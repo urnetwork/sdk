@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var connectVcLog = logFn("connect_view_controller")

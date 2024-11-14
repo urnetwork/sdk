@@ -1,9 +1,8 @@
-package client
+package sdk
 
 import (
 	"context"
 	// "golang.org/x/mobile/gl"
-	// "bringyour.com/connect"
 )
 
 var pvcLog = logFn("provide_view_controller")

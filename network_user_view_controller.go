@@ -1,10 +1,10 @@
-package client
+package sdk
 
 import (
 	"context"
 	"sync"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var nuLog = logFn("network_user_view_controller")

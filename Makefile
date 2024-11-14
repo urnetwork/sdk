@@ -14,16 +14,16 @@ build_android:
 		-trimpath \
 		-gcflags="-dwarf=true" \
 		-ldflags="-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
-		-o build/android/BringYourClient.aar \
-	bringyour.com/client
+		-o build/android/URnetworkSdk.aar \
+		github.com/urnetwork/sdk
 
 	# validate that all types could be exported
 	cd build/android; \
 	    if [[ -e validate ]]; then mv validate validate.$$(date +%s); fi; \
 		mkdir validate; \
-		cp BringYourClient-sources.jar validate/; \
+		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
-			jar -xf BringYourClient-sources.jar; \
+			jar -xf URnetworkSdk-sources.jar; \
 			bad_exports=`grep -Ri '// skipped' .`; \
 			if [[ "$$bad_exports" ]]; then \
 				echo "Some types could not be exported:"; \
@@ -40,9 +40,10 @@ build_ios:
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
 		-target=ios -iosversion 14.0 \
+		-bundleid com.bringyour \
 		-trimpath \
-		-o build/ios/BringYourClient.xcframework \
-	bringyour.com/client
+		-o build/ios/URnetworkSdk.xcframework \
+		github.com/urnetwork/sdk
 
 init:
 	go install golang.org/x/mobile/cmd/gomobile@latest

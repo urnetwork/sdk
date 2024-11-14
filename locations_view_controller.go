@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var locationsVcLog = logFn("locations_view_controller")

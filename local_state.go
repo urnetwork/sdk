@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	gojwt "github.com/golang-jwt/jwt/v5"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var lsLog = logFn("local_state")

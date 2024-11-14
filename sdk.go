@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 
 	// "github.com/golang/glog"
 
-	"bringyour.com/connect"
-	"bringyour.com/protocol"
+	"github.com/urnetwork/connect"
+	"github.com/urnetwork/protocol"
 )
 
 // note: publicly exported types must be fully contained in the `client` package tree

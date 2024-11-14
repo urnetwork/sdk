@@ -1,10 +1,10 @@
-package client
+package sdk
 
 import (
 	"context"
 	"sync"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var referralCodeLog = logFn("referral_code_view_controller")

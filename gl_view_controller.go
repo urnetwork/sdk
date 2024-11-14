@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/mobile/gl"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var glvcLog = logFn("gl_view_controller")

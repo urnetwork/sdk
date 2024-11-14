@@ -1,4 +1,4 @@
-package client
+package sdk
 
 type ViewController interface {
 	Close()

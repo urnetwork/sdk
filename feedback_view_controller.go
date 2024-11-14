@@ -1,10 +1,10 @@
-package client
+package sdk
 
 import (
 	"context"
 	"sync"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var fbvcLog = logFn("feedback_view_controller")

@@ -1,11 +1,11 @@
-package client
+package sdk
 
 import (
 	"context"
 	"sync"
 	"time"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var avcLog = logFn("account_view_controller")

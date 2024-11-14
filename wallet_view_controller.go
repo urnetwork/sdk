@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var wvcLog = logFn("wallet_view_controller")

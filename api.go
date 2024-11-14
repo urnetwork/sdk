@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	// "time"
 	"sync"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var apiLog = logFn("api")

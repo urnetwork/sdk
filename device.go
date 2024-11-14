@@ -1,4 +1,4 @@
-package client
+package sdk
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 
 	"github.com/golang/glog"
 
-	"bringyour.com/connect"
-	"bringyour.com/protocol"
+	"github.com/urnetwork/connect"
+	"github.com/urnetwork/protocol"
 )
 
 // the device upgrades the api, including setting the client jwt

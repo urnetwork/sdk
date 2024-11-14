@@ -1,10 +1,10 @@
-package client
+package sdk
 
 import (
 	"context"
 	"slices"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var dvcLog = logFn("device_view_controller")

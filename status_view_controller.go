@@ -1,11 +1,11 @@
-package client
+package sdk
 
 import (
 	"context"
 
 	"golang.org/x/mobile/gl"
 
-	"bringyour.com/connect"
+	"github.com/urnetwork/connect"
 )
 
 var svcLog = logFn("status_view_controller")
