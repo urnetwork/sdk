@@ -107,6 +107,7 @@ type BringYourDevice struct {
 
 	routeLocal          bool
 	canShowRatingDialog bool
+	canRefer            bool
 
 	provideWhileDisconnected bool
 	offline                  bool
@@ -333,6 +334,18 @@ func (self *BringYourDevice) SetProvideWhileDisconnected(provideWhileDisconnecte
 		}
 	}
 
+}
+
+func (self *BringYourDevice) GetCanRefer() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.canRefer
+}
+
+func (self *BringYourDevice) SetCanRefer(canRefer bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.canRefer = canRefer
 }
 
 func (self *BringYourDevice) SetRouteLocal(routeLocal bool) {
