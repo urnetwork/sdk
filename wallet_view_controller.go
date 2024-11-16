@@ -128,7 +128,7 @@ func newWalletViewController(ctx context.Context, device *BringYourDevice) *Wall
 func (self *WalletViewController) Start() {
 	go self.fetchAccountWallets()
 	go self.FetchPayoutWallet()
-	go self.fetchPayments()
+	go self.FetchPayments()
 	go self.FetchTransferStats()
 	self.pollNewWallets()
 }
@@ -488,7 +488,7 @@ func (vc *WalletViewController) setAccountPayments(payments []*AccountPayment) {
 
 }
 
-func (vc *WalletViewController) fetchPayments() {
+func (vc *WalletViewController) FetchPayments() {
 
 	vc.device.GetApi().GetAccountPayments(connect.NewApiCallback[*GetNetworkAccountPaymentsResult](
 		func(results *GetNetworkAccountPaymentsResult, err error) {
@@ -673,6 +673,8 @@ func (self *WalletViewController) FetchTransferStats() {
 				if results != nil {
 					self.setUnpaidByteCount(results.UnpaidBytesProvided)
 				}
+
+				self.setIsFetchingTransferStats(false)
 
 			}))
 
