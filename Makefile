@@ -5,17 +5,19 @@ clean:
 	rm -rf build
 
 build_android:
-	mkdir -p build/android
 # 	gomobile bind -target=android -androidapi 19 -javapkg com.bringyour.network -o build/android/client.aar
+	BUILD_DIR=android.`date +%s`; \
 	WARP_VERSION=`warpctl ls version`; \
+	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
 		-target=android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags="-dwarf=true" \
 		-ldflags="-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
-		-o build/android/URnetworkSdk.aar \
-		github.com/urnetwork/sdk
+		-o "build/$$BUILD_DIR/URnetworkSdk.aar" \
+		github.com/urnetwork/sdk; \
+	ln -sf "$$BUILD_DIR" build/android
 
 	# validate that all types could be exported
 	cd build/android; \
@@ -32,18 +34,22 @@ build_android:
 			fi;
 
 build_ios:
-	mkdir -p build/ios
 	# -prefix com.bringyour.network.client
 # 	gomobile bind -target=ios -iosversion 14.0 -o build/ios/Client.xcframework
 # 	gomobile bind -target=ios -iosversion 14.0 -o build/ios/Client.xcframework bringyour.com/client bringyour.com/client/device bringyour.com/client/vc
+	BUILD_DIR=ios.`date +%s`; \
 	WARP_VERSION=`warpctl ls version`; \
+	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
 		-target=ios -iosversion 14.0 \
 		-bundleid com.bringyour \
 		-trimpath \
-		-o build/ios/URnetworkSdk.xcframework \
-		github.com/urnetwork/sdk
+		-gcflags="-dwarf=true" \
+		-ldflags="-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-o "build/$$BUILD_DIR/URnetworkSdk.xcframework" \
+		github.com/urnetwork/sdk; \
+	ln -sf "$$BUILD_DIR" build/ios
 
 init:
 	go install golang.org/x/mobile/cmd/gomobile@latest
