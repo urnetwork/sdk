@@ -131,10 +131,10 @@ jobs:
         with:
           tag_name: v${{steps.create-release.outputs.version}}
           release_name: Release ${{steps.create-release.outputs.version}}
+          body_path: release-commits.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          body: |
-            This is a nightly release
+
       - name: Upload aar to github release
         uses: svenstaro/upload-release-action@v2
         with:
@@ -143,4 +143,3 @@ jobs:
           asset_name: URnetworkSdk.aar
           tag: v${{steps.create-release.outputs.version}}
           overwrite: true
-          body: "urnetwork client aar"
