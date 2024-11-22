@@ -122,8 +122,8 @@ jobs:
       - name: Create Release
         uses: "comnoco/create-release-action@v2"
         with:
-          tag_name: v${steps.create-release.outputs.version}
-          release_name: Release ${steps.create-release.outputs.version}
+          tag_name: v${{steps.create-release.outputs.version}}
+          release_name: Release ${{steps.create-release.outputs.version}}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           body: |
