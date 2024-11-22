@@ -108,7 +108,8 @@ jobs:
               exit 1
           fi
 
-          ls -al
+          find .
+          ls -alr
 
       - name: Install semver-release
         run: go install github.com/urnetwork/semver-release@v0.0.6
@@ -117,10 +118,10 @@ jobs:
         working-directory: sdk
         id: create-release
         run: |
-          PREVIOUS_RELEASE="$HOME/go/bin/semver-release latest ."
+          PREVIOUS_RELEASE="$($HOME/go/bin/semver-release latest .)"
           $HOME/go/bin/semver-release release
           git push origin --tags
-          CURRENT_RELEASE="$HOME/go/bin/semver-release latest ."
+          CURRENT_RELEASE="$($HOME/go/bin/semver-release latest .)"
 
           git log "$PREVIOUS_RELEASE^".."$CURRENT_RELEASE"
 
