@@ -63,6 +63,7 @@ jobs:
           rm -rf gosource
 
       - name: fix go mod
+        working-directory: sdk
         run: |
           go mod edit -dropreplace github.com/urnetwork/connect@v0.0.0
           go mod edit -dropreplace github.com/urnetwork/protocol@v0.0.0
@@ -75,6 +76,7 @@ jobs:
         run: go install golang.org/x/mobile/cmd/...@latest
 
       - name: build
+        working-directory: sdk
         run: |
           mkdir -p build/android
           gomobile bind \
@@ -87,6 +89,7 @@ jobs:
             github.com/urnetwork/sdk
 
       - name: validate
+        working-directory: sdk
         run: |
           cd build/android
           mkdir validate
@@ -105,6 +108,7 @@ jobs:
       - name: Install semver-release
         run: go install github.com/urnetwork/semver-release@v0.0.4
       - name: Create Release
+        working-directory: sdk
         id: create-release
         run: |
           $HOME/go/bin/semver-release release
