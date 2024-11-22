@@ -106,7 +106,8 @@ jobs:
           fi
 
       - name: Install semver-release
-        run: go install github.com/urnetwork/semver-release@v0.0.4
+        run: go install github.com/urnetwork/semver-release@v0.0.6
+
       - name: Create Release
         working-directory: sdk
         id: create-release
