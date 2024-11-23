@@ -1099,8 +1099,8 @@ func (self *BringYourApi) AccountPreferencesGet(callback AccountPreferencesGetCa
  **/
 
 type TransferStatsResult struct {
-	PaidBytesProvided   int `json:"paid_bytes_provided"`
-	UnpaidBytesProvided int `json:"unpaid_bytes_provided"`
+	PaidBytesProvided   ByteCount `json:"paid_bytes_provided"`
+	UnpaidBytesProvided ByteCount `json:"unpaid_bytes_provided"`
 }
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
