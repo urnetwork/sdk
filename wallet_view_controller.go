@@ -29,7 +29,7 @@ type IsRemovingWalletListener interface {
 }
 
 type UnpaidByteCountListener interface {
-	StateChanged(int)
+	StateChanged(ByteCount)
 }
 
 type PayoutWalletListener interface {
@@ -85,7 +85,7 @@ type WalletViewController struct {
 	isPollingAccountWallets bool
 	isPollingPayoutWallet   bool
 	isFetchingTransferStats bool
-	unpaidByteCount         int
+	unpaidByteCount         ByteCount
 
 	stateLock sync.Mutex
 
@@ -631,7 +631,7 @@ func (self *WalletViewController) AddUnpaidByteCountListener(listener UnpaidByte
 	})
 }
 
-func (self *WalletViewController) unpaidByteCountChanged(count int) {
+func (self *WalletViewController) unpaidByteCountChanged(count ByteCount) {
 	for _, listener := range self.unpaidByteCountListeners.Get() {
 		connect.HandleError(func() {
 			listener.StateChanged(count)
@@ -639,7 +639,7 @@ func (self *WalletViewController) unpaidByteCountChanged(count int) {
 	}
 }
 
-func (self *WalletViewController) setUnpaidByteCount(count int) {
+func (self *WalletViewController) setUnpaidByteCount(count ByteCount) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -649,7 +649,7 @@ func (self *WalletViewController) setUnpaidByteCount(count int) {
 	self.unpaidByteCountChanged(count)
 }
 
-func (self *WalletViewController) GetUnpaidByteCount() int {
+func (self *WalletViewController) GetUnpaidByteCount() ByteCount {
 	return self.unpaidByteCount
 }
 
