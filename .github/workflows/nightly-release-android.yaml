@@ -13,39 +13,46 @@ jobs:
   build_aar:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup SSH
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: "0"
+          fetch-tags: "true"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.3"
+
+      - name: fix go mod
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SDK_PRIVATE_KEY }}" > ~/.ssh/sdk_key
-          chmod 600 ~/.ssh/sdk_key
+          go mod edit -dropreplace github.com/urnetwork/connect@v0.0.0
+          go mod edit -dropreplace github.com/urnetwork/protocol@v0.0.0
+          go mod edit -dropreplace github.com/urnetwork/userwireguard@v0.0.0
 
-          # Create SSH config file
-          echo "Host github-sdk-key" >> ~/.ssh/config
-          echo "  HostName github.com" >> ~/.ssh/config
-          echo "  User git" >> ~/.ssh/config
-          echo "  IdentityFile ~/.ssh/sdk_key" >> ~/.ssh/config
+          go mod edit -require github.com/urnetwork/connect@latest -require github.com/urnetwork/protocol@latest -require github.com/urnetwork/userwireguard@latest
+          go mod tidy
 
-          # Add GitHub to known_hosts to avoid prompt
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
+      - name: Install semver-release
+        run: go install github.com/urnetwork/semver-release@v0.0.8
 
-      - name: Clone Repo
+      - name: Check if release is needed
+        id: release_needed
         run: |
-          git clone git@github-sdk-key:urnetwork/sdk.git
+          echo "RELEASE_NEEDED=$(semver-release release-needed)" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 21
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: "zulu"
 
       - name: Setup Android SDK
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         uses: android-actions/setup-android@v3
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23.3"
-
       - name: build patched go
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         run: |
           git config --global user.email "build@ur.io"
           git config --global user.name "Urnetrwork Build"
@@ -65,21 +72,12 @@ jobs:
           cd ..
           rm -rf gosource
 
-      - name: fix go mod
-        working-directory: sdk
-        run: |
-          go mod edit -dropreplace github.com/urnetwork/connect@v0.0.0
-          go mod edit -dropreplace github.com/urnetwork/protocol@v0.0.0
-          go mod edit -dropreplace github.com/urnetwork/userwireguard@v0.0.0
-
-          go mod edit -require github.com/urnetwork/connect@latest -require github.com/urnetwork/protocol@latest -require github.com/urnetwork/userwireguard@latest
-          go mod tidy
-
       - name: install gomobile
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         run: go install golang.org/x/mobile/cmd/...@latest
 
       - name: build
-        working-directory: sdk
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         run: |
           mkdir -p build/android
           gomobile bind \
@@ -92,7 +90,7 @@ jobs:
             github.com/urnetwork/sdk
 
       - name: validate
-        working-directory: sdk
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         run: |
           cd build/android
           mkdir validate
@@ -108,11 +106,8 @@ jobs:
               exit 1
           fi
 
-      - name: Install semver-release
-        run: go install github.com/urnetwork/semver-release@v0.0.6
-
       - name: Create Release
-        working-directory: sdk
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         id: create-release
         run: |
           PREVIOUS_RELEASE="$($HOME/go/bin/semver-release latest .)"
@@ -126,7 +121,8 @@ jobs:
 
           echo "version=$($HOME/go/bin/semver-release latest .)" >> "$GITHUB_OUTPUT"
 
-      - name: Create Githib Release
+      - name: Create Github Release
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         uses: "comnoco/create-release-action@v2"
         with:
           tag_name: v${{steps.create-release.outputs.version}}
@@ -136,6 +132,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload aar to github release
+        if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
