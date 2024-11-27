@@ -6,8 +6,8 @@ require (
 	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/golang/glog v1.2.1
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/protocol v0.0.0
+	github.com/urnetwork/connect v0.1.4
+	github.com/urnetwork/protocol v0.1.3
 	golang.org/x/mobile v0.0.0-20241108191957-fa514ef75a0f
 
 )
@@ -32,9 +32,3 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 	src.agwa.name/tlshacks v0.0.0-20231008131857-90d701ba3225 // indirect
 )
-
-replace github.com/urnetwork/connect v0.0.0 => ../connect
-
-replace github.com/urnetwork/protocol v0.0.0 => ../protocol
-
-replace github.com/urnetwork/userwireguard v0.0.0 => ../userwireguard
