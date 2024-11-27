@@ -116,8 +116,8 @@ jobs:
           CURRENT_RELEASE="$($HOME/go/bin/semver-release latest .)"
 
           set -x
-          echo "## Release Commits `v$PREVIOUS_RELEASE`..`v$CURRENT_RELEASE`" > ../release-commits.md
-          git log "v$PREVIOUS_RELEASE".."v$CURRENT_RELEASE^" --oneline | sed 's/^/- /' -  >> ../release-commits.md
+          echo "## Release Commits `v$PREVIOUS_RELEASE`..`v$CURRENT_RELEASE`" > release-commits.md
+          git log "v$PREVIOUS_RELEASE".."v$CURRENT_RELEASE^" --oneline | sed 's/^/- /' -  >> release-commits.md
 
           echo "version=$($HOME/go/bin/semver-release latest .)" >> "$GITHUB_OUTPUT"
           ls -la build/android
