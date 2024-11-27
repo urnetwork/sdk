@@ -120,6 +120,7 @@ jobs:
           git log "v$PREVIOUS_RELEASE".."v$CURRENT_RELEASE^" --oneline | sed 's/^/- /' -  >> ../release-commits.md
 
           echo "version=$($HOME/go/bin/semver-release latest .)" >> "$GITHUB_OUTPUT"
+          ls -la build/android
 
       - name: Create Github Release
         if: ${{ steps.release_needed.outputs.RELEASE_NEEDED == 'true'}}
@@ -136,7 +137,8 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: sdk/build/android/URnetworkSdk.aar
-          asset_name: URnetworkSdk.aar
+          file: build/android/*
+          file_glob: true
+          # asset_name: URnetworkSdk.aar
           tag: v${{steps.create-release.outputs.version}}
           overwrite: true
