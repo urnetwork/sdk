@@ -207,7 +207,8 @@ func (self *BringYourApi) AuthPasswordReset(authPasswordReset *AuthPasswordReset
 type AuthVerifySendCallback connect.ApiCallback[*AuthVerifySendResult]
 
 type AuthVerifySendArgs struct {
-	UserAuth string `json:"user_auth"`
+	UserAuth   string `json:"user_auth"`
+	UseNumeric bool   `json:"use_numeric,omitempty"`
 }
 
 type AuthVerifySendResult struct {
