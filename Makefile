@@ -47,7 +47,7 @@ build_ios:
 	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
-		-target=ios -iosversion 14.0 \
+		-target=ios,macos -iosversion 16.0 \
 		-bundleid com.bringyour \
 		-trimpath \
 		-gcflags="-dwarf=true" \
