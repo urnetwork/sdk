@@ -39,6 +39,10 @@ github.com/quic-go/quic-go v0.46.0/go.mod h1:1dLehS7TIR64+vxGR70GDcatWTOtMX2PUtn
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.6.1 h1:hDPOHmpOpP40lSULcqw7IrRb/u7w6RpDC9399XyoNd0=
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+github.com/urnetwork/connect v0.1.5 h1:9WidR7S6v4QKHIelZX5E7p+ofbuiiz35To3NNVK5+hc=
+github.com/urnetwork/connect v0.1.5/go.mod h1:CVNFuhwbrL318qye3bzu49WRjaEMwyIgPT+FzzV1ZXs=
+github.com/urnetwork/protocol v0.1.3 h1:FDrxqEpGfXshOEDANYYYMTmHyChrpYdUCCfnCWp/RBQ=
+github.com/urnetwork/protocol v0.1.3/go.mod h1:AW8Alk31jyTnj2mIEk9DSNnR8pW33P2747HV1R2CKTU=
 go.uber.org/mock v0.4.0 h1:VcM4ZOtdbR4f6VXfiOpwpVJDL6lCReaZ6mw31wqh7KU=
 go.uber.org/mock v0.4.0/go.mod h1:a6FSlNadKUHUa9IP5Vyt1zh4fC7uAwxMutEAscFbkZc=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
