@@ -5,7 +5,6 @@ clean:
 	rm -rf build
 
 build_android:
-# 	gomobile bind -target=android -androidapi 19 -javapkg com.bringyour.network -o build/android/client.aar
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	BUILD_DIR=android.`date +%s`; \
@@ -37,9 +36,6 @@ build_android:
 			fi;
 
 build_ios:
-	# -prefix com.bringyour.network.client
-# 	gomobile bind -target=ios -iosversion 14.0 -o build/ios/Client.xcframework
-# 	gomobile bind -target=ios -iosversion 14.0 -o build/ios/Client.xcframework bringyour.com/client bringyour.com/client/device bringyour.com/client/vc
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	BUILD_DIR=ios.`date +%s`; \
