@@ -12,11 +12,11 @@ build_android:
 	WARP_VERSION=`warpctl ls version`; \
 	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
-		-target=android/arm64,android/arm,android/amd64 -androidapi 24 \
+		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
 		-trimpath \
-		-gcflags="-dwarf=true" \
-		-ldflags="-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-gcflags "-dwarf=true" \
+		-ldflags "-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
 		-o "build/$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
 	if [[ -e "build/android" ]]; then mv build/android build/android.old.`date +%s`; fi; \
@@ -47,11 +47,11 @@ build_ios:
 	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
-		-target=ios,macos -iosversion 16.0 \
+		-target ios,iossimulator,macos -iosversion 16.0 \
 		-bundleid com.bringyour \
 		-trimpath \
-		-gcflags="-dwarf=true" \
-		-ldflags="-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-gcflags "-dwarf=true" \
+		-ldflags "-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
 		-o "build/$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
 	if [[ -e "build/ios" ]]; then mv build/ios build/ios.old.`date +%s`; fi; \
