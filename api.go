@@ -18,6 +18,9 @@ import (
 	"github.com/urnetwork/connect"
 )
 
+// the api is asychronous, which is the most natural for the target platforms
+
+
 var apiLog = logFn("api")
 
 // FIXME rename to Api
@@ -885,17 +888,6 @@ func (self *BringYourApi) SubscriptionCreatePaymentId(createPaymentId *Subscript
 	})
 }
 
-func (self *BringYourApi) SubscriptionCreatePaymentIdSync(createPaymentId *SubscriptionCreatePaymentIdArgs) (*SubscriptionCreatePaymentIdResult, error) {
-	return connect.HttpPostWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/subscription/create-payment-id", self.apiUrl),
-		createPaymentId,
-		self.GetByJwt(),
-		&SubscriptionCreatePaymentIdResult{},
-		connect.NewNoopApiCallback[*SubscriptionCreatePaymentIdResult](),
-	)
-}
 
 /**
  * Get network user
