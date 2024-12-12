@@ -194,10 +194,7 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 // 	self.filteredLocationState = state
 // }
 
-// must be called with the state lock
-func (self *LocationsViewController) setFilteredLocationsFromResult(result *FindLocationsResult, filter string) {
-	locationsVcLog("SET FILTERED LOCATIONS FROM RESULT %s", result)
-
+func GetFilteredLocationsFromResult(result *FindLocationsResult, filter string) *FilteredLocations {
 	var bestMatch []*ConnectLocation
 	var promoted []*ConnectLocation
 	var countries []*ConnectLocation
@@ -312,8 +309,12 @@ func (self *LocationsViewController) setFilteredLocationsFromResult(result *Find
 		Devices:     exportedDevices,
 	}
 
-	// self.filteredLocationsChanged(filteredLocations)
-	// self.filterLocationsStateChanged(LocationsLoaded)
+	return filteredLocations
+}
+
+// must be called with the state lock
+func (self *LocationsViewController) setFilteredLocationsFromResult(result *FindLocationsResult, filter string) {
+	filteredLocations := GetFilteredLocationsFromResult(result, filter)
 
 	self.filteredLocations = filteredLocations
 	self.filteredLocationState = LocationsLoaded
@@ -364,7 +365,10 @@ func cmpConnectLocations(a *ConnectLocation, b *ConnectLocation) int {
  * ie locationId.toString()
  */
 func (vc *LocationsViewController) GetColorHex(code string) string {
+	return GetColorHex(code)
+}
 
+func GetColorHex(code string) string {
 	if color, exists := countryCodeColorHexes[code]; exists {
 		return color
 	}
