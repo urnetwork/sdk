@@ -1036,16 +1036,18 @@ type SendFeedbackCallback connect.ApiCallback[*FeedbackSendResult]
 func (self *BringYourApi) SendFeedback(
 	sendFeedback *FeedbackSendArgs,
 	callback SendFeedbackCallback,
-) (*FeedbackSendResult, error) {
-	return connect.HttpPostWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/feedback/send-feedback", self.apiUrl),
-		sendFeedback,
-		self.GetByJwt(),
-		&FeedbackSendResult{},
-		callback,
-	)
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/feedback/send-feedback", self.apiUrl),
+			sendFeedback,
+			self.GetByJwt(),
+			&FeedbackSendResult{},
+			callback,
+		)
+	})
 }
 
 /**
