@@ -1005,16 +1005,18 @@ type RemoveWalletCallback connect.ApiCallback[*RemoveWalletResult]
 func (self *BringYourApi) RemoveWallet(
 	removeWallet *RemoveWalletArgs,
 	callback RemoveWalletCallback,
-) (*RemoveWalletResult, error) {
-	return connect.HttpPostWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/account/wallets/remove", self.apiUrl),
-		removeWallet,
-		self.GetByJwt(),
-		&RemoveWalletResult{},
-		callback,
-	)
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/account/wallets/remove", self.apiUrl),
+			removeWallet,
+			self.GetByJwt(),
+			&RemoveWalletResult{},
+			callback,
+		)
+	})
 }
 
 /**
@@ -1113,15 +1115,17 @@ type TransferStatsResult struct {
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
 
-func (self *BringYourApi) GetTransferStats(callback GetTransferStatsCallback) (*TransferStatsResult, error) {
-	return connect.HttpGetWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/transfer/stats", self.apiUrl),
-		self.GetByJwt(),
-		&TransferStatsResult{},
-		callback,
-	)
+func (self *BringYourApi) GetTransferStats(callback GetTransferStatsCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/transfer/stats", self.apiUrl),
+			self.GetByJwt(),
+			&TransferStatsResult{},
+			callback,
+		)
+	})
 }
 
 /**
