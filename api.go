@@ -1005,16 +1005,18 @@ type RemoveWalletCallback connect.ApiCallback[*RemoveWalletResult]
 func (self *BringYourApi) RemoveWallet(
 	removeWallet *RemoveWalletArgs,
 	callback RemoveWalletCallback,
-) (*RemoveWalletResult, error) {
-	return connect.HttpPostWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/account/wallets/remove", self.apiUrl),
-		removeWallet,
-		self.GetByJwt(),
-		&RemoveWalletResult{},
-		callback,
-	)
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/account/wallets/remove", self.apiUrl),
+			removeWallet,
+			self.GetByJwt(),
+			&RemoveWalletResult{},
+			callback,
+		)
+	})
 }
 
 /**
