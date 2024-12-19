@@ -48,6 +48,14 @@ type AccountWallet struct {
 	CreateTime       *Time      `json:"create_time"`
 }
 
+func (self *AccountWallet) ObscuredWalletAddress() string {
+	if len(self.WalletAddress) < 6 {
+		return ""
+	}
+	return "****" + self.WalletAddress[len(self.WalletAddress)-6:]
+
+}
+
 type AccountPayment struct {
 	PaymentId       *Id       `json:"payment_id"`
 	PaymentPlanId   *Id       `json:"payment_plan_id"`

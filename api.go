@@ -1113,15 +1113,17 @@ type TransferStatsResult struct {
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
 
-func (self *BringYourApi) GetTransferStats(callback GetTransferStatsCallback) (*TransferStatsResult, error) {
-	return connect.HttpGetWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/transfer/stats", self.apiUrl),
-		self.GetByJwt(),
-		&TransferStatsResult{},
-		callback,
-	)
+func (self *BringYourApi) GetTransferStats(callback GetTransferStatsCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/transfer/stats", self.apiUrl),
+			self.GetByJwt(),
+			&TransferStatsResult{},
+			callback,
+		)
+	})
 }
 
 /**
