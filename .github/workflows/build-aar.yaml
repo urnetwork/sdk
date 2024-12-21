@@ -53,7 +53,9 @@ jobs:
           go mod tidy
 
       - name: install gomobile
-        run: go install golang.org/x/mobile/cmd/...@latest
+        run: |
+          go get golang.org/x/mobile
+          go install golang.org/x/mobile/cmd/...@latest
 
       - name: build
         run: |

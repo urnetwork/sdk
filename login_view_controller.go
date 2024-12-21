@@ -3,7 +3,6 @@ package sdk
 import (
 	"context"
 	"time"
-	// "golang.org/x/mobile/gl"
 )
 
 var lvcLog = logFn("login_view_controller")
@@ -17,8 +16,6 @@ type LoginViewController struct {
 	api *BringYourApi
 
 	// networkCheck *networkCheck
-
-	// glViewController
 }
 
 func NewLoginViewController(api *BringYourApi) *LoginViewController {

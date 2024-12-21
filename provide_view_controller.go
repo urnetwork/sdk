@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"context"
-	// "golang.org/x/mobile/gl"
 )
 
 var pvcLog = logFn("provide_view_controller")
@@ -12,8 +11,6 @@ type ProvideViewController struct {
 	cancel context.CancelFunc
 
 	device *BringYourDevice
-
-	// glViewController
 }
 
 func newProvideViewController(ctx context.Context, device *BringYourDevice) *ProvideViewController {
@@ -23,7 +20,6 @@ func newProvideViewController(ctx context.Context, device *BringYourDevice) *Pro
 		ctx:    cancelCtx,
 		cancel: cancel,
 		device: device,
-		// glViewController: *newGLViewController(),
 	}
 	// vc.drawController = vc
 	return vc
