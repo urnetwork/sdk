@@ -54,7 +54,7 @@ jobs:
 
       - name: install gomobile
         run: |
-          go get golang.org/x/mobile/bind
+          go get golang.org/x/mobile
           go install golang.org/x/mobile/cmd/...@latest
 
       - name: build
