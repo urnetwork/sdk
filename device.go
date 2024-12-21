@@ -797,12 +797,6 @@ func (self *BringYourDevice) OpenProvideViewController() *ProvideViewController 
 	return vc
 }
 
-func (self *BringYourDevice) OpenStatusViewController() *StatusViewController {
-	vc := newStatusViewController(self.ctx, self.client)
-	self.openViewController(vc)
-	return vc
-}
-
 func (self *BringYourDevice) OpenDevicesViewController() *DevicesViewController {
 	vc := newDevicesViewController(self.ctx, self)
 	self.openViewController(vc)
