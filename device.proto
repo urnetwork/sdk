@@ -1,0 +1,11 @@
+
+# note the service was initialized with a public cert for tls auth
+
+service DeviceLocal {
+	
+}
+
+service DeviceRemote {
+	
+}
+

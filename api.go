@@ -20,8 +20,7 @@ import (
 
 var apiLog = logFn("api")
 
-// FIXME rename to Api
-type BringYourApi struct {
+type Api struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 

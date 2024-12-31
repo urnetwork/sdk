@@ -50,6 +50,96 @@ type ReceivePacket interface {
 	ReceivePacket(packet []byte)
 }
 
+
+type Device interface {
+
+	func (self *BringYourDevice) ClientId() *Id 
+
+	func (self *BringYourDevice) GetClientId() *Id 
+
+	func (self *BringYourDevice) GetApi() *BringYourApi 
+
+	func (self *BringYourDevice) GetNetworkSpace() *NetworkSpace 
+
+	func (self *BringYourDevice) GetStats() *DeviceStats
+
+	func (self *BringYourDevice) GetShouldShowRatingDialog() bool 
+
+	func (self *BringYourDevice) GetCanShowRatingDialog() bool
+
+	func (self *BringYourDevice) SetCanShowRatingDialog(canShowRatingDialog bool) 
+
+	func (self *BringYourDevice) GetProvideWhileDisconnected() bool
+
+	func (self *BringYourDevice) SetProvideWhileDisconnected(provideWhileDisconnected bool)
+
+	func (self *BringYourDevice) GetCanRefer() bool
+
+	func (self *BringYourDevice) SetCanRefer(canRefer bool)
+
+	func (self *BringYourDevice) SetRouteLocal(routeLocal bool) 
+
+	func (self *BringYourDevice) GetRouteLocal() bool
+
+	func (self *BringYourDevice) AddProvideChangeListener(listener ProvideChangeListener) Sub 
+
+	func (self *BringYourDevice) AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub 
+
+	func (self *BringYourDevice) AddOfflineChangeListener(listener OfflineChangeListener) Sub 
+
+	func (self *BringYourDevice) AddConnectChangeListener(listener ConnectChangeListener) Sub 
+
+	func (self *BringYourDevice) AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
+
+	func (self *BringYourDevice) AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
+
+	func (self *BringYourDevice) GetProvideSecretKeys(listener ProvideSecretKeysListener) Sub 
+
+	func (self *BringYourDevice) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList)
+
+	func (self *BringYourDevice) InitProvideSecretKeys()
+
+	func (self *BringYourDevice) GetProvideEnabled() bool 
+
+	func (self *BringYourDevice) GetConnectEnabled() bool 
+
+	func (self *BringYourDevice) SetProvideMode(provideMode ProvideMode) 
+
+	func (self *BringYourDevice) setProvideModeNoEvent(provideMode ProvideMode) 
+
+	func (self *BringYourDevice) GetProvideMode() ProvideMode 
+
+	func (self *BringYourDevice) SetProvidePaused(providePaused bool) 
+
+	func (self *BringYourDevice) GetProvidePaused() bool 
+
+	func (self *BringYourDevice) SetOffline(offline bool) 
+
+	func (self *BringYourDevice) GetOffline() bool 
+
+	func (self *BringYourDevice) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool)
+
+	func (self *BringYourDevice) GetVpnInterfaceWhileOffline() bool
+
+	func (self *BringYourDevice) RemoveDestination() error 
+
+	func (self *BringYourDevice) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) (returnErr error)
+
+	func (self *BringYourDevice) SetConnectLocation(location *ConnectLocation) 
+
+	func (self *BringYourDevice) GetConnectLocation() *ConnectLocation 
+
+	func (self *BringYourDevice) Shuffle() 
+
+	func (self *BringYourDevice) SendPacket(packet []byte, n int32) bool 
+
+	func (self *BringYourDevice) AddReceivePacket(receivePacket ReceivePacket) Sub 
+
+	func (self *BringYourDevice) Close()
+}
+
+
+
 type deviceSettings struct {
 	// time to give up (drop) sending a packet to a destination
 	SendTimeout time.Duration
@@ -63,7 +153,7 @@ func defaultDeviceSettings() *deviceSettings {
 	}
 }
 
-type BringYourDevice struct {
+type LocalDevice struct {
 	networkSpace *NetworkSpace
 
 	ctx    context.Context
@@ -112,8 +202,6 @@ type BringYourDevice struct {
 	provideWhileDisconnected bool
 	offline                  bool
 	vpnInterfaceWhileOffline bool
-
-	openedViewControllers map[ViewController]bool
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
@@ -761,82 +849,6 @@ func (self *BringYourDevice) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	})
 }
 
-func (self *BringYourDevice) openViewController(vc ViewController) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.openedViewControllers[vc] = true
-}
-
-func (self *BringYourDevice) closeViewController(vc ViewController) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	delete(self.openedViewControllers, vc)
-}
-
-func (self *BringYourDevice) OpenLocationsViewController() *LocationsViewController {
-	vm := newLocationsViewController(self.ctx, self)
-	self.openViewController(vm)
-	return vm
-}
-
-func (self *BringYourDevice) OpenConnectViewController() *ConnectViewController {
-	vm := newConnectViewController(self.ctx, self)
-	self.openViewController(vm)
-	return vm
-}
-
-func (self *BringYourDevice) OpenWalletViewController() *WalletViewController {
-	vc := newWalletViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenProvideViewController() *ProvideViewController {
-	vc := newProvideViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenDevicesViewController() *DevicesViewController {
-	vc := newDevicesViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenAccountViewController() *AccountViewController {
-	vc := newAccountViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenFeedbackViewController() *FeedbackViewController {
-	vc := newFeedbackViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenNetworkUserViewController() *NetworkUserViewController {
-	vc := newNetworkUserViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenAccountPreferencesViewController() *AccountPreferencesViewController {
-	vc := newAccountPreferencesViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) OpenReferralCodeViewController() *ReferralCodeViewController {
-	vc := newReferralCodeViewController(self.ctx, self)
-	self.openViewController(vc)
-	return vc
-}
-
-func (self *BringYourDevice) CloseViewController(vc ViewController) {
-	vc.Close()
-	self.closeViewController(vc)
-}
 
 func (self *BringYourDevice) Close() {
 	self.stateLock.Lock()
