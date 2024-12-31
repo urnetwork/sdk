@@ -6,9 +6,8 @@ require (
 	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/golang/glog v1.2.1
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/protocol v0.0.0
-	golang.org/x/mobile v0.0.0-20241108191957-fa514ef75a0f
+	github.com/urnetwork/connect v0.1.6
+	github.com/urnetwork/protocol v0.1.3
 
 )
 
@@ -21,20 +20,15 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/quic-go/quic-go v0.46.0 // indirect
 	go.uber.org/mock v0.4.0 // indirect
-	golang.org/x/crypto v0.29.0 // indirect
+	golang.org/x/crypto v0.30.0 // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
+	golang.org/x/mobile v0.0.0-20241213221354-a87c1cf6cf46 // indirect
 	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.31.0 // indirect
-	golang.org/x/sync v0.9.0 // indirect
-	golang.org/x/sys v0.27.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
-	golang.org/x/tools v0.27.0 // indirect
+	golang.org/x/net v0.32.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	src.agwa.name/tlshacks v0.0.0-20231008131857-90d701ba3225 // indirect
 )
-
-replace github.com/urnetwork/connect v0.0.0 => ../connect
-
-replace github.com/urnetwork/protocol v0.0.0 => ../protocol
-
-replace github.com/urnetwork/userwireguard v0.0.0 => ../userwireguard
