@@ -2,7 +2,11 @@
 # note the service was initialized with a public cert for tls auth
 
 service DeviceLocal {
+
+	rpc Sync(SyncRequest) returns (SyncResponse) {}
+
 	
+
 }
 
 service DeviceRemote {

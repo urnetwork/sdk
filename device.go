@@ -45,15 +45,26 @@ type ConnectLocationChangeListener interface {
 	ConnectLocationChanged(location *ConnectLocation)
 }
 
+type ProvideSecretKeysListener interface {
+	ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList)
+}
+
 // receive a packet into the local raw socket
 type ReceivePacket interface {
 	ReceivePacket(packet []byte)
 }
 
 
+type DeviceDestination struct {
+	Location *ConnectLocation
+	Specs *ProviderSpecList
+	ProvideMode ProvideMode
+}
+
+
 type Device interface {
 
-	func (self *BringYourDevice) ClientId() *Id 
+	// func (self *BringYourDevice) ClientId() *Id 
 
 	func (self *BringYourDevice) GetClientId() *Id 
 
@@ -93,7 +104,7 @@ type Device interface {
 
 	func (self *BringYourDevice) AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
 
-	func (self *BringYourDevice) GetProvideSecretKeys(listener ProvideSecretKeysListener) Sub 
+	func (self *BringYourDevice) AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
 
 	func (self *BringYourDevice) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList)
 
@@ -121,9 +132,9 @@ type Device interface {
 
 	func (self *BringYourDevice) GetVpnInterfaceWhileOffline() bool
 
-	func (self *BringYourDevice) RemoveDestination() error 
+	func (self *BringYourDevice) RemoveDestination()
 
-	func (self *BringYourDevice) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) (returnErr error)
+	func (self *BringYourDevice) SetDestination(destination *DeviceDestination)
 
 	func (self *BringYourDevice) SetConnectLocation(location *ConnectLocation) 
 
@@ -136,6 +147,9 @@ type Device interface {
 	func (self *BringYourDevice) AddReceivePacket(receivePacket ReceivePacket) Sub 
 
 	func (self *BringYourDevice) Close()
+
+
+	func (self *BringYourDevice) GetAuthPublicKey() string
 }
 
 
@@ -706,11 +720,11 @@ func (self *BringYourDevice) GetVpnInterfaceWhileOffline() bool {
 	return self.vpnInterfaceWhileOffline
 }
 
-func (self *BringYourDevice) RemoveDestination() error {
-	return self.SetDestination(nil, nil, ProvideModeNone)
+func (self *BringYourDevice) RemoveDestination() {
+	self.SetDestination(nil, nil, ProvideModeNone)
 }
 
-func (self *BringYourDevice) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) (returnErr error) {
+func (self *BringYourDevice) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -757,14 +771,10 @@ func (self *BringYourDevice) SetDestination(location *ConnectLocation, specs *Pr
 		}
 		// else no specs, not an error
 	}()
-	if returnErr != nil {
-		return
-	}
 	self.connectLocationChanged(self.GetConnectLocation())
 	connectEnabled := self.GetConnectEnabled()
 	self.stats.UpdateConnect(connectEnabled)
 	self.connectChanged(connectEnabled)
-	return
 }
 
 func (self *BringYourDevice) SetConnectLocation(location *ConnectLocation) {
