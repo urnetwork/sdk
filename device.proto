@@ -5,6 +5,7 @@ service DeviceLocal {
 
 	rpc Sync(SyncRequest) returns (SyncResponse) {}
 
+	rpc 
 	
 
 }
