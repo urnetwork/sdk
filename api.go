@@ -1178,7 +1178,7 @@ type UpgradeGuestArgs struct {
 }
 
 type UpgradeGuestResult struct {
-	ByJwt                string                          `json:"by_jwt,omitempty"`
+	ByJwt                *string                         `json:"by_jwt,omitempty"`
 	VerificationRequired *UpgradeGuestResultVerification `json:"verification_required,omitempty"`
 	Error                *UpgradeGuesteResultError       `json:"error,omitempty"`
 }
