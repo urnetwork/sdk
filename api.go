@@ -1162,3 +1162,45 @@ func (self *BringYourApi) AuthCodeLogin(
 		callback,
 	)
 }
+
+/**
+ * Guest upgrade
+ */
+
+type UpgradeGuestCallback connect.ApiCallback[*UpgradeGuestResult]
+
+type UpgradeGuestArgs struct {
+	UserAuth    string `json:"user_auth,omitempty"`
+	AuthJwt     string `json:"auth_jwt,omitempty"`
+	AuthJwtType string `json:"auth_jwt_type,omitempty"`
+	Password    string `json:"password,omitempty"`
+	NetworkName string `json:"network_name,omitempty"`
+}
+
+type UpgradeGuestResult struct {
+	ByJwt                string                          `json:"by_jwt,omitempty"`
+	VerificationRequired *UpgradeGuestResultVerification `json:"verification_required,omitempty"`
+	Error                *UpgradeGuesteResultError       `json:"error,omitempty"`
+}
+
+type UpgradeGuestResultVerification struct {
+	UserAuth string `json:"user_auth"`
+}
+
+type UpgradeGuesteResultError struct {
+	Message string `json:"message"`
+}
+
+func (self *BringYourApi) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGuestCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/auth/upgrade-guest", self.apiUrl),
+			upgradeGuest,
+			self.GetByJwt(),
+			&UpgradeGuestResult{},
+			callback,
+		)
+	})
+}
