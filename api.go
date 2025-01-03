@@ -972,15 +972,19 @@ type GetNetworkReferralCodeError struct {
 
 type GetNetworkReferralCodeCallback connect.ApiCallback[*GetNetworkReferralCodeResult]
 
-func (self *BringYourApi) GetNetworkReferralCode(callback GetNetworkReferralCodeCallback) (*GetNetworkReferralCodeResult, error) {
-	return connect.HttpGetWithStrategy(
-		self.ctx,
-		self.clientStrategy,
-		fmt.Sprintf("%s/account/referral-code", self.apiUrl),
-		self.GetByJwt(),
-		&GetNetworkReferralCodeResult{},
-		callback,
-	)
+func (self *BringYourApi) GetNetworkReferralCode(
+	callback GetNetworkReferralCodeCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithStrategy(
+			self.ctx,
+			self.clientStrategy,
+			fmt.Sprintf("%s/account/referral-code", self.apiUrl),
+			self.GetByJwt(),
+			&GetNetworkReferralCodeResult{},
+			callback,
+		)
+	})
 }
 
 /**
