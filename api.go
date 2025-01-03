@@ -1177,8 +1177,12 @@ type UpgradeGuestArgs struct {
 	NetworkName string `json:"network_name,omitempty"`
 }
 
+type UpgradeGuestNetwork struct {
+	ByJwt string `json:"by_jwt,omitempty"`
+}
+
 type UpgradeGuestResult struct {
-	ByJwt                *string                         `json:"by_jwt,omitempty"`
+	Network              *UpgradeGuestNetwork            `json:"network,omitempty"`
 	VerificationRequired *UpgradeGuestResultVerification `json:"verification_required,omitempty"`
 	Error                *UpgradeGuesteResultError       `json:"error,omitempty"`
 }
