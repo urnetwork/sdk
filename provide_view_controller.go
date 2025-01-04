@@ -10,10 +10,10 @@ type ProvideViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	device *BringYourDevice
+	device Device
 }
 
-func newProvideViewController(ctx context.Context, device *BringYourDevice) *ProvideViewController {
+func newProvideViewController(ctx context.Context, device Device) *ProvideViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &ProvideViewController{

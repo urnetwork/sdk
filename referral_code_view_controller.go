@@ -21,12 +21,12 @@ type ReferralCodeViewController struct {
 
 	isFetching bool
 
-	device *BringYourDevice
+	device Device
 
 	referralCodeListeners *connect.CallbackList[ReferralCodeListener]
 }
 
-func newReferralCodeViewController(ctx context.Context, device *BringYourDevice) *ReferralCodeViewController {
+func newReferralCodeViewController(ctx context.Context, device Device) *ReferralCodeViewController {
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 

@@ -42,7 +42,7 @@ type FilteredLocationsListener interface {
 type LocationsViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -56,7 +56,7 @@ type LocationsViewController struct {
 	// filteredLocationsStateListeners *connect.CallbackList[FilteredLocationsStateListener]
 }
 
-func newLocationsViewController(ctx context.Context, device *BringYourDevice) *LocationsViewController {
+func newLocationsViewController(ctx context.Context, device Device) *LocationsViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &LocationsViewController{

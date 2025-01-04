@@ -75,7 +75,7 @@ type AccountPayment struct {
 type WalletViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	wallets                 *AccountWalletsList
 	isAddingExternalWallet  bool
@@ -97,7 +97,7 @@ type WalletViewController struct {
 	unpaidByteCountListeners          *connect.CallbackList[UnpaidByteCountListener]
 }
 
-func newWalletViewController(ctx context.Context, device *BringYourDevice) *WalletViewController {
+func newWalletViewController(ctx context.Context, device Device) *WalletViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &WalletViewController{

@@ -17,12 +17,12 @@ type DevicesViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	device *BringYourDevice
+	device Device
 
 	networkClientsListeners *connect.CallbackList[NetworkClientsListener]
 }
 
-func newDevicesViewController(ctx context.Context, device *BringYourDevice) *DevicesViewController {
+func newDevicesViewController(ctx context.Context, device Device) *DevicesViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &DevicesViewController{

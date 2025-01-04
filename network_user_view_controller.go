@@ -41,7 +41,7 @@ type NetworkUser struct {
 type NetworkUserViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -56,7 +56,7 @@ type NetworkUserViewController struct {
 	networkUserUpdateSuccessListener *connect.CallbackList[NetworkUserUpdateSuccessListener]
 }
 
-func newNetworkUserViewController(ctx context.Context, device *BringYourDevice) *NetworkUserViewController {
+func newNetworkUserViewController(ctx context.Context, device Device) *NetworkUserViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &NetworkUserViewController{
