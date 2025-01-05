@@ -15,8 +15,6 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-var connectVcLog = logFn("connect_view_controller")
-
 type ConnectionStatus = string
 
 const (
@@ -45,7 +43,7 @@ type GridListener interface {
 type ConnectViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -62,7 +60,7 @@ type ConnectViewController struct {
 	gridListeners *connect.CallbackList[GridListener]
 }
 
-func newConnectViewController(ctx context.Context, device *BringYourDevice) *ConnectViewController {
+func newConnectViewController(ctx context.Context, device Device) *ConnectViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &ConnectViewController{
@@ -95,7 +93,7 @@ func (self *ConnectViewController) Start() {}
 func (self *ConnectViewController) Stop() {}
 
 func (self *ConnectViewController) Close() {
-	connectVcLog("close")
+	glog.Info("[cvc]close")
 	self.cancel()
 }
 
@@ -229,7 +227,7 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 	// enable provider
 	provideMode := ProvideModePublic
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
-	self.device.setProvideModeNoEvent(provideMode)
+	self.device.SetProvideMode(provideMode)
 
 	// persist the connection location for automatic reconnect
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
@@ -255,7 +253,7 @@ func (self *ConnectViewController) Disconnect() {
 		// disable provider
 		provideMode := ProvideModeNone
 		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
-		self.device.setProvideModeNoEvent(provideMode)
+		self.device.SetProvideMode(provideMode)
 	}
 
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(nil)
@@ -294,7 +292,7 @@ func (self *ConnectViewController) setGrid() {
 	if grid != nil {
 		self.setConnectionStatus(DestinationSet)
 
-		if windowMonitor := self.device.windowMonitor(); windowMonitor != nil {
+		if windowMonitor := self.device.(device).windowMonitor(); windowMonitor != nil {
 			grid.listenToWindow(windowMonitor)
 		}
 	} else {
@@ -467,7 +465,7 @@ func (self *ConnectGrid) GetProviderGridPointList() *ProviderGridPointList {
 
 // *important* do not call this while holding the view controller state lock
 // because this intialized with the current state, it will call back into the view controller
-func (self *ConnectGrid) listenToWindow(windowMonitor *connect.RemoteUserNatMultiClientMonitor) {
+func (self *ConnectGrid) listenToWindow(windowMonitor windowMonitor) {
 	done := false
 	func() {
 		self.stateLock.Lock()

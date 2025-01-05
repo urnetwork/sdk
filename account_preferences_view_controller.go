@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var apvcLog = logFn("account_preferences_view_controller")
 
 type AllowProductUpdatesListener interface {
 	StateChanged(bool)
@@ -17,7 +17,7 @@ type AccountPreferencesViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -28,7 +28,7 @@ type AccountPreferencesViewController struct {
 	allowProductUpdatesListeners *connect.CallbackList[AllowProductUpdatesListener]
 }
 
-func newAccountPreferencesViewController(ctx context.Context, device *BringYourDevice) *AccountPreferencesViewController {
+func newAccountPreferencesViewController(ctx context.Context, device Device) *AccountPreferencesViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	vc := &AccountPreferencesViewController{
 		ctx:    cancelCtx,
@@ -53,7 +53,7 @@ func (self *AccountPreferencesViewController) Stop() {
 }
 
 func (self *AccountPreferencesViewController) Close() {
-	apvcLog("close")
+	glog.Info("[apvc]close")
 
 	self.cancel()
 }
@@ -103,7 +103,7 @@ func (self *AccountPreferencesViewController) UpdateAllowProductUpdates(allow bo
 				func(result *AccountPreferencesSetResult, err error) {
 
 					if err != nil {
-						apvcLog("error updating account preferences: %s", err.Error())
+						glog.Info("[apvc]error updating account preferences: %s", err)
 						self.setIsUpdating(false)
 						return
 					}
@@ -141,7 +141,7 @@ func (self *AccountPreferencesViewController) fetchAllowProductUpdates() {
 			func(result *AccountPreferencesGetResult, err error) {
 
 				if err != nil {
-					apvcLog("error fetching account preferences: %s", err.Error())
+					glog.Info("[apvc]error fetching account preferences: %s", err)
 					self.setIsFetching(false)
 					return
 				}

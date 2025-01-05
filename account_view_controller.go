@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var avcLog = logFn("account_view_controller")
 
 const defaultAccountCheckTimeout = 5 * time.Second
 
@@ -16,12 +16,12 @@ type AccountViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	device *BringYourDevice
+	device Device
 
 	walletValidateAddress *walletValidateAddress
 }
 
-func newAccountViewController(ctx context.Context, device *BringYourDevice) *AccountViewController {
+func newAccountViewController(ctx context.Context, device Device) *AccountViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	vc := &AccountViewController{
 		ctx:                   cancelCtx,
@@ -41,7 +41,7 @@ func (self *AccountViewController) Stop() {
 }
 
 func (self *AccountViewController) Close() {
-	avcLog("close")
+	glog.Info("[avvc]close")
 
 	self.cancel()
 }
@@ -54,7 +54,7 @@ type walletValidateAddress struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	api *BringYourApi
+	api *Api
 
 	timeout time.Duration
 
@@ -70,7 +70,7 @@ type walletValidateAddress struct {
 
 func newWalletValidateAddress(
 	ctx context.Context,
-	api *BringYourApi,
+	api *Api,
 	timeout time.Duration,
 ) *walletValidateAddress {
 	cancelCtx, cancel := context.WithCancel(ctx)

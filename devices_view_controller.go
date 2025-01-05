@@ -4,10 +4,10 @@ import (
 	"context"
 	"slices"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var dvcLog = logFn("device_view_controller")
 
 type NetworkClientsListener interface {
 	NetworkClientsChanged(networkClients *NetworkClientInfoList)
@@ -35,7 +35,7 @@ func newDevicesViewController(ctx context.Context, device Device) *DevicesViewCo
 }
 
 func (self *DevicesViewController) ClientId() *Id {
-	return self.device.ClientId()
+	return self.device.GetClientId()
 }
 
 func (self *DevicesViewController) Start() {
@@ -85,7 +85,7 @@ func (self *DevicesViewController) networkClientsChanged(networkClients *Network
 }
 
 func (self *DevicesViewController) Close() {
-	dvcLog("close")
+	glog.Info("[dvc]close")
 
 	self.cancel()
 }

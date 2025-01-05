@@ -9,8 +9,6 @@ import (
 // use a exported lists since arrays of structs are not exportable
 // (see notes in `client.go`)
 
-var gmLog = logFn("gomobile")
-
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type exportedList[T any] struct {
 	values []T

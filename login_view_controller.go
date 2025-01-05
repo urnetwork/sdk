@@ -3,9 +3,9 @@ package sdk
 import (
 	"context"
 	"time"
-)
 
-var lvcLog = logFn("login_view_controller")
+	"github.com/golang/glog"
+)
 
 const defaultNetworkCheckTimeout = 5 * time.Second
 
@@ -13,16 +13,16 @@ type LoginViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	api *BringYourApi
+	api *Api
 
 	// networkCheck *networkCheck
 }
 
-func NewLoginViewController(api *BringYourApi) *LoginViewController {
+func NewLoginViewController(api *Api) *LoginViewController {
 	return newLoginViewControllerWithContext(context.Background(), api)
 }
 
-func newLoginViewControllerWithContext(ctx context.Context, api *BringYourApi) *LoginViewController {
+func newLoginViewControllerWithContext(ctx context.Context, api *Api) *LoginViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &LoginViewController{
@@ -43,7 +43,7 @@ func (self *LoginViewController) Stop() {
 }
 
 func (self *LoginViewController) Close() {
-	lvcLog("close")
+	glog.Info("[livc]close")
 
 	self.cancel()
 }

@@ -30,6 +30,7 @@ import (
 // - redefined primitive types are not exportable. Use type aliases instead.
 // - arrays of structs are not exportable. See https://github.com/golang/go/issues/13445
 //   use the "ExportableList" workaround from `gomobile.go`
+// - exported names start with Get* and Set* to be compatible with target language features
 //
 // additionally, the entire bringyour.com/bringyour tree cannot be used because it pulls in the
 // `warp` environment expectations, which is not compatible with the client lib
@@ -111,7 +112,7 @@ func (self *Id) MarshalJSON() ([]byte, error) {
 	buff.WriteString(encodeUuid(buf))
 	buff.WriteByte('"')
 	b := buff.Bytes()
-	gmLog("MARSHAL ID TO: %s", string(b))
+	// gmLog("MARSHAL ID TO: %s", string(b))
 	return b, nil
 }
 

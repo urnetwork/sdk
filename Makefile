@@ -7,6 +7,7 @@ clean:
 build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
+	# note android/amd64 is needed for chromebook devices
 	BUILD_DIR=android.`date +%s`; \
 	WARP_VERSION=`warpctl ls version`; \
 	mkdir -p "build/$$BUILD_DIR"; \
@@ -43,7 +44,7 @@ build_ios:
 	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
-		-target ios -iosversion 16.0 \
+		-target ios/arm64,iossimulator/arm64 -iosversion 16.0 \
 		-bundleid com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=true" \

@@ -19,7 +19,11 @@ import (
 // the device upgrades the api, including setting the client jwt
 // closing the device does not close the api
 
-var deviceLog = logFn("device")
+// the app handling the packet transfer should instantiate `DeviceLocal`
+// which has additional packet flow functions than the `Device` interface
+// most users should just use the `Device` type which is compatible with
+// running in multiple processes via RPC
+
 
 type ProvideChangeListener interface {
 	ProvideChanged(provideEnabled bool)
@@ -55,114 +59,115 @@ type ReceivePacket interface {
 }
 
 
-type DeviceDestination struct {
-	Location *ConnectLocation
-	Specs *ProviderSpecList
-	ProvideMode ProvideMode
-}
-
-
-// FIXME need to add multi route monitor listener
+// every device must also support the unexported `device` interface
 type Device interface {
 
-	func GetClientId() *Id 
+	GetClientId() *Id
 
-	func GetApi() *BringYourApi 
+	GetNetworkSpace() *NetworkSpace
 
-	func GetNetworkSpace() *NetworkSpace 
+	GetApi() *Api
 
-	func GetStats() *DeviceStats
+	GetStats() *DeviceStats
 
-	func GetShouldShowRatingDialog() bool 
+	GetShouldShowRatingDialog() bool 
 
-	func GetCanShowRatingDialog() bool
+	GetCanShowRatingDialog() bool
 
-	func SetCanShowRatingDialog(canShowRatingDialog bool) 
+	SetCanShowRatingDialog(canShowRatingDialog bool) 
 
-	func GetProvideWhileDisconnected() bool
+	GetProvideWhileDisconnected() bool
 
-	func SetProvideWhileDisconnected(provideWhileDisconnected bool)
+	SetProvideWhileDisconnected(provideWhileDisconnected bool)
 
-	func GetCanRefer() bool
+	GetCanRefer() bool
 
-	func SetCanRefer(canRefer bool)
+	SetCanRefer(canRefer bool)
 
-	func SetRouteLocal(routeLocal bool) 
+	SetRouteLocal(routeLocal bool) 
 
-	func GetRouteLocal() bool
+	GetRouteLocal() bool
 
-	func AddProvideChangeListener(listener ProvideChangeListener) Sub 
+	AddProvideChangeListener(listener ProvideChangeListener) Sub 
 
-	func AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub 
+	AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub 
 
-	func AddOfflineChangeListener(listener OfflineChangeListener) Sub 
+	AddOfflineChangeListener(listener OfflineChangeListener) Sub 
 
-	func AddConnectChangeListener(listener ConnectChangeListener) Sub 
+	AddConnectChangeListener(listener ConnectChangeListener) Sub 
 
-	func AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
+	AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
 
-	func AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
+	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
 
-	func AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
+	AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
 
-	func LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList)
+	LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList)
 
-	func InitProvideSecretKeys()
+	InitProvideSecretKeys()
 
-	func GetProvideEnabled() bool 
+	GetProvideEnabled() bool 
 
-	func GetConnectEnabled() bool 
+	GetConnectEnabled() bool 
 
-	func SetProvideMode(provideMode ProvideMode) 
+	SetProvideMode(provideMode ProvideMode) 
 
-	func setProvideModeNoEvent(provideMode ProvideMode) 
+	GetProvideMode() ProvideMode 
 
-	func GetProvideMode() ProvideMode 
+	SetProvidePaused(providePaused bool) 
 
-	func SetProvidePaused(providePaused bool) 
+	GetProvidePaused() bool 
 
-	func GetProvidePaused() bool 
+	SetOffline(offline bool) 
 
-	func SetOffline(offline bool) 
+	GetOffline() bool 
 
-	func GetOffline() bool 
+	SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool)
 
-	func SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool)
+	GetVpnInterfaceWhileOffline() bool
 
-	func GetVpnInterfaceWhileOffline() bool
+	RemoveDestination()
 
-	func RemoveDestination()
+	SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode)
 
-	func SetDestination(destination *DeviceDestination)
+	SetConnectLocation(location *ConnectLocation) 
 
-	func SetConnectLocation(location *ConnectLocation) 
+	GetConnectLocation() *ConnectLocation 
 
-	func GetConnectLocation() *ConnectLocation 
+	Shuffle()
 
-	func Shuffle() 
+	Close()
+}
 
-	func SendPacket(packet []byte, n int32) bool 
+// unexported to gomobile
+type device interface {
+	// monitor for the current connection window
+	// the client must get the window monitor each time the connection destination changes
+	windowMonitor() windowMonitor
+}
 
-	func AddReceivePacket(receivePacket ReceivePacket) Sub 
-
-	func Close()
+type windowMonitor interface {
+	AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func()
+	Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent)
 }
 
 
-
-type deviceSettings struct {
+type deviceLocalSettings struct {
 	// time to give up (drop) sending a packet to a destination
 	SendTimeout time.Duration
 	// ClientDrainTimeout time.Duration
 }
 
-func defaultDeviceSettings() *deviceSettings {
-	return &deviceSettings{
+func defaultDeviceLocalSettings() *deviceLocalSettings {
+	return &deviceLocalSettings{
 		SendTimeout: 5 * time.Second,
 		// ClientDrainTimeout: 30 * time.Second,
 	}
 }
 
+// compile check that DeviceLocal conforms to Device and device
+var _ Device = (*DeviceLocal)(nil)
+var _ device = (*DeviceLocal)(nil)
 type DeviceLocal struct {
 	networkSpace *NetworkSpace
 
@@ -177,7 +182,7 @@ type DeviceLocal struct {
 	deviceSpec        string
 	appVersion        string
 
-	settings *deviceSettings
+	settings *deviceLocalSettings
 
 	clientId   connect.Id
 	instanceId connect.Id
@@ -194,6 +199,8 @@ type DeviceLocal struct {
 	localUserNat *connect.LocalUserNat
 
 	stats *DeviceStats
+
+	deviceLocalRpc *deviceLocalRpc
 
 	stateLock sync.Mutex
 
@@ -244,7 +251,8 @@ func NewDeviceLocalWithDefaults(
 				deviceSpec,
 				appVersion,
 				instanceId,
-				defaultDeviceSettings(),
+				enableRpc,
+				defaultDeviceLocalSettings(),
 			)
 		},
 	)
@@ -258,7 +266,7 @@ func newDeviceLocal(
 	appVersion string,
 	instanceId *Id,
 	enableRpc bool,
-	settings *deviceSettings,
+	settings *deviceLocalSettings,
 ) (*DeviceLocal, error) {
 	clientId, err := parseByJwtClientId(byJwt)
 	if err != nil {
@@ -308,7 +316,7 @@ func newDeviceLocal(
 	// api := newBringYourApiWithContext(cancelCtx, clientStrategy, apiUrl)
 	networkSpace.api.SetByJwt(byJwt)
 
-	byDevice := &DeviceLocal{
+	deviceLocal := &DeviceLocal{
 		networkSpace: networkSpace,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -336,7 +344,6 @@ func newDeviceLocal(
 		provideWhileDisconnected:          false,
 		offline:                           true,
 		vpnInterfaceWhileOffline:          false,
-		openedViewControllers:             map[ViewController]bool{},
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
 		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
 		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
@@ -347,18 +354,14 @@ func newDeviceLocal(
 	}
 
 	// set up with nil destination
-	localUserNatUnsub := localUserNat.AddReceivePacketCallback(byDevice.receive)
-	byDevice.localUserNatUnsub = localUserNatUnsub
+	localUserNatUnsub := localUserNat.AddReceivePacketCallback(deviceLocal.receive)
+	deviceLocal.localUserNatUnsub = localUserNatUnsub
 
 	if enableRpc {
-		self.deviceLocalRpc = newDeviceLocalRpcWithDefaults(ctx, byJwt)
+		deviceLocal.deviceLocalRpc = newDeviceLocalRpcWithDefaults(ctx, deviceLocal)
 	}
 
-	return byDevice, nil
-}
-
-func (self *DeviceLocal) ClientId() *Id {
-	return self.GetClientId()
+	return deviceLocal, nil
 }
 
 func (self *DeviceLocal) GetClientId() *Id {
@@ -370,7 +373,7 @@ func (self *DeviceLocal) GetClientId() *Id {
 // 	return self.client
 // }
 
-func (self *DeviceLocal) GetApi() *BringYourApi {
+func (self *DeviceLocal) GetApi() *Api {
 	return self.networkSpace.GetApi()
 }
 
@@ -484,12 +487,13 @@ func (self *DeviceLocal) GetRouteLocal() bool {
 // 	return nil
 // }
 
-func (self *DeviceLocal) windowMonitor() *connect.RemoteUserNatMultiClientMonitor {
+func (self *DeviceLocal) windowMonitor() windowMonitor {
 	switch v := self.remoteUserNatClient.(type) {
 	case *connect.RemoteUserNatMultiClient:
 		return v.Monitor()
 	default:
-		return nil
+		// return an empty window monitor to be consistent with the device remote behavior
+		return newEmptyWindowMonitor()
 	}
 }
 
@@ -533,6 +537,11 @@ func (self *DeviceLocal) AddConnectLocationChangeListener(listener ConnectLocati
 	return newSub(func() {
 		self.connectLocationChangeListeners.Remove(callbackId)
 	})
+}
+
+func (self *DeviceLocal) AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub {
+	// FIXME
+	return nil
 }
 
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
@@ -633,42 +642,40 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 }
 
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
-	self.setProvideModeNoEvent(provideMode)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		// TODO create a new provider only client?
+
+		provideModes := map[protocol.ProvideMode]bool{}
+		if ProvideModePublic <= provideMode {
+			provideModes[protocol.ProvideMode_Public] = true
+		}
+		if ProvideModeFriendsAndFamily <= provideMode {
+			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+		}
+		if ProvideModeNetwork <= provideMode {
+			provideModes[protocol.ProvideMode_Network] = true
+		}
+		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
+
+		// recreate the provider user nat
+		if self.remoteUserNatProviderLocalUserNat != nil {
+			self.remoteUserNatProviderLocalUserNat.Close()
+			self.remoteUserNatProviderLocalUserNat = nil
+		}
+		if self.remoteUserNatProvider != nil {
+			self.remoteUserNatProvider.Close()
+			self.remoteUserNatProvider = nil
+		}
+
+		if ProvideModeNone < provideMode {
+			self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
+			self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+		}
+	}()
 	self.provideChanged(self.GetProvideEnabled())
-}
-
-func (self *DeviceLocal) setProvideModeNoEvent(provideMode ProvideMode) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
-	// TODO create a new provider only client?
-
-	provideModes := map[protocol.ProvideMode]bool{}
-	if ProvideModePublic <= provideMode {
-		provideModes[protocol.ProvideMode_Public] = true
-	}
-	if ProvideModeFriendsAndFamily <= provideMode {
-		provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-	}
-	if ProvideModeNetwork <= provideMode {
-		provideModes[protocol.ProvideMode_Network] = true
-	}
-	self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
-
-	// recreate the provider user nat
-	if self.remoteUserNatProviderLocalUserNat != nil {
-		self.remoteUserNatProviderLocalUserNat.Close()
-		self.remoteUserNatProviderLocalUserNat = nil
-	}
-	if self.remoteUserNatProvider != nil {
-		self.remoteUserNatProvider.Close()
-		self.remoteUserNatProvider = nil
-	}
-
-	if ProvideModeNone < provideMode {
-		self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
-		self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
-	}
 }
 
 func (self *DeviceLocal) GetProvideMode() ProvideMode {
@@ -886,11 +893,6 @@ func (self *DeviceLocal) Close() {
 	}
 
 	self.localUserNat.Close()
-
-	for vc, _ := range self.openedViewControllers {
-		vc.Close()
-	}
-	clear(self.openedViewControllers)
 
 	if self.deviceLocalRpc != nil {
 		self.deviceLocalRpc.Close()

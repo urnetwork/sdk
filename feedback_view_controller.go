@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var fbvcLog = logFn("feedback_view_controller")
 
 type IsSendingFeedbackListener interface {
 	StateChanged(bool)
@@ -44,7 +44,7 @@ func (vc *FeedbackViewController) Start() {}
 func (vc *FeedbackViewController) Stop() {}
 
 func (vc *FeedbackViewController) Close() {
-	fbvcLog("close")
+	glog.Info("[fbvc]close")
 
 	vc.cancel()
 }

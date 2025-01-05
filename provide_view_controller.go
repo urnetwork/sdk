@@ -2,9 +2,9 @@ package sdk
 
 import (
 	"context"
-)
 
-var pvcLog = logFn("provide_view_controller")
+	"github.com/golang/glog"
+)
 
 type ProvideViewController struct {
 	ctx    context.Context
@@ -48,7 +48,7 @@ func (self *ProvideViewController) Stop() {
 // }
 
 func (self *ProvideViewController) Close() {
-	pvcLog("close")
+	glog.Info("[pvc]close")
 
 	self.cancel()
 }

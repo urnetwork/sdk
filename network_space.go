@@ -115,10 +115,15 @@ type NetworkSpace struct {
 
 	clientStrategy  *connect.ClientStrategy
 	asyncLocalState *AsyncLocalState
-	api             *BringYourApi
+	api             *Api
 }
 
-func newNetworkSpace(ctx context.Context, key NetworkSpaceKey, values NetworkSpaceValues, storagePath string) *NetworkSpace {
+func newNetworkSpace(
+	ctx context.Context,
+	key NetworkSpaceKey,
+	values NetworkSpaceValues,
+	storagePath string,
+) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	apiUrl := ServiceUrl(&key, &values, "https", "api")
@@ -140,7 +145,7 @@ func newNetworkSpace(ctx context.Context, key NetworkSpaceKey, values NetworkSpa
 
 	asyncLocalState := NewAsyncLocalState(storagePath)
 
-	api := newBringYourApi(cancelCtx, clientStrategy, apiUrl)
+	api := newApi(cancelCtx, clientStrategy, apiUrl)
 
 	return &NetworkSpace{
 		ctx:    cancelCtx,
@@ -237,7 +242,7 @@ func (self *NetworkSpace) GetPlatformUrl() string {
 	return self.platformUrl
 }
 
-func (self *NetworkSpace) GetApi() *BringYourApi {
+func (self *NetworkSpace) GetApi() *Api {
 	return self.api
 }
 

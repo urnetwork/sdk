@@ -1,3 +1,14 @@
+# Style
+
+This package is written to compile with gomobile to supported platforms. 
+
+Some exported signatures are slightly different than idiomatic Go, since they are meant to be called from linked languages.
+
+`sdk.go` and `gomobile.go` documents most of the significant signature elements.
+
+`errors.go` is an implementation of better error logging proposal X. We follow this error pattern in all exported types and goroutine roots to make error and crash logging easier on linked platforms.
+
+
 # Client development guidelines
 
 This is the same concurrency guidelines as the `connect` package.

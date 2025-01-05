@@ -18,8 +18,6 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-var apiLog = logFn("api")
-
 type Api struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -32,10 +30,14 @@ type Api struct {
 	byJwt string
 }
 
-func newBringYourApi(ctx context.Context, clientStrategy *connect.ClientStrategy, apiUrl string) *BringYourApi {
+func newApi(
+	ctx context.Context,
+	clientStrategy *connect.ClientStrategy,
+	apiUrl string,
+) *Api {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	return &BringYourApi{
+	return &Api{
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
@@ -44,21 +46,21 @@ func newBringYourApi(ctx context.Context, clientStrategy *connect.ClientStrategy
 }
 
 // this gets attached to api calls that need it
-func (self *BringYourApi) SetByJwt(byJwt string) {
+func (self *Api) SetByJwt(byJwt string) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
 	self.byJwt = byJwt
 }
 
-func (self *BringYourApi) GetByJwt() string {
+func (self *Api) GetByJwt() string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
 	return self.byJwt
 }
 
-func (self *BringYourApi) Close() {
+func (self *Api) Close() {
 	self.cancel()
 }
 
@@ -91,7 +93,7 @@ type AuthLoginResultNetwork struct {
 	ByJwt string `json:"by_jwt"`
 }
 
-func (self *BringYourApi) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
+func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -132,7 +134,7 @@ type AuthLoginWithPasswordResultError struct {
 	Message string `json:"message"`
 }
 
-func (self *BringYourApi) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
+func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -166,7 +168,7 @@ type AuthVerifyResultError struct {
 	Message string `json:"message"`
 }
 
-func (self *BringYourApi) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {
+func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -190,7 +192,7 @@ type AuthPasswordResetResult struct {
 	UserAuth string `json:"user_auth"`
 }
 
-func (self *BringYourApi) AuthPasswordReset(authPasswordReset *AuthPasswordResetArgs, callback AuthPasswordResetCallback) {
+func (self *Api) AuthPasswordReset(authPasswordReset *AuthPasswordResetArgs, callback AuthPasswordResetCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -215,7 +217,7 @@ type AuthVerifySendResult struct {
 	UserAuth string `json:"user_auth"`
 }
 
-func (self *BringYourApi) AuthVerifySend(authVerifySend *AuthVerifySendArgs, callback AuthVerifySendCallback) {
+func (self *Api) AuthVerifySend(authVerifySend *AuthVerifySendArgs, callback AuthVerifySendCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -239,7 +241,7 @@ type NetworkCheckResult struct {
 	Available bool `json:"available"`
 }
 
-func (self *BringYourApi) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCheckCallback) {
+func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCheckCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -285,7 +287,7 @@ type NetworkCreateResultError struct {
 	Message string `json:"message"`
 }
 
-func (self *BringYourApi) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
+func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -320,7 +322,7 @@ type AuthNetworkClientError struct {
 	Message             string `json:"message"`
 }
 
-func (self *BringYourApi) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
+func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -374,7 +376,7 @@ type NetworkClientConnection struct {
 	ConnectionBlock   string `json:"connection_block"`
 }
 
-func (self *BringYourApi) GetNetworkClients(callback GetNetworkClientsCallback) {
+func (self *Api) GetNetworkClients(callback GetNetworkClientsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -440,7 +442,7 @@ type LocationDeviceResult struct {
 	DeviceName string `json:"device_name"`
 }
 
-func (self *BringYourApi) GetProviderLocations(callback FindLocationsCallback) {
+func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -453,7 +455,7 @@ func (self *BringYourApi) GetProviderLocations(callback FindLocationsCallback) {
 	})
 }
 
-func (self *BringYourApi) FindProviderLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
+func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -467,7 +469,7 @@ func (self *BringYourApi) FindProviderLocations(findLocations *FindLocationsArgs
 	})
 }
 
-func (self *BringYourApi) FindLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
+func (self *Api) FindLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -494,7 +496,7 @@ type FindProvidersResult struct {
 	ClientIds *IdList `json:"client_ids,omitempty"`
 }
 
-func (self *BringYourApi) FindProviders(findProviders *FindProvidersArgs, callback FindProvidersCallback) {
+func (self *Api) FindProviders(findProviders *FindProvidersArgs, callback FindProvidersCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -553,7 +555,7 @@ type FindProvidersProvider struct {
 	EstimatedBytesPerSecond int `json:"estimated_bytes_per_second"`
 }
 
-func (self *BringYourApi) FindProviders2(findProviders2 *FindProviders2Args, callback FindProviders2Callback) {
+func (self *Api) FindProviders2(findProviders2 *FindProviders2Args, callback FindProviders2Callback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -579,7 +581,7 @@ type WalletCircleInitError struct {
 	Message string `json:"message"`
 }
 
-func (self *BringYourApi) WalletCircleInit(callback WalletCircleInitCallback) {
+func (self *Api) WalletCircleInit(callback WalletCircleInitCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -604,7 +606,7 @@ type WalletValidateAddressResult struct {
 	Valid bool `json:"valid,omitempty"`
 }
 
-func (self *BringYourApi) WalletValidateAddress(walletValidateAddress *WalletValidateAddressArgs, callback WalletValidateAddressCallback) {
+func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddressArgs, callback WalletValidateAddressCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -645,7 +647,7 @@ type CreateAccountWalletResult struct {
 
 type CreateAccountWalletCallback connect.ApiCallback[*CreateAccountWalletResult]
 
-func (self *BringYourApi) CreateAccountWallet(createAccountWallet *CreateAccountWalletArgs, callback CreateAccountWalletCallback) {
+func (self *Api) CreateAccountWallet(createAccountWallet *CreateAccountWalletArgs, callback CreateAccountWalletCallback) {
 
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
@@ -672,7 +674,7 @@ type SetPayoutWalletResult struct{}
 
 type SetPayoutWalletCallback connect.ApiCallback[*SetPayoutWalletResult]
 
-func (self *BringYourApi) SetPayoutWallet(payoutWallet *SetPayoutWalletArgs, callback SetPayoutWalletCallback) {
+func (self *Api) SetPayoutWallet(payoutWallet *SetPayoutWalletArgs, callback SetPayoutWalletCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -692,7 +694,7 @@ type GetAccountWalletsResult struct {
 
 type GetAccountWalletsCallback connect.ApiCallback[*GetAccountWalletsResult]
 
-func (self *BringYourApi) GetAccountWallets(callback GetAccountWalletsCallback) {
+func (self *Api) GetAccountWallets(callback GetAccountWalletsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -711,7 +713,7 @@ type GetPayoutWalletIdResult struct {
 
 type GetPayoutWalletCallback connect.ApiCallback[*GetPayoutWalletIdResult]
 
-func (self *BringYourApi) GetPayoutWallet(callback GetPayoutWalletCallback) {
+func (self *Api) GetPayoutWallet(callback GetPayoutWalletCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -744,7 +746,7 @@ type WalletBalanceResult struct {
 	WalletInfo *CircleWalletInfo `json:"wallet_info,omitempty"`
 }
 
-func (self *BringYourApi) WalletBalance(callback WalletBalanceCallback) {
+func (self *Api) WalletBalance(callback WalletBalanceCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -768,7 +770,7 @@ type GetNetworkAccountPaymentsResult struct {
 	Error           *GetNetworkAccountPaymentsError `json:"error,omitempty"`
 }
 
-func (self *BringYourApi) GetAccountPayments(callback GetAccountPaymentsCallback) {
+func (self *Api) GetAccountPayments(callback GetAccountPaymentsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -799,7 +801,7 @@ type WalletCircleTransferOutError struct {
 	Message string `json:"message"`
 }
 
-func (self *BringYourApi) WalletCircleTransferOut(walletCircleTransferOut *WalletCircleTransferOutArgs, callback WalletCircleTransferOutCallback) {
+func (self *Api) WalletCircleTransferOut(walletCircleTransferOut *WalletCircleTransferOutArgs, callback WalletCircleTransferOutCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -841,7 +843,7 @@ type SubscriptionBalanceResult struct {
 	UpdateTime                string               `json:"update_time"`
 }
 
-func (self *BringYourApi) SubscriptionBalance(callback SubscriptionBalanceCallback) {
+func (self *Api) SubscriptionBalance(callback SubscriptionBalanceCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -872,7 +874,7 @@ type SubscriptionCreatePaymentIdError struct {
 	Message string `json:"message"`
 }
 
-func (self *BringYourApi) SubscriptionCreatePaymentId(createPaymentId *SubscriptionCreatePaymentIdArgs, callback SubscriptionCreatePaymentIdCallback) {
+func (self *Api) SubscriptionCreatePaymentId(createPaymentId *SubscriptionCreatePaymentIdArgs, callback SubscriptionCreatePaymentIdCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -886,7 +888,7 @@ func (self *BringYourApi) SubscriptionCreatePaymentId(createPaymentId *Subscript
 	})
 }
 
-func (self *BringYourApi) SubscriptionCreatePaymentIdSync(createPaymentId *SubscriptionCreatePaymentIdArgs) (*SubscriptionCreatePaymentIdResult, error) {
+func (self *Api) SubscriptionCreatePaymentIdSync(createPaymentId *SubscriptionCreatePaymentIdArgs) (*SubscriptionCreatePaymentIdResult, error) {
 	return connect.HttpPostWithStrategy(
 		self.ctx,
 		self.clientStrategy,
@@ -913,7 +915,7 @@ type GetNetworkUserResult struct {
 
 type GetNetworkUserCallback connect.ApiCallback[*GetNetworkUserResult]
 
-func (self *BringYourApi) GetNetworkUser(callback GetNetworkUserCallback) (*GetNetworkUserResult, error) {
+func (self *Api) GetNetworkUser(callback GetNetworkUserCallback) (*GetNetworkUserResult, error) {
 	return connect.HttpGetWithStrategy(
 		self.ctx,
 		self.clientStrategy,
@@ -942,7 +944,7 @@ type NetworkUserUpdateResult struct {
 
 type NetworkUserUpdateCallback connect.ApiCallback[*NetworkUserUpdateResult]
 
-func (self *BringYourApi) NetworkUserUpdate(updateNetworkUser *NetworkUserUpdateArgs, callback NetworkUserUpdateCallback) {
+func (self *Api) NetworkUserUpdate(updateNetworkUser *NetworkUserUpdateArgs, callback NetworkUserUpdateCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStrategy(
 			self.ctx,
@@ -971,7 +973,7 @@ type GetNetworkReferralCodeError struct {
 
 type GetNetworkReferralCodeCallback connect.ApiCallback[*GetNetworkReferralCodeResult]
 
-func (self *BringYourApi) GetNetworkReferralCode(callback GetNetworkReferralCodeCallback) (*GetNetworkReferralCodeResult, error) {
+func (self *Api) GetNetworkReferralCode(callback GetNetworkReferralCodeCallback) (*GetNetworkReferralCodeResult, error) {
 	return connect.HttpGetWithStrategy(
 		self.ctx,
 		self.clientStrategy,
@@ -1001,7 +1003,7 @@ type RemoveWalletArgs struct {
 
 type RemoveWalletCallback connect.ApiCallback[*RemoveWalletResult]
 
-func (self *BringYourApi) RemoveWallet(
+func (self *Api) RemoveWallet(
 	removeWallet *RemoveWalletArgs,
 	callback RemoveWalletCallback,
 ) {
@@ -1034,7 +1036,7 @@ type FeedbackSendResult struct{}
 
 type SendFeedbackCallback connect.ApiCallback[*FeedbackSendResult]
 
-func (self *BringYourApi) SendFeedback(
+func (self *Api) SendFeedback(
 	sendFeedback *FeedbackSendArgs,
 	callback SendFeedbackCallback,
 ) {
@@ -1063,7 +1065,7 @@ type AccountPreferencesSetResult struct{}
 
 type AccountPreferencesSetCallback connect.ApiCallback[*AccountPreferencesSetResult]
 
-func (self *BringYourApi) AccountPreferencesUpdate(
+func (self *Api) AccountPreferencesUpdate(
 	accountPreferences *AccountPreferencesSetArgs,
 	callback AccountPreferencesSetCallback,
 ) {
@@ -1090,7 +1092,7 @@ type AccountPreferencesGetResult struct {
 
 type AccountPreferencesGetCallback connect.ApiCallback[*AccountPreferencesGetResult]
 
-func (self *BringYourApi) AccountPreferencesGet(callback AccountPreferencesGetCallback) {
+func (self *Api) AccountPreferencesGet(callback AccountPreferencesGetCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -1114,7 +1116,7 @@ type TransferStatsResult struct {
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
 
-func (self *BringYourApi) GetTransferStats(callback GetTransferStatsCallback) {
+func (self *Api) GetTransferStats(callback GetTransferStatsCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithStrategy(
 			self.ctx,
@@ -1147,7 +1149,7 @@ type AuthCodeLoginResult struct {
 
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
 
-func (self *BringYourApi) AuthCodeLogin(
+func (self *Api) AuthCodeLogin(
 	codeLoginArgs *AuthCodeLoginArgs,
 	callback AuthCodeLoginCallback,
 ) (*AuthCodeLoginResult, error) {

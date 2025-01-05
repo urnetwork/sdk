@@ -1,3 +1,3 @@
 package sdk
 
-// Logging moved to glog
+// Logging moved to glog (see sdk.go)
