@@ -151,6 +151,19 @@ type windowMonitor interface {
 	Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent)
 }
 
+type emptyWindowMonitor struct {
+}
+
+func (self *emptyWindowMonitor) AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func() {
+	return func() {}
+}
+
+func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+	return nil, nil
+}
+
+
+
 
 type deviceLocalSettings struct {
 	// time to give up (drop) sending a packet to a destination
@@ -493,7 +506,7 @@ func (self *DeviceLocal) windowMonitor() windowMonitor {
 		return v.Monitor()
 	default:
 		// return an empty window monitor to be consistent with the device remote behavior
-		return newEmptyWindowMonitor()
+		return &emptyWindowMonitor{}
 	}
 }
 
