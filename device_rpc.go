@@ -91,6 +91,8 @@ type DeviceRemote struct {
 	connectLocationChangeListeners map[connect.Id]ConnectLocationChangeListener
 	provideSecretKeyListeners map[connect.Id]ProvideSecretKeysListener
 
+	windowMonitors map[connect.Id]*deviceRemoteWindowMonitor
+
 	state deviceRemoteState
 }
 
@@ -174,6 +176,15 @@ func (self *DeviceRemote) run() {
 			if err != nil {
 				return
 			}
+
+			// trim the windows
+			for windowId, windowMonitor := range self.windowMonitors {
+				if !syncResponse.windowIds[windowId] {
+					delete(self.windowMonitors, windowId)
+					clear(windowMonitor, listeners)
+				} 
+			}
+
 
 			// FIXME use response cert to listen with TLS
 			listenConfig := &net.ListenConfig{
@@ -1064,23 +1075,119 @@ func (self *DeviceRemote) Close() {
 
 
 func (self *DeviceRemote) windowMonitor() windowMonitor {
-	// FIXME if connected, get windowId and lock window monitor to that
-	// FIXME else queue up window window monitor
-	return newDeviceRemoteWindowMonitor(self, windowId)
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	windowMonitor := newDeviceRemoteWindowMonitor(self)
+	self.windowMonitors[windowMonitor.windowId] = windowMonitor
+	return windowMonitor
 }
+// FIXME sync send map[windowId][]listenerId
 
 // FIXME queue up window monitors
-func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func() {
-	// FIXME queue up to add
-	// FIXME remote side tracks last used window monitor
-	// FIXME if different, clear all listeners and reset
-	// FIXME return window Id
-	// FIXME track window Id on local side, and clear listeners of old window id
+func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(windowMonitor *deviceRemoteWindowMonitor, monitorEventCallback connect.MonitorEventFunction) func() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	// add
+	// returns success and all the windowIds that were removed
+
+	listenerId := NewId()
+	windowMonitor.listeners[listenerId] = callback
+
+
+	_, ok := self.windowMonitors[windowId]
+	if !ok {
+		// do nothing
+		return
+	}
+
+	if self.service != nil {
+		func() {
+			var windowIds map[connect.Id]bool
+			err := self.service.Call("deviceLocalRpc.AddMonitorEventCallback", ID, &windowIds)
+			if err != nil {
+				service.Close()
+				return
+			}
+
+			// trim the windows
+			for windowId, windowMonitor := range self.windowMonitors {
+				if !windowIds[windowId] {
+					delete(self.windowMonitors, windowId)
+					clear(windowMonitor, listeners)
+				} 
+			}
+		}()
+	}
+
+	return func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		delete(window.listeners, listenerId)
+
+		if self.service != nil {
+			func() {
+				err := self.service.Call("deviceLocalRpc.RemoveMonitorEventCallback", ID, nil)
+				if err != nil {
+					service.Close()
+					return
+				}
+			}()
+		}
+	}
+
 }
 
-func (self *DeviceRemote) windowMonitorEvents() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowMonitor) (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
 	// FIXME if not connected, empty
+
+	_, ok := self.windowMonitors[windowId]
+	if !ok {
+		// empty
+		return
+	}
+
+	if self.service == nil {
+		// empty
+		return
+	}
+
+	service.Call("deviceLocalRpc.MonitorEvents")
 }
+
+
+
+// this object is locked under the DeviceRemote.stateLock
+type deviceRemoteWindowMonitor struct {
+	deviceRemote *DeviceRemote
+
+	listeners map[connect.Id]connect.MonitorEventFunction
+}
+
+func newDeviceRemoteWindowMonitor(deviceRemote *DeviceRemote) *deviceRemoteWindowMonitor {
+	return &deviceRemoteWindowMonitor{
+		deviceRemote: deviceRemote,
+		listeners: map[connect.Id]connect.MonitorEventFunction{},
+	}
+}
+
+// windowMonitor
+
+func (self *deviceRemoteWindowMonitor) AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func() {
+	return self.deviceLocal.windowMonitorAddMonitorEventCallback(self, monitorEventCallback)
+}
+
+func (self *deviceRemoteWindowMonitor) Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+	return self.deviceLocal.windowMonitorEvents(self)
+}
+
+
+
 
 
 
@@ -1089,7 +1196,7 @@ func (self *DeviceRemote) windowMonitorEvents() (*connect.WindowExpandEvent, map
 
 // event dispatch
 
-func listenerList[T any](lock sync.Mutex, listenerMap map[connect.Id]T) []T {
+func listenerList[T any](listenerMap map[connect.Id]T) []T {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -1145,6 +1252,29 @@ func (self *DeviceRemote) connectLocationChanged(location *ConnectLocation) {
 func (self *DeviceRemote) provideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList) {
 	for _, provideSecretKeyListener := range listenerList(self.stateLock, self.provideSecretKeyListeners) {
 		provideSecretKeyListener.ProvideSecretKeysChanged(provideSecretKeyList)
+	}
+}
+
+func (self *DeviceRemote) windowMonitorEvent(
+	windowIds []connect.Id,
+	windowExpandEvent *connect.WindowExpandEvent,
+	providerEvents map[connect.Id]*connect.ProviderEvent,
+) {
+	listenerLists := [][]func()
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		
+		for _, windowId := range windowIds {
+			windowMonitor := self.windowMonitors[windowId]
+			listenerMaps = append(listenerMaps, listenerList(windowMonitor.listeners))
+		}
+	}()
+
+	for _, listenerList := range listenerLists {
+		for _, monitorEventCallback := range listenerList {
+			monitorEventCallback(windowExpandEvent, providerEvents)
+		}
 	}
 }
 
@@ -1257,11 +1387,25 @@ type deviceRemoteSyncRequest struct {
 	RouteLocalChangeListenerIds []connect.Id
 	ConnectLocationChangeListenerIds []connect.Id
 	ProvideSecretKeysListenerIds []connect.Id
+	WindowMonitorEventListenerIds map[connect.Id][]connect.Id
 	deviceRemoteState
 }
 
 type deviceRemoteSyncResponse struct {
+	windowIds map[connect.Id]bool
 	// FIXME response cert
+}
+
+
+type deviceRemoteWindowMonitorId struct {
+	WindowId connect.Id
+	ListenerId connect.Id
+}
+
+type deviceRemoteWindowMonitorEvent struct {
+	WindowIds []connect.Id
+	WindowExpandEvent *connect.WindowExpandEvent
+	ProviderEvents map[connect.Id]*connect.ProviderEvent
 }
 
 
@@ -1275,6 +1419,8 @@ type deviceLocalRpc struct {
 	deviceLocal *DeviceLocal
 	settings *deviceRpcSettings
 
+	stateLock sync.Lock
+
 	provideChangeListenerIds map[connect.Id]bool
 	providePausedChangeListenerIds map[connect.Id]bool
 	offlineChangeListenerIds map[connect.Id]bool
@@ -1282,6 +1428,8 @@ type deviceLocalRpc struct {
 	routeLocalChangeListenerIds map[connect.Id]bool
 	connectLocationChangeListenerIds map[connect.Id]bool
 	provideSecretKeysListenerIds map[connect.Id]bool
+	// local window id -> window id -> listener id
+	localWindowMonitorEventListenerIds map[connect.Id]map[connect.Id]map[connect.Id]bool
 
 	provideChangeListenerSub Sub
 	providePausedChangeListenerSub Sub
@@ -1290,8 +1438,16 @@ type deviceLocalRpc struct {
 	routeLocalChangeListenerSub Sub
 	connectLocationChangeListenerSub Sub
 	provideSecretKeysListenerSub Sub
+	// local window id -> sub
+	localWindowMonitorEventListenerSubs map[connect.Id]func()
 
 	service *rpc.Client
+
+
+	// local window id -> window id
+	localWindowIds map[connect.Id]connect.Id
+
+
 }
 
 func newDeviceLocalRpcWithDefaults(
@@ -1432,6 +1588,10 @@ func (self *deviceLocalRpc) Sync(
 	}
 
 
+	self.updateWindowMonitor()
+
+
+
 	// add listeners
 
 	for provideChangeListenerId, _ := range self.provideChangeListenerIds {
@@ -1483,6 +1643,19 @@ func (self *deviceLocalRpc) Sync(
 		self.AddProvideSecretKeysListener(provideSecretKeysListenerId, nil)
 	}
 
+	for _, windowMonitorEventListenerIds := range self.localWindowMonitorEventListenerIds {
+		for windowId, windowMonitorEventListenerIds := range windowMonitorEventListenerIds {
+			for _, windowMonitorEventListenerId := range windowMonitorEventListenerIds {
+				self.RemoveWindowMonitorEventListener(newWindowMonitorId(windowId, windowMonitorEventListenerId), nil)
+			}
+		}
+	}
+	for windowId, windowMonitorEventListenerIds := range syncRequest.WindowMonitorEventListenerIds {
+		for _, windowMonitorEventListenerId := range windowMonitorEventListenerIds {
+			self.AddWindowMonitorEventListener(newWindowMonitorId(windowId, windowMonitorEventListenerId), nil)
+		}
+	}
+
 
 	// fire listeners with the current state
 	
@@ -1510,7 +1683,13 @@ func (self *deviceLocalRpc) Sync(
 	if self.provideSecretKeysListenerSub != nil {
 		self.ProvideSecretKeysChanged(self.deviceLocal.GetProvideSecretKeys())
 	}
-
+	if self.localWindowMonitor != nil && 0 < len(windowMonitorEventListenerSubs) {
+		self.WindowMonitorEvent(self.localWindowMonitor.Events())
+	}
+ 	
+ 	syncResponse = &deviceRemoteSyncResponse{
+ 		windowIds: maps.Keys(self.localWindowMonitorEventListenerIds[self.localWindowId])
+ 	}
 	return nil
 }
 
@@ -1774,6 +1953,82 @@ func (self *deviceLocalRpc) ProvideSecretKeysChanged(provideSecretKeyList *Provi
 }
 
 
+// must be called with stateLock
+func (self *deviceLocalRpc) updateWindowMonitor() {
+	localWindowMonitor := self.deviceLocal.windowMonitor()
+	if self.localWindowMonitor != localWindowMonitor {
+		for _, unsub := range self.localWindowMonitorEventListenerSubs {
+			unsub()
+		}
+		clear(self.localWindowMonitorEventListenerIds)
+		clear(self.localWindowIds)
+
+		self.localWindowId = NewId()
+		self.localWindowMonitor = windowMonitor
+	}
+}
+
+
+func (self *deviceLocalRpc) AddWindowMonitorEventListener(listenerId deviceRemoteWindowMonitorId, windowIds *map[connect.Id]bool) error {
+	// LOCK
+	// defer UNLOCK
+
+	self.updateWindowMonitor()
+
+	localWindowId, ok := self.localWindowIds[listenerId.windowId]
+	if !ok {
+		localWindowId = self.localWindowId
+		self.localWindowIds[listenerId.windowId] = localWindowId
+	}
+
+	if self.localWindowId == localWindowId {
+		self.localWindowMonitorEventListenerIds[localWindowId][listenerId.windowId][listener.listenerId] = true
+		if self.localWindowMonitorEventListenerSubs[localWindowId] == nil {
+			self.localWindowMonitorEventListenerSubs[localWindowId] = self.localWindowMonitor.AddMonitorEventCallback(self.WindowMonitorEvent)
+		}
+	}
+
+	*windowIds = maps.Keys(self.localWindowMonitorEventListenerIds[self.localWindowId])
+
+	return nil
+}
+
+func (self *deviceLocalRpc) RemoveWindowMonitorEventListener(listenerId deviceRemoteWindowMonitorId, _ any) error {
+	// LOCK
+	// defer UNLOCK
+
+	localWindowId, ok := self.localWindowIds[listenerId.windowId]
+	if ok {
+		delete(self.localWindowMonitorEventListenerIds[localWindowId][listenerId.windowId][listener.listenerId])
+		if len(self.localWindowMonitorEventListenerIds[localWindowId]) == 0 && self.localWindowMonitorEventListenerSubs[localWindowId] != nil {
+			unsub := self.localWindowMonitorEventListenerSubs[localWindowId]
+			unsub()
+			delete(self.localWindowMonitorEventListenerSubs, localWindowId)
+		}
+	}
+
+	return nil
+}
+
+// connect.MonitorEventFunction
+func (self *deviceLocalRpc) WindowMonitorEvent(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent) {
+	// LOCK
+	// defer UNLOCK
+
+	windowIds := maps.Keys(self.localWindowMonitorEventListenerIds[self.windowId])
+	windowMonitorEvent := &deviceRemoteWindowMonitorEvent{
+		WindowIds: windowIds,
+		WindowExpandEvent: windowExpandEvent,
+		ProviderEvents: providerEvents,	
+	}
+
+	err := self.service.Call("deviceRemoteRpc.WindowMonitorEvent", windowMonitorEvent, nil)
+	if err != nil {
+		self.service.Close()
+	}
+}
+
+
 func (self *deviceLocalRpc) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList, _ any) error {
 	self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	return nil
@@ -1920,6 +2175,15 @@ func (self *deviceRemoteRpc) ConnectLocationChanged(location *ConnectLocation, _
 
 func (self *deviceRemoteRpc) ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList, _ any) error {
 	self.deviceRemote.provideSecretKeysChanged(provideSecretKeyList)
+	return nil
+}
+
+func (self *deviceRemoteRpc) WindowMonitorEvent(windowMonitorEvent *deviceRemoteWindowMonitorEvent, _ any) error {
+	self.deviceRemote.windowMonitorEvent(
+		windowMonitorEvent.WindowIds,
+		windowMonitorEvent.WindowExpandEvent,
+		windowMonitorEvent.ProviderEvents,
+	)
 	return nil
 }
 
