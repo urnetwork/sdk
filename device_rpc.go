@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	// "github.com/golang/glog"
+	"github.com/golang/glog"
 
 	"github.com/urnetwork/connect"
 )
@@ -51,6 +51,7 @@ type deviceRpcSettings struct {
 	// TODO randomize the ports
 	Address *deviceRemoteAddress
 	ResponseAddress *deviceRemoteAddress
+	InitialLockTimeout time.Duration
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
@@ -59,6 +60,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		RpcReconnectTimeout: 1 * time.Second,
 		Address: requireRemoteAddress("127.0.0.1:12025"),
 		ResponseAddress: requireRemoteAddress("127.0.0.1:12026"),
+		InitialLockTimeout: 30 * time.Second,
 	}
 }
 
@@ -112,7 +114,20 @@ func newDeviceRemote(
 	if err != nil {
 		return nil, err
 	}
+	return newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		settings,
+		clientId,
+	)
+}
 
+func newDeviceRemoteWithOverrides(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	settings *deviceRpcSettings,
+	clientId connect.Id,
+) (*DeviceRemote, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	device := &DeviceRemote{
@@ -134,16 +149,21 @@ func newDeviceRemote(
 }
 
 func (self *DeviceRemote) run() {
-	for i := 0; true; i += 1 {
+	initialLock := true
+	intialLockEndTime := time.Now().Add(self.settings.InitialLockTimeout)
+	for {
 		handleCtx, handleCancel := context.WithCancel(self.ctx)
 
 		reconnect := self.reconnectMonitor.NotifyChannel()
 		func() {
 			defer handleCancel()
 
-			if i == 0 {
-				defer self.stateLock.Unlock()
-			}
+			defer func() {
+				if initialLock && intialLockEndTime.Before(time.Now()) {
+					initialLock = false
+					self.stateLock.Unlock()
+				}
+			}()
 
 			dialer := net.Dialer{
 				Timeout: self.settings.RpcConnectTimeout,
@@ -226,7 +246,7 @@ func (self *DeviceRemote) run() {
 
 
 			func() {
-				if  0 < i {
+				if !initialLock {
 					self.stateLock.Lock()
 					defer self.stateLock.Unlock()
 				}
@@ -235,7 +255,7 @@ func (self *DeviceRemote) run() {
 			}()
 
 			defer func() {
-				if  0 < i {
+				if !initialLock {
 					self.stateLock.Lock()
 					defer self.stateLock.Unlock()
 				}
@@ -353,7 +373,7 @@ func (self *DeviceRemote) GetCanShowRatingDialog() bool {
 	if success {
 		return canShowRatingDialog
 	} else {
-		return false
+		return self.state.CanShowRatingDialog.Get(defaultCanShowRatingDialog)
 	}
 }
 
@@ -400,7 +420,7 @@ func (self *DeviceRemote) GetProvideWhileDisconnected() bool {
 	if success {
 		return provideWhileDisconnected
 	} else {
-		return self.state.ProvideWhileDisconnected.Value
+		return self.state.ProvideWhileDisconnected.Get(defaultProvideWhileDisconnected)
 	}
 }
 
@@ -447,7 +467,7 @@ func (self *DeviceRemote) GetCanRefer() bool {
 	if success {
 		return canRefer
 	} else {	
-		return self.state.CanRefer.Value
+		return self.state.CanRefer.Get(defaultCanRefer)
 	}
 }
 
@@ -523,8 +543,8 @@ func (self *DeviceRemote) GetRouteLocal() bool {
 	}()
 	if success {
 		return routeLocal
-	} else {	
-		return self.state.RouteLocal.Value
+	} else {
+		return self.state.RouteLocal.Get(defaultRouteLocal)
 	}
 }
 
@@ -772,7 +792,7 @@ func (self *DeviceRemote) GetProvideMode() ProvideMode {
 	if success {
 		return provideMode
 	} else {	
-		return self.state.ProvideMode.Value
+		return self.state.ProvideMode.Get(ProvideModeNone)
 	}
 }
 
@@ -826,7 +846,7 @@ func (self *DeviceRemote) GetProvidePaused() bool {
 	if success {
 		return providePaused
 	} else {	
-		return self.state.ProvidePaused.Value
+		return self.state.ProvidePaused.Get(false)
 	}
 }
 
@@ -841,8 +861,10 @@ func (self *DeviceRemote) SetOffline(offline bool) {
 				return false
 			}
 
+			glog.Info("[drpc]deviceLocalRpc.SetOffline")
 			err := self.service.Call("deviceLocalRpc.SetOffline", offline, nil)
 			if err != nil {
+				glog.Info("[drpc]deviceLocalRpc.SetOffline err = %s", err)
 				self.service.Close()
 				return false
 			}
@@ -880,7 +902,7 @@ func (self *DeviceRemote) GetOffline() bool {
 	if success {
 		return offline
 	} else {	
-		return self.state.Offline.Value
+		return self.state.Offline.Get(defaultOffline)
 	}
 }
 
@@ -934,7 +956,7 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 	if success {
 		return vpnInterfaceWhileOffline
 	} else {	
-		return self.state.VpnInterfaceWhileOffline.Value
+		return self.state.VpnInterfaceWhileOffline.Get(defaultVpnInterfaceWhileOffline)
 	}
 }
 
@@ -1039,7 +1061,7 @@ func (self *DeviceRemote) GetConnectLocation() *ConnectLocation {
 	if success {
 		return location
 	} else {
-		return self.state.Location.Value
+		return self.state.Location.Get(nil)
 	}
 }
 
@@ -1307,6 +1329,14 @@ func (self *deviceRemoteValue[T]) Unset() {
 	self.IsSet = false
 }
 
+func (self *deviceRemoteValue[T]) Get(defaultValue T) T {
+	if self.IsSet {
+		return self.Value
+	} else {
+		return defaultValue
+	}
+}
+
 
 type deviceRemoteAddress struct {
 	Ip netip.Addr
@@ -1445,7 +1475,6 @@ type deviceLocalRpc struct {
 	localWindowId connect.Id
 
 
-
 	provideChangeListenerSub Sub
 	providePausedChangeListenerSub Sub
 	offlineChangeListenerSub Sub
@@ -1456,9 +1485,6 @@ type deviceLocalRpc struct {
 	windowMonitorEventListenerSub func()
 
 	service *rpc.Client
-
-
-
 }
 
 func newDeviceLocalRpcWithDefaults(
@@ -1514,8 +1540,6 @@ func (self *deviceLocalRpc) run() {
 
 			server := rpc.NewServer()
 			server.Register(self)
-
-			// defer server.Close()
 
 			go func() {
 				defer handleCancel()

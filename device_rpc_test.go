@@ -6,6 +6,8 @@ import (
 	// "time"
 
 	"github.com/go-playground/assert/v2"
+
+	"github.com/urnetwork/connect"
 )
 
 
@@ -22,11 +24,12 @@ func TestDeviceRemote(t *testing.T) {
 		panic(err)
 	}
 
+	clientId := connect.NewId()
 	instanceId := NewId()
 
 
 	// FIXME enable RPC
-	deviceLocal, err := newDeviceLocal(
+	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace,
 		byJwt,
 		"",
@@ -35,6 +38,7 @@ func TestDeviceRemote(t *testing.T) {
 		instanceId,
 		true,
 		defaultDeviceLocalSettings(),
+		clientId,
 	)
 	if err != nil {
 		panic(err)
@@ -42,10 +46,11 @@ func TestDeviceRemote(t *testing.T) {
 	defer deviceLocal.Close()
 
 
-	deviceRemote, err := newDeviceRemote(
+	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
 		defaultDeviceRpcSettings(),
+		clientId,
 	)
 	if err != nil {
 		panic(err)
@@ -53,23 +58,23 @@ func TestDeviceRemote(t *testing.T) {
 	defer deviceRemote.Close()
 
 
-	assert.Equal(t, false, deviceRemote.GetOffline())
-	assert.Equal(t, false, deviceLocal.GetOffline())
-	
-	deviceRemote.SetOffline(true)
 	assert.Equal(t, true, deviceRemote.GetOffline())
 	assert.Equal(t, true, deviceLocal.GetOffline())
-
-	deviceLocal.SetOffline(false)
+	
+	deviceRemote.SetOffline(false)
 	assert.Equal(t, false, deviceRemote.GetOffline())
 	assert.Equal(t, false, deviceLocal.GetOffline())
+
+	deviceLocal.SetOffline(true)
+	assert.Equal(t, true, deviceRemote.GetOffline())
+	assert.Equal(t, true, deviceLocal.GetOffline())
 
 
 	listener := &testing_offlineChangeListener{}
 	sub := deviceRemote.AddOfflineChangeListener(listener)
-	deviceRemote.SetOffline(true)
-	assert.Equal(t, true, listener.event)
-	assert.Equal(t, true, listener.eventOffline)
+	deviceRemote.SetOffline(false)
+	assert.Equal(t, false, listener.event)
+	assert.Equal(t, false, listener.eventOffline)
 	sub.Close()
 
 }

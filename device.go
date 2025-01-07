@@ -163,6 +163,12 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 }
 
 
+const defaultRouteLocal = true
+const defaultCanShowRatingDialog = true
+const defaultProvideWhileDisconnected = false
+const defaultCanRefer = false
+const defaultOffline = true
+const defaultVpnInterfaceWhileOffline = false
 
 
 type deviceLocalSettings struct {
@@ -285,7 +291,30 @@ func newDeviceLocal(
 	if err != nil {
 		return nil, err
 	}
+	return newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		enableRpc,
+		settings,
+		clientId,
+	)
+}
 
+func newDeviceLocalWithOverrides(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	enableRpc bool,
+	settings *deviceLocalSettings,
+	clientId connect.Id,
+) (*DeviceLocal, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// ctx, cancel := api.ctx, api.cancel
 	apiUrl := networkSpace.apiUrl
@@ -352,11 +381,12 @@ func newDeviceLocal(
 		remoteUserNatClient:               nil,
 		remoteUserNatProviderLocalUserNat: nil,
 		remoteUserNatProvider:             nil,
-		routeLocal:                        true,
-		canShowRatingDialog:               true,
-		provideWhileDisconnected:          false,
-		offline:                           true,
-		vpnInterfaceWhileOffline:          false,
+		routeLocal:                        defaultRouteLocal,
+		canShowRatingDialog:               defaultCanShowRatingDialog,
+		canRefer: defaultCanRefer,
+		provideWhileDisconnected:          defaultProvideWhileDisconnected,
+		offline:                           defaultOffline,
+		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
 		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
 		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
@@ -924,7 +954,7 @@ func parseByJwtClientId(byJwt string) (connect.Id, error) {
 	case string:
 		return connect.ParseId(v)
 	default:
-		return connect.Id{}, fmt.Errorf("byJwt hav invalid type for client_id: %T", v)
+		return connect.Id{}, fmt.Errorf("byJwt have invalid type for client_id: %T", v)
 	}
 }
 
