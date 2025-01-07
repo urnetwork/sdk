@@ -100,10 +100,10 @@ func NewDeviceRemoteWithDefaults(
 	networkSpace *NetworkSpace,
 	byJwt string,
 ) (*DeviceRemote, error) {
-	return NewDeviceRemote(networkSpace, byJwt, defaultDeviceRpcSettings())
+	return newDeviceRemote(networkSpace, byJwt, defaultDeviceRpcSettings())
 }
 
-func NewDeviceRemote(
+func newDeviceRemote(
 	networkSpace *NetworkSpace,
 	byJwt string,
 	settings *deviceRpcSettings,

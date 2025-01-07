@@ -72,6 +72,10 @@ func newId(id [16]byte) *Id {
 	}
 }
 
+func NewId() *Id {
+	return newId(connect.NewId())
+}
+
 func ParseId(src string) (*Id, error) {
 	dst, err := parseUuid(src)
 	if err != nil {

@@ -164,6 +164,29 @@ func newNetworkSpace(
 	}
 }
 
+func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
+	key := NetworkSpaceKey{
+
+	}
+	values := NetworkSpaceValues{
+
+	}
+	storagePath, err := os.MkdirTemp("", "networkspace")
+	if err != nil {
+		returnErr = err
+		return
+	}
+
+	networkSpace = newNetworkSpace(
+		ctx,
+		key,
+		values,
+		storagePath,
+	)
+	byJwt = ""
+	return
+}
+
 func (self *NetworkSpace) GetKey() *NetworkSpaceKey {
 	// make a copy
 	key := self.key
