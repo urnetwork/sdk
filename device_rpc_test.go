@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-playground/assert/v2"
 
+	// "github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
 
@@ -76,6 +78,7 @@ func TestDeviceRemote(t *testing.T) {
 	assert.Equal(t, false, listener.event)
 	assert.Equal(t, false, listener.eventOffline)
 	sub.Close()
+
 
 }
 

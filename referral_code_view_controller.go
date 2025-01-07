@@ -86,7 +86,7 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 					func(result *GetNetworkReferralCodeResult, err error) {
 						if err != nil {
 							self.setIsFetching(false)
-							glog.Info("[rcvc]error fetching referral code: %s", err)
+							glog.Infof("[rcvc]error fetching referral code: %s", err)
 							return
 						}
 

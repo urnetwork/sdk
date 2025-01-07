@@ -23,13 +23,15 @@ build_android:
 	mv "build/$$BUILD_DIR/" build/android
 
 	# validate that all types could be exported
+	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
+	# but due to limitations they are and should be ignored
 	cd build/android; \
 	    if [[ -e validate ]]; then mv validate validate.$$(date +%s); fi; \
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
 			jar -xf URnetworkSdk-sources.jar; \
-			bad_exports=`grep -Ri '// skipped' .`; \
+			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -v DeviceRemote`; \
 			if [[ "$$bad_exports" ]]; then \
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \

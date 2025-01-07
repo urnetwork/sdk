@@ -219,7 +219,7 @@ type DeviceLocal struct {
 
 	stats *DeviceStats
 
-	deviceLocalRpc *deviceLocalRpc
+	deviceLocalRpc *DeviceLocalRpc
 
 	stateLock sync.Mutex
 

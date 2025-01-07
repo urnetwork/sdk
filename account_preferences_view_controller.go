@@ -103,7 +103,7 @@ func (self *AccountPreferencesViewController) UpdateAllowProductUpdates(allow bo
 				func(result *AccountPreferencesSetResult, err error) {
 
 					if err != nil {
-						glog.Info("[apvc]error updating account preferences: %s", err)
+						glog.Infof("[apvc]error updating account preferences: %s", err)
 						self.setIsUpdating(false)
 						return
 					}
@@ -141,7 +141,7 @@ func (self *AccountPreferencesViewController) fetchAllowProductUpdates() {
 			func(result *AccountPreferencesGetResult, err error) {
 
 				if err != nil {
-					glog.Info("[apvc]error fetching account preferences: %s", err)
+					glog.Infof("[apvc]error fetching account preferences: %s", err)
 					self.setIsFetching(false)
 					return
 				}

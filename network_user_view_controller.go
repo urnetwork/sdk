@@ -152,13 +152,13 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 			func(result *GetNetworkUserResult, err error) {
 
 				if err != nil {
-					glog.Info("[nuvc]fetchNetworkUser go error %s", err)
+					glog.Infof("[nuvc]fetchNetworkUser go error %s", err)
 					self.setIsLoading(false)
 					return
 				}
 
 				if result.Error != nil {
-					glog.Info("[nuvc]fetchNetworkUser response error %s", result.Error.Message)
+					glog.Infof("[nuvc]fetchNetworkUser response error %s", result.Error.Message)
 					self.setIsLoading(false)
 					return
 				}
