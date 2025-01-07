@@ -247,11 +247,11 @@ type DeviceLocal struct {
 	connectChangeListeners         *connect.CallbackList[ConnectChangeListener]
 	routeLocalChangeListeners      *connect.CallbackList[RouteLocalChangeListener]
 	connectLocationChangeListeners *connect.CallbackList[ConnectLocationChangeListener]
+	provideSecretKeysListeners *connect.CallbackList[ProvideSecretKeysListener]
 
 	localUserNatUnsub func()
 }
 
-// FIXME pass NetworkSpace here instead of API
 func NewDeviceLocalWithDefaults(
 	networkSpace *NetworkSpace,
 	byJwt string,
@@ -394,6 +394,7 @@ func newDeviceLocalWithOverrides(
 		connectChangeListeners:            connect.NewCallbackList[ConnectChangeListener](),
 		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
 		connectLocationChangeListeners:    connect.NewCallbackList[ConnectLocationChangeListener](),
+		provideSecretKeysListeners:    connect.NewCallbackList[ProvideSecretKeysListener](),
 	}
 
 	// set up with nil destination
@@ -408,13 +409,8 @@ func newDeviceLocalWithOverrides(
 }
 
 func (self *DeviceLocal) GetClientId() *Id {
-	// clientId := self.client.ClientId()
 	return newId(self.clientId)
 }
-
-// func (self *DeviceLocal) client() *connect.Client {
-// 	return self.client
-// }
 
 func (self *DeviceLocal) GetApi() *Api {
 	return self.networkSpace.GetApi()
@@ -423,15 +419,6 @@ func (self *DeviceLocal) GetApi() *Api {
 func (self *DeviceLocal) GetNetworkSpace() *NetworkSpace {
 	return self.networkSpace
 }
-
-// func (self *DeviceLocal) SetCustomExtenderAutoConfigure(extenderAutoConfigure *ExtenderAutoConfigure) {
-// 	// FIXME
-// }
-
-// func (self *DeviceLocal) GetCustomExtenderAutoConfigure() *ExtenderAutoConfigure {
-// 	// FIXME
-// 	return nil
-// }
 
 func (self *DeviceLocal) GetStats() *DeviceStats {
 	return self.stats
@@ -521,15 +508,6 @@ func (self *DeviceLocal) GetRouteLocal() bool {
 	return self.routeLocal
 }
 
-// func (self *DeviceLocal) SetCustomExtenderResolver(extenderResolver *ExtenderResolver) {
-// 	// FIXME
-// }
-
-// func (self *DeviceLocal) CustomExtenderResolver() *ExtenderResolver {
-// 	// FIXME
-// 	return nil
-// }
-
 func (self *DeviceLocal) windowMonitor() windowMonitor {
 	switch v := self.remoteUserNatClient.(type) {
 	case *connect.RemoteUserNatMultiClient:
@@ -583,8 +561,10 @@ func (self *DeviceLocal) AddConnectLocationChangeListener(listener ConnectLocati
 }
 
 func (self *DeviceLocal) AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub {
-	// FIXME
-	return nil
+	callbackId := self.provideSecretKeysListeners.Add(listener)
+	return newSub(func() {
+		self.provideSecretKeysListeners.Remove(callbackId)
+	})
 }
 
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
@@ -635,6 +615,14 @@ func (self *DeviceLocal) connectLocationChanged(location *ConnectLocation) {
 	}
 }
 
+func (self *DeviceLocal) provideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList) {
+	for _, listener := range self.provideSecretKeysListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProvideSecretKeysChanged(provideSecretKeyList)
+		})
+	}
+}
+
 // `ReceivePacketFunction`
 func (self *DeviceLocal) receive(source connect.TransferPath, ipProtocol connect.IpProtocol, packet []byte) {
 	// deviceLog("GOT A PACKET %d", len(packet))
@@ -664,10 +652,14 @@ func (self *DeviceLocal) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecr
 		provideSecretKeys[provideMode] = []byte(provideSecretKey.ProvideSecretKey)
 	}
 	self.client.ContractManager().LoadProvideSecretKeys(provideSecretKeys)
+
+	self.provideSecretKeysChanged(self.GetProvideSecretKeys())
 }
 
 func (self *DeviceLocal) InitProvideSecretKeys() {
 	self.client.ContractManager().InitProvideSecretKeys()
+
+	self.provideSecretKeysChanged(self.GetProvideSecretKeys())
 }
 
 func (self *DeviceLocal) GetProvideEnabled() bool {

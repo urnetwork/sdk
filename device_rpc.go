@@ -1451,17 +1451,17 @@ type DeviceRemoteWindowMonitorEvent struct {
 }
 
 
+// rpc wrappers
 
 type RpcVoid = *any
 type RpcNoArg = int
 
-// FIXME just standardize call void and call to close service on err, automate logging
 func rpcCallVoid(service *rpc.Client, name string, arg any) error {
 	var void RpcVoid
-	glog.Infof("[?]%s", name)
+	glog.Infof("[rpc]%s", name)
 	err := service.Call(name, arg, &void)
 	if err != nil {
-		glog.Infof("[?]%s err = %s", name, err)
+		glog.Infof("[rpc]%s err = %s", name, err)
 		service.Close()
 	}
 	return err
@@ -1470,10 +1470,10 @@ func rpcCallVoid(service *rpc.Client, name string, arg any) error {
 func rpcCallNoArgVoid(service *rpc.Client, name string) error {
 	var noarg RpcNoArg
 	var void RpcVoid
-	glog.Infof("[?]%s", name)
+	glog.Infof("[rpc]%s", name)
 	err := service.Call(name, noarg, &void)
 	if err != nil {
-		glog.Infof("[?]%s err = %s", name, err)
+		glog.Infof("[rpc]%s err = %s", name, err)
 		service.Close()
 	}
 	return err
@@ -1482,10 +1482,10 @@ func rpcCallNoArgVoid(service *rpc.Client, name string) error {
 func rpcCallNoArg[T any](service *rpc.Client, name string) (T, error) {
 	var noarg RpcNoArg
 	var r T
-	glog.Infof("[?]%s", name)
+	glog.Infof("[rpc]%s", name)
 	err := service.Call(name, noarg, &r)
 	if err != nil {
-		glog.Infof("[?]%s err = %s", name, err)
+		glog.Infof("[rpc]%s err = %s", name, err)
 		service.Close()
 	}
 	return r, err
@@ -1493,10 +1493,10 @@ func rpcCallNoArg[T any](service *rpc.Client, name string) (T, error) {
 
 func rpcCall[T any](service *rpc.Client, name string, arg any) (T, error) {
 	var r T
-	glog.Infof("[?]%s", name)
+	glog.Infof("[rpc]%s", name)
 	err := service.Call(name, arg, &r)
 	if err != nil {
-		glog.Infof("[?]%s err = %s", name, err)
+		glog.Infof("[rpc]%s err = %s", name, err)
 		service.Close()
 	}
 	return r, err
