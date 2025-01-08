@@ -159,7 +159,7 @@ func (self *emptyWindowMonitor) AddMonitorEventCallback(monitorEventCallback con
 }
 
 func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
-	return nil, nil
+	return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 }
 
 

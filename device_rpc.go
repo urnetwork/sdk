@@ -57,11 +57,11 @@ type deviceRpcSettings struct {
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
-		RpcConnectTimeout: 10 * time.Second,
-		RpcReconnectTimeout: 1 * time.Second,
+		RpcConnectTimeout: 1 * time.Second,
+		RpcReconnectTimeout: 100 * time.Millisecond,
 		Address: requireRemoteAddress("127.0.0.1:12025"),
 		ResponseAddress: requireRemoteAddress("127.0.0.1:12026"),
-		InitialLockTimeout: 30 * time.Second,
+		InitialLockTimeout: 1 * time.Second,
 	}
 }
 
@@ -1164,19 +1164,19 @@ func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowM
 	_, ok := self.windowMonitors[windowMonitor.windowId]
 	if !ok {
 		// window no longer active
-		return nil, nil
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
 
 	if self.service == nil {
-		return nil, nil
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
 
 	event, err := rpcCallNoArg[*DeviceRemoteWindowMonitorEvent](self.service, "DeviceLocalRpc.WindowMonitorEvents")
 	if err != nil {
-		return nil, nil
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
 	if event == nil {
-		return nil, nil
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
 	return event.WindowExpandEvent, event.ProviderEvents
 }
