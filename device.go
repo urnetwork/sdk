@@ -184,9 +184,10 @@ func defaultDeviceLocalSettings() *deviceLocalSettings {
 	}
 }
 
-// compile check that DeviceLocal conforms to Device and device
+// compile check that DeviceLocal conforms to Device, device, and ViewControllerManager
 var _ Device = (*DeviceLocal)(nil)
 var _ device = (*DeviceLocal)(nil)
+var _ ViewControllerManager = (*DeviceLocal)(nil)
 type DeviceLocal struct {
 	networkSpace *NetworkSpace
 
@@ -250,6 +251,8 @@ type DeviceLocal struct {
 	provideSecretKeysListeners *connect.CallbackList[ProvideSecretKeysListener]
 
 	localUserNatUnsub func()
+
+	viewControllerManager
 }
 
 func NewDeviceLocalWithDefaults(
@@ -396,6 +399,7 @@ func newDeviceLocalWithOverrides(
 		connectLocationChangeListeners:    connect.NewCallbackList[ConnectLocationChangeListener](),
 		provideSecretKeysListeners:    connect.NewCallbackList[ProvideSecretKeysListener](),
 	}
+	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
 	// set up with nil destination
 	localUserNatUnsub := localUserNat.AddReceivePacketCallback(deviceLocal.receive)

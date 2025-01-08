@@ -71,8 +71,8 @@ func (self *DeviceStats) GetUserSuccess() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	connectTimeCondition := 30*time.Second <= self.maxConnectDuration
-	receiveByteCountCondition := ByteCount(64*1024*1024) <= self.netRemoteReceiveByteCount
+	connectTimeCondition := self.connectEnabled && self.connectStartTime.Add(30*time.Second).Before(time.Now()) || 30*time.Second <= self.netConnectDuration
+	receiveByteCountCondition := ByteCount(64*1024) <= self.netRemoteReceiveByteCount
 	return connectTimeCondition && receiveByteCountCondition
 }
 

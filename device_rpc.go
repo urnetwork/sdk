@@ -65,9 +65,10 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 	}
 }
 
-// compile check that DeviceRemote conforms to Device and device
+// compile check that DeviceRemote conforms to Device, device, and ViewControllerManager
 var _ Device = (*DeviceRemote)(nil)
 var _ device = (*DeviceRemote)(nil)
+var _ ViewControllerManager = (*DeviceRemote)(nil)
 type DeviceRemote struct {
 	ctx context.Context
 	cancel context.CancelFunc
@@ -96,6 +97,8 @@ type DeviceRemote struct {
 	windowMonitors map[connect.Id]*deviceRemoteWindowMonitor
 
 	state deviceRemoteState
+
+	viewControllerManager
 }
 
 func NewDeviceRemoteWithDefaults(
@@ -130,7 +133,7 @@ func newDeviceRemoteWithOverrides(
 ) (*DeviceRemote, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	device := &DeviceRemote{
+	deviceRemote := &DeviceRemote{
 		ctx: ctx,
 		cancel: cancel,
 		networkSpace: networkSpace,
@@ -149,12 +152,13 @@ func newDeviceRemoteWithOverrides(
 		provideSecretKeyListeners: map[connect.Id]ProvideSecretKeysListener{},
 		windowMonitors: map[connect.Id]*deviceRemoteWindowMonitor{},
 	}
+	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
 	// remote starts locked
 	// only after the first attempt to connect to the local does it unlock
-	device.stateLock.Lock()
-	go device.run()
-	return device, nil
+	deviceRemote.stateLock.Lock()
+	go deviceRemote.run()
+	return deviceRemote, nil
 }
 
 func (self *DeviceRemote) run() {
