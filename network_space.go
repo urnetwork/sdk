@@ -273,6 +273,14 @@ func (self *NetworkSpace) close() {
 	self.cancel()
 }
 
+func (self *NetworkSpace) ToJson() (string, error) {
+	jsonBytes, err := json.Marshal(self)
+	if err != nil {
+		return "", err
+	}
+	return string(jsonBytes), nil
+}
+
 type NetworkSpaceUpdate interface {
 	Update(values *NetworkSpaceValues)
 }
@@ -565,4 +573,9 @@ func (self *NetworkSpaceManager) RemoveNetworkSpace(networkSpace *NetworkSpace) 
 
 func (self *NetworkSpaceManager) Close() {
 	self.cancel()
+}
+
+func (self *NetworkSpaceManager) ImportNetworkSpace(networkSpaceJson string) (*NetworkSpace, error) {
+	// FIXME
+	return nil, nil
 }

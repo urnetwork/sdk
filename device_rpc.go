@@ -755,7 +755,7 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 	if success {
 		return connectEnabled
 	} else {	
-		return false
+		return self.state.Location.IsSet || self.state.Destination.IsSet
 	}
 }
 
@@ -959,80 +959,100 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 }
 
 func (self *DeviceRemote) RemoveDestination() {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	success := func()(bool) {
-		if self.service == nil {
-			return false
-		}
+		success := func()(bool) {
+			if self.service == nil {
+				return false
+			}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.RemoveDestination", nil)
-		if err != nil {
-			return false
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.RemoveDestination", nil)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.RemoveDestination.Unset()
+		} else {	
+			self.state.RemoveDestination.Set(true)
+			self.state.Destination.Unset()
+			self.state.Location.Unset()
 		}
-		return true
 	}()
-	if success {
-		self.state.RemoveDestination.Unset()
-	} else {	
-		self.state.RemoveDestination.Set(true)
-		self.state.Destination.Unset()
-		self.state.Location.Unset()
+	if event {
+		self.connectChanged(self.GetConnectEnabled())
 	}
 }
 
 func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	destination := &DeviceRemoteDestination{
-		Location: location,
-		Specs: specs,
-		ProvideMode: provideMode,
-	}
-
-	success := func()(bool) {
-		if self.service == nil {
-			return false
+		destination := &DeviceRemoteDestination{
+			Location: location,
+			Specs: specs,
+			ProvideMode: provideMode,
 		}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetDestination", destination)
-		if err != nil {
-			return false
+		success := func()(bool) {
+			if self.service == nil {
+				return false
+			}
+
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetDestination", destination)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.Destination.Unset()
+		} else {	
+			self.state.Destination.Set(destination)
+			self.state.RemoveDestination.Unset()
+			self.state.Location.Unset()
+			event = true
 		}
-		return true
 	}()
-	if success {
-		self.state.Destination.Unset()
-	} else {	
-		self.state.Destination.Set(destination)
-		self.state.RemoveDestination.Unset()
-		self.state.Location.Unset()
+	if event {
+		self.connectChanged(self.GetConnectEnabled())
 	}
 }
 
 func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	success := func()(bool) {
-		if self.service == nil {
-			return false
-		}
+		success := func()(bool) {
+			if self.service == nil {
+				return false
+			}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetConnectLocation", location)
-		if err != nil {
-			return false
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetConnectLocation", location)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.Location.Unset()
+		} else {
+			self.state.Location.Set(location)
+			self.state.RemoveDestination.Unset()
+			self.state.Destination.Unset()
+			event = true
 		}
-		return true
 	}()
-	if success {
-		self.state.Location.Unset()
-	} else {
-		self.state.Location.Set(location)
-		self.state.RemoveDestination.Unset()
-		self.state.Destination.Unset()
+	if event {
+		self.connectChanged(self.GetConnectEnabled())
 	}
 }
 
