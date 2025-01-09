@@ -124,6 +124,10 @@ type Device interface {
 
 	Close()
 
+	Cancel()
+	
+	GetDone() bool
+
 	
 	AddProvideChangeListener(listener ProvideChangeListener) Sub 
 
@@ -909,6 +913,10 @@ func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	})
 }
 
+func (self *DeviceLocal) Cancel() {
+	self.cancel()
+}
+
 
 func (self *DeviceLocal) Close() {
 	self.stateLock.Lock()
@@ -937,6 +945,15 @@ func (self *DeviceLocal) Close() {
 
 	if self.deviceLocalRpc != nil {
 		self.deviceLocalRpc.Close()
+	}
+}
+
+func (self *DeviceLocal) GetDone() bool {
+	select {
+	case <-self.ctx.Done():
+		return true
+	default:
+		return false
 	}
 }
 
