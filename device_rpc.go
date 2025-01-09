@@ -79,6 +79,7 @@ type DeviceRemote struct {
 	settings *deviceRpcSettings
 
 	reconnectMonitor *connect.Monitor
+	syncMonitor *connect.Monitor
 	
 	clientId connect.Id
 	clientStrategy *connect.ClientStrategy
@@ -96,7 +97,7 @@ type DeviceRemote struct {
 	provideSecretKeyListeners map[connect.Id]ProvideSecretKeysListener
 	windowMonitors map[connect.Id]*deviceRemoteWindowMonitor
 
-	state deviceRemoteState
+	state DeviceRemoteState
 
 	viewControllerManager
 }
@@ -117,6 +118,7 @@ func newDeviceRemote(
 	if err != nil {
 		return nil, err
 	}
+	networkSpace.api.SetByJwt(byJwt)
 	return newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
@@ -140,6 +142,7 @@ func newDeviceRemoteWithOverrides(
 		byJwt: byJwt,
 		settings: settings,
 		reconnectMonitor: connect.NewMonitor(),
+		syncMonitor: connect.NewMonitor(),
 		clientId: clientId,
 		clientStrategy: networkSpace.clientStrategy,
 
@@ -175,7 +178,7 @@ func (self *DeviceRemote) run() {
 	for {
 		handleCtx, handleCancel := context.WithCancel(self.ctx)
 
-		reconnect := self.reconnectMonitor.NotifyChannel()
+		notify := self.reconnectMonitor.NotifyChannel()
 		func() {
 			defer handleCancel()
 
@@ -201,6 +204,11 @@ func (self *DeviceRemote) run() {
 
 			service := rpc.NewClient(conn)
 			
+			windowMonitorListenerIds := map[connect.Id][]connect.Id{}
+			for windowId, windowMonitor := range self.windowMonitors {
+				windowMonitorListenerIds[windowId] = maps.Keys(windowMonitor.listeners)
+			}
+
 			syncRequest := &DeviceRemoteSyncRequest{
 				ProvideChangeListenerIds: maps.Keys(self.provideChangeListeners),
 				ProvidePausedChangeListenerIds: maps.Keys(self.providePausedChangeListeners),
@@ -209,7 +217,8 @@ func (self *DeviceRemote) run() {
 				RouteLocalChangeListenerIds: maps.Keys(self.routeLocalChangeListeners),
 				ConnectLocationChangeListenerIds: maps.Keys(self.connectLocationChangeListeners),
 				ProvideSecretKeysListenerIds: maps.Keys(self.provideSecretKeyListeners),
-				deviceRemoteState: self.state,
+				WindowMonitorEventListenerIds: windowMonitorListenerIds,
+				State: self.state,
 			}
 			syncResponse, err := rpcCall[*DeviceRemoteSyncResponse](service, "DeviceLocalRpc.Sync", syncRequest)
 			if err != nil {
@@ -233,6 +242,7 @@ func (self *DeviceRemote) run() {
 			}
 			responseListener, err := listenConfig.Listen(handleCtx, "tcp", self.settings.ResponseAddress.HostPort())
 			if err != nil {
+				glog.Infof("[dr]connect response setup err = %s", err)
 				return
 			}
 			defer responseListener.Close()
@@ -252,6 +262,7 @@ func (self *DeviceRemote) run() {
 				for {
 					conn, err := responseListener.Accept()
 					if err != nil {
+						glog.Infof("[dr]connect response accept err = %s", err)
 						return
 					}
 					server.ServeConn(conn)
@@ -259,12 +270,7 @@ func (self *DeviceRemote) run() {
 				}
 			}()
 
-			select {
-			case <- time.After(200 * time.Millisecond):
-			}
-
-
-			err = rpcCallVoid(service, "DeviceLocalRpc.ConnectResponse", self.settings.ResponseAddress)
+			err = rpcCallVoid(service, "DeviceLocalRpc.SyncReverse", self.settings.ResponseAddress)
 			if err != nil {
 				return
 			}
@@ -279,6 +285,7 @@ func (self *DeviceRemote) run() {
 				}
 				self.state.Unset()
 				self.service = service
+				self.syncMonitor.NotifyAll()
 			}()
 
 			glog.Infof("[dr]sync 2")
@@ -315,7 +322,7 @@ func (self *DeviceRemote) run() {
 		case <- self.ctx.Done():
 			return
 		case <- time.After(self.settings.RpcReconnectTimeout):
-		case <- reconnect:
+		case <- notify:
 			// reconnect now
 		}
 	}
@@ -329,8 +336,39 @@ func (self *DeviceRemote) GetRpcPublicKey() string {
 // force a connect attempt as soon as possible
 // note this just speeds up connection but is not required,
 // since the rpc connect will poll until connected
-func (self *DeviceRemote) Connect() {
+func (self *DeviceRemote) Sync() {
 	self.reconnectMonitor.NotifyAll()
+}
+
+func (self *DeviceRemote) waitForSync(timeout time.Duration) bool {
+	
+	synced, notify := func()(bool, chan struct{}) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.service != nil {
+			return true, nil
+		}
+		return false, self.syncMonitor.NotifyChannel()
+	}()
+	if synced {
+		return true
+	} else if 0 <= timeout {
+		select {
+		case <- self.ctx.Done():
+			return false
+		case <- notify:
+			return true
+		case <- time.After(timeout):
+			return false
+		}
+	} else {
+		select {
+		case <- self.ctx.Done():
+			return false
+		case <- notify:
+			return true
+		}
+	}
 }
 
 func (self *DeviceRemote) GetClientId() *Id {
@@ -508,7 +546,7 @@ func (self *DeviceRemote) SetCanRefer(canRefer bool) {
 			return false
 		}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetProvideWhileDisconnected", canRefer)
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetCanRefer", canRefer)
 		if err != nil {
 			return false
 		}
@@ -687,7 +725,7 @@ func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSec
 	if success {
 		self.state.LoadProvideSecretKeys.Unset()
 	} else {	
-		self.state.LoadProvideSecretKeys.Set(provideSecretKeyList)
+		self.state.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
 		self.state.InitProvideSecretKeys.Unset()
 	}
 }
@@ -996,7 +1034,7 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 
 		destination := &DeviceRemoteDestination{
 			Location: location,
-			Specs: specs,
+			Specs: specs.getAll(),
 			ProvideMode: provideMode,
 		}
 
@@ -1266,7 +1304,6 @@ func (self *DeviceRemote) providePausedChanged(providePaused bool) {
 
 func (self *DeviceRemote) offlineChanged(offline bool, vpnInterfaceWhileOffline bool) {
 	for _, offlineChangeListener := range listenerListWithLock(self.stateLock, self.offlineChangeListeners) {
-		glog.Infof("!!DeviceRemote offlineChanged event")
 		offlineChangeListener.OfflineChanged(offline, vpnInterfaceWhileOffline)
 	}
 }
@@ -1329,7 +1366,7 @@ func (self *DeviceRemote) windowMonitorEvent(
 //gomobile:noexport
 type DeviceRemoteDestination struct {
 	Location *ConnectLocation
-	Specs *ProviderSpecList
+	Specs []*ProviderSpec
 	ProvideMode ProvideMode
 }
 
@@ -1403,15 +1440,20 @@ type DeviceRemoteOfflineChangeEvent struct {
 	VpnInterfaceWhileOffline bool
 }
 
+//gomobile:noexport
+type DeviceRemoteConnectLocationChangeEvent struct {
+	Location *ConnectLocation
+}
+
 
 //gomobile:noexport
-type deviceRemoteState struct {
+type DeviceRemoteState struct {
 	CanShowRatingDialog deviceRemoteValue[bool] 
 	ProvideWhileDisconnected deviceRemoteValue[bool]
 	CanRefer deviceRemoteValue[bool]
 	RouteLocal deviceRemoteValue[bool]
 	InitProvideSecretKeys deviceRemoteValue[bool]
-	LoadProvideSecretKeys deviceRemoteValue[*ProvideSecretKeyList]
+	LoadProvideSecretKeys deviceRemoteValue[[]*ProvideSecretKey]
 	ProvideMode deviceRemoteValue[ProvideMode]
 	ProvidePaused deviceRemoteValue[bool]
 	Offline deviceRemoteValue[bool]
@@ -1422,7 +1464,7 @@ type deviceRemoteState struct {
 	Shuffle deviceRemoteValue[bool]
 }
 
-func (self *deviceRemoteState) Unset() {
+func (self *DeviceRemoteState) Unset() {
 	self.CanShowRatingDialog.Unset()
 	self.ProvideWhileDisconnected.Unset()
 	self.CanRefer.Unset()
@@ -1449,7 +1491,7 @@ type DeviceRemoteSyncRequest struct {
 	ConnectLocationChangeListenerIds []connect.Id
 	ProvideSecretKeysListenerIds []connect.Id
 	WindowMonitorEventListenerIds map[connect.Id][]connect.Id
-	deviceRemoteState
+	State DeviceRemoteState
 }
 
 
@@ -1552,10 +1594,8 @@ type DeviceLocalRpc struct {
 
 	// window id -> listener id
 	windowMonitorEventListenerIds map[connect.Id]map[connect.Id]bool
-
 	// local window id -> window id
 	localWindowIds map[connect.Id]connect.Id
-
 	localWindowMonitor windowMonitor
 	localWindowId connect.Id
 
@@ -1598,6 +1638,8 @@ func newDeviceLocalRpc(
 		routeLocalChangeListenerIds: map[connect.Id]bool{},
 		connectLocationChangeListenerIds: map[connect.Id]bool{},
 		provideSecretKeysListenerIds: map[connect.Id]bool{},
+		windowMonitorEventListenerIds: map[connect.Id]map[connect.Id]bool{},
+		localWindowIds: map[connect.Id]connect.Id{},
 	}
 
 	go deviceLocalRpc.run()
@@ -1618,6 +1660,7 @@ func (self *DeviceLocalRpc) run() {
 			}
 			listener, err := listenConfig.Listen(handleCtx, "tcp", self.settings.Address.HostPort())
 			if err != nil {
+				glog.Infof("[dlrcp]listen err = %s", err)
 				return
 			}
 
@@ -1633,6 +1676,7 @@ func (self *DeviceLocalRpc) run() {
 				for {
 					conn, err := listener.Accept()
 					if err != nil {
+						glog.Infof("[dlrcp]listen accept err = %s", err)
 						return
 					}
 					server.ServeConn(conn)
@@ -1657,122 +1701,159 @@ func (self *DeviceLocalRpc) Sync(
 	syncRequest *DeviceRemoteSyncRequest,
 	syncResponse **DeviceRemoteSyncResponse,
 ) error {
+	defer func() {
+		if r := recover(); r != nil {
+			debug.PrintStack()
+			panic(r)
+		}
+	}()
+
+	glog.Infof("s1")
+
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	// apply state adjustments
 
-	if syncRequest.CanShowRatingDialog.IsSet {
-		self.deviceLocal.SetCanShowRatingDialog(syncRequest.CanShowRatingDialog.Value)
+	state := syncRequest.State
+
+	glog.Infof("s2")
+	if state.CanShowRatingDialog.IsSet {
+		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
 	}
-	if syncRequest.ProvideWhileDisconnected.IsSet {
-		self.deviceLocal.SetProvideWhileDisconnected(syncRequest.ProvideWhileDisconnected.Value)
+	glog.Infof("s2")
+	if state.ProvideWhileDisconnected.IsSet {
+		self.deviceLocal.SetProvideWhileDisconnected(state.ProvideWhileDisconnected.Value)
 	}
-	if syncRequest.CanRefer.IsSet {
-		self.deviceLocal.SetCanRefer(syncRequest.CanRefer.Value)
+	glog.Infof("s3")
+	if state.CanRefer.IsSet {
+		self.deviceLocal.SetCanRefer(state.CanRefer.Value)
 	}
-	if syncRequest.RouteLocal.IsSet {
-		self.deviceLocal.SetRouteLocal(syncRequest.RouteLocal.Value)
+	glog.Infof("s4")
+	if state.RouteLocal.IsSet {
+		self.deviceLocal.SetRouteLocal(state.RouteLocal.Value)
 	}
-	if syncRequest.InitProvideSecretKeys.IsSet {
+	glog.Infof("s5")
+	if state.InitProvideSecretKeys.IsSet {
 		self.deviceLocal.InitProvideSecretKeys()
 	}
-	if syncRequest.LoadProvideSecretKeys.IsSet {
-		self.deviceLocal.LoadProvideSecretKeys(syncRequest.LoadProvideSecretKeys.Value)
+	glog.Infof("s6")
+	if state.LoadProvideSecretKeys.IsSet {
+		provideSecretKeyList := NewProvideSecretKeyList()
+		provideSecretKeyList.addAll(state.LoadProvideSecretKeys.Value...)
+		self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	}
-	if syncRequest.ProvideMode.IsSet {
-		self.deviceLocal.SetProvideMode(syncRequest.ProvideMode.Value)
+	glog.Infof("s7")
+	if state.ProvideMode.IsSet {
+		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
 	}
-	if syncRequest.ProvidePaused.IsSet {
-		self.deviceLocal.SetProvidePaused(syncRequest.ProvidePaused.Value)
+	glog.Infof("s8")
+	if state.ProvidePaused.IsSet {
+		self.deviceLocal.SetProvidePaused(state.ProvidePaused.Value)
 	}
-	if syncRequest.Offline.IsSet {
-		self.deviceLocal.SetOffline(syncRequest.Offline.Value)
+	glog.Infof("s9")
+	if state.Offline.IsSet {
+		self.deviceLocal.SetOffline(state.Offline.Value)
 	}
-	if syncRequest.VpnInterfaceWhileOffline.IsSet {
-		self.deviceLocal.SetVpnInterfaceWhileOffline(syncRequest.VpnInterfaceWhileOffline.Value)
+	glog.Infof("s10")
+	if state.VpnInterfaceWhileOffline.IsSet {
+		self.deviceLocal.SetVpnInterfaceWhileOffline(state.VpnInterfaceWhileOffline.Value)
 	}
-	if syncRequest.RemoveDestination.IsSet {
+	glog.Infof("s11")
+	if state.RemoveDestination.IsSet {
 		self.deviceLocal.RemoveDestination()
 	}
-	if syncRequest.Destination.IsSet {
-		destination := syncRequest.Destination.Value
+	glog.Infof("s12")
+	if state.Destination.IsSet {
+		destination := state.Destination.Value
+		providerSpecList := NewProviderSpecList()
+		providerSpecList.addAll(destination.Specs...)
 		self.deviceLocal.SetDestination(
 			destination.Location,
-			destination.Specs,
+			providerSpecList,
 			destination.ProvideMode,
 		)
 	}
-	if syncRequest.Location.IsSet {
-		self.deviceLocal.SetConnectLocation(syncRequest.Location.Value)
+	glog.Infof("s13")
+	if state.Location.IsSet {
+		self.deviceLocal.SetConnectLocation(state.Location.Value)
 	}
-	if syncRequest.Shuffle.IsSet {
+	glog.Infof("s14")
+	if state.Shuffle.IsSet {
 		self.deviceLocal.Shuffle()
 	}
 
-
+	glog.Infof("s15")
 	self.updateWindowMonitor(true)
 
 
 
 	// add listeners
-
+	glog.Infof("s16")
 	for provideChangeListenerId, _ := range self.provideChangeListenerIds {
-		self.RemoveProvideChangeListener(provideChangeListenerId, nil)
+		self.removeProvideChangeListener(provideChangeListenerId)
 	}
+	glog.Infof("s16b")
 	for _, provideChangeListenerId := range syncRequest.ProvideChangeListenerIds {
-		self.AddProvideChangeListener(provideChangeListenerId, nil)
+		self.addProvideChangeListener(provideChangeListenerId)
 	}
 
+	glog.Infof("s17")
 	for providePausedChangeListenerId, _ := range self.providePausedChangeListenerIds {
-		self.RemoveProvidePausedChangeListener(providePausedChangeListenerId, nil)
+		self.removeProvidePausedChangeListener(providePausedChangeListenerId)
 	}
 	for _, providePausedChangeListenerId := range syncRequest.ProvidePausedChangeListenerIds {
-		self.AddProvidePausedChangeListener(providePausedChangeListenerId, nil)
+		self.addProvidePausedChangeListener(providePausedChangeListenerId)
 	}
 
+	glog.Infof("s18")
 	for offlineChangeListenerId, _ := range self.offlineChangeListenerIds {
-		self.RemoveOfflineChangeListener(offlineChangeListenerId, nil)
+		self.removeOfflineChangeListener(offlineChangeListenerId)
 	}
 	for _, offlineChangeListenerId := range syncRequest.OfflineChangeListenerIds {
-		self.AddOfflineChangeListener(offlineChangeListenerId, nil)
+		self.addOfflineChangeListener(offlineChangeListenerId)
 	}
 
+	glog.Infof("s19")
 	for connectChangeListenerId, _ := range self.connectChangeListenerIds {
-		self.RemoveConnectChangeListener(connectChangeListenerId, nil)
+		self.removeConnectChangeListener(connectChangeListenerId)
 	}
 	for _, connectChangeListenerId := range syncRequest.ConnectChangeListenerIds {
-		self.AddConnectChangeListener(connectChangeListenerId, nil)
+		self.addConnectChangeListener(connectChangeListenerId)
 	}
 
+	glog.Infof("s20")
 	for routeLocalChangeListenerId, _ := range self.routeLocalChangeListenerIds {
-		self.RemoveRouteLocalChangeListener(routeLocalChangeListenerId, nil)
+		self.removeRouteLocalChangeListener(routeLocalChangeListenerId)
 	}
 	for _, routeLocalChangeListenerId := range syncRequest.RouteLocalChangeListenerIds {
-		self.AddRouteLocalChangeListener(routeLocalChangeListenerId, nil)
+		self.addRouteLocalChangeListener(routeLocalChangeListenerId)
 	}
 
+	glog.Infof("s21")
 	for connectLocationChangeListenerId, _ := range self.connectLocationChangeListenerIds {
-		self.RemoveConnectLocationChangeListener(connectLocationChangeListenerId, nil)
+		self.removeConnectLocationChangeListener(connectLocationChangeListenerId)
 	}
 	for _, connectLocationChangeListenerId := range syncRequest.ConnectLocationChangeListenerIds {
-		self.AddConnectLocationChangeListener(connectLocationChangeListenerId, nil)
+		self.addConnectLocationChangeListener(connectLocationChangeListenerId)
 	}
 
+	glog.Infof("s22")
 	for provideSecretKeysListenerId, _ := range self.provideSecretKeysListenerIds {
-		self.RemoveProvideSecretKeysListener(provideSecretKeysListenerId, nil)
+		self.removeProvideSecretKeysListener(provideSecretKeysListenerId)
 	}
 	for _, provideSecretKeysListenerId := range syncRequest.ProvideSecretKeysListenerIds {
-		self.AddProvideSecretKeysListener(provideSecretKeysListenerId, nil)
+		self.addProvideSecretKeysListener(provideSecretKeysListenerId)
 	}
 
+	glog.Infof("s23")
 	for windowId, windowMonitorEventListenerIds := range self.windowMonitorEventListenerIds {
 		for windowMonitorEventListenerId, _ := range windowMonitorEventListenerIds {
 			windowListenerId := DeviceRemoteWindowListenerId{
 				WindowId: windowId, 
 				ListenerId: windowMonitorEventListenerId,
 			}
-			self.RemoveWindowMonitorEventListener(windowListenerId, nil)
+			self.removeWindowMonitorEventListener(windowListenerId)
 		}
 	}
 	for windowId, windowMonitorEventListenerIds := range syncRequest.WindowMonitorEventListenerIds {
@@ -1781,48 +1862,20 @@ func (self *DeviceLocalRpc) Sync(
 				WindowId: windowId, 
 				ListenerId: windowMonitorEventListenerId,
 			}
-			self.AddWindowMonitorEventListener(windowListenerId, nil)
+			self.addWindowMonitorEventListener(windowListenerId)
 		}
 	}
 
 
-	// fire listeners with the current state
-	
-	if self.provideChangeListenerSub != nil {
-		self.ProvideChanged(self.deviceLocal.GetProvideEnabled())
-	}
-	if self.providePausedChangeListenerSub != nil {
-		self.ProvidePausedChanged(self.deviceLocal.GetProvidePaused())
-	}
-	if self.offlineChangeListenerSub != nil {
-		self.OfflineChanged(self.deviceLocal.GetOffline(), self.deviceLocal.GetVpnInterfaceWhileOffline())
-	}
-	if self.connectChangeListenerSub != nil {
-		self.ConnectChanged(self.deviceLocal.GetConnectEnabled())
-	}
-	if self.routeLocalChangeListenerSub != nil {
-		self.RouteLocalChanged(self.deviceLocal.GetRouteLocal())
-	}
-	if self.connectLocationChangeListenerSub != nil {
-		self.ConnectLocationChanged(self.deviceLocal.GetConnectLocation())
-	}
-	if self.connectLocationChangeListenerSub != nil {
-		self.ConnectLocationChanged(self.deviceLocal.GetConnectLocation())
-	}
-	if self.provideSecretKeysListenerSub != nil {
-		self.ProvideSecretKeysChanged(self.deviceLocal.GetProvideSecretKeys())
-	}
-	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
-		self.WindowMonitorEventCallback(self.localWindowMonitor.Events())
-	}
- 	
+ 	glog.Infof("s33")
  	*syncResponse = &DeviceRemoteSyncResponse{
  		WindowIds: self.windowIds(),
  	}
+ 	glog.Infof("s34")
 	return nil
 }
 
-func (self *DeviceLocalRpc) ConnectResponse(responseAddress *DeviceRemoteAddress, _ RpcVoid) error {
+func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -1849,6 +1902,44 @@ func (self *DeviceLocalRpc) ConnectResponse(responseAddress *DeviceRemoteAddress
 	glog.Infof("[dlrpc]connected")
 
 	self.service = rpc.NewClient(conn)
+
+
+
+	// fire listeners with the current state
+	
+	glog.Infof("s24")
+	if self.provideChangeListenerSub != nil {
+		self.provideChanged(self.deviceLocal.GetProvideEnabled())
+	}
+	glog.Infof("s25")
+	if self.providePausedChangeListenerSub != nil {
+		self.providePausedChanged(self.deviceLocal.GetProvidePaused())
+	}
+	glog.Infof("s26")
+	if self.offlineChangeListenerSub != nil {
+		self.offlineChanged(self.deviceLocal.GetOffline(), self.deviceLocal.GetVpnInterfaceWhileOffline())
+	}
+	glog.Infof("s27")
+	if self.connectChangeListenerSub != nil {
+		self.connectChanged(self.deviceLocal.GetConnectEnabled())
+	}
+	glog.Infof("s28")
+	if self.routeLocalChangeListenerSub != nil {
+		self.routeLocalChanged(self.deviceLocal.GetRouteLocal())
+	}
+	glog.Infof("s29")
+	if self.connectLocationChangeListenerSub != nil {
+		self.connectLocationChanged(self.deviceLocal.GetConnectLocation())
+	}
+	glog.Infof("s31")
+	if self.provideSecretKeysListenerSub != nil {
+		self.provideSecretKeysChanged(self.deviceLocal.GetProvideSecretKeys())
+	}
+	glog.Infof("s32")
+	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
+		self.windowMonitorEventCallback(self.localWindowMonitor.Events())
+	}
+ 	
 
 	return nil
 }
@@ -1907,31 +1998,43 @@ func (self *DeviceLocalRpc) GetRouteLocal(_ RpcNoArg, routeLocal *bool) error {
 func (self *DeviceLocalRpc) AddProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addProvideChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProvideChangeListener(listenerId connect.Id) {
 	self.provideChangeListenerIds[listenerId] = true
 	if self.provideChangeListenerSub == nil {
 		self.provideChangeListenerSub = self.deviceLocal.AddProvideChangeListener(self)
 	}
-	return nil
 }
 
 func (self *DeviceLocalRpc) RemoveProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeProvideChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProvideChangeListener(listenerId connect.Id) {
 	delete(self.provideChangeListenerIds, listenerId)
 	if len(self.provideChangeListenerIds) == 0 && self.provideChangeListenerSub != nil {
 		self.provideChangeListenerSub.Close()
 		self.provideChangeListenerSub = nil
 	}
-	return nil
 }
 
 // ProvideChangeListener
 func (self *DeviceLocalRpc) ProvideChanged(provideEnabled bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.provideChanged(provideEnabled)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) provideChanged(provideEnabled bool) {
 	if self.service != nil {
 		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideChanged", provideEnabled)
 	}
@@ -1941,7 +2044,12 @@ func (self *DeviceLocalRpc) ProvideChanged(provideEnabled bool) {
 func (self *DeviceLocalRpc) AddProvidePausedChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addProvidePausedChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProvidePausedChangeListener(listenerId connect.Id) error {
 	self.providePausedChangeListenerIds[listenerId] = true
 	if self.providePausedChangeListenerSub == nil {
 		self.providePausedChangeListenerSub = self.deviceLocal.AddProvidePausedChangeListener(self)
@@ -1952,20 +2060,28 @@ func (self *DeviceLocalRpc) AddProvidePausedChangeListener(listenerId connect.Id
 func (self *DeviceLocalRpc) RemoveProvidePausedChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeProvidePausedChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProvidePausedChangeListener(listenerId connect.Id) {
 	delete(self.providePausedChangeListenerIds, listenerId)
 	if len(self.providePausedChangeListenerIds) == 0 && self.providePausedChangeListenerSub != nil {
 		self.providePausedChangeListenerSub.Close()
 		self.providePausedChangeListenerSub = nil
 	}
-	return nil
 }
 
 // ProvidePausedChangeListener
 func (self *DeviceLocalRpc) ProvidePausedChanged(providePaused bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.providePausedChanged(providePaused)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) providePausedChanged(providePaused bool) {
 	if self.service != nil {
 		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvidePausedChanged", providePaused)
 	}
@@ -1975,31 +2091,43 @@ func (self *DeviceLocalRpc) ProvidePausedChanged(providePaused bool) {
 func (self *DeviceLocalRpc) AddOfflineChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addOfflineChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addOfflineChangeListener(listenerId connect.Id) {
 	self.offlineChangeListenerIds[listenerId] = true
 	if self.offlineChangeListenerSub == nil {
 		self.offlineChangeListenerSub = self.deviceLocal.AddOfflineChangeListener(self)
 	}
-	return nil
 }
 
 func (self *DeviceLocalRpc) RemoveOfflineChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeOfflineChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeOfflineChangeListener(listenerId connect.Id) {
 	delete(self.offlineChangeListenerIds, listenerId)
 	if len(self.offlineChangeListenerIds) == 0 && self.offlineChangeListenerSub != nil {
 		self.offlineChangeListenerSub.Close()
 		self.offlineChangeListenerSub = nil
 	}
-	return nil
 }
 
 // OfflineChangeListener
 func (self *DeviceLocalRpc) OfflineChanged(offline bool, vpnInterfaceWhileOffline bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.offlineChanged(offline, vpnInterfaceWhileOffline)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) offlineChanged(offline bool, vpnInterfaceWhileOffline bool) {
 	if self.service != nil {
 		event := &DeviceRemoteOfflineChangeEvent{
 			Offline: offline,
@@ -2013,31 +2141,43 @@ func (self *DeviceLocalRpc) OfflineChanged(offline bool, vpnInterfaceWhileOfflin
 func (self *DeviceLocalRpc) AddConnectChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addConnectChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addConnectChangeListener(listenerId connect.Id) {
 	self.connectChangeListenerIds[listenerId] = true
 	if self.connectChangeListenerSub == nil {
 		self.connectChangeListenerSub = self.deviceLocal.AddConnectChangeListener(self)
 	}
-	return nil
 }
 
 func (self *DeviceLocalRpc) RemoveConnectChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeConnectChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeConnectChangeListener(listenerId connect.Id) {
 	delete(self.connectChangeListenerIds, listenerId)
 	if len(self.connectChangeListenerIds) == 0 && self.connectChangeListenerSub != nil {
 		self.connectChangeListenerSub.Close()
 		self.connectChangeListenerSub = nil
 	}
-	return nil
 }
 
 // ConnectChangeListener
 func (self *DeviceLocalRpc) ConnectChanged(connectEnabled bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.connectChanged(connectEnabled)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) connectChanged(connectEnabled bool) {
 	if self.service != nil {
 		rpcCallVoid(self.service, "DeviceRemoteRpc.ConnectChanged", connectEnabled)
 	}
@@ -2047,31 +2187,43 @@ func (self *DeviceLocalRpc) ConnectChanged(connectEnabled bool) {
 func (self *DeviceLocalRpc) AddRouteLocalChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addRouteLocalChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addRouteLocalChangeListener(listenerId connect.Id) {
 	self.routeLocalChangeListenerIds[listenerId] = true
 	if self.routeLocalChangeListenerSub == nil {
 		self.routeLocalChangeListenerSub = self.deviceLocal.AddRouteLocalChangeListener(self)
 	}
-	return nil
 }
 
 func (self *DeviceLocalRpc) RemoveRouteLocalChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeRouteLocalChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeRouteLocalChangeListener(listenerId connect.Id) {
 	delete(self.routeLocalChangeListenerIds, listenerId)
 	if len(self.routeLocalChangeListenerIds) == 0 && self.routeLocalChangeListenerSub != nil {
 		self.routeLocalChangeListenerSub.Close()
 		self.routeLocalChangeListenerSub = nil
 	}
-	return nil
 }
 
 // RouteLocalChangeListener
 func (self *DeviceLocalRpc) RouteLocalChanged(routeLocal bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.routeLocalChanged(routeLocal)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) routeLocalChanged(routeLocal bool) {
 	if self.service != nil {
 		rpcCallVoid(self.service, "DeviceRemoteRpc.RouteLocalChanged", routeLocal)
 	}
@@ -2081,33 +2233,48 @@ func (self *DeviceLocalRpc) RouteLocalChanged(routeLocal bool) {
 func (self *DeviceLocalRpc) AddConnectLocationChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addConnectLocationChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addConnectLocationChangeListener(listenerId connect.Id) {
 	self.connectLocationChangeListenerIds[listenerId] = true
 	if self.connectLocationChangeListenerSub == nil {
 		self.connectLocationChangeListenerSub = self.deviceLocal.AddConnectLocationChangeListener(self)
 	}
-	return nil
 }
 
 func (self *DeviceLocalRpc) RemoveConnectLocationChangeListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeConnectLocationChangeListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeConnectLocationChangeListener(listenerId connect.Id) {
 	delete(self.connectLocationChangeListenerIds, listenerId)
 	if len(self.connectLocationChangeListenerIds) == 0 && self.connectLocationChangeListenerSub != nil {
 		self.connectLocationChangeListenerSub.Close()
 		self.connectLocationChangeListenerSub = nil
 	}
-	return nil
 }
 
 // ConnectLocationChangeListener
 func (self *DeviceLocalRpc) ConnectLocationChanged(location *ConnectLocation) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.connectLocationChanged(location)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) connectLocationChanged(location *ConnectLocation) {
 	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ConnectLocationChanged", location)
+		event := &DeviceRemoteConnectLocationChangeEvent{
+			Location: location,
+		}
+		rpcCallVoid(self.service, "DeviceRemoteRpc.ConnectLocationChanged", event)
 	}
 }
 
@@ -2115,33 +2282,45 @@ func (self *DeviceLocalRpc) ConnectLocationChanged(location *ConnectLocation) {
 func (self *DeviceLocalRpc) AddProvideSecretKeysListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.addProvideSecretKeysListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProvideSecretKeysListener(listenerId connect.Id) {
 	self.provideSecretKeysListenerIds[listenerId] = true
 	if self.provideSecretKeysListenerSub == nil {
 		self.provideSecretKeysListenerSub = self.deviceLocal.AddProvideSecretKeysListener(self)
 	}
-	return nil
 }
 
 func (self *DeviceLocalRpc) RemoveProvideSecretKeysListener(listenerId connect.Id, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeProvideSecretKeysListener(listenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProvideSecretKeysListener(listenerId connect.Id) {
 	delete(self.provideSecretKeysListenerIds, listenerId)
 	if len(self.provideSecretKeysListenerIds) == 0 && self.provideSecretKeysListenerSub != nil {
 		self.provideSecretKeysListenerSub.Close()
 		self.provideSecretKeysListenerSub = nil
 	}
-	return nil
 }
 
 // ProvideSecretKeysListener
 func (self *DeviceLocalRpc) ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.provideSecretKeysChanged(provideSecretKeyList)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) provideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList) {
 	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideSecretKeysChanged", provideSecretKeyList)
+		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideSecretKeysChanged", provideSecretKeyList.getAll())
 	}
 }
 
@@ -2176,7 +2355,12 @@ func (self *DeviceLocalRpc) windowIds() map[connect.Id]bool {
 func (self *DeviceLocalRpc) AddWindowMonitorEventListener(windowListenerId DeviceRemoteWindowListenerId, windowIds *map[connect.Id]bool) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	*windowIds = self.addWindowMonitorEventListener(windowListenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) addWindowMonitorEventListener(windowListenerId DeviceRemoteWindowListenerId) map[connect.Id]bool {
 	self.updateWindowMonitor(true)
 
 	localWindowId, ok := self.localWindowIds[windowListenerId.WindowId]
@@ -2198,15 +2382,18 @@ func (self *DeviceLocalRpc) AddWindowMonitorEventListener(windowListenerId Devic
 		}
 	}
 
-	*windowIds = self.windowIds()
-
-	return nil
+	return self.windowIds()
 }
 
 func (self *DeviceLocalRpc) RemoveWindowMonitorEventListener(windowListenerId DeviceRemoteWindowListenerId, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.removeWindowMonitorEventListener(windowListenerId)
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeWindowMonitorEventListener(windowListenerId DeviceRemoteWindowListenerId) {
 	localWindowId, ok := self.localWindowIds[windowListenerId.WindowId]
 	if ok && self.localWindowId == localWindowId {
 		monitorEventListeners, ok := self.windowMonitorEventListenerIds[windowListenerId.WindowId]
@@ -2216,24 +2403,27 @@ func (self *DeviceLocalRpc) RemoveWindowMonitorEventListener(windowListenerId De
 				delete(self.windowMonitorEventListenerIds, windowListenerId.WindowId)
 			}
 
-			if len(monitorEventListeners) == 0 && self.windowMonitorEventListenerSub != nil {
+			if len(self.windowMonitorEventListenerIds) == 0 && self.windowMonitorEventListenerSub != nil {
 				self.windowMonitorEventListenerSub()
 				self.windowMonitorEventListenerSub = nil
 			}
 		}
 	}
-
-	return nil
 }
 
 func (self *DeviceLocalRpc) WindowMonitorEvents(_ RpcNoArg, event **DeviceRemoteWindowMonitorEvent) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	*event = self.windowMonitorEvents()
+	return nil
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) windowMonitorEvents() *DeviceRemoteWindowMonitorEvent {
 	if self.localWindowMonitor != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
 
-		*event = &DeviceRemoteWindowMonitorEvent{
+		return &DeviceRemoteWindowMonitorEvent{
 			WindowIds: self.windowIds(),
 			WindowExpandEvent: windowExpandEvent,
 			ProviderEvents: providerEvents,	
@@ -2249,15 +2439,22 @@ func (self *DeviceLocalRpc) WindowMonitorEventCallback(
 ) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	self.windowMonitorEventCallback(windowExpandEvent, providerEvents)
+}
 
+// must be called with stateLock
+func (self *DeviceLocalRpc) windowMonitorEventCallback(
+	windowExpandEvent *connect.WindowExpandEvent,
+	providerEvents map[connect.Id]*connect.ProviderEvent,
+) {
 	if self.service != nil {
-		windowMonitorEvent := &DeviceRemoteWindowMonitorEvent{
+		event := &DeviceRemoteWindowMonitorEvent{
 			WindowIds: self.windowIds(),
 			WindowExpandEvent: windowExpandEvent,
 			ProviderEvents: providerEvents,	
 		}
 
-		rpcCallVoid(self.service, "DeviceRemoteRpc.WindowMonitorEventCallback", windowMonitorEvent)
+		rpcCallVoid(self.service, "DeviceRemoteRpc.WindowMonitorEventCallback", event)
 	}
 }
 
@@ -2329,9 +2526,11 @@ func (self *DeviceLocalRpc) RemoveDestination(_ RpcNoArg, _ RpcVoid) error {
 }
 
 func (self *DeviceLocalRpc) SetDestination(destination *DeviceRemoteDestination, _ RpcVoid) error {
+	providerSpecList := NewProviderSpecList()
+	providerSpecList.addAll(destination.Specs...)
 	self.deviceLocal.SetDestination(
 		destination.Location,
-		destination.Specs,
+		providerSpecList,
 		destination.ProvideMode,
 	)
 	return nil
@@ -2397,7 +2596,6 @@ func (self *DeviceRemoteRpc) ProvidePausedChanged(providePaused bool, _ RpcVoid)
 }
 
 func (self *DeviceRemoteRpc) OfflineChanged(event *DeviceRemoteOfflineChangeEvent, _ RpcVoid) error {
-	glog.Infof("!!DeviceRemoteRpc OfflineChanged")
 	go self.deviceRemote.offlineChanged(event.Offline, event.VpnInterfaceWhileOffline)
 	return nil
 }
@@ -2412,21 +2610,23 @@ func (self *DeviceRemoteRpc) RouteLocalChanged(routeLocal bool, _ RpcVoid) error
 	return nil
 }
 
-func (self *DeviceRemoteRpc) ConnectLocationChanged(location *ConnectLocation, _ RpcVoid) error {
-	go self.deviceRemote.connectLocationChanged(location)
+func (self *DeviceRemoteRpc) ConnectLocationChanged(event *DeviceRemoteConnectLocationChangeEvent, _ RpcVoid) error {
+	go self.deviceRemote.connectLocationChanged(event.Location)
 	return nil
 }
 
-func (self *DeviceRemoteRpc) ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList, _ RpcVoid) error {
+func (self *DeviceRemoteRpc) ProvideSecretKeysChanged(provideSecretKeys []*ProvideSecretKey, _ RpcVoid) error {
+	provideSecretKeyList := NewProvideSecretKeyList()
+	provideSecretKeyList.addAll(provideSecretKeys...)
 	go self.deviceRemote.provideSecretKeysChanged(provideSecretKeyList)
 	return nil
 }
 
-func (self *DeviceRemoteRpc) WindowMonitorEventCallback(windowMonitorEvent *DeviceRemoteWindowMonitorEvent, _ RpcVoid) error {
+func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindowMonitorEvent, _ RpcVoid) error {
 	self.deviceRemote.windowMonitorEvent(
-		windowMonitorEvent.WindowIds,
-		windowMonitorEvent.WindowExpandEvent,
-		windowMonitorEvent.ProviderEvents,
+		event.WindowIds,
+		event.WindowExpandEvent,
+		event.ProviderEvents,
 	)
 	return nil
 }

@@ -216,6 +216,7 @@ const (
 	ProvideModeNetwork          ProvideMode = ProvideMode(protocol.ProvideMode_Network)
 	ProvideModeFriendsAndFamily ProvideMode = ProvideMode(protocol.ProvideMode_FriendsAndFamily)
 	ProvideModePublic           ProvideMode = ProvideMode(protocol.ProvideMode_Public)
+	ProvideModeStream           ProvideMode = ProvideMode(protocol.ProvideMode_Stream)
 )
 
 type LocationType = string

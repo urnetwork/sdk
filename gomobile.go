@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"time"
+	"slices"
 )
 
 // use a exported lists since arrays of structs are not exportable
@@ -32,6 +33,10 @@ func (self *exportedList[T]) Add(value T) {
 
 func (self *exportedList[T]) addAll(values ...T) {
 	self.values = append(self.values, values...)
+}
+
+func (self *exportedList[T]) getAll() []T {
+	return slices.Clone(self.values)
 }
 
 func (self *exportedList[T]) Contains(v T) bool {

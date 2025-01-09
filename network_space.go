@@ -38,6 +38,11 @@ type NetExtenderAutoConfigure struct {
 	ExtenderHostname string `json:"extender_hostname,omitempty"`
 }
 
+type ExportNetworkSpace struct {
+	Key *NetworkSpaceKey `json:"key,omitempty"`
+	Values  *NetworkSpaceValues `json:"values,omitempty"`
+}
+
 type NetworkSpaceKey struct {
 	HostName string `json:"host_name,omitempty"`
 	EnvName  string `json:"env_name,omitempty"`
@@ -143,7 +148,10 @@ func newNetworkSpace(
 		clientStrategy.SetCustomExtenders(extenderIpSecrets)
 	}
 
-	asyncLocalState := NewAsyncLocalState(storagePath)
+	var asyncLocalState *AsyncLocalState
+	if storagePath != "" {
+		asyncLocalState = NewAsyncLocalState(storagePath)
+	}
 
 	api := newApi(cancelCtx, clientStrategy, apiUrl)
 
@@ -202,11 +210,11 @@ func (self *NetworkSpace) ConnectLinkUrl(target string) string {
 }
 
 func (self *NetworkSpace) GetHostName() string {
-	return self.values.EnvSecret
+	return self.key.HostName
 }
 
 func (self *NetworkSpace) GetEnvName() string {
-	return self.values.EnvSecret
+	return self.key.EnvName
 }
 
 func (self *NetworkSpace) GetEnvSecret() string {
@@ -274,11 +282,15 @@ func (self *NetworkSpace) close() {
 }
 
 func (self *NetworkSpace) ToJson() (string, error) {
-	jsonBytes, err := json.Marshal(self)
+	exportNetworkSpace := &ExportNetworkSpace{
+		Key: &self.key,
+		Values: &self.values,
+	}
+	networkSpaceJsonBytes, err := json.Marshal(exportNetworkSpace)
 	if err != nil {
 		return "", err
 	}
-	return string(jsonBytes), nil
+	return string(networkSpaceJsonBytes), nil
 }
 
 type NetworkSpaceUpdate interface {
@@ -317,6 +329,10 @@ type NetworkSpaceManager struct {
 	activeNetworkSpaceChangeListeners *connect.CallbackList[ActiveNetworkSpaceChangeListener]
 }
 
+func NewNetworkSpaceManagerNoStorage() *NetworkSpaceManager {
+	return NewNetworkSpaceManager("")
+}
+
 func NewNetworkSpaceManager(storagePath string) *NetworkSpaceManager {
 	ctx := context.Background()
 
@@ -340,6 +356,9 @@ func newNetworkSpaceManagerWithContext(ctx context.Context, storagePath string) 
 }
 
 func (self *NetworkSpaceManager) store() error {
+	if self.storagePath == "" {
+		return nil
+	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -370,6 +389,9 @@ func (self *NetworkSpaceManager) store() error {
 }
 
 func (self *NetworkSpaceManager) load() (returnErr error) {
+	if self.storagePath == "" {
+		return nil
+	}
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -416,6 +438,9 @@ func (self *NetworkSpaceManager) load() (returnErr error) {
 }
 
 func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
+	if self.storagePath == "" {
+		return ""
+	}
 	envStoragePath := filepath.Join(self.storagePath, "network_spaces", key.EnvName)
 	if err := os.MkdirAll(envStoragePath, LocalStorageFilePermissions); err != nil {
 		panic(err)
@@ -575,7 +600,14 @@ func (self *NetworkSpaceManager) Close() {
 	self.cancel()
 }
 
-func (self *NetworkSpaceManager) ImportNetworkSpace(networkSpaceJson string) (*NetworkSpace, error) {
-	// FIXME
-	return nil, nil
+func (self *NetworkSpaceManager) ImportNetworkSpaceFromJson(networkSpaceJson string) (*NetworkSpace, error) {
+	exportNetworkSpace := ExportNetworkSpace{}
+	err := json.Unmarshal([]byte(networkSpaceJson), &exportNetworkSpace)
+	if err != nil {
+		return nil, err
+	}
+	networkSpace := self.updateNetworkSpace(exportNetworkSpace.Key, func(values *NetworkSpaceValues) {
+		*values = *exportNetworkSpace.Values
+	})
+	return networkSpace, nil
 }

@@ -88,20 +88,6 @@ type Device interface {
 
 	GetRouteLocal() bool
 
-	AddProvideChangeListener(listener ProvideChangeListener) Sub 
-
-	AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub 
-
-	AddOfflineChangeListener(listener OfflineChangeListener) Sub 
-
-	AddConnectChangeListener(listener ConnectChangeListener) Sub 
-
-	AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
-
-	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
-
-	AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
-
 	LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList)
 
 	InitProvideSecretKeys()
@@ -137,6 +123,22 @@ type Device interface {
 	Shuffle()
 
 	Close()
+
+	
+	AddProvideChangeListener(listener ProvideChangeListener) Sub 
+
+	AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub 
+
+	AddOfflineChangeListener(listener OfflineChangeListener) Sub 
+
+	AddConnectChangeListener(listener ConnectChangeListener) Sub 
+
+	AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
+
+	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
+
+	AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
+
 }
 
 // unexported to gomobile
