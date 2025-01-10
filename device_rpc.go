@@ -46,6 +46,11 @@ import (
 // the rpc is blocking on a single goproutine per peer
 
 
+type RemoteChangeListener interface {
+	RemoteChanged(remoteConnected bool)
+}
+
+
 type deviceRpcSettings struct {
 	RpcConnectTimeout time.Duration
 	RpcReconnectTimeout time.Duration
@@ -58,7 +63,7 @@ type deviceRpcSettings struct {
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
 		RpcConnectTimeout: 1 * time.Second,
-		RpcReconnectTimeout: 100 * time.Millisecond,
+		RpcReconnectTimeout: 1 * time.Second,
 		Address: requireRemoteAddress("127.0.0.1:12025"),
 		ResponseAddress: requireRemoteAddress("127.0.0.1:12026"),
 		InitialLockTimeout: 1 * time.Second,
@@ -87,6 +92,8 @@ type DeviceRemote struct {
 	
 	clientId connect.Id
 	clientStrategy *connect.ClientStrategy
+
+	remoteChangeListeners *connect.CallbackList[RemoteChangeListener]
 
 	stateLock sync.Mutex
 
@@ -161,6 +168,7 @@ func newDeviceRemoteWithOverrides(
 		syncMonitor: connect.NewMonitor(),
 		clientId: clientId,
 		clientStrategy: networkSpace.clientStrategy,
+		remoteChangeListeners: connect.NewCallbackList[RemoteChangeListener](),
 
 		provideChangeListeners: map[connect.Id]ProvideChangeListener{},
 		providePausedChangeListeners: map[connect.Id]ProvidePausedChangeListener{},
@@ -230,7 +238,8 @@ func (self *DeviceRemote) run() {
 				}
 				conn, err := dialer.DialContext(handleCtx, "tcp", self.settings.Address.HostPort())
 				if err != nil {
-					glog.Infof("[dr]sync connect err = %s", err)
+					// failure to connect here is normal if the local is not running
+					// glog.Infof("[dr]sync connect err = %s", err)
 					return
 				}
 				// FIXME
@@ -352,6 +361,8 @@ func (self *DeviceRemote) run() {
 			}()
 
 			if synced {
+				self.remoteChanged(true)
+
 				glog.Infof("[dr]sync done")
 				select {
 				case <- handleCtx.Done():
@@ -370,6 +381,8 @@ func (self *DeviceRemote) run() {
 					}
 					clear(self.httpResponseChannels)
 				}()
+
+				self.remoteChanged(false)
 			}
 
 
@@ -1635,6 +1648,19 @@ func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
 		// no one is still listening, drop the response	
 	}
 	close(httpResponseChannel)
+}
+
+func (self *DeviceRemote) AddRemoteChangeListener(listener RemoteChangeListener) Sub {
+	listenerId := self.remoteChangeListeners.Add(listener)
+	return newSub(func() {
+		self.remoteChangeListeners.Remove(listenerId)
+	})
+}
+
+func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
+	for _, listener := range self.remoteChangeListeners.Get() {
+		listener.RemoteChanged(remoteConnected)
+	}
 }
 
 
