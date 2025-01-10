@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"fmt"
-	"runtime/debug"
+	// "runtime/debug"
 
 	"golang.org/x/exp/maps"
 
@@ -101,6 +101,8 @@ type DeviceRemote struct {
 	provideSecretKeysListeners map[connect.Id]ProvideSecretKeysListener
 	windowMonitors map[connect.Id]*deviceRemoteWindowMonitor
 
+	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
+
 	state DeviceRemoteState
 
 	viewControllerManager
@@ -122,13 +124,23 @@ func newDeviceRemote(
 	if err != nil {
 		return nil, err
 	}
-	networkSpace.api.SetByJwt(byJwt)
-	return newDeviceRemoteWithOverrides(
+	api := networkSpace.GetApi()
+	api.SetByJwt(byJwt)
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
 		settings,
 		clientId,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	api.setHttpPostRaw(deviceRemote.httpPostRaw)
+	api.setHttpGetRaw(deviceRemote.httpGetRaw)
+
+	return deviceRemote, nil
 }
 
 func newDeviceRemoteWithOverrides(
@@ -158,6 +170,7 @@ func newDeviceRemoteWithOverrides(
 		connectLocationChangeListeners: map[connect.Id]ConnectLocationChangeListener{},
 		provideSecretKeysListeners: map[connect.Id]ProvideSecretKeysListener{},
 		windowMonitors: map[connect.Id]*deviceRemoteWindowMonitor{},
+		httpResponseChannels: map[connect.Id]chan *DeviceRemoteHttpResponse{},
 	}
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
@@ -169,13 +182,13 @@ func newDeviceRemoteWithOverrides(
 }
 
 func (self *DeviceRemote) run() {
-	defer func() {
-		if r := recover(); r != nil {
-			glog.Errorf("[dr]unrecovered = %s", r)
-			debug.PrintStack()
-			panic(r)
-		}
-	}()
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		glog.Errorf("[dr]unrecovered = %s", r)
+	// 		debug.PrintStack()
+	// 		panic(r)
+	// 	}
+	// }()
 
 	initialLock := true
 	intialLockEndTime := time.Now().Add(self.settings.InitialLockTimeout)
@@ -350,6 +363,12 @@ func (self *DeviceRemote) run() {
 					defer self.stateLock.Unlock()
 					self.service.Close()
 					self.service = nil
+
+					// close pending http responses
+					for _, responseChannel := range self.httpResponseChannels {
+						close(responseChannel)
+					}
+					clear(self.httpResponseChannels)
 				}()
 			}
 
@@ -407,6 +426,12 @@ func (self *DeviceRemote) waitForSync(timeout time.Duration) bool {
 			return true
 		}
 	}
+}
+
+func (self *DeviceRemote) getService() *rpc.Client {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.service
 }
 
 func (self *DeviceRemote) GetClientId() *Id {
@@ -532,24 +557,31 @@ func (self *DeviceRemote) GetProvideWhileDisconnected() bool {
 }
 
 func (self *DeviceRemote) SetProvideWhileDisconnected(provideWhileDisconnected bool) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	success := func()(bool) {
-		if self.service == nil {
-			return false
-		}
+		success := func()(bool) {
+			if self.service == nil {
+				return false
+			}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetProvideWhileDisconnected", provideWhileDisconnected)
-		if err != nil {
-			return false
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetProvideWhileDisconnected", provideWhileDisconnected)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.ProvideWhileDisconnected.Unset()
+		} else {
+			self.state.ProvideWhileDisconnected.Set(provideWhileDisconnected)
+			event = true
 		}
-		return true
 	}()
-	if success {
-		self.state.ProvideWhileDisconnected.Unset()
-	} else {
-		self.state.ProvideWhileDisconnected.Set(provideWhileDisconnected)
+	if event {
+		self.provideChanged(self.GetProvideEnabled())
 	}
 }
 
@@ -808,8 +840,12 @@ func (self *DeviceRemote) GetProvideEnabled() bool {
 	}()
 	if success {
 		return provideEnabled
-	} else {	
-		return false
+	} else {
+		if self.state.ProvideWhileDisconnected.IsSet {
+			return self.state.ProvideWhileDisconnected.Value
+		} else {
+			return false
+		}
 	}
 }
 
@@ -1445,12 +1481,176 @@ func (self *DeviceRemote) windowMonitorEvent(
 }
 
 
+// safe to call on multiple goroutines
+func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+	// if server is set, use remote
+	// else use local
+
+	requestCtx, requestCancel := context.WithCancel(ctx)
+	defer requestCancel()
+	go func() {
+		defer requestCancel()
+		select {
+		case <- self.ctx.Done():
+		case <- requestCtx.Done():
+		}
+	}()
+
+	service := self.getService()
+
+	if service != nil {
+		httpRequestId := connect.NewId()
+		httpRequest := &DeviceRemoteHttpRequest{
+			RequestId: httpRequestId,
+			RequestUrl: requestUrl,
+			RequestBodyBytes: requestBodyBytes,
+			ByJwt: byJwt,
+		}
+
+		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+
+		var err error
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			
+			err = rpcCallVoid(service, "DeviceLocalRpc.HttpPostRaw", httpRequest)
+			if err != nil {
+				close(httpResponseChannel)
+				return
+			}
+
+			self.httpResponseChannels[httpRequestId] = httpResponseChannel
+		}()
+
+		if err != nil {
+			return nil, err
+		}
+
+		select {
+		case httpResponse, ok := <- httpResponseChannel:
+			if !ok {
+				return nil, fmt.Errorf("Done")
+			}
+			return httpResponse.BodyBytes, httpResponse.toError()
+		case <- requestCtx.Done():
+			return nil, fmt.Errorf("Done")
+		}
+	} else {
+		return connect.HttpPostWithStrategyRaw(
+			requestCtx,
+			self.clientStrategy,
+			requestUrl,
+			requestBodyBytes,
+			byJwt,
+		)
+	}
+}
+
+// safe to call on multiple goroutines
+func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+	// if server is set, use remote
+	// else use local
+
+	requestCtx, requestCancel := context.WithCancel(ctx)
+	defer requestCancel()
+	go func() {
+		defer requestCancel()
+		select {
+		case <- self.ctx.Done():
+		case <- requestCtx.Done():
+		}
+	}()
+
+	service := self.getService()
+
+	if service != nil {
+		httpRequestId := connect.NewId()
+		httpRequest := &DeviceRemoteHttpRequest{
+			RequestId: httpRequestId,
+			RequestUrl: requestUrl,
+			ByJwt: byJwt,
+		}
+
+		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+
+		var err error
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			
+			err = rpcCallVoid(service, "DeviceLocalRpc.HttpGetRaw", httpRequest)
+			if err != nil {
+				close(httpResponseChannel)
+				return
+			}
+
+			self.httpResponseChannels[httpRequestId] = httpResponseChannel
+		}()
+
+		if err != nil {
+			return nil, err
+		}
+
+		select {
+		case httpResponse, ok := <- httpResponseChannel:
+			if !ok {
+				return nil, fmt.Errorf("Done")
+			}
+			return httpResponse.BodyBytes, httpResponse.toError()
+		case <- requestCtx.Done():
+			return nil, fmt.Errorf("Done")
+		}
+	} else {
+		return connect.HttpGetWithStrategyRaw(
+			requestCtx,
+			self.clientStrategy,
+			requestUrl,
+			byJwt,
+		)
+	}
+}
+
+func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
+	httpRequestId := httpResponse.RequestId
+
+	var ok bool
+	var httpResponseChannel chan *DeviceRemoteHttpResponse
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		httpResponseChannel, ok = self.httpResponseChannels[httpRequestId]
+		if ok {
+			delete(self.httpResponseChannels, httpRequestId)
+		}
+	}()
+	if !ok {
+		return
+	}
+
+	select {
+	case httpResponseChannel <- httpResponse:
+	default:
+		// no one is still listening, drop the response	
+	}
+	close(httpResponseChannel)
+}
+
+
+
+
+// *important rpc note* gob encoding cannot encode fields that are not exported
+// so our usual gomobile types that have private fields cannot be properly sent via rpc
+// for rpc we redefine these gomobile types so that they can be gob encoded
 
 // *important type note*
 // all of the types below here should *not* be exported by gomobile
 // we use a made-up annotation gomobile:noexport to try to document this
 // however, the types must be exported for net.rpc to work
 // this leads to some unfortunate gomobile warnings currently
+
+
 
 //gomobile:noexport
 type DeviceRemoteDestination struct {
@@ -1809,6 +2009,46 @@ func rpcCall[T any](service *rpc.Client, name string, arg any) (T, error) {
 }
 
 
+//gomobile:noexport
+type DeviceRemoteHttpRequest struct {
+	RequestId connect.Id
+	RequestUrl string
+	RequestBodyBytes []byte
+	ByJwt string
+}
+
+
+//gomobile:noexport
+type DeviceRemoteHttpResponse struct {
+	RequestId connect.Id
+	BodyBytes []byte
+	Error *DeviceRemoteHttpResponseError
+}
+
+func newDeviceRemoteHttpResponse(requestId connect.Id, bodyBytes []byte, err error) *DeviceRemoteHttpResponse {
+	httpResponse := &DeviceRemoteHttpResponse{
+		RequestId: requestId,
+		BodyBytes: bodyBytes,
+	}
+	if err != nil {
+		httpResponse.Error = &DeviceRemoteHttpResponseError{
+			Error: fmt.Sprintf("%v", err),
+		}
+	}
+	return httpResponse
+}
+
+func (self *DeviceRemoteHttpResponse) toError() error {
+	if self.Error != nil {
+		return fmt.Errorf("%s", self.Error.Error)
+	}
+	return nil
+}
+
+//gomobile:noexport
+type DeviceRemoteHttpResponseError struct {
+	Error string
+}
 
 
 // rpc are called on a single go routine
@@ -1964,12 +2204,12 @@ func (self *DeviceLocalRpc) Sync(
 	syncRequest *DeviceRemoteSyncRequest,
 	syncResponse **DeviceRemoteSyncResponse,
 ) error {
-	defer func() {
-		if r := recover(); r != nil {
-			debug.PrintStack()
-			panic(r)
-		}
-	}()
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		debug.PrintStack()
+	// 		panic(r)
+	// 	}
+	// }()
 
 	glog.Infof("s1")
 
@@ -2820,6 +3060,53 @@ func (self *DeviceLocalRpc) Shuffle(_ RpcNoArg, _ RpcVoid) error {
 	return nil
 }
 
+func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
+	go func() {
+		bodyBytes, err := connect.HttpPostWithStrategyRaw(
+			self.ctx,
+			self.deviceLocal.clientStrategy,
+			httpRequest.RequestUrl,
+			httpRequest.RequestBodyBytes,
+			httpRequest.ByJwt,
+		)
+
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			
+			if self.service != nil {
+				httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
+
+				rpcCallVoid(self.service, "DeviceRemoteRpc.HttpResponse", httpResponse)
+			}
+		}()
+	}()
+	return nil
+}
+
+func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
+	go func() {
+		bodyBytes, err := connect.HttpGetWithStrategyRaw(
+			self.ctx,
+			self.deviceLocal.clientStrategy,
+			httpRequest.RequestUrl,
+			httpRequest.ByJwt,
+		)
+
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			
+			if self.service != nil {
+				httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
+
+				rpcCallVoid(self.service, "DeviceRemoteRpc.HttpResponse", httpResponse)
+			}
+		}()
+	}()
+	return nil
+}
+
 func (self *DeviceLocalRpc) Close() {
 	// self.stateLock.Lock()
 	// defer self.stateLock.Unlock()
@@ -2905,6 +3192,12 @@ func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindo
 		event.WindowExpandEvent,
 		event.ProviderEvents,
 	)
+	return nil
+}
+
+func (self *DeviceRemoteRpc) HttpResponse(httpResponse *DeviceRemoteHttpResponse, _ RpcVoid) error {
+	glog.Infof("[drrpc]HttpResponse")
+	go self.deviceRemote.httpResponse(httpResponse)
 	return nil
 }
 

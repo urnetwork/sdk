@@ -174,10 +174,13 @@ func newNetworkSpace(
 
 func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
 	key := NetworkSpaceKey{
-
+		HostName: "test",
+		EnvName: "test",
 	}
 	values := NetworkSpaceValues{
-
+		Bundled: true,
+		NetExposeServerIps: true,
+		NetExposeServerHostNames: true,
 	}
 	storagePath, err := os.MkdirTemp("", "networkspace")
 	if err != nil {

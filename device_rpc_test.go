@@ -186,9 +186,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			// sync
 
-
-
-			// FIXME enable RPC
+			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
 				networkSpace,
 				byJwt,
@@ -264,6 +262,73 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 }
 
+
+
+func TestDeviceRemoteApi(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		defaultDeviceRpcSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+
+
+
+	// enable rpc
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		true,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+
+	deviceRemote.Sync()
+
+	deviceRemote.waitForSync(5 * time.Second)
+
+
+
+	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	assert.Equal(t, err, nil)
+	assert.NotEqual(t, bodyBytes, nil)
+	glog.Infof("response body=%s", string(bodyBytes))
+	assert.NotEqual(t, len(bodyBytes), 0)
+
+	// FIXME allow POST on the hello route
+	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	// assert.Equal(t, err, nil)
+
+
+}
 
 
 type testing_listener struct {

@@ -125,7 +125,7 @@ type Device interface {
 	Close()
 
 	Cancel()
-	
+
 	GetDone() bool
 
 	
@@ -365,7 +365,8 @@ func newDeviceLocalWithOverrides(
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	// api := newBringYourApiWithContext(cancelCtx, clientStrategy, apiUrl)
-	networkSpace.api.SetByJwt(byJwt)
+	api := networkSpace.GetApi()
+	api.SetByJwt(byJwt)
 
 	deviceLocal := &DeviceLocal{
 		networkSpace: networkSpace,

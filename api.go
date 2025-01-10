@@ -21,6 +21,7 @@ import (
 
 // the api is asychronous, which is the most natural for the target platforms
 
+
 type Api struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -31,6 +32,9 @@ type Api struct {
 
 	mutex sync.Mutex
 	byJwt string
+
+	httpPostRaw connect.HttpPostRawFunction
+	httpGetRaw connect.HttpGetRawFunction
 }
 
 func newApi(
@@ -40,11 +44,20 @@ func newApi(
 ) *Api {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
+	httpPostRaw := func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string)([]byte, error) {
+		return connect.HttpPostWithStrategyRaw(ctx, clientStrategy, requestUrl, requestBodyBytes, byJwt)
+	}
+	httpGetRaw := func(ctx context.Context, requestUrl string, byJwt string)([]byte, error) {
+		return connect.HttpGetWithStrategyRaw(ctx, clientStrategy, requestUrl, byJwt)
+	}
+
 	return &Api{
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
 		apiUrl:         apiUrl,
+		httpPostRaw:  httpPostRaw,
+		httpGetRaw:  httpGetRaw,
 	}
 }
 
@@ -62,6 +75,36 @@ func (self *Api) GetByJwt() string {
 
 	return self.byJwt
 }
+
+
+func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	self.httpPostRaw = httpPostRaw
+}
+
+func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	return self.httpPostRaw
+}
+
+func (self *Api) setHttpGetRaw(httpGetRaw connect.HttpGetRawFunction) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	self.httpGetRaw = httpGetRaw
+}
+
+func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	return self.httpGetRaw
+}
+
 
 func (self *Api) Close() {
 	self.cancel()
@@ -98,9 +141,9 @@ type AuthLoginResultNetwork struct {
 
 func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/login", self.apiUrl),
 			authLogin,
 			self.GetByJwt(),
@@ -139,9 +182,9 @@ type AuthLoginWithPasswordResultError struct {
 
 func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/login-with-password", self.apiUrl),
 			authLoginWithPassword,
 			self.GetByJwt(),
@@ -173,9 +216,9 @@ type AuthVerifyResultError struct {
 
 func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/verify", self.apiUrl),
 			authVerify,
 			self.GetByJwt(),
@@ -197,9 +240,9 @@ type AuthPasswordResetResult struct {
 
 func (self *Api) AuthPasswordReset(authPasswordReset *AuthPasswordResetArgs, callback AuthPasswordResetCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/password-reset", self.apiUrl),
 			authPasswordReset,
 			self.GetByJwt(),
@@ -222,9 +265,9 @@ type AuthVerifySendResult struct {
 
 func (self *Api) AuthVerifySend(authVerifySend *AuthVerifySendArgs, callback AuthVerifySendCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/verify-send", self.apiUrl),
 			authVerifySend,
 			self.GetByJwt(),
@@ -246,9 +289,9 @@ type NetworkCheckResult struct {
 
 func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCheckCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/network-check", self.apiUrl),
 			networkCheck,
 			self.GetByJwt(),
@@ -292,9 +335,9 @@ type NetworkCreateResultError struct {
 
 func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/network-create", self.apiUrl),
 			networkCreate,
 			self.GetByJwt(),
@@ -327,9 +370,9 @@ type AuthNetworkClientError struct {
 
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/auth-client", self.apiUrl),
 			authNetworkClient,
 			self.GetByJwt(),
@@ -381,9 +424,9 @@ type NetworkClientConnection struct {
 
 func (self *Api) GetNetworkClients(callback GetNetworkClientsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/network/clients", self.apiUrl),
 			self.GetByJwt(),
 			&NetworkClientsResult{},
@@ -447,9 +490,9 @@ type LocationDeviceResult struct {
 
 func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/network/provider-locations", self.apiUrl),
 			self.GetByJwt(),
 			&FindLocationsResult{},
@@ -460,9 +503,9 @@ func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
 
 func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/find-provider-locations", self.apiUrl),
 			findLocations,
 			self.GetByJwt(),
@@ -474,9 +517,9 @@ func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callbac
 
 func (self *Api) FindLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/find-locations", self.apiUrl),
 			findLocations,
 			self.GetByJwt(),
@@ -501,9 +544,9 @@ type FindProvidersResult struct {
 
 func (self *Api) FindProviders(findProviders *FindProvidersArgs, callback FindProvidersCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/find-providers", self.apiUrl),
 			findProviders,
 			self.GetByJwt(),
@@ -560,9 +603,9 @@ type FindProvidersProvider struct {
 
 func (self *Api) FindProviders2(findProviders2 *FindProviders2Args, callback FindProviders2Callback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/find-providers2", self.apiUrl),
 			findProviders2,
 			self.GetByJwt(),
@@ -586,9 +629,9 @@ type WalletCircleInitError struct {
 
 func (self *Api) WalletCircleInit(callback WalletCircleInitCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/wallet/circle-init", self.apiUrl),
 			nil,
 			self.GetByJwt(),
@@ -611,9 +654,9 @@ type WalletValidateAddressResult struct {
 
 func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddressArgs, callback WalletValidateAddressCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/wallet/validate-address", self.apiUrl),
 			walletValidateAddress,
 			self.GetByJwt(),
@@ -653,9 +696,9 @@ type CreateAccountWalletCallback connect.ApiCallback[*CreateAccountWalletResult]
 func (self *Api) CreateAccountWallet(createAccountWallet *CreateAccountWalletArgs, callback CreateAccountWalletCallback) {
 
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/account/wallet", self.apiUrl),
 			createAccountWallet,
 			self.GetByJwt(),
@@ -679,9 +722,9 @@ type SetPayoutWalletCallback connect.ApiCallback[*SetPayoutWalletResult]
 
 func (self *Api) SetPayoutWallet(payoutWallet *SetPayoutWalletArgs, callback SetPayoutWalletCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/account/payout-wallet", self.apiUrl),
 			payoutWallet,
 			self.GetByJwt(),
@@ -699,9 +742,9 @@ type GetAccountWalletsCallback connect.ApiCallback[*GetAccountWalletsResult]
 
 func (self *Api) GetAccountWallets(callback GetAccountWalletsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/account/wallets", self.apiUrl),
 			self.GetByJwt(),
 			&GetAccountWalletsResult{},
@@ -718,9 +761,9 @@ type GetPayoutWalletCallback connect.ApiCallback[*GetPayoutWalletIdResult]
 
 func (self *Api) GetPayoutWallet(callback GetPayoutWalletCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/account/payout-wallet", self.apiUrl),
 			self.GetByJwt(),
 			&GetPayoutWalletIdResult{},
@@ -751,9 +794,9 @@ type WalletBalanceResult struct {
 
 func (self *Api) WalletBalance(callback WalletBalanceCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/wallet/balance", self.apiUrl),
 			self.GetByJwt(),
 			&WalletBalanceResult{},
@@ -775,9 +818,9 @@ type GetNetworkAccountPaymentsResult struct {
 
 func (self *Api) GetAccountPayments(callback GetAccountPaymentsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/account/payments", self.apiUrl),
 			self.byJwt,
 			&GetNetworkAccountPaymentsResult{},
@@ -806,9 +849,9 @@ type WalletCircleTransferOutError struct {
 
 func (self *Api) WalletCircleTransferOut(walletCircleTransferOut *WalletCircleTransferOutArgs, callback WalletCircleTransferOutCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/wallet/circle-transfer-out", self.apiUrl),
 			walletCircleTransferOut,
 			self.GetByJwt(),
@@ -848,9 +891,9 @@ type SubscriptionBalanceResult struct {
 
 func (self *Api) SubscriptionBalance(callback SubscriptionBalanceCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/subscription/balance", self.apiUrl),
 			self.GetByJwt(),
 			&SubscriptionBalanceResult{},
@@ -879,9 +922,9 @@ type SubscriptionCreatePaymentIdError struct {
 
 func (self *Api) SubscriptionCreatePaymentId(createPaymentId *SubscriptionCreatePaymentIdArgs, callback SubscriptionCreatePaymentIdCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/subscription/create-payment-id", self.apiUrl),
 			createPaymentId,
 			self.GetByJwt(),
@@ -908,9 +951,9 @@ type GetNetworkUserResult struct {
 type GetNetworkUserCallback connect.ApiCallback[*GetNetworkUserResult]
 
 func (self *Api) GetNetworkUser(callback GetNetworkUserCallback) (*GetNetworkUserResult, error) {
-	return connect.HttpGetWithStrategy(
+	return connect.HttpGetWithRawFunction(
 		self.ctx,
-		self.clientStrategy,
+		self.getHttpGetRaw(),
 		fmt.Sprintf("%s/network/user", self.apiUrl),
 		self.GetByJwt(),
 		&GetNetworkUserResult{},
@@ -938,9 +981,9 @@ type NetworkUserUpdateCallback connect.ApiCallback[*NetworkUserUpdateResult]
 
 func (self *Api) NetworkUserUpdate(updateNetworkUser *NetworkUserUpdateArgs, callback NetworkUserUpdateCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/user/update", self.apiUrl),
 			updateNetworkUser,
 			self.GetByJwt(),
@@ -970,9 +1013,9 @@ func (self *Api) GetNetworkReferralCode(
 	callback GetNetworkReferralCodeCallback,
 ) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/account/referral-code", self.apiUrl),
 			self.GetByJwt(),
 			&GetNetworkReferralCodeResult{},
@@ -1005,9 +1048,9 @@ func (self *Api) RemoveWallet(
 	callback RemoveWalletCallback,
 ) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/account/wallets/remove", self.apiUrl),
 			removeWallet,
 			self.GetByJwt(),
@@ -1038,9 +1081,9 @@ func (self *Api) SendFeedback(
 	callback SendFeedbackCallback,
 ) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/feedback/send-feedback", self.apiUrl),
 			sendFeedback,
 			self.GetByJwt(),
@@ -1067,9 +1110,9 @@ func (self *Api) AccountPreferencesUpdate(
 	callback AccountPreferencesSetCallback,
 ) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/preferences/set-preferences", self.apiUrl),
 			accountPreferences,
 			self.GetByJwt(),
@@ -1091,9 +1134,9 @@ type AccountPreferencesGetCallback connect.ApiCallback[*AccountPreferencesGetRes
 
 func (self *Api) AccountPreferencesGet(callback AccountPreferencesGetCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/preferences", self.apiUrl),
 			self.GetByJwt(),
 			&AccountPreferencesGetResult{},
@@ -1115,9 +1158,9 @@ type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
 
 func (self *Api) GetTransferStats(callback GetTransferStatsCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithStrategy(
+		connect.HttpGetWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/transfer/stats", self.apiUrl),
 			self.GetByJwt(),
 			&TransferStatsResult{},
@@ -1150,9 +1193,9 @@ func (self *Api) AuthCodeLogin(
 	codeLoginArgs *AuthCodeLoginArgs,
 	callback AuthCodeLoginCallback,
 ) (*AuthCodeLoginResult, error) {
-	return connect.HttpPostWithStrategy(
+	return connect.HttpPostWithRawFunction(
 		self.ctx,
-		self.clientStrategy,
+		self.getHttpPostRaw(),
 		fmt.Sprintf("%s/auth/code-login", self.apiUrl),
 		codeLoginArgs,
 		self.GetByJwt(),
@@ -1195,9 +1238,9 @@ type UpgradeGuesteResultError struct {
 
 func (self *Api) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGuestCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithStrategy(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.clientStrategy,
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/upgrade-guest", self.apiUrl),
 			upgradeGuest,
 			self.GetByJwt(),
