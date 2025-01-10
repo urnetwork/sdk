@@ -14,7 +14,7 @@ import (
 	// "net/http"
 	// _ "net/http/pprof"
 
-	// "github.com/golang/glog"
+	"github.com/golang/glog"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/urnetwork/connect"
@@ -404,7 +404,7 @@ func DecodeBase58(data string) ([]byte, error) {
 	result := base58.Decode(data)
 	if len(result) == 0 {
 		err := fmt.Errorf("DecodeBase58 error: invalid base58 string")
-		deviceLog("DecodeBase58 error: %v", err)
+		glog.Errorf("DecodeBase58 error: %v", err)
 		return nil, err
 	}
 
