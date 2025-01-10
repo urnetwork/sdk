@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+
 	// "hash/fnv"
 	"encoding/json"
 	"flag"
@@ -15,8 +16,10 @@ import (
 
 	// "github.com/golang/glog"
 
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/protocol"
+	"golang.org/x/crypto/nacl/box"
 )
 
 // note: publicly exported types must be fully contained in the `client` package tree
@@ -384,4 +387,72 @@ func (self *ConnectLocationId) String() string {
 type ProvideSecretKey struct {
 	ProvideMode      ProvideMode `json:"provide_mode"`
 	ProvideSecretKey string      `json:"provide_secret_key"`
+}
+
+/**
+ * =============================================================
+ * Utils for encoding/decoding base58, box encryption/decryption
+ * Used for fetching the wallet address from Solflare
+ * =============================================================
+ */
+
+func EncodeBase58(data []byte) string {
+	return base58.Encode(data)
+}
+
+func DecodeBase58(data string) ([]byte, error) {
+	result := base58.Decode(data)
+	if len(result) == 0 {
+		err := fmt.Errorf("DecodeBase58 error: invalid base58 string")
+		deviceLog("DecodeBase58 error: %v", err)
+		return nil, err
+	}
+
+	return result, nil
+
+}
+
+const (
+	BoxOverhead = box.Overhead // 16 bytes for auth
+)
+
+func DecryptData(encryptedDataBase58, nonceBase58, sharedSecretBase58 string) ([]byte, error) {
+	encryptedData := base58.Decode(encryptedDataBase58)
+	nonce := base58.Decode(nonceBase58)
+	sharedSecret := base58.Decode(sharedSecretBase58)
+
+	if len(nonce) != 24 {
+		return nil, fmt.Errorf("invalid nonce length")
+	}
+
+	if len(sharedSecret) != 32 {
+		return nil, fmt.Errorf("invalid shared secret length")
+	}
+
+	var n [24]byte
+	var k [32]byte
+	copy(n[:], nonce)
+	copy(k[:], sharedSecret)
+
+	decrypted, ok := box.OpenAfterPrecomputation(nil, encryptedData, &n, &k)
+	if !ok {
+		return nil, fmt.Errorf("decryption failed")
+	}
+
+	return decrypted, nil
+}
+
+func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
+	if len(privateKey) != 32 || len(publicKey) != 32 {
+		return nil, fmt.Errorf("invalid key length")
+	}
+
+	var priv, pub [32]byte
+	copy(priv[:], privateKey)
+	copy(pub[:], publicKey)
+
+	shared := new([32]byte)
+	box.Precompute(shared, &pub, &priv)
+
+	return shared[:], nil
 }
