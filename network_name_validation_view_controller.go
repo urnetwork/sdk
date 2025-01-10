@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
 
@@ -12,7 +14,7 @@ type NetworkNameValidationViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	api *BringYourApi
+	api *Api
 
 	// device *BringYourDevice
 
@@ -22,11 +24,11 @@ type NetworkNameValidationViewController struct {
 	networkCheck *networkCheck
 }
 
-func NewNetworkNameValidationViewController(api *BringYourApi) *NetworkNameValidationViewController {
+func NewNetworkNameValidationViewController(api *Api) *NetworkNameValidationViewController {
 	return newNetworkNameValidationViewController(context.Background(), api)
 }
 
-func newNetworkNameValidationViewController(ctx context.Context, api *BringYourApi) *NetworkNameValidationViewController {
+func newNetworkNameValidationViewController(ctx context.Context, api *Api) *NetworkNameValidationViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	vc := &NetworkNameValidationViewController{
 		ctx:    cancelCtx,
@@ -48,7 +50,7 @@ func (self *NetworkNameValidationViewController) Stop() {
 }
 
 func (self *NetworkNameValidationViewController) Close() {
-	lvcLog("close")
+	glog.Info("[nnvvc]close")
 
 	self.cancel()
 }
@@ -61,7 +63,7 @@ type networkCheck struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	api *BringYourApi
+	api *Api
 
 	timeout time.Duration
 
@@ -76,7 +78,7 @@ type networkCheck struct {
 
 func newNetworkCheck(
 	ctx context.Context,
-	api *BringYourApi,
+	api *Api,
 	timeout time.Duration,
 ) *networkCheck {
 	cancelCtx, cancel := context.WithCancel(ctx)

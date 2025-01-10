@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var nuLog = logFn("network_user_view_controller")
 
 type IsNetworkUserLoadingListener interface {
 	StateChanged(bool)
@@ -41,7 +41,7 @@ type NetworkUser struct {
 type NetworkUserViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -56,7 +56,7 @@ type NetworkUserViewController struct {
 	networkUserUpdateSuccessListener *connect.CallbackList[NetworkUserUpdateSuccessListener]
 }
 
-func newNetworkUserViewController(ctx context.Context, device *BringYourDevice) *NetworkUserViewController {
+func newNetworkUserViewController(ctx context.Context, device Device) *NetworkUserViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &NetworkUserViewController{
@@ -83,7 +83,7 @@ func (vc *NetworkUserViewController) Start() {
 func (vc *NetworkUserViewController) Stop() {}
 
 func (vc *NetworkUserViewController) Close() {
-	nuLog("close")
+	glog.Info("[nuvc]close")
 
 	vc.cancel()
 }
@@ -152,13 +152,13 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 			func(result *GetNetworkUserResult, err error) {
 
 				if err != nil {
-					nuLog("fetchNetworkUser go error %s", err.Error())
+					glog.Infof("[nuvc]fetchNetworkUser go error %s", err)
 					self.setIsLoading(false)
 					return
 				}
 
 				if result.Error != nil {
-					nuLog("fetchNetworkUser response error %s", result.Error.Message)
+					glog.Infof("[nuvc]fetchNetworkUser response error %s", result.Error.Message)
 					self.setIsLoading(false)
 					return
 				}

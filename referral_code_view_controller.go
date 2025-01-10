@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var referralCodeLog = logFn("referral_code_view_controller")
 
 type ReferralCodeListener interface {
 	ReferralCodeUpdated(string)
@@ -21,12 +21,12 @@ type ReferralCodeViewController struct {
 
 	isFetching bool
 
-	device *BringYourDevice
+	device Device
 
 	referralCodeListeners *connect.CallbackList[ReferralCodeListener]
 }
 
-func newReferralCodeViewController(ctx context.Context, device *BringYourDevice) *ReferralCodeViewController {
+func newReferralCodeViewController(ctx context.Context, device Device) *ReferralCodeViewController {
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -64,7 +64,7 @@ func (self *ReferralCodeViewController) Start() {
 func (self *ReferralCodeViewController) Stop() {}
 
 func (self *ReferralCodeViewController) Close() {
-	referralCodeLog("close")
+	glog.Info("[rcvc]close")
 
 	self.cancel()
 }
@@ -86,7 +86,7 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 					func(result *GetNetworkReferralCodeResult, err error) {
 						if err != nil {
 							self.setIsFetching(false)
-							referralCodeLog("error fetching referral code: %s", err.Error())
+							glog.Infof("[rcvc]error fetching referral code: %s", err)
 							return
 						}
 

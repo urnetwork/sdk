@@ -9,10 +9,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var locationsVcLog = logFn("locations_view_controller")
 
 type FilterLocationsState = string
 
@@ -42,7 +42,7 @@ type FilteredLocationsListener interface {
 type LocationsViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -56,7 +56,7 @@ type LocationsViewController struct {
 	// filteredLocationsStateListeners *connect.CallbackList[FilteredLocationsStateListener]
 }
 
-func newLocationsViewController(ctx context.Context, device *BringYourDevice) *LocationsViewController {
+func newLocationsViewController(ctx context.Context, device Device) *LocationsViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &LocationsViewController{
@@ -82,7 +82,7 @@ func (self *LocationsViewController) Start() {
 func (self *LocationsViewController) Stop() {}
 
 func (self *LocationsViewController) Close() {
-	locationsVcLog("close")
+	glog.Info("[lcvc]close")
 
 	self.cancel()
 }
@@ -137,7 +137,7 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 	// api call, call callback
 	filter = strings.TrimSpace(filter)
 
-	locationsVcLog("FILTER LOCATIONS %s", filter)
+	// locationsVcLog("FILTER LOCATIONS %s", filter)
 	// self.filterLocationsStateChanged(LocationsLoading)
 
 	var filterSequenceNumber int64
@@ -152,11 +152,11 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 
 	self.filteredLocationsChanged(self.GetFilteredLocations(), self.GetFilteredLocationState())
 
-	locationsVcLog("POST FILTER LOCATIONS %s", filter)
+	// locationsVcLog("POST FILTER LOCATIONS %s", filter)
 
 	callback := FindLocationsCallback(connect.NewApiCallback[*FindLocationsResult](
 		func(result *FindLocationsResult, err error) {
-			locationsVcLog("FIND LOCATIONS RESULT %s %s", result, err)
+			// locationsVcLog("FIND LOCATIONS RESULT %s %s", result, err)
 
 			update := false
 			func() {

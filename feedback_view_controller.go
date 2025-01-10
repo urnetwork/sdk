@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var fbvcLog = logFn("feedback_view_controller")
 
 type IsSendingFeedbackListener interface {
 	StateChanged(bool)
@@ -16,7 +16,7 @@ type IsSendingFeedbackListener interface {
 type FeedbackViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	stateLock sync.Mutex
 
@@ -25,7 +25,7 @@ type FeedbackViewController struct {
 	isSendingFeedbackListeners *connect.CallbackList[IsSendingFeedbackListener]
 }
 
-func newFeedbackViewController(ctx context.Context, device *BringYourDevice) *FeedbackViewController {
+func newFeedbackViewController(ctx context.Context, device Device) *FeedbackViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &FeedbackViewController{
@@ -44,7 +44,7 @@ func (vc *FeedbackViewController) Start() {}
 func (vc *FeedbackViewController) Stop() {}
 
 func (vc *FeedbackViewController) Close() {
-	fbvcLog("close")
+	glog.Info("[fbvc]close")
 
 	vc.cancel()
 }

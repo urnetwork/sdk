@@ -4,12 +4,11 @@ import (
 	"encoding/json"
 	"reflect"
 	"time"
+	"slices"
 )
 
 // use a exported lists since arrays of structs are not exportable
 // (see notes in `client.go`)
-
-var gmLog = logFn("gomobile")
 
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type exportedList[T any] struct {
@@ -34,6 +33,10 @@ func (self *exportedList[T]) Add(value T) {
 
 func (self *exportedList[T]) addAll(values ...T) {
 	self.values = append(self.values, values...)
+}
+
+func (self *exportedList[T]) getAll() []T {
+	return slices.Clone(self.values)
 }
 
 func (self *exportedList[T]) Contains(v T) bool {

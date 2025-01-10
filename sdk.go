@@ -14,7 +14,7 @@ import (
 	// "net/http"
 	// _ "net/http/pprof"
 
-	// "github.com/golang/glog"
+	"github.com/golang/glog"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/urnetwork/connect"
@@ -33,6 +33,7 @@ import (
 // - redefined primitive types are not exportable. Use type aliases instead.
 // - arrays of structs are not exportable. See https://github.com/golang/go/issues/13445
 //   use the "ExportableList" workaround from `gomobile.go`
+// - exported names start with Get* and Set* to be compatible with target language features
 //
 // additionally, the entire bringyour.com/bringyour tree cannot be used because it pulls in the
 // `warp` environment expectations, which is not compatible with the client lib
@@ -72,6 +73,10 @@ func newId(id [16]byte) *Id {
 		id:    id,
 		IdStr: encodeUuid(id),
 	}
+}
+
+func NewId() *Id {
+	return newId(connect.NewId())
 }
 
 func ParseId(src string) (*Id, error) {
@@ -114,7 +119,7 @@ func (self *Id) MarshalJSON() ([]byte, error) {
 	buff.WriteString(encodeUuid(buf))
 	buff.WriteByte('"')
 	b := buff.Bytes()
-	gmLog("MARSHAL ID TO: %s", string(b))
+	// gmLog("MARSHAL ID TO: %s", string(b))
 	return b, nil
 }
 
@@ -214,6 +219,7 @@ const (
 	ProvideModeNetwork          ProvideMode = ProvideMode(protocol.ProvideMode_Network)
 	ProvideModeFriendsAndFamily ProvideMode = ProvideMode(protocol.ProvideMode_FriendsAndFamily)
 	ProvideModePublic           ProvideMode = ProvideMode(protocol.ProvideMode_Public)
+	ProvideModeStream           ProvideMode = ProvideMode(protocol.ProvideMode_Stream)
 )
 
 type LocationType = string
@@ -398,7 +404,7 @@ func DecodeBase58(data string) ([]byte, error) {
 	result := base58.Decode(data)
 	if len(result) == 0 {
 		err := fmt.Errorf("DecodeBase58 error: invalid base58 string")
-		deviceLog("DecodeBase58 error: %v", err)
+		glog.Errorf("DecodeBase58 error: %v", err)
 		return nil, err
 	}
 

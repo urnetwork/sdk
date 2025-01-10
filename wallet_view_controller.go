@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	"github.com/urnetwork/connect"
 )
-
-var wvcLog = logFn("wallet_view_controller")
 
 type AccountWalletsListener interface {
 	AccountWalletsChanged()
@@ -75,7 +75,7 @@ type AccountPayment struct {
 type WalletViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	device *BringYourDevice
+	device Device
 
 	wallets                 *AccountWalletsList
 	isAddingExternalWallet  bool
@@ -97,7 +97,7 @@ type WalletViewController struct {
 	unpaidByteCountListeners          *connect.CallbackList[UnpaidByteCountListener]
 }
 
-func newWalletViewController(ctx context.Context, device *BringYourDevice) *WalletViewController {
+func newWalletViewController(ctx context.Context, device Device) *WalletViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	vc := &WalletViewController{
@@ -138,7 +138,7 @@ func (vc *WalletViewController) Stop() {
 }
 
 func (vc *WalletViewController) Close() {
-	wvcLog("close")
+	glog.Info("[wvc]close")
 
 	vc.cancel()
 }
@@ -195,7 +195,7 @@ func (vc *WalletViewController) ValidateAddress(
 			func(result *WalletValidateAddressResult, err error) {
 
 				if err != nil {
-					wvcLog("error validating address %s on %s: %s", address, blockchain, err.Error())
+					glog.Infof("[wvc]error validating address %s on %s: %s", address, blockchain, err)
 					callback.SendResult(false)
 				}
 
@@ -237,7 +237,7 @@ func (vc *WalletViewController) AddExternalWallet(address string, blockchain Blo
 
 		blockchainUpper := strings.ToUpper(blockchain)
 		if blockchainUpper != "SOL" && blockchainUpper != "MATIC" {
-			wvcLog("invalid blockchain passed: %s", blockchainUpper)
+			glog.Infof("[wvc]invalid blockchain passed: %s", blockchainUpper)
 			return
 		}
 
@@ -253,7 +253,7 @@ func (vc *WalletViewController) AddExternalWallet(address string, blockchain Blo
 			func(result *CreateAccountWalletResult, err error) {
 
 				if err != nil {
-					wvcLog("error creating an external wallet: %s", err.Error())
+					glog.Infof("[wvc]error creating an external wallet: %s", err)
 					// err = createErr
 					return
 				}
@@ -298,7 +298,7 @@ func (vc *WalletViewController) UpdatePayoutWallet(walletId *Id) (err error) {
 		func(result *SetPayoutWalletResult, setWalletErr error) {
 
 			if setWalletErr != nil {
-				wvcLog("Error setting payout wallet: %s", err.Error())
+				glog.Infof("[wvc]Error setting payout wallet: %s", err)
 				return
 			}
 
@@ -332,7 +332,7 @@ func (self *WalletViewController) FetchPayoutWallet() {
 		func(result *GetPayoutWalletIdResult, err error) {
 
 			if err != nil {
-				wvcLog("error fetching payout wallet: %s", err.Error())
+				glog.Infof("error fetching payout wallet: %s", err)
 				return
 			}
 
@@ -407,7 +407,7 @@ func (self *WalletViewController) fetchAccountWallets() {
 		func(results *GetAccountWalletsResult, err error) {
 
 			if err != nil {
-				wvcLog("Error fetching account wallets: ", err.Error())
+				glog.Infof("[wvc]Error fetching account wallets: %s", err)
 				return
 			}
 
@@ -494,7 +494,7 @@ func (vc *WalletViewController) FetchPayments() {
 		func(results *GetNetworkAccountPaymentsResult, err error) {
 
 			if err != nil {
-				wvcLog("fetch payments failed: %s", err.Error())
+				glog.Infof("[wvc]fetch payments failed: %s", err)
 				return
 			}
 
@@ -593,7 +593,7 @@ func (self *WalletViewController) pollNewWallets() {
 
 		defer func() {
 			if r := recover(); r != nil {
-				connectVcLog("pollNewWallets: recovered from panic: %v", r)
+				glog.Infof("[wvc]pollNewWallets: recovered from panic: %v", r)
 			}
 		}()
 
@@ -666,7 +666,7 @@ func (self *WalletViewController) FetchTransferStats() {
 			func(results *TransferStatsResult, err error) {
 
 				if err != nil {
-					wvcLog("error fetching transfer stats: %s", err.Error())
+					glog.Infof("[wvc]error fetching transfer stats: %s", err)
 					return
 				}
 
