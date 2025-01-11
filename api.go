@@ -18,9 +18,7 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-
 // the api is asychronous, which is the most natural for the target platforms
-
 
 type Api struct {
 	ctx    context.Context
@@ -34,7 +32,7 @@ type Api struct {
 	byJwt string
 
 	httpPostRaw connect.HttpPostRawFunction
-	httpGetRaw connect.HttpGetRawFunction
+	httpGetRaw  connect.HttpGetRawFunction
 }
 
 func newApi(
@@ -44,10 +42,10 @@ func newApi(
 ) *Api {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	httpPostRaw := func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string)([]byte, error) {
+	httpPostRaw := func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
 		return connect.HttpPostWithStrategyRaw(ctx, clientStrategy, requestUrl, requestBodyBytes, byJwt)
 	}
-	httpGetRaw := func(ctx context.Context, requestUrl string, byJwt string)([]byte, error) {
+	httpGetRaw := func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
 		return connect.HttpGetWithStrategyRaw(ctx, clientStrategy, requestUrl, byJwt)
 	}
 
@@ -56,8 +54,8 @@ func newApi(
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
 		apiUrl:         apiUrl,
-		httpPostRaw:  httpPostRaw,
-		httpGetRaw:  httpGetRaw,
+		httpPostRaw:    httpPostRaw,
+		httpGetRaw:     httpGetRaw,
 	}
 }
 
@@ -75,7 +73,6 @@ func (self *Api) GetByJwt() string {
 
 	return self.byJwt
 }
-
 
 func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
 	self.mutex.Lock()
@@ -104,7 +101,6 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 
 	return self.httpGetRaw
 }
-
 
 func (self *Api) Close() {
 	self.cancel()
@@ -934,7 +930,6 @@ func (self *Api) SubscriptionCreatePaymentId(createPaymentId *SubscriptionCreate
 	})
 }
 
-
 /**
  * Get network user
  */
@@ -950,15 +945,17 @@ type GetNetworkUserResult struct {
 
 type GetNetworkUserCallback connect.ApiCallback[*GetNetworkUserResult]
 
-func (self *Api) GetNetworkUser(callback GetNetworkUserCallback) (*GetNetworkUserResult, error) {
-	return connect.HttpGetWithRawFunction(
-		self.ctx,
-		self.getHttpGetRaw(),
-		fmt.Sprintf("%s/network/user", self.apiUrl),
-		self.GetByJwt(),
-		&GetNetworkUserResult{},
-		callback,
-	)
+func (self *Api) GetNetworkUser(callback GetNetworkUserCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/network/user", self.apiUrl),
+			self.GetByJwt(),
+			&GetNetworkUserResult{},
+			callback,
+		)
+	})
 }
 
 /**
@@ -1007,7 +1004,6 @@ type GetNetworkReferralCodeError struct {
 }
 
 type GetNetworkReferralCodeCallback connect.ApiCallback[*GetNetworkReferralCodeResult]
-
 
 func (self *Api) GetNetworkReferralCode(
 	callback GetNetworkReferralCodeCallback,
