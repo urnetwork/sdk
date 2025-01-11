@@ -226,6 +226,15 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			glog.Infof("GGX")
 			assert.Equal(t, deviceLocal.GetConnectLocation(), &ConnectLocation{})
 
+			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
+			assert.Equal(t, deviceRemote.GetCanRefer(), true)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
+			assert.Equal(t, deviceRemote.GetOffline(), true)
+			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+
 			provideChangeListener.with(func() {
 				assert.Equal(t, provideChangeListener.event, true)
 			})
@@ -261,7 +270,6 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 
 }
-
 
 
 func TestDeviceRemoteApi(t *testing.T) {
@@ -329,6 +337,299 @@ func TestDeviceRemoteApi(t *testing.T) {
 
 
 }
+
+
+
+func TestDeviceRemoteLastKnownValues(t *testing.T) {
+	// sync
+	// then close local
+	// remote should retain the values
+
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		defaultDeviceRpcSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+
+
+	// set all properties
+
+	deviceRemote.SetCanShowRatingDialog(true)
+	deviceRemote.SetCanRefer(true)
+	deviceRemote.SetRouteLocal(true)
+	deviceRemote.SetProvideMode(ProvideModeStream)
+	deviceRemote.SetProvidePaused(true)
+	deviceRemote.SetOffline(true)
+	deviceRemote.SetVpnInterfaceWhileOffline(true)
+	deviceRemote.RemoveDestination()
+	deviceRemote.SetConnectLocation(&ConnectLocation{})
+	deviceRemote.SetDestination(&ConnectLocation{}, NewProviderSpecList(), ProvideModePublic)
+	deviceRemote.Shuffle()
+
+	// sync
+
+	// enable rpc
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		true,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+
+	deviceRemote.Sync()
+
+	deviceRemote.waitForSync(5 * time.Second)
+
+	// wait for event callbacks on goroutines to run
+	select {
+	case <- time.After(200 * time.Millisecond):
+	}
+
+	glog.Infof("GG1")
+	assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
+	glog.Infof("GG2")
+	assert.Equal(t, deviceLocal.GetCanRefer(), true)
+	glog.Infof("GG3")
+	assert.Equal(t, deviceLocal.GetRouteLocal(), true)
+	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
+	assert.Equal(t, deviceLocal.GetOffline(), true)
+	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+	glog.Infof("GGX")
+	assert.Equal(t, deviceLocal.GetConnectLocation(), &ConnectLocation{})
+
+	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
+	assert.Equal(t, deviceRemote.GetCanRefer(), true)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
+	assert.Equal(t, deviceRemote.GetOffline(), true)
+	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+	assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+
+
+
+	deviceLocal.Close()
+
+	// make sure the remote value retains the last know state
+
+	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
+	assert.Equal(t, deviceRemote.GetCanRefer(), true)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
+	assert.Equal(t, deviceRemote.GetOffline(), true)
+	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+	assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+
+
+}
+
+
+
+func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
+	// sync
+	// then close local
+	// remote should retain the values
+
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		defaultDeviceRpcSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+
+	// add all listeners
+
+	provideChangeListener := &testing_provideChangeListener{}
+	providePausedChangeListener := &testing_providePausedChangeListener{}
+	offlineChangeListener := &testing_offlineChangeListener{}
+	connectChangeListener := &testing_connectChangeListener{}
+	routeLocalChangeListener := &testing_routeLocalChangeListener{}
+	connectLocationChangeListener := &testing_connectLocationChangeListener{}
+	provideSecretKeysListener := &testing_provideSecretKeysListener{}
+	monitorEventListener := &testing_monitorEventListener{}
+
+
+
+	provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
+	defer provideChangeListenerSub.Close()
+
+	providePausedChangeListenerSub := deviceRemote.AddProvidePausedChangeListener(providePausedChangeListener)
+	defer providePausedChangeListenerSub.Close()
+
+	offlineChangeListenerSub := deviceRemote.AddOfflineChangeListener(offlineChangeListener)
+	defer offlineChangeListenerSub.Close()
+
+	connectChangeSub := deviceRemote.AddConnectChangeListener(connectChangeListener)
+	defer connectChangeSub.Close()
+
+	routeLocalChangeListenerSub := deviceRemote.AddRouteLocalChangeListener(routeLocalChangeListener)
+	defer routeLocalChangeListenerSub.Close()
+
+	connectLocationChangeListenerSub := deviceRemote.AddConnectLocationChangeListener(connectLocationChangeListener)
+	defer connectLocationChangeListenerSub.Close()
+
+	provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
+	defer provideSecretKeysListenerSub.Close()
+
+
+	windowMonitor := deviceRemote.windowMonitor()
+	windowExpandEvent, providerEvents := windowMonitor.Events()
+	assert.NotEqual(t, windowExpandEvent, nil)
+	assert.NotEqual(t, providerEvents, nil)
+
+	monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
+	defer monitorEventCallbackSub()
+
+
+	// set all properties
+
+	deviceRemote.SetCanShowRatingDialog(true)
+	deviceRemote.SetCanRefer(true)
+	deviceRemote.SetRouteLocal(true)
+	deviceRemote.SetProvideMode(ProvideModeStream)
+	deviceRemote.SetProvidePaused(true)
+	deviceRemote.SetOffline(true)
+	deviceRemote.SetVpnInterfaceWhileOffline(true)
+	deviceRemote.RemoveDestination()
+	deviceRemote.SetConnectLocation(&ConnectLocation{})
+	deviceRemote.SetDestination(&ConnectLocation{}, NewProviderSpecList(), ProvideModePublic)
+	deviceRemote.Shuffle()
+
+	// sync
+
+	// enable rpc
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		true,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+
+	deviceRemote.Sync()
+
+	deviceRemote.waitForSync(5 * time.Second)
+
+	// wait for event callbacks on goroutines to run
+	select {
+	case <- time.After(200 * time.Millisecond):
+	}
+
+	glog.Infof("GG1")
+	assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
+	glog.Infof("GG2")
+	assert.Equal(t, deviceLocal.GetCanRefer(), true)
+	glog.Infof("GG3")
+	assert.Equal(t, deviceLocal.GetRouteLocal(), true)
+	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
+	assert.Equal(t, deviceLocal.GetOffline(), true)
+	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+	glog.Infof("GGX")
+	assert.Equal(t, deviceLocal.GetConnectLocation(), &ConnectLocation{})
+
+
+	provideChangeListener.with(func() {
+		assert.Equal(t, provideChangeListener.event, true)
+	})
+	providePausedChangeListener.with(func() {
+		assert.Equal(t, providePausedChangeListener.event, true)
+	})
+	offlineChangeListener.with(func() {
+		assert.Equal(t, offlineChangeListener.event, true)
+	})
+	connectChangeListener.with(func() {
+		assert.Equal(t, connectChangeListener.event, true)
+	})
+	routeLocalChangeListener.with(func() {
+		assert.Equal(t, routeLocalChangeListener.event, true)
+	})
+	connectLocationChangeListener.with(func() {
+		assert.Equal(t, connectLocationChangeListener.event, true)
+	})
+	provideSecretKeysListener.with(func() {
+		assert.Equal(t, provideSecretKeysListener.event, true)
+	})
+	monitorEventListener.with(func() {
+		assert.Equal(t, monitorEventListener.event, true)
+	})
+
+
+	deviceLocal.Close()
+
+	// make sure the remote value retains the last know state
+	// the last known state was set in the listeners
+
+	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
+	assert.Equal(t, deviceRemote.GetCanRefer(), true)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
+	assert.Equal(t, deviceRemote.GetOffline(), true)
+	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+	assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+
+
+}
+
 
 
 type testing_listener struct {
