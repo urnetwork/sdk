@@ -40,7 +40,6 @@ type ViewControllerManager interface {
 	CloseViewController(vc ViewController) 
 
 	Close()
-
 }
 
 
@@ -156,3 +155,4 @@ func (self *viewControllerManager) Close() {
 	}
 	clear(self.openedViewControllers)
 }
+
