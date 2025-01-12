@@ -66,7 +66,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		RpcReconnectTimeout: 1 * time.Second,
 		Address: requireRemoteAddress("127.0.0.1:12025"),
 		ResponseAddress: requireRemoteAddress("127.0.0.1:12026"),
-		InitialLockTimeout: 1 * time.Second,
+		InitialLockTimeout: 4 * time.Second,
 	}
 }
 
@@ -262,11 +262,9 @@ func (self *DeviceRemote) run() {
 				}
 
 				service := rpc.NewClient(conn)
-				self.service = service
 				defer func() {
 					if !synced {
 						service.Close()
-						self.service = nil
 					}
 				}()
 				
@@ -365,6 +363,8 @@ func (self *DeviceRemote) run() {
 				self.syncMonitor.NotifyAll()
 
 				glog.Infof("[dr]sync 2")
+
+				self.service = service
 
 
 				if initialLock {
@@ -560,6 +560,7 @@ func (self *DeviceRemote) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	}()
 	if success {
 		self.state.CanShowRatingDialog.Unset()
+		self.lastKnownState.CanShowRatingDialog.Set(canShowRatingDialog)
 	} else {
 		self.state.CanShowRatingDialog.Set(canShowRatingDialog)
 	}
@@ -609,6 +610,7 @@ func (self *DeviceRemote) SetProvideWhileDisconnected(provideWhileDisconnected b
 		}()
 		if success {
 			self.state.ProvideWhileDisconnected.Unset()
+			self.lastKnownState.ProvideWhileDisconnected.Set(provideWhileDisconnected)
 		} else {
 			self.state.ProvideWhileDisconnected.Set(provideWhileDisconnected)
 			event = true
@@ -661,6 +663,7 @@ func (self *DeviceRemote) SetCanRefer(canRefer bool) {
 	}()
 	if success {
 		self.state.CanRefer.Unset()
+		self.lastKnownState.CanRefer.Set(canRefer)
 	} else {
 		self.state.CanRefer.Set(canRefer)
 	}
@@ -685,6 +688,7 @@ func (self *DeviceRemote) SetRouteLocal(routeLocal bool) {
 		}()
 		if success {
 			self.state.RouteLocal.Unset()
+			self.lastKnownState.RouteLocal.Set(routeLocal)
 		} else {
 			self.state.RouteLocal.Set(routeLocal)
 			event = true
@@ -826,7 +830,7 @@ func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSec
 			return false
 		}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.LoadProvideSecretKeys", provideSecretKeyList)
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.LoadProvideSecretKeys", provideSecretKeyList.getAll())
 		if err != nil {
 			return false
 		}
@@ -834,6 +838,8 @@ func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSec
 	}()
 	if success {
 		self.state.LoadProvideSecretKeys.Unset()
+		self.lastKnownState.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
+		self.lastKnownState.InitProvideSecretKeys.Unset()
 	} else {	
 		self.state.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
 		self.state.InitProvideSecretKeys.Unset()
@@ -849,7 +855,7 @@ func (self *DeviceRemote) InitProvideSecretKeys() {
 			return false
 		}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.InitProvideSecretKeys", nil)
+		err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.InitProvideSecretKeys")
 		if err != nil {
 			return false
 		}
@@ -857,6 +863,8 @@ func (self *DeviceRemote) InitProvideSecretKeys() {
 	}()
 	if success {
 		self.state.InitProvideSecretKeys.Unset()
+		self.lastKnownState.InitProvideSecretKeys.Set(true)
+		self.lastKnownState.LoadProvideSecretKeys.Unset()
 	} else {	
 		self.state.InitProvideSecretKeys.Set(true)
 		self.state.LoadProvideSecretKeys.Unset()
@@ -938,6 +946,7 @@ func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
 	}()
 	if success {
 		self.state.ProvideMode.Unset()
+		self.lastKnownState.ProvideMode.Set(provideMode)
 	} else {	
 		self.state.ProvideMode.Set(provideMode)
 	}
@@ -989,6 +998,7 @@ func (self *DeviceRemote) SetProvidePaused(providePaused bool) {
 		}()
 		if success {
 			self.state.ProvidePaused.Unset()
+			self.lastKnownState.ProvidePaused.Set(providePaused)
 		} else {	
 			self.state.ProvidePaused.Set(providePaused)
 			event = true
@@ -1043,6 +1053,7 @@ func (self *DeviceRemote) SetOffline(offline bool) {
 		}()
 		if success {
 			self.state.Offline.Unset()
+			self.lastKnownState.Offline.Set(offline)
 		} else {	
 			self.state.Offline.Set(offline)
 			event = true
@@ -1097,6 +1108,7 @@ func (self *DeviceRemote) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline b
 		}()
 		if success {
 			self.state.VpnInterfaceWhileOffline.Unset()
+			self.lastKnownState.VpnInterfaceWhileOffline.Set(vpnInterfaceWhileOffline)
 		} else {	
 			self.state.VpnInterfaceWhileOffline.Set(vpnInterfaceWhileOffline)
 			event = true
@@ -1143,7 +1155,7 @@ func (self *DeviceRemote) RemoveDestination() {
 				return false
 			}
 
-			err := rpcCallVoid(self.service, "DeviceLocalRpc.RemoveDestination", nil)
+			err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.RemoveDestination")
 			if err != nil {
 				return false
 			}
@@ -1151,13 +1163,18 @@ func (self *DeviceRemote) RemoveDestination() {
 		}()
 		if success {
 			self.state.RemoveDestination.Unset()
+			self.lastKnownState.RemoveDestination.Set(true)
+			self.lastKnownState.Destination.Unset()
+			self.lastKnownState.Location.Unset()
 		} else {	
 			self.state.RemoveDestination.Set(true)
 			self.state.Destination.Unset()
 			self.state.Location.Unset()
+			event = true
 		}
 	}()
 	if event {
+		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
 		self.connectChanged(self.GetConnectEnabled())
 	}
 }
@@ -1187,6 +1204,9 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 		}()
 		if success {
 			self.state.Destination.Unset()
+			self.lastKnownState.Destination.Set(destination)
+			self.lastKnownState.RemoveDestination.Unset()
+			self.lastKnownState.Location.Unset()
 		} else {	
 			self.state.Destination.Set(destination)
 			self.state.RemoveDestination.Unset()
@@ -1195,6 +1215,7 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 		}
 	}()
 	if event {
+		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
 		self.connectChanged(self.GetConnectEnabled())
 	}
 }
@@ -1219,6 +1240,9 @@ func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
 		}()
 		if success {
 			self.state.Location.Unset()
+			self.lastKnownState.Location.Set(deviceRemoteLocation)
+			self.lastKnownState.RemoveDestination.Unset()
+			self.lastKnownState.Destination.Unset()
 		} else {
 			self.state.Location.Set(deviceRemoteLocation)
 			self.state.RemoveDestination.Unset()
@@ -1227,6 +1251,7 @@ func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
 		}
 	}()
 	if event {
+		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
 		self.connectChanged(self.GetConnectEnabled())
 	}
 }
@@ -1271,7 +1296,7 @@ func (self *DeviceRemote) Shuffle() {
 			return false
 		}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.Shuffle", nil)
+		err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.Shuffle")
 		if err != nil {
 			return false
 		}
@@ -1279,6 +1304,7 @@ func (self *DeviceRemote) Shuffle() {
 	}()
 	if success {
 		self.state.Shuffle.Unset()
+		self.lastKnownState.Shuffle.Set(true)
 	} else {
 		self.state.Shuffle.Set(true)
 	}
@@ -1859,9 +1885,11 @@ func (self *DeviceRemoteState) Unset() {
 	self.ProvidePaused.Unset()
 	self.Offline.Unset()
 	self.VpnInterfaceWhileOffline.Unset()
+	self.RemoveDestination.Unset()
 	self.Destination.Unset()
 	self.Location.Unset()
 	self.Shuffle.Unset()
+
 	self.ConnectEnabled.Unset()
 	self.ProvideEnabled.Unset()
 }
@@ -2094,7 +2122,7 @@ func (self *DeviceRemoteConnectLocationId) toConnectLocationId() *ConnectLocatio
 		connectLocationId.LocationId = newId(*self.LocationId)
 	}
 	if self.LocationGroupId != nil {
-		connectLocationId.LocationGroupId =newId(*self.LocationGroupId)
+		connectLocationId.LocationGroupId = newId(*self.LocationGroupId)
 	}
 	return connectLocationId
 }
@@ -2108,6 +2136,9 @@ type RpcVoid = *any
 type RpcNoArg = int
 
 func rpcCallVoid(service *rpc.Client, name string, arg any) error {
+	if arg == nil {
+		panic("rpc cannot have nil args")
+	}
 	var void RpcVoid
 	glog.Infof("[rpc]%s", name)
 	err := service.Call(name, arg, &void)
@@ -2143,6 +2174,9 @@ func rpcCallNoArg[T any](service *rpc.Client, name string) (T, error) {
 }
 
 func rpcCall[T any](service *rpc.Client, name string, arg any) (T, error) {
+	if arg == nil {
+		panic("rpc cannot have nil args")
+	}
 	var r T
 	glog.Infof("[rpc]%s", name)
 	err := service.Call(name, arg, &r)
@@ -3113,7 +3147,9 @@ func (self *DeviceLocalRpc) windowMonitorEventCallback(
 }
 
 
-func (self *DeviceLocalRpc) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList, _ RpcVoid) error {
+func (self *DeviceLocalRpc) LoadProvideSecretKeys(provideSecretKeys []*ProvideSecretKey, _ RpcVoid) error {
+	provideSecretKeyList := NewProvideSecretKeyList()
+	provideSecretKeyList.addAll(provideSecretKeys...)
 	self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	return nil
 }

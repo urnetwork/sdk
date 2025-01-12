@@ -49,6 +49,7 @@ type ConnectLocationChangeListener interface {
 	ConnectLocationChanged(location *ConnectLocation)
 }
 
+// FIXME rename to ProvideSecretKeysChangeListener
 type ProvideSecretKeysListener interface {
 	ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList)
 }

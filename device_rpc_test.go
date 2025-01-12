@@ -76,9 +76,212 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	listener := &testing_offlineChangeListener{}
 	sub := deviceRemote.AddOfflineChangeListener(listener)
 	deviceRemote.SetOffline(false)
-	assert.Equal(t, false, listener.event)
-	assert.Equal(t, false, listener.eventOffline)
+	listener.with(func(){
+		assert.Equal(t, false, listener.event)
+		assert.Equal(t, false, listener.eventOffline)
+	})
 	sub.Close()
+
+
+}
+
+
+
+func TestDeviceRemoteFull(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+
+
+
+	for range 10 {
+		func() {
+
+			clientId := connect.NewId()
+			instanceId := NewId()
+
+
+
+			// enable rpc
+			deviceLocal, err := newDeviceLocalWithOverrides(
+				networkSpace,
+				byJwt,
+				"",
+				"",
+				"",
+				instanceId,
+				true,
+				defaultDeviceLocalSettings(),
+				clientId,
+			)
+			if err != nil {
+				panic(err)
+			}
+			defer deviceLocal.Close()
+
+
+
+
+			deviceRemote, err := newDeviceRemoteWithOverrides(
+				networkSpace,
+				byJwt,
+				defaultDeviceRpcSettings(),
+				clientId,
+			)
+			if err != nil {
+				panic(err)
+			}
+			defer deviceRemote.Close()
+
+
+			// add all listeners
+
+			provideChangeListener := &testing_provideChangeListener{}
+			providePausedChangeListener := &testing_providePausedChangeListener{}
+			offlineChangeListener := &testing_offlineChangeListener{}
+			connectChangeListener := &testing_connectChangeListener{}
+			routeLocalChangeListener := &testing_routeLocalChangeListener{}
+			connectLocationChangeListener := &testing_connectLocationChangeListener{}
+			provideSecretKeysListener := &testing_provideSecretKeysListener{}
+			monitorEventListener := &testing_monitorEventListener{}
+
+
+
+			provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
+			defer provideChangeListenerSub.Close()
+
+			providePausedChangeListenerSub := deviceRemote.AddProvidePausedChangeListener(providePausedChangeListener)
+			defer providePausedChangeListenerSub.Close()
+
+			offlineChangeListenerSub := deviceRemote.AddOfflineChangeListener(offlineChangeListener)
+			defer offlineChangeListenerSub.Close()
+
+			connectChangeSub := deviceRemote.AddConnectChangeListener(connectChangeListener)
+			defer connectChangeSub.Close()
+
+			routeLocalChangeListenerSub := deviceRemote.AddRouteLocalChangeListener(routeLocalChangeListener)
+			defer routeLocalChangeListenerSub.Close()
+
+			connectLocationChangeListenerSub := deviceRemote.AddConnectLocationChangeListener(connectLocationChangeListener)
+			defer connectLocationChangeListenerSub.Close()
+
+			provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
+			defer provideSecretKeysListenerSub.Close()
+
+
+			windowMonitor := deviceRemote.windowMonitor()
+			windowExpandEvent, providerEvents := windowMonitor.Events()
+			assert.NotEqual(t, windowExpandEvent, nil)
+			assert.NotEqual(t, providerEvents, nil)
+
+			monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
+			defer monitorEventCallbackSub()
+
+
+
+			location := &ConnectLocation{
+				ConnectLocationId: &ConnectLocationId{
+					ClientId: NewId(),
+					LocationId: NewId(),
+					LocationGroupId: NewId(),
+					BestAvailable: true,
+				},
+			}
+
+
+			// set all properties
+
+			deviceRemote.InitProvideSecretKeys()
+			deviceRemote.LoadProvideSecretKeys(NewProvideSecretKeyList())
+			deviceRemote.SetCanShowRatingDialog(true)
+			deviceRemote.SetCanRefer(true)
+			deviceRemote.SetRouteLocal(!defaultRouteLocal)
+			deviceRemote.SetProvideMode(ProvideModeStream)
+			deviceRemote.SetProvidePaused(true)
+			deviceRemote.SetOffline(true)
+			deviceRemote.SetVpnInterfaceWhileOffline(true)
+			deviceRemote.RemoveDestination()
+			deviceRemote.SetConnectLocation(location)
+			deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
+			deviceRemote.Shuffle()
+
+
+			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
+			assert.Equal(t, deviceRemote.GetCanRefer(), true)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
+			assert.Equal(t, deviceRemote.GetOffline(), true)
+			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+
+
+			// wait for event callbacks on goroutines to run
+			select {
+			case <- time.After(200 * time.Millisecond):
+			}
+
+			glog.Infof("GG1")
+			assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
+			glog.Infof("GG2")
+			assert.Equal(t, deviceLocal.GetCanRefer(), true)
+			glog.Infof("GG3")
+			assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+			assert.Equal(t, deviceLocal.GetProvidePaused(), true)
+			assert.Equal(t, deviceLocal.GetOffline(), true)
+			assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+			glog.Infof("GGX")
+			assert.Equal(t, deviceLocal.GetConnectLocation(), location)
+
+			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
+			assert.Equal(t, deviceRemote.GetCanRefer(), true)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
+			assert.Equal(t, deviceRemote.GetOffline(), true)
+			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+
+			provideChangeListener.with(func() {
+				assert.Equal(t, provideChangeListener.event, true)
+			})
+			providePausedChangeListener.with(func() {
+				assert.Equal(t, providePausedChangeListener.event, true)
+			})
+			offlineChangeListener.with(func() {
+				assert.Equal(t, offlineChangeListener.event, true)
+			})
+			connectChangeListener.with(func() {
+				assert.Equal(t, connectChangeListener.event, true)
+			})
+			routeLocalChangeListener.with(func() {
+				assert.Equal(t, routeLocalChangeListener.event, true)
+			})
+			connectLocationChangeListener.with(func() {
+				assert.Equal(t, connectLocationChangeListener.event, true)
+			})
+			provideSecretKeysListener.with(func() {
+				assert.Equal(t, provideSecretKeysListener.event, true)
+			})
+			// FIXME one difference with remote sync later versus now is that the monitor doesn't getted called with empty events
+			// monitorEventListener.with(func() {
+			// 	assert.Equal(t, monitorEventListener.event, true)
+			// })
+
+		}()
+
+		// FIXME once TLS certs are in place remote this
+		select {
+		case <- time.After(200 * time.Millisecond):
+		}
+	}
 
 
 }
@@ -160,29 +363,41 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			defer monitorEventCallbackSub()
 
 
+			location := &ConnectLocation{
+				ConnectLocationId: &ConnectLocationId{
+					ClientId: NewId(),
+					LocationId: NewId(),
+					LocationGroupId: NewId(),
+					BestAvailable: true,
+				},
+			}
+
+
 			// set all properties
 
+			deviceRemote.InitProvideSecretKeys()
+			deviceRemote.LoadProvideSecretKeys(NewProvideSecretKeyList())
 			deviceRemote.SetCanShowRatingDialog(true)
 			deviceRemote.SetCanRefer(true)
-			deviceRemote.SetRouteLocal(true)
+			deviceRemote.SetRouteLocal(!defaultRouteLocal)
 			deviceRemote.SetProvideMode(ProvideModeStream)
 			deviceRemote.SetProvidePaused(true)
 			deviceRemote.SetOffline(true)
 			deviceRemote.SetVpnInterfaceWhileOffline(true)
 			deviceRemote.RemoveDestination()
-			deviceRemote.SetConnectLocation(&ConnectLocation{})
-			deviceRemote.SetDestination(&ConnectLocation{}, NewProviderSpecList(), ProvideModePublic)
+			deviceRemote.SetConnectLocation(location)
+			deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
 			deviceRemote.Shuffle()
 
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
 			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 			assert.Equal(t, deviceRemote.GetOffline(), true)
 			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
 			// sync
 
@@ -218,22 +433,22 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			glog.Infof("GG2")
 			assert.Equal(t, deviceLocal.GetCanRefer(), true)
 			glog.Infof("GG3")
-			assert.Equal(t, deviceLocal.GetRouteLocal(), true)
+			assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
 			assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 			assert.Equal(t, deviceLocal.GetOffline(), true)
 			assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
 			glog.Infof("GGX")
-			assert.Equal(t, deviceLocal.GetConnectLocation(), &ConnectLocation{})
+			assert.Equal(t, deviceLocal.GetConnectLocation(), location)
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
 			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 			assert.Equal(t, deviceRemote.GetOffline(), true)
 			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
 			provideChangeListener.with(func() {
 				assert.Equal(t, provideChangeListener.event, true)
@@ -287,20 +502,6 @@ func TestDeviceRemoteApi(t *testing.T) {
 	instanceId := NewId()
 
 
-	deviceRemote, err := newDeviceRemoteWithOverrides(
-		networkSpace,
-		byJwt,
-		defaultDeviceRpcSettings(),
-		clientId,
-	)
-	if err != nil {
-		panic(err)
-	}
-	defer deviceRemote.Close()
-
-
-
-
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace,
@@ -319,9 +520,20 @@ func TestDeviceRemoteApi(t *testing.T) {
 	defer deviceLocal.Close()
 
 
-	deviceRemote.Sync()
 
-	deviceRemote.waitForSync(5 * time.Second)
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		defaultDeviceRpcSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+
 
 
 
@@ -373,16 +585,25 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 
 	// set all properties
 
+	location := &ConnectLocation{
+		ConnectLocationId: &ConnectLocationId{
+			ClientId: NewId(),
+			LocationId: NewId(),
+			LocationGroupId: NewId(),
+			BestAvailable: true,
+		},
+	}
+
 	deviceRemote.SetCanShowRatingDialog(true)
 	deviceRemote.SetCanRefer(true)
-	deviceRemote.SetRouteLocal(true)
+	deviceRemote.SetRouteLocal(!defaultRouteLocal)
 	deviceRemote.SetProvideMode(ProvideModeStream)
 	deviceRemote.SetProvidePaused(true)
 	deviceRemote.SetOffline(true)
 	deviceRemote.SetVpnInterfaceWhileOffline(true)
 	deviceRemote.RemoveDestination()
-	deviceRemote.SetConnectLocation(&ConnectLocation{})
-	deviceRemote.SetDestination(&ConnectLocation{}, NewProviderSpecList(), ProvideModePublic)
+	deviceRemote.SetConnectLocation(location)
+	deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
 	deviceRemote.Shuffle()
 
 	// sync
@@ -419,22 +640,22 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	glog.Infof("GG2")
 	assert.Equal(t, deviceLocal.GetCanRefer(), true)
 	glog.Infof("GG3")
-	assert.Equal(t, deviceLocal.GetRouteLocal(), true)
+	assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
 	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 	assert.Equal(t, deviceLocal.GetOffline(), true)
 	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
 	glog.Infof("GGX")
-	assert.Equal(t, deviceLocal.GetConnectLocation(), &ConnectLocation{})
+	assert.Equal(t, deviceLocal.GetConnectLocation(), location)
 
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
 	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 	assert.Equal(t, deviceRemote.GetOffline(), true)
 	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
 
 
@@ -444,12 +665,12 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
 	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 	assert.Equal(t, deviceRemote.GetOffline(), true)
 	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
 
 }
@@ -529,19 +750,27 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
 	defer monitorEventCallbackSub()
 
+	location := &ConnectLocation{
+		ConnectLocationId: &ConnectLocationId{
+			ClientId: NewId(),
+			LocationId: NewId(),
+			LocationGroupId: NewId(),
+			BestAvailable: true,
+		},
+	}
 
 	// set all properties
 
 	deviceRemote.SetCanShowRatingDialog(true)
 	deviceRemote.SetCanRefer(true)
-	deviceRemote.SetRouteLocal(true)
+	deviceRemote.SetRouteLocal(!defaultRouteLocal)
 	deviceRemote.SetProvideMode(ProvideModeStream)
 	deviceRemote.SetProvidePaused(true)
 	deviceRemote.SetOffline(true)
 	deviceRemote.SetVpnInterfaceWhileOffline(true)
 	deviceRemote.RemoveDestination()
-	deviceRemote.SetConnectLocation(&ConnectLocation{})
-	deviceRemote.SetDestination(&ConnectLocation{}, NewProviderSpecList(), ProvideModePublic)
+	deviceRemote.SetConnectLocation(location)
+	deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
 	deviceRemote.Shuffle()
 
 	// sync
@@ -578,13 +807,13 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	glog.Infof("GG2")
 	assert.Equal(t, deviceLocal.GetCanRefer(), true)
 	glog.Infof("GG3")
-	assert.Equal(t, deviceLocal.GetRouteLocal(), true)
+	assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
 	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 	assert.Equal(t, deviceLocal.GetOffline(), true)
 	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
 	glog.Infof("GGX")
-	assert.Equal(t, deviceLocal.GetConnectLocation(), &ConnectLocation{})
+	assert.Equal(t, deviceLocal.GetConnectLocation(), location)
 
 
 	provideChangeListener.with(func() {
@@ -620,12 +849,12 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), true)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
 	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 	assert.Equal(t, deviceRemote.GetOffline(), true)
 	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceRemote.GetConnectLocation(), &ConnectLocation{})
+	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
 
 }
