@@ -64,6 +64,7 @@ type ReceivePacket interface {
 type Device interface {
 
 	GetClientId() *Id
+	GetInstanceId() *Id
 
 	GetNetworkSpace() *NetworkSpace
 
@@ -422,6 +423,10 @@ func newDeviceLocalWithOverrides(
 
 func (self *DeviceLocal) GetClientId() *Id {
 	return newId(self.clientId)
+}
+
+func (self *DeviceLocal) GetInstanceId() *Id {
+	return newId(self.instanceId)
 }
 
 func (self *DeviceLocal) GetApi() *Api {

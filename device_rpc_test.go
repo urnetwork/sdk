@@ -52,6 +52,7 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
+		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
 	)
@@ -131,6 +132,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			deviceRemote, err := newDeviceRemoteWithOverrides(
 				networkSpace,
 				byJwt,
+				instanceId,
 				defaultDeviceRpcSettings(),
 				clientId,
 			)
@@ -224,7 +226,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			// wait for event callbacks on goroutines to run
 			select {
-			case <- time.After(200 * time.Millisecond):
+			case <- time.After(500 * time.Millisecond):
 			}
 
 			glog.Infof("GG1")
@@ -310,6 +312,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			deviceRemote, err := newDeviceRemoteWithOverrides(
 				networkSpace,
 				byJwt,
+				instanceId,
 				defaultDeviceRpcSettings(),
 				clientId,
 			)
@@ -425,7 +428,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			// wait for event callbacks on goroutines to run
 			select {
-			case <- time.After(200 * time.Millisecond):
+			case <- time.After(500 * time.Millisecond):
 			}
 
 			glog.Infof("GG1")
@@ -525,6 +528,7 @@ func TestDeviceRemoteApi(t *testing.T) {
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
+		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
 	)
@@ -573,6 +577,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
+		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
 	)
@@ -632,7 +637,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 
 	// wait for event callbacks on goroutines to run
 	select {
-	case <- time.After(200 * time.Millisecond):
+	case <- time.After(500 * time.Millisecond):
 	}
 
 	glog.Infof("GG1")
@@ -698,6 +703,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
+		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
 	)
@@ -799,7 +805,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	// wait for event callbacks on goroutines to run
 	select {
-	case <- time.After(200 * time.Millisecond):
+	case <- time.After(500 * time.Millisecond):
 	}
 
 	glog.Infof("GG1")
