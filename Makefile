@@ -4,6 +4,11 @@ all: clean build_android build_ios
 clean:
 	rm -rf build
 
+# to reduce binary file size:
+# (not used) -s omit symbol table and debug info
+# -w omit DWARF symbol table
+# see https://go.dev/doc/gdb
+
 build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
@@ -15,8 +20,8 @@ build_android:
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
 		-trimpath \
-		-gcflags "-dwarf=true" \
-		-ldflags "-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-gcflags "-dwarf=false" \
+		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
 		-o "build/$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
 	if [[ -e "build/android" ]]; then mv build/android build/android.old.`date +%s`; fi; \
@@ -49,8 +54,8 @@ build_ios:
 		-target ios/arm64,iossimulator/arm64 -iosversion 16.0 \
 		-bundleid com.bringyour \
 		-trimpath \
-		-gcflags "-dwarf=true" \
-		-ldflags "-X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-gcflags "-dwarf=false" \
+		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
 		-o "build/$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
 	if [[ -e "build/ios" ]]; then mv build/ios build/ios.old.`date +%s`; fi; \

@@ -315,6 +315,17 @@ func (self *ConnectLocation) ToCountry() *ConnectLocation {
 	}
 }
 
+func (self *ConnectLocation) Equals(b *ConnectLocation) bool {
+	if b == nil {
+		return false
+	}
+	if self.ConnectLocationId == nil {
+		return b.ConnectLocationId == nil
+	}
+	return self.ConnectLocationId.Cmp(b.ConnectLocationId) == 0
+}
+
+
 // merged location and location group
 type ConnectLocationId struct {
 	// if set, the location is a direct connection to another device
@@ -335,6 +346,9 @@ func (self *ConnectLocationId) IsDevice() bool {
 func (self *ConnectLocationId) Cmp(b *ConnectLocationId) int {
 	// - direct
 	// - group
+	if b == nil {
+		return -1
+	}
 	if self.ClientId != nil && b.ClientId != nil {
 		if c := self.ClientId.Cmp(b.ClientId); c != 0 {
 			return c
