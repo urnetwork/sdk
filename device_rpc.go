@@ -66,7 +66,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		RpcReconnectTimeout: 1 * time.Second,
 		Address: requireRemoteAddress("127.0.0.1:12025"),
 		ResponseAddress: requireRemoteAddress("127.0.0.1:12026"),
-		InitialLockTimeout: 4 * time.Second,
+		InitialLockTimeout: 200 * time.Millisecond,
 	}
 }
 
@@ -91,6 +91,7 @@ type DeviceRemote struct {
 	syncMonitor *connect.Monitor
 	
 	clientId connect.Id
+	instanceId connect.Id
 	clientStrategy *connect.ClientStrategy
 
 	remoteChangeListeners *connect.CallbackList[RemoteChangeListener]
@@ -120,13 +121,15 @@ type DeviceRemote struct {
 func NewDeviceRemoteWithDefaults(
 	networkSpace *NetworkSpace,
 	byJwt string,
+	instanceId *Id,
 ) (*DeviceRemote, error) {
-	return newDeviceRemote(networkSpace, byJwt, defaultDeviceRpcSettings())
+	return newDeviceRemote(networkSpace, byJwt, instanceId, defaultDeviceRpcSettings())
 }
 
 func newDeviceRemote(
 	networkSpace *NetworkSpace,
 	byJwt string,
+	instanceId *Id,
 	settings *deviceRpcSettings,
 ) (*DeviceRemote, error) {
 	clientId, err := parseByJwtClientId(byJwt)
@@ -139,6 +142,7 @@ func newDeviceRemote(
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
+		instanceId,
 		settings,
 		clientId,
 	)
@@ -155,6 +159,7 @@ func newDeviceRemote(
 func newDeviceRemoteWithOverrides(
 	networkSpace *NetworkSpace,
 	byJwt string,
+	instanceId *Id,
 	settings *deviceRpcSettings,
 	clientId connect.Id,
 ) (*DeviceRemote, error) {
@@ -169,6 +174,7 @@ func newDeviceRemoteWithOverrides(
 		reconnectMonitor: connect.NewMonitor(),
 		syncMonitor: connect.NewMonitor(),
 		clientId: clientId,
+		instanceId: instanceId.toConnectId(),
 		clientStrategy: networkSpace.clientStrategy,
 		remoteChangeListeners: connect.NewCallbackList[RemoteChangeListener](),
 
@@ -464,6 +470,10 @@ func (self *DeviceRemote) getService() *rpc.Client {
 
 func (self *DeviceRemote) GetClientId() *Id {
 	return newId(self.clientId)
+}
+
+func (self *DeviceRemote) GetInstanceId() *Id {
+	return newId(self.instanceId)
 }
 
 func (self *DeviceRemote) GetApi() *Api {
