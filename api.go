@@ -300,14 +300,15 @@ func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCh
 type NetworkCreateCallback connect.ApiCallback[*NetworkCreateResult]
 
 type NetworkCreateArgs struct {
-	UserName    string `json:"user_name,omitempty"`
-	UserAuth    string `json:"user_auth,omitempty"`
-	AuthJwt     string `json:"auth_jwt,omitempty"`
-	AuthJwtType string `json:"auth_jwt_type,omitempty"`
-	Password    string `json:"password,omitempty"`
-	NetworkName string `json:"network_name,omitempty"`
-	Terms       bool   `json:"terms"`
-	GuestMode   bool   `json:"guest_mode"`
+	UserName         string `json:"user_name,omitempty"`
+	UserAuth         string `json:"user_auth,omitempty"`
+	AuthJwt          string `json:"auth_jwt,omitempty"`
+	AuthJwtType      string `json:"auth_jwt_type,omitempty"`
+	Password         string `json:"password,omitempty"`
+	NetworkName      string `json:"network_name,omitempty"`
+	Terms            bool   `json:"terms"`
+	GuestMode        bool   `json:"guest_mode"`
+	VerifyOtpNumeric bool   `json:"verify_use_numeric,omitempty"`
 }
 
 type NetworkCreateResult struct {
