@@ -1578,8 +1578,9 @@ func (self *DeviceRemote) windowMonitorEvent(
 		defer self.stateLock.Unlock()
 		
 		for windowId, _ := range windowIds {
-			windowMonitor := self.windowMonitors[windowId]
-			listenerLists = append(listenerLists, listenerList(windowMonitor.listeners))
+			if windowMonitor, ok := self.windowMonitors[windowId]; ok {
+				listenerLists = append(listenerLists, listenerList(windowMonitor.listeners))
+			}
 		}
 	}()
 	for _, listenerList := range listenerLists {
