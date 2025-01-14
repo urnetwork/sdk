@@ -592,12 +592,11 @@ func (self *DeviceRemote) SetCanShowRatingDialog(canShowRatingDialog bool) {
 		}
 		return true
 	}()
+	state := &self.state
 	if success {
-		self.state.CanShowRatingDialog.Unset()
-		self.lastKnownState.CanShowRatingDialog.Set(canShowRatingDialog)
-	} else {
-		self.state.CanShowRatingDialog.Set(canShowRatingDialog)
+		state = &self.lastKnownState
 	}
+	state.CanShowRatingDialog.Set(canShowRatingDialog)
 }
 
 func (self *DeviceRemote) GetProvideWhileDisconnected() bool {
@@ -642,13 +641,13 @@ func (self *DeviceRemote) SetProvideWhileDisconnected(provideWhileDisconnected b
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.ProvideWhileDisconnected.Unset()
-			self.lastKnownState.ProvideWhileDisconnected.Set(provideWhileDisconnected)
+			state = &self.lastKnownState
 		} else {
-			self.state.ProvideWhileDisconnected.Set(provideWhileDisconnected)
 			event = true
 		}
+		state.ProvideWhileDisconnected.Set(provideWhileDisconnected)
 	}()
 	if event {
 		self.provideChanged(self.GetProvideEnabled())
@@ -695,12 +694,11 @@ func (self *DeviceRemote) SetCanRefer(canRefer bool) {
 		}
 		return true
 	}()
+	state := &self.state
 	if success {
-		self.state.CanRefer.Unset()
-		self.lastKnownState.CanRefer.Set(canRefer)
-	} else {
-		self.state.CanRefer.Set(canRefer)
+		state = &self.lastKnownState
 	}
+	state.CanRefer.Set(canRefer)
 }
 
 func (self *DeviceRemote) SetRouteLocal(routeLocal bool) {
@@ -720,13 +718,13 @@ func (self *DeviceRemote) SetRouteLocal(routeLocal bool) {
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.RouteLocal.Unset()
-			self.lastKnownState.RouteLocal.Set(routeLocal)
+			state = &self.lastKnownState
 		} else {
-			self.state.RouteLocal.Set(routeLocal)
 			event = true
 		}
+		state.RouteLocal.Set(routeLocal)
 	}()
 	if event {
 		self.routeLocalChanged(self.GetRouteLocal())
@@ -870,14 +868,12 @@ func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSec
 		}
 		return true
 	}()
+	state := &self.state
 	if success {
-		self.state.LoadProvideSecretKeys.Unset()
-		self.lastKnownState.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
-		self.lastKnownState.InitProvideSecretKeys.Unset()
-	} else {	
-		self.state.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
-		self.state.InitProvideSecretKeys.Unset()
+		state = &self.lastKnownState
 	}
+	state.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
+	state.InitProvideSecretKeys.Unset()
 }
 
 func (self *DeviceRemote) InitProvideSecretKeys() {
@@ -895,14 +891,12 @@ func (self *DeviceRemote) InitProvideSecretKeys() {
 		}
 		return true
 	}()
+	state := &self.state
 	if success {
-		self.state.InitProvideSecretKeys.Unset()
-		self.lastKnownState.InitProvideSecretKeys.Set(true)
-		self.lastKnownState.LoadProvideSecretKeys.Unset()
-	} else {	
-		self.state.InitProvideSecretKeys.Set(true)
-		self.state.LoadProvideSecretKeys.Unset()
+		state = &self.lastKnownState
 	}
+	state.InitProvideSecretKeys.Set(true)
+	state.LoadProvideSecretKeys.Unset()
 }
 
 func (self *DeviceRemote) GetProvideEnabled() bool {
@@ -978,12 +972,11 @@ func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
 		}
 		return true
 	}()
+	state := &self.state
 	if success {
-		self.state.ProvideMode.Unset()
-		self.lastKnownState.ProvideMode.Set(provideMode)
-	} else {	
-		self.state.ProvideMode.Set(provideMode)
+		state = &self.lastKnownState
 	}
+	state.ProvideMode.Set(provideMode)
 }
 
 func (self *DeviceRemote) GetProvideMode() ProvideMode {
@@ -1030,13 +1023,13 @@ func (self *DeviceRemote) SetProvidePaused(providePaused bool) {
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.ProvidePaused.Unset()
-			self.lastKnownState.ProvidePaused.Set(providePaused)
+			state = &self.lastKnownState
 		} else {	
-			self.state.ProvidePaused.Set(providePaused)
 			event = true
 		}
+		state.ProvidePaused.Set(providePaused)
 	}()
 	if event {
 		self.providePausedChanged(self.GetProvidePaused())
@@ -1085,13 +1078,13 @@ func (self *DeviceRemote) SetOffline(offline bool) {
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.Offline.Unset()
-			self.lastKnownState.Offline.Set(offline)
+			state = &self.lastKnownState
 		} else {	
-			self.state.Offline.Set(offline)
 			event = true
 		}
+		state.Offline.Set(offline)
 	}()
 	if event {
 		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
@@ -1140,13 +1133,13 @@ func (self *DeviceRemote) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline b
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.VpnInterfaceWhileOffline.Unset()
-			self.lastKnownState.VpnInterfaceWhileOffline.Set(vpnInterfaceWhileOffline)
+			state = &self.lastKnownState
 		} else {	
-			self.state.VpnInterfaceWhileOffline.Set(vpnInterfaceWhileOffline)
 			event = true
 		}
+		state.VpnInterfaceWhileOffline.Set(vpnInterfaceWhileOffline)
 	}()
 	if event {
 		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
@@ -1195,17 +1188,15 @@ func (self *DeviceRemote) RemoveDestination() {
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.RemoveDestination.Unset()
-			self.lastKnownState.RemoveDestination.Set(true)
-			self.lastKnownState.Destination.Unset()
-			self.lastKnownState.Location.Unset()
+			state = &self.lastKnownState
 		} else {	
-			self.state.RemoveDestination.Set(true)
-			self.state.Destination.Unset()
-			self.state.Location.Unset()
 			event = true
 		}
+		state.RemoveDestination.Set(true)
+		state.Destination.Unset()
+		state.Location.Unset()
 	}()
 	if event {
 		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
@@ -1236,17 +1227,15 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.Destination.Unset()
-			self.lastKnownState.Destination.Set(destination)
-			self.lastKnownState.RemoveDestination.Unset()
-			self.lastKnownState.Location.Unset()
+			state = &self.lastKnownState
 		} else {	
-			self.state.Destination.Set(destination)
-			self.state.RemoveDestination.Unset()
-			self.state.Location.Unset()
 			event = true
 		}
+		state.Destination.Set(destination)
+		state.RemoveDestination.Unset()
+		state.Location.Unset()
 	}()
 	if event {
 		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
@@ -1272,17 +1261,15 @@ func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
 			}
 			return true
 		}()
+		state := &self.state
 		if success {
-			self.state.Location.Unset()
-			self.lastKnownState.Location.Set(deviceRemoteLocation)
-			self.lastKnownState.RemoveDestination.Unset()
-			self.lastKnownState.Destination.Unset()
+			state = &self.lastKnownState
 		} else {
-			self.state.Location.Set(deviceRemoteLocation)
-			self.state.RemoveDestination.Unset()
-			self.state.Destination.Unset()
 			event = true
 		}
+		state.Location.Set(deviceRemoteLocation)
+		state.RemoveDestination.Unset()
+		state.Destination.Unset()
 	}()
 	if event {
 		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
@@ -1336,12 +1323,11 @@ func (self *DeviceRemote) Shuffle() {
 		}
 		return true
 	}()
+	state := &self.state
 	if success {
-		self.state.Shuffle.Unset()
-		self.lastKnownState.Shuffle.Set(true)
-	} else {
-		self.state.Shuffle.Set(true)
+		state = &self.lastKnownState
 	}
+	state.Shuffle.Set(true)
 }
 
 func (self *DeviceRemote) Cancel() {
@@ -1960,6 +1946,9 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	if update.VpnInterfaceWhileOffline.IsSet {
 		self.VpnInterfaceWhileOffline.Set(update.VpnInterfaceWhileOffline.Value)
 	}
+	if update.RemoveDestination.IsSet {
+		self.RemoveDestination.Set(update.RemoveDestination.Value)
+	}
 	if update.Destination.IsSet {
 		self.Destination.Set(update.Destination.Value)
 	}
@@ -1969,6 +1958,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	if update.Shuffle.IsSet {
 		self.Shuffle.Set(update.Shuffle.Value)
 	}
+
 	if update.ConnectEnabled.IsSet {
 		self.ConnectEnabled.Set(update.ConnectEnabled.Value)
 	}
