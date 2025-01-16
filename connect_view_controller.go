@@ -484,10 +484,6 @@ func (self *ConnectGrid) GetProviderGridPointList() *ProviderGridPointList {
 // *important* do not call this while holding the view controller state lock
 // because this intialized with the current state, it will call back into the view controller
 func (self *ConnectGrid) listenToWindow(windowMonitor windowMonitor) {
-	// initialize with the current values
-	windowExpandEvent, providerEvents := windowMonitor.Events()
-	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
-
 	done := false
 	func() {
 		self.stateLock.Lock()
@@ -509,6 +505,10 @@ func (self *ConnectGrid) listenToWindow(windowMonitor windowMonitor) {
 	if done {
 		return
 	}
+
+	// initialize with the current values
+	windowExpandEvent, providerEvents := windowMonitor.Events()
+	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
 }
 
 func (self *ConnectGrid) close() {
@@ -690,6 +690,7 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 				}
 			}
 			clear(self.providerGridPoints)
+			providerGridPointChanged = true
 		}
 
 		for clientId, providerEvent := range providerEvents {
