@@ -994,7 +994,7 @@ type testing_monitorEventListener struct {
 	providerEvents map[connect.Id]*connect.ProviderEvent
 }
 
-func (self *testing_monitorEventListener) MonitorEventCallback(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent) {
+func (self *testing_monitorEventListener) MonitorEventCallback(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
