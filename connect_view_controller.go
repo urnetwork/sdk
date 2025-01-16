@@ -681,16 +681,15 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 
 		if reset {
 			for _, point := range self.providerGridPoints {
-				if !providerStateIsTerminal(point.State) {
-					point.State = ProviderStateRemoved
+				c := gridPointCoord{
+					X: int(point.X),
+					Y: int(point.Y),
 				}
-				// schedule the point to be removed
-				// note this resets the end time if already set
-				endTime := newTime(time.Now().Add(self.settings.RemoveTimeout))
-				point.EndTime = endTime
-				point.Active = providerStateIsActive(point.State)
-				providerGridPointChanged = true
+				if gridPoint, ok := self.gridPoints[c]; ok {
+					gridPoint.Occupied = false
+				}
 			}
+			clear(self.providerGridPoints)
 		}
 
 		for clientId, providerEvent := range providerEvents {
