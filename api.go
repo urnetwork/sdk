@@ -297,6 +297,10 @@ func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCh
 	})
 }
 
+/**
+ * Network Create
+ */
+
 type NetworkCreateCallback connect.ApiCallback[*NetworkCreateResult]
 
 type NetworkCreateArgs struct {
@@ -339,6 +343,28 @@ func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback Networ
 			networkCreate,
 			self.GetByJwt(),
 			&NetworkCreateResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Delete network
+ */
+
+type NetworkDeleteResult struct{}
+
+type NetworkDeleteCallback connect.ApiCallback[*NetworkDeleteResult]
+
+func (self *Api) NetworkDelete(callback NetworkDeleteCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/network-delete", self.apiUrl),
+			nil,
+			self.GetByJwt(),
+			&NetworkDeleteResult{},
 			callback,
 		)
 	})
