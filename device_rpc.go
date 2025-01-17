@@ -303,13 +303,18 @@ func (self *DeviceRemote) run() {
 					return
 				}
 
-				// trim the windows
-				for windowId, windowMonitor := range self.windowMonitors {
-					if !syncResponse.WindowIds[windowId] {
-						delete(self.windowMonitors, windowId)
-						clear(windowMonitor.listeners)
-					} 
+				if syncResponse.Error != "" {
+					glog.Infof("Sync error: %s", syncResponse.Error)
+					return
 				}
+
+				// trim the windows
+				// for windowId, windowMonitor := range self.windowMonitors {
+				// 	if !syncResponse.WindowIds[windowId] {
+				// 		delete(self.windowMonitors, windowId)
+				// 		clear(windowMonitor.listeners)
+				// 	} 
+				// }
 
 
 				// FIXME use response cert to listen with TLS
@@ -1430,8 +1435,7 @@ func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowM
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	_, ok := self.windowMonitors[windowMonitor.windowId]
-	if !ok {
+	if _, ok := self.windowMonitors[windowMonitor.windowId]; !ok {
 		// window no longer active
 		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
@@ -1447,6 +1451,20 @@ func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowM
 	if event == nil {
 		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
+
+	// trim the windows
+	for windowId, windowMonitor := range self.windowMonitors {
+		if !event.WindowIds[windowId] {
+			delete(self.windowMonitors, windowId)
+			clear(windowMonitor.listeners)
+		} 
+	}
+
+	if _, ok := self.windowMonitors[windowMonitor.windowId]; !ok {
+		// window no longer active
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
+	}
+
 	return event.WindowExpandEvent, event.ProviderEvents
 }
 
@@ -1991,8 +2009,10 @@ type DeviceRemoteSyncRequest struct {
 
 //gomobile:noexport
 type DeviceRemoteSyncResponse struct {
-	WindowIds map[connect.Id]bool
+	// WindowIds map[connect.Id]bool
 	// FIXME response cert
+	RpcPublicKey string
+	Error string
 }
 
 
@@ -2518,12 +2538,21 @@ func (self *DeviceLocalRpc) Sync(
 	syncRequest *DeviceRemoteSyncRequest,
 	syncResponse **DeviceRemoteSyncResponse,
 ) error {
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		debug.PrintStack()
-	// 		panic(r)
-	// 	}
-	// }()
+	/*
+	defer func() {
+		if r := recover(); r != nil {
+			// debug.PrintStack()
+			// panic(r)
+
+			*syncResponse = &DeviceRemoteSyncResponse{
+		 		// WindowIds: self.windowIds(),
+		 		// RpcPublicKey: "test",
+		 		Error: fmt.Sprintf("%v", r),
+		 	}
+		 	returnErr = r.(error)
+		}
+	}()
+	*/
 
 	glog.Infof("s1")
 
@@ -2602,8 +2631,8 @@ func (self *DeviceLocalRpc) Sync(
 		self.deviceLocal.Shuffle()
 	}
 
-	glog.Infof("s15")
-	self.updateWindowMonitor(true)
+	// glog.Infof("s15")
+	// self.updateWindowMonitor(true)
 
 
 
@@ -2657,7 +2686,8 @@ func (self *DeviceLocalRpc) Sync(
 
  	glog.Infof("s33")
  	*syncResponse = &DeviceRemoteSyncResponse{
- 		WindowIds: self.windowIds(),
+ 		// WindowIds: self.windowIds(),
+ 		// RpcPublicKey: "test",
  	}
  	glog.Infof("s34")
 	return nil
@@ -3122,17 +3152,14 @@ func (self *DeviceLocalRpc) provideSecretKeysChanged(provideSecretKeyList *Provi
 
 
 // must be called with stateLock
-// `trim` is true if the remote client will trim the active window ids
-func (self *DeviceLocalRpc) updateWindowMonitor(trim bool) {
+func (self *DeviceLocalRpc) updateWindowMonitor() {
 	localWindowMonitor := self.deviceLocal.windowMonitor()
 	if self.localWindowMonitor != localWindowMonitor {
 		if self.windowMonitorEventListenerSub != nil {
 			self.windowMonitorEventListenerSub()
 			self.windowMonitorEventListenerSub = nil
 		}
-		if trim {
-			clear(self.localWindowIds)
-		}
+		clear(self.localWindowIds)
 
 		self.localWindowId = connect.NewId()
 		self.localWindowMonitor = localWindowMonitor
@@ -3157,7 +3184,7 @@ func (self *DeviceLocalRpc) AddWindowMonitorEventListener(windowListenerId Devic
 
 // must be called with stateLock
 func (self *DeviceLocalRpc) addWindowMonitorEventListener(windowListenerId DeviceRemoteWindowListenerId) map[connect.Id]bool {
-	self.updateWindowMonitor(true)
+	self.updateWindowMonitor()
 
 	localWindowId, ok := self.localWindowIds[windowListenerId.WindowId]
 	if !ok {
@@ -3216,6 +3243,8 @@ func (self *DeviceLocalRpc) WindowMonitorEvents(_ RpcNoArg, event **DeviceRemote
 
 // must be called with stateLock
 func (self *DeviceLocalRpc) windowMonitorEvents() *DeviceRemoteWindowMonitorEvent {
+	self.updateWindowMonitor()
+
 	if self.localWindowMonitor != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
 

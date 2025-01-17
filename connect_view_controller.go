@@ -484,10 +484,6 @@ func (self *ConnectGrid) GetProviderGridPointList() *ProviderGridPointList {
 // *important* do not call this while holding the view controller state lock
 // because this intialized with the current state, it will call back into the view controller
 func (self *ConnectGrid) listenToWindow(windowMonitor windowMonitor) {
-	// initialize with the current values
-	windowExpandEvent, providerEvents := windowMonitor.Events()
-	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
-
 	done := false
 	func() {
 		self.stateLock.Lock()
@@ -509,6 +505,10 @@ func (self *ConnectGrid) listenToWindow(windowMonitor windowMonitor) {
 	if done {
 		return
 	}
+
+	// initialize with the current values
+	windowExpandEvent, providerEvents := windowMonitor.Events()
+	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
 }
 
 func (self *ConnectGrid) close() {
@@ -681,16 +681,16 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 
 		if reset {
 			for _, point := range self.providerGridPoints {
-				if !providerStateIsTerminal(point.State) {
-					point.State = ProviderStateRemoved
+				c := gridPointCoord{
+					X: int(point.X),
+					Y: int(point.Y),
 				}
-				// schedule the point to be removed
-				// note this resets the end time if already set
-				endTime := newTime(time.Now().Add(self.settings.RemoveTimeout))
-				point.EndTime = endTime
-				point.Active = providerStateIsActive(point.State)
-				providerGridPointChanged = true
+				if gridPoint, ok := self.gridPoints[c]; ok {
+					gridPoint.Occupied = false
+				}
 			}
+			clear(self.providerGridPoints)
+			providerGridPointChanged = true
 		}
 
 		for clientId, providerEvent := range providerEvents {
