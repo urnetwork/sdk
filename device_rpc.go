@@ -1587,6 +1587,7 @@ func (self *DeviceRemote) windowMonitorEvent(
 	windowIds map[connect.Id]bool,
 	windowExpandEvent *connect.WindowExpandEvent,
 	providerEvents map[connect.Id]*connect.ProviderEvent,
+	reset bool,
 ) {
 	listenerLists := [][]connect.MonitorEventFunction{}
 	func() {
@@ -1601,7 +1602,7 @@ func (self *DeviceRemote) windowMonitorEvent(
 	}()
 	for _, listenerList := range listenerLists {
 		for _, monitorEventCallback := range listenerList {
-			monitorEventCallback(windowExpandEvent, providerEvents)
+			monitorEventCallback(windowExpandEvent, providerEvents, reset)
 		}
 	}
 }
@@ -2007,6 +2008,7 @@ type DeviceRemoteWindowMonitorEvent struct {
 	WindowIds map[connect.Id]bool
 	WindowExpandEvent *connect.WindowExpandEvent
 	ProviderEvents map[connect.Id]*connect.ProviderEvent
+	Reset bool
 }
 
 
@@ -2730,7 +2732,8 @@ func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ 
 	}
 	glog.Infof("s32")
 	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
-		self.windowMonitorEventCallback(self.localWindowMonitor.Events())
+		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
+		self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
 	}
  	
 
@@ -3220,6 +3223,7 @@ func (self *DeviceLocalRpc) windowMonitorEvents() *DeviceRemoteWindowMonitorEven
 			WindowIds: self.windowIds(),
 			WindowExpandEvent: windowExpandEvent,
 			ProviderEvents: providerEvents,	
+			Reset: true,
 		}
 	}
 	return nil
@@ -3229,22 +3233,25 @@ func (self *DeviceLocalRpc) windowMonitorEvents() *DeviceRemoteWindowMonitorEven
 func (self *DeviceLocalRpc) WindowMonitorEventCallback(
 	windowExpandEvent *connect.WindowExpandEvent,
 	providerEvents map[connect.Id]*connect.ProviderEvent,
+	reset bool,
 ) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	self.windowMonitorEventCallback(windowExpandEvent, providerEvents)
+	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, reset)
 }
 
 // must be called with stateLock
 func (self *DeviceLocalRpc) windowMonitorEventCallback(
 	windowExpandEvent *connect.WindowExpandEvent,
 	providerEvents map[connect.Id]*connect.ProviderEvent,
+	reset bool,
 ) {
 	if self.service != nil {
 		event := &DeviceRemoteWindowMonitorEvent{
 			WindowIds: self.windowIds(),
 			WindowExpandEvent: windowExpandEvent,
 			ProviderEvents: providerEvents,	
+			Reset: reset,
 		}
 
 		rpcCallVoid(self.service, "DeviceRemoteRpc.WindowMonitorEventCallback", event, self.closeService)
@@ -3475,6 +3482,7 @@ func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindo
 		event.WindowIds,
 		event.WindowExpandEvent,
 		event.ProviderEvents,
+		event.Reset,
 	)
 	return nil
 }
