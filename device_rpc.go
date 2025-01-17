@@ -231,11 +231,6 @@ func (self *DeviceRemote) run() {
 			defer handleCancel()
 
 			var responseListener net.Listener
-			defer func() {
-				if responseListener != nil {
-					responseListener.Close()
-				}
-			}()
 
 			synced := false
 			func() {
@@ -331,6 +326,11 @@ func (self *DeviceRemote) run() {
 					glog.Infof("[dr]sync reverse listen err = %s", err)
 					return
 				}
+				defer func() {
+					if !synced {
+						responseListener.Close()
+					}
+				}()
 				
 
 				glog.Info("[dr]start device remote rpc")
@@ -411,6 +411,7 @@ func (self *DeviceRemote) run() {
 					defer self.stateLock.Unlock()
 
 					self.closeService()
+					responseListener.Close()
 
 					// close pending http responses
 					for _, responseChannel := range self.httpResponseChannels {
@@ -1335,8 +1336,8 @@ func (self *DeviceRemote) Cancel() {
 }
 
 func (self *DeviceRemote) Close() {
-	// self.stateLock.Lock()
-	// defer self.stateLock.Unlock()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
 
 	self.cancel()
 
@@ -1344,6 +1345,11 @@ func (self *DeviceRemote) Close() {
 	// 	self.service.Close()
 	// 	self.service = nil
 	// }
+
+	api := self.networkSpace.GetApi()
+	api.SetByJwt("")
+	api.setHttpPostRaw(nil)
+	api.setHttpGetRaw(nil)
 }
 
 func (self *DeviceRemote) GetDone() bool {
@@ -2393,7 +2399,6 @@ func (self *DeviceLocalRpc) run() {
 				glog.Infof("[dlrcp]listen err = %s", err)
 				return
 			}
-
 			defer listener.Close()
 
 			server := rpc.NewServer()

@@ -42,20 +42,13 @@ func newApi(
 ) *Api {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	httpPostRaw := func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
-		return connect.HttpPostWithStrategyRaw(ctx, clientStrategy, requestUrl, requestBodyBytes, byJwt)
-	}
-	httpGetRaw := func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
-		return connect.HttpGetWithStrategyRaw(ctx, clientStrategy, requestUrl, byJwt)
-	}
-
 	return &Api{
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
 		apiUrl:         apiUrl,
-		httpPostRaw:    httpPostRaw,
-		httpGetRaw:     httpGetRaw,
+		httpPostRaw:    nil,
+		httpGetRaw:     nil,
 	}
 }
 
@@ -85,7 +78,13 @@ func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	return self.httpPostRaw
+	if self.httpPostRaw != nil {
+		return self.httpPostRaw
+	}
+
+	return func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+		return connect.HttpPostWithStrategyRaw(ctx, self.clientStrategy, requestUrl, requestBodyBytes, byJwt)
+	}
 }
 
 func (self *Api) setHttpGetRaw(httpGetRaw connect.HttpGetRawFunction) {
@@ -99,7 +98,13 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	return self.httpGetRaw
+	if self.httpGetRaw != nil {
+		return self.httpGetRaw
+	}
+
+	return func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+		return connect.HttpGetWithStrategyRaw(ctx, self.clientStrategy, requestUrl, byJwt)
+	}
 }
 
 func (self *Api) Close() {

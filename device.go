@@ -953,6 +953,9 @@ func (self *DeviceLocal) Close() {
 	if self.deviceLocalRpc != nil {
 		self.deviceLocalRpc.Close()
 	}
+
+	api := self.networkSpace.GetApi()
+	api.SetByJwt("")
 }
 
 func (self *DeviceLocal) GetDone() bool {
