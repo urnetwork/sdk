@@ -152,11 +152,18 @@ type device interface {
 	// monitor for the current connection window
 	// the client must get the window monitor each time the connection destination changes
 	windowMonitor() windowMonitor
+	localSecurityPolicy() securityPolicy
+	providerSecurityPolicy() securityPolicy
 }
 
 type windowMonitor interface {
 	AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func()
 	Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent)
+}
+
+type securityPolicy interface {
+	Stats() map[connect.SecurityPolicyResult]map[connect.SecurityDestination]int
+	ResetStats()
 }
 
 type emptyWindowMonitor struct {
@@ -532,6 +539,48 @@ func (self *DeviceLocal) windowMonitor() windowMonitor {
 	default:
 		// return an empty window monitor to be consistent with the device remote behavior
 		return &emptyWindowMonitor{}
+	}
+}
+
+func (self *DeviceLocal) localSecurityPolicy() securityPolicy {
+	return self.localSecurityPolicy
+}
+
+func (self *DeviceLocal) providerSecurityPolicy() securityPolicy {
+	return self.providerSecurityPolicy
+}
+
+func (self *DeviceLocal) localSecurityPolicyStats() map[connect.SecurityPolicyResult]map[connect.SecurityDestination]int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	return localUserNat.SecurityPolicyStats()
+}
+
+func (self *DeviceLocal) localSecurityPolicyResetStats() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	localUserNat.ResetSecurityPolicyStats()
+}
+
+func (self *DeviceLocal) providerSecurityPolicyStats() map[connect.SecurityPolicyResult]map[connect.SecurityDestination]int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.remoteUserNatClient != nil {
+		return remoteUserNatClient.SecurityPolicyStats()
+	} else {
+		return map[connect.SecurityPolicyResult]map[connect.SecurityDestination]int{}
+	}
+}
+
+func (self *DeviceLocal) providerSecurityPolicyResetStats() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.remoteUserNatClient != nil {
+		remoteUserNatClient.ResetSecurityPolicyStats()
 	}
 }
 
