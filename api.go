@@ -1233,7 +1233,7 @@ func (self *Api) AuthCodeLogin(
 }
 
 /**
- * Guest upgrade
+ * Guest upgrade to brand new network
  */
 
 type UpgradeGuestCallback connect.ApiCallback[*UpgradeGuestResult]
@@ -1273,6 +1273,51 @@ func (self *Api) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGu
 			upgradeGuest,
 			self.GetByJwt(),
 			&UpgradeGuestResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Merge guest account with existing account
+ */
+
+type UpgradeGuestExistingCallback connect.ApiCallback[*UpgradeGuestExistingResult]
+
+type UpgradeGuestExistingArgs struct {
+	UserAuth    string `json:"user_auth,omitempty"`
+	Password    string `json:"password,omitempty"`
+	AuthJwt     string `json:"auth_jwt,omitempty"`
+	AuthJwtType string `json:"auth_jwt_type,omitempty"`
+}
+
+type UpgradeGuestExistingNetwork struct {
+	ByJwt string `json:"by_jwt,omitempty"`
+}
+
+type UpgradeGuestExistingResultVerification struct {
+	UserAuth string `json:"user_auth"`
+}
+
+type UpgradeGuesteExistingResultError struct {
+	Message string `json:"message"`
+}
+
+type UpgradeGuestExistingResult struct {
+	Network              *UpgradeGuestExistingNetwork            `json:"network,omitempty"`
+	VerificationRequired *UpgradeGuestExistingResultVerification `json:"verification_required,omitempty"`
+	Error                *UpgradeGuesteExistingResultError       `json:"error,omitempty"`
+}
+
+func (self *Api) UpgradeGuestExisting(upgradeGuest *UpgradeGuestExistingArgs, callback UpgradeGuestExistingCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/upgrade-guest-existing", self.apiUrl),
+			upgradeGuest,
+			self.GetByJwt(),
+			&UpgradeGuestExistingResult{},
 			callback,
 		)
 	})
