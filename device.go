@@ -152,11 +152,19 @@ type device interface {
 	// monitor for the current connection window
 	// the client must get the window monitor each time the connection destination changes
 	windowMonitor() windowMonitor
+	egressSecurityPolicy() securityPolicy
+	ingressSecurityPolicy() securityPolicy
 }
 
 type windowMonitor interface {
 	AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func()
 	Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent)
+}
+
+
+type securityPolicy interface {
+	Stats(reset bool) connect.SecurityPolicyStats
+	// ResetStats()
 }
 
 type emptyWindowMonitor struct {
@@ -534,6 +542,97 @@ func (self *DeviceLocal) windowMonitor() windowMonitor {
 		return &emptyWindowMonitor{}
 	}
 }
+
+
+type deviceLocalEgressSecurityPolicy struct {
+	deviceLocal *DeviceLocal
+}
+
+func newDeviceLocalEgressSecurityPolicy(deviceLocal *DeviceLocal) *deviceLocalEgressSecurityPolicy {
+	return &deviceLocalEgressSecurityPolicy{
+		deviceLocal: deviceLocal,
+	}	
+}
+
+func (self *deviceLocalEgressSecurityPolicy) Stats(reset bool) connect.SecurityPolicyStats {
+	return self.deviceLocal.egressSecurityPolicyStats(reset)
+}
+
+// func (self *deviceLocalEgressSecurityPolicy) ResetStats() {
+// 	self.deviceLocal.resetEgressSecurityPolicyStats()
+// }
+
+
+type deviceLocalIngressSecurityPolicy struct {
+	deviceLocal *DeviceLocal
+}
+
+func newDeviceLocalIngressSecurityPolicy(deviceLocal *DeviceLocal) *deviceLocalIngressSecurityPolicy {
+	return &deviceLocalIngressSecurityPolicy{
+		deviceLocal: deviceLocal,
+	}	
+}
+
+func (self *deviceLocalIngressSecurityPolicy) Stats(reset bool) connect.SecurityPolicyStats {
+	return self.deviceLocal.ingressSecurityPolicyStats(reset)
+}
+
+// func (self *deviceLocalIngressSecurityPolicy) ResetStats() {
+// 	self.deviceLocal.resetIngressSecurityPolicyStats()
+// }
+
+
+func (self *DeviceLocal) egressSecurityPolicy() securityPolicy {
+	return &deviceLocalEgressSecurityPolicy{
+		deviceLocal: self,
+	}
+}
+
+func (self *DeviceLocal) ingressSecurityPolicy() securityPolicy {
+	return &deviceLocalIngressSecurityPolicy{
+ 		deviceLocal: self,
+	}
+} 
+
+func (self *DeviceLocal) egressSecurityPolicyStats(reset bool) connect.SecurityPolicyStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.remoteUserNatClient != nil {
+		return self.remoteUserNatClient.SecurityPolicyStats(reset)
+	} else {
+		return connect.SecurityPolicyStats{}
+	}
+}
+
+// func (self *DeviceLocal) resetEgressSecurityPolicyStats() {
+// 	self.stateLock.Lock()
+// 	defer self.stateLock.Unlock()
+
+// 	if self.remoteUserNatClient != nil {
+// 		self.remoteUserNatClient.ResetSecurityPolicyStats()
+// 	}
+// }
+
+func (self *DeviceLocal) ingressSecurityPolicyStats(reset bool) connect.SecurityPolicyStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.remoteUserNatProvider != nil {
+		return self.remoteUserNatProvider.SecurityPolicyStats(reset)
+	} else {
+		return connect.SecurityPolicyStats{}
+	}
+}
+
+// func (self *DeviceLocal) resetIngressSecurityPolicyStats() {
+// 	self.stateLock.Lock()
+// 	defer self.stateLock.Unlock()
+
+// 	if self.remoteUserNatProvider != nil {
+// 		self.remoteUserNatProvider.ResetSecurityPolicyStats()
+// 	}
+// }
 
 func (self *DeviceLocal) AddProvideChangeListener(listener ProvideChangeListener) Sub {
 	callbackId := self.provideChangeListeners.Add(listener)

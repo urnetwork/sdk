@@ -867,6 +867,67 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 
 
+
+func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+
+	// FIXME enable RPC
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		true,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+
+	deviceRemote.Sync()
+	deviceRemote.waitForSync(5 * time.Second)
+
+
+	deviceRemote.egressSecurityPolicy().Stats(false)
+	deviceRemote.ingressSecurityPolicy().Stats(false)
+
+	deviceRemote.egressSecurityPolicy().Stats(true)
+	deviceRemote.ingressSecurityPolicy().Stats(true)
+
+
+}
+
+
+
 type testing_listener struct {
 	stateLock sync.Mutex
 	event bool

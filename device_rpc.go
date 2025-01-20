@@ -77,10 +77,6 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 	}
 }
 
-// FIXME this needs to track the last known value from get or event
-// FIXME get when not sync and not set should return last known value
-// FIXME the default values should be the last known value
-
 // compile check that DeviceRemote conforms to Device, device, and ViewControllerManager
 var _ Device = (*DeviceRemote)(nil)
 var _ device = (*DeviceRemote)(nil)
@@ -102,6 +98,9 @@ type DeviceRemote struct {
 	clientStrategy *connect.ClientStrategy
 
 	remoteChangeListeners *connect.CallbackList[RemoteChangeListener]
+
+	// egressSecurityPolicy *deviceRemoteEgressSecurityPolicy
+	// ingressSecurityPolicy *deviceRemote 
 
 	stateLock sync.Mutex
 
@@ -143,24 +142,14 @@ func newDeviceRemote(
 	if err != nil {
 		return nil, err
 	}
-	api := networkSpace.GetApi()
-	api.SetByJwt(byJwt)
-
-	deviceRemote, err := newDeviceRemoteWithOverrides(
+	
+	return newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
 		instanceId,
 		settings,
 		clientId,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	api.setHttpPostRaw(deviceRemote.httpPostRaw)
-	api.setHttpGetRaw(deviceRemote.httpGetRaw)
-
-	return deviceRemote, nil
 }
 
 func newDeviceRemoteWithOverrides(
@@ -171,6 +160,9 @@ func newDeviceRemoteWithOverrides(
 	clientId connect.Id,
 ) (*DeviceRemote, error) {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	api := networkSpace.GetApi()
+	api.SetByJwt(byJwt)
 
 	deviceRemote := &DeviceRemote{
 		ctx: ctx,
@@ -195,15 +187,13 @@ func newDeviceRemoteWithOverrides(
 		windowMonitors: map[connect.Id]*deviceRemoteWindowMonitor{},
 		httpResponseChannels: map[connect.Id]chan *DeviceRemoteHttpResponse{},
 	}
-	// assume a common set of defaults
-	// deviceRemote.lastKnownState.RouteLocal.Set(defaultRouteLocal)
-	// deviceRemote.lastKnownState.CanShowRatingDialog.Set(defaultCanShowRatingDialog)
-	// deviceRemote.lastKnownState.ProvideWhileDisconnected.Set(defaultProvideWhileDisconnected)
-	// deviceRemote.lastKnownState.CanRefer.Set(defaultCanRefer)
-	// deviceRemote.lastKnownState.Offline.Set(defaultOffline)
-	// deviceRemote.lastKnownState.VpnInterfaceWhileOffline.Set(defaultVpnInterfaceWhileOffline)
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
+
+	api.setHttpPostRaw(deviceRemote.httpPostRaw)
+	api.setHttpGetRaw(deviceRemote.httpGetRaw)
+
+	newSecurityPolicyMonitor(ctx, deviceRemote)
 
 	// remote starts locked
 	// only after the first attempt to connect to the local does it unlock
@@ -1498,6 +1488,190 @@ func (self *deviceRemoteWindowMonitor) Events() (*connect.WindowExpandEvent, map
 }
 
 
+func (self *DeviceRemote) egressSecurityPolicyStats(reset bool) connect.SecurityPolicyStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	stats, success := func()(connect.SecurityPolicyStats, bool) {
+		if self.service == nil {
+			return connect.SecurityPolicyStats{}, false
+		}
+
+		stats, err := rpcCall[connect.SecurityPolicyStats](self.service, "DeviceLocalRpc.EgressSecurityPolicyStats", reset, self.closeService)
+		if err != nil {
+			return connect.SecurityPolicyStats{}, false
+		}
+		self.lastKnownState.EgressSecurityPolicyStats.Set(stats)
+		return stats, true
+	}()
+
+	var out connect.SecurityPolicyStats
+	if success {
+		out = stats
+	} else if self.state.ResetEgressSecurityPolicyStats.IsSet {
+		out = connect.SecurityPolicyStats{}
+	} else {
+		out = self.lastKnownState.EgressSecurityPolicyStats.Get(
+			connect.SecurityPolicyStats{},
+		)
+	}
+
+	if reset {
+		state := &self.state
+		if success {
+			state = &self.lastKnownState
+		}
+		state.ResetEgressSecurityPolicyStats.Set(true)
+		state.EgressSecurityPolicyStats.Unset()
+	}
+
+	return out
+}
+
+/*
+func (self *DeviceRemote) resetEgressSecurityPolicyStats() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func()(bool) {
+		if self.service == nil {
+			return false
+		}
+
+		err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ResetEgressSecurityPolicyStats", self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+	state := &self.state
+	if success {
+		state = &self.lastKnownState
+	}
+	state.ResetEgressSecurityPolicyStats.Set(true)
+	state.EgressSecurityPolicyStats.Unset()
+}
+*/
+
+func (self *DeviceRemote) ingressSecurityPolicyStats(reset bool) connect.SecurityPolicyStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	stats, success := func()(connect.SecurityPolicyStats, bool) {
+		if self.service == nil {
+			return connect.SecurityPolicyStats{}, false
+		}
+
+		stats, err := rpcCall[connect.SecurityPolicyStats](self.service, "DeviceLocalRpc.IngressSecurityPolicyStats", reset, self.closeService)
+		if err != nil {
+			return connect.SecurityPolicyStats{}, false
+		}
+		self.lastKnownState.IngressSecurityPolicyStats.Set(stats)
+		return stats, true
+	}()
+
+	var out connect.SecurityPolicyStats
+	if success {
+		out = stats
+	} else if self.state.ResetIngressSecurityPolicyStats.IsSet {
+		out = connect.SecurityPolicyStats{}
+	} else {
+		out = self.lastKnownState.IngressSecurityPolicyStats.Get(
+			connect.SecurityPolicyStats{},
+		)
+	}
+
+	if reset {
+		state := &self.state
+		if success {
+			state = &self.lastKnownState
+		}
+		state.ResetIngressSecurityPolicyStats.Set(true)
+		state.IngressSecurityPolicyStats.Unset()
+	}
+
+	return out
+}
+
+/*
+func (self *DeviceRemote) resetIngressSecurityPolicyStats() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func()(bool) {
+		if self.service == nil {
+			return false
+		}
+
+		err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ResetIngressSecurityPolicyStats", self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+	state := &self.state
+	if success {
+		state = &self.lastKnownState
+	}
+	state.ResetIngressSecurityPolicyStats.Set(true)
+	state.IngressSecurityPolicyStats.Unset()
+}
+*/
+
+
+
+type deviceRemoteEgressSecurityPolicy struct {
+	deviceRemote *DeviceRemote
+}
+
+func newDeviceRemoteEgressSecurityPolicy(deviceRemote *DeviceRemote) *deviceRemoteEgressSecurityPolicy {
+	return &deviceRemoteEgressSecurityPolicy{
+		deviceRemote: deviceRemote,
+	}	
+}
+
+func (self *deviceRemoteEgressSecurityPolicy) Stats(reset bool) connect.SecurityPolicyStats {
+	return self.deviceRemote.egressSecurityPolicyStats(reset)
+}
+
+// func (self *deviceRemoteEgressSecurityPolicy) ResetStats() {
+// 	self.deviceRemote.resetEgressSecurityPolicyStats()
+// }
+
+
+type deviceRemoteIngressSecurityPolicy struct {
+	deviceRemote *DeviceRemote
+}
+
+func newDeviceRemoteIngressSecurityPolicy(deviceRemote *DeviceRemote) *deviceRemoteIngressSecurityPolicy {
+	return &deviceRemoteIngressSecurityPolicy{
+		deviceRemote: deviceRemote,
+	}	
+}
+
+func (self *deviceRemoteIngressSecurityPolicy) Stats(reset bool) connect.SecurityPolicyStats {
+	return self.deviceRemote.ingressSecurityPolicyStats(reset)
+}
+
+// func (self *deviceRemoteIngressSecurityPolicy) ResetStats() {
+// 	self.deviceRemote.resetIngressSecurityPolicyStats()
+// }
+
+
+func (self *DeviceRemote) egressSecurityPolicy() securityPolicy {
+	return &deviceRemoteEgressSecurityPolicy{
+		deviceRemote: self,
+	}
+}
+
+func (self *DeviceRemote) ingressSecurityPolicy() securityPolicy {
+	return &deviceRemoteIngressSecurityPolicy{
+		deviceRemote: self,
+	}
+}
+
+
+
 // event dispatch
 
 func listenerList[T any](listenerMap map[connect.Id]T) []T {
@@ -1915,9 +2089,14 @@ type DeviceRemoteState struct {
 	Destination deviceRemoteValue[*DeviceRemoteDestination]
 	Location deviceRemoteValue[*DeviceRemoteConnectLocation]
 	Shuffle deviceRemoteValue[bool]
+	ResetEgressSecurityPolicyStats deviceRemoteValue[bool]
+	ResetIngressSecurityPolicyStats deviceRemoteValue[bool]
 
 	ConnectEnabled deviceRemoteValue[bool]
 	ProvideEnabled deviceRemoteValue[bool]
+
+	EgressSecurityPolicyStats deviceRemoteValue[connect.SecurityPolicyStats]
+	IngressSecurityPolicyStats deviceRemoteValue[connect.SecurityPolicyStats]
 }
 
 func (self *DeviceRemoteState) Unset() {
@@ -1935,9 +2114,13 @@ func (self *DeviceRemoteState) Unset() {
 	self.Destination.Unset()
 	self.Location.Unset()
 	self.Shuffle.Unset()
+	self.ResetEgressSecurityPolicyStats.Unset()
+	self.ResetIngressSecurityPolicyStats.Unset()
 
 	self.ConnectEnabled.Unset()
 	self.ProvideEnabled.Unset()
+	self.EgressSecurityPolicyStats.Unset()
+	self.IngressSecurityPolicyStats.Unset()
 }
 
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
@@ -1983,12 +2166,24 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	if update.Shuffle.IsSet {
 		self.Shuffle.Set(update.Shuffle.Value)
 	}
+	if update.ResetEgressSecurityPolicyStats.IsSet {
+		self.ResetEgressSecurityPolicyStats.Set(update.ResetEgressSecurityPolicyStats.Value)
+	}
+	if update.ResetIngressSecurityPolicyStats.IsSet {
+		self.ResetIngressSecurityPolicyStats.Set(update.ResetIngressSecurityPolicyStats.Value)
+	}
 
 	if update.ConnectEnabled.IsSet {
 		self.ConnectEnabled.Set(update.ConnectEnabled.Value)
 	}
 	if update.ProvideEnabled.IsSet {
 		self.ProvideEnabled.Set(update.ProvideEnabled.Value)
+	}
+	if update.EgressSecurityPolicyStats.IsSet {
+		self.EgressSecurityPolicyStats.Set(update.EgressSecurityPolicyStats.Value)
+	}
+	if update.IngressSecurityPolicyStats.IsSet {
+		self.IngressSecurityPolicyStats.Set(update.IngressSecurityPolicyStats.Value)
 	}
 }
 
@@ -2334,6 +2529,8 @@ type DeviceLocalRpc struct {
 	cancel context.CancelFunc
 
 	deviceLocal *DeviceLocal
+	egressSecurityPolicy securityPolicy
+	ingressSecurityPolicy securityPolicy
 	settings *deviceRpcSettings
 
 	stateLock sync.Mutex
@@ -2385,6 +2582,8 @@ func newDeviceLocalRpc(
 		ctx: cancelCtx,
 		cancel: cancel,
 		deviceLocal: deviceLocal,
+		egressSecurityPolicy: deviceLocal.egressSecurityPolicy(),
+		ingressSecurityPolicy: deviceLocal.ingressSecurityPolicy(),
 		settings: settings,
 		provideChangeListenerIds: map[connect.Id]bool{},
 		providePausedChangeListenerIds: map[connect.Id]bool{},
@@ -2629,6 +2828,13 @@ func (self *DeviceLocalRpc) Sync(
 	glog.Infof("s14")
 	if state.Shuffle.IsSet {
 		self.deviceLocal.Shuffle()
+	}
+
+	if state.ResetEgressSecurityPolicyStats.IsSet {
+		self.egressSecurityPolicy.Stats(true)
+	}
+	if state.ResetIngressSecurityPolicyStats.IsSet {
+		self.ingressSecurityPolicy.Stats(true)
 	}
 
 	// glog.Infof("s15")
@@ -3286,6 +3492,27 @@ func (self *DeviceLocalRpc) windowMonitorEventCallback(
 		rpcCallVoid(self.service, "DeviceRemoteRpc.WindowMonitorEventCallback", event, self.closeService)
 	}
 }
+
+
+func (self *DeviceLocalRpc) EgressSecurityPolicyStats(reset bool, stats *connect.SecurityPolicyStats) error {
+	*stats = self.egressSecurityPolicy.Stats(reset)
+	return nil
+}
+
+// func (self *DeviceLocalRpc) ResetEgressSecurityPolicyStats(_ RpcNoArg, _ RpcVoid) error {
+// 	self.egressSecurityPolicy.ResetStats()
+// 	return nil
+// }
+
+func (self *DeviceLocalRpc) IngressSecurityPolicyStats(reset bool, stats *connect.SecurityPolicyStats) error {
+	*stats = self.ingressSecurityPolicy.Stats(reset)
+	return nil
+}
+
+// func (self *DeviceLocalRpc) ResetIngressSecurityPolicyStats(_ RpcNoArg, _ RpcVoid) error {
+// 	self.ingressSecurityPolicy.ResetStats()
+// 	return nil
+// }
 
 
 func (self *DeviceLocalRpc) LoadProvideSecretKeys(provideSecretKeys []*ProvideSecretKey, _ RpcVoid) error {
