@@ -2102,8 +2102,6 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 }
 
 
-
-
 // *important rpc note* gob encoding cannot encode fields that are not exported
 // so our usual gomobile types that have private fields cannot be properly sent via rpc
 // for rpc we redefine these gomobile types so that they can be gob encoded
@@ -2114,6 +2112,8 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 // however, the types must be exported for net.rpc to work
 // this leads to some unfortunate gomobile warnings currently
 
+// *important* argument and return values from rpc fucntios CANNOT be nil
+// this is a limitation in net.rpc
 
 
 //gomobile:noexport
