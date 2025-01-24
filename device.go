@@ -59,6 +59,21 @@ type ReceivePacket interface {
 	ReceivePacket(packet []byte)
 }
 
+type TunnelChangeListener interface {
+	TunnelChanged(tunnelStarted bool)
+}
+
+type ContractStatusChangeListener interface {
+	ContractStatusChanged(contractStatus *ContractStatus)
+}
+
+
+type ContractStatus struct {
+	InsufficientBalance bool
+	NoPermission bool
+	Premium bool
+}
+
 
 // every device must also support the unexported `device` interface
 type Device interface {
@@ -124,6 +139,12 @@ type Device interface {
 
 	Shuffle()
 
+	SetTunnelStarted(tunnelStarted bool)
+
+	GetTunnelStarted() bool
+
+	GetContractStatus() *ContractStatus
+
 	Close()
 
 	Cancel()
@@ -144,6 +165,10 @@ type Device interface {
 	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
 
 	AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
+
+	AddTunnelChangeListener(listener TunnelChangeListener) Sub
+
+	AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub
 
 }
 
@@ -185,18 +210,25 @@ const defaultProvideWhileDisconnected = false
 const defaultCanRefer = false
 const defaultOffline = true
 const defaultVpnInterfaceWhileOffline = false
+const defaultTunnelStarted = false
 
 
 type deviceLocalSettings struct {
 	// time to give up (drop) sending a packet to a destination
 	SendTimeout time.Duration
 	// ClientDrainTimeout time.Duration
+
+	NetContractStatusDuration time.Duration
+	NetContractStatusCount int
 }
 
 func defaultDeviceLocalSettings() *deviceLocalSettings {
 	return &deviceLocalSettings{
 		SendTimeout: 5 * time.Second,
 		// ClientDrainTimeout: 30 * time.Second,
+
+		NetContractStatusDuration: 10 * time.Second,
+		NetContractStatusCount: 10,
 	}
 }
 
@@ -255,6 +287,10 @@ type DeviceLocal struct {
 	provideWhileDisconnected bool
 	offline                  bool
 	vpnInterfaceWhileOffline bool
+	tunnelStarted bool
+
+	orderedContractStatusUpdates []*contractStatusUpdate
+	netContractStatus *ContractStatus
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
@@ -265,6 +301,8 @@ type DeviceLocal struct {
 	routeLocalChangeListeners      *connect.CallbackList[RouteLocalChangeListener]
 	connectLocationChangeListeners *connect.CallbackList[ConnectLocationChangeListener]
 	provideSecretKeysListeners *connect.CallbackList[ProvideSecretKeysListener]
+	tunnelChangeListeners *connect.CallbackList[TunnelChangeListener]
+	contractStatusChangeListeners *connect.CallbackList[ContractStatusChangeListener]
 
 	localUserNatUnsub func()
 
@@ -407,6 +445,9 @@ func newDeviceLocalWithOverrides(
 		provideWhileDisconnected:          defaultProvideWhileDisconnected,
 		offline:                           defaultOffline,
 		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
+		tunnelStarted: defaultTunnelStarted,
+		orderedContractStatusUpdates: []*contractStatusUpdate{},
+		netContractStatus: nil,
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
 		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
 		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
@@ -415,6 +456,8 @@ func newDeviceLocalWithOverrides(
 		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
 		connectLocationChangeListeners:    connect.NewCallbackList[ConnectLocationChangeListener](),
 		provideSecretKeysListeners:    connect.NewCallbackList[ProvideSecretKeysListener](),
+		contractStatusChangeListeners: connect.NewCallbackList[ContractStatusChangeListener](),		
+		tunnelChangeListeners: connect.NewCallbackList[TunnelChangeListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
@@ -428,6 +471,125 @@ func newDeviceLocalWithOverrides(
 
 	return deviceLocal, nil
 }
+
+
+type contractStatusUpdate struct {
+	updateTime time.Time
+	contractStatus *connect.ContractStatus
+}
+
+func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractStatus) {
+	event := false	
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		// track last n status updates and use all updates newer than M seconds
+		now := time.Now()
+		windowStartTime := now.Add(-self.settings.NetContractStatusDuration)
+		i := max(
+			0,
+			len(self.orderedContractStatusUpdates) - (self.settings.NetContractStatusCount - 1),
+		)
+		for i < len(self.orderedContractStatusUpdates) && self.orderedContractStatusUpdates[i].updateTime.Before(windowStartTime) {
+			i += 1
+		}
+		self.orderedContractStatusUpdates = self.orderedContractStatusUpdates[:i]
+		update := &contractStatusUpdate{
+			updateTime: now,
+			contractStatus: contractStatus,
+		}
+		self.orderedContractStatusUpdates = append(self.orderedContractStatusUpdates, update)
+
+		// summarize the update window
+		netContractStatus := &ContractStatus{}
+		for _, contractStatusUpdate := range self.orderedContractStatusUpdates {
+			contractStatus := contractStatusUpdate.contractStatus
+			if contractStatus.Error != nil {
+				switch *contractStatus.Error {
+				case protocol.ContractError_InsufficientBalance:
+					netContractStatus.InsufficientBalance = true
+				case protocol.ContractError_NoPermission:
+					netContractStatus.NoPermission = true
+				}
+			}
+			if contractStatus.Premium {
+				netContractStatus.Premium = true
+			}
+		}
+
+		if self.netContractStatus == nil || *self.netContractStatus != *netContractStatus {
+			self.netContractStatus = netContractStatus
+			event = true
+		}
+	}()
+	if event {
+		self.contractStatusChanged(self.GetContractStatus())
+	}
+}
+
+func (self *DeviceLocal) AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub {
+	callbackId := self.contractStatusChangeListeners.Add(listener)
+	return newSub(func() {
+		self.contractStatusChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) contractStatusChanged(contractStatus *ContractStatus) {
+	for _, contractStatusChangeListener := range self.contractStatusChangeListeners.Get() {
+		connect.HandleError(func() {
+			contractStatusChangeListener.ContractStatusChanged(contractStatus)
+		})
+	}
+}
+
+
+func (self *DeviceLocal) SetTunnelStarted(tunnelStarted bool) {
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if self.tunnelStarted != tunnelStarted {
+			self.tunnelStarted = tunnelStarted
+			event = true
+		}
+	}()
+	if event {
+		self.tunnelChanged(self.GetTunnelStarted())
+	}
+}
+
+func (self *DeviceLocal) GetTunnelStarted() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	return self.tunnelStarted
+}
+
+func (self *DeviceLocal) AddTunnelChangeListener(listener TunnelChangeListener) Sub {
+	callbackId := self.tunnelChangeListeners.Add(listener)
+	return newSub(func() {
+		self.tunnelChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) tunnelChanged(tunnelStarted bool) {
+	for _, tunnelChangeListener := range self.tunnelChangeListeners.Get() {
+		connect.HandleError(func() {
+			tunnelChangeListener.TunnelChanged(tunnelStarted)
+		})
+	}
+}
+
+
+func (self *DeviceLocal) GetContractStatus() *ContractStatus {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	return self.netContractStatus
+}
+
 
 func (self *DeviceLocal) GetClientId() *Id {
 	return newId(self.clientId)
@@ -922,12 +1084,14 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, ipProtocol, packet)
 			}
-			self.remoteUserNatClient = connect.NewRemoteUserNatMultiClientWithDefaults(
+			multi := connect.NewRemoteUserNatMultiClientWithDefaults(
 				self.ctx,
 				generator,
 				remoteReceive,
 				protocol.ProvideMode_Network,
 			)
+			multi.AddContractStatusCallback(self.updateContractStatus)
+			self.remoteUserNatClient = multi
 		}
 		// else no specs, not an error
 	}()

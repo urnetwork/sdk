@@ -114,6 +114,8 @@ type DeviceRemote struct {
 	connectLocationChangeListeners map[connect.Id]ConnectLocationChangeListener
 	provideSecretKeysListeners map[connect.Id]ProvideSecretKeysListener
 	windowMonitors map[connect.Id]*deviceRemoteWindowMonitor
+	tunnelChangeListeners map[connect.Id]TunnelChangeListener
+	contractStatusChangeListeners map[connect.Id]ContractStatusChangeListener
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
 
@@ -185,6 +187,8 @@ func newDeviceRemoteWithOverrides(
 		connectLocationChangeListeners: map[connect.Id]ConnectLocationChangeListener{},
 		provideSecretKeysListeners: map[connect.Id]ProvideSecretKeysListener{},
 		windowMonitors: map[connect.Id]*deviceRemoteWindowMonitor{},
+		tunnelChangeListeners: map[connect.Id]TunnelChangeListener{},
+		contractStatusChangeListeners: map[connect.Id]ContractStatusChangeListener{},
 		httpResponseChannels: map[connect.Id]chan *DeviceRemoteHttpResponse{},
 	}
 
@@ -285,6 +289,8 @@ func (self *DeviceRemote) run() {
 					RouteLocalChangeListenerIds: maps.Keys(self.routeLocalChangeListeners),
 					ConnectLocationChangeListenerIds: maps.Keys(self.connectLocationChangeListeners),
 					ProvideSecretKeysListenerIds: maps.Keys(self.provideSecretKeysListeners),
+					TunnelChangeListenerIds: maps.Keys(self.tunnelChangeListeners),
+					ContractStatusChangeListenerIds: maps.Keys(self.contractStatusChangeListeners),
 					WindowMonitorEventListenerIds: windowMonitorListenerIds,
 					State: self.state,
 				}
@@ -416,6 +422,7 @@ func (self *DeviceRemote) run() {
 				}()
 
 				self.remoteChanged(false)
+				self.tunnelChanged(false)
 			}
 
 
@@ -503,6 +510,125 @@ func (self *DeviceRemote) GetApi() *Api {
 func (self *DeviceRemote) GetNetworkSpace() *NetworkSpace {
 	return self.networkSpace
 }
+
+
+func (self *DeviceRemote) SetTunnelStarted(tunnelStarted bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func()(bool) {
+		if self.service == nil {
+			return false
+		}
+
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetTunnelStarted", tunnelStarted, self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+	state := &self.state
+	if success {
+		state = &self.lastKnownState
+	}
+	state.TunnelStarted.Set(tunnelStarted)
+}
+
+func (self *DeviceRemote) GetTunnelStarted() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	tunnelStarted, success := func()(bool, bool) {
+		if self.service == nil {
+			return false, false
+		}
+
+		tunnelStarted, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.GetTunnelStarted", self.closeService)
+		if err != nil {
+			return false, false
+		}
+		self.lastKnownState.TunnelStarted.Set(tunnelStarted)
+		return tunnelStarted, true
+	}()
+	if success {
+		return tunnelStarted
+	} else {
+		return self.service != nil && self.state.TunnelStarted.Get(
+			self.lastKnownState.TunnelStarted.Get(defaultTunnelStarted),
+		)
+	}
+}
+
+func (self *DeviceRemote) GetContractStatus() *ContractStatus {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractStatus, success := func()(*ContractStatus, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		status, err := rpcCallNoArg[*DeviceRemoteContractStatus](self.service, "DeviceLocalRpc.GetContractStatus", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		contractStatus := status.ContractStatus
+		self.lastKnownState.ContractStatus.Set(contractStatus)
+		return contractStatus, true
+	}()
+	if success {
+		return contractStatus
+	} else {
+		return self.state.ContractStatus.Get(
+			self.lastKnownState.ContractStatus.Get(nil),
+		)
+	}
+}
+
+func (self *DeviceRemote) AddTunnelChangeListener(listener TunnelChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.tunnelChangeListeners,
+		"DeviceLocalRpc.AddTunnelChangeListener",
+		"DeviceLocalRpc.RemoveTunnelChangeListener",
+	)
+}
+
+func (self *DeviceRemote) AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.contractStatusChangeListeners,
+		"DeviceLocalRpc.AddContractStatusChangeListener",
+		"DeviceLocalRpc.RemoveContractStatusChangeListener",
+	)
+}
+
+func (self *DeviceRemote) tunnelChanged(tunnelStarted bool) {
+	listenerList := func()[]TunnelChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.TunnelStarted.Set(tunnelStarted)
+		return listenerList(self.tunnelChangeListeners)
+	}()
+	for _, tunnelChangeListener := range listenerList {
+		tunnelChangeListener.TunnelChanged(tunnelStarted)
+	}
+}
+
+func (self *DeviceRemote) contractStatusChanged(contractStatus *ContractStatus) {
+	listenerList := func()[]ContractStatusChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.ContractStatus.Set(contractStatus)
+		return listenerList(self.contractStatusChangeListeners)
+	}()
+	for _, contractStatusChangeListener := range listenerList {
+		contractStatusChangeListener.ContractStatusChanged(contractStatus)
+	}
+}
+
 
 func (self *DeviceRemote) GetStats() *DeviceStats {
 	self.stateLock.Lock()
@@ -1976,8 +2102,6 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 }
 
 
-
-
 // *important rpc note* gob encoding cannot encode fields that are not exported
 // so our usual gomobile types that have private fields cannot be properly sent via rpc
 // for rpc we redefine these gomobile types so that they can be gob encoded
@@ -1988,6 +2112,8 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 // however, the types must be exported for net.rpc to work
 // this leads to some unfortunate gomobile warnings currently
 
+// *important* argument and return values from rpc fucntios CANNOT be nil
+// this is a limitation in net.rpc
 
 
 //gomobile:noexport
@@ -2072,9 +2198,16 @@ type DeviceRemoteConnectLocationChangeEvent struct {
 	Location *DeviceRemoteConnectLocation
 }
 
+//gomobile:noexport
+type DeviceRemoteContractStatus struct {
+	ContractStatus *ContractStatus
+}
+
 
 //gomobile:noexport
 type DeviceRemoteState struct {
+	// thick state + last known state
+
 	CanShowRatingDialog deviceRemoteValue[bool] 
 	ProvideWhileDisconnected deviceRemoteValue[bool]
 	CanRefer deviceRemoteValue[bool]
@@ -2091,12 +2224,17 @@ type DeviceRemoteState struct {
 	Shuffle deviceRemoteValue[bool]
 	ResetEgressSecurityPolicyStats deviceRemoteValue[bool]
 	ResetIngressSecurityPolicyStats deviceRemoteValue[bool]
+	TunnelStarted deviceRemoteValue[bool]
+
+	// only last known state
 
 	ConnectEnabled deviceRemoteValue[bool]
 	ProvideEnabled deviceRemoteValue[bool]
 
 	EgressSecurityPolicyStats deviceRemoteValue[connect.SecurityPolicyStats]
 	IngressSecurityPolicyStats deviceRemoteValue[connect.SecurityPolicyStats]
+
+	ContractStatus deviceRemoteValue[*ContractStatus]
 }
 
 func (self *DeviceRemoteState) Unset() {
@@ -2116,11 +2254,13 @@ func (self *DeviceRemoteState) Unset() {
 	self.Shuffle.Unset()
 	self.ResetEgressSecurityPolicyStats.Unset()
 	self.ResetIngressSecurityPolicyStats.Unset()
+	self.TunnelStarted.Unset()
 
 	self.ConnectEnabled.Unset()
 	self.ProvideEnabled.Unset()
 	self.EgressSecurityPolicyStats.Unset()
 	self.IngressSecurityPolicyStats.Unset()
+	self.ContractStatus.Unset()
 }
 
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
@@ -2172,6 +2312,9 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	if update.ResetIngressSecurityPolicyStats.IsSet {
 		self.ResetIngressSecurityPolicyStats.Set(update.ResetIngressSecurityPolicyStats.Value)
 	}
+	if update.TunnelStarted.IsSet {
+		self.TunnelStarted.Set(update.TunnelStarted.Value)
+	}
 
 	if update.ConnectEnabled.IsSet {
 		self.ConnectEnabled.Set(update.ConnectEnabled.Value)
@@ -2185,6 +2328,9 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	if update.IngressSecurityPolicyStats.IsSet {
 		self.IngressSecurityPolicyStats.Set(update.IngressSecurityPolicyStats.Value)
 	}
+	if update.ContractStatus.IsSet {
+		self.ContractStatus.Set(update.ContractStatus.Value)
+	}
 }
 
 
@@ -2197,6 +2343,8 @@ type DeviceRemoteSyncRequest struct {
 	RouteLocalChangeListenerIds []connect.Id
 	ConnectLocationChangeListenerIds []connect.Id
 	ProvideSecretKeysListenerIds []connect.Id
+	TunnelChangeListenerIds []connect.Id
+	ContractStatusChangeListenerIds []connect.Id
 	WindowMonitorEventListenerIds map[connect.Id][]connect.Id
 	State DeviceRemoteState
 }
@@ -2542,6 +2690,8 @@ type DeviceLocalRpc struct {
 	routeLocalChangeListenerIds map[connect.Id]bool
 	connectLocationChangeListenerIds map[connect.Id]bool
 	provideSecretKeysListenerIds map[connect.Id]bool
+	tunnelChangeListenerIds map[connect.Id]bool
+	contractStatusChangeListenerIds map[connect.Id]bool
 
 
 	// window id -> listener id
@@ -2560,6 +2710,8 @@ type DeviceLocalRpc struct {
 	connectLocationChangeListenerSub Sub
 	provideSecretKeysListenerSub Sub
 	windowMonitorEventListenerSub func()
+	tunnelChangeListenerSub Sub
+	contractStatusChangeListenerSub Sub
 
 	service *rpcClient
 }
@@ -2593,6 +2745,8 @@ func newDeviceLocalRpc(
 		connectLocationChangeListenerIds: map[connect.Id]bool{},
 		provideSecretKeysListenerIds: map[connect.Id]bool{},
 		windowMonitorEventListenerIds: map[connect.Id]map[connect.Id]bool{},
+		tunnelChangeListenerIds: map[connect.Id]bool{},
+		contractStatusChangeListenerIds: map[connect.Id]bool{},
 		localWindowIds: map[connect.Id]connect.Id{},
 	}
 
@@ -2721,6 +2875,14 @@ func (self *DeviceLocalRpc) closeService() {
 		self.removeProvideSecretKeysListener(provideSecretKeysListenerId)
 	}
 
+	for tunnelChangeListenerId, _ := range self.tunnelChangeListenerIds {
+		self.removeTunnelChangeListener(tunnelChangeListenerId)
+	}
+
+	for contractStatusChangeListenerId, _ := range self.contractStatusChangeListenerIds {
+		self.removeContractStatusChangeListener(contractStatusChangeListenerId)
+	}
+
 	glog.Infof("s23")
 	for windowId, windowMonitorEventListenerIds := range self.windowMonitorEventListenerIds {
 		for windowMonitorEventListenerId, _ := range windowMonitorEventListenerIds {
@@ -2837,6 +2999,10 @@ func (self *DeviceLocalRpc) Sync(
 		self.ingressSecurityPolicy.Stats(true)
 	}
 
+	if state.TunnelStarted.IsSet {
+		self.deviceLocal.SetTunnelStarted(state.TunnelStarted.Value)
+	}
+
 	// glog.Infof("s15")
 	// self.updateWindowMonitor(true)
 
@@ -2876,6 +3042,14 @@ func (self *DeviceLocalRpc) Sync(
 	glog.Infof("s22")
 	for _, provideSecretKeysListenerId := range syncRequest.ProvideSecretKeysListenerIds {
 		self.addProvideSecretKeysListener(provideSecretKeysListenerId)
+	}
+
+	for _, tunnelChangeListenerId := range syncRequest.TunnelChangeListenerIds {
+		self.addTunnelChangeListener(tunnelChangeListenerId)
+	}
+
+	for _, contractStatusChangeListenerId := range syncRequest.ContractStatusChangeListenerIds {
+		self.addContractStatusChangeListener(contractStatusChangeListenerId)
 	}
 
 	glog.Infof("s23")
@@ -2966,15 +3140,138 @@ func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ 
 	if self.provideSecretKeysListenerSub != nil {
 		self.provideSecretKeysChanged(self.deviceLocal.GetProvideSecretKeys())
 	}
+	if self.tunnelChangeListenerSub != nil {
+		self.tunnelChanged(self.deviceLocal.GetTunnelStarted())
+	}
+	if self.contractStatusChangeListenerSub != nil {
+		self.contractStatusChanged(self.deviceLocal.GetContractStatus())
+	}
 	glog.Infof("s32")
 	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
 		self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
 	}
  	
-
 	return nil
 }
+
+
+func (self *DeviceLocalRpc) SetTunnelStarted(tunnelStarted bool, _ RpcVoid) error {
+	self.deviceLocal.SetTunnelStarted(tunnelStarted)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetTunnelStarted(_ RpcNoArg, tunnelStarted *bool) error {
+	*tunnelStarted = self.deviceLocal.GetTunnelStarted()
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetContractStatus(_ RpcNoArg, status **DeviceRemoteContractStatus) error {
+	*status = &DeviceRemoteContractStatus{
+		ContractStatus: self.deviceLocal.GetContractStatus(),
+	}
+	return nil
+}
+
+
+func (self *DeviceLocalRpc) AddTunnelChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addTunnelChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addTunnelChangeListener(listenerId connect.Id) {
+	self.tunnelChangeListenerIds[listenerId] = true
+	if self.tunnelChangeListenerSub == nil {
+		self.tunnelChangeListenerSub = self.deviceLocal.AddTunnelChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveTunnelChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeTunnelChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeTunnelChangeListener(listenerId connect.Id) {
+	delete(self.tunnelChangeListenerIds, listenerId)
+	if len(self.tunnelChangeListenerIds) == 0 && self.tunnelChangeListenerSub != nil {
+		self.tunnelChangeListenerSub.Close()
+		self.tunnelChangeListenerSub = nil
+	}
+}
+
+
+
+
+func (self *DeviceLocalRpc) AddContractStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addContractStatusChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addContractStatusChangeListener(listenerId connect.Id) {
+	self.contractStatusChangeListenerIds[listenerId] = true
+	if self.contractStatusChangeListenerSub == nil {
+		self.contractStatusChangeListenerSub = self.deviceLocal.AddContractStatusChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveContractStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeContractStatusChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeContractStatusChangeListener(listenerId connect.Id) {
+	delete(self.contractStatusChangeListenerIds, listenerId)
+	if len(self.contractStatusChangeListenerIds) == 0 && self.contractStatusChangeListenerSub != nil {
+		self.contractStatusChangeListenerSub.Close()
+		self.contractStatusChangeListenerSub = nil
+	}
+}
+
+
+// TunnelChangeListener
+func (self *DeviceLocalRpc) TunnelChanged(tunnelStarted bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.tunnelChanged(tunnelStarted)
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) tunnelChanged(tunnelStarted bool) {
+	if self.service != nil {
+		rpcCallVoid(self.service, "DeviceRemoteRpc.TunnelChanged", tunnelStarted, self.closeService)
+	}
+}
+
+
+// ContractStatusChangeListener
+func (self *DeviceLocalRpc) ContractStatusChanged(contractStatus *ContractStatus) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.contractStatusChanged(contractStatus)
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) contractStatusChanged(contractStatus *ContractStatus) {
+	if self.service != nil {
+		status := &DeviceRemoteContractStatus{
+			ContractStatus: contractStatus,
+		}
+		rpcCallVoid(self.service, "DeviceRemoteRpc.ContractStatusChanged", status, self.closeService)
+	}
+}
+
 
 func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
 	*stats = self.deviceLocal.GetStats()
@@ -3740,6 +4037,18 @@ func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindo
 		event.ProviderEvents,
 		event.Reset,
 	)
+	return nil
+}
+
+func (self *DeviceRemoteRpc) TunnelChanged(tunnelStarted bool, _ RpcVoid) error {
+	glog.Infof("[drrpc]TunnelChanged")
+	go self.deviceRemote.tunnelChanged(tunnelStarted)
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ContractStatusChanged(status *DeviceRemoteContractStatus, _ RpcVoid) error {
+	glog.Infof("[drrpc]ContractStatusChanged")
+	go self.deviceRemote.contractStatusChanged(status.ContractStatus)
 	return nil
 }
 
