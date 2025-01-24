@@ -504,6 +504,32 @@ func (self *DeviceRemote) GetNetworkSpace() *NetworkSpace {
 	return self.networkSpace
 }
 
+
+func (self *DeviceRemote) SetTunnelStarted(tunnelStarted bool) {
+	// FIXME
+}
+
+func (self *DeviceRemote) GetTunnelStarted() bool {
+	// FIXME
+	return false
+}
+
+func (self *DeviceRemote) GetContractStatus() *ContractStatus {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddTunnelChangeListener(listener TunnelChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+
 func (self *DeviceRemote) GetStats() *DeviceStats {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
