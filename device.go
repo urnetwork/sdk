@@ -210,6 +210,7 @@ const defaultProvideWhileDisconnected = false
 const defaultCanRefer = false
 const defaultOffline = true
 const defaultVpnInterfaceWhileOffline = false
+const defaultTunnelStarted = false
 
 
 type deviceLocalSettings struct {
@@ -444,7 +445,7 @@ func newDeviceLocalWithOverrides(
 		provideWhileDisconnected:          defaultProvideWhileDisconnected,
 		offline:                           defaultOffline,
 		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
-		tunnelStarted: false,
+		tunnelStarted: defaultTunnelStarted,
 		orderedContractStatusUpdates: []*contractStatusUpdate{},
 		netContractStatus: nil,
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
