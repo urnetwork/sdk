@@ -268,7 +268,7 @@ type DeviceLocal struct {
 
 	stats *DeviceStats
 
-	deviceLocalRpc *DeviceLocalRpc
+	deviceLocalRpcManager *deviceLocalRpcManager
 
 	stateLock sync.Mutex
 
@@ -466,7 +466,7 @@ func newDeviceLocalWithOverrides(
 	deviceLocal.localUserNatUnsub = localUserNatUnsub
 
 	if enableRpc {
-		deviceLocal.deviceLocalRpc = newDeviceLocalRpcWithDefaults(ctx, deviceLocal)
+		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
 	}
 
 	return deviceLocal, nil
@@ -1213,8 +1213,8 @@ func (self *DeviceLocal) Close() {
 
 	self.localUserNat.Close()
 
-	if self.deviceLocalRpc != nil {
-		self.deviceLocalRpc.Close()
+	if self.deviceLocalRpcManager != nil {
+		self.deviceLocalRpcManager.Close()
 	}
 
 	api := self.networkSpace.GetApi()
