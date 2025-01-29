@@ -47,6 +47,8 @@ type ConnectViewController struct {
 
 	stateLock sync.Mutex
 
+	connectLocationChangedSub Sub
+
 	// this is set when the client is connected
 	connected        bool
 	connectionStatus ConnectionStatus
@@ -79,13 +81,27 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 		// windowSizeListeners:   connect.NewCallbackList[WindowSizeListener](),
 		gridListeners: connect.NewCallbackList[GridListener](),
 	}
-	if location := device.GetConnectLocation(); location != nil {
-		vc.setConnected(true)
-		vc.setSelectedLocation(location)
-		vc.setConnectionStatus(DestinationSet)
-		vc.setGrid()
-	}
+	// if location := device.GetConnectLocation(); location != nil {
+	// 	vc.setConnected(true)
+	// 	vc.setSelectedLocation(location)
+	// 	vc.setConnectionStatus(DestinationSet)
+	// 	vc.setGrid()
+	// }
+	vc.connectLocationChangedSub = device.AddConnectLocationChangeListener(vc)
+	vc.ConnectLocationChanged(device.GetConnectLocation())
 	return vc
+}
+
+// ConnectLocationChangeListener
+func (self *ConnectViewController) ConnectLocationChanged(location *ConnectLocation) {
+	if location == nil {
+		self.setConnected(false)
+		// keep the previous selected location
+	} else {
+		self.setConnected(true)
+		self.setSelectedLocation(location)
+	}
+	self.setGrid()
 }
 
 func (self *ConnectViewController) Start() {}
@@ -95,6 +111,7 @@ func (self *ConnectViewController) Stop() {}
 func (self *ConnectViewController) Close() {
 	glog.Info("[cvc]close")
 	self.cancel()
+	self.connectLocationChangedSub.Close()
 }
 
 func (self *ConnectViewController) GetConnected() bool {
@@ -222,7 +239,7 @@ func (self *ConnectViewController) setConnected(connected bool) {
 }
 
 func (self *ConnectViewController) Connect(location *ConnectLocation) {
-	self.setConnected(true)
+	// self.setConnected(true)
 
 	// enable provider
 	provideMode := ProvideModePublic
@@ -233,9 +250,9 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
 	self.device.SetConnectLocation(location)
 
-	self.setSelectedLocation(location)
+	// self.setSelectedLocation(location)
 
-	self.setGrid()
+	// self.setGrid()
 }
 
 func (self *ConnectViewController) ConnectBestAvailable() {
@@ -247,7 +264,7 @@ func (self *ConnectViewController) ConnectBestAvailable() {
 }
 
 func (self *ConnectViewController) Disconnect() {
-	self.setConnected(false)
+	// self.setConnected(false)
 
 	if !self.device.GetProvideWhileDisconnected() {
 		// disable provider
@@ -259,7 +276,7 @@ func (self *ConnectViewController) Disconnect() {
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(nil)
 	self.device.SetConnectLocation(nil)
 
-	self.setGrid()
+	// self.setGrid()
 }
 
 func (self *ConnectViewController) setGrid() {
