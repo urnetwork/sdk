@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"fmt"
 	// "runtime/debug"
+	mathrand "math/rand"
 
 	"golang.org/x/exp/maps"
 
@@ -60,11 +61,17 @@ type deviceRpcSettings struct {
 	KeepAliveRetryCount int
 	// TODO randomize the ports
 	Address *DeviceRemoteAddress
-	ResponseAddress *DeviceRemoteAddress
+	ResponseHost string
+	ResponsePorts []int
+	ResponsePortProbeCount int
 	InitialLockTimeout time.Duration
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
+	responsePorts := []int{}
+	for port := 12025; port < 12125; port += 1 {
+		responsePorts = append(responsePorts, port)
+	}
 	return &deviceRpcSettings{
 		RpcCallTimeout: 4 * time.Second,
 		RpcConnectTimeout: 1 * time.Second,
@@ -72,9 +79,31 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		KeepAliveTimeout: 1 * time.Second,
 		KeepAliveRetryCount: 2,
 		Address: requireRemoteAddress("127.0.0.1:12025"),
-		ResponseAddress: requireRemoteAddress("127.0.0.1:12026"),
+		ResponseHost: "127.0.0.1",
+		ResponsePorts: responsePorts,
+		ResponsePortProbeCount: 10,
 		InitialLockTimeout: 200 * time.Millisecond,
 	}
+}
+
+func (self *deviceRpcSettings) RequireRandResponseAddress() *DeviceRemoteAddress {
+	address, err := self.RandResponseAddress()
+	if err != nil {
+		panic(err)
+	}
+	return address
+}
+
+func (self *deviceRpcSettings) RandResponseAddress() (*DeviceRemoteAddress, error) {
+	ip, err := netip.ParseAddr(self.ResponseHost)
+	if err != nil {
+		return nil, err
+	}
+	port := self.ResponsePorts[mathrand.Intn(len(self.ResponsePorts))]
+	return &DeviceRemoteAddress{
+		Ip: ip,
+		Port: port,
+	}, nil
 }
 
 // compile check that DeviceRemote conforms to Device, device, and ViewControllerManager
@@ -322,7 +351,14 @@ func (self *DeviceRemote) run() {
 						Count: self.settings.KeepAliveRetryCount,
 					},
 				}
-				responseListener, err = listenConfig.Listen(handleCtx, "tcp", self.settings.ResponseAddress.HostPort())
+				var responseAddress *DeviceRemoteAddress
+				for range self.settings.ResponsePortProbeCount {
+					responseAddress = self.settings.RequireRandResponseAddress()
+					responseListener, err = listenConfig.Listen(handleCtx, "tcp", responseAddress.HostPort())
+					if err == nil {
+						break
+					}
+				}
 				if err != nil {
 					glog.Infof("[dr]sync reverse listen err = %s", err)
 					return
@@ -370,7 +406,7 @@ func (self *DeviceRemote) run() {
 				}()
 
 
-				err = rpcCallVoid(service, "DeviceLocalRpc.SyncReverse", self.settings.ResponseAddress, self.closeService)
+				err = rpcCallVoid(service, "DeviceLocalRpc.SyncReverse", responseAddress, self.closeService)
 				if err != nil {
 					return
 				}
@@ -2669,6 +2705,105 @@ type DeviceRemoteHttpResponseError struct {
 }
 
 
+
+type deviceLocalRpcManager struct {
+	ctx context.Context
+	cancel context.CancelFunc
+	deviceLocal *DeviceLocal
+	settings *deviceRpcSettings
+}
+
+func newDeviceLocalRpcManagerWithDefaults(
+	ctx context.Context,
+	deviceLocal *DeviceLocal,
+) *deviceLocalRpcManager {
+	return newDeviceLocalRpcManager(ctx, deviceLocal, defaultDeviceRpcSettings())
+}
+
+func newDeviceLocalRpcManager(
+	ctx context.Context,
+	deviceLocal *DeviceLocal,
+	settings *deviceRpcSettings,
+) *deviceLocalRpcManager {
+	cancelCtx, cancel := context.WithCancel(ctx)
+
+	deviceLocalRpcManager := &deviceLocalRpcManager{
+		ctx: cancelCtx,
+		cancel: cancel,
+		deviceLocal: deviceLocal,
+		settings: settings,
+	}
+
+	go deviceLocalRpcManager.run()
+	return deviceLocalRpcManager
+}
+
+func (self *deviceLocalRpcManager) run() {
+	for {
+		handleCtx, handleCancel := context.WithCancel(self.ctx)
+
+		func() {
+			defer handleCancel()
+
+			listenConfig := &net.ListenConfig{
+				KeepAliveConfig: net.KeepAliveConfig{
+					Enable: true,
+					Idle: self.settings.KeepAliveTimeout / time.Duration(2 * self.settings.KeepAliveRetryCount),
+					Interval: self.settings.KeepAliveTimeout / time.Duration(2 * self.settings.KeepAliveRetryCount),
+					Count: self.settings.KeepAliveRetryCount,
+				},
+			}
+			listener, err := listenConfig.Listen(handleCtx, "tcp", self.settings.Address.HostPort())
+			if err != nil {
+				glog.Infof("[dlrcp]listen err = %s", err)
+				return
+			}
+			defer listener.Close()
+
+			go func() {
+				defer handleCancel()
+
+				// handle connections serially
+				for {
+					select {
+					case <- handleCtx.Done():
+						return
+					default:
+					}
+
+					conn, err := listener.Accept()
+					if err != nil {
+						glog.Infof("[dlrcp]listen accept err = %s", err)
+						return
+					}
+
+					newDeviceLocalRpc(
+						self.ctx,
+						conn,
+						self.deviceLocal,
+						self.settings,
+					)
+				}
+			}()
+
+			select {
+			case <- handleCtx.Done():
+			}
+		}()
+
+		select {
+		case <- self.ctx.Done():
+			return
+		case <- time.After(self.settings.RpcReconnectTimeout):
+		}
+	}
+}
+
+func (self *deviceLocalRpcManager) Close() {
+	self.cancel()
+}
+
+
 // rpc are called on a single go routine
 
 //gomobile:noexport
@@ -2676,6 +2811,7 @@ type DeviceLocalRpc struct {
 	ctx context.Context
 	cancel context.CancelFunc
 
+	conn net.Conn
 	deviceLocal *DeviceLocal
 	egressSecurityPolicy securityPolicy
 	ingressSecurityPolicy securityPolicy
@@ -2716,15 +2852,9 @@ type DeviceLocalRpc struct {
 	service *rpcClient
 }
 
-func newDeviceLocalRpcWithDefaults(
-	ctx context.Context,
-	deviceLocal *DeviceLocal,
-) *DeviceLocalRpc {
-	return newDeviceLocalRpc(ctx, deviceLocal, defaultDeviceRpcSettings())
-}
-
 func newDeviceLocalRpc(
 	ctx context.Context,
+	conn net.Conn,
 	deviceLocal *DeviceLocal,
 	settings *deviceRpcSettings,
 ) *DeviceLocalRpc {
@@ -2733,6 +2863,7 @@ func newDeviceLocalRpc(
 	deviceLocalRpc := &DeviceLocalRpc{
 		ctx: cancelCtx,
 		cancel: cancel,
+		conn: conn,
 		deviceLocal: deviceLocal,
 		egressSecurityPolicy: deviceLocal.egressSecurityPolicy(),
 		ingressSecurityPolicy: deviceLocal.ingressSecurityPolicy(),
@@ -2755,80 +2886,24 @@ func newDeviceLocalRpc(
 }
 
 func (self *DeviceLocalRpc) run() {
-	for {
-		handleCtx, handleCancel := context.WithCancel(self.ctx)
-
-		func() {
-			defer handleCancel()
-
-			listenConfig := &net.ListenConfig{
-				KeepAliveConfig: net.KeepAliveConfig{
-					Enable: true,
-					Idle: self.settings.KeepAliveTimeout / time.Duration(2 * self.settings.KeepAliveRetryCount),
-					Interval: self.settings.KeepAliveTimeout / time.Duration(2 * self.settings.KeepAliveRetryCount),
-					Count: self.settings.KeepAliveRetryCount,
-				},
-			}
-			listener, err := listenConfig.Listen(handleCtx, "tcp", self.settings.Address.HostPort())
-			if err != nil {
-				glog.Infof("[dlrcp]listen err = %s", err)
-				return
-			}
-			defer listener.Close()
-
-			server := rpc.NewServer()
-			server.Register(self)
-
-			go func() {
-				defer handleCancel()
-
-				// handle connections serially
-				for {
-					select {
-					case <- handleCtx.Done():
-						return
-					default:
-					}
-
-					conn, err := listener.Accept()
-					if err != nil {
-						glog.Infof("[dlrcp]listen accept err = %s", err)
-						return
-					}
-
-					func() {
-						connCtx, connCancel := context.WithCancel(handleCtx)
-						defer connCancel()
-						go func() {
-							defer conn.Close()
-							select {
-							case <- connCtx.Done():
-							}
-						}()
-						server.ServeConn(conn)
-						glog.Infof("[dlrcp]server conn done")
-
-						func() {
-							self.stateLock.Lock()
-							defer self.stateLock.Unlock()
-							self.closeService()
-						}()
-					}()
-
-				}
-			}()
-
-			select {
-			case <- handleCtx.Done():
-			}
-		}()
-
+	defer self.cancel()
+	go func() {
+		defer self.conn.Close()
 		select {
 		case <- self.ctx.Done():
-			return
-		case <- time.After(self.settings.RpcReconnectTimeout):
 		}
-	}
+	}()
+
+	server := rpc.NewServer()
+	server.Register(self)
+	server.ServeConn(self.conn)
+	glog.Infof("[dlrcp]server conn done")
+
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.closeService()
+	}()
 }
 
 // must be called with state lock
