@@ -60,7 +60,7 @@ func SetMemoryLimit(limit int64) {
 
 // func initPprof() {
 // 	go func() {
-// 		glog.Infof("pprof = %s\n", http.ListenAndServe("localhost:6060", nil))
+// 		glog.Infof("pprof = %s\n", http.ListenAndServe(":6060", nil))
 // 	}()
 // }
 

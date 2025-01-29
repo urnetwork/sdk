@@ -5,7 +5,7 @@ clean:
 	rm -rf build
 
 # to reduce binary file size:
-# (not used) -s omit symbol table and debug info
+# -s omit symbol table and debug info
 # -w omit DWARF symbol table
 # see https://go.dev/doc/gdb
 
@@ -52,7 +52,7 @@ build_ios:
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
 		-target ios/arm64,iossimulator/arm64 -iosversion 16.0 \
-		-bundleid com.bringyour \
+		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
