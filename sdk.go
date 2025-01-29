@@ -10,6 +10,7 @@ import (
 	"flag"
 	"math"
 	"os"
+	"runtime/debug"
 
 	// "net/http"
 	// _ "net/http/pprof"
@@ -50,6 +51,11 @@ func initGlog() {
 	flag.Set("v", "0")
 	// unlike unix, the android/ios standard is for diagnostics to go to stdout
 	os.Stderr = os.Stdout
+}
+
+
+func SetMemoryLimit(limit int64) {
+	debug.SetMemoryLimit(limit)
 }
 
 // func initPprof() {
