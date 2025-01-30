@@ -10,6 +10,7 @@ import (
 	"flag"
 	"math"
 	"os"
+	"runtime/debug"
 
 	// "net/http"
 	// _ "net/http/pprof"
@@ -39,6 +40,8 @@ import (
 // `warp` environment expectations, which is not compatible with the client lib
 
 func init() {
+	debug.SetGCPercent(10)
+
 	initGlog()
 
 	// initPprof()
@@ -52,9 +55,14 @@ func initGlog() {
 	os.Stderr = os.Stdout
 }
 
+
+func SetMemoryLimit(limit int64) {
+	debug.SetMemoryLimit(limit)
+}
+
 // func initPprof() {
 // 	go func() {
-// 		glog.Infof("pprof = %s\n", http.ListenAndServe("localhost:6060", nil))
+// 		glog.Infof("pprof = %s\n", http.ListenAndServe(":6060", nil))
 // 	}()
 // }
 

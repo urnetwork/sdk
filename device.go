@@ -224,7 +224,7 @@ type deviceLocalSettings struct {
 
 func defaultDeviceLocalSettings() *deviceLocalSettings {
 	return &deviceLocalSettings{
-		SendTimeout: 5 * time.Second,
+		SendTimeout: 4 * time.Second,
 		// ClientDrainTimeout: 30 * time.Second,
 
 		NetContractStatusDuration: 10 * time.Second,
@@ -1002,8 +1002,9 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 	glog.Infof("[device]provide paused = %t\n", providePaused)
 
-	self.client.ContractManager().SetProvidePaused(providePaused)
-	self.providePausedChanged(self.GetProvidePaused())
+	if self.client.ContractManager().SetProvidePaused(providePaused) {
+		self.providePausedChanged(self.GetProvidePaused())
+	}
 }
 
 func (self *DeviceLocal) GetProvidePaused() bool {
