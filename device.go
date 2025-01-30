@@ -224,7 +224,7 @@ type deviceLocalSettings struct {
 
 func defaultDeviceLocalSettings() *deviceLocalSettings {
 	return &deviceLocalSettings{
-		SendTimeout: 1 * time.Second,
+		SendTimeout: 4 * time.Second,
 		// ClientDrainTimeout: 30 * time.Second,
 
 		NetContractStatusDuration: 10 * time.Second,
