@@ -54,9 +54,15 @@ type ProvideSecretKeysListener interface {
 	ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList)
 }
 
+
+type IpProtocol = int
+const IpProtocolUnkown = 0
+const IpProtocolUdp = 1
+const IpProtocolTcp = 2
+
 // receive a packet into the local raw socket
 type ReceivePacket interface {
-	ReceivePacket(packet []byte)
+	ReceivePacket(ipVersion int, ipProtocol IpProtocol, packet []byte)
 }
 
 type TunnelChangeListener interface {
@@ -902,10 +908,10 @@ func (self *DeviceLocal) provideSecretKeysChanged(provideSecretKeyList *ProvideS
 }
 
 // `ReceivePacketFunction`
-func (self *DeviceLocal) receive(source connect.TransferPath, ipProtocol connect.IpProtocol, packet []byte) {
+func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 	// deviceLog("GOT A PACKET %d", len(packet))
 	for _, receiveCallback := range self.receiveCallbacks.Get() {
-		receiveCallback(source, ipProtocol, packet)
+		receiveCallback(source, provideMode, ipPath, packet)
 	}
 }
 
@@ -1081,9 +1087,9 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				connect.DefaultClientSettings,
 				connect.DefaultApiMultiClientGeneratorSettings(),
 			)
-			remoteReceive := func(source connect.TransferPath, ipProtocol connect.IpProtocol, packet []byte) {
+			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
-				self.receive(source, ipProtocol, packet)
+				self.receive(source, provideMode, ipPath, packet)
 			}
 			multi := connect.NewRemoteUserNatMultiClientWithDefaults(
 				self.ctx,
@@ -1175,8 +1181,18 @@ func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
 }
 
 func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
-	receive := func(destination connect.TransferPath, ipProtocol connect.IpProtocol, packet []byte) {
-		receivePacket.ReceivePacket(packet)
+	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
+		var ipProtocol IpProtocol
+		switch ipPath.Protocol {
+		case connect.IpProtocolUdp:
+			ipProtocol = IpProtocolUdp
+		case connect.IpProtocolTcp:
+			ipProtocol = IpProtocolTcp
+		default:
+			ipProtocol = IpProtocolUnkown
+		}
+
+		receivePacket.ReceivePacket(ipPath.Version, ipProtocol, packet)
 	}
 	callbackId := self.receiveCallbacks.Add(receive)
 	return newSub(func() {
