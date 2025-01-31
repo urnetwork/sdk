@@ -8,6 +8,7 @@ clean:
 # -s omit symbol table and debug info
 # -w omit DWARF symbol table
 # see https://go.dev/doc/gdb
+# see https://github.com/xaionaro/documentation/blob/master/golang/reduce-binary-size.md
 
 build_android:
 	# *important* gradle does not handle symbolic links consistently
