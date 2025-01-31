@@ -60,6 +60,11 @@ func SetMemoryLimit(limit int64) {
 	debug.SetMemoryLimit(limit)
 }
 
+func FreeMemory() {
+	debug.FreeOSMemory()
+}
+
+
 // func initPprof() {
 // 	go func() {
 // 		glog.Infof("pprof = %s\n", http.ListenAndServe(":6060", nil))
