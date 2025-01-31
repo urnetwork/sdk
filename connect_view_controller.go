@@ -300,20 +300,20 @@ func (self *ConnectViewController) setGrid() {
 		}
 	}()
 
-	if !changed {
-		return
-	}
-
-	self.gridChanged()
-
 	if grid != nil {
 		self.setConnectionStatus(DestinationSet)
-
-		if windowMonitor := self.device.(device).windowMonitor(); windowMonitor != nil {
-			grid.listenToWindow(windowMonitor)
-		}
 	} else {
 		self.setConnectionStatus(Disconnected)
+	}
+
+	if changed {	
+		if grid != nil {
+			if windowMonitor := self.device.(device).windowMonitor(); windowMonitor != nil {
+				grid.listenToWindow(windowMonitor)
+			}
+		}
+
+		self.gridChanged()
 	}
 }
 

@@ -405,14 +405,10 @@ func (self *DeviceRemote) run() {
 					// resync
 				}()
 
-
 				err = rpcCallVoid(service, "DeviceLocalRpc.SyncReverse", responseAddress, self.closeService)
 				if err != nil {
 					return
 				}
-
-
-				glog.Infof("[dr]sync 1")
 
 				// because the local state changes always win,
 				// the last known state can be copied from the local state changes
@@ -421,10 +417,7 @@ func (self *DeviceRemote) run() {
 				self.state.Unset()
 				self.syncMonitor.NotifyAll()
 
-				glog.Infof("[dr]sync 2")
-
 				self.service = service
-
 
 				if initialLock {
 					initialLock = false
@@ -1604,6 +1597,7 @@ func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowM
 		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
 
+/*
 	// trim the windows
 	for windowId, windowMonitor := range self.windowMonitors {
 		if !event.WindowIds[windowId] {
@@ -1616,6 +1610,7 @@ func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowM
 		// window no longer active
 		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 	}
+	*/
 
 	return event.WindowExpandEvent, event.ProviderEvents
 }
@@ -2913,52 +2908,34 @@ func (self *DeviceLocalRpc) closeService() {
 		self.service = nil
 	}
 
-
 	// remove listeners
-	glog.Infof("s16")
 	for provideChangeListenerId, _ := range self.provideChangeListenerIds {
 		self.removeProvideChangeListener(provideChangeListenerId)
 	}
-
-	glog.Infof("s17")
 	for providePausedChangeListenerId, _ := range self.providePausedChangeListenerIds {
 		self.removeProvidePausedChangeListener(providePausedChangeListenerId)
 	}
-
-	glog.Infof("s18")
 	for offlineChangeListenerId, _ := range self.offlineChangeListenerIds {
 		self.removeOfflineChangeListener(offlineChangeListenerId)
 	}
-
-	glog.Infof("s19")
 	for connectChangeListenerId, _ := range self.connectChangeListenerIds {
 		self.removeConnectChangeListener(connectChangeListenerId)
 	}
-
-	glog.Infof("s20")
 	for routeLocalChangeListenerId, _ := range self.routeLocalChangeListenerIds {
 		self.removeRouteLocalChangeListener(routeLocalChangeListenerId)
 	}
-
-	glog.Infof("s21")
 	for connectLocationChangeListenerId, _ := range self.connectLocationChangeListenerIds {
 		self.removeConnectLocationChangeListener(connectLocationChangeListenerId)
 	}
-
-	glog.Infof("s22")
 	for provideSecretKeysListenerId, _ := range self.provideSecretKeysListenerIds {
 		self.removeProvideSecretKeysListener(provideSecretKeysListenerId)
 	}
-
 	for tunnelChangeListenerId, _ := range self.tunnelChangeListenerIds {
 		self.removeTunnelChangeListener(tunnelChangeListenerId)
 	}
-
 	for contractStatusChangeListenerId, _ := range self.contractStatusChangeListenerIds {
 		self.removeContractStatusChangeListener(contractStatusChangeListenerId)
 	}
-
-	glog.Infof("s23")
 	for windowId, windowMonitorEventListenerIds := range self.windowMonitorEventListenerIds {
 		for windowMonitorEventListenerId, _ := range windowMonitorEventListenerIds {
 			windowListenerId := DeviceRemoteWindowListenerId{
@@ -2990,8 +2967,6 @@ func (self *DeviceLocalRpc) Sync(
 	}()
 	*/
 
-	glog.Infof("s1")
-
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -3001,53 +2976,41 @@ func (self *DeviceLocalRpc) Sync(
 
 	state := syncRequest.State
 
-	glog.Infof("s2")
 	if state.CanShowRatingDialog.IsSet {
 		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
 	}
-	glog.Infof("s2")
 	if state.ProvideWhileDisconnected.IsSet {
 		self.deviceLocal.SetProvideWhileDisconnected(state.ProvideWhileDisconnected.Value)
 	}
-	glog.Infof("s3")
 	if state.CanRefer.IsSet {
 		self.deviceLocal.SetCanRefer(state.CanRefer.Value)
 	}
-	glog.Infof("s4")
 	if state.RouteLocal.IsSet {
 		self.deviceLocal.SetRouteLocal(state.RouteLocal.Value)
 	}
-	glog.Infof("s5")
 	if state.InitProvideSecretKeys.IsSet {
 		self.deviceLocal.InitProvideSecretKeys()
 	}
-	glog.Infof("s6")
 	if state.LoadProvideSecretKeys.IsSet {
 		provideSecretKeyList := NewProvideSecretKeyList()
 		provideSecretKeyList.addAll(state.LoadProvideSecretKeys.Value...)
 		self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	}
-	glog.Infof("s7")
 	if state.ProvideMode.IsSet {
 		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
 	}
-	glog.Infof("s8")
 	if state.ProvidePaused.IsSet {
 		self.deviceLocal.SetProvidePaused(state.ProvidePaused.Value)
 	}
-	glog.Infof("s9")
 	if state.Offline.IsSet {
 		self.deviceLocal.SetOffline(state.Offline.Value)
 	}
-	glog.Infof("s10")
 	if state.VpnInterfaceWhileOffline.IsSet {
 		self.deviceLocal.SetVpnInterfaceWhileOffline(state.VpnInterfaceWhileOffline.Value)
 	}
-	glog.Infof("s11")
 	if state.RemoveDestination.IsSet {
 		self.deviceLocal.RemoveDestination()
 	}
-	glog.Infof("s12")
 	if state.Destination.IsSet {
 		destination := state.Destination.Value
 		providerSpecList := NewProviderSpecList()
@@ -3058,11 +3021,9 @@ func (self *DeviceLocalRpc) Sync(
 			destination.ProvideMode,
 		)
 	}
-	glog.Infof("s13")
 	if state.Location.IsSet {
 		self.deviceLocal.SetConnectLocation(state.Location.Value.toConnectLocation())
 	}
-	glog.Infof("s14")
 	if state.Shuffle.IsSet {
 		self.deviceLocal.Shuffle()
 	}
@@ -3078,56 +3039,35 @@ func (self *DeviceLocalRpc) Sync(
 		self.deviceLocal.SetTunnelStarted(state.TunnelStarted.Value)
 	}
 
-	// glog.Infof("s15")
-	// self.updateWindowMonitor(true)
-
-
 
 	// add listeners
-	glog.Infof("s16")
 	for _, provideChangeListenerId := range syncRequest.ProvideChangeListenerIds {
 		self.addProvideChangeListener(provideChangeListenerId)
 	}
-
-	glog.Infof("s17")
 	for _, providePausedChangeListenerId := range syncRequest.ProvidePausedChangeListenerIds {
 		self.addProvidePausedChangeListener(providePausedChangeListenerId)
 	}
-
-	glog.Infof("s18")
 	for _, offlineChangeListenerId := range syncRequest.OfflineChangeListenerIds {
 		self.addOfflineChangeListener(offlineChangeListenerId)
 	}
-
-	glog.Infof("s19")
 	for _, connectChangeListenerId := range syncRequest.ConnectChangeListenerIds {
 		self.addConnectChangeListener(connectChangeListenerId)
 	}
-
-	glog.Infof("s20")
 	for _, routeLocalChangeListenerId := range syncRequest.RouteLocalChangeListenerIds {
 		self.addRouteLocalChangeListener(routeLocalChangeListenerId)
 	}
-
-	glog.Infof("s21")
 	for _, connectLocationChangeListenerId := range syncRequest.ConnectLocationChangeListenerIds {
 		self.addConnectLocationChangeListener(connectLocationChangeListenerId)
 	}
-
-	glog.Infof("s22")
 	for _, provideSecretKeysListenerId := range syncRequest.ProvideSecretKeysListenerIds {
 		self.addProvideSecretKeysListener(provideSecretKeysListenerId)
 	}
-
 	for _, tunnelChangeListenerId := range syncRequest.TunnelChangeListenerIds {
 		self.addTunnelChangeListener(tunnelChangeListenerId)
 	}
-
 	for _, contractStatusChangeListenerId := range syncRequest.ContractStatusChangeListenerIds {
 		self.addContractStatusChangeListener(contractStatusChangeListenerId)
 	}
-
-	glog.Infof("s23")
 	for windowId, windowMonitorEventListenerIds := range syncRequest.WindowMonitorEventListenerIds {
 		for _, windowMonitorEventListenerId := range windowMonitorEventListenerIds {
 			windowListenerId := DeviceRemoteWindowListenerId{
@@ -3138,14 +3078,11 @@ func (self *DeviceLocalRpc) Sync(
 		}
 	}
 
-
- 	glog.Infof("s33")
  	*syncResponse = &DeviceRemoteSyncResponse{
  		// WindowIds: self.windowIds(),
  		// RpcPublicKey: "test",
  	}
- 	glog.Infof("s34")
-	return nil
+ 	return nil
 }
 
 func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ RpcVoid) error {
@@ -3183,35 +3120,26 @@ func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ 
 		client: rpc.NewClient(conn),
 	}
 
-
-
 	// fire listeners with the current state
 	
-	glog.Infof("s24")
 	if self.provideChangeListenerSub != nil {
 		self.provideChanged(self.deviceLocal.GetProvideEnabled())
 	}
-	glog.Infof("s25")
 	if self.providePausedChangeListenerSub != nil {
 		self.providePausedChanged(self.deviceLocal.GetProvidePaused())
 	}
-	glog.Infof("s26")
 	if self.offlineChangeListenerSub != nil {
 		self.offlineChanged(self.deviceLocal.GetOffline(), self.deviceLocal.GetVpnInterfaceWhileOffline())
 	}
-	glog.Infof("s27")
 	if self.connectChangeListenerSub != nil {
 		self.connectChanged(self.deviceLocal.GetConnectEnabled())
 	}
-	glog.Infof("s28")
 	if self.routeLocalChangeListenerSub != nil {
 		self.routeLocalChanged(self.deviceLocal.GetRouteLocal())
 	}
-	glog.Infof("s29")
 	if self.connectLocationChangeListenerSub != nil {
 		self.connectLocationChanged(self.deviceLocal.GetConnectLocation())
 	}
-	glog.Infof("s31")
 	if self.provideSecretKeysListenerSub != nil {
 		self.provideSecretKeysChanged(self.deviceLocal.GetProvideSecretKeys())
 	}
@@ -3221,7 +3149,6 @@ func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ 
 	if self.contractStatusChangeListenerSub != nil {
 		self.contractStatusChanged(self.deviceLocal.GetContractStatus())
 	}
-	glog.Infof("s32")
 	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
 		self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
