@@ -52,7 +52,7 @@ build_ios:
 	mkdir -p "build/$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
-		-target ios/arm64,iossimulator/arm64 -iosversion 16.0 \
+		-target ios/arm64,iossimulator/arm64,maccatalyst/arm64,macos/arm64 -iosversion 16.0 \
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
