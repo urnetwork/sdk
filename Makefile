@@ -1,5 +1,5 @@
 
-all: clean build_android build_ios
+all: clean build_android build_apple
 
 clean:
 	rm -rf build
@@ -14,25 +14,25 @@ build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# note android/amd64 is needed for chromebook devices
-	BUILD_DIR=android.`date +%s`; \
+	BUILD_DIR=build/android.`date +%s`; \
 	WARP_VERSION=`warpctl ls version`; \
-	mkdir -p "build/$$BUILD_DIR"; \
+	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
 		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
-		-o "build/$$BUILD_DIR/URnetworkSdk.aar" \
+		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
 	if [[ -e "build/android" ]]; then mv build/android build/android.old.`date +%s`; fi; \
-	mv "build/$$BUILD_DIR/" build/android
+	mv "$$BUILD_DIR" build/android;
 
 	# validate that all types could be exported
 	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
 	# but due to limitations they are and should be ignored
 	cd build/android; \
-	    if [[ -e validate ]]; then mv validate validate.$$(date +%s); fi; \
+		if [[ -e validate ]]; then mv validate validate.$$(date +%s); fi; \
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
@@ -45,22 +45,30 @@ build_android:
 			fi;
 
 build_ios:
+	$(MAKE) build_apple
+
+build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
-	BUILD_DIR=ios.`date +%s`; \
+	BUILD_DIR=build/apple.`date +%s`; \
 	WARP_VERSION=`warpctl ls version`; \
-	mkdir -p "build/$$BUILD_DIR"; \
+	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \
-		-target ios/arm64,iossimulator/arm64 -iosversion 16.0 \
+		-target ios/arm64,iossimulator/arm64,maccatalyst/arm64,maccatalyst/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
-		-o "build/$$BUILD_DIR/URnetworkSdk.xcframework" \
+		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
 	if [[ -e "build/ios" ]]; then mv build/ios build/ios.old.`date +%s`; fi; \
-	mv "build/$$BUILD_DIR/" build/ios
+	cp -r "$$BUILD_DIR" build/ios; \
+	if [[ -e "build/apple" ]]; then mv build/apple build/apple.old.`date +%s`; fi; \
+	mv "$$BUILD_DIR" build/apple;
+
+build_windows:
+	cd windows; GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -o URnetworkSdk-amd64.dll -buildmode=c-shared
 
 init:
 	go install golang.org/x/mobile/cmd/gomobile@latest
