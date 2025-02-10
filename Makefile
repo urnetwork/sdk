@@ -67,8 +67,20 @@ build_apple:
 	if [[ -e "build/apple" ]]; then mv build/apple build/apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" build/apple;
 
+# this must be run on Windows
+# use mingw64 for gcc
 build_windows:
-	cd windows; GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -o URnetworkSdk-amd64.dll -buildmode=c-shared
+	$$env:BUILD_DIR=build/windows.`date +%s`; \
+	mkdir -p "$$BUILD_DIR"; \
+	cd windows; \
+	$$env:GOOS=windows; \
+	$$env:GOARCH=amd64; \
+	$$env:CGO_ENABLED=1; \
+	go build \
+		-buildmode=c-shared \
+		-o "$$BUILD_DIR/URnetworkSdk-amd64.dll"; \
+	if [[ -e "build/windows" ]]; then mv build/windows build/windows.old.`date +%s`; fi; \
+	mv "$$BUILD_DIR" build/windows;
 
 init:
 	go install golang.org/x/mobile/cmd/gomobile@latest
