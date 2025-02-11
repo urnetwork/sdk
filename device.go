@@ -13,7 +13,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/urnetwork/connect"
-	"github.com/urnetwork/protocol"
+	"github.com/urnetwork/connect/protocol"
 )
 
 // the device upgrades the api, including setting the client jwt

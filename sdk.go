@@ -19,7 +19,7 @@ import (
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/urnetwork/connect"
-	"github.com/urnetwork/protocol"
+	"github.com/urnetwork/connect/protocol"
 	"golang.org/x/crypto/nacl/box"
 )
 
