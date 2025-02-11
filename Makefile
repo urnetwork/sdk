@@ -68,19 +68,11 @@ build_apple:
 	mv "$$BUILD_DIR" build/apple;
 
 # this must be run on Windows
-# use mingw64 for gcc
+# use mingw64 for gcc (choco install mingw) 
 build_windows:
-	$$env:BUILD_DIR=build/windows.`date +%s`; \
-	mkdir -p "$$BUILD_DIR"; \
-	cd windows; \
-	$$env:GOOS=windows; \
-	$$env:GOARCH=amd64; \
-	$$env:CGO_ENABLED=1; \
-	go build \
-		-buildmode=c-shared \
-		-o "$$BUILD_DIR/URnetworkSdk-amd64.dll"; \
-	if [[ -e "build/windows" ]]; then mv build/windows build/windows.old.`date +%s`; fi; \
-	mv "$$BUILD_DIR" build/windows;
+	cd windows && set "GOOS=windows" && set "GOARCH=amd64" && set "CGO_ENABLED=1" && go build -buildmode=c-shared -o "../build/windows/amd64/URnetworkSdk.dll"
+	rem FIXME mingw64 does not appear to support arm64 currently
+	rem cd windows && set "GOOS=windows" && set "GOARCH=arm64" && set "CGO_ENABLED=1" && go build -buildmode=c-shared -o "../build/windows/arm64/URnetworkSdk.dll"
 
 init:
 	go install golang.org/x/mobile/cmd/gomobile@latest
