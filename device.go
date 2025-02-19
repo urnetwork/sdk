@@ -56,9 +56,12 @@ type ProvideSecretKeysListener interface {
 
 
 type IpProtocol = int
-const IpProtocolUnkown = 0
-const IpProtocolUdp = 1
-const IpProtocolTcp = 2
+const (
+	IpProtocolUnkown IpProtocol = 0
+	IpProtocolUdp IpProtocol = 1
+	IpProtocolTcp IpProtocol = 2
+)
+
 
 // receive a packet into the local raw socket
 type ReceivePacket interface {
