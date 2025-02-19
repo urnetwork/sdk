@@ -12,11 +12,11 @@ type DeviceStats struct {
 	connectCount              int
 	netConnectDuration        time.Duration
 	maxConnectDuration        time.Duration
-	netRemoteSendByteCount    ByteCount
-	netRemoteReceiveByteCount ByteCount
+	netRemoteSendByteCount    /*ByteCount*/int64
+	netRemoteReceiveByteCount /*ByteCount*/int64
 
 	successConnectDuration time.Duration
-	successByteCount ByteCount
+	successByteCount /*ByteCount*/int64
 }
 
 func newDeviceStats() *DeviceStats {
@@ -26,11 +26,11 @@ func newDeviceStats() *DeviceStats {
 		connectCount:              0,
 		netConnectDuration:        time.Duration(0),
 		maxConnectDuration:        time.Duration(0),
-		netRemoteSendByteCount:    ByteCount(0),
-		netRemoteReceiveByteCount: ByteCount(0),
+		netRemoteSendByteCount:    /*ByteCount*/int64(0),
+		netRemoteReceiveByteCount: /*ByteCount*/int64(0),
 
 		successConnectDuration: 120 * time.Second,
-		successByteCount: ByteCount(64 * 1024 * 1024),
+		successByteCount: /*ByteCount*/int64(64 * 1024 * 1024),
 	}
 }
 
@@ -55,14 +55,14 @@ func (self *DeviceStats) GetMaxConnectDurationSeconds() int {
 	return int(self.maxConnectDuration / time.Second)
 }
 
-func (self *DeviceStats) GetNetRemoteSendByteCount() ByteCount {
+func (self *DeviceStats) GetNetRemoteSendByteCount() /*ByteCount*/int64 {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	return self.netRemoteSendByteCount
 }
 
-func (self *DeviceStats) GetNetRemoteReceiveByteCount() ByteCount {
+func (self *DeviceStats) GetNetRemoteReceiveByteCount() /*ByteCount*/int64 {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -105,14 +105,14 @@ func (self *DeviceStats) UpdateConnect(connectEnabled bool) {
 	}
 }
 
-func (self *DeviceStats) UpdateRemoteReceive(remoteReceiveByteCount ByteCount) {
+func (self *DeviceStats) UpdateRemoteReceive(remoteReceiveByteCount /*ByteCount*/int64) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	self.netRemoteReceiveByteCount += remoteReceiveByteCount
 }
 
-func (self *DeviceStats) UpdateRemoteSend(remoteSendByteCount ByteCount) {
+func (self *DeviceStats) UpdateRemoteSend(remoteSendByteCount /*ByteCount*/int64) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 

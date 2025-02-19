@@ -14,12 +14,12 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-type FilterLocationsState = string
+// type FilterLocationsState = string
 
 const (
-	LocationsLoading FilterLocationsState = "LOCATIONS_LOADING"
-	LocationsLoaded  FilterLocationsState = "LOCATIONS_LOADED"
-	LocationsError   FilterLocationsState = "LOCATIONS_ERROR"
+	LocationsLoading /*FilterLocationsState*/string = "LOCATIONS_LOADING"
+	LocationsLoaded  /*FilterLocationsState*/string = "LOCATIONS_LOADED"
+	LocationsError   /*FilterLocationsState*/string = "LOCATIONS_ERROR"
 )
 
 type FilteredLocations struct {
@@ -36,7 +36,7 @@ type FilteredLocations struct {
 // }
 
 type FilteredLocationsListener interface {
-	FilteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState)
+	FilteredLocationsChanged(locations *FilteredLocations, state /*FilterLocationsState*/string)
 }
 
 type LocationsViewController struct {
@@ -50,7 +50,7 @@ type LocationsViewController struct {
 	previousFilterSequenceNumber int64
 
 	filteredLocations     *FilteredLocations
-	filteredLocationState FilterLocationsState
+	filteredLocationState /*FilterLocationsState*/string
 
 	filteredLocationListeners *connect.CallbackList[FilteredLocationsListener]
 	// filteredLocationsStateListeners *connect.CallbackList[FilteredLocationsStateListener]
@@ -97,13 +97,13 @@ func (self *LocationsViewController) GetFilteredLocations() *FilteredLocations {
 	return self.filteredLocations
 }
 
-func (self *LocationsViewController) GetFilteredLocationState() FilterLocationsState {
+func (self *LocationsViewController) GetFilteredLocationState() /*FilterLocationsState*/string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.filteredLocationState
 }
 
-func (self *LocationsViewController) filteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState) {
+func (self *LocationsViewController) filteredLocationsChanged(locations *FilteredLocations, state /*FilterLocationsState*/string) {
 	for _, listener := range self.filteredLocationListeners.Get() {
 		connect.HandleError(func() {
 			listener.FilteredLocationsChanged(locations, state)

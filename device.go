@@ -55,17 +55,17 @@ type ProvideSecretKeysListener interface {
 }
 
 
-type IpProtocol = int
+// type IpProtocol = int
 const (
-	IpProtocolUnkown IpProtocol = 0
-	IpProtocolUdp IpProtocol = 1
-	IpProtocolTcp IpProtocol = 2
+	IpProtocolUnkown /*IpProtocol*/int = 0
+	IpProtocolUdp /*IpProtocol*/int = 1
+	IpProtocolTcp /*IpProtocol*/int = 2
 )
 
 
 // receive a packet into the local raw socket
 type ReceivePacket interface {
-	ReceivePacket(ipVersion int, ipProtocol IpProtocol, packet []byte)
+	ReceivePacket(ipVersion int, ipProtocol /*IpProtocol*/int, packet []byte)
 }
 
 type TunnelChangeListener interface {
@@ -122,9 +122,9 @@ type Device interface {
 
 	GetConnectEnabled() bool 
 
-	SetProvideMode(provideMode ProvideMode) 
+	SetProvideMode(provideMode /*ProvideMode*/int) 
 
-	GetProvideMode() ProvideMode 
+	GetProvideMode() /*ProvideMode*/int 
 
 	SetProvidePaused(providePaused bool) 
 
@@ -140,7 +140,7 @@ type Device interface {
 
 	RemoveDestination()
 
-	SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode)
+	SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode /*ProvideMode*/int)
 
 	SetConnectLocation(location *ConnectLocation) 
 
@@ -923,7 +923,7 @@ func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 	provideSecretKeyList := NewProvideSecretKeyList()
 	for provideMode, provideSecretKey := range provideSecretKeys {
 		provideSecretKey := &ProvideSecretKey{
-			ProvideMode:      ProvideMode(provideMode),
+			ProvideMode:      /*ProvideMode*/int(provideMode),
 			ProvideSecretKey: string(provideSecretKey),
 		}
 		provideSecretKeyList.Add(provideSecretKey)
@@ -963,7 +963,7 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 	return self.remoteUserNatClient != nil
 }
 
-func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
+func (self *DeviceLocal) SetProvideMode(provideMode /*ProvideMode*/int) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -1000,12 +1000,12 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 	self.provideChanged(self.GetProvideEnabled())
 }
 
-func (self *DeviceLocal) GetProvideMode() ProvideMode {
+func (self *DeviceLocal) GetProvideMode() /*ProvideMode*/int {
 	maxProvideMode := protocol.ProvideMode_None
 	for provideMode, _ := range self.client.ContractManager().GetProvideModes() {
 		maxProvideMode = max(maxProvideMode, provideMode)
 	}
-	return ProvideMode(maxProvideMode)
+	return /*ProvideMode*/int(maxProvideMode)
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
@@ -1056,7 +1056,7 @@ func (self *DeviceLocal) RemoveDestination() {
 	self.SetDestination(nil, nil, ProvideModeNone)
 }
 
-func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) {
+func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode /*ProvideMode*/int) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -1091,7 +1091,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				connect.DefaultApiMultiClientGeneratorSettings(),
 			)
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
+				self.stats.UpdateRemoteReceive(/*ByteCount*/int64(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
 			multi := connect.NewRemoteUserNatMultiClientWithDefaults(
@@ -1163,7 +1163,7 @@ func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
 	}()
 
 	if remoteUserNatClient != nil {
-		self.stats.UpdateRemoteSend(ByteCount(n))
+		self.stats.UpdateRemoteSend(/*ByteCount*/int64(n))
 		return remoteUserNatClient.SendPacket(
 			source,
 			protocol.ProvideMode_Network,
@@ -1185,7 +1185,7 @@ func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
 
 func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-		var ipProtocol IpProtocol
+		var ipProtocol /*IpProtocol*/int
 		switch ipPath.Protocol {
 		case connect.IpProtocolUdp:
 			ipProtocol = IpProtocolUdp
