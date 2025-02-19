@@ -225,31 +225,31 @@ func (self *TransferPath) toConnect() connect.TransferPath {
 	return path
 }
 
-// type ProvideMode = int
+type ProvideMode = int
 const (
-	ProvideModeNone             /*ProvideMode*/int = /*ProvideMode*/int(protocol.ProvideMode_None)
-	ProvideModeNetwork          /*ProvideMode*/int = /*ProvideMode*/int(protocol.ProvideMode_Network)
-	ProvideModeFriendsAndFamily /*ProvideMode*/int = /*ProvideMode*/int(protocol.ProvideMode_FriendsAndFamily)
-	ProvideModePublic           /*ProvideMode*/int = /*ProvideMode*/int(protocol.ProvideMode_Public)
-	ProvideModeStream           /*ProvideMode*/int = /*ProvideMode*/int(protocol.ProvideMode_Stream)
+	ProvideModeNone             ProvideMode = ProvideMode(protocol.ProvideMode_None)
+	ProvideModeNetwork          ProvideMode = ProvideMode(protocol.ProvideMode_Network)
+	ProvideModeFriendsAndFamily ProvideMode = ProvideMode(protocol.ProvideMode_FriendsAndFamily)
+	ProvideModePublic           ProvideMode = ProvideMode(protocol.ProvideMode_Public)
+	ProvideModeStream           ProvideMode = ProvideMode(protocol.ProvideMode_Stream)
 )
 
-// type LocationType = string
+type LocationType = string
 const (
-	LocationTypeCountry /*LocationType*/string = "country"
-	LocationTypeRegion  /*LocationType*/string = "region"
-	LocationTypeCity    /*LocationType*/string = "city"
+	LocationTypeCountry LocationType = "country"
+	LocationTypeRegion  LocationType = "region"
+	LocationTypeCity    LocationType = "city"
 )
 
-// type ByteCount = int64
+type ByteCount = int64
 
-// type NanoCents = int64
+type NanoCents = int64
 
-func UsdToNanoCents(usd float64) /*NanoCents*/int64 {
-	return /*NanoCents*/int64(math.Round(usd * float64(1000000000)))
+func UsdToNanoCents(usd float64) NanoCents {
+	return NanoCents(math.Round(usd * float64(1000000000)))
 }
 
-func NanoCentsToUsd(nanoCents /*NanoCents*/int64) float64 {
+func NanoCentsToUsd(nanoCents NanoCents) float64 {
 	return float64(nanoCents) / float64(1000000000)
 }
 
@@ -262,7 +262,7 @@ type ConnectLocation struct {
 	Promoted      bool  `json:"promoted,omitempty"`
 	MatchDistance int32 `json:"match_distance,omitempty"`
 
-	LocationType /*LocationType*/string `json:"location_type,omitempty"`
+	LocationType LocationType `json:"location_type,omitempty"`
 
 	City        string `json:"city,omitempty"`
 	Region      string `json:"region,omitempty"`
@@ -410,7 +410,7 @@ func (self *ConnectLocationId) String() string {
 }
 
 type ProvideSecretKey struct {
-	ProvideMode      /*ProvideMode*/int `json:"provide_mode"`
+	ProvideMode      ProvideMode `json:"provide_mode"`
 	ProvideSecretKey string      `json:"provide_secret_key"`
 }
 

@@ -1108,7 +1108,7 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 	}
 }
 
-func (self *DeviceRemote) SetProvideMode(provideMode /*ProvideMode*/int) {
+func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -1130,19 +1130,19 @@ func (self *DeviceRemote) SetProvideMode(provideMode /*ProvideMode*/int) {
 	state.ProvideMode.Set(provideMode)
 }
 
-func (self *DeviceRemote) GetProvideMode() /*ProvideMode*/int {
+func (self *DeviceRemote) GetProvideMode() ProvideMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	provideMode, success := func()(/*ProvideMode*/int, bool) {
+	provideMode, success := func()(ProvideMode, bool) {
 		if self.service == nil {
-			var empty /*ProvideMode*/int
+			var empty ProvideMode
 			return empty, false
 		}
 
-		provideMode, err := rpcCallNoArg[/*ProvideMode*/int](self.service, "DeviceLocalRpc.GetProvideMode", self.closeService)
+		provideMode, err := rpcCallNoArg[ProvideMode](self.service, "DeviceLocalRpc.GetProvideMode", self.closeService)
 		if err != nil {
-			var empty /*ProvideMode*/int
+			var empty ProvideMode
 			return empty, false
 		}
 		self.lastKnownState.ProvideMode.Set(provideMode)
@@ -1355,7 +1355,7 @@ func (self *DeviceRemote) RemoveDestination() {
 	}
 }
 
-func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode /*ProvideMode*/int) {
+func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) {
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2151,7 +2151,7 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 type DeviceRemoteDestination struct {
 	Location *DeviceRemoteConnectLocation
 	Specs []*ProviderSpec
-	ProvideMode /*ProvideMode*/int
+	ProvideMode ProvideMode
 }
 
 //gomobile:noexport
@@ -2245,7 +2245,7 @@ type DeviceRemoteState struct {
 	RouteLocal deviceRemoteValue[bool]
 	InitProvideSecretKeys deviceRemoteValue[bool]
 	LoadProvideSecretKeys deviceRemoteValue[[]*ProvideSecretKey]
-	ProvideMode deviceRemoteValue[/*ProvideMode*/int]
+	ProvideMode deviceRemoteValue[ProvideMode]
 	ProvidePaused deviceRemoteValue[bool]
 	Offline deviceRemoteValue[bool]
 	VpnInterfaceWhileOffline deviceRemoteValue[bool]
@@ -2436,7 +2436,7 @@ type DeviceRemoteConnectLocationValue struct {
 	Promoted      bool
 	MatchDistance int32
 
-	LocationType /*LocationType*/string
+	LocationType LocationType
 
 	City        string
 	Region      string
@@ -3836,12 +3836,12 @@ func (self *DeviceLocalRpc) GetConnectEnabled(_ RpcNoArg, connectEnabled *bool) 
 	return nil
 }
 
-func (self *DeviceLocalRpc) SetProvideMode(provideMode /*ProvideMode*/int, _ RpcVoid) error {
+func (self *DeviceLocalRpc) SetProvideMode(provideMode ProvideMode, _ RpcVoid) error {
 	self.deviceLocal.SetProvideMode(provideMode)
 	return nil
 } 
 
-func (self *DeviceLocalRpc) GetProvideMode(_ RpcNoArg, provideMode */*ProvideMode*/int) error {
+func (self *DeviceLocalRpc) GetProvideMode(_ RpcNoArg, provideMode *ProvideMode) error {
 	*provideMode = self.deviceLocal.GetProvideMode()
 	return nil
 }

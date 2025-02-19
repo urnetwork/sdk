@@ -29,7 +29,7 @@ type IsRemovingWalletListener interface {
 }
 
 type UnpaidByteCountListener interface {
-	StateChanged(/*ByteCount*/int64)
+	StateChanged(ByteCount)
 }
 
 type PayoutWalletListener interface {
@@ -40,7 +40,7 @@ type AccountWallet struct {
 	WalletId         *Id        `json:"wallet_id"`
 	CircleWalletId   string     `json:"circle_wallet_id,omitempty"`
 	NetworkId        *Id        `json:"network_id"`
-	WalletType       /*WalletType*/string `json:"wallet_type"`
+	WalletType       WalletType `json:"wallet_type"`
 	Blockchain       string     `json:"blockchain"`
 	WalletAddress    string     `json:"wallet_address"`
 	Active           bool       `json:"active"`
@@ -53,8 +53,8 @@ type AccountPayment struct {
 	PaymentPlanId   *Id       `json:"payment_plan_id"`
 	WalletId        *Id       `json:"wallet_id"`
 	NetworkId       *Id       `json:"network_id"`
-	PayoutByteCount /*ByteCount*/int64 `json:"payout_byte_count"`
-	Payout          /*NanoCents*/int64 `json:"payout_nano_cents"`
+	PayoutByteCount ByteCount `json:"payout_byte_count"`
+	Payout          NanoCents `json:"payout_nano_cents"`
 	MinSweepTime    *Time     `json:"min_sweep_time"`
 	CreateTime      *Time     `json:"create_time"`
 
@@ -85,7 +85,7 @@ type WalletViewController struct {
 	isPollingAccountWallets bool
 	isPollingPayoutWallet   bool
 	isFetchingTransferStats bool
-	unpaidByteCount         /*ByteCount*/int64
+	unpaidByteCount         ByteCount
 
 	stateLock sync.Mutex
 
@@ -182,7 +182,7 @@ func NewValidateAddressCallback(sendResult func(bool)) *validateAddressCallbackI
 
 func (vc *WalletViewController) ValidateAddress(
 	address string,
-	blockchain /*Blockchain*/string,
+	blockchain Blockchain,
 	callback ValidateAddressCallback,
 ) {
 
@@ -231,7 +231,7 @@ func (vc *WalletViewController) setIsCreatingExternalWallet(state bool) {
 
 }
 
-func (vc *WalletViewController) AddExternalWallet(address string, blockchain /*Blockchain*/string) {
+func (vc *WalletViewController) AddExternalWallet(address string, blockchain Blockchain) {
 
 	if !vc.isAddingExternalWallet {
 
@@ -631,7 +631,7 @@ func (self *WalletViewController) AddUnpaidByteCountListener(listener UnpaidByte
 	})
 }
 
-func (self *WalletViewController) unpaidByteCountChanged(count /*ByteCount*/int64) {
+func (self *WalletViewController) unpaidByteCountChanged(count ByteCount) {
 	for _, listener := range self.unpaidByteCountListeners.Get() {
 		connect.HandleError(func() {
 			listener.StateChanged(count)
@@ -639,7 +639,7 @@ func (self *WalletViewController) unpaidByteCountChanged(count /*ByteCount*/int6
 	}
 }
 
-func (self *WalletViewController) setUnpaidByteCount(count /*ByteCount*/int64) {
+func (self *WalletViewController) setUnpaidByteCount(count ByteCount) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -649,7 +649,7 @@ func (self *WalletViewController) setUnpaidByteCount(count /*ByteCount*/int64) {
 	self.unpaidByteCountChanged(count)
 }
 
-func (self *WalletViewController) GetUnpaidByteCount() /*ByteCount*/int64 {
+func (self *WalletViewController) GetUnpaidByteCount() ByteCount {
 	return self.unpaidByteCount
 }
 

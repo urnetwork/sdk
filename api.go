@@ -436,7 +436,7 @@ type NetworkClientInfo struct {
 	AuthTime   *Time `json:"auth_time"`
 
 	Resident    *NetworkClientResident       `json:"resident,omitempty"`
-	ProvideMode /*ProvideMode*/int                  `json:"provide_mode"`
+	ProvideMode ProvideMode                  `json:"provide_mode"`
 	Connections *NetworkClientConnectionList `json:"connections"`
 }
 
@@ -487,7 +487,7 @@ type FindLocationsResult struct {
 
 type LocationResult struct {
 	LocationId   *Id          `json:"location_id"`
-	LocationType /*LocationType*/string `json:"location_type"`
+	LocationType LocationType `json:"location_type"`
 	Name         string       `json:"name"`
 	// FIXME
 	City string `json:"city,omitempty"`
@@ -694,21 +694,21 @@ func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddr
 	})
 }
 
-// type WalletType = string
+type WalletType = string
 const (
-	WalletTypeCircleUserControlled /*WalletType*/string = "circle_uc"
-	WalletTypeXch                  /*WalletType*/string = "xch"
-	WalletTypeSol                  /*WalletType*/string = "sol"
+	WalletTypeCircleUserControlled WalletType = "circle_uc"
+	WalletTypeXch                  WalletType = "xch"
+	WalletTypeSol                  WalletType = "sol"
 )
 
-// type Blockchain = string
+type Blockchain = string
 const (
-	SOL   /*Blockchain*/string = "SOL"
-	MATIC /*Blockchain*/string = "MATIC"
+	SOL   Blockchain = "SOL"
+	MATIC Blockchain = "MATIC"
 )
 
 type CreateAccountWalletArgs struct {
-	Blockchain       /*Blockchain*/string `json:"blockchain"`
+	Blockchain       Blockchain `json:"blockchain"`
 	WalletAddress    string     `json:"wallet_address"`
 	DefaultTokenType string     `json:"default_token_type"`
 }
@@ -809,7 +809,7 @@ type CircleWalletInfo struct {
 	Blockchain           string    `json:"blockchain"`
 	BlockchainSymbol     string    `json:"blockchain_symbol"`
 	CreateDate           string    `json:"create_date"`
-	BalanceUsdcNanoCents /*NanoCents*/int64 `json:"balance_usdc_nano_cents"`
+	BalanceUsdcNanoCents NanoCents `json:"balance_usdc_nano_cents"`
 }
 
 type WalletBalanceCallback connect.ApiCallback[*WalletBalanceResult]
@@ -859,7 +859,7 @@ type WalletCircleTransferOutCallback connect.ApiCallback[*WalletCircleTransferOu
 
 type WalletCircleTransferOutArgs struct {
 	ToAddress           string    `json:"to_address"`
-	AmountUsdcNanoCents /*NanoCents*/int64 `json:"amount_usdc_nano_cents"`
+	AmountUsdcNanoCents NanoCents `json:"amount_usdc_nano_cents"`
 	Terms               bool      `json:"terms"`
 }
 
@@ -898,19 +898,19 @@ type TransferBalance struct {
 	NetworkId             *Id       `json:"network_id"`
 	StartTime             string    `json:"start_time"`
 	EndTime               string    `json:"end_time"`
-	StartBalanceByteCount /*ByteCount*/int64 `json:"start_balance_byte_count"`
+	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
 	// how much money the platform made after subtracting fees
-	NetRevenue       /*NanoCents*/int64 `json:"net_revenue"`
-	BalanceByteCount /*ByteCount*/int64 `json:"balance_byte_count"`
+	NetRevenue       NanoCents `json:"net_revenue"`
+	BalanceByteCount ByteCount `json:"balance_byte_count"`
 }
 
 type SubscriptionBalanceCallback connect.ApiCallback[*SubscriptionBalanceResult]
 
 type SubscriptionBalanceResult struct {
-	BalanceByteCount          /*ByteCount*/int64            `json:"balance_byte_count"`
+	BalanceByteCount          ByteCount            `json:"balance_byte_count"`
 	CurrentSubscription       *Subscription        `json:"current_subscription,omitempty"`
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
-	PendingPayoutUsdNanoCents /*NanoCents*/int64            `json:"pending_payout_usd_nano_cents"`
+	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
 	WalletInfo                *CircleWalletInfo    `json:"wallet_info,omitempty"`
 	UpdateTime                string               `json:"update_time"`
 }
@@ -1176,8 +1176,8 @@ func (self *Api) AccountPreferencesGet(callback AccountPreferencesGetCallback) {
  **/
 
 type TransferStatsResult struct {
-	PaidBytesProvided   /*ByteCount*/int64 `json:"paid_bytes_provided"`
-	UnpaidBytesProvided /*ByteCount*/int64 `json:"unpaid_bytes_provided"`
+	PaidBytesProvided   ByteCount `json:"paid_bytes_provided"`
+	UnpaidBytesProvided ByteCount `json:"unpaid_bytes_provided"`
 }
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]

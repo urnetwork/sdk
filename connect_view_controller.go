@@ -15,13 +15,13 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// type ConnectionStatus = string
+type ConnectionStatus = string
 
 const (
-	Disconnected   /*ConnectionStatus*/string = "DISCONNECTED"
-	Connecting     /*ConnectionStatus*/string = "CONNECTING"
-	DestinationSet /*ConnectionStatus*/string = "DESTINATION_SET"
-	Connected      /*ConnectionStatus*/string = "CONNECTED"
+	Disconnected   ConnectionStatus = "DISCONNECTED"
+	Connecting     ConnectionStatus = "CONNECTING"
+	DestinationSet ConnectionStatus = "DESTINATION_SET"
+	Connected      ConnectionStatus = "CONNECTED"
 )
 
 type SelectedLocationListener interface {
@@ -51,7 +51,7 @@ type ConnectViewController struct {
 
 	// this is set when the client is connected
 	connected        bool
-	connectionStatus /*ConnectionStatus*/string
+	connectionStatus ConnectionStatus
 	selectedLocation *ConnectLocation
 	grid             *ConnectGrid
 	// providerGridPointList *ProviderGridPointList
@@ -120,13 +120,13 @@ func (self *ConnectViewController) GetConnected() bool {
 	return self.connected
 }
 
-func (self *ConnectViewController) GetConnectionStatus() /*ConnectionStatus*/string {
+func (self *ConnectViewController) GetConnectionStatus() ConnectionStatus {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.connectionStatus
 }
 
-func (self *ConnectViewController) setConnectionStatus(status /*ConnectionStatus*/string) {
+func (self *ConnectViewController) setConnectionStatus(status ConnectionStatus) {
 	changed := false
 	func() {
 		self.stateLock.Lock()
@@ -323,17 +323,17 @@ func (self *ConnectViewController) GetGrid() *ConnectGrid {
 	return self.grid
 }
 
-// type ProviderState = string
+type ProviderState = string
 
 const (
-	ProviderStateInEvaluation     /*ProviderState*/string = "InEvaluation"
-	ProviderStateEvaluationFailed /*ProviderState*/string = "EvaluationFailed"
-	ProviderStateNotAdded         /*ProviderState*/string = "NotAdded"
-	ProviderStateAdded            /*ProviderState*/string = "Added"
-	ProviderStateRemoved          /*ProviderState*/string = "Removed"
+	ProviderStateInEvaluation     ProviderState = "InEvaluation"
+	ProviderStateEvaluationFailed ProviderState = "EvaluationFailed"
+	ProviderStateNotAdded         ProviderState = "NotAdded"
+	ProviderStateAdded            ProviderState = "Added"
+	ProviderStateRemoved          ProviderState = "Removed"
 )
 
-func parseProviderState(state connect.ProviderState) (/*ProviderState*/string, error) {
+func parseProviderState(state connect.ProviderState) (ProviderState, error) {
 	switch state {
 	case connect.ProviderStateInEvaluation:
 		return ProviderStateInEvaluation, nil
@@ -350,7 +350,7 @@ func parseProviderState(state connect.ProviderState) (/*ProviderState*/string, e
 	}
 }
 
-func providerStateIsTerminal(state /*ProviderState*/string) bool {
+func providerStateIsTerminal(state ProviderState) bool {
 	switch state {
 	case ProviderStateEvaluationFailed, ProviderStateNotAdded, ProviderStateRemoved:
 		return true
@@ -359,7 +359,7 @@ func providerStateIsTerminal(state /*ProviderState*/string) bool {
 	}
 }
 
-func providerStateIsActive(state /*ProviderState*/string) bool {
+func providerStateIsActive(state ProviderState) bool {
 	switch state {
 	case ProviderStateAdded:
 		return true
@@ -374,7 +374,7 @@ type ProviderGridPoint struct {
 	Y        int32
 	ClientId *Id
 	// EventTime *Time
-	State /*ProviderState*/string
+	State ProviderState
 	// the time when this point will be removed
 	// the ui can transition out based on this value
 	EndTime *Time
@@ -682,7 +682,7 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 	done := false
 	windowSizeChanged := false
 	providerGridPointChanged := false
-	var connectionStatus /*ConnectionStatus*/string
+	var connectionStatus ConnectionStatus
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
