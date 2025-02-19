@@ -14,8 +14,9 @@ build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# note android/amd64 is needed for chromebook devices
+	WARPCTL="../warp/warpctl/build/$$(uname | tr '[:upper:]' '[:lower:]')/$$(uname -m)/warpctl"; \
 	BUILD_DIR=build/android.`date +%s`; \
-	WARP_VERSION=`warpctl ls version`; \
+	WARP_VERSION=`$$WARPCTL ls version`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
@@ -50,8 +51,9 @@ build_ios:
 build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
+	WARPCTL="../warp/warpctl/build/$$(uname | tr '[:upper:]' '[:lower:]')/$$(uname -m)/warpctl"; \
 	BUILD_DIR=build/apple.`date +%s`; \
-	WARP_VERSION=`warpctl ls version`; \
+	WARP_VERSION=`$$WARPCTL ls version`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-ldflags "-X client.Version=$$WARP_VERSION" \

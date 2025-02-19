@@ -165,16 +165,16 @@ func (self *LocalState) SetInstanceId(instanceId *Id) error {
 	}
 }
 
-func (self *LocalState) SetProvideMode(provideMode ProvideMode) error {
+func (self *LocalState) SetProvideMode(provideMode /*ProvideMode*/int) error {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	provideModeBytes := []byte(fmt.Sprintf("%d", provideMode))
 	return os.WriteFile(path, provideModeBytes, LocalStorageFilePermissions)
 }
 
-func (self *LocalState) GetProvideMode() ProvideMode {
+func (self *LocalState) GetProvideMode() /*ProvideMode*/int {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	if provideModeBytes, err := os.ReadFile(path); err == nil {
-		var provideMode ProvideMode
+		var provideMode /*ProvideMode*/int
 		if _, err := fmt.Sscanf(string(provideModeBytes), "%d", &provideMode); err == nil {
 			return provideMode
 		}
