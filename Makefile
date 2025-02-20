@@ -16,7 +16,7 @@ build_android:
 	# note android/amd64 is needed for chromebook devices
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	export GODEBUG=gotypesalias=0; \
-	WARPCTL="../warp/warpctl/build/$$(uname | tr '[:upper:]' '[:lower:]')/$$(uname -m)/warpctl"; \
+	WARPCTL="warpctl"; \
 	BUILD_DIR=build/android.`date +%s`; \
 	WARP_VERSION=`$$WARPCTL ls version`; \
 	mkdir -p "$$BUILD_DIR"; \
@@ -55,7 +55,7 @@ build_apple:
 	# the build dir swap is non-atomic
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	export GODEBUG=gotypesalias=0; \
-	WARPCTL="../warp/warpctl/build/$$(uname | tr '[:upper:]' '[:lower:]')/$$(uname -m)/warpctl"; \
+	WARPCTL="warpctl"; \
 	BUILD_DIR=build/apple.`date +%s`; \
 	WARP_VERSION=`$$WARPCTL ls version`; \
 	mkdir -p "$$BUILD_DIR"; \
