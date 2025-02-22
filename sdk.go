@@ -481,3 +481,4 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 
 	return shared[:], nil
 }
+
