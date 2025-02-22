@@ -14,8 +14,9 @@ build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# note android/amd64 is needed for chromebook devices
+	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/android.`date +%s`; \
-	WARP_VERSION=`warpctl ls version`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
@@ -50,11 +51,11 @@ build_ios:
 build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
+	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/apple.`date +%s`; \
-	WARP_VERSION=`warpctl ls version`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
-		-ldflags "-X client.Version=$$WARP_VERSION" \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
 		-trimpath \

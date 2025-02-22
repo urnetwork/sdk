@@ -226,7 +226,6 @@ func (self *TransferPath) toConnect() connect.TransferPath {
 }
 
 type ProvideMode = int
-
 const (
 	ProvideModeNone             ProvideMode = ProvideMode(protocol.ProvideMode_None)
 	ProvideModeNetwork          ProvideMode = ProvideMode(protocol.ProvideMode_Network)
@@ -236,7 +235,6 @@ const (
 )
 
 type LocationType = string
-
 const (
 	LocationTypeCountry LocationType = "country"
 	LocationTypeRegion  LocationType = "region"

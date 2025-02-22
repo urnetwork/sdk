@@ -695,7 +695,6 @@ func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddr
 }
 
 type WalletType = string
-
 const (
 	WalletTypeCircleUserControlled WalletType = "circle_uc"
 	WalletTypeXch                  WalletType = "xch"
@@ -703,7 +702,6 @@ const (
 )
 
 type Blockchain = string
-
 const (
 	SOL   Blockchain = "SOL"
 	MATIC Blockchain = "MATIC"
