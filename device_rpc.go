@@ -2133,6 +2133,119 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 }
 
 
+func (self *DeviceRemote) GetProviderEnabled() bool {
+	// FIXME
+	return true
+}
+
+func (self *DeviceRemote) SetProviderEnabled(providerEnabled bool) {
+	// FIXME
+}
+
+func (self *DeviceRemote) AddProviderChangeListener(listener ProviderChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) GetBlockStats() *BlockStats {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) GetBlockActions() *BlockActionWindow {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) OverrideBlockAction(hostPattern string, block bool) {
+	// FIXME
+}
+
+func (self *DeviceRemote) RemoveBlockActionOverride(hostPattern string) {
+	// FIXME
+}
+
+func (self *DeviceRemote) SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList) {
+	// FIXME
+}
+
+func (self *DeviceRemote) GetBlockEnabled() bool {
+	// FIXME
+	return false
+}
+
+func (self *DeviceRemote) SetBlockEnabled(blockEnabled bool) {
+	// FIXME
+}
+
+func (self *DeviceRemote) GetBlockWhileDisconnected() bool {
+	// FIXME
+	return false
+}
+
+func (self *DeviceRemote) SetBlockWhileDisconnected(blockWhileDisconnected bool) {
+	// FIXME
+}
+
+func (self *DeviceRemote) AddBlockChangeListener(listener BlockChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+
+// contract stats
+
+func (self *DeviceRemote) GetEgressContractStats() *ContractStats {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) GetEgressContractDetails() *ContractDetailsList {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) GetIngressContractStats() *ContractStats {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) GetIngressContractDetails() *ContractDetailsList {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceRemote) AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+
 // *important rpc note* gob encoding cannot encode fields that are not exported
 // so our usual gomobile types that have private fields cannot be properly sent via rpc
 // for rpc we redefine these gomobile types so that they can be gob encoded

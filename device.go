@@ -1,20 +1,9 @@
 package sdk
 
 import (
-	"context"
-	"fmt"
-
-	// "net/netip"
-	"sync"
-	"time"
-
-	gojwt "github.com/golang-jwt/jwt/v5"
-
-	"github.com/golang/glog"
-
 	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/protocol"
 )
+
 
 // the device upgrades the api, including setting the client jwt
 // closing the device does not close the api
@@ -27,6 +16,10 @@ import (
 
 type ProvideChangeListener interface {
 	ProvideChanged(provideEnabled bool)
+}
+
+type ProviderChangeListener interface {
+	ProviderChanged(providerEnabled bool)
 }
 
 type ProvidePausedChangeListener interface {
@@ -54,11 +47,25 @@ type ProvideSecretKeysListener interface {
 	ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList)
 }
 
+type BlockChangeListener interface {
+	BlockChanged(blockEnabled bool)
+}
 
-type IpProtocol = int
-const IpProtocolUnkown = 0
-const IpProtocolUdp = 1
-const IpProtocolTcp = 2
+type BlockActionWindowChangeListener interface {
+	BlockActionWindowChanged(blockActionWindow *BlockActionWindow)
+}
+
+type BlockStatsChangeListener interface {
+	BlockStatsChanged(blockStats *BlockStats)
+}
+
+type ContractStatsChangeListener interface {
+	ContractStatsChanged(contractStats *ContractStats)
+}
+
+type ContractDetailsChangeListener interface {
+	ContractDetailsChanged(contractDetails *ContractDetails)
+}
 
 // receive a packet into the local raw socket
 type ReceivePacket interface {
@@ -74,10 +81,84 @@ type ContractStatusChangeListener interface {
 }
 
 
+type IpProtocol = int
+const (
+	IpProtocolUnkown IpProtocol = 0
+	IpProtocolUdp IpProtocol = 1
+	IpProtocolTcp IpProtocol = 2
+)
+
+
 type ContractStatus struct {
 	InsufficientBalance bool
 	NoPermission bool
 	Premium bool
+}
+
+
+type BlockStats struct {
+	AllowedCount int
+	BlockedCount int
+}
+
+
+type BlockActionWindow struct {
+	BlockActionOverrides *BlockActionOverrideList
+	BlockActions *BlockActionList
+}
+
+
+type BlockActionOverride struct {
+	Host string
+	BlockOverride bool
+}
+
+
+type BlockAction struct {
+	Time int64
+	Host string
+	Block bool
+	Override bool
+	BlockOverride bool
+}
+
+
+type ContractStats struct {
+	ContractUsedByteCount ByteCount
+	ContractByteCount ByteCount
+	ContractBitRate int
+
+	CompanionContractUsedByteCount ByteCount
+	CompanionContractByteCount ByteCount
+	CompanionContractBitRate int
+}
+
+
+/*
+       contract
+         |   ^
+contract |   | companion contract
+transfer |   | transfer
+path     |   | path
+         ⌄   |
+       companion contract
+*/
+type ContractDetails struct {
+	ContractId *Id
+	ContractUsedByteCount ByteCount
+	ContractByteCount ByteCount
+	ContractBitRate int
+	ContractTransferPath *TransferPath
+
+	CompanionContractId *Id
+	CompanionContractUsedByteCount ByteCount
+	CompanionContractByteCount ByteCount
+	CompanionContractBitRate int
+	CompanionContractTransferPath *TransferPath
+
+	Ipv4 string
+	Ipv6 string
+	Country string
 }
 
 
@@ -102,10 +183,6 @@ type Device interface {
 	GetProvideWhileDisconnected() bool
 
 	SetProvideWhileDisconnected(provideWhileDisconnected bool)
-
-	GetProvideWhileConnected() bool
-
-	SetProvideWhileConnected(provideWhileConnected bool)
 
 	GetCanRefer() bool
 
@@ -181,17 +258,27 @@ type Device interface {
 	AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub
 
 
+	GetProviderEnabled() bool
+
+	SetProviderEnabled(providerEnabled bool)
+
+	AddProviderChangeListener(listener ProviderChangeListener) Sub 
+
+
 	// privacy block
 
 	GetBlockStats() *BlockStats
 
 	// includes applicable overrides
-	GetRecentBlockActions(blockActionId) *BlockActionWindow // FIXME return list of blockActions since the given id
+	GetBlockActions() *BlockActionWindow
 
-	// host can be *.H, **.H, or a regex s/H/
-	OverrideBlockAction(host string, block bool)
+	// host can be *.H, **.H (includes H and any subdomain), or a regex s/H/
+	OverrideBlockAction(hostPattern string, block bool)
 
-	RemoveBlockActionOverride(host string)
+	// exact match of the host pattern
+	RemoveBlockActionOverride(hostPattern string)
+
+	SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList)
 
 	GetBlockEnabled() bool
 
@@ -201,97 +288,31 @@ type Device interface {
 
 	SetBlockWhileDisconnected(blockWhileDisconnected bool)
 
-	// FIXME block action override listener, include all block action overrides in window
-
-	// FIXME block action listener
-
-
-	// FIXME real time contract status
-
+	AddBlockChangeListener(listener BlockChangeListener) Sub
+	// rate limited window updates
+	AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub
+	// rate limited
+	AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
 
 
-
-	// FIXME pubsub in api
-
-	// FIXME api for contract status
-	// receive: companion and non companion
-	// send: companion and non companion
-	// limit and current fill of each
-	// this is a poll only api. No events since it changes so much
-	// ordered by last used time
-	// client id and location of client
+	// contract stats
+	
 	GetEgressContractStats() *ContractStats
 	GetEgressContractDetails() *ContractDetailsList
 	
 	GetIngressContractStats() *ContractStats
 	GetIngressContractDetails() *ContractDetailsList
 	
+	// rate limited
+	AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
+	// rate limited
+	AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
 
-	// FIXME contract details listener
-	// FIXME contract stats listener
-
-
-
+	// rate limited
+	AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
+	// rate limited
+	AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
 }
-
-
-type BlockStats struct {
-
-	// allowed count
-	// blocked count
-
-}
-
-type BlockActionWindow struct {
-	// host -> block action overrides
-	// []*BlockAction
-
-
-}
-
-type BlockAction struct {
-	Time time.Time
-	Host string
-	Block bool
-	Override bool
-	BlockOverride bool
-}
-
-
-type ContractStats struct {
-	ContractUsedByteCount ByteCount
-	ContractByteCount ByteCount
-	ContractBitRate int
-
-	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount ByteCount
-	CompanionContractBitRate int
-
-}
-
-
-type ContractDetails struct {
-	ContractId *Id
-	ContractUsedByteCount ByteCount
-	ContractByteCount ByteCount
-	ContractBitRate int
-	ContractClientId *Id
-
-	CompanionContractId *Id
-	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount ByteCount
-	CompanionContractBitRate int
-	CompanionContractClientId *Id
-
-	Ipv4 string
-	Ipv6 string
-	Country string
-
-}
-
-
-// block action:  block action id;  status allow, deny, remove;  host name if status is allow or deny
-
 
 
 // unexported to gomobile

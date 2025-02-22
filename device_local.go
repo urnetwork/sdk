@@ -1,3 +1,20 @@
+package sdk
+
+import (
+	"context"
+	"fmt"
+
+	// "net/netip"
+	"sync"
+	"time"
+
+	gojwt "github.com/golang-jwt/jwt/v5"
+
+	"github.com/golang/glog"
+
+	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/protocol"
+)
 
 type emptyWindowMonitor struct {
 }
@@ -1134,3 +1151,117 @@ func (self *WindowEvents) EvaluationFailedClientCount() int {
 	return count
 }
 */
+
+
+
+func (self *DeviceLocal) GetProviderEnabled() bool {
+	// FIXME
+	return true
+}
+
+func (self *DeviceLocal) SetProviderEnabled(providerEnabled bool) {
+	// FIXME
+}
+
+func (self *DeviceLocal) AddProviderChangeListener(listener ProviderChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) GetBlockStats() *BlockStats {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) GetBlockActions() *BlockActionWindow {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) OverrideBlockAction(hostPattern string, block bool) {
+	// FIXME
+}
+
+func (self *DeviceLocal) RemoveBlockActionOverride(hostPattern string) {
+	// FIXME
+}
+
+func (self *DeviceLocal) SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList) {
+	// FIXME
+}
+
+func (self *DeviceLocal) GetBlockEnabled() bool {
+	// FIXME
+	return false
+}
+
+func (self *DeviceLocal) SetBlockEnabled(blockEnabled bool) {
+	// FIXME
+}
+
+func (self *DeviceLocal) GetBlockWhileDisconnected() bool {
+	// FIXME
+	return false
+}
+
+func (self *DeviceLocal) SetBlockWhileDisconnected(blockWhileDisconnected bool) {
+	// FIXME
+}
+
+func (self *DeviceLocal) AddBlockChangeListener(listener BlockChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+
+// contract stats
+
+func (self *DeviceLocal) GetEgressContractStats() *ContractStats {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) GetEgressContractDetails() *ContractDetailsList {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) GetIngressContractStats() *ContractStats {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) GetIngressContractDetails() *ContractDetailsList {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	// FIXME
+	return nil
+}

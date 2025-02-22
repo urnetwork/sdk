@@ -236,6 +236,37 @@ func NewProvideSecretKeyList() *ProvideSecretKeyList {
 	}
 }
 
+type ContractDetailsList struct {
+	exportedList[*ContractDetails]
+}
+
+func NewContractDetailsList() *ContractDetailsList {
+	return &ContractDetailsList{
+		exportedList: *newExportedList[*ContractDetails](),
+	}
+}
+
+type BlockActionOverrideList struct {
+	exportedList[*BlockActionOverride]
+}
+
+func NewBlockActionOverrideList() *BlockActionOverrideList {
+	return &BlockActionOverrideList{
+		exportedList: *newExportedList[*BlockActionOverride](),
+	}
+}
+
+type BlockActionList struct {
+	exportedList[*BlockAction]
+}
+
+func NewBlockActionList() *BlockActionList {
+	return &BlockActionList{
+		exportedList: *newExportedList[*BlockAction](),
+	}
+}
+
+
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type Time struct {
 	impl time.Time
