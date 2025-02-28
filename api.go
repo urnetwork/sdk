@@ -318,6 +318,7 @@ type NetworkCreateArgs struct {
 	Terms            bool   `json:"terms"`
 	GuestMode        bool   `json:"guest_mode"`
 	VerifyOtpNumeric bool   `json:"verify_use_numeric,omitempty"`
+	ReferralCode     *Id    `json:"referral_code,omitempty"`
 }
 
 type NetworkCreateResult struct {
@@ -695,6 +696,7 @@ func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddr
 }
 
 type WalletType = string
+
 const (
 	WalletTypeCircleUserControlled WalletType = "circle_uc"
 	WalletTypeXch                  WalletType = "xch"
@@ -702,6 +704,7 @@ const (
 )
 
 type Blockchain = string
+
 const (
 	SOL   Blockchain = "SOL"
 	MATIC Blockchain = "MATIC"
