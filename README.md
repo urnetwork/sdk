@@ -48,3 +48,11 @@ sudo cp -r go /usr/local/go
 # now `which go` should point to the patched go
 ```
 
+# Xcode setup
+
+If you see this error, run the following command.
+
+```
+# gomobile: -target="ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64" requires Xcode
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer/
+```

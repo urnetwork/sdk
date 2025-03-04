@@ -1,6 +1,6 @@
 module github.com/urnetwork/sdk
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/btcsuite/btcutil v1.0.2
@@ -9,8 +9,8 @@ require (
 	github.com/golang/glog v1.2.4
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/connect/protocol v0.0.0
-	golang.org/x/crypto v0.33.0
-	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa
+	golang.org/x/crypto v0.35.0
+	golang.org/x/exp v0.0.0-20250228200357-dead58393ab7
 )
 
 require (
