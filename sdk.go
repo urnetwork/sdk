@@ -55,7 +55,6 @@ func initGlog() {
 	os.Stderr = os.Stdout
 }
 
-
 func SetMemoryLimit(limit int64) {
 	debug.SetMemoryLimit(limit)
 }
@@ -63,7 +62,6 @@ func SetMemoryLimit(limit int64) {
 func FreeMemory() {
 	debug.FreeOSMemory()
 }
-
 
 // func initPprof() {
 // 	go func() {
@@ -226,6 +224,7 @@ func (self *TransferPath) toConnect() connect.TransferPath {
 }
 
 type ProvideMode = int
+
 const (
 	ProvideModeNone             ProvideMode = ProvideMode(protocol.ProvideMode_None)
 	ProvideModeNetwork          ProvideMode = ProvideMode(protocol.ProvideMode_Network)
@@ -235,6 +234,7 @@ const (
 )
 
 type LocationType = string
+
 const (
 	LocationTypeCountry LocationType = "country"
 	LocationTypeRegion  LocationType = "region"
@@ -336,7 +336,6 @@ func (self *ConnectLocation) Equals(b *ConnectLocation) bool {
 	return self.ConnectLocationId.Cmp(b.ConnectLocationId) == 0
 }
 
-
 // merged location and location group
 type ConnectLocationId struct {
 	// if set, the location is a direct connection to another device
@@ -437,10 +436,6 @@ func DecodeBase58(data string) ([]byte, error) {
 
 }
 
-const (
-	BoxOverhead = box.Overhead // 16 bytes for auth
-)
-
 func DecryptData(encryptedDataBase58, nonceBase58, sharedSecretBase58 string) ([]byte, error) {
 	encryptedData := base58.Decode(encryptedDataBase58)
 	nonce := base58.Decode(nonceBase58)
@@ -481,4 +476,3 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 
 	return shared[:], nil
 }
-
