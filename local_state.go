@@ -82,7 +82,7 @@ func (self *LocalState) ParseByJwt() (*ByJwt, error) {
 	if networkName, ok := claims["network_name"]; ok {
 		byJwt.NetworkName = networkName.(string)
 	}
-	if networkIdStr, ok := claims["network_name"]; ok {
+	if networkIdStr, ok := claims["network_id"]; ok {
 		if networkId, err := ParseId(networkIdStr.(string)); err == nil {
 			byJwt.NetworkId = networkId
 		}
