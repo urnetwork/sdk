@@ -1054,6 +1054,37 @@ func (self *Api) GetNetworkReferralCode(
 }
 
 /**
+ * Validate referral code
+ */
+
+type ValidateReferralCodeArgs struct {
+	ReferralCode *Id `json:"referral_code"`
+}
+
+type ValidateReferralCodeResult struct {
+	IsValid bool `json:"is_valid"`
+}
+
+type ValidateReferralCodeCallback connect.ApiCallback[*ValidateReferralCodeResult]
+
+func (self *Api) ValidateReferralCode(
+	validateReferralCode *ValidateReferralCodeArgs,
+	callback ValidateReferralCodeCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/referral-code/validate", self.apiUrl),
+			validateReferralCode,
+			self.GetByJwt(),
+			&ValidateReferralCodeResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Remove wallet
  */
 
