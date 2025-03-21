@@ -15,10 +15,11 @@ build_android:
 	# the build dir swap is non-atomic
 	# note android/amd64 is needed for chromebook devices
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/android.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
-	$$HOME/go/bin/gomobile bind \
+	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
 		-trimpath \
@@ -52,10 +53,11 @@ build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/apple.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
-	$$HOME/go/bin/gomobile bind \
+	gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
 		-trimpath \
@@ -76,6 +78,7 @@ build_windows:
 	rem cd windows && set "GOOS=windows" && set "GOARCH=arm64" && set "CGO_ENABLED=1" && go build -buildmode=c-shared -o "../build/windows/arm64/URnetworkSdk.dll"
 
 init:
-	go install golang.org/x/mobile/cmd/gomobile@latest
-	go get golang.org/x/mobile/bind@latest
-	$$HOME/go/bin/gomobile init
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	go install golang.org/x/mobile/cmd/gomobile@latest; \
+	go get golang.org/x/mobile/bind@latest; \
+	gomobile init

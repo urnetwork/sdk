@@ -10,7 +10,7 @@ require (
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/connect/protocol v0.0.0
 	golang.org/x/crypto v0.36.0
-	golang.org/x/exp v0.0.0-20250228200357-dead58393ab7
+	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 )
 
 require (
