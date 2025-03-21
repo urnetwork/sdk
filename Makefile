@@ -78,4 +78,4 @@ build_windows:
 init:
 	go install golang.org/x/mobile/cmd/gomobile@latest
 	go get golang.org/x/mobile/bind@latest
-	gomobile init
+	$$HOME/go/bin/gomobile init
