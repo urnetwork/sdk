@@ -18,7 +18,7 @@ build_android:
 	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/android.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
-	gomobile bind \
+	$$HOME/go/bin/gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
 		-trimpath \
@@ -26,20 +26,20 @@ build_android:
 		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
-	if [[ -e "build/android" ]]; then mv build/android build/android.old.`date +%s`; fi; \
+	if [ -e "build/android" ]; then mv build/android build/android.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" build/android;
 
 	# validate that all types could be exported
 	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
 	# but due to limitations they are and should be ignored
 	cd build/android; \
-		if [[ -e validate ]]; then mv validate validate.$$(date +%s); fi; \
+		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
 			jar -xf URnetworkSdk-sources.jar; \
 			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]'`; \
-			if [[ "$$bad_exports" ]]; then \
+			if [ "$$bad_exports" ]; then \
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
 				exit 1; \
@@ -55,7 +55,7 @@ build_apple:
 	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/apple.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
-	gomobile bind \
+	$$HOME/go/bin/gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
 		-trimpath \
@@ -63,9 +63,9 @@ build_apple:
 		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
-	if [[ -e "build/ios" ]]; then mv build/ios build/ios.old.`date +%s`; fi; \
+	if [ -e "build/ios" ]; then mv build/ios build/ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" build/ios; \
-	if [[ -e "build/apple" ]]; then mv build/apple build/apple.old.`date +%s`; fi; \
+	if [ -e "build/apple" ]; then mv build/apple build/apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" build/apple;
 
 # this must be run on Windows
