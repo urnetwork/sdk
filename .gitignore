@@ -10,3 +10,5 @@ temp/*
 
 .vscode/*
 .direnv
+
+windows/main
