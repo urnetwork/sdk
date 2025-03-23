@@ -79,6 +79,7 @@ build_windows:
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	go install golang.org/x/mobile/cmd/gomobile@latest; \
-	go get golang.org/x/mobile/bind@latest; \
+	GOMOBILE_VERSION=v0.0.0-20250305212854-3a7bc9f8a4de; \
+	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION; \
+	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION; \
 	gomobile init
