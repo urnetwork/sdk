@@ -24,7 +24,7 @@ build_android:
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
 	if [ -e "build/android" ]; then mv build/android build/android.old.`date +%s`; fi; \
@@ -62,7 +62,7 @@ build_apple:
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -B gobuildid" \
+		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
 	if [ -e "build/ios" ]; then mv build/ios build/ios.old.`date +%s`; fi; \
