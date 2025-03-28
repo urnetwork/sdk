@@ -10,11 +10,13 @@ clean:
 # see https://go.dev/doc/gdb
 # see https://github.com/xaionaro/documentation/blob/master/golang/reduce-binary-size.md
 
+# on macos, `brew install binutils` and `brew link binutils --force`
 build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# note android/amd64 is needed for chromebook devices
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/android.`date +%s`; \
@@ -28,12 +30,15 @@ build_android:
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
 	if [ -e "build/android" ]; then mv build/android build/android.old.`date +%s`; fi; \
+	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec objcopy --remove-section .comment {} \; ; \
+	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
 	mv "$$BUILD_DIR" build/android;
 
 	# validate that all types could be exported
 	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
 	# but due to limitations they are and should be ignored
-	cd build/android; \
+	(cd build/android; \
 		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
@@ -44,7 +49,7 @@ build_android:
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
 				exit 1; \
-			fi;
+			fi;)
 
 build_ios:
 	$(MAKE) build_apple
