@@ -109,6 +109,7 @@ func (self *AccountPreferencesViewController) UpdateAllowProductUpdates(allow bo
 					}
 
 					self.setAllowProductUpdates(allow)
+					self.setIsUpdating(false)
 
 				}))
 
