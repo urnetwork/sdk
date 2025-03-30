@@ -17,6 +17,9 @@ build_android:
 	# note android/amd64 is needed for chromebook devices
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
+	# validate that all types could be exported
+	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
+	# but due to limitations they are and should be ignored
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	BUILD_DIR=build/android.`date +%s`; \
@@ -29,16 +32,10 @@ build_android:
 		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		github.com/urnetwork/sdk; \
-	if [ -e "build/android" ]; then mv build/android build/android.old.`date +%s`; fi; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec objcopy --remove-section .comment {} \; ; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
-	mv "$$BUILD_DIR" build/android;
-
-	# validate that all types could be exported
-	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
-	# but due to limitations they are and should be ignored
-	(cd build/android; \
+	(cd "$$BUILD_DIR"; \
 		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
@@ -49,7 +46,11 @@ build_android:
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
 				exit 1; \
-			fi;)
+			fi;); \
+	rm -rf "$$BUILD_DIR/edit"; \
+	rm -rf "$$BUILD_DIR/validate"; \
+	if [ -e "build/android" ]; then mv build/android build/android.old.`date +%s`; fi; \
+	mv "$$BUILD_DIR" build/android;
 
 build_ios:
 	$(MAKE) build_apple
@@ -70,6 +71,7 @@ build_apple:
 		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
+	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	if [ -e "build/ios" ]; then mv build/ios build/ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" build/ios; \
 	if [ -e "build/apple" ]; then mv build/apple build/apple.old.`date +%s`; fi; \
