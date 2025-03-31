@@ -1,0 +1,8 @@
+framework module "URnetworkSdk" {
+	header "ref.h"
+    header "Sdk.objc.h"
+    header "Universe.objc.h"
+    header "URnetworkSdk.h"
+
+    export *
+}
