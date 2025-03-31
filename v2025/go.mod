@@ -1,4 +1,4 @@
-module github.com/urnetwork/sdk
+module github.com/urnetwork/sdk/v2025
 
 go 1.24.0
 
