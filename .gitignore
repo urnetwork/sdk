@@ -1,10 +1,9 @@
 **/bin
-**/build
+build/apple*
+build/ios*
+build/android*
 **/.DS_Store
 **/test.out
-
-# binaries
-build
 
 temp/*
 

@@ -2,7 +2,9 @@
 all: clean build_android build_apple
 
 clean:
-	rm -rf build
+	rm -rf android*
+	rm -rf apple*
+	rm -rf ios*
 
 # to reduce binary file size:
 # -s omit symbol table and debug info
@@ -22,7 +24,7 @@ build_android:
 	# but due to limitations they are and should be ignored
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
-	BUILD_DIR=build/android.`date +%s`; \
+	BUILD_DIR=android.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
@@ -49,8 +51,8 @@ build_android:
 			fi;); \
 	rm -rf "$$BUILD_DIR/edit"; \
 	rm -rf "$$BUILD_DIR/validate"; \
-	if [ -e "build/android" ]; then mv build/android build/android.old.`date +%s`; fi; \
-	mv "$$BUILD_DIR" build/android;
+	if [ -e "android" ]; then mv android android.old.`date +%s`; fi; \
+	mv "$$BUILD_DIR" android;
 
 build_ios:
 	$(MAKE) build_apple
@@ -61,7 +63,7 @@ build_apple:
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
-	BUILD_DIR=build/apple.`date +%s`; \
+	BUILD_DIR=apple.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
@@ -72,21 +74,15 @@ build_apple:
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		github.com/urnetwork/sdk; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
-	if [ -e "build/ios" ]; then mv build/ios build/ios.old.`date +%s`; fi; \
-	cp -r "$$BUILD_DIR" build/ios; \
-	if [ -e "build/apple" ]; then mv build/apple build/apple.old.`date +%s`; fi; \
-	mv "$$BUILD_DIR" build/apple;
-
-# this must be run on Windows
-# use mingw64 for gcc (choco install mingw) 
-build_windows:
-	cd windows && set "GOOS=windows" && set "GOARCH=amd64" && set "CGO_ENABLED=1" && go build -buildmode=c-shared -o "../build/windows/amd64/URnetworkSdk.dll"
-	rem FIXME mingw64 does not appear to support arm64 currently
-	rem cd windows && set "GOOS=windows" && set "GOARCH=arm64" && set "CGO_ENABLED=1" && go build -buildmode=c-shared -o "../build/windows/arm64/URnetworkSdk.dll"
+	if [ -e "ios" ]; then mv ios ios.old.`date +%s`; fi; \
+	cp -r "$$BUILD_DIR" ios; \
+	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
+	mv "$$BUILD_DIR" apple;
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	GOMOBILE_VERSION=v0.0.0-20250305212854-3a7bc9f8a4de; \
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION; \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION; \
-	gomobile init
+	gomobile init; \
+	go mod download;
