@@ -29,9 +29,9 @@ build_android:
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-w -X client.Version=$$WARP_VERSION -compressdwarf=false" \
+		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
-		.; \
+		github.com/urnetwork/sdk; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec objcopy --remove-section .comment {} \; ; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
@@ -68,9 +68,9 @@ build_apple:
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false" \
+		-ldflags "-s -w -X client.Version=$$WARP_VERSION -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
-		.; \
+		github.com/urnetwork/sdk; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	if [ -e "build/ios" ]; then mv build/ios build/ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" build/ios; \
