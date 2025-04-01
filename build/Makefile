@@ -85,4 +85,8 @@ init:
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION; \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION; \
 	gomobile init; \
-	go mod download "github.com/urnetwork/sdk" "github.com/urnetwork/connect" "github.com/urnetwork/connect/protocol";
+	go mod download "github.com/urnetwork/sdk"; \
+	go mod download "github.com/urnetwork/connect"; \
+	go mod download "github.com/urnetwork/connect/protocol"; \
+	go clean -cache; \
+	go clean -modcache;

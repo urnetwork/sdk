@@ -10,4 +10,4 @@ temp/*
 .vscode/*
 .direnv
 
-windows/main
+go.sum
