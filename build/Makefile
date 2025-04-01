@@ -1,5 +1,5 @@
 
-all: clean build_android build_apple
+all: init clean build_android build_apple
 
 clean:
 	rm -rf android*
