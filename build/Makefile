@@ -12,7 +12,6 @@ clean:
 # see https://go.dev/doc/gdb
 # see https://github.com/xaionaro/documentation/blob/master/golang/reduce-binary-size.md
 
-# on macos, `brew install binutils` and `brew link binutils --force`
 build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
@@ -22,8 +21,11 @@ build_android:
 	# validate that all types could be exported
 	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
 	# but due to limitations they are and should be ignored
+	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
+	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
+	export OBJCOPY=`find "$$ANDROID_NDK_HOME" -iname 'llvm-objcopy'`; \
 	BUILD_DIR=android.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
@@ -35,7 +37,7 @@ build_android:
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		"github.com/urnetwork/sdk"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
-	find "$$BUILD_DIR/edit" -iname '*.so' -exec objcopy --remove-section .comment {} \; ; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
 	(cd "$$BUILD_DIR"; \
 		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
