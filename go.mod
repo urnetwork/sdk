@@ -33,37 +33,3 @@ replace github.com/urnetwork/connect => ../connect
 replace github.com/urnetwork/connect/protocol => ../connect/protocol
 
 replace github.com/urnetwork/userwireguard => ../userwireguard
-
-exclude github.com/urnetwork/connect v0.1.13
-
-exclude github.com/urnetwork/connect v0.1.12
-
-exclude github.com/urnetwork/connect v0.1.11
-
-exclude github.com/urnetwork/connect v0.1.10
-
-exclude github.com/urnetwork/connect v0.1.9
-
-exclude github.com/urnetwork/connect v0.1.8
-
-exclude github.com/urnetwork/connect v0.1.7
-
-exclude github.com/urnetwork/connect v0.1.6
-
-exclude github.com/urnetwork/connect v0.1.5
-
-exclude github.com/urnetwork/connect v0.1.4
-
-exclude github.com/urnetwork/connect v0.1.3
-
-exclude github.com/urnetwork/connect v0.1.2
-
-exclude github.com/urnetwork/connect v0.1.1
-
-exclude github.com/urnetwork/connect v0.1.0
-
-exclude github.com/urnetwork/connect v0.0.3
-
-exclude github.com/urnetwork/connect v0.0.2
-
-exclude github.com/urnetwork/connect v0.0.1
