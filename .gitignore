@@ -9,5 +9,3 @@ temp/*
 
 .vscode/*
 .direnv
-
-go.sum
