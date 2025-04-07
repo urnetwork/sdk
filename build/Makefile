@@ -89,6 +89,5 @@ init:
 	gomobile init; \
 	go mod download "github.com/urnetwork/sdk"; \
 	go mod download "github.com/urnetwork/connect"; \
-	go mod download "github.com/urnetwork/connect/protocol"; \
 	go clean -cache; \
 	go clean -modcache;
