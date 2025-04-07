@@ -35,7 +35,7 @@ build_android:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X client.Version=$${WARP_VERSION}-$${WARP_VERSION_CODE} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2025"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
@@ -74,7 +74,7 @@ build_apple:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X client.Version=$${WARP_VERSION}-$${WARP_VERSION_CODE} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2025"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	if [ -e "ios" ]; then mv ios ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" ios; \
@@ -87,8 +87,8 @@ init:
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION; \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION; \
 	gomobile init; \
-	go mod download "github.com/urnetwork/sdk"; \
-	go mod download "github.com/urnetwork/connect"; \
+	go mod download "github.com/urnetwork/sdk/v2025"; \
+	go mod download "github.com/urnetwork/connect/v2025"; \
 	go mod download "github.com/urnetwork/connect/protocol"; \
 	go clean -cache; \
 	go clean -modcache;
