@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 
-go get -t -u ./...
+go clean -cache
+go clean -modcache
+
 go test -v -race
