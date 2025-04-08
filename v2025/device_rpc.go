@@ -17,7 +17,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2025"
 )
 
 // On some platforms the device needs to run in a separate process,
