@@ -1059,7 +1059,7 @@ func (self *Api) GetNetworkReferralCode(
  */
 
 type ValidateReferralCodeArgs struct {
-	ReferralCode *Id `json:"referral_code"`
+	ReferralCode string `json:"referral_code"`
 }
 
 type ValidateReferralCodeResult struct {
