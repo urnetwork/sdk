@@ -1,7 +1,7 @@
 package sdk
 
 import (
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2025"
 )
 
 
