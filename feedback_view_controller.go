@@ -75,7 +75,10 @@ func (vc *FeedbackViewController) setIsSendingFeedback(isSending bool) {
 	vc.isSendingFeedbackChanged(isSending)
 }
 
-func (vc *FeedbackViewController) SendFeedback(msg string) {
+func (vc *FeedbackViewController) SendFeedback(
+	msg string,
+	starCount int,
+) {
 
 	if !vc.isSendingFeedback {
 
@@ -85,6 +88,7 @@ func (vc *FeedbackViewController) SendFeedback(msg string) {
 			Needs: &FeedbackSendNeeds{
 				Other: msg,
 			},
+			StarCount: starCount,
 		}
 
 		vc.device.GetApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
