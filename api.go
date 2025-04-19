@@ -1126,7 +1126,8 @@ func (self *Api) RemoveWallet(
  */
 
 type FeedbackSendArgs struct {
-	Needs *FeedbackSendNeeds `json:"needs"`
+	Needs     *FeedbackSendNeeds `json:"needs"`
+	StarCount int                `json:"star_count"`
 }
 
 type FeedbackSendNeeds struct {
