@@ -183,13 +183,13 @@ func (self *LocalState) GetProvideMode() ProvideMode {
 }
 
 func (self *LocalState) SetRouteLocal(routeLocal bool) error {
-	path := filepath.Join(self.localStorageDir, ".route_local")
+	path := filepath.Join(self.localStorageDir, ".route_local-2")
 	routeLocalBytes := []byte(fmt.Sprintf("%t", routeLocal))
 	return os.WriteFile(path, routeLocalBytes, LocalStorageFilePermissions)
 }
 
 func (self *LocalState) GetRouteLocal() bool {
-	path := filepath.Join(self.localStorageDir, ".route_local")
+	path := filepath.Join(self.localStorageDir, ".route_local-2")
 	if routeLocalBytes, err := os.ReadFile(path); err == nil {
 		var routeLocal bool
 		if _, err := fmt.Sscanf(string(routeLocalBytes), "%t", &routeLocal); err == nil {
