@@ -70,7 +70,7 @@ func FreeMemory() {
 // }
 
 // this value is set via the linker, e.g.
-// -ldflags "-X client.Version=$WARP_VERSION"
+// -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
 var Version string
 
 type Id struct {
