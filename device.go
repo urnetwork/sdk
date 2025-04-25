@@ -80,6 +80,10 @@ type ContractStatusChangeListener interface {
 	ContractStatusChanged(contractStatus *ContractStatus)
 }
 
+type WindowStatusChangeListener interface {
+	WindowStatusChanged(windowStatus *WindowStatus)
+}
+
 
 type IpProtocol = int
 const (
@@ -159,6 +163,16 @@ type ContractDetails struct {
 	Ipv4 string
 	Ipv6 string
 	Country string
+}
+
+type WindowStatus struct {
+	TargetSize int
+	MinSatisfied bool
+	ProviderStateInEvaluation int
+	ProviderStateEvaluationFailed int
+	ProviderStateNotAdded int
+	ProviderStateAdded int
+	ProviderStateRemoved int
 }
 
 
@@ -312,6 +326,9 @@ type Device interface {
 	AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
 	// rate limited
 	AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+
+	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
+	GetWindowStatus() *WindowStatus
 }
 
 
