@@ -6,6 +6,7 @@ import (
 
 	// "net/netip"
 	"sync"
+	// "sync/atomic"
 	"time"
 
 	gojwt "github.com/golang-jwt/jwt/v5"
@@ -95,6 +96,7 @@ type DeviceLocal struct {
 	deviceLocalRpcManager *deviceLocalRpcManager
 
 	stateLock sync.Mutex
+	// stateLockGoid atomic.Int64
 
 	connectLocation *ConnectLocation
 
@@ -299,6 +301,28 @@ func newDeviceLocalWithOverrides(
 	return deviceLocal, nil
 }
 
+// func (self *DeviceLocal) lock() {
+// 	goid := goid()
+// 	lockGoid := self.stateLockGoid.Load()
+// 	if goid == lockGoid {
+// 		panic(fmt.Errorf("Recursive lock"))
+// 	}
+// 	self.stateLock.Lock()
+// 	self.stateLockGoid.Store(goid)
+// }
+
+// func (self *DeviceLocal) unlock() {
+// 	self.stateLockGoid.Store(0)
+// 	self.stateLock.Unlock()
+// }
+
+// func (self *DeviceLocal) assertNotLockOwner() {
+// 	goid := goid()
+// 	lockGoid := self.stateLockGoid.Load()
+// 	if goid == lockGoid {
+// 		debug.PrintStack()
+// 	}
+// }
 
 type contractStatusUpdate struct {
 	updateTime time.Time
@@ -661,6 +685,7 @@ func (self *DeviceLocal) AddWindowStatusChangeListener(listener WindowStatusChan
 }
 
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.provideChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideChanged(provideEnabled)
@@ -669,6 +694,7 @@ func (self *DeviceLocal) provideChanged(provideEnabled bool) {
 }
 
 func (self *DeviceLocal) providePausedChanged(providePaused bool) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.providePausedChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvidePausedChanged(providePaused)
@@ -677,6 +703,7 @@ func (self *DeviceLocal) providePausedChanged(providePaused bool) {
 }
 
 func (self *DeviceLocal) offlineChanged(offline bool, vpnInterfaceWhileOffline bool) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.offlineChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.OfflineChanged(offline, vpnInterfaceWhileOffline)
@@ -685,6 +712,7 @@ func (self *DeviceLocal) offlineChanged(offline bool, vpnInterfaceWhileOffline b
 }
 
 func (self *DeviceLocal) connectChanged(connectEnabled bool) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.connectChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ConnectChanged(connectEnabled)
@@ -693,6 +721,7 @@ func (self *DeviceLocal) connectChanged(connectEnabled bool) {
 }
 
 func (self *DeviceLocal) routeLocalChanged(routeLocal bool) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.routeLocalChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.RouteLocalChanged(routeLocal)
@@ -701,6 +730,7 @@ func (self *DeviceLocal) routeLocalChanged(routeLocal bool) {
 }
 
 func (self *DeviceLocal) connectLocationChanged(location *ConnectLocation) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.connectLocationChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ConnectLocationChanged(location)
@@ -709,6 +739,7 @@ func (self *DeviceLocal) connectLocationChanged(location *ConnectLocation) {
 }
 
 func (self *DeviceLocal) provideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.provideSecretKeysListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideSecretKeysChanged(provideSecretKeyList)
@@ -717,6 +748,7 @@ func (self *DeviceLocal) provideSecretKeysChanged(provideSecretKeyList *ProvideS
 }
 
 func (self *DeviceLocal) contractStatusChanged(contractStatus *ContractStatus) {
+	// self.assertNotLockOwner()
 	for _, contractStatusChangeListener := range self.contractStatusChangeListeners.Get() {
 		connect.HandleError(func() {
 			contractStatusChangeListener.ContractStatusChanged(contractStatus)
@@ -725,6 +757,7 @@ func (self *DeviceLocal) contractStatusChanged(contractStatus *ContractStatus) {
 }
 
 func (self *DeviceLocal) tunnelChanged(tunnelStarted bool) {
+	// self.assertNotLockOwner()
 	for _, tunnelChangeListener := range self.tunnelChangeListeners.Get() {
 		connect.HandleError(func() {
 			tunnelChangeListener.TunnelChanged(tunnelStarted)
@@ -733,6 +766,7 @@ func (self *DeviceLocal) tunnelChanged(tunnelStarted bool) {
 }
 
 func (self *DeviceLocal) windowStatusChanged(windowStatus *WindowStatus) {
+	// self.assertNotLockOwner()
 	for _, listener := range self.windowStatusChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.WindowStatusChanged(windowStatus)
@@ -742,6 +776,7 @@ func (self *DeviceLocal) windowStatusChanged(windowStatus *WindowStatus) {
 
 // `ReceivePacketFunction`
 func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
+	// self.assertNotLockOwner()
 	// deviceLog("GOT A PACKET %d", len(packet))
 	for _, receiveCallback := range self.receiveCallbacks.Get() {
 		receiveCallback(source, provideMode, ipPath, packet)
@@ -899,7 +934,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 		}
 		if self.windowMonitorSub != nil {
 			self.windowMonitorSub()
-			self.windowMonitorSub = nil;
+			self.windowMonitorSub = nil
 		}
 
 		if specs != nil && 0 < specs.Len() {
@@ -941,10 +976,11 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
 				self.windowStatusChanged(toWindowStatus(monitor))
 			}
-			self.windowMonitorSub = multi.Monitor().AddMonitorEventCallback(windowMonitorEvent)
+			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 		}
 		// else no specs, not an error
 	}()
+
 	self.connectLocationChanged(self.GetConnectLocation())
 	connectEnabled := self.GetConnectEnabled()
 	self.stats.UpdateConnect(connectEnabled)
@@ -1099,6 +1135,10 @@ func (self *DeviceLocal) Close() {
 	if self.remoteUserNatClient != nil {
 		self.remoteUserNatClient.Close()
 		self.remoteUserNatClient = nil
+	}
+	if self.windowMonitorSub != nil {
+		self.windowMonitorSub()
+		self.windowMonitorSub = nil
 	}
 	// self.localUserNat.RemoveReceivePacketCallback(self.receive)
 	self.localUserNatUnsub()
