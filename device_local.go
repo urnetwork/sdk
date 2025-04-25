@@ -100,6 +100,7 @@ type DeviceLocal struct {
 
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
+	windowMonitorSub func()
 
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
@@ -127,6 +128,7 @@ type DeviceLocal struct {
 	provideSecretKeysListeners *connect.CallbackList[ProvideSecretKeysListener]
 	tunnelChangeListeners *connect.CallbackList[TunnelChangeListener]
 	contractStatusChangeListeners *connect.CallbackList[ContractStatusChangeListener]
+	windowStatusChangeListeners *connect.CallbackList[WindowStatusChangeListener]
 
 	localUserNatUnsub func()
 
@@ -282,6 +284,7 @@ func newDeviceLocalWithOverrides(
 		provideSecretKeysListeners:    connect.NewCallbackList[ProvideSecretKeysListener](),
 		contractStatusChangeListeners: connect.NewCallbackList[ContractStatusChangeListener](),		
 		tunnelChangeListeners: connect.NewCallbackList[TunnelChangeListener](),
+		windowStatusChangeListeners:   connect.NewCallbackList[WindowStatusChangeListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
@@ -352,22 +355,6 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 	}
 }
 
-func (self *DeviceLocal) AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub {
-	callbackId := self.contractStatusChangeListeners.Add(listener)
-	return newSub(func() {
-		self.contractStatusChangeListeners.Remove(callbackId)
-	})
-}
-
-func (self *DeviceLocal) contractStatusChanged(contractStatus *ContractStatus) {
-	for _, contractStatusChangeListener := range self.contractStatusChangeListeners.Get() {
-		connect.HandleError(func() {
-			contractStatusChangeListener.ContractStatusChanged(contractStatus)
-		})
-	}
-}
-
-
 func (self *DeviceLocal) SetTunnelStarted(tunnelStarted bool) {
 	event := false
 	func() {
@@ -391,29 +378,12 @@ func (self *DeviceLocal) GetTunnelStarted() bool {
 	return self.tunnelStarted
 }
 
-func (self *DeviceLocal) AddTunnelChangeListener(listener TunnelChangeListener) Sub {
-	callbackId := self.tunnelChangeListeners.Add(listener)
-	return newSub(func() {
-		self.tunnelChangeListeners.Remove(callbackId)
-	})
-}
-
-func (self *DeviceLocal) tunnelChanged(tunnelStarted bool) {
-	for _, tunnelChangeListener := range self.tunnelChangeListeners.Get() {
-		connect.HandleError(func() {
-			tunnelChangeListener.TunnelChanged(tunnelStarted)
-		})
-	}
-}
-
-
 func (self *DeviceLocal) GetContractStatus() *ContractStatus {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	return self.netContractStatus
 }
-
 
 func (self *DeviceLocal) GetClientId() *Id {
 	return newId(self.clientId)
@@ -669,6 +639,27 @@ func (self *DeviceLocal) AddProvideSecretKeysListener(listener ProvideSecretKeys
 	})
 }
 
+func (self *DeviceLocal) AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub {
+	callbackId := self.contractStatusChangeListeners.Add(listener)
+	return newSub(func() {
+		self.contractStatusChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddTunnelChangeListener(listener TunnelChangeListener) Sub {
+	callbackId := self.tunnelChangeListeners.Add(listener)
+	return newSub(func() {
+		self.tunnelChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub {
+	callbackId := self.windowStatusChangeListeners.Add(listener)
+	return newSub(func() {
+		self.windowStatusChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
 	for _, listener := range self.provideChangeListeners.Get() {
 		connect.HandleError(func() {
@@ -721,6 +712,30 @@ func (self *DeviceLocal) provideSecretKeysChanged(provideSecretKeyList *ProvideS
 	for _, listener := range self.provideSecretKeysListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideSecretKeysChanged(provideSecretKeyList)
+		})
+	}
+}
+
+func (self *DeviceLocal) contractStatusChanged(contractStatus *ContractStatus) {
+	for _, contractStatusChangeListener := range self.contractStatusChangeListeners.Get() {
+		connect.HandleError(func() {
+			contractStatusChangeListener.ContractStatusChanged(contractStatus)
+		})
+	}
+}
+
+func (self *DeviceLocal) tunnelChanged(tunnelStarted bool) {
+	for _, tunnelChangeListener := range self.tunnelChangeListeners.Get() {
+		connect.HandleError(func() {
+			tunnelChangeListener.TunnelChanged(tunnelStarted)
+		})
+	}
+}
+
+func (self *DeviceLocal) windowStatusChanged(windowStatus *WindowStatus) {
+	for _, listener := range self.windowStatusChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.WindowStatusChanged(windowStatus)
 		})
 	}
 }
@@ -882,6 +897,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			self.remoteUserNatClient.Close()
 			self.remoteUserNatClient = nil
 		}
+		if self.windowMonitorSub != nil {
+			self.windowMonitorSub()
+			self.windowMonitorSub = nil;
+		}
 
 		if specs != nil && 0 < specs.Len() {
 			connectSpecs := []*connect.ProviderSpec{}
@@ -917,6 +936,12 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			)
 			multi.AddContractStatusCallback(self.updateContractStatus)
 			self.remoteUserNatClient = multi
+
+			monitor := multi.Monitor()
+			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
+				self.windowStatusChanged(toWindowStatus(monitor))
+			}
+			self.windowMonitorSub = multi.Monitor().AddMonitorEventCallback(windowMonitorEvent)
 		}
 		// else no specs, not an error
 	}()
@@ -924,6 +949,46 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 	connectEnabled := self.GetConnectEnabled()
 	self.stats.UpdateConnect(connectEnabled)
 	self.connectChanged(connectEnabled)
+	self.windowStatusChanged(self.GetWindowStatus())
+}
+
+func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
+	var windowStatus *WindowStatus
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		switch v := self.remoteUserNatClient.(type) {
+		case *connect.RemoteUserNatMultiClient:
+			windowStatus = toWindowStatus(v.Monitor())
+		default:
+			windowStatus = &WindowStatus{}
+		}
+	}()
+	return windowStatus
+}
+
+func toWindowStatus(monitor *connect.RemoteUserNatMultiClientMonitor) *WindowStatus {
+	windowExpandEvent, providerEvents := monitor.Events()
+	windowStatus := &WindowStatus{
+		TargetSize: windowExpandEvent.TargetSize,
+		MinSatisfied: windowExpandEvent.MinSatisfied,
+	}
+	for _, providerEvent := range providerEvents {
+		switch providerEvent.State {
+		case connect.ProviderStateInEvaluation:
+			windowStatus.ProviderStateInEvaluation += 1
+		case connect.ProviderStateEvaluationFailed:
+			windowStatus.ProviderStateEvaluationFailed += 1
+		case connect.ProviderStateNotAdded:
+			windowStatus.ProviderStateNotAdded += 1
+		case connect.ProviderStateAdded:
+			windowStatus.ProviderStateAdded += 1
+		case connect.ProviderStateRemoved:
+			windowStatus.ProviderStateRemoved += 1
+		}
+	}
+	return windowStatus
 }
 
 func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
