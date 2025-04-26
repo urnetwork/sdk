@@ -329,6 +329,26 @@ func (self *LocalState) GetProvideWhileDisconnected() bool {
 	return false
 }
 
+func (self *LocalState) SetAllowForeground(allowForeground bool) error {
+	path := filepath.Join(self.localStorageDir, ".allow_foreground")
+	allowForegroundBytes, err := json.Marshal(allowForeground)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, allowForegroundBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) GetAllowForeground() bool {
+	path := filepath.Join(self.localStorageDir, ".allow_foreground")
+	if allowForegroundBytes, err := os.ReadFile(path); err == nil {
+		var allowForeground bool
+		if err := json.Unmarshal(allowForegroundBytes, &allowForeground); err == nil {
+			return allowForeground
+		}
+	}
+	return false
+}
+
 // clears all auth tokens
 func (self *LocalState) Logout() error {
 	return errors.Join(
