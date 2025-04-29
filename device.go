@@ -4,7 +4,6 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-
 // the device upgrades the api, including setting the client jwt
 // closing the device does not close the api
 
@@ -12,7 +11,6 @@ import (
 // which has additional packet flow functions than the `Device` interface
 // most users should just use the `Device` type which is compatible with
 // running in multiple processes via RPC
-
 
 type ProvideChangeListener interface {
 	ProvideChanged(provideEnabled bool)
@@ -84,101 +82,94 @@ type WindowStatusChangeListener interface {
 	WindowStatusChanged(windowStatus *WindowStatus)
 }
 
-
 type IpProtocol = int
+
 const (
 	IpProtocolUnkown IpProtocol = 0
-	IpProtocolUdp IpProtocol = 1
-	IpProtocolTcp IpProtocol = 2
+	IpProtocolUdp    IpProtocol = 1
+	IpProtocolTcp    IpProtocol = 2
 )
-
 
 type ContractStatus struct {
 	InsufficientBalance bool
-	NoPermission bool
-	Premium bool
+	NoPermission        bool
+	Premium             bool
 }
-
 
 type BlockStats struct {
 	AllowedCount int
 	BlockedCount int
 }
 
-
 type BlockActionWindow struct {
 	BlockActionOverrides *BlockActionOverrideList
-	BlockActions *BlockActionList
+	BlockActions         *BlockActionList
 }
-
 
 type BlockActionOverride struct {
-	Host string
+	Host          string
 	BlockOverride bool
 }
-
 
 type BlockAction struct {
-	Time int64
-	Host string
-	Block bool
-	Override bool
+	Time          int64
+	Host          string
+	Block         bool
+	Override      bool
 	BlockOverride bool
 }
-
 
 type ContractStats struct {
 	ContractUsedByteCount ByteCount
-	ContractByteCount ByteCount
-	ContractBitRate int
+	ContractByteCount     ByteCount
+	ContractBitRate       int
 
 	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount ByteCount
-	CompanionContractBitRate int
+	CompanionContractByteCount     ByteCount
+	CompanionContractBitRate       int
 }
 
-
 /*
-       contract
-         |   ^
+	contract
+	  |   ^
+
 contract |   | companion contract
 transfer |   | transfer
 path     |   | path
-         ⌄   |
-       companion contract
+
+	  ⌄   |
+	companion contract
 */
 type ContractDetails struct {
-	ContractId *Id
+	ContractId            *Id
 	ContractUsedByteCount ByteCount
-	ContractByteCount ByteCount
-	ContractBitRate int
-	ContractTransferPath *TransferPath
+	ContractByteCount     ByteCount
+	ContractBitRate       int
+	ContractTransferPath  *TransferPath
 
-	CompanionContractId *Id
+	CompanionContractId            *Id
 	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount ByteCount
-	CompanionContractBitRate int
-	CompanionContractTransferPath *TransferPath
+	CompanionContractByteCount     ByteCount
+	CompanionContractBitRate       int
+	CompanionContractTransferPath  *TransferPath
 
-	Ipv4 string
-	Ipv6 string
+	Ipv4    string
+	Ipv6    string
 	Country string
 }
 
 type WindowStatus struct {
-	TargetSize int
-	MinSatisfied bool
-	ProviderStateInEvaluation int
+	TargetSize                    int
+	MinSatisfied                  bool
+	ProviderStateInEvaluation     int
 	ProviderStateEvaluationFailed int
-	ProviderStateNotAdded int
-	ProviderStateAdded int
-	ProviderStateRemoved int
+	ProviderStateNotAdded         int
+	ProviderStateAdded            int
+	ProviderStateRemoved          int
 }
-
 
 // every device must also support the unexported `device` interface
 type Device interface {
-
 	GetClientId() *Id
 	GetInstanceId() *Id
 
@@ -188,13 +179,17 @@ type Device interface {
 
 	GetStats() *DeviceStats
 
-	GetShouldShowRatingDialog() bool 
+	GetShouldShowRatingDialog() bool
 
 	GetCanShowRatingDialog() bool
 
-	SetCanShowRatingDialog(canShowRatingDialog bool) 
+	SetCanShowRatingDialog(canShowRatingDialog bool)
 
 	GetProvideWhileDisconnected() bool
+
+	GetAllowForeground() bool
+
+	SetAllowForeground(allowForeground bool)
 
 	SetProvideWhileDisconnected(provideWhileDisconnected bool)
 
@@ -202,7 +197,7 @@ type Device interface {
 
 	SetCanRefer(canRefer bool)
 
-	SetRouteLocal(routeLocal bool) 
+	SetRouteLocal(routeLocal bool)
 
 	GetRouteLocal() bool
 
@@ -210,21 +205,21 @@ type Device interface {
 
 	InitProvideSecretKeys()
 
-	GetProvideEnabled() bool 
+	GetProvideEnabled() bool
 
-	GetConnectEnabled() bool 
+	GetConnectEnabled() bool
 
-	SetProvideMode(provideMode ProvideMode) 
+	SetProvideMode(provideMode ProvideMode)
 
-	GetProvideMode() ProvideMode 
+	GetProvideMode() ProvideMode
 
-	SetProvidePaused(providePaused bool) 
+	SetProvidePaused(providePaused bool)
 
-	GetProvidePaused() bool 
+	GetProvidePaused() bool
 
-	SetOffline(offline bool) 
+	SetOffline(offline bool)
 
-	GetOffline() bool 
+	GetOffline() bool
 
 	SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool)
 
@@ -234,9 +229,9 @@ type Device interface {
 
 	SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode)
 
-	SetConnectLocation(location *ConnectLocation) 
+	SetConnectLocation(location *ConnectLocation)
 
-	GetConnectLocation() *ConnectLocation 
+	GetConnectLocation() *ConnectLocation
 
 	Shuffle()
 
@@ -252,32 +247,29 @@ type Device interface {
 
 	GetDone() bool
 
-	
-	AddProvideChangeListener(listener ProvideChangeListener) Sub 
+	AddProvideChangeListener(listener ProvideChangeListener) Sub
 
-	AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub 
+	AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub
 
-	AddOfflineChangeListener(listener OfflineChangeListener) Sub 
+	AddOfflineChangeListener(listener OfflineChangeListener) Sub
 
-	AddConnectChangeListener(listener ConnectChangeListener) Sub 
+	AddConnectChangeListener(listener ConnectChangeListener) Sub
 
 	AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
 
-	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub 
+	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub
 
-	AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub 
+	AddProvideSecretKeysListener(listener ProvideSecretKeysListener) Sub
 
 	AddTunnelChangeListener(listener TunnelChangeListener) Sub
 
 	AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub
 
-
 	GetProviderEnabled() bool
 
 	SetProviderEnabled(providerEnabled bool)
 
-	AddProviderChangeListener(listener ProviderChangeListener) Sub 
-
+	AddProviderChangeListener(listener ProviderChangeListener) Sub
 
 	// privacy block
 
@@ -308,15 +300,14 @@ type Device interface {
 	// rate limited
 	AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
 
-
 	// contract stats
-	
+
 	GetEgressContractStats() *ContractStats
 	GetEgressContractDetails() *ContractDetailsList
-	
+
 	GetIngressContractStats() *ContractStats
 	GetIngressContractDetails() *ContractDetailsList
-	
+
 	// rate limited
 	AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
 	// rate limited
@@ -331,7 +322,6 @@ type Device interface {
 	GetWindowStatus() *WindowStatus
 }
 
-
 // unexported to gomobile
 type device interface {
 	// monitor for the current connection window
@@ -341,15 +331,12 @@ type device interface {
 	ingressSecurityPolicy() securityPolicy
 }
 
-
 type windowMonitor interface {
 	AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func()
 	Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent)
 }
 
-
 type securityPolicy interface {
 	Stats(reset bool) connect.SecurityPolicyStats
 	// ResetStats()
 }
-
