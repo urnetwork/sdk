@@ -2,6 +2,11 @@ module github.com/urnetwork/sdk/build
 
 go 1.24.0
 
+require (
+	github.com/urnetwork/connect v0.0.0
+	github.com/urnetwork/sdk v0.0.0
+)
+
 replace github.com/urnetwork/sdk => ..
 
 replace github.com/urnetwork/connect => ../../connect
