@@ -115,9 +115,17 @@ type AuthLoginCallback connect.ApiCallback[*AuthLoginResult]
 
 // `model.AuthLoginArgs`
 type AuthLoginArgs struct {
-	UserAuth    string `json:"user_auth,omitempty"`
-	AuthJwtType string `json:"auth_jwt_type,omitempty"`
-	AuthJwt     string `json:"auth_jwt,omitempty"`
+	UserAuth    string               `json:"user_auth,omitempty"`
+	AuthJwtType string               `json:"auth_jwt_type,omitempty"`
+	AuthJwt     string               `json:"auth_jwt,omitempty"`
+	WalletAuth  *AuthWalletLoginArgs `json:"wallet_auth,omitempty"`
+}
+
+type AuthWalletLoginArgs struct {
+	PublicKey  string `json:"wallet_address,omitempty"`
+	Signature  string `json:"wallet_signature,omitempty"`
+	Message    string `json:"wallet_message,omitempty"`
+	Blockchain string `json:"blockchain,omitempty"`
 }
 
 // `model.AuthLoginResult`
@@ -127,6 +135,7 @@ type AuthLoginResult struct {
 	AuthAllowed *StringList             `json:"auth_allowed,omitempty"`
 	Error       *AuthLoginResultError   `json:"error,omitempty"`
 	Network     *AuthLoginResultNetwork `json:"network,omitempty"`
+	WalletLogin *AuthWalletLoginArgs    `json:"wallet_login,omitempty"`
 }
 
 // `model.AuthLoginResultError`
