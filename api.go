@@ -115,13 +115,13 @@ type AuthLoginCallback connect.ApiCallback[*AuthLoginResult]
 
 // `model.AuthLoginArgs`
 type AuthLoginArgs struct {
-	UserAuth    string               `json:"user_auth,omitempty"`
-	AuthJwtType string               `json:"auth_jwt_type,omitempty"`
-	AuthJwt     string               `json:"auth_jwt,omitempty"`
-	WalletAuth  *AuthWalletLoginArgs `json:"wallet_auth,omitempty"`
+	UserAuth    string          `json:"user_auth,omitempty"`
+	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
+	AuthJwt     string          `json:"auth_jwt,omitempty"`
+	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
 }
 
-type AuthWalletLoginArgs struct {
+type WalletAuthArgs struct {
 	PublicKey  string `json:"wallet_address,omitempty"`
 	Signature  string `json:"wallet_signature,omitempty"`
 	Message    string `json:"wallet_message,omitempty"`
@@ -135,7 +135,7 @@ type AuthLoginResult struct {
 	AuthAllowed *StringList             `json:"auth_allowed,omitempty"`
 	Error       *AuthLoginResultError   `json:"error,omitempty"`
 	Network     *AuthLoginResultNetwork `json:"network,omitempty"`
-	WalletLogin *AuthWalletLoginArgs    `json:"wallet_login,omitempty"`
+	WalletAuth  *WalletAuthArgs         `json:"wallet_login,omitempty"`
 }
 
 // `model.AuthLoginResultError`
@@ -318,16 +318,17 @@ func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCh
 type NetworkCreateCallback connect.ApiCallback[*NetworkCreateResult]
 
 type NetworkCreateArgs struct {
-	UserName         string `json:"user_name,omitempty"`
-	UserAuth         string `json:"user_auth,omitempty"`
-	AuthJwt          string `json:"auth_jwt,omitempty"`
-	AuthJwtType      string `json:"auth_jwt_type,omitempty"`
-	Password         string `json:"password,omitempty"`
-	NetworkName      string `json:"network_name,omitempty"`
-	Terms            bool   `json:"terms"`
-	GuestMode        bool   `json:"guest_mode"`
-	VerifyOtpNumeric bool   `json:"verify_use_numeric,omitempty"`
-	ReferralCode     *Id    `json:"referral_code,omitempty"`
+	UserName         string          `json:"user_name,omitempty"`
+	UserAuth         string          `json:"user_auth,omitempty"`
+	AuthJwt          string          `json:"auth_jwt,omitempty"`
+	AuthJwtType      string          `json:"auth_jwt_type,omitempty"`
+	Password         string          `json:"password,omitempty"`
+	NetworkName      string          `json:"network_name,omitempty"`
+	Terms            bool            `json:"terms"`
+	GuestMode        bool            `json:"guest_mode"`
+	VerifyOtpNumeric bool            `json:"verify_use_numeric,omitempty"`
+	ReferralCode     *Id             `json:"referral_code,omitempty"`
+	WalletAuth       *WalletAuthArgs `json:"wallet_auth,omitempty"`
 }
 
 type NetworkCreateResult struct {
