@@ -38,6 +38,7 @@ build_android:
 		"github.com/urnetwork/sdk"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec checksec file {} --output json \; ; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
 	(cd "$$BUILD_DIR"; \
 		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
@@ -82,12 +83,14 @@ build_apple:
 	mv "$$BUILD_DIR" apple;
 
 init:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	GOMOBILE_VERSION=v0.0.0-20250408133729-978277e7eaf7; \
-	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION; \
-	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION; \
-	gomobile init; \
-	go mod download "github.com/urnetwork/sdk"; \
-	go mod download "github.com/urnetwork/connect"; \
-	go clean -cache; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	GOMOBILE_VERSION=v0.0.0-20250408133729-978277e7eaf7  && \
+	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
+	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
+	gomobile init && \
+	CHECKSEC_VERSION=v0.0.0-20250322005620-31f2c9784742 && \
+	go install github.com/slimm609/checksec@$$CHECKSEC_VERSION && \
+	go mod download "github.com/urnetwork/sdk" && \
+	go mod download "github.com/urnetwork/connect" && \
+	go clean -cache && \
 	go clean -modcache;
