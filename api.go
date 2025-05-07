@@ -1366,3 +1366,38 @@ func (self *Api) UpgradeGuestExisting(upgradeGuest *UpgradeGuestExistingArgs, ca
 		)
 	})
 }
+
+/**
+ * Verify Seeker Token Holder
+ */
+
+type VerifySeekerNftHolderArgs struct {
+	PublicKey string `json:"wallet_address,omitempty"`
+	Signature string `json:"wallet_signature,omitempty"`
+	Message   string `json:"wallet_message,omitempty"`
+}
+
+type VerifySeekerNftHolderError struct {
+	Message string `json:"message"`
+}
+
+type VerifySeekerNftHolderResult struct {
+	Success bool                        `json:"success"`
+	Error   *VerifySeekerNftHolderError `json:"error,omitempty"`
+}
+
+type VerifySeekerNftHolderCallback connect.ApiCallback[*VerifySeekerNftHolderResult]
+
+func (self *Api) VerifySeekerHolder(verify *VerifySeekerNftHolderArgs, callback VerifySeekerNftHolderCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/account/wallets/verify-seeker", self.apiUrl),
+			verify,
+			self.GetByJwt(),
+			&VerifySeekerNftHolderResult{},
+			callback,
+		)
+	})
+}
