@@ -46,6 +46,7 @@ type AccountWallet struct {
 	Active           bool       `json:"active"`
 	DefaultTokenType string     `json:"default_token_type"`
 	CreateTime       *Time      `json:"create_time"`
+	HasSeekerToken   bool       `json:"has_seeker_token"`
 }
 
 type AccountPayment struct {
@@ -126,7 +127,7 @@ func newWalletViewController(ctx context.Context, device Device) *WalletViewCont
 }
 
 func (self *WalletViewController) Start() {
-	go self.fetchAccountWallets()
+	go self.FetchAccountWallets()
 	go self.FetchPayoutWallet()
 	go self.FetchPayments()
 	go self.FetchTransferStats()
@@ -259,7 +260,7 @@ func (vc *WalletViewController) AddExternalWallet(address string, blockchain Blo
 				}
 
 				vc.setIsCreatingExternalWallet(false)
-				vc.fetchAccountWallets()
+				vc.FetchAccountWallets()
 				vc.FetchPayoutWallet()
 
 			})))
@@ -401,7 +402,7 @@ func (vc *WalletViewController) setAccountWallets(wallets *AccountWalletsList) {
 	vc.accountWalletsChanged()
 }
 
-func (self *WalletViewController) fetchAccountWallets() {
+func (self *WalletViewController) FetchAccountWallets() {
 
 	self.device.GetApi().GetAccountWallets(connect.NewApiCallback[*GetAccountWalletsResult](
 		func(results *GetAccountWalletsResult, err error) {
@@ -435,6 +436,7 @@ func (self *WalletViewController) fetchAccountWallets() {
 					Active:           walletResult.Active,
 					DefaultTokenType: walletResult.DefaultTokenType,
 					CreateTime:       walletResult.CreateTime,
+					HasSeekerToken:   walletResult.HasSeekerToken,
 				}
 
 				wallets = append(wallets, wallet)
@@ -558,7 +560,7 @@ func (vc *WalletViewController) RemoveWallet(walletId *Id) {
 					}
 
 					if result.Success {
-						vc.fetchAccountWallets()
+						vc.FetchAccountWallets()
 					}
 
 				}),
@@ -604,7 +606,7 @@ func (self *WalletViewController) pollNewWallets() {
 			case <-ticker.C:
 
 				if self.isPollingAccountWallets {
-					self.fetchAccountWallets()
+					self.FetchAccountWallets()
 				}
 
 				if self.isPollingPayoutWallet {
