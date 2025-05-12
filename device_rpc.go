@@ -1719,6 +1719,7 @@ func (self *DeviceRemote) egressSecurityPolicyStats(reset bool) connect.Security
 	var out connect.SecurityPolicyStats
 	if success {
 		out = stats
+		self.state.ResetEgressSecurityPolicyStats.Unset()
 	} else if self.state.ResetEgressSecurityPolicyStats.IsSet {
 		out = connect.SecurityPolicyStats{}
 	} else {
@@ -1784,6 +1785,7 @@ func (self *DeviceRemote) ingressSecurityPolicyStats(reset bool) connect.Securit
 	var out connect.SecurityPolicyStats
 	if success {
 		out = stats
+		self.state.ResetIngressSecurityPolicyStats.Unset()
 	} else if self.state.ResetIngressSecurityPolicyStats.IsSet {
 		out = connect.SecurityPolicyStats{}
 	} else {

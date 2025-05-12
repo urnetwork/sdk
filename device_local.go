@@ -298,6 +298,8 @@ func newDeviceLocalWithOverrides(
 
 	if enableRpc {
 		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
+	} else {
+		newSecurityPolicyMonitor(ctx, deviceLocal)
 	}
 
 	return deviceLocal, nil
@@ -978,7 +980,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.ctx,
 				generator,
 				remoteReceive,
-				protocol.ProvideMode_Network,
+				protocol.ProvideMode_Public,
 			)
 			multi.AddContractStatusCallback(self.updateContractStatus)
 			self.remoteUserNatClient = multi
