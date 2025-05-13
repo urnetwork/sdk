@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 
@@ -434,6 +435,44 @@ func DecodeBase58(data string) ([]byte, error) {
 
 	return result, nil
 
+}
+
+func EncryptData(data []byte, nonceBase58, sharedSecretBase58 string) (string, error) {
+	nonce := base58.Decode(nonceBase58)
+	sharedSecret := base58.Decode(sharedSecretBase58)
+
+	if len(nonce) != 24 {
+		return "", fmt.Errorf("invalid nonce length")
+	}
+
+	if len(sharedSecret) != 32 {
+		return "", fmt.Errorf("invalid shared secret length")
+	}
+
+	var n [24]byte
+	var k [32]byte
+	copy(n[:], nonce)
+	copy(k[:], sharedSecret)
+
+	// Encrypt the data
+	encrypted := box.SealAfterPrecomputation(nil, data, &n, &k)
+
+	// Return base58 encoded encrypted data
+	return base58.Encode(encrypted), nil
+}
+
+func GenerateNonce() string {
+	var nonce [24]byte
+
+	// Use crypto/rand to fill the nonce with random bytes
+	if _, err := rand.Read(nonce[:]); err != nil {
+		// In a production system we would handle this error properly
+		// but for a cryptographic random source, this should rarely if ever happen
+		glog.Errorf("Failed to generate random nonce: %v", err)
+		panic(err)
+	}
+
+	return base58.Encode(nonce[:])
 }
 
 func DecryptData(encryptedDataBase58, nonceBase58, sharedSecretBase58 string) ([]byte, error) {
