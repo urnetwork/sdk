@@ -1283,11 +1283,12 @@ func (self *Api) AuthCodeLogin(
 type UpgradeGuestCallback connect.ApiCallback[*UpgradeGuestResult]
 
 type UpgradeGuestArgs struct {
-	UserAuth    string `json:"user_auth,omitempty"`
-	AuthJwt     string `json:"auth_jwt,omitempty"`
-	AuthJwtType string `json:"auth_jwt_type,omitempty"`
-	Password    string `json:"password,omitempty"`
-	NetworkName string `json:"network_name,omitempty"`
+	UserAuth    string          `json:"user_auth,omitempty"`
+	AuthJwt     string          `json:"auth_jwt,omitempty"`
+	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
+	Password    string          `json:"password,omitempty"`
+	NetworkName string          `json:"network_name,omitempty"`
+	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
 }
 
 type UpgradeGuestNetwork struct {
@@ -1329,10 +1330,11 @@ func (self *Api) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGu
 type UpgradeGuestExistingCallback connect.ApiCallback[*UpgradeGuestExistingResult]
 
 type UpgradeGuestExistingArgs struct {
-	UserAuth    string `json:"user_auth,omitempty"`
-	Password    string `json:"password,omitempty"`
-	AuthJwt     string `json:"auth_jwt,omitempty"`
-	AuthJwtType string `json:"auth_jwt_type,omitempty"`
+	UserAuth    string          `json:"user_auth,omitempty"`
+	Password    string          `json:"password,omitempty"`
+	AuthJwt     string          `json:"auth_jwt,omitempty"`
+	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
+	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
 }
 
 type UpgradeGuestExistingNetwork struct {
