@@ -1410,7 +1410,7 @@ func (self *Api) VerifySeekerHolder(verify *VerifySeekerNftHolderArgs, callback 
 
 type GetLeaderboardArgs struct{}
 
-type Earner struct {
+type LeaderboardEarner struct {
 	NetworkId   string `json:"network_id"`
 	NetworkName string `json:"network_name"`
 	NetMiBCount int    `json:"net_mib_count"`
@@ -1418,8 +1418,8 @@ type Earner struct {
 }
 
 type LeaderboardResult struct {
-	Earners []Earner          `json:"earners"`
-	Error   *LeaderboardError `json:"error,omitempty"`
+	Earners *LeaderboardEarnersList `json:"earners"`
+	Error   *LeaderboardError       `json:"error,omitempty"`
 }
 
 type LeaderboardError struct {
