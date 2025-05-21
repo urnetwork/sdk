@@ -1403,3 +1403,105 @@ func (self *Api) VerifySeekerHolder(verify *VerifySeekerNftHolderArgs, callback 
 		)
 	})
 }
+
+/**
+ * Leaderboard
+ */
+
+type GetLeaderboardArgs struct{}
+
+type Earner struct {
+	NetworkId   string `json:"network_id"`
+	NetworkName string `json:"network_name"`
+	NetMiBCount int    `json:"net_mib_count"`
+	IsPublic    bool   `json:"is_public"`
+}
+
+type LeaderboardResult struct {
+	Earners []Earner          `json:"earners"`
+	Error   *LeaderboardError `json:"error,omitempty"`
+}
+
+type LeaderboardError struct {
+	Message string `json:"message"`
+}
+
+type GetLeaderboardCallback connect.ApiCallback[*LeaderboardResult]
+
+func (self *Api) GetLeaderboard(args *GetLeaderboardArgs, callback GetLeaderboardCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/stats/leaderboard", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&LeaderboardResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Get Network Leaderboard ranking
+ */
+
+type NetworkRanking struct {
+	NetMiBCount     int `json:"net_mib_count"`
+	LeaderboardRank int `json:"leaderboard_rank"`
+}
+
+type GetNetworkRankingResult struct {
+	NetworkRanking NetworkRanking          `json:"network_ranking"`
+	Error          *GetNetworkRankingError `json:"error,omitempty"`
+}
+type GetNetworkRankingError struct {
+	Message string `json:"message"`
+}
+
+type GetNetworkLeaderboardRankingCallback connect.ApiCallback[*GetNetworkRankingResult]
+
+func (self *Api) GetNetworkLeaderboardRanking(callback GetNetworkLeaderboardRankingCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/network/ranking", self.apiUrl),
+			self.GetByJwt(),
+			&GetNetworkRankingResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Set Network Leaderboard public
+ */
+
+type SetNetworkRankingPublicArgs struct {
+	IsPublic bool `json:"is_public"`
+}
+
+type SetNetworkRankingPublicResult struct {
+	Error *SetNetworkRankingPublicError `json:"error,omitempty"`
+}
+
+type SetNetworkRankingPublicError struct {
+	Message string `json:"message"`
+}
+
+type SetNetworkLeaderboardPublicCallback connect.ApiCallback[*SetNetworkRankingPublicResult]
+
+func (self *Api) SetNetworkLeaderboardPublic(args *SetNetworkRankingPublicArgs, callback SetNetworkLeaderboardPublicCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/ranking-visibility", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SetNetworkRankingPublicResult{},
+			callback,
+		)
+	})
+}
