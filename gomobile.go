@@ -3,8 +3,8 @@ package sdk
 import (
 	"encoding/json"
 	"reflect"
-	"time"
 	"slices"
+	"time"
 )
 
 // use a exported lists since arrays of structs are not exportable
@@ -266,6 +266,9 @@ func NewBlockActionList() *BlockActionList {
 	}
 }
 
+type LeaderboardEarnersList struct {
+	exportedList[*LeaderboardEarner]
+}
 
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type Time struct {
