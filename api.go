@@ -1447,12 +1447,13 @@ func (self *Api) GetLeaderboard(args *GetLeaderboardArgs, callback GetLeaderboar
  */
 
 type NetworkRanking struct {
-	NetMiBCount     int `json:"net_mib_count"`
-	LeaderboardRank int `json:"leaderboard_rank"`
+	NetMiBCount       float32 `json:"net_mib_count"`
+	LeaderboardRank   int     `json:"leaderboard_rank"`
+	LeaderboardPublic bool    `json:"leaderboard_public"`
 }
 
 type GetNetworkRankingResult struct {
-	NetworkRanking NetworkRanking          `json:"network_ranking"`
+	NetworkRanking *NetworkRanking         `json:"network_ranking"`
 	Error          *GetNetworkRankingError `json:"error,omitempty"`
 }
 type GetNetworkRankingError struct {
