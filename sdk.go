@@ -64,6 +64,10 @@ func FreeMemory() {
 	debug.FreeOSMemory()
 }
 
+func MessagePoolGet(n int) []byte {
+	return connect.MessagePoolGet(n)
+}
+
 // func initPprof() {
 // 	go func() {
 // 		glog.Infof("pprof = %s\n", http.ListenAndServe(":6060", nil))
