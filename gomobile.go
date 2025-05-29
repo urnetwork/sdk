@@ -270,6 +270,10 @@ type LeaderboardEarnersList struct {
 	exportedList[*LeaderboardEarner]
 }
 
+type AccountPointsList struct {
+	exportedList[*AccountPoint]
+}
+
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type Time struct {
 	impl time.Time

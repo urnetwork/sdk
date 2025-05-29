@@ -1525,7 +1525,7 @@ type AccountPoint struct {
 }
 
 type AccountPointsResult struct {
-	AccountPoints []AccountPoint `json:"account_points"`
+	AccountPoints *AccountPointsList `json:"account_points"`
 }
 
 type GetAccountPointsCallback connect.ApiCallback[*AccountPointsResult]
