@@ -1506,3 +1506,39 @@ func (self *Api) SetNetworkLeaderboardPublic(args *SetNetworkRankingPublicArgs, 
 		)
 	})
 }
+
+/**
+ * Network points
+ * Eventually these will be transferrable to token
+ */
+type AccountPointEvent string
+
+const (
+	AccountPointEventReferral AccountPointEvent = "referral"
+)
+
+type AccountPoint struct {
+	NetworkId  *Id               `json:"network_id"`
+	Event      AccountPointEvent `json:"event"`
+	PointValue int               `json:"point_value"`
+	CreateTime *Time             `json:"create_time"`
+}
+
+type AccountPointsResult struct {
+	AccountPoints []AccountPoint `json:"account_points"`
+}
+
+type GetAccountPointsCallback connect.ApiCallback[*AccountPointsResult]
+
+func (self *Api) GetAccountPoints(callback GetAccountPointsCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/account/points", self.apiUrl),
+			self.GetByJwt(),
+			&AccountPointsResult{},
+			callback,
+		)
+	})
+}
