@@ -975,6 +975,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
+				// connect.MessagePoolReturn(packet)
 			}
 			multi := connect.NewRemoteUserNatMultiClientWithDefaults(
 				self.ctx,
@@ -1076,8 +1077,16 @@ func (self *DeviceLocal) Shuffle() {
 }
 
 func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
-	packetCopy := make([]byte, n)
-	copy(packetCopy, packet[0:n])
+	// packetCopy := make([]byte, n)
+	// copy(packetCopy, packet[0:n])
+	return self.sendPacket(connect.MessagePoolCopy(packet[:n]))
+}
+
+func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
+	return self.sendPacket(packet[:n])
+}
+
+func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	source := connect.SourceId(self.clientId)
 
 	var remoteUserNatClient connect.UserNatClient
@@ -1092,11 +1101,11 @@ func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
 	}()
 
 	if remoteUserNatClient != nil {
-		self.stats.UpdateRemoteSend(ByteCount(n))
+		self.stats.UpdateRemoteSend(ByteCount(len(packet)))
 		return remoteUserNatClient.SendPacket(
 			source,
 			protocol.ProvideMode_Network,
-			packetCopy,
+			packet,
 			self.settings.SendTimeout,
 		)
 	} else if routeLocal {
@@ -1104,7 +1113,7 @@ func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
 		return localUserNat.SendPacket(
 			source,
 			protocol.ProvideMode_Network,
-			packetCopy,
+			packet,
 			self.settings.SendTimeout,
 		)
 	} else {
