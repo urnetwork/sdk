@@ -65,7 +65,18 @@ func FreeMemory() {
 }
 
 func MessagePoolGet(n int) []byte {
-	return connect.MessagePoolGet(n)
+	b := connect.MessagePoolGet(n)
+	// return b[:cap(b)]
+	return b
+}
+
+func MessagePoolGetRaw(n int) []byte {
+	b := connect.MessagePoolGet(n)
+	return b[:cap(b)]
+}
+
+func MessagePoolReturn(b []byte) {
+	connect.MessagePoolReturn(b)
 }
 
 // func initPprof() {

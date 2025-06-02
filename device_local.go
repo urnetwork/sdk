@@ -975,7 +975,6 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
-				// connect.MessagePoolReturn(packet)
 			}
 			multi := connect.NewRemoteUserNatMultiClientWithDefaults(
 				self.ctx,
@@ -1077,9 +1076,12 @@ func (self *DeviceLocal) Shuffle() {
 }
 
 func (self *DeviceLocal) SendPacket(packet []byte, n int32) bool {
-	// packetCopy := make([]byte, n)
-	// copy(packetCopy, packet[0:n])
-	return self.sendPacket(connect.MessagePoolCopy(packet[:n]))
+	b := connect.MessagePoolCopy(packet[:n])
+	success := self.sendPacket(b)
+	if !success {
+		MessagePoolReturn(b)
+	}
+	return success
 }
 
 func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
