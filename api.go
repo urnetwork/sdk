@@ -327,7 +327,7 @@ type NetworkCreateArgs struct {
 	Terms            bool            `json:"terms"`
 	GuestMode        bool            `json:"guest_mode"`
 	VerifyOtpNumeric bool            `json:"verify_use_numeric,omitempty"`
-	ReferralCode     *Id             `json:"referral_code,omitempty"`
+	ReferralCode     string          `json:"referral_code,omitempty"`
 	WalletAuth       *WalletAuthArgs `json:"wallet_auth,omitempty"`
 }
 
