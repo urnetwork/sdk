@@ -1019,7 +1019,7 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 	return windowStatus
 }
 
-func toWindowStatus(monitor *connect.RemoteUserNatMultiClientMonitor) *WindowStatus {
+func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 	windowExpandEvent, providerEvents := monitor.Events()
 	windowStatus := &WindowStatus{
 		TargetSize:   windowExpandEvent.TargetSize,
