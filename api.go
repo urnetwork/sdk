@@ -1096,6 +1096,76 @@ func (self *Api) ValidateReferralCode(
 }
 
 /**
+ * Update network referral
+ * Users can edit their referral code to associate with a different parent network.
+ */
+
+type SetNetworkReferralArgs struct {
+	ReferralCode string `json:"referral_code"`
+}
+
+type SetNetworkReferralError struct {
+	Message string `json:"message"`
+}
+
+type SetNetworkReferralResult struct {
+	Error *SetNetworkReferralError `json:"error,omitempty"`
+}
+
+type SetNetworkReferralCallback connect.ApiCallback[*SetNetworkReferralResult]
+
+func (self *Api) SetNetworkReferral(
+	args *SetNetworkReferralArgs,
+	callback SetNetworkReferralCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/account/set-referral", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SetNetworkReferralResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Get referral network
+ * This returns the parent referral network of the current network.
+ */
+
+type ReferralNetwork struct {
+	Id   *Id    `json:"id"`
+	Name string `json:"name"`
+}
+
+type GetReferralNetworkError struct {
+	Message string `json:"message"`
+}
+
+type GetReferralNetworkResult struct {
+	Network *ReferralNetwork         `json:"network,omitempty"`
+	Error   *GetReferralNetworkError `json:"error,omitempty"`
+}
+
+type GetReferralNetworkCallback connect.ApiCallback[*GetReferralNetworkResult]
+
+func (self *Api) GetReferralNetwork(callback GetReferralNetworkCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/account/referral-network", self.apiUrl),
+			self.GetByJwt(),
+			&GetReferralNetworkResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Remove wallet
  */
 
