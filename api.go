@@ -1166,6 +1166,29 @@ func (self *Api) GetReferralNetwork(callback GetReferralNetworkCallback) {
 }
 
 /**
+ * Unlink parent referral network from account
+ */
+type UnlinkReferralNetworkResult struct {
+}
+
+type UnlinkReferralNetworkCallback connect.ApiCallback[*UnlinkReferralNetworkResult]
+
+func (self *Api) UnlinkReferralNetwork(
+	callback UnlinkReferralNetworkCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/account/unlink-referral-network", self.apiUrl),
+			self.GetByJwt(),
+			&UnlinkReferralNetworkResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Remove wallet
  */
 
