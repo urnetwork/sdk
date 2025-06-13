@@ -425,7 +425,7 @@ type GetNetworkClientsCallback connect.ApiCallback[*NetworkClientsResult]
 
 type NetworkClientResident struct {
 	ClientId              *Id      `json:"client_id"`
-	InstanceId            *Id      `json:"client_id"`
+	InstanceId            *Id      `json:"instance_id"`
 	ResidentId            *Id      `json:"resident_id"`
 	ResidentHost          string   `json:"resident_host"`
 	ResidentService       string   `json:"resident_service"`
