@@ -269,6 +269,18 @@ func NanoCentsToUsd(nanoCents NanoCents) float64 {
 	return float64(nanoCents) / float64(1000000000)
 }
 
+type NanoPoints = int64
+
+// 1 point = 1_000_000 nano points
+
+func PointsToNanoPoints(points float64) NanoPoints {
+	return NanoPoints(math.Round(float64(points) * 1_000_000))
+}
+
+func NanoPointsToPoints(nanoPoints NanoPoints) float64 {
+	return math.Round(float64(nanoPoints) / 1_000_000)
+}
+
 // merged location and location group
 type ConnectLocation struct {
 	ConnectLocationId *ConnectLocationId `json:"connect_location_id,omitempty"`

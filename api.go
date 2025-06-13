@@ -1604,17 +1604,14 @@ func (self *Api) SetNetworkLeaderboardPublic(args *SetNetworkRankingPublicArgs, 
  * Network points
  * Eventually these will be transferrable to token
  */
-type AccountPointEvent string
-
-const (
-	AccountPointEventReferral AccountPointEvent = "referral"
-)
 
 type AccountPoint struct {
-	NetworkId  *Id               `json:"network_id"`
-	Event      AccountPointEvent `json:"event"`
-	PointValue int               `json:"point_value"`
-	CreateTime *Time             `json:"create_time"`
+	NetworkId       *Id        `json:"network_id"`
+	Event           string     `json:"event"`
+	PointValue      NanoPoints `json:"point_value"`
+	PaymentPlanId   *Id        `json:"payment_plan_id,omitempty"`
+	LinkedNetworkId *Id        `json:"linked_network_id,omitempty"`
+	CreateTime      *Time      `json:"create_time"`
 }
 
 type AccountPointsResult struct {
