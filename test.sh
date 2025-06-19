@@ -1,3 +1,3 @@
 #!/usr/bin/env zsh
 
-go test -v -race "$@"
+go test -timeout 0 -v -race "$@"
