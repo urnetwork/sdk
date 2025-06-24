@@ -1606,12 +1606,13 @@ func (self *Api) SetNetworkLeaderboardPublic(args *SetNetworkRankingPublicArgs, 
  */
 
 type AccountPoint struct {
-	NetworkId       *Id        `json:"network_id"`
-	Event           string     `json:"event"`
-	PointValue      NanoPoints `json:"point_value"`
-	PaymentPlanId   *Id        `json:"payment_plan_id,omitempty"`
-	LinkedNetworkId *Id        `json:"linked_network_id,omitempty"`
-	CreateTime      *Time      `json:"create_time"`
+	NetworkId        *Id        `json:"network_id"`
+	Event            string     `json:"event"`
+	PointValue       NanoPoints `json:"point_value"`
+	AccountPaymentId *Id        `json:"account_payment_id"`
+	PaymentPlanId    *Id        `json:"payment_plan_id,omitempty"`
+	LinkedNetworkId  *Id        `json:"linked_network_id,omitempty"`
+	CreateTime       *Time      `json:"create_time"`
 }
 
 type AccountPointsResult struct {

@@ -65,6 +65,8 @@ type AccountPayment struct {
 	PaymentTime    *Time   `json:"payment_time,omitempty"`
 	PaymentReceipt string  `json:"payment_receipt,omitempty"`
 	WalletAddress  string  `json:"wallet_address"`
+	Blockchain     string  `json:"blockchain,omitempty"`
+	TxHash         string  `json:"tx_hash,omitempty"`
 
 	Completed    bool  `json:"completed,omitempty"`
 	CompleteTime *Time `json:"complete_time,omitempty"`
