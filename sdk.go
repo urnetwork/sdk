@@ -87,7 +87,7 @@ func MessagePoolReturn(b []byte) {
 
 // this value is set via the linker, e.g.
 // -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
-var Version string
+const Version string = ""
 
 type Id struct {
 	id [16]byte
