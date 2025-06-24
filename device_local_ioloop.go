@@ -2,9 +2,11 @@ package sdk
 
 import (
 	"context"
+	"os"
 	"syscall"
+	// "net"
 
-	// "github.com/golang/glog"
+	"github.com/golang/glog"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
@@ -14,32 +16,52 @@ import (
 // this avoids transferring byte buffers between go and native code
 // on android, byte buffers are copied between go and native code which leads to unnecessary performance overhead
 
-type IoLoop struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	deviceLocal *DeviceLocal
-	// f *os.File
-	fd int
+type IoLoopDoneCallback interface {
+	IoLoopDone()
 }
 
-func NewIoLoop(deviceLocal *DeviceLocal, fd int32) *IoLoop {
+type IoLoop struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
+	deviceLocal  *DeviceLocal
+	fd           int
+	doneCallback IoLoopDoneCallback
+}
+
+// the fd must be:
+// - opened in non blocking mode
+// - detached so that it can be closed the the ioloop
+func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallback) *IoLoop {
 	ctx, cancel := context.WithCancel(deviceLocal.ctx)
 
-	// f := os.NewFile(uintptr(fd), "tun")
-
 	ioLoop := &IoLoop{
-		ctx:         ctx,
-		cancel:      cancel,
-		deviceLocal: deviceLocal,
-		fd:          int(fd),
+		ctx:          ctx,
+		cancel:       cancel,
+		deviceLocal:  deviceLocal,
+		fd:           int(fd),
+		doneCallback: doneCallback,
 	}
+	go ioLoop.run()
 	return ioLoop
 }
 
-func (self *IoLoop) Run() {
+func (self *IoLoop) run() {
+	defer connect.HandleError(func() {
+		if self.doneCallback != nil {
+			self.doneCallback.IoLoopDone()
+		}
+	})
+
 	defer self.cancel()
 
-	// defer self.f.Close()
+	err := syscall.SetNonblock(self.fd, true)
+	if err != nil {
+		glog.Infof("[io]Could not set non-blocking: %s\n", err)
+		return
+	}
+
+	f := os.NewFile(uintptr(self.fd), "urnetwork")
+	defer f.Close()
 
 	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 		select {
@@ -48,8 +70,7 @@ func (self *IoLoop) Run() {
 		default:
 		}
 
-		// _, err := self.f.Write(packet)
-		_, err := syscall.Write(self.fd, packet)
+		_, err := f.Write(packet)
 		if err != nil {
 			self.cancel()
 		}
@@ -57,27 +78,32 @@ func (self *IoLoop) Run() {
 	callbackId := self.deviceLocal.receiveCallbacks.Add(receive)
 	defer self.deviceLocal.receiveCallbacks.Remove(callbackId)
 
-	for {
-		select {
-		case <-self.ctx.Done():
-			return
-		default:
-		}
+	go func() {
+		for {
+			select {
+			case <-self.ctx.Done():
+				return
+			default:
+			}
 
-		packet := MessagePoolGet(2048)
-		// n, err := self.f.Read(p)
-		n, err := syscall.Read(self.fd, packet)
-		if 0 < n {
-			success := self.deviceLocal.sendPacket(packet[:n])
-			if !success {
+			packet := MessagePoolGet(2048)
+			n, err := f.Read(packet)
+			if 0 < n {
+				success := self.deviceLocal.sendPacket(packet[:n])
+				if !success {
+					MessagePoolReturn(packet)
+				}
+			} else {
 				MessagePoolReturn(packet)
 			}
-		} else {
-			MessagePoolReturn(packet)
+			if err != nil {
+				return
+			}
 		}
-		if err != nil {
-			return
-		}
+	}()
+
+	select {
+	case <-self.ctx.Done():
 	}
 }
 
