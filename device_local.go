@@ -851,13 +851,15 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 		// TODO create a new provider only client?
 
 		provideModes := map[protocol.ProvideMode]bool{}
-		if ProvideModePublic <= provideMode {
+		switch provideMode {
+		case ProvideModePublic:
 			provideModes[protocol.ProvideMode_Public] = true
-		}
-		if ProvideModeFriendsAndFamily <= provideMode {
 			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-		}
-		if ProvideModeNetwork <= provideMode {
+			provideModes[protocol.ProvideMode_Network] = true
+		case ProvideModeFriendsAndFamily:
+			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+			provideModes[protocol.ProvideMode_Network] = true
+		case ProvideModeNetwork:
 			provideModes[protocol.ProvideMode_Network] = true
 		}
 		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
