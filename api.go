@@ -1504,10 +1504,11 @@ func (self *Api) VerifySeekerHolder(verify *VerifySeekerNftHolderArgs, callback 
 type GetLeaderboardArgs struct{}
 
 type LeaderboardEarner struct {
-	NetworkId   string  `json:"network_id"`
-	NetworkName string  `json:"network_name"`
-	NetMiBCount float32 `json:"net_mib_count"`
-	IsPublic    bool    `json:"is_public"`
+	NetworkId         string  `json:"network_id"`
+	NetworkName       string  `json:"network_name"`
+	NetMiBCount       float32 `json:"net_mib_count"`
+	IsPublic          bool    `json:"is_public"`
+	ContainsProfanity bool    `json:"contains_profanity"`
 }
 
 type LeaderboardResult struct {
