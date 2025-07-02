@@ -233,6 +233,10 @@ type Device interface {
 
 	GetConnectLocation() *ConnectLocation
 
+	SetDefaultLocation(location *ConnectLocation)
+
+	GetDefaultLocation() *ConnectLocation
+
 	Shuffle()
 
 	SetTunnelStarted(tunnelStarted bool)
