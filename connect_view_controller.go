@@ -88,7 +88,15 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 	// 	vc.setGrid()
 	// }
 	vc.connectLocationChangedSub = device.AddConnectLocationChangeListener(vc)
-	vc.ConnectLocationChanged(device.GetConnectLocation())
+
+	connectedLocation := device.GetConnectLocation()
+	vc.ConnectLocationChanged(connectedLocation)
+
+	if connectedLocation == nil {
+		glog.Infof("setting default location %s", device.GetDefaultLocation().Name)
+		vc.setSelectedLocation(device.GetDefaultLocation())
+	}
+
 	return vc
 }
 
