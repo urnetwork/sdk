@@ -224,6 +224,31 @@ func (self *LocalState) GetConnectLocation() *ConnectLocation {
 	return nil
 }
 
+func (self *LocalState) SetDefaultLocation(connectLocation *ConnectLocation) error {
+	path := filepath.Join(self.localStorageDir, ".default_location")
+	if connectLocation == nil {
+		os.Remove(path)
+		return nil
+	} else {
+		defaultLocationBytes, err := json.Marshal(connectLocation)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, defaultLocationBytes, LocalStorageFilePermissions)
+	}
+}
+
+func (self *LocalState) GetDefaultLocation() *ConnectLocation {
+	path := filepath.Join(self.localStorageDir, ".default_location")
+	if connectLocationBytes, err := os.ReadFile(path); err == nil {
+		var connectLocation ConnectLocation
+		if err := json.Unmarshal(connectLocationBytes, &connectLocation); err == nil {
+			return &connectLocation
+		}
+	}
+	return nil
+}
+
 func (self *LocalState) SetProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) error {
 	path := filepath.Join(self.localStorageDir, ".provide_secret_keys")
 	if provideSecretKeyList == nil {
