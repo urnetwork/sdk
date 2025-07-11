@@ -15,7 +15,6 @@ require (
 )
 
 require (
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
