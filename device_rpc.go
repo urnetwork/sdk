@@ -1516,6 +1516,56 @@ func (self *DeviceRemote) GetConnectLocation() *ConnectLocation {
 	}
 }
 
+func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	defaultLocation, success := func() (*ConnectLocation, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		defaultLocation, err := rpcCallNoArg[*DeviceRemoteConnectLocation](self.service, "DeviceLocalRpc.GetDefaultLocation", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return defaultLocation.toConnectLocation(), true
+	}()
+	if success {
+		return defaultLocation
+	} else {
+		return self.state.DefaultLocation.Value.DefaultLocation.toConnectLocation()
+	}
+}
+
+func (self *DeviceRemote) SetDefaultLocation(connectLocation *ConnectLocation) {
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	deviceRemoteLocation := newDeviceRemoteDefaultLocation(connectLocation)
+
+	success := func() bool {
+		if self.service == nil {
+			return false
+		}
+
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetDefaultLocation", deviceRemoteLocation, self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+
+	state := &self.state
+
+	if success {
+		state = &self.lastKnownState
+	}
+
+	state.DefaultLocation.Set(deviceRemoteLocation)
+}
+
 func (self *DeviceRemote) Shuffle() {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -2442,20 +2492,31 @@ type DeviceRemoteWindowStatus struct {
 type DeviceRemoteState struct {
 	// thick state + last known state
 
-	CanShowRatingDialog             deviceRemoteValue[bool]
-	ProvideWhileDisconnected        deviceRemoteValue[bool]
-	CanRefer                        deviceRemoteValue[bool]
-	AllowForeground                 deviceRemoteValue[bool]
-	RouteLocal                      deviceRemoteValue[bool]
-	InitProvideSecretKeys           deviceRemoteValue[bool]
-	LoadProvideSecretKeys           deviceRemoteValue[[]*ProvideSecretKey]
-	ProvideMode                     deviceRemoteValue[ProvideMode]
-	ProvidePaused                   deviceRemoteValue[bool]
-	Offline                         deviceRemoteValue[bool]
-	VpnInterfaceWhileOffline        deviceRemoteValue[bool]
-	RemoveDestination               deviceRemoteValue[bool]
-	Destination                     deviceRemoteValue[*DeviceRemoteDestination]
-	Location                        deviceRemoteValue[*DeviceRemoteConnectLocation]
+	CanShowRatingDialog      deviceRemoteValue[bool]
+	ProvideWhileDisconnected deviceRemoteValue[bool]
+	CanRefer                 deviceRemoteValue[bool]
+	AllowForeground          deviceRemoteValue[bool]
+	RouteLocal               deviceRemoteValue[bool]
+	InitProvideSecretKeys    deviceRemoteValue[bool]
+	LoadProvideSecretKeys    deviceRemoteValue[[]*ProvideSecretKey]
+	ProvideMode              deviceRemoteValue[ProvideMode]
+	ProvidePaused            deviceRemoteValue[bool]
+	Offline                  deviceRemoteValue[bool]
+	VpnInterfaceWhileOffline deviceRemoteValue[bool]
+	RemoveDestination        deviceRemoteValue[bool]
+	Destination              deviceRemoteValue[*DeviceRemoteDestination]
+
+	/**
+	 * Location used to connect on init
+	 * if a user connects to a location, and relaunches the app, it will reconnect to this location
+	 */
+	Location deviceRemoteValue[*DeviceRemoteConnectLocation]
+
+	/**
+	 * Default location used to persist location
+	 * if a user selects a location, connects, then disconnects, this should be persisted
+	 */
+	DefaultLocation                 deviceRemoteValue[*DeviceRemoteDefaultLocation]
 	Shuffle                         deviceRemoteValue[bool]
 	ResetEgressSecurityPolicyStats  deviceRemoteValue[bool]
 	ResetIngressSecurityPolicyStats deviceRemoteValue[bool]
@@ -2572,10 +2633,23 @@ type DeviceRemoteConnectLocation struct {
 	ConnectLocation *DeviceRemoteConnectLocationValue
 }
 
+//gomobile:noexport
+type DeviceRemoteDefaultLocation struct {
+	DefaultLocation *DeviceRemoteConnectLocationValue
+}
+
 func newDeviceRemoteConnectLocation(connectLocation *ConnectLocation) *DeviceRemoteConnectLocation {
 	deviceRemoteConnectLocation := &DeviceRemoteConnectLocation{}
 	if connectLocation != nil {
 		deviceRemoteConnectLocation.ConnectLocation = newDeviceRemoteConnectLocationValue(connectLocation)
+	}
+	return deviceRemoteConnectLocation
+}
+
+func newDeviceRemoteDefaultLocation(connectLocation *ConnectLocation) *DeviceRemoteDefaultLocation {
+	deviceRemoteConnectLocation := &DeviceRemoteDefaultLocation{}
+	if connectLocation != nil {
+		deviceRemoteConnectLocation.DefaultLocation = newDeviceRemoteConnectLocationValue(connectLocation)
 	}
 	return deviceRemoteConnectLocation
 }
@@ -4111,6 +4185,16 @@ func (self *DeviceLocalRpc) SetConnectLocation(location *DeviceRemoteConnectLoca
 
 func (self *DeviceLocalRpc) GetConnectLocation(_ RpcNoArg, location **DeviceRemoteConnectLocation) error {
 	*location = newDeviceRemoteConnectLocation(self.deviceLocal.GetConnectLocation())
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetDefaultLocation(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
+	self.deviceLocal.SetDefaultLocation(location.toConnectLocation())
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetDefaultLocation(_ RpcNoArg, location **DeviceRemoteDefaultLocation) error {
+	*location = newDeviceRemoteDefaultLocation(self.deviceLocal.GetDefaultLocation())
 	return nil
 }
 
