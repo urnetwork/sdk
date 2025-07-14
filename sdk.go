@@ -57,10 +57,12 @@ func initGlog() {
 }
 
 func SetMemoryLimit(limit int64) {
+	connect.ResizeMessagePools(limit / 8)
 	debug.SetMemoryLimit(limit)
 }
 
 func FreeMemory() {
+	connect.ClearMessagePools()
 	debug.FreeOSMemory()
 }
 
