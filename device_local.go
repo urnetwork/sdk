@@ -100,7 +100,8 @@ type DeviceLocal struct {
 	stateLock sync.Mutex
 	// stateLockGoid atomic.Int64
 
-	connectLocation *ConnectLocation
+	connectLocation *ConnectLocation // reconnects when launched
+	defaultLocation *ConnectLocation // persisting the location after the client has disconnected
 
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
@@ -267,6 +268,7 @@ func newDeviceLocalWithOverrides(
 		localUserNat:                      localUserNat,
 		stats:                             newDeviceStats(),
 		connectLocation:                   nil,
+		defaultLocation:                   nil,
 		remoteUserNatClient:               nil,
 		remoteUserNatProviderLocalUserNat: nil,
 		remoteUserNatProvider:             nil,
@@ -1064,6 +1066,18 @@ func (self *DeviceLocal) GetConnectLocation() *ConnectLocation {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.connectLocation
+}
+
+func (self *DeviceLocal) GetDefaultLocation() *ConnectLocation {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.defaultLocation
+}
+
+func (self *DeviceLocal) SetDefaultLocation(location *ConnectLocation) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.defaultLocation = location
 }
 
 func (self *DeviceLocal) Shuffle() {

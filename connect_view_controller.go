@@ -88,7 +88,14 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 	// 	vc.setGrid()
 	// }
 	vc.connectLocationChangedSub = device.AddConnectLocationChangeListener(vc)
-	vc.ConnectLocationChanged(device.GetConnectLocation())
+
+	connectedLocation := device.GetConnectLocation()
+	vc.ConnectLocationChanged(connectedLocation)
+
+	if connectedLocation == nil {
+		vc.setSelectedLocation(device.GetDefaultLocation())
+	}
+
 	return vc
 }
 
@@ -250,6 +257,13 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
 	self.device.SetConnectLocation(location)
 
+	// set location as default location
+	// if user disconnects, we still want that location populated when they reload the app
+	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetDefaultLocation(location)
+
+	// todo - is this needed?
+	self.device.SetDefaultLocation(location)
+
 	// self.setSelectedLocation(location)
 
 	// self.setGrid()
@@ -306,7 +320,7 @@ func (self *ConnectViewController) setGrid() {
 		self.setConnectionStatus(Disconnected)
 	}
 
-	if changed {	
+	if changed {
 		if grid != nil {
 			if windowMonitor := self.device.(device).windowMonitor(); windowMonitor != nil {
 				grid.listenToWindow(windowMonitor)
