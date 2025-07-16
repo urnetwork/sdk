@@ -93,7 +93,6 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 	vc.ConnectLocationChanged(connectedLocation)
 
 	if connectedLocation == nil {
-		glog.Infof("setting default location %s", device.GetDefaultLocation().Name)
 		vc.setSelectedLocation(device.GetDefaultLocation())
 	}
 
