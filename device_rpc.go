@@ -1534,7 +1534,11 @@ func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
 	if success {
 		return defaultLocation
 	} else {
-		return self.state.DefaultLocation.Value.DefaultLocation.toConnectLocation()
+		if self.state.DefaultLocation.IsSet {
+			return self.state.DefaultLocation.Value.ConnectLocation.toConnectLocation()
+		}
+		glog.Infof("No default location set, returning nil")
+		return nil
 	}
 }
 
@@ -2516,7 +2520,7 @@ type DeviceRemoteState struct {
 	 * Default location used to persist location
 	 * if a user selects a location, connects, then disconnects, this should be persisted
 	 */
-	DefaultLocation                 deviceRemoteValue[*DeviceRemoteDefaultLocation]
+	DefaultLocation                 deviceRemoteValue[*DeviceRemoteConnectLocation]
 	Shuffle                         deviceRemoteValue[bool]
 	ResetEgressSecurityPolicyStats  deviceRemoteValue[bool]
 	ResetIngressSecurityPolicyStats deviceRemoteValue[bool]
@@ -2548,6 +2552,7 @@ func (self *DeviceRemoteState) Unset() {
 	self.RemoveDestination.Unset()
 	self.Destination.Unset()
 	self.Location.Unset()
+	self.DefaultLocation.Unset()
 	self.Shuffle.Unset()
 	self.ResetEgressSecurityPolicyStats.Unset()
 	self.ResetIngressSecurityPolicyStats.Unset()
@@ -2634,9 +2639,9 @@ type DeviceRemoteConnectLocation struct {
 }
 
 //gomobile:noexport
-type DeviceRemoteDefaultLocation struct {
-	DefaultLocation *DeviceRemoteConnectLocationValue
-}
+// type DeviceRemoteDefaultLocation struct {
+// 	DefaultLocation *DeviceRemoteConnectLocationValue
+// }
 
 func newDeviceRemoteConnectLocation(connectLocation *ConnectLocation) *DeviceRemoteConnectLocation {
 	deviceRemoteConnectLocation := &DeviceRemoteConnectLocation{}
@@ -2646,10 +2651,11 @@ func newDeviceRemoteConnectLocation(connectLocation *ConnectLocation) *DeviceRem
 	return deviceRemoteConnectLocation
 }
 
-func newDeviceRemoteDefaultLocation(connectLocation *ConnectLocation) *DeviceRemoteDefaultLocation {
-	deviceRemoteConnectLocation := &DeviceRemoteDefaultLocation{}
+func newDeviceRemoteDefaultLocation(connectLocation *ConnectLocation) *DeviceRemoteConnectLocation {
+	deviceRemoteConnectLocation := &DeviceRemoteConnectLocation{}
 	if connectLocation != nil {
-		deviceRemoteConnectLocation.DefaultLocation = newDeviceRemoteConnectLocationValue(connectLocation)
+
+		deviceRemoteConnectLocation.ConnectLocation = newDeviceRemoteConnectLocationValue(connectLocation)
 	}
 	return deviceRemoteConnectLocation
 }
@@ -4193,7 +4199,7 @@ func (self *DeviceLocalRpc) SetDefaultLocation(location *DeviceRemoteConnectLoca
 	return nil
 }
 
-func (self *DeviceLocalRpc) GetDefaultLocation(_ RpcNoArg, location **DeviceRemoteDefaultLocation) error {
+func (self *DeviceLocalRpc) GetDefaultLocation(_ RpcNoArg, location **DeviceRemoteConnectLocation) error {
 	*location = newDeviceRemoteDefaultLocation(self.deviceLocal.GetDefaultLocation())
 	return nil
 }
