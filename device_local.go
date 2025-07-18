@@ -32,7 +32,8 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 
 const defaultRouteLocal = true
 const defaultCanShowRatingDialog = true
-const defaultProvideWhileDisconnected = false
+
+const defaultProvideControlMode = ProvideControlModeAuto
 const defaultCanRefer = false
 const defaultAllowForeground = false
 const defaultOffline = true
@@ -115,7 +116,7 @@ type DeviceLocal struct {
 	canRefer            bool
 	allowForeground     bool
 
-	provideWhileDisconnected bool
+	provideControlMode       ProvideControlMode
 	offline                  bool
 	vpnInterfaceWhileOffline bool
 	tunnelStarted            bool
@@ -276,23 +277,24 @@ func newDeviceLocalWithOverrides(
 		canShowRatingDialog:               defaultCanShowRatingDialog,
 		canRefer:                          defaultCanRefer,
 		allowForeground:                   defaultAllowForeground,
-		provideWhileDisconnected:          defaultProvideWhileDisconnected,
-		offline:                           defaultOffline,
-		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
-		tunnelStarted:                     defaultTunnelStarted,
-		orderedContractStatusUpdates:      []*contractStatusUpdate{},
-		netContractStatus:                 nil,
-		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
-		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
-		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
-		offlineChangeListeners:            connect.NewCallbackList[OfflineChangeListener](),
-		connectChangeListeners:            connect.NewCallbackList[ConnectChangeListener](),
-		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
-		connectLocationChangeListeners:    connect.NewCallbackList[ConnectLocationChangeListener](),
-		provideSecretKeysListeners:        connect.NewCallbackList[ProvideSecretKeysListener](),
-		contractStatusChangeListeners:     connect.NewCallbackList[ContractStatusChangeListener](),
-		tunnelChangeListeners:             connect.NewCallbackList[TunnelChangeListener](),
-		windowStatusChangeListeners:       connect.NewCallbackList[WindowStatusChangeListener](),
+
+		provideControlMode:             defaultProvideControlMode,
+		offline:                        defaultOffline,
+		vpnInterfaceWhileOffline:       defaultVpnInterfaceWhileOffline,
+		tunnelStarted:                  defaultTunnelStarted,
+		orderedContractStatusUpdates:   []*contractStatusUpdate{},
+		netContractStatus:              nil,
+		receiveCallbacks:               connect.NewCallbackList[connect.ReceivePacketFunction](),
+		provideChangeListeners:         connect.NewCallbackList[ProvideChangeListener](),
+		providePausedChangeListeners:   connect.NewCallbackList[ProvidePausedChangeListener](),
+		offlineChangeListeners:         connect.NewCallbackList[OfflineChangeListener](),
+		connectChangeListeners:         connect.NewCallbackList[ConnectChangeListener](),
+		routeLocalChangeListeners:      connect.NewCallbackList[RouteLocalChangeListener](),
+		connectLocationChangeListeners: connect.NewCallbackList[ConnectLocationChangeListener](),
+		provideSecretKeysListeners:     connect.NewCallbackList[ProvideSecretKeysListener](),
+		contractStatusChangeListeners:  connect.NewCallbackList[ContractStatusChangeListener](),
+		tunnelChangeListeners:          connect.NewCallbackList[TunnelChangeListener](),
+		windowStatusChangeListeners:    connect.NewCallbackList[WindowStatusChangeListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
@@ -458,29 +460,41 @@ func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	self.canShowRatingDialog = canShowRatingDialog
 }
 
-func (self *DeviceLocal) GetProvideWhileDisconnected() bool {
+func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.provideWhileDisconnected
+	return self.provideControlMode
 }
 
-func (self *DeviceLocal) SetProvideWhileDisconnected(provideWhileDisconnected bool) {
+func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
 
 	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.provideWhileDisconnected != provideWhileDisconnected {
+		if self.provideControlMode != mode {
 			changed = true
-			self.provideWhileDisconnected = provideWhileDisconnected
+			self.provideControlMode = mode
 		}
 	}()
 
-	if changed && !self.GetConnectEnabled() {
-		if !self.GetProvideWhileDisconnected() {
+	if changed {
+		switch mode {
+		case ProvideControlModeAuto:
+			if self.GetConnectEnabled() {
+				// if user is connected, start providing
+				self.SetProvideMode(ProvideModePublic)
+			} else {
+				// if user is not connected, stop providing
+				self.SetProvideMode(ProvideModeNone)
+			}
+		case ProvideControlModeNever:
 			self.SetProvideMode(ProvideModeNone)
-		} else {
+		case ProvideControlModeAlways:
 			self.SetProvideMode(ProvideModePublic)
+		default:
+			glog.Errorf("Unknown provide control mode: %s", mode)
+			self.SetProvideMode(ProvideModeNone)
 		}
 	}
 

@@ -185,13 +185,13 @@ type Device interface {
 
 	SetCanShowRatingDialog(canShowRatingDialog bool)
 
-	GetProvideWhileDisconnected() bool
+	GetProvideControlMode() ProvideControlMode
 
 	GetAllowForeground() bool
 
 	SetAllowForeground(allowForeground bool)
 
-	SetProvideWhileDisconnected(provideWhileDisconnected bool)
+	SetProvideControlMode(mode ProvideControlMode)
 
 	GetCanRefer() bool
 

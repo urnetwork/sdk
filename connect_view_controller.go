@@ -248,10 +248,12 @@ func (self *ConnectViewController) setConnected(connected bool) {
 func (self *ConnectViewController) Connect(location *ConnectLocation) {
 	// self.setConnected(true)
 
-	// enable provider
-	provideMode := ProvideModePublic
-	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
-	self.device.SetProvideMode(provideMode)
+	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
+		// enable provider
+		provideMode := ProvideModePublic
+		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
+		self.device.SetProvideMode(provideMode)
+	}
 
 	// persist the connection location for automatic reconnect
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
@@ -263,10 +265,6 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 
 	// todo - is this needed?
 	self.device.SetDefaultLocation(location)
-
-	// self.setSelectedLocation(location)
-
-	// self.setGrid()
 }
 
 func (self *ConnectViewController) ConnectBestAvailable() {
@@ -278,9 +276,8 @@ func (self *ConnectViewController) ConnectBestAvailable() {
 }
 
 func (self *ConnectViewController) Disconnect() {
-	// self.setConnected(false)
 
-	if !self.device.GetProvideWhileDisconnected() {
+	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
 		// disable provider
 		provideMode := ProvideModeNone
 		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
@@ -289,8 +286,6 @@ func (self *ConnectViewController) Disconnect() {
 
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(nil)
 	self.device.SetConnectLocation(nil)
-
-	// self.setGrid()
 }
 
 func (self *ConnectViewController) setGrid() {

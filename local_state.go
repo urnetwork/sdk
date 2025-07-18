@@ -334,24 +334,24 @@ func (self *LocalState) GetVpnInterfaceWhileOffline() bool {
 	return false
 }
 
-func (self *LocalState) SetProvideWhileDisconnected(provideWhileDisconnected bool) error {
-	path := filepath.Join(self.localStorageDir, ".provide_while_disconnected")
-	provideWhileDisconnectedBytes, err := json.Marshal(provideWhileDisconnected)
+func (self *LocalState) SetProvideControlMode(mode ProvideControlMode) error {
+	path := filepath.Join(self.localStorageDir, ".provide_control_mode")
+	provideControlModeBytes, err := json.Marshal(mode)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, provideWhileDisconnectedBytes, LocalStorageFilePermissions)
+	return os.WriteFile(path, provideControlModeBytes, LocalStorageFilePermissions)
 }
 
-func (self *LocalState) GetProvideWhileDisconnected() bool {
-	path := filepath.Join(self.localStorageDir, ".provide_while_disconnected")
-	if provideWhileDisconnectedBytes, err := os.ReadFile(path); err == nil {
-		var provideWhileDisconnected bool
-		if err := json.Unmarshal(provideWhileDisconnectedBytes, &provideWhileDisconnected); err == nil {
-			return provideWhileDisconnected
+func (self *LocalState) GetProvideControlMode() ProvideControlMode {
+	path := filepath.Join(self.localStorageDir, ".provide_control_mode")
+	if provideControlModeBytes, err := os.ReadFile(path); err == nil {
+		var provideControlMode ProvideControlMode
+		if err := json.Unmarshal(provideControlModeBytes, &provideControlMode); err == nil {
+			return provideControlMode
 		}
 	}
-	return false
+	return ProvideControlModeAuto
 }
 
 func (self *LocalState) SetAllowForeground(allowForeground bool) error {
