@@ -3607,7 +3607,7 @@ func (self *DeviceLocalRpc) GetProvideControlMode(_ RpcNoArg, mode *ProvideContr
 	return nil
 }
 
-func (self *DeviceLocalRpc) SetProvideWhileDisconnected(mode ProvideControlMode, _ RpcVoid) error {
+func (self *DeviceLocalRpc) SetProviceControlMode(mode ProvideControlMode, _ RpcVoid) error {
 	self.deviceLocal.SetProvideControlMode(mode)
 	return nil
 }
