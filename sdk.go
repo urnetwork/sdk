@@ -259,6 +259,14 @@ const (
 	LocationTypeCity    LocationType = "city"
 )
 
+type ProvideControlMode = string
+
+const (
+	ProvideControlModeNever  ProvideControlMode = "never"
+	ProvideControlModeAlways ProvideControlMode = "always"
+	ProvideControlModeAuto   ProvideControlMode = "auto"
+)
+
 type ByteCount = int64
 
 type NanoCents = int64

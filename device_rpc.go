@@ -730,32 +730,32 @@ func (self *DeviceRemote) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	state.CanShowRatingDialog.Set(canShowRatingDialog)
 }
 
-func (self *DeviceRemote) GetProvideWhileDisconnected() bool {
+func (self *DeviceRemote) GetProvideControlMode() ProvideControlMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	provideWhileDisconnected, success := func() (bool, bool) {
+	provideControlMode, success := func() (ProvideControlMode, bool) {
 		if self.service == nil {
-			return false, false
+			return ProvideControlModeAuto, false
 		}
 
-		provideWhileDisconnected, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.GetProvideWhileDisconnected", self.closeService)
+		provideControlMode, err := rpcCallNoArg[ProvideControlMode](self.service, "DeviceLocalRpc.GetProvideControlMode", self.closeService)
 		if err != nil {
-			return false, false
+			return ProvideControlModeAuto, false
 		}
-		self.lastKnownState.ProvideWhileDisconnected.Set(provideWhileDisconnected)
-		return provideWhileDisconnected, true
+		self.lastKnownState.ProvideControlMode.Set(provideControlMode)
+		return provideControlMode, true
 	}()
 	if success {
-		return provideWhileDisconnected
+		return provideControlMode
 	} else {
-		return self.state.ProvideWhileDisconnected.Get(
-			self.lastKnownState.ProvideWhileDisconnected.Get(defaultProvideWhileDisconnected),
+		return self.state.ProvideControlMode.Get(
+			self.lastKnownState.ProvideControlMode.Get(defaultProvideControlMode),
 		)
 	}
 }
 
-func (self *DeviceRemote) SetProvideWhileDisconnected(provideWhileDisconnected bool) {
+func (self *DeviceRemote) SetProvideControlMode(mode ProvideControlMode) {
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -766,7 +766,7 @@ func (self *DeviceRemote) SetProvideWhileDisconnected(provideWhileDisconnected b
 				return false
 			}
 
-			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetProvideWhileDisconnected", provideWhileDisconnected, self.closeService)
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetProvideControlMode", mode, self.closeService)
 			if err != nil {
 				return false
 			}
@@ -778,7 +778,7 @@ func (self *DeviceRemote) SetProvideWhileDisconnected(provideWhileDisconnected b
 		} else {
 			event = true
 		}
-		state.ProvideWhileDisconnected.Set(provideWhileDisconnected)
+		state.ProvideControlMode.Set(mode)
 	}()
 	if event {
 		self.provideChanged(self.GetProvideEnabled())
@@ -1126,11 +1126,27 @@ func (self *DeviceRemote) GetProvideEnabled() bool {
 	if success {
 		return provideEnabled
 	} else {
-		if self.state.ProvideWhileDisconnected.IsSet {
-			return self.state.ProvideWhileDisconnected.Value
+
+		if self.state.ProvideControlMode.IsSet {
+
+			if self.state.ProvideControlMode.Value == ProvideControlModeAuto {
+
+				// todo - double check is this the correct way to handle this?
+				// instead should we check connectEnabled and return based on that?
+				return self.lastKnownState.ProvideEnabled.Get(false)
+
+			} else if self.state.ProvideControlMode.Value == ProvideControlModeAlways {
+				return true
+			} else if self.state.ProvideControlMode.Value == ProvideControlModeNever {
+				return false
+			}
+
+			return false
+
 		} else {
 			return self.lastKnownState.ProvideEnabled.Get(false)
 		}
+
 	}
 }
 
@@ -2497,7 +2513,7 @@ type DeviceRemoteState struct {
 	// thick state + last known state
 
 	CanShowRatingDialog      deviceRemoteValue[bool]
-	ProvideWhileDisconnected deviceRemoteValue[bool]
+	ProvideControlMode       deviceRemoteValue[ProvideControlMode]
 	CanRefer                 deviceRemoteValue[bool]
 	AllowForeground          deviceRemoteValue[bool]
 	RouteLocal               deviceRemoteValue[bool]
@@ -2540,7 +2556,7 @@ type DeviceRemoteState struct {
 
 func (self *DeviceRemoteState) Unset() {
 	self.CanShowRatingDialog.Unset()
-	self.ProvideWhileDisconnected.Unset()
+	self.ProvideControlMode.Unset()
 	self.CanRefer.Unset()
 	self.RouteLocal.Unset()
 	self.InitProvideSecretKeys.Unset()
@@ -2569,7 +2585,7 @@ func (self *DeviceRemoteState) Unset() {
 
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.CanShowRatingDialog.Merge(update.CanShowRatingDialog)
-	self.ProvideWhileDisconnected.Merge(update.ProvideWhileDisconnected)
+	self.ProvideControlMode.Merge(update.ProvideControlMode)
 	self.AllowForeground.Merge(update.AllowForeground)
 	self.CanRefer.Merge(update.CanRefer)
 	self.RouteLocal.Merge(update.RouteLocal)
@@ -3215,8 +3231,8 @@ func (self *DeviceLocalRpc) Sync(
 	if state.CanShowRatingDialog.IsSet {
 		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
 	}
-	if state.ProvideWhileDisconnected.IsSet {
-		self.deviceLocal.SetProvideWhileDisconnected(state.ProvideWhileDisconnected.Value)
+	if state.ProvideControlMode.IsSet {
+		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
 	}
 	if state.AllowForeground.IsSet {
 		self.deviceLocal.SetAllowForeground(state.AllowForeground.Value)
@@ -3586,13 +3602,13 @@ func (self *DeviceLocalRpc) SetCanShowRatingDialog(canShowRatingDialog bool, _ R
 	return nil
 }
 
-func (self *DeviceLocalRpc) GetProvideWhileDisconnected(_ RpcNoArg, provideWhileDisconnected *bool) error {
-	*provideWhileDisconnected = self.deviceLocal.GetProvideWhileDisconnected()
+func (self *DeviceLocalRpc) GetProvideControlMode(_ RpcNoArg, mode *ProvideControlMode) error {
+	*mode = self.deviceLocal.GetProvideControlMode()
 	return nil
 }
 
-func (self *DeviceLocalRpc) SetProvideWhileDisconnected(provideWhileDisconnected bool, _ RpcVoid) error {
-	self.deviceLocal.SetProvideWhileDisconnected(provideWhileDisconnected)
+func (self *DeviceLocalRpc) SetProviceControlMode(mode ProvideControlMode, _ RpcVoid) error {
+	self.deviceLocal.SetProvideControlMode(mode)
 	return nil
 }
 
