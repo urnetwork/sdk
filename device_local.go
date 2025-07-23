@@ -106,6 +106,7 @@ type DeviceLocal struct {
 
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
+	contractStatusSub   func()
 	windowMonitorSub    func()
 
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
@@ -277,24 +278,23 @@ func newDeviceLocalWithOverrides(
 		canShowRatingDialog:               defaultCanShowRatingDialog,
 		canRefer:                          defaultCanRefer,
 		allowForeground:                   defaultAllowForeground,
-
-		provideControlMode:             defaultProvideControlMode,
-		offline:                        defaultOffline,
-		vpnInterfaceWhileOffline:       defaultVpnInterfaceWhileOffline,
-		tunnelStarted:                  defaultTunnelStarted,
-		orderedContractStatusUpdates:   []*contractStatusUpdate{},
-		netContractStatus:              nil,
-		receiveCallbacks:               connect.NewCallbackList[connect.ReceivePacketFunction](),
-		provideChangeListeners:         connect.NewCallbackList[ProvideChangeListener](),
-		providePausedChangeListeners:   connect.NewCallbackList[ProvidePausedChangeListener](),
-		offlineChangeListeners:         connect.NewCallbackList[OfflineChangeListener](),
-		connectChangeListeners:         connect.NewCallbackList[ConnectChangeListener](),
-		routeLocalChangeListeners:      connect.NewCallbackList[RouteLocalChangeListener](),
-		connectLocationChangeListeners: connect.NewCallbackList[ConnectLocationChangeListener](),
-		provideSecretKeysListeners:     connect.NewCallbackList[ProvideSecretKeysListener](),
-		contractStatusChangeListeners:  connect.NewCallbackList[ContractStatusChangeListener](),
-		tunnelChangeListeners:          connect.NewCallbackList[TunnelChangeListener](),
-		windowStatusChangeListeners:    connect.NewCallbackList[WindowStatusChangeListener](),
+		provideControlMode:                defaultProvideControlMode,
+		offline:                           defaultOffline,
+		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
+		tunnelStarted:                     defaultTunnelStarted,
+		orderedContractStatusUpdates:      []*contractStatusUpdate{},
+		netContractStatus:                 &ContractStatus{},
+		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
+		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
+		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
+		offlineChangeListeners:            connect.NewCallbackList[OfflineChangeListener](),
+		connectChangeListeners:            connect.NewCallbackList[ConnectChangeListener](),
+		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
+		connectLocationChangeListeners:    connect.NewCallbackList[ConnectLocationChangeListener](),
+		provideSecretKeysListeners:        connect.NewCallbackList[ProvideSecretKeysListener](),
+		contractStatusChangeListeners:     connect.NewCallbackList[ContractStatusChangeListener](),
+		tunnelChangeListeners:             connect.NewCallbackList[TunnelChangeListener](),
+		windowStatusChangeListeners:       connect.NewCallbackList[WindowStatusChangeListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
@@ -373,6 +373,10 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 				case protocol.ContractError_NoPermission:
 					netContractStatus.NoPermission = true
 				}
+			} else {
+				// reset the error state
+				netContractStatus.InsufficientBalance = false
+				netContractStatus.NoPermission = false
 			}
 			if contractStatus.Premium {
 				netContractStatus.Premium = true
@@ -961,13 +965,17 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 
 		self.connectLocation = location
 
-		if self.remoteUserNatClient != nil {
-			self.remoteUserNatClient.Close()
-			self.remoteUserNatClient = nil
+		if self.contractStatusSub != nil {
+			self.contractStatusSub()
+			self.contractStatusSub = nil
 		}
 		if self.windowMonitorSub != nil {
 			self.windowMonitorSub()
 			self.windowMonitorSub = nil
+		}
+		if self.remoteUserNatClient != nil {
+			self.remoteUserNatClient.Close()
+			self.remoteUserNatClient = nil
 		}
 
 		if specs != nil && 0 < specs.Len() {
@@ -988,6 +996,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.deviceDescription,
 				self.deviceSpec,
 				self.appVersion,
+				&self.clientId,
 				// connect.DefaultClientSettingsNoNetworkEvents,
 				connect.DefaultClientSettings,
 				connect.DefaultApiMultiClientGeneratorSettings(),
@@ -1002,7 +1011,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				remoteReceive,
 				protocol.ProvideMode_Public,
 			)
-			multi.AddContractStatusCallback(self.updateContractStatus)
+			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
 			self.remoteUserNatClient = multi
 
 			monitor := multi.Monitor()
@@ -1187,13 +1196,17 @@ func (self *DeviceLocal) Close() {
 
 	self.client.Cancel()
 
-	if self.remoteUserNatClient != nil {
-		self.remoteUserNatClient.Close()
-		self.remoteUserNatClient = nil
+	if self.contractStatusSub != nil {
+		self.contractStatusSub()
+		self.contractStatusSub = nil
 	}
 	if self.windowMonitorSub != nil {
 		self.windowMonitorSub()
 		self.windowMonitorSub = nil
+	}
+	if self.remoteUserNatClient != nil {
+		self.remoteUserNatClient.Close()
+		self.remoteUserNatClient = nil
 	}
 	// self.localUserNat.RemoveReceivePacketCallback(self.receive)
 	self.localUserNatUnsub()
