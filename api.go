@@ -920,11 +920,21 @@ type TransferBalance struct {
 type SubscriptionBalanceCallback connect.ApiCallback[*SubscriptionBalanceResult]
 
 type SubscriptionBalanceResult struct {
-	BalanceByteCount          ByteCount            `json:"balance_byte_count"`
+	/*
+	 * StartBalanceByteCount - The available balance the user starts the day with
+	 */
+	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
+	/**
+	 * BalanceByteCount - The remaining balance the user has available
+	 */
+	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	/**
+	 * OpenTransferByteCount - The total number of bytes tied up in open transfers
+	 */
+	OpenTransferByteCount     ByteCount            `json:"open_transfer_byte_count"`
 	CurrentSubscription       *Subscription        `json:"current_subscription,omitempty"`
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
 	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
-	WalletInfo                *CircleWalletInfo    `json:"wallet_info,omitempty"`
 	UpdateTime                string               `json:"update_time"`
 }
 
