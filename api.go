@@ -1644,3 +1644,90 @@ func (self *Api) GetAccountPoints(callback GetAccountPointsCallback) {
 		)
 	})
 }
+
+/**
+ * Network block location
+ */
+
+type NetworkBlockLocationArgs struct {
+	LocationId Id `json:"location_id"`
+}
+
+type NetworkBlockLocationResult struct {
+	Error *NetworkBlockLocationError `json:"error,omitempty"`
+}
+
+type NetworkBlockLocationError struct {
+	Message string `json:"message"`
+}
+
+type NetworkBlockLocationCallback connect.ApiCallback[*NetworkBlockLocationResult]
+
+func (self *Api) NetworkBlockLocation(args *NetworkBlockLocationArgs, callback NetworkBlockLocationCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/block-location", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&NetworkBlockLocationResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Network unblock location
+ */
+
+type NetworkUnblockLocationArgs struct {
+	LocationId Id `json:"location_id"`
+}
+
+type NetworkUnblockLocationResult struct {
+	Error *NetworkUnblockLocationError `json:"error,omitempty"`
+}
+
+type NetworkUnblockLocationError struct {
+	Message string `json:"message"`
+}
+
+type NetworkUnblockLocationCallback connect.ApiCallback[*NetworkUnblockLocationResult]
+
+func (self *Api) NetworkUnblockLocation(args *NetworkBlockLocationArgs, callback NetworkUnblockLocationCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/unblock-location", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&NetworkUnblockLocationResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Fetch network blocked locations
+ */
+
+type GetNetworkBlockedLocationsResult struct {
+	LocationIds IdList `json:"location_ids"`
+}
+
+type GetNetworkBlockedLocationsCallback connect.ApiCallback[*GetNetworkBlockedLocationsResult]
+
+func (self *Api) GetNetworkBlockedLocations(callback GetNetworkBlockedLocationsCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/network/blocked-locations", self.apiUrl),
+			self.GetByJwt(),
+			&GetNetworkBlockedLocationsResult{},
+			callback,
+		)
+	})
+}
