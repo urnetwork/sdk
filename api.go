@@ -1650,7 +1650,7 @@ func (self *Api) GetAccountPoints(callback GetAccountPointsCallback) {
  */
 
 type NetworkBlockLocationArgs struct {
-	LocationId Id `json:"location_id"`
+	LocationId *Id `json:"location_id"`
 }
 
 type NetworkBlockLocationResult struct {
@@ -1682,7 +1682,7 @@ func (self *Api) NetworkBlockLocation(args *NetworkBlockLocationArgs, callback N
  */
 
 type NetworkUnblockLocationArgs struct {
-	LocationId Id `json:"location_id"`
+	LocationId *Id `json:"location_id"`
 }
 
 type NetworkUnblockLocationResult struct {
@@ -1695,7 +1695,7 @@ type NetworkUnblockLocationError struct {
 
 type NetworkUnblockLocationCallback connect.ApiCallback[*NetworkUnblockLocationResult]
 
-func (self *Api) NetworkUnblockLocation(args *NetworkBlockLocationArgs, callback NetworkUnblockLocationCallback) {
+func (self *Api) NetworkUnblockLocation(args *NetworkUnblockLocationArgs, callback NetworkUnblockLocationCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
@@ -1714,7 +1714,7 @@ func (self *Api) NetworkUnblockLocation(args *NetworkBlockLocationArgs, callback
  */
 
 type GetNetworkBlockedLocationsResult struct {
-	LocationIds IdList `json:"location_ids"`
+	BlockedLocations BlockedLocationsList `json:"blocked_locations"`
 }
 
 type GetNetworkBlockedLocationsCallback connect.ApiCallback[*GetNetworkBlockedLocationsResult]

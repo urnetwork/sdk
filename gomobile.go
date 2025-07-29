@@ -186,6 +186,21 @@ func NewAccountPaymentsList() *AccountPaymentsList {
 	}
 }
 
+type BlockedLocation struct {
+	LocationId   Id     `json:"location_id"`
+	LocationName string `json:"location_name"`
+}
+
+type BlockedLocationsList struct {
+	exportedList[*BlockedLocation]
+}
+
+func NewBlockedLocationsList() *BlockedLocationsList {
+	return &BlockedLocationsList{
+		exportedList: *newExportedList[*BlockedLocation](),
+	}
+}
+
 type NetworkClientInfoList struct {
 	exportedList[*NetworkClientInfo]
 }
