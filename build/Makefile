@@ -35,7 +35,7 @@ build_android:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2025"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec checksec file {} --output json \; ; \
@@ -75,7 +75,7 @@ build_apple:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2025"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	if [ -e "ios" ]; then mv ios ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" ios; \
@@ -90,7 +90,7 @@ init:
 	gomobile init && \
 	CHECKSEC_VERSION=v0.0.0-20250322005620-31f2c9784742 && \
 	go install github.com/slimm609/checksec@$$CHECKSEC_VERSION && \
-	go mod download "github.com/urnetwork/sdk" && \
-	go mod download "github.com/urnetwork/connect" && \
+	go mod download "github.com/urnetwork/sdk/v2025" && \
+	go mod download "github.com/urnetwork/connect/v2025" && \
 	go clean -cache && \
 	go clean -modcache;
