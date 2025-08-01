@@ -1714,7 +1714,7 @@ func (self *Api) NetworkUnblockLocation(args *NetworkUnblockLocationArgs, callba
  */
 
 type GetNetworkBlockedLocationsResult struct {
-	BlockedLocations BlockedLocationsList `json:"blocked_locations"`
+	BlockedLocations *BlockedLocationsList `json:"blocked_locations"`
 }
 
 type GetNetworkBlockedLocationsCallback connect.ApiCallback[*GetNetworkBlockedLocationsResult]
