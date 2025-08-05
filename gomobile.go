@@ -187,8 +187,10 @@ func NewAccountPaymentsList() *AccountPaymentsList {
 }
 
 type BlockedLocation struct {
-	LocationId   *Id    `json:"location_id"`
-	LocationName string `json:"location_name"`
+	LocationId   *Id          `json:"location_id"`
+	LocationName string       `json:"location_name"`
+	LocationType LocationType `json:"location_type"`
+	CountryCode  string       `json:"country_code"`
 }
 
 type BlockedLocationsList struct {
