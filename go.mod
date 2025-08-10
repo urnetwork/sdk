@@ -9,7 +9,7 @@ require (
 	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang/glog v1.2.5
-	github.com/urnetwork/connect v0.2.0
+	github.com/urnetwork/connect v0.0.0
 	golang.org/x/crypto v0.40.0
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 )

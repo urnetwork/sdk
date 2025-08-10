@@ -5,7 +5,7 @@ go 1.24.4
 toolchain go1.24.5
 
 require (
-	github.com/urnetwork/connect v0.2.0
+	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/sdk v0.0.0
 )
 
