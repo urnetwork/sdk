@@ -25,6 +25,7 @@ build_android:
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
+	export GOEXPERIMENT=greenteagc; \
 	OBJCOPY=`find "$$ANDROID_NDK_HOME" -iname 'llvm-objcopy'`; \
 	BUILD_DIR=android.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
@@ -66,6 +67,7 @@ build_apple:
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
+	export GOEXPERIMENT=greenteagc; \
 	BUILD_DIR=apple.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
