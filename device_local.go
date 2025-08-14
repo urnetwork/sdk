@@ -291,6 +291,7 @@ func newDeviceLocalWithOverrides(
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
 		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
 		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
+		provideNetworkModeChangeListeners: connect.NewCallbackList[ProvideNetworkModeChangeListener](),
 		offlineChangeListeners:            connect.NewCallbackList[OfflineChangeListener](),
 		connectChangeListeners:            connect.NewCallbackList[ConnectChangeListener](),
 		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
@@ -539,7 +540,7 @@ func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
 	}()
 	if set {
 		glog.Infof("Set provide network mode: %s", mode)
-		// self.provideNetworkModeChanged(mode)
+		self.provideNetworkModeChanged(mode)
 	}
 }
 
@@ -784,7 +785,7 @@ func (self *DeviceLocal) providePausedChanged(providePaused bool) {
 }
 
 func (self *DeviceLocal) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
-	// self.assertNotLockOwner()
+
 	for _, listener := range self.provideNetworkModeChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideNetworkModeChanged(provideNetworkMode)
