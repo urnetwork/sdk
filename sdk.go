@@ -267,6 +267,13 @@ const (
 	ProvideControlModeAuto   ProvideControlMode = "auto"
 )
 
+type ProvideNetworkMode = string
+
+const (
+	ProvideNetworkModeWiFi ProvideNetworkMode = "wifi"
+	ProvideNetworkModeAll  ProvideNetworkMode = "all" // allow providing on wifi and cell networks
+)
+
 type ByteCount = int64
 
 type NanoCents = int64

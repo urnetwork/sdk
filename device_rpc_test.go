@@ -2,9 +2,9 @@ package sdk
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
-	"sync"
 
 	"github.com/go-playground/assert/v2"
 
@@ -12,7 +12,6 @@ import (
 
 	"github.com/urnetwork/connect"
 )
-
 
 // FIXME start remote and local
 // FIXME use a test JWT against a bogus network space, the client doesn't need to connect
@@ -29,7 +28,6 @@ func TestDeviceRemoteSimple(t *testing.T) {
 
 	clientId := connect.NewId()
 	instanceId := NewId()
-
 
 	// FIXME enable RPC
 	deviceLocal, err := newDeviceLocalWithOverrides(
@@ -48,7 +46,6 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	}
 	defer deviceLocal.Close()
 
-
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
@@ -61,10 +58,9 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-
 	assert.Equal(t, true, deviceRemote.GetOffline())
 	assert.Equal(t, true, deviceLocal.GetOffline())
-	
+
 	deviceRemote.SetOffline(false)
 	assert.Equal(t, false, deviceRemote.GetOffline())
 	assert.Equal(t, false, deviceLocal.GetOffline())
@@ -73,20 +69,16 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	assert.Equal(t, true, deviceRemote.GetOffline())
 	assert.Equal(t, true, deviceLocal.GetOffline())
 
-
 	listener := &testing_offlineChangeListener{}
 	sub := deviceRemote.AddOfflineChangeListener(listener)
 	deviceRemote.SetOffline(false)
-	listener.with(func(){
+	listener.with(func() {
 		assert.Equal(t, false, listener.event)
 		assert.Equal(t, false, listener.eventOffline)
 	})
 	sub.Close()
 
-
 }
-
-
 
 func TestDeviceRemoteFull(t *testing.T) {
 
@@ -98,16 +90,11 @@ func TestDeviceRemoteFull(t *testing.T) {
 		panic(err)
 	}
 
-
-
-
 	for range 10 {
 		func() {
 
 			clientId := connect.NewId()
 			instanceId := NewId()
-
-
 
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
@@ -126,9 +113,6 @@ func TestDeviceRemoteFull(t *testing.T) {
 			}
 			defer deviceLocal.Close()
 
-
-
-
 			deviceRemote, err := newDeviceRemoteWithOverrides(
 				networkSpace,
 				byJwt,
@@ -141,7 +125,6 @@ func TestDeviceRemoteFull(t *testing.T) {
 			}
 			defer deviceRemote.Close()
 
-
 			// add all listeners
 
 			provideChangeListener := &testing_provideChangeListener{}
@@ -152,8 +135,6 @@ func TestDeviceRemoteFull(t *testing.T) {
 			connectLocationChangeListener := &testing_connectLocationChangeListener{}
 			provideSecretKeysListener := &testing_provideSecretKeysListener{}
 			monitorEventListener := &testing_monitorEventListener{}
-
-
 
 			provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
 			defer provideChangeListenerSub.Close()
@@ -176,7 +157,6 @@ func TestDeviceRemoteFull(t *testing.T) {
 			provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
 			defer provideSecretKeysListenerSub.Close()
 
-
 			windowMonitor := deviceRemote.windowMonitor()
 			windowExpandEvent, providerEvents := windowMonitor.Events()
 			assert.NotEqual(t, windowExpandEvent, nil)
@@ -185,17 +165,14 @@ func TestDeviceRemoteFull(t *testing.T) {
 			monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
 			defer monitorEventCallbackSub()
 
-
-
 			location := &ConnectLocation{
 				ConnectLocationId: &ConnectLocationId{
-					ClientId: NewId(),
-					LocationId: NewId(),
+					ClientId:        NewId(),
+					LocationId:      NewId(),
 					LocationGroupId: NewId(),
-					BestAvailable: true,
+					BestAvailable:   true,
 				},
 			}
-
 
 			// set all properties
 
@@ -213,7 +190,6 @@ func TestDeviceRemoteFull(t *testing.T) {
 			deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
 			deviceRemote.Shuffle()
 
-
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
 			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
@@ -223,10 +199,9 @@ func TestDeviceRemoteFull(t *testing.T) {
 			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
 			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
-
 			// wait for event callbacks on goroutines to run
 			select {
-			case <- time.After(500 * time.Millisecond):
+			case <-time.After(500 * time.Millisecond):
 			}
 
 			glog.Infof("GG1")
@@ -281,13 +256,11 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 		// FIXME once TLS certs are in place remote this
 		select {
-		case <- time.After(200 * time.Millisecond):
+		case <-time.After(200 * time.Millisecond):
 		}
 	}
 
-
 }
-
 
 func TestDeviceRemoteFullSync(t *testing.T) {
 
@@ -299,15 +272,11 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 		panic(err)
 	}
 
-
-
-
 	for range 10 {
 		func() {
 
 			clientId := connect.NewId()
 			instanceId := NewId()
-
 
 			deviceRemote, err := newDeviceRemoteWithOverrides(
 				networkSpace,
@@ -321,7 +290,6 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			}
 			defer deviceRemote.Close()
 
-
 			// add all listeners
 
 			provideChangeListener := &testing_provideChangeListener{}
@@ -332,8 +300,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			connectLocationChangeListener := &testing_connectLocationChangeListener{}
 			provideSecretKeysListener := &testing_provideSecretKeysListener{}
 			monitorEventListener := &testing_monitorEventListener{}
-
-
+			networkModeListener := &testing_networkModeChangeListener{}
 
 			provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
 			defer provideChangeListenerSub.Close()
@@ -356,6 +323,8 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
 			defer provideSecretKeysListenerSub.Close()
 
+			networkModeListenerSub := deviceRemote.AddProvideNetworkModeChangeListener(networkModeListener)
+			defer networkModeListenerSub.Close()
 
 			windowMonitor := deviceRemote.windowMonitor()
 			windowExpandEvent, providerEvents := windowMonitor.Events()
@@ -365,16 +334,14 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
 			defer monitorEventCallbackSub()
 
-
 			location := &ConnectLocation{
 				ConnectLocationId: &ConnectLocationId{
-					ClientId: NewId(),
-					LocationId: NewId(),
+					ClientId:        NewId(),
+					LocationId:      NewId(),
 					LocationGroupId: NewId(),
-					BestAvailable: true,
+					BestAvailable:   true,
 				},
 			}
-
 
 			// set all properties
 
@@ -384,6 +351,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			deviceRemote.SetCanRefer(true)
 			deviceRemote.SetRouteLocal(!defaultRouteLocal)
 			deviceRemote.SetProvideMode(ProvideModeStream)
+			deviceRemote.SetProvideNetworkMode(ProvideNetworkModeWiFi)
 			deviceRemote.SetProvidePaused(true)
 			deviceRemote.SetOffline(true)
 			deviceRemote.SetVpnInterfaceWhileOffline(true)
@@ -391,7 +359,6 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			deviceRemote.SetConnectLocation(location)
 			deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
 			deviceRemote.Shuffle()
-
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
@@ -401,6 +368,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			assert.Equal(t, deviceRemote.GetOffline(), true)
 			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
 			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+			assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeWiFi)
 
 			// sync
 
@@ -421,14 +389,13 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			}
 			defer deviceLocal.Close()
 
-
 			deviceRemote.Sync()
 
 			deviceRemote.waitForSync(5 * time.Second)
 
 			// wait for event callbacks on goroutines to run
 			select {
-			case <- time.After(500 * time.Millisecond):
+			case <-time.After(500 * time.Millisecond):
 			}
 
 			glog.Infof("GG1")
@@ -452,6 +419,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			assert.Equal(t, deviceRemote.GetOffline(), true)
 			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
 			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+			assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeWiFi)
 
 			provideChangeListener.with(func() {
 				assert.Equal(t, provideChangeListener.event, true)
@@ -477,18 +445,19 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			monitorEventListener.with(func() {
 				assert.Equal(t, monitorEventListener.event, true)
 			})
+			networkModeListener.with(func() {
+				assert.Equal(t, monitorEventListener.event, true)
+			})
 
 		}()
 
 		// FIXME once TLS certs are in place remote this
 		select {
-		case <- time.After(200 * time.Millisecond):
+		case <-time.After(200 * time.Millisecond):
 		}
 	}
 
-
 }
-
 
 func TestDeviceRemoteApi(t *testing.T) {
 
@@ -500,10 +469,8 @@ func TestDeviceRemoteApi(t *testing.T) {
 		panic(err)
 	}
 
-
 	clientId := connect.NewId()
 	instanceId := NewId()
-
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
@@ -522,9 +489,6 @@ func TestDeviceRemoteApi(t *testing.T) {
 	}
 	defer deviceLocal.Close()
 
-
-
-
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
@@ -537,10 +501,6 @@ func TestDeviceRemoteApi(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-
-
-
-
 	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
 	assert.Equal(t, err, nil)
 	assert.NotEqual(t, bodyBytes, nil)
@@ -551,16 +511,12 @@ func TestDeviceRemoteApi(t *testing.T) {
 	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
 	// assert.Equal(t, err, nil)
 
-
 }
-
-
 
 func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	// sync
 	// then close local
 	// remote should retain the values
-
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -573,7 +529,6 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	clientId := connect.NewId()
 	instanceId := NewId()
 
-
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
@@ -586,16 +541,14 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-
-
 	// set all properties
 
 	location := &ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{
-			ClientId: NewId(),
-			LocationId: NewId(),
+			ClientId:        NewId(),
+			LocationId:      NewId(),
 			LocationGroupId: NewId(),
-			BestAvailable: true,
+			BestAvailable:   true,
 		},
 	}
 
@@ -609,6 +562,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	deviceRemote.RemoveDestination()
 	deviceRemote.SetConnectLocation(location)
 	deviceRemote.SetDestination(location, NewProviderSpecList(), ProvideModePublic)
+	// deviceRemote.SetProvideNetworkMode(ProvideNetworkModeAll)
 	deviceRemote.Shuffle()
 
 	// sync
@@ -630,14 +584,13 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	}
 	defer deviceLocal.Close()
 
-
 	deviceRemote.Sync()
 
 	deviceRemote.waitForSync(5 * time.Second)
 
 	// wait for event callbacks on goroutines to run
 	select {
-	case <- time.After(500 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 	}
 
 	glog.Infof("GG1")
@@ -661,8 +614,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	assert.Equal(t, deviceRemote.GetOffline(), true)
 	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
 	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
-
-
+	// assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
 
 	deviceLocal.Close()
 
@@ -676,17 +628,14 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	assert.Equal(t, deviceRemote.GetOffline(), true)
 	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
 	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
-
+	// assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
 
 }
-
-
 
 func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	// sync
 	// then close local
 	// remote should retain the values
-
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -698,7 +647,6 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	clientId := connect.NewId()
 	instanceId := NewId()
-
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
@@ -712,7 +660,6 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-
 	// add all listeners
 
 	provideChangeListener := &testing_provideChangeListener{}
@@ -723,8 +670,6 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	connectLocationChangeListener := &testing_connectLocationChangeListener{}
 	provideSecretKeysListener := &testing_provideSecretKeysListener{}
 	monitorEventListener := &testing_monitorEventListener{}
-
-
 
 	provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
 	defer provideChangeListenerSub.Close()
@@ -747,7 +692,6 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
 	defer provideSecretKeysListenerSub.Close()
 
-
 	windowMonitor := deviceRemote.windowMonitor()
 	windowExpandEvent, providerEvents := windowMonitor.Events()
 	assert.NotEqual(t, windowExpandEvent, nil)
@@ -758,10 +702,10 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	location := &ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{
-			ClientId: NewId(),
-			LocationId: NewId(),
+			ClientId:        NewId(),
+			LocationId:      NewId(),
 			LocationGroupId: NewId(),
-			BestAvailable: true,
+			BestAvailable:   true,
 		},
 	}
 
@@ -798,14 +742,13 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	}
 	defer deviceLocal.Close()
 
-
 	deviceRemote.Sync()
 
 	deviceRemote.waitForSync(5 * time.Second)
 
 	// wait for event callbacks on goroutines to run
 	select {
-	case <- time.After(500 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 	}
 
 	glog.Infof("GG1")
@@ -820,7 +763,6 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
 	glog.Infof("GGX")
 	assert.Equal(t, deviceLocal.GetConnectLocation(), location)
-
 
 	provideChangeListener.with(func() {
 		assert.Equal(t, provideChangeListener.event, true)
@@ -847,7 +789,6 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 		assert.Equal(t, monitorEventListener.event, true)
 	})
 
-
 	deviceLocal.Close()
 
 	// make sure the remote value retains the last know state
@@ -862,11 +803,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
 	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
 
-
 }
-
-
-
 
 func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 
@@ -880,7 +817,6 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 
 	clientId := connect.NewId()
 	instanceId := NewId()
-
 
 	// FIXME enable RPC
 	deviceLocal, err := newDeviceLocalWithOverrides(
@@ -899,7 +835,6 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	}
 	defer deviceLocal.Close()
 
-
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
@@ -912,10 +847,8 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-
 	deviceRemote.Sync()
 	deviceRemote.waitForSync(5 * time.Second)
-
 
 	deviceRemote.egressSecurityPolicy().Stats(false)
 	deviceRemote.ingressSecurityPolicy().Stats(false)
@@ -923,31 +856,26 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	deviceRemote.egressSecurityPolicy().Stats(true)
 	deviceRemote.ingressSecurityPolicy().Stats(true)
 
-
 }
-
-
 
 type testing_listener struct {
 	stateLock sync.Mutex
-	event bool
+	event     bool
 }
 
 func (self *testing_listener) clear() {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	
+
 	self.event = false
 }
 
 func (self *testing_listener) with(c func()) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	
+
 	c()
 }
-
-
 
 type testing_provideChangeListener struct {
 	testing_listener
@@ -962,7 +890,6 @@ func (self *testing_provideChangeListener) ProvideChanged(provideEnabled bool) {
 	self.provideEnabled = provideEnabled
 }
 
-
 type testing_providePausedChangeListener struct {
 	testing_listener
 	providePaused bool
@@ -976,10 +903,9 @@ func (self *testing_providePausedChangeListener) ProvidePausedChanged(providePau
 	self.providePaused = providePaused
 }
 
-
 type testing_offlineChangeListener struct {
 	testing_listener
-	eventOffline bool
+	eventOffline                  bool
 	eventVpnInterfaceWhileOffline bool
 }
 
@@ -991,7 +917,6 @@ func (self *testing_offlineChangeListener) OfflineChanged(offline bool, vpnInter
 	self.eventOffline = offline
 	self.eventVpnInterfaceWhileOffline = vpnInterfaceWhileOffline
 }
-
 
 type testing_connectChangeListener struct {
 	testing_listener
@@ -1006,7 +931,6 @@ func (self *testing_connectChangeListener) ConnectChanged(connectEnabled bool) {
 	self.connectEnabled = connectEnabled
 }
 
-
 type testing_routeLocalChangeListener struct {
 	testing_listener
 	routeLocal bool
@@ -1019,7 +943,6 @@ func (self *testing_routeLocalChangeListener) RouteLocalChanged(routeLocal bool)
 	self.event = true
 	self.routeLocal = routeLocal
 }
-
 
 type testing_connectLocationChangeListener struct {
 	testing_listener
@@ -1034,7 +957,6 @@ func (self *testing_connectLocationChangeListener) ConnectLocationChanged(locati
 	self.location = location
 }
 
-
 type testing_provideSecretKeysListener struct {
 	testing_listener
 	provideSecretKeyList *ProvideSecretKeyList
@@ -1048,11 +970,10 @@ func (self *testing_provideSecretKeysListener) ProvideSecretKeysChanged(provideS
 	self.provideSecretKeyList = provideSecretKeyList
 }
 
-
 type testing_monitorEventListener struct {
 	testing_listener
 	windowExpandEvent *connect.WindowExpandEvent
-	providerEvents map[connect.Id]*connect.ProviderEvent
+	providerEvents    map[connect.Id]*connect.ProviderEvent
 }
 
 func (self *testing_monitorEventListener) MonitorEventCallback(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
@@ -1064,4 +985,15 @@ func (self *testing_monitorEventListener) MonitorEventCallback(windowExpandEvent
 	self.providerEvents = providerEvents
 }
 
+type testing_networkModeChangeListener struct {
+	testing_listener
+	provideNetworkMode *ProvideNetworkMode
+}
 
+func (self *testing_networkModeChangeListener) ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.provideNetworkMode = &provideNetworkMode
+}

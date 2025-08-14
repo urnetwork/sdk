@@ -135,17 +135,18 @@ type DeviceRemote struct {
 
 	service *rpcClient
 
-	provideChangeListeners         map[connect.Id]ProvideChangeListener
-	providePausedChangeListeners   map[connect.Id]ProvidePausedChangeListener
-	offlineChangeListeners         map[connect.Id]OfflineChangeListener
-	connectChangeListeners         map[connect.Id]ConnectChangeListener
-	routeLocalChangeListeners      map[connect.Id]RouteLocalChangeListener
-	connectLocationChangeListeners map[connect.Id]ConnectLocationChangeListener
-	provideSecretKeysListeners     map[connect.Id]ProvideSecretKeysListener
-	windowMonitors                 map[connect.Id]*deviceRemoteWindowMonitor
-	tunnelChangeListeners          map[connect.Id]TunnelChangeListener
-	contractStatusChangeListeners  map[connect.Id]ContractStatusChangeListener
-	windowStatusChangeListeners    map[connect.Id]WindowStatusChangeListener
+	provideChangeListeners            map[connect.Id]ProvideChangeListener
+	providePausedChangeListeners      map[connect.Id]ProvidePausedChangeListener
+	provideNetworkModeChangeListeners map[connect.Id]ProvideNetworkModeChangeListener
+	offlineChangeListeners            map[connect.Id]OfflineChangeListener
+	connectChangeListeners            map[connect.Id]ConnectChangeListener
+	routeLocalChangeListeners         map[connect.Id]RouteLocalChangeListener
+	connectLocationChangeListeners    map[connect.Id]ConnectLocationChangeListener
+	provideSecretKeysListeners        map[connect.Id]ProvideSecretKeysListener
+	windowMonitors                    map[connect.Id]*deviceRemoteWindowMonitor
+	tunnelChangeListeners             map[connect.Id]TunnelChangeListener
+	contractStatusChangeListeners     map[connect.Id]ContractStatusChangeListener
+	windowStatusChangeListeners       map[connect.Id]WindowStatusChangeListener
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
 
@@ -209,18 +210,19 @@ func newDeviceRemoteWithOverrides(
 		clientStrategy:        networkSpace.clientStrategy,
 		remoteChangeListeners: connect.NewCallbackList[RemoteChangeListener](),
 
-		provideChangeListeners:         map[connect.Id]ProvideChangeListener{},
-		providePausedChangeListeners:   map[connect.Id]ProvidePausedChangeListener{},
-		offlineChangeListeners:         map[connect.Id]OfflineChangeListener{},
-		connectChangeListeners:         map[connect.Id]ConnectChangeListener{},
-		routeLocalChangeListeners:      map[connect.Id]RouteLocalChangeListener{},
-		connectLocationChangeListeners: map[connect.Id]ConnectLocationChangeListener{},
-		provideSecretKeysListeners:     map[connect.Id]ProvideSecretKeysListener{},
-		windowMonitors:                 map[connect.Id]*deviceRemoteWindowMonitor{},
-		tunnelChangeListeners:          map[connect.Id]TunnelChangeListener{},
-		contractStatusChangeListeners:  map[connect.Id]ContractStatusChangeListener{},
-		windowStatusChangeListeners:    map[connect.Id]WindowStatusChangeListener{},
-		httpResponseChannels:           map[connect.Id]chan *DeviceRemoteHttpResponse{},
+		provideChangeListeners:            map[connect.Id]ProvideChangeListener{},
+		providePausedChangeListeners:      map[connect.Id]ProvidePausedChangeListener{},
+		provideNetworkModeChangeListeners: map[connect.Id]ProvideNetworkModeChangeListener{},
+		offlineChangeListeners:            map[connect.Id]OfflineChangeListener{},
+		connectChangeListeners:            map[connect.Id]ConnectChangeListener{},
+		routeLocalChangeListeners:         map[connect.Id]RouteLocalChangeListener{},
+		connectLocationChangeListeners:    map[connect.Id]ConnectLocationChangeListener{},
+		provideSecretKeysListeners:        map[connect.Id]ProvideSecretKeysListener{},
+		windowMonitors:                    map[connect.Id]*deviceRemoteWindowMonitor{},
+		tunnelChangeListeners:             map[connect.Id]TunnelChangeListener{},
+		contractStatusChangeListeners:     map[connect.Id]ContractStatusChangeListener{},
+		windowStatusChangeListeners:       map[connect.Id]WindowStatusChangeListener{},
+		httpResponseChannels:              map[connect.Id]chan *DeviceRemoteHttpResponse{},
 	}
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
@@ -981,6 +983,16 @@ func (self *DeviceRemote) AddProvidePausedChangeListener(listener ProvidePausedC
 	)
 }
 
+func (self *DeviceRemote) AddProvideNetworkModeChangeListener(listener ProvideNetworkModeChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.provideNetworkModeChangeListeners,
+		"DeviceLocalRpc.AddProvideNetworkModeChangeListener",
+		"DeviceLocalRpc.RemoveProvideNetworkModeChangeListener",
+	)
+}
+
 func (self *DeviceRemote) AddOfflineChangeListener(listener OfflineChangeListener) Sub {
 	return addListener(
 		self,
@@ -1281,6 +1293,61 @@ func (self *DeviceRemote) GetProvidePaused() bool {
 	} else {
 		return self.state.ProvidePaused.Get(
 			self.lastKnownState.ProvidePaused.Get(false),
+		)
+	}
+}
+
+func (self *DeviceRemote) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode) {
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetProvideNetworkMode", provideNetworkMode, self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		state := &self.state
+		if success {
+			state = &self.lastKnownState
+		} else {
+			event = true
+		}
+		state.ProvideNetworkMode.Set(provideNetworkMode)
+	}()
+	if event {
+		self.provideNetworkModeChanged(self.GetProvideNetworkMode())
+	}
+}
+
+func (self *DeviceRemote) GetProvideNetworkMode() ProvideNetworkMode {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	provideNetworkMode, success := func() (ProvideNetworkMode, bool) {
+		if self.service == nil {
+			return ProvideNetworkModeWiFi, false
+		}
+
+		provideNetworkMode, err := rpcCallNoArg[ProvideNetworkMode](self.service, "DeviceLocalRpc.GetProvideNetworkMode", self.closeService)
+		if err != nil {
+			return ProvideNetworkModeWiFi, false
+		}
+		self.lastKnownState.ProvideNetworkMode.Set(provideNetworkMode)
+		return provideNetworkMode, true
+	}()
+	if success {
+		return provideNetworkMode
+	} else {
+		return self.state.ProvideNetworkMode.Get(
+			self.lastKnownState.ProvideNetworkMode.Get(ProvideNetworkModeWiFi),
 		)
 	}
 }
@@ -1989,6 +2056,18 @@ func (self *DeviceRemote) providePausedChanged(providePaused bool) {
 	}
 }
 
+func (self *DeviceRemote) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+	listenerList := func() []ProvideNetworkModeChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.ProvideNetworkMode.Set(provideNetworkMode)
+		return listenerList(self.provideNetworkModeChangeListeners)
+	}()
+	for _, provideNetworkModeChangeListener := range listenerList {
+		provideNetworkModeChangeListener.ProvideNetworkModeChanged(provideNetworkMode)
+	}
+}
+
 func (self *DeviceRemote) offlineChanged(offline bool, vpnInterfaceWhileOffline bool) {
 	listenerList := func() []OfflineChangeListener {
 		self.stateLock.Lock()
@@ -2519,7 +2598,8 @@ type DeviceRemoteState struct {
 	RouteLocal               deviceRemoteValue[bool]
 	InitProvideSecretKeys    deviceRemoteValue[bool]
 	LoadProvideSecretKeys    deviceRemoteValue[[]*ProvideSecretKey]
-	ProvideMode              deviceRemoteValue[ProvideMode]
+	ProvideMode              deviceRemoteValue[ProvideMode]        // auto, always, never
+	ProvideNetworkMode       deviceRemoteValue[ProvideNetworkMode] // wifi or cellular + wifi
 	ProvidePaused            deviceRemoteValue[bool]
 	Offline                  deviceRemoteValue[bool]
 	VpnInterfaceWhileOffline deviceRemoteValue[bool]
@@ -2562,6 +2642,7 @@ func (self *DeviceRemoteState) Unset() {
 	self.InitProvideSecretKeys.Unset()
 	self.LoadProvideSecretKeys.Unset()
 	self.ProvideMode.Unset()
+	self.ProvideNetworkMode.Unset()
 	self.ProvidePaused.Unset()
 	self.Offline.Unset()
 	self.VpnInterfaceWhileOffline.Unset()
@@ -2592,6 +2673,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.InitProvideSecretKeys.Merge(update.InitProvideSecretKeys)
 	self.LoadProvideSecretKeys.Merge(update.LoadProvideSecretKeys)
 	self.ProvideMode.Merge(update.ProvideMode)
+	self.ProvideNetworkMode.Merge(update.ProvideNetworkMode)
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
 	self.VpnInterfaceWhileOffline.Merge(update.VpnInterfaceWhileOffline)
@@ -3062,16 +3144,17 @@ type DeviceLocalRpc struct {
 
 	stateLock sync.Mutex
 
-	provideChangeListenerIds         map[connect.Id]bool
-	providePausedChangeListenerIds   map[connect.Id]bool
-	offlineChangeListenerIds         map[connect.Id]bool
-	connectChangeListenerIds         map[connect.Id]bool
-	routeLocalChangeListenerIds      map[connect.Id]bool
-	connectLocationChangeListenerIds map[connect.Id]bool
-	provideSecretKeysListenerIds     map[connect.Id]bool
-	tunnelChangeListenerIds          map[connect.Id]bool
-	contractStatusChangeListenerIds  map[connect.Id]bool
-	windowStatusChangeListenerIds    map[connect.Id]bool
+	provideChangeListenerIds            map[connect.Id]bool
+	providePausedChangeListenerIds      map[connect.Id]bool
+	provideNetworkModeChangeListenerIds map[connect.Id]bool
+	offlineChangeListenerIds            map[connect.Id]bool
+	connectChangeListenerIds            map[connect.Id]bool
+	routeLocalChangeListenerIds         map[connect.Id]bool
+	connectLocationChangeListenerIds    map[connect.Id]bool
+	provideSecretKeysListenerIds        map[connect.Id]bool
+	tunnelChangeListenerIds             map[connect.Id]bool
+	contractStatusChangeListenerIds     map[connect.Id]bool
+	windowStatusChangeListenerIds       map[connect.Id]bool
 
 	// window id -> listener id
 	windowMonitorEventListenerIds map[connect.Id]map[connect.Id]bool
@@ -3080,17 +3163,18 @@ type DeviceLocalRpc struct {
 	localWindowMonitor windowMonitor
 	localWindowId      connect.Id
 
-	provideChangeListenerSub         Sub
-	providePausedChangeListenerSub   Sub
-	offlineChangeListenerSub         Sub
-	connectChangeListenerSub         Sub
-	routeLocalChangeListenerSub      Sub
-	connectLocationChangeListenerSub Sub
-	provideSecretKeysListenerSub     Sub
-	windowMonitorEventListenerSub    func()
-	tunnelChangeListenerSub          Sub
-	contractStatusChangeListenerSub  Sub
-	windowStatusChangeListenerSub    Sub
+	provideChangeListenerSub            Sub
+	providePausedChangeListenerSub      Sub
+	offlineChangeListenerSub            Sub
+	connectChangeListenerSub            Sub
+	routeLocalChangeListenerSub         Sub
+	connectLocationChangeListenerSub    Sub
+	provideSecretKeysListenerSub        Sub
+	provideNetworkModeChangeListenerSub Sub
+	windowMonitorEventListenerSub       func()
+	tunnelChangeListenerSub             Sub
+	contractStatusChangeListenerSub     Sub
+	windowStatusChangeListenerSub       Sub
 
 	service *rpcClient
 }
@@ -3104,25 +3188,26 @@ func newDeviceLocalRpc(
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	deviceLocalRpc := &DeviceLocalRpc{
-		ctx:                              cancelCtx,
-		cancel:                           cancel,
-		conn:                             conn,
-		deviceLocal:                      deviceLocal,
-		egressSecurityPolicy:             deviceLocal.egressSecurityPolicy(),
-		ingressSecurityPolicy:            deviceLocal.ingressSecurityPolicy(),
-		settings:                         settings,
-		provideChangeListenerIds:         map[connect.Id]bool{},
-		providePausedChangeListenerIds:   map[connect.Id]bool{},
-		offlineChangeListenerIds:         map[connect.Id]bool{},
-		connectChangeListenerIds:         map[connect.Id]bool{},
-		routeLocalChangeListenerIds:      map[connect.Id]bool{},
-		connectLocationChangeListenerIds: map[connect.Id]bool{},
-		provideSecretKeysListenerIds:     map[connect.Id]bool{},
-		windowMonitorEventListenerIds:    map[connect.Id]map[connect.Id]bool{},
-		tunnelChangeListenerIds:          map[connect.Id]bool{},
-		contractStatusChangeListenerIds:  map[connect.Id]bool{},
-		windowStatusChangeListenerIds:    map[connect.Id]bool{},
-		localWindowIds:                   map[connect.Id]connect.Id{},
+		ctx:                                 cancelCtx,
+		cancel:                              cancel,
+		conn:                                conn,
+		deviceLocal:                         deviceLocal,
+		egressSecurityPolicy:                deviceLocal.egressSecurityPolicy(),
+		ingressSecurityPolicy:               deviceLocal.ingressSecurityPolicy(),
+		settings:                            settings,
+		provideChangeListenerIds:            map[connect.Id]bool{},
+		provideNetworkModeChangeListenerIds: map[connect.Id]bool{},
+		providePausedChangeListenerIds:      map[connect.Id]bool{},
+		offlineChangeListenerIds:            map[connect.Id]bool{},
+		connectChangeListenerIds:            map[connect.Id]bool{},
+		routeLocalChangeListenerIds:         map[connect.Id]bool{},
+		connectLocationChangeListenerIds:    map[connect.Id]bool{},
+		provideSecretKeysListenerIds:        map[connect.Id]bool{},
+		windowMonitorEventListenerIds:       map[connect.Id]map[connect.Id]bool{},
+		tunnelChangeListenerIds:             map[connect.Id]bool{},
+		contractStatusChangeListenerIds:     map[connect.Id]bool{},
+		windowStatusChangeListenerIds:       map[connect.Id]bool{},
+		localWindowIds:                      map[connect.Id]connect.Id{},
 	}
 
 	go deviceLocalRpc.run()
@@ -3163,6 +3248,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for providePausedChangeListenerId, _ := range self.providePausedChangeListenerIds {
 		self.removeProvidePausedChangeListener(providePausedChangeListenerId)
+	}
+	for provideNetworkModeChangeListenerId, _ := range self.provideNetworkModeChangeListenerIds {
+		self.removeProvideNetworkModeChangeListener(provideNetworkModeChangeListenerId)
 	}
 	for offlineChangeListenerId, _ := range self.offlineChangeListenerIds {
 		self.removeOfflineChangeListener(offlineChangeListenerId)
@@ -3253,6 +3341,9 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	if state.ProvideMode.IsSet {
 		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
+	}
+	if state.ProvideNetworkMode.IsSet {
+		self.deviceLocal.SetProvideNetworkMode(state.ProvideNetworkMode.Value)
 	}
 	if state.ProvidePaused.IsSet {
 		self.deviceLocal.SetProvidePaused(state.ProvidePaused.Value)
@@ -3607,7 +3698,7 @@ func (self *DeviceLocalRpc) GetProvideControlMode(_ RpcNoArg, mode *ProvideContr
 	return nil
 }
 
-func (self *DeviceLocalRpc) SetProviceControlMode(mode ProvideControlMode, _ RpcVoid) error {
+func (self *DeviceLocalRpc) SetProvideControlMode(mode ProvideControlMode, _ RpcVoid) error {
 	self.deviceLocal.SetProvideControlMode(mode)
 	return nil
 }
@@ -4151,6 +4242,61 @@ func (self *DeviceLocalRpc) SetProvideMode(provideMode ProvideMode, _ RpcVoid) e
 func (self *DeviceLocalRpc) GetProvideMode(_ RpcNoArg, provideMode *ProvideMode) error {
 	*provideMode = self.deviceLocal.GetProvideMode()
 	return nil
+}
+
+// ConnectChangeListener
+func (self *DeviceLocalRpc) ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.provideNetworkModeChanged(provideNetworkMode)
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+	if self.service != nil {
+		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideNetworkModeChanged", provideNetworkMode, self.closeService)
+	}
+}
+
+func (self *DeviceLocalRpc) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode, _ RpcVoid) error {
+	self.deviceLocal.SetProvideNetworkMode(provideNetworkMode)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProvideNetworkMode(_ RpcNoArg, provideNetworkMode *ProvideNetworkMode) error {
+	*provideNetworkMode = self.deviceLocal.GetProvideNetworkMode()
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddProvideNetworkModeChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProvideNetworkModeChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProvideNetworkModeChangeListener(listenerId connect.Id) {
+	self.provideNetworkModeChangeListenerIds[listenerId] = true
+	if self.provideNetworkModeChangeListenerSub == nil {
+		self.provideNetworkModeChangeListenerSub = self.deviceLocal.AddProvideNetworkModeChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProvideNetworkModeChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProvideNetworkModeChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProvideNetworkModeChangeListener(listenerId connect.Id) {
+	delete(self.provideNetworkModeChangeListenerIds, listenerId)
+	if len(self.provideNetworkModeChangeListenerIds) == 0 && self.provideNetworkModeChangeListenerSub != nil {
+		self.provideNetworkModeChangeListenerSub.Close()
+		self.provideNetworkModeChangeListenerSub = nil
+	}
 }
 
 func (self *DeviceLocalRpc) SetProvidePaused(providePaused bool, _ RpcVoid) error {
