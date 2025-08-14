@@ -165,6 +165,7 @@ func (self *LocalState) SetInstanceId(instanceId *Id) error {
 	}
 }
 
+// auto, always, never
 func (self *LocalState) SetProvideMode(provideMode ProvideMode) error {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	provideModeBytes := []byte(fmt.Sprintf("%d", provideMode))
@@ -175,11 +176,29 @@ func (self *LocalState) GetProvideMode() ProvideMode {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	if provideModeBytes, err := os.ReadFile(path); err == nil {
 		var provideMode ProvideMode
-		if _, err := fmt.Sscanf(string(provideModeBytes), "%d", &provideMode); err == nil {
+		if _, err := fmt.Sscanf(string(provideModeBytes), "%s", &provideMode); err == nil {
 			return provideMode
 		}
 	}
 	return ProvideModeNone
+}
+
+// wifi, cell, etc
+func (self *LocalState) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode) error {
+	path := filepath.Join(self.localStorageDir, ".provide_network_mode")
+	provideNetworkModeBytes := []byte(fmt.Sprintf("%s", provideNetworkMode))
+	return os.WriteFile(path, provideNetworkModeBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) GetProvideNetworkMode() ProvideNetworkMode {
+	path := filepath.Join(self.localStorageDir, ".provide_network_mode")
+	if provideNetworkModeBytes, err := os.ReadFile(path); err == nil {
+		var provideNetworkMode ProvideNetworkMode
+		if _, err := fmt.Sscanf(string(provideNetworkModeBytes), "%d", &provideNetworkMode); err == nil {
+			return provideNetworkMode
+		}
+	}
+	return ProvideNetworkModeWiFi
 }
 
 func (self *LocalState) SetRouteLocal(routeLocal bool) error {

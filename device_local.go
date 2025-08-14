@@ -34,6 +34,7 @@ const defaultRouteLocal = true
 const defaultCanShowRatingDialog = true
 
 const defaultProvideControlMode = ProvideControlModeAuto
+const defaultProvideNetworkMode = ProvideNetworkModeWiFi
 const defaultCanRefer = false
 const defaultAllowForeground = false
 const defaultOffline = true
@@ -117,7 +118,8 @@ type DeviceLocal struct {
 	canRefer            bool
 	allowForeground     bool
 
-	provideControlMode       ProvideControlMode
+	provideControlMode       ProvideControlMode // auto, always, never
+	provideNetworkMode       ProvideNetworkMode // wifi, cellular
 	offline                  bool
 	vpnInterfaceWhileOffline bool
 	tunnelStarted            bool
@@ -127,16 +129,17 @@ type DeviceLocal struct {
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
-	provideChangeListeners         *connect.CallbackList[ProvideChangeListener]
-	providePausedChangeListeners   *connect.CallbackList[ProvidePausedChangeListener]
-	offlineChangeListeners         *connect.CallbackList[OfflineChangeListener]
-	connectChangeListeners         *connect.CallbackList[ConnectChangeListener]
-	routeLocalChangeListeners      *connect.CallbackList[RouteLocalChangeListener]
-	connectLocationChangeListeners *connect.CallbackList[ConnectLocationChangeListener]
-	provideSecretKeysListeners     *connect.CallbackList[ProvideSecretKeysListener]
-	tunnelChangeListeners          *connect.CallbackList[TunnelChangeListener]
-	contractStatusChangeListeners  *connect.CallbackList[ContractStatusChangeListener]
-	windowStatusChangeListeners    *connect.CallbackList[WindowStatusChangeListener]
+	provideChangeListeners            *connect.CallbackList[ProvideChangeListener]
+	providePausedChangeListeners      *connect.CallbackList[ProvidePausedChangeListener]
+	provideNetworkModeChangeListeners *connect.CallbackList[ProvideNetworkModeChangeListener]
+	offlineChangeListeners            *connect.CallbackList[OfflineChangeListener]
+	connectChangeListeners            *connect.CallbackList[ConnectChangeListener]
+	routeLocalChangeListeners         *connect.CallbackList[RouteLocalChangeListener]
+	connectLocationChangeListeners    *connect.CallbackList[ConnectLocationChangeListener]
+	provideSecretKeysListeners        *connect.CallbackList[ProvideSecretKeysListener]
+	tunnelChangeListeners             *connect.CallbackList[TunnelChangeListener]
+	contractStatusChangeListeners     *connect.CallbackList[ContractStatusChangeListener]
+	windowStatusChangeListeners       *connect.CallbackList[WindowStatusChangeListener]
 
 	localUserNatUnsub func()
 
@@ -279,6 +282,7 @@ func newDeviceLocalWithOverrides(
 		canRefer:                          defaultCanRefer,
 		allowForeground:                   defaultAllowForeground,
 		provideControlMode:                defaultProvideControlMode,
+		provideNetworkMode:                defaultProvideNetworkMode,
 		offline:                           defaultOffline,
 		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
 		tunnelStarted:                     defaultTunnelStarted,
@@ -464,12 +468,20 @@ func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	self.canShowRatingDialog = canShowRatingDialog
 }
 
+/**
+ * Get provide network mode.
+ * for example, auto, always, never
+ */
 func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.provideControlMode
 }
 
+/**
+ * Set provide network mode.
+ * auto, always, never
+ */
 func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
 
 	changed := false
@@ -502,6 +514,32 @@ func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
 		}
 	}
 
+}
+
+/**
+ * Get provide network mode.
+ * for example, wifi, cellular
+ */
+func (self *DeviceLocal) GetProvideNetworkMode() ProvideNetworkMode {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.provideNetworkMode
+}
+
+func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
+	set := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if self.provideNetworkMode != mode {
+			self.provideNetworkMode = mode
+			set = true
+		}
+	}()
+	if set {
+		self.provideNetworkModeChanged(mode)
+	}
 }
 
 func (self *DeviceLocal) GetCanRefer() bool {
@@ -663,6 +701,13 @@ func (self *DeviceLocal) AddProvidePausedChangeListener(listener ProvidePausedCh
 	})
 }
 
+func (self *DeviceLocal) AddProvideNetworkModeChangeListener(listener ProvideNetworkModeChangeListener) Sub {
+	callbackId := self.provideNetworkModeChangeListeners.Add(listener)
+	return newSub(func() {
+		self.provideNetworkModeChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) AddOfflineChangeListener(listener OfflineChangeListener) Sub {
 	callbackId := self.offlineChangeListeners.Add(listener)
 	return newSub(func() {
@@ -733,6 +778,15 @@ func (self *DeviceLocal) providePausedChanged(providePaused bool) {
 	for _, listener := range self.providePausedChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvidePausedChanged(providePaused)
+		})
+	}
+}
+
+func (self *DeviceLocal) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+	// self.assertNotLockOwner()
+	for _, listener := range self.provideNetworkModeChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProvideNetworkModeChanged(provideNetworkMode)
 		})
 	}
 }

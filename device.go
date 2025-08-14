@@ -24,6 +24,10 @@ type ProvidePausedChangeListener interface {
 	ProvidePausedChanged(providePaused bool)
 }
 
+type ProvideNetworkModeChangeListener interface {
+	ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode)
+}
+
 type OfflineChangeListener interface {
 	OfflineChanged(offline bool, vpnInterfaceWhileOffline bool)
 }
@@ -185,13 +189,19 @@ type Device interface {
 
 	SetCanShowRatingDialog(canShowRatingDialog bool)
 
-	GetProvideControlMode() ProvideControlMode
-
 	GetAllowForeground() bool
 
 	SetAllowForeground(allowForeground bool)
 
+	GetProvideControlMode() ProvideControlMode // auto, always, never
+
 	SetProvideControlMode(mode ProvideControlMode)
+
+	GetProvideNetworkMode() ProvideNetworkMode // wifi, cellular, etc.
+
+	SetProvideNetworkMode(mode ProvideNetworkMode)
+
+	AddProvideNetworkModeChangeListener(listener ProvideNetworkModeChangeListener) Sub
 
 	GetCanRefer() bool
 
