@@ -538,7 +538,8 @@ func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
 		}
 	}()
 	if set {
-		self.provideNetworkModeChanged(mode)
+		glog.Infof("Set provide network mode: %s", mode)
+		// self.provideNetworkModeChanged(mode)
 	}
 }
 

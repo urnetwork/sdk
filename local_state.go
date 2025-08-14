@@ -194,7 +194,7 @@ func (self *LocalState) GetProvideNetworkMode() ProvideNetworkMode {
 	path := filepath.Join(self.localStorageDir, ".provide_network_mode")
 	if provideNetworkModeBytes, err := os.ReadFile(path); err == nil {
 		var provideNetworkMode ProvideNetworkMode
-		if _, err := fmt.Sscanf(string(provideNetworkModeBytes), "%d", &provideNetworkMode); err == nil {
+		if _, err := fmt.Sscanf(string(provideNetworkModeBytes), "%s", &provideNetworkMode); err == nil {
 			return provideNetworkMode
 		}
 	}
