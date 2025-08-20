@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+
 	// "encoding/json"
 
 	// "encoding/base64"
@@ -1377,6 +1378,46 @@ func (self *Api) AuthCodeLogin(
 		&AuthCodeLoginResult{},
 		callback,
 	)
+}
+
+/**
+ * Auth code create
+ */
+
+type AuthCodeCreateArgs struct {
+	DurationMinutes float64 `json:"duration_minutes,omitempty"`
+	Uses            int     `json:"uses,omitempty"`
+}
+
+type AuthCodeCreateResult struct {
+	AuthCode        string               `json:"auth_code,omitempty"`
+	DurationMinutes float64              `json:"duration_minutes,omitempty"`
+	Uses            int                  `json:"uses,omitempty"`
+	Error           *AuthCodeCreateError `json:"error,omitempty"`
+}
+
+type AuthCodeCreateError struct {
+	AuthCodeLimitExceeded bool   `json:"auth_code_limit_exceeded,omitempty"`
+	Message               string `json:"message,omitempty"`
+}
+
+type AuthCodeCreateCallback connect.ApiCallback[*AuthCodeCreateResult]
+
+func (self *Api) AuthCodeCreate(
+	codeCreateArgs *AuthCodeCreateArgs,
+	callback AuthCodeCreateCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/code-create", self.apiUrl),
+			codeCreateArgs,
+			self.GetByJwt(),
+			&AuthCodeCreateResult{},
+			callback,
+		)
+	})
 }
 
 /**
