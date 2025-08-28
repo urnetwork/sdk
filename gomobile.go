@@ -86,6 +86,26 @@ func NewIntList() *IntList {
 	}
 }
 
+type Float32List struct {
+	exportedList[float32]
+}
+
+func NewFloat32List() *Float32List {
+	return &Float32List{
+		exportedList: *newExportedList[float32](),
+	}
+}
+
+type Float64List struct {
+	exportedList[float64]
+}
+
+func NewFloat64List() *Float64List {
+	return &Float64List{
+		exportedList: *newExportedList[float64](),
+	}
+}
+
 type TransferPathList struct {
 	exportedList[*TransferPath]
 }
@@ -200,6 +220,23 @@ type BlockedLocationsList struct {
 func NewBlockedLocationsList() *BlockedLocationsList {
 	return &BlockedLocationsList{
 		exportedList: *newExportedList[*BlockedLocation](),
+	}
+}
+
+type CountryMultiplier struct {
+	CountryLocationId     *Id     `json:"country_location_id"`
+	Country               string  `json:"country"`
+	CountryCode           string  `json:"country_code"`
+	ReliabilityMultiplier float64 `json:"reliability_multiplier"`
+}
+
+type CountryMultiplierList struct {
+	exportedList[*CountryMultiplier]
+}
+
+func NewCountryMultiplierList() *CountryMultiplierList {
+	return &CountryMultiplierList{
+		exportedList: *newExportedList[*CountryMultiplier](),
 	}
 }
 
