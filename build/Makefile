@@ -25,6 +25,7 @@ build_android:
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
+	export GOEXPERIMENT=greenteagc; \
 	OBJCOPY=`find "$$ANDROID_NDK_HOME" -iname 'llvm-objcopy'`; \
 	BUILD_DIR=android.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
@@ -66,6 +67,7 @@ build_apple:
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
+	export GOEXPERIMENT=greenteagc; \
 	BUILD_DIR=apple.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \
@@ -84,11 +86,11 @@ build_apple:
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
-	GOMOBILE_VERSION=v0.0.0-20250606033058-a2a15c67f36f  && \
+	GOMOBILE_VERSION=v0.0.0-20250711185624-d5bb5ecc55c0  && \
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
 	gomobile init && \
-	CHECKSEC_VERSION=v0.0.0-20250322005620-31f2c9784742 && \
+	CHECKSEC_VERSION=v0.0.0-20250615123946-0b1e0a288d9a && \
 	go install github.com/slimm609/checksec@$$CHECKSEC_VERSION && \
 	go mod download "github.com/urnetwork/sdk" && \
 	go mod download "github.com/urnetwork/connect" && \

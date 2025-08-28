@@ -5,7 +5,7 @@ go 1.24.4
 toolchain go1.24.5
 
 require (
-	github.com/urnetwork/connect v0.2.0
+	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/sdk v0.0.0
 )
 
@@ -35,11 +35,11 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20220613132600-b0d781184e0d // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
-	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
-	golang.org/x/mod v0.26.0 // indirect
+	golang.org/x/mobile v0.0.0-20250711185624-d5bb5ecc55c0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/tools v0.34.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/tools v0.36.0 // indirect
 	honnef.co/go/tools v0.3.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )

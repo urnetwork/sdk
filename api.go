@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+
 	// "encoding/json"
 
 	// "encoding/base64"
@@ -1380,6 +1381,46 @@ func (self *Api) AuthCodeLogin(
 }
 
 /**
+ * Auth code create
+ */
+
+type AuthCodeCreateArgs struct {
+	DurationMinutes float64 `json:"duration_minutes,omitempty"`
+	Uses            int     `json:"uses,omitempty"`
+}
+
+type AuthCodeCreateResult struct {
+	AuthCode        string               `json:"auth_code,omitempty"`
+	DurationMinutes float64              `json:"duration_minutes,omitempty"`
+	Uses            int                  `json:"uses,omitempty"`
+	Error           *AuthCodeCreateError `json:"error,omitempty"`
+}
+
+type AuthCodeCreateError struct {
+	AuthCodeLimitExceeded bool   `json:"auth_code_limit_exceeded,omitempty"`
+	Message               string `json:"message,omitempty"`
+}
+
+type AuthCodeCreateCallback connect.ApiCallback[*AuthCodeCreateResult]
+
+func (self *Api) AuthCodeCreate(
+	codeCreateArgs *AuthCodeCreateArgs,
+	callback AuthCodeCreateCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/code-create", self.apiUrl),
+			codeCreateArgs,
+			self.GetByJwt(),
+			&AuthCodeCreateResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Guest upgrade to brand new network
  */
 
@@ -1727,6 +1768,53 @@ func (self *Api) GetNetworkBlockedLocations(callback GetNetworkBlockedLocationsC
 			fmt.Sprintf("%s/network/blocked-locations", self.apiUrl),
 			self.GetByJwt(),
 			&GetNetworkBlockedLocationsResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Network reliability
+ */
+
+type ReliabilityWindow struct {
+	MeanReliabilityWeight float64 `json:"mean_reliability_weight"`
+	MinTimeUnixMilli      int64   `json:"min_time_unix_milli"`
+	MinBucketNumber       int64   `json:"min_bucket_number"`
+	MaxTimeUnixMilli      int64   `json:"max_time_unix_milli"`
+	// exclusive
+	MaxBucketNumber       int64 `json:"max_bucket_number"`
+	BucketDurationSeconds int   `json:"bucket_duration_seconds"`
+
+	MaxClientCount int `json:"max_client_count"`
+	// valid+invalid
+	MaxTotalClientCount int `json:"max_total_client_count"`
+
+	ReliabilityWeights *Float64List           `json:"reliability_weights"`
+	ClientCounts       *IntList               `json:"client_counts"`
+	TotalClientCounts  *IntList               `json:"total_client_counts"`
+	CountryMultipliers *CountryMultiplierList `json:"country_multipliers"`
+}
+
+type GetNetworkReliabilityError struct {
+	Message string `json:"message"`
+}
+
+type GetNetworkReliabilityResult struct {
+	ReliabilityWindow *ReliabilityWindow          `json:"reliability_window,omitempty"`
+	Error             *GetNetworkReliabilityError `json:"error,omitempty"`
+}
+
+type GetNetworkReliabilityCallback connect.ApiCallback[*GetNetworkReliabilityResult]
+
+func (self *Api) GetNetworkReliability(callback GetNetworkReliabilityCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/network/reliability", self.apiUrl),
+			self.GetByJwt(),
+			&GetNetworkReliabilityResult{},
 			callback,
 		)
 	})
