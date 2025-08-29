@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"flag"
 	"math"
+	// "math/big"
 	"os"
 	"runtime/debug"
+	// "strings"
 
 	// "net/http"
 	// _ "net/http/pprof"
@@ -123,6 +125,17 @@ func (self *Id) Bytes() []byte {
 func (self *Id) String() string {
 	return self.IdStr
 }
+
+/*
+func (self *Id) StringForConsole() string {
+	// the macOS console shows <private> for ids which makes them hard to debug
+	// https://mjtsai.com/blog/2019/11/21/catalinas-log-cant-be-unprivatised/
+	// note this can be decoded with `echo -n "obase=16;<id>" | bc | xxd -r -p`
+	i := &big.Int{}
+	i.SetBytes([]byte(self.String()))
+	return i.Text(10)
+}
+*/
 
 func (self *Id) Cmp(b *Id) int {
 	for i, v := range self.id {
