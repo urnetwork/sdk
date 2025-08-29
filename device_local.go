@@ -34,6 +34,7 @@ const defaultRouteLocal = true
 const defaultCanShowRatingDialog = true
 
 const defaultProvideControlMode = ProvideControlModeAuto
+const defaultProvideNetworkMode = ProvideNetworkModeWiFi
 const defaultCanRefer = false
 const defaultAllowForeground = false
 const defaultOffline = true
@@ -117,7 +118,9 @@ type DeviceLocal struct {
 	canRefer            bool
 	allowForeground     bool
 
-	provideControlMode       ProvideControlMode
+	provideMode              ProvideMode
+	provideControlMode       ProvideControlMode // auto, always, never
+	provideNetworkMode       ProvideNetworkMode // wifi, cellular
 	offline                  bool
 	vpnInterfaceWhileOffline bool
 	tunnelStarted            bool
@@ -127,16 +130,17 @@ type DeviceLocal struct {
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
-	provideChangeListeners         *connect.CallbackList[ProvideChangeListener]
-	providePausedChangeListeners   *connect.CallbackList[ProvidePausedChangeListener]
-	offlineChangeListeners         *connect.CallbackList[OfflineChangeListener]
-	connectChangeListeners         *connect.CallbackList[ConnectChangeListener]
-	routeLocalChangeListeners      *connect.CallbackList[RouteLocalChangeListener]
-	connectLocationChangeListeners *connect.CallbackList[ConnectLocationChangeListener]
-	provideSecretKeysListeners     *connect.CallbackList[ProvideSecretKeysListener]
-	tunnelChangeListeners          *connect.CallbackList[TunnelChangeListener]
-	contractStatusChangeListeners  *connect.CallbackList[ContractStatusChangeListener]
-	windowStatusChangeListeners    *connect.CallbackList[WindowStatusChangeListener]
+	provideChangeListeners            *connect.CallbackList[ProvideChangeListener]
+	providePausedChangeListeners      *connect.CallbackList[ProvidePausedChangeListener]
+	provideNetworkModeChangeListeners *connect.CallbackList[ProvideNetworkModeChangeListener]
+	offlineChangeListeners            *connect.CallbackList[OfflineChangeListener]
+	connectChangeListeners            *connect.CallbackList[ConnectChangeListener]
+	routeLocalChangeListeners         *connect.CallbackList[RouteLocalChangeListener]
+	connectLocationChangeListeners    *connect.CallbackList[ConnectLocationChangeListener]
+	provideSecretKeysListeners        *connect.CallbackList[ProvideSecretKeysListener]
+	tunnelChangeListeners             *connect.CallbackList[TunnelChangeListener]
+	contractStatusChangeListeners     *connect.CallbackList[ContractStatusChangeListener]
+	windowStatusChangeListeners       *connect.CallbackList[WindowStatusChangeListener]
 
 	localUserNatUnsub func()
 
@@ -278,7 +282,9 @@ func newDeviceLocalWithOverrides(
 		canShowRatingDialog:               defaultCanShowRatingDialog,
 		canRefer:                          defaultCanRefer,
 		allowForeground:                   defaultAllowForeground,
+		provideMode:                       ProvideModeNone,
 		provideControlMode:                defaultProvideControlMode,
+		provideNetworkMode:                defaultProvideNetworkMode,
 		offline:                           defaultOffline,
 		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
 		tunnelStarted:                     defaultTunnelStarted,
@@ -287,6 +293,7 @@ func newDeviceLocalWithOverrides(
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
 		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
 		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
+		provideNetworkModeChangeListeners: connect.NewCallbackList[ProvideNetworkModeChangeListener](),
 		offlineChangeListeners:            connect.NewCallbackList[OfflineChangeListener](),
 		connectChangeListeners:            connect.NewCallbackList[ConnectChangeListener](),
 		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
@@ -370,8 +377,10 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 				switch *contractStatus.Error {
 				case protocol.ContractError_InsufficientBalance:
 					netContractStatus.InsufficientBalance = true
+					glog.Infof("[contract]error insufficent balance\n")
 				case protocol.ContractError_NoPermission:
 					netContractStatus.NoPermission = true
+					glog.Infof("[contract]error no permission\n")
 				}
 			} else {
 				// reset the error state
@@ -464,26 +473,34 @@ func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	self.canShowRatingDialog = canShowRatingDialog
 }
 
+/**
+ * Get provide network mode.
+ * for example, auto, always, never
+ */
 func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.provideControlMode
 }
 
-func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
+/**
+ * Set provide network mode.
+ * auto, always, never
+ */
+func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControlMode) {
 
 	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.provideControlMode != mode {
+		if self.provideControlMode != provideControlMode {
 			changed = true
-			self.provideControlMode = mode
+			self.provideControlMode = provideControlMode
 		}
 	}()
 
 	if changed {
-		switch mode {
+		switch self.GetProvideControlMode() {
 		case ProvideControlModeAuto:
 			if self.GetConnectEnabled() {
 				// if user is connected, start providing
@@ -492,16 +509,40 @@ func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
 				// if user is not connected, stop providing
 				self.SetProvideMode(ProvideModeNone)
 			}
-		case ProvideControlModeNever:
-			self.SetProvideMode(ProvideModeNone)
 		case ProvideControlModeAlways:
 			self.SetProvideMode(ProvideModePublic)
 		default:
-			glog.Errorf("Unknown provide control mode: %s", mode)
 			self.SetProvideMode(ProvideModeNone)
 		}
 	}
 
+}
+
+/**
+ * Get provide network mode.
+ * for example, wifi, cellular
+ */
+func (self *DeviceLocal) GetProvideNetworkMode() ProvideNetworkMode {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.provideNetworkMode
+}
+
+func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
+	set := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if self.provideNetworkMode != mode {
+			self.provideNetworkMode = mode
+			set = true
+		}
+	}()
+	if set {
+		glog.Infof("Set provide network mode: %s", mode)
+		self.provideNetworkModeChanged(mode)
+	}
 }
 
 func (self *DeviceLocal) GetCanRefer() bool {
@@ -663,6 +704,13 @@ func (self *DeviceLocal) AddProvidePausedChangeListener(listener ProvidePausedCh
 	})
 }
 
+func (self *DeviceLocal) AddProvideNetworkModeChangeListener(listener ProvideNetworkModeChangeListener) Sub {
+	callbackId := self.provideNetworkModeChangeListeners.Add(listener)
+	return newSub(func() {
+		self.provideNetworkModeChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) AddOfflineChangeListener(listener OfflineChangeListener) Sub {
 	callbackId := self.offlineChangeListeners.Add(listener)
 	return newSub(func() {
@@ -733,6 +781,15 @@ func (self *DeviceLocal) providePausedChanged(providePaused bool) {
 	for _, listener := range self.providePausedChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvidePausedChanged(providePaused)
+		})
+	}
+}
+
+func (self *DeviceLocal) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
+
+	for _, listener := range self.provideNetworkModeChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProvideNetworkModeChanged(provideNetworkMode)
 		})
 	}
 }
@@ -864,50 +921,71 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 }
 
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
+	glog.Infof("[device]provide = %d\n", provideMode)
+
+	changed := false
+	var provideModes map[protocol.ProvideMode]bool
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
 		// TODO create a new provider only client?
 
-		provideModes := map[protocol.ProvideMode]bool{}
-		switch provideMode {
-		case ProvideModePublic:
-			provideModes[protocol.ProvideMode_Public] = true
-			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-			provideModes[protocol.ProvideMode_Network] = true
-		case ProvideModeFriendsAndFamily:
-			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-			provideModes[protocol.ProvideMode_Network] = true
-		case ProvideModeNetwork:
-			provideModes[protocol.ProvideMode_Network] = true
-		}
-		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
+		if self.provideMode != provideMode {
+			self.provideMode = provideMode
+			changed = true
 
-		// recreate the provider user nat
-		if self.remoteUserNatProviderLocalUserNat != nil {
-			self.remoteUserNatProviderLocalUserNat.Close()
-			self.remoteUserNatProviderLocalUserNat = nil
-		}
-		if self.remoteUserNatProvider != nil {
-			self.remoteUserNatProvider.Close()
-			self.remoteUserNatProvider = nil
-		}
+			provideModes = map[protocol.ProvideMode]bool{}
+			switch provideMode {
+			case ProvideModePublic:
+				provideModes[protocol.ProvideMode_Public] = true
+				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+				provideModes[protocol.ProvideMode_Network] = true
+			case ProvideModeFriendsAndFamily:
+				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+				provideModes[protocol.ProvideMode_Network] = true
+			case ProvideModeNetwork:
+				provideModes[protocol.ProvideMode_Network] = true
+			}
 
-		if ProvideModeNone < provideMode {
-			self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
-			self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+			if ProvideModeNone < provideMode {
+				// recreate the provider user nat only as needed
+				// this avoid connection disruptions
+				if self.remoteUserNatProviderLocalUserNat == nil {
+					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
+				}
+				if self.remoteUserNatProvider == nil {
+					self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+				}
+			} else {
+				// close
+				if self.remoteUserNatProviderLocalUserNat != nil {
+					self.remoteUserNatProviderLocalUserNat.Close()
+					self.remoteUserNatProviderLocalUserNat = nil
+				}
+				if self.remoteUserNatProvider != nil {
+					self.remoteUserNatProvider.Close()
+					self.remoteUserNatProvider = nil
+				}
+			}
+
 		}
 	}()
-	self.provideChanged(self.GetProvideEnabled())
+	if changed {
+		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
+		self.provideChanged(self.GetProvideEnabled())
+	}
 }
 
 func (self *DeviceLocal) GetProvideMode() ProvideMode {
-	maxProvideMode := protocol.ProvideMode_None
-	for provideMode, _ := range self.client.ContractManager().GetProvideModes() {
-		maxProvideMode = max(maxProvideMode, provideMode)
-	}
-	return ProvideMode(maxProvideMode)
+	// maxProvideMode := protocol.ProvideMode_None
+	// for provideMode, _ := range self.client.ContractManager().GetProvideModes() {
+	// 	maxProvideMode = max(maxProvideMode, provideMode)
+	// }
+	// return ProvideMode(maxProvideMode)
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.provideMode
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
