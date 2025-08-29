@@ -118,6 +118,7 @@ type DeviceLocal struct {
 	canRefer            bool
 	allowForeground     bool
 
+	provideMode              ProvideMode
 	provideControlMode       ProvideControlMode // auto, always, never
 	provideNetworkMode       ProvideNetworkMode // wifi, cellular
 	offline                  bool
@@ -281,6 +282,7 @@ func newDeviceLocalWithOverrides(
 		canShowRatingDialog:               defaultCanShowRatingDialog,
 		canRefer:                          defaultCanRefer,
 		allowForeground:                   defaultAllowForeground,
+		provideMode:                       ProvideModeNone,
 		provideControlMode:                defaultProvideControlMode,
 		provideNetworkMode:                defaultProvideNetworkMode,
 		offline:                           defaultOffline,
@@ -375,8 +377,10 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 				switch *contractStatus.Error {
 				case protocol.ContractError_InsufficientBalance:
 					netContractStatus.InsufficientBalance = true
+					glog.Infof("[contract]error insufficent balance\n")
 				case protocol.ContractError_NoPermission:
 					netContractStatus.NoPermission = true
+					glog.Infof("[contract]error no permission\n")
 				}
 			} else {
 				// reset the error state
@@ -483,20 +487,20 @@ func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
  * Set provide network mode.
  * auto, always, never
  */
-func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
+func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControlMode) {
 
 	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.provideControlMode != mode {
+		if self.provideControlMode != provideControlMode {
 			changed = true
-			self.provideControlMode = mode
+			self.provideControlMode = provideControlMode
 		}
 	}()
 
 	if changed {
-		switch mode {
+		switch self.GetProvideControlMode() {
 		case ProvideControlModeAuto:
 			if self.GetConnectEnabled() {
 				// if user is connected, start providing
@@ -505,12 +509,9 @@ func (self *DeviceLocal) SetProvideControlMode(mode ProvideControlMode) {
 				// if user is not connected, stop providing
 				self.SetProvideMode(ProvideModeNone)
 			}
-		case ProvideControlModeNever:
-			self.SetProvideMode(ProvideModeNone)
 		case ProvideControlModeAlways:
 			self.SetProvideMode(ProvideModePublic)
 		default:
-			glog.Errorf("Unknown provide control mode: %s", mode)
 			self.SetProvideMode(ProvideModeNone)
 		}
 	}
@@ -920,50 +921,71 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 }
 
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
+	glog.Infof("[device]provide = %d\n", provideMode)
+
+	changed := false
+	var provideModes map[protocol.ProvideMode]bool
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
 		// TODO create a new provider only client?
 
-		provideModes := map[protocol.ProvideMode]bool{}
-		switch provideMode {
-		case ProvideModePublic:
-			provideModes[protocol.ProvideMode_Public] = true
-			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-			provideModes[protocol.ProvideMode_Network] = true
-		case ProvideModeFriendsAndFamily:
-			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-			provideModes[protocol.ProvideMode_Network] = true
-		case ProvideModeNetwork:
-			provideModes[protocol.ProvideMode_Network] = true
-		}
-		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
+		if self.provideMode != provideMode {
+			self.provideMode = provideMode
+			changed = true
 
-		// recreate the provider user nat
-		if self.remoteUserNatProviderLocalUserNat != nil {
-			self.remoteUserNatProviderLocalUserNat.Close()
-			self.remoteUserNatProviderLocalUserNat = nil
-		}
-		if self.remoteUserNatProvider != nil {
-			self.remoteUserNatProvider.Close()
-			self.remoteUserNatProvider = nil
-		}
+			provideModes = map[protocol.ProvideMode]bool{}
+			switch provideMode {
+			case ProvideModePublic:
+				provideModes[protocol.ProvideMode_Public] = true
+				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+				provideModes[protocol.ProvideMode_Network] = true
+			case ProvideModeFriendsAndFamily:
+				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+				provideModes[protocol.ProvideMode_Network] = true
+			case ProvideModeNetwork:
+				provideModes[protocol.ProvideMode_Network] = true
+			}
 
-		if ProvideModeNone < provideMode {
-			self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
-			self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+			if ProvideModeNone < provideMode {
+				// recreate the provider user nat only as needed
+				// this avoid connection disruptions
+				if self.remoteUserNatProviderLocalUserNat == nil {
+					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
+				}
+				if self.remoteUserNatProvider == nil {
+					self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+				}
+			} else {
+				// close
+				if self.remoteUserNatProviderLocalUserNat != nil {
+					self.remoteUserNatProviderLocalUserNat.Close()
+					self.remoteUserNatProviderLocalUserNat = nil
+				}
+				if self.remoteUserNatProvider != nil {
+					self.remoteUserNatProvider.Close()
+					self.remoteUserNatProvider = nil
+				}
+			}
+
 		}
 	}()
-	self.provideChanged(self.GetProvideEnabled())
+	if changed {
+		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
+		self.provideChanged(self.GetProvideEnabled())
+	}
 }
 
 func (self *DeviceLocal) GetProvideMode() ProvideMode {
-	maxProvideMode := protocol.ProvideMode_None
-	for provideMode, _ := range self.client.ContractManager().GetProvideModes() {
-		maxProvideMode = max(maxProvideMode, provideMode)
-	}
-	return ProvideMode(maxProvideMode)
+	// maxProvideMode := protocol.ProvideMode_None
+	// for provideMode, _ := range self.client.ContractManager().GetProvideModes() {
+	// 	maxProvideMode = max(maxProvideMode, provideMode)
+	// }
+	// return ProvideMode(maxProvideMode)
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.provideMode
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
