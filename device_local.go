@@ -1106,6 +1106,17 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 	self.stats.UpdateConnect(connectEnabled)
 	self.connectChanged(connectEnabled)
 	self.windowStatusChanged(self.GetWindowStatus())
+
+	switch self.GetProvideControlMode() {
+	case ProvideControlModeAuto:
+		if self.GetConnectEnabled() {
+			// if user is connected, start providing
+			self.SetProvideMode(ProvideModePublic)
+		} else {
+			// if user is not connected, stop providing
+			self.SetProvideMode(ProvideModeNone)
+		}
+	}
 }
 
 func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
