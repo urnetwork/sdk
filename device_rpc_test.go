@@ -552,6 +552,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 		},
 	}
 
+	deviceRemote.SetProvideControlMode(ProvideControlModeManual)
 	deviceRemote.SetCanShowRatingDialog(true)
 	deviceRemote.SetCanRefer(true)
 	deviceRemote.SetRouteLocal(!defaultRouteLocal)
@@ -594,6 +595,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	}
 
 	glog.Infof("GG1")
+	assert.Equal(t, deviceLocal.GetProvideControlMode(), ProvideControlModeManual)
 	assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
 	glog.Infof("GG2")
 	assert.Equal(t, deviceLocal.GetCanRefer(), true)
@@ -606,6 +608,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	glog.Infof("GGX")
 	assert.Equal(t, deviceLocal.GetConnectLocation(), location)
 
+	assert.Equal(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
 	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
@@ -620,6 +623,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 
 	// make sure the remote value retains the last know state
 
+	assert.Equal(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
 	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)

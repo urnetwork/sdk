@@ -278,6 +278,7 @@ const (
 	ProvideControlModeNever  ProvideControlMode = "never"
 	ProvideControlModeAlways ProvideControlMode = "always"
 	ProvideControlModeAuto   ProvideControlMode = "auto"
+	ProvideControlModeManual ProvideControlMode = "manual"
 )
 
 type ProvideNetworkMode = string

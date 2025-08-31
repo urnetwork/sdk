@@ -33,7 +33,7 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 const defaultRouteLocal = true
 const defaultCanShowRatingDialog = true
 
-const defaultProvideControlMode = ProvideControlModeAuto
+const defaultProvideControlMode = ProvideControlModeManual
 const defaultProvideNetworkMode = ProvideNetworkModeWiFi
 const defaultCanRefer = false
 const defaultAllowForeground = false
