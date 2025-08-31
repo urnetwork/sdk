@@ -16,7 +16,7 @@ import (
 	// "time"
 	"sync"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2025"
 )
 
 // the api is asychronous, which is the most natural for the target platforms
