@@ -1531,6 +1531,7 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 	if event {
 		self.connectLocationChanged(newDeviceRemoteConnectLocation(self.GetConnectLocation()))
 		self.connectChanged(self.GetConnectEnabled())
+		self.provideChanged(self.GetProvideEnabled())
 	}
 }
 
