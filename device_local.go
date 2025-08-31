@@ -488,34 +488,33 @@ func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
  * auto, always, never
  */
 func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControlMode) {
-
-	changed := false
+	provideModeChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.provideControlMode != provideControlMode {
-			changed = true
 			self.provideControlMode = provideControlMode
+
+			switch provideControlMode {
+			case ProvideControlModeAuto:
+				if self.remoteUserNatClient != nil {
+					// if user is connected, start providing
+					provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+				} else {
+					// if user is not connected, stop providing
+					provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+				}
+			case ProvideControlModeAlways:
+				provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+			default:
+				provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+			}
 		}
 	}()
 
-	if changed {
-		switch self.GetProvideControlMode() {
-		case ProvideControlModeAuto:
-			if self.GetConnectEnabled() {
-				// if user is connected, start providing
-				self.SetProvideMode(ProvideModePublic)
-			} else {
-				// if user is not connected, stop providing
-				self.SetProvideMode(ProvideModeNone)
-			}
-		case ProvideControlModeAlways:
-			self.SetProvideMode(ProvideModePublic)
-		default:
-			self.SetProvideMode(ProvideModeNone)
-		}
+	if provideModeChanged {
+		self.provideChanged(self.GetProvideEnabled())
 	}
-
 }
 
 /**
@@ -924,57 +923,61 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 	glog.Infof("[device]provide = %d\n", provideMode)
 
 	changed := false
-	var provideModes map[protocol.ProvideMode]bool
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		// TODO create a new provider only client?
-
-		if self.provideMode != provideMode {
-			self.provideMode = provideMode
-			changed = true
-
-			provideModes = map[protocol.ProvideMode]bool{}
-			switch provideMode {
-			case ProvideModePublic:
-				provideModes[protocol.ProvideMode_Public] = true
-				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-				provideModes[protocol.ProvideMode_Network] = true
-			case ProvideModeFriendsAndFamily:
-				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-				provideModes[protocol.ProvideMode_Network] = true
-			case ProvideModeNetwork:
-				provideModes[protocol.ProvideMode_Network] = true
-			}
-
-			if ProvideModeNone < provideMode {
-				// recreate the provider user nat only as needed
-				// this avoid connection disruptions
-				if self.remoteUserNatProviderLocalUserNat == nil {
-					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
-				}
-				if self.remoteUserNatProvider == nil {
-					self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
-				}
-			} else {
-				// close
-				if self.remoteUserNatProviderLocalUserNat != nil {
-					self.remoteUserNatProviderLocalUserNat.Close()
-					self.remoteUserNatProviderLocalUserNat = nil
-				}
-				if self.remoteUserNatProvider != nil {
-					self.remoteUserNatProvider.Close()
-					self.remoteUserNatProvider = nil
-				}
-			}
-
-		}
+		changed = self.setProvideModeWithLock(provideMode)
 	}()
 	if changed {
-		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
 		self.provideChanged(self.GetProvideEnabled())
 	}
+}
+
+func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (changed bool) {
+	if self.provideMode != provideMode {
+		self.provideMode = provideMode
+		changed = true
+
+		// TODO create a new provider only client?
+
+		if ProvideModeNone < provideMode {
+			// recreate the provider user nat only as needed
+			// this avoid connection disruptions
+			if self.remoteUserNatProviderLocalUserNat == nil {
+				self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
+			}
+			if self.remoteUserNatProvider == nil {
+				self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+			}
+		} else {
+			// close
+			if self.remoteUserNatProviderLocalUserNat != nil {
+				self.remoteUserNatProviderLocalUserNat.Close()
+				self.remoteUserNatProviderLocalUserNat = nil
+			}
+			if self.remoteUserNatProvider != nil {
+				self.remoteUserNatProvider.Close()
+				self.remoteUserNatProvider = nil
+			}
+		}
+
+		provideModes := map[protocol.ProvideMode]bool{}
+		switch provideMode {
+		case ProvideModePublic:
+			provideModes[protocol.ProvideMode_Public] = true
+			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+			provideModes[protocol.ProvideMode_Network] = true
+		case ProvideModeFriendsAndFamily:
+			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+			provideModes[protocol.ProvideMode_Network] = true
+		case ProvideModeNetwork:
+			provideModes[protocol.ProvideMode_Network] = true
+		}
+
+		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
+	}
+	return
 }
 
 func (self *DeviceLocal) GetProvideMode() ProvideMode {
@@ -1037,6 +1040,7 @@ func (self *DeviceLocal) RemoveDestination() {
 }
 
 func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) {
+	provideModeChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -1097,8 +1101,16 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.windowStatusChanged(toWindowStatus(monitor))
 			}
 			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
+
+			if self.provideControlMode == ProvideControlModeAuto {
+				provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+			}
+		} else {
+			// else no specs, not an error
+			if self.provideControlMode == ProvideControlModeAuto {
+				provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+			}
 		}
-		// else no specs, not an error
 	}()
 
 	self.connectLocationChanged(self.GetConnectLocation())
@@ -1107,15 +1119,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 	self.connectChanged(connectEnabled)
 	self.windowStatusChanged(self.GetWindowStatus())
 
-	switch self.GetProvideControlMode() {
-	case ProvideControlModeAuto:
-		if self.GetConnectEnabled() {
-			// if user is connected, start providing
-			self.SetProvideMode(ProvideModePublic)
-		} else {
-			// if user is not connected, stop providing
-			self.SetProvideMode(ProvideModeNone)
-		}
+	if provideModeChanged {
+		self.provideChanged(self.GetProvideEnabled())
 	}
 }
 

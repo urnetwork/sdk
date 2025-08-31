@@ -1138,27 +1138,7 @@ func (self *DeviceRemote) GetProvideEnabled() bool {
 	if success {
 		return provideEnabled
 	} else {
-
-		if self.state.ProvideControlMode.IsSet {
-
-			if self.state.ProvideControlMode.Value == ProvideControlModeAuto {
-
-				// todo - double check is this the correct way to handle this?
-				// instead should we check connectEnabled and return based on that?
-				return self.lastKnownState.ProvideEnabled.Get(false)
-
-			} else if self.state.ProvideControlMode.Value == ProvideControlModeAlways {
-				return true
-			} else if self.state.ProvideControlMode.Value == ProvideControlModeNever {
-				return false
-			}
-
-			return false
-
-		} else {
-			return self.lastKnownState.ProvideEnabled.Get(false)
-		}
-
+		return self.lastKnownState.ProvideEnabled.Get(false)
 	}
 }
 
