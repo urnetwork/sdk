@@ -992,9 +992,8 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
-	glog.Infof("[device]provide paused = %t\n", providePaused)
-
 	if self.client.ContractManager().SetProvidePaused(providePaused) {
+		glog.Infof("[device]provide paused = %t\n", providePaused)
 		self.providePausedChanged(self.GetProvidePaused())
 	}
 }
@@ -1004,14 +1003,19 @@ func (self *DeviceLocal) GetProvidePaused() bool {
 }
 
 func (self *DeviceLocal) SetOffline(offline bool) {
-	glog.Infof("[device]offline = %t\n", offline)
-
+	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.offline = offline
+		if self.offline != offline {
+			self.offline = offline
+			changed = true
+		}
 	}()
-	self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
+	if changed {
+		glog.Infof("[device]offline = %t\n", offline)
+		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
+	}
 }
 
 func (self *DeviceLocal) GetOffline() bool {
@@ -1021,12 +1025,18 @@ func (self *DeviceLocal) GetOffline() bool {
 }
 
 func (self *DeviceLocal) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool) {
+	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.vpnInterfaceWhileOffline = vpnInterfaceWhileOffline
+		if self.vpnInterfaceWhileOffline != vpnInterfaceWhileOffline {
+			self.vpnInterfaceWhileOffline = vpnInterfaceWhileOffline
+			changed = true
+		}
 	}()
-	self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
+	if changed {
+		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
+	}
 }
 
 func (self *DeviceLocal) GetVpnInterfaceWhileOffline() bool {
