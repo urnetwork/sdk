@@ -2,18 +2,7 @@ package sdk
 
 import (
 	"context"
-
-	// "encoding/json"
-
-	// "encoding/base64"
-	// "bytes"
-	// "errors"
 	"fmt"
-	// "io"
-	// "net"
-	// "net/http"
-	// "strings"
-	// "time"
 	"sync"
 
 	"github.com/urnetwork/connect"
@@ -1815,6 +1804,38 @@ func (self *Api) GetNetworkReliability(callback GetNetworkReliabilityCallback) {
 			fmt.Sprintf("%s/network/reliability", self.apiUrl),
 			self.GetByJwt(),
 			&GetNetworkReliabilityResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Solana Payment Intents
+ */
+
+type SolanaPaymentIntentArgs struct {
+	Reference string `json:"reference"`
+}
+
+type SolanaPaymentIntentResult struct {
+	Error *SolanaPaymentIntentError `json:"error,omitempty"`
+}
+
+type SolanaPaymentIntentError struct {
+	Message string `json:"message"`
+}
+
+type SolanaPaymentIntentCallback connect.ApiCallback[*SolanaPaymentIntentResult]
+
+func (self *Api) CreateSolanaPaymentIntent(args *SolanaPaymentIntentArgs, callback SolanaPaymentIntentCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/solana/payment-intent", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SolanaPaymentIntentResult{},
 			callback,
 		)
 	})
