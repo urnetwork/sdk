@@ -21,8 +21,8 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/btcsuite/btcutil/base58"
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/protocol"
+	"github.com/urnetwork/connect/v2025"
+	"github.com/urnetwork/connect/v2025/protocol"
 	"golang.org/x/crypto/nacl/box"
 )
 
@@ -91,7 +91,7 @@ func MessagePoolReturn(b []byte) {
 
 // this value is set via the linker, e.g.
 // -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
-const Version string = ""
+const Version string = "2025.9.11+728171850"
 
 type Id struct {
 	id [16]byte
