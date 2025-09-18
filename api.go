@@ -1840,3 +1840,39 @@ func (self *Api) CreateSolanaPaymentIntent(args *SolanaPaymentIntentArgs, callba
 		)
 	})
 }
+
+/**
+ * Stripe Payment Intent
+ */
+
+type StripeCreatePaymentIntentArgs struct {
+	// SubscriptionType string `json:"subscription_type"` // should be "monthly" or "yearly"
+}
+
+type StripeCreatePaymentIntentErr struct {
+	Message string `json:"message"`
+}
+
+type StripeCreatePaymentIntentResult struct {
+	PaymentIntents *StripePaymentIntentList      `json:"payment_intents,omitempty"`
+	EphemeralKey   string                        `json:"ephemeral_key,omitempty"`
+	CustomerId     string                        `json:"customer_id,omitempty"`
+	PublishableKey string                        `json:"publishable_key,omitempty"`
+	Error          *StripeCreatePaymentIntentErr `json:"error,omitempty"`
+}
+
+type StripePaymentIntentCallback connect.ApiCallback[*StripeCreatePaymentIntentResult]
+
+func (self *Api) CreateStripePaymentIntent(args *StripeCreatePaymentIntentArgs, callback StripePaymentIntentCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/stripe/payment-intent", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&StripeCreatePaymentIntentResult{},
+			callback,
+		)
+	})
+}
