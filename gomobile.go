@@ -328,6 +328,15 @@ type AccountPointsList struct {
 	exportedList[*AccountPoint]
 }
 
+type StripePaymentIntent struct {
+	SubscriptionType string `json:"subscription_type"` // should be "monthly" or "yearly"
+	ClientSecret     string `json:"client_secret"`
+}
+
+type StripePaymentIntentList struct {
+	exportedList[*StripePaymentIntent]
+}
+
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type Time struct {
 	impl time.Time
