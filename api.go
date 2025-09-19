@@ -1845,9 +1845,7 @@ func (self *Api) CreateSolanaPaymentIntent(args *SolanaPaymentIntentArgs, callba
  * Stripe Payment Intent
  */
 
-type StripeCreatePaymentIntentArgs struct {
-	// SubscriptionType string `json:"subscription_type"` // should be "monthly" or "yearly"
-}
+type StripeCreatePaymentIntentArgs struct{}
 
 type StripeCreatePaymentIntentErr struct {
 	Message string `json:"message"`
@@ -1872,6 +1870,37 @@ func (self *Api) CreateStripePaymentIntent(args *StripeCreatePaymentIntentArgs, 
 			args,
 			self.GetByJwt(),
 			&StripeCreatePaymentIntentResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Stripe Customer Portal
+ */
+
+type StripeCreateCustomerPortalArgs struct{}
+
+type StripeCreateCustomerPortalError struct {
+	Message string `json:"message"`
+}
+
+type StripeCreateCustomerPortalResult struct {
+	Url   string                           `json:"url,omitempty"`
+	Error *StripeCreateCustomerPortalError `json:"error,omitempty"`
+}
+
+type StripeCreateCustomerPortalCallback connect.ApiCallback[*StripeCreateCustomerPortalResult]
+
+func (self *Api) StripeCreateCustomerPortal(args *StripeCreateCustomerPortalArgs, callback StripeCreateCustomerPortalCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/stripe/customer-portal", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&StripeCreateCustomerPortalResult{},
 			callback,
 		)
 	})
