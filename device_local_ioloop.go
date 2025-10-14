@@ -46,6 +46,9 @@ func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallba
 }
 
 func (self *IoLoop) run() {
+	f := os.NewFile(uintptr(self.fd), "urnetwork")
+	defer f.Close()
+
 	defer connect.HandleError(func() {
 		if self.doneCallback != nil {
 			self.doneCallback.IoLoopDone()
@@ -56,12 +59,8 @@ func (self *IoLoop) run() {
 
 	err := syscall.SetNonblock(self.fd, true)
 	if err != nil {
-		glog.Infof("[io]Could not set non-blocking: %s\n", err)
-		return
+		glog.Infof("[io]WARNING: could not set non-blocking = %s\n", err)
 	}
-
-	f := os.NewFile(uintptr(self.fd), "urnetwork")
-	defer f.Close()
 
 	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 		select {
@@ -88,6 +87,7 @@ func (self *IoLoop) run() {
 
 			packet := MessagePoolGet(2048)
 			n, err := f.Read(packet)
+			// glog.Infof("[io]READ PACKET %d (%s)\n", n, err)
 			if 0 < n {
 				success := self.deviceLocal.sendPacket(packet[:n])
 				if !success {
