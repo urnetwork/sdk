@@ -5,15 +5,6 @@ go 1.24.4
 toolchain go1.24.5
 
 require (
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/sdk v0.0.0
-)
-
-replace github.com/urnetwork/sdk => ..
-
-replace github.com/urnetwork/connect => ../../connect
-
-require (
 	github.com/BurntSushi/toml v1.1.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -32,6 +23,8 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/u-root/u-root v0.14.0 // indirect
+	github.com/urnetwork/connect/v2025 v2025.10.27-768288050
+	github.com/urnetwork/sdk/v2025 v2025.10.27-768288050
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20220613132600-b0d781184e0d // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
