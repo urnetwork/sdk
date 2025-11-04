@@ -1073,7 +1073,8 @@ type ValidateReferralCodeArgs struct {
 }
 
 type ValidateReferralCodeResult struct {
-	IsValid bool `json:"is_valid"`
+	IsValid  bool `json:"is_valid"`
+	IsCapped bool `json:"is_capped"`
 }
 
 type ValidateReferralCodeCallback connect.ApiCallback[*ValidateReferralCodeResult]
