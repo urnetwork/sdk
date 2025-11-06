@@ -189,6 +189,10 @@ type Device interface {
 
 	SetCanShowRatingDialog(canShowRatingDialog bool)
 
+	GetCanPromptIntroFunnel() bool
+
+	SetCanPromptIntroFunnel(canPrompt bool)
+
 	GetAllowForeground() bool
 
 	SetAllowForeground(allowForeground bool)

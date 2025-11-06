@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"time"
 
 	// "io"
 	"encoding/json"
@@ -308,6 +309,36 @@ func (self *LocalState) GetCanShowRatingDialog() bool {
 		var canShowRatingDialog bool
 		if err := json.Unmarshal(canShowRatingDialogBytes, &canShowRatingDialog); err == nil {
 			return canShowRatingDialog
+		}
+	}
+	return true
+}
+
+func (self *LocalState) SetIntroFunnelLastPrompted() error {
+
+	now := time.Now()
+
+	path := filepath.Join(self.localStorageDir, ".can_prompt_intro_funnel")
+	lastPromptedBytes, err := json.Marshal(now)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, lastPromptedBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) GetCanPromptIntroFunnel() bool {
+	path := filepath.Join(self.localStorageDir, ".can_prompt_intro_funnel")
+
+	if intoFunnelTimeLastPromptedBytes, err := os.ReadFile(path); err == nil {
+		var intoFunnelTimeLastPrompted time.Time
+		if err := json.Unmarshal(intoFunnelTimeLastPromptedBytes, &intoFunnelTimeLastPrompted); err == nil {
+
+			now := time.Now().UTC()
+
+			timePassed := now.Sub(intoFunnelTimeLastPrompted)
+
+			return timePassed.Hours() > 24*5
+
 		}
 	}
 	return true

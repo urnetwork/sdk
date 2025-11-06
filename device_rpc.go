@@ -663,6 +663,10 @@ func (self *DeviceRemote) GetStats() *DeviceStats {
 	}
 }
 
+/**
+ * Ratings dialog
+ */
+
 func (self *DeviceRemote) GetShouldShowRatingDialog() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -732,6 +736,60 @@ func (self *DeviceRemote) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	state.CanShowRatingDialog.Set(canShowRatingDialog)
 }
 
+/**
+ * Intro funnel prompt
+ */
+
+func (self *DeviceRemote) GetCanPromptIntroFunnel() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	canPromptIntroFunnel, success := func() (bool, bool) {
+		if self.service == nil {
+			return false, false
+		}
+
+		canPromptIntroFunnel, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.GetCanPromptIntroFunnel", self.closeService)
+		if err != nil {
+			return false, false
+		}
+		self.lastKnownState.CanShowRatingDialog.Set(canPromptIntroFunnel)
+		return canPromptIntroFunnel, true
+	}()
+	if success {
+		return canPromptIntroFunnel
+	} else {
+		return self.state.CanPromptIntroFunnel.Get(
+			self.lastKnownState.CanPromptIntroFunnel.Get(defaultCanShowRatingDialog),
+		)
+	}
+}
+
+func (self *DeviceRemote) SetCanPromptIntroFunnel(canPromptIntroFunnel bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func() bool {
+		if self.service == nil {
+			return false
+		}
+
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetCanPromptIntroFunnel", canPromptIntroFunnel, self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+	state := &self.state
+	if success {
+		state = &self.lastKnownState
+	}
+	state.CanPromptIntroFunnel.Set(canPromptIntroFunnel)
+}
+
+/**
+ * Provide Control Mode
+ */
 func (self *DeviceRemote) GetProvideControlMode() ProvideControlMode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -2573,6 +2631,7 @@ type DeviceRemoteState struct {
 	// thick state + last known state
 
 	CanShowRatingDialog      deviceRemoteValue[bool]
+	CanPromptIntroFunnel     deviceRemoteValue[bool]
 	ProvideControlMode       deviceRemoteValue[ProvideControlMode]
 	CanRefer                 deviceRemoteValue[bool]
 	AllowForeground          deviceRemoteValue[bool]
@@ -2617,6 +2676,7 @@ type DeviceRemoteState struct {
 
 func (self *DeviceRemoteState) Unset() {
 	self.CanShowRatingDialog.Unset()
+	self.CanPromptIntroFunnel.Unset()
 	self.ProvideControlMode.Unset()
 	self.CanRefer.Unset()
 	self.RouteLocal.Unset()
@@ -2647,6 +2707,7 @@ func (self *DeviceRemoteState) Unset() {
 
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.CanShowRatingDialog.Merge(update.CanShowRatingDialog)
+	self.CanPromptIntroFunnel.Merge(update.CanPromptIntroFunnel)
 	self.ProvideControlMode.Merge(update.ProvideControlMode)
 	self.AllowForeground.Merge(update.AllowForeground)
 	self.CanRefer.Merge(update.CanRefer)
@@ -3300,6 +3361,9 @@ func (self *DeviceLocalRpc) Sync(
 	if state.CanShowRatingDialog.IsSet {
 		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
 	}
+	if state.CanPromptIntroFunnel.IsSet {
+		self.deviceLocal.SetCanPromptIntroFunnel(state.CanPromptIntroFunnel.Value)
+	}
 	if state.ProvideControlMode.IsSet {
 		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
 	}
@@ -3659,6 +3723,10 @@ func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
 	return nil
 }
 
+/**
+ * Ratings Dialog
+ */
+
 func (self *DeviceLocalRpc) GetShouldShowRatingDialog(_ RpcNoArg, shouldShowRatingDialog *bool) error {
 	*shouldShowRatingDialog = self.deviceLocal.GetShouldShowRatingDialog()
 	return nil
@@ -3673,6 +3741,24 @@ func (self *DeviceLocalRpc) SetCanShowRatingDialog(canShowRatingDialog bool, _ R
 	self.deviceLocal.SetCanShowRatingDialog(canShowRatingDialog)
 	return nil
 }
+
+/**
+ * Intro Funnel Prompt
+ */
+
+func (self *DeviceLocalRpc) GetCanPromptIntroFunnel(_ RpcNoArg, canPromptIntroFunnel *bool) error {
+	*canPromptIntroFunnel = self.deviceLocal.GetCanPromptIntroFunnel()
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetCanPromptIntroFunnel(canPromptIntroFunnel bool, _ RpcVoid) error {
+	self.deviceLocal.SetCanPromptIntroFunnel(canPromptIntroFunnel)
+	return nil
+}
+
+/**
+ * Provide Control Mode
+ */
 
 func (self *DeviceLocalRpc) GetProvideControlMode(_ RpcNoArg, mode *ProvideControlMode) error {
 	*mode = self.deviceLocal.GetProvideControlMode()

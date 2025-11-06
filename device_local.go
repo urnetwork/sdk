@@ -32,6 +32,7 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 
 const defaultRouteLocal = true
 const defaultCanShowRatingDialog = true
+const defaultCanShowIntroFunnel = true
 
 const defaultProvideControlMode = ProvideControlModeManual
 const defaultProvideNetworkMode = ProvideNetworkModeWiFi
@@ -113,10 +114,11 @@ type DeviceLocal struct {
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
 
-	routeLocal          bool
-	canShowRatingDialog bool
-	canRefer            bool
-	allowForeground     bool
+	routeLocal           bool
+	canShowRatingDialog  bool
+	canPromptIntroFunnel bool
+	canRefer             bool
+	allowForeground      bool
 
 	provideMode              ProvideMode
 	provideControlMode       ProvideControlMode // auto, always, never
@@ -280,6 +282,7 @@ func newDeviceLocalWithOverrides(
 		remoteUserNatProvider:             nil,
 		routeLocal:                        defaultRouteLocal,
 		canShowRatingDialog:               defaultCanShowRatingDialog,
+		canPromptIntroFunnel:              defaultCanShowIntroFunnel,
 		canRefer:                          defaultCanRefer,
 		allowForeground:                   defaultAllowForeground,
 		provideMode:                       ProvideModeNone,
@@ -471,6 +474,21 @@ func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.canShowRatingDialog = canShowRatingDialog
+}
+
+/**
+ * Prompt Intro tunnel
+ */
+func (self *DeviceLocal) GetCanPromptIntroFunnel() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.canPromptIntroFunnel
+}
+
+func (self *DeviceLocal) SetCanPromptIntroFunnel(canPrompt bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.canPromptIntroFunnel = canPrompt
 }
 
 /**
