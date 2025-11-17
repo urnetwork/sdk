@@ -86,7 +86,7 @@ build_apple:
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
-	GOMOBILE_VERSION=v0.0.0-20251021151156-188f512ec823  && \
+	GOMOBILE_VERSION=v0.0.0-20251113184115-a159579294ab  && \
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
 	gomobile init && \
