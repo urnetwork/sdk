@@ -5,14 +5,18 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"runtime"
+	"strconv"
 
 	// "hash/fnv"
 	"encoding/json"
 	"flag"
 	"math"
+
 	// "math/big"
 	"os"
 	"runtime/debug"
+
 	// "strings"
 
 	// "net/http"
@@ -51,11 +55,45 @@ func init() {
 }
 
 func initGlog() {
-	flag.Set("logtostderr", "true")
+
+	home, _ := os.UserHomeDir()
+	logDir := ""
+
+	if f := flag.Lookup("log_dir"); f == nil || f.Value.String() == "" {
+
+		if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
+
+			logDir = defaultLogDir(home)
+
+			if err := os.MkdirAll(logDir, 0755); err == nil {
+				flag.Set("log_dir", logDir)
+			} else {
+				// Fallback to container root if Logs couldn’t be created (very unlikely)
+				_ = os.MkdirAll(home, 0755)
+				flag.Set("log_dir", home)
+			}
+		}
+		// For non-darwin OSes, glog will use os.TempDir() unless caller sets log_dir explicitly.
+	}
+
+	flag.Set("alsologtostderr", "true") // show in terminal too
 	flag.Set("stderrthreshold", "INFO")
+	var maxLogSize uint64 = 1024 * 1024 * 16
+	flag.Set("max_log_size", strconv.FormatUint(maxLogSize, 10))
 	flag.Set("v", "0")
-	// unlike unix, the android/ios standard is for diagnostics to go to stdout
+	// On mobile platforms, send diagnostics to stdout
 	os.Stderr = os.Stdout
+}
+
+func GetLogDir() string {
+	if f := flag.Lookup("log_dir"); f != nil {
+		return f.Value.String()
+	}
+	return ""
+}
+
+func FlushGlog() {
+	glog.Flush()
 }
 
 func SetMemoryLimit(limit int64) {
