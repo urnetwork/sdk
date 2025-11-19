@@ -62,7 +62,7 @@ func initGlog() {
 		if err := os.MkdirAll(logDir, 0755); err == nil {
 			flag.Set("log_dir", logDir)
 		} else {
-			// Fallback to container root if Logs couldn’t be created (very unlikely)
+			// fallback to home dir
 			_ = os.MkdirAll(home, 0755)
 			flag.Set("log_dir", home)
 		}
