@@ -5,6 +5,7 @@ import (
 	"os"
 	"syscall"
 	// "net"
+	"sync"
 
 	"github.com/golang/glog"
 
@@ -46,6 +47,8 @@ func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallba
 }
 
 func (self *IoLoop) run() {
+	defer self.cancel()
+
 	f := os.NewFile(uintptr(self.fd), "urnetwork")
 	defer f.Close()
 
@@ -62,12 +65,12 @@ func (self *IoLoop) run() {
 		glog.Infof("[io]WARNING: could not set non-blocking = %s\n", err)
 	}
 
+	var writeMutex sync.Mutex
+
 	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-		select {
-		case <-self.ctx.Done():
-			return
-		default:
-		}
+		// note `packet` is only valid for the lifecycle of this call
+		writeMutex.Lock()
+		defer writeMutex.Unlock()
 
 		_, err := f.Write(packet)
 		if err != nil {
@@ -77,33 +80,27 @@ func (self *IoLoop) run() {
 	callbackId := self.deviceLocal.receiveCallbacks.Add(receive)
 	defer self.deviceLocal.receiveCallbacks.Remove(callbackId)
 
-	go func() {
-		for {
-			select {
-			case <-self.ctx.Done():
-				return
-			default:
-			}
+	for {
+		select {
+		case <-self.ctx.Done():
+			return
+		default:
+		}
 
-			packet := MessagePoolGet(2048)
-			n, err := f.Read(packet)
-			// glog.Infof("[io]READ PACKET %d (%s)\n", n, err)
-			if 0 < n {
-				success := self.deviceLocal.sendPacket(packet[:n])
-				if !success {
-					MessagePoolReturn(packet)
-				}
-			} else {
+		packet := MessagePoolGet(2048)
+		n, err := f.Read(packet)
+		// glog.Infof("[io]READ PACKET %d (%s)\n", n, err)
+		if 0 < n {
+			success := self.deviceLocal.sendPacket(packet[:n])
+			if !success {
 				MessagePoolReturn(packet)
 			}
-			if err != nil {
-				return
-			}
+		} else {
+			MessagePoolReturn(packet)
 		}
-	}()
-
-	select {
-	case <-self.ctx.Done():
+		if err != nil {
+			return
+		}
 	}
 }
 
