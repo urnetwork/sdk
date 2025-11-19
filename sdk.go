@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"runtime"
 	"strconv"
 
 	// "hash/fnv"
@@ -55,25 +54,18 @@ func init() {
 }
 
 func initGlog() {
-
 	home, _ := os.UserHomeDir()
 	logDir := ""
 
 	if f := flag.Lookup("log_dir"); f == nil || f.Value.String() == "" {
-
-		if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
-
-			logDir = defaultLogDir(home)
-
-			if err := os.MkdirAll(logDir, 0755); err == nil {
-				flag.Set("log_dir", logDir)
-			} else {
-				// Fallback to container root if Logs couldn’t be created (very unlikely)
-				_ = os.MkdirAll(home, 0755)
-				flag.Set("log_dir", home)
-			}
+		logDir = defaultLogDir(home)
+		if err := os.MkdirAll(logDir, 0755); err == nil {
+			flag.Set("log_dir", logDir)
+		} else {
+			// Fallback to container root if Logs couldn’t be created (very unlikely)
+			_ = os.MkdirAll(home, 0755)
+			flag.Set("log_dir", home)
 		}
-		// For non-darwin OSes, glog will use os.TempDir() unless caller sets log_dir explicitly.
 	}
 
 	flag.Set("alsologtostderr", "true") // show in terminal too
@@ -81,8 +73,73 @@ func initGlog() {
 	var maxLogSize uint64 = 1024 * 1024 * 16
 	flag.Set("max_log_size", strconv.FormatUint(maxLogSize, 10))
 	flag.Set("v", "0")
-	// On mobile platforms, send diagnostics to stdout
 	os.Stderr = os.Stdout
+	glog.Infof("Glog initialized, home is %q logdir=%q cwd=%q", home, logDir)
+
+	// limit 4 log files
+	clearOldLogs(logDir)
+}
+
+func clearOldLogs(logDir string) {
+
+	// get all files that contain .log.INFO in the string
+	files, err := os.ReadDir(logDir)
+	if err != nil {
+		glog.Errorf("Failed to read log directory %q: %v", logDir, err)
+		return
+	}
+
+	logPaths := []string{}
+
+	for _, file := range files {
+		name := file.Name()
+		if !file.IsDir() && (bytes.Contains([]byte(name), []byte(".log.INFO")) || bytes.Contains([]byte(name), []byte(".log.WARNING")) || bytes.Contains([]byte(name), []byte(".log.ERROR")) || bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
+			fullPath := logDir + "/" + name
+			logPaths = append(logPaths, fullPath)
+		}
+	}
+
+	// order by modification time, oldest first
+	type fileInfo struct {
+		path    string
+		modTime int64
+	}
+
+	fileInfos := []fileInfo{}
+
+	for _, path := range logPaths {
+		info, err := os.Stat(path)
+		if err != nil {
+			glog.Errorf("Failed to stat log file %q: %v", path, err)
+			continue
+		}
+		fileInfos = append(fileInfos, fileInfo{path: path, modTime: info.ModTime().Unix()})
+	}
+
+	// sort by modTime
+	for i := 0; i < len(fileInfos)-1; i++ {
+		for j := i + 1; j < len(fileInfos); j++ {
+			if fileInfos[i].modTime > fileInfos[j].modTime {
+				fileInfos[i], fileInfos[j] = fileInfos[j], fileInfos[i]
+			}
+		}
+	}
+
+	glog.Infof("Found %d log files in %q", len(fileInfos), logDir)
+
+	// keep only the 4 most recent logs
+	if len(fileInfos) > 4 {
+		toDelete := fileInfos[:len(fileInfos)-4]
+		for _, fi := range toDelete {
+			err := os.Remove(fi.path)
+			if err != nil {
+				glog.Errorf("Failed to remove old log file %q: %v", fi.path, err)
+			} else {
+				glog.Infof("Removed old log file %q", fi.path)
+			}
+		}
+	}
+
 }
 
 func GetLogDir() string {
