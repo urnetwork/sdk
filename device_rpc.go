@@ -2516,6 +2516,33 @@ func (self *DeviceRemote) AddIngressContractDetailsChangeListener(listener Contr
 	return nil
 }
 
+func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
+	logsUploaded := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.UploadLogs", self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		logsUploaded = success
+	}()
+
+	if !logsUploaded {
+		return fmt.Errorf("Failed to upload logs")
+	}
+
+	return nil
+}
+
 // *important rpc note* gob encoding cannot encode fields that are not exported
 // so our usual gomobile types that have private fields cannot be properly sent via rpc
 // for rpc we redefine these gomobile types so that they can be gob encoded

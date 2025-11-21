@@ -1,8 +1,13 @@
 package sdk
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 
 	// "net/netip"
 	"sync"
@@ -1555,5 +1560,81 @@ func (self *DeviceLocal) AddIngressContratStatsChangeListener(listener ContractS
 
 func (self *DeviceLocal) AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
 	// FIXME
+	return nil
+}
+
+func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
+
+	logDir := GetLogDir()
+
+	files, err := os.ReadDir(logDir)
+
+	if err != nil {
+		glog.Errorf("Failed to read log directory %q: %v", logDir, err)
+		return err
+	}
+
+	logPaths := []string{}
+
+	for _, file := range files {
+		name := file.Name()
+		if !file.IsDir() &&
+			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
+				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
+				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
+				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
+			fullPath := logDir + "/" + name
+			logPaths = append(logPaths, fullPath)
+		}
+	}
+
+	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
+	zipPath := filepath.Join(logDir, zipName)
+
+	err = zipLogs(logPaths, zipPath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(zipPath)
+
+	zipFile, err := os.Open(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	self.GetApi().UploadLogs(feedbackId, zipFile, callback)
+
+	return nil
+}
+
+func zipLogs(
+	logFiles []string,
+	zipPath string,
+) error {
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	for _, file := range logFiles {
+		f, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		w, err := zipWriter.Create(filepath.Base(file))
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(w, f); err != nil {
+			return err
+		}
+	}
 	return nil
 }

@@ -338,6 +338,8 @@ type Device interface {
 
 	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
 	GetWindowStatus() *WindowStatus
+
+	UploadLogs(feedbackId string, callback UploadLogsCallback) error
 }
 
 // unexported to gomobile
