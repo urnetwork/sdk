@@ -2527,16 +2527,19 @@ func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallb
 				return false
 			}
 
-			err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.UploadLogs", self.closeService)
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.UploadLogs", feedbackId, self.closeService)
 			if err != nil {
+				glog.Infof("Failed to upload logs: %v", err)
 				return false
 			}
+			glog.Infof("Logs uploaded successfully")
 			return true
 		}()
 		logsUploaded = success
 	}()
 
 	if !logsUploaded {
+		glog.Infof("Failed to upload logs")
 		return fmt.Errorf("Failed to upload logs")
 	}
 
@@ -3766,6 +3769,17 @@ func (self *DeviceLocalRpc) GetCanShowRatingDialog(_ RpcNoArg, canShowRatingDial
 
 func (self *DeviceLocalRpc) SetCanShowRatingDialog(canShowRatingDialog bool, _ RpcVoid) error {
 	self.deviceLocal.SetCanShowRatingDialog(canShowRatingDialog)
+	return nil
+}
+
+func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
+	self.deviceLocal.UploadLogs(feedbackId, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
+		if err != nil {
+			glog.Infof("[dlrpc]UploadLogs err = %s", err)
+		} else {
+			glog.Infof("[dlrpc]UploadLogs success: %s")
+		}
+	}))
 	return nil
 }
 
