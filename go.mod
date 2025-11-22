@@ -19,7 +19,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/quic-go/quic-go v0.55.0 // indirect
-	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
@@ -31,3 +30,5 @@ require (
 )
 
 replace github.com/urnetwork/connect => ../connect
+
+replace github.com/golang/glog => ../glog
