@@ -1568,14 +1568,12 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 	logDir := GetLogDir()
 
 	files, err := os.ReadDir(logDir)
-
 	if err != nil {
 		glog.Errorf("Failed to read log directory %q: %v", logDir, err)
 		return err
 	}
 
 	logPaths := []string{}
-
 	for _, file := range files {
 		name := file.Name()
 		if !file.IsDir() &&
@@ -1591,19 +1589,33 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
 	zipPath := filepath.Join(logDir, zipName)
 
-	err = zipLogs(logPaths, zipPath)
-	if err != nil {
+	if err := zipLogs(logPaths, zipPath); err != nil {
 		return err
 	}
-	defer os.Remove(zipPath)
 
 	zipFile, err := os.Open(zipPath)
 	if err != nil {
 		return err
 	}
-	defer zipFile.Close()
 
-	self.GetApi().UploadLogs(feedbackId, zipFile, callback)
+	fileInfo, err := zipFile.Stat()
+	if err != nil {
+		zipFile.Close()
+		return err
+	}
+	fileSize := fileInfo.Size()
+	glog.Infof("Uploading log file %q (%d bytes)", zipPath, fileSize)
+
+	self.GetApi().uploadLogs(feedbackId, zipFile, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
+		// Ensure resources are cleaned up after upload completes (success or error)
+		zipFile.Close()
+		os.Remove(zipPath)
+
+		// Forward result to the original callback
+		if callback != nil {
+			callback.Result(res, err)
+		}
+	}))
 
 	return nil
 }
@@ -1621,20 +1633,37 @@ func zipLogs(
 	zipWriter := zip.NewWriter(zipFile)
 	defer zipWriter.Close()
 
-	for _, file := range logFiles {
-		f, err := os.Open(file)
+	for _, path := range logFiles {
+		f, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
 
-		w, err := zipWriter.Create(filepath.Base(file))
+		fi, err := f.Stat()
 		if err != nil {
+			f.Close()
 			return err
 		}
+
+		hdr, err := zip.FileInfoHeader(fi)
+		if err != nil {
+			f.Close()
+			return err
+		}
+		hdr.Name = filepath.Base(path)
+		hdr.Method = zip.Deflate
+
+		w, err := zipWriter.CreateHeader(hdr)
+		if err != nil {
+			f.Close()
+			return err
+		}
+
 		if _, err := io.Copy(w, f); err != nil {
+			f.Close()
 			return err
 		}
+		f.Close()
 	}
 	return nil
 }

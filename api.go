@@ -102,12 +102,8 @@ func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	// if self.httpPostRaw != nil {
-	// 	return self.httpPostRaw
-	// }
-
-	return func(ctx context.Context, requestUrl string, body io.Reader, contentType string, byJwt string, contentLength int64) ([]byte, error) {
-		return connect.HttpPostStreamWithStrategyRaw(ctx, self.clientStrategy, requestUrl, body, contentType, byJwt, contentLength)
+	return func(ctx context.Context, requestUrl string, body io.Reader, byJwt string) ([]byte, error) {
+		return connect.HttpPostStreamWithStrategyRaw(ctx, requestUrl, body, byJwt)
 	}
 }
 
@@ -1252,7 +1248,9 @@ type FeedbackSendNeeds struct {
 	Other string `json:"other"`
 }
 
-type FeedbackSendResult struct{}
+type FeedbackSendResult struct {
+	FeedbackId *Id `json:"feedback_id"`
+}
 
 type SendFeedbackCallback connect.ApiCallback[*FeedbackSendResult]
 
@@ -1924,7 +1922,6 @@ func (self *Api) StripeCreateCustomerPortal(args *StripeCreateCustomerPortalArgs
 /**
  * Upload logs
  */
-type UploadLogsArgs struct{}
 
 type UploadLogsError struct {
 	Message string `json:"message"`
@@ -1936,16 +1933,18 @@ type UploadLogsResult struct {
 
 type UploadLogsCallback connect.ApiCallback[*UploadLogsResult]
 
-func (self *Api) UploadLogs(feedbackId string, body io.Reader, callback UploadLogsCallback) {
+func (self *Api) uploadLogs(
+	feedbackId string,
+	body io.Reader,
+	callback UploadLogsCallback,
+) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithStreamFunction(
 			self.ctx,
 			self.getHttpPostStreamRaw(),
 			fmt.Sprintf("%s/log/%s/upload", self.apiUrl, feedbackId),
 			body,
-			"application/octet-stream",
 			self.GetByJwt(),
-			-1,
 			&UploadLogsResult{},
 			callback,
 		)
