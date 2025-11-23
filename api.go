@@ -502,6 +502,8 @@ type LocationResult struct {
 	CountryLocationId *Id    `json:"country_location_id,omitempty"`
 	ProviderCount     int    `json:"provider_count,omitempty"`
 	MatchDistance     int    `json:"match_distance,omitempty"`
+	Stable            bool   `json:"stable"`
+	StrongPrivacy     bool   `json:"strong_privacy"`
 }
 
 type LocationGroupResult struct {
