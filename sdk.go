@@ -432,6 +432,9 @@ type ConnectLocation struct {
 	CityLocationId    *Id `json:"city_location_id,omitempty"`
 	RegionLocationId  *Id `json:"region_location_id,omitempty"`
 	CountryLocationId *Id `json:"country_location_id,omitempty"`
+
+	Stable        bool `json:"stable"`
+	StrongPrivacy bool `json:"strong_privacy"`
 }
 
 func (self *ConnectLocation) IsGroup() bool {
