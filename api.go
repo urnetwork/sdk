@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/urnetwork/connect"
@@ -94,6 +95,15 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 
 	return func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
 		return connect.HttpGetWithStrategyRaw(ctx, self.clientStrategy, requestUrl, byJwt)
+	}
+}
+
+func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	return func(ctx context.Context, requestUrl string, body io.Reader, byJwt string) ([]byte, error) {
+		return connect.HttpPostStreamWithStrategyRaw(ctx, requestUrl, body, byJwt)
 	}
 }
 
@@ -1240,7 +1250,9 @@ type FeedbackSendNeeds struct {
 	Other string `json:"other"`
 }
 
-type FeedbackSendResult struct{}
+type FeedbackSendResult struct {
+	FeedbackId *Id `json:"feedback_id"`
+}
 
 type SendFeedbackCallback connect.ApiCallback[*FeedbackSendResult]
 
@@ -1904,6 +1916,38 @@ func (self *Api) StripeCreateCustomerPortal(args *StripeCreateCustomerPortalArgs
 			args,
 			self.GetByJwt(),
 			&StripeCreateCustomerPortalResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Upload logs
+ */
+
+type UploadLogsError struct {
+	Message string `json:"message"`
+}
+
+type UploadLogsResult struct {
+	Error *UploadLogsError `json:"error,omitempty"`
+}
+
+type UploadLogsCallback connect.ApiCallback[*UploadLogsResult]
+
+func (self *Api) uploadLogs(
+	feedbackId string,
+	body io.Reader,
+	callback UploadLogsCallback,
+) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithStreamFunction(
+			self.ctx,
+			self.getHttpPostStreamRaw(),
+			fmt.Sprintf("%s/log/%s/upload", self.apiUrl, feedbackId),
+			body,
+			self.GetByJwt(),
+			&UploadLogsResult{},
 			callback,
 		)
 	})
