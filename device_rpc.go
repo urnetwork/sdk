@@ -2527,7 +2527,15 @@ func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallb
 				return false
 			}
 
-			err := rpcCallVoid(self.service, "DeviceLocalRpc.UploadLogs", feedbackId, self.closeService)
+			// syncResponse, err := rpcCall[*DeviceRemoteSyncResponse](service, "DeviceLocalRpc.Sync", syncRequest, self.closeService)
+			// if err != nil {
+			// 	return
+			// }
+
+			syncResponse, err := rpcCall[error](self.service, "DeviceLocalRpc.UploadLogs", feedbackId, self.closeService)
+
+			glog.Infof("UploadLogs response: %v", syncResponse)
+
 			if err != nil {
 				glog.Infof("Failed to upload logs: %v", err)
 				return false
@@ -3772,16 +3780,39 @@ func (self *DeviceLocalRpc) SetCanShowRatingDialog(canShowRatingDialog bool, _ R
 	return nil
 }
 
-func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
-	self.deviceLocal.UploadLogs(feedbackId, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
-		if err != nil {
-			glog.Infof("[dlrpc]UploadLogs err = %s", err)
-		} else {
-			glog.Infof("[dlrpc]UploadLogs success: %s")
-		}
-	}))
+//	func (self *DeviceLocalRpc) UploadLogs(feedbackId string, uploadError *error) error {
+//		// uploadError = self.deviceLocal.UploadLogs(feedbackId, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
+//		// 	if err != nil {
+//		// 		glog.Infof("[dlrpc]UploadLogs err = %s", err)
+//		// 	} else {
+//		// 		glog.Infof("[dlrpc]UploadLogs success: %s")
+//		// 	}
+//		// }))
+//		//
+//		*uploadError = self.deviceLocal.UploadLogs(feedbackId, nil)
+//		return nil
+//	}
+func (self *DeviceLocalRpc) UploadLogs(feedbackId string, uploadError *error) error {
+	var immediateErr error
+	immediateErr = self.deviceLocal.UploadLogs(feedbackId, connect.NewApiCallback[*UploadLogsResult](
+		func(res *UploadLogsResult, err error) {
+			if err != nil {
+				glog.Errorf("[dlrpc]UploadLogs async error: %v", err)
+			} else if res != nil && res.Error != nil {
+				glog.Errorf("[dlrpc]UploadLogs server error: %s", res.Error.Message)
+			} else {
+				glog.Infof("[dlrpc]UploadLogs success (feedbackId=%s)", feedbackId)
+			}
+		},
+	))
+	*uploadError = immediateErr
 	return nil
 }
+
+// func (self *DeviceLocalRpc) EgressSecurityPolicyStats(reset bool, stats *connect.SecurityPolicyStats) error {
+// 	*stats = self.egressSecurityPolicy.Stats(reset)
+// 	return nil
+// }
 
 /**
  * Intro Funnel Prompt

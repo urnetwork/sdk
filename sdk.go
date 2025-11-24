@@ -153,6 +153,13 @@ func FlushGlog() {
 	glog.Flush()
 }
 
+func SetLogDir(logDir string) error {
+	glog.Infof("Setting log dir to %q", logDir)
+	err := glog.SetLogDir(logDir)
+	flag.Set("log_dir", logDir)
+	return err
+}
+
 func SetMemoryLimit(limit int64) {
 	connect.ResizeMessagePools(limit / 8)
 	debug.SetMemoryLimit(limit)

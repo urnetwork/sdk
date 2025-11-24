@@ -1563,7 +1563,7 @@ func (self *DeviceLocal) AddIngressContractDetailsChangeListener(listener Contra
 	return nil
 }
 
-func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
+func (self *DeviceLocal) UploadLogsZ(feedbackId string, callback UploadLogsCallback) error {
 
 	logDir := GetLogDir()
 
@@ -1619,6 +1619,49 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 
 	return nil
 }
+
+/**
+ * for testing
+ */
+func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
+	logDir := GetLogDir()
+
+	// Name must contain one of the substrings (.log.INFO / .log.WARNING / .log.ERROR / .log.FATAL)
+	// if you later want to reuse existing UploadLogs filtering logic; here we bypass that anyway.
+	tmpFile, err := os.CreateTemp(logDir, "manualtest-*.log.INFO")
+	if err != nil {
+		return err
+	}
+
+	// We will remove it in the async callback after upload finishes.
+	testBytes := []byte("Test upload generated at " + time.Now().Format(time.RFC3339) + "\nLine 2\n")
+	if _, err := tmpFile.Write(testBytes); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return err
+	}
+
+	// Rewind for reading.
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return err
+	}
+
+	// Start upload
+	self.GetApi().uploadLogs(feedbackId, tmpFile, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		if callback != nil {
+			callback.Result(res, err)
+		}
+	}))
+	return nil
+}
+
+/**
+ * end for testing
+ */
 
 func zipLogs(
 	logFiles []string,
