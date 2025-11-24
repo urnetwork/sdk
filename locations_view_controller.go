@@ -240,6 +240,8 @@ func GetFilteredLocationsFromResult(result *FindLocationsResult, filter string) 
 			CountryLocationId: locationResult.CountryLocationId,
 			ProviderCount:     int32(locationResult.ProviderCount),
 			MatchDistance:     int32(locationResult.MatchDistance),
+			Stable:            locationResult.Stable,
+			StrongPrivacy:     locationResult.StrongPrivacy,
 		}
 
 		if location.MatchDistance == 0 && filter != "" {
