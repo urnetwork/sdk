@@ -154,7 +154,6 @@ func FlushGlog() {
 }
 
 func SetLogDir(logDir string) error {
-	glog.Infof("Setting log dir to %q", logDir)
 	err := glog.SetLogDir(logDir)
 	flag.Set("log_dir", logDir)
 	return err

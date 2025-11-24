@@ -3778,11 +3778,6 @@ func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
 	return nil
 }
 
-// func (self *DeviceLocalRpc) EgressSecurityPolicyStats(reset bool, stats *connect.SecurityPolicyStats) error {
-// 	*stats = self.egressSecurityPolicy.Stats(reset)
-// 	return nil
-// }
-
 /**
  * Intro Funnel Prompt
  */
