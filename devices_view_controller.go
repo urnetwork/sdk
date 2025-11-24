@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/golang/glog"
+	"github.com/urnetwork/glog"
 
 	"github.com/urnetwork/connect"
 )

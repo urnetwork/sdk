@@ -3,10 +3,8 @@ package sdk
 import (
 	"context"
 	"sync"
-
-	// "github.com/golang/glog"
+	// "github.com/urnetwork/glog"
 )
-
 
 type ViewController interface {
 	Close()
@@ -14,39 +12,37 @@ type ViewController interface {
 	Stop()
 }
 
-
 type ViewControllerManager interface {
-
 	OpenLocationsViewController() *LocationsViewController
 
 	OpenConnectViewController() *ConnectViewController
 
-	OpenWalletViewController() *WalletViewController 
+	OpenWalletViewController() *WalletViewController
 
 	OpenProvideViewController() *ProvideViewController
 
-	OpenDevicesViewController() *DevicesViewController 
+	OpenDevicesViewController() *DevicesViewController
 
-	OpenAccountViewController() *AccountViewController 
+	OpenAccountViewController() *AccountViewController
 
-	OpenFeedbackViewController() *FeedbackViewController 
+	OpenFeedbackViewController() *FeedbackViewController
 
-	OpenNetworkUserViewController() *NetworkUserViewController 
+	OpenNetworkUserViewController() *NetworkUserViewController
 
-	OpenAccountPreferencesViewController() *AccountPreferencesViewController 
+	OpenAccountPreferencesViewController() *AccountPreferencesViewController
 
-	OpenReferralCodeViewController() *ReferralCodeViewController 
+	OpenReferralCodeViewController() *ReferralCodeViewController
 
-	CloseViewController(vc ViewController) 
+	CloseViewController(vc ViewController)
 
 	Close()
 }
 
-
 // compile check that viewControllerManager conforms to ViewControllerManager
 var _ ViewControllerManager = (*viewControllerManager)(nil)
+
 type viewControllerManager struct {
-	ctx context.Context
+	ctx    context.Context
 	cancel context.CancelFunc
 	device Device
 
@@ -59,10 +55,10 @@ func newViewControllerManager(ctx context.Context, device Device) *viewControlle
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	return &viewControllerManager{
-		ctx: cancelCtx,
-		cancel: cancel,
-		device: device,
-		openedViewControllers:             map[ViewController]bool{},
+		ctx:                   cancelCtx,
+		cancel:                cancel,
+		device:                device,
+		openedViewControllers: map[ViewController]bool{},
 	}
 }
 
@@ -143,7 +139,6 @@ func (self *viewControllerManager) CloseViewController(vc ViewController) {
 	self.closeViewController(vc)
 }
 
-
 func (self *viewControllerManager) Close() {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -155,4 +150,3 @@ func (self *viewControllerManager) Close() {
 	}
 	clear(self.openedViewControllers)
 }
-

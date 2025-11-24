@@ -13,7 +13,7 @@ replace github.com/urnetwork/sdk => ..
 
 replace github.com/urnetwork/connect => ../../connect
 
-replace github.com/golang/glog => ../../glog
+replace github.com/urnetwork/glog => ../../glog
 
 require (
 	github.com/BurntSushi/toml v1.1.0 // indirect

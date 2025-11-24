@@ -8,7 +8,7 @@ import (
 	// "net"
 	"sync"
 
-	"github.com/golang/glog"
+	"github.com/urnetwork/glog"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"

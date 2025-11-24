@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-playground/assert/v2"
 
-	"github.com/golang/glog"
+	"github.com/urnetwork/glog"
 
 	"github.com/urnetwork/connect"
 )

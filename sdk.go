@@ -21,7 +21,7 @@ import (
 	// "net/http"
 	// _ "net/http/pprof"
 
-	"github.com/golang/glog"
+	"github.com/urnetwork/glog"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/urnetwork/connect"
