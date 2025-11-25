@@ -8,13 +8,14 @@ require (
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
-	github.com/urnetwork/glog v0.0.0
 	github.com/urnetwork/connect v0.0.0
+	github.com/urnetwork/glog v0.0.0
 	golang.org/x/crypto v0.43.0
 	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b
 )
 
 require (
+	github.com/golang/glog v1.2.5 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
@@ -31,4 +32,5 @@ require (
 
 replace github.com/urnetwork/connect => ../connect
 
-replace github.com/urnetwork/glog => ../glog
+//replace github.com/urnetwork/glog => ../glog
+replace github.com/golang/glog => github.com/urnetwork/glog v0.0.0
