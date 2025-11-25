@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"strconv"
 
 	// "hash/fnv"
 	"encoding/json"
@@ -54,30 +53,12 @@ func init() {
 }
 
 func initGlog() {
-	home, _ := os.UserHomeDir()
-	logDir := ""
-
-	if f := flag.Lookup("log_dir"); f == nil || f.Value.String() == "" {
-		logDir = defaultLogDir(home)
-		if err := os.MkdirAll(logDir, 0755); err == nil {
-			flag.Set("log_dir", logDir)
-		} else {
-			// fallback to home dir
-			_ = os.MkdirAll(home, 0755)
-			flag.Set("log_dir", home)
-		}
-	}
-
-	flag.Set("alsologtostderr", "true") // show in terminal too
+	// flag.Set("logtostderr", "true")
+	flag.Set("alsologtostderr", "true")
 	flag.Set("stderrthreshold", "INFO")
-	var maxLogSize uint64 = 1024 * 1024 * 16
-	flag.Set("max_log_size", strconv.FormatUint(maxLogSize, 10))
 	flag.Set("v", "0")
+	// unlike unix, the android/ios standard is for diagnostics to go to stdout
 	os.Stderr = os.Stdout
-	glog.Infof("Glog initialized, home is %q logdir=%q cwd=%q", home, logDir)
-
-	// limit 4 log files
-	clearOldLogs(logDir)
 }
 
 func clearOldLogs(logDir string) {
@@ -154,8 +135,15 @@ func FlushGlog() {
 }
 
 func SetLogDir(logDir string) error {
+
+	glog.SetMaxLogSize(1024 * 1024 * 16)
 	err := glog.SetLogDir(logDir)
-	flag.Set("log_dir", logDir)
+	if err != nil {
+		glog.Infof("SetLogDir to %q failed: %v", logDir, err)
+	}
+	glog.Infof("New glog initialized")
+	clearOldLogs(logDir)
+
 	return err
 }
 
