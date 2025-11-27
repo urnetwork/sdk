@@ -13,7 +13,7 @@ import (
 
 	gojwt "github.com/golang-jwt/jwt/v5"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2025"
 )
 
 const AsyncQueueSize = 32
