@@ -40,6 +40,10 @@ github.com/quic-go/quic-go v0.57.0 h1:AsSSrrMs4qI/hLrKlTH/TGQeTMY0ib1pAOX7vA3Adq
 github.com/quic-go/quic-go v0.57.0/go.mod h1:ly4QBAjHA2VhdnxhojRsCUOeJwKYg+taDlos92xb1+s=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/urnetwork/connect/v2025 v2025.11.30-797631720 h1:clrAoNXNBxpeeEx3KVkSVfygiW2Pr2Y4EAnvvir+wgY=
+github.com/urnetwork/connect/v2025 v2025.11.30-797631720/go.mod h1:qivg99SEulVB75M3MpZNRC9j5OMepNBNnnnWlu+9onw=
+github.com/urnetwork/glog/v2025 v2025.11.30-797631720 h1:+Pjk9e37wrNGjba2jv1beAN1Ba87BulDcdqksSeggyc=
+github.com/urnetwork/glog/v2025 v2025.11.30-797631720/go.mod h1:qHL8srvn3YSdHjnWYEkDuIPjrvT2//xS0xkhEP3/328=
 go.uber.org/mock v0.6.0 h1:hyF9dfmbgIX5EfOdasqLsWD6xqpNZlXblLB/Dbnwv3Y=
 go.uber.org/mock v0.6.0/go.mod h1:KiVJ4BqZJaMj4svdfmHM0AUx4NJYO8ZNpPnZn1Z+BBU=
 golang.org/x/crypto v0.0.0-20170930174604-9419663f5a44/go.mod h1:6SG95UA2DQfeDnfUPMdvaQW0Q7yPrPDi9nlGo2tz2b4=
