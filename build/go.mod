@@ -5,18 +5,9 @@ go 1.24.4
 toolchain go1.24.5
 
 require (
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/glog v0.0.0
-	github.com/urnetwork/sdk v0.0.0
-)
-
-replace github.com/urnetwork/sdk => ..
-
-replace github.com/urnetwork/connect => ../../connect
-
-replace github.com/urnetwork/glog => ../../glog
-
-require (
+	github.com/urnetwork/connect/v2025 v2025.12.9-805011090
+	github.com/urnetwork/glog/v2025 v2025.12.9-805011090
+	github.com/urnetwork/sdk/v2025 v2025.12.9-805011090
 	golang.org/x/mobile v0.0.0-20251126181937-5c265dc024c4 // indirect
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
