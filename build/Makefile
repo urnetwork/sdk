@@ -91,12 +91,12 @@ build_js:
 	export GOEXPERIMENT=greenteagc; \
 	BUILD_DIR=js.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
-	mkdir -p "$$BUILD_DIR/wasm"; \
-	GOOS=js GOARCH=wasm go build -o "$$BUILD_DIR/wasm/sdk.wasm"; \
-	cp /usr/local/go/lib/wasm/wasm_exec.js "$$BUILD_DIR/wasm"; \
-	cp index.js "$$BUILD_DIR/wasm"; \
-	cp index.html "$$BUILD_DIR/wasm"; \
-	(cd "$$BUILD_DIR" && zip -r URnetworkSdkJs.zip wasm); \
+	mkdir -p "$$BUILD_DIR/URnetworkSdkJs"; \
+	GOOS=js GOARCH=wasm go build -o "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm"; \
+	cp /usr/local/go/lib/wasm/wasm_exec.js "$$BUILD_DIR/URnetworkSdkJs"; \
+	cp index.js "$$BUILD_DIR/URnetworkSdkJs"; \
+	cp index.html "$$BUILD_DIR/URnetworkSdkJs"; \
+	(cd "$$BUILD_DIR" && zip -r URnetworkSdkJs.zip URnetworkSdkJs); \
 	if [ -e "js" ]; then mv js js.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" js;
 
