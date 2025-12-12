@@ -147,6 +147,7 @@ type DeviceRemote struct {
 	tunnelChangeListeners             map[connect.Id]TunnelChangeListener
 	contractStatusChangeListeners     map[connect.Id]ContractStatusChangeListener
 	windowStatusChangeListeners       map[connect.Id]WindowStatusChangeListener
+	jwtRefreshListeners               map[connect.Id]JwtRefreshListener
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
 
@@ -222,6 +223,7 @@ func newDeviceRemoteWithOverrides(
 		tunnelChangeListeners:             map[connect.Id]TunnelChangeListener{},
 		contractStatusChangeListeners:     map[connect.Id]ContractStatusChangeListener{},
 		windowStatusChangeListeners:       map[connect.Id]WindowStatusChangeListener{},
+		jwtRefreshListeners:               map[connect.Id]JwtRefreshListener{},
 		httpResponseChannels:              map[connect.Id]chan *DeviceRemoteHttpResponse{},
 	}
 
@@ -1130,6 +1132,24 @@ func (self *DeviceRemote) AddWindowStatusChangeListener(listener WindowStatusCha
 		"DeviceLocalRpc.RemoveWindowStatusChangeListener",
 	)
 }
+
+func (self *DeviceRemote) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.jwtRefreshListeners,
+		"DeviceLocalRpc.AddJwtRefreshListener",
+		"DeviceLocalRpc.RemoveJwtRefreshListener",
+	)
+}
+
+// func (self *DeviceRemote) jwtRefreshed() {
+// 	for _, listener := range self.jwtRefreshListeners.Get() {
+// 		connect.HandleError(func() {
+// 			listener.JwtRefreshed()
+// 		})
+// 	}
+// }
 
 func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
 	self.stateLock.Lock()
@@ -2194,6 +2214,18 @@ func (self *DeviceRemote) contractStatusChanged(contractStatus *ContractStatus) 
 	}
 }
 
+func (self *DeviceRemote) jwtRefreshed() {
+	listenerList := func() []JwtRefreshListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		// self.lastKnownState.ContractStatus.Set(contractStatus)
+		return listenerList(self.jwtRefreshListeners)
+	}()
+	for _, jwtRefreshListener := range listenerList {
+		jwtRefreshListener.JwtRefreshed()
+	}
+}
+
 func (self *DeviceRemote) windowStatusChanged(windowStatus *WindowStatus) {
 	listenerList := func() []WindowStatusChangeListener {
 		self.stateLock.Lock()
@@ -3228,6 +3260,7 @@ type DeviceLocalRpc struct {
 	tunnelChangeListenerIds             map[connect.Id]bool
 	contractStatusChangeListenerIds     map[connect.Id]bool
 	windowStatusChangeListenerIds       map[connect.Id]bool
+	jwtRefreshListenerIds               map[connect.Id]bool
 
 	// window id -> listener id
 	windowMonitorEventListenerIds map[connect.Id]map[connect.Id]bool
@@ -3248,6 +3281,7 @@ type DeviceLocalRpc struct {
 	tunnelChangeListenerSub             Sub
 	contractStatusChangeListenerSub     Sub
 	windowStatusChangeListenerSub       Sub
+	jwtRefreshListenerSub               Sub
 
 	service *rpcClient
 }
@@ -3685,13 +3719,6 @@ func (self *DeviceLocalRpc) addWindowStatusChangeListener(listenerId connect.Id)
 	}
 }
 
-func (self *DeviceLocalRpc) RemoveWindowStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.removeWindowStatusChangeListener(listenerId)
-	return nil
-}
-
 // must be called with stateLock
 func (self *DeviceLocalRpc) removeWindowStatusChangeListener(listenerId connect.Id) {
 	delete(self.windowStatusChangeListenerIds, listenerId)
@@ -3700,6 +3727,73 @@ func (self *DeviceLocalRpc) removeWindowStatusChangeListener(listenerId connect.
 		self.windowStatusChangeListenerSub = nil
 	}
 }
+
+func (self *DeviceLocalRpc) RemoveWindowStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeWindowStatusChangeListener(listenerId)
+	return nil
+}
+
+/**
+ * jwt refresh listener
+ */
+
+func (self *DeviceLocalRpc) AddJwtRefreshListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addJwtRefreshListener(listenerId)
+	return nil
+}
+
+func (self *DeviceLocalRpc) JwtRefreshed() {
+	// for _, listener := range self.jwtRefreshListeners.Get() {
+	// 	connect.HandleError(func() {
+	// 		listener.JwtRefreshed()
+	// 	})
+	// }
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.jwtRefreshed()
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) jwtRefreshed() {
+	if self.service != nil {
+		rpcCallVoid(self.service, "DeviceRemoteRpc.JwtRefreshed", nil, self.closeService)
+	}
+}
+
+// func (self *DeviceLocalRpc) WindowStatusChanged(windowStatus *WindowStatus) {
+// 	self.stateLock.Lock()
+// 	defer self.stateLock.Unlock()
+// 	self.windowStatusChanged(windowStatus)
+// }
+
+func (self *DeviceLocalRpc) addJwtRefreshListener(listenerId connect.Id) {
+	self.jwtRefreshListenerIds[listenerId] = true
+	if self.jwtRefreshListenerSub == nil {
+		self.jwtRefreshListenerSub = self.deviceLocal.AddJwtRefreshListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveJwtRefreshListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeJwtRefreshListener(listenerId)
+	return nil
+}
+
+func (self *DeviceLocalRpc) removeJwtRefreshListener(listenerId connect.Id) {
+	delete(self.jwtRefreshListenerIds, listenerId)
+	if len(self.jwtRefreshListenerIds) == 0 && self.jwtRefreshListenerSub != nil {
+		self.jwtRefreshListenerSub.Close()
+		self.jwtRefreshListenerSub = nil
+	}
+}
+
+// "DeviceLocalRpc.AddJwtRefreshListener",
+// 		"DeviceLocalRpc.RemoveJwtRefreshListener",
 
 // TunnelChangeListener
 func (self *DeviceLocalRpc) TunnelChanged(tunnelStarted bool) {
@@ -4622,6 +4716,14 @@ func (self *DeviceRemoteRpc) ContractStatusChanged(status *DeviceRemoteContractS
 func (self *DeviceRemoteRpc) WindowStatusChanged(status *DeviceRemoteWindowStatus, _ RpcVoid) error {
 	glog.Infof("[drrpc]WindowStatusChanged")
 	go self.deviceRemote.windowStatusChanged(status.WindowStatus)
+	return nil
+}
+
+// func (self *DeviceRemoteRpc) JwtRefreshed(status *DeviceRemoteWindowStatus, _ RpcVoid) error {
+func (self *DeviceRemoteRpc) JwtRefreshed(_ RpcVoid) error {
+	glog.Infof("[drrpc]WindowStatusChanged")
+	// go self.deviceRemote.windowStatusChanged(status.WindowStatus)
+	go self.deviceRemote.jwtRefreshed()
 	return nil
 }
 
