@@ -2,6 +2,7 @@
 build/apple*
 build/ios*
 build/android*
+build/js*
 **/.DS_Store
 **/test.out
 

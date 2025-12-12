@@ -1,10 +1,11 @@
 
-all: init clean build_android build_apple
+all: init clean build_js build_android build_apple
 
 clean:
 	rm -rf android*
 	rm -rf apple*
 	rm -rf ios*
+	rm -rf js*
 
 # to reduce binary file size:
 # -s omit symbol table and debug info
@@ -83,6 +84,21 @@ build_apple:
 	cp -r "$$BUILD_DIR" ios; \
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" apple;
+
+build_js:
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	export GODEBUG=gotypesalias=0; \
+	export GOEXPERIMENT=greenteagc; \
+	BUILD_DIR=js.`date +%s`; \
+	mkdir -p "$$BUILD_DIR"; \
+	mkdir -p "$$BUILD_DIR/wasm"; \
+	GOOS=js GOARCH=wasm go build -o "$$BUILD_DIR/wasm/sdk.wasm"; \
+	cp /usr/local/go/lib/wasm/wasm_exec.js "$$BUILD_DIR/wasm"; \
+	cp index.js "$$BUILD_DIR/wasm"; \
+	cp index.html "$$BUILD_DIR/wasm"; \
+	(cd "$$BUILD_DIR" && zip -r URnetworkSdkJs.zip wasm); \
+	if [ -e "js" ]; then mv js js.old.`date +%s`; fi; \
+	mv "$$BUILD_DIR" js;
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \

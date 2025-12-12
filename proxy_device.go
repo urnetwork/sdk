@@ -25,6 +25,12 @@ type SetupNewDeviceCallback interface {
 	SetupNewDevice(device Device, proxyConfigResult *ProxyConfigResult) bool
 }
 
+func DefaultProxyConfig() *ProxyConfig {
+	return &ProxyConfig{
+		EnableHttp: true,
+	}
+}
+
 func DefaultProxyDeviceSettings() *ProxyDeviceSettings {
 	return &ProxyDeviceSettings{
 		ApiUrl:      "api.bringyour.com",
@@ -97,6 +103,10 @@ func newProxyDevice(
 func (self *ProxyDevice) run() {
 
 	// FIXME
+
+	if self.setupNewDeviceCallback != nil {
+		self.setupNewDeviceCallback.SetupNewDevice(nil, nil)
+	}
 
 	/*
 
