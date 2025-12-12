@@ -1952,3 +1952,31 @@ func (self *Api) uploadLogs(
 		)
 	})
 }
+
+/**
+ * Refresh JWT token
+ */
+
+type RefreshJwtResultError struct {
+	Message string `json:"message"`
+}
+
+type RefreshJwtResult struct {
+	ByJwt string                 `json:"by_jwt,omitempty"`
+	Error *RefreshJwtResultError `json:"error,omitempty"`
+}
+
+type RefreshJwtCallback connect.ApiCallback[*RefreshJwtResult]
+
+func (self *Api) RefreshJwt(callback RefreshJwtCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/auth/refresh", self.apiUrl),
+			self.GetByJwt(),
+			&RefreshJwtResult{},
+			callback,
+		)
+	})
+}

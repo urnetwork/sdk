@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -148,6 +149,7 @@ type DeviceLocal struct {
 	tunnelChangeListeners             *connect.CallbackList[TunnelChangeListener]
 	contractStatusChangeListeners     *connect.CallbackList[ContractStatusChangeListener]
 	windowStatusChangeListeners       *connect.CallbackList[WindowStatusChangeListener]
+	jwtRefreshListeners               *connect.CallbackList[JwtRefreshListener]
 
 	localUserNatUnsub func()
 
@@ -310,6 +312,7 @@ func newDeviceLocalWithOverrides(
 		contractStatusChangeListeners:     connect.NewCallbackList[ContractStatusChangeListener](),
 		tunnelChangeListeners:             connect.NewCallbackList[TunnelChangeListener](),
 		windowStatusChangeListeners:       connect.NewCallbackList[WindowStatusChangeListener](),
+		jwtRefreshListeners:               connect.NewCallbackList[JwtRefreshListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
@@ -322,6 +325,8 @@ func newDeviceLocalWithOverrides(
 	} else {
 		newSecurityPolicyMonitor(ctx, deviceLocal)
 	}
+
+	deviceLocal.initRefreshJwtTimer(byJwt)
 
 	return deviceLocal, nil
 }
@@ -348,6 +353,129 @@ func newDeviceLocalWithOverrides(
 // 		debug.PrintStack()
 // 	}
 // }
+
+func (self *DeviceLocal) initRefreshJwtTimer(jwt string) {
+	token, _, err := gojwt.NewParser().ParseUnverified(jwt, gojwt.MapClaims{})
+	if err != nil {
+		glog.Errorf("Failed to parse JWT for refresh timer: %v", err)
+		return
+	}
+
+	if claims, ok := token.Claims.(gojwt.MapClaims); ok {
+
+		glog.Infof("JWT claims: %+v", claims)
+
+		expRaw, ok := claims["exp"]
+		if !ok {
+			glog.Errorf("No exp claim found in JWT")
+		} else {
+			switch exp := expRaw.(type) {
+			case float64:
+				// expirationTime := time.Unix(int64(exp), 0)
+				// ... rest of your logic ...
+				glog.Infof("exp claim is float64: %v", exp)
+			case json.Number:
+				expInt, _ := exp.Int64()
+				// expirationTime := time.Unix(expInt, 0)
+				// ... rest of your logic ...
+				glog.Infof("exp claim is json.Number: %v", expInt)
+			default:
+				glog.Errorf("exp claim is of unexpected type: %T", expRaw)
+			}
+		}
+
+		if exp, ok := claims["exp"].(float64); ok {
+			glog.Infof("Setting up JWT refresh timer")
+			expirationTime := time.Unix(int64(exp), 0)
+			refreshTime := expirationTime.Add(-5 * time.Minute)
+			durationUntilRefresh := time.Until(refreshTime)
+			if durationUntilRefresh <= 0 {
+				glog.Infof("JWT is expiring soon, should refresh now")
+				self.refreshToken()
+				return
+			}
+			glog.Infof("Scheduling JWT refresh in %v", durationUntilRefresh)
+			time.AfterFunc(durationUntilRefresh, func() {
+				self.refreshToken()
+			})
+		} else {
+			glog.Errorf("Failed to parse JWT exp claim for refresh timer")
+		}
+	} else {
+		glog.Errorf("Failed to parse JWT claims for refresh timer")
+	}
+}
+
+func (self *DeviceLocal) refreshToken() {
+
+	glog.Infof("Refreshing JWT")
+
+	api := self.GetApi()
+
+	// callback := func(result *RefreshJwtResult, err error) {}
+
+	callback := RefreshJwtCallback(connect.NewApiCallback[*RefreshJwtResult](
+		func(result *RefreshJwtResult, err error) {
+
+			if err != nil {
+				glog.Errorf("Failed to refresh JWT: %v", err)
+				// try again in 1 minute
+
+				return
+			}
+
+			if result.Error != nil {
+				/**
+				 * not a API error, but a token refresh error
+				 * for example, client no longer exists
+				 */
+
+				glog.Errorf("Failed to refresh JWT: %v", result.Error.Message)
+
+				// logout user
+
+			}
+
+			if result.ByJwt == "" {
+				glog.Errorf("Failed to refresh JWT: empty JWT returned")
+
+				// logout?
+			}
+
+			glog.Infof("Successfully refreshed JWT")
+			self.stateLock.Lock()
+			api.SetByJwt(result.ByJwt)
+			self.byJwt = result.ByJwt
+
+			auth := &connect.ClientAuth{
+				ByJwt:      result.ByJwt,
+				InstanceId: self.instanceId,
+				AppVersion: Version,
+			}
+			platformTransport := connect.NewPlatformTransportWithDefaults(
+				self.client.Ctx(),
+				self.clientStrategy,
+				self.client.RouteManager(),
+				self.networkSpace.platformUrl,
+				auth,
+			)
+			self.platformTransport = platformTransport
+
+			// fire listeners
+			self.jwtRefreshed()
+
+			self.stateLock.Unlock()
+
+			self.initRefreshJwtTimer(result.ByJwt)
+
+		},
+	))
+
+	api.RefreshJwt(callback)
+
+	// todo
+	return
+}
 
 type contractStatusUpdate struct {
 	updateTime     time.Time
@@ -717,6 +845,21 @@ func (self *DeviceLocal) AddProvideChangeListener(listener ProvideChangeListener
 	return newSub(func() {
 		self.provideChangeListeners.Remove(callbackId)
 	})
+}
+
+func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
+	callbackId := self.jwtRefreshListeners.Add(listener)
+	return newSub(func() {
+		self.jwtRefreshListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) jwtRefreshed() {
+	for _, listener := range self.jwtRefreshListeners.Get() {
+		connect.HandleError(func() {
+			listener.JwtRefreshed()
+		})
+	}
 }
 
 func (self *DeviceLocal) AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub {
