@@ -125,6 +125,45 @@ func (self *ProxyDevice) run() {
 
 			// on read or write failure, retry
 
+
+
+
+			connect := func()(server.Id) {
+				ws, err := CONNECT()
+				if err != nil {
+					return err
+				}
+
+				// SEND GET RESIDENT ID MESSAGE
+				// WAIT FOR RESPONSE
+
+				residentId, err := ws.Read()
+				if err != nil {
+					return err
+				}
+				return residentId
+
+			}
+
+			ws, residentId, err := connect()
+			if EXPECTED != nil && residentId != EXPECTED {
+				// resident changed
+				if REMOTEDEVICE {
+					REMOTEDEVICE.Close()
+					REMOTEDEVICE = nil
+				}
+				EXPECTED = nil
+				cleint = nil
+				continue
+			}
+			if err != nil {
+				RETRYTIMEOUT
+				continue
+			}
+
+
+			EXPECTED = &residentId
+
 			if client == nil {
 				CREATECLIENT()
 				CREATEAPI()
@@ -133,35 +172,6 @@ func (self *ProxyDevice) run() {
 				if !setupNewDeviceCallback(remoteDevice, proxyConfigResult) {
 					return
 				}
-			}
-
-
-			connect := func() {
-				ws, err := CONNECT()
-				if err != nil {
-					return err
-				}
-
-				config, err := ws.Read()
-				if err != nil {
-					return err
-				}
-				if config != EXPECTED {
-					return configGoneError
-				}
-			}
-
-			ws, configGone, err := connect()
-			if configGone {
-				if REMOTEDEVICE {
-					REMOTEDEVICE.Close()
-					REMOTEDEVICE = nil
-				}
-				continue
-			}
-			if err != nil {
-				RETRYTIMEOUT
-				continue
 			}
 
 			handleConnection := func() {
