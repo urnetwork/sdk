@@ -88,7 +88,7 @@ type WindowStatusChangeListener interface {
 
 type JwtRefreshListener interface {
 	// JwtRefreshed(jwt *ByJwt)
-	JwtRefreshed()
+	JwtRefreshed(jwt string)
 }
 
 type IpProtocol = int
@@ -348,6 +348,8 @@ type Device interface {
 	GetWindowStatus() *WindowStatus
 
 	UploadLogs(feedbackId string, callback UploadLogsCallback) error
+
+	RefreshToken(attempt int) error
 }
 
 // unexported to gomobile

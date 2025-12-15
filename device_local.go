@@ -391,12 +391,12 @@ func (self *DeviceLocal) initRefreshJwtTimer(jwt string) {
 			durationUntilRefresh := time.Until(refreshTime)
 			if durationUntilRefresh <= 0 {
 				glog.Infof("JWT is expiring soon, should refresh now")
-				self.refreshToken()
+				self.RefreshToken(0)
 				return
 			}
 			glog.Infof("Scheduling JWT refresh in %v", durationUntilRefresh)
 			time.AfterFunc(durationUntilRefresh, func() {
-				self.refreshToken()
+				self.RefreshToken(0)
 			})
 		} else {
 			glog.Errorf("Failed to parse JWT exp claim for refresh timer")
@@ -406,20 +406,29 @@ func (self *DeviceLocal) initRefreshJwtTimer(jwt string) {
 	}
 }
 
-func (self *DeviceLocal) refreshToken() {
+func (self *DeviceLocal) RefreshToken(attempt int) error {
 
 	glog.Infof("Refreshing JWT")
 
 	api := self.GetApi()
 
-	// callback := func(result *RefreshJwtResult, err error) {}
-
 	callback := RefreshJwtCallback(connect.NewApiCallback[*RefreshJwtResult](
 		func(result *RefreshJwtResult, err error) {
 
 			if err != nil {
+				/*
+				 *  potentially API failed, try again
+				 */
+
 				glog.Errorf("Failed to refresh JWT: %v", err)
-				// try again in 1 minute
+
+				if attempt < 5 {
+					backoffDuration := time.Duration((attempt+1)*1) * time.Minute
+					glog.Infof("Scheduling JWT refresh retry in %v", backoffDuration)
+					time.AfterFunc(backoffDuration, func() {
+						self.RefreshToken(attempt + 1)
+					})
+				}
 
 				return
 			}
@@ -432,7 +441,7 @@ func (self *DeviceLocal) refreshToken() {
 
 				glog.Errorf("Failed to refresh JWT: %v", result.Error.Message)
 
-				// logout user
+				// logout user?
 
 			}
 
@@ -446,6 +455,9 @@ func (self *DeviceLocal) refreshToken() {
 			self.stateLock.Lock()
 			api.SetByJwt(result.ByJwt)
 			self.byJwt = result.ByJwt
+
+			self.networkSpace.asyncLocalState.localState.SetByClientJwt(result.ByJwt)
+			self.networkSpace.asyncLocalState.localState.SetByJwt(result.ByJwt)
 
 			auth := &connect.ClientAuth{
 				ByJwt:      result.ByJwt,
@@ -462,7 +474,7 @@ func (self *DeviceLocal) refreshToken() {
 			self.platformTransport = platformTransport
 
 			// fire listeners
-			self.jwtRefreshed()
+			self.jwtRefreshed(result.ByJwt)
 
 			self.stateLock.Unlock()
 
@@ -474,7 +486,7 @@ func (self *DeviceLocal) refreshToken() {
 	api.RefreshJwt(callback)
 
 	// todo
-	return
+	return nil
 }
 
 type contractStatusUpdate struct {
@@ -854,10 +866,10 @@ func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub 
 	})
 }
 
-func (self *DeviceLocal) jwtRefreshed() {
+func (self *DeviceLocal) jwtRefreshed(jwt string) {
 	for _, listener := range self.jwtRefreshListeners.Get() {
 		connect.HandleError(func() {
-			listener.JwtRefreshed()
+			listener.JwtRefreshed(jwt)
 		})
 	}
 }
