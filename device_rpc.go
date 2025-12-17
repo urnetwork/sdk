@@ -3763,17 +3763,11 @@ func (self *DeviceLocalRpc) AddJwtRefreshListener(listenerId connect.Id, _ RpcVo
 }
 
 func (self *DeviceLocalRpc) JwtRefreshed(jwt string) {
-	// for _, listener := range self.jwtRefreshListeners.Get() {
-	// 	connect.HandleError(func() {
-	// 		listener.JwtRefreshed()
-	// 	})
-	// }
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.jwtRefreshed(jwt)
 }
 
-// must be called with stateLock
 func (self *DeviceLocalRpc) jwtRefreshed(jwt string) {
 	if self.service != nil {
 		rpcCallVoid(self.service, "DeviceRemoteRpc.JwtRefreshed", jwt, self.closeService)

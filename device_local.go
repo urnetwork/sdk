@@ -153,6 +153,8 @@ type DeviceLocal struct {
 
 	localUserNatUnsub func()
 
+	jwtRefreshTimer *time.Timer
+
 	viewControllerManager
 }
 
@@ -395,7 +397,13 @@ func (self *DeviceLocal) initRefreshJwtTimer(jwt string) {
 				return
 			}
 			glog.Infof("Scheduling JWT refresh in %v", durationUntilRefresh)
-			time.AfterFunc(durationUntilRefresh, func() {
+
+			// if previous one exists, close it out
+			if self.jwtRefreshTimer != nil {
+				self.jwtRefreshTimer.Stop()
+			}
+
+			self.jwtRefreshTimer = time.AfterFunc(durationUntilRefresh, func() {
 				self.RefreshToken(0)
 			})
 		} else {
@@ -1505,6 +1513,10 @@ func (self *DeviceLocal) Close() {
 
 	if self.deviceLocalRpcManager != nil {
 		self.deviceLocalRpcManager.Close()
+	}
+
+	if self.jwtRefreshTimer != nil {
+		self.jwtRefreshTimer.Stop()
 	}
 
 	api := self.networkSpace.GetApi()
