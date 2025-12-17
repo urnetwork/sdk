@@ -6,7 +6,7 @@ import (
 	"context"
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2025"
 )
 
 // js conversion notes:
