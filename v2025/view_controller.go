@@ -3,7 +3,7 @@ package sdk
 import (
 	"context"
 	"sync"
-	// "github.com/urnetwork/glog"
+	// "github.com/urnetwork/glog/v2025"
 )
 
 type ViewController interface {
