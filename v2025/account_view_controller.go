@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2025"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2025"
 )
 
 const defaultAccountCheckTimeout = 5 * time.Second
