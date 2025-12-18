@@ -327,6 +327,7 @@ func (self *DeviceRemote) run() {
 					TunnelChangeListenerIds:          maps.Keys(self.tunnelChangeListeners),
 					ContractStatusChangeListenerIds:  maps.Keys(self.contractStatusChangeListeners),
 					WindowStatusChangeListenerIds:    maps.Keys(self.windowStatusChangeListeners),
+					JwtRefreshListenerIds:            maps.Keys(self.jwtRefreshListeners),
 					WindowMonitorEventListenerIds:    windowMonitorListenerIds,
 					State:                            self.state,
 				}
@@ -2826,6 +2827,7 @@ type DeviceRemoteSyncRequest struct {
 	TunnelChangeListenerIds          []connect.Id
 	ContractStatusChangeListenerIds  []connect.Id
 	WindowStatusChangeListenerIds    []connect.Id
+	JwtRefreshListenerIds            []connect.Id
 	WindowMonitorEventListenerIds    map[connect.Id][]connect.Id
 	State                            DeviceRemoteState
 }
@@ -3330,6 +3332,7 @@ func newDeviceLocalRpc(
 		tunnelChangeListenerIds:             map[connect.Id]bool{},
 		contractStatusChangeListenerIds:     map[connect.Id]bool{},
 		windowStatusChangeListenerIds:       map[connect.Id]bool{},
+		jwtRefreshListenerIds:               map[connect.Id]bool{},
 		localWindowIds:                      map[connect.Id]connect.Id{},
 	}
 
@@ -3398,6 +3401,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for windowStatusChangeListenerId, _ := range self.windowStatusChangeListenerIds {
 		self.removeWindowStatusChangeListener(windowStatusChangeListenerId)
+	}
+	for jwtRefreshListenerId, _ := range self.jwtRefreshListenerIds {
+		self.removeJwtRefreshListener(jwtRefreshListenerId)
 	}
 	for windowId, windowMonitorEventListenerIds := range self.windowMonitorEventListenerIds {
 		for windowMonitorEventListenerId, _ := range windowMonitorEventListenerIds {
@@ -3542,6 +3548,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, windowStatusChangeListenerId := range syncRequest.WindowStatusChangeListenerIds {
 		self.addWindowStatusChangeListener(windowStatusChangeListenerId)
 	}
+	for _, jwtRefreshListenerId := range syncRequest.JwtRefreshListenerIds {
+		self.addJwtRefreshListener(jwtRefreshListenerId)
+	}
 	for windowId, windowMonitorEventListenerIds := range syncRequest.WindowMonitorEventListenerIds {
 		for _, windowMonitorEventListenerId := range windowMonitorEventListenerIds {
 			windowListenerId := DeviceRemoteWindowListenerId{
@@ -3629,6 +3638,9 @@ func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ 
 	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
 		self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
+	}
+	if self.jwtRefreshListenerSub != nil {
+		self.jwtRefreshed(self.deviceLocal.byJwt)
 	}
 
 	return nil
