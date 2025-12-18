@@ -596,16 +596,25 @@ func (self *DeviceRemote) RefreshToken(attempt int) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	refreshError := func() error {
+	success := func() bool {
 		if self.service == nil {
-			return nil
+			return false
 		}
 
-		return rpcCallVoid(self.service, "DeviceLocalRpc.RefreshToken", attempt, self.closeService)
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.RefreshToken", attempt, self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
 	}()
+	state := &self.state
+	if success {
+		state = &self.lastKnownState
+	}
+	state.RefreshToken.Set(attempt)
 
-	return refreshError
-
+	// FIXME is the return value supposed to mean if the token was refreshed immediately? It might be conflating RPC errors with logical errors
+	return nil
 }
 
 func (self *DeviceRemote) GetContractStatus() *ContractStatus {
@@ -2752,6 +2761,8 @@ type DeviceRemoteState struct {
 
 	ContractStatus deviceRemoteValue[*ContractStatus]
 	WindowStatus   deviceRemoteValue[*WindowStatus]
+
+	RefreshToken deviceRemoteValue[int]
 }
 
 func (self *DeviceRemoteState) Unset() {
@@ -2783,6 +2794,8 @@ func (self *DeviceRemoteState) Unset() {
 	self.IngressSecurityPolicyStats.Unset()
 	self.ContractStatus.Unset()
 	self.WindowStatus.Unset()
+
+	self.RefreshToken.Unset()
 }
 
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
@@ -2813,6 +2826,8 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.IngressSecurityPolicyStats.Merge(update.IngressSecurityPolicyStats)
 	self.ContractStatus.Merge(update.ContractStatus)
 	self.WindowStatus.Merge(update.WindowStatus)
+
+	self.RefreshToken.Merge(update.RefreshToken)
 }
 
 //gomobile:noexport
@@ -3515,6 +3530,10 @@ func (self *DeviceLocalRpc) Sync(
 
 	if state.TunnelStarted.IsSet {
 		self.deviceLocal.SetTunnelStarted(state.TunnelStarted.Value)
+	}
+
+	if state.RefreshToken.IsSet {
+		self.deviceLocal.RefreshToken(state.RefreshToken.Value)
 	}
 
 	// add listeners
