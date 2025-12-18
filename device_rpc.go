@@ -4767,7 +4767,7 @@ func (self *DeviceRemoteRpc) WindowStatusChanged(status *DeviceRemoteWindowStatu
 
 // func (self *DeviceRemoteRpc) JwtRefreshed(status *DeviceRemoteWindowStatus, _ RpcVoid) error {
 func (self *DeviceRemoteRpc) JwtRefreshed(jwt string, _ RpcVoid) error {
-	glog.Infof("[drrpc]WindowStatusChanged")
+	glog.Infof("[drrpc]JwtRefreshed")
 	// go self.deviceRemote.windowStatusChanged(status.WindowStatus)
 	go self.deviceRemote.jwtRefreshed(jwt)
 	return nil
