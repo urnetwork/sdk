@@ -48,7 +48,9 @@ func (self *deviceTokenManager) initRefreshJwtTimer(
 		if exp, ok := claims["exp"].(float64); ok {
 			glog.Infof("Setting up JWT refresh timer")
 			expirationTime := time.Unix(int64(exp), 0)
-			refreshTime := expirationTime.Add(-5 * time.Minute)
+
+			// jwts currently last 30 days on the server, so start attempting to refresh 14 days before expiration
+			refreshTime := expirationTime.Add(-14 * 24 * time.Hour)
 			durationUntilRefresh := time.Until(refreshTime)
 			if durationUntilRefresh <= 0 {
 				glog.Infof("JWT is expiring soon, should refresh now")
@@ -77,6 +79,7 @@ func (self *deviceTokenManager) initRefreshJwtTimer(
 func (self *deviceTokenManager) RefreshToken(
 	attempt int,
 	onSuccess func(newToken string),
+	logout func(),
 ) (returnErr error) {
 
 	glog.Infof("Refreshing JWT")
@@ -115,13 +118,16 @@ func (self *deviceTokenManager) RefreshToken(
 				glog.Errorf("Failed to refresh JWT: %v", result.Error.Message)
 
 				// logout user?
-
+				logout()
+				return
 			}
 
 			if result.ByJwt == "" {
 				glog.Errorf("Failed to refresh JWT: empty JWT returned")
 
 				// logout?
+				logout()
+				return
 			}
 
 			glog.Infof("Successfully refreshed JWT")
