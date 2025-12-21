@@ -322,6 +322,7 @@ func newDeviceLocalWithOverrides(
 		byJwt, // adminJwt
 		deviceLocal.networkSpace.GetApi(),
 		deviceLocal.onTokenRefreshSuccess,
+		networkSpace.asyncLocalState.localState.Logout,
 	)
 
 	// set up with nil destination
@@ -338,7 +339,11 @@ func newDeviceLocalWithOverrides(
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
-	return self.tokenManager.RefreshToken(attempt, self.onTokenRefreshSuccess)
+	return self.tokenManager.RefreshToken(
+		attempt,
+		self.onTokenRefreshSuccess,
+		self.networkSpace.asyncLocalState.localState.Logout,
+	)
 }
 
 // func (self *DeviceLocal) lock() {

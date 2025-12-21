@@ -236,6 +236,7 @@ func newDeviceRemoteWithOverrides(
 		byJwt, // adminJwt
 		deviceRemote.networkSpace.GetApi(),
 		deviceRemote.onTokenRefreshSuccess,
+		networkSpace.asyncLocalState.localState.Logout,
 	)
 
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
@@ -512,7 +513,11 @@ func (self *DeviceRemote) onTokenRefreshSuccess(newJwt string) {
 
 func (self *DeviceRemote) RefreshToken(attempt int) error {
 	glog.Infof("DeviceRemote RefreshToken attempt %d", attempt)
-	return self.tokenManager.RefreshToken(attempt, self.onTokenRefreshSuccess)
+	return self.tokenManager.RefreshToken(
+		attempt,
+		self.onTokenRefreshSuccess,
+		self.networkSpace.asyncLocalState.localState.Logout,
+	)
 }
 
 func (self *DeviceRemote) GetRpcPublicKey() string {

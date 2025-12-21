@@ -20,6 +20,7 @@ func newDeviceTokenManager(
 	adminJwt string,
 	api *Api,
 	onTokenRefreshed func(newToken string),
+	logout func() error,
 ) *deviceTokenManager {
 	manager := &deviceTokenManager{
 		ClientJwt: clientJwt,
@@ -27,13 +28,14 @@ func newDeviceTokenManager(
 		api:       api,
 	}
 
-	manager.initRefreshJwtTimer(clientJwt, onTokenRefreshed)
+	manager.initRefreshJwtTimer(clientJwt, onTokenRefreshed, logout)
 	return manager
 }
 
 func (self *deviceTokenManager) initRefreshJwtTimer(
 	jwt string,
 	onSuccess func(newToken string),
+	logout func() error,
 ) {
 	token, _, err := gojwt.NewParser().ParseUnverified(jwt, gojwt.MapClaims{})
 	if err != nil {
@@ -54,7 +56,7 @@ func (self *deviceTokenManager) initRefreshJwtTimer(
 			durationUntilRefresh := time.Until(refreshTime)
 			if durationUntilRefresh <= 0 {
 				glog.Infof("JWT is expiring soon, should refresh now")
-				self.RefreshToken(0, onSuccess)
+				self.RefreshToken(0, onSuccess, logout)
 				return
 			}
 			glog.Infof("Scheduling JWT refresh in %v", durationUntilRefresh)
@@ -66,7 +68,7 @@ func (self *deviceTokenManager) initRefreshJwtTimer(
 
 			self.jwtRefreshTimer = time.AfterFunc(durationUntilRefresh, func() {
 				glog.Infof("JWT refresh timer triggered")
-				self.RefreshToken(0, onSuccess)
+				self.RefreshToken(0, onSuccess, logout)
 			})
 		} else {
 			glog.Errorf("Failed to parse JWT exp claim for refresh timer")
@@ -79,7 +81,7 @@ func (self *deviceTokenManager) initRefreshJwtTimer(
 func (self *deviceTokenManager) RefreshToken(
 	attempt int,
 	onSuccess func(newToken string),
-	logout func(),
+	logout func() error,
 ) (returnErr error) {
 
 	glog.Infof("Refreshing JWT")
@@ -100,7 +102,7 @@ func (self *deviceTokenManager) RefreshToken(
 					backoffDuration := time.Duration((attempt+1)*1) * time.Minute
 					glog.Infof("Scheduling JWT refresh retry in %v", backoffDuration)
 					time.AfterFunc(backoffDuration, func() {
-						self.RefreshToken(attempt+1, onSuccess)
+						self.RefreshToken(attempt+1, onSuccess, logout)
 					})
 				}
 
@@ -134,7 +136,7 @@ func (self *deviceTokenManager) RefreshToken(
 
 			onSuccess(result.ByJwt)
 
-			self.initRefreshJwtTimer(result.ByJwt, onSuccess)
+			self.initRefreshJwtTimer(result.ByJwt, onSuccess, logout)
 
 		},
 	))
