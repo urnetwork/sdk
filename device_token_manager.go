@@ -78,6 +78,11 @@ func (self *deviceTokenManager) initRefreshJwtTimer(
 	}
 }
 
+/**
+ * Polled periodically but can also be directly invoked on subscription
+ * todo - enforce expiration on server side
+ * do we need to call logout manually, or better to pass an empty token to onSuccess and logout from interface?
+ */
 func (self *deviceTokenManager) RefreshToken(
 	attempt int,
 	onSuccess func(newToken string),
@@ -120,7 +125,7 @@ func (self *deviceTokenManager) RefreshToken(
 				glog.Errorf("Failed to refresh JWT: %v", result.Error.Message)
 
 				// logout user?
-				logout()
+				// todo - logout()
 				return
 			}
 
@@ -128,7 +133,7 @@ func (self *deviceTokenManager) RefreshToken(
 				glog.Errorf("Failed to refresh JWT: empty JWT returned")
 
 				// logout?
-				logout()
+				// todo - logout()
 				return
 			}
 
