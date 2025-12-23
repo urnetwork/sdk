@@ -91,8 +91,6 @@ func (self *deviceTokenManager) RefreshToken(
 
 	glog.Infof("Refreshing JWT")
 
-	// api := self.GetApi()
-
 	callback := RefreshJwtCallback(connect.NewApiCallback[*RefreshJwtResult](
 		func(result *RefreshJwtResult, err error) {
 
