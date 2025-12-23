@@ -25,6 +25,7 @@ type ByJwt struct {
 	NetworkName string
 	NetworkId   *Id
 	GuestMode   bool
+	Pro         bool
 }
 
 type LocalState struct {
@@ -90,6 +91,10 @@ func (self *LocalState) ParseByJwt() (*ByJwt, error) {
 	}
 	if guestMode, ok := claims["guest_mode"]; ok {
 		byJwt.GuestMode = guestMode.(bool)
+	}
+
+	if isPro, ok := claims["pro"]; ok {
+		byJwt.Pro = isPro.(bool)
 	}
 
 	return byJwt, nil

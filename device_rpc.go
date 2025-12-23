@@ -116,6 +116,7 @@ type DeviceRemote struct {
 
 	networkSpace *NetworkSpace
 	byJwt        string
+	tokenManager *deviceTokenManager
 
 	settings *deviceRpcSettings
 
@@ -147,6 +148,7 @@ type DeviceRemote struct {
 	tunnelChangeListeners             map[connect.Id]TunnelChangeListener
 	contractStatusChangeListeners     map[connect.Id]ContractStatusChangeListener
 	windowStatusChangeListeners       map[connect.Id]WindowStatusChangeListener
+	jwtRefreshListeners               map[connect.Id]JwtRefreshListener
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
 
@@ -222,10 +224,20 @@ func newDeviceRemoteWithOverrides(
 		tunnelChangeListeners:             map[connect.Id]TunnelChangeListener{},
 		contractStatusChangeListeners:     map[connect.Id]ContractStatusChangeListener{},
 		windowStatusChangeListeners:       map[connect.Id]WindowStatusChangeListener{},
+		jwtRefreshListeners:               map[connect.Id]JwtRefreshListener{},
 		httpResponseChannels:              map[connect.Id]chan *DeviceRemoteHttpResponse{},
 	}
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
+
+	deviceRemote.tokenManager = newDeviceTokenManager(
+		// how should we differentiate clientJwt and adminJwt here?
+		byJwt, // clientJwt
+		byJwt, // adminJwt
+		deviceRemote.networkSpace.GetApi(),
+		deviceRemote.onTokenRefreshSuccess,
+		networkSpace.asyncLocalState.localState.Logout,
+	)
 
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
 	api.setHttpGetRaw(deviceRemote.httpGetRaw)
@@ -475,6 +487,36 @@ func (self *DeviceRemote) closeService() {
 		self.service.Close()
 		self.service = nil
 	}
+}
+
+func (self *DeviceRemote) onTokenRefreshSuccess(newJwt string) {
+
+	glog.Infof("DeviceLocal JWT refreshed")
+
+	self.stateLock.Lock()
+
+	self.GetApi().SetByJwt(newJwt)
+
+	self.byJwt = newJwt
+
+	self.networkSpace.asyncLocalState.localState.SetByClientJwt(newJwt)
+	self.networkSpace.asyncLocalState.localState.SetByJwt(newJwt)
+
+	self.stateLock.Unlock()
+
+	// fire listeners
+	self.jwtRefreshed(newJwt)
+
+	glog.Infof("DeviceRemote onTokenRefreshSuccess complete, should have fired listeners")
+}
+
+func (self *DeviceRemote) RefreshToken(attempt int) error {
+	glog.Infof("DeviceRemote RefreshToken attempt %d", attempt)
+	return self.tokenManager.RefreshToken(
+		attempt,
+		self.onTokenRefreshSuccess,
+		self.networkSpace.asyncLocalState.localState.Logout,
+	)
 }
 
 func (self *DeviceRemote) GetRpcPublicKey() string {
@@ -1131,6 +1173,16 @@ func (self *DeviceRemote) AddWindowStatusChangeListener(listener WindowStatusCha
 	)
 }
 
+func (self *DeviceRemote) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.jwtRefreshListeners,
+		"DeviceLocalRpc.AddJwtRefreshListener",
+		"DeviceLocalRpc.RemoveJwtRefreshListener",
+	)
+}
+
 func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1729,10 +1781,15 @@ func (self *DeviceRemote) Close() {
 	// 	self.service = nil
 	// }
 
+	if self.tokenManager != nil {
+		self.tokenManager.Close()
+	}
+
 	api := self.networkSpace.GetApi()
 	api.SetByJwt("")
 	api.setHttpPostRaw(nil)
 	api.setHttpGetRaw(nil)
+
 }
 
 func (self *DeviceRemote) GetDone() bool {
@@ -2191,6 +2248,18 @@ func (self *DeviceRemote) contractStatusChanged(contractStatus *ContractStatus) 
 	}()
 	for _, contractStatusChangeListener := range listenerList {
 		contractStatusChangeListener.ContractStatusChanged(contractStatus)
+	}
+}
+
+func (self *DeviceRemote) jwtRefreshed(jwt string) {
+	listenerList := func() []JwtRefreshListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		// self.lastKnownState.ContractStatus.Set(contractStatus)
+		return listenerList(self.jwtRefreshListeners)
+	}()
+	for _, jwtRefreshListener := range listenerList {
+		jwtRefreshListener.JwtRefreshed(jwt)
 	}
 }
 
@@ -2703,6 +2772,8 @@ type DeviceRemoteState struct {
 
 	ContractStatus deviceRemoteValue[*ContractStatus]
 	WindowStatus   deviceRemoteValue[*WindowStatus]
+
+	// RefreshToken deviceRemoteValue[int]
 }
 
 func (self *DeviceRemoteState) Unset() {
@@ -2734,6 +2805,8 @@ func (self *DeviceRemoteState) Unset() {
 	self.IngressSecurityPolicyStats.Unset()
 	self.ContractStatus.Unset()
 	self.WindowStatus.Unset()
+
+	// self.RefreshToken.Unset()
 }
 
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
@@ -2764,6 +2837,8 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.IngressSecurityPolicyStats.Merge(update.IngressSecurityPolicyStats)
 	self.ContractStatus.Merge(update.ContractStatus)
 	self.WindowStatus.Merge(update.WindowStatus)
+
+	// self.RefreshToken.Merge(update.RefreshToken)
 }
 
 //gomobile:noexport
@@ -3461,6 +3536,10 @@ func (self *DeviceLocalRpc) Sync(
 		self.deviceLocal.SetTunnelStarted(state.TunnelStarted.Value)
 	}
 
+	// if state.RefreshToken.IsSet {
+	// 	self.deviceLocal.RefreshToken(state.RefreshToken.Value)
+	// }
+
 	// add listeners
 	for _, provideChangeListenerId := range syncRequest.ProvideChangeListenerIds {
 		self.addProvideChangeListener(provideChangeListenerId)
@@ -3685,13 +3764,6 @@ func (self *DeviceLocalRpc) addWindowStatusChangeListener(listenerId connect.Id)
 	}
 }
 
-func (self *DeviceLocalRpc) RemoveWindowStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.removeWindowStatusChangeListener(listenerId)
-	return nil
-}
-
 // must be called with stateLock
 func (self *DeviceLocalRpc) removeWindowStatusChangeListener(listenerId connect.Id) {
 	delete(self.windowStatusChangeListenerIds, listenerId)
@@ -3699,6 +3771,13 @@ func (self *DeviceLocalRpc) removeWindowStatusChangeListener(listenerId connect.
 		self.windowStatusChangeListenerSub.Close()
 		self.windowStatusChangeListenerSub = nil
 	}
+}
+
+func (self *DeviceLocalRpc) RemoveWindowStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeWindowStatusChangeListener(listenerId)
+	return nil
 }
 
 // TunnelChangeListener
@@ -3753,6 +3832,13 @@ func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
 	*stats = self.deviceLocal.GetStats()
 	return nil
 }
+
+// func (self *DeviceLocalRpc) RefreshToken(attempt int) error {
+
+// 	glog.Infof("[dlrpc]RefreshToken attempt=%d", attempt)
+
+// 	return self.deviceLocal.RefreshToken(attempt)
+// }
 
 /**
  * Ratings Dialog

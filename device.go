@@ -86,6 +86,11 @@ type WindowStatusChangeListener interface {
 	WindowStatusChanged(windowStatus *WindowStatus)
 }
 
+type JwtRefreshListener interface {
+	// JwtRefreshed(jwt *ByJwt)
+	JwtRefreshed(jwt string)
+}
+
 type IpProtocol = int
 
 const (
@@ -337,9 +342,14 @@ type Device interface {
 	AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
 
 	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
+
+	AddJwtRefreshListener(listener JwtRefreshListener) Sub
+
 	GetWindowStatus() *WindowStatus
 
 	UploadLogs(feedbackId string, callback UploadLogsCallback) error
+
+	RefreshToken(attempt int) error
 }
 
 // unexported to gomobile

@@ -77,7 +77,8 @@ type DeviceLocal struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	byJwt string
+	byJwt        string
+	tokenManager *deviceTokenManager
 	// platformUrl string
 	// apiUrl      string
 
@@ -148,6 +149,7 @@ type DeviceLocal struct {
 	tunnelChangeListeners             *connect.CallbackList[TunnelChangeListener]
 	contractStatusChangeListeners     *connect.CallbackList[ContractStatusChangeListener]
 	windowStatusChangeListeners       *connect.CallbackList[WindowStatusChangeListener]
+	jwtRefreshListeners               *connect.CallbackList[JwtRefreshListener]
 
 	localUserNatUnsub func()
 
@@ -310,8 +312,18 @@ func newDeviceLocalWithOverrides(
 		contractStatusChangeListeners:     connect.NewCallbackList[ContractStatusChangeListener](),
 		tunnelChangeListeners:             connect.NewCallbackList[TunnelChangeListener](),
 		windowStatusChangeListeners:       connect.NewCallbackList[WindowStatusChangeListener](),
+		jwtRefreshListeners:               connect.NewCallbackList[JwtRefreshListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
+
+	deviceLocal.tokenManager = newDeviceTokenManager(
+		// how should we differentiate clientJwt and adminJwt here?
+		byJwt, // clientJwt
+		byJwt, // adminJwt
+		deviceLocal.networkSpace.GetApi(),
+		deviceLocal.onTokenRefreshSuccess,
+		networkSpace.asyncLocalState.localState.Logout,
+	)
 
 	// set up with nil destination
 	localUserNatUnsub := localUserNat.AddReceivePacketCallback(deviceLocal.receive)
@@ -324,6 +336,14 @@ func newDeviceLocalWithOverrides(
 	}
 
 	return deviceLocal, nil
+}
+
+func (self *DeviceLocal) RefreshToken(attempt int) error {
+	return self.tokenManager.RefreshToken(
+		attempt,
+		self.onTokenRefreshSuccess,
+		self.networkSpace.asyncLocalState.localState.Logout,
+	)
 }
 
 // func (self *DeviceLocal) lock() {
@@ -348,6 +368,41 @@ func newDeviceLocalWithOverrides(
 // 		debug.PrintStack()
 // 	}
 // }
+
+func (self *DeviceLocal) onTokenRefreshSuccess(newJwt string) {
+
+	glog.Infof("DeviceLocal JWT refreshed")
+
+	self.stateLock.Lock()
+
+	self.GetApi().SetByJwt(newJwt)
+
+	self.byJwt = newJwt
+
+	self.networkSpace.asyncLocalState.localState.SetByClientJwt(newJwt)
+	self.networkSpace.asyncLocalState.localState.SetByJwt(newJwt)
+
+	auth := &connect.ClientAuth{
+		ByJwt:      newJwt,
+		InstanceId: self.instanceId,
+		AppVersion: Version,
+	}
+	platformTransport := connect.NewPlatformTransportWithDefaults(
+		self.client.Ctx(),
+		self.clientStrategy,
+		self.client.RouteManager(),
+		self.networkSpace.platformUrl,
+		auth,
+	)
+	self.platformTransport = platformTransport
+
+	// fire listeners
+	self.jwtRefreshed(newJwt)
+
+	self.stateLock.Unlock()
+
+	glog.Infof("DeviceLocal onTokenRefreshSuccess complete, should have fired listeners")
+}
 
 type contractStatusUpdate struct {
 	updateTime     time.Time
@@ -717,6 +772,21 @@ func (self *DeviceLocal) AddProvideChangeListener(listener ProvideChangeListener
 	return newSub(func() {
 		self.provideChangeListeners.Remove(callbackId)
 	})
+}
+
+func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
+	callbackId := self.jwtRefreshListeners.Add(listener)
+	return newSub(func() {
+		self.jwtRefreshListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) jwtRefreshed(jwt string) {
+	for _, listener := range self.jwtRefreshListeners.Get() {
+		connect.HandleError(func() {
+			listener.JwtRefreshed(jwt)
+		})
+	}
 }
 
 func (self *DeviceLocal) AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub {
@@ -1354,6 +1424,9 @@ func (self *DeviceLocal) Close() {
 
 	api := self.networkSpace.GetApi()
 	api.SetByJwt("")
+	if self.tokenManager != nil {
+		self.tokenManager.Close()
+	}
 }
 
 func (self *DeviceLocal) GetDone() bool {
