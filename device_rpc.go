@@ -64,6 +64,8 @@ type deviceRpcSettings struct {
 	ResponsePorts          []int
 	ResponsePortProbeCount int
 	InitialLockTimeout     time.Duration
+
+	deviceLocalSettings
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
@@ -82,6 +84,8 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		ResponsePorts:          responsePorts,
 		ResponsePortProbeCount: 10,
 		InitialLockTimeout:     200 * time.Millisecond,
+
+		deviceLocalSettings: *defaultDeviceLocalSettings(),
 	}
 }
 
@@ -626,7 +630,7 @@ func (self *DeviceRemote) GetTunnelStarted() bool {
 		return tunnelStarted
 	} else {
 		return self.service != nil && self.state.TunnelStarted.Get(
-			self.lastKnownState.TunnelStarted.Get(defaultTunnelStarted),
+			self.lastKnownState.TunnelStarted.Get(self.settings.DefaultTunnelStarted),
 		)
 	}
 }
@@ -751,7 +755,7 @@ func (self *DeviceRemote) GetCanShowRatingDialog() bool {
 		return canShowRatingDialog
 	} else {
 		return self.state.CanShowRatingDialog.Get(
-			self.lastKnownState.CanShowRatingDialog.Get(defaultCanShowRatingDialog),
+			self.lastKnownState.CanShowRatingDialog.Get(self.settings.DefaultCanShowRatingDialog),
 		)
 	}
 }
@@ -802,7 +806,7 @@ func (self *DeviceRemote) GetCanPromptIntroFunnel() bool {
 		return canPromptIntroFunnel
 	} else {
 		return self.state.CanPromptIntroFunnel.Get(
-			self.lastKnownState.CanPromptIntroFunnel.Get(defaultCanShowRatingDialog),
+			self.lastKnownState.CanPromptIntroFunnel.Get(self.settings.DefaultCanShowRatingDialog),
 		)
 	}
 }
@@ -852,7 +856,7 @@ func (self *DeviceRemote) GetProvideControlMode() ProvideControlMode {
 		return provideControlMode
 	} else {
 		return self.state.ProvideControlMode.Get(
-			self.lastKnownState.ProvideControlMode.Get(defaultProvideControlMode),
+			self.lastKnownState.ProvideControlMode.Get(self.settings.DefaultProvideControlMode),
 		)
 	}
 }
@@ -907,7 +911,7 @@ func (self *DeviceRemote) GetCanRefer() bool {
 		return canRefer
 	} else {
 		return self.state.CanRefer.Get(
-			self.lastKnownState.CanRefer.Get(defaultCanRefer),
+			self.lastKnownState.CanRefer.Get(self.settings.DefaultCanRefer),
 		)
 	}
 }
@@ -954,7 +958,7 @@ func (self *DeviceRemote) GetAllowForeground() bool {
 		return allowForeground
 	} else {
 		return self.state.AllowForeground.Get(
-			self.lastKnownState.AllowForeground.Get(defaultAllowForeground),
+			self.lastKnownState.AllowForeground.Get(self.settings.DefaultAllowForeground),
 		)
 	}
 }
@@ -1031,7 +1035,7 @@ func (self *DeviceRemote) GetRouteLocal() bool {
 		return routeLocal
 	} else {
 		return self.state.RouteLocal.Get(
-			self.lastKnownState.RouteLocal.Get(defaultRouteLocal),
+			self.lastKnownState.RouteLocal.Get(self.settings.DefaultRouteLocal),
 		)
 	}
 }
@@ -1492,7 +1496,7 @@ func (self *DeviceRemote) GetOffline() bool {
 		return offline
 	} else {
 		return self.state.Offline.Get(
-			self.lastKnownState.Offline.Get(defaultOffline),
+			self.lastKnownState.Offline.Get(self.settings.DefaultOffline),
 		)
 	}
 }
@@ -1547,7 +1551,7 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 		return vpnInterfaceWhileOffline
 	} else {
 		return self.state.VpnInterfaceWhileOffline.Get(
-			self.lastKnownState.VpnInterfaceWhileOffline.Get(defaultVpnInterfaceWhileOffline),
+			self.lastKnownState.VpnInterfaceWhileOffline.Get(self.settings.DefaultVpnInterfaceWhileOffline),
 		)
 	}
 }

@@ -31,6 +31,8 @@ func TestDeviceRemoteSimple(t *testing.T) {
 
 	// FIXME enable RPC
 	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		nil,
 		networkSpace,
 		byJwt,
 		"",
@@ -96,8 +98,12 @@ func TestDeviceRemoteFull(t *testing.T) {
 			clientId := connect.NewId()
 			instanceId := NewId()
 
+			settings := defaultDeviceRpcSettings()
+
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
+				true,
+				nil,
 				networkSpace,
 				byJwt,
 				"",
@@ -117,7 +123,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 				networkSpace,
 				byJwt,
 				instanceId,
-				defaultDeviceRpcSettings(),
+				settings,
 				clientId,
 			)
 			if err != nil {
@@ -180,7 +186,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			deviceRemote.LoadProvideSecretKeys(NewProvideSecretKeyList())
 			deviceRemote.SetCanShowRatingDialog(true)
 			deviceRemote.SetCanRefer(true)
-			deviceRemote.SetRouteLocal(!defaultRouteLocal)
+			deviceRemote.SetRouteLocal(!settings.DefaultRouteLocal)
 			deviceRemote.SetProvideMode(ProvideModeStream)
 			deviceRemote.SetProvidePaused(true)
 			deviceRemote.SetOffline(true)
@@ -192,7 +198,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 			assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -209,7 +215,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			glog.Infof("GG2")
 			assert.Equal(t, deviceLocal.GetCanRefer(), true)
 			glog.Infof("GG3")
-			assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
 			assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 			assert.Equal(t, deviceLocal.GetOffline(), true)
@@ -219,7 +225,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 			assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -278,11 +284,13 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			clientId := connect.NewId()
 			instanceId := NewId()
 
+			settings := defaultDeviceRpcSettings()
+
 			deviceRemote, err := newDeviceRemoteWithOverrides(
 				networkSpace,
 				byJwt,
 				instanceId,
-				defaultDeviceRpcSettings(),
+				settings,
 				clientId,
 			)
 			if err != nil {
@@ -349,7 +357,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			deviceRemote.LoadProvideSecretKeys(NewProvideSecretKeyList())
 			deviceRemote.SetCanShowRatingDialog(true)
 			deviceRemote.SetCanRefer(true)
-			deviceRemote.SetRouteLocal(!defaultRouteLocal)
+			deviceRemote.SetRouteLocal(!settings.DefaultRouteLocal)
 			deviceRemote.SetProvideMode(ProvideModeStream)
 			deviceRemote.SetProvideNetworkMode(ProvideNetworkModeWiFi)
 			deviceRemote.SetProvidePaused(true)
@@ -362,7 +370,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 			assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -374,6 +382,8 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
+				true,
+				nil,
 				networkSpace,
 				byJwt,
 				"",
@@ -403,7 +413,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			glog.Infof("GG2")
 			assert.Equal(t, deviceLocal.GetCanRefer(), true)
 			glog.Infof("GG3")
-			assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
 			assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 			assert.Equal(t, deviceLocal.GetOffline(), true)
@@ -413,7 +423,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 			assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -474,6 +484,8 @@ func TestDeviceRemoteApi(t *testing.T) {
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		nil,
 		networkSpace,
 		byJwt,
 		"",
@@ -529,11 +541,13 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	clientId := connect.NewId()
 	instanceId := NewId()
 
+	settings := defaultDeviceRpcSettings()
+
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
 		instanceId,
-		defaultDeviceRpcSettings(),
+		settings,
 		clientId,
 	)
 	if err != nil {
@@ -555,7 +569,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	deviceRemote.SetProvideControlMode(ProvideControlModeManual)
 	deviceRemote.SetCanShowRatingDialog(true)
 	deviceRemote.SetCanRefer(true)
-	deviceRemote.SetRouteLocal(!defaultRouteLocal)
+	deviceRemote.SetRouteLocal(!settings.DefaultRouteLocal)
 	deviceRemote.SetProvideMode(ProvideModeStream)
 	deviceRemote.SetProvidePaused(true)
 	deviceRemote.SetOffline(true)
@@ -570,6 +584,8 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		nil,
 		networkSpace,
 		byJwt,
 		"",
@@ -600,7 +616,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	glog.Infof("GG2")
 	assert.Equal(t, deviceLocal.GetCanRefer(), true)
 	glog.Infof("GG3")
-	assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
+	assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
 	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 	assert.Equal(t, deviceLocal.GetOffline(), true)
@@ -611,7 +627,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	assert.Equal(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 	assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -626,7 +642,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	assert.Equal(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 	assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -652,11 +668,13 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	clientId := connect.NewId()
 	instanceId := NewId()
 
+	settings := defaultDeviceRpcSettings()
+
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
 		instanceId,
-		defaultDeviceRpcSettings(),
+		settings,
 		clientId,
 	)
 	if err != nil {
@@ -717,7 +735,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	deviceRemote.SetCanShowRatingDialog(true)
 	deviceRemote.SetCanRefer(true)
-	deviceRemote.SetRouteLocal(!defaultRouteLocal)
+	deviceRemote.SetRouteLocal(!settings.DefaultRouteLocal)
 	deviceRemote.SetProvideMode(ProvideModeStream)
 	deviceRemote.SetProvidePaused(true)
 	deviceRemote.SetOffline(true)
@@ -731,6 +749,8 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		nil,
 		networkSpace,
 		byJwt,
 		"",
@@ -760,7 +780,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	glog.Infof("GG2")
 	assert.Equal(t, deviceLocal.GetCanRefer(), true)
 	glog.Infof("GG3")
-	assert.Equal(t, deviceLocal.GetRouteLocal(), !defaultRouteLocal)
+	assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
 	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
 	assert.Equal(t, deviceLocal.GetOffline(), true)
@@ -800,7 +820,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
 	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), !defaultRouteLocal)
+	assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
 	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
 	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
 	assert.Equal(t, deviceRemote.GetOffline(), true)
@@ -824,6 +844,8 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 
 	// FIXME enable RPC
 	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		nil,
 		networkSpace,
 		byJwt,
 		"",

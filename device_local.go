@@ -35,17 +35,29 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 	return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 }
 
-const defaultRouteLocal = true
-const defaultCanShowRatingDialog = true
-const defaultCanShowIntroFunnel = true
+func defaultDeviceLocalSettings() *deviceLocalSettings {
+	return &deviceLocalSettings{
+		SendTimeout: 4 * time.Second,
+		// ClientDrainTimeout: 30 * time.Second,
 
-const defaultProvideControlMode = ProvideControlModeManual
-const defaultProvideNetworkMode = ProvideNetworkModeWiFi
-const defaultCanRefer = false
-const defaultAllowForeground = false
-const defaultOffline = true
-const defaultVpnInterfaceWhileOffline = false
-const defaultTunnelStarted = false
+		NetContractStatusDuration: 10 * time.Second,
+		NetContractStatusCount:    10,
+
+		DefaultRouteLocal:          true,
+		DefaultCanShowRatingDialog: true,
+		DefaultCanShowIntroFunnel:  true,
+
+		DefaultProvideControlMode:       ProvideControlModeManual,
+		DefaultProvideNetworkMode:       ProvideNetworkModeWiFi,
+		DefaultCanRefer:                 false,
+		DefaultAllowForeground:          false,
+		DefaultOffline:                  true,
+		DefaultVpnInterfaceWhileOffline: false,
+		DefaultTunnelStarted:            false,
+
+		ClientSettings: *connect.DefaultClientSettings(),
+	}
+}
 
 type deviceLocalSettings struct {
 	// time to give up (drop) sending a packet to a destination
@@ -54,16 +66,20 @@ type deviceLocalSettings struct {
 
 	NetContractStatusDuration time.Duration
 	NetContractStatusCount    int
-}
 
-func defaultDeviceLocalSettings() *deviceLocalSettings {
-	return &deviceLocalSettings{
-		SendTimeout: 4 * time.Second,
-		// ClientDrainTimeout: 30 * time.Second,
+	DefaultRouteLocal          bool
+	DefaultCanShowRatingDialog bool
+	DefaultCanShowIntroFunnel  bool
 
-		NetContractStatusDuration: 10 * time.Second,
-		NetContractStatusCount:    10,
-	}
+	DefaultProvideControlMode       ProvideControlMode
+	DefaultProvideNetworkMode       ProvideNetworkMode
+	DefaultCanRefer                 bool
+	DefaultAllowForeground          bool
+	DefaultOffline                  bool
+	DefaultVpnInterfaceWhileOffline bool
+	DefaultTunnelStarted            bool
+
+	connect.ClientSettings
 }
 
 // compile check that DeviceLocal conforms to Device, device, and ViewControllerManager
@@ -92,15 +108,9 @@ type DeviceLocal struct {
 	instanceId connect.Id
 
 	clientStrategy *connect.ClientStrategy
-	// this is the client for provide
-	client *connect.Client
 
-	// contractManager *connect.ContractManager
-	// routeManager *connect.RouteManager
-
-	platformTransport *connect.PlatformTransport
-
-	localUserNat *connect.LocalUserNat
+	generator connect.MultiClientGenerator
+	provider  *deviceLocalProvider
 
 	stats *DeviceStats
 
@@ -156,6 +166,7 @@ type DeviceLocal struct {
 	viewControllerManager
 }
 
+// FIXME remove enableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 func NewDeviceLocalWithDefaults(
 	networkSpace *NetworkSpace,
 	byJwt string,
@@ -168,6 +179,8 @@ func NewDeviceLocalWithDefaults(
 	return traceWithReturnError(
 		func() (*DeviceLocal, error) {
 			return newDeviceLocal(
+				true,
+				nil,
 				networkSpace,
 				byJwt,
 				deviceDescription,
@@ -181,7 +194,59 @@ func NewDeviceLocalWithDefaults(
 	)
 }
 
+// gomobile:ignore
+func NewPlatformDeviceLocalWithDefaults(
+	generator connect.MultiClientGenerator,
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+) (*DeviceLocal, error) {
+	return NewEmbeddedDeviceLocal(
+		generator,
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		defaultDeviceLocalSettings(),
+	)
+}
+
+// a local device that does not use the default platform transport
+// this device is typically embedded inside the platform
+// gomobile:ignore
+func NewPlatformDeviceLocal(
+	generator connect.MultiClientGenerator,
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	settings *deviceLocalSettings,
+) (*DeviceLocal, error) {
+	return newDeviceLocal(
+		false,
+		generator,
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		// FIXME change rpc to set connections. Embedded devices will set RPC connection when there is a control connection
+		false,
+		settings,
+	)
+}
+
 func newDeviceLocal(
+	allowProvider bool,
+	generator connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
@@ -196,6 +261,8 @@ func newDeviceLocal(
 		return nil, err
 	}
 	return newDeviceLocalWithOverrides(
+		allowProvider,
+		generator,
 		networkSpace,
 		byJwt,
 		deviceDescription,
@@ -209,6 +276,8 @@ func newDeviceLocal(
 }
 
 func newDeviceLocalWithOverrides(
+	allowProvider bool,
+	generator connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
@@ -221,47 +290,32 @@ func newDeviceLocalWithOverrides(
 ) (*DeviceLocal, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// ctx, cancel := api.ctx, api.cancel
-	apiUrl := networkSpace.apiUrl
+	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
 
-	clientOob := connect.NewApiOutOfBandControl(ctx, clientStrategy, byJwt, apiUrl)
-	client := connect.NewClient(
-		ctx,
-		clientId,
-		clientOob,
-		// connect.DefaultClientSettingsNoNetworkEvents(),
-		connect.DefaultClientSettings(),
-	)
-
-	// routeManager := connect.NewRouteManager(connectClient)
-	// contractManager := connect.NewContractManagerWithDefaults(connectClient)
-	// connectClient.Setup(routeManager, contractManager)
-	// go connectClient.Run()
-
-	auth := &connect.ClientAuth{
-		ByJwt:      byJwt,
-		InstanceId: instanceId.toConnectId(),
-		AppVersion: Version,
+	var provider *deviceLocalProvider
+	if allowProvider {
+		provider = newDeviceLocalProviderWithOverrides(
+			ctx,
+			networkSpace,
+			byJwt,
+			appVersion,
+			instanceId.toConnectId(),
+			&settings.ClientSettings,
+			clientId,
+		)
 	}
-	platformTransport := connect.NewPlatformTransportWithDefaults(
-		client.Ctx(),
-		clientStrategy,
-		client.RouteManager(),
-		networkSpace.platformUrl,
-		auth,
-	)
-
-	// go platformTransport.Run(connectClient.RouteManager())
-
-	localUserNatSettings := connect.DefaultLocalUserNatSettings()
-	// no ulimit for local traffic
-	localUserNatSettings.UdpBufferSettings.UserLimit = 0
-	localUserNatSettings.TcpBufferSettings.UserLimit = 0
-	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	// api := newBringYourApiWithContext(cancelCtx, clientStrategy, apiUrl)
 	api := networkSpace.GetApi()
 	api.SetByJwt(byJwt)
+
+	defaultRouteLocal := settings.DefaultRouteLocal
+	defaultProvideControlMode := settings.DefaultProvideControlMode
+	if provider == nil {
+		defaultRouteLocal = false
+		defaultProvideControlMode = ProvideControlModeNever
+	}
 
 	deviceLocal := &DeviceLocal{
 		networkSpace: networkSpace,
@@ -276,11 +330,10 @@ func newDeviceLocalWithOverrides(
 		clientId:          clientId,
 		instanceId:        instanceId.toConnectId(),
 		clientStrategy:    clientStrategy,
-		client:            client,
+		generator:         generator,
+		provider:          provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
-		platformTransport:                 platformTransport,
-		localUserNat:                      localUserNat,
 		stats:                             newDeviceStats(),
 		connectLocation:                   nil,
 		defaultLocation:                   nil,
@@ -288,16 +341,16 @@ func newDeviceLocalWithOverrides(
 		remoteUserNatProviderLocalUserNat: nil,
 		remoteUserNatProvider:             nil,
 		routeLocal:                        defaultRouteLocal,
-		canShowRatingDialog:               defaultCanShowRatingDialog,
-		canPromptIntroFunnel:              defaultCanShowIntroFunnel,
-		canRefer:                          defaultCanRefer,
-		allowForeground:                   defaultAllowForeground,
+		canShowRatingDialog:               settings.DefaultCanShowRatingDialog,
+		canPromptIntroFunnel:              settings.DefaultCanShowIntroFunnel,
+		canRefer:                          settings.DefaultCanRefer,
+		allowForeground:                   settings.DefaultAllowForeground,
 		provideMode:                       ProvideModeNone,
 		provideControlMode:                defaultProvideControlMode,
-		provideNetworkMode:                defaultProvideNetworkMode,
-		offline:                           defaultOffline,
-		vpnInterfaceWhileOffline:          defaultVpnInterfaceWhileOffline,
-		tunnelStarted:                     defaultTunnelStarted,
+		provideNetworkMode:                settings.DefaultProvideNetworkMode,
+		offline:                           settings.DefaultOffline,
+		vpnInterfaceWhileOffline:          settings.DefaultVpnInterfaceWhileOffline,
+		tunnelStarted:                     settings.DefaultTunnelStarted,
 		orderedContractStatusUpdates:      []*contractStatusUpdate{},
 		netContractStatus:                 &ContractStatus{},
 		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
@@ -321,13 +374,15 @@ func newDeviceLocalWithOverrides(
 		byJwt, // clientJwt
 		byJwt, // adminJwt
 		deviceLocal.networkSpace.GetApi(),
-		deviceLocal.onTokenRefreshSuccess,
+		deviceLocal.SetByJwt,
 		networkSpace.asyncLocalState.localState.Logout,
 	)
 
 	// set up with nil destination
-	localUserNatUnsub := localUserNat.AddReceivePacketCallback(deviceLocal.receive)
-	deviceLocal.localUserNatUnsub = localUserNatUnsub
+	if provider != nil {
+		localUserNatUnsub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.receive)
+		deviceLocal.localUserNatUnsub = localUserNatUnsub
+	}
 
 	if enableRpc {
 		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
@@ -341,7 +396,7 @@ func newDeviceLocalWithOverrides(
 func (self *DeviceLocal) RefreshToken(attempt int) error {
 	return self.tokenManager.RefreshToken(
 		attempt,
-		self.onTokenRefreshSuccess,
+		self.SetByJwt,
 		self.networkSpace.asyncLocalState.localState.Logout,
 	)
 }
@@ -369,39 +424,31 @@ func (self *DeviceLocal) RefreshToken(attempt int) error {
 // 	}
 // }
 
-func (self *DeviceLocal) onTokenRefreshSuccess(newJwt string) {
-
-	glog.Infof("DeviceLocal JWT refreshed")
-
-	self.stateLock.Lock()
-
-	self.GetApi().SetByJwt(newJwt)
-
-	self.byJwt = newJwt
-
-	self.networkSpace.asyncLocalState.localState.SetByClientJwt(newJwt)
-	self.networkSpace.asyncLocalState.localState.SetByJwt(newJwt)
-
-	auth := &connect.ClientAuth{
-		ByJwt:      newJwt,
-		InstanceId: self.instanceId,
-		AppVersion: Version,
+func (self *DeviceLocal) client() *connect.Client {
+	if self.provider == nil {
+		return nil
 	}
-	platformTransport := connect.NewPlatformTransportWithDefaults(
-		self.client.Ctx(),
-		self.clientStrategy,
-		self.client.RouteManager(),
-		self.networkSpace.platformUrl,
-		auth,
-	)
-	self.platformTransport = platformTransport
+	return self.provider.Client()
+}
+
+func (self *DeviceLocal) SetByJwt(byJwt string) {
+	self.GetApi().SetByJwt(byJwt)
+
+	self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
+	self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+
+	if self.provider != nil {
+		self.provider.SetByJwt(byJwt)
+	}
+
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.byJwt = byJwt
+	}()
 
 	// fire listeners
-	self.jwtRefreshed(newJwt)
-
-	self.stateLock.Unlock()
-
-	glog.Infof("DeviceLocal onTokenRefreshSuccess complete, should have fired listeners")
+	self.jwtRefreshed(byJwt)
 }
 
 type contractStatusUpdate struct {
@@ -968,34 +1015,40 @@ func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protoc
 }
 
 func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
-	provideSecretKeys := self.client.ContractManager().GetProvideSecretKeys()
 	provideSecretKeyList := NewProvideSecretKeyList()
-	for provideMode, provideSecretKey := range provideSecretKeys {
-		provideSecretKey := &ProvideSecretKey{
-			ProvideMode:      ProvideMode(provideMode),
-			ProvideSecretKey: string(provideSecretKey),
+	if client := self.client(); client != nil {
+		provideSecretKeys := client.ContractManager().GetProvideSecretKeys()
+		for provideMode, provideSecretKey := range provideSecretKeys {
+			provideSecretKey := &ProvideSecretKey{
+				ProvideMode:      ProvideMode(provideMode),
+				ProvideSecretKey: string(provideSecretKey),
+			}
+			provideSecretKeyList.Add(provideSecretKey)
 		}
-		provideSecretKeyList.Add(provideSecretKey)
 	}
 	return provideSecretKeyList
 }
 
 func (self *DeviceLocal) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
-	provideSecretKeys := map[protocol.ProvideMode][]byte{}
-	for i := 0; i < provideSecretKeyList.Len(); i += 1 {
-		provideSecretKey := provideSecretKeyList.Get(i)
-		provideMode := protocol.ProvideMode(provideSecretKey.ProvideMode)
-		provideSecretKeys[provideMode] = []byte(provideSecretKey.ProvideSecretKey)
-	}
-	self.client.ContractManager().LoadProvideSecretKeys(provideSecretKeys)
+	if client := self.client(); client != nil {
+		provideSecretKeys := map[protocol.ProvideMode][]byte{}
+		for i := 0; i < provideSecretKeyList.Len(); i += 1 {
+			provideSecretKey := provideSecretKeyList.Get(i)
+			provideMode := protocol.ProvideMode(provideSecretKey.ProvideMode)
+			provideSecretKeys[provideMode] = []byte(provideSecretKey.ProvideSecretKey)
+		}
+		client.ContractManager().LoadProvideSecretKeys(provideSecretKeys)
 
-	self.provideSecretKeysChanged(self.GetProvideSecretKeys())
+		self.provideSecretKeysChanged(self.GetProvideSecretKeys())
+	}
 }
 
 func (self *DeviceLocal) InitProvideSecretKeys() {
-	self.client.ContractManager().InitProvideSecretKeys()
+	if client := self.client(); client != nil {
+		client.ContractManager().InitProvideSecretKeys()
 
-	self.provideSecretKeysChanged(self.GetProvideSecretKeys())
+		self.provideSecretKeysChanged(self.GetProvideSecretKeys())
+	}
 }
 
 func (self *DeviceLocal) GetProvideEnabled() bool {
@@ -1028,47 +1081,49 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 }
 
 func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (changed bool) {
-	if self.provideMode != provideMode {
-		self.provideMode = provideMode
-		changed = true
+	if client := self.client(); client != nil {
+		if self.provideMode != provideMode {
+			self.provideMode = provideMode
+			changed = true
 
-		// TODO create a new provider only client?
+			// TODO create a new provider only client?
 
-		if ProvideModeNone < provideMode {
-			// recreate the provider user nat only as needed
-			// this avoid connection disruptions
-			if self.remoteUserNatProviderLocalUserNat == nil {
-				self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(self.client.Ctx(), self.clientId.String())
+			if ProvideModeNone < provideMode {
+				// recreate the provider user nat only as needed
+				// this avoid connection disruptions
+				if self.remoteUserNatProviderLocalUserNat == nil {
+					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(client.Ctx(), self.clientId.String())
+				}
+				if self.remoteUserNatProvider == nil {
+					self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(client, self.remoteUserNatProviderLocalUserNat)
+				}
+			} else {
+				// close
+				if self.remoteUserNatProviderLocalUserNat != nil {
+					self.remoteUserNatProviderLocalUserNat.Close()
+					self.remoteUserNatProviderLocalUserNat = nil
+				}
+				if self.remoteUserNatProvider != nil {
+					self.remoteUserNatProvider.Close()
+					self.remoteUserNatProvider = nil
+				}
 			}
-			if self.remoteUserNatProvider == nil {
-				self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(self.client, self.remoteUserNatProviderLocalUserNat)
+
+			provideModes := map[protocol.ProvideMode]bool{}
+			switch provideMode {
+			case ProvideModePublic:
+				provideModes[protocol.ProvideMode_Public] = true
+				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+				provideModes[protocol.ProvideMode_Network] = true
+			case ProvideModeFriendsAndFamily:
+				provideModes[protocol.ProvideMode_FriendsAndFamily] = true
+				provideModes[protocol.ProvideMode_Network] = true
+			case ProvideModeNetwork:
+				provideModes[protocol.ProvideMode_Network] = true
 			}
-		} else {
-			// close
-			if self.remoteUserNatProviderLocalUserNat != nil {
-				self.remoteUserNatProviderLocalUserNat.Close()
-				self.remoteUserNatProviderLocalUserNat = nil
-			}
-			if self.remoteUserNatProvider != nil {
-				self.remoteUserNatProvider.Close()
-				self.remoteUserNatProvider = nil
-			}
+
+			client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
 		}
-
-		provideModes := map[protocol.ProvideMode]bool{}
-		switch provideMode {
-		case ProvideModePublic:
-			provideModes[protocol.ProvideMode_Public] = true
-			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-			provideModes[protocol.ProvideMode_Network] = true
-		case ProvideModeFriendsAndFamily:
-			provideModes[protocol.ProvideMode_FriendsAndFamily] = true
-			provideModes[protocol.ProvideMode_Network] = true
-		case ProvideModeNetwork:
-			provideModes[protocol.ProvideMode_Network] = true
-		}
-
-		self.client.ContractManager().SetProvideModesWithReturnTraffic(provideModes)
 	}
 	return
 }
@@ -1085,14 +1140,19 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
-	if self.client.ContractManager().SetProvidePaused(providePaused) {
-		glog.Infof("[device]provide paused = %t\n", providePaused)
-		self.providePausedChanged(self.GetProvidePaused())
+	if client := self.client(); client != nil {
+		if client.ContractManager().SetProvidePaused(providePaused) {
+			glog.Infof("[device]provide paused = %t\n", providePaused)
+			self.providePausedChanged(self.GetProvidePaused())
+		}
 	}
 }
 
-func (self *DeviceLocal) GetProvidePaused() bool {
-	return self.client.ContractManager().IsProvidePaused()
+func (self *DeviceLocal) GetProvidePaused() (providePaused bool) {
+	if client := self.client(); client != nil {
+		providePaused = client.ContractManager().IsProvidePaused()
+	}
+	return
 }
 
 func (self *DeviceLocal) SetOffline(offline bool) {
@@ -1169,23 +1229,26 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
 			}
 
-			generator := connect.NewApiMultiClientGenerator(
-				self.ctx,
-				connectSpecs,
-				self.clientStrategy,
-				// exclude self
-				[]connect.Id{self.clientId},
-				self.networkSpace.apiUrl,
-				self.byJwt,
-				self.networkSpace.platformUrl,
-				self.deviceDescription,
-				self.deviceSpec,
-				self.appVersion,
-				&self.clientId,
-				// connect.DefaultClientSettingsNoNetworkEvents,
-				connect.DefaultClientSettings,
-				connect.DefaultApiMultiClientGeneratorSettings(),
-			)
+			generator := self.generator
+			if generator == nil {
+				generator = connect.NewApiMultiClientGenerator(
+					self.ctx,
+					connectSpecs,
+					self.clientStrategy,
+					// exclude self
+					[]connect.Id{self.clientId},
+					self.networkSpace.apiUrl,
+					self.byJwt,
+					self.networkSpace.platformUrl,
+					self.deviceDescription,
+					self.deviceSpec,
+					self.appVersion,
+					&self.clientId,
+					// connect.DefaultClientSettingsNoNetworkEvents,
+					connect.DefaultClientSettings,
+					connect.DefaultApiMultiClientGeneratorSettings(),
+				)
+			}
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
@@ -1329,14 +1392,17 @@ func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
 func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	source := connect.SourceId(self.clientId)
 
-	var remoteUserNatClient connect.UserNatClient
 	var localUserNat *connect.LocalUserNat
+	if self.provider != nil {
+		localUserNat = self.provider.LocalUserNat()
+	}
+
+	var remoteUserNatClient connect.UserNatClient
 	var routeLocal bool
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		remoteUserNatClient = self.remoteUserNatClient
-		localUserNat = self.localUserNat
 		routeLocal = self.routeLocal
 	}()
 
@@ -1348,7 +1414,7 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 			packet,
 			self.settings.SendTimeout,
 		)
-	} else if routeLocal {
+	} else if routeLocal && localUserNat != nil {
 		// route locally
 		return localUserNat.SendPacket(
 			source,
@@ -1391,7 +1457,10 @@ func (self *DeviceLocal) Close() {
 
 	self.cancel()
 
-	self.client.Cancel()
+	if self.provider != nil {
+		self.provider.Close()
+		self.provider = nil
+	}
 
 	if self.contractStatusSub != nil {
 		self.contractStatusSub()
@@ -1416,7 +1485,7 @@ func (self *DeviceLocal) Close() {
 		self.remoteUserNatProvider = nil
 	}
 
-	self.localUserNat.Close()
+	// self.localUserNat.Close()
 
 	if self.deviceLocalRpcManager != nil {
 		self.deviceLocalRpcManager.Close()
