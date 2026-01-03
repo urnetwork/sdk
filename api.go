@@ -1980,3 +1980,14 @@ func (self *Api) RefreshJwt(callback RefreshJwtCallback) {
 		)
 	})
 }
+
+func (self *Api) RefreshJwtSync() (*RefreshJwtResult, error) {
+	return connect.HttpGetWithRawFunction(
+		self.ctx,
+		self.getHttpGetRaw(),
+		fmt.Sprintf("%s/auth/refresh", self.apiUrl),
+		self.GetByJwt(),
+		&RefreshJwtResult{},
+		connect.NewNoopApiCallback[*RefreshJwtResult](),
+	)
+}

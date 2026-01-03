@@ -370,11 +370,10 @@ func newDeviceLocalWithOverrides(
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
 	deviceLocal.tokenManager = newDeviceTokenManager(
-		// how should we differentiate clientJwt and adminJwt here?
-		byJwt, // clientJwt
-		byJwt, // adminJwt
-		deviceLocal.networkSpace.GetApi(),
+		ctx,
+		api,
 		deviceLocal.SetByJwt,
+		// TODO the logout event should be propagated to the user
 		networkSpace.asyncLocalState.localState.Logout,
 	)
 
@@ -394,11 +393,8 @@ func newDeviceLocalWithOverrides(
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
-	return self.tokenManager.RefreshToken(
-		attempt,
-		self.SetByJwt,
-		self.networkSpace.asyncLocalState.localState.Logout,
-	)
+	self.tokenManager.RefreshToken()
+	return nil
 }
 
 // func (self *DeviceLocal) lock() {
@@ -1491,11 +1487,13 @@ func (self *DeviceLocal) Close() {
 		self.deviceLocalRpcManager.Close()
 	}
 
-	api := self.networkSpace.GetApi()
-	api.SetByJwt("")
 	if self.tokenManager != nil {
 		self.tokenManager.Close()
+		self.tokenManager = nil
 	}
+
+	api := self.networkSpace.GetApi()
+	api.SetByJwt("")
 }
 
 func (self *DeviceLocal) GetDone() bool {

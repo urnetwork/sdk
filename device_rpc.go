@@ -235,10 +235,8 @@ func newDeviceRemoteWithOverrides(
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
 	deviceRemote.tokenManager = newDeviceTokenManager(
-		// how should we differentiate clientJwt and adminJwt here?
-		byJwt, // clientJwt
-		byJwt, // adminJwt
-		deviceRemote.networkSpace.GetApi(),
+		ctx,
+		api,
 		deviceRemote.onTokenRefreshSuccess,
 		networkSpace.asyncLocalState.localState.Logout,
 	)
@@ -516,11 +514,8 @@ func (self *DeviceRemote) onTokenRefreshSuccess(newJwt string) {
 
 func (self *DeviceRemote) RefreshToken(attempt int) error {
 	glog.Infof("DeviceRemote RefreshToken attempt %d", attempt)
-	return self.tokenManager.RefreshToken(
-		attempt,
-		self.onTokenRefreshSuccess,
-		self.networkSpace.asyncLocalState.localState.Logout,
-	)
+	self.tokenManager.RefreshToken()
+	return nil
 }
 
 func (self *DeviceRemote) GetRpcPublicKey() string {
