@@ -1,3 +1,6 @@
+// proxy device is not intended to use on gomobile platforms
+//
+//gomobile:ignore
 package sdk
 
 import (

@@ -204,7 +204,7 @@ func NewPlatformDeviceLocalWithDefaults(
 	appVersion string,
 	instanceId *Id,
 ) (*DeviceLocal, error) {
-	return NewEmbeddedDeviceLocal(
+	return NewPlatformDeviceLocal(
 		generator,
 		networkSpace,
 		byJwt,
