@@ -129,10 +129,10 @@ func newWalletViewController(ctx context.Context, device Device) *WalletViewCont
 }
 
 func (self *WalletViewController) Start() {
-	go self.FetchAccountWallets()
-	go self.FetchPayoutWallet()
-	go self.FetchPayments()
-	go self.FetchTransferStats()
+	go connect.HandleError(self.FetchAccountWallets)
+	go connect.HandleError(self.FetchPayoutWallet)
+	go connect.HandleError(self.FetchPayments)
+	go connect.HandleError(self.FetchTransferStats)
 	self.pollNewWallets()
 }
 
@@ -591,7 +591,7 @@ func (self *WalletViewController) SetIsPollingPayoutWallet(isPolling bool) {
 // which creates an account_wallet entry
 func (self *WalletViewController) pollNewWallets() {
 
-	go func() {
+	go connect.HandleError(func() {
 		ticker := time.NewTicker(2500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -616,7 +616,7 @@ func (self *WalletViewController) pollNewWallets() {
 				}
 			}
 		}
-	}()
+	})
 
 }
 

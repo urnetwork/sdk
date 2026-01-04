@@ -77,7 +77,7 @@ func newNetworkUserViewController(ctx context.Context, device Device) *NetworkUs
 }
 
 func (vc *NetworkUserViewController) Start() {
-	go vc.FetchNetworkUser()
+	go connect.HandleError(vc.FetchNetworkUser)
 }
 
 func (vc *NetworkUserViewController) Stop() {}
@@ -152,13 +152,13 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 			func(result *GetNetworkUserResult, err error) {
 
 				if err != nil {
-					glog.Infof("[nuvc]fetchNetworkUser go error %s", err)
+					glog.Infof("[nuvc]fetchNetworkUser err=%s", err)
 					self.setIsLoading(false)
 					return
 				}
 
 				if result.Error != nil {
-					glog.Infof("[nuvc]fetchNetworkUser response error %s", result.Error.Message)
+					glog.Infof("[nuvc]fetchNetworkUser response err=%s", result.Error.Message)
 					self.setIsLoading(false)
 					return
 				}

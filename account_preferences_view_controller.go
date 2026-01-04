@@ -45,7 +45,7 @@ func newAccountPreferencesViewController(ctx context.Context, device Device) *Ac
 }
 
 func (self *AccountPreferencesViewController) Start() {
-	go self.fetchAllowProductUpdates()
+	go connect.HandleError(self.fetchAllowProductUpdates)
 }
 
 func (self *AccountPreferencesViewController) Stop() {
