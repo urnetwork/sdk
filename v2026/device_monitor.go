@@ -7,9 +7,9 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2026"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 type securityPolicyMonitor struct {

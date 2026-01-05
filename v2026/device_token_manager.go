@@ -4,8 +4,8 @@ import (
 	"time"
 
 	gojwt "github.com/golang-jwt/jwt/v5"
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/glog/v2026"
 )
 
 type deviceTokenManager struct {

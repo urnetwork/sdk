@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 // a proxy device is a device that is used through a proxy protocol - http or socks
