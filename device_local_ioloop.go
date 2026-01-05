@@ -43,7 +43,7 @@ func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallba
 		fd:           int(fd),
 		doneCallback: doneCallback,
 	}
-	go ioLoop.run()
+	go connect.HandleError(ioLoop.run, cancel)
 	return ioLoop
 }
 

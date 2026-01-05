@@ -25,7 +25,7 @@ func newSecurityPolicyMonitor(ctx context.Context, device Device) *securityPolic
 		cancel: cancel,
 		device: device,
 	}
-	go securityPolicyMonitor.run()
+	go connect.HandleError(securityPolicyMonitor.run, cancel)
 	return securityPolicyMonitor
 }
 

@@ -64,6 +64,8 @@ type deviceRpcSettings struct {
 	ResponsePorts          []int
 	ResponsePortProbeCount int
 	InitialLockTimeout     time.Duration
+
+	deviceLocalSettings
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
@@ -82,6 +84,8 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		ResponsePorts:          responsePorts,
 		ResponsePortProbeCount: 10,
 		InitialLockTimeout:     200 * time.Millisecond,
+
+		deviceLocalSettings: *defaultDeviceLocalSettings(),
 	}
 }
 
@@ -231,10 +235,8 @@ func newDeviceRemoteWithOverrides(
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
 	deviceRemote.tokenManager = newDeviceTokenManager(
-		// how should we differentiate clientJwt and adminJwt here?
-		byJwt, // clientJwt
-		byJwt, // adminJwt
-		deviceRemote.networkSpace.GetApi(),
+		ctx,
+		api,
 		deviceRemote.onTokenRefreshSuccess,
 		networkSpace.asyncLocalState.localState.Logout,
 	)
@@ -247,7 +249,7 @@ func newDeviceRemoteWithOverrides(
 	// remote starts locked
 	// only after the first attempt to connect to the local does it unlock
 	deviceRemote.stateLock.Lock()
-	go deviceRemote.run()
+	go connect.HandleError(deviceRemote.run, cancel)
 	return deviceRemote, nil
 }
 
@@ -393,7 +395,7 @@ func (self *DeviceRemote) run() {
 				// defer deviceRemoteRpc.Close()
 				// defer server.Close()
 
-				go func() {
+				go connect.HandleError(func() {
 					defer func() {
 						handleCancel()
 						deviceRemoteRpc.Close()
@@ -407,18 +409,21 @@ func (self *DeviceRemote) run() {
 					func() {
 						connCtx, connCancel := context.WithCancel(handleCtx)
 						defer connCancel()
-						go func() {
+						go connect.HandleError(func() {
 							defer conn.Close()
 							select {
 							case <-connCtx.Done():
 							}
-						}()
+						})
 						server.ServeConn(conn)
 						glog.Infof("[dr]sync reverse server done")
 					}()
 
 					// resync
-				}()
+				}, func() {
+					handleCancel()
+					deviceRemoteRpc.Close()
+				})
 
 				err = rpcCallVoid(service, "DeviceLocalRpc.SyncReverse", responseAddress, self.closeService)
 				if err != nil {
@@ -512,11 +517,8 @@ func (self *DeviceRemote) onTokenRefreshSuccess(newJwt string) {
 
 func (self *DeviceRemote) RefreshToken(attempt int) error {
 	glog.Infof("DeviceRemote RefreshToken attempt %d", attempt)
-	return self.tokenManager.RefreshToken(
-		attempt,
-		self.onTokenRefreshSuccess,
-		self.networkSpace.asyncLocalState.localState.Logout,
-	)
+	self.tokenManager.RefreshToken()
+	return nil
 }
 
 func (self *DeviceRemote) GetRpcPublicKey() string {
@@ -626,7 +628,7 @@ func (self *DeviceRemote) GetTunnelStarted() bool {
 		return tunnelStarted
 	} else {
 		return self.service != nil && self.state.TunnelStarted.Get(
-			self.lastKnownState.TunnelStarted.Get(defaultTunnelStarted),
+			self.lastKnownState.TunnelStarted.Get(self.settings.DefaultTunnelStarted),
 		)
 	}
 }
@@ -751,7 +753,7 @@ func (self *DeviceRemote) GetCanShowRatingDialog() bool {
 		return canShowRatingDialog
 	} else {
 		return self.state.CanShowRatingDialog.Get(
-			self.lastKnownState.CanShowRatingDialog.Get(defaultCanShowRatingDialog),
+			self.lastKnownState.CanShowRatingDialog.Get(self.settings.DefaultCanShowRatingDialog),
 		)
 	}
 }
@@ -802,7 +804,7 @@ func (self *DeviceRemote) GetCanPromptIntroFunnel() bool {
 		return canPromptIntroFunnel
 	} else {
 		return self.state.CanPromptIntroFunnel.Get(
-			self.lastKnownState.CanPromptIntroFunnel.Get(defaultCanShowRatingDialog),
+			self.lastKnownState.CanPromptIntroFunnel.Get(self.settings.DefaultCanShowRatingDialog),
 		)
 	}
 }
@@ -852,7 +854,7 @@ func (self *DeviceRemote) GetProvideControlMode() ProvideControlMode {
 		return provideControlMode
 	} else {
 		return self.state.ProvideControlMode.Get(
-			self.lastKnownState.ProvideControlMode.Get(defaultProvideControlMode),
+			self.lastKnownState.ProvideControlMode.Get(self.settings.DefaultProvideControlMode),
 		)
 	}
 }
@@ -907,7 +909,7 @@ func (self *DeviceRemote) GetCanRefer() bool {
 		return canRefer
 	} else {
 		return self.state.CanRefer.Get(
-			self.lastKnownState.CanRefer.Get(defaultCanRefer),
+			self.lastKnownState.CanRefer.Get(self.settings.DefaultCanRefer),
 		)
 	}
 }
@@ -954,7 +956,7 @@ func (self *DeviceRemote) GetAllowForeground() bool {
 		return allowForeground
 	} else {
 		return self.state.AllowForeground.Get(
-			self.lastKnownState.AllowForeground.Get(defaultAllowForeground),
+			self.lastKnownState.AllowForeground.Get(self.settings.DefaultAllowForeground),
 		)
 	}
 }
@@ -1031,7 +1033,7 @@ func (self *DeviceRemote) GetRouteLocal() bool {
 		return routeLocal
 	} else {
 		return self.state.RouteLocal.Get(
-			self.lastKnownState.RouteLocal.Get(defaultRouteLocal),
+			self.lastKnownState.RouteLocal.Get(self.settings.DefaultRouteLocal),
 		)
 	}
 }
@@ -1492,7 +1494,7 @@ func (self *DeviceRemote) GetOffline() bool {
 		return offline
 	} else {
 		return self.state.Offline.Get(
-			self.lastKnownState.Offline.Get(defaultOffline),
+			self.lastKnownState.Offline.Get(self.settings.DefaultOffline),
 		)
 	}
 }
@@ -1547,7 +1549,7 @@ func (self *DeviceRemote) GetVpnInterfaceWhileOffline() bool {
 		return vpnInterfaceWhileOffline
 	} else {
 		return self.state.VpnInterfaceWhileOffline.Get(
-			self.lastKnownState.VpnInterfaceWhileOffline.Get(defaultVpnInterfaceWhileOffline),
+			self.lastKnownState.VpnInterfaceWhileOffline.Get(self.settings.DefaultVpnInterfaceWhileOffline),
 		)
 	}
 }
@@ -2306,13 +2308,13 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 
 	requestCtx, requestCancel := context.WithCancel(ctx)
 	defer requestCancel()
-	go func() {
+	go connect.HandleError(func() {
 		defer requestCancel()
 		select {
 		case <-self.ctx.Done():
 		case <-requestCtx.Done():
 		}
-	}()
+	}, requestCancel)
 
 	service := self.getService()
 
@@ -2372,13 +2374,13 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 
 	requestCtx, requestCancel := context.WithCancel(ctx)
 	defer requestCancel()
-	go func() {
+	go connect.HandleError(func() {
 		defer requestCancel()
 		select {
 		case <-self.ctx.Done():
 		case <-requestCtx.Done():
 		}
-	}()
+	}, requestCancel)
 
 	service := self.getService()
 
@@ -3056,14 +3058,14 @@ type rpcClientWithTimeout struct {
 func (self *rpcClientWithTimeout) Call(serviceMethod string, args any, reply any) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() {
+	go connect.HandleError(func() {
 		defer cancel()
 		select {
 		case <-ctx.Done():
 		case <-time.After(self.timeout):
 			self.closeClient()
 		}
-	}()
+	}, cancel)
 	return self.client.Call(serviceMethod, args, reply)
 }
 
@@ -3208,7 +3210,7 @@ func newDeviceLocalRpcManager(
 		settings:    settings,
 	}
 
-	go deviceLocalRpcManager.run()
+	go connect.HandleError(deviceLocalRpcManager.run, cancel)
 	return deviceLocalRpcManager
 }
 
@@ -3234,7 +3236,7 @@ func (self *deviceLocalRpcManager) run() {
 			}
 			defer listener.Close()
 
-			go func() {
+			go connect.HandleError(func() {
 				defer handleCancel()
 
 				// handle connections serially
@@ -3258,7 +3260,7 @@ func (self *deviceLocalRpcManager) run() {
 						self.settings,
 					)
 				}
-			}()
+			}, handleCancel)
 
 			select {
 			case <-handleCtx.Done():
@@ -3358,18 +3360,18 @@ func newDeviceLocalRpc(
 		localWindowIds:                      map[connect.Id]connect.Id{},
 	}
 
-	go deviceLocalRpc.run()
+	go connect.HandleError(deviceLocalRpc.run, cancel)
 	return deviceLocalRpc
 }
 
 func (self *DeviceLocalRpc) run() {
 	defer self.cancel()
-	go func() {
+	go connect.HandleError(func() {
 		defer self.conn.Close()
 		select {
 		case <-self.ctx.Done():
 		}
-	}()
+	}, self.cancel)
 
 	server := rpc.NewServer()
 	server.Register(self)
@@ -4561,7 +4563,7 @@ func (self *DeviceLocalRpc) Shuffle(_ RpcNoArg, _ RpcVoid) error {
 }
 
 func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
-	go func() {
+	go connect.HandleError(func() {
 		bodyBytes, err := connect.HttpPostWithStrategyRaw(
 			self.ctx,
 			self.deviceLocal.clientStrategy,
@@ -4580,12 +4582,12 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 				rpcCallVoid(self.service, "DeviceRemoteRpc.HttpResponse", httpResponse, self.closeService)
 			}
 		}()
-	}()
+	})
 	return nil
 }
 
 func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
-	go func() {
+	go connect.HandleError(func() {
 		bodyBytes, err := connect.HttpGetWithStrategyRaw(
 			self.ctx,
 			self.deviceLocal.clientStrategy,
@@ -4603,7 +4605,7 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 				rpcCallVoid(self.service, "DeviceRemoteRpc.HttpResponse", httpResponse, self.closeService)
 			}
 		}()
-	}()
+	})
 	return nil
 }
 
@@ -4642,78 +4644,102 @@ func newDeviceRemoteRpc(ctx context.Context, deviceRemote *DeviceRemote) *Device
 
 func (self *DeviceRemoteRpc) ProvideChanged(provideEnabled bool, _ RpcVoid) error {
 	glog.Infof("[drrpc]ProvideChanged provideEnabled=%t", provideEnabled)
-	go self.deviceRemote.provideChanged(provideEnabled)
+	go connect.HandleError(func() {
+		self.deviceRemote.provideChanged(provideEnabled)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) ProvidePausedChanged(providePaused bool, _ RpcVoid) error {
 	glog.Infof("[drrpc]ProvidePausedChanged providePaused=%t", providePaused)
-	go self.deviceRemote.providePausedChanged(providePaused)
+	go connect.HandleError(func() {
+		self.deviceRemote.providePausedChanged(providePaused)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) OfflineChanged(event *DeviceRemoteOfflineChangeEvent, _ RpcVoid) error {
 	glog.Infof("[drrpc]OfflineChanged offline=%t vpnInterfaceWhileOffline=%t", event.Offline, event.VpnInterfaceWhileOffline)
-	go self.deviceRemote.offlineChanged(event.Offline, event.VpnInterfaceWhileOffline)
+	go connect.HandleError(func() {
+		self.deviceRemote.offlineChanged(event.Offline, event.VpnInterfaceWhileOffline)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) ConnectChanged(connectEnabled bool, _ RpcVoid) error {
 	glog.Infof("[drrpc]ConnectChanged connectEnabled=%t", connectEnabled)
-	go self.deviceRemote.connectChanged(connectEnabled)
+	go connect.HandleError(func() {
+		self.deviceRemote.connectChanged(connectEnabled)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) RouteLocalChanged(routeLocal bool, _ RpcVoid) error {
 	glog.Infof("[drrpc]RouteLocalChanged routeLocal=%t", routeLocal)
-	go self.deviceRemote.routeLocalChanged(routeLocal)
+	go connect.HandleError(func() {
+		self.deviceRemote.routeLocalChanged(routeLocal)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) ConnectLocationChanged(event *DeviceRemoteConnectLocationChangeEvent, _ RpcVoid) error {
 	glog.Infof("[drrpc]ConnectLocationChanged")
-	go self.deviceRemote.connectLocationChanged(event.Location)
+	go connect.HandleError(func() {
+		self.deviceRemote.connectLocationChanged(event.Location)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) ProvideSecretKeysChanged(provideSecretKeys []*ProvideSecretKey, _ RpcVoid) error {
 	glog.Infof("[drrpc]ProvideSecretKeysChanged")
-	go self.deviceRemote.provideSecretKeysChanged(provideSecretKeys)
+	go connect.HandleError(func() {
+		self.deviceRemote.provideSecretKeysChanged(provideSecretKeys)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindowMonitorEvent, _ RpcVoid) error {
 	glog.Infof("[drrpc]WindowMonitorEventCallback")
-	go self.deviceRemote.windowMonitorEvent(
-		event.WindowIds,
-		event.WindowExpandEvent,
-		event.ProviderEvents,
-		event.Reset,
-	)
+	go connect.HandleError(func() {
+		self.deviceRemote.windowMonitorEvent(
+			event.WindowIds,
+			event.WindowExpandEvent,
+			event.ProviderEvents,
+			event.Reset,
+		)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) TunnelChanged(tunnelStarted bool, _ RpcVoid) error {
 	glog.Infof("[drrpc]TunnelChanged")
-	go self.deviceRemote.tunnelChanged(tunnelStarted)
+	go connect.HandleError(func() {
+		self.deviceRemote.tunnelChanged(tunnelStarted)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) ContractStatusChanged(status *DeviceRemoteContractStatus, _ RpcVoid) error {
 	glog.Infof("[drrpc]ContractStatusChanged")
-	go self.deviceRemote.contractStatusChanged(status.ContractStatus)
+	go connect.HandleError(func() {
+		self.deviceRemote.contractStatusChanged(status.ContractStatus)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) WindowStatusChanged(status *DeviceRemoteWindowStatus, _ RpcVoid) error {
 	glog.Infof("[drrpc]WindowStatusChanged")
-	go self.deviceRemote.windowStatusChanged(status.WindowStatus)
+	go connect.HandleError(func() {
+		self.deviceRemote.windowStatusChanged(status.WindowStatus)
+	})
 	return nil
 }
 
 func (self *DeviceRemoteRpc) HttpResponse(httpResponse *DeviceRemoteHttpResponse, _ RpcVoid) error {
 	glog.Infof("[drrpc]HttpResponse")
-	go self.deviceRemote.httpResponse(httpResponse)
+	go connect.HandleError(func() {
+		self.deviceRemote.httpResponse(httpResponse)
+	})
 	return nil
 }
 

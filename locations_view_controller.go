@@ -76,7 +76,9 @@ func newLocationsViewController(ctx context.Context, device Device) *LocationsVi
 }
 
 func (self *LocationsViewController) Start() {
-	go self.FilterLocations("")
+	go connect.HandleError(func() {
+		self.FilterLocations("")
+	})
 }
 
 func (self *LocationsViewController) Stop() {}

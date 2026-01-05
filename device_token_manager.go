@@ -1,157 +1,163 @@
 package sdk
 
 import (
+	"context"
+	"fmt"
+	mathrand "math/rand"
 	"time"
 
 	gojwt "github.com/golang-jwt/jwt/v5"
+
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/glog"
 )
 
 type deviceTokenManager struct {
-	ClientJwt       string `json:"client_jwt"`
-	AdminJwt        string `json:"admin_jwt"`
-	api             *Api
-	jwtRefreshTimer *time.Timer
+	ctx              context.Context
+	cancel           context.CancelFunc
+	api              *Api
+	refreshMonitor   *connect.Monitor
+	onTokenRefreshed func(newToken string)
+	logout           func() error
 }
 
 func newDeviceTokenManager(
-	clientJwt string,
-	adminJwt string,
+	ctx context.Context,
 	api *Api,
 	onTokenRefreshed func(newToken string),
 	logout func() error,
 ) *deviceTokenManager {
+	cancelCtx, cancel := context.WithCancel(ctx)
+
 	manager := &deviceTokenManager{
-		ClientJwt: clientJwt,
-		AdminJwt:  adminJwt,
-		api:       api,
+		ctx:              cancelCtx,
+		cancel:           cancel,
+		api:              api,
+		refreshMonitor:   connect.NewMonitor(),
+		onTokenRefreshed: onTokenRefreshed,
+		logout:           logout,
 	}
 
-	manager.initRefreshJwtTimer(clientJwt, onTokenRefreshed, logout)
+	go connect.HandleError(manager.run)
+
 	return manager
 }
 
-func (self *deviceTokenManager) initRefreshJwtTimer(
-	jwt string,
-	onSuccess func(newToken string),
-	logout func() error,
-) {
-	token, _, err := gojwt.NewParser().ParseUnverified(jwt, gojwt.MapClaims{})
-	if err != nil {
-		glog.Errorf("Failed to parse JWT for refresh timer: %v", err)
-		return
-	}
+func (self *deviceTokenManager) run() {
+	for {
+		refreshNotify := self.refreshMonitor.NotifyChannel()
 
-	if claims, ok := token.Claims.(gojwt.MapClaims); ok {
-
-		glog.Infof("JWT claims: %+v", claims)
-
-		if exp, ok := claims["exp"].(float64); ok {
-			glog.Infof("Setting up JWT refresh timer")
-			expirationTime := time.Unix(int64(exp), 0)
-
-			// jwts currently last 30 days on the server, so start attempting to refresh 14 days before expiration
-			refreshTime := expirationTime.Add(-14 * 24 * time.Hour)
-			durationUntilRefresh := time.Until(refreshTime)
-			if durationUntilRefresh <= 0 {
-				glog.Infof("JWT is expiring soon, should refresh now")
-				self.RefreshToken(0, onSuccess, logout)
+		var expirationTime time.Time
+		func() {
+			byJwt := self.api.GetByJwt()
+			token, _, err := gojwt.NewParser().ParseUnverified(byJwt, gojwt.MapClaims{})
+			if err != nil {
 				return
 			}
-			glog.Infof("Scheduling JWT refresh in %v", durationUntilRefresh)
 
-			// if previous one exists, close it out
-			if self.jwtRefreshTimer != nil {
-				self.jwtRefreshTimer.Stop()
+			if claims, ok := token.Claims.(gojwt.MapClaims); ok {
+				glog.V(1).Infof("[dtm]JWT claims: %+v", claims)
+
+				if exp, ok := claims["exp"].(float64); ok {
+					expirationTime = time.Unix(int64(exp), 0)
+					return
+				}
 			}
+		}()
 
-			self.jwtRefreshTimer = time.AfterFunc(durationUntilRefresh, func() {
-				glog.Infof("JWT refresh timer triggered")
-				self.RefreshToken(0, onSuccess, logout)
-			})
+		now := time.Now()
+		var refreshTimeout time.Duration
+		if expirationTime.IsZero() {
+			// jwt has no expiration, refresh at an arbitrary interval of 7 days
+			refreshTimeout = 7 * 27 * time.Hour
 		} else {
-			glog.Errorf("Failed to parse JWT exp claim for refresh timer")
+			// jwts currently last 30 days on the server, so start attempting to refresh 14 days before expiration
+			refreshTime := expirationTime.Add(-14 * 24 * time.Hour)
+			refreshTimeout = refreshTime.Sub(now)
 		}
-	} else {
-		glog.Errorf("Failed to parse JWT claims for refresh timer")
+
+		if 0 < refreshTimeout {
+			glog.Infof(
+				"[dtm]waiting %.2fs to refresh the jwt",
+				float64(refreshTimeout/time.Millisecond)/1000.0,
+			)
+			select {
+			case <-self.ctx.Done():
+				return
+			case <-refreshNotify:
+			case <-time.After(refreshTimeout):
+			}
+		}
+
+		func() {
+			for {
+				glog.Infof("[dtm]refreshing the jwt now")
+				err := self.refreshToken()
+				if err == nil {
+					return
+				}
+
+				randomTimeout := time.Duration(mathrand.Int63n(int64(15 * time.Minute)))
+
+				glog.Infof(
+					"[dtm]jwt refresh failed. Will retry in %.2fs. err = %s",
+					float64(randomTimeout/time.Millisecond)/1000.0,
+					err,
+				)
+
+				select {
+				case <-self.ctx.Done():
+					return
+				case <-refreshNotify:
+				case <-time.After(randomTimeout):
+				}
+			}
+		}()
 	}
 }
 
-/**
- * Polled periodically but can also be directly invoked on subscription
- * todo - enforce expiration on server side
- * do we need to call logout manually, or better to pass an empty token to onSuccess and logout from interface?
- */
-func (self *deviceTokenManager) RefreshToken(
-	attempt int,
-	onSuccess func(newToken string),
-	logout func() error,
-) (returnErr error) {
+func (self *deviceTokenManager) refreshToken() error {
+	result, err := self.api.RefreshJwtSync()
 
-	glog.Infof("Refreshing JWT")
+	if err != nil {
+		/*
+		 *  potentially API failed, try again
+		 */
 
-	callback := RefreshJwtCallback(connect.NewApiCallback[*RefreshJwtResult](
-		func(result *RefreshJwtResult, err error) {
+		glog.Errorf("[dtm]failed to refresh JWT: %v", err)
 
-			if err != nil {
-				/*
-				 *  potentially API failed, try again
-				 */
+		return err
+	}
 
-				glog.Errorf("Failed to refresh JWT: %v", err)
+	if result.Error != nil {
+		/**
+		 * not a API error, but a token refresh error
+		 * for example, client no longer exists
+		 */
 
-				if attempt < 5 {
-					backoffDuration := time.Duration((attempt+1)*1) * time.Minute
-					glog.Infof("Scheduling JWT refresh retry in %v", backoffDuration)
-					time.AfterFunc(backoffDuration, func() {
-						self.RefreshToken(attempt+1, onSuccess, logout)
-					})
-				}
+		glog.Errorf("[dtm]failed to refresh JWT: %v", result.Error.Message)
 
-				returnErr = err
+		self.logout()
+		return nil
+	}
 
-				return
-			}
+	// guard against api logic errors that could mess up the client state
+	if result.ByJwt == "" {
+		return fmt.Errorf("Failed to refresh JWT: empty JWT returned")
+	}
 
-			if result.Error != nil {
-				/**
-				 * not a API error, but a token refresh error
-				 * for example, client no longer exists
-				 */
+	glog.Infof("[dtm]successfully refreshed JWT")
 
-				glog.Errorf("Failed to refresh JWT: %v", result.Error.Message)
+	self.onTokenRefreshed(result.ByJwt)
 
-				// logout user?
-				// todo - logout()
-				return
-			}
+	return nil
+}
 
-			if result.ByJwt == "" {
-				glog.Errorf("Failed to refresh JWT: empty JWT returned")
-
-				// logout?
-				// todo - logout()
-				return
-			}
-
-			glog.Infof("Successfully refreshed JWT")
-
-			onSuccess(result.ByJwt)
-
-			self.initRefreshJwtTimer(result.ByJwt, onSuccess, logout)
-
-		},
-	))
-
-	self.api.RefreshJwt(callback)
-
-	// todo
-	return
+// refreshes the token immediately
+func (self *deviceTokenManager) RefreshToken() {
+	self.refreshMonitor.NotifyAll()
 }
 
 func (self *deviceTokenManager) Close() {
-	if self.jwtRefreshTimer != nil {
-		self.jwtRefreshTimer.Stop()
-	}
+	self.cancel()
 }

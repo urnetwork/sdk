@@ -58,7 +58,7 @@ func (self *ReferralCodeViewController) referralCodeChanged(code string) {
 }
 
 func (self *ReferralCodeViewController) Start() {
-	go self.fetchNetworkReferralCode()
+	go connect.HandleError(self.fetchNetworkReferralCode)
 }
 
 func (self *ReferralCodeViewController) Stop() {}

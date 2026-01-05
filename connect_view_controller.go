@@ -455,7 +455,7 @@ func newConnectGrid(ctx context.Context, connectViewController *ConnectViewContr
 		gridPoints:                map[gridPointCoord]*gridPoint{},
 		providerGridPoints:        map[connect.Id]*ProviderGridPoint{},
 	}
-	go providerGrid.run()
+	go connect.HandleError(providerGrid.run, cancel)
 	return providerGrid
 }
 
