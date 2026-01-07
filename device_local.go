@@ -1861,12 +1861,18 @@ func toConnectWindowSize(windowSize *WindowSizeSettings) connect.WindowSizeSetti
 	if windowSize == nil {
 		return connect.DefaultWindowSizeSettings()
 	}
+	fixedWindowSize := 0
+	if windowSize.WindowSizeMin == windowSize.WindowSizeMax {
+		// fixed window size is a special mode that enforces a tigher window than just setting min=max
+		// for simplicity, enable fixed window size in this case
+		fixedWindowSize = windowSize.WindowSizeMin
+	}
 	return connect.WindowSizeSettings{
 		WindowSizeMin:            windowSize.WindowSizeMin,
 		WindowSizeMinP2pOnly:     windowSize.WindowSizeMinP2pOnly,
 		WindowSizeMax:            windowSize.WindowSizeMax,
 		WindowSizeHardMax:        windowSize.WindowSizeHardMax,
-		FixedWindowSize:          windowSize.FixedWindowSize,
+		FixedWindowSize:          fixedWindowSize,
 		WindowSizeReconnectScale: windowSize.WindowSizeReconnectScale,
 		KeepHealthiestCount:      windowSize.KeepHealthiestCount,
 		Ulimit:                   windowSize.Ulimit,

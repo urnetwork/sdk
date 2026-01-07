@@ -585,13 +585,12 @@ type WindowSizeSettings struct {
 	WindowSizeMax int `json:"window_size_max"`
 	// leave 0 to disable (no hard limit)
 	WindowSizeHardMax int `json:"window_size_hard_max"`
-	// leave 0 to automatically size between `WindowSizeMin` and `WindowSizeMax`
-	FixedWindowSize int `json:"fixed_window_size"`
 	// clients per source
+	// leave 0 to use the default value
 	WindowSizeReconnectScale float64 `json:"window_size_reconnect_scale"`
 	// leave 0 to disable
 	KeepHealthiestCount int `json:"keep_healthiest_count"`
-	// leave 0 to disable (no limit)
+	// leave 0 to use the default value
 	Ulimit int `json:"ulimit"`
 }
 
