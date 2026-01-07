@@ -564,6 +564,37 @@ type ProvideSecretKey struct {
 	ProvideSecretKey string      `json:"provide_secret_key"`
 }
 
+type WindowType = string
+
+const (
+	WindowTypeQuality WindowType = "quality"
+	WindowTypeSpeed   WindowType = "speed"
+)
+
+type PerformanceProfile struct {
+	WindowType WindowType          `json:"window_type"`
+	WindowSize *WindowSizeSettings `json:"window_size"`
+}
+
+type WindowSizeSettings struct {
+	WindowSizeMin int `json:"window_size_min"`
+	// the minimumum number of items in the windows that must be connected via p2p only
+	// leave 0 for default behavior
+	WindowSizeMinP2pOnly int `json:"window_size_min_p2p_only"`
+	// inclusive, soft limit
+	WindowSizeMax int `json:"window_size_max"`
+	// leave 0 to disable (no hard limit)
+	WindowSizeHardMax int `json:"window_size_hard_max"`
+	// leave 0 to automatically size between `WindowSizeMin` and `WindowSizeMax`
+	FixedWindowSize int `json:"fixed_window_size"`
+	// clients per source
+	WindowSizeReconnectScale float64 `json:"window_size_reconnect_scale"`
+	// leave 0 to disable
+	KeepHealthiestCount int `json:"keep_healthiest_count"`
+	// leave 0 to disable (no limit)
+	Ulimit int `json:"ulimit"`
+}
+
 /**
  * =============================================================
  * Utils for encoding/decoding base58, box encryption/decryption
