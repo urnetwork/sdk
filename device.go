@@ -246,7 +246,7 @@ type Device interface {
 
 	RemoveDestination()
 
-	SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode)
+	SetDestination(location *ConnectLocation, specs *ProviderSpecList)
 
 	SetConnectLocation(location *ConnectLocation)
 
@@ -350,6 +350,10 @@ type Device interface {
 	UploadLogs(feedbackId string, callback UploadLogsCallback) error
 
 	RefreshToken(attempt int) error
+
+	SetPerformanceProfile(performanceProfile *PerformanceProfile)
+
+	GetPerformanceProfile() *PerformanceProfile
 }
 
 // unexported to gomobile

@@ -122,6 +122,8 @@ type DeviceLocal struct {
 	connectLocation *ConnectLocation // reconnects when launched
 	defaultLocation *ConnectLocation // persisting the location after the client has disconnected
 
+	performanceProfile *PerformanceProfile
+
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
 	contractStatusSub   func()
@@ -395,6 +397,30 @@ func newDeviceLocalWithOverrides(
 func (self *DeviceLocal) RefreshToken(attempt int) error {
 	self.tokenManager.RefreshToken()
 	return nil
+}
+
+func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
+	var remoteUserNatClient connect.UserNatClient
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		self.performanceProfile = performanceProfile
+		remoteUserNatClient = self.remoteUserNatClient
+	}()
+	if remoteUserNatClient != nil {
+		switch v := remoteUserNatClient.(type) {
+		case *connect.RemoteUserNatMultiClient:
+			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
+		}
+	}
+}
+
+func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	return self.performanceProfile
 }
 
 // func (self *DeviceLocal) lock() {
@@ -1195,10 +1221,10 @@ func (self *DeviceLocal) GetVpnInterfaceWhileOffline() bool {
 }
 
 func (self *DeviceLocal) RemoveDestination() {
-	self.SetDestination(nil, nil, ProvideModeNone)
+	self.SetDestination(nil, nil)
 }
 
-func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList, provideMode ProvideMode) {
+func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList) {
 	provideModeChanged := false
 	func() {
 		self.stateLock.Lock()
@@ -1249,11 +1275,14 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
-			multi := connect.NewRemoteUserNatMultiClientWithDefaults(
+			settings := connect.DefaultMultiClientSettings()
+			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+			multi := connect.NewRemoteUserNatMultiClient(
 				self.ctx,
 				generator,
 				remoteReceive,
 				protocol.ProvideMode_Public,
+				settings,
 			)
 			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
 			self.remoteUserNatClient = multi
@@ -1337,7 +1366,7 @@ func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
 			BestAvailable:   location.ConnectLocationId.BestAvailable,
 		})
 
-		self.SetDestination(location, specs, ProvideModePublic)
+		self.SetDestination(location, specs)
 	}
 }
 
@@ -1806,4 +1835,46 @@ func zipLogs(
 		f.Close()
 	}
 	return nil
+}
+
+func toConnectPerformanceProfile(performanceProfile *PerformanceProfile) *connect.PerformanceProfile {
+	if performanceProfile == nil {
+		return nil
+	}
+	var connectWindowType connect.WindowType
+	switch performanceProfile.WindowType {
+	case WindowTypeQuality:
+		connectWindowType = connect.WindowTypeQuality
+	case WindowTypeSpeed:
+		connectWindowType = connect.WindowTypeSpeed
+	default:
+		connectWindowType = connect.WindowTypeQuality
+	}
+	p := &connect.PerformanceProfile{
+		WindowType: connectWindowType,
+		WindowSize: toConnectWindowSize(performanceProfile.WindowSize),
+	}
+	return p
+}
+
+func toConnectWindowSize(windowSize *WindowSizeSettings) connect.WindowSizeSettings {
+	if windowSize == nil {
+		return connect.DefaultWindowSizeSettings()
+	}
+	fixedWindowSize := 0
+	if windowSize.WindowSizeMin == windowSize.WindowSizeMax {
+		// fixed window size is a special mode that enforces a tigher window than just setting min=max
+		// for simplicity, enable fixed window size in this case
+		fixedWindowSize = windowSize.WindowSizeMin
+	}
+	return connect.WindowSizeSettings{
+		WindowSizeMin:            windowSize.WindowSizeMin,
+		WindowSizeMinP2pOnly:     windowSize.WindowSizeMinP2pOnly,
+		WindowSizeMax:            windowSize.WindowSizeMax,
+		WindowSizeHardMax:        windowSize.WindowSizeHardMax,
+		FixedWindowSize:          fixedWindowSize,
+		WindowSizeReconnectScale: windowSize.WindowSizeReconnectScale,
+		KeepHealthiestCount:      windowSize.KeepHealthiestCount,
+		Ulimit:                   windowSize.Ulimit,
+	}
 }
