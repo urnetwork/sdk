@@ -34,7 +34,7 @@ type IoLoop struct {
 // - opened in non blocking mode
 // - detached so that it can be closed the the ioloop
 func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallback) *IoLoop {
-	ctx, cancel := context.WithCancel(deviceLocal.ctx)
+	ctx, cancel := context.WithCancel(deviceLocal.Ctx())
 
 	ioLoop := &IoLoop{
 		ctx:          ctx,
@@ -78,8 +78,9 @@ func (self *IoLoop) run() {
 			self.cancel()
 		}
 	}
-	callbackId := self.deviceLocal.receiveCallbacks.Add(receive)
-	defer self.deviceLocal.receiveCallbacks.Remove(callbackId)
+
+	unsub := self.deviceLocal.AddReceivePacketCallback(receive)
+	defer unsub()
 
 	for {
 		select {
@@ -92,7 +93,7 @@ func (self *IoLoop) run() {
 		n, err := f.Read(packet)
 		// glog.Infof("[io]READ PACKET %d (%s)\n", n, err)
 		if 0 < n {
-			success := self.deviceLocal.sendPacket(packet[:n])
+			success := self.deviceLocal.SendPacketNoCopy(packet, int32(n))
 			if !success {
 				MessagePoolReturn(packet)
 			}
