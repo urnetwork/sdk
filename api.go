@@ -1991,3 +1991,43 @@ func (self *Api) RefreshJwtSync() (*RefreshJwtResult, error) {
 		connect.NewNoopApiCallback[*RefreshJwtResult](),
 	)
 }
+
+/**
+ * redeem balance code
+ */
+
+type RedeemBalanceCodeArgs struct {
+	Secret string `json:"secret"`
+}
+
+type RedeemBalanceCodeResult struct {
+	TransferBalance *RedeemBalanceCodeTransferBalance `json:"transfer_balance,omitempty"`
+	Error           *RedeemBalanceCodeError           `json:"error,omitempty"`
+}
+
+type RedeemBalanceCodeTransferBalance struct {
+	TransferBalanceId Id        `json:"transfer_balance_id"`
+	StartTime         Time      `json:"start_time"`
+	EndTime           Time      `json:"end_time"`
+	BalanceByteCount  ByteCount `json:"balance_byte_count"`
+}
+
+type RedeemBalanceCodeError struct {
+	Message string `json:"message"`
+}
+
+type RedeemBalanceCodeCallback connect.ApiCallback[*RedeemBalanceCodeResult]
+
+func (self *Api) RedeemBalanceCode(args *RedeemBalanceCodeArgs, callback RedeemBalanceCodeCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/redeem-balance-code", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RedeemBalanceCodeResult{},
+			callback,
+		)
+	})
+}
