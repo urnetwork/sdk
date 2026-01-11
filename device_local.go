@@ -109,8 +109,8 @@ type DeviceLocal struct {
 
 	clientStrategy *connect.ClientStrategy
 
-	generator connect.MultiClientGenerator
-	provider  *deviceLocalProvider
+	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
+	provider      *deviceLocalProvider
 
 	stats *DeviceStats
 
@@ -198,7 +198,7 @@ func NewDeviceLocalWithDefaults(
 
 // gomobile:ignore
 func NewPlatformDeviceLocalWithDefaults(
-	generator connect.MultiClientGenerator,
+	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
@@ -207,7 +207,7 @@ func NewPlatformDeviceLocalWithDefaults(
 	instanceId *Id,
 ) (*DeviceLocal, error) {
 	return NewPlatformDeviceLocal(
-		generator,
+		generatorFunc,
 		networkSpace,
 		byJwt,
 		deviceDescription,
@@ -222,7 +222,7 @@ func NewPlatformDeviceLocalWithDefaults(
 // this device is typically embedded inside the platform
 // gomobile:ignore
 func NewPlatformDeviceLocal(
-	generator connect.MultiClientGenerator,
+	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
@@ -233,7 +233,7 @@ func NewPlatformDeviceLocal(
 ) (*DeviceLocal, error) {
 	return newDeviceLocal(
 		false,
-		generator,
+		generatorFunc,
 		networkSpace,
 		byJwt,
 		deviceDescription,
@@ -248,7 +248,7 @@ func NewPlatformDeviceLocal(
 
 func newDeviceLocal(
 	allowProvider bool,
-	generator connect.MultiClientGenerator,
+	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
@@ -264,7 +264,7 @@ func newDeviceLocal(
 	}
 	return newDeviceLocalWithOverrides(
 		allowProvider,
-		generator,
+		generatorFunc,
 		networkSpace,
 		byJwt,
 		deviceDescription,
@@ -279,7 +279,7 @@ func newDeviceLocal(
 
 func newDeviceLocalWithOverrides(
 	allowProvider bool,
-	generator connect.MultiClientGenerator,
+	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
@@ -332,7 +332,7 @@ func newDeviceLocalWithOverrides(
 		clientId:          clientId,
 		instanceId:        instanceId.toConnectId(),
 		clientStrategy:    clientStrategy,
-		generator:         generator,
+		generatorFunc:     generatorFunc,
 		provider:          provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
@@ -392,6 +392,11 @@ func newDeviceLocalWithOverrides(
 	}
 
 	return deviceLocal, nil
+}
+
+// gomobile:ignore
+func (self *DeviceLocal) Ctx() context.Context {
+	return self.ctx
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
@@ -1251,8 +1256,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
 			}
 
-			generator := self.generator
-			if generator == nil {
+			var generator connect.MultiClientGenerator
+			if self.generatorFunc != nil {
+				generator = self.generatorFunc(connectSpecs)
+			} else {
 				generator = connect.NewApiMultiClientGenerator(
 					self.ctx,
 					connectSpecs,
@@ -1470,6 +1477,14 @@ func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	return newSub(func() {
 		self.receiveCallbacks.Remove(callbackId)
 	})
+}
+
+// gomobile:ignore
+func (self *DeviceLocal) AddReceivePacketCallback(callback func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte)) func() {
+	callbackId := self.receiveCallbacks.Add(callback)
+	return func() {
+		self.receiveCallbacks.Remove(callbackId)
+	}
 }
 
 func (self *DeviceLocal) Cancel() {

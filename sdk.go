@@ -199,6 +199,21 @@ func NewId() *Id {
 	return newId(connect.NewId())
 }
 
+func IdFromBytes(idBytes []byte) (*Id, error) {
+	if len(idBytes) != 16 {
+		return nil, fmt.Errorf("Id bytes must be length 16")
+	}
+	return newId([16]byte(idBytes)), nil
+}
+
+func RequireIdFromBytes(idBytes []byte) *Id {
+	id, err := IdFromBytes(idBytes)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 func ParseId(src string) (*Id, error) {
 	dst, err := parseUuid(src)
 	if err != nil {

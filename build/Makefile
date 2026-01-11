@@ -48,7 +48,7 @@ build_android:
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
 			jar -xf URnetworkSdk-sources.jar; \
-			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy'`; \
+			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx'`; \
 			if [ "$$bad_exports" ]; then \
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
