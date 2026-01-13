@@ -2006,9 +2006,9 @@ type RedeemBalanceCodeResult struct {
 }
 
 type RedeemBalanceCodeTransferBalance struct {
-	TransferBalanceId Id        `json:"transfer_balance_id"`
-	StartTime         Time      `json:"start_time"`
-	EndTime           Time      `json:"end_time"`
+	TransferBalanceId *Id       `json:"transfer_balance_id"`
+	StartTime         *Time     `json:"start_time"`
+	EndTime           *Time     `json:"end_time"`
 	BalanceByteCount  ByteCount `json:"balance_byte_count"`
 }
 
