@@ -39,8 +39,8 @@ type NetExtenderAutoConfigure struct {
 }
 
 type ExportNetworkSpace struct {
-	Key *NetworkSpaceKey `json:"key,omitempty"`
-	Values  *NetworkSpaceValues `json:"values,omitempty"`
+	Key    *NetworkSpaceKey    `json:"key,omitempty"`
+	Values *NetworkSpaceValues `json:"values,omitempty"`
 }
 
 type NetworkSpaceKey struct {
@@ -172,14 +172,28 @@ func newNetworkSpace(
 	}
 }
 
+// gomobile:ignore
+func NewPlatformNetworkSpace(
+	ctx context.Context,
+	env string,
+	host string,
+) *NetworkSpace {
+	key := NetworkSpaceKey{
+		EnvName:  env,
+		HostName: host,
+	}
+	values := NetworkSpaceValues{}
+	return newNetworkSpace(ctx, key, values, "")
+}
+
 func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
 	key := NetworkSpaceKey{
 		HostName: "test",
-		EnvName: "test",
+		EnvName:  "test",
 	}
 	values := NetworkSpaceValues{
-		Bundled: true,
-		NetExposeServerIps: true,
+		Bundled:                  true,
+		NetExposeServerIps:       true,
 		NetExposeServerHostNames: true,
 	}
 	storagePath, err := os.MkdirTemp("", "networkspace")
@@ -286,7 +300,7 @@ func (self *NetworkSpace) close() {
 
 func (self *NetworkSpace) ToJson() (string, error) {
 	exportNetworkSpace := &ExportNetworkSpace{
-		Key: &self.key,
+		Key:    &self.key,
 		Values: &self.values,
 	}
 	networkSpaceJsonBytes, err := json.Marshal(exportNetworkSpace)

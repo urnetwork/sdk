@@ -235,11 +235,21 @@ func newDeviceRemoteWithOverrides(
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
+	var logout func() error
+	if networkSpace.asyncLocalState != nil {
+		logout = networkSpace.asyncLocalState.localState.Logout
+	} else {
+		// do nothing
+		logout = func() error {
+			return nil
+		}
+	}
+
 	deviceRemote.tokenManager = newDeviceTokenManager(
 		ctx,
 		api,
 		deviceRemote.setByJwt,
-		networkSpace.asyncLocalState.localState.Logout,
+		logout,
 	)
 
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
@@ -500,8 +510,10 @@ func (self *DeviceRemote) setByJwt(byJwt string) {
 
 	self.GetApi().SetByJwt(byJwt)
 
-	self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
-	self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+	if self.networkSpace.asyncLocalState != nil {
+		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
+		self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+	}
 
 	func() {
 		self.stateLock.Lock()
