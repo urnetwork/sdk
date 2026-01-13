@@ -165,6 +165,9 @@ type DeviceLocal struct {
 
 	localUserNatSub func()
 
+	ingressSecurityPolicyGenerator func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
+	egressSecurityPolicyGenerator  func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
+
 	viewControllerManager
 }
 
@@ -407,6 +410,20 @@ func newDeviceLocalWithOverrides(
 // gomobile:ignore
 func (self *DeviceLocal) Ctx() context.Context {
 	return self.ctx
+}
+
+// gomobile:ignore
+func (self *DeviceLocal) SetIngressSecurityPolicyGenerator(g func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.ingressSecurityPolicyGenerator = g
+}
+
+// gomobile:ignore
+func (self *DeviceLocal) SetEgressSecurityPolicyGenerator(g func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.egressSecurityPolicyGenerator = g
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
@@ -1270,7 +1287,6 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 
 			var generator connect.MultiClientGenerator
 			if self.generatorFunc != nil {
-				fmt.Printf("DEVICE LOCAL USE GENERATOR FUNC specs=%v\n", connectSpecs)
 				generator = self.generatorFunc(connectSpecs)
 			} else {
 				generator = connect.NewApiMultiClientGenerator(
@@ -1297,6 +1313,12 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			}
 			settings := connect.DefaultMultiClientSettings()
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+			if self.ingressSecurityPolicyGenerator != nil {
+				settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
+			}
+			if self.egressSecurityPolicyGenerator != nil {
+				settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
+			}
 			multi := connect.NewRemoteUserNatMultiClient(
 				self.ctx,
 				generator,
@@ -1385,7 +1407,6 @@ func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
 			ClientId:        location.ConnectLocationId.ClientId,
 			BestAvailable:   location.ConnectLocationId.BestAvailable,
 		})
-		fmt.Printf("DEVICE LOCAL SET specs=%v\n", specs)
 		self.SetDestination(location, specs)
 	}
 }
