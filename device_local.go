@@ -163,7 +163,10 @@ type DeviceLocal struct {
 	windowStatusChangeListeners       *connect.CallbackList[WindowStatusChangeListener]
 	jwtRefreshListeners               *connect.CallbackList[JwtRefreshListener]
 
-	localUserNatUnsub func()
+	localUserNatSub func()
+
+	ingressSecurityPolicyGenerator func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
+	egressSecurityPolicyGenerator  func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
 
 	viewControllerManager
 }
@@ -371,18 +374,28 @@ func newDeviceLocalWithOverrides(
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
+	var logout func() error
+	if networkSpace.asyncLocalState != nil {
+		logout = networkSpace.asyncLocalState.localState.Logout
+	} else {
+		// do nothing
+		logout = func() error {
+			return nil
+		}
+	}
+
 	deviceLocal.tokenManager = newDeviceTokenManager(
 		ctx,
 		api,
 		deviceLocal.SetByJwt,
 		// TODO the logout event should be propagated to the user
-		networkSpace.asyncLocalState.localState.Logout,
+		logout,
 	)
 
 	// set up with nil destination
 	if provider != nil {
-		localUserNatUnsub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.receive)
-		deviceLocal.localUserNatUnsub = localUserNatUnsub
+		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.receive)
+		deviceLocal.localUserNatSub = localUserNatSub
 	}
 
 	if enableRpc {
@@ -397,6 +410,20 @@ func newDeviceLocalWithOverrides(
 // gomobile:ignore
 func (self *DeviceLocal) Ctx() context.Context {
 	return self.ctx
+}
+
+// gomobile:ignore
+func (self *DeviceLocal) SetIngressSecurityPolicyGenerator(g func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.ingressSecurityPolicyGenerator = g
+}
+
+// gomobile:ignore
+func (self *DeviceLocal) SetEgressSecurityPolicyGenerator(g func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.egressSecurityPolicyGenerator = g
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
@@ -461,8 +488,10 @@ func (self *DeviceLocal) client() *connect.Client {
 func (self *DeviceLocal) SetByJwt(byJwt string) {
 	self.GetApi().SetByJwt(byJwt)
 
-	self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
-	self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+	if self.networkSpace.asyncLocalState != nil {
+		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
+		self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+	}
 
 	if self.provider != nil {
 		self.provider.SetByJwt(byJwt)
@@ -1284,6 +1313,12 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			}
 			settings := connect.DefaultMultiClientSettings()
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+			if self.ingressSecurityPolicyGenerator != nil {
+				settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
+			}
+			if self.egressSecurityPolicyGenerator != nil {
+				settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
+			}
 			multi := connect.NewRemoteUserNatMultiClient(
 				self.ctx,
 				generator,
@@ -1372,7 +1407,6 @@ func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
 			ClientId:        location.ConnectLocationId.ClientId,
 			BestAvailable:   location.ConnectLocationId.BestAvailable,
 		})
-
 		self.SetDestination(location, specs)
 	}
 }
@@ -1515,7 +1549,10 @@ func (self *DeviceLocal) Close() {
 		self.remoteUserNatClient = nil
 	}
 	// self.localUserNat.RemoveReceivePacketCallback(self.receive)
-	self.localUserNatUnsub()
+	if self.localUserNatSub != nil {
+		self.localUserNatSub()
+		self.localUserNatSub = nil
+	}
 	if self.remoteUserNatProviderLocalUserNat != nil {
 		self.remoteUserNatProviderLocalUserNat.Close()
 		self.remoteUserNatProviderLocalUserNat = nil
