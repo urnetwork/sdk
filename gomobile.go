@@ -337,6 +337,18 @@ type StripePaymentIntentList struct {
 	exportedList[*StripePaymentIntent]
 }
 
+type RedeemedBalanceCode struct {
+	BalanceCodeId    *Id       `json:"balance_code_id"`
+	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	RedeemTime       *Time     `json:"redeem_time"`
+	EndTime          *Time     `json:"end_time"`
+	Secret           string    `json:"secret"`
+}
+
+type RedeemedBalanceCodeList struct {
+	exportedList[*RedeemedBalanceCode]
+}
+
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type Time struct {
 	impl time.Time
