@@ -2031,3 +2031,31 @@ func (self *Api) RedeemBalanceCode(args *RedeemBalanceCodeArgs, callback RedeemB
 		)
 	})
 }
+
+/**
+ * Fetch network redeemed transfer balance codes
+ */
+
+type GetNetworkRedeemedBalanceCodesError struct {
+	Message string `json:"message"`
+}
+
+type GetNetworkRedeemedBalanceCodesResult struct {
+	BalanceCodes *RedeemedBalanceCodeList             `json:"balance_codes"`
+	Error        *GetNetworkRedeemedBalanceCodesError `json:"error,omitempty"`
+}
+
+type GetNetworkRedeemedBalanceCodesCallback connect.ApiCallback[*GetNetworkRedeemedBalanceCodesResult]
+
+func (self *Api) GetNetworkRedeemedBalanceCodes(callback GetNetworkRedeemedBalanceCodesCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/account/balance-codes", self.apiUrl),
+			self.GetByJwt(),
+			&GetNetworkRedeemedBalanceCodesResult{},
+			callback,
+		)
+	})
+}
