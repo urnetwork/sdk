@@ -182,7 +182,10 @@ func NewPlatformNetworkSpace(
 		EnvName:  env,
 		HostName: host,
 	}
-	values := NetworkSpaceValues{}
+	values := NetworkSpaceValues{
+		NetExposeServerIps:       true,
+		NetExposeServerHostNames: true,
+	}
 	return newNetworkSpace(ctx, key, values, "")
 }
 

@@ -1335,13 +1335,17 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			}
 			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 
-			if self.provideControlMode == ProvideControlModeAuto {
-				provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+			if self.provider != nil {
+				if self.provideControlMode == ProvideControlModeAuto {
+					provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+				}
 			}
 		} else {
 			// else no specs, not an error
-			if self.provideControlMode == ProvideControlModeAuto {
-				provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+			if self.provider != nil {
+				if self.provideControlMode == ProvideControlModeAuto {
+					provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+				}
 			}
 		}
 	}()
