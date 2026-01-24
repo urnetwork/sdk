@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 // a network space is a set of server and app configurations
