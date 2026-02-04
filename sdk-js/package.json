@@ -1,0 +1,64 @@
+{
+  "name": "@urnetwork/sdk-js",
+  "version": "0.0.1",
+  "description": "JS/TS SDK for URnetwork - WebAssembly-based proxy and networking library",
+  "license": "ISC",
+  "author": "URnetwork",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs",
+      "types": "./dist/react/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "wasm",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run build:types && npm run build:bundle",
+    "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
+    "build:bundle": "rollup -c",
+    "dev": "rollup -c -w",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/react": "^18.2.0",
+    "react": "^18.2.0",
+    "rollup": "^4.9.0",
+    "rollup-plugin-copy": "^3.5.0",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  },
+  "keywords": [
+    "urnetwork",
+    "proxy",
+    "vpn",
+    "networking",
+    "wasm",
+    "webassembly",
+    "react"
+  ]
+}

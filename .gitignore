@@ -10,3 +10,8 @@ temp/*
 
 .vscode/*
 .direnv
+
+sdk-js/node_modules
+sdk-js/dist
+sdk-js/sdk.wasm
+sdk-js/wasm_exec.js

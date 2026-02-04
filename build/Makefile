@@ -85,20 +85,40 @@ build_apple:
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" apple;
 
-build_js:
+# Generate TypeScript types from Go structs
+generate_types:
+	@echo "Generating TypeScript types from Go structs..."
+	@if [ -d "../sdk-js" ]; then \
+		go run gen_types.go; \
+	else \
+		echo "⚠️  sdk-js directory not found, skipping type generation"; \
+	fi
+
+# Build the JavaScript/WASM version of the SDK and package it for npm consumption
+build_js: generate_types
+	# Ensure Go and gomobile are on the PATH, and set required Go environment variables
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
 	BUILD_DIR=js.`date +%s`; \
-	mkdir -p "$$BUILD_DIR"; \
 	mkdir -p "$$BUILD_DIR/URnetworkSdkJs"; \
-	GOOS=js GOARCH=wasm go build -o "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm"; \
+	GOOS=js GOARCH=wasm go build -o "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm" .; \
 	cp /usr/local/go/lib/wasm/wasm_exec.js "$$BUILD_DIR/URnetworkSdkJs"; \
 	cp index.js "$$BUILD_DIR/URnetworkSdkJs"; \
 	cp index.html "$$BUILD_DIR/URnetworkSdkJs"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdkJs.zip URnetworkSdkJs); \
+	if [ -d "../sdk-js" ]; then \
+		echo "Building npm package..."; \
+		mkdir -p "../sdk-js/wasm"; \
+		cp "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm" "../sdk-js/wasm/"; \
+		cp "$$BUILD_DIR/URnetworkSdkJs/wasm_exec.js" "../sdk-js/wasm/"; \
+		(cd "../sdk-js" && npm install && npm run build); \
+		echo "NPM package built in ../sdk-js/dist"; \
+		echo "Ready to publish from ../sdk-js"; \
+	fi; \
 	if [ -e "js" ]; then mv js js.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" js;
+
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \

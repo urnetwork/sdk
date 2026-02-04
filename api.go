@@ -111,9 +111,14 @@ func (self *Api) Close() {
 	self.cancel()
 }
 
+// ApiError represents a generic error response from the API
+// with a message field. This is used across multiple API result types.
+type ApiError struct {
+	Message string `json:"message"`
+}
+
 type AuthLoginCallback connect.ApiCallback[*AuthLoginResult]
 
-// `model.AuthLoginArgs`
 type AuthLoginArgs struct {
 	UserAuth    string          `json:"user_auth,omitempty"`
 	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
@@ -174,7 +179,7 @@ type AuthLoginWithPasswordArgs struct {
 type AuthLoginWithPasswordResult struct {
 	VerificationRequired *AuthLoginWithPasswordResultVerification `json:"verification_required,omitempty"`
 	Network              *AuthLoginWithPasswordResultNetwork      `json:"network,omitempty"`
-	Error                *AuthLoginWithPasswordResultError        `json:"error,omitempty"`
+	Error                *ApiError                                `json:"error,omitempty"`
 }
 
 type AuthLoginWithPasswordResultVerification struct {
@@ -184,10 +189,6 @@ type AuthLoginWithPasswordResultVerification struct {
 type AuthLoginWithPasswordResultNetwork struct {
 	ByJwt       string `json:"by_jwt,omitempty"`
 	NetworkName string `json:"name,omitempty"`
-}
-
-type AuthLoginWithPasswordResultError struct {
-	Message string `json:"message"`
 }
 
 func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
@@ -213,15 +214,11 @@ type AuthVerifyArgs struct {
 
 type AuthVerifyResult struct {
 	Network *AuthVerifyResultNetwork `json:"network,omitempty"`
-	Error   *AuthVerifyResultError   `json:"error,omitempty"`
+	Error   *ApiError                `json:"error,omitempty"`
 }
 
 type AuthVerifyResultNetwork struct {
 	ByJwt string `json:"by_jwt"`
-}
-
-type AuthVerifyResultError struct {
-	Message string `json:"message"`
 }
 
 func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {

@@ -4,11 +4,7 @@ go 1.24.4
 
 toolchain go1.24.5
 
-require (
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/glog v0.0.0
-	github.com/urnetwork/sdk v0.0.0
-)
+require github.com/urnetwork/sdk v0.0.0
 
 replace github.com/urnetwork/sdk => ..
 
@@ -23,6 +19,8 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/quic-go/quic-go v0.58.0 // indirect
+	github.com/urnetwork/connect v0.0.0 // indirect
+	github.com/urnetwork/glog v0.0.0 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93 // indirect
 	golang.org/x/mobile v0.0.0-20251209145715-2553ed8ce294 // indirect
