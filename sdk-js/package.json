@@ -16,6 +16,9 @@
   "bugs": {
     "url": "https://github.com/urnetwork/sdk/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://github.com/urnetwork/sdk/tree/main/sdk-js#readme",
   "exports": {
     ".": {
