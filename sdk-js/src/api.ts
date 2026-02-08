@@ -411,16 +411,6 @@ export class URNetworkAPI {
    *
    * ================ */
 
-  /**
-   * Verifies a user's authentication code.
-   *
-   * Sends a POST request to the `/auth/verify` endpoint with the user's code and admin JWT.
-   * If successful, returns a network object with by_jwt, which can be used as the client JWT, which will the main JWT we use.
-   *
-   * @param params - The authentication verification arguments, including `user_auth` and `verify_code`.
-   * @param adminToken - The admin token used for authorization in the request header.
-   * @returns AuthVerifyResult containing the network JWT or an error message.
-   */
   async verifyUserAuth(
     params: AuthVerifyArgs,
     adminToken: string,
@@ -507,7 +497,7 @@ export class URNetworkAPI {
       // Check if this was an abort
       if (error instanceof Error && error.name === "AbortError") {
         console.log("Auth network client request was cancelled");
-        throw error; // Re-throw to be handled by the hook
+        throw error;
       }
 
       console.error("Auth network client error:", error);

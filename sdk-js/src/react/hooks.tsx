@@ -1,14 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { URNetwork } from "../index";
 import { useAPI, useAuth } from "./context";
-import type {
-  // ApiResult,
-  // ProxyDevice,
-  // ProxyConfig,
-  // ProxyConfigResult,
-  // SetupDeviceCallback,
-  InitOptions,
-} from "../types";
+import type { InitOptions } from "../types";
 import {
   AuthCodeLoginResult,
   AuthNetworkClientArgs,
@@ -18,10 +11,7 @@ import {
   FilteredLocations,
   FindLocationsArgs,
   FindLocationsResult,
-  // AuthLoginArgs,
-  // AuthLoginWithPasswordArgs,
   NetworkCheckResult,
-  // NetworkCreateArgs,
 } from "../generated";
 
 const tokenRequiredError = "Admin JWT is required for verification";
@@ -63,13 +53,6 @@ export function useURNetwork(options?: InitOptions) {
 }
 
 /**
- * Hook to create and manage a proxy device
- */
-// export function useProxyDevice(options: UseProxyDeviceOptions = {}) {
-//   // ... existing implementation ...
-// }
-
-/**
  * Check network name availability with debounce
  */
 export function useCheckNetwork(options?: {
@@ -95,7 +78,6 @@ export function useCheckNetwork(options?: {
         return null;
       }
 
-      // This is the correct place for setLoading(true)
       setLoading(true);
       setError(null);
       try {
@@ -130,9 +112,6 @@ export function useCheckNetwork(options?: {
         setLoading(false);
         return;
       }
-
-      // REMOVED: setLoading(true);
-      // Removing this prevents the input from disabling (and losing focus) while the user is still typing.
 
       timeoutRef.current = setTimeout(() => {
         checkNetwork(params);

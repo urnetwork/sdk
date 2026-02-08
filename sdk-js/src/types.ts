@@ -1,3 +1,5 @@
+import { ProxyConfigResult } from "./generated";
+
 /**
  * Configuration for proxy behavior
  */
@@ -15,18 +17,6 @@ export interface ProxyConfig {
 export interface ProxyAuthResult {
   username: string;
   password: string;
-}
-
-/**
- * Result of proxy configuration
- */
-export interface ProxyConfigResult {
-  expirationTime: number;
-  keepaliveSeconds: number;
-  httpProxyUrl: string;
-  socksProxyUrl: string;
-  httpProxyAuth?: ProxyAuthResult;
-  socksProxyAuth?: ProxyAuthResult;
 }
 
 /**
