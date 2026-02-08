@@ -15,7 +15,6 @@ import (
 
 func jsProxyDevice(proxyDevice *sdk.ProxyDevice) js.Value {
 	return js.ValueOf(map[string]any{
-
 		"getDevice": js.FuncOf(func(this js.Value, args []js.Value) any {
 			return jsDevice(proxyDevice.GetDevice())
 		}),
@@ -44,29 +43,8 @@ func jsDevice(device sdk.Device) js.Value {
 	if device == nil {
 		return js.Null()
 	}
-	return js.ValueOf(map[string]any{
-
-		// "getDevice": js.FuncOf(func(this js.Value, args []js.Value) any {
-
-		// }),
-
-		// "getProxyConfigResult": js.FuncOf(func(this js.Value, args []js.Value) any {
-
-		// }),
-
-		// "cancel": js.FuncOf(func(this js.Value, args []js.Value) any {
-
-		// }),
-
-		// "close": js.FuncOf(func(this js.Value, args []js.Value) any {
-
-		// }),
-
-		// "isDone": js.FuncOf(func(this js.Value, args []js.Value) any {
-
-		// }),
-
-	})
+	// Device methods can be added here as needed
+	return js.ValueOf(map[string]any{})
 }
 
 func jsProxyConfigResult(proxyConfigResult *sdk.ProxyConfigResult) js.Value {
@@ -96,8 +74,8 @@ func jsProxyAuthResult(proxyAuthResult *sdk.ProxyAuthResult) js.Value {
 }
 
 func parseProxyConfig(jsProxyConfig js.Value) *sdk.ProxyConfig {
-	if jsProxyConfig.IsUndefined() {
-		return nil
+	if jsProxyConfig.IsUndefined() || jsProxyConfig.IsNull() {
+		return sdk.DefaultProxyConfig()
 	}
 
 	proxyConfig := &sdk.ProxyConfig{}
@@ -124,22 +102,20 @@ func parseProxyConfig(jsProxyConfig js.Value) *sdk.ProxyConfig {
 }
 
 func parseSetupDeviceCallback(jsSetupDeviceCallback js.Value) sdk.SetupNewDeviceCallback {
-	if jsSetupDeviceCallback.IsUndefined() {
+	if jsSetupDeviceCallback.IsUndefined() || jsSetupDeviceCallback.IsNull() {
 		return nil
 	}
 
 	return &simpleSetupDeviceCallback{
 		setupNewDevice: func(device sdk.Device, proxyConfigResult *sdk.ProxyConfigResult) bool {
-			v := jsSetupDeviceCallback.Call(
-				"apply",
-				js.Global(),
+			result := jsSetupDeviceCallback.Invoke(
 				jsDevice(device),
 				jsProxyConfigResult(proxyConfigResult),
 			)
-			if v.IsUndefined() {
+			if result.IsUndefined() || result.IsNull() {
 				return true
 			}
-			return v.Bool()
+			return result.Bool()
 		},
 	}
 }
@@ -153,15 +129,17 @@ func (self *simpleSetupDeviceCallback) SetupNewDevice(device sdk.Device, proxyCo
 }
 
 func NewProxyDeviceWithDefaults(this js.Value, args []js.Value) any {
-	proxyConfig := sdk.DefaultProxyConfig()
+	var proxyConfig *sdk.ProxyConfig
 	var setupNewDeviceCallback sdk.SetupNewDeviceCallback
 
-	if 0 < len(args) {
+	if len(args) > 0 && !args[0].IsNull() && !args[0].IsUndefined() {
 		proxyConfig = parseProxyConfig(args[0])
+	} else {
+		proxyConfig = sdk.DefaultProxyConfig()
+	}
 
-		if 1 < len(args) {
-			setupNewDeviceCallback = parseSetupDeviceCallback(args[1])
-		}
+	if len(args) > 1 && !args[1].IsNull() && !args[1].IsUndefined() {
+		setupNewDeviceCallback = parseSetupDeviceCallback(args[1])
 	}
 
 	proxyDevice := sdk.NewProxyDeviceWithDefaults(proxyConfig, setupNewDeviceCallback)

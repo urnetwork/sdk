@@ -3,6 +3,7 @@ build/apple*
 build/ios*
 build/android*
 build/js*
+build/node_modules
 **/.DS_Store
 **/test.out
 
@@ -10,3 +11,8 @@ temp/*
 
 .vscode/*
 .direnv
+
+sdk-js/node_modules
+sdk-js/dist
+sdk-js/sdk.wasm
+sdk-js/wasm_exec.js

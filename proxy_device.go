@@ -45,16 +45,28 @@ type ProxyConfig struct {
 	LockCallerIp bool     `json:"lock_caller_ip"`
 	LockIpList   []string `json:"lock_ip_list"`
 
-	EnableSocks     bool `json:"enable_socks"`
-	EnableHttp      bool `json:"enable_http"`
-	HttpRequireAuth bool `json:"http_require_auth"`
+	EnableSocks        bool              `json:"enable_socks"`
+	EnableHttp         bool              `json:"enable_http"`
+	HttpRequireAuth    bool              `json:"http_require_auth"`
+	InitialDeviceState *ProxyDeviceState `json:"initial_device_state"`
+}
+
+type ProxyDeviceState struct {
+	Location           *ConnectLocation    `json:"location"`
+	PerformanceProfile *PerformanceProfile `json:"performance_profile"`
 }
 
 type ProxyConfigResult struct {
 	ExpirationTime   time.Time `json:"expiration_time"`
 	KeepaliveSeconds int       `json:"keepalive_seconds"`
 	HttpProxyUrl     string    `json:"http_proxy_url,omitempty"`
+	HttpsProxyUrl    string    `json:"https_proxy_url,omitempty"`
 	SocksProxyUrl    string    `json:"socks_proxy_url,omitempty"`
+	ProxyHost        string    `json:"proxy_host,omitempty"`
+	SocksProxyPort   int       `json:"sock_proxy_port,omitempty"`
+	HttpProxyPort    int       `json:"http_proxy_port,omitempty"`
+	HttpsProxyPort   int       `json:"https_proxy_port,omitempty"`
+	AuthToken        string    `json:"auth_token,omitempty"`
 
 	HttpProxyAuth  *ProxyAuthResult `json:"http_proxy_auth"`
 	SocksProxyAuth *ProxyAuthResult `json:"socks_proxy_auth"`
