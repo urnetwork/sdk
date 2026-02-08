@@ -8,6 +8,7 @@ import type {
 
 export * from "./types";
 export * from "./api";
+export * from "./utils";
 // export * from "./react/hooks";
 
 export class URNetwork {

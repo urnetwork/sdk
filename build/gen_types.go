@@ -58,11 +58,32 @@ func generateTypes() error {
 		sdk.NetworkCreateResultNetwork{},
 		sdk.WalletAuthArgs{},
 		sdk.StringList{},
+		sdk.AuthLoginResult{},
 		sdk.AuthLoginResultError{},
 		sdk.AuthLoginResultNetwork{},
 		sdk.AuthVerifyArgs{},
 		sdk.AuthVerifyResult{},
 		sdk.AuthVerifyResultNetwork{},
+		sdk.AuthCodeLoginArgs{},
+		sdk.AuthCodeLoginResult{},
+		sdk.AuthNetworkClientResult{},
+		sdk.ProviderSpec{},
+		sdk.AuthNetworkClientError{},
+		sdk.AuthNetworkClientArgs{},
+		sdk.ProxyConfig{},
+		sdk.FindLocationsArgs{},
+		sdk.FindLocationsResult{},
+		sdk.LocationResult{},
+		sdk.LocationGroupResult{},
+		sdk.LocationDeviceResult{},
+		sdk.FilteredLocations{},
+		sdk.ConnectLocationId{},
+		sdk.ConnectLocation{},
+		sdk.ProxyDeviceState{},
+		sdk.PerformanceProfile{},
+		sdk.WindowSizeSettings{},
+		sdk.RemoveNetworkClientArgs{},
+		sdk.RemoveNetworkClientResult{},
 	}
 
 	for _, t := range types {
@@ -170,6 +191,20 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "string" // ISO 8601 format
 		case "netip.Addr":
 			return "string"
+		case "sdk.Id":
+			return "string" // UUID format
+		case "sdk.StringList":
+			return "string[]"
+		case "sdk.LocationResultList":
+			return "LocationResult[]"
+		case "sdk.LocationDeviceResultList":
+			return "LocationDeviceResult[]"
+		case "sdk.ProviderSpecList":
+			return "ProviderSpec[]"
+		case "sdk.LocationGroupResultList":
+			return "LocationGroupResult[]"
+		case "sdk.ConnectLocationList":
+			return "ConnectLocation[]"
 		default:
 			return t.Name()
 		}

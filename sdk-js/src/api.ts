@@ -1,46 +1,29 @@
 import {
+  AuthCodeLoginArgs,
+  AuthCodeLoginResult,
   AuthLoginArgs,
+  AuthLoginResult,
   AuthLoginWithPasswordArgs,
   AuthLoginWithPasswordResult,
+  AuthNetworkClientArgs,
+  AuthNetworkClientResult,
   AuthVerifyArgs,
   AuthVerifyResult,
+  FindLocationsArgs,
+  FindLocationsResult,
   NetworkCheckArgs,
   NetworkCheckResult,
   NetworkCreateArgs,
   NetworkCreateResult,
+  RemoveNetworkClientArgs,
+  RemoveNetworkClientResult,
 } from "./generated";
-// we handle types with arrays manually due to gomobile limitations
-import { AuthLoginResult } from "./types";
 
 export class URNetworkAPI {
   private baseURL: string;
-  // @ts-ignore - will add in with auth methods
-  private token?: string;
 
   constructor(config?: { baseURL?: string; token?: string }) {
     this.baseURL = config?.baseURL || "https://api.bringyour.com";
-    this.token = config?.token;
-  }
-
-  setToken(token: string) {
-    this.token = token;
-  }
-
-  clearToken() {
-    this.token = undefined;
-  }
-
-  /**
-   * For protected endpoints, ensure that a token is set
-   * @returns The current authentication token
-   * @throws Error if no token is set
-   */
-  // @ts-ignore - will add in with auth methods
-  private requireToken(): string {
-    if (!this.token) {
-      throw new Error("Authentication required. Please login first.");
-    }
-    return this.token;
   }
 
   /**
@@ -118,13 +101,6 @@ export class URNetworkAPI {
 
       const data = await this.safeJsonParse<AuthLoginResult>(response);
 
-      /**
-       * if successful login, set the token for future requests
-       */
-      if (data.network?.by_jwt) {
-        this.setToken(data.network.by_jwt);
-      }
-
       return data;
     } catch (error) {
       console.error("Login error:", error);
@@ -173,13 +149,6 @@ export class URNetworkAPI {
 
       const data =
         await this.safeJsonParse<AuthLoginWithPasswordResult>(response);
-
-      /**
-       * if successful login, set the token for future requests
-       */
-      if (data.network?.by_jwt) {
-        this.setToken(data.network.by_jwt);
-      }
 
       return data;
     } catch (error) {
@@ -294,13 +263,6 @@ export class URNetworkAPI {
 
       const data = await this.safeJsonParse<NetworkCreateResult>(response);
 
-      /**
-       * if successful creation, set the token for future requests
-       */
-      if (data.network?.by_jwt) {
-        this.setToken(data.network.by_jwt);
-      }
-
       return data;
     } catch (error) {
       console.error("Network creation error:", error);
@@ -313,22 +275,162 @@ export class URNetworkAPI {
     }
   }
 
+  async authCodeLogin(params: AuthCodeLoginArgs): Promise<AuthCodeLoginResult> {
+    try {
+      const response = await fetch(`${this.baseURL}/auth/code-login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Auth code login failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          by_jwt: "",
+          error: {
+            message: errorData,
+          },
+        };
+      }
+
+      return await this.safeJsonParse<AuthCodeLoginResult>(response);
+    } catch (error) {
+      console.error("Network check error:", error);
+      return {
+        by_jwt: "",
+        error: {
+          message:
+            error instanceof Error ? error.message : "Auth code login failed",
+        },
+      };
+    }
+  }
+
+  /**
+   * Fetches all network provider locations
+   */
+  async networkProviderLocations(): Promise<FindLocationsResult> {
+    try {
+      const response = await fetch(
+        `${this.baseURL}/network/provider-locations`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      if (!response.ok) {
+        console.error(
+          "/network/provider-locations failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          specs: [],
+          groups: [],
+          locations: [],
+          devices: [],
+        };
+      }
+
+      const data = await this.safeJsonParse<FindLocationsResult>(response);
+
+      return data;
+    } catch (error) {
+      console.error("User auth verification error:", error);
+      return {
+        specs: [],
+        groups: [],
+        locations: [],
+        devices: [],
+      };
+    }
+  }
+
+  async searchProviderLocations(
+    params: FindLocationsArgs,
+  ): Promise<FindLocationsResult> {
+    try {
+      const response = await fetch(
+        `${this.baseURL}/network/find-provider-locations`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(params),
+        },
+      );
+
+      if (!response.ok) {
+        console.error(
+          "network/find-provider-locations failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          specs: [],
+          groups: [],
+          locations: [],
+          devices: [],
+        };
+      }
+
+      return await this.safeJsonParse<FindLocationsResult>(response);
+    } catch (error) {
+      console.error("network/find-provider-locations error:", error);
+      return {
+        specs: [],
+        groups: [],
+        locations: [],
+        devices: [],
+      };
+    }
+  }
+
   /* ================
    *
    * authed endpoints
    *
    * ================ */
 
-  async verifyUserAuth(params: AuthVerifyArgs): Promise<AuthVerifyResult> {
+  /**
+   * Verifies a user's authentication code.
+   *
+   * Sends a POST request to the `/auth/verify` endpoint with the user's code and admin JWT.
+   * If successful, returns a network object with by_jwt, which can be used as the client JWT, which will the main JWT we use.
+   *
+   * @param params - The authentication verification arguments, including `user_auth` and `verify_code`.
+   * @param adminToken - The admin token used for authorization in the request header.
+   * @returns AuthVerifyResult containing the network JWT or an error message.
+   */
+  async verifyUserAuth(
+    params: AuthVerifyArgs,
+    adminToken: string,
+  ): Promise<AuthVerifyResult> {
     try {
-      // requires the admin JWT
-      const token = this.requireToken();
-
       const response = await fetch(`${this.baseURL}/auth/verify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           user_auth: params.user_auth,
@@ -354,13 +456,6 @@ export class URNetworkAPI {
 
       const data = await this.safeJsonParse<AuthVerifyResult>(response);
 
-      if (data.network?.by_jwt) {
-        /**
-         * set the client JWT
-         */
-        this.setToken(data.network.by_jwt);
-      }
-
       return data;
     } catch (error) {
       console.error("User auth verification error:", error);
@@ -368,6 +463,109 @@ export class URNetworkAPI {
         error: {
           message:
             error instanceof Error ? error.message : "Verification failed",
+        },
+      };
+    }
+  }
+
+  async authNetworkClient(
+    params: AuthNetworkClientArgs,
+    token: string,
+    signal?: AbortSignal,
+  ): Promise<AuthNetworkClientResult> {
+    try {
+      const response = await fetch(`${this.baseURL}/network/auth-client`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(params),
+        signal, // Pass the abort signal to fetch
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Auth network client failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          proxy_config_result: null,
+          error: {
+            message: `HTTP error! status: ${response.status}`,
+            client_limit_exceeded: false,
+          },
+        };
+      }
+
+      return await this.safeJsonParse<AuthNetworkClientResult>(response);
+    } catch (error) {
+      // Check if this was an abort
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("Auth network client request was cancelled");
+        throw error; // Re-throw to be handled by the hook
+      }
+
+      console.error("Auth network client error:", error);
+      return {
+        proxy_config_result: null,
+        error: {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Auth network client failed",
+          client_limit_exceeded: false,
+        },
+      };
+    }
+  }
+
+  async removeNetworkClient(
+    params: RemoveNetworkClientArgs,
+    token: string,
+  ): Promise<RemoveNetworkClientResult> {
+    try {
+      const response = await fetch(`${this.baseURL}/network/remove-client`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Network removed client failed failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          error: {
+            message: `HTTP error! status: ${response.status}`,
+          },
+        };
+      }
+
+      const data =
+        await this.safeJsonParse<RemoveNetworkClientResult>(response);
+
+      return data;
+    } catch (error) {
+      console.error("Remove network client error:", error);
+      return {
+        error: {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Remove network client failed",
         },
       };
     }

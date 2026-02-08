@@ -386,16 +386,18 @@ func (self *Api) NetworkDelete(callback NetworkDeleteCallback) {
 type AuthNetworkClientCallback connect.ApiCallback[*AuthNetworkClientResult]
 
 type AuthNetworkClientArgs struct {
-	// FIXME how to bring this back as optional with gomobile. Use a new type *OptionalId?
-	// if omitted, a new client_id is created
-	// ClientId string `json:"client_id,omitempty"`
-	Description string `json:"description"`
-	DeviceSpec  string `json:"device_spec"`
+	ClientId       *Id    `json:"client_id,omitempty"`
+	SourceClientId *Id    `json:"source_client_id,omitempty"`
+	Description    string `json:"description"`
+	DeviceSpec     string `json:"device_spec"`
+
+	ProxyConfig *ProxyConfig `json:"proxy_config,omitempty"`
 }
 
 type AuthNetworkClientResult struct {
-	ByClientJwt string                  `json:"by_client_jwt,omitempty"`
-	Error       *AuthNetworkClientError `json:"error,omitempty"`
+	ByClientJwt       string                  `json:"by_client_jwt,omitempty"`
+	ProxyConfigResult *ProxyConfigResult      `json:"proxy_config_result"`
+	Error             *AuthNetworkClientError `json:"error,omitempty"`
 }
 
 type AuthNetworkClientError struct {
@@ -1355,13 +1357,9 @@ type AuthCodeLoginArgs struct {
 	AuthCode string `json:"auth_code"`
 }
 
-type AuthCodeLoginError struct {
-	Message string `json:"message"`
-}
-
 type AuthCodeLoginResult struct {
-	Jwt   string              `json:"by_jwt"`
-	Error *AuthCodeLoginError `json:"error,omitempty"`
+	Jwt   string    `json:"by_jwt"`
+	Error *ApiError `json:"error,omitempty"`
 }
 
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
@@ -2055,4 +2053,16 @@ func (self *Api) GetNetworkRedeemedBalanceCodes(callback GetNetworkRedeemedBalan
 			callback,
 		)
 	})
+}
+
+/**
+ * Remove network client
+ */
+
+type RemoveNetworkClientArgs struct {
+	ClientId *Id `json:"client_id"`
+}
+
+type RemoveNetworkClientResult struct {
+	Error *ApiError `json:"error,omitempty"`
 }

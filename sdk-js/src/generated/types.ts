@@ -44,7 +44,13 @@ export interface ProxyConfigResult {
   expiration_time: string;
   keepalive_seconds: number;
   http_proxy_url?: string;
+  https_proxy_url?: string;
   socks_proxy_url?: string;
+  proxy_host?: string;
+  sock_proxy_port?: number;
+  http_proxy_port?: number;
+  https_proxy_port?: number;
+  auth_token?: string;
   http_proxy_auth: ProxyAuthResult | null;
   socks_proxy_auth: ProxyAuthResult | null;
 }
@@ -132,6 +138,15 @@ export interface WalletAuthArgs {
 export interface StringList {
 }
 
+export interface AuthLoginResult {
+  user_name?: string;
+  user_auth?: string;
+  auth_allowed?: string[] | null;
+  error?: AuthLoginResultError | null;
+  network?: AuthLoginResultNetwork | null;
+  wallet_login?: WalletAuthArgs | null;
+}
+
 export interface AuthLoginResultError {
   suggested_user_auth?: string;
   message: string;
@@ -153,5 +168,154 @@ export interface AuthVerifyResult {
 
 export interface AuthVerifyResultNetwork {
   by_jwt: string;
+}
+
+export interface AuthCodeLoginArgs {
+  auth_code: string;
+}
+
+export interface AuthCodeLoginResult {
+  by_jwt: string;
+  error?: ApiError | null;
+}
+
+export interface AuthNetworkClientResult {
+  by_client_jwt?: string;
+  proxy_config_result: ProxyConfigResult | null;
+  error?: AuthNetworkClientError | null;
+}
+
+export interface ProviderSpec {
+  location_id?: string | null;
+  location_group_id?: string | null;
+  client_id?: string | null;
+  best_available?: boolean;
+}
+
+export interface AuthNetworkClientError {
+  client_limit_exceeded: boolean;
+  message: string;
+}
+
+export interface AuthNetworkClientArgs {
+  client_id?: string | null;
+  source_client_id?: string | null;
+  description: string;
+  device_spec: string;
+  proxy_config?: ProxyConfig | null;
+}
+
+export interface ProxyConfig {
+  lock_caller_ip: boolean;
+  lock_ip_list: string[];
+  enable_socks: boolean;
+  enable_http: boolean;
+  http_require_auth: boolean;
+  initial_device_state: ProxyDeviceState | null;
+}
+
+export interface FindLocationsArgs {
+  query: string;
+  max_distance_fraction?: number;
+  enable_max_distance_fraction?: boolean;
+}
+
+export interface FindLocationsResult {
+  specs: ProviderSpec[] | null;
+  groups: LocationGroupResult[] | null;
+  locations: LocationResult[] | null;
+  devices: LocationDeviceResult[] | null;
+}
+
+export interface LocationResult {
+  location_id: string | null;
+  location_type: string;
+  name: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  country_code?: string;
+  city_location_id?: string | null;
+  region_location_id?: string | null;
+  country_location_id?: string | null;
+  provider_count?: number;
+  match_distance?: number;
+  stable: boolean;
+  strong_privacy: boolean;
+}
+
+export interface LocationGroupResult {
+  location_group_id: string | null;
+  name: string;
+  provider_count?: number;
+  promoted?: boolean;
+  match_distance?: number;
+}
+
+export interface LocationDeviceResult {
+  client_id: string | null;
+  device_name: string;
+}
+
+export interface FilteredLocations {
+  best_matches: ConnectLocation[] | null;
+  promoted: ConnectLocation[] | null;
+  countries: ConnectLocation[] | null;
+  cities: ConnectLocation[] | null;
+  regions: ConnectLocation[] | null;
+  devices: ConnectLocation[] | null;
+}
+
+export interface ConnectLocationId {
+  client_id?: string | null;
+  location_id?: string | null;
+  location_group_id?: string | null;
+  best_available?: boolean;
+}
+
+export interface ConnectLocation {
+  connect_location_id?: ConnectLocationId | null;
+  name?: string;
+  provider_count?: number;
+  promoted?: boolean;
+  match_distance?: number;
+  location_type?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  country_code?: string;
+  city_location_id?: string | null;
+  region_location_id?: string | null;
+  country_location_id?: string | null;
+  stable: boolean;
+  strong_privacy: boolean;
+}
+
+export interface ProxyDeviceState {
+  location: ConnectLocation | null;
+  performance_profile: PerformanceProfile | null;
+}
+
+export interface PerformanceProfile {
+  window_type: string;
+  window_size: WindowSizeSettings | null;
+}
+
+export interface WindowSizeSettings {
+  window_size_min: number;
+  window_size_min_p2p_only: number;
+  window_size_max: number;
+  window_size_hard_max: number;
+  window_size_reconnect_scale: number;
+  keep_healthiest_count: number;
+  ulimit: number;
+}
+
+export interface RemoveNetworkClientArgs {
+  client_id: string | null;
+}
+
+export interface RemoveNetworkClientResult {
+  error?: ApiError | null;
 }
 

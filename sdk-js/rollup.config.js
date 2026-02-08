@@ -45,7 +45,12 @@ export default [
         sourcemap: true,
       },
     ],
-    external: ["react", "@urnetwork/sdk-js"], // External to avoid bundling core twice
+    external: [
+      "react",
+      "react/jsx-runtime",
+      "@tanstack/react-query",
+      "@urnetwork/sdk-js",
+    ],
     plugins: [
       resolve(),
       typescript({

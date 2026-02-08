@@ -4,3 +4,4 @@ export * from "../index";
 // React-specific exports
 export * from "./context";
 export * from "./hooks";
+export * from "./query-options";
