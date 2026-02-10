@@ -1,6 +1,6 @@
 {
   "name": "@urnetwork/sdk-js",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.1-beta.2",
   "description": "JS/TS SDK for URnetwork integration",
   "license": "ISC",
   "author": "URnetwork <support@ur.io> (https://ur.io)",
