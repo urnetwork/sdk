@@ -1,6 +1,6 @@
 {
   "name": "@urnetwork/sdk-js",
-  "version": "0.0.1-beta.2",
+  "version": "0.0.1-beta.3",
   "description": "JS/TS SDK for URnetwork integration",
   "license": "ISC",
   "author": "URnetwork <support@ur.io> (https://ur.io)",
@@ -43,10 +43,6 @@
     "build:bundle": "rollup -c",
     "dev": "rollup -c -w",
     "prepublishOnly": "npm run build",
-    "release:beta": "npm version prerelease --preid=beta && npm publish --tag beta",
-    "release:patch": "npm version patch && npm publish",
-    "release:minor": "npm version minor && npm publish",
-    "release:major": "npm version major && npm publish",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "peerDependencies": {
