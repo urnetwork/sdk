@@ -27,6 +27,7 @@ export function useProviderList() {
 
   const debounceMs = 500;
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentRequestRef = useRef<number>(0);
 
   const filterLocations = (result: FindLocationsResult): FilteredLocations => {
     const bestMatch: ConnectLocation[] = [];
@@ -166,9 +167,9 @@ export function useProviderList() {
   };
 
   const getProviders = useCallback(
-    async (search: string): Promise<void> => {
+    async (search: string, requestId: number): Promise<void> => {
       setLoading(true);
-      setError(null);
+      setError(null); // Clear error when starting new request
 
       try {
         let result;
@@ -181,13 +182,32 @@ export function useProviderList() {
           result = await api.searchProviderLocations(params);
         }
 
-        const filteredLocations = filterLocations(result);
-        setFilteredLocations(filteredLocations);
-      } catch (error) {
-        setError(error as Error);
-        setFilteredLocations(initialFilteredLocations);
+        // Only update state if this is still the latest request
+        if (requestId === currentRequestRef.current) {
+          const filteredLocations = filterLocations(result);
+          setFilteredLocations(filteredLocations);
+        }
+      } catch (err) {
+        // Only update state if this is still the latest request
+        if (requestId === currentRequestRef.current) {
+          // Type-safe error handling
+          let errorObj: Error;
+          if (err instanceof Error) {
+            errorObj = err;
+          } else if (typeof err === "string") {
+            errorObj = new Error(err);
+          } else {
+            errorObj = new Error("Failed to load locations");
+          }
+
+          setError(errorObj);
+          setFilteredLocations(initialFilteredLocations);
+        }
       } finally {
-        setLoading(false);
+        // Only update loading state if this is still the latest request
+        if (requestId === currentRequestRef.current) {
+          setLoading(false);
+        }
       }
     },
     [api],
@@ -200,9 +220,13 @@ export function useProviderList() {
       clearTimeout(timeoutRef.current);
     }
 
+    // Increment request counter to track latest request
+    currentRequestRef.current += 1;
+    const requestId = currentRequestRef.current;
+
     // Set new timeout
     timeoutRef.current = setTimeout(() => {
-      getProviders(query);
+      getProviders(query, requestId);
     }, debounceMs);
 
     // Cleanup function
@@ -219,5 +243,6 @@ export function useProviderList() {
     filteredLocations,
     query,
     setQuery,
+    retry: () => getProviders(query, ++currentRequestRef.current),
   };
 }

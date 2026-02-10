@@ -339,12 +339,10 @@ export class URNetworkAPI {
         const errorData = await response.text();
         console.error("Error response:", errorData);
 
-        return {
-          specs: [],
-          groups: [],
-          locations: [],
-          devices: [],
-        };
+        // Throw error instead of returning empty data
+        throw new Error(
+          `Failed to fetch provider locations: ${response.status} ${response.statusText}`,
+        );
       }
 
       const data = await this.safeJsonParse<FindLocationsResult>(response);
@@ -352,12 +350,8 @@ export class URNetworkAPI {
       return data;
     } catch (error) {
       console.error("User auth verification error:", error);
-      return {
-        specs: [],
-        groups: [],
-        locations: [],
-        devices: [],
-      };
+      // Re-throw the error so the caller can handle it
+      throw error;
     }
   }
 
@@ -385,23 +379,17 @@ export class URNetworkAPI {
         const errorData = await response.text();
         console.error("Error response:", errorData);
 
-        return {
-          specs: [],
-          groups: [],
-          locations: [],
-          devices: [],
-        };
+        // Throw error instead of returning empty data
+        throw new Error(
+          `Failed to search provider locations: ${response.status} ${response.statusText}`,
+        );
       }
 
       return await this.safeJsonParse<FindLocationsResult>(response);
     } catch (error) {
       console.error("network/find-provider-locations error:", error);
-      return {
-        specs: [],
-        groups: [],
-        locations: [],
-        devices: [],
-      };
+      // Re-throw the error so the caller can handle it
+      throw error;
     }
   }
 
