@@ -1,6 +1,6 @@
 {
   "name": "@urnetwork/sdk-js",
-  "version": "0.0.1-beta.4",
+  "version": "0.0.1-beta.5",
   "description": "JS/TS SDK for URnetwork integration",
   "license": "ISC",
   "author": "URnetwork <support@ur.io> (https://ur.io)",
@@ -38,7 +38,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npm run build:types && npm run build:bundle",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && npm run build:types && npm run build:bundle",
     "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
     "build:bundle": "rollup -c",
     "dev": "rollup -c -w",
