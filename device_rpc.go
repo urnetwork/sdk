@@ -75,10 +75,10 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 	}
 	return &deviceRpcSettings{
 		RpcCallTimeout:         4 * time.Second,
-		RpcConnectTimeout:      1 * time.Second,
+		RpcConnectTimeout:      5 * time.Second,
 		RpcReconnectTimeout:    1 * time.Second,
-		KeepAliveTimeout:       1 * time.Second,
-		KeepAliveRetryCount:    2,
+		KeepAliveTimeout:       5 * time.Second,
+		KeepAliveRetryCount:    3,
 		Address:                requireRemoteAddress("127.0.0.1:12025"),
 		ResponseHost:           "127.0.0.1",
 		ResponsePorts:          responsePorts,
@@ -272,6 +272,8 @@ func (self *DeviceRemote) run() {
 	// 		panic(r)
 	// 	}
 	// }()
+
+	syncReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
 
 	initialLock := true
 	intialLockEndTime := time.Now().Add(self.settings.InitialLockTimeout)
@@ -490,7 +492,7 @@ func (self *DeviceRemote) run() {
 		select {
 		case <-self.ctx.Done():
 			return
-		case <-time.After(self.settings.RpcReconnectTimeout):
+		case <-syncReconnect.After():
 		case <-notify:
 			// reconnect now
 		}
@@ -3305,6 +3307,8 @@ func newDeviceLocalRpcManager(
 }
 
 func (self *deviceLocalRpcManager) run() {
+	listenReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
+
 	for {
 		handleCtx, handleCancel := context.WithCancel(self.ctx)
 
@@ -3329,14 +3333,10 @@ func (self *deviceLocalRpcManager) run() {
 			go connect.HandleError(func() {
 				defer handleCancel()
 
+				acceptReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
+
 				// handle connections serially
 				for {
-					select {
-					case <-handleCtx.Done():
-						return
-					default:
-					}
-
 					conn, err := listener.Accept()
 					if err != nil {
 						glog.Infof("[dlrcp]listen accept err = %s", err)
@@ -3349,6 +3349,12 @@ func (self *deviceLocalRpcManager) run() {
 						self.deviceLocal,
 						self.settings,
 					)
+
+					select {
+					case <-handleCtx.Done():
+						return
+					case <-acceptReconnect.After():
+					}
 				}
 			}, handleCancel)
 
@@ -3360,7 +3366,7 @@ func (self *deviceLocalRpcManager) run() {
 		select {
 		case <-self.ctx.Done():
 			return
-		case <-time.After(self.settings.RpcReconnectTimeout):
+		case <-listenReconnect.After():
 		}
 	}
 }
