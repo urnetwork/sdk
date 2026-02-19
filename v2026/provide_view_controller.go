@@ -3,7 +3,7 @@ package sdk
 import (
 	"context"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2026"
 )
 
 type ProvideViewController struct {
