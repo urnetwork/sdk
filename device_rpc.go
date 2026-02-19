@@ -3343,12 +3343,25 @@ func (self *deviceLocalRpcManager) run() {
 						return
 					}
 
-					newDeviceLocalRpc(
-						self.ctx,
-						conn,
-						self.deviceLocal,
-						self.settings,
-					)
+					func() {
+						rpcCtx, rpcCancel := context.WithCancel(handleCtx)
+						defer rpcCancel()
+
+						localRpc := newDeviceLocalRpc(
+							rpcCtx,
+							conn,
+							self.deviceLocal,
+							self.settings,
+						)
+						go connect.HandleError(func() {
+							defer localRpc.Close()
+							select {
+							case <-rpcCtx.Done():
+								return
+							}
+						})
+						localRpc.Run()
+					}()
 
 					select {
 					case <-handleCtx.Done():
@@ -3364,7 +3377,7 @@ func (self *deviceLocalRpcManager) run() {
 		}()
 
 		select {
-		case <-self.ctx.Done():
+		case <-handleCtx.Done():
 			return
 		case <-listenReconnect.After():
 		}
@@ -3456,11 +3469,11 @@ func newDeviceLocalRpc(
 		localWindowIds:                      map[connect.Id]connect.Id{},
 	}
 
-	go connect.HandleError(deviceLocalRpc.run, cancel)
+	// go connect.HandleError(deviceLocalRpc.run, cancel)
 	return deviceLocalRpc
 }
 
-func (self *DeviceLocalRpc) run() {
+func (self *DeviceLocalRpc) Run() {
 	defer self.cancel()
 	go connect.HandleError(func() {
 		defer self.conn.Close()
