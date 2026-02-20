@@ -83,7 +83,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		ResponseHost:           "127.0.0.1",
 		ResponsePorts:          responsePorts,
 		ResponsePortProbeCount: 10,
-		InitialLockTimeout:     200 * time.Millisecond,
+		InitialLockTimeout:     4 * time.Second,
 
 		deviceLocalSettings: *defaultDeviceLocalSettings(),
 	}
@@ -3343,25 +3343,13 @@ func (self *deviceLocalRpcManager) run() {
 						return
 					}
 
-					func() {
-						rpcCtx, rpcCancel := context.WithCancel(handleCtx)
-						defer rpcCancel()
-
-						localRpc := newDeviceLocalRpc(
-							rpcCtx,
-							conn,
-							self.deviceLocal,
-							self.settings,
-						)
-						go connect.HandleError(func() {
-							defer localRpc.Close()
-							select {
-							case <-rpcCtx.Done():
-								return
-							}
-						})
-						localRpc.Run()
-					}()
+					// note this will close the connection when handleCtx is closed
+					newDeviceLocalRpc(
+						handleCtx,
+						conn,
+						self.deviceLocal,
+						self.settings,
+					)
 
 					select {
 					case <-handleCtx.Done():
@@ -3469,11 +3457,11 @@ func newDeviceLocalRpc(
 		localWindowIds:                      map[connect.Id]connect.Id{},
 	}
 
-	// go connect.HandleError(deviceLocalRpc.run, cancel)
+	go connect.HandleError(deviceLocalRpc.run, cancel)
 	return deviceLocalRpc
 }
 
-func (self *DeviceLocalRpc) Run() {
+func (self *DeviceLocalRpc) run() {
 	defer self.cancel()
 	go connect.HandleError(func() {
 		defer self.conn.Close()
