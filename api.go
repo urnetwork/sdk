@@ -1364,19 +1364,18 @@ type AuthCodeLoginResult struct {
 
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
 
-func (self *Api) AuthCodeLogin(
-	codeLoginArgs *AuthCodeLoginArgs,
-	callback AuthCodeLoginCallback,
-) (*AuthCodeLoginResult, error) {
-	return connect.HttpPostWithRawFunction(
-		self.ctx,
-		self.getHttpPostRaw(),
-		fmt.Sprintf("%s/auth/code-login", self.apiUrl),
-		codeLoginArgs,
-		self.GetByJwt(),
-		&AuthCodeLoginResult{},
-		callback,
-	)
+func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/code-login", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&AuthCodeLoginResult{},
+			callback,
+		)
+	})
 }
 
 /**
