@@ -2,14 +2,6 @@ module github.com/urnetwork/sdk/build
 
 go 1.25.0
 
-require github.com/urnetwork/sdk v0.0.0
-
-replace github.com/urnetwork/sdk => ..
-
-replace github.com/urnetwork/connect => ../../connect
-
-replace github.com/urnetwork/glog => ../../glog
-
 require (
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
@@ -17,8 +9,9 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/urnetwork/connect v0.0.0 // indirect
-	github.com/urnetwork/glog v0.0.0 // indirect
+	github.com/urnetwork/connect/v2026 v2026.2.23-870691720
+	github.com/urnetwork/glog/v2026 v2026.2.23-870691720
+	github.com/urnetwork/sdk/v2026 v2026.2.23-870691720
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mobile v0.0.0-20260217195705-b56b3793a9c4 // indirect
