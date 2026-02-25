@@ -409,6 +409,31 @@ func (self *LocalState) GetProvideControlMode() ProvideControlMode {
 	return ProvideControlModeAuto
 }
 
+func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error {
+	path := filepath.Join(self.localStorageDir, ".performance_profile")
+	if profile == nil {
+		os.Remove(path)
+		return nil
+	} else {
+		profileBytes, err := json.Marshal(profile)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, profileBytes, LocalStorageFilePermissions)
+	}
+}
+
+func (self *LocalState) GetPerformanceProfile() *PerformanceProfile {
+	path := filepath.Join(self.localStorageDir, ".performance_profile")
+	if performanceProfileBytes, err := os.ReadFile(path); err == nil {
+		var performanceProfile PerformanceProfile
+		if err := json.Unmarshal(performanceProfileBytes, &performanceProfile); err == nil {
+			return &performanceProfile
+		}
+	}
+	return nil
+}
+
 func (self *LocalState) SetAllowForeground(allowForeground bool) error {
 	path := filepath.Join(self.localStorageDir, ".allow_foreground")
 	allowForegroundBytes, err := json.Marshal(allowForeground)
