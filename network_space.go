@@ -129,12 +129,23 @@ func newNetworkSpace(
 	values NetworkSpaceValues,
 	storagePath string,
 ) *NetworkSpace {
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings())
+}
+
+func newNetworkSpaceWithConnectSettings(
+	ctx context.Context,
+	key NetworkSpaceKey,
+	values NetworkSpaceValues,
+	storagePath string,
+	connectSettings *connect.ConnectSettings,
+) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	apiUrl := ServiceUrl(&key, &values, "https", "api")
 	platformUrl := ServiceUrl(&key, &values, "wss", "connect")
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
+	clientStrategySettings.ConnectSettings = *connectSettings
 	clientStrategySettings.ExposeServerIps = values.NetExposeServerIps
 	clientStrategySettings.ExposeServerHostNames = values.NetExposeServerHostNames
 
@@ -177,6 +188,7 @@ func NewPlatformNetworkSpace(
 	ctx context.Context,
 	env string,
 	host string,
+	connectSettings *connect.ConnectSettings,
 ) *NetworkSpace {
 	key := NetworkSpaceKey{
 		EnvName:  env,
@@ -186,7 +198,7 @@ func NewPlatformNetworkSpace(
 		NetExposeServerIps:       true,
 		NetExposeServerHostNames: true,
 	}
-	return newNetworkSpace(ctx, key, values, "")
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, "", connectSettings)
 }
 
 func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
