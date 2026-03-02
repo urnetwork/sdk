@@ -185,6 +185,7 @@ func NewDeviceLocalWithDefaults(
 		func() (*DeviceLocal, error) {
 			return newDeviceLocal(
 				true,
+				true,
 				nil,
 				networkSpace,
 				byJwt,
@@ -236,6 +237,7 @@ func NewPlatformDeviceLocal(
 ) (*DeviceLocal, error) {
 	return newDeviceLocal(
 		false,
+		false,
 		generatorFunc,
 		networkSpace,
 		byJwt,
@@ -251,6 +253,7 @@ func NewPlatformDeviceLocal(
 
 func newDeviceLocal(
 	allowProvider bool,
+	verbose bool,
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
@@ -267,6 +270,7 @@ func newDeviceLocal(
 	}
 	return newDeviceLocalWithOverrides(
 		allowProvider,
+		verbose,
 		generatorFunc,
 		networkSpace,
 		byJwt,
@@ -282,6 +286,7 @@ func newDeviceLocal(
 
 func newDeviceLocalWithOverrides(
 	allowProvider bool,
+	verbose bool,
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
@@ -400,7 +405,7 @@ func newDeviceLocalWithOverrides(
 
 	if enableRpc {
 		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
-	} else {
+	} else if verbose {
 		newSecurityPolicyMonitor(ctx, deviceLocal)
 	}
 
