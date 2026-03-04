@@ -589,6 +589,8 @@ const (
 type PerformanceProfile struct {
 	WindowType WindowType          `json:"window_type"`
 	WindowSize *WindowSizeSettings `json:"window_size"`
+	// setting this to true exposes the real source IP to the provider
+	AllowDirect bool `json:"allow_direct"`
 }
 
 type WindowSizeSettings struct {
