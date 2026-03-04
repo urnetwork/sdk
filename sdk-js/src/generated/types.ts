@@ -299,6 +299,7 @@ export interface ProxyDeviceState {
 export interface PerformanceProfile {
   window_type: string;
   window_size: WindowSizeSettings | null;
+  allow_direct: boolean;
 }
 
 export interface WindowSizeSettings {
