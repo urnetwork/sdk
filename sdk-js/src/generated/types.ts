@@ -320,3 +320,33 @@ export interface RemoveNetworkClientResult {
   error?: ApiError | null;
 }
 
+export interface CreateApiKeyArgs {
+  name: string;
+}
+
+export interface CreateApiKeyResult {
+  id?: string | null;
+  api_key?: string;
+  name?: string;
+  error?: ApiError | null;
+}
+
+export interface PublicAccountApiKey {
+  id: string | null;
+  name: string;
+  create_time: string | null;
+}
+
+export interface ListApiKeysResult {
+  api_keys?: PublicAccountApiKey[] | null;
+  error?: ApiError | null;
+}
+
+export interface DeleteApiKeyArgs {
+  id: string | null;
+}
+
+export interface DeleteApiKeyResult {
+  error?: ApiError | null;
+}
+

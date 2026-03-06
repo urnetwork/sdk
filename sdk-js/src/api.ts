@@ -9,8 +9,13 @@ import {
   AuthNetworkClientResult,
   AuthVerifyArgs,
   AuthVerifyResult,
+  CreateApiKeyArgs,
+  CreateApiKeyResult,
+  DeleteApiKeyArgs,
+  DeleteApiKeyResult,
   FindLocationsArgs,
   FindLocationsResult,
+  ListApiKeysResult,
   NetworkCheckArgs,
   NetworkCheckResult,
   NetworkCreateArgs,
@@ -544,6 +549,130 @@ export class URNetworkAPI {
             error instanceof Error
               ? error.message
               : "Remove network client failed",
+        },
+      };
+    }
+  }
+
+  async createApiKey(
+    params: CreateApiKeyArgs,
+    token: string,
+  ): Promise<CreateApiKeyResult> {
+    try {
+      const response = await fetch(`${this.baseURL}/account/api-key`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Create API key failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          error: {
+            message: `HTTP error! status: ${response.status}`,
+          },
+        };
+      }
+
+      return await this.safeJsonParse<CreateApiKeyResult>(response);
+    } catch (error) {
+      console.error("Create API key error:", error);
+      return {
+        error: {
+          message:
+            error instanceof Error ? error.message : "Create API key failed",
+        },
+      };
+    }
+  }
+
+  async listApiKeys(token: string): Promise<ListApiKeysResult> {
+    try {
+      const response = await fetch(`${this.baseURL}/account/api-keys`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error(
+          "List API keys failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          error: {
+            message: `HTTP error! status: ${response.status}`,
+          },
+        };
+      }
+
+      const data = await this.safeJsonParse<ListApiKeysResult>(response);
+
+      return data;
+    } catch (error) {
+      console.error("List API keys error:", error);
+      return {
+        error: {
+          message:
+            error instanceof Error ? error.message : "List API keys failed",
+        },
+      };
+    }
+  }
+
+  async deleteApiKey(
+    params: DeleteApiKeyArgs,
+    token: string,
+  ): Promise<DeleteApiKeyResult> {
+    try {
+      const response = await fetch(`${this.baseURL}/account/api-key/remove`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Delete API key failed:",
+          response.status,
+          response.statusText,
+        );
+        const errorData = await response.text();
+        console.error("Error response:", errorData);
+
+        return {
+          error: {
+            message: `HTTP error! status: ${response.status}`,
+          },
+        };
+      }
+
+      return await this.safeJsonParse<DeleteApiKeyResult>(response);
+    } catch (error) {
+      console.error("Delete API key error:", error);
+      return {
+        error: {
+          message:
+            error instanceof Error ? error.message : "Delete API key failed",
         },
       };
     }
