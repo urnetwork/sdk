@@ -2065,3 +2065,85 @@ type RemoveNetworkClientArgs struct {
 type RemoveNetworkClientResult struct {
 	Error *ApiError `json:"error,omitempty"`
 }
+
+/**
+ * Create API Key
+ */
+
+type CreateApiKeyArgs struct {
+	Name string `json:"name"`
+}
+
+type CreateApiKeyResult struct {
+	Id     *Id       `json:"id,omitempty"`
+	ApiKey string    `json:"api_key,omitempty"`
+	Name   string    `json:"name,omitempty"`
+	Error  *ApiError `json:"error,omitempty"`
+}
+
+type CreateApiKeyCallback connect.ApiCallback[*CreateApiKeyResult]
+
+func (self *Api) CreateApiKey(args *CreateApiKeyArgs, callback CreateApiKeyCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/account/api-key", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&CreateApiKeyResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * List API Keys
+ */
+
+type ListApiKeysResult struct {
+	ApiKeys *PublicAccountApiKeyList `json:"api_keys,omitempty"`
+	Error   *ApiError                `json:"error,omitempty"`
+}
+
+type ListApiKeysCallback connect.ApiCallback[*ListApiKeysResult]
+
+func (self *Api) ListApiKeys(callback ListApiKeysCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/account/api-keys", self.apiUrl),
+			self.GetByJwt(),
+			&ListApiKeysResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Delete API Key
+ */
+
+type DeleteApiKeyArgs struct {
+	Id *Id `json:"id"`
+}
+
+type DeleteApiKeyResult struct {
+	Error *ApiError `json:"error,omitempty"`
+}
+
+type DeleteApiKeyCallback connect.ApiCallback[*DeleteApiKeyResult]
+
+func (self *Api) DeleteApiKey(callback DeleteApiKeyCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/account/api-key/remove", self.apiUrl),
+			self.GetByJwt(),
+			&DeleteApiKeyResult{},
+			callback,
+		)
+	})
+}

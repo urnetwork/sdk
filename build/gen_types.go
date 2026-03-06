@@ -84,6 +84,12 @@ func generateTypes() error {
 		sdk.WindowSizeSettings{},
 		sdk.RemoveNetworkClientArgs{},
 		sdk.RemoveNetworkClientResult{},
+		sdk.CreateApiKeyArgs{},
+		sdk.CreateApiKeyResult{},
+		sdk.PublicAccountApiKey{},
+		sdk.ListApiKeysResult{},
+		sdk.DeleteApiKeyArgs{},
+		sdk.DeleteApiKeyResult{},
 	}
 
 	for _, t := range types {
@@ -187,7 +193,7 @@ func goTypeToTypeScript(t reflect.Type) string {
 	case reflect.Struct:
 		// Check for known types
 		switch t.String() {
-		case "time.Time":
+		case "time.Time", "sdk.Time":
 			return "string" // ISO 8601 format
 		case "netip.Addr":
 			return "string"
@@ -205,6 +211,8 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "LocationGroupResult[]"
 		case "sdk.ConnectLocationList":
 			return "ConnectLocation[]"
+		case "sdk.PublicAccountApiKeyList":
+			return "PublicAccountApiKey[]"
 		default:
 			return t.Name()
 		}

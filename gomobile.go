@@ -349,6 +349,16 @@ type RedeemedBalanceCodeList struct {
 	exportedList[*RedeemedBalanceCode]
 }
 
+type PublicAccountApiKey struct {
+	Id         *Id    `json:"id"`
+	Name       string `json:"name"`
+	CreateTime *Time  `json:"create_time"`
+}
+
+type PublicAccountApiKeyList struct {
+	exportedList[*PublicAccountApiKey]
+}
+
 // conforms to `json.Marshaler` and `json.Unmarshaler`
 type Time struct {
 	impl time.Time
