@@ -1290,55 +1290,109 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
 			}
 
-			var generator connect.MultiClientGenerator
-			if self.generatorFunc != nil {
-				generator = self.generatorFunc(connectSpecs)
-			} else {
-				generator = connect.NewApiMultiClientGenerator(
-					self.ctx,
-					connectSpecs,
-					self.clientStrategy,
-					// exclude self
-					[]connect.Id{self.clientId},
-					self.networkSpace.apiUrl,
-					self.byJwt,
-					self.networkSpace.platformUrl,
-					self.deviceDescription,
-					self.deviceSpec,
-					self.appVersion,
-					&self.clientId,
-					// connect.DefaultClientSettingsNoNetworkEvents,
-					connect.DefaultClientSettings,
-					connect.DefaultApiMultiClientGeneratorSettings(),
-				)
+			specClientIds := []connect.Id{}
+			for _, spec := range connectSpecs {
+				if spec.ClientId != nil {
+					specClientIds = append(specClientIds, *spec.ClientId)
+				}
 			}
+			fixedDestinationSize := len(specClientIds) == len(connectSpecs)
+
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
-			settings := connect.DefaultMultiClientSettings()
-			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
-			if self.ingressSecurityPolicyGenerator != nil {
-				settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
-			}
-			if self.egressSecurityPolicyGenerator != nil {
-				settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
-			}
-			multi := connect.NewRemoteUserNatMultiClient(
-				self.ctx,
-				generator,
-				remoteReceive,
-				protocol.ProvideMode_Public,
-				settings,
-			)
-			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
-			self.remoteUserNatClient = multi
 
-			monitor := multi.Monitor()
-			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
-				self.windowStatusChanged(toWindowStatus(monitor))
+			if fixedDestinationSize {
+				// a minimal efficient setup to send to fixed client id destinations
+
+				// FIXME support custom security policies
+
+				apiUrl := self.networkSpace.apiUrl
+				clientStrategy := self.networkSpace.clientStrategy
+
+				clientOob := connect.NewApiOutOfBandControl(self.ctx, clientStrategy, self.byJwt, apiUrl)
+				client := connect.NewClient(
+					self.ctx,
+					self.clientId,
+					clientOob,
+					connect.DefaultClientSettings(),
+				)
+
+				auth := &connect.ClientAuth{
+					ByJwt:      self.byJwt,
+					InstanceId: self.instanceId,
+					AppVersion: self.appVersion,
+				}
+				platformTransport := connect.NewPlatformTransportWithDefaults(
+					client.Ctx(),
+					clientStrategy,
+					client.RouteManager(),
+					self.networkSpace.platformUrl,
+					auth,
+				)
+
+				var destinations []connect.MultiHopId
+				for _, clientId := range specClientIds {
+					destinations = append(destinations, connect.RequireMultiHopId(clientId))
+				}
+				nat := connect.NewRemoteUserNatClientWithClose(
+					client,
+					remoteReceive,
+					destinations,
+					protocol.ProvideMode_Public,
+					func() {
+						platformTransport.Close()
+						client.Close()
+					},
+				)
+				self.remoteUserNatClient = nat
+			} else {
+				var generator connect.MultiClientGenerator
+				if self.generatorFunc != nil {
+					generator = self.generatorFunc(connectSpecs)
+				} else {
+					generator = connect.NewApiMultiClientGenerator(
+						self.ctx,
+						connectSpecs,
+						self.clientStrategy,
+						// exclude self
+						[]connect.Id{self.clientId},
+						self.networkSpace.apiUrl,
+						self.byJwt,
+						self.networkSpace.platformUrl,
+						self.deviceDescription,
+						self.deviceSpec,
+						self.appVersion,
+						&self.clientId,
+						// connect.DefaultClientSettingsNoNetworkEvents,
+						connect.DefaultClientSettings,
+						connect.DefaultApiMultiClientGeneratorSettings(),
+					)
+				}
+				settings := connect.DefaultMultiClientSettings()
+				settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+				if self.ingressSecurityPolicyGenerator != nil {
+					settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
+				}
+				if self.egressSecurityPolicyGenerator != nil {
+					settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
+				}
+				multi := connect.NewRemoteUserNatMultiClient(
+					self.ctx,
+					generator,
+					remoteReceive,
+					protocol.ProvideMode_Public,
+					settings,
+				)
+				self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
+				self.remoteUserNatClient = multi
+				monitor := multi.Monitor()
+				windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
+					self.windowStatusChanged(toWindowStatus(monitor))
+				}
+				self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 			}
-			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 
 			if self.provider != nil {
 				if self.provideControlMode == ProvideControlModeAuto {
@@ -1373,6 +1427,11 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 		defer self.stateLock.Unlock()
 
 		switch v := self.remoteUserNatClient.(type) {
+		case *connect.RemoteUserNatClient:
+			windowStatus = &WindowStatus{
+				TargetSize:   v.DestinationCount(),
+				MinSatisfied: true,
+			}
 		case *connect.RemoteUserNatMultiClient:
 			windowStatus = toWindowStatus(v.Monitor())
 		default:
