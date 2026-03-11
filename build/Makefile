@@ -26,7 +26,7 @@ build_android:
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
 	# see https://github.com/wlynxg/anet/pull/9
-	# see https://github.com/golang/go/issues/78085
+	# see https://github.com/pion/webrtc/issues/2640
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
