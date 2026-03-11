@@ -24,6 +24,9 @@ build_android:
 	# but due to limitations they are and should be ignored
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
+	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
+	# see https://github.com/wlynxg/anet/pull/9
+	# see https://github.com/golang/go/issues/78085
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
@@ -35,7 +38,7 @@ build_android:
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
+		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		"github.com/urnetwork/sdk"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
