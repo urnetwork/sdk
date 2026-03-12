@@ -35,6 +35,39 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 	return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
 }
 
+type fixedWindowMonitor struct {
+	clientIds []connect.Id
+}
+
+func newFixedWindowMonitor(clientIds []connect.Id) *fixedWindowMonitor {
+	return &fixedWindowMonitor{
+		clientIds: clientIds,
+	}
+}
+
+func (self *fixedWindowMonitor) AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func() {
+	go connect.HandleError(func() {
+		windowExpandEvent, providerEvents := self.Events()
+		monitorEventCallback(windowExpandEvent, providerEvents, true)
+	})
+	return func() {}
+}
+
+func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+	windowExpandEvent := &connect.WindowExpandEvent{
+		TargetSize:   len(self.clientIds),
+		MinSatisfied: true,
+	}
+	providerEvents := map[connect.Id]*connect.ProviderEvent{}
+	for _, clientId := range self.clientIds {
+		providerEvents[clientId] = &connect.ProviderEvent{
+			ClientId: clientId,
+			State:    connect.ProviderStateAdded,
+		}
+	}
+	return windowExpandEvent, providerEvents
+}
+
 func defaultDeviceLocalSettings() *deviceLocalSettings {
 	return &deviceLocalSettings{
 		SendTimeout: 4 * time.Second,
@@ -447,6 +480,12 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 	}()
 	if remoteUserNatClient != nil {
 		switch v := remoteUserNatClient.(type) {
+		case *connect.RemoteUserNatClient:
+			if performanceProfile != nil {
+				v.SetAllowDirect(performanceProfile.AllowDirect)
+			} else {
+				v.SetAllowDirect(false)
+			}
 		case *connect.RemoteUserNatMultiClient:
 			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
 		}
@@ -763,6 +802,10 @@ func (self *DeviceLocal) SetRouteLocal(routeLocal bool) {
 		if self.routeLocal != routeLocal {
 			self.routeLocal = routeLocal
 			set = true
+
+			if self.remoteUserNatClient != nil {
+				self.remoteUserNatClient.SetLocalSecurityBypass(routeLocal)
+			}
 		}
 	}()
 	if set {
@@ -779,6 +822,8 @@ func (self *DeviceLocal) GetRouteLocal() bool {
 
 func (self *DeviceLocal) windowMonitor() windowMonitor {
 	switch v := self.remoteUserNatClient.(type) {
+	case *connect.RemoteUserNatClient:
+		return newFixedWindowMonitor(v.DestinationIds())
 	case *connect.RemoteUserNatMultiClient:
 		return v.Monitor()
 	default:
@@ -1298,6 +1343,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			}
 			fixedDestinationSize := len(specClientIds) == len(connectSpecs)
 
+			fmt.Printf("[SETDESTINATION]clientids=%v %t\n", specClientIds, fixedDestinationSize)
+
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
@@ -1394,6 +1441,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 			}
 
+			self.remoteUserNatClient.SetLocalSecurityBypass(self.routeLocal)
+
 			if self.provider != nil {
 				if self.provideControlMode == ProvideControlModeAuto {
 					provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
@@ -1428,9 +1477,11 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 
 		switch v := self.remoteUserNatClient.(type) {
 		case *connect.RemoteUserNatClient:
+			n := len(v.DestinationIds())
 			windowStatus = &WindowStatus{
-				TargetSize:   v.DestinationCount(),
-				MinSatisfied: true,
+				TargetSize:         n,
+				ProviderStateAdded: n,
+				MinSatisfied:       true,
 			}
 		case *connect.RemoteUserNatMultiClient:
 			windowStatus = toWindowStatus(v.Monitor())
@@ -1971,8 +2022,9 @@ func toConnectPerformanceProfile(performanceProfile *PerformanceProfile) *connec
 		connectWindowType = connect.WindowTypeQuality
 	}
 	p := &connect.PerformanceProfile{
-		WindowType: connectWindowType,
-		WindowSize: toConnectWindowSize(performanceProfile.WindowSize),
+		WindowType:  connectWindowType,
+		WindowSize:  toConnectWindowSize(performanceProfile.WindowSize),
+		AllowDirect: performanceProfile.AllowDirect,
 	}
 	return p
 }
