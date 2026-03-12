@@ -32,6 +32,7 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	// FIXME enable RPC
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		true,
+		false,
 		nil,
 		networkSpace,
 		byJwt,
@@ -103,6 +104,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
 				true,
+				false,
 				nil,
 				networkSpace,
 				byJwt,
@@ -385,6 +387,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
 				true,
+				false,
 				nil,
 				networkSpace,
 				byJwt,
@@ -485,6 +488,7 @@ func TestDeviceRemoteApi(t *testing.T) {
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		true,
+		false,
 		nil,
 		networkSpace,
 		byJwt,
@@ -586,6 +590,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		true,
+		false,
 		nil,
 		networkSpace,
 		byJwt,
@@ -751,6 +756,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		true,
+		false,
 		nil,
 		networkSpace,
 		byJwt,
@@ -844,6 +850,7 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	// FIXME enable RPC
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		true,
+		false,
 		nil,
 		networkSpace,
 		byJwt,
