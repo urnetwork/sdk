@@ -1343,8 +1343,6 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			}
 			fixedDestinationSize := len(specClientIds) == len(connectSpecs)
 
-			fmt.Printf("[SETDESTINATION]clientids=%v %t\n", specClientIds, fixedDestinationSize)
-
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
