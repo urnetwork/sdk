@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-playground/assert/v2"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2026"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 // FIXME start remote and local
