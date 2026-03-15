@@ -522,7 +522,7 @@ func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
 // 	}
 // }
 
-func (self *DeviceLocal) client() *connect.Client {
+func (self *DeviceLocal) providerClient() *connect.Client {
 	if self.provider == nil {
 		return nil
 	}
@@ -1122,7 +1122,7 @@ func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protoc
 
 func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 	provideSecretKeyList := NewProvideSecretKeyList()
-	if client := self.client(); client != nil {
+	if client := self.providerClient(); client != nil {
 		provideSecretKeys := client.ContractManager().GetProvideSecretKeys()
 		for provideMode, provideSecretKey := range provideSecretKeys {
 			provideSecretKey := &ProvideSecretKey{
@@ -1136,7 +1136,7 @@ func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 }
 
 func (self *DeviceLocal) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
-	if client := self.client(); client != nil {
+	if client := self.providerClient(); client != nil {
 		provideSecretKeys := map[protocol.ProvideMode][]byte{}
 		for i := 0; i < provideSecretKeyList.Len(); i += 1 {
 			provideSecretKey := provideSecretKeyList.Get(i)
@@ -1150,7 +1150,7 @@ func (self *DeviceLocal) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecr
 }
 
 func (self *DeviceLocal) InitProvideSecretKeys() {
-	if client := self.client(); client != nil {
+	if client := self.providerClient(); client != nil {
 		client.ContractManager().InitProvideSecretKeys()
 
 		self.provideSecretKeysChanged(self.GetProvideSecretKeys())
@@ -1187,14 +1187,12 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 }
 
 func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (changed bool) {
-	if client := self.client(); client != nil {
+	if client := self.providerClient(); client != nil {
 		if self.provideMode != provideMode {
 			self.provideMode = provideMode
 			changed = true
 
-			// TODO create a new provider only client?
-
-			if ProvideModeNone < provideMode {
+			if provideMode != ProvideModeNone {
 				// recreate the provider user nat only as needed
 				// this avoid connection disruptions
 				if self.remoteUserNatProviderLocalUserNat == nil {
@@ -1246,7 +1244,7 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
-	if client := self.client(); client != nil {
+	if client := self.providerClient(); client != nil {
 		if client.ContractManager().SetProvidePaused(providePaused) {
 			glog.Infof("[device]provide paused = %t\n", providePaused)
 			self.providePausedChanged(self.GetProvidePaused())
@@ -1255,7 +1253,7 @@ func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 }
 
 func (self *DeviceLocal) GetProvidePaused() (providePaused bool) {
-	if client := self.client(); client != nil {
+	if client := self.providerClient(); client != nil {
 		providePaused = client.ContractManager().IsProvidePaused()
 	}
 	return
@@ -1344,12 +1342,14 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			fixedDestinationSize := len(specClientIds) == len(connectSpecs)
 
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
+				// glog.Infof("[trace]receive packet\n")
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
 
-			if fixedDestinationSize {
+			if fixedDestinationSize && self.providerClient() == nil {
 				// a minimal efficient setup to send to fixed client id destinations
+				// the client id can be reused because there is no provider
 
 				// FIXME support custom security policies
 
@@ -1575,11 +1575,6 @@ func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
 func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	source := connect.SourceId(self.clientId)
 
-	var localUserNat *connect.LocalUserNat
-	if self.provider != nil {
-		localUserNat = self.provider.LocalUserNat()
-	}
-
 	var remoteUserNatClient connect.UserNatClient
 	var routeLocal bool
 	func() {
@@ -1597,14 +1592,22 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 			packet,
 			self.settings.SendTimeout,
 		)
-	} else if routeLocal && localUserNat != nil {
-		// route locally
-		return localUserNat.SendPacket(
-			source,
-			protocol.ProvideMode_Network,
-			packet,
-			self.settings.SendTimeout,
-		)
+	} else if routeLocal {
+		var localUserNat *connect.LocalUserNat
+		if self.provider != nil {
+			localUserNat = self.provider.LocalUserNat()
+		}
+		if localUserNat != nil {
+			// route locally
+			return localUserNat.SendPacket(
+				source,
+				protocol.ProvideMode_Network,
+				packet,
+				self.settings.SendTimeout,
+			)
+		} else {
+			return false
+		}
 	} else {
 		return false
 	}
