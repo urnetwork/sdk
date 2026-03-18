@@ -1333,13 +1333,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
 			}
 
-			specClientIds := []connect.Id{}
-			for _, spec := range connectSpecs {
-				if spec.ClientId != nil {
-					specClientIds = append(specClientIds, *spec.ClientId)
-				}
-			}
-			fixedDestinationSize := len(specClientIds) == len(connectSpecs)
+			// specClientIds := []connect.Id{}
+			// for _, spec := range connectSpecs {
+			// 	if spec.ClientId != nil {
+			// 		specClientIds = append(specClientIds, *spec.ClientId)
+			// 	}
+			// }
+			// fixedDestinationSize := len(specClientIds) == len(connectSpecs)
 
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				// glog.Infof("[trace]receive packet\n")
@@ -1347,97 +1347,97 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.receive(source, provideMode, ipPath, packet)
 			}
 
-			if fixedDestinationSize && self.providerClient() == nil {
-				// a minimal efficient setup to send to fixed client id destinations
-				// the client id can be reused because there is no provider
+			// if fixedDestinationSize && self.providerClient() == nil {
+			// 	// a minimal efficient setup to send to fixed client id destinations
+			// 	// the client id can be reused because there is no provider
 
-				// FIXME support custom security policies
+			// 	// FIXME support custom security policies
 
-				apiUrl := self.networkSpace.apiUrl
-				clientStrategy := self.networkSpace.clientStrategy
+			// 	apiUrl := self.networkSpace.apiUrl
+			// 	clientStrategy := self.networkSpace.clientStrategy
 
-				clientOob := connect.NewApiOutOfBandControl(self.ctx, clientStrategy, self.byJwt, apiUrl)
-				client := connect.NewClient(
-					self.ctx,
-					self.clientId,
-					clientOob,
-					connect.DefaultClientSettings(),
-				)
+			// 	clientOob := connect.NewApiOutOfBandControl(self.ctx, clientStrategy, self.byJwt, apiUrl)
+			// 	client := connect.NewClient(
+			// 		self.ctx,
+			// 		self.clientId,
+			// 		clientOob,
+			// 		connect.DefaultClientSettings(),
+			// 	)
 
-				auth := &connect.ClientAuth{
-					ByJwt:      self.byJwt,
-					InstanceId: self.instanceId,
-					AppVersion: self.appVersion,
-				}
-				platformTransport := connect.NewPlatformTransportWithDefaults(
-					client.Ctx(),
-					clientStrategy,
-					client.RouteManager(),
-					self.networkSpace.platformUrl,
-					auth,
-				)
+			// 	auth := &connect.ClientAuth{
+			// 		ByJwt:      self.byJwt,
+			// 		InstanceId: self.instanceId,
+			// 		AppVersion: self.appVersion,
+			// 	}
+			// 	platformTransport := connect.NewPlatformTransportWithDefaults(
+			// 		client.Ctx(),
+			// 		clientStrategy,
+			// 		client.RouteManager(),
+			// 		self.networkSpace.platformUrl,
+			// 		auth,
+			// 	)
 
-				var destinations []connect.MultiHopId
-				for _, clientId := range specClientIds {
-					destinations = append(destinations, connect.RequireMultiHopId(clientId))
-				}
-				nat := connect.NewRemoteUserNatClientWithClose(
-					client,
-					remoteReceive,
-					destinations,
-					protocol.ProvideMode_Public,
-					func() {
-						platformTransport.Close()
-						client.Close()
-					},
-				)
-				self.remoteUserNatClient = nat
+			// 	var destinations []connect.MultiHopId
+			// 	for _, clientId := range specClientIds {
+			// 		destinations = append(destinations, connect.RequireMultiHopId(clientId))
+			// 	}
+			// 	nat := connect.NewRemoteUserNatClientWithClose(
+			// 		client,
+			// 		remoteReceive,
+			// 		destinations,
+			// 		protocol.ProvideMode_Public,
+			// 		func() {
+			// 			platformTransport.Close()
+			// 			client.Close()
+			// 		},
+			// 	)
+			// 	self.remoteUserNatClient = nat
+			// } else {
+			var generator connect.MultiClientGenerator
+			if self.generatorFunc != nil {
+				generator = self.generatorFunc(connectSpecs)
 			} else {
-				var generator connect.MultiClientGenerator
-				if self.generatorFunc != nil {
-					generator = self.generatorFunc(connectSpecs)
-				} else {
-					generator = connect.NewApiMultiClientGenerator(
-						self.ctx,
-						connectSpecs,
-						self.clientStrategy,
-						// exclude self
-						[]connect.Id{self.clientId},
-						self.networkSpace.apiUrl,
-						self.byJwt,
-						self.networkSpace.platformUrl,
-						self.deviceDescription,
-						self.deviceSpec,
-						self.appVersion,
-						&self.clientId,
-						// connect.DefaultClientSettingsNoNetworkEvents,
-						connect.DefaultClientSettings,
-						connect.DefaultApiMultiClientGeneratorSettings(),
-					)
-				}
-				settings := connect.DefaultMultiClientSettings()
-				settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
-				if self.ingressSecurityPolicyGenerator != nil {
-					settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
-				}
-				if self.egressSecurityPolicyGenerator != nil {
-					settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
-				}
-				multi := connect.NewRemoteUserNatMultiClient(
+				generator = connect.NewApiMultiClientGenerator(
 					self.ctx,
-					generator,
-					remoteReceive,
-					protocol.ProvideMode_Public,
-					settings,
+					connectSpecs,
+					self.clientStrategy,
+					// exclude self
+					[]connect.Id{self.clientId},
+					self.networkSpace.apiUrl,
+					self.byJwt,
+					self.networkSpace.platformUrl,
+					self.deviceDescription,
+					self.deviceSpec,
+					self.appVersion,
+					&self.clientId,
+					// connect.DefaultClientSettingsNoNetworkEvents,
+					connect.DefaultClientSettings,
+					connect.DefaultApiMultiClientGeneratorSettings(),
 				)
-				self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
-				self.remoteUserNatClient = multi
-				monitor := multi.Monitor()
-				windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
-					self.windowStatusChanged(toWindowStatus(monitor))
-				}
-				self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 			}
+			settings := connect.DefaultMultiClientSettings()
+			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+			if self.ingressSecurityPolicyGenerator != nil {
+				settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
+			}
+			if self.egressSecurityPolicyGenerator != nil {
+				settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
+			}
+			multi := connect.NewRemoteUserNatMultiClient(
+				self.ctx,
+				generator,
+				remoteReceive,
+				protocol.ProvideMode_Public,
+				settings,
+			)
+			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
+			self.remoteUserNatClient = multi
+			monitor := multi.Monitor()
+			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
+				self.windowStatusChanged(toWindowStatus(monitor))
+			}
+			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
+			// }
 
 			self.remoteUserNatClient.SetLocalSecurityBypass(self.routeLocal)
 
