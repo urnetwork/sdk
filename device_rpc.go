@@ -74,16 +74,16 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		responsePorts = append(responsePorts, port)
 	}
 	return &deviceRpcSettings{
-		RpcCallTimeout:         4 * time.Second,
+		RpcCallTimeout:         5 * time.Second,
 		RpcConnectTimeout:      5 * time.Second,
-		RpcReconnectTimeout:    1 * time.Second,
-		KeepAliveTimeout:       5 * time.Second,
+		RpcReconnectTimeout:    5 * time.Second,
+		KeepAliveTimeout:       1 * time.Second,
 		KeepAliveRetryCount:    3,
 		Address:                requireRemoteAddress("127.0.0.1:12025"),
 		ResponseHost:           "127.0.0.1",
 		ResponsePorts:          responsePorts,
-		ResponsePortProbeCount: 10,
-		InitialLockTimeout:     4 * time.Second,
+		ResponsePortProbeCount: 20,
+		InitialLockTimeout:     1 * time.Second,
 
 		deviceLocalSettings: *defaultDeviceLocalSettings(),
 	}
