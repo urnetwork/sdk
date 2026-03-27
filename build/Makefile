@@ -115,7 +115,7 @@ build_js: generate_types
 		mkdir -p "../sdk-js/wasm"; \
 		cp "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm" "../sdk-js/wasm/"; \
 		cp "$$BUILD_DIR/URnetworkSdkJs/wasm_exec.js" "../sdk-js/wasm/"; \
-		(cd "../sdk-js" && npm install && npm run build); \
+		(cd "../sdk-js" && npm ci && npm run build); \
 		echo "NPM package built in ../sdk-js/dist"; \
 		echo "Ready to publish from ../sdk-js"; \
 	fi; \
