@@ -110,15 +110,6 @@ build_js: generate_types
 	cp index.js "$$BUILD_DIR/URnetworkSdkJs"; \
 	cp index.html "$$BUILD_DIR/URnetworkSdkJs"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdkJs.zip URnetworkSdkJs); \
-	if [ -d "../sdk-js" ]; then \
-		echo "Building npm package..."; \
-		mkdir -p "../sdk-js/wasm"; \
-		cp "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm" "../sdk-js/wasm/"; \
-		cp "$$BUILD_DIR/URnetworkSdkJs/wasm_exec.js" "../sdk-js/wasm/"; \
-		(cd "../sdk-js" && npm ci && npm run build); \
-		echo "NPM package built in ../sdk-js/dist"; \
-		echo "Ready to publish from ../sdk-js"; \
-	fi; \
 	if [ -e "js" ]; then mv js js.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" js;
 
