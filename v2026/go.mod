@@ -1,4 +1,4 @@
-module github.com/urnetwork/sdk
+module github.com/urnetwork/sdk/v2026
 
 go 1.25.0
 
@@ -6,8 +6,6 @@ require (
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/glog v0.0.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 )
@@ -31,10 +29,11 @@ require (
 	github.com/pion/srtp/v3 v3.0.10 // indirect
 	github.com/pion/stun/v3 v3.1.2 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
-	github.com/pion/turn/v4 v4.1.4 // indirect
 	github.com/pion/turn/v5 v5.0.3 // indirect
 	github.com/pion/webrtc/v4 v4.2.12 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/urnetwork/connect/v2026 v2026.5.5-931891900
+	github.com/urnetwork/glog/v2026 v2026.5.5-931891900
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
@@ -43,11 +42,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	src.agwa.name/tlshacks v0.0.2 // indirect
 )
-
-retract [v0.0.1, v1.0.0]
-
-retract v0.0.40 // retract self
-
-replace github.com/urnetwork/connect => ../connect
-
-replace github.com/urnetwork/glog => ../glog
