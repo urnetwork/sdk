@@ -78,6 +78,10 @@ github.com/quic-go/quic-go v0.59.0 h1:OLJkp1Mlm/aS7dpKgTc6cnpynnD2Xg7C1pwL6vy/SA
 github.com/quic-go/quic-go v0.59.0/go.mod h1:upnsH4Ju1YkqpLXC305eW3yDZ4NfnNbmQRCMWS58IKU=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/urnetwork/connect/v2026 v2026.5.14-939701890 h1:VBB5TBONdincnq0A1HT/b/ZI8Zp5SeEthDpDSJxYhe0=
+github.com/urnetwork/connect/v2026 v2026.5.14-939701890/go.mod h1:NCVmj+eB/8QA2F9LMWIjmqiO7n5b0NL6Ix+AklWF3Wk=
+github.com/urnetwork/glog/v2026 v2026.5.14-939701890 h1:Z1s3/RGBbJK24VDP7eDMK54c7THAw/vY0UHLQFsaZ6c=
+github.com/urnetwork/glog/v2026 v2026.5.14-939701890/go.mod h1:X77XqzsL9XxcDl8+FlcXqssBOec+d0oGcHthz20+0MM=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 go.uber.org/mock v0.6.0 h1:hyF9dfmbgIX5EfOdasqLsWD6xqpNZlXblLB/Dbnwv3Y=
