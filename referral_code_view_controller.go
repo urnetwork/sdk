@@ -35,8 +35,6 @@ func newReferralCodeViewController(ctx context.Context, device Device) *Referral
 		cancel: cancel,
 		device: device,
 
-		isFetching: false,
-
 		referralCodeListeners: connect.NewCallbackList[ReferralCodeListener](),
 	}
 	return vc
@@ -70,34 +68,42 @@ func (self *ReferralCodeViewController) Close() {
 }
 
 func (self *ReferralCodeViewController) setIsFetching(isFetching bool) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.isFetching = isFetching
-	}()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.isFetching = isFetching
 }
 
 func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
-
-	if !self.isFetching {
-		self.device.GetApi().GetNetworkReferralCode(
-			GetNetworkReferralCodeCallback(
-				connect.NewApiCallback[*GetNetworkReferralCodeResult](
-					func(result *GetNetworkReferralCodeResult, err error) {
-						if err != nil {
-							self.setIsFetching(false)
-							glog.Infof("[rcvc]error fetching referral code: %s", err)
-							return
-						}
-
-						if result != nil && result.ReferralCode != "" {
-							self.referralCodeChanged(result.ReferralCode)
-						}
-
-						self.setIsFetching(false)
-					},
-				),
-			),
-		)
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !self.isFetching {
+			self.isFetching = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
 	}
+	self.device.GetApi().GetNetworkReferralCode(
+		GetNetworkReferralCodeCallback(
+			connect.NewApiCallback[*GetNetworkReferralCodeResult](
+				func(result *GetNetworkReferralCodeResult, err error) {
+					if err != nil {
+						self.setIsFetching(false)
+						glog.Infof("[rcvc]error fetching referral code: %s", err)
+						return
+					}
+
+					if result != nil && result.ReferralCode != "" {
+						self.referralCodeChanged(result.ReferralCode)
+					}
+
+					self.setIsFetching(false)
+				},
+			),
+		),
+	)
 }

@@ -36,8 +36,6 @@ func newAccountPreferencesViewController(ctx context.Context, device Device) *Ac
 		device: device,
 
 		allowProductUpdates: false,
-		isFetching:          false,
-		isUpdating:          false,
 
 		allowProductUpdatesListeners: connect.NewCallbackList[AllowProductUpdatesListener](),
 	}
@@ -74,50 +72,55 @@ func (self *AccountPreferencesViewController) allowProductUpdatesChanged(allow b
 }
 
 func (self *AccountPreferencesViewController) setIsFetching(isFetching bool) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.isFetching = isFetching
-	}()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.isFetching = isFetching
 }
 
 func (self *AccountPreferencesViewController) setIsUpdating(isUpdating bool) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.isUpdating = isUpdating
-	}()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.isUpdating = isUpdating
 }
 
 func (self *AccountPreferencesViewController) UpdateAllowProductUpdates(allow bool) {
-
-	if !self.isUpdating {
-
-		self.setIsUpdating(true)
-
-		self.device.GetApi().AccountPreferencesUpdate(
-			&AccountPreferencesSetArgs{
-				ProductUpdates: allow,
-			},
-			connect.NewApiCallback[*AccountPreferencesSetResult](
-				func(result *AccountPreferencesSetResult, err error) {
-
-					if err != nil {
-						glog.Infof("[apvc]error updating account preferences: %s", err)
-						self.setIsUpdating(false)
-						return
-					}
-
-					self.setAllowProductUpdates(allow)
-					self.setIsUpdating(false)
-
-				}))
-
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !self.isUpdating {
+			self.isUpdating = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
 	}
+
+	self.device.GetApi().AccountPreferencesUpdate(
+		&AccountPreferencesSetArgs{
+			ProductUpdates: allow,
+		},
+		connect.NewApiCallback[*AccountPreferencesSetResult](
+			func(result *AccountPreferencesSetResult, err error) {
+
+				if err != nil {
+					glog.Infof("[apvc]error updating account preferences: %s", err)
+					self.setIsUpdating(false)
+					return
+				}
+
+				self.setAllowProductUpdates(allow)
+				self.setIsUpdating(false)
+
+			}))
 
 }
 
 func (self *AccountPreferencesViewController) GetAllowProductUpdates() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
 	return self.allowProductUpdates
 }
 
@@ -133,29 +136,37 @@ func (self *AccountPreferencesViewController) setAllowProductUpdates(allow bool)
 }
 
 func (self *AccountPreferencesViewController) fetchAllowProductUpdates() {
-
-	if !self.isFetching {
-
-		self.setIsFetching(true)
-
-		self.device.GetApi().AccountPreferencesGet(AccountPreferencesGetCallback(connect.NewApiCallback[*AccountPreferencesGetResult](
-			func(result *AccountPreferencesGetResult, err error) {
-
-				if err != nil {
-					glog.Infof("[apvc]error fetching account preferences: %s", err)
-					self.setIsFetching(false)
-					return
-				}
-
-				if result == nil {
-					self.setAllowProductUpdates(false)
-				} else {
-					self.setAllowProductUpdates(result.ProductUpdates)
-				}
-
-				self.setIsFetching(false)
-
-			})))
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !self.isFetching {
+			self.isFetching = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
 	}
+
+	self.device.GetApi().AccountPreferencesGet(AccountPreferencesGetCallback(connect.NewApiCallback[*AccountPreferencesGetResult](
+		func(result *AccountPreferencesGetResult, err error) {
+
+			if err != nil {
+				glog.Infof("[apvc]error fetching account preferences: %s", err)
+				self.setIsFetching(false)
+				return
+			}
+
+			if result == nil {
+				self.setAllowProductUpdates(false)
+			} else {
+				self.setAllowProductUpdates(result.ProductUpdates)
+			}
+
+			self.setIsFetching(false)
+
+		})))
 
 }

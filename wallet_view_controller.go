@@ -80,17 +80,35 @@ type WalletViewController struct {
 	cancel context.CancelFunc
 	device Device
 
-	wallets                 *AccountWalletsList
+	stateLock sync.Mutex
+
+	// all fields below guarded by stateLock
+	wallets         *AccountWalletsList
+	payoutWalletId  *Id
+	accountPayments *AccountPaymentsList
+	unpaidByteCount ByteCount
+
 	isAddingExternalWallet  bool
 	isRemovingWallet        bool
-	payoutWalletId          *Id
-	accountPayments         *AccountPaymentsList
 	isPollingAccountWallets bool
 	isPollingPayoutWallet   bool
 	isFetchingTransferStats bool
-	unpaidByteCount         ByteCount
 
-	stateLock sync.Mutex
+	// fetch sequence numbers — newer responses replace older,
+	// older responses landing after newer are discarded
+	accountWalletsNextSeq    int64
+	accountWalletsAppliedSeq int64
+	payoutWalletNextSeq      int64
+	payoutWalletAppliedSeq   int64
+	paymentsNextSeq          int64
+	paymentsAppliedSeq       int64
+	transferStatsNextSeq     int64
+	transferStatsAppliedSeq  int64
+
+	// lifecycle for Start/Stop polling; guarded by lifecycleLock
+	lifecycleLock sync.Mutex
+	pollerCancel  context.CancelFunc
+	pollerDone    chan struct{}
 
 	accountWalletsListeners           *connect.CallbackList[AccountWalletsListener]
 	payoutWalletListeners             *connect.CallbackList[PayoutWalletListener]
@@ -108,15 +126,10 @@ func newWalletViewController(ctx context.Context, device Device) *WalletViewCont
 		cancel: cancel,
 		device: device,
 
-		wallets:                 NewAccountWalletsList(),
-		isAddingExternalWallet:  false,
-		isRemovingWallet:        false,
-		payoutWalletId:          nil,
-		accountPayments:         NewAccountPaymentsList(),
-		isPollingAccountWallets: false,
-		isPollingPayoutWallet:   false,
-		isFetchingTransferStats: false,
-		unpaidByteCount:         0,
+		wallets:         NewAccountWalletsList(),
+		payoutWalletId:  nil,
+		accountPayments: NewAccountPaymentsList(),
+		unpaidByteCount: 0,
 
 		accountWalletsListeners:           connect.NewCallbackList[AccountWalletsListener](),
 		payoutWalletListeners:             connect.NewCallbackList[PayoutWalletListener](),
@@ -128,21 +141,49 @@ func newWalletViewController(ctx context.Context, device Device) *WalletViewCont
 	return vc
 }
 
-func (self *WalletViewController) Start() {
-	go connect.HandleError(self.FetchAccountWallets)
-	go connect.HandleError(self.FetchPayoutWallet)
-	go connect.HandleError(self.FetchPayments)
-	go connect.HandleError(self.FetchTransferStats)
-	self.pollNewWallets()
+func (vc *WalletViewController) Start() {
+	vc.lifecycleLock.Lock()
+	if vc.pollerCancel != nil {
+		vc.lifecycleLock.Unlock()
+		return
+	}
+	pollerCtx, pollerCancel := context.WithCancel(vc.ctx)
+	pollerDone := make(chan struct{})
+	vc.pollerCancel = pollerCancel
+	vc.pollerDone = pollerDone
+	vc.lifecycleLock.Unlock()
+
+	go connect.HandleError(vc.FetchAccountWallets)
+	go connect.HandleError(vc.FetchPayoutWallet)
+	go connect.HandleError(vc.FetchPayments)
+	go connect.HandleError(vc.FetchTransferStats)
+
+	go connect.HandleError(func() {
+		defer close(pollerDone)
+		vc.runPoller(pollerCtx)
+	})
 }
 
 func (vc *WalletViewController) Stop() {
-	// FIXME
+	vc.lifecycleLock.Lock()
+	cancel := vc.pollerCancel
+	done := vc.pollerDone
+	vc.pollerCancel = nil
+	vc.pollerDone = nil
+	vc.lifecycleLock.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
 }
 
 func (vc *WalletViewController) Close() {
 	glog.Info("[wvc]close")
 
+	vc.Stop()
 	vc.cancel()
 }
 
@@ -200,6 +241,7 @@ func (vc *WalletViewController) ValidateAddress(
 				if err != nil {
 					glog.Infof("[wvc]error validating address %s on %s: %s", address, blockchain, err)
 					callback.SendResult(false)
+					return
 				}
 
 				callback.SendResult(result.Valid)
@@ -211,7 +253,7 @@ func (vc *WalletViewController) ValidateAddress(
 func (vc *WalletViewController) AddIsCreatingExternalWalletListener(listener IsCreatingExternalWalletListener) Sub {
 	callbackId := vc.isCreatingExternalWalletListeners.Add(listener)
 	return newSub(func() {
-		vc.accountWalletsListeners.Remove(callbackId)
+		vc.isCreatingExternalWalletListeners.Remove(callbackId)
 	})
 }
 
@@ -224,50 +266,57 @@ func (vc *WalletViewController) isCreatingExternalWalletChanged(isProcessing boo
 }
 
 func (vc *WalletViewController) setIsCreatingExternalWallet(state bool) {
-
-	vc.stateLock.Lock()
-	defer vc.stateLock.Unlock()
-
-	vc.isAddingExternalWallet = state
-
-	vc.isCreatingExternalWalletChanged(vc.isAddingExternalWallet)
-
+	func() {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		vc.isAddingExternalWallet = state
+	}()
+	vc.isCreatingExternalWalletChanged(state)
 }
 
 func (vc *WalletViewController) AddExternalWallet(address string, blockchain Blockchain) {
 
-	if !vc.isAddingExternalWallet {
-
-		blockchainUpper := strings.ToUpper(blockchain)
-		if blockchainUpper != "SOL" && blockchainUpper != "MATIC" {
-			glog.Infof("[wvc]invalid blockchain passed: %s", blockchainUpper)
-			return
-		}
-
-		vc.setIsCreatingExternalWallet(true)
-
-		args := &CreateAccountWalletArgs{
-			Blockchain:       blockchainUpper,
-			WalletAddress:    address,
-			DefaultTokenType: "USDC",
-		}
-
-		vc.device.GetApi().CreateAccountWallet(args, CreateAccountWalletCallback(connect.NewApiCallback[*CreateAccountWalletResult](
-			func(result *CreateAccountWalletResult, err error) {
-
-				if err != nil {
-					glog.Infof("[wvc]error creating an external wallet: %s", err)
-					// err = createErr
-					return
-				}
-
-				vc.setIsCreatingExternalWallet(false)
-				vc.FetchAccountWallets()
-				vc.FetchPayoutWallet()
-
-			})))
-
+	blockchainUpper := strings.ToUpper(blockchain)
+	if blockchainUpper != "SOL" && blockchainUpper != "MATIC" {
+		glog.Infof("[wvc]invalid blockchain passed: %s", blockchainUpper)
+		return
 	}
+
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		if !vc.isAddingExternalWallet {
+			vc.isAddingExternalWallet = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
+	}
+	vc.isCreatingExternalWalletChanged(true)
+
+	args := &CreateAccountWalletArgs{
+		Blockchain:       blockchainUpper,
+		WalletAddress:    address,
+		DefaultTokenType: "USDC",
+	}
+
+	vc.device.GetApi().CreateAccountWallet(args, CreateAccountWalletCallback(connect.NewApiCallback[*CreateAccountWalletResult](
+		func(result *CreateAccountWalletResult, err error) {
+
+			if err != nil {
+				glog.Infof("[wvc]error creating an external wallet: %s", err)
+				vc.setIsCreatingExternalWallet(false)
+				return
+			}
+
+			vc.setIsCreatingExternalWallet(false)
+			vc.FetchAccountWallets()
+			vc.FetchPayoutWallet()
+
+		})))
 
 }
 
@@ -301,14 +350,18 @@ func (vc *WalletViewController) UpdatePayoutWallet(walletId *Id) (err error) {
 		func(result *SetPayoutWalletResult, setWalletErr error) {
 
 			if setWalletErr != nil {
-				glog.Infof("[wvc]Error setting payout wallet: %s", err)
+				glog.Infof("[wvc]Error setting payout wallet: %s", setWalletErr)
 				return
 			}
 
-			vc.stateLock.Lock()
-			vc.payoutWalletId = args.WalletId
-			vc.stateLock.Unlock()
-			vc.payoutWalletIdChanged(vc.payoutWalletId)
+			var id *Id
+			func() {
+				vc.stateLock.Lock()
+				defer vc.stateLock.Unlock()
+				vc.payoutWalletId = args.WalletId
+				id = vc.payoutWalletId
+			}()
+			vc.payoutWalletIdChanged(id)
 
 		})))
 
@@ -316,20 +369,20 @@ func (vc *WalletViewController) UpdatePayoutWallet(walletId *Id) (err error) {
 }
 
 func (vc *WalletViewController) GetPayoutWalletId() (id *Id) {
+	vc.stateLock.Lock()
+	defer vc.stateLock.Unlock()
 	return vc.payoutWalletId
 }
 
-func (self *WalletViewController) setPayoutWalletId(id *Id) {
+func (self *WalletViewController) FetchPayoutWallet() {
+
+	var seq int64
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.payoutWalletId = id
+		self.payoutWalletNextSeq++
+		seq = self.payoutWalletNextSeq
 	}()
-
-	self.payoutWalletIdChanged(id)
-}
-
-func (self *WalletViewController) FetchPayoutWallet() {
 
 	self.device.GetApi().GetPayoutWallet(GetPayoutWalletCallback(connect.NewApiCallback[*GetPayoutWalletIdResult](
 		func(result *GetPayoutWalletIdResult, err error) {
@@ -339,22 +392,41 @@ func (self *WalletViewController) FetchPayoutWallet() {
 				return
 			}
 
-			// if is polling
-			// check if existing value matches result
-			if self.isPollingPayoutWallet && (
-			// no existing payout wallet, but result exists or
-			(self.payoutWalletId == nil && result.WalletId != nil) ||
-				// existing payout wallet does not equal incoming payout wallet
-				(self.payoutWalletId != nil && result.WalletId != nil && self.payoutWalletId.Cmp(result.WalletId) != 0)) {
-				self.SetIsPollingPayoutWallet(false)
-			}
+			var changed bool
+			var newId *Id
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				if self.payoutWalletAppliedSeq >= seq {
+					return
+				}
+				self.payoutWalletAppliedSeq = seq
 
-			self.setPayoutWalletId(result.WalletId)
+				prior := self.payoutWalletId
+				// stop polling if the result has updated the payout wallet
+				if self.isPollingPayoutWallet && (
+				// no existing payout wallet, but result exists or
+				(prior == nil && result.WalletId != nil) ||
+					// existing payout wallet does not equal incoming payout wallet
+					(prior != nil && result.WalletId != nil && prior.Cmp(result.WalletId) != 0)) {
+					self.isPollingPayoutWallet = false
+				}
+
+				self.payoutWalletId = result.WalletId
+				newId = result.WalletId
+				changed = true
+			}()
+			if !changed {
+				return
+			}
+			self.payoutWalletIdChanged(newId)
 
 		})))
 }
 
 func (vc *WalletViewController) GetWallets() *AccountWalletsList {
+	vc.stateLock.Lock()
+	defer vc.stateLock.Unlock()
 	return vc.wallets
 }
 
@@ -365,9 +437,10 @@ func (vc *WalletViewController) FilterWalletsById(idStr string) *AccountWallet {
 		return nil
 	}
 
-	for i := 0; i < vc.wallets.Len(); i++ {
+	wallets := vc.GetWallets()
+	for i := 0; i < wallets.Len(); i++ {
 
-		wallet := vc.wallets.Get(i)
+		wallet := wallets.Get(i)
 
 		if wallet.WalletId.Cmp(id) == 0 {
 			return wallet
@@ -394,17 +467,15 @@ func (vc *WalletViewController) accountWalletsChanged() {
 	}
 }
 
-func (vc *WalletViewController) setAccountWallets(wallets *AccountWalletsList) {
-	func() {
-		vc.stateLock.Lock()
-		defer vc.stateLock.Unlock()
-		vc.wallets = wallets
-	}()
-
-	vc.accountWalletsChanged()
-}
-
 func (self *WalletViewController) FetchAccountWallets() {
+
+	var seq int64
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.accountWalletsNextSeq++
+		seq = self.accountWalletsNextSeq
+	}()
 
 	self.device.GetApi().GetAccountWallets(connect.NewApiCallback[*GetAccountWalletsResult](
 		func(results *GetAccountWalletsResult, err error) {
@@ -416,13 +487,6 @@ func (self *WalletViewController) FetchAccountWallets() {
 
 			newWalletsList := NewAccountWalletsList()
 			var wallets []*AccountWallet
-
-			// if we are polling for new wallets
-			// and the new results length does not match the existing wallets length
-			// stop polling
-			if self.isPollingAccountWallets && results.Wallets.Len() != self.wallets.Len() {
-				self.SetIsPollingAccountWallets(false)
-			}
 
 			for i := 0; i < results.Wallets.Len(); i++ {
 
@@ -447,11 +511,37 @@ func (self *WalletViewController) FetchAccountWallets() {
 
 			newWalletsList.addAll(wallets...)
 
-			self.setAccountWallets(newWalletsList)
+			applied := false
+			triggerRemovingDone := false
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				if self.accountWalletsAppliedSeq >= seq {
+					return
+				}
+				self.accountWalletsAppliedSeq = seq
 
-			// we fetch wallets after removing a wallet
-			if self.isRemovingWallet {
-				self.setIsRemovingWallet(false)
+				// if we are polling for new wallets and the result length differs
+				// from the prior, stop polling
+				if self.isPollingAccountWallets && newWalletsList.Len() != self.wallets.Len() {
+					self.isPollingAccountWallets = false
+				}
+
+				self.wallets = newWalletsList
+				applied = true
+
+				// we fetch wallets after removing a wallet
+				if self.isRemovingWallet {
+					self.isRemovingWallet = false
+					triggerRemovingDone = true
+				}
+			}()
+			if !applied {
+				return
+			}
+			self.accountWalletsChanged()
+			if triggerRemovingDone {
+				self.isRemovingWalletChanged(false)
 			}
 
 		}))
@@ -474,25 +564,20 @@ func (vc *WalletViewController) paymentsChanged() {
 }
 
 func (vc *WalletViewController) GetAccountPayments() *AccountPaymentsList {
+	vc.stateLock.Lock()
+	defer vc.stateLock.Unlock()
 	return vc.accountPayments
 }
 
-func (vc *WalletViewController) setAccountPayments(payments []*AccountPayment) {
+func (vc *WalletViewController) FetchPayments() {
 
+	var seq int64
 	func() {
 		vc.stateLock.Lock()
 		defer vc.stateLock.Unlock()
-		if len(payments) > 0 {
-			vc.accountPayments = NewAccountPaymentsList()
-			vc.accountPayments.addAll(payments...)
-		}
+		vc.paymentsNextSeq++
+		seq = vc.paymentsNextSeq
 	}()
-
-	vc.paymentsChanged()
-
-}
-
-func (vc *WalletViewController) FetchPayments() {
 
 	vc.device.GetApi().GetAccountPayments(connect.NewApiCallback[*GetNetworkAccountPaymentsResult](
 		func(results *GetNetworkAccountPaymentsResult, err error) {
@@ -513,7 +598,23 @@ func (vc *WalletViewController) FetchPayments() {
 				}
 			}
 
-			vc.setAccountPayments(payouts)
+			applied := false
+			func() {
+				vc.stateLock.Lock()
+				defer vc.stateLock.Unlock()
+				if vc.paymentsAppliedSeq >= seq {
+					return
+				}
+				vc.paymentsAppliedSeq = seq
+				if len(payouts) > 0 {
+					vc.accountPayments = NewAccountPaymentsList()
+					vc.accountPayments.addAll(payouts...)
+				}
+				applied = true
+			}()
+			if applied {
+				vc.paymentsChanged()
+			}
 
 		}))
 
@@ -538,94 +639,95 @@ func (vc *WalletViewController) setIsRemovingWallet(isRemoving bool) {
 	func() {
 		vc.stateLock.Lock()
 		defer vc.stateLock.Unlock()
-
 		vc.isRemovingWallet = isRemoving
 	}()
-
 	vc.isRemovingWalletChanged(isRemoving)
 }
 
 func (vc *WalletViewController) RemoveWallet(walletId *Id) {
 
-	if !vc.isRemovingWallet {
-		vc.setIsRemovingWallet(true)
-
-		vc.device.GetApi().RemoveWallet(
-			&RemoveWalletArgs{
-				WalletId: walletId.IdStr,
-			},
-			RemoveWalletCallback(connect.NewApiCallback[*RemoveWalletResult](
-				func(result *RemoveWalletResult, err error) {
-
-					if err != nil || !result.Success {
-						vc.setIsRemovingWallet(false)
-					}
-
-					if result.Success {
-						vc.FetchAccountWallets()
-					}
-
-				}),
-			),
-		)
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		if !vc.isRemovingWallet {
+			vc.isRemovingWallet = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
 	}
+	vc.isRemovingWalletChanged(true)
+
+	vc.device.GetApi().RemoveWallet(
+		&RemoveWalletArgs{
+			WalletId: walletId.IdStr,
+		},
+		RemoveWalletCallback(connect.NewApiCallback[*RemoveWalletResult](
+			func(result *RemoveWalletResult, err error) {
+
+				if err != nil || !result.Success {
+					vc.setIsRemovingWallet(false)
+				}
+
+				if result.Success {
+					vc.FetchAccountWallets()
+				}
+
+			}),
+		),
+	)
 }
 
 func (self *WalletViewController) SetIsPollingAccountWallets(isPolling bool) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.isPollingAccountWallets = isPolling
-	}()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.isPollingAccountWallets = isPolling
 }
 
 func (self *WalletViewController) SetIsPollingPayoutWallet(isPolling bool) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.isPollingPayoutWallet = isPolling
-	}()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.isPollingPayoutWallet = isPolling
 }
 
 // when a user creates a circle wallet, we wait for a webhook from circle
 // which creates an account_wallet entry
-func (self *WalletViewController) pollNewWallets() {
+func (self *WalletViewController) runPoller(ctx context.Context) {
+	ticker := time.NewTicker(2500 * time.Millisecond)
+	defer ticker.Stop()
 
-	go connect.HandleError(func() {
-		ticker := time.NewTicker(2500 * time.Millisecond)
-		defer ticker.Stop()
+	defer func() {
+		if r := recover(); r != nil {
+			glog.Infof("[wvc]runPoller: recovered from panic: %v", r)
+		}
+	}()
 
-		defer func() {
-			if r := recover(); r != nil {
-				glog.Infof("[wvc]pollNewWallets: recovered from panic: %v", r)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+
+			var pollAccountWallets, pollPayoutWallet bool
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				pollAccountWallets = self.isPollingAccountWallets
+				pollPayoutWallet = self.isPollingPayoutWallet
+			}()
+
+			if pollAccountWallets {
+				self.FetchAccountWallets()
 			}
-		}()
 
-		for {
-			select {
-			case <-self.ctx.Done():
-				return
-			case <-ticker.C:
-
-				if self.isPollingAccountWallets {
-					self.FetchAccountWallets()
-				}
-
-				if self.isPollingPayoutWallet {
-					self.FetchPayoutWallet()
-				}
+			if pollPayoutWallet {
+				self.FetchPayoutWallet()
 			}
 		}
-	})
-
-}
-
-func (self *WalletViewController) setIsFetchingTransferStats(isFetching bool) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.isFetchingTransferStats = isFetching
-	}()
+	}
 }
 
 func (self *WalletViewController) AddUnpaidByteCountListener(listener UnpaidByteCountListener) Sub {
@@ -643,17 +745,9 @@ func (self *WalletViewController) unpaidByteCountChanged(count ByteCount) {
 	}
 }
 
-func (self *WalletViewController) setUnpaidByteCount(count ByteCount) {
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.unpaidByteCount = count
-	}()
-
-	self.unpaidByteCountChanged(count)
-}
-
 func (self *WalletViewController) GetUnpaidByteCount() ByteCount {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
 	return self.unpaidByteCount
 }
 
@@ -662,26 +756,56 @@ func (self *WalletViewController) GetUnpaidByteCount() ByteCount {
  **/
 func (self *WalletViewController) FetchTransferStats() {
 
-	if !self.isFetchingTransferStats {
+	// check-and-set under the lock so concurrent callers don't both proceed
+	var seq int64
+	enter := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !self.isFetchingTransferStats {
+			self.isFetchingTransferStats = true
+			enter = true
+		}
+		self.transferStatsNextSeq++
+		seq = self.transferStatsNextSeq
+	}()
+	if !enter {
+		return
+	}
 
-		self.setIsFetchingTransferStats(true)
+	self.device.GetApi().GetTransferStats(connect.NewApiCallback[*TransferStatsResult](
+		func(results *TransferStatsResult, err error) {
 
-		self.device.GetApi().GetTransferStats(connect.NewApiCallback[*TransferStatsResult](
-			func(results *TransferStatsResult, err error) {
+			defer func() {
+				self.stateLock.Lock()
+				self.isFetchingTransferStats = false
+				self.stateLock.Unlock()
+			}()
 
-				if err != nil {
-					glog.Infof("[wvc]error fetching transfer stats: %s", err)
+			if err != nil {
+				glog.Infof("[wvc]error fetching transfer stats: %s", err)
+				return
+			}
+
+			if results == nil {
+				return
+			}
+
+			applied := false
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				if self.transferStatsAppliedSeq >= seq {
 					return
 				}
+				self.transferStatsAppliedSeq = seq
+				self.unpaidByteCount = results.UnpaidBytesProvided
+				applied = true
+			}()
+			if applied {
+				self.unpaidByteCountChanged(results.UnpaidBytesProvided)
+			}
 
-				if results != nil {
-					self.setUnpaidByteCount(results.UnpaidBytesProvided)
-				}
-
-				self.setIsFetchingTransferStats(false)
-
-			}))
-
-	}
+		}))
 
 }

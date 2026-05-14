@@ -143,6 +143,8 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 	// self.filterLocationsStateChanged(LocationsLoading)
 
 	var filterSequenceNumber int64
+	var snapshotLocations *FilteredLocations
+	var snapshotState FilterLocationsState
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -150,9 +152,11 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 		filterSequenceNumber = self.nextFilterSequenceNumber
 
 		self.filteredLocationState = LocationsLoading
+		snapshotLocations = self.filteredLocations
+		snapshotState = self.filteredLocationState
 	}()
 
-	self.filteredLocationsChanged(self.GetFilteredLocations(), self.GetFilteredLocationState())
+	self.filteredLocationsChanged(snapshotLocations, snapshotState)
 
 	// locationsVcLog("POST FILTER LOCATIONS %s", filter)
 
@@ -161,6 +165,8 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 			// locationsVcLog("FIND LOCATIONS RESULT %s %s", result, err)
 
 			update := false
+			var notifyLocations *FilteredLocations
+			var notifyState FilterLocationsState
 			func() {
 				self.stateLock.Lock()
 				defer self.stateLock.Unlock()
@@ -173,10 +179,12 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 						self.filteredLocationState = LocationsError
 						self.filteredLocations = nil
 					}
+					notifyLocations = self.filteredLocations
+					notifyState = self.filteredLocationState
 				}
 			}()
 			if update {
-				self.filteredLocationsChanged(self.GetFilteredLocations(), self.GetFilteredLocationState())
+				self.filteredLocationsChanged(notifyLocations, notifyState)
 			}
 		},
 	))

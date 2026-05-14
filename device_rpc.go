@@ -865,7 +865,7 @@ func (self *DeviceRemote) GetCanPromptIntroFunnel() bool {
 		if err != nil {
 			return false, false
 		}
-		self.lastKnownState.CanShowRatingDialog.Set(canPromptIntroFunnel)
+		self.lastKnownState.CanPromptIntroFunnel.Set(canPromptIntroFunnel)
 		return canPromptIntroFunnel, true
 	}()
 	if success {
@@ -1017,7 +1017,7 @@ func (self *DeviceRemote) GetAllowForeground() bool {
 		if err != nil {
 			return false, false
 		}
-		self.lastKnownState.CanRefer.Set(allowForeground)
+		self.lastKnownState.AllowForeground.Set(allowForeground)
 		return allowForeground, true
 	}()
 	if success {

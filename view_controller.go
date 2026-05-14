@@ -140,13 +140,20 @@ func (self *viewControllerManager) CloseViewController(vc ViewController) {
 }
 
 func (self *viewControllerManager) Close() {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
 	self.cancel()
 
-	for vc, _ := range self.openedViewControllers {
+	var vcs []ViewController
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		for vc, _ := range self.openedViewControllers {
+			vcs = append(vcs, vc)
+		}
+		clear(self.openedViewControllers)
+	}()
+
+	for _, vc := range vcs {
 		vc.Close()
 	}
-	clear(self.openedViewControllers)
 }

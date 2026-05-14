@@ -862,7 +862,7 @@ func (self *Api) GetAccountPayments(callback GetAccountPaymentsCallback) {
 			self.ctx,
 			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/account/payments", self.apiUrl),
-			self.byJwt,
+			self.GetByJwt(),
 			&GetNetworkAccountPaymentsResult{},
 			callback,
 		)

@@ -66,6 +66,10 @@ func NewStringList() *StringList {
 	}
 }
 
+func (self *StringList) Contains(v string) bool {
+	return slices.Contains(self.values, v)
+}
+
 type IdList struct {
 	exportedList[*Id]
 }
@@ -74,6 +78,21 @@ func NewIdList() *IdList {
 	return &IdList{
 		exportedList: *newExportedList[*Id](),
 	}
+}
+
+func (self *IdList) Contains(v *Id) bool {
+	for _, value := range self.values {
+		if value == v {
+			return true
+		}
+		if value == nil || v == nil {
+			continue
+		}
+		if value.Cmp(v) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type IntList struct {
@@ -86,6 +105,10 @@ func NewIntList() *IntList {
 	}
 }
 
+func (self *IntList) Contains(v int) bool {
+	return slices.Contains(self.values, v)
+}
+
 type Float32List struct {
 	exportedList[float32]
 }
@@ -96,6 +119,10 @@ func NewFloat32List() *Float32List {
 	}
 }
 
+func (self *Float32List) Contains(v float32) bool {
+	return slices.Contains(self.values, v)
+}
+
 type Float64List struct {
 	exportedList[float64]
 }
@@ -104,6 +131,10 @@ func NewFloat64List() *Float64List {
 	return &Float64List{
 		exportedList: *newExportedList[float64](),
 	}
+}
+
+func (self *Float64List) Contains(v float64) bool {
+	return slices.Contains(self.values, v)
 }
 
 type TransferPathList struct {
@@ -399,8 +430,8 @@ func (self *Time) UnixMilli() int64 {
 	return self.impl.UnixMilli()
 }
 
-func (self *Time) MillisUntil() int32 {
-	return int32(self.impl.Sub(time.Now()) / time.Millisecond)
+func (self *Time) MillisUntil() int64 {
+	return int64(self.impl.Sub(time.Now()) / time.Millisecond)
 }
 
 func (self *Time) Format(layout string) string {
@@ -408,7 +439,12 @@ func (self *Time) Format(layout string) string {
 }
 
 func (self *Time) UnmarshalJSON(b []byte) error {
-	return json.Unmarshal(b, &self.impl)
+	err := json.Unmarshal(b, &self.impl)
+	if err != nil {
+		return err
+	}
+	self.TimeStr = self.impl.String()
+	return nil
 }
 
 func (self *Time) MarshalJSON() ([]byte, error) {
