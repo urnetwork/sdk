@@ -116,7 +116,7 @@ build_js: generate_types
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
-	GOMOBILE_VERSION=v0.0.0-20260410095206-2cfb76559b7b && \
+	GOMOBILE_VERSION=v0.0.0-20260508232728-bebd421c7fa8 && \
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
 	gomobile init && \

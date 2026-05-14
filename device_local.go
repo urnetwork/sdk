@@ -69,9 +69,11 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 }
 
 func defaultDeviceLocalSettings() *deviceLocalSettings {
+	bufferSize := 256
 	return &deviceLocalSettings{
-		// do not drop packets due to backpressure
-		SendTimeout: -1,
+		// this works with the `SequenceBufferSize` to control packet loss during back pressure
+		SendTimeout:        5 * time.Second,
+		SequenceBufferSize: bufferSize,
 		// ClientDrainTimeout: 30 * time.Second,
 
 		NetContractStatusDuration: 10 * time.Second,
@@ -89,7 +91,7 @@ func defaultDeviceLocalSettings() *deviceLocalSettings {
 		DefaultVpnInterfaceWhileOffline: false,
 		DefaultTunnelStarted:            false,
 
-		ClientSettings: *connect.DefaultClientSettings(),
+		ClientSettings: *connect.DefaultClientSettingsWithBufferSize(bufferSize),
 	}
 }
 
@@ -97,6 +99,7 @@ type deviceLocalSettings struct {
 	// time to give up (drop) sending a packet to a destination
 	SendTimeout time.Duration
 	// ClientDrainTimeout time.Duration
+	SequenceBufferSize int
 
 	NetContractStatusDuration time.Duration
 	NetContractStatusCount    int
@@ -1412,7 +1415,9 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 					self.appVersion,
 					&self.clientId,
 					// connect.DefaultClientSettingsNoNetworkEvents,
-					connect.DefaultClientSettings,
+					func() *connect.ClientSettings {
+						return connect.DefaultClientSettingsWithBufferSize(self.settings.SequenceBufferSize)
+					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
 				)
 			}
