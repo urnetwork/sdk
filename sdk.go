@@ -45,7 +45,7 @@ import (
 // `warp` environment expectations, which is not compatible with the client lib
 
 func init() {
-	//debug.SetGCPercent(10)
+	debug.SetGCPercent(10)
 
 	initGlog()
 
