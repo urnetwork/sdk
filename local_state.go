@@ -182,7 +182,7 @@ func (self *LocalState) GetProvideMode() ProvideMode {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	if provideModeBytes, err := os.ReadFile(path); err == nil {
 		var provideMode ProvideMode
-		if _, err := fmt.Sscanf(string(provideModeBytes), "%s", &provideMode); err == nil {
+		if _, err := fmt.Sscanf(string(provideModeBytes), "%d", &provideMode); err == nil {
 			return provideMode
 		}
 	}

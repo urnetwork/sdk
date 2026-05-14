@@ -491,7 +491,13 @@ func (self *ConnectGrid) GetProviderGridPointByClientId(clientId *Id) *ProviderG
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	return self.providerGridPoints[clientId.toConnectId()]
+	// return a copy so the caller doesn't race the run loop's in-place field updates
+	point := self.providerGridPoints[clientId.toConnectId()]
+	if point == nil {
+		return nil
+	}
+	copyPoint := *point
+	return &copyPoint
 }
 
 func (self *ConnectGrid) GetProviderGridPointList() *ProviderGridPointList {

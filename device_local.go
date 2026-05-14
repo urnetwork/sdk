@@ -70,7 +70,8 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 
 func defaultDeviceLocalSettings() *deviceLocalSettings {
 	return &deviceLocalSettings{
-		SendTimeout: 4 * time.Second,
+		// do not drop packets due to backpressure
+		SendTimeout: -1,
 		// ClientDrainTimeout: 30 * time.Second,
 
 		NetContractStatusDuration: 10 * time.Second,
@@ -1577,11 +1578,13 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 
 	var remoteUserNatClient connect.UserNatClient
 	var routeLocal bool
+	var provider *deviceLocalProvider
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		remoteUserNatClient = self.remoteUserNatClient
 		routeLocal = self.routeLocal
+		provider = self.provider
 	}()
 
 	if remoteUserNatClient != nil {
@@ -1594,8 +1597,8 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 		)
 	} else if routeLocal {
 		var localUserNat *connect.LocalUserNat
-		if self.provider != nil {
-			localUserNat = self.provider.LocalUserNat()
+		if provider != nil {
+			localUserNat = provider.LocalUserNat()
 		}
 		if localUserNat != nil {
 			// route locally

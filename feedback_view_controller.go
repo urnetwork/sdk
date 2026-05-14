@@ -33,7 +33,6 @@ func newFeedbackViewController(ctx context.Context, device Device) *FeedbackView
 		cancel: cancel,
 		device: device,
 
-		isSendingFeedback:          false,
 		isSendingFeedbackListeners: connect.NewCallbackList[IsSendingFeedbackListener](),
 	}
 	return vc
@@ -68,10 +67,8 @@ func (vc *FeedbackViewController) setIsSendingFeedback(isSending bool) {
 	func() {
 		vc.stateLock.Lock()
 		defer vc.stateLock.Unlock()
-
 		vc.isSendingFeedback = isSending
 	}()
-
 	vc.isSendingFeedbackChanged(isSending)
 }
 
@@ -79,26 +76,34 @@ func (vc *FeedbackViewController) SendFeedback(
 	msg string,
 	starCount int,
 ) {
-
-	if !vc.isSendingFeedback {
-
-		vc.setIsSendingFeedback(true)
-
-		args := &FeedbackSendArgs{
-			Needs: &FeedbackSendNeeds{
-				Other: msg,
-			},
-			StarCount: starCount,
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		if !vc.isSendingFeedback {
+			vc.isSendingFeedback = true
+			enter = true
 		}
-
-		vc.device.GetApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
-			func(result *FeedbackSendResult, err error) {
-
-				vc.setIsSendingFeedback(false)
-
-			},
-		)))
-
+	}()
+	if !enter {
+		return
 	}
+	vc.isSendingFeedbackChanged(true)
+
+	args := &FeedbackSendArgs{
+		Needs: &FeedbackSendNeeds{
+			Other: msg,
+		},
+		StarCount: starCount,
+	}
+
+	vc.device.GetApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
+		func(result *FeedbackSendResult, err error) {
+
+			vc.setIsSendingFeedback(false)
+
+		},
+	)))
 
 }

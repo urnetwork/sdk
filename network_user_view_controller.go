@@ -65,7 +65,6 @@ func newNetworkUserViewController(ctx context.Context, device Device) *NetworkUs
 		device: device,
 
 		networkUser: nil,
-		isLoading:   false,
 
 		isLoadingListener:                connect.NewCallbackList[IsNetworkUserLoadingListener](),
 		networkUserListener:              connect.NewCallbackList[NetworkUserListener](),
@@ -94,7 +93,6 @@ func (vc *NetworkUserViewController) setIsLoading(isLoading bool) {
 		defer vc.stateLock.Unlock()
 		vc.isLoading = isLoading
 	}()
-
 	vc.isLoadingChanged(isLoading)
 }
 
@@ -114,6 +112,8 @@ func (vc *NetworkUserViewController) AddIsLoadingListener(listener IsNetworkUser
 }
 
 func (vc *NetworkUserViewController) GetNetworkUser() *NetworkUser {
+	vc.stateLock.Lock()
+	defer vc.stateLock.Unlock()
 	return vc.networkUser
 }
 
@@ -143,40 +143,49 @@ func (self *NetworkUserViewController) setNetworkUser(nu *NetworkUser) {
 }
 
 func (self *NetworkUserViewController) FetchNetworkUser() {
-
-	if !self.isLoading {
-
-		self.setIsLoading(true)
-
-		self.device.GetApi().GetNetworkUser(GetNetworkUserCallback(connect.NewApiCallback[*GetNetworkUserResult](
-			func(result *GetNetworkUserResult, err error) {
-
-				if err != nil {
-					glog.Infof("[nuvc]fetchNetworkUser err=%s", err)
-					self.setIsLoading(false)
-					return
-				}
-
-				if result.Error != nil {
-					glog.Infof("[nuvc]fetchNetworkUser response err=%s", result.Error.Message)
-					self.setIsLoading(false)
-					return
-				}
-
-				networkUser := &NetworkUser{
-					UserId:      result.NetworkUser.UserId,
-					UserName:    result.NetworkUser.UserName,
-					UserAuth:    result.NetworkUser.UserAuth,
-					Verified:    result.NetworkUser.Verified,
-					AuthType:    result.NetworkUser.AuthType,
-					NetworkName: result.NetworkUser.NetworkName,
-				}
-
-				self.setNetworkUser(networkUser)
-				self.setIsLoading(false)
-
-			})))
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !self.isLoading {
+			self.isLoading = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
 	}
+	self.isLoadingChanged(true)
+
+	self.device.GetApi().GetNetworkUser(GetNetworkUserCallback(connect.NewApiCallback[*GetNetworkUserResult](
+		func(result *GetNetworkUserResult, err error) {
+
+			if err != nil {
+				glog.Infof("[nuvc]fetchNetworkUser err=%s", err)
+				self.setIsLoading(false)
+				return
+			}
+
+			if result.Error != nil {
+				glog.Infof("[nuvc]fetchNetworkUser response err=%s", result.Error.Message)
+				self.setIsLoading(false)
+				return
+			}
+
+			networkUser := &NetworkUser{
+				UserId:      result.NetworkUser.UserId,
+				UserName:    result.NetworkUser.UserName,
+				UserAuth:    result.NetworkUser.UserAuth,
+				Verified:    result.NetworkUser.Verified,
+				AuthType:    result.NetworkUser.AuthType,
+				NetworkName: result.NetworkUser.NetworkName,
+			}
+
+			self.setNetworkUser(networkUser)
+			self.setIsLoading(false)
+
+		})))
 }
 
 func (vc *NetworkUserViewController) sendNetworkUserUpdateError(msg string) {
@@ -215,7 +224,6 @@ func (self *NetworkUserViewController) setIsNetworkUserUpdating(updating bool) {
 		defer self.stateLock.Unlock()
 		self.isUpdating = updating
 	}()
-
 	self.isNetworkUserUpdating(updating)
 }
 
@@ -235,35 +243,44 @@ func (self *NetworkUserViewController) AddIsUpdatingListener(listener IsNetworkU
 }
 
 func (self *NetworkUserViewController) UpdateNetworkUser(networkName string) {
-
-	if !self.isUpdating {
-
-		self.setIsNetworkUserUpdating(true)
-
-		self.device.GetApi().NetworkUserUpdate(
-			&NetworkUserUpdateArgs{
-				NetworkName: networkName,
-			},
-			NetworkUserUpdateCallback(connect.NewApiCallback[*NetworkUserUpdateResult](
-				func(result *NetworkUserUpdateResult, err error) {
-
-					if err != nil {
-						self.sendNetworkUserUpdateError("An error occurred updating your profile")
-						self.setIsNetworkUserUpdating(false)
-						return
-					}
-
-					if result.Error != nil {
-						self.sendNetworkUserUpdateError(result.Error.Message)
-						self.setIsNetworkUserUpdating(false)
-						return
-					}
-
-					self.emitNetworkUserUpdateSuccess()
-					self.setIsNetworkUserUpdating(false)
-
-				}),
-			))
+	// check-and-set under the lock so concurrent callers don't both proceed
+	enter := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !self.isUpdating {
+			self.isUpdating = true
+			enter = true
+		}
+	}()
+	if !enter {
+		return
 	}
+	self.isNetworkUserUpdating(true)
+
+	self.device.GetApi().NetworkUserUpdate(
+		&NetworkUserUpdateArgs{
+			NetworkName: networkName,
+		},
+		NetworkUserUpdateCallback(connect.NewApiCallback[*NetworkUserUpdateResult](
+			func(result *NetworkUserUpdateResult, err error) {
+
+				if err != nil {
+					self.sendNetworkUserUpdateError("An error occurred updating your profile")
+					self.setIsNetworkUserUpdating(false)
+					return
+				}
+
+				if result.Error != nil {
+					self.sendNetworkUserUpdateError(result.Error.Message)
+					self.setIsNetworkUserUpdating(false)
+					return
+				}
+
+				self.emitNetworkUserUpdateSuccess()
+				self.setIsNetworkUserUpdating(false)
+
+			}),
+		))
 
 }
