@@ -1611,7 +1611,7 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 				source,
 				protocol.ProvideMode_Network,
 				packet,
-				self.settings.SendTimeout,
+				0,
 			)
 		} else {
 			return false
