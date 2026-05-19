@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2026"
 )
 
 const defaultNetworkCheckTimeout = 5 * time.Second
