@@ -32,12 +32,15 @@ func newDeviceLocalProviderWithOverrides(
 	clientStrategy := networkSpace.clientStrategy
 
 	clientOob := connect.NewApiOutOfBandControl(ctx, clientStrategy, byJwt, apiUrl)
+	clientSettings := settings
+	if clientSettings == nil {
+		clientSettings = connect.DefaultClientSettings()
+	}
 	client := connect.NewClient(
 		ctx,
 		clientId,
 		clientOob,
-		// connect.DefaultClientSettingsNoNetworkEvents(),
-		connect.DefaultClientSettings(),
+		clientSettings,
 	)
 
 	auth := &connect.ClientAuth{

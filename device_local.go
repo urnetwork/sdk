@@ -1160,6 +1160,62 @@ func (self *DeviceLocal) InitProvideSecretKeys() {
 	}
 }
 
+// GetClientKeySeed returns the 32-byte Ed25519 seed for the provider
+// client's long-lived identity key. The caller is expected to
+// persist this in local storage and pass it back via
+// `deviceLocalSettings.ClientSettings.ClientKeySeed` on the next
+// process start, so the client's published `ClientKey` (and any
+// contract bindings to it) stays stable across restarts. Returns
+// nil when no provider client exists or encryption is not yet
+// initialized.
+func (self *DeviceLocal) GetClientKeySeed() []byte {
+	client := self.providerClient()
+	if client == nil {
+		return nil
+	}
+	keyManager := client.ClientKeyManager()
+	if keyManager == nil {
+		return nil
+	}
+	return keyManager.Seed()
+}
+
+// GetProvideTlsCertificatePem returns the PEM-encoded TLS server
+// certificate chain that the provider client publishes via
+// `EncryptedKey`. Concatenated PEM blocks, leaf first. Pair with
+// `GetProvideTlsPrivateKeyPem` and pass back via
+// `deviceLocalSettings.ClientSettings.EncryptionSettings.
+// ProvideTlsCertificatePem` / `ProvideTlsPrivateKeyPem` to keep the
+// cert commitment stable across restarts. Returns nil when no
+// provider client exists or encryption is disabled.
+func (self *DeviceLocal) GetProvideTlsCertificatePem() []byte {
+	client := self.providerClient()
+	if client == nil {
+		return nil
+	}
+	manager := client.EncryptionSessionManager()
+	if manager == nil {
+		return nil
+	}
+	return manager.ProvideTlsCertificatePem()
+}
+
+// GetProvideTlsPrivateKeyPem returns the PEM-encoded PKCS#8 private
+// key matching the leaf of `GetProvideTlsCertificatePem()`. Returns
+// nil when no provider client exists, encryption is disabled, or
+// the cert was supplied with no exposed private key.
+func (self *DeviceLocal) GetProvideTlsPrivateKeyPem() []byte {
+	client := self.providerClient()
+	if client == nil {
+		return nil
+	}
+	manager := client.EncryptionSessionManager()
+	if manager == nil {
+		return nil
+	}
+	return manager.ProvideTlsPrivateKeyPem()
+}
+
 func (self *DeviceLocal) GetProvideEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
