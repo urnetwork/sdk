@@ -1129,11 +1129,10 @@ func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 	if client := self.providerClient(); client != nil {
 		provideSecretKeys := client.ContractManager().GetProvideSecretKeys()
 		for provideMode, provideSecretKey := range provideSecretKeys {
-			provideSecretKey := &ProvideSecretKey{
+			provideSecretKeyList.Add(&ProvideSecretKey{
 				ProvideMode:      ProvideMode(provideMode),
 				ProvideSecretKey: string(provideSecretKey),
-			}
-			provideSecretKeyList.Add(provideSecretKey)
+			})
 		}
 	}
 	return provideSecretKeyList
