@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 
 	// "github.com/urnetwork/glog"
 
@@ -32,15 +33,48 @@ func newDeviceLocalProviderWithOverrides(
 	clientStrategy := networkSpace.clientStrategy
 
 	clientOob := connect.NewApiOutOfBandControl(ctx, clientStrategy, byJwt, apiUrl)
-	clientSettings := settings
-	if clientSettings == nil {
-		clientSettings = connect.DefaultClientSettings()
+
+	// Shallow-copy settings (and nested EncryptionSettings) so that
+	// filling in defaults never mutates the caller's struct.
+	var clientSettings connect.ClientSettings
+	if settings != nil {
+		clientSettings = *settings
+	} else {
+		clientSettings = *connect.DefaultClientSettings()
 	}
+	if clientSettings.EncryptionSettings != nil {
+		es := *clientSettings.EncryptionSettings
+		clientSettings.EncryptionSettings = &es
+	}
+
+	// Install the default out-of-band peer-key cross-check when none
+	// is configured. Callers who want to disable the check can set a
+	// no-op NewPeerClientPublicKeyFetcher in their settings.
+	if clientSettings.EncryptionSettings != nil && clientSettings.EncryptionSettings.NewPeerClientPublicKeyFetcher == nil {
+		clientSettings.EncryptionSettings.NewPeerClientPublicKeyFetcher = func(peerId connect.Id) func(context.Context) ([]byte, error) {
+			url := fmt.Sprintf("%s/key/%s", apiUrl, peerId)
+			return func(fetchCtx context.Context) ([]byte, error) {
+				r, err := connect.HttpGetWithStrategy(
+					fetchCtx,
+					clientStrategy,
+					url,
+					"",
+					&connect.GetClientKeyResult{},
+					connect.NewNoopApiCallback[*connect.GetClientKeyResult](),
+				)
+				if err != nil {
+					return nil, err
+				}
+				return r.PublicKey, nil
+			}
+		}
+	}
+
 	client := connect.NewClient(
 		ctx,
 		clientId,
 		clientOob,
-		clientSettings,
+		&clientSettings,
 	)
 
 	auth := &connect.ClientAuth{
