@@ -142,6 +142,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			routeLocalChangeListener := &testing_routeLocalChangeListener{}
 			connectLocationChangeListener := &testing_connectLocationChangeListener{}
 			provideSecretKeysListener := &testing_provideSecretKeysListener{}
+			performanceProfileChangeListener := &testing_performanceProfileChangeListener{}
 			monitorEventListener := &testing_monitorEventListener{}
 
 			provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
@@ -164,6 +165,9 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
 			defer provideSecretKeysListenerSub.Close()
+
+			performanceProfileChangeListenerSub := deviceRemote.AddPerformanceProfileChangeListener(performanceProfileChangeListener)
+			defer performanceProfileChangeListenerSub.Close()
 
 			windowMonitor := deviceRemote.windowMonitor()
 			windowExpandEvent, providerEvents := windowMonitor.Events()
@@ -254,6 +258,10 @@ func TestDeviceRemoteFull(t *testing.T) {
 			})
 			provideSecretKeysListener.with(func() {
 				assert.Equal(t, provideSecretKeysListener.event, true)
+			})
+			performanceProfileChangeListener.with(func() {
+				assert.Equal(t, performanceProfileChangeListener.event, true)
+				assert.NotEqual(t, performanceProfileChangeListener.performanceProfile, nil)
 			})
 			// FIXME one difference with remote sync later versus now is that the monitor doesn't getted called with empty events
 			// monitorEventListener.with(func() {
@@ -1000,6 +1008,19 @@ func (self *testing_provideSecretKeysListener) ProvideSecretKeysChanged(provideS
 
 	self.event = true
 	self.provideSecretKeyList = provideSecretKeyList
+}
+
+type testing_performanceProfileChangeListener struct {
+	testing_listener
+	performanceProfile *PerformanceProfile
+}
+
+func (self *testing_performanceProfileChangeListener) PerformanceProfileChanged(performanceProfile *PerformanceProfile) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.performanceProfile = performanceProfile
 }
 
 type testing_monitorEventListener struct {

@@ -72,6 +72,7 @@ build_apple:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
+	export MACOSX_DEPLOYMENT_TARGET=13.5; \
 	BUILD_DIR=apple.`date +%s`; \
 	mkdir -p "$$BUILD_DIR"; \
 	gomobile bind \

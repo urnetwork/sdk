@@ -16,6 +16,10 @@ type ProvideChangeListener interface {
 	ProvideChanged(provideEnabled bool)
 }
 
+type ProvideModeChangeListener interface {
+	ProvideModeChanged(provideMode ProvideMode)
+}
+
 type ProviderChangeListener interface {
 	ProviderChanged(providerEnabled bool)
 }
@@ -26,6 +30,14 @@ type ProvidePausedChangeListener interface {
 
 type ProvideNetworkModeChangeListener interface {
 	ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode)
+}
+
+type ProvideControlModeChangeListener interface {
+	ProvideControlModeChanged(provideControlMode ProvideControlMode)
+}
+
+type PerformanceProfileChangeListener interface {
+	PerformanceProfileChanged(performanceProfile *PerformanceProfile)
 }
 
 type OfflineChangeListener interface {
@@ -40,8 +52,32 @@ type RouteLocalChangeListener interface {
 	RouteLocalChanged(routeLocal bool)
 }
 
+type VpnInterfaceWhileOfflineChangeListener interface {
+	VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline bool)
+}
+
 type ConnectLocationChangeListener interface {
 	ConnectLocationChanged(location *ConnectLocation)
+}
+
+type DefaultLocationChangeListener interface {
+	DefaultLocationChanged(location *ConnectLocation)
+}
+
+type CanShowRatingDialogChangeListener interface {
+	CanShowRatingDialogChanged(canShowRatingDialog bool)
+}
+
+type CanPromptIntroFunnelChangeListener interface {
+	CanPromptIntroFunnelChanged(canPromptIntroFunnel bool)
+}
+
+type AllowForegroundChangeListener interface {
+	AllowForegroundChanged(allowForeground bool)
+}
+
+type CanReferChangeListener interface {
+	CanReferChanged(canRefer bool)
 }
 
 // FIXME rename to ProvideSecretKeysChangeListener
@@ -87,6 +123,9 @@ type WindowStatusChangeListener interface {
 }
 
 type JwtRefreshListener interface {
+	// JWT refresh is intentionally handled by each Device implementation.
+	// DeviceRemote refreshes on the remote/app side, so this listener is not
+	// bridged over DeviceLocal RPC like durable device-state listeners.
 	// JwtRefreshed(jwt *ByJwt)
 	JwtRefreshed(jwt string)
 }
@@ -194,17 +233,25 @@ type Device interface {
 
 	SetCanShowRatingDialog(canShowRatingDialog bool)
 
+	AddCanShowRatingDialogChangeListener(listener CanShowRatingDialogChangeListener) Sub
+
 	GetCanPromptIntroFunnel() bool
 
 	SetCanPromptIntroFunnel(canPrompt bool)
+
+	AddCanPromptIntroFunnelChangeListener(listener CanPromptIntroFunnelChangeListener) Sub
 
 	GetAllowForeground() bool
 
 	SetAllowForeground(allowForeground bool)
 
+	AddAllowForegroundChangeListener(listener AllowForegroundChangeListener) Sub
+
 	GetProvideControlMode() ProvideControlMode // auto, always, never
 
 	SetProvideControlMode(mode ProvideControlMode)
+
+	AddProvideControlModeChangeListener(listener ProvideControlModeChangeListener) Sub
 
 	GetProvideNetworkMode() ProvideNetworkMode // wifi, cellular, etc.
 
@@ -215,6 +262,8 @@ type Device interface {
 	GetCanRefer() bool
 
 	SetCanRefer(canRefer bool)
+
+	AddCanReferChangeListener(listener CanReferChangeListener) Sub
 
 	SetRouteLocal(routeLocal bool)
 
@@ -232,6 +281,8 @@ type Device interface {
 
 	GetProvideMode() ProvideMode
 
+	AddProvideModeChangeListener(listener ProvideModeChangeListener) Sub
+
 	SetProvidePaused(providePaused bool)
 
 	GetProvidePaused() bool
@@ -244,6 +295,8 @@ type Device interface {
 
 	GetVpnInterfaceWhileOffline() bool
 
+	AddVpnInterfaceWhileOfflineChangeListener(listener VpnInterfaceWhileOfflineChangeListener) Sub
+
 	RemoveDestination()
 
 	SetDestination(location *ConnectLocation, specs *ProviderSpecList)
@@ -255,6 +308,8 @@ type Device interface {
 	SetDefaultLocation(location *ConnectLocation)
 
 	GetDefaultLocation() *ConnectLocation
+
+	AddDefaultLocationChangeListener(listener DefaultLocationChangeListener) Sub
 
 	Shuffle()
 
@@ -288,58 +343,60 @@ type Device interface {
 
 	AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub
 
-	GetProviderEnabled() bool
+	/*
+		GetProviderEnabled() bool
 
-	SetProviderEnabled(providerEnabled bool)
+		SetProviderEnabled(providerEnabled bool)
 
-	AddProviderChangeListener(listener ProviderChangeListener) Sub
+		AddProviderChangeListener(listener ProviderChangeListener) Sub
 
-	// privacy block
+		// privacy block
 
-	GetBlockStats() *BlockStats
+		GetBlockStats() *BlockStats
 
-	// includes applicable overrides
-	GetBlockActions() *BlockActionWindow
+		// includes applicable overrides
+		GetBlockActions() *BlockActionWindow
 
-	// host can be *.H, **.H (includes H and any subdomain), or a regex s/H/
-	OverrideBlockAction(hostPattern string, block bool)
+		// host can be *.H, **.H (includes H and any subdomain), or a regex s/H/
+		OverrideBlockAction(hostPattern string, block bool)
 
-	// exact match of the host pattern
-	RemoveBlockActionOverride(hostPattern string)
+		// exact match of the host pattern
+		RemoveBlockActionOverride(hostPattern string)
 
-	SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList)
+		SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList)
 
-	GetBlockEnabled() bool
+		GetBlockEnabled() bool
 
-	SetBlockEnabled(blockEnabled bool)
+		SetBlockEnabled(blockEnabled bool)
 
-	GetBlockWhileDisconnected() bool
+		GetBlockWhileDisconnected() bool
 
-	SetBlockWhileDisconnected(blockWhileDisconnected bool)
+		SetBlockWhileDisconnected(blockWhileDisconnected bool)
 
-	AddBlockChangeListener(listener BlockChangeListener) Sub
-	// rate limited window updates
-	AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub
-	// rate limited
-	AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
+		AddBlockChangeListener(listener BlockChangeListener) Sub
+		// rate limited window updates
+		AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub
+		// rate limited
+		AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
 
-	// contract stats
+		// contract stats
 
-	GetEgressContractStats() *ContractStats
-	GetEgressContractDetails() *ContractDetailsList
+		GetEgressContractStats() *ContractStats
+		GetEgressContractDetails() *ContractDetailsList
 
-	GetIngressContractStats() *ContractStats
-	GetIngressContractDetails() *ContractDetailsList
+		GetIngressContractStats() *ContractStats
+		GetIngressContractDetails() *ContractDetailsList
 
-	// rate limited
-	AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
-	// rate limited
-	AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+		// rate limited
+		AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
+		// rate limited
+		AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
 
-	// rate limited
-	AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
-	// rate limited
-	AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+		// rate limited
+		AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
+		// rate limited
+		AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+	*/
 
 	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
 
@@ -354,6 +411,8 @@ type Device interface {
 	SetPerformanceProfile(performanceProfile *PerformanceProfile)
 
 	GetPerformanceProfile() *PerformanceProfile
+
+	AddPerformanceProfileChangeListener(listener PerformanceProfileChangeListener) Sub
 }
 
 // unexported to gomobile

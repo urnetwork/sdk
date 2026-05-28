@@ -187,18 +187,27 @@ type DeviceLocal struct {
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
-	provideChangeListeners            *connect.CallbackList[ProvideChangeListener]
-	providePausedChangeListeners      *connect.CallbackList[ProvidePausedChangeListener]
-	provideNetworkModeChangeListeners *connect.CallbackList[ProvideNetworkModeChangeListener]
-	offlineChangeListeners            *connect.CallbackList[OfflineChangeListener]
-	connectChangeListeners            *connect.CallbackList[ConnectChangeListener]
-	routeLocalChangeListeners         *connect.CallbackList[RouteLocalChangeListener]
-	connectLocationChangeListeners    *connect.CallbackList[ConnectLocationChangeListener]
-	provideSecretKeysListeners        *connect.CallbackList[ProvideSecretKeysListener]
-	tunnelChangeListeners             *connect.CallbackList[TunnelChangeListener]
-	contractStatusChangeListeners     *connect.CallbackList[ContractStatusChangeListener]
-	windowStatusChangeListeners       *connect.CallbackList[WindowStatusChangeListener]
-	jwtRefreshListeners               *connect.CallbackList[JwtRefreshListener]
+	canShowRatingDialogChangeListeners      *connect.CallbackList[CanShowRatingDialogChangeListener]
+	canPromptIntroFunnelChangeListeners     *connect.CallbackList[CanPromptIntroFunnelChangeListener]
+	allowForegroundChangeListeners          *connect.CallbackList[AllowForegroundChangeListener]
+	canReferChangeListeners                 *connect.CallbackList[CanReferChangeListener]
+	provideModeChangeListeners              *connect.CallbackList[ProvideModeChangeListener]
+	provideChangeListeners                  *connect.CallbackList[ProvideChangeListener]
+	provideControlModeChangeListeners       *connect.CallbackList[ProvideControlModeChangeListener]
+	performanceProfileChangeListeners       *connect.CallbackList[PerformanceProfileChangeListener]
+	providePausedChangeListeners            *connect.CallbackList[ProvidePausedChangeListener]
+	provideNetworkModeChangeListeners       *connect.CallbackList[ProvideNetworkModeChangeListener]
+	offlineChangeListeners                  *connect.CallbackList[OfflineChangeListener]
+	vpnInterfaceWhileOfflineChangeListeners *connect.CallbackList[VpnInterfaceWhileOfflineChangeListener]
+	connectChangeListeners                  *connect.CallbackList[ConnectChangeListener]
+	routeLocalChangeListeners               *connect.CallbackList[RouteLocalChangeListener]
+	connectLocationChangeListeners          *connect.CallbackList[ConnectLocationChangeListener]
+	defaultLocationChangeListeners          *connect.CallbackList[DefaultLocationChangeListener]
+	provideSecretKeysListeners              *connect.CallbackList[ProvideSecretKeysListener]
+	tunnelChangeListeners                   *connect.CallbackList[TunnelChangeListener]
+	contractStatusChangeListeners           *connect.CallbackList[ContractStatusChangeListener]
+	windowStatusChangeListeners             *connect.CallbackList[WindowStatusChangeListener]
+	jwtRefreshListeners                     *connect.CallbackList[JwtRefreshListener]
 
 	localUserNatSub func()
 
@@ -237,6 +246,37 @@ func NewDeviceLocalWithDefaults(
 	)
 }
 
+func NewDeviceLocalWithKeyMaterial(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	enableRpc bool,
+	keyMaterial *DeviceLocalKeyMaterial,
+) (*DeviceLocal, error) {
+	settings := defaultDeviceLocalSettings()
+	applyDeviceLocalKeyMaterial(&settings.ClientSettings, keyMaterial)
+	return traceWithReturnError(
+		func() (*DeviceLocal, error) {
+			return newDeviceLocal(
+				true,
+				true,
+				nil,
+				networkSpace,
+				byJwt,
+				deviceDescription,
+				deviceSpec,
+				appVersion,
+				instanceId,
+				enableRpc,
+				settings,
+			)
+		},
+	)
+}
+
 // gomobile:ignore
 func NewPlatformDeviceLocalWithDefaults(
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
@@ -256,6 +296,31 @@ func NewPlatformDeviceLocalWithDefaults(
 		appVersion,
 		instanceId,
 		defaultDeviceLocalSettings(),
+	)
+}
+
+// gomobile:ignore
+func NewPlatformDeviceLocalWithKeyMaterial(
+	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	keyMaterial *DeviceLocalKeyMaterial,
+) (*DeviceLocal, error) {
+	settings := defaultDeviceLocalSettings()
+	applyDeviceLocalKeyMaterial(&settings.ClientSettings, keyMaterial)
+	return NewPlatformDeviceLocal(
+		generatorFunc,
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		settings,
 	)
 }
 
@@ -381,38 +446,47 @@ func newDeviceLocalWithOverrides(
 		provider:          provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
-		stats:                             newDeviceStats(),
-		connectLocation:                   nil,
-		defaultLocation:                   nil,
-		remoteUserNatClient:               nil,
-		remoteUserNatProviderLocalUserNat: nil,
-		remoteUserNatProvider:             nil,
-		routeLocal:                        defaultRouteLocal,
-		canShowRatingDialog:               settings.DefaultCanShowRatingDialog,
-		canPromptIntroFunnel:              settings.DefaultCanShowIntroFunnel,
-		canRefer:                          settings.DefaultCanRefer,
-		allowForeground:                   settings.DefaultAllowForeground,
-		provideMode:                       ProvideModeNone,
-		provideControlMode:                defaultProvideControlMode,
-		provideNetworkMode:                settings.DefaultProvideNetworkMode,
-		offline:                           settings.DefaultOffline,
-		vpnInterfaceWhileOffline:          settings.DefaultVpnInterfaceWhileOffline,
-		tunnelStarted:                     settings.DefaultTunnelStarted,
-		orderedContractStatusUpdates:      []*contractStatusUpdate{},
-		netContractStatus:                 &ContractStatus{},
-		receiveCallbacks:                  connect.NewCallbackList[connect.ReceivePacketFunction](),
-		provideChangeListeners:            connect.NewCallbackList[ProvideChangeListener](),
-		providePausedChangeListeners:      connect.NewCallbackList[ProvidePausedChangeListener](),
-		provideNetworkModeChangeListeners: connect.NewCallbackList[ProvideNetworkModeChangeListener](),
-		offlineChangeListeners:            connect.NewCallbackList[OfflineChangeListener](),
-		connectChangeListeners:            connect.NewCallbackList[ConnectChangeListener](),
-		routeLocalChangeListeners:         connect.NewCallbackList[RouteLocalChangeListener](),
-		connectLocationChangeListeners:    connect.NewCallbackList[ConnectLocationChangeListener](),
-		provideSecretKeysListeners:        connect.NewCallbackList[ProvideSecretKeysListener](),
-		contractStatusChangeListeners:     connect.NewCallbackList[ContractStatusChangeListener](),
-		tunnelChangeListeners:             connect.NewCallbackList[TunnelChangeListener](),
-		windowStatusChangeListeners:       connect.NewCallbackList[WindowStatusChangeListener](),
-		jwtRefreshListeners:               connect.NewCallbackList[JwtRefreshListener](),
+		stats:                                   newDeviceStats(),
+		connectLocation:                         nil,
+		defaultLocation:                         nil,
+		remoteUserNatClient:                     nil,
+		remoteUserNatProviderLocalUserNat:       nil,
+		remoteUserNatProvider:                   nil,
+		routeLocal:                              defaultRouteLocal,
+		canShowRatingDialog:                     settings.DefaultCanShowRatingDialog,
+		canPromptIntroFunnel:                    settings.DefaultCanShowIntroFunnel,
+		canRefer:                                settings.DefaultCanRefer,
+		allowForeground:                         settings.DefaultAllowForeground,
+		provideMode:                             ProvideModeNone,
+		provideControlMode:                      defaultProvideControlMode,
+		provideNetworkMode:                      settings.DefaultProvideNetworkMode,
+		offline:                                 settings.DefaultOffline,
+		vpnInterfaceWhileOffline:                settings.DefaultVpnInterfaceWhileOffline,
+		tunnelStarted:                           settings.DefaultTunnelStarted,
+		orderedContractStatusUpdates:            []*contractStatusUpdate{},
+		netContractStatus:                       &ContractStatus{},
+		receiveCallbacks:                        connect.NewCallbackList[connect.ReceivePacketFunction](),
+		canShowRatingDialogChangeListeners:      connect.NewCallbackList[CanShowRatingDialogChangeListener](),
+		canPromptIntroFunnelChangeListeners:     connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
+		allowForegroundChangeListeners:          connect.NewCallbackList[AllowForegroundChangeListener](),
+		canReferChangeListeners:                 connect.NewCallbackList[CanReferChangeListener](),
+		provideModeChangeListeners:              connect.NewCallbackList[ProvideModeChangeListener](),
+		provideChangeListeners:                  connect.NewCallbackList[ProvideChangeListener](),
+		provideControlModeChangeListeners:       connect.NewCallbackList[ProvideControlModeChangeListener](),
+		performanceProfileChangeListeners:       connect.NewCallbackList[PerformanceProfileChangeListener](),
+		providePausedChangeListeners:            connect.NewCallbackList[ProvidePausedChangeListener](),
+		provideNetworkModeChangeListeners:       connect.NewCallbackList[ProvideNetworkModeChangeListener](),
+		offlineChangeListeners:                  connect.NewCallbackList[OfflineChangeListener](),
+		vpnInterfaceWhileOfflineChangeListeners: connect.NewCallbackList[VpnInterfaceWhileOfflineChangeListener](),
+		connectChangeListeners:                  connect.NewCallbackList[ConnectChangeListener](),
+		routeLocalChangeListeners:               connect.NewCallbackList[RouteLocalChangeListener](),
+		connectLocationChangeListeners:          connect.NewCallbackList[ConnectLocationChangeListener](),
+		defaultLocationChangeListeners:          connect.NewCallbackList[DefaultLocationChangeListener](),
+		provideSecretKeysListeners:              connect.NewCallbackList[ProvideSecretKeysListener](),
+		contractStatusChangeListeners:           connect.NewCallbackList[ContractStatusChangeListener](),
+		tunnelChangeListeners:                   connect.NewCallbackList[TunnelChangeListener](),
+		windowStatusChangeListeners:             connect.NewCallbackList[WindowStatusChangeListener](),
+		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
 	}
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
@@ -475,10 +549,12 @@ func (self *DeviceLocal) RefreshToken(attempt int) error {
 
 func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
 	var remoteUserNatClient connect.UserNatClient
+	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		changed = !performanceProfilesEqual(self.performanceProfile, performanceProfile)
 		self.performanceProfile = performanceProfile
 		remoteUserNatClient = self.remoteUserNatClient
 	}()
@@ -494,6 +570,9 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
 		}
 	}
+	if changed {
+		self.performanceProfileChanged(performanceProfile)
+	}
 }
 
 func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
@@ -501,6 +580,36 @@ func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
 	defer self.stateLock.Unlock()
 
 	return self.performanceProfile
+}
+
+func performanceProfilesEqual(a *PerformanceProfile, b *PerformanceProfile) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.WindowType != b.WindowType || a.AllowDirect != b.AllowDirect {
+		return false
+	}
+	return windowSizeSettingsEqual(a.WindowSize, b.WindowSize)
+}
+
+func windowSizeSettingsEqual(a *WindowSizeSettings, b *WindowSizeSettings) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.WindowSizeMin == b.WindowSizeMin &&
+		a.WindowSizeMinP2pOnly == b.WindowSizeMinP2pOnly &&
+		a.WindowSizeMax == b.WindowSizeMax &&
+		a.WindowSizeHardMax == b.WindowSizeHardMax &&
+		a.WindowSizeReconnectScale == b.WindowSizeReconnectScale &&
+		a.KeepHealthiestCount == b.KeepHealthiestCount &&
+		a.Ulimit == b.Ulimit
+}
+
+func connectLocationsEqual(a *ConnectLocation, b *ConnectLocation) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equals(b)
 }
 
 // func (self *DeviceLocal) lock() {
@@ -531,6 +640,12 @@ func (self *DeviceLocal) providerClient() *connect.Client {
 		return nil
 	}
 	return self.provider.Client()
+}
+
+func (self *DeviceLocal) providerClientSnapshot() *connect.Client {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.providerClient()
 }
 
 func (self *DeviceLocal) SetByJwt(byJwt string) {
@@ -682,9 +797,18 @@ func (self *DeviceLocal) GetCanShowRatingDialog() bool {
 }
 
 func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.canShowRatingDialog = canShowRatingDialog
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.canShowRatingDialog != canShowRatingDialog {
+			self.canShowRatingDialog = canShowRatingDialog
+			changed = true
+		}
+	}()
+	if changed {
+		self.canShowRatingDialogChanged(canShowRatingDialog)
+	}
 }
 
 /**
@@ -697,9 +821,18 @@ func (self *DeviceLocal) GetCanPromptIntroFunnel() bool {
 }
 
 func (self *DeviceLocal) SetCanPromptIntroFunnel(canPrompt bool) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.canPromptIntroFunnel = canPrompt
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.canPromptIntroFunnel != canPrompt {
+			self.canPromptIntroFunnel = canPrompt
+			changed = true
+		}
+	}()
+	if changed {
+		self.canPromptIntroFunnelChanged(canPrompt)
+	}
 }
 
 /**
@@ -717,31 +850,37 @@ func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
  * auto, always, never
  */
 func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControlMode) {
-	provideModeChanged := false
+	provideChanged := false
+	provideControlModeChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if self.provideControlMode != provideControlMode {
 			self.provideControlMode = provideControlMode
+			provideControlModeChanged = true
 
 			switch provideControlMode {
 			case ProvideControlModeAuto:
 				if self.remoteUserNatClient != nil {
 					// if user is connected, start providing
-					provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+					provideChanged = self.setProvideModeWithLock(ProvideModePublic)
 				} else {
 					// if user is not connected, stop providing
-					provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+					provideChanged = self.setProvideModeWithLock(ProvideModeNone)
 				}
 			case ProvideControlModeAlways:
-				provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
+				provideChanged = self.setProvideModeWithLock(ProvideModePublic)
 			default:
-				provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
+				provideChanged = self.setProvideModeWithLock(ProvideModeNone)
 			}
 		}
 	}()
 
-	if provideModeChanged {
+	if provideControlModeChanged {
+		self.provideControlModeChanged(provideControlMode)
+	}
+	if provideChanged {
+		self.provideModeChanged(self.GetProvideMode())
 		self.provideChanged(self.GetProvideEnabled())
 	}
 }
@@ -780,9 +919,18 @@ func (self *DeviceLocal) GetCanRefer() bool {
 }
 
 func (self *DeviceLocal) SetCanRefer(canRefer bool) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.canRefer = canRefer
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.canRefer != canRefer {
+			self.canRefer = canRefer
+			changed = true
+		}
+	}()
+	if changed {
+		self.canReferChanged(canRefer)
+	}
 }
 
 func (self *DeviceLocal) GetAllowForeground() bool {
@@ -792,9 +940,18 @@ func (self *DeviceLocal) GetAllowForeground() bool {
 }
 
 func (self *DeviceLocal) SetAllowForeground(allowForeground bool) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.allowForeground = allowForeground
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.allowForeground != allowForeground {
+			self.allowForeground = allowForeground
+			changed = true
+		}
+	}()
+	if changed {
+		self.allowForegroundChanged(allowForeground)
+	}
 }
 
 func (self *DeviceLocal) SetRouteLocal(routeLocal bool) {
@@ -931,6 +1088,55 @@ func (self *DeviceLocal) AddProvideChangeListener(listener ProvideChangeListener
 	})
 }
 
+func (self *DeviceLocal) AddCanShowRatingDialogChangeListener(listener CanShowRatingDialogChangeListener) Sub {
+	callbackId := self.canShowRatingDialogChangeListeners.Add(listener)
+	return newSub(func() {
+		self.canShowRatingDialogChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddCanPromptIntroFunnelChangeListener(listener CanPromptIntroFunnelChangeListener) Sub {
+	callbackId := self.canPromptIntroFunnelChangeListeners.Add(listener)
+	return newSub(func() {
+		self.canPromptIntroFunnelChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddAllowForegroundChangeListener(listener AllowForegroundChangeListener) Sub {
+	callbackId := self.allowForegroundChangeListeners.Add(listener)
+	return newSub(func() {
+		self.allowForegroundChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddCanReferChangeListener(listener CanReferChangeListener) Sub {
+	callbackId := self.canReferChangeListeners.Add(listener)
+	return newSub(func() {
+		self.canReferChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddProvideModeChangeListener(listener ProvideModeChangeListener) Sub {
+	callbackId := self.provideModeChangeListeners.Add(listener)
+	return newSub(func() {
+		self.provideModeChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddProvideControlModeChangeListener(listener ProvideControlModeChangeListener) Sub {
+	callbackId := self.provideControlModeChangeListeners.Add(listener)
+	return newSub(func() {
+		self.provideControlModeChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddPerformanceProfileChangeListener(listener PerformanceProfileChangeListener) Sub {
+	callbackId := self.performanceProfileChangeListeners.Add(listener)
+	return newSub(func() {
+		self.performanceProfileChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
 	callbackId := self.jwtRefreshListeners.Add(listener)
 	return newSub(func() {
@@ -967,6 +1173,13 @@ func (self *DeviceLocal) AddOfflineChangeListener(listener OfflineChangeListener
 	})
 }
 
+func (self *DeviceLocal) AddVpnInterfaceWhileOfflineChangeListener(listener VpnInterfaceWhileOfflineChangeListener) Sub {
+	callbackId := self.vpnInterfaceWhileOfflineChangeListeners.Add(listener)
+	return newSub(func() {
+		self.vpnInterfaceWhileOfflineChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) AddConnectChangeListener(listener ConnectChangeListener) Sub {
 	callbackId := self.connectChangeListeners.Add(listener)
 	return newSub(func() {
@@ -985,6 +1198,13 @@ func (self *DeviceLocal) AddConnectLocationChangeListener(listener ConnectLocati
 	callbackId := self.connectLocationChangeListeners.Add(listener)
 	return newSub(func() {
 		self.connectLocationChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddDefaultLocationChangeListener(listener DefaultLocationChangeListener) Sub {
+	callbackId := self.defaultLocationChangeListeners.Add(listener)
+	return newSub(func() {
+		self.defaultLocationChangeListeners.Remove(callbackId)
 	})
 }
 
@@ -1016,6 +1236,46 @@ func (self *DeviceLocal) AddWindowStatusChangeListener(listener WindowStatusChan
 	})
 }
 
+func (self *DeviceLocal) canShowRatingDialogChanged(canShowRatingDialog bool) {
+	for _, listener := range self.canShowRatingDialogChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.CanShowRatingDialogChanged(canShowRatingDialog)
+		})
+	}
+}
+
+func (self *DeviceLocal) canPromptIntroFunnelChanged(canPromptIntroFunnel bool) {
+	for _, listener := range self.canPromptIntroFunnelChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.CanPromptIntroFunnelChanged(canPromptIntroFunnel)
+		})
+	}
+}
+
+func (self *DeviceLocal) allowForegroundChanged(allowForeground bool) {
+	for _, listener := range self.allowForegroundChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.AllowForegroundChanged(allowForeground)
+		})
+	}
+}
+
+func (self *DeviceLocal) canReferChanged(canRefer bool) {
+	for _, listener := range self.canReferChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.CanReferChanged(canRefer)
+		})
+	}
+}
+
+func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
+	for _, listener := range self.provideModeChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProvideModeChanged(provideMode)
+		})
+	}
+}
+
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
 	// self.assertNotLockOwner()
 	for _, listener := range self.provideChangeListeners.Get() {
@@ -1034,6 +1294,22 @@ func (self *DeviceLocal) providePausedChanged(providePaused bool) {
 	}
 }
 
+func (self *DeviceLocal) provideControlModeChanged(provideControlMode ProvideControlMode) {
+	for _, listener := range self.provideControlModeChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProvideControlModeChanged(provideControlMode)
+		})
+	}
+}
+
+func (self *DeviceLocal) performanceProfileChanged(performanceProfile *PerformanceProfile) {
+	for _, listener := range self.performanceProfileChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.PerformanceProfileChanged(performanceProfile)
+		})
+	}
+}
+
 func (self *DeviceLocal) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
 
 	for _, listener := range self.provideNetworkModeChangeListeners.Get() {
@@ -1048,6 +1324,14 @@ func (self *DeviceLocal) offlineChanged(offline bool, vpnInterfaceWhileOffline b
 	for _, listener := range self.offlineChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.OfflineChanged(offline, vpnInterfaceWhileOffline)
+		})
+	}
+}
+
+func (self *DeviceLocal) vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline bool) {
+	for _, listener := range self.vpnInterfaceWhileOfflineChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline)
 		})
 	}
 }
@@ -1075,6 +1359,14 @@ func (self *DeviceLocal) connectLocationChanged(location *ConnectLocation) {
 	for _, listener := range self.connectLocationChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ConnectLocationChanged(location)
+		})
+	}
+}
+
+func (self *DeviceLocal) defaultLocationChanged(location *ConnectLocation) {
+	for _, listener := range self.defaultLocationChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.DefaultLocationChanged(location)
 		})
 	}
 }
@@ -1161,15 +1453,12 @@ func (self *DeviceLocal) InitProvideSecretKeys() {
 }
 
 // GetClientKeySeed returns the 32-byte Ed25519 seed for the provider
-// client's long-lived identity key. The caller is expected to
-// persist this in local storage and pass it back via
-// `deviceLocalSettings.ClientSettings.ClientKeySeed` on the next
-// process start, so the client's published `ClientKey` (and any
-// contract bindings to it) stays stable across restarts. Returns
-// nil when no provider client exists or encryption is not yet
-// initialized.
+// client's long-lived identity key. Persist it in caller-owned local
+// storage and pass it back with NewDeviceLocalWithKeyMaterial on the next
+// process start so the client's published ClientKey stays stable. Returns
+// nil when no provider client exists or key initialization failed.
 func (self *DeviceLocal) GetClientKeySeed() []byte {
-	client := self.providerClient()
+	client := self.providerClientSnapshot()
 	if client == nil {
 		return nil
 	}
@@ -1177,19 +1466,18 @@ func (self *DeviceLocal) GetClientKeySeed() []byte {
 	if keyManager == nil {
 		return nil
 	}
-	return keyManager.Seed()
+	return bytes.Clone(keyManager.Seed())
 }
 
 // GetProvideTlsCertificatePem returns the PEM-encoded TLS server
 // certificate chain that the provider client publishes via
 // `EncryptedKey`. Concatenated PEM blocks, leaf first. Pair with
-// `GetProvideTlsPrivateKeyPem` and pass back via
-// `deviceLocalSettings.ClientSettings.EncryptionSettings.
-// ProvideTlsCertificatePem` / `ProvideTlsPrivateKeyPem` to keep the
-// cert commitment stable across restarts. Returns nil when no
-// provider client exists or encryption is disabled.
+// `GetProvideTlsPrivateKeyPem` and pass back with
+// NewDeviceLocalWithKeyMaterial to keep the cert commitment stable across
+// restarts. Returns nil when no provider client exists or encryption is
+// disabled.
 func (self *DeviceLocal) GetProvideTlsCertificatePem() []byte {
-	client := self.providerClient()
+	client := self.providerClientSnapshot()
 	if client == nil {
 		return nil
 	}
@@ -1197,7 +1485,7 @@ func (self *DeviceLocal) GetProvideTlsCertificatePem() []byte {
 	if manager == nil {
 		return nil
 	}
-	return manager.ProvideTlsCertificatePem()
+	return bytes.Clone(manager.ProvideTlsCertificatePem())
 }
 
 // GetProvideTlsPrivateKeyPem returns the PEM-encoded PKCS#8 private
@@ -1205,7 +1493,7 @@ func (self *DeviceLocal) GetProvideTlsCertificatePem() []byte {
 // nil when no provider client exists, encryption is disabled, or
 // the cert was supplied with no exposed private key.
 func (self *DeviceLocal) GetProvideTlsPrivateKeyPem() []byte {
-	client := self.providerClient()
+	client := self.providerClientSnapshot()
 	if client == nil {
 		return nil
 	}
@@ -1213,7 +1501,59 @@ func (self *DeviceLocal) GetProvideTlsPrivateKeyPem() []byte {
 	if manager == nil {
 		return nil
 	}
-	return manager.ProvideTlsPrivateKeyPem()
+	return bytes.Clone(manager.ProvideTlsPrivateKeyPem())
+}
+
+// GetKeyMaterial returns the provider client's persisted identity
+// material. Persist it in caller-owned local storage and pass it back to
+// NewDeviceLocalWithKeyMaterial on the next process start.
+func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
+	return NewDeviceLocalKeyMaterial(
+		self.GetClientKeySeed(),
+		self.GetProvideTlsCertificatePem(),
+		self.GetProvideTlsPrivateKeyPem(),
+	)
+}
+
+// SetKeyMaterial applies provider-client identity material to this device and
+// emits ProvideSecretKeysChanged so callers can persist the resulting local
+// state through the existing provide-secret-keys listener path.
+func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
+	if keyMaterial == nil || keyMaterial.IsEmpty() {
+		return
+	}
+
+	client := func() *connect.Client {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		applyDeviceLocalKeyMaterial(&self.settings.ClientSettings, keyMaterial)
+		return self.providerClient()
+	}()
+
+	if client != nil {
+		if seed := keyMaterial.GetClientKeySeed(); 0 < len(seed) {
+			keyManager := client.ClientKeyManager()
+			if keyManager != nil {
+				if err := keyManager.SetSeed(seed); err != nil {
+					glog.Errorf("[device]failed to set client key seed: %s\n", err)
+				}
+			}
+		}
+
+		certPem := keyMaterial.GetProvideTlsCertificatePem()
+		privateKeyPem := keyMaterial.GetProvideTlsPrivateKeyPem()
+		if 0 < len(certPem) && 0 < len(privateKeyPem) {
+			encryptionManager := client.EncryptionSessionManager()
+			if encryptionManager != nil {
+				if err := encryptionManager.SetProvideTlsKeyMaterial(certPem, privateKeyPem); err != nil {
+					glog.Errorf("[device]failed to set provide TLS key material: %s\n", err)
+				}
+			}
+		}
+	}
+
+	self.provideSecretKeysChanged(self.GetProvideSecretKeys())
 }
 
 func (self *DeviceLocal) GetProvideEnabled() bool {
@@ -1241,6 +1581,7 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 		changed = self.setProvideModeWithLock(provideMode)
 	}()
 	if changed {
+		self.provideModeChanged(provideMode)
 		self.provideChanged(self.GetProvideEnabled())
 	}
 }
@@ -1351,6 +1692,7 @@ func (self *DeviceLocal) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bo
 		}
 	}()
 	if changed {
+		self.vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline)
 		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
 	}
 }
@@ -1366,7 +1708,7 @@ func (self *DeviceLocal) RemoveDestination() {
 }
 
 func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList) {
-	provideModeChanged := false
+	provideChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -1471,7 +1813,11 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 					&self.clientId,
 					// connect.DefaultClientSettingsNoNetworkEvents,
 					func() *connect.ClientSettings {
-						return connect.DefaultClientSettingsWithBufferSize(self.settings.SequenceBufferSize)
+						return newDeviceClientSettings(
+							connect.DefaultClientSettingsWithBufferSize(self.settings.SequenceBufferSize),
+							self.networkSpace.apiUrl,
+							self.clientStrategy,
+						)
 					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
 				)
@@ -1502,17 +1848,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 
 			self.remoteUserNatClient.SetLocalSecurityBypass(self.routeLocal)
 
-			if self.provider != nil {
-				if self.provideControlMode == ProvideControlModeAuto {
-					provideModeChanged = self.setProvideModeWithLock(ProvideModePublic)
-				}
+			if self.provideControlMode == ProvideControlModeAuto {
+				provideChanged = self.setProvideModeWithLock(ProvideModePublic)
 			}
 		} else {
 			// else no specs, not an error
-			if self.provider != nil {
-				if self.provideControlMode == ProvideControlModeAuto {
-					provideModeChanged = self.setProvideModeWithLock(ProvideModeNone)
-				}
+			if self.provideControlMode == ProvideControlModeAuto {
+				provideChanged = self.setProvideModeWithLock(ProvideModeNone)
 			}
 		}
 	}()
@@ -1523,7 +1865,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 	self.connectChanged(connectEnabled)
 	self.windowStatusChanged(self.GetWindowStatus())
 
-	if provideModeChanged {
+	if provideChanged {
+		self.provideModeChanged(self.GetProvideMode())
 		self.provideChanged(self.GetProvideEnabled())
 	}
 }
@@ -1602,9 +1945,18 @@ func (self *DeviceLocal) GetDefaultLocation() *ConnectLocation {
 }
 
 func (self *DeviceLocal) SetDefaultLocation(location *ConnectLocation) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.defaultLocation = location
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !connectLocationsEqual(self.defaultLocation, location) {
+			self.defaultLocation = location
+			changed = true
+		}
+	}()
+	if changed {
+		self.defaultLocationChanged(location)
+	}
 }
 
 func (self *DeviceLocal) Shuffle() {
@@ -1856,6 +2208,7 @@ func (self *WindowEvents) EvaluationFailedClientCount() int {
 }
 */
 
+/*
 func (self *DeviceLocal) GetProviderEnabled() bool {
 	// FIXME
 	return true
@@ -1966,6 +2319,7 @@ func (self *DeviceLocal) AddIngressContractDetailsChangeListener(listener Contra
 	// FIXME
 	return nil
 }
+*/
 
 func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
 

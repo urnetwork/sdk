@@ -299,6 +299,48 @@ func (self *LocalState) GetProvideSecretKeys() *ProvideSecretKeyList {
 	return nil
 }
 
+type deviceLocalKeyMaterialStorage struct {
+	ClientKeySeed            []byte `json:"client_key_seed,omitempty"`
+	ProvideTlsCertificatePem []byte `json:"provide_tls_certificate_pem,omitempty"`
+	ProvideTlsPrivateKeyPem  []byte `json:"provide_tls_private_key_pem,omitempty"`
+}
+
+func (self *LocalState) SetDeviceLocalKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) error {
+	path := filepath.Join(self.localStorageDir, ".device_local_key_material")
+	if keyMaterial == nil || keyMaterial.IsEmpty() {
+		os.Remove(path)
+		return nil
+	}
+
+	keyMaterialBytes, err := json.Marshal(deviceLocalKeyMaterialStorage{
+		ClientKeySeed:            keyMaterial.GetClientKeySeed(),
+		ProvideTlsCertificatePem: keyMaterial.GetProvideTlsCertificatePem(),
+		ProvideTlsPrivateKeyPem:  keyMaterial.GetProvideTlsPrivateKeyPem(),
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, keyMaterialBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) GetDeviceLocalKeyMaterial() *DeviceLocalKeyMaterial {
+	path := filepath.Join(self.localStorageDir, ".device_local_key_material")
+	if keyMaterialBytes, err := os.ReadFile(path); err == nil {
+		var keyMaterial deviceLocalKeyMaterialStorage
+		if err := json.Unmarshal(keyMaterialBytes, &keyMaterial); err == nil {
+			deviceLocalKeyMaterial := NewDeviceLocalKeyMaterial(
+				keyMaterial.ClientKeySeed,
+				keyMaterial.ProvideTlsCertificatePem,
+				keyMaterial.ProvideTlsPrivateKeyPem,
+			)
+			if !deviceLocalKeyMaterial.IsEmpty() {
+				return deviceLocalKeyMaterial
+			}
+		}
+	}
+	return nil
+}
+
 func (self *LocalState) SetCanShowRatingDialog(canShowRatingDialog bool) error {
 	path := filepath.Join(self.localStorageDir, ".can_show_rating_dialog")
 	canShowRatingDialogBytes, err := json.Marshal(canShowRatingDialog)
@@ -331,10 +373,24 @@ func (self *LocalState) SetIntroFunnelLastPrompted() error {
 	return os.WriteFile(path, lastPromptedBytes, LocalStorageFilePermissions)
 }
 
+func (self *LocalState) SetCanPromptIntroFunnel(canPrompt bool) error {
+	path := filepath.Join(self.localStorageDir, ".can_prompt_intro_funnel")
+	canPromptBytes, err := json.Marshal(canPrompt)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, canPromptBytes, LocalStorageFilePermissions)
+}
+
 func (self *LocalState) GetCanPromptIntroFunnel() bool {
 	path := filepath.Join(self.localStorageDir, ".can_prompt_intro_funnel")
 
 	if intoFunnelTimeLastPromptedBytes, err := os.ReadFile(path); err == nil {
+		var canPrompt bool
+		if err := json.Unmarshal(intoFunnelTimeLastPromptedBytes, &canPrompt); err == nil {
+			return canPrompt
+		}
+
 		var intoFunnelTimeLastPrompted time.Time
 		if err := json.Unmarshal(intoFunnelTimeLastPromptedBytes, &intoFunnelTimeLastPrompted); err == nil {
 
