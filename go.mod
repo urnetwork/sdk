@@ -6,6 +6,7 @@ require (
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/glog v0.0.0
 	golang.org/x/crypto v0.50.0
@@ -15,7 +16,6 @@ require (
 require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect

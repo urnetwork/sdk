@@ -152,6 +152,11 @@ type DeviceLocal struct {
 	stats *DeviceStats
 
 	deviceLocalRpcManager *deviceLocalRpcManager
+	// current listener config, so SetRpcServer is a no-op (no rebind that would
+	// drop live connections) when the same server is re-applied
+	rpcHostPort      string
+	rpcServerPem     string
+	rpcClientCertPem string
 
 	stateLock sync.Mutex
 	// stateLockGoid atomic.Int64
@@ -2119,6 +2124,49 @@ func (self *DeviceLocal) GetDone() bool {
 	default:
 		return false
 	}
+}
+
+// SetRpcServer starts (or restarts) the rpc server listening on hostPort
+// (e.g. "127.0.0.1:12042"), presenting the certificate/key in serverPem and,
+// when clientCertPem is non-empty, requiring and pinning that client
+// certificate for mTLS. An empty serverPem listens unencrypted. Apps call this
+// after constructing the device with the per-session server key material and
+// client certificate received from the remote.
+func (self *DeviceLocal) SetRpcServer(serverPem string, clientCertPem string, hostPort string) error {
+	address, err := parseDeviceRemoteAddress(hostPort)
+	if err != nil {
+		return err
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	// idempotent: if the listener config is unchanged, do not rebind (which would
+	// drop live connections and force the remote to resync). re-applying the same
+	// server must be a no-op.
+	if self.deviceLocalRpcManager != nil &&
+		self.rpcHostPort == hostPort &&
+		self.rpcServerPem == serverPem &&
+		self.rpcClientCertPem == clientCertPem {
+		return nil
+	}
+
+	glog.Infof("[dlrpc]set rpc server %s (tls=%t mtls=%t)", address.HostPort(), len(serverPem) != 0, len(clientCertPem) != 0)
+
+	settings := defaultDeviceRpcSettings()
+	settings.Address = address
+	listener := NewWebsocketDeviceRpcListener(address, serverPem, clientCertPem, settings)
+
+	// closing the old manager synchronously releases the previous listener's
+	// port before the new listener binds (which may be the same port)
+	if self.deviceLocalRpcManager != nil {
+		self.deviceLocalRpcManager.Close()
+	}
+	self.deviceLocalRpcManager = newDeviceLocalRpcManager(self.ctx, self, settings, listener)
+	self.rpcHostPort = hostPort
+	self.rpcServerPem = serverPem
+	self.rpcClientCertPem = clientCertPem
+	return nil
 }
 
 func parseByJwtClientId(byJwt string) (connect.Id, error) {

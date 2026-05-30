@@ -12,7 +12,6 @@ import (
 	"time"
 
 	// "runtime/debug"
-	mathrand "math/rand"
 
 	"golang.org/x/exp/maps"
 
@@ -58,59 +57,33 @@ type deviceRpcSettings struct {
 	KeepAliveTimeout    time.Duration
 	// max number of keep alive pings after first. Must be at least 1
 	KeepAliveRetryCount int
-	// TODO randomize the ports
-	Address                *DeviceRemoteAddress
-	ResponseHost           string
-	ResponsePorts          []int
-	ResponsePortProbeCount int
-	InitialLockTimeout     time.Duration
+	Address             *DeviceRemoteAddress
+	InitialLockTimeout  time.Duration
 	// size of the buffered channel that serializes delivery of rpc callbacks.
 	// when full, callback delivery blocks as expected back pressure.
 	CallbackBufferSize int
+	// per-stream buffered frame counts for the rpc transport mux
+	MuxSendBufferSize    int
+	MuxReceiveBufferSize int
 
 	deviceLocalSettings
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
-	responsePorts := []int{}
-	for port := 12025; port < 12125; port += 1 {
-		responsePorts = append(responsePorts, port)
-	}
 	return &deviceRpcSettings{
-		RpcCallTimeout:         5 * time.Second,
-		RpcConnectTimeout:      5 * time.Second,
-		RpcReconnectTimeout:    5 * time.Second,
-		KeepAliveTimeout:       1 * time.Second,
-		KeepAliveRetryCount:    3,
-		Address:                requireRemoteAddress("127.0.0.1:12025"),
-		ResponseHost:           "127.0.0.1",
-		ResponsePorts:          responsePorts,
-		ResponsePortProbeCount: 20,
-		InitialLockTimeout:     1 * time.Second,
-		CallbackBufferSize:     64,
+		RpcCallTimeout:       5 * time.Second,
+		RpcConnectTimeout:    5 * time.Second,
+		RpcReconnectTimeout:  5 * time.Second,
+		KeepAliveTimeout:     1 * time.Second,
+		KeepAliveRetryCount:  3,
+		Address:              requireRemoteAddress("127.0.0.1:12025"),
+		InitialLockTimeout:   1 * time.Second,
+		CallbackBufferSize:   64,
+		MuxSendBufferSize:    32,
+		MuxReceiveBufferSize: 32,
 
 		deviceLocalSettings: *defaultDeviceLocalSettings(),
 	}
-}
-
-func (self *deviceRpcSettings) RequireRandResponseAddress() *DeviceRemoteAddress {
-	address, err := self.RandResponseAddress()
-	if err != nil {
-		panic(err)
-	}
-	return address
-}
-
-func (self *deviceRpcSettings) RandResponseAddress() (*DeviceRemoteAddress, error) {
-	ip, err := netip.ParseAddr(self.ResponseHost)
-	if err != nil {
-		return nil, err
-	}
-	port := self.ResponsePorts[mathrand.Intn(len(self.ResponsePorts))]
-	return &DeviceRemoteAddress{
-		Ip:   ip,
-		Port: port,
-	}, nil
 }
 
 // compile check that DeviceRemote conforms to Device, device, and ViewControllerManager
@@ -130,6 +103,9 @@ type DeviceRemote struct {
 
 	reconnectMonitor *connect.Monitor
 	syncMonitor      *connect.Monitor
+	// notified when the rpc transport (dialer) is swapped, to drop a live
+	// connection and reconnect with the new dialer
+	resetMonitor *connect.Monitor
 
 	clientId       connect.Id
 	instanceId     connect.Id
@@ -142,7 +118,13 @@ type DeviceRemote struct {
 
 	stateLock sync.Mutex
 
-	service *rpcClient
+	dialer DeviceRpcDialer
+	// current dialer config, so SetRpcServer is a no-op (no reset of a live
+	// connection) when the same transport is re-applied
+	rpcHostPort      string
+	rpcClientPem     string
+	rpcServerCertPem string
+	service          *rpcClient
 
 	canShowRatingDialogChangeListeners      map[connect.Id]CanShowRatingDialogChangeListener
 	canPromptIntroFunnelChangeListeners     map[connect.Id]CanPromptIntroFunnelChangeListener
@@ -182,7 +164,9 @@ func NewDeviceRemoteWithDefaults(
 	byJwt string,
 	instanceId *Id,
 ) (*DeviceRemote, error) {
-	return newDeviceRemote(networkSpace, byJwt, instanceId, defaultDeviceRpcSettings())
+	settings := defaultDeviceRpcSettings()
+	dialer := NewWebsocketDeviceRpcDialer(settings.Address, "", "", settings)
+	return newDeviceRemote(networkSpace, byJwt, instanceId, settings, dialer)
 }
 
 func newDeviceRemote(
@@ -190,6 +174,7 @@ func newDeviceRemote(
 	byJwt string,
 	instanceId *Id,
 	settings *deviceRpcSettings,
+	dialer DeviceRpcDialer,
 ) (*DeviceRemote, error) {
 	clientId, err := parseByJwtClientId(byJwt)
 	if err != nil {
@@ -202,6 +187,7 @@ func newDeviceRemote(
 		instanceId,
 		settings,
 		clientId,
+		dialer,
 	)
 }
 
@@ -211,6 +197,7 @@ func newDeviceRemoteWithOverrides(
 	instanceId *Id,
 	settings *deviceRpcSettings,
 	clientId connect.Id,
+	dialer DeviceRpcDialer,
 ) (*DeviceRemote, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -225,9 +212,11 @@ func newDeviceRemoteWithOverrides(
 		settings:              settings,
 		reconnectMonitor:      connect.NewMonitor(),
 		syncMonitor:           connect.NewMonitor(),
+		resetMonitor:          connect.NewMonitor(),
 		clientId:              clientId,
 		instanceId:            instanceId.toConnectId(),
 		clientStrategy:        networkSpace.clientStrategy,
+		dialer:                dialer,
 		remoteChangeListeners: connect.NewCallbackList[RemoteChangeListener](),
 
 		canShowRatingDialogChangeListeners:      map[connect.Id]CanShowRatingDialogChangeListener{},
@@ -295,18 +284,22 @@ func (self *DeviceRemote) run() {
 	// 	}
 	// }()
 
-	syncReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
-
 	initialLock := true
 	intialLockEndTime := time.Now().Add(self.settings.InitialLockTimeout)
 	for {
+		// rate-limit reconnects: ensure at least RpcReconnectTimeout between the
+		// start of one connect attempt and the next. Created per-iteration so the
+		// minimum applies to every attempt (after a long-lived connection drops,
+		// `After` fires immediately with no artificial delay).
+		syncReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
 		handleCtx, handleCancel := context.WithCancel(self.ctx)
 
 		notify := self.reconnectMonitor.NotifyChannel()
+		resetNotify := self.resetMonitor.NotifyChannel()
 		func() {
 			defer handleCancel()
 
-			var responseListener net.Listener
+			var reverseConn net.Conn
 
 			synced := false
 			func() {
@@ -324,34 +317,29 @@ func (self *DeviceRemote) run() {
 
 				}
 
-				dialer := net.Dialer{
-					Timeout: self.settings.RpcConnectTimeout,
-					KeepAliveConfig: net.KeepAliveConfig{
-						Enable: true,
-					},
-				}
-				conn, err := dialer.DialContext(handleCtx, "tcp", self.settings.Address.HostPort())
+				forwardConn, rev, err := self.dialer.Dial(handleCtx)
 				if err != nil {
 					// failure to connect here is normal if the local is not running
 					// glog.Infof("[dr]sync connect err = %s", err)
 					return
 				}
-				// FIXME
-				// tls.Handshake()
+				reverseConn = rev
 
 				select {
 				case <-handleCtx.Done():
+					forwardConn.Close()
 					return
 				default:
 				}
 
-				// service := rpc.NewClient(conn)
 				service := &rpcClientWithTimeout{
 					ctx:         self.ctx,
 					timeout:     self.settings.RpcCallTimeout,
-					closeClient: conn.Close,
-					client:      rpc.NewClient(conn),
+					closeClient: forwardConn.Close,
+					client:      rpc.NewClient(forwardConn),
 				}
+				// closing the forward rpc client tears down the whole mux,
+				// including reverseConn
 				defer func() {
 					if !synced {
 						service.Close()
@@ -405,40 +393,10 @@ func (self *DeviceRemote) run() {
 				// 	}
 				// }
 
-				// FIXME use response cert to listen with TLS
-				listenConfig := &net.ListenConfig{
-					KeepAliveConfig: net.KeepAliveConfig{
-						Enable:   true,
-						Idle:     self.settings.KeepAliveTimeout / time.Duration(2*self.settings.KeepAliveRetryCount),
-						Interval: self.settings.KeepAliveTimeout / time.Duration(2*self.settings.KeepAliveRetryCount),
-						Count:    self.settings.KeepAliveRetryCount,
-					},
-				}
-				var responseAddress *DeviceRemoteAddress
-				for range self.settings.ResponsePortProbeCount {
-					responseAddress = self.settings.RequireRandResponseAddress()
-					responseListener, err = listenConfig.Listen(handleCtx, "tcp", responseAddress.HostPort())
-					if err == nil {
-						break
-					}
-				}
-				if err != nil {
-					glog.Infof("[dr]sync reverse listen err = %s", err)
-					return
-				}
-				defer func() {
-					if !synced {
-						responseListener.Close()
-					}
-				}()
-
 				glog.Info("[dr]start device remote rpc")
 				deviceRemoteRpc := newDeviceRemoteRpc(handleCtx, self)
 				server := rpc.NewServer()
 				server.Register(deviceRemoteRpc)
-
-				// defer deviceRemoteRpc.Close()
-				// defer server.Close()
 
 				go connect.HandleError(func() {
 					defer func() {
@@ -446,31 +404,15 @@ func (self *DeviceRemote) run() {
 						deviceRemoteRpc.Close()
 					}()
 
-					conn, err := responseListener.Accept()
-					if err != nil {
-						glog.Infof("[dr]sync reverse accept err = %s", err)
-						return
-					}
-					func() {
-						connCtx, connCancel := context.WithCancel(handleCtx)
-						defer connCancel()
-						go connect.HandleError(func() {
-							defer conn.Close()
-							select {
-							case <-connCtx.Done():
-							}
-						})
-						server.ServeConn(conn)
-						glog.Infof("[dr]sync reverse server done")
-					}()
-
-					// resync
+					// reverseConn is closed on teardown, which unblocks ServeConn
+					server.ServeConn(reverseConn)
+					glog.Infof("[dr]sync reverse server done")
 				}, func() {
 					handleCancel()
 					deviceRemoteRpc.Close()
 				})
 
-				err = rpcCallVoid(service, "DeviceLocalRpc.SyncReverse", responseAddress, self.closeService)
+				err = rpcCallNoArgVoid(service, "DeviceLocalRpc.SyncReverse", self.closeService)
 				if err != nil {
 					return
 				}
@@ -500,6 +442,10 @@ func (self *DeviceRemote) run() {
 				glog.Infof("[dr]sync done")
 				select {
 				case <-handleCtx.Done():
+				case <-resetNotify:
+					// the dialer was swapped; drop this connection and
+					// reconnect with the new transport
+					glog.Infof("[dr]rpc transport reset")
 				}
 				glog.Infof("[dr]handle done")
 
@@ -508,7 +454,9 @@ func (self *DeviceRemote) run() {
 					defer self.stateLock.Unlock()
 
 					self.closeService()
-					responseListener.Close()
+					if reverseConn != nil {
+						reverseConn.Close()
+					}
 
 					// close pending http responses
 					for _, responseChannel := range self.httpResponseChannels {
@@ -529,6 +477,8 @@ func (self *DeviceRemote) run() {
 		case <-syncReconnect.After():
 		case <-notify:
 			// reconnect now
+		case <-resetNotify:
+			// the dialer was swapped; reconnect now with the new transport
 		}
 	}
 }
@@ -568,11 +518,6 @@ func (self *DeviceRemote) RefreshToken(attempt int) error {
 	glog.Infof("DeviceRemote RefreshToken attempt %d", attempt)
 	self.tokenManager.RefreshToken()
 	return nil
-}
-
-func (self *DeviceRemote) GetRpcPublicKey() string {
-	// FIXME
-	return ""
 }
 
 func (self *DeviceRemote) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
@@ -634,6 +579,45 @@ func (self *DeviceRemote) GetPerformanceProfile() *PerformanceProfile {
 // since the rpc connect will poll until connected
 func (self *DeviceRemote) Sync() {
 	self.reconnectMonitor.NotifyAll()
+}
+
+// SetRpcServer points the rpc transport at hostPort (e.g. "127.0.0.1:12042"),
+// pinning the server certificate in serverCertPem and presenting clientPem
+// (cert+key) as the client identity for mTLS. An empty serverCertPem uses an
+// unencrypted connection. A live connection is dropped and reconnected with the
+// new transport. Apps call this per vpn session with fresh key material.
+func (self *DeviceRemote) SetRpcServer(clientPem string, serverCertPem string, hostPort string) error {
+	address, err := parseDeviceRemoteAddress(hostPort)
+	if err != nil {
+		return err
+	}
+
+	changed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		// idempotent: if the transport config is unchanged, do not swap the
+		// dialer or reset a live connection. re-applying the same server (e.g.
+		// on every state change) must not tear down and resync the session.
+		if self.dialer != nil &&
+			self.rpcHostPort == hostPort &&
+			self.rpcClientPem == clientPem &&
+			self.rpcServerCertPem == serverCertPem {
+			return false
+		}
+
+		self.dialer = NewWebsocketDeviceRpcDialer(address, clientPem, serverCertPem, self.settings)
+		self.rpcHostPort = hostPort
+		self.rpcClientPem = clientPem
+		self.rpcServerCertPem = serverCertPem
+		return true
+	}()
+
+	if changed {
+		glog.Infof("[dr]set rpc server %s (mtls=%t)", address.HostPort(), len(clientPem) != 0)
+		self.resetMonitor.NotifyAll()
+	}
+	return nil
 }
 
 func (self *DeviceRemote) waitForSync(timeout time.Duration) bool {
@@ -3320,11 +3304,8 @@ type DeviceRemoteSyncRequest struct {
 
 //gomobile:noexport
 type DeviceRemoteSyncResponse struct {
-	// WindowIds map[connect.Id]bool
-	// FIXME response cert
-	RpcPublicKey string
-	Error        string
-	State        DeviceRemoteState
+	Error string
+	State DeviceRemoteState
 }
 
 //gomobile:noexport
@@ -3647,19 +3628,23 @@ type deviceLocalRpcManager struct {
 	cancel      context.CancelFunc
 	deviceLocal *DeviceLocal
 	settings    *deviceRpcSettings
+	listener    DeviceRpcListener
 }
 
 func newDeviceLocalRpcManagerWithDefaults(
 	ctx context.Context,
 	deviceLocal *DeviceLocal,
 ) *deviceLocalRpcManager {
-	return newDeviceLocalRpcManager(ctx, deviceLocal, defaultDeviceRpcSettings())
+	settings := defaultDeviceRpcSettings()
+	listener := NewWebsocketDeviceRpcListener(settings.Address, "", "", settings)
+	return newDeviceLocalRpcManager(ctx, deviceLocal, settings, listener)
 }
 
 func newDeviceLocalRpcManager(
 	ctx context.Context,
 	deviceLocal *DeviceLocal,
 	settings *deviceRpcSettings,
+	listener DeviceRpcListener,
 ) *deviceLocalRpcManager {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -3668,6 +3653,7 @@ func newDeviceLocalRpcManager(
 		cancel:      cancel,
 		deviceLocal: deviceLocal,
 		settings:    settings,
+		listener:    listener,
 	}
 
 	go connect.HandleError(deviceLocalRpcManager.run, cancel)
@@ -3675,73 +3661,45 @@ func newDeviceLocalRpcManager(
 }
 
 func (self *deviceLocalRpcManager) run() {
-	listenReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
+	defer self.listener.Close()
+
+	acceptReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
 
 	for {
-		handleCtx, handleCancel := context.WithCancel(self.ctx)
-
-		func() {
-			defer handleCancel()
-
-			listenConfig := &net.ListenConfig{
-				KeepAliveConfig: net.KeepAliveConfig{
-					Enable:   true,
-					Idle:     self.settings.KeepAliveTimeout / time.Duration(2*self.settings.KeepAliveRetryCount),
-					Interval: self.settings.KeepAliveTimeout / time.Duration(2*self.settings.KeepAliveRetryCount),
-					Count:    self.settings.KeepAliveRetryCount,
-				},
-			}
-			listener, err := listenConfig.Listen(handleCtx, "tcp", self.settings.Address.HostPort())
-			if err != nil {
-				glog.Infof("[dlrcp]listen err = %s", err)
-				return
-			}
-			defer listener.Close()
-
-			go connect.HandleError(func() {
-				defer handleCancel()
-
-				acceptReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
-
-				// handle connections serially
-				for {
-					conn, err := listener.Accept()
-					if err != nil {
-						glog.Infof("[dlrcp]listen accept err = %s", err)
-						return
-					}
-
-					// note this will close the connection when handleCtx is closed
-					newDeviceLocalRpc(
-						handleCtx,
-						conn,
-						self.deviceLocal,
-						self.settings,
-					)
-
-					select {
-					case <-handleCtx.Done():
-						return
-					case <-acceptReconnect.After():
-					}
-				}
-			}, handleCancel)
-
-			select {
-			case <-handleCtx.Done():
-			}
-		}()
-
 		select {
-		case <-handleCtx.Done():
+		case <-self.ctx.Done():
 			return
-		case <-listenReconnect.After():
+		default:
 		}
+
+		forwardConn, reverseConn, err := self.listener.Accept(self.ctx)
+		if err != nil {
+			glog.Infof("[dlrcp]accept err = %s", err)
+			select {
+			case <-self.ctx.Done():
+				return
+			case <-acceptReconnect.After():
+				continue
+			}
+		}
+
+		// each connection manages its own lifecycle; the rpc closes its
+		// connection when its context is cancelled
+		newDeviceLocalRpc(
+			self.ctx,
+			forwardConn,
+			reverseConn,
+			self.deviceLocal,
+			self.settings,
+		)
 	}
 }
 
 func (self *deviceLocalRpcManager) Close() {
 	self.cancel()
+	// close the listener synchronously so the port is released before a
+	// replacement listener (e.g. from DeviceLocal.SetRpcServer) binds it
+	self.listener.Close()
 }
 
 // rpc are called on a single go routine
@@ -3751,7 +3709,10 @@ type DeviceLocalRpc struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// conn is the forward stream on which DeviceLocalRpc methods are served;
+	// reverseConn is the reverse stream used as the DeviceRemoteRpc client
 	conn                  net.Conn
+	reverseConn           net.Conn
 	deviceLocal           *DeviceLocal
 	egressSecurityPolicy  securityPolicy
 	ingressSecurityPolicy securityPolicy
@@ -3815,6 +3776,7 @@ type DeviceLocalRpc struct {
 func newDeviceLocalRpc(
 	ctx context.Context,
 	conn net.Conn,
+	reverseConn net.Conn,
 	deviceLocal *DeviceLocal,
 	settings *deviceRpcSettings,
 ) *DeviceLocalRpc {
@@ -3824,6 +3786,7 @@ func newDeviceLocalRpc(
 		ctx:                                       cancelCtx,
 		cancel:                                    cancel,
 		conn:                                      conn,
+		reverseConn:                               reverseConn,
 		deviceLocal:                               deviceLocal,
 		egressSecurityPolicy:                      deviceLocal.egressSecurityPolicy(),
 		ingressSecurityPolicy:                     deviceLocal.ingressSecurityPolicy(),
@@ -4180,24 +4143,9 @@ func (self *DeviceLocalRpc) Sync(
 	return nil
 }
 
-func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ RpcVoid) error {
+func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-
-	dialer := net.Dialer{
-		Timeout: self.settings.RpcConnectTimeout,
-		KeepAliveConfig: net.KeepAliveConfig{
-			Enable: true,
-		},
-	}
-	glog.Infof("[dlrpc]sync reverse")
-	conn, err := dialer.DialContext(self.ctx, "tcp", responseAddress.HostPort())
-	if err != nil {
-		glog.Infof("[dlrpc]sync reverse err = %s", err)
-		return err
-	}
-	// FIXME
-	// tls.Handshake()
 
 	select {
 	case <-self.ctx.Done():
@@ -4205,14 +4153,15 @@ func (self *DeviceLocalRpc) SyncReverse(responseAddress *DeviceRemoteAddress, _ 
 	default:
 	}
 
-	glog.Infof("[dlrpc]sync reverse connected")
+	glog.Infof("[dlrpc]sync reverse")
 
-	// self.service = rpc.NewClient(conn)
+	// the reverse stream is already established by the listener; use it as the
+	// DeviceRemoteRpc client rather than dialing back
 	self.service = &rpcClientWithTimeout{
 		ctx:         self.ctx,
 		timeout:     self.settings.RpcCallTimeout,
-		closeClient: conn.Close,
-		client:      rpc.NewClient(conn),
+		closeClient: self.reverseConn.Close,
+		client:      rpc.NewClient(self.reverseConn),
 	}
 
 	// fire listeners with the current state
