@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -55,6 +56,7 @@ func TestDeviceRemoteSimple(t *testing.T) {
 		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
+		testing_deviceRpcDialerDefault(),
 	)
 	if err != nil {
 		panic(err)
@@ -127,6 +129,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 				instanceId,
 				settings,
 				clientId,
+				testing_deviceRpcDialer(settings),
 			)
 			if err != nil {
 				panic(err)
@@ -142,6 +145,7 @@ func TestDeviceRemoteFull(t *testing.T) {
 			routeLocalChangeListener := &testing_routeLocalChangeListener{}
 			connectLocationChangeListener := &testing_connectLocationChangeListener{}
 			provideSecretKeysListener := &testing_provideSecretKeysListener{}
+			performanceProfileChangeListener := &testing_performanceProfileChangeListener{}
 			monitorEventListener := &testing_monitorEventListener{}
 
 			provideChangeListenerSub := deviceRemote.AddProvideChangeListener(provideChangeListener)
@@ -164,6 +168,9 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			provideSecretKeysListenerSub := deviceRemote.AddProvideSecretKeysListener(provideSecretKeysListener)
 			defer provideSecretKeysListenerSub.Close()
+
+			performanceProfileChangeListenerSub := deviceRemote.AddPerformanceProfileChangeListener(performanceProfileChangeListener)
+			defer performanceProfileChangeListenerSub.Close()
 
 			windowMonitor := deviceRemote.windowMonitor()
 			windowExpandEvent, providerEvents := windowMonitor.Events()
@@ -255,6 +262,10 @@ func TestDeviceRemoteFull(t *testing.T) {
 			provideSecretKeysListener.with(func() {
 				assert.Equal(t, provideSecretKeysListener.event, true)
 			})
+			performanceProfileChangeListener.with(func() {
+				assert.Equal(t, performanceProfileChangeListener.event, true)
+				assert.NotEqual(t, performanceProfileChangeListener.performanceProfile, nil)
+			})
 			// FIXME one difference with remote sync later versus now is that the monitor doesn't getted called with empty events
 			// monitorEventListener.with(func() {
 			// 	assert.Equal(t, monitorEventListener.event, true)
@@ -294,6 +305,7 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 				instanceId,
 				settings,
 				clientId,
+				testing_deviceRpcDialer(settings),
 			)
 			if err != nil {
 				panic(err)
@@ -511,6 +523,7 @@ func TestDeviceRemoteApi(t *testing.T) {
 		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
+		testing_deviceRpcDialerDefault(),
 	)
 	if err != nil {
 		panic(err)
@@ -553,6 +566,7 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 		instanceId,
 		settings,
 		clientId,
+		testing_deviceRpcDialer(settings),
 	)
 	if err != nil {
 		panic(err)
@@ -681,6 +695,7 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 		instanceId,
 		settings,
 		clientId,
+		testing_deviceRpcDialer(settings),
 	)
 	if err != nil {
 		panic(err)
@@ -873,6 +888,7 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 		instanceId,
 		defaultDeviceRpcSettings(),
 		clientId,
+		testing_deviceRpcDialerDefault(),
 	)
 	if err != nil {
 		panic(err)
@@ -888,6 +904,555 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	deviceRemote.egressSecurityPolicy().Stats(true)
 	deviceRemote.ingressSecurityPolicy().Stats(true)
 
+}
+
+func TestDeviceRemoteSelfSignedCert(t *testing.T) {
+	// the device remote dials the device local over wss, pinning a self-signed
+	// certificate generated for this session
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+	clientPem := keyMaterial.GetClientPem()
+	clientCertPem := keyMaterial.GetClientCertPem()
+	serverPem := keyMaterial.GetServerPem()
+	serverCertPem := keyMaterial.GetServerCertPem()
+	assert.NotEqual(t, len(clientPem), 0)
+	assert.NotEqual(t, len(serverPem), 0)
+
+	settings := defaultDeviceRpcSettings()
+
+	// device local with its built-in rpc disabled; attach a manager backed by a
+	// tls listener using the generated server pem
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		false,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	listener := NewWebsocketDeviceRpcListener(settings.Address, serverPem, clientCertPem, settings)
+	rpcManager := newDeviceLocalRpcManager(deviceLocal.ctx, deviceLocal, settings, listener)
+	defer rpcManager.Close()
+
+	// device remote presents its client cert and pins the server cert (mTLS)
+	dialer := NewWebsocketDeviceRpcDialer(settings.Address, clientPem, serverCertPem, settings)
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		dialer,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	deviceRemote.Sync()
+	synced := deviceRemote.waitForSync(5 * time.Second)
+	assert.Equal(t, synced, true)
+
+	// state propagates over the tls connection in both directions
+	deviceRemote.SetOffline(false)
+	assert.Equal(t, deviceRemote.GetOffline(), false)
+	assert.Equal(t, deviceLocal.GetOffline(), false)
+
+	deviceLocal.SetOffline(true)
+	assert.Equal(t, deviceRemote.GetOffline(), true)
+	assert.Equal(t, deviceLocal.GetOffline(), true)
+}
+
+// testing_mtlsPinMismatch runs an mTLS session where one side's pin is wrong and
+// asserts the handshake fails so sync never completes.
+func testing_mtlsPinMismatch(t *testing.T, serverPem string, clientCertPem string, clientPem string, serverCertPem string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		false,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	listener := NewWebsocketDeviceRpcListener(settings.Address, serverPem, clientCertPem, settings)
+	rpcManager := newDeviceLocalRpcManager(deviceLocal.ctx, deviceLocal, settings, listener)
+	defer rpcManager.Close()
+
+	dialer := NewWebsocketDeviceRpcDialer(settings.Address, clientPem, serverCertPem, settings)
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		dialer,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	deviceRemote.Sync()
+	// the pin does not match, so the handshake fails and sync never completes
+	synced := deviceRemote.waitForSync(2 * time.Second)
+	assert.Equal(t, synced, false)
+}
+
+// TestDeviceRemoteSelfSignedCertServerPinMismatch verifies the dialer rejects a
+// server presenting a certificate other than the pinned one.
+func TestDeviceRemoteSelfSignedCertServerPinMismatch(t *testing.T) {
+	km, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+	wrong, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+
+	// dialer pins the wrong server cert
+	testing_mtlsPinMismatch(t, km.GetServerPem(), km.GetClientCertPem(), km.GetClientPem(), wrong.GetServerCertPem())
+}
+
+// TestDeviceRemoteSelfSignedCertClientPinMismatch verifies the listener rejects a
+// client presenting a certificate other than the pinned one (mTLS).
+func TestDeviceRemoteSelfSignedCertClientPinMismatch(t *testing.T) {
+	km, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+	wrong, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+
+	// dialer presents the wrong client identity
+	testing_mtlsPinMismatch(t, km.GetServerPem(), km.GetClientCertPem(), wrong.GetClientPem(), km.GetServerCertPem())
+}
+
+// TestDeviceRemoteSetRpcServerReset verifies that SetRpcServer swaps the
+// transport at runtime and reconnects.
+func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+
+	hostPort := "127.0.0.1:12077"
+	settings := defaultDeviceRpcSettings()
+
+	// local with built-in rpc disabled; start a tls listener via SetRpcServer
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		false,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	err = deviceLocal.SetRpcServer(keyMaterial.GetServerPem(), keyMaterial.GetClientCertPem(), hostPort)
+	assert.Equal(t, err, nil)
+
+	// remote starts pointed at a dead port, so it cannot connect
+	deadDialer := NewWebsocketDeviceRpcDialer(requireRemoteAddress("127.0.0.1:12099"), "", "", settings)
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		deadDialer,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	assert.Equal(t, deviceRemote.waitForSync(500*time.Millisecond), false)
+
+	// reset the transport to the tls listener; this should connect
+	err = deviceRemote.SetRpcServer(keyMaterial.GetClientPem(), keyMaterial.GetServerCertPem(), hostPort)
+	assert.Equal(t, err, nil)
+	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+
+	deviceRemote.SetOffline(false)
+	assert.Equal(t, deviceRemote.GetOffline(), false)
+	assert.Equal(t, deviceLocal.GetOffline(), false)
+}
+
+// TestDeviceLocalSetRpcServerRebind verifies that calling SetRpcServer again
+// closes the old listener and binds a new one on the same port. A dialer using
+// the new session's material connecting successfully proves the new listener
+// (which pins the new client cert) is the one bound — the old listener pinned a
+// different client cert and would reject it.
+func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	hostPort := "127.0.0.1:12078"
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		false,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	// bind once
+	km1, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+	err = deviceLocal.SetRpcServer(km1.GetServerPem(), km1.GetClientCertPem(), hostPort)
+	assert.Equal(t, err, nil)
+
+	// rebind on the SAME port with fresh material
+	km2, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+	err = deviceLocal.SetRpcServer(km2.GetServerPem(), km2.GetClientCertPem(), hostPort)
+	assert.Equal(t, err, nil)
+
+	// a remote using the new material must connect to the rebound listener
+	dialer := NewWebsocketDeviceRpcDialer(requireRemoteAddress(hostPort), km2.GetClientPem(), km2.GetServerCertPem(), settings)
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		dialer,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	deviceRemote.SetOffline(false)
+	assert.Equal(t, deviceLocal.GetOffline(), false)
+}
+
+type testing_remoteChangeCounter struct {
+	stateLock    sync.Mutex
+	connectCount int
+}
+
+func (self *testing_remoteChangeCounter) RemoteChanged(remoteConnected bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if remoteConnected {
+		self.connectCount++
+	}
+}
+
+func (self *testing_remoteChangeCounter) count() int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.connectCount
+}
+
+// TestDeviceRemoteStaysConnected verifies that once synced the session stays
+// connected (no tight sync/reconnect loop).
+func TestDeviceRemoteStaysConnected(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		true,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	counter := &testing_remoteChangeCounter{}
+	sub := deviceRemote.AddRemoteChangeListener(counter)
+	defer sub.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+
+	// hold; a healthy session stays connected (one connect event), a tight loop
+	// produces many
+	select {
+	case <-time.After(3 * time.Second):
+	}
+
+	c := counter.count()
+	glog.Infof("[test]remote connect count = %d", c)
+	assert.Equal(t, c <= 1, true)
+}
+
+// TestDeviceRpcSetRpcServerIdempotent verifies that re-applying the same rpc
+// server (on both the remote dialer and the local listener) does not reset a
+// live connection — i.e. no tight resync loop when the app re-applies the same
+// transport on every state change.
+func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	hostPort := "127.0.0.1:12025"
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		true,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	counter := &testing_remoteChangeCounter{}
+	sub := deviceRemote.AddRemoteChangeListener(counter)
+	defer sub.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+
+	// record the transport config on both sides (may rebind/reconnect once)
+	assert.Equal(t, deviceLocal.SetRpcServer("", "", hostPort), nil)
+	assert.Equal(t, deviceRemote.SetRpcServer("", "", hostPort), nil)
+	deviceRemote.waitForSync(5 * time.Second)
+	select {
+	case <-time.After(1 * time.Second):
+	}
+
+	baseline := counter.count()
+
+	// re-applying the same transport repeatedly must be a no-op (no reconnects)
+	for range 10 {
+		assert.Equal(t, deviceLocal.SetRpcServer("", "", hostPort), nil)
+		assert.Equal(t, deviceRemote.SetRpcServer("", "", hostPort), nil)
+		select {
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	select {
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	glog.Infof("[test]connect count baseline=%d final=%d", baseline, counter.count())
+	assert.Equal(t, counter.count(), baseline)
+}
+
+// TestDeviceRpcKeyMaterialStrings verifies the generated PEM strings are
+// well-formed and complete an mTLS handshake when used verbatim — the app and
+// extension carry them through unchanged, so all encoding lives in the SDK.
+func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
+	assert.Equal(t, err, nil)
+
+	clientPem := keyMaterial.GetClientPem()
+	clientCertPem := keyMaterial.GetClientCertPem()
+	serverPem := keyMaterial.GetServerPem()
+	serverCertPem := keyMaterial.GetServerCertPem()
+
+	// the values are opaque PEM strings, carried verbatim by the app/extension
+	assert.Equal(t, strings.Contains(serverCertPem, "BEGIN CERTIFICATE"), true)
+	assert.Equal(t, strings.Contains(serverPem, "BEGIN CERTIFICATE"), true)
+	assert.Equal(t, strings.Contains(serverPem, "PRIVATE KEY"), true)
+	assert.Equal(t, strings.Contains(clientCertPem, "BEGIN CERTIFICATE"), true)
+	assert.Equal(t, strings.Contains(clientPem, "PRIVATE KEY"), true)
+
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		true,
+		false,
+		nil,
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		false,
+		defaultDeviceLocalSettings(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	err = deviceLocal.SetRpcServer(serverPem, clientCertPem, settings.Address.HostPort())
+	assert.Equal(t, err, nil)
+
+	dialer := NewWebsocketDeviceRpcDialer(settings.Address, clientPem, serverCertPem, settings)
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		dialer,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+
+	deviceRemote.SetOffline(false)
+	assert.Equal(t, deviceRemote.GetOffline(), false)
+	assert.Equal(t, deviceLocal.GetOffline(), false)
 }
 
 type testing_listener struct {
@@ -1002,6 +1567,19 @@ func (self *testing_provideSecretKeysListener) ProvideSecretKeysChanged(provideS
 	self.provideSecretKeyList = provideSecretKeyList
 }
 
+type testing_performanceProfileChangeListener struct {
+	testing_listener
+	performanceProfile *PerformanceProfile
+}
+
+func (self *testing_performanceProfileChangeListener) PerformanceProfileChanged(performanceProfile *PerformanceProfile) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.performanceProfile = performanceProfile
+}
+
 type testing_monitorEventListener struct {
 	testing_listener
 	windowExpandEvent *connect.WindowExpandEvent
@@ -1028,4 +1606,13 @@ func (self *testing_networkModeChangeListener) ProvideNetworkModeChanged(provide
 
 	self.event = true
 	self.provideNetworkMode = &provideNetworkMode
+}
+
+func testing_deviceRpcDialer(settings *deviceRpcSettings) DeviceRpcDialer {
+	return NewWebsocketDeviceRpcDialer(settings.Address, "", "", settings)
+}
+
+func testing_deviceRpcDialerDefault() DeviceRpcDialer {
+	settings := defaultDeviceRpcSettings()
+	return NewWebsocketDeviceRpcDialer(settings.Address, "", "", settings)
 }
