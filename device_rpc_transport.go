@@ -155,10 +155,16 @@ func (self *deviceRpcMux) writeLoop() {
 				return
 			}
 		case <-ping:
+			// match the message-write path: only apply a deadline when one is
+			// configured. with writeTimeout == 0 the zero time.Time means "no
+			// deadline"; passing time.Now() would be an already-expired deadline
+			// and every ping would fail immediately, tearing down the mux.
+			var deadline time.Time
 			if 0 < self.writeTimeout {
-				self.ws.SetWriteDeadline(time.Now().Add(self.writeTimeout))
+				deadline = time.Now().Add(self.writeTimeout)
+				self.ws.SetWriteDeadline(deadline)
 			}
-			if err := self.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(self.writeTimeout)); err != nil {
+			if err := self.ws.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
 				glog.Infof("[mux]ping done = %s", err)
 				return
 			}
@@ -167,7 +173,16 @@ func (self *deviceRpcMux) writeLoop() {
 }
 
 func (self *deviceRpcMux) readLoop() {
-	defer self.close()
+	// readLoop is the sole producer for each conn's receive channel, so once
+	// this defer runs no further frames can be pushed. drain whatever is still
+	// buffered back to the pool (mirrors writeLoop draining self.send), so
+	// pooled frames are not leaked when the mux is torn down.
+	defer func() {
+		self.close()
+		for _, conn := range self.conns {
+			conn.drainReceive()
+		}
+	}()
 
 	for {
 		messageType, r, err := self.ws.NextReader()
@@ -232,6 +247,19 @@ func (self *deviceRpcMuxConn) pushReceive(message []byte) bool {
 		return false
 	case self.receive <- message:
 		return true
+	}
+}
+
+// drainReceive returns any buffered pooled frames to the pool. Only safe to
+// call once readLoop (the sole producer) has stopped pushing.
+func (self *deviceRpcMuxConn) drainReceive() {
+	for {
+		select {
+		case message := <-self.receive:
+			connect.MessagePoolReturn(message)
+		default:
+			return
+		}
 	}
 }
 
@@ -466,6 +494,22 @@ func serverTlsConfig(serverPem string, clientCertPem string) (*tls.Config, error
 	return config, nil
 }
 
+// deviceRpcKeepAliveConfig enables OS-level TCP keepalive on the underlying
+// connection so a dead peer is reaped by the kernel even when the websocket
+// ping/pong layer is disabled (KeepAliveTimeout == 0). When the keepalive
+// settings are positive the probe cadence matches the prior raw-TCP transport;
+// otherwise the connection falls back to the OS default keepalive parameters.
+func deviceRpcKeepAliveConfig(settings *deviceRpcSettings) net.KeepAliveConfig {
+	config := net.KeepAliveConfig{Enable: true}
+	if 0 < settings.KeepAliveTimeout && 0 < settings.KeepAliveRetryCount {
+		interval := settings.KeepAliveTimeout / time.Duration(2*settings.KeepAliveRetryCount)
+		config.Idle = interval
+		config.Interval = interval
+		config.Count = settings.KeepAliveRetryCount
+	}
+	return config
+}
+
 // compile check that WebsocketDeviceRpcDialer conforms to DeviceRpcDialer
 var _ DeviceRpcDialer = (*WebsocketDeviceRpcDialer)(nil)
 
@@ -491,8 +535,15 @@ func NewWebsocketDeviceRpcDialer(address *DeviceRemoteAddress, clientPem string,
 }
 
 func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.Conn, error) {
+	// dial the raw TCP conn with OS-level keepalive enabled; gorilla wraps this
+	// conn with TLS for wss, so keepalive persists under encryption.
+	netDialer := &net.Dialer{
+		Timeout:         self.settings.RpcConnectTimeout,
+		KeepAliveConfig: deviceRpcKeepAliveConfig(self.settings),
+	}
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: self.settings.RpcConnectTimeout,
+		NetDialContext:   netDialer.DialContext,
 	}
 	scheme := "ws"
 	if len(self.serverCertPem) != 0 {
@@ -572,7 +623,19 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 		return nil
 	}
 
-	netListener, err := net.Listen("tcp", self.address.HostPort())
+	// drop any serve error left by a previous listener generation so a fresh
+	// listen does not immediately resurface a stale failure.
+	select {
+	case <-self.serveErr:
+	default:
+	}
+
+	// listen with OS-level keepalive enabled on accepted connections so a dead
+	// peer is reaped by the kernel even when the websocket ping layer is off.
+	listenConfig := &net.ListenConfig{
+		KeepAliveConfig: deviceRpcKeepAliveConfig(self.settings),
+	}
+	netListener, err := listenConfig.Listen(self.ctx, "tcp", self.address.HostPort())
 	if err != nil {
 		glog.Infof("[dlrpc]listen %s err = %s", self.address.HostPort(), err)
 		return err
@@ -599,13 +662,26 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 
 	glog.Infof("[dlrpc]listen %s (tls=%t mtls=%t)", self.address.HostPort(), useTls, len(self.clientCertPem) != 0)
 	self.started = true
+	// capture the server locally: after a serve error we clear self.httpServer
+	// so a later generation can rebind, and this goroutine must not observe that
+	// reassignment.
+	httpServer := self.httpServer
 	go func() {
 		var serveErr error
 		if useTls {
-			serveErr = self.httpServer.ServeTLS(netListener, "", "")
+			serveErr = httpServer.ServeTLS(netListener, "", "")
 		} else {
-			serveErr = self.httpServer.Serve(netListener)
+			serveErr = httpServer.Serve(netListener)
 		}
+		// http.Server.Serve has already closed netListener on return. unless the
+		// listener was closed intentionally, allow the next Accept to rebind a
+		// fresh listener instead of wedging on the dead one.
+		self.stateLock.Lock()
+		if !self.closed {
+			self.started = false
+			self.httpServer = nil
+		}
+		self.stateLock.Unlock()
 		select {
 		case self.serveErr <- serveErr:
 		default:

@@ -715,10 +715,11 @@ func (self *DeviceRemote) GetTunnelStarted() bool {
 	if success {
 		return tunnelStarted
 	} else {
-		// return self.service != nil && self.state.TunnelStarted.Get(
-		// 	self.lastKnownState.TunnelStarted.Get(self.settings.DefaultTunnelStarted),
-		// )
-		return false
+		// retain last-known state on disconnect, consistent with the other
+		// getters (GetContractStatus, GetWindowStatus, ...).
+		return self.state.TunnelStarted.Get(
+			self.lastKnownState.TunnelStarted.Get(self.settings.DefaultTunnelStarted),
+		)
 	}
 }
 
