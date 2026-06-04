@@ -22,9 +22,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/glog/v2026"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 // A single net.Conn is initiated by the DeviceRemote and carries two
