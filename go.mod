@@ -45,8 +45,6 @@ require (
 
 retract [v0.0.1, v1.0.0]
 
-retract v0.0.40 // retract self
-
 replace github.com/urnetwork/connect => ../connect
 
 replace github.com/urnetwork/glog => ../glog
