@@ -71,11 +71,11 @@ type deviceRpcSettings struct {
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
-		RpcCallTimeout:       5 * time.Second,
-		RpcConnectTimeout:    5 * time.Second,
-		RpcReconnectTimeout:  5 * time.Second,
+		RpcCallTimeout:       15 * time.Second,
+		RpcConnectTimeout:    15 * time.Second,
+		RpcReconnectTimeout:  1 * time.Second,
 		KeepAliveTimeout:     1 * time.Second,
-		KeepAliveRetryCount:  3,
+		KeepAliveRetryCount:  5,
 		Address:              requireRemoteAddress("127.0.0.1:12025"),
 		InitialLockTimeout:   1 * time.Second,
 		CallbackBufferSize:   64,
