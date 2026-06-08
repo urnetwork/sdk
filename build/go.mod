@@ -2,14 +2,6 @@ module github.com/urnetwork/sdk/build
 
 go 1.25.0
 
-require github.com/urnetwork/sdk v0.0.0
-
-replace github.com/urnetwork/sdk => ..
-
-replace github.com/urnetwork/connect => ../../connect
-
-replace github.com/urnetwork/glog => ../../glog
-
 require (
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
@@ -34,8 +26,9 @@ require (
 	github.com/pion/turn/v5 v5.0.3 // indirect
 	github.com/pion/webrtc/v4 v4.2.12 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/urnetwork/connect v0.0.0 // indirect
-	github.com/urnetwork/glog v0.0.0 // indirect
+	github.com/urnetwork/connect/v2026 v2026.6.8-961298910
+	github.com/urnetwork/glog/v2026 v2026.6.8-961298910
+	github.com/urnetwork/sdk/v2026 v2026.6.8-961298910
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
