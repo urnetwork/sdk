@@ -227,6 +227,64 @@ func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, b
 	return
 }
 
+// Testing_NewNetworkSpaceWithUrls builds a NetworkSpace that targets explicit
+// api and platform urls instead of deriving them from a host/env via ServiceUrl.
+// This lets integration tests point the SDK at local servers, e.g.
+// apiUrl="https://127.0.0.1:8083" and platformUrl="wss://127.0.0.1:8080".
+//
+// Only the "normal" dialer is enabled (no resilient tls fragmentation/reorder)
+// to keep the loopback tls handshake deterministic. Pair this with a
+// connectSettings whose TlsConfig has InsecureSkipVerify=true so the SDK accepts
+// the local self-signed certificates (every dialer honors ConnectSettings.TlsConfig).
+//
+// gomobile:ignore
+func Testing_NewNetworkSpaceWithUrls(
+	ctx context.Context,
+	apiUrl string,
+	platformUrl string,
+	connectSettings *connect.ConnectSettings,
+) *NetworkSpace {
+	cancelCtx, cancel := context.WithCancel(ctx)
+
+	key := NetworkSpaceKey{
+		HostName: "test",
+		EnvName:  "test",
+	}
+	values := NetworkSpaceValues{
+		NetExposeServerIps:       true,
+		NetExposeServerHostNames: true,
+	}
+
+	clientStrategySettings := connect.DefaultClientStrategySettings()
+	clientStrategySettings.ConnectSettings = *connectSettings
+	clientStrategySettings.ExposeServerIps = true
+	clientStrategySettings.ExposeServerHostNames = true
+	// only the direct tls dialer; the resilient dialers fragment/reorder the tls
+	// ClientHello, which is unnecessary (and an extra failure mode) on loopback
+	clientStrategySettings.EnableNormal = true
+	clientStrategySettings.EnableResilient = false
+
+	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
+
+	api := newApi(cancelCtx, clientStrategy, apiUrl)
+
+	return &NetworkSpace{
+		ctx:    cancelCtx,
+		cancel: cancel,
+
+		key:         key,
+		values:      values,
+		storagePath: "",
+
+		apiUrl:      apiUrl,
+		platformUrl: platformUrl,
+
+		clientStrategy:  clientStrategy,
+		asyncLocalState: nil,
+		api:             api,
+	}
+}
+
 func (self *NetworkSpace) GetKey() *NetworkSpaceKey {
 	// make a copy
 	key := self.key
