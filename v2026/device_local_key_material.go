@@ -3,7 +3,7 @@ package sdk
 import (
 	"bytes"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 // DeviceLocalKeyMaterial carries the provider client's persisted identity
