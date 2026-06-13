@@ -146,6 +146,9 @@ func newNetworkSpaceWithConnectSettings(
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
+	// the network space logger rides `ConnectSettings.Log`. this silences the
+	// shared client strategy, which a per-device `DisableLogging` cannot reach.
+	clientStrategySettings.Log = connectSettings.Log
 	clientStrategySettings.ExposeServerIps = values.NetExposeServerIps
 	clientStrategySettings.ExposeServerHostNames = values.NetExposeServerHostNames
 
@@ -257,6 +260,7 @@ func Testing_NewNetworkSpaceWithUrls(
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
+	clientStrategySettings.Log = connectSettings.Log
 	clientStrategySettings.ExposeServerIps = true
 	clientStrategySettings.ExposeServerHostNames = true
 	// only the direct tls dialer; the resilient dialers fragment/reorder the tls

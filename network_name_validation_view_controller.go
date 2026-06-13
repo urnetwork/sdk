@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -50,7 +48,7 @@ func (self *NetworkNameValidationViewController) Stop() {
 }
 
 func (self *NetworkNameValidationViewController) Close() {
-	glog.Info("[nnvvc]close")
+	connect.DefaultLogger().Info("[nnvvc]close")
 
 	self.cancel()
 }

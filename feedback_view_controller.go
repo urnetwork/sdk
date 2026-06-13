@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -43,7 +41,7 @@ func (vc *FeedbackViewController) Start() {}
 func (vc *FeedbackViewController) Stop() {}
 
 func (vc *FeedbackViewController) Close() {
-	glog.Info("[fbvc]close")
+	deviceLog(vc.device).Info("[fbvc]close")
 
 	vc.cancel()
 }

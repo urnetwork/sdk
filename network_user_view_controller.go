@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -82,7 +80,7 @@ func (vc *NetworkUserViewController) Start() {
 func (vc *NetworkUserViewController) Stop() {}
 
 func (vc *NetworkUserViewController) Close() {
-	glog.Info("[nuvc]close")
+	deviceLog(vc.device).Info("[nuvc]close")
 
 	vc.cancel()
 }
@@ -162,13 +160,13 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 		func(result *GetNetworkUserResult, err error) {
 
 			if err != nil {
-				glog.Infof("[nuvc]fetchNetworkUser err=%s", err)
+				deviceLog(self.device).Infof("[nuvc]fetchNetworkUser err=%s", err)
 				self.setIsLoading(false)
 				return
 			}
 
 			if result.Error != nil {
-				glog.Infof("[nuvc]fetchNetworkUser response err=%s", result.Error.Message)
+				deviceLog(self.device).Infof("[nuvc]fetchNetworkUser response err=%s", result.Error.Message)
 				self.setIsLoading(false)
 				return
 			}

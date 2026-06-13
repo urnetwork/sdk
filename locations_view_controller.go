@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -84,7 +82,7 @@ func (self *LocationsViewController) Start() {
 func (self *LocationsViewController) Stop() {}
 
 func (self *LocationsViewController) Close() {
-	glog.Info("[lcvc]close")
+	deviceLog(self.device).Info("[lcvc]close")
 
 	self.cancel()
 }

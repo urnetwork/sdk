@@ -8,8 +8,6 @@ import (
 	// "net"
 	"sync"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 )
@@ -63,7 +61,7 @@ func (self *IoLoop) run() {
 
 	err := syscall.SetNonblock(self.fd, true)
 	if err != nil {
-		glog.Infof("[io]WARNING: could not set non-blocking = %s\n", err)
+		self.deviceLocal.log.Infof("[io]WARNING: could not set non-blocking = %s\n", err)
 	}
 
 	var writeMutex sync.Mutex
@@ -91,7 +89,7 @@ func (self *IoLoop) run() {
 
 		packet := MessagePoolGet(2048)
 		n, err := f.Read(packet)
-		// glog.Infof("[io]READ PACKET %d (%s)\n", n, err)
+		// self.log.Infof("[io]READ PACKET %d (%s)\n", n, err)
 		if 0 < n {
 			success := self.deviceLocal.SendPacketNoCopy(packet, int32(n))
 			if !success {

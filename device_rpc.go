@@ -15,8 +15,6 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -66,7 +64,7 @@ type deviceRpcSettings struct {
 	MuxSendBufferSize    int
 	MuxReceiveBufferSize int
 
-	deviceLocalSettings
+	DeviceLocalSettings
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
@@ -82,7 +80,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		MuxSendBufferSize:    32,
 		MuxReceiveBufferSize: 32,
 
-		deviceLocalSettings: *defaultDeviceLocalSettings(),
+		DeviceLocalSettings: *DefaultDeviceLocalSettings(),
 	}
 }
 
@@ -94,6 +92,7 @@ var _ ViewControllerManager = (*DeviceRemote)(nil)
 type DeviceRemote struct {
 	ctx    context.Context
 	cancel context.CancelFunc
+	log    connect.Logger
 
 	networkSpace *NetworkSpace
 	byJwt        string
@@ -159,6 +158,11 @@ type DeviceRemote struct {
 	viewControllerManager
 }
 
+// conforms to `device`
+func (self *DeviceRemote) logger() connect.Logger {
+	return self.log
+}
+
 func NewDeviceRemoteWithDefaults(
 	networkSpace *NetworkSpace,
 	byJwt string,
@@ -210,6 +214,7 @@ func newDeviceRemoteWithOverrides(
 		networkSpace:          networkSpace,
 		byJwt:                 byJwt,
 		settings:              settings,
+		log:                   settings.logger(),
 		reconnectMonitor:      connect.NewMonitor(),
 		syncMonitor:           connect.NewMonitor(),
 		resetMonitor:          connect.NewMonitor(),
@@ -258,6 +263,7 @@ func newDeviceRemoteWithOverrides(
 
 	deviceRemote.tokenManager = newDeviceTokenManager(
 		ctx,
+		deviceRemote.log,
 		api,
 		deviceRemote.setByJwt,
 		logout,
@@ -278,7 +284,7 @@ func newDeviceRemoteWithOverrides(
 func (self *DeviceRemote) run() {
 	// defer func() {
 	// 	if r := recover(); r != nil {
-	// 		glog.Errorf("[dr]unrecovered = %s", r)
+	// 		self.log.Errorf("[dr]unrecovered = %s", r)
 	// 		debug.PrintStack()
 	// 		panic(r)
 	// 	}
@@ -320,7 +326,7 @@ func (self *DeviceRemote) run() {
 				forwardConn, rev, err := self.dialer.Dial(handleCtx)
 				if err != nil {
 					// failure to connect here is normal if the local is not running
-					// glog.Infof("[dr]sync connect err = %s", err)
+					// self.log.Infof("[dr]sync connect err = %s", err)
 					return
 				}
 				reverseConn = rev
@@ -334,6 +340,7 @@ func (self *DeviceRemote) run() {
 
 				service := &rpcClientWithTimeout{
 					ctx:         self.ctx,
+					log:         self.log,
 					timeout:     self.settings.RpcCallTimeout,
 					closeClient: forwardConn.Close,
 					client:      rpc.NewClient(forwardConn),
@@ -381,7 +388,7 @@ func (self *DeviceRemote) run() {
 				}
 
 				if syncResponse.Error != "" {
-					glog.Infof("Sync error: %s", syncResponse.Error)
+					self.log.Infof("Sync error: %s", syncResponse.Error)
 					return
 				}
 
@@ -393,7 +400,7 @@ func (self *DeviceRemote) run() {
 				// 	}
 				// }
 
-				glog.Info("[dr]start device remote rpc")
+				self.log.Info("[dr]start device remote rpc")
 				deviceRemoteRpc := newDeviceRemoteRpc(handleCtx, self)
 				server := rpc.NewServer()
 				server.Register(deviceRemoteRpc)
@@ -406,7 +413,7 @@ func (self *DeviceRemote) run() {
 
 					// reverseConn is closed on teardown, which unblocks ServeConn
 					server.ServeConn(reverseConn)
-					glog.Infof("[dr]sync reverse server done")
+					self.log.Infof("[dr]sync reverse server done")
 				}, func() {
 					handleCancel()
 					deviceRemoteRpc.Close()
@@ -439,15 +446,15 @@ func (self *DeviceRemote) run() {
 			if synced {
 				self.remoteChanged(true)
 
-				glog.Infof("[dr]sync done")
+				self.log.Infof("[dr]sync done")
 				select {
 				case <-handleCtx.Done():
 				case <-resetNotify:
 					// the dialer was swapped; drop this connection and
 					// reconnect with the new transport
-					glog.Infof("[dr]rpc transport reset")
+					self.log.Infof("[dr]rpc transport reset")
 				}
-				glog.Infof("[dr]handle done")
+				self.log.Infof("[dr]handle done")
 
 				func() {
 					self.stateLock.Lock()
@@ -492,7 +499,7 @@ func (self *DeviceRemote) closeService() {
 }
 
 func (self *DeviceRemote) setByJwt(byJwt string) {
-	glog.Infof("DeviceLocal JWT refreshed")
+	self.log.Infof("DeviceLocal JWT refreshed")
 
 	self.GetApi().SetByJwt(byJwt)
 
@@ -511,11 +518,11 @@ func (self *DeviceRemote) setByJwt(byJwt string) {
 	// fire listeners
 	self.jwtRefreshed(byJwt)
 
-	glog.Infof("DeviceRemote onTokenRefreshSuccess complete, should have fired listeners")
+	self.log.Infof("DeviceRemote onTokenRefreshSuccess complete, should have fired listeners")
 }
 
 func (self *DeviceRemote) RefreshToken(attempt int) error {
-	glog.Infof("DeviceRemote RefreshToken attempt %d", attempt)
+	self.log.Infof("DeviceRemote RefreshToken attempt %d", attempt)
 	self.tokenManager.RefreshToken()
 	return nil
 }
@@ -614,7 +621,7 @@ func (self *DeviceRemote) SetRpcServer(clientPem string, serverCertPem string, h
 	}()
 
 	if changed {
-		glog.Infof("[dr]set rpc server %s (mtls=%t)", address.HostPort(), len(clientPem) != 0)
+		self.log.Infof("[dr]set rpc server %s (mtls=%t)", address.HostPort(), len(clientPem) != 0)
 		self.resetMonitor.NotifyAll()
 	}
 	return nil
@@ -1975,7 +1982,7 @@ func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
 		if self.state.DefaultLocation.IsSet {
 			return self.state.DefaultLocation.Value.ConnectLocation.toConnectLocation()
 		}
-		glog.Infof("No default location set, returning nil")
+		self.log.Infof("No default location set, returning nil")
 		return nil
 	}
 }
@@ -3023,17 +3030,17 @@ func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallb
 			err := rpcCallVoid(self.service, "DeviceLocalRpc.UploadLogs", feedbackId, self.closeService)
 
 			if err != nil {
-				glog.Infof("Failed to upload logs: %v", err)
+				self.log.Infof("Failed to upload logs: %v", err)
 				return false
 			}
-			glog.Infof("Logs uploaded successfully")
+			self.log.Infof("Logs uploaded successfully")
 			return true
 		}()
 		logsUploaded = success
 	}()
 
 	if !logsUploaded {
-		glog.Infof("Failed to upload logs")
+		self.log.Infof("Failed to upload logs")
 		return fmt.Errorf("Failed to upload logs")
 	}
 
@@ -3492,6 +3499,7 @@ type rpcClient = rpcClientWithTimeout
 
 type rpcClientWithTimeout struct {
 	ctx         context.Context
+	log         connect.Logger
 	timeout     time.Duration
 	closeClient func() error
 	client      *rpc.Client
@@ -3537,10 +3545,10 @@ func rpcCallVoid(service *rpcClient, name string, arg any, cleanup func()) error
 		panic("rpc cannot have nil args")
 	}
 	var void RpcVoid
-	glog.Infof("[rpc]%s", name)
+	service.log.Infof("[rpc]%s", name)
 	err := service.Call(name, arg, &void)
 	if err != nil {
-		glog.Infof("[rpc]%s err = %s", name, err)
+		service.log.Infof("[rpc]%s err = %s", name, err)
 		cleanup()
 	}
 	return err
@@ -3549,10 +3557,10 @@ func rpcCallVoid(service *rpcClient, name string, arg any, cleanup func()) error
 func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 	var noarg RpcNoArg
 	var void RpcVoid
-	glog.Infof("[rpc]%s", name)
+	service.log.Infof("[rpc]%s", name)
 	err := service.Call(name, noarg, &void)
 	if err != nil {
-		glog.Infof("[rpc]%s err = %s", name, err)
+		service.log.Infof("[rpc]%s err = %s", name, err)
 		cleanup()
 	}
 	return err
@@ -3561,10 +3569,10 @@ func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 func rpcCallNoArg[T any](service *rpcClient, name string, cleanup func()) (T, error) {
 	var noarg RpcNoArg
 	var r T
-	glog.Infof("[rpc]%s", name)
+	service.log.Infof("[rpc]%s", name)
 	err := service.Call(name, noarg, &r)
 	if err != nil {
-		glog.Infof("[rpc]%s err = %s", name, err)
+		service.log.Infof("[rpc]%s err = %s", name, err)
 		cleanup()
 	}
 	return r, err
@@ -3575,10 +3583,10 @@ func rpcCall[T any](service *rpcClient, name string, arg any, cleanup func()) (T
 		panic("rpc cannot have nil args")
 	}
 	var r T
-	glog.Infof("[rpc]%s", name)
+	service.log.Infof("[rpc]%s", name)
 	err := service.Call(name, arg, &r)
 	if err != nil {
-		glog.Infof("[rpc]%s err = %s", name, err)
+		service.log.Infof("[rpc]%s err = %s", name, err)
 		cleanup()
 	}
 	return r, err
@@ -3637,6 +3645,9 @@ func newDeviceLocalRpcManagerWithDefaults(
 	deviceLocal *DeviceLocal,
 ) *deviceLocalRpcManager {
 	settings := defaultDeviceRpcSettings()
+	// follow the device logging config (see `DeviceLocalSettings.DisableLogging`)
+	settings.DisableLogging = deviceLocal.settings.DisableLogging
+	settings.ClientSettings.Log = deviceLocal.settings.ClientSettings.Log
 	listener := NewWebsocketDeviceRpcListener(settings.Address, "", "", settings)
 	return newDeviceLocalRpcManager(ctx, deviceLocal, settings, listener)
 }
@@ -3675,7 +3686,7 @@ func (self *deviceLocalRpcManager) run() {
 
 		forwardConn, reverseConn, err := self.listener.Accept(self.ctx)
 		if err != nil {
-			glog.Infof("[dlrcp]accept err = %s", err)
+			self.deviceLocal.log.Infof("[dlrcp]accept err = %s", err)
 			select {
 			case <-self.ctx.Done():
 				return
@@ -3832,7 +3843,7 @@ func (self *DeviceLocalRpc) run() {
 	server := rpc.NewServer()
 	server.Register(self)
 	server.ServeConn(self.conn)
-	glog.Infof("[dlrcp]server conn done")
+	self.deviceLocal.log.Infof("[dlrcp]server conn done")
 
 	func() {
 		self.stateLock.Lock()
@@ -4154,12 +4165,13 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	default:
 	}
 
-	glog.Infof("[dlrpc]sync reverse")
+	self.deviceLocal.log.Infof("[dlrpc]sync reverse")
 
 	// the reverse stream is already established by the listener; use it as the
 	// DeviceRemoteRpc client rather than dialing back
 	self.service = &rpcClientWithTimeout{
 		ctx:         self.ctx,
+		log:         self.settings.logger(),
 		timeout:     self.settings.RpcCallTimeout,
 		closeClient: self.reverseConn.Close,
 		client:      rpc.NewClient(self.reverseConn),
@@ -4407,7 +4419,7 @@ func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
 
 // func (self *DeviceLocalRpc) RefreshToken(attempt int) error {
 
-// 	glog.Infof("[dlrpc]RefreshToken attempt=%d", attempt)
+// 	self.deviceLocal.log.Infof("[dlrpc]RefreshToken attempt=%d", attempt)
 
 // 	return self.deviceLocal.RefreshToken(attempt)
 // }
@@ -5446,7 +5458,7 @@ func (self *DeviceLocalRpc) GetProvidePaused(_ RpcNoArg, providePaused *bool) er
 }
 
 func (self *DeviceLocalRpc) SetOffline(offline bool, _ RpcVoid) error {
-	glog.Infof("[dlrpc]set offline")
+	self.deviceLocal.log.Infof("[dlrpc]set offline")
 	self.deviceLocal.SetOffline(offline)
 	return nil
 }
@@ -5660,7 +5672,7 @@ func (self *DeviceRemoteRpc) dispatch(callback func()) {
 }
 
 func (self *DeviceRemoteRpc) ProvideChanged(provideEnabled bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]ProvideChanged provideEnabled=%t", provideEnabled)
+	self.deviceRemote.log.Infof("[drrpc]ProvideChanged provideEnabled=%t", provideEnabled)
 	self.dispatch(func() {
 		self.deviceRemote.provideChanged(provideEnabled)
 	})
@@ -5668,7 +5680,7 @@ func (self *DeviceRemoteRpc) ProvideChanged(provideEnabled bool, _ RpcVoid) erro
 }
 
 func (self *DeviceRemoteRpc) CanShowRatingDialogChanged(canShowRatingDialog bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]CanShowRatingDialogChanged canShowRatingDialog=%t", canShowRatingDialog)
+	self.deviceRemote.log.Infof("[drrpc]CanShowRatingDialogChanged canShowRatingDialog=%t", canShowRatingDialog)
 	self.dispatch(func() {
 		self.deviceRemote.canShowRatingDialogChanged(canShowRatingDialog)
 	})
@@ -5676,7 +5688,7 @@ func (self *DeviceRemoteRpc) CanShowRatingDialogChanged(canShowRatingDialog bool
 }
 
 func (self *DeviceRemoteRpc) CanPromptIntroFunnelChanged(canPromptIntroFunnel bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]CanPromptIntroFunnelChanged canPromptIntroFunnel=%t", canPromptIntroFunnel)
+	self.deviceRemote.log.Infof("[drrpc]CanPromptIntroFunnelChanged canPromptIntroFunnel=%t", canPromptIntroFunnel)
 	self.dispatch(func() {
 		self.deviceRemote.canPromptIntroFunnelChanged(canPromptIntroFunnel)
 	})
@@ -5684,7 +5696,7 @@ func (self *DeviceRemoteRpc) CanPromptIntroFunnelChanged(canPromptIntroFunnel bo
 }
 
 func (self *DeviceRemoteRpc) AllowForegroundChanged(allowForeground bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]AllowForegroundChanged allowForeground=%t", allowForeground)
+	self.deviceRemote.log.Infof("[drrpc]AllowForegroundChanged allowForeground=%t", allowForeground)
 	self.dispatch(func() {
 		self.deviceRemote.allowForegroundChanged(allowForeground)
 	})
@@ -5692,7 +5704,7 @@ func (self *DeviceRemoteRpc) AllowForegroundChanged(allowForeground bool, _ RpcV
 }
 
 func (self *DeviceRemoteRpc) CanReferChanged(canRefer bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]CanReferChanged canRefer=%t", canRefer)
+	self.deviceRemote.log.Infof("[drrpc]CanReferChanged canRefer=%t", canRefer)
 	self.dispatch(func() {
 		self.deviceRemote.canReferChanged(canRefer)
 	})
@@ -5700,7 +5712,7 @@ func (self *DeviceRemoteRpc) CanReferChanged(canRefer bool, _ RpcVoid) error {
 }
 
 func (self *DeviceRemoteRpc) ProvideModeChanged(provideMode ProvideMode, _ RpcVoid) error {
-	glog.Infof("[drrpc]ProvideModeChanged provideMode=%d", provideMode)
+	self.deviceRemote.log.Infof("[drrpc]ProvideModeChanged provideMode=%d", provideMode)
 	self.dispatch(func() {
 		self.deviceRemote.provideModeChanged(provideMode)
 	})
@@ -5708,7 +5720,7 @@ func (self *DeviceRemoteRpc) ProvideModeChanged(provideMode ProvideMode, _ RpcVo
 }
 
 func (self *DeviceRemoteRpc) ProvidePausedChanged(providePaused bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]ProvidePausedChanged providePaused=%t", providePaused)
+	self.deviceRemote.log.Infof("[drrpc]ProvidePausedChanged providePaused=%t", providePaused)
 	self.dispatch(func() {
 		self.deviceRemote.providePausedChanged(providePaused)
 	})
@@ -5716,7 +5728,7 @@ func (self *DeviceRemoteRpc) ProvidePausedChanged(providePaused bool, _ RpcVoid)
 }
 
 func (self *DeviceRemoteRpc) ProvideControlModeChanged(provideControlMode ProvideControlMode, _ RpcVoid) error {
-	glog.Infof("[drrpc]ProvideControlModeChanged provideControlMode=%s", provideControlMode)
+	self.deviceRemote.log.Infof("[drrpc]ProvideControlModeChanged provideControlMode=%s", provideControlMode)
 	self.dispatch(func() {
 		self.deviceRemote.provideControlModeChanged(provideControlMode)
 	})
@@ -5724,7 +5736,7 @@ func (self *DeviceRemoteRpc) ProvideControlModeChanged(provideControlMode Provid
 }
 
 func (self *DeviceRemoteRpc) ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode, _ RpcVoid) error {
-	glog.Infof("[drrpc]ProvideNetworkModeChanged provideNetworkMode=%s", provideNetworkMode)
+	self.deviceRemote.log.Infof("[drrpc]ProvideNetworkModeChanged provideNetworkMode=%s", provideNetworkMode)
 	self.dispatch(func() {
 		self.deviceRemote.provideNetworkModeChanged(provideNetworkMode)
 	})
@@ -5732,7 +5744,7 @@ func (self *DeviceRemoteRpc) ProvideNetworkModeChanged(provideNetworkMode Provid
 }
 
 func (self *DeviceRemoteRpc) PerformanceProfileChanged(event *DevicePerformanceProfile, _ RpcVoid) error {
-	glog.Infof("[drrpc]PerformanceProfileChanged")
+	self.deviceRemote.log.Infof("[drrpc]PerformanceProfileChanged")
 	self.dispatch(func() {
 		self.deviceRemote.performanceProfileChanged(event.PerformanceProfile)
 	})
@@ -5740,7 +5752,7 @@ func (self *DeviceRemoteRpc) PerformanceProfileChanged(event *DevicePerformanceP
 }
 
 func (self *DeviceRemoteRpc) OfflineChanged(event *DeviceRemoteOfflineChangeEvent, _ RpcVoid) error {
-	glog.Infof("[drrpc]OfflineChanged offline=%t vpnInterfaceWhileOffline=%t", event.Offline, event.VpnInterfaceWhileOffline)
+	self.deviceRemote.log.Infof("[drrpc]OfflineChanged offline=%t vpnInterfaceWhileOffline=%t", event.Offline, event.VpnInterfaceWhileOffline)
 	self.dispatch(func() {
 		self.deviceRemote.offlineChanged(event.Offline, event.VpnInterfaceWhileOffline)
 	})
@@ -5748,7 +5760,7 @@ func (self *DeviceRemoteRpc) OfflineChanged(event *DeviceRemoteOfflineChangeEven
 }
 
 func (self *DeviceRemoteRpc) VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]VpnInterfaceWhileOfflineChanged vpnInterfaceWhileOffline=%t", vpnInterfaceWhileOffline)
+	self.deviceRemote.log.Infof("[drrpc]VpnInterfaceWhileOfflineChanged vpnInterfaceWhileOffline=%t", vpnInterfaceWhileOffline)
 	self.dispatch(func() {
 		self.deviceRemote.vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline)
 	})
@@ -5756,7 +5768,7 @@ func (self *DeviceRemoteRpc) VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOf
 }
 
 func (self *DeviceRemoteRpc) ConnectChanged(connectEnabled bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]ConnectChanged connectEnabled=%t", connectEnabled)
+	self.deviceRemote.log.Infof("[drrpc]ConnectChanged connectEnabled=%t", connectEnabled)
 	self.dispatch(func() {
 		self.deviceRemote.connectChanged(connectEnabled)
 	})
@@ -5764,7 +5776,7 @@ func (self *DeviceRemoteRpc) ConnectChanged(connectEnabled bool, _ RpcVoid) erro
 }
 
 func (self *DeviceRemoteRpc) RouteLocalChanged(routeLocal bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]RouteLocalChanged routeLocal=%t", routeLocal)
+	self.deviceRemote.log.Infof("[drrpc]RouteLocalChanged routeLocal=%t", routeLocal)
 	self.dispatch(func() {
 		self.deviceRemote.routeLocalChanged(routeLocal)
 	})
@@ -5772,7 +5784,7 @@ func (self *DeviceRemoteRpc) RouteLocalChanged(routeLocal bool, _ RpcVoid) error
 }
 
 func (self *DeviceRemoteRpc) ConnectLocationChanged(event *DeviceRemoteConnectLocationChangeEvent, _ RpcVoid) error {
-	glog.Infof("[drrpc]ConnectLocationChanged")
+	self.deviceRemote.log.Infof("[drrpc]ConnectLocationChanged")
 	self.dispatch(func() {
 		self.deviceRemote.connectLocationChanged(event.Location)
 	})
@@ -5780,7 +5792,7 @@ func (self *DeviceRemoteRpc) ConnectLocationChanged(event *DeviceRemoteConnectLo
 }
 
 func (self *DeviceRemoteRpc) DefaultLocationChanged(event *DeviceRemoteConnectLocation, _ RpcVoid) error {
-	glog.Infof("[drrpc]DefaultLocationChanged")
+	self.deviceRemote.log.Infof("[drrpc]DefaultLocationChanged")
 	self.dispatch(func() {
 		self.deviceRemote.defaultLocationChanged(event.toConnectLocation())
 	})
@@ -5788,7 +5800,7 @@ func (self *DeviceRemoteRpc) DefaultLocationChanged(event *DeviceRemoteConnectLo
 }
 
 func (self *DeviceRemoteRpc) ProvideSecretKeysChanged(provideSecretKeys []*ProvideSecretKey, _ RpcVoid) error {
-	glog.Infof("[drrpc]ProvideSecretKeysChanged")
+	self.deviceRemote.log.Infof("[drrpc]ProvideSecretKeysChanged")
 	self.dispatch(func() {
 		self.deviceRemote.provideSecretKeysChanged(provideSecretKeys)
 	})
@@ -5796,7 +5808,7 @@ func (self *DeviceRemoteRpc) ProvideSecretKeysChanged(provideSecretKeys []*Provi
 }
 
 func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindowMonitorEvent, _ RpcVoid) error {
-	glog.Infof("[drrpc]WindowMonitorEventCallback")
+	self.deviceRemote.log.Infof("[drrpc]WindowMonitorEventCallback")
 	self.dispatch(func() {
 		self.deviceRemote.windowMonitorEvent(
 			event.WindowIds,
@@ -5809,7 +5821,7 @@ func (self *DeviceRemoteRpc) WindowMonitorEventCallback(event *DeviceRemoteWindo
 }
 
 func (self *DeviceRemoteRpc) TunnelChanged(tunnelStarted bool, _ RpcVoid) error {
-	glog.Infof("[drrpc]TunnelChanged")
+	self.deviceRemote.log.Infof("[drrpc]TunnelChanged")
 	self.dispatch(func() {
 		self.deviceRemote.tunnelChanged(tunnelStarted)
 	})
@@ -5817,7 +5829,7 @@ func (self *DeviceRemoteRpc) TunnelChanged(tunnelStarted bool, _ RpcVoid) error 
 }
 
 func (self *DeviceRemoteRpc) ContractStatusChanged(status *DeviceRemoteContractStatus, _ RpcVoid) error {
-	glog.Infof("[drrpc]ContractStatusChanged")
+	self.deviceRemote.log.Infof("[drrpc]ContractStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.contractStatusChanged(status.ContractStatus)
 	})
@@ -5825,7 +5837,7 @@ func (self *DeviceRemoteRpc) ContractStatusChanged(status *DeviceRemoteContractS
 }
 
 func (self *DeviceRemoteRpc) WindowStatusChanged(status *DeviceRemoteWindowStatus, _ RpcVoid) error {
-	glog.Infof("[drrpc]WindowStatusChanged")
+	self.deviceRemote.log.Infof("[drrpc]WindowStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.windowStatusChanged(status.WindowStatus)
 	})
@@ -5833,7 +5845,7 @@ func (self *DeviceRemoteRpc) WindowStatusChanged(status *DeviceRemoteWindowStatu
 }
 
 func (self *DeviceRemoteRpc) HttpResponse(httpResponse *DeviceRemoteHttpResponse, _ RpcVoid) error {
-	glog.Infof("[drrpc]HttpResponse")
+	self.deviceRemote.log.Infof("[drrpc]HttpResponse")
 	self.dispatch(func() {
 		self.deviceRemote.httpResponse(httpResponse)
 	})

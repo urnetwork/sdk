@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -51,7 +49,7 @@ func (self *AccountPreferencesViewController) Stop() {
 }
 
 func (self *AccountPreferencesViewController) Close() {
-	glog.Info("[apvc]close")
+	deviceLog(self.device).Info("[apvc]close")
 
 	self.cancel()
 }
@@ -106,7 +104,7 @@ func (self *AccountPreferencesViewController) UpdateAllowProductUpdates(allow bo
 			func(result *AccountPreferencesSetResult, err error) {
 
 				if err != nil {
-					glog.Infof("[apvc]error updating account preferences: %s", err)
+					deviceLog(self.device).Infof("[apvc]error updating account preferences: %s", err)
 					self.setIsUpdating(false)
 					return
 				}
@@ -154,7 +152,7 @@ func (self *AccountPreferencesViewController) fetchAllowProductUpdates() {
 		func(result *AccountPreferencesGetResult, err error) {
 
 			if err != nil {
-				glog.Infof("[apvc]error fetching account preferences: %s", err)
+				deviceLog(self.device).Infof("[apvc]error fetching account preferences: %s", err)
 				self.setIsFetching(false)
 				return
 			}

@@ -48,18 +48,22 @@ func newDeviceLocalProviderWithOverrides(
 		InstanceId: instanceId,
 		AppVersion: appVersion,
 	}
-	platformTransport := connect.NewPlatformTransportWithDefaults(
+	platformTransportSettings := connect.DefaultPlatformTransportSettings()
+	platformTransportSettings.Log = clientSettings.Log
+	platformTransport := connect.NewPlatformTransport(
 		client.Ctx(),
 		clientStrategy,
 		client.RouteManager(),
 		networkSpace.platformUrl,
 		auth,
+		platformTransportSettings,
 	)
 
 	localUserNatSettings := connect.DefaultLocalUserNatSettings()
 	// no ulimit for local traffic
 	localUserNatSettings.UdpBufferSettings.UserLimit = 0
 	localUserNatSettings.TcpBufferSettings.UserLimit = 0
+	localUserNatSettings.Log = clientSettings.Log
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	return &deviceLocalProvider{

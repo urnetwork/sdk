@@ -2,8 +2,6 @@ package sdk
 
 import (
 	"context"
-
-	"github.com/urnetwork/glog"
 )
 
 type ProvideViewController struct {
@@ -48,7 +46,7 @@ func (self *ProvideViewController) Stop() {
 // }
 
 func (self *ProvideViewController) Close() {
-	glog.Info("[pvc]close")
+	deviceLog(self.device).Info("[pvc]close")
 
 	self.cancel()
 }

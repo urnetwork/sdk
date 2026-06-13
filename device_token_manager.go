@@ -9,12 +9,12 @@ import (
 	gojwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/urnetwork/connect"
-	"github.com/urnetwork/glog"
 )
 
 type deviceTokenManager struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
+	log              connect.Logger
 	api              *Api
 	refreshMonitor   *connect.Monitor
 	onTokenRefreshed func(newToken string)
@@ -23,6 +23,7 @@ type deviceTokenManager struct {
 
 func newDeviceTokenManager(
 	ctx context.Context,
+	log connect.Logger,
 	api *Api,
 	onTokenRefreshed func(newToken string),
 	logout func() error,
@@ -32,6 +33,7 @@ func newDeviceTokenManager(
 	manager := &deviceTokenManager{
 		ctx:              cancelCtx,
 		cancel:           cancel,
+		log:              log,
 		api:              api,
 		refreshMonitor:   connect.NewMonitor(),
 		onTokenRefreshed: onTokenRefreshed,
@@ -56,7 +58,7 @@ func (self *deviceTokenManager) run() {
 			}
 
 			if claims, ok := token.Claims.(gojwt.MapClaims); ok {
-				glog.V(1).Infof("[dtm]JWT claims: %+v", claims)
+				self.log.V(1).Infof("[dtm]JWT claims: %+v", claims)
 
 				if exp, ok := claims["exp"].(float64); ok {
 					expirationTime = time.Unix(int64(exp), 0)
@@ -77,7 +79,7 @@ func (self *deviceTokenManager) run() {
 		}
 
 		if 0 < refreshTimeout {
-			glog.Infof(
+			self.log.Infof(
 				"[dtm]waiting %.2fs to refresh the jwt",
 				float64(refreshTimeout/time.Millisecond)/1000.0,
 			)
@@ -91,7 +93,7 @@ func (self *deviceTokenManager) run() {
 
 		func() {
 			for {
-				glog.Infof("[dtm]refreshing the jwt now")
+				self.log.Infof("[dtm]refreshing the jwt now")
 				err := self.refreshToken()
 				if err == nil {
 					return
@@ -99,7 +101,7 @@ func (self *deviceTokenManager) run() {
 
 				randomTimeout := time.Duration(mathrand.Int63n(int64(15 * time.Minute)))
 
-				glog.Infof(
+				self.log.Infof(
 					"[dtm]jwt refresh failed. Will retry in %.2fs. err = %s",
 					float64(randomTimeout/time.Millisecond)/1000.0,
 					err,
@@ -124,7 +126,7 @@ func (self *deviceTokenManager) refreshToken() error {
 		 *  potentially API failed, try again
 		 */
 
-		glog.Errorf("[dtm]failed to refresh JWT: %v", err)
+		self.log.Errorf("[dtm]failed to refresh JWT: %v", err)
 
 		return err
 	}
@@ -135,7 +137,7 @@ func (self *deviceTokenManager) refreshToken() error {
 		 * for example, client no longer exists
 		 */
 
-		glog.Errorf("[dtm]failed to refresh JWT: %v", result.Error.Message)
+		self.log.Errorf("[dtm]failed to refresh JWT: %v", result.Error.Message)
 
 		self.logout()
 		return nil
@@ -146,7 +148,7 @@ func (self *deviceTokenManager) refreshToken() error {
 		return fmt.Errorf("Failed to refresh JWT: empty JWT returned")
 	}
 
-	glog.Infof("[dtm]successfully refreshed JWT")
+	self.log.Infof("[dtm]successfully refreshed JWT")
 
 	self.onTokenRefreshed(result.ByJwt)
 

@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -41,7 +39,7 @@ func (self *AccountViewController) Stop() {
 }
 
 func (self *AccountViewController) Close() {
-	glog.Info("[avvc]close")
+	deviceLog(self.device).Info("[avvc]close")
 
 	self.cancel()
 }

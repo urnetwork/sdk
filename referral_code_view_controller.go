@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -62,7 +60,7 @@ func (self *ReferralCodeViewController) Start() {
 func (self *ReferralCodeViewController) Stop() {}
 
 func (self *ReferralCodeViewController) Close() {
-	glog.Info("[rcvc]close")
+	deviceLog(self.device).Info("[rcvc]close")
 
 	self.cancel()
 }
@@ -93,7 +91,7 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 				func(result *GetNetworkReferralCodeResult, err error) {
 					if err != nil {
 						self.setIsFetching(false)
-						glog.Infof("[rcvc]error fetching referral code: %s", err)
+						deviceLog(self.device).Infof("[rcvc]error fetching referral code: %s", err)
 						return
 					}
 
