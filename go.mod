@@ -1,6 +1,6 @@
 module github.com/urnetwork/sdk
 
-go 1.25.0
+go 1.25.5
 
 require (
 	github.com/btcsuite/btcutil v1.0.2
@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/google/btree v1.1.2 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
@@ -40,6 +41,7 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gvisor.dev/gvisor v0.0.0-20260501174236-38fac1bddd3c // indirect
 	src.agwa.name/tlshacks v0.0.2 // indirect
 )
 

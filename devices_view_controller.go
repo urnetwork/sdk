@@ -4,8 +4,6 @@ import (
 	"context"
 	"slices"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -85,7 +83,7 @@ func (self *DevicesViewController) networkClientsChanged(networkClients *Network
 }
 
 func (self *DevicesViewController) Close() {
-	glog.Info("[dvc]close")
+	deviceLog(self.device).Info("[dvc]close")
 
 	self.cancel()
 }

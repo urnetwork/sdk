@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/urnetwork/glog"
+	"github.com/urnetwork/connect"
 )
 
 const defaultNetworkCheckTimeout = 5 * time.Second
@@ -43,7 +43,7 @@ func (self *LoginViewController) Stop() {
 }
 
 func (self *LoginViewController) Close() {
-	glog.Info("[livc]close")
+	connect.DefaultLogger().Info("[livc]close")
 
 	self.cancel()
 }

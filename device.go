@@ -422,6 +422,17 @@ type device interface {
 	windowMonitor() windowMonitor
 	egressSecurityPolicy() securityPolicy
 	ingressSecurityPolicy() securityPolicy
+	logger() connect.Logger
+}
+
+// deviceLog returns the device's logger, for view controllers and other
+// device-attached components, so that they are silenced with the device
+// (see `DeviceLocalSettings.DisableLogging`).
+func deviceLog(d Device) connect.Logger {
+	if dd, ok := d.(device); ok {
+		return dd.logger()
+	}
+	return connect.DefaultLogger()
 }
 
 type windowMonitor interface {

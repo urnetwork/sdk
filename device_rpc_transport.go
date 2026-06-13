@@ -22,8 +22,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -63,6 +61,7 @@ type DeviceRpcListener interface {
 type deviceRpcMux struct {
 	ctx    context.Context
 	cancel context.CancelFunc
+	log    connect.Logger
 
 	ws *websocket.Conn
 
@@ -88,6 +87,7 @@ func newDeviceRpcMux(ctx context.Context, ws *websocket.Conn, settings *deviceRp
 	mux := &deviceRpcMux{
 		ctx:          cancelCtx,
 		cancel:       cancel,
+		log:          settings.logger(),
 		ws:           ws,
 		pingTimeout:  pingTimeout,
 		readTimeout:  readTimeout,
@@ -113,7 +113,7 @@ func newDeviceRpcMux(ctx context.Context, ws *websocket.Conn, settings *deviceRp
 
 func (self *deviceRpcMux) close() {
 	self.closeOnce.Do(func() {
-		glog.Infof("[mux]close")
+		self.log.Infof("[mux]close")
 		self.cancel()
 		self.ws.Close()
 	})
@@ -151,7 +151,7 @@ func (self *deviceRpcMux) writeLoop() {
 			err := self.ws.WriteMessage(websocket.BinaryMessage, b)
 			connect.MessagePoolReturn(b)
 			if err != nil {
-				glog.Infof("[mux]write done = %s", err)
+				self.log.Infof("[mux]write done = %s", err)
 				return
 			}
 		case <-ping:
@@ -165,7 +165,7 @@ func (self *deviceRpcMux) writeLoop() {
 				self.ws.SetWriteDeadline(deadline)
 			}
 			if err := self.ws.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
-				glog.Infof("[mux]ping done = %s", err)
+				self.log.Infof("[mux]ping done = %s", err)
 				return
 			}
 		}
@@ -187,7 +187,7 @@ func (self *deviceRpcMux) readLoop() {
 	for {
 		messageType, r, err := self.ws.NextReader()
 		if err != nil {
-			glog.Infof("[mux]read done = %s", err)
+			self.log.Infof("[mux]read done = %s", err)
 			return
 		}
 		if messageType != websocket.BinaryMessage {
@@ -195,7 +195,7 @@ func (self *deviceRpcMux) readLoop() {
 		}
 		message, err := connect.MessagePoolReadAll(r)
 		if err != nil {
-			glog.Infof("[mux]read all done = %s", err)
+			self.log.Infof("[mux]read all done = %s", err)
 			return
 		}
 		if 0 < self.readTimeout {
@@ -446,10 +446,10 @@ func parsePinnedCert(certPem []byte) (*x509.Certificate, error) {
 // clientTlsConfig builds a client tls.Config that pins the server certificate in
 // serverCertPem and, when clientPem is non-empty, presents it as the client
 // identity (mTLS).
-func clientTlsConfig(serverCertPem string, clientPem string) (*tls.Config, error) {
+func clientTlsConfig(log connect.Logger, serverCertPem string, clientPem string) (*tls.Config, error) {
 	pinned, err := parsePinnedCert([]byte(serverCertPem))
 	if err != nil {
-		glog.Infof("[dr]client tls: server cert pin parse err (serverCertPem len=%d) = %s", len(serverCertPem), err)
+		log.Infof("[dr]client tls: server cert pin parse err (serverCertPem len=%d) = %s", len(serverCertPem), err)
 		return nil, err
 	}
 	config := &tls.Config{
@@ -461,7 +461,7 @@ func clientTlsConfig(serverCertPem string, clientPem string) (*tls.Config, error
 	if len(clientPem) != 0 {
 		cert, err := tls.X509KeyPair([]byte(clientPem), []byte(clientPem))
 		if err != nil {
-			glog.Infof("[dr]client tls: client keypair err (clientPem len=%d) = %s", len(clientPem), err)
+			log.Infof("[dr]client tls: client keypair err (clientPem len=%d) = %s", len(clientPem), err)
 			return nil, err
 		}
 		config.Certificates = []tls.Certificate{cert}
@@ -471,10 +471,10 @@ func clientTlsConfig(serverCertPem string, clientPem string) (*tls.Config, error
 
 // serverTlsConfig builds a server tls.Config presenting serverPem and, when
 // clientCertPem is non-empty, requiring and pinning that client certificate (mTLS).
-func serverTlsConfig(serverPem string, clientCertPem string) (*tls.Config, error) {
+func serverTlsConfig(log connect.Logger, serverPem string, clientCertPem string) (*tls.Config, error) {
 	cert, err := tls.X509KeyPair([]byte(serverPem), []byte(serverPem))
 	if err != nil {
-		glog.Infof("[dlrpc]server tls: server keypair err (serverPem len=%d) = %s", len(serverPem), err)
+		log.Infof("[dlrpc]server tls: server keypair err (serverPem len=%d) = %s", len(serverPem), err)
 		return nil, err
 	}
 	config := &tls.Config{
@@ -484,7 +484,7 @@ func serverTlsConfig(serverPem string, clientCertPem string) (*tls.Config, error
 	if len(clientCertPem) != 0 {
 		pinned, err := parsePinnedCert([]byte(clientCertPem))
 		if err != nil {
-			glog.Infof("[dlrpc]server tls: client cert pin parse err (clientCertPem len=%d) = %s", len(clientCertPem), err)
+			log.Infof("[dlrpc]server tls: client cert pin parse err (clientCertPem len=%d) = %s", len(clientCertPem), err)
 			return nil, err
 		}
 		// require a client cert and pin it exactly via VerifyPeerCertificate
@@ -518,6 +518,7 @@ type WebsocketDeviceRpcDialer struct {
 	clientPem     string // client identity to present (cert+key); optional
 	serverCertPem string // server cert to pin; empty => unencrypted
 	settings      *deviceRpcSettings
+	log           connect.Logger
 }
 
 // NewWebsocketDeviceRpcDialer dials the device local at address. If
@@ -531,6 +532,7 @@ func NewWebsocketDeviceRpcDialer(address *DeviceRemoteAddress, clientPem string,
 		clientPem:     clientPem,
 		serverCertPem: serverCertPem,
 		settings:      settings,
+		log:           settings.logger(),
 	}
 }
 
@@ -547,7 +549,7 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 	}
 	scheme := "ws"
 	if len(self.serverCertPem) != 0 {
-		tlsConfig, err := clientTlsConfig(self.serverCertPem, self.clientPem)
+		tlsConfig, err := clientTlsConfig(self.log, self.serverCertPem, self.clientPem)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -556,13 +558,13 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 	}
 	u := url.URL{Scheme: scheme, Host: self.address.HostPort(), Path: "/"}
 
-	glog.Infof("[dr]dial %s (mtls=%t)", u.String(), len(self.clientPem) != 0)
+	self.log.Infof("[dr]dial %s (mtls=%t)", u.String(), len(self.clientPem) != 0)
 	ws, _, err := dialer.DialContext(ctx, u.String(), nil)
 	if err != nil {
-		glog.Infof("[dr]dial %s err = %s", u.String(), err)
+		self.log.Infof("[dr]dial %s err = %s", u.String(), err)
 		return nil, nil, err
 	}
-	glog.Infof("[dr]dial %s connected", u.String())
+	self.log.Infof("[dr]dial %s connected", u.String())
 	mux := newDeviceRpcMux(ctx, ws, self.settings)
 	return mux.conns[deviceRpcStreamForward], mux.conns[deviceRpcStreamReverse], nil
 }
@@ -578,6 +580,7 @@ type WebsocketDeviceRpcListener struct {
 	serverPem     string // server identity to present (cert+key); empty => unencrypted
 	clientCertPem string // client cert to require + pin (mTLS); optional
 	settings      *deviceRpcSettings
+	log           connect.Logger
 
 	upgrader websocket.Upgrader
 
@@ -600,6 +603,7 @@ func NewWebsocketDeviceRpcListener(address *DeviceRemoteAddress, serverPem strin
 	return &WebsocketDeviceRpcListener{
 		ctx:           ctx,
 		cancel:        cancel,
+		log:           settings.logger(),
 		address:       address,
 		serverPem:     serverPem,
 		clientCertPem: clientCertPem,
@@ -637,7 +641,7 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 	}
 	netListener, err := listenConfig.Listen(self.ctx, "tcp", self.address.HostPort())
 	if err != nil {
-		glog.Infof("[dlrpc]listen %s err = %s", self.address.HostPort(), err)
+		self.log.Infof("[dlrpc]listen %s err = %s", self.address.HostPort(), err)
 		return err
 	}
 
@@ -652,7 +656,7 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 
 	useTls := len(self.serverPem) != 0
 	if useTls {
-		tlsConfig, err := serverTlsConfig(self.serverPem, self.clientCertPem)
+		tlsConfig, err := serverTlsConfig(self.log, self.serverPem, self.clientCertPem)
 		if err != nil {
 			netListener.Close()
 			return err
@@ -660,7 +664,7 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 		self.httpServer.TLSConfig = tlsConfig
 	}
 
-	glog.Infof("[dlrpc]listen %s (tls=%t mtls=%t)", self.address.HostPort(), useTls, len(self.clientCertPem) != 0)
+	self.log.Infof("[dlrpc]listen %s (tls=%t mtls=%t)", self.address.HostPort(), useTls, len(self.clientCertPem) != 0)
 	self.started = true
 	// capture the server locally: after a serve error we clear self.httpServer
 	// so a later generation can rebind, and this goroutine must not observe that
@@ -693,10 +697,10 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 func (self *WebsocketDeviceRpcListener) handle(w http.ResponseWriter, r *http.Request) {
 	ws, err := self.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		glog.Infof("[dlrpc]ws upgrade err = %s", err)
+		self.log.Infof("[dlrpc]ws upgrade err = %s", err)
 		return
 	}
-	glog.Infof("[dlrpc]accept from %s", ws.RemoteAddr())
+	self.log.Infof("[dlrpc]accept from %s", ws.RemoteAddr())
 	// the mux owns the websocket; it lives until torn down by the accepting
 	// DeviceLocalRpc or by the listener being closed.
 	mux := newDeviceRpcMux(self.ctx, ws, self.settings)

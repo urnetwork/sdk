@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -116,7 +114,7 @@ func (self *ConnectViewController) Start() {}
 func (self *ConnectViewController) Stop() {}
 
 func (self *ConnectViewController) Close() {
-	glog.Info("[cvc]close")
+	deviceLog(self.device).Info("[cvc]close")
 	self.cancel()
 	self.connectLocationChangedSub.Close()
 }
@@ -590,7 +588,7 @@ func (self *ConnectGrid) run() {
 			}
 
 			if 0 < removedCount {
-				glog.Infof(
+				deviceLog(self.connectViewController.device).Infof(
 					"[grid]%d->%d points=%d(-%d)\n",
 					self.windowCurrentSize,
 					self.windowTargetSize,
@@ -728,7 +726,7 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 		for clientId, providerEvent := range providerEvents {
 			providerState, err := parseProviderState(providerEvent.State)
 			if err != nil {
-				glog.Errorf("[grid]could not parse provider event state: %s", string(providerEvent.State))
+				deviceLog(self.connectViewController.device).Errorf("[grid]could not parse provider event state: %s", string(providerEvent.State))
 				continue
 			}
 
@@ -832,7 +830,7 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 			connectionStatus = Connecting
 		}
 
-		glog.Infof(
+		deviceLog(self.connectViewController.device).Infof(
 			"[grid]%d->%d(%t) points=%d %s (w=%t, p=%t)\n",
 			self.windowCurrentSize,
 			self.windowTargetSize,

@@ -7,8 +7,6 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -39,13 +37,13 @@ func (self *securityPolicyMonitor) run() {
 		case <-time.After(30 * time.Second):
 		}
 
-		printSecurityPolicyStats("ingress", self.device.(device).ingressSecurityPolicy().Stats(false))
-		printSecurityPolicyStats("egress", self.device.(device).egressSecurityPolicy().Stats(false))
+		printSecurityPolicyStats(deviceLog(self.device), "ingress", self.device.(device).ingressSecurityPolicy().Stats(false))
+		printSecurityPolicyStats(deviceLog(self.device), "egress", self.device.(device).egressSecurityPolicy().Stats(false))
 	}
 }
 
-func printSecurityPolicyStats(prefix string, stats connect.SecurityPolicyStats) {
-	glog.Infof("%s security policy stats:", prefix)
+func printSecurityPolicyStats(log connect.Logger, prefix string, stats connect.SecurityPolicyStats) {
+	log.Infof("%s security policy stats:", prefix)
 	for result, destinationCounts := range stats {
 		destinations := maps.Keys(destinationCounts)
 		slices.SortFunc(destinations, func(a connect.SecurityDestination, b connect.SecurityDestination) int {
@@ -53,7 +51,7 @@ func printSecurityPolicyStats(prefix string, stats connect.SecurityPolicyStats) 
 		})
 		for _, destination := range destinations {
 			count := destinationCounts[destination]
-			glog.Infof("%s[%s] ->%s = %d", prefix, result.String(), destination.String(), count)
+			log.Infof("%s[%s] ->%s = %d", prefix, result.String(), destination.String(), count)
 		}
 	}
 }

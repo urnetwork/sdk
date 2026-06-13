@@ -18,8 +18,6 @@ import (
 
 	gojwt "github.com/golang-jwt/jwt/v5"
 
-	"github.com/urnetwork/glog"
-
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 )
@@ -68,9 +66,9 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 	return windowExpandEvent, providerEvents
 }
 
-func defaultDeviceLocalSettings() *deviceLocalSettings {
+func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 	bufferSize := 256
-	return &deviceLocalSettings{
+	return &DeviceLocalSettings{
 		// this works with the `SequenceBufferSize` to control packet loss during back pressure
 		SendTimeout:        5 * time.Second,
 		SequenceBufferSize: bufferSize,
@@ -91,11 +89,31 @@ func defaultDeviceLocalSettings() *deviceLocalSettings {
 		DefaultVpnInterfaceWhileOffline: false,
 		DefaultTunnelStarted:            false,
 
+		AllowProvider: true,
+		Verbose:       true,
+
 		ClientSettings: *connect.DefaultClientSettingsWithBufferSize(bufferSize),
 	}
 }
 
-type deviceLocalSettings struct {
+// DeviceLocalSettings carries every device option, including what were
+// previously constructor variant parameters. Construct with
+// `DefaultDeviceLocalSettings` and override fields before passing to
+// `NewDeviceLocal`.
+//
+// logger resolves the configured device logger
+func (self *DeviceLocalSettings) logger() connect.Logger {
+	if self.DisableLogging {
+		return connect.NewNoopLogger()
+	}
+	if self.ClientSettings.Log != nil {
+		return self.ClientSettings.Log
+	}
+	return connect.DefaultLogger()
+}
+
+//gomobile:noexport
+type DeviceLocalSettings struct {
 	// time to give up (drop) sending a packet to a destination
 	SendTimeout time.Duration
 	// ClientDrainTimeout time.Duration
@@ -115,6 +133,26 @@ type deviceLocalSettings struct {
 	DefaultOffline                  bool
 	DefaultVpnInterfaceWhileOffline bool
 	DefaultTunnelStarted            bool
+
+	// options folded from the old constructor variants
+
+	// AllowProvider creates the provider client and its local user nat.
+	// The app constructors default this to true; the platform constructors
+	// set false (the device is embedded inside the platform).
+	AllowProvider bool
+	// Verbose runs the security policy monitor when rpc is not enabled
+	Verbose bool
+	// GeneratorFunc, when set, builds the multi client generator instead of
+	// the default api generator
+	GeneratorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
+	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
+	EnableRpc bool
+	// KeyMaterial, when set, is applied to `ClientSettings` at construction
+	KeyMaterial *DeviceLocalKeyMaterial
+	// DisableLogging silences the device and all nested components and
+	// clients, for hosts embedding many devices in one process.
+	// It overrides `ClientSettings.Log`.
+	DisableLogging bool
 
 	connect.ClientSettings
 }
@@ -139,7 +177,8 @@ type DeviceLocal struct {
 	deviceSpec        string
 	appVersion        string
 
-	settings *deviceLocalSettings
+	settings *DeviceLocalSettings
+	log      connect.Logger
 
 	clientId   connect.Id
 	instanceId connect.Id
@@ -232,22 +271,16 @@ func NewDeviceLocalWithDefaults(
 	instanceId *Id,
 	enableRpc bool,
 ) (*DeviceLocal, error) {
-	return traceWithReturnError(
-		func() (*DeviceLocal, error) {
-			return newDeviceLocal(
-				true,
-				true,
-				nil,
-				networkSpace,
-				byJwt,
-				deviceDescription,
-				deviceSpec,
-				appVersion,
-				instanceId,
-				enableRpc,
-				defaultDeviceLocalSettings(),
-			)
-		},
+	settings := DefaultDeviceLocalSettings()
+	settings.EnableRpc = enableRpc
+	return NewDeviceLocal(
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		settings,
 	)
 }
 
@@ -261,21 +294,42 @@ func NewDeviceLocalWithKeyMaterial(
 	enableRpc bool,
 	keyMaterial *DeviceLocalKeyMaterial,
 ) (*DeviceLocal, error) {
-	settings := defaultDeviceLocalSettings()
-	applyDeviceLocalKeyMaterial(&settings.ClientSettings, keyMaterial)
+	settings := DefaultDeviceLocalSettings()
+	settings.EnableRpc = enableRpc
+	settings.KeyMaterial = keyMaterial
+	return NewDeviceLocal(
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		settings,
+	)
+}
+
+// NewDeviceLocal creates a device with all options carried on `settings`
+// (see `DeviceLocalSettings`).
+//
+//gomobile:noexport
+func NewDeviceLocal(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	settings *DeviceLocalSettings,
+) (*DeviceLocal, error) {
 	return traceWithReturnError(
 		func() (*DeviceLocal, error) {
 			return newDeviceLocal(
-				true,
-				true,
-				nil,
 				networkSpace,
 				byJwt,
 				deviceDescription,
 				deviceSpec,
 				appVersion,
 				instanceId,
-				enableRpc,
 				settings,
 			)
 		},
@@ -300,7 +354,7 @@ func NewPlatformDeviceLocalWithDefaults(
 		deviceSpec,
 		appVersion,
 		instanceId,
-		defaultDeviceLocalSettings(),
+		DefaultDeviceLocalSettings(),
 	)
 }
 
@@ -315,8 +369,8 @@ func NewPlatformDeviceLocalWithKeyMaterial(
 	instanceId *Id,
 	keyMaterial *DeviceLocalKeyMaterial,
 ) (*DeviceLocal, error) {
-	settings := defaultDeviceLocalSettings()
-	applyDeviceLocalKeyMaterial(&settings.ClientSettings, keyMaterial)
+	settings := DefaultDeviceLocalSettings()
+	settings.KeyMaterial = keyMaterial
 	return NewPlatformDeviceLocal(
 		generatorFunc,
 		networkSpace,
@@ -340,78 +394,74 @@ func NewPlatformDeviceLocal(
 	deviceSpec string,
 	appVersion string,
 	instanceId *Id,
-	settings *deviceLocalSettings,
+	settings *DeviceLocalSettings,
 ) (*DeviceLocal, error) {
+	settings.AllowProvider = false
+	settings.Verbose = false
+	settings.GeneratorFunc = generatorFunc
+	// FIXME change rpc to set connections. Embedded devices will set RPC connection when there is a control connection
+	settings.EnableRpc = false
 	return newDeviceLocal(
-		false,
-		false,
-		generatorFunc,
 		networkSpace,
 		byJwt,
 		deviceDescription,
 		deviceSpec,
 		appVersion,
 		instanceId,
-		// FIXME change rpc to set connections. Embedded devices will set RPC connection when there is a control connection
-		false,
 		settings,
 	)
 }
 
 func newDeviceLocal(
-	allowProvider bool,
-	verbose bool,
-	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
 	deviceSpec string,
 	appVersion string,
 	instanceId *Id,
-	enableRpc bool,
-	settings *deviceLocalSettings,
+	settings *DeviceLocalSettings,
 ) (*DeviceLocal, error) {
 	clientId, err := parseByJwtClientId(byJwt)
 	if err != nil {
 		return nil, err
 	}
 	return newDeviceLocalWithOverrides(
-		allowProvider,
-		verbose,
-		generatorFunc,
 		networkSpace,
 		byJwt,
 		deviceDescription,
 		deviceSpec,
 		appVersion,
 		instanceId,
-		enableRpc,
 		settings,
 		clientId,
 	)
 }
 
 func newDeviceLocalWithOverrides(
-	allowProvider bool,
-	verbose bool,
-	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
 	byJwt string,
 	deviceDescription string,
 	deviceSpec string,
 	appVersion string,
 	instanceId *Id,
-	enableRpc bool,
-	settings *deviceLocalSettings,
+	settings *DeviceLocalSettings,
 	clientId connect.Id,
 ) (*DeviceLocal, error) {
+	if settings.KeyMaterial != nil {
+		applyDeviceLocalKeyMaterial(&settings.ClientSettings, settings.KeyMaterial)
+	}
+
+	// resolve the device logger. all nested components and clients follow it.
+	log := settings.logger()
+	settings.ClientSettings.Log = log
+
 	ctx, cancel := context.WithCancel(context.Background())
 	// ctx, cancel := api.ctx, api.cancel
 	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
 
 	var provider *deviceLocalProvider
-	if allowProvider {
+	if settings.AllowProvider {
 		provider = newDeviceLocalProviderWithOverrides(
 			ctx,
 			networkSpace,
@@ -444,10 +494,11 @@ func newDeviceLocalWithOverrides(
 		deviceSpec:        deviceSpec,
 		appVersion:        appVersion,
 		settings:          settings,
+		log:               log,
 		clientId:          clientId,
 		instanceId:        instanceId.toConnectId(),
 		clientStrategy:    clientStrategy,
-		generatorFunc:     generatorFunc,
+		generatorFunc:     settings.GeneratorFunc,
 		provider:          provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
@@ -507,6 +558,7 @@ func newDeviceLocalWithOverrides(
 
 	deviceLocal.tokenManager = newDeviceTokenManager(
 		ctx,
+		log,
 		api,
 		deviceLocal.SetByJwt,
 		// TODO the logout event should be propagated to the user
@@ -519,9 +571,9 @@ func newDeviceLocalWithOverrides(
 		deviceLocal.localUserNatSub = localUserNatSub
 	}
 
-	if enableRpc {
+	if settings.EnableRpc {
 		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
-	} else if verbose {
+	} else if settings.Verbose {
 		newSecurityPolicyMonitor(ctx, deviceLocal)
 	}
 
@@ -531,6 +583,11 @@ func newDeviceLocalWithOverrides(
 // gomobile:ignore
 func (self *DeviceLocal) Ctx() context.Context {
 	return self.ctx
+}
+
+// conforms to `device`
+func (self *DeviceLocal) logger() connect.Logger {
+	return self.log
 }
 
 // gomobile:ignore
@@ -711,10 +768,10 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 				switch *contractStatus.Error {
 				case protocol.ContractError_InsufficientBalance:
 					netContractStatus.InsufficientBalance = true
-					glog.Infof("[contract]error insufficent balance\n")
+					self.log.Infof("[contract]error insufficent balance\n")
 				case protocol.ContractError_NoPermission:
 					netContractStatus.NoPermission = true
-					glog.Infof("[contract]error no permission\n")
+					self.log.Infof("[contract]error no permission\n")
 				}
 			} else {
 				// reset the error state
@@ -912,7 +969,7 @@ func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
 		}
 	}()
 	if set {
-		glog.Infof("Set provide network mode: %s", mode)
+		self.log.Infof("Set provide network mode: %s", mode)
 		self.provideNetworkModeChanged(mode)
 	}
 }
@@ -1541,7 +1598,7 @@ func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
 			keyManager := client.ClientKeyManager()
 			if keyManager != nil {
 				if err := keyManager.SetSeed(seed); err != nil {
-					glog.Errorf("[device]failed to set client key seed: %s\n", err)
+					self.log.Errorf("[device]failed to set client key seed: %s\n", err)
 				}
 			}
 		}
@@ -1552,7 +1609,7 @@ func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
 			encryptionManager := client.EncryptionSessionManager()
 			if encryptionManager != nil {
 				if err := encryptionManager.SetProvideTlsKeyMaterial(certPem, privateKeyPem); err != nil {
-					glog.Errorf("[device]failed to set provide TLS key material: %s\n", err)
+					self.log.Errorf("[device]failed to set provide TLS key material: %s\n", err)
 				}
 			}
 		}
@@ -1576,7 +1633,7 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 }
 
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
-	glog.Infof("[device]provide = %d\n", provideMode)
+	self.log.Infof("[device]provide = %d\n", provideMode)
 
 	changed := false
 	func() {
@@ -1601,7 +1658,9 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 				// recreate the provider user nat only as needed
 				// this avoid connection disruptions
 				if self.remoteUserNatProviderLocalUserNat == nil {
-					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNatWithDefaults(client.Ctx(), self.clientId.String())
+					localUserNatSettings := connect.DefaultLocalUserNatSettings()
+					localUserNatSettings.Log = self.log
+					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(client.Ctx(), self.clientId.String(), localUserNatSettings)
 				}
 				if self.remoteUserNatProvider == nil {
 					self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(client, self.remoteUserNatProviderLocalUserNat)
@@ -1651,7 +1710,7 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 	if client := self.providerClient(); client != nil {
 		if client.ContractManager().SetProvidePaused(providePaused) {
-			glog.Infof("[device]provide paused = %t\n", providePaused)
+			self.log.Infof("[device]provide paused = %t\n", providePaused)
 			self.providePausedChanged(self.GetProvidePaused())
 		}
 	}
@@ -1675,7 +1734,7 @@ func (self *DeviceLocal) SetOffline(offline bool) {
 		}
 	}()
 	if changed {
-		glog.Infof("[device]offline = %t\n", offline)
+		self.log.Infof("[device]offline = %t\n", offline)
 		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
 	}
 }
@@ -1748,7 +1807,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// fixedDestinationSize := len(specClientIds) == len(connectSpecs)
 
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-				// glog.Infof("[trace]receive packet\n")
+				// self.log.Infof("[trace]receive packet\n")
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
@@ -1818,16 +1877,19 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 					&self.clientId,
 					// connect.DefaultClientSettingsNoNetworkEvents,
 					func() *connect.ClientSettings {
-						return newDeviceClientSettings(
+						clientSettings := newDeviceClientSettings(
 							connect.DefaultClientSettingsWithBufferSize(self.settings.SequenceBufferSize),
 							self.networkSpace.apiUrl,
 							self.clientStrategy,
 						)
+						clientSettings.Log = self.log
+						return clientSettings
 					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
 				)
 			}
 			settings := connect.DefaultMultiClientSettings()
+			settings.Log = self.log
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
 			if self.ingressSecurityPolicyGenerator != nil {
 				settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
@@ -2151,7 +2213,7 @@ func (self *DeviceLocal) SetRpcServer(serverPem string, clientCertPem string, ho
 		return nil
 	}
 
-	glog.Infof("[dlrpc]set rpc server %s (tls=%t mtls=%t)", address.HostPort(), len(serverPem) != 0, len(clientCertPem) != 0)
+	self.log.Infof("[dlrpc]set rpc server %s (tls=%t mtls=%t)", address.HostPort(), len(serverPem) != 0, len(clientCertPem) != 0)
 
 	settings := defaultDeviceRpcSettings()
 	settings.Address = address
@@ -2375,7 +2437,7 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 
 	files, err := os.ReadDir(logDir)
 	if err != nil {
-		glog.Errorf("Failed to read log directory %q: %v", logDir, err)
+		self.log.Errorf("Failed to read log directory %q: %v", logDir, err)
 		return err
 	}
 
@@ -2410,7 +2472,7 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 		return err
 	}
 	fileSize := fileInfo.Size()
-	glog.Infof("Uploading log file %q (%d bytes)", zipPath, fileSize)
+	self.log.Infof("Uploading log file %q (%d bytes)", zipPath, fileSize)
 
 	self.GetApi().uploadLogs(feedbackId, zipFile, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
 		// Ensure resources are cleaned up after upload completes (success or error)

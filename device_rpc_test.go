@@ -31,18 +31,17 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	instanceId := NewId()
 
 	// FIXME enable RPC
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
+	deviceLocalSettings.EnableRpc = true
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -105,17 +104,13 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
-				true,
-				false,
-				nil,
 				networkSpace,
 				byJwt,
 				"",
 				"",
 				"",
 				instanceId,
-				true,
-				defaultDeviceLocalSettings(),
+				testDeviceLocalSettingsRpc(),
 				clientId,
 			)
 			if err != nil {
@@ -398,17 +393,13 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			// enable rpc
 			deviceLocal, err := newDeviceLocalWithOverrides(
-				true,
-				false,
-				nil,
 				networkSpace,
 				byJwt,
 				"",
 				"",
 				"",
 				instanceId,
-				true,
-				defaultDeviceLocalSettings(),
+				testDeviceLocalSettingsRpc(),
 				clientId,
 			)
 			if err != nil {
@@ -499,17 +490,13 @@ func TestDeviceRemoteApi(t *testing.T) {
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		testDeviceLocalSettingsRpc(),
 		clientId,
 	)
 	if err != nil {
@@ -603,17 +590,13 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		testDeviceLocalSettingsRpc(),
 		clientId,
 	)
 	if err != nil {
@@ -770,17 +753,13 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	// enable rpc
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		testDeviceLocalSettingsRpc(),
 		clientId,
 	)
 	if err != nil {
@@ -863,18 +842,17 @@ func TestDeviceRemoteSecurityPolicyStats(t *testing.T) {
 	instanceId := NewId()
 
 	// FIXME enable RPC
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
+	deviceLocalSettings.EnableRpc = true
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -934,18 +912,16 @@ func TestDeviceRemoteSelfSignedCert(t *testing.T) {
 
 	// device local with its built-in rpc disabled; attach a manager backed by a
 	// tls listener using the generated server pem
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		false,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -1002,18 +978,16 @@ func testing_mtlsPinMismatch(t *testing.T, serverPem string, clientCertPem strin
 
 	settings := defaultDeviceRpcSettings()
 
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		false,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -1090,18 +1064,16 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	settings := defaultDeviceRpcSettings()
 
 	// local with built-in rpc disabled; start a tls listener via SetRpcServer
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		false,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -1159,18 +1131,16 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 	hostPort := "127.0.0.1:12078"
 	settings := defaultDeviceRpcSettings()
 
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		false,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -1246,17 +1216,13 @@ func TestDeviceRemoteStaysConnected(t *testing.T) {
 	settings := defaultDeviceRpcSettings()
 
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		testDeviceLocalSettingsRpc(),
 		clientId,
 	)
 	if err != nil {
@@ -1315,17 +1281,13 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	settings := defaultDeviceRpcSettings()
 
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		true,
-		defaultDeviceLocalSettings(),
+		testDeviceLocalSettingsRpc(),
 		clientId,
 	)
 	if err != nil {
@@ -1411,18 +1373,16 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 
 	settings := defaultDeviceRpcSettings()
 
+	deviceLocalSettings := DefaultDeviceLocalSettings()
+	deviceLocalSettings.Verbose = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		true,
-		false,
-		nil,
 		networkSpace,
 		byJwt,
 		"",
 		"",
 		"",
 		instanceId,
-		false,
-		defaultDeviceLocalSettings(),
+		deviceLocalSettings,
 		clientId,
 	)
 	if err != nil {
@@ -1615,4 +1575,12 @@ func testing_deviceRpcDialer(settings *deviceRpcSettings) DeviceRpcDialer {
 func testing_deviceRpcDialerDefault() DeviceRpcDialer {
 	settings := defaultDeviceRpcSettings()
 	return NewWebsocketDeviceRpcDialer(settings.Address, "", "", settings)
+}
+
+// rpc test device settings: rpc enabled, security policy monitor off
+func testDeviceLocalSettingsRpc() *DeviceLocalSettings {
+	settings := DefaultDeviceLocalSettings()
+	settings.Verbose = false
+	settings.EnableRpc = true
+	return settings
 }
