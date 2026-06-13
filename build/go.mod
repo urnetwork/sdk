@@ -1,6 +1,6 @@
 module github.com/urnetwork/sdk/build
 
-go 1.25.0
+go 1.25.5
 
 require github.com/urnetwork/sdk v0.0.0
 
@@ -13,6 +13,7 @@ replace github.com/urnetwork/glog => ../../glog
 require (
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/google/btree v1.1.2 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -48,5 +49,6 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gvisor.dev/gvisor v0.0.0-20260501174236-38fac1bddd3c // indirect
 	src.agwa.name/tlshacks v0.0.2 // indirect
 )
