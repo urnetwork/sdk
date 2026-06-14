@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-playground/assert/v2"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 func TestDeviceClientSettingsInstallsPeerKeyFetcherWithoutMutatingInput(t *testing.T) {
