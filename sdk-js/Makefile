@@ -3,6 +3,7 @@ all: clean build
 clean:
 	rm -rf wasm
 	rm -rf dist
+	$(MAKE) -C ../build clean
 
 build:
 	mkdir wasm && \
