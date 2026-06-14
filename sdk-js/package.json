@@ -43,7 +43,7 @@
     "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
     "build:bundle": "rollup -c",
     "dev": "rollup -c -w",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build && test -s wasm/sdk.wasm && test -s wasm/wasm_exec.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "peerDependencies": {

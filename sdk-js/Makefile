@@ -6,7 +6,7 @@ clean:
 	$(MAKE) -C ../build clean
 
 build:
-	mkdir wasm && \
+	mkdir -p wasm && \
 	$(MAKE) -C ../build build_js && \
 	cp ../build/js/URnetworkSdkJs/sdk.wasm wasm/ && \
 	cp ../build/js/URnetworkSdkJs/wasm_exec.js wasm/ && \
