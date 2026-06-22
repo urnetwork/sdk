@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 type ConnectionStatus = string
