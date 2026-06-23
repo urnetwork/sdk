@@ -11,7 +11,7 @@ import (
 
 	// "net/netip"
 	"sync"
-	// "sync/atomic"
+	"sync/atomic"
 	"time"
 	// "os"
 	// "syscall"
@@ -209,6 +209,14 @@ type DeviceLocal struct {
 	remoteUserNatClient connect.UserNatClient
 	contractStatusSub   func()
 	windowMonitorSub    func()
+
+	// sendRoute is an immutable snapshot of the routing fields read on the
+	// per-packet send path (`remoteUserNatClient`, `routeLocal`, `provider`).
+	// it is rebuilt under `stateLock` (via `updateSendRouteWithLock`) whenever
+	// any of those change, and read lock-free by `sendPacket`, so the hot path
+	// does not take `stateLock` once per packet just to read rarely-changing
+	// configuration.
+	sendRoute atomic.Pointer[deviceLocalSendRoute]
 
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
@@ -544,6 +552,9 @@ func newDeviceLocalWithOverrides(
 		windowStatusChangeListeners:             connect.NewCallbackList[WindowStatusChangeListener](),
 		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
 	}
+	// publish the initial send-route snapshot so `sendPacket` always has a
+	// non-nil snapshot to read
+	deviceLocal.updateSendRouteWithLock()
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
 	var logout func() error
@@ -1029,6 +1040,7 @@ func (self *DeviceLocal) SetRouteLocal(routeLocal bool) {
 			if self.remoteUserNatClient != nil {
 				self.remoteUserNatClient.SetLocalSecurityBypass(routeLocal)
 			}
+			self.updateSendRouteWithLock()
 		}
 	}()
 	if set {
@@ -1924,6 +1936,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				provideChanged = self.setProvideModeWithLock(ProvideModeNone)
 			}
 		}
+		self.updateSendRouteWithLock()
 	}()
 
 	self.connectLocationChanged(self.GetConnectLocation())
@@ -2052,32 +2065,42 @@ func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
 	return self.sendPacket(packet[:n])
 }
 
+// deviceLocalSendRoute is an immutable snapshot of the routing fields read on
+// the per-packet send path. see `DeviceLocal.sendRoute`.
+type deviceLocalSendRoute struct {
+	remoteUserNatClient connect.UserNatClient
+	routeLocal          bool
+	provider            *deviceLocalProvider
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) updateSendRouteWithLock() {
+	self.sendRoute.Store(&deviceLocalSendRoute{
+		remoteUserNatClient: self.remoteUserNatClient,
+		routeLocal:          self.routeLocal,
+		provider:            self.provider,
+	})
+}
+
 func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	source := connect.SourceId(self.clientId)
 
-	var remoteUserNatClient connect.UserNatClient
-	var routeLocal bool
-	var provider *deviceLocalProvider
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		remoteUserNatClient = self.remoteUserNatClient
-		routeLocal = self.routeLocal
-		provider = self.provider
-	}()
+	// read the routing snapshot lock-free; it is rebuilt under `stateLock`
+	// whenever the routing fields change
+	route := self.sendRoute.Load()
 
-	if remoteUserNatClient != nil {
+	if route.remoteUserNatClient != nil {
 		self.stats.UpdateRemoteSend(ByteCount(len(packet)))
-		return remoteUserNatClient.SendPacket(
+		return route.remoteUserNatClient.SendPacket(
 			source,
 			protocol.ProvideMode_Network,
 			packet,
 			self.settings.SendTimeout,
 		)
-	} else if routeLocal {
+	} else if route.routeLocal {
 		var localUserNat *connect.LocalUserNat
-		if provider != nil {
-			localUserNat = provider.LocalUserNat()
+		if route.provider != nil {
+			localUserNat = route.provider.LocalUserNat()
 		}
 		if localUserNat != nil {
 			// route locally
@@ -2150,6 +2173,7 @@ func (self *DeviceLocal) Close() {
 		self.remoteUserNatClient.Close()
 		self.remoteUserNatClient = nil
 	}
+	self.updateSendRouteWithLock()
 	// self.localUserNat.RemoveReceivePacketCallback(self.receive)
 	if self.localUserNatSub != nil {
 		self.localUserNatSub()
