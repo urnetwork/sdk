@@ -58,7 +58,9 @@ func (self *deviceTokenManager) run() {
 			}
 
 			if claims, ok := token.Claims.(gojwt.MapClaims); ok {
-				self.log.V(1).Infof("[dtm]JWT claims: %+v", claims)
+				if self.log.V(1).Enabled() {
+					self.log.Infof("[dtm]JWT claims: %+v", claims)
+				}
 
 				if exp, ok := claims["exp"].(float64); ok {
 					expirationTime = time.Unix(int64(exp), 0)
