@@ -117,12 +117,12 @@ build_js: generate_types
 
 init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
-	GOMOBILE_VERSION=v0.0.0-20260508232728-bebd421c7fa8 && \
+	GOMOBILE_VERSION=v0.0.0-20260611195102-4dd8f1dbf5d2 && \
 	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
 	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
 	gomobile init && \
-	CHECKSEC_VERSION=v0.0.0-20250809193834-71012bf5cee9 && \
-	go install github.com/slimm609/checksec@$$CHECKSEC_VERSION && \
+	CHECKSEC_VERSION=v3.1.0 && \
+	go install github.com/slimm609/checksec/v3@$$CHECKSEC_VERSION && \
 	go mod download "github.com/urnetwork/sdk" && \
 	go mod download "github.com/urnetwork/connect" && \
 	go clean -cache && \
