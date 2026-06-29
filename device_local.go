@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	// "net/netip"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -183,6 +183,15 @@ type DeviceLocal struct {
 	clientId   connect.Id
 	instanceId connect.Id
 
+	// tunnelLocalAddress is reserved from connect's shared local-address pool at
+	// construction (released in Close); the platform assigns it to the TUN
+	// interface, kept from colliding with any IpMux-reserved address.
+	tunnelLocalAddress netip.Addr
+
+	// tunnelDnsSetting is the DNS config the platform applies to the TUN. Defaults
+	// to plain DNS 1.1.1.1 — plain (:53) is required for the UpgradeMux to intercept.
+	tunnelDnsSetting *TunnelDnsSetting
+
 	clientStrategy *connect.ClientStrategy
 
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
@@ -209,6 +218,14 @@ type DeviceLocal struct {
 	remoteUserNatClient connect.UserNatClient
 	contractStatusSub   func()
 	windowMonitorSub    func()
+
+	// upgradeMux interposes on `remoteUserNatClient` (the exit/egress path) to
+	// intercept and upgrade plaintext DNS (UDP/53) and HTTP (TCP/80). It is created and
+	// torn down with `remoteUserNatClient`. When set, the send path runs through it (it
+	// claims DNS/HTTP, else forwards to `remoteUserNatClient`) and the multi-client's
+	// receive callback is the mux's `Receive`. nil => no interposition.
+	upgradeMux         *connect.UpgradeMux
+	upgradeMuxSettings *connect.UpgradeMuxSettings
 
 	// sendRoute is an immutable snapshot of the routing fields read on the
 	// per-packet send path (`remoteUserNatClient`, `routeLocal`, `provider`).
@@ -492,28 +509,40 @@ func newDeviceLocalWithOverrides(
 		defaultProvideControlMode = ProvideControlModeNever
 	}
 
+	// reserve the tunnel interface address from connect's shared local-address pool
+	// so it never collides with an IpMux-reserved address; released in Close.
+	tunnelLocalAddress, ok := connect.TakeLocalIpv4Address()
+	if !ok {
+		cancel()
+		return nil, fmt.Errorf("no local tunnel address available")
+	}
+
 	deviceLocal := &DeviceLocal{
 		networkSpace: networkSpace,
 		ctx:          ctx,
 		cancel:       cancel,
 		byJwt:        byJwt,
 		// apiUrl:            apiUrl,
-		deviceDescription: deviceDescription,
-		deviceSpec:        deviceSpec,
-		appVersion:        appVersion,
-		settings:          settings,
-		log:               log,
-		clientId:          clientId,
-		instanceId:        instanceId.toConnectId(),
-		clientStrategy:    clientStrategy,
-		generatorFunc:     settings.GeneratorFunc,
-		provider:          provider,
+		deviceDescription:  deviceDescription,
+		deviceSpec:         deviceSpec,
+		appVersion:         appVersion,
+		settings:           settings,
+		log:                log,
+		clientId:           clientId,
+		instanceId:         instanceId.toConnectId(),
+		tunnelLocalAddress: tunnelLocalAddress,
+		tunnelDnsSetting:   DefaultTunnelDnsSetting(),
+		clientStrategy:     clientStrategy,
+		generatorFunc:      settings.GeneratorFunc,
+		provider:           provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
 		stats:                                   newDeviceStats(),
 		connectLocation:                         nil,
 		defaultLocation:                         nil,
 		remoteUserNatClient:                     nil,
+		upgradeMux:                              nil,
+		upgradeMuxSettings:                      connect.DefaultUpgradeMuxSettings(),
 		remoteUserNatProviderLocalUserNat:       nil,
 		remoteUserNatProvider:                   nil,
 		routeLocal:                              defaultRouteLocal,
@@ -599,6 +628,47 @@ func (self *DeviceLocal) Ctx() context.Context {
 // conforms to `device`
 func (self *DeviceLocal) logger() connect.Logger {
 	return self.log
+}
+
+// TunnelLocalAddress returns the IPv4 address reserved for the TUN interface. The
+// platform assigns this to the tunnel instead of a hardcoded address, so the tunnel
+// address and every IpMux address are drawn from one allocator (no collision).
+func (self *DeviceLocal) TunnelLocalAddress() string {
+	return self.tunnelLocalAddress.String()
+}
+
+// TunnelDnsSetting returns the DNS configuration the platform should apply to the
+// TUN (defaults to plain DNS 1.1.1.1). Plain DNS is required for the UpgradeMux to
+// intercept and upgrade :53 traffic.
+func (self *DeviceLocal) TunnelDnsSetting() *TunnelDnsSetting {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.tunnelDnsSetting
+}
+
+// SetTunnelDnsSetting overrides the platform DNS configuration. Each use case sets
+// its own (the apps use plain 1.1.1.1; server/proxy may differ).
+func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.tunnelDnsSetting = setting
+}
+
+// SetUpgradeMuxSettings sets how the interposed mux resolves DNS and upgrades HTTP.
+// It takes effect when the remote client is next (re)created. nil disables the mux
+// (direct pass-through to the exit). gomobile:ignore until a platform-friendly
+// settings surface lands with the per-use-case defaults.
+//
+// gomobile:ignore
+func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSettings) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.upgradeMuxSettings = settings
+	// apply to the live mux immediately when non-nil (rebuilds its DohCache); nil takes
+	// effect on the next client recreation, which then creates no mux
+	if self.upgradeMux != nil && settings != nil {
+		self.upgradeMux.SetSettings(settings)
+	}
 }
 
 // gomobile:ignore
@@ -1799,6 +1869,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			self.windowMonitorSub()
 			self.windowMonitorSub = nil
 		}
+		if self.upgradeMux != nil {
+			self.upgradeMux.Close()
+			self.upgradeMux = nil
+		}
 		if self.remoteUserNatClient != nil {
 			self.remoteUserNatClient.Close()
 			self.remoteUserNatClient = nil
@@ -1909,15 +1983,45 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			if self.egressSecurityPolicyGenerator != nil {
 				settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
 			}
+			// interpose the upgrade mux on the exit path: the multi-client delivers to
+			// the mux's Receive (mux-addressed replies terminate on its internal stack,
+			// the rest flow on to remoteReceive), and the send path runs through the mux
+			// (it claims DNS/HTTP, else forwards to the multi-client).
+			muxReceive := connect.ReceivePacketFunction(remoteReceive)
+			var upgradeMux *connect.UpgradeMux
+			if self.upgradeMuxSettings != nil {
+				m, err := connect.NewUpgradeMux(
+					self.ctx,
+					connect.SourceId(self.clientId),
+					protocol.ProvideMode_Network,
+					self.settings.SendTimeout,
+					remoteReceive,
+					self.upgradeMuxSettings,
+					self.log,
+				)
+				if err != nil {
+					self.log.Infof("[device]upgrade mux unavailable, passing through: %s\n", err)
+				} else {
+					upgradeMux = m
+					muxReceive = m.Receive
+				}
+			}
+
 			multi := connect.NewRemoteUserNatMultiClient(
 				self.ctx,
 				generator,
-				remoteReceive,
+				muxReceive,
 				protocol.ProvideMode_Public,
 				settings,
 			)
 			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
 			self.remoteUserNatClient = multi
+			if upgradeMux != nil {
+				upgradeMux.SetUpstream(multi.SendPacket)
+				// the mux's DNS reverse index drives ServerName path affinity (point 4)
+				multi.SetServerNameLookup(upgradeMux)
+				self.upgradeMux = upgradeMux
+			}
 			monitor := multi.Monitor()
 			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
 				self.windowStatusChanged(toWindowStatus(monitor))
@@ -2069,6 +2173,7 @@ func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
 // the per-packet send path. see `DeviceLocal.sendRoute`.
 type deviceLocalSendRoute struct {
 	remoteUserNatClient connect.UserNatClient
+	upgradeMux          *connect.UpgradeMux
 	routeLocal          bool
 	provider            *deviceLocalProvider
 }
@@ -2077,6 +2182,7 @@ type deviceLocalSendRoute struct {
 func (self *DeviceLocal) updateSendRouteWithLock() {
 	self.sendRoute.Store(&deviceLocalSendRoute{
 		remoteUserNatClient: self.remoteUserNatClient,
+		upgradeMux:          self.upgradeMux,
 		routeLocal:          self.routeLocal,
 		provider:            self.provider,
 	})
@@ -2089,7 +2195,16 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	// whenever the routing fields change
 	route := self.sendRoute.Load()
 
-	if route.remoteUserNatClient != nil {
+	if route.upgradeMux != nil {
+		// the mux claims DNS/HTTP and forwards everything else to remoteUserNatClient
+		self.stats.UpdateRemoteSend(ByteCount(len(packet)))
+		return route.upgradeMux.SendPacket(
+			source,
+			protocol.ProvideMode_Network,
+			packet,
+			self.settings.SendTimeout,
+		)
+	} else if route.remoteUserNatClient != nil {
 		self.stats.UpdateRemoteSend(ByteCount(len(packet)))
 		return route.remoteUserNatClient.SendPacket(
 			source,
@@ -2156,6 +2271,8 @@ func (self *DeviceLocal) Close() {
 
 	self.cancel()
 
+	connect.ReturnLocalIpv4Address(self.tunnelLocalAddress)
+
 	if self.provider != nil {
 		self.provider.Close()
 		self.provider = nil
@@ -2168,6 +2285,10 @@ func (self *DeviceLocal) Close() {
 	if self.windowMonitorSub != nil {
 		self.windowMonitorSub()
 		self.windowMonitorSub = nil
+	}
+	if self.upgradeMux != nil {
+		self.upgradeMux.Close()
+		self.upgradeMux = nil
 	}
 	if self.remoteUserNatClient != nil {
 		self.remoteUserNatClient.Close()
