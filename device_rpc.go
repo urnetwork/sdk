@@ -49,7 +49,13 @@ type RemoteChangeListener interface {
 }
 
 type deviceRpcSettings struct {
-	RpcCallTimeout      time.Duration
+	RpcCallTimeout time.Duration
+	// timeout for fire-and-forget reverse notifications (DeviceRemoteRpc.*),
+	// shorter than RpcCallTimeout. delivery is async (see DeviceLocalRpc.sendLoop)
+	// so this only bounds how long a single notification waits before the reverse
+	// stream is torn down and resynced. a suspended app is also caught by the
+	// websocket keepalive (~KeepAliveTimeout*(KeepAliveRetryCount+1)).
+	RpcNotifyTimeout    time.Duration
 	RpcConnectTimeout   time.Duration
 	RpcReconnectTimeout time.Duration
 	KeepAliveTimeout    time.Duration
@@ -70,6 +76,7 @@ type deviceRpcSettings struct {
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
 		RpcCallTimeout:       15 * time.Second,
+		RpcNotifyTimeout:     2 * time.Second,
 		RpcConnectTimeout:    15 * time.Second,
 		RpcReconnectTimeout:  1 * time.Second,
 		KeepAliveTimeout:     1 * time.Second,
@@ -3783,6 +3790,15 @@ type DeviceLocalRpc struct {
 	windowStatusChangeListenerSub             Sub
 
 	service *rpcClient
+
+	// reverse notification delivery (see sendLoop). producers enqueue and
+	// return; the blocking rpc runs on sendLoop, off stateLock, coalescing by
+	// key so a slow or suspended app cannot build unbounded backlog.
+	sendMu                 sync.Mutex
+	sendPending            map[string]func()
+	sendOrder              []string
+	sendSignal             chan struct{}
+	sendWindowMonitorEvent *DeviceRemoteWindowMonitorEvent
 }
 
 func newDeviceLocalRpc(
@@ -3825,6 +3841,8 @@ func newDeviceLocalRpc(
 		contractStatusChangeListenerIds:           map[connect.Id]bool{},
 		windowStatusChangeListenerIds:             map[connect.Id]bool{},
 		localWindowIds:                            map[connect.Id]connect.Id{},
+		sendPending:                               map[string]func(){},
+		sendSignal:                                make(chan struct{}, 1),
 	}
 
 	go connect.HandleError(deviceLocalRpc.run, cancel)
@@ -3839,6 +3857,8 @@ func (self *DeviceLocalRpc) run() {
 		case <-self.ctx.Done():
 		}
 	}, self.cancel)
+
+	go connect.HandleError(self.sendLoop, self.cancel)
 
 	server := rpc.NewServer()
 	server.Register(self)
@@ -3928,6 +3948,151 @@ func (self *DeviceLocalRpc) closeService() {
 			}
 			self.removeWindowMonitorEventListener(windowListenerId)
 		}
+	}
+}
+
+// --- reverse notification delivery ---
+//
+// Reverse rpcs (DeviceRemoteRpc.*) are fire-and-forget notifications into the
+// app, produced by connect workers and core-device listener callbacks. Those
+// producers must not block, and the calls must not run while holding stateLock.
+// sendLoop owns delivery: producers enqueue and return immediately, and the
+// (possibly blocking) rpc runs here, off the producer path and off stateLock.
+// Events coalesce by key so a slow or suspended app cannot build unbounded
+// backlog; the reverse stream is reaped after RpcNotifyTimeout regardless.
+
+// enqueueReverse schedules op for delivery by sendLoop, coalescing by key so the
+// latest op for a key replaces any prior pending op (last value wins). Never
+// blocks and never touches stateLock.
+func (self *DeviceLocalRpc) enqueueReverse(key string, op func()) {
+	self.sendMu.Lock()
+	if _, ok := self.sendPending[key]; !ok {
+		self.sendOrder = append(self.sendOrder, key)
+	}
+	self.sendPending[key] = op
+	self.sendMu.Unlock()
+
+	select {
+	case self.sendSignal <- struct{}{}:
+	default:
+	}
+}
+
+// reverseNotify enqueues a coalescing fire-and-forget reverse rpc keyed by the
+// method name (last value wins). Correct for the *Changed notifications, which
+// each carry the current value of one piece of state.
+func (self *DeviceLocalRpc) reverseNotify(name string, arg any) {
+	self.enqueueReverse(name, func() {
+		self.reverseCall(name, arg)
+	})
+}
+
+// sendLoop delivers enqueued reverse rpcs serially in fifo order. A delivery can
+// block up to RpcNotifyTimeout; while it does, further events coalesce in the
+// queue rather than blocking producers.
+func (self *DeviceLocalRpc) sendLoop() {
+	for {
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-self.sendSignal:
+		}
+		for {
+			self.sendMu.Lock()
+			if len(self.sendOrder) == 0 {
+				self.sendMu.Unlock()
+				break
+			}
+			key := self.sendOrder[0]
+			self.sendOrder = self.sendOrder[1:]
+			op := self.sendPending[key]
+			delete(self.sendPending, key)
+			self.sendMu.Unlock()
+
+			if op != nil {
+				op()
+			}
+
+			select {
+			case <-self.ctx.Done():
+				return
+			default:
+			}
+		}
+	}
+}
+
+// reverseCall performs a fire-and-forget reverse rpc without holding stateLock
+// across the (blocking) call, tearing down the service on error so a dead or
+// suspended app is reaped. Only called from sendLoop.
+func (self *DeviceLocalRpc) reverseCall(name string, arg any) {
+	self.stateLock.Lock()
+	service := self.service
+	self.stateLock.Unlock()
+
+	if service == nil {
+		return
+	}
+
+	var void RpcVoid
+	service.log.Infof("[rpc]%s", name)
+	if err := service.Call(name, arg, &void); err != nil {
+		service.log.Infof("[rpc]%s err = %s", name, err)
+		self.stateLock.Lock()
+		// only tear down if this is still the live service; a concurrent
+		// closeService or SyncReverse may have already replaced it
+		if self.service == service {
+			self.closeService()
+		}
+		self.stateLock.Unlock()
+	}
+}
+
+// enqueueWindowMonitorEvent coalesces window monitor events. Unlike the
+// *Changed notifications these are not pure last-value: each carries provider
+// events keyed by clientId plus a reset flag for a full snapshot. Coalescing
+// therefore merges rather than replaces — provider events are last-value per
+// clientId, matching how the monitor itself coalesces them — so no provider
+// transition is dropped under back pressure. A reset replaces accumulated state.
+func (self *DeviceLocalRpc) enqueueWindowMonitorEvent(event *DeviceRemoteWindowMonitorEvent) {
+	const key = "DeviceRemoteRpc.WindowMonitorEventCallback"
+
+	self.sendMu.Lock()
+	if self.sendWindowMonitorEvent == nil || event.Reset {
+		self.sendWindowMonitorEvent = event
+	} else {
+		merged := self.sendWindowMonitorEvent
+		merged.WindowExpandEvent = event.WindowExpandEvent
+		if merged.WindowIds == nil {
+			merged.WindowIds = map[connect.Id]bool{}
+		}
+		for windowId := range event.WindowIds {
+			merged.WindowIds[windowId] = true
+		}
+		if merged.ProviderEvents == nil {
+			merged.ProviderEvents = map[connect.Id]*connect.ProviderEvent{}
+		}
+		for clientId, providerEvent := range event.ProviderEvents {
+			merged.ProviderEvents[clientId] = providerEvent
+		}
+	}
+	if _, ok := self.sendPending[key]; !ok {
+		self.sendOrder = append(self.sendOrder, key)
+	}
+	self.sendPending[key] = func() {
+		self.sendMu.Lock()
+		merged := self.sendWindowMonitorEvent
+		self.sendWindowMonitorEvent = nil
+		self.sendMu.Unlock()
+		if merged != nil {
+			self.reverseCall(key, merged)
+		}
+	}
+	self.sendMu.Unlock()
+
+	select {
+	case self.sendSignal <- struct{}{}:
+	default:
 	}
 }
 
@@ -4172,7 +4337,7 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	self.service = &rpcClientWithTimeout{
 		ctx:         self.ctx,
 		log:         self.settings.logger(),
-		timeout:     self.settings.RpcCallTimeout,
+		timeout:     self.settings.RpcNotifyTimeout,
 		closeClient: self.reverseConn.Close,
 		client:      rpc.NewClient(self.reverseConn),
 	}
@@ -4371,11 +4536,9 @@ func (self *DeviceLocalRpc) TunnelChanged(tunnelStarted bool) {
 	self.tunnelChanged(tunnelStarted)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) tunnelChanged(tunnelStarted bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.TunnelChanged", tunnelStarted, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.TunnelChanged", tunnelStarted)
 }
 
 // ContractStatusChangeListener
@@ -4385,14 +4548,12 @@ func (self *DeviceLocalRpc) ContractStatusChanged(contractStatus *ContractStatus
 	self.contractStatusChanged(contractStatus)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) contractStatusChanged(contractStatus *ContractStatus) {
-	if self.service != nil {
-		status := &DeviceRemoteContractStatus{
-			ContractStatus: contractStatus,
-		}
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ContractStatusChanged", status, self.closeService)
+	status := &DeviceRemoteContractStatus{
+		ContractStatus: contractStatus,
 	}
+	self.reverseNotify("DeviceRemoteRpc.ContractStatusChanged", status)
 }
 
 // WindowStatusChangeListener
@@ -4402,14 +4563,12 @@ func (self *DeviceLocalRpc) WindowStatusChanged(windowStatus *WindowStatus) {
 	self.windowStatusChanged(windowStatus)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) windowStatusChanged(windowStatus *WindowStatus) {
-	if self.service != nil {
-		status := &DeviceRemoteWindowStatus{
-			WindowStatus: windowStatus,
-		}
-		rpcCallVoid(self.service, "DeviceRemoteRpc.WindowStatusChanged", status, self.closeService)
+	status := &DeviceRemoteWindowStatus{
+		WindowStatus: windowStatus,
 	}
+	self.reverseNotify("DeviceRemoteRpc.WindowStatusChanged", status)
 }
 
 func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
@@ -4481,11 +4640,9 @@ func (self *DeviceLocalRpc) CanShowRatingDialogChanged(canShowRatingDialog bool)
 	self.canShowRatingDialogChanged(canShowRatingDialog)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) canShowRatingDialogChanged(canShowRatingDialog bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.CanShowRatingDialogChanged", canShowRatingDialog, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.CanShowRatingDialogChanged", canShowRatingDialog)
 }
 
 func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
@@ -4545,11 +4702,9 @@ func (self *DeviceLocalRpc) CanPromptIntroFunnelChanged(canPromptIntroFunnel boo
 	self.canPromptIntroFunnelChanged(canPromptIntroFunnel)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) canPromptIntroFunnelChanged(canPromptIntroFunnel bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.CanPromptIntroFunnelChanged", canPromptIntroFunnel, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.CanPromptIntroFunnelChanged", canPromptIntroFunnel)
 }
 
 /**
@@ -4614,11 +4769,9 @@ func (self *DeviceLocalRpc) AllowForegroundChanged(allowForeground bool) {
 	self.allowForegroundChanged(allowForeground)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) allowForegroundChanged(allowForeground bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.AllowForegroundChanged", allowForeground, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.AllowForegroundChanged", allowForeground)
 }
 
 func (self *DeviceLocalRpc) GetCanRefer(_ RpcNoArg, canRefer *bool) error {
@@ -4669,11 +4822,9 @@ func (self *DeviceLocalRpc) CanReferChanged(canRefer bool) {
 	self.canReferChanged(canRefer)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) canReferChanged(canRefer bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.CanReferChanged", canRefer, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.CanReferChanged", canRefer)
 }
 
 func (self *DeviceLocalRpc) SetRouteLocal(routeLocal bool, _ RpcVoid) error {
@@ -4736,11 +4887,9 @@ func (self *DeviceLocalRpc) ProvideModeChanged(provideMode ProvideMode) {
 	self.provideModeChanged(provideMode)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) provideModeChanged(provideMode ProvideMode) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideModeChanged", provideMode, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ProvideModeChanged", provideMode)
 }
 
 func (self *DeviceLocalRpc) AddProvideChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -4781,11 +4930,9 @@ func (self *DeviceLocalRpc) ProvideChanged(provideEnabled bool) {
 	self.provideChanged(provideEnabled)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) provideChanged(provideEnabled bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideChanged", provideEnabled, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ProvideChanged", provideEnabled)
 }
 
 func (self *DeviceLocalRpc) AddProvideControlModeChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -4826,11 +4973,9 @@ func (self *DeviceLocalRpc) ProvideControlModeChanged(provideControlMode Provide
 	self.provideControlModeChanged(provideControlMode)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) provideControlModeChanged(provideControlMode ProvideControlMode) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideControlModeChanged", provideControlMode, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ProvideControlModeChanged", provideControlMode)
 }
 
 func (self *DeviceLocalRpc) AddPerformanceProfileChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -4871,14 +5016,12 @@ func (self *DeviceLocalRpc) PerformanceProfileChanged(performanceProfile *Perfor
 	self.performanceProfileChanged(performanceProfile)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) performanceProfileChanged(performanceProfile *PerformanceProfile) {
-	if self.service != nil {
-		event := &DevicePerformanceProfile{
-			PerformanceProfile: performanceProfile,
-		}
-		rpcCallVoid(self.service, "DeviceRemoteRpc.PerformanceProfileChanged", event, self.closeService)
+	event := &DevicePerformanceProfile{
+		PerformanceProfile: performanceProfile,
 	}
+	self.reverseNotify("DeviceRemoteRpc.PerformanceProfileChanged", event)
 }
 
 func (self *DeviceLocalRpc) AddProvidePausedChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -4920,11 +5063,9 @@ func (self *DeviceLocalRpc) ProvidePausedChanged(providePaused bool) {
 	self.providePausedChanged(providePaused)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) providePausedChanged(providePaused bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvidePausedChanged", providePaused, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ProvidePausedChanged", providePaused)
 }
 
 func (self *DeviceLocalRpc) AddOfflineChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -4965,15 +5106,13 @@ func (self *DeviceLocalRpc) OfflineChanged(offline bool, vpnInterfaceWhileOfflin
 	self.offlineChanged(offline, vpnInterfaceWhileOffline)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) offlineChanged(offline bool, vpnInterfaceWhileOffline bool) {
-	if self.service != nil {
-		event := &DeviceRemoteOfflineChangeEvent{
-			Offline:                  offline,
-			VpnInterfaceWhileOffline: vpnInterfaceWhileOffline,
-		}
-		rpcCallVoid(self.service, "DeviceRemoteRpc.OfflineChanged", event, self.closeService)
+	event := &DeviceRemoteOfflineChangeEvent{
+		Offline:                  offline,
+		VpnInterfaceWhileOffline: vpnInterfaceWhileOffline,
 	}
+	self.reverseNotify("DeviceRemoteRpc.OfflineChanged", event)
 }
 
 func (self *DeviceLocalRpc) AddVpnInterfaceWhileOfflineChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -5014,11 +5153,9 @@ func (self *DeviceLocalRpc) VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOff
 	self.vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.VpnInterfaceWhileOfflineChanged", vpnInterfaceWhileOffline, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.VpnInterfaceWhileOfflineChanged", vpnInterfaceWhileOffline)
 }
 
 func (self *DeviceLocalRpc) AddConnectChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -5059,11 +5196,9 @@ func (self *DeviceLocalRpc) ConnectChanged(connectEnabled bool) {
 	self.connectChanged(connectEnabled)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) connectChanged(connectEnabled bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ConnectChanged", connectEnabled, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ConnectChanged", connectEnabled)
 }
 
 func (self *DeviceLocalRpc) AddRouteLocalChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -5104,11 +5239,9 @@ func (self *DeviceLocalRpc) RouteLocalChanged(routeLocal bool) {
 	self.routeLocalChanged(routeLocal)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) routeLocalChanged(routeLocal bool) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.RouteLocalChanged", routeLocal, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.RouteLocalChanged", routeLocal)
 }
 
 func (self *DeviceLocalRpc) AddConnectLocationChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -5149,14 +5282,12 @@ func (self *DeviceLocalRpc) ConnectLocationChanged(location *ConnectLocation) {
 	self.connectLocationChanged(location)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) connectLocationChanged(location *ConnectLocation) {
-	if self.service != nil {
-		event := &DeviceRemoteConnectLocationChangeEvent{
-			Location: newDeviceRemoteConnectLocation(location),
-		}
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ConnectLocationChanged", event, self.closeService)
+	event := &DeviceRemoteConnectLocationChangeEvent{
+		Location: newDeviceRemoteConnectLocation(location),
 	}
+	self.reverseNotify("DeviceRemoteRpc.ConnectLocationChanged", event)
 }
 
 func (self *DeviceLocalRpc) AddProvideSecretKeysListener(listenerId connect.Id, _ RpcVoid) error {
@@ -5197,11 +5328,9 @@ func (self *DeviceLocalRpc) ProvideSecretKeysChanged(provideSecretKeyList *Provi
 	self.provideSecretKeysChanged(provideSecretKeyList)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) provideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideSecretKeysChanged", provideSecretKeyList.getAll(), self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ProvideSecretKeysChanged", provideSecretKeyList.getAll())
 }
 
 // must be called with stateLock
@@ -5322,22 +5451,19 @@ func (self *DeviceLocalRpc) WindowMonitorEventCallback(
 	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, reset)
 }
 
-// must be called with stateLock
+// must be called with stateLock (reads windowIds). enqueues an async, merging
+// reverse notification (see enqueueWindowMonitorEvent / sendLoop).
 func (self *DeviceLocalRpc) windowMonitorEventCallback(
 	windowExpandEvent *connect.WindowExpandEvent,
 	providerEvents map[connect.Id]*connect.ProviderEvent,
 	reset bool,
 ) {
-	if self.service != nil {
-		event := &DeviceRemoteWindowMonitorEvent{
-			WindowIds:         self.windowIds(),
-			WindowExpandEvent: windowExpandEvent,
-			ProviderEvents:    providerEvents,
-			Reset:             reset,
-		}
-
-		rpcCallVoid(self.service, "DeviceRemoteRpc.WindowMonitorEventCallback", event, self.closeService)
-	}
+	self.enqueueWindowMonitorEvent(&DeviceRemoteWindowMonitorEvent{
+		WindowIds:         self.windowIds(),
+		WindowExpandEvent: windowExpandEvent,
+		ProviderEvents:    providerEvents,
+		Reset:             reset,
+	})
 }
 
 func (self *DeviceLocalRpc) EgressSecurityPolicyStats(reset bool, stats *connect.SecurityPolicyStats) error {
@@ -5399,11 +5525,9 @@ func (self *DeviceLocalRpc) ProvideNetworkModeChanged(provideNetworkMode Provide
 	self.provideNetworkModeChanged(provideNetworkMode)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) provideNetworkModeChanged(provideNetworkMode ProvideNetworkMode) {
-	if self.service != nil {
-		rpcCallVoid(self.service, "DeviceRemoteRpc.ProvideNetworkModeChanged", provideNetworkMode, self.closeService)
-	}
+	self.reverseNotify("DeviceRemoteRpc.ProvideNetworkModeChanged", provideNetworkMode)
 }
 
 func (self *DeviceLocalRpc) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode, _ RpcVoid) error {
@@ -5551,12 +5675,10 @@ func (self *DeviceLocalRpc) DefaultLocationChanged(location *ConnectLocation) {
 	self.defaultLocationChanged(location)
 }
 
-// must be called with stateLock
+// enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) defaultLocationChanged(location *ConnectLocation) {
-	if self.service != nil {
-		event := newDeviceRemoteDefaultLocation(location)
-		rpcCallVoid(self.service, "DeviceRemoteRpc.DefaultLocationChanged", event, self.closeService)
-	}
+	event := newDeviceRemoteDefaultLocation(location)
+	self.reverseNotify("DeviceRemoteRpc.DefaultLocationChanged", event)
 }
 
 func (self *DeviceLocalRpc) Shuffle(_ RpcNoArg, _ RpcVoid) error {
@@ -5574,16 +5696,14 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 			httpRequest.ByJwt,
 		)
 
-		func() {
-			self.stateLock.Lock()
-			defer self.stateLock.Unlock()
-
-			if self.service != nil {
-				httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
-
-				rpcCallVoid(self.service, "DeviceRemoteRpc.HttpResponse", httpResponse, self.closeService)
-			}
-		}()
+		httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
+		// key per request id so distinct responses are never coalesced
+		self.enqueueReverse(
+			"DeviceRemoteRpc.HttpResponse:"+httpRequest.RequestId.String(),
+			func() {
+				self.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
+			},
+		)
 	})
 	return nil
 }
@@ -5597,16 +5717,14 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 			httpRequest.ByJwt,
 		)
 
-		func() {
-			self.stateLock.Lock()
-			defer self.stateLock.Unlock()
-
-			if self.service != nil {
-				httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
-
-				rpcCallVoid(self.service, "DeviceRemoteRpc.HttpResponse", httpResponse, self.closeService)
-			}
-		}()
+		httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
+		// key per request id so distinct responses are never coalesced
+		self.enqueueReverse(
+			"DeviceRemoteRpc.HttpResponse:"+httpRequest.RequestId.String(),
+			func() {
+				self.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
+			},
+		)
 	})
 	return nil
 }

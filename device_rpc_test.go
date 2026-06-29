@@ -1584,3 +1584,320 @@ func testDeviceLocalSettingsRpc() *DeviceLocalSettings {
 	settings.EnableRpc = true
 	return settings
 }
+
+// TestDeviceLocalRpcReverseCoalesceLastValue exercises the reverse-notification
+// queue directly. While one delivery is stuck — standing in for a disconnected /
+// suspended remote that has stopped reading — a burst of updates must coalesce
+// per key to the latest value, keep the queue bounded, and never block the
+// producer. When delivery resumes, each key is delivered once, in first-seen
+// order, carrying the latest value.
+func TestDeviceLocalRpcReverseCoalesceLastValue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rpc := &DeviceLocalRpc{
+		ctx:         ctx,
+		sendPending: map[string]func(){},
+		sendSignal:  make(chan struct{}, 1),
+	}
+	go rpc.sendLoop()
+
+	var mu sync.Mutex
+	var statusVals, provideVals []int
+	recordStatus := func(v int) func() {
+		return func() {
+			mu.Lock()
+			statusVals = append(statusVals, v)
+			mu.Unlock()
+		}
+	}
+	recordProvide := func(v int) func() {
+		return func() {
+			mu.Lock()
+			provideVals = append(provideVals, v)
+			mu.Unlock()
+		}
+	}
+
+	// the gate op parks the send loop, simulating a remote that has stopped
+	// reading; everything enqueued behind it must coalesce
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	rpc.enqueueReverse("gate", func() {
+		close(entered)
+		<-release
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("send loop never started the gate delivery")
+	}
+
+	// fire a burst for two keys while delivery is stuck
+	const n = 100
+	for i := 0; i < n; i++ {
+		rpc.enqueueReverse("status", recordStatus(i))
+		rpc.enqueueReverse("provide", recordProvide(i))
+	}
+
+	// the queue holds exactly one coalesced op per key, in first-seen order
+	rpc.sendMu.Lock()
+	pendingLen := len(rpc.sendPending)
+	order := append([]string{}, rpc.sendOrder...)
+	rpc.sendMu.Unlock()
+	assert.Equal(t, pendingLen, 2)
+	assert.Equal(t, order, []string{"status", "provide"})
+
+	// resume delivery; only the latest value for each key is delivered
+	close(release)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		sv := append([]int{}, statusVals...)
+		pv := append([]int{}, provideVals...)
+		mu.Unlock()
+		if len(sv) == 1 && len(pv) == 1 {
+			assert.Equal(t, sv, []int{n - 1})
+			assert.Equal(t, pv, []int{n - 1})
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected one coalesced delivery per key, got status=%v provide=%v", sv, pv)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestDeviceLocalRpcReverseNotifyKeys verifies the real notification methods
+// coalesce by their rpc method name: repeated updates collapse to a single
+// queued entry per method, in first-seen order.
+func TestDeviceLocalRpcReverseNotifyKeys(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rpc := &DeviceLocalRpc{
+		ctx:         ctx,
+		sendPending: map[string]func(){},
+		sendSignal:  make(chan struct{}, 1),
+	}
+	// no send loop is started: inspect the coalesced queue directly
+
+	for i := 0; i < 10; i++ {
+		rpc.tunnelChanged(i%2 == 0)
+		rpc.provideChanged(i%2 == 0)
+		rpc.connectChanged(i%2 == 0)
+		rpc.routeLocalChanged(i%2 == 0)
+	}
+
+	rpc.sendMu.Lock()
+	order := append([]string{}, rpc.sendOrder...)
+	pendingLen := len(rpc.sendPending)
+	rpc.sendMu.Unlock()
+
+	assert.Equal(t, order, []string{
+		"DeviceRemoteRpc.TunnelChanged",
+		"DeviceRemoteRpc.ProvideChanged",
+		"DeviceRemoteRpc.ConnectChanged",
+		"DeviceRemoteRpc.RouteLocalChanged",
+	})
+	assert.Equal(t, pendingLen, 4)
+}
+
+// TestDeviceLocalRpcWindowMonitorMerge verifies window monitor events coalesce
+// by merging rather than replacing: provider events are last-value per clientId
+// (no transition dropped), window ids union, the expand event is last-value, and
+// a reset replaces the accumulated state.
+func TestDeviceLocalRpcWindowMonitorMerge(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rpc := &DeviceLocalRpc{
+		ctx:         ctx,
+		sendPending: map[string]func(){},
+		sendSignal:  make(chan struct{}, 1),
+	}
+
+	w1 := connect.NewId()
+	w2 := connect.NewId()
+	cA := connect.NewId()
+	cB := connect.NewId()
+	expand1 := &connect.WindowExpandEvent{TargetSize: 4}
+	expand2 := &connect.WindowExpandEvent{TargetSize: 7}
+
+	// first (non-reset) event seeds the accumulator
+	rpc.enqueueWindowMonitorEvent(&DeviceRemoteWindowMonitorEvent{
+		WindowIds:         map[connect.Id]bool{w1: true},
+		WindowExpandEvent: expand1,
+		ProviderEvents: map[connect.Id]*connect.ProviderEvent{
+			cA: &connect.ProviderEvent{ClientId: cA, State: connect.ProviderStateInEvaluation},
+		},
+	})
+	// second event merges: new clientId, new window id, newer expand
+	rpc.enqueueWindowMonitorEvent(&DeviceRemoteWindowMonitorEvent{
+		WindowIds:         map[connect.Id]bool{w2: true},
+		WindowExpandEvent: expand2,
+		ProviderEvents: map[connect.Id]*connect.ProviderEvent{
+			cB: &connect.ProviderEvent{ClientId: cB, State: connect.ProviderStateInEvaluation},
+		},
+	})
+	// third event updates cA to a newer state (last value per clientId wins)
+	rpc.enqueueWindowMonitorEvent(&DeviceRemoteWindowMonitorEvent{
+		WindowIds:         map[connect.Id]bool{w1: true},
+		WindowExpandEvent: expand2,
+		ProviderEvents: map[connect.Id]*connect.ProviderEvent{
+			cA: &connect.ProviderEvent{ClientId: cA, State: connect.ProviderStateAdded},
+		},
+	})
+
+	rpc.sendMu.Lock()
+	merged := rpc.sendWindowMonitorEvent
+	order := append([]string{}, rpc.sendOrder...)
+	pendingLen := len(rpc.sendPending)
+	rpc.sendMu.Unlock()
+
+	assert.Equal(t, order, []string{"DeviceRemoteRpc.WindowMonitorEventCallback"})
+	assert.Equal(t, pendingLen, 1)
+	if merged == nil {
+		t.Fatal("expected a merged window monitor event")
+	}
+	assert.Equal(t, merged.Reset, false)
+	assert.Equal(t, merged.WindowExpandEvent, expand2)
+	assert.Equal(t, merged.WindowIds, map[connect.Id]bool{w1: true, w2: true})
+	assert.Equal(t, len(merged.ProviderEvents), 2)
+	assert.Equal(t, merged.ProviderEvents[cA].State, connect.ProviderStateAdded)
+	assert.Equal(t, merged.ProviderEvents[cB].State, connect.ProviderStateInEvaluation)
+
+	// a reset event discards the accumulated state
+	cC := connect.NewId()
+	rpc.enqueueWindowMonitorEvent(&DeviceRemoteWindowMonitorEvent{
+		WindowIds:         map[connect.Id]bool{w2: true},
+		WindowExpandEvent: expand1,
+		ProviderEvents: map[connect.Id]*connect.ProviderEvent{
+			cC: &connect.ProviderEvent{ClientId: cC, State: connect.ProviderStateInEvaluation},
+		},
+		Reset: true,
+	})
+
+	rpc.sendMu.Lock()
+	merged = rpc.sendWindowMonitorEvent
+	rpc.sendMu.Unlock()
+	if merged == nil {
+		t.Fatal("expected a window monitor event after reset")
+	}
+	assert.Equal(t, merged.Reset, true)
+	assert.Equal(t, merged.WindowIds, map[connect.Id]bool{w2: true})
+	assert.Equal(t, len(merged.ProviderEvents), 1)
+	assert.Equal(t, merged.ProviderEvents[cC].State, connect.ProviderStateInEvaluation)
+}
+
+type testing_blockingRouteLocalListener struct {
+	stateLock sync.Mutex
+	count     int
+	last      bool
+	blocked   bool
+	entered   chan struct{}
+	release   chan struct{}
+}
+
+func (self *testing_blockingRouteLocalListener) RouteLocalChanged(routeLocal bool) {
+	self.stateLock.Lock()
+	self.count += 1
+	self.last = routeLocal
+	first := !self.blocked
+	self.blocked = true
+	self.stateLock.Unlock()
+
+	// the first callback parks here, simulating a remote that has stopped
+	// draining reverse callbacks (suspended / disconnected app)
+	if first {
+		close(self.entered)
+		<-self.release
+	}
+}
+
+// TestDeviceLocalRpcReverseStalledRemote drives a real remote into a stalled
+// state (its callback drain is parked in a listener) and fires a burst of state
+// changes on the local device. Because reverse delivery is async and coalescing,
+// the local setters must not block on the stalled remote, and once the remote
+// resumes it must converge to the final value having seen far fewer events than
+// were fired.
+func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, byJwt, "", "", "", instanceId, testDeviceLocalSettingsRpc(), clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace, byJwt, instanceId, settings, clientId, testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	listener := &testing_blockingRouteLocalListener{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	doRelease := func() { releaseOnce.Do(func() { close(listener.release) }) }
+	defer doRelease()
+
+	sub := deviceRemote.AddRouteLocalChangeListener(listener)
+	defer sub.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+
+	// force a change to drive the remote listener, then wait until it is parked
+	initial := deviceLocal.GetRouteLocal()
+	final := !initial
+	deviceLocal.SetRouteLocal(final)
+	select {
+	case <-listener.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("remote listener never received the initial update")
+	}
+
+	// with the remote stalled, fire a burst. each setter only enqueues a reverse
+	// notification, so these must return promptly rather than block on the remote.
+	// (the old synchronous path would block here for ~RpcNotifyTimeout.)
+	const burst = 100
+	start := time.Now()
+	for i := 0; i < burst; i++ {
+		deviceLocal.SetRouteLocal(initial)
+		deviceLocal.SetRouteLocal(final)
+	}
+	elapsed := time.Since(start)
+	assert.Equal(t, elapsed < time.Second, true)
+
+	// resume the remote and let it drain
+	doRelease()
+	time.Sleep(2 * time.Second)
+
+	listener.stateLock.Lock()
+	last := listener.last
+	count := listener.count
+	listener.stateLock.Unlock()
+
+	// converged to the final value, and coalescing collapsed the burst far below
+	// the number of updates fired (1 initial + 2*burst)
+	assert.Equal(t, last, final)
+	assert.Equal(t, count < 1+2*burst, true)
+}
