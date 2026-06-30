@@ -2,6 +2,12 @@ package sdk
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/rpc"
 	"strings"
 	"sync"
 	"testing"
@@ -1877,7 +1883,7 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 
 	// with the remote stalled, fire a burst. each setter only enqueues a reverse
 	// notification, so these must return promptly rather than block on the remote.
-	// (the old synchronous path would block here for ~RpcNotifyTimeout.)
+	// (the old synchronous path would block the setter on the stalled remote.)
 	const burst = 100
 	start := time.Now()
 	for i := 0; i < burst; i++ {
@@ -1900,4 +1906,461 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	// the number of updates fired (1 initial + 2*burst)
 	assert.Equal(t, last, final)
 	assert.Equal(t, count < 1+2*burst, true)
+}
+
+// testing_blockingReverseRpc stands in for the app side of the reverse rpc. The
+// first Notify call parks until released — a slow but live app that has not
+// drained the call — while later calls return immediately.
+type testing_blockingReverseRpc struct {
+	enteredOnce *sync.Once
+	entered     chan struct{}
+	release     chan struct{}
+}
+
+func (self *testing_blockingReverseRpc) Notify(_ bool, _ RpcVoid) error {
+	first := false
+	self.enteredOnce.Do(func() {
+		first = true
+		close(self.entered)
+	})
+	if first {
+		<-self.release
+	}
+	return nil
+}
+
+// testing_newReverseService wires a DeviceLocalRpc whose reverse service is a
+// real net/rpc client to server over an in-memory pipe. Returns the rpc, the
+// service, and the local conn (close it to simulate the connection breaking).
+func testing_newReverseService(t *testing.T, ctx context.Context, server *testing_blockingReverseRpc) (*DeviceLocalRpc, *rpcClientWithTimeout, net.Conn) {
+	localConn, appConn := net.Pipe()
+	t.Cleanup(func() { localConn.Close() })
+	t.Cleanup(func() { appConn.Close() })
+
+	appServer := rpc.NewServer()
+	if err := appServer.RegisterName("DeviceRemoteRpc", server); err != nil {
+		t.Fatal(err)
+	}
+	go appServer.ServeConn(appConn)
+
+	settings := defaultDeviceRpcSettings()
+	service := &rpcClientWithTimeout{
+		ctx:         ctx,
+		log:         settings.logger(),
+		timeout:     settings.RpcCallTimeout, // unused: reverse delivery blocks
+		closeClient: localConn.Close,
+		client:      rpc.NewClient(localConn),
+	}
+	localRpc := &DeviceLocalRpc{
+		ctx:     ctx,
+		service: service,
+	}
+	return localRpc, service, localConn
+}
+
+// TestDeviceLocalRpcReverseBlocksAsBackPressure asserts that a reverse delivery
+// to a slow but live app BLOCKS (back pressure) instead of failing, and does not
+// tear down the reverse rpc. Failing here is the root cause of the extra tunnel
+// disconnects: tearing down closes reverseConn, which unblocks the app's
+// ServeConn, fires tunnelChanged(false), and forces a reconnect. A transiently
+// slow app (the connection is fine, only the app's callback drain is parked) must
+// apply back pressure, not flap the tunnel.
+func TestDeviceLocalRpcReverseBlocksAsBackPressure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server := &testing_blockingReverseRpc{
+		enteredOnce: &sync.Once{},
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	doRelease := func() { releaseOnce.Do(func() { close(server.release) }) }
+	defer doRelease()
+
+	localRpc, service, _ := testing_newReverseService(t, ctx, server)
+
+	// deliver on a goroutine; the app parks in the handler, so this must block
+	done := make(chan struct{})
+	go func() {
+		localRpc.reverseCall("DeviceRemoteRpc.Notify", true)
+		close(done)
+	}()
+
+	select {
+	case <-server.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("app reverse handler never received the call")
+	}
+
+	// while the app is parked the delivery blocks (back pressure) and does NOT
+	// tear down — a transiently slow app must not flap the tunnel
+	select {
+	case <-done:
+		t.Fatal("reverseCall returned while the app was parked (should block as back pressure)")
+	case <-time.After(500 * time.Millisecond):
+	}
+	localRpc.stateLock.Lock()
+	serviceWhileBlocked := localRpc.service
+	localRpc.stateLock.Unlock()
+	if serviceWhileBlocked != service {
+		t.Fatal("reverse service was torn down while merely blocked on a slow app")
+	}
+
+	// once the app drains, the delivery completes — still no teardown
+	doRelease()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reverseCall did not complete after the app drained")
+	}
+	localRpc.stateLock.Lock()
+	serviceAfter := localRpc.service
+	localRpc.stateLock.Unlock()
+	if serviceAfter != service {
+		t.Fatal("reverse service was torn down after a successful delivery")
+	}
+}
+
+// TestDeviceLocalRpcReverseTearsDownOnTransportError asserts the other half: a
+// real transport error (a dead/suspended app reaped by the keepalive, modeled by
+// the connection breaking under the blocked call) DOES tear down the reverse rpc
+// so the tunnel reconnects. Blocking sheds transient slowness; only a dead tunnel
+// reconnects.
+func TestDeviceLocalRpcReverseTearsDownOnTransportError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server := &testing_blockingReverseRpc{
+		enteredOnce: &sync.Once{},
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	defer func() {
+		// release any parked handler goroutine at cleanup
+		var once sync.Once
+		once.Do(func() { close(server.release) })
+	}()
+
+	localRpc, _, localConn := testing_newReverseService(t, ctx, server)
+
+	done := make(chan struct{})
+	go func() {
+		localRpc.reverseCall("DeviceRemoteRpc.Notify", true)
+		close(done)
+	}()
+
+	select {
+	case <-server.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("app reverse handler never received the call")
+	}
+
+	// the connection breaks under the blocked call
+	localConn.Close()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reverseCall did not return after the connection broke")
+	}
+	localRpc.stateLock.Lock()
+	serviceAfter := localRpc.service
+	localRpc.stateLock.Unlock()
+	if serviceAfter != nil {
+		t.Fatal("reverse service was not torn down on a real transport error")
+	}
+}
+
+// testing_newSyncedDeviceLocalRemote builds a local+remote pair over the real rpc
+// transport and waits until the remote has synced (so the remote routes http
+// through the rpc, not the local fallback). Both are closed via t.Cleanup.
+func testing_newSyncedDeviceLocalRemote(t *testing.T, ctx context.Context) (*DeviceLocal, *DeviceRemote) {
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, byJwt, "", "", "", instanceId, testDeviceLocalSettingsRpc(), clientId,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace, byJwt, instanceId, settings, clientId, testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		deviceLocal.Close()
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		deviceRemote.Close()
+		deviceLocal.Close()
+	})
+
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(5 * time.Second) {
+		t.Fatal("device remote did not sync")
+	}
+	if !deviceRemote.GetRemoteConnected() {
+		t.Fatal("device remote is not connected after sync (http would not route through rpc)")
+	}
+	return deviceLocal, deviceRemote
+}
+
+// TestDeviceRpcHttpOverRpc exercises the full http-over-rpc round trip: the remote
+// forwards the request to the local (DeviceLocalRpc.HttpPostRaw / HttpGetRaw), the
+// local performs the http call, and the body is returned to the remote via the
+// reverse DeviceRemoteRpc.HttpResponse. Covers get, post (with a body), and a
+// non-200 error.
+func TestDeviceRpcHttpOverRpc(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fail" {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("boom"))
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(r.Method + ":" + r.URL.Path + ":" + string(body)))
+	}))
+	defer ts.Close()
+
+	_, deviceRemote := testing_newSyncedDeviceLocalRemote(t, ctx)
+
+	getBody, err := deviceRemote.httpGetRaw(ctx, ts.URL+"/ok", "")
+	assert.Equal(t, err, nil)
+	assert.Equal(t, string(getBody), "GET:/ok:")
+
+	postBody, err := deviceRemote.httpPostRaw(ctx, ts.URL+"/ok", []byte("payload"), "")
+	assert.Equal(t, err, nil)
+	assert.Equal(t, string(postBody), "POST:/ok:payload")
+
+	// a non-200 is surfaced as an error carried back over the reverse rpc
+	_, err = deviceRemote.httpGetRaw(ctx, ts.URL+"/fail", "")
+	assert.NotEqual(t, err, nil)
+}
+
+// TestDeviceRpcHttpOverRpcConcurrent fires many http requests at once. Each
+// response is delivered directly on its own goroutine (not via the coalescing
+// state-notification queue), so this checks that concurrent responses are routed
+// back to the correct caller by request id with no cross-talk.
+func TestDeviceRpcHttpOverRpcConcurrent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// echo the id query param so each response is unique to its request
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(r.URL.Query().Get("id")))
+	}))
+	defer ts.Close()
+
+	_, deviceRemote := testing_newSyncedDeviceLocalRemote(t, ctx)
+
+	const n = 50
+	results := make([]string, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id := fmt.Sprintf("%d", i)
+			url := ts.URL + "?id=" + id
+			var body []byte
+			var err error
+			if i%2 == 0 {
+				body, err = deviceRemote.httpGetRaw(ctx, url, "")
+			} else {
+				body, err = deviceRemote.httpPostRaw(ctx, url, []byte(id), "")
+			}
+			results[i] = string(body)
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		assert.Equal(t, errs[i], nil)
+		// each request got its own response, not another request's
+		assert.Equal(t, results[i], fmt.Sprintf("%d", i))
+	}
+}
+
+// testing_httpAndStateReverseRpc is an app-side reverse server whose state
+// notification (TunnelChanged) parks until released, while HttpResponse always
+// returns immediately and records what it received.
+type testing_httpAndStateReverseRpc struct {
+	tunnelOnce    *sync.Once
+	tunnelEntered chan struct{}
+	release       chan struct{}
+	httpReceived  chan *DeviceRemoteHttpResponse
+}
+
+func (self *testing_httpAndStateReverseRpc) TunnelChanged(_ bool, _ RpcVoid) error {
+	self.tunnelOnce.Do(func() { close(self.tunnelEntered) })
+	<-self.release
+	return nil
+}
+
+func (self *testing_httpAndStateReverseRpc) HttpResponse(httpResponse *DeviceRemoteHttpResponse, _ RpcVoid) error {
+	self.httpReceived <- httpResponse
+	return nil
+}
+
+// TestDeviceLocalRpcHttpResponseNotBlockedByStuckNotification asserts the split:
+// http responses are delivered directly (see HttpPostRaw / HttpGetRaw), not via
+// sendLoop, so a state notification stuck in the coalescing queue does not
+// head-of-line block an http response (and vice versa). With sendLoop blocked
+// (back pressure) inside a state-notification delivery to a parked app, a
+// directly delivered http response must still arrive promptly.
+func TestDeviceLocalRpcHttpResponseNotBlockedByStuckNotification(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	localConn, appConn := net.Pipe()
+	defer localConn.Close()
+	defer appConn.Close()
+
+	server := &testing_httpAndStateReverseRpc{
+		tunnelOnce:    &sync.Once{},
+		tunnelEntered: make(chan struct{}),
+		release:       make(chan struct{}),
+		httpReceived:  make(chan *DeviceRemoteHttpResponse, 1),
+	}
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(server.release) })
+
+	appServer := rpc.NewServer()
+	if err := appServer.RegisterName("DeviceRemoteRpc", server); err != nil {
+		t.Fatal(err)
+	}
+	go appServer.ServeConn(appConn)
+
+	settings := defaultDeviceRpcSettings()
+	service := &rpcClientWithTimeout{
+		ctx:         ctx,
+		log:         settings.logger(),
+		timeout:     settings.RpcCallTimeout, // unused: reverse delivery blocks
+		closeClient: localConn.Close,
+		client:      rpc.NewClient(localConn),
+	}
+	defer service.Close()
+
+	localRpc := &DeviceLocalRpc{
+		ctx:         ctx,
+		service:     service,
+		sendPending: map[string]func(){},
+		sendSignal:  make(chan struct{}, 1),
+	}
+	go localRpc.sendLoop()
+
+	// park sendLoop inside a state-notification delivery (the app handler blocks)
+	localRpc.reverseNotify("DeviceRemoteRpc.TunnelChanged", true)
+	select {
+	case <-server.tunnelEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sendLoop never delivered the state notification")
+	}
+
+	// with sendLoop stuck, an http response delivered directly must still arrive
+	httpResponse := newDeviceRemoteHttpResponse(connect.NewId(), []byte("ok"), nil)
+	start := time.Now()
+	localRpc.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
+	elapsed := time.Since(start)
+
+	select {
+	case got := <-server.httpReceived:
+		assert.Equal(t, got.RequestId, httpResponse.RequestId)
+		assert.Equal(t, string(got.BodyBytes), "ok")
+	case <-time.After(time.Second):
+		t.Fatal("http response was not delivered while a state notification was stuck in sendLoop")
+	}
+	// delivered promptly, i.e. it did not wait behind the state notification that
+	// is blocking sendLoop
+	assert.Equal(t, elapsed < time.Second, true)
+}
+
+// testing_panicRpc has a served method that panics, to exercise the forward
+// serve loop's panic recovery.
+type testing_panicRpc struct {
+	pinged chan struct{}
+}
+
+func (self *testing_panicRpc) Panic(_ bool, _ RpcVoid) error {
+	panic("boom")
+}
+
+func (self *testing_panicRpc) Ping(_ bool, _ RpcVoid) error {
+	select {
+	case self.pinged <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+// TestDeviceLocalRpcServedPanicRecovered mirrors run()'s serial serve loop and
+// asserts that a panic in a served method does NOT crash the process (net/rpc
+// does not recover handler panics — without the HandleError wrapper this test
+// binary would crash) and that serving continues with later calls.
+func TestDeviceLocalRpcServedPanicRecovered(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	server := rpc.NewServer()
+	srv := &testing_panicRpc{pinged: make(chan struct{}, 1)}
+	if err := server.RegisterName("T", srv); err != nil {
+		t.Fatal(err)
+	}
+
+	// the exact serve loop from DeviceLocalRpc.run()
+	go func() {
+		codec := newGobServerCodec(serverConn)
+		for ctx.Err() == nil {
+			var serveErr error
+			connect.HandleError(func() {
+				serveErr = server.ServeRequest(codec)
+			})
+			if serveErr != nil {
+				return
+			}
+		}
+	}()
+
+	client := rpc.NewClient(clientConn)
+	defer client.Close()
+
+	var void RpcVoid
+	// fire the panicking call; the handler panics before writing a response, so
+	// this call never completes — we only need the server to have processed it
+	client.Go("T.Panic", true, &void, make(chan *rpc.Call, 1))
+
+	// serving must continue after the recovered panic: a later call still succeeds
+	done := make(chan error, 1)
+	go func() { done <- client.Call("T.Ping", true, &void) }()
+	select {
+	case err := <-done:
+		assert.Equal(t, err, nil)
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not continue serving after a recovered handler panic")
+	}
+	select {
+	case <-srv.pinged:
+	case <-time.After(time.Second):
+		t.Fatal("ping handler did not run")
+	}
 }

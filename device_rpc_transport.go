@@ -91,7 +91,7 @@ func newDeviceRpcMux(ctx context.Context, ws *websocket.Conn, settings *deviceRp
 		ws:           ws,
 		pingTimeout:  pingTimeout,
 		readTimeout:  readTimeout,
-		writeTimeout: settings.RpcCallTimeout,
+		writeTimeout: settings.MuxWriteTimeout,
 		send:         make(chan []byte, settings.MuxSendBufferSize),
 	}
 	for i := range mux.conns {

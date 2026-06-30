@@ -1,7 +1,9 @@
 package sdk
 
 import (
+	"bufio"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"net"
 	"net/netip"
@@ -49,13 +51,7 @@ type RemoteChangeListener interface {
 }
 
 type deviceRpcSettings struct {
-	RpcCallTimeout time.Duration
-	// timeout for fire-and-forget reverse notifications (DeviceRemoteRpc.*),
-	// shorter than RpcCallTimeout. delivery is async (see DeviceLocalRpc.sendLoop)
-	// so this only bounds how long a single notification waits before the reverse
-	// stream is torn down and resynced. a suspended app is also caught by the
-	// websocket keepalive (~KeepAliveTimeout*(KeepAliveRetryCount+1)).
-	RpcNotifyTimeout    time.Duration
+	RpcCallTimeout      time.Duration
 	RpcConnectTimeout   time.Duration
 	RpcReconnectTimeout time.Duration
 	KeepAliveTimeout    time.Duration
@@ -69,23 +65,36 @@ type deviceRpcSettings struct {
 	// per-stream buffered frame counts for the rpc transport mux
 	MuxSendBufferSize    int
 	MuxReceiveBufferSize int
+	// deadline for a single mux frame write before the connection is torn down.
+	// decoupled from RpcCallTimeout so the rpc call timeout can be long (back
+	// pressure during spin-up) without letting a stuck write hang that long.
+	MuxWriteTimeout time.Duration
+	// max concurrent http-over-rpc fetch+deliver operations. bounds in-flight
+	// request/response buffers + goroutines so a slow or suspended app cannot pile
+	// up unbounded memory in the (memory-capped) network extension.
+	HttpMaxConcurrent int
 
 	DeviceLocalSettings
 }
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
-		RpcCallTimeout:       15 * time.Second,
-		RpcNotifyTimeout:     2 * time.Second,
-		RpcConnectTimeout:    15 * time.Second,
-		RpcReconnectTimeout:  1 * time.Second,
-		KeepAliveTimeout:     1 * time.Second,
+		RpcCallTimeout:      60 * time.Second,
+		RpcConnectTimeout:   30 * time.Second,
+		RpcReconnectTimeout: 1 * time.Second,
+		// 5s ping; the read side tears down only after KeepAliveTimeout *
+		// (KeepAliveRetryCount+1) = 30s of silence, so normal iOS app suspension
+		// (the app process is frozen while backgrounded) does not flap the rpc,
+		// while a genuinely dead connection is still reaped.
+		KeepAliveTimeout:     5 * time.Second,
 		KeepAliveRetryCount:  5,
 		Address:              requireRemoteAddress("127.0.0.1:12025"),
 		InitialLockTimeout:   1 * time.Second,
 		CallbackBufferSize:   64,
 		MuxSendBufferSize:    32,
 		MuxReceiveBufferSize: 32,
+		MuxWriteTimeout:      15 * time.Second,
+		HttpMaxConcurrent:    16,
 
 		DeviceLocalSettings: *DefaultDeviceLocalSettings(),
 	}
@@ -3526,6 +3535,19 @@ func (self *rpcClientWithTimeout) Call(serviceMethod string, args any, reply any
 	return self.client.Call(serviceMethod, args, reply)
 }
 
+// notifyBlocking delivers a fire-and-forget reverse rpc and blocks until it
+// completes. A slow app (e.g. its callback buffer is full) applies back pressure
+// here rather than failing — there is no per-call timeout, so a transiently slow
+// app never reports a failure that would tear down the reverse rpc and flap the
+// tunnel. Liveness is the transport's job: a dead or suspended app is reaped by
+// the keepalive (~KeepAliveTimeout*(KeepAliveRetryCount+1)), which breaks the
+// connection and surfaces here as a real error. Returns an error only on a real
+// transport failure (a dead reverse rpc is a dead tunnel).
+func (self *rpcClientWithTimeout) notifyBlocking(serviceMethod string, args any) error {
+	var void RpcVoid
+	return self.client.Call(serviceMethod, args, &void)
+}
+
 func (self *rpcClientWithTimeout) Close() error {
 	return self.client.Close()
 }
@@ -3799,6 +3821,11 @@ type DeviceLocalRpc struct {
 	sendOrder              []string
 	sendSignal             chan struct{}
 	sendWindowMonitorEvent *DeviceRemoteWindowMonitorEvent
+
+	// bounds concurrent http-over-rpc fetch+deliver so a slow/suspended app cannot
+	// pile up unbounded request/response buffers (HttpPostRaw / HttpGetRaw). nil
+	// means unbounded (HttpMaxConcurrent <= 0).
+	httpSem chan struct{}
 }
 
 func newDeviceLocalRpc(
@@ -3844,9 +3871,66 @@ func newDeviceLocalRpc(
 		sendPending:                               map[string]func(){},
 		sendSignal:                                make(chan struct{}, 1),
 	}
+	if 0 < settings.HttpMaxConcurrent {
+		deviceLocalRpc.httpSem = make(chan struct{}, settings.HttpMaxConcurrent)
+	}
 
 	go connect.HandleError(deviceLocalRpc.run, cancel)
 	return deviceLocalRpc
+}
+
+// gobServerCodec is the standard net/rpc gob server codec (net/rpc keeps its own
+// unexported). It lets run() serve forward rpc one request at a time via
+// server.ServeRequest so handler panics can be recovered (see run()).
+type gobServerCodec struct {
+	rwc    net.Conn
+	dec    *gob.Decoder
+	enc    *gob.Encoder
+	encBuf *bufio.Writer
+	closed bool
+}
+
+func newGobServerCodec(conn net.Conn) *gobServerCodec {
+	buf := bufio.NewWriter(conn)
+	return &gobServerCodec{
+		rwc:    conn,
+		dec:    gob.NewDecoder(conn),
+		enc:    gob.NewEncoder(buf),
+		encBuf: buf,
+	}
+}
+
+func (self *gobServerCodec) ReadRequestHeader(r *rpc.Request) error {
+	return self.dec.Decode(r)
+}
+
+func (self *gobServerCodec) ReadRequestBody(body any) error {
+	return self.dec.Decode(body)
+}
+
+func (self *gobServerCodec) WriteResponse(r *rpc.Response, body any) (err error) {
+	if err = self.enc.Encode(r); err != nil {
+		if self.encBuf.Flush() == nil {
+			// couldn't encode the header; close to signal the broken connection
+			self.Close()
+		}
+		return
+	}
+	if err = self.enc.Encode(body); err != nil {
+		if self.encBuf.Flush() == nil {
+			self.Close()
+		}
+		return
+	}
+	return self.encBuf.Flush()
+}
+
+func (self *gobServerCodec) Close() error {
+	if self.closed {
+		return nil
+	}
+	self.closed = true
+	return self.rwc.Close()
 }
 
 func (self *DeviceLocalRpc) run() {
@@ -3862,7 +3946,24 @@ func (self *DeviceLocalRpc) run() {
 
 	server := rpc.NewServer()
 	server.Register(self)
-	server.ServeConn(self.conn)
+	// Serve forward rpc one request at a time (the methods are intended to run on
+	// a single goroutine) wrapped in HandleError. net/rpc does NOT recover handler
+	// panics — without this, a panic in any served method (or in the core code it
+	// calls) crashes the whole network extension. ServeRequest runs the call
+	// synchronously, so a panic surfaces here, is recovered, and serving continues
+	// with the next request instead of taking down the process. The connection is
+	// closed (and ServeRequest unblocked) on ctx cancel by the goroutine above.
+	codec := newGobServerCodec(self.conn)
+	for self.ctx.Err() == nil {
+		var serveErr error
+		connect.HandleError(func() {
+			serveErr = server.ServeRequest(codec)
+		})
+		if serveErr != nil {
+			// connection closed or unrecoverable codec error
+			break
+		}
+	}
 	self.deviceLocal.log.Infof("[dlrcp]server conn done")
 
 	func() {
@@ -3953,13 +4054,27 @@ func (self *DeviceLocalRpc) closeService() {
 
 // --- reverse notification delivery ---
 //
-// Reverse rpcs (DeviceRemoteRpc.*) are fire-and-forget notifications into the
-// app, produced by connect workers and core-device listener callbacks. Those
-// producers must not block, and the calls must not run while holding stateLock.
-// sendLoop owns delivery: producers enqueue and return immediately, and the
-// (possibly blocking) rpc runs here, off the producer path and off stateLock.
-// Events coalesce by key so a slow or suspended app cannot build unbounded
-// backlog; the reverse stream is reaped after RpcNotifyTimeout regardless.
+// Reverse rpcs (DeviceRemoteRpc.*) are fire-and-forget calls into the app,
+// produced by connect workers and core-device listener callbacks. Producers must
+// not block, and the calls must not run while holding stateLock.
+//
+// State notifications (the *Changed calls and the window monitor event) are
+// delivered by sendLoop: producers enqueue and return immediately, and the
+// (blocking) rpc runs on sendLoop, off the producer path and off stateLock. They
+// coalesce by key (last value wins) so a slow or suspended app cannot build
+// unbounded backlog.
+//
+// Http responses are delivered directly on their own per-request goroutine (see
+// HttpPostRaw / HttpGetRaw), not through sendLoop, so a slow state notification
+// can never delay an http response and vice versa.
+//
+// Delivery blocks (see reverseCall / notifyBlocking): a slow app — e.g. one whose
+// callback buffer is full — applies back pressure rather than failing, so a
+// transiently slow app never tears down the reverse rpc and flaps the tunnel.
+// (State coalescing means back pressure just sheds intermediate values.) The
+// reverse rpc (== the tunnel) is torn down only on a real transport error; a dead
+// or suspended app is reaped by the transport keepalive, which surfaces as such
+// an error.
 
 // enqueueReverse schedules op for delivery by sendLoop, coalescing by key so the
 // latest op for a key replaces any prior pending op (last value wins). Never
@@ -3987,9 +4102,9 @@ func (self *DeviceLocalRpc) reverseNotify(name string, arg any) {
 	})
 }
 
-// sendLoop delivers enqueued reverse rpcs serially in fifo order. A delivery can
-// block up to RpcNotifyTimeout; while it does, further events coalesce in the
-// queue rather than blocking producers.
+// sendLoop delivers enqueued reverse rpcs serially in fifo order. A delivery
+// blocks until the app acks it (back pressure); while it does, further events
+// coalesce in the queue rather than blocking producers.
 func (self *DeviceLocalRpc) sendLoop() {
 	for {
 		select {
@@ -4023,8 +4138,13 @@ func (self *DeviceLocalRpc) sendLoop() {
 }
 
 // reverseCall performs a fire-and-forget reverse rpc without holding stateLock
-// across the (blocking) call, tearing down the service on error so a dead or
-// suspended app is reaped. Only called from sendLoop.
+// across the (blocking) call. Delivery blocks (notifyBlocking): a slow app
+// applies back pressure rather than failing, so a transiently slow app never
+// flaps the tunnel. The service is torn down only on a real transport error — a
+// dead or suspended app is reaped by the transport keepalive, which surfaces as
+// an error here (a dead reverse rpc is a dead tunnel). Called from sendLoop
+// (state notifications) and directly from the http handler goroutines (http
+// responses).
 func (self *DeviceLocalRpc) reverseCall(name string, arg any) {
 	self.stateLock.Lock()
 	service := self.service
@@ -4034,9 +4154,8 @@ func (self *DeviceLocalRpc) reverseCall(name string, arg any) {
 		return
 	}
 
-	var void RpcVoid
 	service.log.Infof("[rpc]%s", name)
-	if err := service.Call(name, arg, &void); err != nil {
+	if err := service.notifyBlocking(name, arg); err != nil {
 		service.log.Infof("[rpc]%s err = %s", name, err)
 		self.stateLock.Lock()
 		// only tear down if this is still the live service; a concurrent
@@ -4059,6 +4178,10 @@ func (self *DeviceLocalRpc) enqueueWindowMonitorEvent(event *DeviceRemoteWindowM
 
 	self.sendMu.Lock()
 	if self.sendWindowMonitorEvent == nil || event.Reset {
+		// own the maps outright so later in-place merges never mutate a map held
+		// by the connect window monitor (or by an in-flight delivery being encoded)
+		event.WindowIds = maps.Clone(event.WindowIds)
+		event.ProviderEvents = maps.Clone(event.ProviderEvents)
 		self.sendWindowMonitorEvent = event
 	} else {
 		merged := self.sendWindowMonitorEvent
@@ -4333,11 +4456,13 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	self.deviceLocal.log.Infof("[dlrpc]sync reverse")
 
 	// the reverse stream is already established by the listener; use it as the
-	// DeviceRemoteRpc client rather than dialing back
+	// DeviceRemoteRpc client rather than dialing back. reverse delivery blocks for
+	// back pressure (see reverseCall / notifyBlocking), so the timeout/closeClient
+	// fields are unused for this client.
 	self.service = &rpcClientWithTimeout{
 		ctx:         self.ctx,
 		log:         self.settings.logger(),
-		timeout:     self.settings.RpcNotifyTimeout,
+		timeout:     self.settings.RpcCallTimeout,
 		closeClient: self.reverseConn.Close,
 		client:      rpc.NewClient(self.reverseConn),
 	}
@@ -5686,8 +5811,30 @@ func (self *DeviceLocalRpc) Shuffle(_ RpcNoArg, _ RpcVoid) error {
 	return nil
 }
 
+// acquireHttp bounds concurrent http-over-rpc fetch+deliver (HttpMaxConcurrent)
+// so a slow or suspended app cannot pile up unbounded in-flight request/response
+// buffers. Returns a release func, or ok=false if the rpc is shutting down. A nil
+// httpSem means unbounded.
+func (self *DeviceLocalRpc) acquireHttp() (release func(), ok bool) {
+	if self.httpSem == nil {
+		return func() {}, true
+	}
+	select {
+	case self.httpSem <- struct{}{}:
+		return func() { <-self.httpSem }, true
+	case <-self.ctx.Done():
+		return func() {}, false
+	}
+}
+
 func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
 	go connect.HandleError(func() {
+		release, ok := self.acquireHttp()
+		if !ok {
+			return
+		}
+		defer release()
+
 		bodyBytes, err := connect.HttpPostWithStrategyRaw(
 			self.ctx,
 			self.deviceLocal.clientStrategy,
@@ -5697,19 +5844,23 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 		)
 
 		httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
-		// key per request id so distinct responses are never coalesced
-		self.enqueueReverse(
-			"DeviceRemoteRpc.HttpResponse:"+httpRequest.RequestId.String(),
-			func() {
-				self.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
-			},
-		)
+		// deliver directly on this per-request goroutine rather than via the
+		// state-notification queue (sendLoop): http responses must not head-of-line
+		// block — or be blocked by — coalescing state notifications, and they are
+		// independent request/reply pairs that need no coalescing or ordering
+		self.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
 	})
 	return nil
 }
 
 func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
 	go connect.HandleError(func() {
+		release, ok := self.acquireHttp()
+		if !ok {
+			return
+		}
+		defer release()
+
 		bodyBytes, err := connect.HttpGetWithStrategyRaw(
 			self.ctx,
 			self.deviceLocal.clientStrategy,
@@ -5718,13 +5869,11 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 		)
 
 		httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
-		// key per request id so distinct responses are never coalesced
-		self.enqueueReverse(
-			"DeviceRemoteRpc.HttpResponse:"+httpRequest.RequestId.String(),
-			func() {
-				self.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
-			},
-		)
+		// deliver directly on this per-request goroutine rather than via the
+		// state-notification queue (sendLoop): http responses must not head-of-line
+		// block — or be blocked by — coalescing state notifications, and they are
+		// independent request/reply pairs that need no coalescing or ordering
+		self.reverseCall("DeviceRemoteRpc.HttpResponse", httpResponse)
 	})
 	return nil
 }
