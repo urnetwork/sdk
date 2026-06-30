@@ -89,6 +89,11 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		DefaultVpnInterfaceWhileOffline: false,
 		DefaultTunnelStarted:            false,
 
+		// EXPERIMENT (temporary): default ON so the random 10.x tunnel address is
+		// used without extra wiring. Set false to restore the 169.254/16 pool
+		// allocator. See newDeviceLocalWithOverrides.
+		UseExperimentalTunnelAddress: true,
+
 		AllowProvider: true,
 		Verbose:       true,
 
@@ -154,6 +159,13 @@ type DeviceLocalSettings struct {
 	// It overrides `ClientSettings.Log`.
 	DisableLogging bool
 
+	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
+	// 10.x.y.h (RFC1918, DHCP-shaped) address instead of drawing from connect's
+	// 169.254/16 pool. 10.x is private, so the browser's mDNS obfuscation masks it
+	// in WebRTC peer discovery, and randomizing avoids a fixed signature.
+	// EXPERIMENT: defaults true for now (testing).
+	UseExperimentalTunnelAddress bool
+
 	connect.ClientSettings
 }
 
@@ -183,9 +195,11 @@ type DeviceLocal struct {
 	clientId   connect.Id
 	instanceId connect.Id
 
-	// tunnelLocalAddress is reserved from connect's shared local-address pool at
-	// construction (released in Close); the platform assigns it to the TUN
-	// interface, kept from colliding with any IpMux-reserved address.
+	// tunnelLocalAddress is the address the platform assigns to the TUN interface.
+	// A random 10.x.y.h (RFC1918, DHCP-shaped) when settings.UseExperimentalTunnelAddress
+	// is set (default on for now); otherwise reserved from connect's shared
+	// local-address pool at construction (released in Close) so it never collides
+	// with an IpMux-reserved address.
 	tunnelLocalAddress netip.Addr
 
 	// tunnelDnsSetting is the DNS config the platform applies to the TUN. Defaults
@@ -509,12 +523,24 @@ func newDeviceLocalWithOverrides(
 		defaultProvideControlMode = ProvideControlModeNever
 	}
 
-	// reserve the tunnel interface address from connect's shared local-address pool
-	// so it never collides with an IpMux-reserved address; released in Close.
-	tunnelLocalAddress, ok := connect.TakeLocalIpv4Address()
-	if !ok {
-		cancel()
-		return nil, fmt.Errorf("no local tunnel address available")
+	// EXPERIMENT: when UseExperimentalTunnelAddress is set (default on for now),
+	// assign the TUN interface a 10.x.y.h address (minimum free /24, host
+	// randomized in 2..254 like a DHCP lease) instead of reserving from connect's
+	// 169.254/16 pool. 10.0.0.0/8 is RFC1918, which libwebrtc classifies as
+	// private, so the browser's mDNS obfuscation rewrites the host candidate to
+	// <hash>.local and the tunnel address does not leak in WebRTC peer discovery.
+	// The randomized host avoids a fixed fingerprint; the /24 avoids a real local
+	// subnet. Not from the pool -> not returned in Close.
+	var tunnelLocalAddress netip.Addr
+	if settings.UseExperimentalTunnelAddress {
+		tunnelLocalAddress = connect.RandomLocalIpv4(connect.LocalIpv4Networks())
+	} else {
+		var ok bool
+		tunnelLocalAddress, ok = connect.TakeLocalIpv4Address()
+		if !ok {
+			cancel()
+			return nil, fmt.Errorf("no local tunnel address available")
+		}
 	}
 
 	deviceLocal := &DeviceLocal{
@@ -630,9 +656,11 @@ func (self *DeviceLocal) logger() connect.Logger {
 	return self.log
 }
 
-// TunnelLocalAddress returns the IPv4 address reserved for the TUN interface. The
-// platform assigns this to the tunnel instead of a hardcoded address, so the tunnel
-// address and every IpMux address are drawn from one allocator (no collision).
+// TunnelLocalAddress returns the IPv4 address the platform assigns to the TUN
+// interface. When settings.UseExperimentalTunnelAddress is set (default on for
+// now) this is a random 10.x.y.h (RFC1918, DHCP-shaped) so it is private and the
+// browser's mDNS obfuscation masks it in WebRTC peer discovery; otherwise it is
+// drawn from connect's shared 169.254/16 allocator (no IpMux collision).
 func (self *DeviceLocal) TunnelLocalAddress() string {
 	return self.tunnelLocalAddress.String()
 }
@@ -2271,7 +2299,12 @@ func (self *DeviceLocal) Close() {
 
 	self.cancel()
 
-	connect.ReturnLocalIpv4Address(self.tunnelLocalAddress)
+	// return the address to the pool only when it was drawn from it (i.e. the
+	// experimental random 10.x address was not used); mirrors the allocation in
+	// newDeviceLocalWithOverrides so a non-pool address never pollutes the free list.
+	if !self.settings.UseExperimentalTunnelAddress {
+		connect.ReturnLocalIpv4Address(self.tunnelLocalAddress)
+	}
 
 	if self.provider != nil {
 		self.provider.Close()
