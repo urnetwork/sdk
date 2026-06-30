@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/v2026"
 )
 
 // On some platforms the device needs to run in a separate process,
