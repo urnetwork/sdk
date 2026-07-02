@@ -48,21 +48,32 @@ func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallba
 func (self *IoLoop) run() {
 	defer self.cancel()
 
+	// set non-blocking BEFORE os.NewFile: os.NewFile only registers the fd with the
+	// runtime poller when it is already non-blocking, and the poller registration is
+	// what lets Close unblock a pending Read (see below)
+	err := syscall.SetNonblock(self.fd, true)
+	if err != nil {
+		self.deviceLocal.log.Infof("[io]WARNING: could not set non-blocking = %s\n", err)
+	}
+
 	f := os.NewFile(uintptr(self.fd), "urnetwork")
-	defer f.Close()
+
+	// unblock a Read parked on a quiet link when the loop (or its device) closes:
+	// without this the read loop below sits in f.Read until the next packet happens
+	// to arrive, leaking the goroutine and holding the detached fd across every
+	// tunnel stop/start on an idle interface
+	go connect.HandleError(func() {
+		defer f.Close()
+		select {
+		case <-self.ctx.Done():
+		}
+	})
 
 	defer connect.HandleError(func() {
 		if self.doneCallback != nil {
 			self.doneCallback.IoLoopDone()
 		}
 	})
-
-	defer self.cancel()
-
-	err := syscall.SetNonblock(self.fd, true)
-	if err != nil {
-		self.deviceLocal.log.Infof("[io]WARNING: could not set non-blocking = %s\n", err)
-	}
 
 	var writeMutex sync.Mutex
 

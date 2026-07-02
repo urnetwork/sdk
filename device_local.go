@@ -294,8 +294,8 @@ type DeviceLocal struct {
 
 	localUserNatSub func()
 
-	ingressSecurityPolicyGenerator func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
-	egressSecurityPolicyGenerator  func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
+	clientSecurityPolicyGenerator   func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
+	providerSecurityPolicyGenerator func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy
 
 	viewControllerManager
 }
@@ -699,18 +699,21 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 	}
 }
 
+// SetClientSecurityPolicyGenerator sets the multi-client (the device's own traffic) security policy.
 // gomobile:ignore
-func (self *DeviceLocal) SetIngressSecurityPolicyGenerator(g func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
+func (self *DeviceLocal) SetClientSecurityPolicyGenerator(g func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	self.ingressSecurityPolicyGenerator = g
+	self.clientSecurityPolicyGenerator = g
 }
 
+// SetProviderSecurityPolicyGenerator sets the provider (egressing remote clients' traffic) security
+// policy. Defaults to the reversed client policy (connect.DefaultProviderSecurityPolicyWithStats).
 // gomobile:ignore
-func (self *DeviceLocal) SetEgressSecurityPolicyGenerator(g func(*connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
+func (self *DeviceLocal) SetProviderSecurityPolicyGenerator(g func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	self.egressSecurityPolicyGenerator = g
+	self.providerSecurityPolicyGenerator = g
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
@@ -827,15 +830,21 @@ func (self *DeviceLocal) SetByJwt(byJwt string) {
 		self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
 	}
 
-	if self.provider != nil {
-		self.provider.SetByJwt(byJwt)
-	}
-
+	// snapshot self.provider under stateLock, synchronizing with Close()'s
+	// self.provider = nil write, and store byJwt in the same critical section.
+	// provider.SetByJwt runs on the snapshot outside the lock (it only sets the
+	// platform transport auth, which has its own locking).
+	var provider *deviceLocalProvider
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		provider = self.provider
 		self.byJwt = byJwt
 	}()
+
+	if provider != nil {
+		provider.SetByJwt(byJwt)
+	}
 
 	// fire listeners
 	self.jwtRefreshed(byJwt)
@@ -1590,7 +1599,9 @@ func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protoc
 
 func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 	provideSecretKeyList := NewProvideSecretKeyList()
-	if client := self.providerClient(); client != nil {
+	// snapshot reads self.provider under stateLock, synchronizing with Close()'s
+	// write; the unlocked providerClient() would race a concurrent teardown
+	if client := self.providerClientSnapshot(); client != nil {
 		provideSecretKeys := client.ContractManager().GetProvideSecretKeys()
 		for provideMode, provideSecretKey := range provideSecretKeys {
 			provideSecretKeyList.Add(&ProvideSecretKey{
@@ -1603,7 +1614,7 @@ func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 }
 
 func (self *DeviceLocal) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
-	if client := self.providerClient(); client != nil {
+	if client := self.providerClientSnapshot(); client != nil {
 		provideSecretKeys := map[protocol.ProvideMode][]byte{}
 		for i := 0; i < provideSecretKeyList.Len(); i += 1 {
 			provideSecretKey := provideSecretKeyList.Get(i)
@@ -1617,7 +1628,7 @@ func (self *DeviceLocal) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecr
 }
 
 func (self *DeviceLocal) InitProvideSecretKeys() {
-	if client := self.providerClient(); client != nil {
+	if client := self.providerClientSnapshot(); client != nil {
 		client.ContractManager().InitProvideSecretKeys()
 
 		self.provideSecretKeysChanged(self.GetProvideSecretKeys())
@@ -1773,7 +1784,14 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(client.Ctx(), self.clientId.String(), localUserNatSettings)
 				}
 				if self.remoteUserNatProvider == nil {
-					self.remoteUserNatProvider = connect.NewRemoteUserNatProviderWithDefaults(client, self.remoteUserNatProviderLocalUserNat)
+					// the provider egresses remote clients' traffic and runs its own security policy:
+					// the connect default is the reversed client policy
+					// (DefaultProviderSecurityPolicyWithStats), or an explicitly set provider policy
+					providerSettings := connect.DefaultRemoteUserNatProviderSettings()
+					if self.providerSecurityPolicyGenerator != nil {
+						providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
+					}
+					self.remoteUserNatProvider = connect.NewRemoteUserNatProvider(client, self.remoteUserNatProviderLocalUserNat, providerSettings)
 				}
 			} else {
 				// close
@@ -1818,7 +1836,7 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
-	if client := self.providerClient(); client != nil {
+	if client := self.providerClientSnapshot(); client != nil {
 		if client.ContractManager().SetProvidePaused(providePaused) {
 			self.log.Infof("[device]provide paused = %t\n", providePaused)
 			self.providePausedChanged(self.GetProvidePaused())
@@ -1827,7 +1845,7 @@ func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
 }
 
 func (self *DeviceLocal) GetProvidePaused() (providePaused bool) {
-	if client := self.providerClient(); client != nil {
+	if client := self.providerClientSnapshot(); client != nil {
 		providePaused = client.ContractManager().IsProvidePaused()
 	}
 	return
@@ -2005,11 +2023,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			settings := connect.DefaultMultiClientSettings()
 			settings.Log = self.log
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
-			if self.ingressSecurityPolicyGenerator != nil {
-				settings.IngressSecurityPolicyGenerator = self.ingressSecurityPolicyGenerator
-			}
-			if self.egressSecurityPolicyGenerator != nil {
-				settings.EgressSecurityPolicyGenerator = self.egressSecurityPolicyGenerator
+			if self.clientSecurityPolicyGenerator != nil {
+				settings.SecurityPolicyGenerator = self.clientSecurityPolicyGenerator
 			}
 			// interpose the upgrade mux on the exit path: the multi-client delivers to
 			// the mux's Receive (mux-addressed replies terminate on its internal stack,
@@ -2246,12 +2261,16 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 			localUserNat = route.provider.LocalUserNat()
 		}
 		if localUserNat != nil {
-			// route locally
+			// route locally. Use the same send timeout as the remote/mux paths:
+			// LocalUserNat assumes a lossless, in-order source and implements no
+			// retransmit, so a non-blocking (timeout 0) send that drops on a full
+			// channel corrupts the flow's protocol state under backpressure. Blocking
+			// up to SendTimeout applies backpressure to the caller instead of dropping.
 			return localUserNat.SendPacket(
 				source,
 				protocol.ProvideMode_Network,
 				packet,
-				0,
+				self.settings.SendTimeout,
 			)
 		} else {
 			return false

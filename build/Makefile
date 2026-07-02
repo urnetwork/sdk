@@ -20,8 +20,11 @@ build_android:
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
 	# validate that all types could be exported
-	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*) should not be included in gomobile
+	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*, DeviceRpcDialer/Listener and their
+	# Websocket* transports) should not be included in gomobile
 	# but due to limitations they are and should be ignored
+	# the same applies to the DeviceLocalSettings struct fields, the DeviceLocal security-policy
+	# generator setters, and testing-only constructors whose unsupported field/param types gomobile skips
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
@@ -51,7 +54,7 @@ build_android:
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
 			jar -xf URnetworkSdk-sources.jar; \
-			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'SetEgressSecurityPolicyGenerator' | grep -ve 'SetIngressSecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'NewPlatformNetworkSpace'`; \
+			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'DeviceRpcDialer' | grep -ve 'DeviceRpcListener' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'DeviceLocalSettings' | grep -ve 'NewPlatformNetworkSpace' | grep -ve 'Testing_NewNetworkSpaceWithUrls'`; \
 			if [ "$$bad_exports" ]; then \
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
