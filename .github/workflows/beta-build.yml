@@ -1,0 +1,72 @@
+name: Beta Build — SDK
+
+on:
+  push:
+    branches:
+      - beta/custom-server
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WARP_VERSION: beta-${{ github.run_number }}
+
+jobs:
+  build-sdk:
+    name: Build SDK (Android + iOS)
+    runs-on: macos-latest
+    steps:
+      - name: Check out SDK
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: true
+          link-to-sdk: true
+
+      - name: Install gomobile and dependencies
+        working-directory: build
+        run: |
+          export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+          make init
+
+      - name: Build Android SDK
+        working-directory: build
+        run: |
+          export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_HOME"
+          make build_android
+
+      - name: Build iOS SDK
+        working-directory: build
+        run: |
+          export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+          make build_apple
+
+      - name: Package iOS SDK
+        run: |
+          if [ -d build/apple/URnetworkSdk.xcframework ]; then
+            (cd build/apple && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework)
+          fi
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: beta-custom-server-${{ github.run_number }}-${{ github.run_attempt }}
+        run: |
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "URnetwork SDK beta custom server ${{ github.run_number }}" \
+            --generate-notes \
+            build/android/URnetworkSdk.aar \
+            build/apple/URnetworkSdk.xcframework.zip
