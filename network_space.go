@@ -142,8 +142,10 @@ func newNetworkSpaceWithConnectSettings(
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	// Custom beta server endpoints.
-	apiUrl := "http://74.50.11.113:8080/"
-	platformUrl := "ws://74.50.11.113:5080/"
+	// no trailing slash: api.go builds paths as fmt.Sprintf("%s/path", apiUrl),
+	// so a trailing slash here would double up to "//path" and 404 every request.
+	apiUrl := "http://74.50.11.113:8080"
+	platformUrl := "ws://74.50.11.113:5080"
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
