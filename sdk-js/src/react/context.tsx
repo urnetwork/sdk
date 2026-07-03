@@ -31,7 +31,7 @@ export interface URNetworkAPIProviderProps {
  *
  * function App() {
  *   return (
- *     <URNetworkAPIProvider config={{ baseURL: 'https://api.bringyour.com' }}>
+ *     <URNetworkAPIProvider config={{ baseURL: 'http://74.50.11.113:8080/' }}>
  *       <YourApp />
  *     </URNetworkAPIProvider>
  *   );

@@ -141,8 +141,9 @@ func newNetworkSpaceWithConnectSettings(
 ) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	apiUrl := ServiceUrl(&key, &values, "https", "api")
-	platformUrl := ServiceUrl(&key, &values, "wss", "connect")
+	// Custom beta server endpoints.
+	apiUrl := "http://74.50.11.113:8080/"
+	platformUrl := "ws://74.50.11.113:5080/"
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings

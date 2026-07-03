@@ -523,14 +523,14 @@ func TestDeviceRemoteApi(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "http://74.50.11.113:8080/hello", "")
 	assert.Equal(t, err, nil)
 	assert.NotEqual(t, bodyBytes, nil)
 	glog.Infof("response body=%s", string(bodyBytes))
 	assert.NotEqual(t, len(bodyBytes), 0)
 
 	// FIXME allow POST on the hello route
-	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "http://74.50.11.113:8080/hello", "")
 	// assert.Equal(t, err, nil)
 
 }
