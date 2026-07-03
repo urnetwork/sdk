@@ -168,6 +168,40 @@ func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback)
 	})
 }
 
+type AuthWalletChallengeCallback connect.ApiCallback[*AuthWalletChallengeResult]
+
+type AuthWalletChallengeArgs struct {
+	WalletAddress string `json:"wallet_address,omitempty"`
+	Blockchain    string `json:"blockchain,omitempty"`
+}
+
+// `model.WalletAuthChallengeResult`
+type AuthWalletChallengeResult struct {
+	Challenge       string                          `json:"challenge,omitempty"`
+	Timestamp       int64                           `json:"timestamp,omitempty"`
+	ExpiresIn       int64                           `json:"expires_in,omitempty"`
+	MessageTemplate string                          `json:"message_template,omitempty"`
+	Error           *AuthWalletChallengeResultError `json:"error,omitempty"`
+}
+
+type AuthWalletChallengeResultError struct {
+	Message string `json:"message"`
+}
+
+func (self *Api) AuthWalletChallenge(args *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/wallet-challenge", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&AuthWalletChallengeResult{},
+			callback,
+		)
+	})
+}
+
 type AuthLoginWithPasswordCallback connect.ApiCallback[*AuthLoginWithPasswordResult]
 
 type AuthLoginWithPasswordArgs struct {
