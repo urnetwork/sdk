@@ -26,7 +26,10 @@ jobs:
           go-version: stable
 
       - name: Check out connect dependency
-        run: git clone --depth 1 https://github.com/urnetwork/connect.git ../connect
+        run: git clone --depth 1 --branch beta/custom-server https://github.com/Ryanmello07/connect.git ../connect
+
+      - name: Check out glog dependency
+        run: git clone --depth 1 https://github.com/urnetwork/glog.git ../glog
 
       - name: Set up Android NDK
         uses: nttld/setup-ndk@v1
