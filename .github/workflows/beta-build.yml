@@ -25,6 +25,9 @@ jobs:
         with:
           go-version: stable
 
+      - name: Check out connect dependency
+        run: git clone --depth 1 https://github.com/urnetwork/connect.git ../connect
+
       - name: Set up Android NDK
         uses: nttld/setup-ndk@v1
         with:
