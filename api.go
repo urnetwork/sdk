@@ -140,7 +140,7 @@ type AuthLoginResult struct {
 	AuthAllowed *StringList             `json:"auth_allowed,omitempty"`
 	Error       *AuthLoginResultError   `json:"error,omitempty"`
 	Network     *AuthLoginResultNetwork `json:"network,omitempty"`
-	WalletAuth  *WalletAuthArgs         `json:"wallet_login,omitempty"`
+	WalletAuth  *WalletAuthArgs         `json:"wallet_auth,omitempty"`
 }
 
 // `model.AuthLoginResultError`
@@ -1666,7 +1666,7 @@ type AccountPoint struct {
 }
 
 type AccountPointsResult struct {
-	AccountPoints *AccountPointsList `json:"account_points"`
+	AccountPoints *AccountPointsList `json:"network_points"`
 }
 
 type GetAccountPointsCallback connect.ApiCallback[*AccountPointsResult]
