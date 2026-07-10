@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/rpc"
 	"strings"
 	"sync"
@@ -533,6 +534,518 @@ func TestDeviceRemoteApi(t *testing.T) {
 	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
 	// assert.Equal(t, err, nil)
 
+}
+
+func TestDeviceRemoteBlockAndDns(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	// enable rpc
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		testDeviceLocalSettingsRpc(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(15*time.Second), true)
+
+	localOverridesListener := &testing_blockActionOverridesChangeListener{}
+	localOverridesSub := deviceLocal.AddBlockActionOverridesChangeListener(localOverridesListener)
+	defer localOverridesSub.Close()
+
+	remoteOverridesListener := &testing_blockActionOverridesChangeListener{}
+	remoteOverridesSub := deviceRemote.AddBlockActionOverridesChangeListener(remoteOverridesListener)
+	defer remoteOverridesSub.Close()
+
+	remoteDnsListener := &testing_dnsResolverSettingsChangeListener{}
+	remoteDnsSub := deviceRemote.AddDnsResolverSettingsChangeListener(remoteDnsListener)
+	defer remoteDnsSub.Close()
+
+	// (a) set overrides on the remote; the local and remote lists match
+
+	hosts := NewStringList()
+	hosts.addAll("example.com", "**.example.org")
+	appIds := NewStringList()
+	appIds.addAll("com.example.app")
+	override := &BlockActionOverride{
+		OverrideId:    NewId(),
+		Hosts:         hosts,
+		AppIds:        appIds,
+		BlockOverride: &BlockOverride{Block: true},
+		RouteOverride: &RouteOverride{Local: true},
+	}
+	overrides := NewBlockActionOverrideList()
+	overrides.Add(override)
+	deviceRemote.SetBlockActionOverrides(overrides)
+
+	localOverrides := deviceLocal.GetBlockActionOverrides()
+	assert.Equal(t, localOverrides.Len(), 1)
+	remoteOverrides := deviceRemote.GetBlockActionOverrides()
+	assert.Equal(t, remoteOverrides.Len(), 1)
+	assert.Equal(t, remoteOverrides, localOverrides)
+	assert.Equal(t, remoteOverrides.Get(0).OverrideId, override.OverrideId)
+	assert.Equal(t, remoteOverrides.Get(0).Hosts.getAll(), []string{"example.com", "**.example.org"})
+	assert.Equal(t, remoteOverrides.Get(0).AppIds.getAll(), []string{"com.example.app"})
+	assert.Equal(t, remoteOverrides.Get(0).BlockOverride, &BlockOverride{Block: true})
+	assert.Equal(t, remoteOverrides.Get(0).RouteOverride, &RouteOverride{Local: true})
+
+	// setting via the remote fires the local overrides listener
+	assert.Equal(t, testing_waitFor(5*time.Second, func() bool {
+		event := false
+		localOverridesListener.with(func() {
+			event = localOverridesListener.event
+		})
+		return event
+	}), true)
+
+	// (f) the local override app ids are derived from the synced overrides
+	localAppIds := deviceLocal.GetLocalOverrideAppIds()
+	remoteAppIds := deviceRemote.GetLocalOverrideAppIds()
+	assert.NotEqual(t, remoteAppIds, nil)
+	assert.Equal(t, remoteAppIds, localAppIds)
+	assert.Equal(t, remoteAppIds.Included.Contains("com.example.app"), true)
+	assert.Equal(t, remoteAppIds.Excluded.Len(), 0)
+
+	// (b) add/remove round trip
+
+	hosts2 := NewStringList()
+	hosts2.addAll("10.0.0.0/8")
+	override2 := &BlockActionOverride{
+		OverrideId:    NewId(),
+		Hosts:         hosts2,
+		BlockOverride: &BlockOverride{Block: false},
+	}
+	deviceRemote.AddBlockActionOverride(override2)
+
+	assert.Equal(t, deviceLocal.GetBlockActionOverrides().Len(), 2)
+	remoteOverrides = deviceRemote.GetBlockActionOverrides()
+	assert.Equal(t, remoteOverrides.Len(), 2)
+	assert.Equal(t, remoteOverrides, deviceLocal.GetBlockActionOverrides())
+	assert.Equal(t, remoteOverrides.Get(1).OverrideId, override2.OverrideId)
+	assert.Equal(t, remoteOverrides.Get(1).BlockOverride, &BlockOverride{Block: false})
+
+	deviceRemote.RemoveBlockActionOverride(override2.OverrideId)
+
+	assert.Equal(t, deviceLocal.GetBlockActionOverrides().Len(), 1)
+	remoteOverrides = deviceRemote.GetBlockActionOverrides()
+	assert.Equal(t, remoteOverrides.Len(), 1)
+	assert.Equal(t, remoteOverrides.Get(0).OverrideId, override.OverrideId)
+
+	// (c) the remote overrides listener fires when changed via the local
+
+	hosts3 := NewStringList()
+	hosts3.addAll("blocked.example.net")
+	override3 := &BlockActionOverride{
+		OverrideId:    NewId(),
+		Hosts:         hosts3,
+		BlockOverride: &BlockOverride{Block: true},
+	}
+	deviceLocal.AddBlockActionOverride(override3)
+
+	// wait for the reverse notification with the latest full list
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		remoteOverridesListener.with(func() {
+			found = remoteOverridesListener.event &&
+				remoteOverridesListener.blockActionOverrides != nil &&
+				remoteOverridesListener.blockActionOverrides.Len() == 2
+		})
+		return found
+	}), true)
+
+	// and the local listener fires when changed via the remote
+	localOverridesListener.clear()
+	deviceRemote.RemoveBlockActionOverride(override3.OverrideId)
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		localOverridesListener.with(func() {
+			found = localOverridesListener.event &&
+				localOverridesListener.blockActionOverrides != nil &&
+				localOverridesListener.blockActionOverrides.Len() == 1
+		})
+		return found
+	}), true)
+
+	// (d) set dns resolver settings on the remote; the local and remote match
+
+	remoteDohUrlsIpv4 := NewStringList()
+	remoteDohUrlsIpv4.addAll("https://1.1.1.1/dns-query")
+	localDnsIpv4 := NewStringList()
+	localDnsIpv4.addAll("192.168.1.1")
+	dnsResolverSettings := &DnsResolverSettings{
+		EnableRemoteDoh:   true,
+		EnableLocalDns:    true,
+		RemoteDohUrlsIpv4: remoteDohUrlsIpv4,
+		LocalDnsIpv4:      localDnsIpv4,
+		EnableFallback:    true,
+	}
+	deviceRemote.SetDnsResolverSettings(dnsResolverSettings)
+
+	localDns := deviceLocal.GetDnsResolverSettings()
+	assert.NotEqual(t, localDns, nil)
+	assert.Equal(t, localDns.EnableRemoteDoh, true)
+	assert.Equal(t, localDns.EnableLocalDns, true)
+	assert.Equal(t, localDns.EnableLocalDoh, false)
+	assert.Equal(t, localDns.EnableRemoteDns, false)
+	assert.Equal(t, localDns.EnableFallback, true)
+	assert.Equal(t, localDns.RemoteDohUrlsIpv4.getAll(), []string{"https://1.1.1.1/dns-query"})
+	assert.Equal(t, localDns.LocalDnsIpv4.getAll(), []string{"192.168.1.1"})
+
+	remoteDns := deviceRemote.GetDnsResolverSettings()
+	assert.NotEqual(t, remoteDns, nil)
+	assert.Equal(t, remoteDns, localDns)
+
+	// setting via the remote fires the remote dns listener (reverse notified)
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		remoteDnsListener.with(func() {
+			found = remoteDnsListener.event &&
+				remoteDnsListener.dnsResolverSettings != nil &&
+				remoteDnsListener.dnsResolverSettings.EnableLocalDns &&
+				remoteDnsListener.dnsResolverSettings.RemoteDohUrlsIpv4.Contains("https://1.1.1.1/dns-query")
+		})
+		return found
+	}), true)
+
+	// (e) the stats getters return non-nil while connected
+
+	assert.NotEqual(t, deviceRemote.GetPacketStats(), nil)
+	assert.NotEqual(t, deviceRemote.GetBlockStats(), nil)
+	assert.NotEqual(t, deviceRemote.GetEgressContractStats(), nil)
+	assert.NotEqual(t, deviceRemote.GetIngressContractStats(), nil)
+	assert.NotEqual(t, deviceRemote.GetBlockActions(), nil)
+	assert.NotEqual(t, deviceRemote.GetEgressContractDetails(), nil)
+	assert.NotEqual(t, deviceRemote.GetIngressContractDetails(), nil)
+
+	// (g) block actions round trip with the deciding override id
+
+	blockActionOverrideId := connect.NewId()
+	deviceLocal.updateBlockActions([]*connect.BlockAction{
+		{
+			Time:            time.Now(),
+			Ips:             []netip.Addr{netip.MustParseAddr("203.0.113.9")},
+			Hosts:           []string{"blocked.example.org"},
+			Block:           true,
+			BlockOverrideId: &blockActionOverrideId,
+			PacketCount:     1,
+			ByteCount:       10,
+		},
+	})
+	remoteWindow := deviceRemote.GetBlockActions()
+	assert.Equal(t, remoteWindow.BlockActions.Len(), 1)
+	remoteAction := remoteWindow.BlockActions.Get(0)
+	assert.Equal(t, remoteAction.Block, true)
+	assert.Equal(t, remoteAction.Hosts.Contains("blocked.example.org"), true)
+	assert.NotEqual(t, remoteAction.OverrideId, nil)
+	assert.Equal(t, remoteAction.OverrideId.Cmp(newId(blockActionOverrideId)), 0)
+}
+
+// TestDeviceRemotePacketAndProviderStats threads the packet stats and the
+// provider stats surfaces over rpc: the getters, the add listeners with their
+// reverse notifications, and the initial fire on the sync reverse.
+func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	// a provider listener added before the local connects is carried by the
+	// sync request and receives the initial state on the sync reverse
+	initialProviderPacketStatsListener := &testing_packetStatsChangeListener{}
+	initialProviderPacketStatsSub := deviceRemote.AddProviderPacketStatsChangeListener(initialProviderPacketStatsListener)
+	defer initialProviderPacketStatsSub.Close()
+
+	// enable rpc (the default settings allow the provider)
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		testDeviceLocalSettingsRpc(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(15*time.Second), true)
+
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		fired := false
+		initialProviderPacketStatsListener.with(func() {
+			fired = initialProviderPacketStatsListener.event &&
+				initialProviderPacketStatsListener.packetStats != nil
+		})
+		return fired
+	}), true)
+
+	// (a) the getters return non-nil (zero) values while connected
+
+	providerPacketStats := deviceRemote.GetProviderPacketStats()
+	assert.NotEqual(t, providerPacketStats, nil)
+	assert.Equal(t, providerPacketStats.RemoteEgressPacketCount, int64(0))
+	assert.NotEqual(t, deviceRemote.GetProviderEgressContractStats(), nil)
+	assert.NotEqual(t, deviceRemote.GetProviderIngressContractStats(), nil)
+	providerEgressDetails := deviceRemote.GetProviderEgressContractDetails()
+	assert.NotEqual(t, providerEgressDetails, nil)
+	assert.Equal(t, providerEgressDetails.Len(), 0)
+	providerIngressDetails := deviceRemote.GetProviderIngressContractDetails()
+	assert.NotEqual(t, providerIngressDetails, nil)
+	assert.Equal(t, providerIngressDetails.Len(), 0)
+
+	// (b) the client packet stats listener receives the reverse notification
+
+	packetStatsListener := &testing_packetStatsChangeListener{}
+	packetStatsSub := deviceRemote.AddPacketStatsChangeListener(packetStatsListener)
+	defer packetStatsSub.Close()
+
+	deviceLocal.updatePacketStats(&connect.PacketStats{
+		RemoteEgressPacketCount: 10,
+		RemoteEgressByteCount:   1000,
+	})
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		packetStatsListener.with(func() {
+			found = packetStatsListener.packetStats != nil &&
+				packetStatsListener.packetStats.RemoteEgressByteCount == 1000
+		})
+		return found
+	}), true)
+
+	// (c) the provider packet stats listener receives the reverse notification
+
+	providerPacketStatsListener := &testing_packetStatsChangeListener{}
+	providerPacketStatsSub := deviceRemote.AddProviderPacketStatsChangeListener(providerPacketStatsListener)
+	defer providerPacketStatsSub.Close()
+
+	deviceLocal.updateProviderPacketStats(&connect.PacketStats{
+		RemoteIngressPacketCount: 7,
+		RemoteIngressByteCount:   700,
+	})
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		providerPacketStatsListener.with(func() {
+			found = providerPacketStatsListener.packetStats != nil &&
+				providerPacketStatsListener.packetStats.RemoteIngressByteCount == 700
+		})
+		return found
+	}), true)
+
+	// the client packet stats listener must not see the provider event
+	packetStatsListener.with(func() {
+		assert.Equal(t, packetStatsListener.packetStats.RemoteIngressByteCount, ByteCount(0))
+	})
+
+	// (d) the provider contract stats and details listeners receive the
+	// reverse notifications
+
+	providerIngressStatsListener := &testing_contractStatsChangeListener{}
+	providerIngressStatsSub := deviceRemote.AddProviderIngressContractStatsChangeListener(providerIngressStatsListener)
+	defer providerIngressStatsSub.Close()
+
+	providerIngressDetailsListener := &testing_contractDetailsChangeListener{}
+	providerIngressDetailsSub := deviceRemote.AddProviderIngressContractDetailsChangeListener(providerIngressDetailsListener)
+	defer providerIngressDetailsSub.Close()
+
+	us := connect.NewId()
+	peer := connect.NewId()
+	stream := connect.NewId()
+	ingressContractId := connect.NewId()
+	companionContractId := connect.NewId()
+
+	deviceLocal.updateProviderContractStatsEvents([]*connect.ContractStatsEvent{
+		{
+			ContractId:         ingressContractId,
+			Receive:            true,
+			Path:               connect.TransferPath{SourceId: peer, DestinationId: us, StreamId: stream},
+			TransferByteCount:  10000,
+			UsedByteCount:      1000,
+			UsedByteCountDelta: 1000,
+			Open:               true,
+		},
+		{
+			ContractId:         companionContractId,
+			Receive:            false,
+			Companion:          true,
+			Path:               connect.TransferPath{SourceId: us, DestinationId: peer, StreamId: stream},
+			TransferByteCount:  20000,
+			UsedByteCount:      500,
+			UsedByteCountDelta: 500,
+			Open:               true,
+		},
+	})
+
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		providerIngressStatsListener.with(func() {
+			found = providerIngressStatsListener.contractStats != nil &&
+				providerIngressStatsListener.contractStats.ContractUsedByteCount == 1000 &&
+				providerIngressStatsListener.contractStats.CompanionContractUsedByteCount == 500
+		})
+		return found
+	}), true)
+
+	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+		found := false
+		providerIngressDetailsListener.with(func() {
+			found = providerIngressDetailsListener.contractDetails != nil &&
+				providerIngressDetailsListener.contractDetails.ContractId != nil &&
+				providerIngressDetailsListener.contractDetails.ContractId.Cmp(newId(ingressContractId)) == 0 &&
+				providerIngressDetailsListener.contractDetails.CompanionContractId != nil &&
+				providerIngressDetailsListener.contractDetails.CompanionContractId.Cmp(newId(companionContractId)) == 0
+		})
+		return found
+	}), true)
+
+	// (e) the getters over rpc reflect the local state
+
+	remoteIngressStats := deviceRemote.GetProviderIngressContractStats()
+	assert.Equal(t, remoteIngressStats, deviceLocal.GetProviderIngressContractStats())
+	assert.Equal(t, remoteIngressStats.ContractUsedByteCount, ByteCount(1000))
+	remoteIngressDetails := deviceRemote.GetProviderIngressContractDetails()
+	assert.Equal(t, remoteIngressDetails.Len(), 1)
+	assert.Equal(t, remoteIngressDetails.Get(0).ContractUsedByteCount, ByteCount(1000))
+	assert.Equal(t, remoteIngressDetails.Get(0).CompanionContractUsedByteCount, ByteCount(500))
+}
+
+// TestDeviceRemoteProviderStatsNoProvider pins the noop provider surface over
+// rpc: when the local device has no provider the getters return nil and the
+// sync does not fire the provider listeners.
+func TestDeviceRemoteProviderStatsNoProvider(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	settings := testDeviceLocalSettingsRpc()
+	settings.AllowProvider = false
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		settings,
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	providerPacketStatsListener := &testing_packetStatsChangeListener{}
+	providerPacketStatsSub := deviceRemote.AddProviderPacketStatsChangeListener(providerPacketStatsListener)
+	defer providerPacketStatsSub.Close()
+
+	providerEgressStatsListener := &testing_contractStatsChangeListener{}
+	providerEgressStatsSub := deviceRemote.AddProviderEgressContractStatsChangeListener(providerEgressStatsListener)
+	defer providerEgressStatsSub.Close()
+
+	deviceRemote.Sync()
+	assert.Equal(t, deviceRemote.waitForSync(15*time.Second), true)
+
+	if packetStats := deviceRemote.GetProviderPacketStats(); packetStats != nil {
+		t.Fatalf("expected nil provider packet stats without a provider, got %+v", packetStats)
+	}
+	if contractStats := deviceRemote.GetProviderEgressContractStats(); contractStats != nil {
+		t.Fatalf("expected nil provider egress stats without a provider, got %+v", contractStats)
+	}
+	if contractStats := deviceRemote.GetProviderIngressContractStats(); contractStats != nil {
+		t.Fatalf("expected nil provider ingress stats without a provider, got %+v", contractStats)
+	}
+	if details := deviceRemote.GetProviderEgressContractDetails(); details != nil {
+		t.Fatalf("expected nil provider egress details without a provider, got %+v", details)
+	}
+	if details := deviceRemote.GetProviderIngressContractDetails(); details != nil {
+		t.Fatalf("expected nil provider ingress details without a provider, got %+v", details)
+	}
+
+	// wait for the sync reverse to fire the other initial listeners; the
+	// provider listeners have no state and must not fire
+	select {
+	case <-time.After(500 * time.Millisecond):
+	}
+	providerPacketStatsListener.with(func() {
+		assert.Equal(t, providerPacketStatsListener.event, false)
+	})
+	providerEgressStatsListener.with(func() {
+		assert.Equal(t, providerEgressStatsListener.event, false)
+	})
 }
 
 func TestDeviceRemoteLastKnownValues(t *testing.T) {
@@ -1572,6 +2085,87 @@ func (self *testing_networkModeChangeListener) ProvideNetworkModeChanged(provide
 
 	self.event = true
 	self.provideNetworkMode = &provideNetworkMode
+}
+
+type testing_blockActionOverridesChangeListener struct {
+	testing_listener
+	blockActionOverrides *BlockActionOverrideList
+}
+
+func (self *testing_blockActionOverridesChangeListener) BlockActionOverridesChanged(blockActionOverrides *BlockActionOverrideList) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.blockActionOverrides = blockActionOverrides
+}
+
+type testing_dnsResolverSettingsChangeListener struct {
+	testing_listener
+	dnsResolverSettings *DnsResolverSettings
+}
+
+func (self *testing_dnsResolverSettingsChangeListener) DnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.dnsResolverSettings = dnsResolverSettings
+}
+
+type testing_packetStatsChangeListener struct {
+	testing_listener
+	packetStats *PacketStats
+}
+
+func (self *testing_packetStatsChangeListener) PacketStatsChanged(packetStats *PacketStats) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.packetStats = packetStats
+}
+
+type testing_contractStatsChangeListener struct {
+	testing_listener
+	contractStats *ContractStats
+}
+
+func (self *testing_contractStatsChangeListener) ContractStatsChanged(contractStats *ContractStats) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.contractStats = contractStats
+}
+
+type testing_contractDetailsChangeListener struct {
+	testing_listener
+	contractDetails *ContractDetails
+}
+
+func (self *testing_contractDetailsChangeListener) ContractDetailsChanged(contractDetails *ContractDetails) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
+	self.contractDetails = contractDetails
+}
+
+// polls until the condition holds or the timeout elapses
+func testing_waitFor(timeout time.Duration, condition func() bool) bool {
+	endTime := time.Now().Add(timeout)
+	for {
+		if condition() {
+			return true
+		}
+		if time.Now().After(endTime) {
+			return false
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func testing_deviceRpcDialer(settings *deviceRpcSettings) DeviceRpcDialer {

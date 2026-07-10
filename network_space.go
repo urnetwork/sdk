@@ -627,6 +627,19 @@ func (self *NetworkSpaceManager) UpdateNetworkSpace(key *NetworkSpaceKey, callba
 	return self.updateNetworkSpace(key, callback.Update)
 }
 
+// UpdateNetworkSpaceValues sets the network space for key to values and returns
+// it. Unlike UpdateNetworkSpace, it takes the values directly instead of via a
+// mutation callback, so it maps cleanly across the c abi where callback
+// arguments cannot be mutated in place (the cgo desktop SDK). A nil values
+// leaves the existing values unchanged.
+func (self *NetworkSpaceManager) UpdateNetworkSpaceValues(key *NetworkSpaceKey, values *NetworkSpaceValues) *NetworkSpace {
+	return self.updateNetworkSpace(key, func(v *NetworkSpaceValues) {
+		if values != nil {
+			*v = *values
+		}
+	})
+}
+
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {
 	var copyValues NetworkSpaceValues
 

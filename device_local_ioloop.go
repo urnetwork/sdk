@@ -1,3 +1,8 @@
+// the fd loop assumes posix fd semantics
+// on windows the app-side tunnel pumps packets via SendPacket/AddReceivePacketCallback instead
+
+//go:build !windows
+
 package sdk
 
 import (

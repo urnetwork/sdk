@@ -20,10 +20,6 @@ type ProvideModeChangeListener interface {
 	ProvideModeChanged(provideMode ProvideMode)
 }
 
-type ProviderChangeListener interface {
-	ProviderChanged(providerEnabled bool)
-}
-
 type ProvidePausedChangeListener interface {
 	ProvidePausedChanged(providePaused bool)
 }
@@ -85,12 +81,12 @@ type ProvideSecretKeysListener interface {
 	ProvideSecretKeysChanged(provideSecretKeyList *ProvideSecretKeyList)
 }
 
-type BlockChangeListener interface {
-	BlockChanged(blockEnabled bool)
-}
-
 type BlockActionWindowChangeListener interface {
 	BlockActionWindowChanged(blockActionWindow *BlockActionWindow)
+}
+
+type BlockActionOverridesChangeListener interface {
+	BlockActionOverridesChanged(blockActionOverrides *BlockActionOverrideList)
 }
 
 type BlockStatsChangeListener interface {
@@ -103,6 +99,18 @@ type ContractStatsChangeListener interface {
 
 type ContractDetailsChangeListener interface {
 	ContractDetailsChanged(contractDetails *ContractDetails)
+}
+
+type DnsResolverSettingsChangeListener interface {
+	DnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings)
+}
+
+type PacketStatsChangeListener interface {
+	PacketStatsChanged(packetStats *PacketStats)
+}
+
+type NetworkPeersChangeListener interface {
+	NetworkPeersChanged(networkPeers *NetworkPeers)
 }
 
 // receive a packet into the local raw socket
@@ -133,9 +141,9 @@ type JwtRefreshListener interface {
 type IpProtocol = int
 
 const (
-	IpProtocolUnkown IpProtocol = 0
-	IpProtocolUdp    IpProtocol = 1
-	IpProtocolTcp    IpProtocol = 2
+	IpProtocolUnknown IpProtocol = 0
+	IpProtocolUdp     IpProtocol = 1
+	IpProtocolTcp     IpProtocol = 2
 )
 
 type ContractStatus struct {
@@ -150,21 +158,76 @@ type BlockStats struct {
 }
 
 type BlockActionWindow struct {
-	BlockActionOverrides *BlockActionOverrideList
-	BlockActions         *BlockActionList
+	BlockActions *BlockActionList
 }
 
 type BlockActionOverride struct {
-	Host          string
-	BlockOverride bool
+	// this is set by the caller and must be ensured unique by the caller
+	OverrideId *Id
+	// hosts mean the traffic overlaps any of the hosts
+	// a host can be 1. an exact hostname 2. a wildcard host name (*.H matches subdomains of H,
+	// **.H matches H and subdomains) 3. an ipv4 or ipv6 subnet 4. an ipv4 or ipv6
+	Hosts *StringList
+	// on android these are package names
+	AppIds        *StringList
+	BlockOverride *BlockOverride
+	RouteOverride *RouteOverride
 }
 
+type OverrideLocalAppIds struct {
+	Included *StringList
+	Excluded *StringList
+}
+
+type BlockOverride struct {
+	Block bool
+}
+
+type RouteOverride struct {
+	Local bool
+}
+
+// a routing decision, aggregated per cluster per event epoch.
+// decisions are made on the cluster level (destinations that activity-associate
+// share the decision), so one action carries all the ips and hosts in the cluster
 type BlockAction struct {
+	BlockActionId *Id
 	Time          int64
-	Host          string
-	Block         bool
-	Override      bool
-	BlockOverride bool
+	// all ips in the cluster
+	Ips *StringList
+	// all hosts observed for the cluster ips
+	Hosts *StringList
+	Block bool
+	Local bool
+	// the applied overrides, when an override determined the decision.
+	// `OverrideId` is the deciding override (see `BlockActionOverride.OverrideId`);
+	// the block override's id when the block and route decisions came from
+	// different overrides. the override may have been removed since the decision
+	OverrideId    *Id
+	BlockOverride *BlockOverride
+	RouteOverride *RouteOverride
+	PacketCount   int
+	ByteCount     ByteCount
+}
+
+// cumulative packet counts by route.
+// remote is traffic egressed to providers. local is traffic routed
+// to the local user nat (route local and security bypass).
+// block counts traffic dropped by the security rules, split by direction:
+// egress is blocked on the way out, ingress on the way in
+type PacketStats struct {
+	RemoteEgressPacketCount  int64
+	RemoteEgressByteCount    ByteCount
+	RemoteIngressPacketCount int64
+	RemoteIngressByteCount   ByteCount
+	LocalEgressPacketCount   int64
+	LocalEgressByteCount     ByteCount
+	LocalIngressPacketCount  int64
+	LocalIngressByteCount    ByteCount
+	BlockEgressPacketCount   int64
+	BlockEgressByteCount     ByteCount
+	BlockIngressPacketCount  int64
+	BlockIngressByteCount    ByteCount
 }
 
 type ContractStats struct {
@@ -200,10 +263,6 @@ type ContractDetails struct {
 	CompanionContractByteCount     ByteCount
 	CompanionContractBitRate       int
 	CompanionContractTransferPath  *TransferPath
-
-	Ipv4    string
-	Ipv6    string
-	Country string
 }
 
 type WindowStatus struct {
@@ -214,6 +273,97 @@ type WindowStatus struct {
 	ProviderStateNotAdded         int
 	ProviderStateAdded            int
 	ProviderStateRemoved          int
+}
+
+type NetworkPeers struct {
+	Connected         *NetworkPeerList
+	DisconnectedCount int
+}
+
+type NetworkPeer struct {
+	ClientId       *Id
+	ProvideEnabled bool
+	Principal      string
+	Roles          *StringList
+	DeviceSpec     string
+	DeviceName     string
+}
+
+// DnsResolverSettings is the gomobile-friendly surface for how the device resolves
+// DNS — plain DNS and/or DoH, against local and/or remote servers. It mirrors the
+// resolver configuration in the connect package; the string lists hold resolver IPs
+// and DoH endpoint URLs. TLS/cert-pinning is applied internally and not exposed here.
+type DnsResolverSettings struct {
+	EnableRemoteDoh bool
+	EnableLocalDoh  bool
+	EnableRemoteDns bool
+	EnableLocalDns  bool
+	// EnableFallback races a handicapped resolver over the local host network
+	// when the tunnel resolver is slow, bridging tunnel startup. The fallback
+	// servers are derived as the host-side projection of the resolver settings
+	// above. When false, DNS only ever resolves through the tunnel
+	EnableFallback bool
+
+	RemoteDohUrlsIpv4 *StringList
+	RemoteDohUrlsIpv6 *StringList
+	LocalDohUrlsIpv4  *StringList
+	LocalDohUrlsIpv6  *StringList
+	RemoteDnsIpv4     *StringList
+	RemoteDnsIpv6     *StringList
+	LocalDnsIpv4      *StringList
+	LocalDnsIpv6      *StringList
+}
+
+// a well known regional dns server, associated to a country code.
+// these are suggestions the ui can surface when connected to the region
+type RegionalDnsServer struct {
+	CountryCode string
+	Name        string
+	Ipv4        string
+}
+
+// GetRegionalDnsServers enumerates the well known regional dns servers
+func GetRegionalDnsServers() *RegionalDnsServerList {
+	servers := NewRegionalDnsServerList()
+	for _, server := range connect.RegionalDnsServers() {
+		servers.Add(&RegionalDnsServer{
+			CountryCode: server.CountryCode,
+			Name:        server.Name,
+			Ipv4:        server.Ipv4,
+		})
+	}
+	return servers
+}
+
+// HasRegionalDnsRecommendation reports whether the country has a recommended
+// dns configuration (the strong-privacy defaults are known not to work there)
+func HasRegionalDnsRecommendation(countryCode string) bool {
+	return 0 < len(connect.RegionalDnsServerIps(countryCode))
+}
+
+// GetRecommendedDnsResolverSettings returns the recommended dns settings for a
+// country (unencrypted remote dns only, using the region's known-working
+// servers), or nil when there is no recommendation. shares the connect
+// recommendation used by the server proxy config
+func GetRecommendedDnsResolverSettings(countryCode string) *DnsResolverSettings {
+	resolver := connect.RegionalDnsResolverSettings(countryCode)
+	if resolver == nil {
+		return nil
+	}
+	return dnsResolverSettingsFromConnect(resolver)
+}
+
+// GetDefaultDnsResolverSettings returns the default, most secure dns settings:
+// encrypted DNS over HTTPS through the tunnel, with the host-side DoH fallback
+// while the tunnel starts. This is what the device uses out of the box
+func GetDefaultDnsResolverSettings() *DnsResolverSettings {
+	muxSettings := connect.DefaultUpgradeMuxSettings()
+	if muxSettings == nil || muxSettings.Dns == nil || muxSettings.Dns.Resolver == nil {
+		return nil
+	}
+	settings := dnsResolverSettingsFromConnect(muxSettings.Dns.Resolver)
+	settings.EnableFallback = muxSettings.Dns.Fallback != nil
+	return settings
 }
 
 // every device must also support the unexported `device` interface
@@ -343,60 +493,91 @@ type Device interface {
 
 	AddContractStatusChangeListener(listener ContractStatusChangeListener) Sub
 
-	/*
-		GetProviderEnabled() bool
+	// privacy block
 
-		SetProviderEnabled(providerEnabled bool)
+	GetBlockStats() *BlockStats
 
-		AddProviderChangeListener(listener ProviderChangeListener) Sub
+	// the recent routing decisions, one per cluster, gated by a time window
+	GetBlockActions() *BlockActionWindow
 
-		// privacy block
+	AddBlockActionOverride(override *BlockActionOverride)
 
-		GetBlockStats() *BlockStats
+	// removes the override with the same override id
+	RemoveBlockActionOverride(overrideId *Id)
 
-		// includes applicable overrides
-		GetBlockActions() *BlockActionWindow
+	SetBlockActionOverrides(overrides *BlockActionOverrideList)
 
-		// host can be *.H, **.H (includes H and any subdomain), or a regex s/H/
-		OverrideBlockAction(hostPattern string, block bool)
+	GetBlockActionOverrides() *BlockActionOverrideList
 
-		// exact match of the host pattern
-		RemoveBlockActionOverride(hostPattern string)
+	// these are derived from the set BlockActionOverrides
+	GetLocalOverrideAppIds() *OverrideLocalAppIds
 
-		SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList)
+	// rate limited window updates
+	AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub
+	// rate limited
+	AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
+	// fires with the full list when the overrides change
+	AddBlockActionOverridesChangeListener(listener BlockActionOverridesChangeListener) Sub
 
-		GetBlockEnabled() bool
+	// packet stats
 
-		SetBlockEnabled(blockEnabled bool)
+	GetPacketStats() *PacketStats
 
-		GetBlockWhileDisconnected() bool
+	// rate limited
+	AddPacketStatsChangeListener(listener PacketStatsChangeListener) Sub
 
-		SetBlockWhileDisconnected(blockWhileDisconnected bool)
+	// contract stats
 
-		AddBlockChangeListener(listener BlockChangeListener) Sub
-		// rate limited window updates
-		AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub
-		// rate limited
-		AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
+	GetEgressContractStats() *ContractStats
+	GetEgressContractDetails() *ContractDetailsList
 
-		// contract stats
+	GetIngressContractStats() *ContractStats
+	GetIngressContractDetails() *ContractDetailsList
 
-		GetEgressContractStats() *ContractStats
-		GetEgressContractDetails() *ContractDetailsList
+	// rate limited
+	AddEgressContractStatsChangeListener(listener ContractStatsChangeListener) Sub
+	// rate limited
+	AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
 
-		GetIngressContractStats() *ContractStats
-		GetIngressContractDetails() *ContractDetailsList
+	// rate limited
+	AddIngressContractStatsChangeListener(listener ContractStatsChangeListener) Sub
+	// rate limited
+	AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
 
-		// rate limited
-		AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
-		// rate limited
-		AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+	// provider packet and contract stats. the mirror of the client stats above
+	// for the traffic relayed for remote clients. devices without a provider
+	// (`AllowProvider`) return nil from the getters and never fire the listeners
 
-		// rate limited
-		AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub
-		// rate limited
-		AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
-	*/
+	GetProviderPacketStats() *PacketStats
+
+	// rate limited
+	AddProviderPacketStatsChangeListener(listener PacketStatsChangeListener) Sub
+
+	GetProviderEgressContractStats() *ContractStats
+	GetProviderEgressContractDetails() *ContractDetailsList
+
+	GetProviderIngressContractStats() *ContractStats
+	GetProviderIngressContractDetails() *ContractDetailsList
+
+	// rate limited
+	AddProviderEgressContractStatsChangeListener(listener ContractStatsChangeListener) Sub
+	// rate limited
+	AddProviderEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+
+	// rate limited
+	AddProviderIngressContractStatsChangeListener(listener ContractStatsChangeListener) Sub
+	// rate limited
+	AddProviderIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub
+
+	SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings)
+
+	GetDnsResolverSettings() *DnsResolverSettings
+
+	AddDnsResolverSettingsChangeListener(listener DnsResolverSettingsChangeListener) Sub
+
+	GetNetworkPeers() *NetworkPeers
+
+	AddNetworkPeersChangeListener(listener NetworkPeersChangeListener) Sub
 
 	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
 

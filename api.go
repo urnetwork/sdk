@@ -438,8 +438,10 @@ type NetworkClientsResult struct {
 
 type NetworkClientInfo struct {
 	ClientId    *Id    `json:"client_id"`
+	DeviceId    *Id    `json:"device_id"`
 	NetworkId   *Id    `json:"network_id"`
 	Description string `json:"description"`
+	DeviceName  string `json:"device_name"`
 	DeviceSpec  string `json:"device_spec"`
 
 	CreateTime *Time `json:"create_time"`
@@ -468,6 +470,35 @@ func (self *Api) GetNetworkClients(callback GetNetworkClientsCallback) {
 			fmt.Sprintf("%s/network/clients", self.apiUrl),
 			self.GetByJwt(),
 			&NetworkClientsResult{},
+			callback,
+		)
+	})
+}
+
+type DeviceSetNameCallback connect.ApiCallback[*DeviceSetNameResult]
+
+type DeviceSetNameArgs struct {
+	DeviceId   *Id    `json:"device_id"`
+	DeviceName string `json:"device_name"`
+}
+
+type DeviceSetNameResult struct {
+	Error *DeviceSetNameError `json:"error,omitempty"`
+}
+
+type DeviceSetNameError struct {
+	Message string `json:"message"`
+}
+
+func (self *Api) DeviceSetName(deviceSetName *DeviceSetNameArgs, callback DeviceSetNameCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/device/set-name", self.apiUrl),
+			deviceSetName,
+			self.GetByJwt(),
+			&DeviceSetNameResult{},
 			callback,
 		)
 	})

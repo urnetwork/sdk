@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"net/netip"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,7 +69,20 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 }
 
 func DefaultDeviceLocalSettings() *DeviceLocalSettings {
-	bufferSize := 256
+	// scaled by the memory budget: deep sequence channels pin in-flight pool
+	// buffers under sustained backpressure (see `SetMemoryLimit`)
+	bufferSize := connect.MemoryScaledCount(256, 32)
+	clientSettings := connect.DefaultClientSettingsWithBufferSize(bufferSize)
+	// one transfer queue budget pair shared across all of the device's
+	// clients (the provider client plus every window client): per-sequence
+	// queues borrow above their floor from these pools, so the aggregate
+	// queue memory stays flat as the window grows (scaled by the memory
+	// budget). the provider client shares by settings copy; the window
+	// client generator stamps the same pointers.
+	clientSettings.SendBufferSettings.ResendQueueBudget =
+		connect.NewTransferMemoryBudget(connect.MemoryScaledByteCount(6*1024*1024, 1024*1024))
+	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget =
+		connect.NewTransferMemoryBudget(connect.MemoryScaledByteCount(8*1024*1024, 1536*1024))
 	return &DeviceLocalSettings{
 		// this works with the `SequenceBufferSize` to control packet loss during back pressure
 		SendTimeout:        5 * time.Second,
@@ -76,6 +91,11 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 
 		NetContractStatusDuration: 10 * time.Second,
 		NetContractStatusCount:    10,
+
+		BlockActionWindowDuration: 300 * time.Second,
+		BlockActionWindowMaxCount: 1024,
+
+		ContractStatsEpoch: 1 * time.Second,
 
 		DefaultRouteLocal:          true,
 		DefaultCanShowRatingDialog: true,
@@ -97,7 +117,7 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		AllowProvider: true,
 		Verbose:       true,
 
-		ClientSettings: *connect.DefaultClientSettingsWithBufferSize(bufferSize),
+		ClientSettings: *clientSettings,
 	}
 }
 
@@ -126,6 +146,14 @@ type DeviceLocalSettings struct {
 
 	NetContractStatusDuration time.Duration
 	NetContractStatusCount    int
+
+	// the time window and max count of retained block actions
+	BlockActionWindowDuration time.Duration
+	BlockActionWindowMaxCount int
+
+	// the contract stats/details listeners emit at most once per epoch across
+	// all window clients (a close event always emits)
+	ContractStatsEpoch time.Duration
 
 	DefaultRouteLocal          bool
 	DefaultCanShowRatingDialog bool
@@ -268,6 +296,37 @@ type DeviceLocal struct {
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
 
+	// insertion ordered, unique by override id
+	blockActionOverrides []*BlockActionOverride
+	// the recent routing decisions, newest last, gated by
+	// `BlockActionWindowDuration`/`BlockActionWindowMaxCount`
+	blockActions []*BlockAction
+	// packet stats accumulated from closed clients. the live client's
+	// stats are added on top
+	packetStatsBase connect.PacketStats
+	netBlockStats   BlockStats
+	// contracts of the current client. the contracts die with the client
+	contracts *deviceContractTracker
+
+	// provider packet stats accumulated from closed provider user nats
+	// (provide disabled). the live provider user nat's stats are added on top
+	providerPacketStatsBase connect.PacketStats
+	// contracts of the provider client, which lives as long as the device
+	providerContracts *deviceContractTracker
+
+	// packet counts on the fallback local route (no remote client)
+	localFallbackEgressPacketCount  atomic.Int64
+	localFallbackEgressByteCount    atomic.Int64
+	localFallbackIngressPacketCount atomic.Int64
+	localFallbackIngressByteCount   atomic.Int64
+
+	blockActionSub        func()
+	packetStatsSub        func()
+	contractStatsEventSub func()
+
+	providerPacketStatsSub        func()
+	providerContractStatsEventSub func()
+
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
 	canShowRatingDialogChangeListeners      *connect.CallbackList[CanShowRatingDialogChangeListener]
@@ -291,6 +350,23 @@ type DeviceLocal struct {
 	contractStatusChangeListeners           *connect.CallbackList[ContractStatusChangeListener]
 	windowStatusChangeListeners             *connect.CallbackList[WindowStatusChangeListener]
 	jwtRefreshListeners                     *connect.CallbackList[JwtRefreshListener]
+
+	blockActionWindowChangeListeners      *connect.CallbackList[BlockActionWindowChangeListener]
+	blockStatsChangeListeners             *connect.CallbackList[BlockStatsChangeListener]
+	blockActionOverridesChangeListeners   *connect.CallbackList[BlockActionOverridesChangeListener]
+	packetStatsChangeListeners            *connect.CallbackList[PacketStatsChangeListener]
+	egressContractStatsChangeListeners    *connect.CallbackList[ContractStatsChangeListener]
+	egressContractDetailsChangeListeners  *connect.CallbackList[ContractDetailsChangeListener]
+	ingressContractStatsChangeListeners   *connect.CallbackList[ContractStatsChangeListener]
+	ingressContractDetailsChangeListeners *connect.CallbackList[ContractDetailsChangeListener]
+	dnsResolverSettingsChangeListeners    *connect.CallbackList[DnsResolverSettingsChangeListener]
+	networkPeersChangeListeners           *connect.CallbackList[NetworkPeersChangeListener]
+
+	providerPacketStatsChangeListeners            *connect.CallbackList[PacketStatsChangeListener]
+	providerEgressContractStatsChangeListeners    *connect.CallbackList[ContractStatsChangeListener]
+	providerEgressContractDetailsChangeListeners  *connect.CallbackList[ContractDetailsChangeListener]
+	providerIngressContractStatsChangeListeners   *connect.CallbackList[ContractStatsChangeListener]
+	providerIngressContractDetailsChangeListeners *connect.CallbackList[ContractDetailsChangeListener]
 
 	localUserNatSub func()
 
@@ -584,6 +660,8 @@ func newDeviceLocalWithOverrides(
 		tunnelStarted:                           settings.DefaultTunnelStarted,
 		orderedContractStatusUpdates:            []*contractStatusUpdate{},
 		netContractStatus:                       &ContractStatus{},
+		contracts:                               newDeviceContractTracker(),
+		providerContracts:                       newDeviceContractTracker(),
 		receiveCallbacks:                        connect.NewCallbackList[connect.ReceivePacketFunction](),
 		canShowRatingDialogChangeListeners:      connect.NewCallbackList[CanShowRatingDialogChangeListener](),
 		canPromptIntroFunnelChangeListeners:     connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
@@ -606,7 +684,36 @@ func newDeviceLocalWithOverrides(
 		tunnelChangeListeners:                   connect.NewCallbackList[TunnelChangeListener](),
 		windowStatusChangeListeners:             connect.NewCallbackList[WindowStatusChangeListener](),
 		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
+		blockActionWindowChangeListeners:        connect.NewCallbackList[BlockActionWindowChangeListener](),
+		blockStatsChangeListeners:               connect.NewCallbackList[BlockStatsChangeListener](),
+		blockActionOverridesChangeListeners:     connect.NewCallbackList[BlockActionOverridesChangeListener](),
+		packetStatsChangeListeners:              connect.NewCallbackList[PacketStatsChangeListener](),
+		egressContractStatsChangeListeners:      connect.NewCallbackList[ContractStatsChangeListener](),
+		egressContractDetailsChangeListeners:    connect.NewCallbackList[ContractDetailsChangeListener](),
+		ingressContractStatsChangeListeners:     connect.NewCallbackList[ContractStatsChangeListener](),
+		ingressContractDetailsChangeListeners:   connect.NewCallbackList[ContractDetailsChangeListener](),
+		dnsResolverSettingsChangeListeners:      connect.NewCallbackList[DnsResolverSettingsChangeListener](),
+		networkPeersChangeListeners:             connect.NewCallbackList[NetworkPeersChangeListener](),
+
+		providerPacketStatsChangeListeners:            connect.NewCallbackList[PacketStatsChangeListener](),
+		providerEgressContractStatsChangeListeners:    connect.NewCallbackList[ContractStatsChangeListener](),
+		providerEgressContractDetailsChangeListeners:  connect.NewCallbackList[ContractDetailsChangeListener](),
+		providerIngressContractStatsChangeListeners:   connect.NewCallbackList[ContractStatsChangeListener](),
+		providerIngressContractDetailsChangeListeners: connect.NewCallbackList[ContractDetailsChangeListener](),
 	}
+	// restore the persisted block action overrides and dns resolver settings
+	if asyncLocalState := networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		localState := asyncLocalState.GetLocalState()
+		if overrides := localState.GetBlockActionOverrides(); overrides != nil {
+			deviceLocal.blockActionOverrides = overrides.getAll()
+		}
+		if dnsResolverSettings := localState.GetDnsResolverSettings(); dnsResolverSettings != nil {
+			if upgradeMuxSettings := upgradeMuxSettingsWithDnsResolverSettings(deviceLocal.upgradeMuxSettings, dnsResolverSettings); upgradeMuxSettings != nil {
+				deviceLocal.upgradeMuxSettings = upgradeMuxSettings
+			}
+		}
+	}
+
 	// publish the initial send-route snapshot so `sendPacket` always has a
 	// non-nil snapshot to read
 	deviceLocal.updateSendRouteWithLock()
@@ -633,8 +740,11 @@ func newDeviceLocalWithOverrides(
 
 	// set up with nil destination
 	if provider != nil {
-		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.receive)
+		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
+		// the provider client lives as long as the device, so its contract
+		// stats subscription does too
+		deviceLocal.providerContractStatsEventSub = provider.Client().ContractManager().AddContractStatsCallback(deviceLocal.updateProviderContractStatsEvents)
 	}
 
 	if settings.EnableRpc {
@@ -1597,6 +1707,13 @@ func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protoc
 	}
 }
 
+// return traffic on the fallback local route (no remote client)
+func (self *DeviceLocal) localFallbackReceive(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
+	self.localFallbackIngressPacketCount.Add(1)
+	self.localFallbackIngressByteCount.Add(int64(len(packet)))
+	self.receive(source, provideMode, ipPath, packet)
+}
+
 func (self *DeviceLocal) GetProvideSecretKeys() *ProvideSecretKeyList {
 	provideSecretKeyList := NewProvideSecretKeyList()
 	// snapshot reads self.provider under stateLock, synchronizing with Close()'s
@@ -1792,6 +1909,7 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 						providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
 					}
 					self.remoteUserNatProvider = connect.NewRemoteUserNatProvider(client, self.remoteUserNatProviderLocalUserNat, providerSettings)
+					self.providerPacketStatsSub = self.remoteUserNatProvider.AddPacketStatsCallback(self.updateProviderPacketStats)
 				}
 			} else {
 				// close
@@ -1799,7 +1917,13 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 					self.remoteUserNatProviderLocalUserNat.Close()
 					self.remoteUserNatProviderLocalUserNat = nil
 				}
+				if self.providerPacketStatsSub != nil {
+					self.providerPacketStatsSub()
+					self.providerPacketStatsSub = nil
+				}
 				if self.remoteUserNatProvider != nil {
+					// fold the final packet counters into the device accumulator
+					addConnectPacketStats(&self.providerPacketStatsBase, self.remoteUserNatProvider.PacketStats())
 					self.remoteUserNatProvider.Close()
 					self.remoteUserNatProvider = nil
 				}
@@ -1919,10 +2043,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			self.upgradeMux.Close()
 			self.upgradeMux = nil
 		}
-		if self.remoteUserNatClient != nil {
-			self.remoteUserNatClient.Close()
-			self.remoteUserNatClient = nil
-		}
+		self.closeRemoteUserNatClientWithLock()
 
 		if specs != nil && 0 < specs.Len() {
 			connectSpecs := []*connect.ProviderSpec{}
@@ -2015,6 +2136,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 							self.clientStrategy,
 						)
 						clientSettings.Log = self.log
+						// share the device budgets so every window client's
+						// queues draw from the same pools
+						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
+						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
 						return clientSettings
 					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
@@ -2073,6 +2198,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// }
 
 			self.remoteUserNatClient.SetLocalSecurityBypass(self.routeLocal)
+
+			multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides))
+			// exclude the resolver endpoints from the override and association logic
+			multi.SetBlockActionIgnoreHosts(dnsIgnoreHostValues(self.dnsResolverSettingsWithLock()))
+			self.blockActionSub = multi.AddBlockActionCallback(self.updateBlockActions)
+			self.packetStatsSub = multi.AddPacketStatsCallback(self.updatePacketStats)
+			self.contractStatsEventSub = multi.AddContractStatsCallback(self.updateContractStatsEvents)
 
 			if self.provideControlMode == ProvideControlModeAuto {
 				provideChanged = self.setProvideModeWithLock(ProvideModePublic)
@@ -2266,12 +2398,17 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 			// retransmit, so a non-blocking (timeout 0) send that drops on a full
 			// channel corrupts the flow's protocol state under backpressure. Blocking
 			// up to SendTimeout applies backpressure to the caller instead of dropping.
-			return localUserNat.SendPacket(
+			success := localUserNat.SendPacket(
 				source,
 				protocol.ProvideMode_Network,
 				packet,
 				self.settings.SendTimeout,
 			)
+			if success {
+				self.localFallbackEgressPacketCount.Add(1)
+				self.localFallbackEgressByteCount.Add(int64(len(packet)))
+			}
+			return success
 		} else {
 			return false
 		}
@@ -2289,7 +2426,7 @@ func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 		case connect.IpProtocolTcp:
 			ipProtocol = IpProtocolTcp
 		default:
-			ipProtocol = IpProtocolUnkown
+			ipProtocol = IpProtocolUnknown
 		}
 
 		receivePacket.ReceivePacket(ipPath.Version, ipProtocol, packet)
@@ -2325,6 +2462,10 @@ func (self *DeviceLocal) Close() {
 		connect.ReturnLocalIpv4Address(self.tunnelLocalAddress)
 	}
 
+	if self.providerContractStatsEventSub != nil {
+		self.providerContractStatsEventSub()
+		self.providerContractStatsEventSub = nil
+	}
 	if self.provider != nil {
 		self.provider.Close()
 		self.provider = nil
@@ -2342,10 +2483,7 @@ func (self *DeviceLocal) Close() {
 		self.upgradeMux.Close()
 		self.upgradeMux = nil
 	}
-	if self.remoteUserNatClient != nil {
-		self.remoteUserNatClient.Close()
-		self.remoteUserNatClient = nil
-	}
+	self.closeRemoteUserNatClientWithLock()
 	self.updateSendRouteWithLock()
 	// self.localUserNat.RemoveReceivePacketCallback(self.receive)
 	if self.localUserNatSub != nil {
@@ -2355,6 +2493,10 @@ func (self *DeviceLocal) Close() {
 	if self.remoteUserNatProviderLocalUserNat != nil {
 		self.remoteUserNatProviderLocalUserNat.Close()
 		self.remoteUserNatProviderLocalUserNat = nil
+	}
+	if self.providerPacketStatsSub != nil {
+		self.providerPacketStatsSub()
+		self.providerPacketStatsSub = nil
 	}
 	if self.remoteUserNatProvider != nil {
 		self.remoteUserNatProvider.Close()
@@ -2515,118 +2657,1155 @@ func (self *WindowEvents) EvaluationFailedClientCount() int {
 }
 */
 
-/*
-func (self *DeviceLocal) GetProviderEnabled() bool {
-	// FIXME
-	return true
+// privacy block
+
+// must be called with `stateLock`. tears down the client event subscriptions
+// and folds the client's final packet counters into the device accumulators
+// before closing it. the contracts die with the client
+func (self *DeviceLocal) closeRemoteUserNatClientWithLock() {
+	if self.blockActionSub != nil {
+		self.blockActionSub()
+		self.blockActionSub = nil
+	}
+	if self.packetStatsSub != nil {
+		self.packetStatsSub()
+		self.packetStatsSub = nil
+	}
+	if self.contractStatsEventSub != nil {
+		self.contractStatsEventSub()
+		self.contractStatsEventSub = nil
+	}
+	if self.remoteUserNatClient != nil {
+		if multi, ok := self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+			addConnectPacketStats(&self.packetStatsBase, multi.PacketStats())
+		}
+		self.remoteUserNatClient.Close()
+		self.remoteUserNatClient = nil
+	}
+	self.contracts.clear()
 }
 
-func (self *DeviceLocal) SetProviderEnabled(providerEnabled bool) {
-	// FIXME
+func addConnectPacketStats(out *connect.PacketStats, add *connect.PacketStats) {
+	out.RemoteEgressPacketCount += add.RemoteEgressPacketCount
+	out.RemoteEgressByteCount += add.RemoteEgressByteCount
+	out.RemoteIngressPacketCount += add.RemoteIngressPacketCount
+	out.RemoteIngressByteCount += add.RemoteIngressByteCount
+	out.LocalEgressPacketCount += add.LocalEgressPacketCount
+	out.LocalEgressByteCount += add.LocalEgressByteCount
+	out.LocalIngressPacketCount += add.LocalIngressPacketCount
+	out.LocalIngressByteCount += add.LocalIngressByteCount
+	out.BlockEgressPacketCount += add.BlockEgressPacketCount
+	out.BlockEgressByteCount += add.BlockEgressByteCount
+	out.BlockIngressPacketCount += add.BlockIngressPacketCount
+	out.BlockIngressByteCount += add.BlockIngressByteCount
 }
 
-func (self *DeviceLocal) AddProviderChangeListener(listener ProviderChangeListener) Sub {
-	// FIXME
-	return nil
+// overrides with no hosts (app id only) are applied by the platform,
+// not the packet path
+func connectBlockActionOverrides(overrides []*BlockActionOverride) []*connect.BlockActionOverride {
+	connectOverrides := []*connect.BlockActionOverride{}
+	for _, override := range overrides {
+		if override.OverrideId == nil || override.Hosts == nil || override.Hosts.Len() == 0 {
+			continue
+		}
+		connectOverride := &connect.BlockActionOverride{
+			OverrideId: override.OverrideId.toConnectId(),
+			Hosts:      override.Hosts.getAll(),
+		}
+		if override.BlockOverride != nil {
+			connectOverride.BlockOverride = &connect.BlockOverride{Block: override.BlockOverride.Block}
+		}
+		if override.RouteOverride != nil {
+			connectOverride.RouteOverride = &connect.RouteOverride{Local: override.RouteOverride.Local}
+		}
+		connectOverrides = append(connectOverrides, connectOverride)
+	}
+	return connectOverrides
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) combinedConnectPacketStatsWithLock() *connect.PacketStats {
+	combined := self.packetStatsBase
+	if multi, ok := self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+		addConnectPacketStats(&combined, multi.PacketStats())
+	}
+	return &combined
+}
+
+func packetStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
+	return &PacketStats{
+		RemoteEgressPacketCount:  packetStats.RemoteEgressPacketCount,
+		RemoteEgressByteCount:    packetStats.RemoteEgressByteCount,
+		RemoteIngressPacketCount: packetStats.RemoteIngressPacketCount,
+		RemoteIngressByteCount:   packetStats.RemoteIngressByteCount,
+		LocalEgressPacketCount:   packetStats.LocalEgressPacketCount,
+		LocalEgressByteCount:     packetStats.LocalEgressByteCount,
+		LocalIngressPacketCount:  packetStats.LocalIngressPacketCount,
+		LocalIngressByteCount:    packetStats.LocalIngressByteCount,
+		BlockEgressPacketCount:   packetStats.BlockEgressPacketCount,
+		BlockEgressByteCount:     packetStats.BlockEgressByteCount,
+		BlockIngressPacketCount:  packetStats.BlockIngressPacketCount,
+		BlockIngressByteCount:    packetStats.BlockIngressByteCount,
+	}
+}
+
+// the client route stats: the multi client counters plus the fallback local route
+func (self *DeviceLocal) clientPacketStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
+	stats := packetStatsFromConnect(packetStats)
+	stats.LocalEgressPacketCount += self.localFallbackEgressPacketCount.Load()
+	stats.LocalEgressByteCount += ByteCount(self.localFallbackEgressByteCount.Load())
+	stats.LocalIngressPacketCount += self.localFallbackIngressPacketCount.Load()
+	stats.LocalIngressByteCount += ByteCount(self.localFallbackIngressByteCount.Load())
+	return stats
+}
+
+// blocked includes incident-class drops (martians/malformed)
+func (self *DeviceLocal) blockStatsFromConnect(packetStats *connect.PacketStats) *BlockStats {
+	return &BlockStats{
+		AllowedCount: int(packetStats.RemoteEgressPacketCount + packetStats.LocalEgressPacketCount + self.localFallbackEgressPacketCount.Load()),
+		BlockedCount: int(packetStats.BlockEgressPacketCount + packetStats.BlockIngressPacketCount),
+	}
 }
 
 func (self *DeviceLocal) GetBlockStats() *BlockStats {
-	// FIXME
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.blockStatsFromConnect(self.combinedConnectPacketStatsWithLock())
+}
+
+func (self *DeviceLocal) GetPacketStats() *PacketStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.clientPacketStatsFromConnect(self.combinedConnectPacketStatsWithLock())
+}
+
+// the packet stats epoch callback from the multi client
+func (self *DeviceLocal) updatePacketStats(packetStats *connect.PacketStats) {
+	var netPacketStats *PacketStats
+	var netBlockStats *BlockStats
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		combined := self.packetStatsBase
+		addConnectPacketStats(&combined, packetStats)
+		netPacketStats = self.clientPacketStatsFromConnect(&combined)
+		blockStats := self.blockStatsFromConnect(&combined)
+		if *blockStats != self.netBlockStats {
+			self.netBlockStats = *blockStats
+			netBlockStats = blockStats
+		}
+	}()
+	self.packetStatsChanged(netPacketStats)
+	if netBlockStats != nil {
+		self.blockStatsChanged(netBlockStats)
+	}
+}
+
+// provider packet stats
+
+// must be called with `stateLock`
+func (self *DeviceLocal) combinedProviderConnectPacketStatsWithLock() *connect.PacketStats {
+	combined := self.providerPacketStatsBase
+	if self.remoteUserNatProvider != nil {
+		addConnectPacketStats(&combined, self.remoteUserNatProvider.PacketStats())
+	}
+	return &combined
+}
+
+// devices with the provider disabled have no provider packet stats
+func (self *DeviceLocal) GetProviderPacketStats() *PacketStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.provider == nil {
+		return nil
+	}
+	return packetStatsFromConnect(self.combinedProviderConnectPacketStatsWithLock())
+}
+
+// the packet stats epoch callback from the provider user nat
+func (self *DeviceLocal) updateProviderPacketStats(packetStats *connect.PacketStats) {
+	var netPacketStats *PacketStats
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		combined := self.providerPacketStatsBase
+		addConnectPacketStats(&combined, packetStats)
+		netPacketStats = packetStatsFromConnect(&combined)
+	}()
+	self.providerPacketStatsChanged(netPacketStats)
+}
+
+func (self *DeviceLocal) AddProviderPacketStatsChangeListener(listener PacketStatsChangeListener) Sub {
+	callbackId := self.providerPacketStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerPacketStatsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) providerPacketStatsChanged(packetStats *PacketStats) {
+	for _, listener := range self.providerPacketStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.PacketStatsChanged(packetStats)
+		})
+	}
+}
+
+// the block action epoch callback from the multi client
+func (self *DeviceLocal) updateBlockActions(blockActions []*connect.BlockAction) {
+	var window *BlockActionWindow
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		for _, blockAction := range blockActions {
+			self.blockActions = append(self.blockActions, self.blockActionFromConnectWithLock(blockAction))
+		}
+		self.trimBlockActionsWithLock()
+		window = self.blockActionWindowWithLock()
+	}()
+	self.blockActionWindowChanged(window)
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) blockActionFromConnectWithLock(blockAction *connect.BlockAction) *BlockAction {
+	ips := NewStringList()
+	for _, ip := range blockAction.Ips {
+		ips.Add(ip.String())
+	}
+	hosts := NewStringList()
+	hosts.addAll(blockAction.Hosts...)
+	out := &BlockAction{
+		BlockActionId: NewId(),
+		Time:          blockAction.Time.UnixMilli(),
+		Ips:           ips,
+		Hosts:         hosts,
+		Block:         blockAction.Block,
+		Local:         blockAction.Local,
+		PacketCount:   blockAction.PacketCount,
+		ByteCount:     blockAction.ByteCount,
+	}
+	// resolve the applied overrides. when an override was removed since the
+	// decision, reflect the decision itself
+	if blockAction.BlockOverrideId != nil {
+		out.OverrideId = newId(*blockAction.BlockOverrideId)
+		out.BlockOverride = &BlockOverride{Block: blockAction.Block}
+		if override := self.blockActionOverrideWithLock(*blockAction.BlockOverrideId); override != nil && override.BlockOverride != nil {
+			out.BlockOverride = &BlockOverride{Block: override.BlockOverride.Block}
+		}
+	}
+	if blockAction.RouteOverrideId != nil {
+		// the block override's id wins when the decisions came from different overrides
+		if out.OverrideId == nil {
+			out.OverrideId = newId(*blockAction.RouteOverrideId)
+		}
+		out.RouteOverride = &RouteOverride{Local: blockAction.Local}
+		if override := self.blockActionOverrideWithLock(*blockAction.RouteOverrideId); override != nil && override.RouteOverride != nil {
+			out.RouteOverride = &RouteOverride{Local: override.RouteOverride.Local}
+		}
+	}
+	return out
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) blockActionOverrideWithLock(overrideId connect.Id) *BlockActionOverride {
+	for _, override := range self.blockActionOverrides {
+		if override.OverrideId != nil && override.OverrideId.toConnectId() == overrideId {
+			return override
+		}
+	}
 	return nil
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) trimBlockActionsWithLock() {
+	windowStartTime := time.Now().Add(-self.settings.BlockActionWindowDuration).UnixMilli()
+	i := 0
+	for i < len(self.blockActions) && self.blockActions[i].Time < windowStartTime {
+		i += 1
+	}
+	if d := len(self.blockActions) - i - self.settings.BlockActionWindowMaxCount; 0 < d {
+		i += d
+	}
+	if 0 < i {
+		self.blockActions = append([]*BlockAction{}, self.blockActions[i:]...)
+	}
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) blockActionWindowWithLock() *BlockActionWindow {
+	blockActions := NewBlockActionList()
+	blockActions.addAll(self.blockActions...)
+	return &BlockActionWindow{
+		BlockActions: blockActions,
+	}
 }
 
 func (self *DeviceLocal) GetBlockActions() *BlockActionWindow {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.trimBlockActionsWithLock()
+	return self.blockActionWindowWithLock()
 }
 
-func (self *DeviceLocal) OverrideBlockAction(hostPattern string, block bool) {
-	// FIXME
+// must be called with `stateLock`.
+// applies the overrides to the live client
+func (self *DeviceLocal) updateBlockActionOverridesWithLock() {
+	if multi, ok := self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+		multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides))
+	}
 }
 
-func (self *DeviceLocal) RemoveBlockActionOverride(hostPattern string) {
-	// FIXME
+// must be called with `stateLock`
+func (self *DeviceLocal) blockActionOverridesWithLock() *BlockActionOverrideList {
+	overrides := NewBlockActionOverrideList()
+	overrides.addAll(self.blockActionOverrides...)
+	return overrides
 }
 
-func (self *DeviceLocal) SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList) {
-	// FIXME
+// persists the overrides to local state, asynchronously
+func (self *DeviceLocal) persistBlockActionOverrides(overrides *BlockActionOverrideList) {
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		asyncLocalState.serialAsync(func() error {
+			return asyncLocalState.GetLocalState().SetBlockActionOverrides(overrides)
+		})
+	}
 }
 
-func (self *DeviceLocal) GetBlockEnabled() bool {
-	// FIXME
+func (self *DeviceLocal) AddBlockActionOverride(override *BlockActionOverride) {
+	if override == nil || override.OverrideId == nil {
+		return
+	}
+	var overrides *BlockActionOverrideList
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		// replace an existing override with the same id
+		self.removeBlockActionOverrideWithLock(override.OverrideId)
+		self.blockActionOverrides = append(self.blockActionOverrides, override)
+		self.updateBlockActionOverridesWithLock()
+		overrides = self.blockActionOverridesWithLock()
+	}()
+	self.persistBlockActionOverrides(overrides)
+	self.blockActionOverridesChanged(overrides)
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) removeBlockActionOverrideWithLock(overrideId *Id) bool {
+	for i, override := range self.blockActionOverrides {
+		if override.OverrideId != nil && override.OverrideId.Cmp(overrideId) == 0 {
+			self.blockActionOverrides = append(
+				self.blockActionOverrides[:i:i],
+				self.blockActionOverrides[i+1:]...,
+			)
+			return true
+		}
+	}
 	return false
 }
 
-func (self *DeviceLocal) SetBlockEnabled(blockEnabled bool) {
-	// FIXME
+func (self *DeviceLocal) RemoveBlockActionOverride(overrideId *Id) {
+	if overrideId == nil {
+		return
+	}
+	var overrides *BlockActionOverrideList
+	removed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		removed = self.removeBlockActionOverrideWithLock(overrideId)
+		if removed {
+			self.updateBlockActionOverridesWithLock()
+			overrides = self.blockActionOverridesWithLock()
+		}
+	}()
+	if removed {
+		self.persistBlockActionOverrides(overrides)
+		self.blockActionOverridesChanged(overrides)
+	}
 }
 
-func (self *DeviceLocal) GetBlockWhileDisconnected() bool {
-	// FIXME
-	return false
+func (self *DeviceLocal) SetBlockActionOverrides(overrides *BlockActionOverrideList) {
+	var netOverrides *BlockActionOverrideList
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.blockActionOverrides = []*BlockActionOverride{}
+		if overrides != nil {
+			for _, override := range overrides.getAll() {
+				if override.OverrideId == nil {
+					continue
+				}
+				self.removeBlockActionOverrideWithLock(override.OverrideId)
+				self.blockActionOverrides = append(self.blockActionOverrides, override)
+			}
+		}
+		self.updateBlockActionOverridesWithLock()
+		netOverrides = self.blockActionOverridesWithLock()
+	}()
+	self.persistBlockActionOverrides(netOverrides)
+	self.blockActionOverridesChanged(netOverrides)
 }
 
-func (self *DeviceLocal) SetBlockWhileDisconnected(blockWhileDisconnected bool) {
-	// FIXME
+func (self *DeviceLocal) GetBlockActionOverrides() *BlockActionOverrideList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.blockActionOverridesWithLock()
 }
 
-func (self *DeviceLocal) AddBlockChangeListener(listener BlockChangeListener) Sub {
-	// FIXME
-	return nil
+// GetLocalOverrideAppIds derives the app include/exclude sets from the
+// overrides with app ids. app rules are enforced by the platform's per-app
+// tunnel routing (currently Android), not the packet path
+func (self *DeviceLocal) GetLocalOverrideAppIds() *OverrideLocalAppIds {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	included := NewStringList()
+	excluded := NewStringList()
+	seen := map[string]bool{}
+	for _, override := range self.blockActionOverrides {
+		if override.RouteOverride == nil || override.AppIds == nil {
+			continue
+		}
+		for _, appId := range override.AppIds.getAll() {
+			if seen[appId] {
+				continue
+			}
+			seen[appId] = true
+			if override.RouteOverride.Local {
+				included.Add(appId)
+			} else {
+				excluded.Add(appId)
+			}
+		}
+	}
+	return &OverrideLocalAppIds{
+		Included: included,
+		Excluded: excluded,
+	}
 }
 
 func (self *DeviceLocal) AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub {
-	// FIXME
-	return nil
+	callbackId := self.blockActionWindowChangeListeners.Add(listener)
+	return newSub(func() {
+		self.blockActionWindowChangeListeners.Remove(callbackId)
+	})
 }
 
 func (self *DeviceLocal) AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub {
-	// FIXME
-	return nil
+	callbackId := self.blockStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.blockStatsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddBlockActionOverridesChangeListener(listener BlockActionOverridesChangeListener) Sub {
+	callbackId := self.blockActionOverridesChangeListeners.Add(listener)
+	return newSub(func() {
+		self.blockActionOverridesChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddPacketStatsChangeListener(listener PacketStatsChangeListener) Sub {
+	callbackId := self.packetStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.packetStatsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) blockActionWindowChanged(blockActionWindow *BlockActionWindow) {
+	for _, listener := range self.blockActionWindowChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.BlockActionWindowChanged(blockActionWindow)
+		})
+	}
+}
+
+func (self *DeviceLocal) blockStatsChanged(blockStats *BlockStats) {
+	for _, listener := range self.blockStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.BlockStatsChanged(blockStats)
+		})
+	}
+}
+
+func (self *DeviceLocal) blockActionOverridesChanged(blockActionOverrides *BlockActionOverrideList) {
+	for _, listener := range self.blockActionOverridesChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.BlockActionOverridesChanged(blockActionOverrides)
+		})
+	}
+}
+
+func (self *DeviceLocal) packetStatsChanged(packetStats *PacketStats) {
+	for _, listener := range self.packetStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.PacketStatsChanged(packetStats)
+		})
+	}
 }
 
 // contract stats
 
+// the state of an open contract, updated on the contract stats epoch
+type deviceContractState struct {
+	contractId        connect.Id
+	path              connect.TransferPath
+	companion         bool
+	usedByteCount     ByteCount
+	transferByteCount ByteCount
+	bitRate           int
+	open              bool
+	updateTime        time.Time
+}
+
+// the open contracts of one connect client (the multi client or the provider
+// client) and the listener dispatch gate.
+// all methods must be called with the device `stateLock`
+type deviceContractTracker struct {
+	// egress (send) and ingress (receive) contracts, keyed by contract id
+	egressContracts  map[connect.Id]*deviceContractState
+	ingressContracts map[connect.Id]*deviceContractState
+	// gates the listener dispatch to the contract stats epoch
+	lastEmitTime time.Time
+}
+
+func newDeviceContractTracker() *deviceContractTracker {
+	return &deviceContractTracker{
+		egressContracts:  map[connect.Id]*deviceContractState{},
+		ingressContracts: map[connect.Id]*deviceContractState{},
+	}
+}
+
+func (self *deviceContractTracker) clear() {
+	clear(self.egressContracts)
+	clear(self.ingressContracts)
+}
+
+// applies a contract stats event batch.
+// each source client emits on its own epoch, so the listener dispatch is gated
+// to at most once per `epoch` across all of them.
+// a batch with a close event always dispatches, so the final report of a
+// contract is never swallowed by the gate.
+// returns nil stats when gated
+func (self *deviceContractTracker) update(
+	events []*connect.ContractStatsEvent,
+	epoch time.Duration,
+) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+	now := time.Now()
+	hasClose := false
+	for _, event := range events {
+		contracts := self.egressContracts
+		if event.Receive {
+			contracts = self.ingressContracts
+		}
+		state, ok := contracts[event.ContractId]
+		if !ok {
+			state = &deviceContractState{
+				contractId: event.ContractId,
+				path:       event.Path,
+				companion:  event.Companion,
+				updateTime: now,
+			}
+			contracts[event.ContractId] = state
+		}
+		elapsed := now.Sub(state.updateTime)
+		state.usedByteCount = event.UsedByteCount
+		state.transferByteCount = event.TransferByteCount
+		state.open = event.Open
+		if !event.Open {
+			hasClose = true
+		}
+		if ok && 0 < elapsed {
+			state.bitRate = int(8 * float64(event.UsedByteCountDelta) / elapsed.Seconds())
+		}
+		state.updateTime = now
+	}
+	if !hasClose && now.Sub(self.lastEmitTime) < epoch {
+		// gated. the state is updated and the next batch past the epoch emits it
+		return
+	}
+	self.lastEmitTime = now
+	egressStats = self.stats(false)
+	ingressStats = self.stats(true)
+	egressDetails = self.details(false)
+	ingressDetails = self.details(true)
+	// evict closed contracts after the final report
+	for contractId, state := range self.egressContracts {
+		if !state.open {
+			delete(self.egressContracts, contractId)
+		}
+	}
+	for contractId, state := range self.ingressContracts {
+		if !state.open {
+			delete(self.ingressContracts, contractId)
+		}
+	}
+	return
+}
+
+// the contract stats epoch callback from the multi client
+func (self *DeviceLocal) updateContractStatsEvents(events []*connect.ContractStatsEvent) {
+	var egressStats *ContractStats
+	var ingressStats *ContractStats
+	var egressDetails *ContractDetailsList
+	var ingressDetails *ContractDetailsList
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		egressStats, ingressStats, egressDetails, ingressDetails = self.contracts.update(events, self.settings.ContractStatsEpoch)
+	}()
+	if egressStats == nil {
+		return
+	}
+	self.egressContractStatsChanged(egressStats)
+	self.ingressContractStatsChanged(ingressStats)
+	self.egressContractDetailsChanged(egressDetails)
+	self.ingressContractDetailsChanged(ingressDetails)
+}
+
+// the contract stats epoch callback from the provider client
+func (self *DeviceLocal) updateProviderContractStatsEvents(events []*connect.ContractStatsEvent) {
+	var egressStats *ContractStats
+	var ingressStats *ContractStats
+	var egressDetails *ContractDetailsList
+	var ingressDetails *ContractDetailsList
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		egressStats, ingressStats, egressDetails, ingressDetails = self.providerContracts.update(events, self.settings.ContractStatsEpoch)
+	}()
+	if egressStats == nil {
+		return
+	}
+	self.providerEgressContractStatsChanged(egressStats)
+	self.providerIngressContractStatsChanged(ingressStats)
+	self.providerEgressContractDetailsChanged(egressDetails)
+	self.providerIngressContractDetailsChanged(ingressDetails)
+}
+
+// the direction's own contracts fill the contract fields, and the opposite
+// direction (the return path with the same peers) fills the companion fields
+func (self *deviceContractTracker) stats(receive bool) *ContractStats {
+	own := self.egressContracts
+	other := self.ingressContracts
+	if receive {
+		own, other = other, own
+	}
+	stats := &ContractStats{}
+	for _, state := range own {
+		stats.ContractUsedByteCount += state.usedByteCount
+		stats.ContractByteCount += state.transferByteCount
+		stats.ContractBitRate += state.bitRate
+	}
+	for _, state := range other {
+		stats.CompanionContractUsedByteCount += state.usedByteCount
+		stats.CompanionContractByteCount += state.transferByteCount
+		stats.CompanionContractBitRate += state.bitRate
+	}
+	return stats
+}
+
+// pairs each contract with its companion in the opposite direction by the peer
+// client id: an exact reverse path match wins, else the most recently updated
+// contract with the same peer
+func (self *deviceContractTracker) details(receive bool) *ContractDetailsList {
+	own := self.egressContracts
+	other := self.ingressContracts
+	if receive {
+		own, other = other, own
+	}
+	details := NewContractDetailsList()
+	for _, state := range own {
+		peerClientId := state.path.DestinationId
+		if receive {
+			peerClientId = state.path.SourceId
+		}
+		var companionState *deviceContractState
+		reversePath := connect.TransferPath{
+			SourceId:      state.path.DestinationId,
+			DestinationId: state.path.SourceId,
+			StreamId:      state.path.StreamId,
+		}
+		for _, otherState := range other {
+			otherPeerClientId := otherState.path.SourceId
+			if receive {
+				otherPeerClientId = otherState.path.DestinationId
+			}
+			if otherState.path == reversePath {
+				companionState = otherState
+				break
+			}
+			if otherPeerClientId == peerClientId {
+				if companionState == nil || companionState.updateTime.Before(otherState.updateTime) {
+					companionState = otherState
+				}
+			}
+		}
+		contractDetails := &ContractDetails{
+			ContractId:            newId(state.contractId),
+			ContractUsedByteCount: state.usedByteCount,
+			ContractByteCount:     state.transferByteCount,
+			ContractBitRate:       state.bitRate,
+			ContractTransferPath:  fromConnect(state.path),
+		}
+		if companionState != nil {
+			contractDetails.CompanionContractId = newId(companionState.contractId)
+			contractDetails.CompanionContractUsedByteCount = companionState.usedByteCount
+			contractDetails.CompanionContractByteCount = companionState.transferByteCount
+			contractDetails.CompanionContractBitRate = companionState.bitRate
+			contractDetails.CompanionContractTransferPath = fromConnect(companionState.path)
+		}
+		details.Add(contractDetails)
+	}
+	return details
+}
+
 func (self *DeviceLocal) GetEgressContractStats() *ContractStats {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.contracts.stats(false)
 }
 
 func (self *DeviceLocal) GetEgressContractDetails() *ContractDetailsList {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.contracts.details(false)
 }
 
 func (self *DeviceLocal) GetIngressContractStats() *ContractStats {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.contracts.stats(true)
 }
 
 func (self *DeviceLocal) GetIngressContractDetails() *ContractDetailsList {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.contracts.details(true)
 }
 
-func (self *DeviceLocal) AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
-	// FIXME
-	return nil
+// devices with the provider disabled have no provider contracts
+
+func (self *DeviceLocal) GetProviderEgressContractStats() *ContractStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.provider == nil {
+		return nil
+	}
+	return self.providerContracts.stats(false)
+}
+
+func (self *DeviceLocal) GetProviderEgressContractDetails() *ContractDetailsList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.provider == nil {
+		return nil
+	}
+	return self.providerContracts.details(false)
+}
+
+func (self *DeviceLocal) GetProviderIngressContractStats() *ContractStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.provider == nil {
+		return nil
+	}
+	return self.providerContracts.stats(true)
+}
+
+func (self *DeviceLocal) GetProviderIngressContractDetails() *ContractDetailsList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.provider == nil {
+		return nil
+	}
+	return self.providerContracts.details(true)
+}
+
+func (self *DeviceLocal) AddEgressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	callbackId := self.egressContractStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.egressContractStatsChangeListeners.Remove(callbackId)
+	})
 }
 
 func (self *DeviceLocal) AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
-	// FIXME
-	return nil
+	callbackId := self.egressContractDetailsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.egressContractDetailsChangeListeners.Remove(callbackId)
+	})
 }
 
-func (self *DeviceLocal) AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
-	// FIXME
-	return nil
+func (self *DeviceLocal) AddIngressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	callbackId := self.ingressContractStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.ingressContractStatsChangeListeners.Remove(callbackId)
+	})
 }
 
 func (self *DeviceLocal) AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
-	// FIXME
-	return nil
+	callbackId := self.ingressContractDetailsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.ingressContractDetailsChangeListeners.Remove(callbackId)
+	})
 }
-*/
+
+func (self *DeviceLocal) AddProviderEgressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	callbackId := self.providerEgressContractStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerEgressContractStatsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddProviderEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	callbackId := self.providerEgressContractDetailsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerEgressContractDetailsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddProviderIngressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	callbackId := self.providerIngressContractStatsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerIngressContractStatsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddProviderIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	callbackId := self.providerIngressContractDetailsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerIngressContractDetailsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) egressContractStatsChanged(contractStats *ContractStats) {
+	for _, listener := range self.egressContractStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceLocal) egressContractDetailsChanged(contractDetails *ContractDetailsList) {
+	for _, listener := range self.egressContractDetailsChangeListeners.Get() {
+		connect.HandleError(func() {
+			for _, details := range contractDetails.getAll() {
+				listener.ContractDetailsChanged(details)
+			}
+		})
+	}
+}
+
+func (self *DeviceLocal) ingressContractStatsChanged(contractStats *ContractStats) {
+	for _, listener := range self.ingressContractStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceLocal) ingressContractDetailsChanged(contractDetails *ContractDetailsList) {
+	for _, listener := range self.ingressContractDetailsChangeListeners.Get() {
+		connect.HandleError(func() {
+			for _, details := range contractDetails.getAll() {
+				listener.ContractDetailsChanged(details)
+			}
+		})
+	}
+}
+
+func (self *DeviceLocal) providerEgressContractStatsChanged(contractStats *ContractStats) {
+	for _, listener := range self.providerEgressContractStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceLocal) providerEgressContractDetailsChanged(contractDetails *ContractDetailsList) {
+	for _, listener := range self.providerEgressContractDetailsChangeListeners.Get() {
+		connect.HandleError(func() {
+			for _, details := range contractDetails.getAll() {
+				listener.ContractDetailsChanged(details)
+			}
+		})
+	}
+}
+
+func (self *DeviceLocal) providerIngressContractStatsChanged(contractStats *ContractStats) {
+	for _, listener := range self.providerIngressContractStatsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceLocal) providerIngressContractDetailsChanged(contractDetails *ContractDetailsList) {
+	for _, listener := range self.providerIngressContractDetailsChangeListeners.Get() {
+		connect.HandleError(func() {
+			for _, details := range contractDetails.getAll() {
+				listener.ContractDetailsChanged(details)
+			}
+		})
+	}
+}
+
+// dns
+
+func dnsResolverSettingsFromConnect(resolver *connect.DnsResolverSettings) *DnsResolverSettings {
+	stringListOf := func(values []string) *StringList {
+		list := NewStringList()
+		list.addAll(values...)
+		return list
+	}
+	return &DnsResolverSettings{
+		EnableRemoteDoh:   resolver.EnableRemoteDoh,
+		EnableLocalDoh:    resolver.EnableLocalDoh,
+		EnableRemoteDns:   resolver.EnableRemoteDns,
+		EnableLocalDns:    resolver.EnableLocalDns,
+		RemoteDohUrlsIpv4: stringListOf(resolver.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6: stringListOf(resolver.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:  stringListOf(resolver.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:  stringListOf(resolver.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:     stringListOf(resolver.RemoteDnsIpv4),
+		RemoteDnsIpv6:     stringListOf(resolver.RemoteDnsIpv6),
+		LocalDnsIpv4:      stringListOf(resolver.LocalDnsIpv4),
+		LocalDnsIpv6:      stringListOf(resolver.LocalDnsIpv6),
+	}
+}
+
+func (self *DnsResolverSettings) toConnect() *connect.DnsResolverSettings {
+	stringsOf := func(list *StringList) []string {
+		if list == nil {
+			return nil
+		}
+		return list.getAll()
+	}
+	return &connect.DnsResolverSettings{
+		EnableRemoteDoh:   self.EnableRemoteDoh,
+		EnableLocalDoh:    self.EnableLocalDoh,
+		EnableRemoteDns:   self.EnableRemoteDns,
+		EnableLocalDns:    self.EnableLocalDns,
+		RemoteDohUrlsIpv4: stringsOf(self.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6: stringsOf(self.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:  stringsOf(self.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:  stringsOf(self.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:     stringsOf(self.RemoteDnsIpv4),
+		RemoteDnsIpv6:     stringsOf(self.RemoteDnsIpv6),
+		LocalDnsIpv4:      stringsOf(self.LocalDnsIpv4),
+		LocalDnsIpv6:      stringsOf(self.LocalDnsIpv6),
+	}
+}
+
+// upgradeMuxSettingsWithDnsResolverSettings builds the next upgrade mux settings
+// with the resolver and the derived fallback applied, copy on write.
+// returns nil when the mux is disabled (base nil)
+func upgradeMuxSettingsWithDnsResolverSettings(base *connect.UpgradeMuxSettings, dnsResolverSettings *DnsResolverSettings) *connect.UpgradeMuxSettings {
+	if base == nil {
+		return nil
+	}
+	nextSettings := *base
+	var nextDns connect.DnsUpgradeSettings
+	if nextSettings.Dns != nil {
+		nextDns = *nextSettings.Dns
+	} else {
+		nextDns = *connect.DefaultUpgradeMuxSettings().Dns
+	}
+	resolver := dnsResolverSettings.toConnect()
+	nextDns.Resolver = resolver
+	if dnsResolverSettings.EnableFallback {
+		nextDns.Fallback = hostFallbackDnsResolverSettings(resolver)
+	} else {
+		// nil disables the fallback (see `connect.DnsUpgradeSettings`)
+		nextDns.Fallback = nil
+	}
+	nextSettings.Dns = &nextDns
+	return &nextSettings
+}
+
+// hostFallbackDnsResolverSettings derives the fallback resolver, which bridges
+// tunnel startup by resolving over the host network, as the host-side projection
+// of the resolver: remote entries are host-dialed (remote doh urls become local
+// doh urls, remote dns ips become local dns ips)
+func hostFallbackDnsResolverSettings(resolver *connect.DnsResolverSettings) *connect.DnsResolverSettings {
+	union := func(locals []string, remotes []string) []string {
+		var out []string
+		seen := map[string]bool{}
+		for _, value := range append(append([]string{}, locals...), remotes...) {
+			if !seen[value] {
+				seen[value] = true
+				out = append(out, value)
+			}
+		}
+		return out
+	}
+	return &connect.DnsResolverSettings{
+		EnableLocalDoh:   resolver.EnableLocalDoh || resolver.EnableRemoteDoh,
+		EnableLocalDns:   resolver.EnableLocalDns || resolver.EnableRemoteDns,
+		LocalDohUrlsIpv4: union(resolver.LocalDohUrlsIpv4, resolver.RemoteDohUrlsIpv4),
+		LocalDohUrlsIpv6: union(resolver.LocalDohUrlsIpv6, resolver.RemoteDohUrlsIpv6),
+		LocalDnsIpv4:     union(resolver.LocalDnsIpv4, resolver.RemoteDnsIpv4),
+		LocalDnsIpv6:     union(resolver.LocalDnsIpv6, resolver.RemoteDnsIpv6),
+	}
+}
+
+// SetDnsResolverSettings sets the mux tunnel resolver and the derived
+// host-side fallback (used to bridge tunnel startup), persisted to local state.
+// TLS/cert pinning is applied internally and is not part of this surface
+func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
+	if dnsResolverSettings == nil {
+		return
+	}
+	var upgradeMuxSettings *connect.UpgradeMuxSettings
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		upgradeMuxSettings = upgradeMuxSettingsWithDnsResolverSettings(self.upgradeMuxSettings, dnsResolverSettings)
+		// exclude the resolver endpoints from the override and association logic
+		self.updateBlockActionIgnoreHostsWithLock(dnsResolverSettings)
+	}()
+	if upgradeMuxSettings == nil {
+		// the mux is disabled. there is no resolver to configure
+		return
+	}
+	// applies to the live mux, if any
+	self.SetUpgradeMuxSettings(upgradeMuxSettings)
+	self.persistDnsResolverSettings(dnsResolverSettings)
+	self.dnsResolverSettingsChanged(self.GetDnsResolverSettings())
+}
+
+// persists the dns resolver settings to local state, asynchronously
+func (self *DeviceLocal) persistDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		asyncLocalState.serialAsync(func() error {
+			return asyncLocalState.GetLocalState().SetDnsResolverSettings(dnsResolverSettings)
+		})
+	}
+}
+
+func (self *DeviceLocal) GetDnsResolverSettings() *DnsResolverSettings {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.dnsResolverSettingsWithLock()
+}
+
+// must be called with `stateLock`
+func (self *DeviceLocal) dnsResolverSettingsWithLock() *DnsResolverSettings {
+	if self.upgradeMuxSettings == nil || self.upgradeMuxSettings.Dns == nil || self.upgradeMuxSettings.Dns.Resolver == nil {
+		return nil
+	}
+	dnsResolverSettings := dnsResolverSettingsFromConnect(self.upgradeMuxSettings.Dns.Resolver)
+	dnsResolverSettings.EnableFallback = self.upgradeMuxSettings.Dns.Fallback != nil
+	return dnsResolverSettings
+}
+
+// must be called with `stateLock`.
+// applies the resolver endpoints to the live client's ignore list, so
+// resolver traffic is never captured by user override rules or clustered
+// with user traffic
+func (self *DeviceLocal) updateBlockActionIgnoreHostsWithLock(dnsResolverSettings *DnsResolverSettings) {
+	if multi, ok := self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+		multi.SetBlockActionIgnoreHosts(dnsIgnoreHostValues(dnsResolverSettings))
+	}
+}
+
+// the host values (hostnames and ips) of the resolver endpoints,
+// used to exclude resolver traffic from the override and association logic
+func dnsIgnoreHostValues(dnsResolverSettings *DnsResolverSettings) []string {
+	if dnsResolverSettings == nil {
+		return nil
+	}
+	values := []string{}
+	seen := map[string]bool{}
+	add := func(value string) {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		values = append(values, value)
+	}
+	addAll := func(list *StringList) {
+		if list == nil {
+			return
+		}
+		for _, value := range list.getAll() {
+			add(value)
+		}
+	}
+	// doh urls contribute their host (a hostname or a literal ip)
+	addUrlHosts := func(list *StringList) {
+		if list == nil {
+			return
+		}
+		for _, value := range list.getAll() {
+			if u, err := url.Parse(strings.TrimSpace(value)); err == nil && u.Hostname() != "" {
+				add(u.Hostname())
+			} else {
+				add(value)
+			}
+		}
+	}
+	addUrlHosts(dnsResolverSettings.RemoteDohUrlsIpv4)
+	addUrlHosts(dnsResolverSettings.RemoteDohUrlsIpv6)
+	addUrlHosts(dnsResolverSettings.LocalDohUrlsIpv4)
+	addUrlHosts(dnsResolverSettings.LocalDohUrlsIpv6)
+	addAll(dnsResolverSettings.RemoteDnsIpv4)
+	addAll(dnsResolverSettings.RemoteDnsIpv6)
+	addAll(dnsResolverSettings.LocalDnsIpv4)
+	addAll(dnsResolverSettings.LocalDnsIpv6)
+	return values
+}
+
+func (self *DeviceLocal) AddDnsResolverSettingsChangeListener(listener DnsResolverSettingsChangeListener) Sub {
+	callbackId := self.dnsResolverSettingsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.dnsResolverSettingsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) dnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings) {
+	for _, listener := range self.dnsResolverSettingsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.DnsResolverSettingsChanged(dnsResolverSettings)
+		})
+	}
+}
+
+// network peers
+
+// devices with the provider disabled have no network peers
+func (self *DeviceLocal) GetNetworkPeers() *NetworkPeers {
+	client := self.providerClientSnapshot()
+	if client == nil {
+		return nil
+	}
+	connected, disconnectedCount := client.NetworkPeers()
+	networkPeers := &NetworkPeers{
+		Connected:         NewNetworkPeerList(),
+		DisconnectedCount: disconnectedCount,
+	}
+	for _, peer := range connected {
+		roles := NewStringList()
+		roles.addAll(peer.Roles...)
+		networkPeers.Connected.Add(&NetworkPeer{
+			ClientId:       newId(peer.ClientId),
+			ProvideEnabled: peer.ProvideEnabled,
+			Principal:      peer.Principal,
+			Roles:          roles,
+			DeviceSpec:     peer.DeviceSpec,
+			DeviceName:     peer.DeviceName,
+		})
+	}
+	return networkPeers
+}
+
+// FUTURE fire when the connect peer tracking is implemented
+func (self *DeviceLocal) AddNetworkPeersChangeListener(listener NetworkPeersChangeListener) Sub {
+	callbackId := self.networkPeersChangeListeners.Add(listener)
+	return newSub(func() {
+		self.networkPeersChangeListeners.Remove(callbackId)
+	})
+}
 
 func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
 
