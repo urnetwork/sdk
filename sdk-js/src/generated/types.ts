@@ -144,7 +144,7 @@ export interface AuthLoginResult {
   auth_allowed?: string[] | null;
   error?: AuthLoginResultError | null;
   network?: AuthLoginResultNetwork | null;
-  wallet_login?: WalletAuthArgs | null;
+  wallet_auth?: WalletAuthArgs | null;
 }
 
 export interface AuthLoginResultError {
