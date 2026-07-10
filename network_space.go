@@ -576,9 +576,8 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 		return ""
 	}
 	// include host so multiple network servers can coexist without sharing auth state
-	safeHost := strings.ReplaceAll(key.HostName, "/", "_")
-	safeHost = strings.ReplaceAll(safeHost, ":", "_")
-	if safeHost == "" {
+	safeHost := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key.HostName)
+	if safeHost == "" || safeHost == "." || safeHost == ".." {
 		safeHost = "default"
 	}
 	envStoragePath := filepath.Join(self.storagePath, "network_spaces", safeHost, key.EnvName)
