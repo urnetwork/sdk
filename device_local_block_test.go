@@ -894,7 +894,7 @@ func TestDeviceLocalNetworkPeers(t *testing.T) {
 		t.Fatalf("expected nil network peers without a provider")
 	}
 
-	// with a provider, the (stub) peers are empty
+	// with a provider and no platform announcements, the peers are empty
 	providerDevice, _ := testing_newBlockDevice(ctx, t, true)
 	defer providerDevice.Close()
 	networkPeers := providerDevice.GetNetworkPeers()
@@ -902,7 +902,7 @@ func TestDeviceLocalNetworkPeers(t *testing.T) {
 		t.Fatalf("expected network peers with a provider")
 	}
 	if networkPeers.Connected.Len() != 0 || networkPeers.DisconnectedCount != 0 {
-		t.Fatalf("expected empty stub network peers")
+		t.Fatalf("expected empty network peers")
 	}
 }
 

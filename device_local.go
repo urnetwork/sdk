@@ -97,6 +97,8 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 
 		ContractStatsEpoch: 1 * time.Second,
 
+		NetworkPeersEpoch: 1 * time.Second,
+
 		DefaultRouteLocal:          true,
 		DefaultCanShowRatingDialog: true,
 		DefaultCanShowIntroFunnel:  true,
@@ -154,6 +156,9 @@ type DeviceLocalSettings struct {
 	// the contract stats/details listeners emit at most once per epoch across
 	// all window clients (a close event always emits)
 	ContractStatsEpoch time.Duration
+
+	// the network peers change listeners emit at most once per epoch
+	NetworkPeersEpoch time.Duration
 
 	DefaultRouteLocal          bool
 	DefaultCanShowRatingDialog bool
@@ -745,6 +750,8 @@ func newDeviceLocalWithOverrides(
 		// the provider client lives as long as the device, so its contract
 		// stats subscription does too
 		deviceLocal.providerContractStatsEventSub = provider.Client().ContractManager().AddContractStatsCallback(deviceLocal.updateProviderContractStatsEvents)
+		// the network peers are tracked by the provider client
+		go connect.HandleError(deviceLocal.watchNetworkPeers)
 	}
 
 	if settings.EnableRpc {
@@ -3799,12 +3806,47 @@ func (self *DeviceLocal) GetNetworkPeers() *NetworkPeers {
 	return networkPeers
 }
 
-// FUTURE fire when the connect peer tracking is implemented
 func (self *DeviceLocal) AddNetworkPeersChangeListener(listener NetworkPeersChangeListener) Sub {
 	callbackId := self.networkPeersChangeListeners.Add(listener)
 	return newSub(func() {
 		self.networkPeersChangeListeners.Remove(callbackId)
 	})
+}
+
+// watchNetworkPeers fires the network peers change listeners when the
+// provider client's peer state changes, at most once per epoch
+func (self *DeviceLocal) watchNetworkPeers() {
+	client := self.providerClientSnapshot()
+	if client == nil {
+		return
+	}
+	peersMonitor := client.PeerManager().PeersMonitor()
+	notify := peersMonitor.NotifyChannel()
+	for {
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-notify:
+		}
+		// coalesce changes within the epoch
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-time.After(self.settings.NetworkPeersEpoch):
+		}
+		// re-arm before the snapshot so a change during the emit
+		// notifies the next round
+		notify = peersMonitor.NotifyChannel()
+		self.networkPeersChanged(self.GetNetworkPeers())
+	}
+}
+
+func (self *DeviceLocal) networkPeersChanged(networkPeers *NetworkPeers) {
+	for _, listener := range self.networkPeersChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.NetworkPeersChanged(networkPeers)
+		})
+	}
 }
 
 func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {

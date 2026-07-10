@@ -399,6 +399,7 @@ struct WalletCircleInitResult;
 struct WalletCircleTransferOutArgs;
 struct WalletCircleTransferOutError;
 struct WalletCircleTransferOutResult;
+struct WalletKeyPair;
 struct WalletValidateAddressArgs;
 struct WalletValidateAddressResult;
 struct WindowStatus;
@@ -1672,6 +1673,11 @@ struct WalletCircleTransferOutResult {
 	std::optional<WalletCircleTransferOutError> error;
 };
 
+struct WalletKeyPair {
+	std::string PrivateKeyBase58{};
+	std::string PublicKeyBase58{};
+};
+
 struct WalletValidateAddressArgs {
 	std::optional<std::string> address;
 	std::optional<std::string> chain;
@@ -2103,6 +2109,8 @@ inline void to_json(nlohmann::json& j, const WalletCircleTransferOutError& v);
 inline void from_json(const nlohmann::json& j, WalletCircleTransferOutError& v);
 inline void to_json(nlohmann::json& j, const WalletCircleTransferOutResult& v);
 inline void from_json(const nlohmann::json& j, WalletCircleTransferOutResult& v);
+inline void to_json(nlohmann::json& j, const WalletKeyPair& v);
+inline void from_json(const nlohmann::json& j, WalletKeyPair& v);
 inline void to_json(nlohmann::json& j, const WalletValidateAddressArgs& v);
 inline void from_json(const nlohmann::json& j, WalletValidateAddressArgs& v);
 inline void to_json(nlohmann::json& j, const WalletValidateAddressResult& v);
@@ -7745,6 +7753,23 @@ inline void from_json(const nlohmann::json& j, WalletCircleTransferOutResult& v)
 		WalletCircleTransferOutError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const WalletKeyPair& v) {
+	j = nlohmann::json::object();
+	j["PrivateKeyBase58"] = v.PrivateKeyBase58;
+	j["PublicKeyBase58"] = v.PublicKeyBase58;
+}
+inline void from_json(const nlohmann::json& j, WalletKeyPair& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("PrivateKeyBase58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PrivateKeyBase58);
+	}
+	if (auto it = j.find("PublicKeyBase58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PublicKeyBase58);
 	}
 }
 
@@ -15266,6 +15291,18 @@ inline DeviceRpcKeyMaterial generateDeviceRpcKeyMaterial() {
 inline std::string generateNonce() {
 	char* r_c = urnet_generate_nonce();
 	return detail::takeString(r_c);
+}
+inline std::optional<WalletKeyPair> generateWalletKeyPair() {
+	char* err_c = nullptr;
+	char* r_c = urnet_generate_wallet_key_pair(&err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<WalletKeyPair>(r_s->c_str());
 }
 inline std::string getColorHex(const std::string& code) {
 	char* r_c = urnet_get_color_hex(code.c_str());

@@ -321,6 +321,7 @@ EXPORTS
 	urnet_generate_device_rpc_key_material
 	urnet_generate_nonce
 	urnet_generate_shared_secret
+	urnet_generate_wallet_key_pair
 	urnet_get_color_hex
 	urnet_get_default_dns_resolver_settings
 	urnet_get_filtered_locations_from_result

@@ -6385,6 +6385,20 @@ func urnet_generate_nonce() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_generate_wallet_key_pair
+func urnet_generate_wallet_key_pair(outError **C.char) *C.char {
+	defer cgoGuard("urnet_generate_wallet_key_pair")
+	r0, err := sdk.GenerateWalletKeyPair()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_generate_wallet_key_pair")
+}
+
 //export urnet_get_color_hex
 func urnet_get_color_hex(code *C.char) *C.char {
 	defer cgoGuard("urnet_get_color_hex")

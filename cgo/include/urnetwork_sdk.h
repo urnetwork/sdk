@@ -893,6 +893,7 @@ void urnet_flush_glog(void);
 void urnet_free_memory(void);
 uint64_t urnet_generate_device_rpc_key_material(char** out_error);
 char* urnet_generate_nonce(void);
+char* urnet_generate_wallet_key_pair(char** out_error);
 char* urnet_get_color_hex(const char* code);
 char* urnet_get_default_dns_resolver_settings(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
@@ -2293,6 +2294,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   user_token?: CircleUserToken | null
  *   challenge_id?: string
  *   error?: WalletCircleTransferOutError | null
+ */
+
+/* WalletKeyPair (json):
+ *   PrivateKeyBase58: string
+ *   PublicKeyBase58: string
  */
 
 /* WalletValidateAddressArgs (json):

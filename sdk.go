@@ -744,3 +744,24 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 
 	return shared[:], nil
 }
+
+// WalletKeyPair is an ephemeral Curve25519 keypair (base58-encoded) for the
+// wallet-connect (Phantom/Solflare) NaCl-box handshake. Apple apps generate this
+// with CryptoKit; desktop (cgo) apps that lack a Curve25519 primitive call
+// GenerateWalletKeyPair so the keypair is wire-compatible with
+// GenerateSharedSecret / EncryptData / DecryptData.
+type WalletKeyPair struct {
+	PrivateKeyBase58 string
+	PublicKeyBase58  string
+}
+
+func GenerateWalletKeyPair() (*WalletKeyPair, error) {
+	publicKey, privateKey, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return &WalletKeyPair{
+		PrivateKeyBase58: base58.Encode(privateKey[:]),
+		PublicKeyBase58:  base58.Encode(publicKey[:]),
+	}, nil
+}
