@@ -66,6 +66,14 @@ type NetworkSpaceValues struct {
 	Wallet                   string `json:"wallet,omitempty"`
 	SsoGoogle                bool   `json:"sso_google,omitempty"`
 
+	// Optional absolute service endpoints. When empty, URLs are derived from HostName/EnvName
+	// via ServiceUrl, matching main-branch behavior:
+	//   api:     https://api.<host>
+	//   connect: wss://connect.<host>
+	// no trailing slash: api.go builds paths as fmt.Sprintf("%s/path", apiUrl).
+	ApiUrl      string `json:"api_url,omitempty"`
+	PlatformUrl string `json:"platform_url,omitempty"`
+
 	// custom extender
 	// this overrides any auto discovered extenders
 	NetExtender              *NetExtender              `json:"net_extender,omitempty"`
@@ -141,11 +149,17 @@ func newNetworkSpaceWithConnectSettings(
 ) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	// Custom beta server endpoints.
+	// Prefer explicit overrides when set; otherwise derive from HostName/EnvName.
 	// no trailing slash: api.go builds paths as fmt.Sprintf("%s/path", apiUrl),
 	// so a trailing slash here would double up to "//path" and 404 every request.
-	apiUrl := "http://74.50.11.113:8080"
-	platformUrl := "ws://74.50.11.113:5080"
+	apiUrl := strings.TrimRight(values.ApiUrl, "/")
+	if apiUrl == "" {
+		apiUrl = ServiceUrl(&key, &values, "https", "api")
+	}
+	platformUrl := strings.TrimRight(values.PlatformUrl, "/")
+	if platformUrl == "" {
+		platformUrl = ServiceUrl(&key, &values, "wss", "connect")
+	}
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
@@ -362,6 +376,14 @@ func (self *NetworkSpace) GetAsyncLocalState() *AsyncLocalState {
 	return self.asyncLocalState
 }
 
+func (self *NetworkSpace) GetConfiguredApiUrl() string {
+	return self.values.ApiUrl
+}
+
+func (self *NetworkSpace) GetConfiguredPlatformUrl() string {
+	return self.values.PlatformUrl
+}
+
 func (self *NetworkSpace) GetApiUrl() string {
 	return self.apiUrl
 }
@@ -538,7 +560,13 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 	if self.storagePath == "" {
 		return ""
 	}
-	envStoragePath := filepath.Join(self.storagePath, "network_spaces", key.EnvName)
+	// include host so multiple network servers can coexist without sharing auth state
+	safeHost := strings.ReplaceAll(key.HostName, "/", "_")
+	safeHost = strings.ReplaceAll(safeHost, ":", "_")
+	if safeHost == "" {
+		safeHost = "default"
+	}
+	envStoragePath := filepath.Join(self.storagePath, "network_spaces", safeHost, key.EnvName)
 	if err := os.MkdirAll(envStoragePath, LocalStorageFilePermissions); err != nil {
 		panic(err)
 	}

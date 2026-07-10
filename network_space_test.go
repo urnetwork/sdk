@@ -1,7 +1,9 @@
 package sdk
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -101,4 +103,76 @@ func TestNetworkSpaceManager(t *testing.T) {
 	assert.Equal(t, networkSpaceManager3.GetNetworkSpaces().Len(), 0)
 
 	networkSpaceManager3.Close()
+}
+
+func TestNetworkSpaceUrlResolution(t *testing.T) {
+	ctx := context.Background()
+
+	networkSpace := newNetworkSpace(
+		ctx,
+		*NewNetworkSpaceKey("ur.network", "main"),
+		NetworkSpaceValues{},
+		"",
+	)
+	assert.Equal(t, networkSpace.GetApiUrl(), "https://api.ur.network")
+	assert.Equal(t, networkSpace.GetPlatformUrl(), "wss://connect.ur.network")
+	networkSpace.close()
+
+	secretNetworkSpace := newNetworkSpace(
+		ctx,
+		*NewNetworkSpaceKey("example.com", "beta"),
+		NetworkSpaceValues{EnvSecret: "secret"},
+		"",
+	)
+	assert.Equal(t, secretNetworkSpace.GetApiUrl(), "https://beta-api.example.com/secret")
+	assert.Equal(t, secretNetworkSpace.GetPlatformUrl(), "wss://beta-connect.example.com/secret")
+	secretNetworkSpace.close()
+
+	migratedNetworkSpace := newNetworkSpace(
+		ctx,
+		*NewNetworkSpaceKey("ur.network", "main"),
+		NetworkSpaceValues{MigrationHostName: "bringyour.com"},
+		"",
+	)
+	assert.Equal(t, migratedNetworkSpace.GetApiUrl(), "https://api.bringyour.com")
+	assert.Equal(t, migratedNetworkSpace.GetPlatformUrl(), "wss://connect.bringyour.com")
+	migratedNetworkSpace.close()
+
+	overrideNetworkSpace := newNetworkSpace(
+		ctx,
+		*NewNetworkSpaceKey("custom.local", "main"),
+		NetworkSpaceValues{
+			ApiUrl:      "http://api.custom.test:8080/",
+			PlatformUrl: "ws://connect.custom.test:5080/",
+		},
+		"",
+	)
+	assert.Equal(t, overrideNetworkSpace.GetApiUrl(), "http://api.custom.test:8080")
+	assert.Equal(t, overrideNetworkSpace.GetPlatformUrl(), "ws://connect.custom.test:5080")
+	assert.Equal(t, overrideNetworkSpace.GetConfiguredApiUrl(), "http://api.custom.test:8080/")
+	assert.Equal(t, overrideNetworkSpace.GetConfiguredPlatformUrl(), "ws://connect.custom.test:5080/")
+	overrideNetworkSpace.close()
+}
+
+func TestNetworkSpaceManagerHostSpecificStoragePath(t *testing.T) {
+	storagePath, err := os.MkdirTemp("", "test_network_space_manager_host_storage")
+	assert.Equal(t, err, nil)
+
+	networkSpaceManager := NewNetworkSpaceManager(storagePath)
+	defer networkSpaceManager.Close()
+
+	firstNetworkSpace := networkSpaceManager.updateNetworkSpace(
+		NewNetworkSpaceKey("ur.network", "main"),
+		func(values *NetworkSpaceValues) {},
+	)
+	secondNetworkSpace := networkSpaceManager.updateNetworkSpace(
+		NewNetworkSpaceKey("custom.example.com:8443", "main"),
+		func(values *NetworkSpaceValues) {},
+	)
+
+	assert.Equal(t, firstNetworkSpace.storagePath, filepath.Join(storagePath, "network_spaces", "ur.network", "main"))
+	assert.Equal(t, secondNetworkSpace.storagePath, filepath.Join(storagePath, "network_spaces", "custom.example.com_8443", "main"))
+	if firstNetworkSpace.storagePath == secondNetworkSpace.storagePath {
+		t.Fatalf("expected network spaces with different hosts to use different storage paths")
+	}
 }
