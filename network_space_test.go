@@ -176,3 +176,35 @@ func TestNetworkSpaceManagerHostSpecificStoragePath(t *testing.T) {
 		t.Fatalf("expected network spaces with different hosts to use different storage paths")
 	}
 }
+
+func TestNetworkSpaceManagerMigratesLegacyEnvOnlyStoragePath(t *testing.T) {
+	storagePath, err := os.MkdirTemp("", "test_network_space_manager_legacy_migration")
+	assert.Equal(t, err, nil)
+
+	// simulate a pre-existing install that predates host-scoped storage:
+	// `network_spaces/<env>` with some local state file already in it.
+	legacyEnvStoragePath := filepath.Join(storagePath, "network_spaces", "main")
+	assert.Equal(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageFilePermissions), nil)
+	legacyMarkerPath := filepath.Join(legacyEnvStoragePath, "legacy_marker")
+	assert.Equal(t, os.WriteFile(legacyMarkerPath, []byte("legacy state"), LocalStorageFilePermissions), nil)
+
+	networkSpaceManager := NewNetworkSpaceManager(storagePath)
+	defer networkSpaceManager.Close()
+
+	networkSpace := networkSpaceManager.updateNetworkSpace(
+		NewNetworkSpaceKey("ur.network", "main"),
+		func(values *NetworkSpaceValues) {},
+	)
+
+	expectedStoragePath := filepath.Join(storagePath, "network_spaces", "ur.network", "main")
+	assert.Equal(t, networkSpace.storagePath, expectedStoragePath)
+
+	migratedMarkerPath := filepath.Join(expectedStoragePath, "legacy_marker")
+	migratedContents, err := os.ReadFile(migratedMarkerPath)
+	assert.Equal(t, err, nil)
+	assert.Equal(t, string(migratedContents), "legacy state")
+
+	if _, err := os.Stat(legacyEnvStoragePath); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy env-only storage path to be moved, not left behind")
+	}
+}
