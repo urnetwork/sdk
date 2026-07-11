@@ -268,6 +268,27 @@ func (self *cAdapterAuthVerifySendCallback) Result(result *sdk.AuthVerifySendRes
 	}
 }
 
+type cAdapterAuthWalletChallengeCallback struct {
+	cbResult C.urnet_auth_wallet_challenge_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAuthWalletChallengeCallback) Result(result *sdk.AuthWalletChallengeResult, errParam error) {
+	defer cgoGuard("urnet_auth_wallet_challenge_cb")
+	result_ := cJson(result, "urnet_auth_wallet_challenge_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_auth_wallet_challenge(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterBlockActionOverridesChangeListener struct {
 	cbBlockActionOverridesChanged C.urnet_block_action_overrides_change_cb
 	userData                      unsafe.Pointer
@@ -521,6 +542,16 @@ func (self *cAdapterDeleteApiKeyCallback) Result(result *sdk.DeleteApiKeyResult,
 	if errParam_ != nil {
 		cStringFree(errParam_)
 	}
+}
+
+type cAdapterDeviceRecreatedListener struct {
+	cbDeviceRecreated C.urnet_device_recreated_cb
+	userData          unsafe.Pointer
+}
+
+func (self *cAdapterDeviceRecreatedListener) DeviceRecreated() {
+	defer cgoGuard("urnet_device_recreated_cb")
+	C.urnet_invoke_device_recreated(self.cbDeviceRecreated, self.userData)
 }
 
 type cAdapterDeviceSetNameCallback struct {
@@ -2361,6 +2392,27 @@ func urnet_api_auth_verify_send(self C.uint64_t, authVerifySend *C.char, callbac
 		callback_ = &cAdapterAuthVerifySendCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.AuthVerifySend(authVerifySend_, callback_)
+}
+
+//export urnet_api_auth_wallet_challenge
+func urnet_api_auth_wallet_challenge(self C.uint64_t, args *C.char, callback_result C.urnet_auth_wallet_challenge_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_auth_wallet_challenge")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_wallet_challenge")
+	if !ok {
+		return
+	}
+	var args_ *sdk.AuthWalletChallengeArgs
+	if args != nil {
+		args_ = &sdk.AuthWalletChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_auth_wallet_challenge") {
+			return
+		}
+	}
+	var callback_ sdk.AuthWalletChallengeCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAuthWalletChallengeCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AuthWalletChallenge(args_, callback_)
 }
 
 //export urnet_api_close
@@ -5850,6 +5902,21 @@ func urnet_device_local_key_material_is_empty(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_remote_add_device_recreated_listener
+func urnet_device_remote_add_device_recreated_listener(self C.uint64_t, listener_device_recreated C.urnet_device_recreated_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_add_device_recreated_listener")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_add_device_recreated_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.DeviceRecreatedListener
+	if listener_device_recreated != nil {
+		listener_ = &cAdapterDeviceRecreatedListener{cbDeviceRecreated: listener_device_recreated, userData: listener_user_data}
+	}
+	r0 := self_.AddDeviceRecreatedListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_remote_add_remote_change_listener
 func urnet_device_remote_add_remote_change_listener(self C.uint64_t, listener_remote_changed C.urnet_remote_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_remote_add_remote_change_listener")
@@ -7354,6 +7421,28 @@ func urnet_network_space_get_bundled(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_network_space_get_configured_api_url
+func urnet_network_space_get_configured_api_url(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_configured_api_url")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_configured_api_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetConfiguredApiUrl()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_configured_platform_url
+func urnet_network_space_get_configured_platform_url(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_configured_platform_url")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_configured_platform_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetConfiguredPlatformUrl()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_env_name
 func urnet_network_space_get_env_name(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_env_name")
@@ -8039,6 +8128,24 @@ func urnet_new_network_space_manager_no_storage() C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_platform_device_remote
+func urnet_new_platform_device_remote(networkSpace C.uint64_t, byJwt *C.char, proxyUrl *C.char, signedProxyId *C.char, instanceId *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_platform_device_remote")
+	networkSpace_, ok := resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_platform_device_remote")
+	if !ok {
+		return 0
+	}
+	r0, err := sdk.NewPlatformDeviceRemote(networkSpace_, goString(byJwt), goString(proxyUrl), goString(signedProxyId), goId(instanceId, "urnet_new_platform_device_remote"))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_proxy_device_with_defaults
 func urnet_new_proxy_device_with_defaults(proxyConfig *C.char, setupNewDeviceCallback_setup_new_device C.urnet_setup_new_device_cb, setupNewDeviceCallback_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_new_proxy_device_with_defaults")
@@ -8081,6 +8188,16 @@ func urnet_new_transfer_path(sourceId *C.char, destinationId *C.char, streamId *
 func urnet_new_tunnel() C.uint64_t {
 	defer cgoGuard("urnet_new_tunnel")
 	r0 := sdk.NewTunnel()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_urls_network_space
+func urnet_new_urls_network_space(apiUrl *C.char, platformUrl *C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_urls_network_space")
+	r0 := sdk.NewUrlsNetworkSpace(goString(apiUrl), goString(platformUrl))
 	if r0 == nil {
 		return 0
 	}

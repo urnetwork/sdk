@@ -119,6 +119,8 @@ inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
+inline constexpr int64_t DeviceRpcWsBinary = 2;
+inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
@@ -233,6 +235,8 @@ struct AuthVerifyResultNetwork;
 struct AuthVerifyResult;
 struct AuthVerifySendArgs;
 struct AuthVerifySendResult;
+struct AuthWalletChallengeArgs;
+struct AuthWalletChallengeResult;
 struct BlockOverride;
 struct RouteOverride;
 struct BlockAction;
@@ -705,6 +709,19 @@ struct AuthVerifySendResult {
 	std::string user_auth{};
 };
 
+struct AuthWalletChallengeArgs {
+	std::optional<std::string> wallet_address;
+	std::optional<std::string> blockchain;
+};
+
+struct AuthWalletChallengeResult {
+	std::optional<std::string> challenge;
+	std::optional<int64_t> timestamp;
+	std::optional<int64_t> expires_in;
+	std::optional<std::string> message_template;
+	std::optional<ApiError> error;
+};
+
 struct BlockOverride {
 	bool Block{};
 };
@@ -847,6 +864,7 @@ struct DeviceLocalSettings {
 	int64_t BlockActionWindowDuration{};
 	int64_t BlockActionWindowMaxCount{};
 	int64_t ContractStatsEpoch{};
+	int64_t NetworkPeersEpoch{};
 	bool DefaultRouteLocal{};
 	bool DefaultCanShowRatingDialog{};
 	bool DefaultCanShowIntroFunnel{};
@@ -863,6 +881,7 @@ struct DeviceLocalSettings {
 	bool EnableRpc{};
 	std::optional<nlohmann::json> KeyMaterial;
 	bool DisableLogging{};
+	bool HostedIncompatible{};
 	bool UseExperimentalTunnelAddress{};
 };
 
@@ -1275,6 +1294,8 @@ struct NetworkSpaceValues {
 	std::optional<std::string> store;
 	std::optional<std::string> wallet;
 	std::optional<bool> sso_google;
+	std::optional<std::string> api_url;
+	std::optional<std::string> platform_url;
 	std::optional<NetExtender> net_extender;
 	std::optional<NetExtenderAutoConfigure> net_extender_auto_configure;
 };
@@ -1777,6 +1798,10 @@ inline void to_json(nlohmann::json& j, const AuthVerifySendArgs& v);
 inline void from_json(const nlohmann::json& j, AuthVerifySendArgs& v);
 inline void to_json(nlohmann::json& j, const AuthVerifySendResult& v);
 inline void from_json(const nlohmann::json& j, AuthVerifySendResult& v);
+inline void to_json(nlohmann::json& j, const AuthWalletChallengeArgs& v);
+inline void from_json(const nlohmann::json& j, AuthWalletChallengeArgs& v);
+inline void to_json(nlohmann::json& j, const AuthWalletChallengeResult& v);
+inline void from_json(const nlohmann::json& j, AuthWalletChallengeResult& v);
 inline void to_json(nlohmann::json& j, const BlockOverride& v);
 inline void from_json(const nlohmann::json& j, BlockOverride& v);
 inline void to_json(nlohmann::json& j, const RouteOverride& v);
@@ -3458,6 +3483,80 @@ inline void from_json(const nlohmann::json& j, AuthVerifySendResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const AuthWalletChallengeArgs& v) {
+	j = nlohmann::json::object();
+	if (v.wallet_address) {
+		j["wallet_address"] = *v.wallet_address;
+	}
+	if (v.blockchain) {
+		j["blockchain"] = *v.blockchain;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthWalletChallengeArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("wallet_address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.wallet_address = std::move(tmp);
+	}
+	if (auto it = j.find("blockchain"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.blockchain = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const AuthWalletChallengeResult& v) {
+	j = nlohmann::json::object();
+	if (v.challenge) {
+		j["challenge"] = *v.challenge;
+	}
+	if (v.timestamp) {
+		j["timestamp"] = *v.timestamp;
+	}
+	if (v.expires_in) {
+		j["expires_in"] = *v.expires_in;
+	}
+	if (v.message_template) {
+		j["message_template"] = *v.message_template;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthWalletChallengeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("challenge"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.challenge = std::move(tmp);
+	}
+	if (auto it = j.find("timestamp"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.timestamp = std::move(tmp);
+	}
+	if (auto it = j.find("expires_in"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.expires_in = std::move(tmp);
+	}
+	if (auto it = j.find("message_template"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.message_template = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		ApiError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const BlockOverride& v) {
 	j = nlohmann::json::object();
 	j["Block"] = v.Block;
@@ -4059,6 +4158,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["BlockActionWindowDuration"] = v.BlockActionWindowDuration;
 	j["BlockActionWindowMaxCount"] = v.BlockActionWindowMaxCount;
 	j["ContractStatsEpoch"] = v.ContractStatsEpoch;
+	j["NetworkPeersEpoch"] = v.NetworkPeersEpoch;
 	j["DefaultRouteLocal"] = v.DefaultRouteLocal;
 	j["DefaultCanShowRatingDialog"] = v.DefaultCanShowRatingDialog;
 	j["DefaultCanShowIntroFunnel"] = v.DefaultCanShowIntroFunnel;
@@ -4077,6 +4177,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 		j["KeyMaterial"] = *v.KeyMaterial;
 	}
 	j["DisableLogging"] = v.DisableLogging;
+	j["HostedIncompatible"] = v.HostedIncompatible;
 	j["UseExperimentalTunnelAddress"] = v.UseExperimentalTunnelAddress;
 }
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
@@ -4103,6 +4204,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("ContractStatsEpoch"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ContractStatsEpoch);
+	}
+	if (auto it = j.find("NetworkPeersEpoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkPeersEpoch);
 	}
 	if (auto it = j.find("DefaultRouteLocal"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultRouteLocal);
@@ -4153,6 +4257,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("DisableLogging"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DisableLogging);
+	}
+	if (auto it = j.find("HostedIncompatible"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HostedIncompatible);
 	}
 	if (auto it = j.find("UseExperimentalTunnelAddress"); it != j.end() && !it->is_null()) {
 		it->get_to(v.UseExperimentalTunnelAddress);
@@ -6039,6 +6146,12 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.sso_google) {
 		j["sso_google"] = *v.sso_google;
 	}
+	if (v.api_url) {
+		j["api_url"] = *v.api_url;
+	}
+	if (v.platform_url) {
+		j["platform_url"] = *v.platform_url;
+	}
 	if (v.net_extender) {
 		j["net_extender"] = *v.net_extender;
 	}
@@ -6094,6 +6207,16 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.sso_google = std::move(tmp);
+	}
+	if (auto it = j.find("api_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.api_url = std::move(tmp);
+	}
+	if (auto it = j.find("platform_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.platform_url = std::move(tmp);
 	}
 	if (auto it = j.find("net_extender"); it != j.end() && !it->is_null()) {
 		NetExtender tmp{};
@@ -7868,6 +7991,7 @@ using AuthNetworkClientCallback = std::function<void(std::optional<AuthNetworkCl
 using AuthPasswordResetCallback = std::function<void(std::optional<AuthPasswordResetResult> result, std::optional<std::string> err_param)>;
 using AuthVerifyCallback = std::function<void(std::optional<AuthVerifyResult> result, std::optional<std::string> err_param)>;
 using AuthVerifySendCallback = std::function<void(std::optional<AuthVerifySendResult> result, std::optional<std::string> err_param)>;
+using AuthWalletChallengeCallback = std::function<void(std::optional<AuthWalletChallengeResult> result, std::optional<std::string> err_param)>;
 using BlockActionOverridesChangeListener = std::function<void(std::optional<BlockActionOverrideList> block_action_overrides)>;
 using BlockActionStatsListener = std::function<void()>;
 using BlockActionWindowChangeListener = std::function<void(std::optional<BlockActionWindow> block_action_window)>;
@@ -7887,6 +8011,7 @@ using CreateAccountWalletCallback = std::function<void(std::optional<CreateAccou
 using CreateApiKeyCallback = std::function<void(std::optional<CreateApiKeyResult> result, std::optional<std::string> err_param)>;
 using DefaultLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult> result, std::optional<std::string> err_param)>;
+using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
 using FilteredLocationsListener = std::function<void(std::optional<FilteredLocations> locations, std::string state)>;
@@ -8156,6 +8281,7 @@ public:
 	void authPasswordReset(const std::optional<AuthPasswordResetArgs>& auth_password_reset, AuthPasswordResetCallback callback) const;
 	void authVerify(const std::optional<AuthVerifyArgs>& auth_verify, AuthVerifyCallback callback) const;
 	void authVerifySend(const std::optional<AuthVerifySendArgs>& auth_verify_send, AuthVerifySendCallback callback) const;
+	void authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& args, AuthWalletChallengeCallback callback) const;
 	void close() const;
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
@@ -8344,6 +8470,7 @@ class DeviceRemote final : public Device {
 public:
 	DeviceRemote() = default;
 	explicit DeviceRemote(uint64_t h) : Device(h) {}
+	Sub addDeviceRecreatedListener(DeviceRecreatedListener listener) const;
 	Sub addRemoteChangeListener(RemoteChangeListener listener) const;
 	void closeViewController(ViewController vc) const;
 	bool getRemoteConnected() const;
@@ -8509,6 +8636,8 @@ public:
 	std::string getApiUrl() const;
 	AsyncLocalState getAsyncLocalState() const;
 	bool getBundled() const;
+	std::string getConfiguredApiUrl() const;
+	std::string getConfiguredPlatformUrl() const;
 	std::string getEnvName() const;
 	std::string getEnvSecret() const;
 	std::string getHostName() const;
@@ -9088,6 +9217,42 @@ inline void oneshot_auth_verify_send(void* user_data, const char* result_json, c
 	delete f;
 }
 
+inline void retained_auth_wallet_challenge(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthWalletChallengeCallback*>(user_data);
+	try {
+		std::optional<AuthWalletChallengeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthWalletChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_wallet_challenge(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<AuthWalletChallengeCallback*>(user_data);
+	try {
+		std::optional<AuthWalletChallengeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<AuthWalletChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_block_action_overrides_change(void* user_data, const char* block_action_overrides_json) {
 	auto* f = static_cast<BlockActionOverridesChangeListener*>(user_data);
 	try {
@@ -9573,6 +9738,26 @@ inline void oneshot_delete_api_key(void* user_data, const char* result_json, con
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_device_recreated(void* user_data) {
+	auto* f = static_cast<DeviceRecreatedListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_device_recreated(void* user_data) {
+	auto* f = static_cast<DeviceRecreatedListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -13252,6 +13437,16 @@ inline void Api::authVerifySend(const std::optional<AuthVerifySendArgs>& auth_ve
 	auto* callback_fn = callback ? new AuthVerifySendCallback(std::move(callback)) : nullptr;
 	urnet_api_auth_verify_send(handle(), auth_verify_send_c, callback_fn ? &detail::oneshot_auth_verify_send : nullptr, callback_fn);
 }
+inline void Api::authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& args, AuthWalletChallengeCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new AuthWalletChallengeCallback(std::move(callback)) : nullptr;
+	urnet_api_auth_wallet_challenge(handle(), args_c, callback_fn ? &detail::oneshot_auth_wallet_challenge : nullptr, callback_fn);
+}
 inline void Api::close() const {
 	urnet_api_close(handle());
 }
@@ -14099,6 +14294,17 @@ inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
 	return r;
 }
+inline Sub DeviceRemote::addDeviceRecreatedListener(DeviceRecreatedListener listener) const {
+	std::shared_ptr<DeviceRecreatedListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<DeviceRecreatedListener>(std::move(listener));
+	}
+	Sub r(urnet_device_remote_add_device_recreated_listener(handle(), listener_fn ? &detail::retained_device_recreated : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub DeviceRemote::addRemoteChangeListener(RemoteChangeListener listener) const {
 	std::shared_ptr<RemoteChangeListener> listener_fn;
 	if (listener) {
@@ -14727,6 +14933,14 @@ inline AsyncLocalState NetworkSpace::getAsyncLocalState() const {
 inline bool NetworkSpace::getBundled() const {
 	bool r = urnet_network_space_get_bundled(handle());
 	return r;
+}
+inline std::string NetworkSpace::getConfiguredApiUrl() const {
+	char* r_c = urnet_network_space_get_configured_api_url(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getConfiguredPlatformUrl() const {
+	char* r_c = urnet_network_space_get_configured_platform_url(handle());
+	return detail::takeString(r_c);
 }
 inline std::string NetworkSpace::getEnvName() const {
 	char* r_c = urnet_network_space_get_env_name(handle());
@@ -15469,6 +15683,14 @@ inline NetworkSpaceManager newNetworkSpaceManagerNoStorage() {
 	NetworkSpaceManager r(urnet_new_network_space_manager_no_storage());
 	return r;
 }
+inline DeviceRemote newPlatformDeviceRemote(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& proxy_url, const std::string& signed_proxy_id, const std::string& instance_id) {
+	char* err_c = nullptr;
+	DeviceRemote r(urnet_new_platform_device_remote(network_space.handle(), by_jwt.c_str(), proxy_url.c_str(), signed_proxy_id.c_str(), instance_id.c_str(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline ProxyDevice newProxyDeviceWithDefaults(const std::optional<ProxyConfig>& proxy_config, SetupNewDeviceCallback setup_new_device_callback) {
 	std::string proxy_config_json;
 	const char* proxy_config_c = nullptr;
@@ -15500,6 +15722,10 @@ inline std::optional<TransferPath> newTransferPath(const std::string& source_id,
 }
 inline Tunnel newTunnel() {
 	Tunnel r(urnet_new_tunnel());
+	return r;
+}
+inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::string& platform_url) {
+	NetworkSpace r(urnet_new_urls_network_space(api_url.c_str(), platform_url.c_str()));
 	return r;
 }
 inline std::string normalEnvName(const std::string& env_name) {
