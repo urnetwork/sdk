@@ -50,6 +50,14 @@ type RemoteChangeListener interface {
 	RemoteChanged(remoteConnected bool)
 }
 
+// DeviceRecreatedListener fires when the hosted device is recreated under the
+// remote (detected as a change in the device generation across reconnects).
+// The client should re-run its device setup (destination, listeners) since the
+// new device instance starts from its persisted initial state.
+type DeviceRecreatedListener interface {
+	DeviceRecreated()
+}
+
 type deviceRpcSettings struct {
 	RpcCallTimeout      time.Duration
 	RpcConnectTimeout   time.Duration
@@ -73,6 +81,23 @@ type deviceRpcSettings struct {
 	// request/response buffers + goroutines so a slow or suspended app cannot pile
 	// up unbounded memory in the (memory-capped) network extension.
 	HttpMaxConcurrent int
+
+	// DisableHostedIncompatible, when true, makes the DeviceLocalRpc noop the
+	// setters that must never change on a hosted device (route local, provide
+	// settings, tunnel/vpn, identity/rpc); the corresponding getters and change
+	// listeners keep working. Set by the platform hosted rpc. This is the rpc
+	// layer of the same guard `DeviceLocalSettings.HostedIncompatible` enforces
+	// inside DeviceLocal.
+	DisableHostedIncompatible bool
+
+	// DeviceGeneration identifies the specific hosted DeviceLocal instance an
+	// rpc serves. The host stamps a fresh value each time it (re)creates the
+	// device (e.g. after an idle reap or egress-death recreate). The
+	// DeviceRemote reads it from the sync response and fires
+	// DeviceRecreatedListener when it changes across reconnects, so the client
+	// can re-run its setup. Empty on non-hosted (localhost) rpc, where the
+	// device is not recreated under the remote.
+	DeviceGeneration string
 
 	DeviceLocalSettings
 }
@@ -126,14 +151,20 @@ type DeviceRemote struct {
 	instanceId     connect.Id
 	clientStrategy *connect.ClientStrategy
 
-	remoteChangeListeners *connect.CallbackList[RemoteChangeListener]
+	remoteChangeListeners    *connect.CallbackList[RemoteChangeListener]
+	deviceRecreatedListeners *connect.CallbackList[DeviceRecreatedListener]
+
+	// the device generation observed on the last successful sync; a change
+	// signals the host recreated the device. Guarded by stateLock.
+	deviceGeneration    string
+	hasDeviceGeneration bool
 
 	// egressSecurityPolicy *deviceRemoteEgressSecurityPolicy
 	// ingressSecurityPolicy *deviceRemote
 
 	stateLock sync.Mutex
 
-	dialer DeviceRpcDialer
+	dialer deviceRpcDialer
 	// current dialer config, so SetRpcServer is a no-op (no reset of a live
 	// connection) when the same transport is re-applied
 	rpcHostPort      string
@@ -162,6 +193,22 @@ type DeviceRemote struct {
 	tunnelChangeListeners                   map[connect.Id]TunnelChangeListener
 	contractStatusChangeListeners           map[connect.Id]ContractStatusChangeListener
 	windowStatusChangeListeners             map[connect.Id]WindowStatusChangeListener
+	blockActionWindowChangeListeners        map[connect.Id]BlockActionWindowChangeListener
+	blockStatsChangeListeners               map[connect.Id]BlockStatsChangeListener
+	blockActionOverridesChangeListeners     map[connect.Id]BlockActionOverridesChangeListener
+	packetStatsChangeListeners              map[connect.Id]PacketStatsChangeListener
+	egressContractStatsChangeListeners      map[connect.Id]ContractStatsChangeListener
+	egressContractDetailsChangeListeners    map[connect.Id]ContractDetailsChangeListener
+	ingressContractStatsChangeListeners     map[connect.Id]ContractStatsChangeListener
+	ingressContractDetailsChangeListeners   map[connect.Id]ContractDetailsChangeListener
+	dnsResolverSettingsChangeListeners      map[connect.Id]DnsResolverSettingsChangeListener
+	networkPeersChangeListeners             map[connect.Id]NetworkPeersChangeListener
+
+	providerPacketStatsChangeListeners            map[connect.Id]PacketStatsChangeListener
+	providerEgressContractStatsChangeListeners    map[connect.Id]ContractStatsChangeListener
+	providerEgressContractDetailsChangeListeners  map[connect.Id]ContractDetailsChangeListener
+	providerIngressContractStatsChangeListeners   map[connect.Id]ContractStatsChangeListener
+	providerIngressContractDetailsChangeListeners map[connect.Id]ContractDetailsChangeListener
 	// jwtRefreshListeners               map[connect.Id]JwtRefreshListener
 	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
 
@@ -189,12 +236,38 @@ func NewDeviceRemoteWithDefaults(
 	return newDeviceRemote(networkSpace, byJwt, instanceId, settings, dialer)
 }
 
+// NewPlatformDeviceRemote creates a DeviceRemote that reaches a hosted
+// DeviceLocal by connecting directly to the proxy host that runs it, at
+// wss://<proxyUrl>/device-rpc. This is the constructor a JS/wasm client uses
+// (with the browser websocket dialer). proxyUrl may be a bare host, host:port,
+// or ws/wss url; a bare host defaults to wss.
+//
+// Auth to the device-rpc endpoint is signedProxyId (the device's signed proxy
+// id — an HMAC bearer token, model.SignProxyId), not a jwt. byJwt is the
+// network member jwt used for the network space api; it also supplies the
+// remote's displayed client id.
+func NewPlatformDeviceRemote(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	proxyUrl string,
+	signedProxyId string,
+	instanceId *Id,
+) (*DeviceRemote, error) {
+	clientId, err := parseByJwtClientId(byJwt)
+	if err != nil {
+		return nil, err
+	}
+	settings := defaultDeviceRpcSettings()
+	dialer := NewPlatformDeviceRpcDialer(proxyUrl, signedProxyId, settings)
+	return newDeviceRemoteWithOverrides(networkSpace, byJwt, instanceId, settings, clientId, dialer)
+}
+
 func newDeviceRemote(
 	networkSpace *NetworkSpace,
 	byJwt string,
 	instanceId *Id,
 	settings *deviceRpcSettings,
-	dialer DeviceRpcDialer,
+	dialer deviceRpcDialer,
 ) (*DeviceRemote, error) {
 	clientId, err := parseByJwtClientId(byJwt)
 	if err != nil {
@@ -217,7 +290,7 @@ func newDeviceRemoteWithOverrides(
 	instanceId *Id,
 	settings *deviceRpcSettings,
 	clientId connect.Id,
-	dialer DeviceRpcDialer,
+	dialer deviceRpcDialer,
 ) (*DeviceRemote, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -225,20 +298,21 @@ func newDeviceRemoteWithOverrides(
 	api.SetByJwt(byJwt)
 
 	deviceRemote := &DeviceRemote{
-		ctx:                   ctx,
-		cancel:                cancel,
-		networkSpace:          networkSpace,
-		byJwt:                 byJwt,
-		settings:              settings,
-		log:                   settings.logger(),
-		reconnectMonitor:      connect.NewMonitor(),
-		syncMonitor:           connect.NewMonitor(),
-		resetMonitor:          connect.NewMonitor(),
-		clientId:              clientId,
-		instanceId:            instanceId.toConnectId(),
-		clientStrategy:        networkSpace.clientStrategy,
-		dialer:                dialer,
-		remoteChangeListeners: connect.NewCallbackList[RemoteChangeListener](),
+		ctx:                      ctx,
+		cancel:                   cancel,
+		networkSpace:             networkSpace,
+		byJwt:                    byJwt,
+		settings:                 settings,
+		log:                      settings.logger(),
+		reconnectMonitor:         connect.NewMonitor(),
+		syncMonitor:              connect.NewMonitor(),
+		resetMonitor:             connect.NewMonitor(),
+		clientId:                 clientId,
+		instanceId:               instanceId.toConnectId(),
+		clientStrategy:           networkSpace.clientStrategy,
+		dialer:                   dialer,
+		remoteChangeListeners:    connect.NewCallbackList[RemoteChangeListener](),
+		deviceRecreatedListeners: connect.NewCallbackList[DeviceRecreatedListener](),
 
 		canShowRatingDialogChangeListeners:      map[connect.Id]CanShowRatingDialogChangeListener{},
 		canPromptIntroFunnelChangeListeners:     map[connect.Id]CanPromptIntroFunnelChangeListener{},
@@ -261,8 +335,24 @@ func newDeviceRemoteWithOverrides(
 		tunnelChangeListeners:                   map[connect.Id]TunnelChangeListener{},
 		contractStatusChangeListeners:           map[connect.Id]ContractStatusChangeListener{},
 		windowStatusChangeListeners:             map[connect.Id]WindowStatusChangeListener{},
+		blockActionWindowChangeListeners:        map[connect.Id]BlockActionWindowChangeListener{},
+		blockStatsChangeListeners:               map[connect.Id]BlockStatsChangeListener{},
+		blockActionOverridesChangeListeners:     map[connect.Id]BlockActionOverridesChangeListener{},
+		packetStatsChangeListeners:              map[connect.Id]PacketStatsChangeListener{},
+		egressContractStatsChangeListeners:      map[connect.Id]ContractStatsChangeListener{},
+		egressContractDetailsChangeListeners:    map[connect.Id]ContractDetailsChangeListener{},
+		ingressContractStatsChangeListeners:     map[connect.Id]ContractStatsChangeListener{},
+		ingressContractDetailsChangeListeners:   map[connect.Id]ContractDetailsChangeListener{},
+		dnsResolverSettingsChangeListeners:      map[connect.Id]DnsResolverSettingsChangeListener{},
+		networkPeersChangeListeners:             map[connect.Id]NetworkPeersChangeListener{},
 		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
 		httpResponseChannels:                    map[connect.Id]chan *DeviceRemoteHttpResponse{},
+
+		providerPacketStatsChangeListeners:            map[connect.Id]PacketStatsChangeListener{},
+		providerEgressContractStatsChangeListeners:    map[connect.Id]ContractStatsChangeListener{},
+		providerEgressContractDetailsChangeListeners:  map[connect.Id]ContractDetailsChangeListener{},
+		providerIngressContractStatsChangeListeners:   map[connect.Id]ContractStatsChangeListener{},
+		providerIngressContractDetailsChangeListeners: map[connect.Id]ContractDetailsChangeListener{},
 	}
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
@@ -324,6 +414,7 @@ func (self *DeviceRemote) run() {
 			var reverseConn net.Conn
 
 			synced := false
+			deviceRecreated := false
 			func() {
 				if initialLock {
 					defer func() {
@@ -395,8 +486,24 @@ func (self *DeviceRemote) run() {
 					TunnelChangeListenerIds:                   maps.Keys(self.tunnelChangeListeners),
 					ContractStatusChangeListenerIds:           maps.Keys(self.contractStatusChangeListeners),
 					WindowStatusChangeListenerIds:             maps.Keys(self.windowStatusChangeListeners),
-					WindowMonitorEventListenerIds:             windowMonitorListenerIds,
-					State:                                     self.state,
+					BlockActionWindowChangeListenerIds:        maps.Keys(self.blockActionWindowChangeListeners),
+					BlockStatsChangeListenerIds:               maps.Keys(self.blockStatsChangeListeners),
+					BlockActionOverridesChangeListenerIds:     maps.Keys(self.blockActionOverridesChangeListeners),
+					PacketStatsChangeListenerIds:              maps.Keys(self.packetStatsChangeListeners),
+					EgressContractStatsChangeListenerIds:      maps.Keys(self.egressContractStatsChangeListeners),
+					EgressContractDetailsChangeListenerIds:    maps.Keys(self.egressContractDetailsChangeListeners),
+					IngressContractStatsChangeListenerIds:     maps.Keys(self.ingressContractStatsChangeListeners),
+					IngressContractDetailsChangeListenerIds:   maps.Keys(self.ingressContractDetailsChangeListeners),
+					DnsResolverSettingsChangeListenerIds:      maps.Keys(self.dnsResolverSettingsChangeListeners),
+					NetworkPeersChangeListenerIds:             maps.Keys(self.networkPeersChangeListeners),
+
+					ProviderPacketStatsChangeListenerIds:            maps.Keys(self.providerPacketStatsChangeListeners),
+					ProviderEgressContractStatsChangeListenerIds:    maps.Keys(self.providerEgressContractStatsChangeListeners),
+					ProviderEgressContractDetailsChangeListenerIds:  maps.Keys(self.providerEgressContractDetailsChangeListeners),
+					ProviderIngressContractStatsChangeListenerIds:   maps.Keys(self.providerIngressContractStatsChangeListeners),
+					ProviderIngressContractDetailsChangeListenerIds: maps.Keys(self.providerIngressContractDetailsChangeListeners),
+					WindowMonitorEventListenerIds:                   windowMonitorListenerIds,
+					State:                                           self.state,
 				}
 				syncResponse, err := rpcCall[*DeviceRemoteSyncResponse](service, "DeviceLocalRpc.Sync", syncRequest, self.closeService)
 				if err != nil {
@@ -451,6 +558,16 @@ func (self *DeviceRemote) run() {
 
 				self.service = service
 
+				// detect a hosted device recreate: a change in the device
+				// generation across syncs means the host built a new device
+				// instance, so the client must re-run its setup. The first
+				// sync establishes the baseline (not a recreate).
+				if self.hasDeviceGeneration && self.deviceGeneration != syncResponse.DeviceGeneration {
+					deviceRecreated = true
+				}
+				self.deviceGeneration = syncResponse.DeviceGeneration
+				self.hasDeviceGeneration = true
+
 				if initialLock {
 					initialLock = false
 					self.stateLock.Unlock()
@@ -461,6 +578,9 @@ func (self *DeviceRemote) run() {
 
 			if synced {
 				self.remoteChanged(true)
+				if deviceRecreated {
+					self.deviceRecreated()
+				}
 
 				self.log.Infof("[dr]sync done")
 				select {
@@ -2718,6 +2838,205 @@ func (self *DeviceRemote) windowStatusChanged(windowStatus *WindowStatus) {
 	}
 }
 
+func (self *DeviceRemote) blockActionWindowChanged(blockActionWindow *BlockActionWindow) {
+	listenerList := func() []BlockActionWindowChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.blockActionWindowChangeListeners)
+	}()
+	for _, blockActionWindowChangeListener := range listenerList {
+		connect.HandleError(func() {
+			blockActionWindowChangeListener.BlockActionWindowChanged(blockActionWindow)
+		})
+	}
+}
+
+func (self *DeviceRemote) blockStatsChanged(blockStats *BlockStats) {
+	listenerList := func() []BlockStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.blockStatsChangeListeners)
+	}()
+	for _, blockStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			blockStatsChangeListener.BlockStatsChanged(blockStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) blockActionOverridesChanged(overridesRpc []*BlockActionOverrideRpc) {
+	listenerList := func() []BlockActionOverridesChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+		return listenerList(self.blockActionOverridesChangeListeners)
+	}()
+	blockActionOverrides := toBlockActionOverrideList(overridesRpc)
+	for _, blockActionOverridesChangeListener := range listenerList {
+		connect.HandleError(func() {
+			blockActionOverridesChangeListener.BlockActionOverridesChanged(blockActionOverrides)
+		})
+	}
+}
+
+func (self *DeviceRemote) packetStatsChanged(packetStats *PacketStats) {
+	listenerList := func() []PacketStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.packetStatsChangeListeners)
+	}()
+	for _, packetStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			packetStatsChangeListener.PacketStatsChanged(packetStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) egressContractStatsChanged(contractStats *ContractStats) {
+	listenerList := func() []ContractStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.egressContractStatsChangeListeners)
+	}()
+	for _, contractStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractStatsChangeListener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) egressContractDetailsChanged(contractDetails *ContractDetails) {
+	listenerList := func() []ContractDetailsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.egressContractDetailsChangeListeners)
+	}()
+	for _, contractDetailsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractDetailsChangeListener.ContractDetailsChanged(contractDetails)
+		})
+	}
+}
+
+func (self *DeviceRemote) ingressContractStatsChanged(contractStats *ContractStats) {
+	listenerList := func() []ContractStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.ingressContractStatsChangeListeners)
+	}()
+	for _, contractStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractStatsChangeListener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) ingressContractDetailsChanged(contractDetails *ContractDetails) {
+	listenerList := func() []ContractDetailsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.ingressContractDetailsChangeListeners)
+	}()
+	for _, contractDetailsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractDetailsChangeListener.ContractDetailsChanged(contractDetails)
+		})
+	}
+}
+
+func (self *DeviceRemote) providerPacketStatsChanged(packetStats *PacketStats) {
+	listenerList := func() []PacketStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.providerPacketStatsChangeListeners)
+	}()
+	for _, packetStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			packetStatsChangeListener.PacketStatsChanged(packetStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) providerEgressContractStatsChanged(contractStats *ContractStats) {
+	listenerList := func() []ContractStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.providerEgressContractStatsChangeListeners)
+	}()
+	for _, contractStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractStatsChangeListener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) providerEgressContractDetailsChanged(contractDetails *ContractDetails) {
+	listenerList := func() []ContractDetailsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.providerEgressContractDetailsChangeListeners)
+	}()
+	for _, contractDetailsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractDetailsChangeListener.ContractDetailsChanged(contractDetails)
+		})
+	}
+}
+
+func (self *DeviceRemote) providerIngressContractStatsChanged(contractStats *ContractStats) {
+	listenerList := func() []ContractStatsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.providerIngressContractStatsChangeListeners)
+	}()
+	for _, contractStatsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractStatsChangeListener.ContractStatsChanged(contractStats)
+		})
+	}
+}
+
+func (self *DeviceRemote) providerIngressContractDetailsChanged(contractDetails *ContractDetails) {
+	listenerList := func() []ContractDetailsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.providerIngressContractDetailsChangeListeners)
+	}()
+	for _, contractDetailsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			contractDetailsChangeListener.ContractDetailsChanged(contractDetails)
+		})
+	}
+}
+
+func (self *DeviceRemote) dnsResolverSettingsChanged(settingsRpc *DnsResolverSettingsRpc) {
+	listenerList := func() []DnsResolverSettingsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.DnsResolverSettings.Set(settingsRpc)
+		return listenerList(self.dnsResolverSettingsChangeListeners)
+	}()
+	dnsResolverSettings := settingsRpc.toDnsResolverSettings()
+	for _, dnsResolverSettingsChangeListener := range listenerList {
+		connect.HandleError(func() {
+			dnsResolverSettingsChangeListener.DnsResolverSettingsChanged(dnsResolverSettings)
+		})
+	}
+}
+
+func (self *DeviceRemote) networkPeersChanged(networkPeers *NetworkPeers) {
+	listenerList := func() []NetworkPeersChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return listenerList(self.networkPeersChangeListeners)
+	}()
+	for _, networkPeersChangeListener := range listenerList {
+		connect.HandleError(func() {
+			networkPeersChangeListener.NetworkPeersChanged(networkPeers)
+		})
+	}
+}
+
 func (self *DeviceRemote) windowMonitorEvent(
 	windowIds map[connect.Id]bool,
 	windowExpandEvent *connect.WindowExpandEvent,
@@ -2919,118 +3238,712 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 	}
 }
 
-/*
-func (self *DeviceRemote) GetProviderEnabled() bool {
-	// FIXME
-	return true
+func (self *DeviceRemote) AddDeviceRecreatedListener(listener DeviceRecreatedListener) Sub {
+	listenerId := self.deviceRecreatedListeners.Add(listener)
+	return newSub(func() {
+		self.deviceRecreatedListeners.Remove(listenerId)
+	})
 }
 
-func (self *DeviceRemote) SetProviderEnabled(providerEnabled bool) {
-	// FIXME
+func (self *DeviceRemote) deviceRecreated() {
+	for _, listener := range self.deviceRecreatedListeners.Get() {
+		listener.DeviceRecreated()
+	}
 }
 
-func (self *DeviceRemote) AddProviderChangeListener(listener ProviderChangeListener) Sub {
-	// FIXME
-	return nil
-}
+// privacy block
 
 func (self *DeviceRemote) GetBlockStats() *BlockStats {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	blockStats, success := func() (*BlockStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemoteBlockStats](self.service, "DeviceLocalRpc.GetBlockStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.BlockStats, true
+	}()
+	if success {
+		return blockStats
+	} else {
+		return nil
+	}
 }
 
 func (self *DeviceRemote) GetBlockActions() *BlockActionWindow {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	blockActionWindow, success := func() (*BlockActionWindow, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		window, err := rpcCallNoArg[*DeviceRemoteBlockActionWindow](self.service, "DeviceLocalRpc.GetBlockActions", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return window.BlockActionWindow.toBlockActionWindow(), true
+	}()
+	if success {
+		return blockActionWindow
+	} else {
+		return nil
+	}
 }
 
-func (self *DeviceRemote) OverrideBlockAction(hostPattern string, block bool) {
-	// FIXME
+func (self *DeviceRemote) AddBlockActionOverride(override *BlockActionOverride) {
+	// mirror the `DeviceLocal` guard
+	if override == nil || override.OverrideId == nil {
+		return
+	}
+	overrideRpc := newBlockActionOverrideRpc(override)
+	var eventOverridesRpc []*BlockActionOverrideRpc
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		// maintain the full overrides list locally, replacing an existing
+		// override with the same id (see `DeviceLocal.AddBlockActionOverride`)
+		overridesRpc := removeBlockActionOverrideRpc(
+			self.state.BlockActionOverrides.Get(
+				self.lastKnownState.BlockActionOverrides.Get(nil),
+			),
+			overrideRpc.OverrideId,
+		)
+		overridesRpc = append(overridesRpc, overrideRpc)
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.AddBlockActionOverride", overrideRpc, self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.BlockActionOverrides.Unset()
+			self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+		} else {
+			event = true
+			eventOverridesRpc = overridesRpc
+			self.state.BlockActionOverrides.Set(overridesRpc)
+		}
+	}()
+	if event {
+		self.blockActionOverridesChanged(eventOverridesRpc)
+	}
 }
 
-func (self *DeviceRemote) RemoveBlockActionOverride(hostPattern string) {
-	// FIXME
+func (self *DeviceRemote) RemoveBlockActionOverride(overrideId *Id) {
+	// mirror the `DeviceLocal` guard
+	if overrideId == nil {
+		return
+	}
+	var eventOverridesRpc []*BlockActionOverrideRpc
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		// maintain the full overrides list locally
+		// (see `DeviceLocal.RemoveBlockActionOverride`)
+		overridesRpc := removeBlockActionOverrideRpc(
+			self.state.BlockActionOverrides.Get(
+				self.lastKnownState.BlockActionOverrides.Get(nil),
+			),
+			overrideId.toConnectId(),
+		)
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.RemoveBlockActionOverride", overrideId.toConnectId(), self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.BlockActionOverrides.Unset()
+			self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+		} else {
+			event = true
+			eventOverridesRpc = overridesRpc
+			self.state.BlockActionOverrides.Set(overridesRpc)
+		}
+	}()
+	if event {
+		self.blockActionOverridesChanged(eventOverridesRpc)
+	}
 }
 
-func (self *DeviceRemote) SetBlockActionOverrideList(blockActionOverrides *BlockActionOverrideList) {
-	// FIXME
+func (self *DeviceRemote) SetBlockActionOverrides(overrides *BlockActionOverrideList) {
+	overridesRpc := newBlockActionOverridesRpc(overrides)
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			deviceOverrides := &DeviceRemoteBlockActionOverrides{
+				BlockActionOverrides: overridesRpc,
+			}
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetBlockActionOverrides", deviceOverrides, self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.BlockActionOverrides.Unset()
+			self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+		} else {
+			event = true
+			self.state.BlockActionOverrides.Set(overridesRpc)
+		}
+	}()
+	if event {
+		self.blockActionOverridesChanged(overridesRpc)
+	}
 }
 
-func (self *DeviceRemote) GetBlockEnabled() bool {
-	// FIXME
-	return false
+func (self *DeviceRemote) GetBlockActionOverrides() *BlockActionOverrideList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	overridesRpc, success := func() ([]*BlockActionOverrideRpc, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceOverrides, err := rpcCallNoArg[*DeviceRemoteBlockActionOverrides](self.service, "DeviceLocalRpc.GetBlockActionOverrides", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		overridesRpc := deviceOverrides.BlockActionOverrides
+		self.lastKnownState.BlockActionOverrides.Set(overridesRpc)
+		return overridesRpc, true
+	}()
+	if success {
+		return toBlockActionOverrideList(overridesRpc)
+	} else {
+		return toBlockActionOverrideList(self.state.BlockActionOverrides.Get(
+			self.lastKnownState.BlockActionOverrides.Get(nil),
+		))
+	}
 }
 
-func (self *DeviceRemote) SetBlockEnabled(blockEnabled bool) {
-	// FIXME
-}
+func (self *DeviceRemote) GetLocalOverrideAppIds() *OverrideLocalAppIds {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
 
-func (self *DeviceRemote) GetBlockWhileDisconnected() bool {
-	// FIXME
-	return false
-}
+	localOverrideAppIds, success := func() (*OverrideLocalAppIds, bool) {
+		if self.service == nil {
+			return nil, false
+		}
 
-func (self *DeviceRemote) SetBlockWhileDisconnected(blockWhileDisconnected bool) {
-	// FIXME
-}
-
-func (self *DeviceRemote) AddBlockChangeListener(listener BlockChangeListener) Sub {
-	// FIXME
-	return nil
+		appIds, err := rpcCallNoArg[*DeviceRemoteLocalOverrideAppIds](self.service, "DeviceLocalRpc.GetLocalOverrideAppIds", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return appIds.LocalOverrideAppIds.toOverrideLocalAppIds(), true
+	}()
+	if success {
+		return localOverrideAppIds
+	} else {
+		return nil
+	}
 }
 
 func (self *DeviceRemote) AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub {
-	// FIXME
-	return nil
+	return addListener(
+		self,
+		listener,
+		self.blockActionWindowChangeListeners,
+		"DeviceLocalRpc.AddBlockActionWindowChangeListener",
+		"DeviceLocalRpc.RemoveBlockActionWindowChangeListener",
+	)
 }
 
 func (self *DeviceRemote) AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub {
-	// FIXME
-	return nil
+	return addListener(
+		self,
+		listener,
+		self.blockStatsChangeListeners,
+		"DeviceLocalRpc.AddBlockStatsChangeListener",
+		"DeviceLocalRpc.RemoveBlockStatsChangeListener",
+	)
+}
+
+func (self *DeviceRemote) AddBlockActionOverridesChangeListener(listener BlockActionOverridesChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.blockActionOverridesChangeListeners,
+		"DeviceLocalRpc.AddBlockActionOverridesChangeListener",
+		"DeviceLocalRpc.RemoveBlockActionOverridesChangeListener",
+	)
+}
+
+// packet stats
+
+func (self *DeviceRemote) GetPacketStats() *PacketStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	packetStats, success := func() (*PacketStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemotePacketStats](self.service, "DeviceLocalRpc.GetPacketStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.PacketStats, true
+	}()
+	if success {
+		return packetStats
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) AddPacketStatsChangeListener(listener PacketStatsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.packetStatsChangeListeners,
+		"DeviceLocalRpc.AddPacketStatsChangeListener",
+		"DeviceLocalRpc.RemovePacketStatsChangeListener",
+	)
 }
 
 // contract stats
 
 func (self *DeviceRemote) GetEgressContractStats() *ContractStats {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractStats, success := func() (*ContractStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemoteContractStats](self.service, "DeviceLocalRpc.GetEgressContractStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.ContractStats, true
+	}()
+	if success {
+		return contractStats
+	} else {
+		return nil
+	}
 }
 
 func (self *DeviceRemote) GetEgressContractDetails() *ContractDetailsList {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractDetailsList, success := func() (*ContractDetailsList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		details, err := rpcCallNoArg[*DeviceRemoteContractDetailsList](self.service, "DeviceLocalRpc.GetEgressContractDetails", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return toContractDetailsList(details.ContractDetailsList), true
+	}()
+	if success {
+		return contractDetailsList
+	} else {
+		return nil
+	}
 }
 
 func (self *DeviceRemote) GetIngressContractStats() *ContractStats {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractStats, success := func() (*ContractStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemoteContractStats](self.service, "DeviceLocalRpc.GetIngressContractStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.ContractStats, true
+	}()
+	if success {
+		return contractStats
+	} else {
+		return nil
+	}
 }
 
 func (self *DeviceRemote) GetIngressContractDetails() *ContractDetailsList {
-	// FIXME
-	return nil
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractDetailsList, success := func() (*ContractDetailsList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		details, err := rpcCallNoArg[*DeviceRemoteContractDetailsList](self.service, "DeviceLocalRpc.GetIngressContractDetails", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return toContractDetailsList(details.ContractDetailsList), true
+	}()
+	if success {
+		return contractDetailsList
+	} else {
+		return nil
+	}
 }
 
-func (self *DeviceRemote) AddEgressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
-	// FIXME
-	return nil
+func (self *DeviceRemote) AddEgressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.egressContractStatsChangeListeners,
+		"DeviceLocalRpc.AddEgressContractStatsChangeListener",
+		"DeviceLocalRpc.RemoveEgressContractStatsChangeListener",
+	)
 }
 
 func (self *DeviceRemote) AddEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
-	// FIXME
-	return nil
+	return addListener(
+		self,
+		listener,
+		self.egressContractDetailsChangeListeners,
+		"DeviceLocalRpc.AddEgressContractDetailsChangeListener",
+		"DeviceLocalRpc.RemoveEgressContractDetailsChangeListener",
+	)
 }
 
-func (self *DeviceRemote) AddIngressContratStatsChangeListener(listener ContractStatsChangeListener) Sub {
-	// FIXME
-	return nil
+func (self *DeviceRemote) AddIngressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.ingressContractStatsChangeListeners,
+		"DeviceLocalRpc.AddIngressContractStatsChangeListener",
+		"DeviceLocalRpc.RemoveIngressContractStatsChangeListener",
+	)
 }
 
 func (self *DeviceRemote) AddIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
-	// FIXME
-	return nil
+	return addListener(
+		self,
+		listener,
+		self.ingressContractDetailsChangeListeners,
+		"DeviceLocalRpc.AddIngressContractDetailsChangeListener",
+		"DeviceLocalRpc.RemoveIngressContractDetailsChangeListener",
+	)
 }
-*/
+
+// provider packet stats
+
+func (self *DeviceRemote) GetProviderPacketStats() *PacketStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	packetStats, success := func() (*PacketStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemotePacketStats](self.service, "DeviceLocalRpc.GetProviderPacketStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.PacketStats, true
+	}()
+	if success {
+		return packetStats
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) AddProviderPacketStatsChangeListener(listener PacketStatsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.providerPacketStatsChangeListeners,
+		"DeviceLocalRpc.AddProviderPacketStatsChangeListener",
+		"DeviceLocalRpc.RemoveProviderPacketStatsChangeListener",
+	)
+}
+
+// provider contract stats
+
+func (self *DeviceRemote) GetProviderEgressContractStats() *ContractStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractStats, success := func() (*ContractStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemoteContractStats](self.service, "DeviceLocalRpc.GetProviderEgressContractStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.ContractStats, true
+	}()
+	if success {
+		return contractStats
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) GetProviderEgressContractDetails() *ContractDetailsList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractDetailsList, success := func() (*ContractDetailsList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		details, err := rpcCallNoArg[*DeviceRemoteContractDetailsList](self.service, "DeviceLocalRpc.GetProviderEgressContractDetails", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		if details.Nil {
+			return nil, true
+		}
+		return toContractDetailsList(details.ContractDetailsList), true
+	}()
+	if success {
+		return contractDetailsList
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) GetProviderIngressContractStats() *ContractStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractStats, success := func() (*ContractStats, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		stats, err := rpcCallNoArg[*DeviceRemoteContractStats](self.service, "DeviceLocalRpc.GetProviderIngressContractStats", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return stats.ContractStats, true
+	}()
+	if success {
+		return contractStats
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) GetProviderIngressContractDetails() *ContractDetailsList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	contractDetailsList, success := func() (*ContractDetailsList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		details, err := rpcCallNoArg[*DeviceRemoteContractDetailsList](self.service, "DeviceLocalRpc.GetProviderIngressContractDetails", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		if details.Nil {
+			return nil, true
+		}
+		return toContractDetailsList(details.ContractDetailsList), true
+	}()
+	if success {
+		return contractDetailsList
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) AddProviderEgressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.providerEgressContractStatsChangeListeners,
+		"DeviceLocalRpc.AddProviderEgressContractStatsChangeListener",
+		"DeviceLocalRpc.RemoveProviderEgressContractStatsChangeListener",
+	)
+}
+
+func (self *DeviceRemote) AddProviderEgressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.providerEgressContractDetailsChangeListeners,
+		"DeviceLocalRpc.AddProviderEgressContractDetailsChangeListener",
+		"DeviceLocalRpc.RemoveProviderEgressContractDetailsChangeListener",
+	)
+}
+
+func (self *DeviceRemote) AddProviderIngressContractStatsChangeListener(listener ContractStatsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.providerIngressContractStatsChangeListeners,
+		"DeviceLocalRpc.AddProviderIngressContractStatsChangeListener",
+		"DeviceLocalRpc.RemoveProviderIngressContractStatsChangeListener",
+	)
+}
+
+func (self *DeviceRemote) AddProviderIngressContractDetailsChangeListener(listener ContractDetailsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.providerIngressContractDetailsChangeListeners,
+		"DeviceLocalRpc.AddProviderIngressContractDetailsChangeListener",
+		"DeviceLocalRpc.RemoveProviderIngressContractDetailsChangeListener",
+	)
+}
+
+// dns
+
+func (self *DeviceRemote) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
+	// mirror the `DeviceLocal` guard
+	if dnsResolverSettings == nil {
+		return
+	}
+	settingsRpc := newDnsResolverSettingsRpc(dnsResolverSettings)
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			deviceSettings := &DeviceRemoteDnsResolverSettings{
+				DnsResolverSettings: settingsRpc,
+			}
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetDnsResolverSettings", deviceSettings, self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.DnsResolverSettings.Unset()
+			self.lastKnownState.DnsResolverSettings.Set(settingsRpc)
+		} else {
+			event = true
+			self.state.DnsResolverSettings.Set(settingsRpc)
+		}
+	}()
+	if event {
+		self.dnsResolverSettingsChanged(settingsRpc)
+	}
+}
+
+func (self *DeviceRemote) GetDnsResolverSettings() *DnsResolverSettings {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	settingsRpc, success := func() (*DnsResolverSettingsRpc, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceSettings, err := rpcCallNoArg[*DeviceRemoteDnsResolverSettings](self.service, "DeviceLocalRpc.GetDnsResolverSettings", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		settingsRpc := deviceSettings.DnsResolverSettings
+		self.lastKnownState.DnsResolverSettings.Set(settingsRpc)
+		return settingsRpc, true
+	}()
+	if success {
+		return settingsRpc.toDnsResolverSettings()
+	} else {
+		return self.state.DnsResolverSettings.Get(
+			self.lastKnownState.DnsResolverSettings.Get(nil),
+		).toDnsResolverSettings()
+	}
+}
+
+func (self *DeviceRemote) AddDnsResolverSettingsChangeListener(listener DnsResolverSettingsChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.dnsResolverSettingsChangeListeners,
+		"DeviceLocalRpc.AddDnsResolverSettingsChangeListener",
+		"DeviceLocalRpc.RemoveDnsResolverSettingsChangeListener",
+	)
+}
+
+// network peers
+
+func (self *DeviceRemote) GetNetworkPeers() *NetworkPeers {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	networkPeers, success := func() (*NetworkPeers, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		peers, err := rpcCallNoArg[*DeviceRemoteNetworkPeers](self.service, "DeviceLocalRpc.GetNetworkPeers", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return peers.NetworkPeers.toNetworkPeers(), true
+	}()
+	if success {
+		return networkPeers
+	} else {
+		return nil
+	}
+}
+
+func (self *DeviceRemote) AddNetworkPeersChangeListener(listener NetworkPeersChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.networkPeersChangeListeners,
+		"DeviceLocalRpc.AddNetworkPeersChangeListener",
+		"DeviceLocalRpc.RemoveNetworkPeersChangeListener",
+	)
+}
 
 func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
 	logsUploaded := false
@@ -3214,6 +4127,10 @@ type DeviceRemoteState struct {
 	ResetEgressSecurityPolicyStats  deviceRemoteValue[bool]
 	ResetIngressSecurityPolicyStats deviceRemoteValue[bool]
 	TunnelStarted                   deviceRemoteValue[bool]
+	// the full overrides list is one synced value.
+	// add/remove/set on the remote all funnel through it
+	BlockActionOverrides deviceRemoteValue[[]*BlockActionOverrideRpc]
+	DnsResolverSettings  deviceRemoteValue[*DnsResolverSettingsRpc]
 
 	// only last known state
 
@@ -3322,14 +4239,34 @@ type DeviceRemoteSyncRequest struct {
 	TunnelChangeListenerIds                   []connect.Id
 	ContractStatusChangeListenerIds           []connect.Id
 	WindowStatusChangeListenerIds             []connect.Id
+	BlockActionWindowChangeListenerIds        []connect.Id
+	BlockStatsChangeListenerIds               []connect.Id
+	BlockActionOverridesChangeListenerIds     []connect.Id
+	PacketStatsChangeListenerIds              []connect.Id
+	EgressContractStatsChangeListenerIds      []connect.Id
+	EgressContractDetailsChangeListenerIds    []connect.Id
+	IngressContractStatsChangeListenerIds     []connect.Id
+	IngressContractDetailsChangeListenerIds   []connect.Id
+	DnsResolverSettingsChangeListenerIds      []connect.Id
+	NetworkPeersChangeListenerIds             []connect.Id
 	WindowMonitorEventListenerIds             map[connect.Id][]connect.Id
 	State                                     DeviceRemoteState
+
+	ProviderPacketStatsChangeListenerIds            []connect.Id
+	ProviderEgressContractStatsChangeListenerIds    []connect.Id
+	ProviderEgressContractDetailsChangeListenerIds  []connect.Id
+	ProviderIngressContractStatsChangeListenerIds   []connect.Id
+	ProviderIngressContractDetailsChangeListenerIds []connect.Id
 }
 
 //gomobile:noexport
 type DeviceRemoteSyncResponse struct {
 	Error string
 	State DeviceRemoteState
+	// DeviceGeneration identifies the hosted DeviceLocal instance; a change
+	// across reconnects means the host recreated the device (see
+	// deviceRpcSettings.DeviceGeneration).
+	DeviceGeneration string
 }
 
 //gomobile:noexport
@@ -3507,6 +4444,586 @@ func (self *DeviceRemoteConnectLocationId) toConnectLocationId() *ConnectLocatio
 	return connectLocationId
 }
 
+// flattened types for the privacy block, packet stats, contract stats,
+// dns, and network peers surface. The gomobile exportedList-based types
+// (StringList, BlockActionOverrideList, ...) and *Id have unexported fields
+// that gob drops, so they cannot cross the rpc (see the rpc note above).
+// converters exist in both directions (sdk <-> rpc).
+// note gob conflates empty and nil slices, so converters normalize.
+
+func stringsFromStringList(list *StringList) []string {
+	if list == nil {
+		return nil
+	}
+	return list.getAll()
+}
+
+// always returns a non-nil list
+func stringListFromStrings(values []string) *StringList {
+	list := NewStringList()
+	list.addAll(values...)
+	return list
+}
+
+// preserves nil
+func stringListFromStringsOrNil(values []string) *StringList {
+	if values == nil {
+		return nil
+	}
+	return stringListFromStrings(values)
+}
+
+// copies so that the rpc value never aliases a caller-owned value
+func copyBlockOverride(blockOverride *BlockOverride) *BlockOverride {
+	if blockOverride == nil {
+		return nil
+	}
+	out := *blockOverride
+	return &out
+}
+
+func copyRouteOverride(routeOverride *RouteOverride) *RouteOverride {
+	if routeOverride == nil {
+		return nil
+	}
+	out := *routeOverride
+	return &out
+}
+
+//gomobile:noexport
+type BlockActionOverrideRpc struct {
+	OverrideId    connect.Id
+	Hosts         []string
+	AppIds        []string
+	BlockOverride *BlockOverride
+	RouteOverride *RouteOverride
+}
+
+// the override must have a non-nil `OverrideId`
+func newBlockActionOverrideRpc(override *BlockActionOverride) *BlockActionOverrideRpc {
+	return &BlockActionOverrideRpc{
+		OverrideId:    override.OverrideId.toConnectId(),
+		Hosts:         stringsFromStringList(override.Hosts),
+		AppIds:        stringsFromStringList(override.AppIds),
+		BlockOverride: copyBlockOverride(override.BlockOverride),
+		RouteOverride: copyRouteOverride(override.RouteOverride),
+	}
+}
+
+func (self *BlockActionOverrideRpc) toBlockActionOverride() *BlockActionOverride {
+	if self == nil {
+		return nil
+	}
+	return &BlockActionOverride{
+		OverrideId:    newId(self.OverrideId),
+		Hosts:         stringListFromStringsOrNil(self.Hosts),
+		AppIds:        stringListFromStringsOrNil(self.AppIds),
+		BlockOverride: copyBlockOverride(self.BlockOverride),
+		RouteOverride: copyRouteOverride(self.RouteOverride),
+	}
+}
+
+// skips overrides without an override id and replaces earlier overrides with
+// the same id, mirroring `DeviceLocal.SetBlockActionOverrides`.
+// always returns a non-nil slice with non-nil elements
+// (gob cannot encode nil slice elements)
+func newBlockActionOverridesRpc(overrides *BlockActionOverrideList) []*BlockActionOverrideRpc {
+	overridesRpc := []*BlockActionOverrideRpc{}
+	if overrides != nil {
+		for _, override := range overrides.getAll() {
+			if override == nil || override.OverrideId == nil {
+				continue
+			}
+			overrideRpc := newBlockActionOverrideRpc(override)
+			overridesRpc = removeBlockActionOverrideRpc(overridesRpc, overrideRpc.OverrideId)
+			overridesRpc = append(overridesRpc, overrideRpc)
+		}
+	}
+	return overridesRpc
+}
+
+func toBlockActionOverrideList(overridesRpc []*BlockActionOverrideRpc) *BlockActionOverrideList {
+	overrides := NewBlockActionOverrideList()
+	for _, overrideRpc := range overridesRpc {
+		if overrideRpc == nil {
+			continue
+		}
+		overrides.Add(overrideRpc.toBlockActionOverride())
+	}
+	return overrides
+}
+
+// returns a copy with the override with `overrideId` removed.
+// the copy keeps mutations from aliasing a list held by the remote state
+func removeBlockActionOverrideRpc(overridesRpc []*BlockActionOverrideRpc, overrideId connect.Id) []*BlockActionOverrideRpc {
+	out := []*BlockActionOverrideRpc{}
+	for _, overrideRpc := range overridesRpc {
+		if overrideRpc == nil || overrideRpc.OverrideId == overrideId {
+			continue
+		}
+		out = append(out, overrideRpc)
+	}
+	return out
+}
+
+//gomobile:noexport
+type BlockActionRpc struct {
+	BlockActionId connect.Id
+	Time          int64
+	Ips           []string
+	Hosts         []string
+	Block         bool
+	Local         bool
+	OverrideId    *connect.Id
+	BlockOverride *BlockOverride
+	RouteOverride *RouteOverride
+	PacketCount   int
+	ByteCount     ByteCount
+}
+
+func newBlockActionRpc(blockAction *BlockAction) *BlockActionRpc {
+	if blockAction == nil {
+		return nil
+	}
+	blockActionRpc := &BlockActionRpc{
+		Time:          blockAction.Time,
+		Ips:           stringsFromStringList(blockAction.Ips),
+		Hosts:         stringsFromStringList(blockAction.Hosts),
+		Block:         blockAction.Block,
+		Local:         blockAction.Local,
+		BlockOverride: copyBlockOverride(blockAction.BlockOverride),
+		RouteOverride: copyRouteOverride(blockAction.RouteOverride),
+		PacketCount:   blockAction.PacketCount,
+		ByteCount:     blockAction.ByteCount,
+	}
+	if blockAction.BlockActionId != nil {
+		blockActionRpc.BlockActionId = blockAction.BlockActionId.toConnectId()
+	}
+	if blockAction.OverrideId != nil {
+		overrideId := blockAction.OverrideId.toConnectId()
+		blockActionRpc.OverrideId = &overrideId
+	}
+	return blockActionRpc
+}
+
+func (self *BlockActionRpc) toBlockAction() *BlockAction {
+	if self == nil {
+		return nil
+	}
+	blockAction := &BlockAction{
+		BlockActionId: newId(self.BlockActionId),
+		Time:          self.Time,
+		Ips:           stringListFromStrings(self.Ips),
+		Hosts:         stringListFromStrings(self.Hosts),
+		Block:         self.Block,
+		Local:         self.Local,
+		BlockOverride: copyBlockOverride(self.BlockOverride),
+		RouteOverride: copyRouteOverride(self.RouteOverride),
+		PacketCount:   self.PacketCount,
+		ByteCount:     self.ByteCount,
+	}
+	if self.OverrideId != nil {
+		blockAction.OverrideId = newId(*self.OverrideId)
+	}
+	return blockAction
+}
+
+//gomobile:noexport
+type BlockActionWindowRpc struct {
+	BlockActions []*BlockActionRpc
+}
+
+func newBlockActionWindowRpc(blockActionWindow *BlockActionWindow) *BlockActionWindowRpc {
+	if blockActionWindow == nil {
+		return nil
+	}
+	windowRpc := &BlockActionWindowRpc{}
+	if blockActionWindow.BlockActions != nil {
+		for _, blockAction := range blockActionWindow.BlockActions.getAll() {
+			if blockAction == nil {
+				continue
+			}
+			windowRpc.BlockActions = append(windowRpc.BlockActions, newBlockActionRpc(blockAction))
+		}
+	}
+	return windowRpc
+}
+
+func (self *BlockActionWindowRpc) toBlockActionWindow() *BlockActionWindow {
+	if self == nil {
+		return nil
+	}
+	blockActions := NewBlockActionList()
+	for _, blockActionRpc := range self.BlockActions {
+		if blockActionRpc == nil {
+			continue
+		}
+		blockActions.Add(blockActionRpc.toBlockAction())
+	}
+	return &BlockActionWindow{
+		BlockActions: blockActions,
+	}
+}
+
+//gomobile:noexport
+type OverrideLocalAppIdsRpc struct {
+	Included []string
+	Excluded []string
+}
+
+func newOverrideLocalAppIdsRpc(overrideLocalAppIds *OverrideLocalAppIds) *OverrideLocalAppIdsRpc {
+	if overrideLocalAppIds == nil {
+		return nil
+	}
+	return &OverrideLocalAppIdsRpc{
+		Included: stringsFromStringList(overrideLocalAppIds.Included),
+		Excluded: stringsFromStringList(overrideLocalAppIds.Excluded),
+	}
+}
+
+func (self *OverrideLocalAppIdsRpc) toOverrideLocalAppIds() *OverrideLocalAppIds {
+	if self == nil {
+		return nil
+	}
+	return &OverrideLocalAppIds{
+		Included: stringListFromStrings(self.Included),
+		Excluded: stringListFromStrings(self.Excluded),
+	}
+}
+
+//gomobile:noexport
+type DnsResolverSettingsRpc struct {
+	EnableRemoteDoh bool
+	EnableLocalDoh  bool
+	EnableRemoteDns bool
+	EnableLocalDns  bool
+	EnableFallback  bool
+
+	RemoteDohUrlsIpv4 []string
+	RemoteDohUrlsIpv6 []string
+	LocalDohUrlsIpv4  []string
+	LocalDohUrlsIpv6  []string
+	RemoteDnsIpv4     []string
+	RemoteDnsIpv6     []string
+	LocalDnsIpv4      []string
+	LocalDnsIpv6      []string
+}
+
+func newDnsResolverSettingsRpc(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettingsRpc {
+	if dnsResolverSettings == nil {
+		return nil
+	}
+	return &DnsResolverSettingsRpc{
+		EnableRemoteDoh:   dnsResolverSettings.EnableRemoteDoh,
+		EnableLocalDoh:    dnsResolverSettings.EnableLocalDoh,
+		EnableRemoteDns:   dnsResolverSettings.EnableRemoteDns,
+		EnableLocalDns:    dnsResolverSettings.EnableLocalDns,
+		EnableFallback:    dnsResolverSettings.EnableFallback,
+		RemoteDohUrlsIpv4: stringsFromStringList(dnsResolverSettings.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6: stringsFromStringList(dnsResolverSettings.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:  stringsFromStringList(dnsResolverSettings.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:  stringsFromStringList(dnsResolverSettings.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:     stringsFromStringList(dnsResolverSettings.RemoteDnsIpv4),
+		RemoteDnsIpv6:     stringsFromStringList(dnsResolverSettings.RemoteDnsIpv6),
+		LocalDnsIpv4:      stringsFromStringList(dnsResolverSettings.LocalDnsIpv4),
+		LocalDnsIpv6:      stringsFromStringList(dnsResolverSettings.LocalDnsIpv6),
+	}
+}
+
+// the string lists are always non-nil, matching `DeviceLocal.GetDnsResolverSettings`
+func (self *DnsResolverSettingsRpc) toDnsResolverSettings() *DnsResolverSettings {
+	if self == nil {
+		return nil
+	}
+	return &DnsResolverSettings{
+		EnableRemoteDoh:   self.EnableRemoteDoh,
+		EnableLocalDoh:    self.EnableLocalDoh,
+		EnableRemoteDns:   self.EnableRemoteDns,
+		EnableLocalDns:    self.EnableLocalDns,
+		EnableFallback:    self.EnableFallback,
+		RemoteDohUrlsIpv4: stringListFromStrings(self.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6: stringListFromStrings(self.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:  stringListFromStrings(self.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:  stringListFromStrings(self.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:     stringListFromStrings(self.RemoteDnsIpv4),
+		RemoteDnsIpv6:     stringListFromStrings(self.RemoteDnsIpv6),
+		LocalDnsIpv4:      stringListFromStrings(self.LocalDnsIpv4),
+		LocalDnsIpv6:      stringListFromStrings(self.LocalDnsIpv6),
+	}
+}
+
+//gomobile:noexport
+type DeviceRemoteTransferPath struct {
+	SourceId      *connect.Id
+	DestinationId *connect.Id
+	StreamId      *connect.Id
+}
+
+func newDeviceRemoteTransferPath(transferPath *TransferPath) *DeviceRemoteTransferPath {
+	if transferPath == nil {
+		return nil
+	}
+	deviceRemoteTransferPath := &DeviceRemoteTransferPath{}
+	if transferPath.SourceId != nil {
+		id := transferPath.SourceId.toConnectId()
+		deviceRemoteTransferPath.SourceId = &id
+	}
+	if transferPath.DestinationId != nil {
+		id := transferPath.DestinationId.toConnectId()
+		deviceRemoteTransferPath.DestinationId = &id
+	}
+	if transferPath.StreamId != nil {
+		id := transferPath.StreamId.toConnectId()
+		deviceRemoteTransferPath.StreamId = &id
+	}
+	return deviceRemoteTransferPath
+}
+
+func (self *DeviceRemoteTransferPath) toTransferPath() *TransferPath {
+	if self == nil {
+		return nil
+	}
+	transferPath := &TransferPath{}
+	if self.SourceId != nil {
+		transferPath.SourceId = newId(*self.SourceId)
+	}
+	if self.DestinationId != nil {
+		transferPath.DestinationId = newId(*self.DestinationId)
+	}
+	if self.StreamId != nil {
+		transferPath.StreamId = newId(*self.StreamId)
+	}
+	return transferPath
+}
+
+//gomobile:noexport
+type ContractDetailsRpc struct {
+	ContractId            *connect.Id
+	ContractUsedByteCount ByteCount
+	ContractByteCount     ByteCount
+	ContractBitRate       int
+	ContractTransferPath  *DeviceRemoteTransferPath
+
+	CompanionContractId            *connect.Id
+	CompanionContractUsedByteCount ByteCount
+	CompanionContractByteCount     ByteCount
+	CompanionContractBitRate       int
+	CompanionContractTransferPath  *DeviceRemoteTransferPath
+}
+
+func newContractDetailsRpc(contractDetails *ContractDetails) *ContractDetailsRpc {
+	if contractDetails == nil {
+		return nil
+	}
+	contractDetailsRpc := &ContractDetailsRpc{
+		ContractUsedByteCount: contractDetails.ContractUsedByteCount,
+		ContractByteCount:     contractDetails.ContractByteCount,
+		ContractBitRate:       contractDetails.ContractBitRate,
+		ContractTransferPath:  newDeviceRemoteTransferPath(contractDetails.ContractTransferPath),
+
+		CompanionContractUsedByteCount: contractDetails.CompanionContractUsedByteCount,
+		CompanionContractByteCount:     contractDetails.CompanionContractByteCount,
+		CompanionContractBitRate:       contractDetails.CompanionContractBitRate,
+		CompanionContractTransferPath:  newDeviceRemoteTransferPath(contractDetails.CompanionContractTransferPath),
+	}
+	if contractDetails.ContractId != nil {
+		id := contractDetails.ContractId.toConnectId()
+		contractDetailsRpc.ContractId = &id
+	}
+	if contractDetails.CompanionContractId != nil {
+		id := contractDetails.CompanionContractId.toConnectId()
+		contractDetailsRpc.CompanionContractId = &id
+	}
+	return contractDetailsRpc
+}
+
+func (self *ContractDetailsRpc) toContractDetails() *ContractDetails {
+	if self == nil {
+		return nil
+	}
+	contractDetails := &ContractDetails{
+		ContractUsedByteCount: self.ContractUsedByteCount,
+		ContractByteCount:     self.ContractByteCount,
+		ContractBitRate:       self.ContractBitRate,
+		ContractTransferPath:  self.ContractTransferPath.toTransferPath(),
+
+		CompanionContractUsedByteCount: self.CompanionContractUsedByteCount,
+		CompanionContractByteCount:     self.CompanionContractByteCount,
+		CompanionContractBitRate:       self.CompanionContractBitRate,
+		CompanionContractTransferPath:  self.CompanionContractTransferPath.toTransferPath(),
+	}
+	if self.ContractId != nil {
+		contractDetails.ContractId = newId(*self.ContractId)
+	}
+	if self.CompanionContractId != nil {
+		contractDetails.CompanionContractId = newId(*self.CompanionContractId)
+	}
+	return contractDetails
+}
+
+// always returns a non-nil slice with non-nil elements
+// (gob cannot encode nil slice elements)
+func newContractDetailsListRpc(contractDetailsList *ContractDetailsList) []*ContractDetailsRpc {
+	contractDetailsRpcs := []*ContractDetailsRpc{}
+	if contractDetailsList != nil {
+		for _, contractDetails := range contractDetailsList.getAll() {
+			if contractDetails == nil {
+				continue
+			}
+			contractDetailsRpcs = append(contractDetailsRpcs, newContractDetailsRpc(contractDetails))
+		}
+	}
+	return contractDetailsRpcs
+}
+
+func toContractDetailsList(contractDetailsRpcs []*ContractDetailsRpc) *ContractDetailsList {
+	contractDetailsList := NewContractDetailsList()
+	for _, contractDetailsRpc := range contractDetailsRpcs {
+		if contractDetailsRpc == nil {
+			continue
+		}
+		contractDetailsList.Add(contractDetailsRpc.toContractDetails())
+	}
+	return contractDetailsList
+}
+
+//gomobile:noexport
+type NetworkPeerRpc struct {
+	ClientId       connect.Id
+	ProvideEnabled bool
+	Principal      string
+	Roles          []string
+	DeviceSpec     string
+	DeviceName     string
+}
+
+func newNetworkPeerRpc(networkPeer *NetworkPeer) *NetworkPeerRpc {
+	if networkPeer == nil {
+		return nil
+	}
+	networkPeerRpc := &NetworkPeerRpc{
+		ProvideEnabled: networkPeer.ProvideEnabled,
+		Principal:      networkPeer.Principal,
+		Roles:          stringsFromStringList(networkPeer.Roles),
+		DeviceSpec:     networkPeer.DeviceSpec,
+		DeviceName:     networkPeer.DeviceName,
+	}
+	if networkPeer.ClientId != nil {
+		networkPeerRpc.ClientId = networkPeer.ClientId.toConnectId()
+	}
+	return networkPeerRpc
+}
+
+func (self *NetworkPeerRpc) toNetworkPeer() *NetworkPeer {
+	if self == nil {
+		return nil
+	}
+	return &NetworkPeer{
+		ClientId:       newId(self.ClientId),
+		ProvideEnabled: self.ProvideEnabled,
+		Principal:      self.Principal,
+		Roles:          stringListFromStrings(self.Roles),
+		DeviceSpec:     self.DeviceSpec,
+		DeviceName:     self.DeviceName,
+	}
+}
+
+//gomobile:noexport
+type NetworkPeersRpc struct {
+	Connected         []*NetworkPeerRpc
+	DisconnectedCount int
+}
+
+func newNetworkPeersRpc(networkPeers *NetworkPeers) *NetworkPeersRpc {
+	if networkPeers == nil {
+		return nil
+	}
+	networkPeersRpc := &NetworkPeersRpc{
+		DisconnectedCount: networkPeers.DisconnectedCount,
+	}
+	if networkPeers.Connected != nil {
+		for _, networkPeer := range networkPeers.Connected.getAll() {
+			if networkPeer == nil {
+				continue
+			}
+			networkPeersRpc.Connected = append(networkPeersRpc.Connected, newNetworkPeerRpc(networkPeer))
+		}
+	}
+	return networkPeersRpc
+}
+
+func (self *NetworkPeersRpc) toNetworkPeers() *NetworkPeers {
+	if self == nil {
+		return nil
+	}
+	connected := NewNetworkPeerList()
+	for _, networkPeerRpc := range self.Connected {
+		if networkPeerRpc == nil {
+			continue
+		}
+		connected.Add(networkPeerRpc.toNetworkPeer())
+	}
+	return &NetworkPeers{
+		Connected:         connected,
+		DisconnectedCount: self.DisconnectedCount,
+	}
+}
+
+// nil-able reply/event wrappers (net/rpc rejects nil args and replies)
+
+//gomobile:noexport
+type DeviceRemoteBlockStats struct {
+	BlockStats *BlockStats
+}
+
+//gomobile:noexport
+type DeviceRemoteBlockActionWindow struct {
+	BlockActionWindow *BlockActionWindowRpc
+}
+
+//gomobile:noexport
+type DeviceRemoteBlockActionOverrides struct {
+	BlockActionOverrides []*BlockActionOverrideRpc
+}
+
+//gomobile:noexport
+type DeviceRemoteLocalOverrideAppIds struct {
+	LocalOverrideAppIds *OverrideLocalAppIdsRpc
+}
+
+//gomobile:noexport
+type DeviceRemotePacketStats struct {
+	PacketStats *PacketStats
+}
+
+//gomobile:noexport
+type DeviceRemoteContractStats struct {
+	ContractStats *ContractStats
+}
+
+//gomobile:noexport
+type DeviceRemoteContractDetails struct {
+	ContractDetails *ContractDetailsRpc
+}
+
+//gomobile:noexport
+type DeviceRemoteContractDetailsList struct {
+	ContractDetailsList []*ContractDetailsRpc
+	// gob cannot distinguish a nil list from an empty one; set by the
+	// provider getters when the device has no provider
+	Nil bool
+}
+
+//gomobile:noexport
+type DeviceRemoteDnsResolverSettings struct {
+	DnsResolverSettings *DnsResolverSettingsRpc
+}
+
+//gomobile:noexport
+type DeviceRemoteNetworkPeers struct {
+	NetworkPeers *NetworkPeersRpc
+}
+
 // rpc wrappers
 
 type rpcClient = rpcClientWithTimeout
@@ -3666,7 +5183,7 @@ type deviceLocalRpcManager struct {
 	cancel      context.CancelFunc
 	deviceLocal *DeviceLocal
 	settings    *deviceRpcSettings
-	listener    DeviceRpcListener
+	listener    deviceRpcListener
 }
 
 func newDeviceLocalRpcManagerWithDefaults(
@@ -3685,7 +5202,7 @@ func newDeviceLocalRpcManager(
 	ctx context.Context,
 	deviceLocal *DeviceLocal,
 	settings *deviceRpcSettings,
-	listener DeviceRpcListener,
+	listener deviceRpcListener,
 ) *deviceLocalRpcManager {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -3781,6 +5298,22 @@ type DeviceLocalRpc struct {
 	tunnelChangeListenerIds                   map[connect.Id]bool
 	contractStatusChangeListenerIds           map[connect.Id]bool
 	windowStatusChangeListenerIds             map[connect.Id]bool
+	blockActionWindowChangeListenerIds        map[connect.Id]bool
+	blockStatsChangeListenerIds               map[connect.Id]bool
+	blockActionOverridesChangeListenerIds     map[connect.Id]bool
+	packetStatsChangeListenerIds              map[connect.Id]bool
+	egressContractStatsChangeListenerIds      map[connect.Id]bool
+	egressContractDetailsChangeListenerIds    map[connect.Id]bool
+	ingressContractStatsChangeListenerIds     map[connect.Id]bool
+	ingressContractDetailsChangeListenerIds   map[connect.Id]bool
+	dnsResolverSettingsChangeListenerIds      map[connect.Id]bool
+	networkPeersChangeListenerIds             map[connect.Id]bool
+
+	providerPacketStatsChangeListenerIds            map[connect.Id]bool
+	providerEgressContractStatsChangeListenerIds    map[connect.Id]bool
+	providerEgressContractDetailsChangeListenerIds  map[connect.Id]bool
+	providerIngressContractStatsChangeListenerIds   map[connect.Id]bool
+	providerIngressContractDetailsChangeListenerIds map[connect.Id]bool
 
 	// window id -> listener id
 	windowMonitorEventListenerIds map[connect.Id]map[connect.Id]bool
@@ -3810,6 +5343,22 @@ type DeviceLocalRpc struct {
 	tunnelChangeListenerSub                   Sub
 	contractStatusChangeListenerSub           Sub
 	windowStatusChangeListenerSub             Sub
+	blockActionWindowChangeListenerSub        Sub
+	blockStatsChangeListenerSub               Sub
+	blockActionOverridesChangeListenerSub     Sub
+	packetStatsChangeListenerSub              Sub
+	egressContractStatsChangeListenerSub      Sub
+	egressContractDetailsChangeListenerSub    Sub
+	ingressContractStatsChangeListenerSub     Sub
+	ingressContractDetailsChangeListenerSub   Sub
+	dnsResolverSettingsChangeListenerSub      Sub
+	networkPeersChangeListenerSub             Sub
+
+	providerPacketStatsChangeListenerSub            Sub
+	providerEgressContractStatsChangeListenerSub    Sub
+	providerEgressContractDetailsChangeListenerSub  Sub
+	providerIngressContractStatsChangeListenerSub   Sub
+	providerIngressContractDetailsChangeListenerSub Sub
 
 	service *rpcClient
 
@@ -3867,9 +5416,25 @@ func newDeviceLocalRpc(
 		tunnelChangeListenerIds:                   map[connect.Id]bool{},
 		contractStatusChangeListenerIds:           map[connect.Id]bool{},
 		windowStatusChangeListenerIds:             map[connect.Id]bool{},
+		blockActionWindowChangeListenerIds:        map[connect.Id]bool{},
+		blockStatsChangeListenerIds:               map[connect.Id]bool{},
+		blockActionOverridesChangeListenerIds:     map[connect.Id]bool{},
+		packetStatsChangeListenerIds:              map[connect.Id]bool{},
+		egressContractStatsChangeListenerIds:      map[connect.Id]bool{},
+		egressContractDetailsChangeListenerIds:    map[connect.Id]bool{},
+		ingressContractStatsChangeListenerIds:     map[connect.Id]bool{},
+		ingressContractDetailsChangeListenerIds:   map[connect.Id]bool{},
+		dnsResolverSettingsChangeListenerIds:      map[connect.Id]bool{},
+		networkPeersChangeListenerIds:             map[connect.Id]bool{},
 		localWindowIds:                            map[connect.Id]connect.Id{},
 		sendPending:                               map[string]func(){},
 		sendSignal:                                make(chan struct{}, 1),
+
+		providerPacketStatsChangeListenerIds:            map[connect.Id]bool{},
+		providerEgressContractStatsChangeListenerIds:    map[connect.Id]bool{},
+		providerEgressContractDetailsChangeListenerIds:  map[connect.Id]bool{},
+		providerIngressContractStatsChangeListenerIds:   map[connect.Id]bool{},
+		providerIngressContractDetailsChangeListenerIds: map[connect.Id]bool{},
 	}
 	if 0 < settings.HttpMaxConcurrent {
 		deviceLocalRpc.httpSem = make(chan struct{}, settings.HttpMaxConcurrent)
@@ -4040,6 +5605,51 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for windowStatusChangeListenerId, _ := range self.windowStatusChangeListenerIds {
 		self.removeWindowStatusChangeListener(windowStatusChangeListenerId)
+	}
+	for blockActionWindowChangeListenerId, _ := range self.blockActionWindowChangeListenerIds {
+		self.removeBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
+	}
+	for blockStatsChangeListenerId, _ := range self.blockStatsChangeListenerIds {
+		self.removeBlockStatsChangeListener(blockStatsChangeListenerId)
+	}
+	for blockActionOverridesChangeListenerId, _ := range self.blockActionOverridesChangeListenerIds {
+		self.removeBlockActionOverridesChangeListener(blockActionOverridesChangeListenerId)
+	}
+	for packetStatsChangeListenerId, _ := range self.packetStatsChangeListenerIds {
+		self.removePacketStatsChangeListener(packetStatsChangeListenerId)
+	}
+	for egressContractStatsChangeListenerId, _ := range self.egressContractStatsChangeListenerIds {
+		self.removeEgressContractStatsChangeListener(egressContractStatsChangeListenerId)
+	}
+	for egressContractDetailsChangeListenerId, _ := range self.egressContractDetailsChangeListenerIds {
+		self.removeEgressContractDetailsChangeListener(egressContractDetailsChangeListenerId)
+	}
+	for ingressContractStatsChangeListenerId, _ := range self.ingressContractStatsChangeListenerIds {
+		self.removeIngressContractStatsChangeListener(ingressContractStatsChangeListenerId)
+	}
+	for ingressContractDetailsChangeListenerId, _ := range self.ingressContractDetailsChangeListenerIds {
+		self.removeIngressContractDetailsChangeListener(ingressContractDetailsChangeListenerId)
+	}
+	for providerPacketStatsChangeListenerId, _ := range self.providerPacketStatsChangeListenerIds {
+		self.removeProviderPacketStatsChangeListener(providerPacketStatsChangeListenerId)
+	}
+	for providerEgressContractStatsChangeListenerId, _ := range self.providerEgressContractStatsChangeListenerIds {
+		self.removeProviderEgressContractStatsChangeListener(providerEgressContractStatsChangeListenerId)
+	}
+	for providerEgressContractDetailsChangeListenerId, _ := range self.providerEgressContractDetailsChangeListenerIds {
+		self.removeProviderEgressContractDetailsChangeListener(providerEgressContractDetailsChangeListenerId)
+	}
+	for providerIngressContractStatsChangeListenerId, _ := range self.providerIngressContractStatsChangeListenerIds {
+		self.removeProviderIngressContractStatsChangeListener(providerIngressContractStatsChangeListenerId)
+	}
+	for providerIngressContractDetailsChangeListenerId, _ := range self.providerIngressContractDetailsChangeListenerIds {
+		self.removeProviderIngressContractDetailsChangeListener(providerIngressContractDetailsChangeListenerId)
+	}
+	for dnsResolverSettingsChangeListenerId, _ := range self.dnsResolverSettingsChangeListenerIds {
+		self.removeDnsResolverSettingsChangeListener(dnsResolverSettingsChangeListenerId)
+	}
+	for networkPeersChangeListenerId, _ := range self.networkPeersChangeListenerIds {
+		self.removeNetworkPeersChangeListener(networkPeersChangeListenerId)
 	}
 	for windowId, windowMonitorEventListenerIds := range self.windowMonitorEventListenerIds {
 		for windowMonitorEventListenerId, _ := range windowMonitorEventListenerIds {
@@ -4238,6 +5848,8 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.Location.Set(newDeviceRemoteConnectLocation(self.deviceLocal.GetConnectLocation()))
 	state.DefaultLocation.Set(newDeviceRemoteDefaultLocation(self.deviceLocal.GetDefaultLocation()))
 	state.TunnelStarted.Set(self.deviceLocal.GetTunnelStarted())
+	state.BlockActionOverrides.Set(newBlockActionOverridesRpc(self.deviceLocal.GetBlockActionOverrides()))
+	state.DnsResolverSettings.Set(newDnsResolverSettingsRpc(self.deviceLocal.GetDnsResolverSettings()))
 
 	state.ConnectEnabled.Set(self.deviceLocal.GetConnectEnabled())
 	state.ProvideEnabled.Set(self.deviceLocal.GetProvideEnabled())
@@ -4283,13 +5895,19 @@ func (self *DeviceLocalRpc) Sync(
 
 	state := syncRequest.State
 
+	// the hosted-incompatible fields (route local, provide settings, tunnel/vpn)
+	// are guarded: skipped here at the rpc layer, and hard-guarded again inside
+	// DeviceLocal. The remote's getters/listeners still see the real device
+	// state, so a hosted device keeps its platform-owned values.
+	hostedIncompatible := self.settings.DisableHostedIncompatible
+
 	if state.CanShowRatingDialog.IsSet {
 		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
 	}
 	if state.CanPromptIntroFunnel.IsSet {
 		self.deviceLocal.SetCanPromptIntroFunnel(state.CanPromptIntroFunnel.Value)
 	}
-	if state.ProvideControlMode.IsSet {
+	if state.ProvideControlMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
 	}
 	if state.AllowForeground.IsSet {
@@ -4298,7 +5916,7 @@ func (self *DeviceLocalRpc) Sync(
 	if state.CanRefer.IsSet {
 		self.deviceLocal.SetCanRefer(state.CanRefer.Value)
 	}
-	if state.RouteLocal.IsSet {
+	if state.RouteLocal.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetRouteLocal(state.RouteLocal.Value)
 	}
 	if state.InitProvideSecretKeys.IsSet {
@@ -4309,19 +5927,19 @@ func (self *DeviceLocalRpc) Sync(
 		provideSecretKeyList.addAll(state.LoadProvideSecretKeys.Value...)
 		self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	}
-	if state.ProvideMode.IsSet {
+	if state.ProvideMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
 	}
-	if state.ProvideNetworkMode.IsSet {
+	if state.ProvideNetworkMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideNetworkMode(state.ProvideNetworkMode.Value)
 	}
-	if state.ProvidePaused.IsSet {
+	if state.ProvidePaused.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvidePaused(state.ProvidePaused.Value)
 	}
 	if state.Offline.IsSet {
 		self.deviceLocal.SetOffline(state.Offline.Value)
 	}
-	if state.VpnInterfaceWhileOffline.IsSet {
+	if state.VpnInterfaceWhileOffline.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetVpnInterfaceWhileOffline(state.VpnInterfaceWhileOffline.Value)
 	}
 	if state.RemoveDestination.IsSet {
@@ -4356,8 +5974,15 @@ func (self *DeviceLocalRpc) Sync(
 		self.ingressSecurityPolicy.Stats(true)
 	}
 
-	if state.TunnelStarted.IsSet {
+	if state.TunnelStarted.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetTunnelStarted(state.TunnelStarted.Value)
+	}
+
+	if state.BlockActionOverrides.IsSet {
+		self.deviceLocal.SetBlockActionOverrides(toBlockActionOverrideList(state.BlockActionOverrides.Value))
+	}
+	if state.DnsResolverSettings.IsSet {
+		self.deviceLocal.SetDnsResolverSettings(state.DnsResolverSettings.Value.toDnsResolverSettings())
 	}
 
 	// if state.RefreshToken.IsSet {
@@ -4425,6 +6050,51 @@ func (self *DeviceLocalRpc) Sync(
 	for _, windowStatusChangeListenerId := range syncRequest.WindowStatusChangeListenerIds {
 		self.addWindowStatusChangeListener(windowStatusChangeListenerId)
 	}
+	for _, blockActionWindowChangeListenerId := range syncRequest.BlockActionWindowChangeListenerIds {
+		self.addBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
+	}
+	for _, blockStatsChangeListenerId := range syncRequest.BlockStatsChangeListenerIds {
+		self.addBlockStatsChangeListener(blockStatsChangeListenerId)
+	}
+	for _, blockActionOverridesChangeListenerId := range syncRequest.BlockActionOverridesChangeListenerIds {
+		self.addBlockActionOverridesChangeListener(blockActionOverridesChangeListenerId)
+	}
+	for _, packetStatsChangeListenerId := range syncRequest.PacketStatsChangeListenerIds {
+		self.addPacketStatsChangeListener(packetStatsChangeListenerId)
+	}
+	for _, egressContractStatsChangeListenerId := range syncRequest.EgressContractStatsChangeListenerIds {
+		self.addEgressContractStatsChangeListener(egressContractStatsChangeListenerId)
+	}
+	for _, egressContractDetailsChangeListenerId := range syncRequest.EgressContractDetailsChangeListenerIds {
+		self.addEgressContractDetailsChangeListener(egressContractDetailsChangeListenerId)
+	}
+	for _, ingressContractStatsChangeListenerId := range syncRequest.IngressContractStatsChangeListenerIds {
+		self.addIngressContractStatsChangeListener(ingressContractStatsChangeListenerId)
+	}
+	for _, ingressContractDetailsChangeListenerId := range syncRequest.IngressContractDetailsChangeListenerIds {
+		self.addIngressContractDetailsChangeListener(ingressContractDetailsChangeListenerId)
+	}
+	for _, providerPacketStatsChangeListenerId := range syncRequest.ProviderPacketStatsChangeListenerIds {
+		self.addProviderPacketStatsChangeListener(providerPacketStatsChangeListenerId)
+	}
+	for _, providerEgressContractStatsChangeListenerId := range syncRequest.ProviderEgressContractStatsChangeListenerIds {
+		self.addProviderEgressContractStatsChangeListener(providerEgressContractStatsChangeListenerId)
+	}
+	for _, providerEgressContractDetailsChangeListenerId := range syncRequest.ProviderEgressContractDetailsChangeListenerIds {
+		self.addProviderEgressContractDetailsChangeListener(providerEgressContractDetailsChangeListenerId)
+	}
+	for _, providerIngressContractStatsChangeListenerId := range syncRequest.ProviderIngressContractStatsChangeListenerIds {
+		self.addProviderIngressContractStatsChangeListener(providerIngressContractStatsChangeListenerId)
+	}
+	for _, providerIngressContractDetailsChangeListenerId := range syncRequest.ProviderIngressContractDetailsChangeListenerIds {
+		self.addProviderIngressContractDetailsChangeListener(providerIngressContractDetailsChangeListenerId)
+	}
+	for _, dnsResolverSettingsChangeListenerId := range syncRequest.DnsResolverSettingsChangeListenerIds {
+		self.addDnsResolverSettingsChangeListener(dnsResolverSettingsChangeListenerId)
+	}
+	for _, networkPeersChangeListenerId := range syncRequest.NetworkPeersChangeListenerIds {
+		self.addNetworkPeersChangeListener(networkPeersChangeListenerId)
+	}
 	for windowId, windowMonitorEventListenerIds := range syncRequest.WindowMonitorEventListenerIds {
 		for _, windowMonitorEventListenerId := range windowMonitorEventListenerIds {
 			windowListenerId := DeviceRemoteWindowListenerId{
@@ -4438,7 +6108,8 @@ func (self *DeviceLocalRpc) Sync(
 	*syncResponse = &DeviceRemoteSyncResponse{
 		// WindowIds: self.windowIds(),
 		// RpcPublicKey: "test",
-		State: self.state(),
+		State:            self.state(),
+		DeviceGeneration: self.settings.DeviceGeneration,
 	}
 	return nil
 }
@@ -4529,6 +6200,75 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	if self.windowStatusChangeListenerSub != nil {
 		self.windowStatusChanged(self.deviceLocal.GetWindowStatus())
 	}
+	if self.blockActionWindowChangeListenerSub != nil {
+		self.blockActionWindowChanged(self.deviceLocal.GetBlockActions())
+	}
+	if self.blockStatsChangeListenerSub != nil {
+		self.blockStatsChanged(self.deviceLocal.GetBlockStats())
+	}
+	if self.blockActionOverridesChangeListenerSub != nil {
+		self.blockActionOverridesChanged(self.deviceLocal.GetBlockActionOverrides())
+	}
+	if self.packetStatsChangeListenerSub != nil {
+		self.packetStatsChanged(self.deviceLocal.GetPacketStats())
+	}
+	if self.egressContractStatsChangeListenerSub != nil {
+		self.egressContractStatsChanged(self.deviceLocal.GetEgressContractStats())
+	}
+	if self.egressContractDetailsChangeListenerSub != nil {
+		// the listener receives one details item per call (see `DeviceLocal`)
+		for _, contractDetails := range self.deviceLocal.GetEgressContractDetails().getAll() {
+			self.egressContractDetailsChanged(contractDetails)
+		}
+	}
+	if self.ingressContractStatsChangeListenerSub != nil {
+		self.ingressContractStatsChanged(self.deviceLocal.GetIngressContractStats())
+	}
+	if self.ingressContractDetailsChangeListenerSub != nil {
+		// the listener receives one details item per call (see `DeviceLocal`)
+		for _, contractDetails := range self.deviceLocal.GetIngressContractDetails().getAll() {
+			self.ingressContractDetailsChanged(contractDetails)
+		}
+	}
+	// the provider getters are nil when the device has no provider; there is
+	// no current state to fire
+	if self.providerPacketStatsChangeListenerSub != nil {
+		if packetStats := self.deviceLocal.GetProviderPacketStats(); packetStats != nil {
+			self.providerPacketStatsChanged(packetStats)
+		}
+	}
+	if self.providerEgressContractStatsChangeListenerSub != nil {
+		if contractStats := self.deviceLocal.GetProviderEgressContractStats(); contractStats != nil {
+			self.providerEgressContractStatsChanged(contractStats)
+		}
+	}
+	if self.providerEgressContractDetailsChangeListenerSub != nil {
+		if contractDetailsList := self.deviceLocal.GetProviderEgressContractDetails(); contractDetailsList != nil {
+			// the listener receives one details item per call (see `DeviceLocal`)
+			for _, contractDetails := range contractDetailsList.getAll() {
+				self.providerEgressContractDetailsChanged(contractDetails)
+			}
+		}
+	}
+	if self.providerIngressContractStatsChangeListenerSub != nil {
+		if contractStats := self.deviceLocal.GetProviderIngressContractStats(); contractStats != nil {
+			self.providerIngressContractStatsChanged(contractStats)
+		}
+	}
+	if self.providerIngressContractDetailsChangeListenerSub != nil {
+		if contractDetailsList := self.deviceLocal.GetProviderIngressContractDetails(); contractDetailsList != nil {
+			// the listener receives one details item per call (see `DeviceLocal`)
+			for _, contractDetails := range contractDetailsList.getAll() {
+				self.providerIngressContractDetailsChanged(contractDetails)
+			}
+		}
+	}
+	if self.dnsResolverSettingsChangeListenerSub != nil {
+		self.dnsResolverSettingsChanged(self.deviceLocal.GetDnsResolverSettings())
+	}
+	if self.networkPeersChangeListenerSub != nil {
+		self.networkPeersChanged(self.deviceLocal.GetNetworkPeers())
+	}
 	if self.localWindowMonitor != nil && self.windowMonitorEventListenerSub != nil {
 		windowExpandEvent, providerEvents := self.localWindowMonitor.Events()
 		self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
@@ -4537,7 +6277,20 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	return nil
 }
 
+// hostedIncompatibleRpcGuarded reports whether a hosted-incompatible rpc setter
+// should be skipped. Getters and listeners are never guarded.
+func (self *DeviceLocalRpc) hostedIncompatibleRpcGuarded(name string) bool {
+	if self.settings.DisableHostedIncompatible {
+		self.deviceLocal.log.Infof("[dlrpc]hosted incompatible: %s ignored\n", name)
+		return true
+	}
+	return false
+}
+
 func (self *DeviceLocalRpc) SetTunnelStarted(tunnelStarted bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetTunnelStarted") {
+		return nil
+	}
 	self.deviceLocal.SetTunnelStarted(tunnelStarted)
 	return nil
 }
@@ -4696,6 +6449,870 @@ func (self *DeviceLocalRpc) windowStatusChanged(windowStatus *WindowStatus) {
 	self.reverseNotify("DeviceRemoteRpc.WindowStatusChanged", status)
 }
 
+// privacy block
+
+func (self *DeviceLocalRpc) GetBlockStats(_ RpcNoArg, stats **DeviceRemoteBlockStats) error {
+	*stats = &DeviceRemoteBlockStats{
+		BlockStats: self.deviceLocal.GetBlockStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetBlockActions(_ RpcNoArg, window **DeviceRemoteBlockActionWindow) error {
+	*window = &DeviceRemoteBlockActionWindow{
+		BlockActionWindow: newBlockActionWindowRpc(self.deviceLocal.GetBlockActions()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddBlockActionOverride(overrideRpc *BlockActionOverrideRpc, _ RpcVoid) error {
+	self.deviceLocal.AddBlockActionOverride(overrideRpc.toBlockActionOverride())
+	return nil
+}
+
+func (self *DeviceLocalRpc) RemoveBlockActionOverride(overrideId connect.Id, _ RpcVoid) error {
+	self.deviceLocal.RemoveBlockActionOverride(newId(overrideId))
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetBlockActionOverrides(deviceOverrides *DeviceRemoteBlockActionOverrides, _ RpcVoid) error {
+	self.deviceLocal.SetBlockActionOverrides(toBlockActionOverrideList(deviceOverrides.BlockActionOverrides))
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetBlockActionOverrides(_ RpcNoArg, deviceOverrides **DeviceRemoteBlockActionOverrides) error {
+	*deviceOverrides = &DeviceRemoteBlockActionOverrides{
+		BlockActionOverrides: newBlockActionOverridesRpc(self.deviceLocal.GetBlockActionOverrides()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetLocalOverrideAppIds(_ RpcNoArg, appIds **DeviceRemoteLocalOverrideAppIds) error {
+	*appIds = &DeviceRemoteLocalOverrideAppIds{
+		LocalOverrideAppIds: newOverrideLocalAppIdsRpc(self.deviceLocal.GetLocalOverrideAppIds()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddBlockActionWindowChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addBlockActionWindowChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addBlockActionWindowChangeListener(listenerId connect.Id) {
+	self.blockActionWindowChangeListenerIds[listenerId] = true
+	if self.blockActionWindowChangeListenerSub == nil {
+		self.blockActionWindowChangeListenerSub = self.deviceLocal.AddBlockActionWindowChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveBlockActionWindowChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeBlockActionWindowChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeBlockActionWindowChangeListener(listenerId connect.Id) {
+	delete(self.blockActionWindowChangeListenerIds, listenerId)
+	if len(self.blockActionWindowChangeListenerIds) == 0 && self.blockActionWindowChangeListenerSub != nil {
+		self.blockActionWindowChangeListenerSub.Close()
+		self.blockActionWindowChangeListenerSub = nil
+	}
+}
+
+// BlockActionWindowChangeListener
+func (self *DeviceLocalRpc) BlockActionWindowChanged(blockActionWindow *BlockActionWindow) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.blockActionWindowChanged(blockActionWindow)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop).
+// the payload is the full window snapshot, so last-value coalescing is safe
+func (self *DeviceLocalRpc) blockActionWindowChanged(blockActionWindow *BlockActionWindow) {
+	event := &DeviceRemoteBlockActionWindow{
+		BlockActionWindow: newBlockActionWindowRpc(blockActionWindow),
+	}
+	self.reverseNotify("DeviceRemoteRpc.BlockActionWindowChanged", event)
+}
+
+func (self *DeviceLocalRpc) AddBlockStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addBlockStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addBlockStatsChangeListener(listenerId connect.Id) {
+	self.blockStatsChangeListenerIds[listenerId] = true
+	if self.blockStatsChangeListenerSub == nil {
+		self.blockStatsChangeListenerSub = self.deviceLocal.AddBlockStatsChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveBlockStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeBlockStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeBlockStatsChangeListener(listenerId connect.Id) {
+	delete(self.blockStatsChangeListenerIds, listenerId)
+	if len(self.blockStatsChangeListenerIds) == 0 && self.blockStatsChangeListenerSub != nil {
+		self.blockStatsChangeListenerSub.Close()
+		self.blockStatsChangeListenerSub = nil
+	}
+}
+
+// BlockStatsChangeListener
+func (self *DeviceLocalRpc) BlockStatsChanged(blockStats *BlockStats) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.blockStatsChanged(blockStats)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) blockStatsChanged(blockStats *BlockStats) {
+	stats := &DeviceRemoteBlockStats{
+		BlockStats: blockStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.BlockStatsChanged", stats)
+}
+
+func (self *DeviceLocalRpc) AddBlockActionOverridesChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addBlockActionOverridesChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addBlockActionOverridesChangeListener(listenerId connect.Id) {
+	self.blockActionOverridesChangeListenerIds[listenerId] = true
+	if self.blockActionOverridesChangeListenerSub == nil {
+		self.blockActionOverridesChangeListenerSub = self.deviceLocal.AddBlockActionOverridesChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveBlockActionOverridesChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeBlockActionOverridesChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeBlockActionOverridesChangeListener(listenerId connect.Id) {
+	delete(self.blockActionOverridesChangeListenerIds, listenerId)
+	if len(self.blockActionOverridesChangeListenerIds) == 0 && self.blockActionOverridesChangeListenerSub != nil {
+		self.blockActionOverridesChangeListenerSub.Close()
+		self.blockActionOverridesChangeListenerSub = nil
+	}
+}
+
+// BlockActionOverridesChangeListener
+func (self *DeviceLocalRpc) BlockActionOverridesChanged(blockActionOverrides *BlockActionOverrideList) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.blockActionOverridesChanged(blockActionOverrides)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop).
+// the payload is the full overrides list, so last-value coalescing is safe
+func (self *DeviceLocalRpc) blockActionOverridesChanged(blockActionOverrides *BlockActionOverrideList) {
+	event := &DeviceRemoteBlockActionOverrides{
+		BlockActionOverrides: newBlockActionOverridesRpc(blockActionOverrides),
+	}
+	self.reverseNotify("DeviceRemoteRpc.BlockActionOverridesChanged", event)
+}
+
+// packet stats
+
+func (self *DeviceLocalRpc) GetPacketStats(_ RpcNoArg, stats **DeviceRemotePacketStats) error {
+	*stats = &DeviceRemotePacketStats{
+		PacketStats: self.deviceLocal.GetPacketStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddPacketStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addPacketStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addPacketStatsChangeListener(listenerId connect.Id) {
+	self.packetStatsChangeListenerIds[listenerId] = true
+	if self.packetStatsChangeListenerSub == nil {
+		self.packetStatsChangeListenerSub = self.deviceLocal.AddPacketStatsChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemovePacketStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removePacketStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removePacketStatsChangeListener(listenerId connect.Id) {
+	delete(self.packetStatsChangeListenerIds, listenerId)
+	if len(self.packetStatsChangeListenerIds) == 0 && self.packetStatsChangeListenerSub != nil {
+		self.packetStatsChangeListenerSub.Close()
+		self.packetStatsChangeListenerSub = nil
+	}
+}
+
+// PacketStatsChangeListener
+func (self *DeviceLocalRpc) PacketStatsChanged(packetStats *PacketStats) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.packetStatsChanged(packetStats)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) packetStatsChanged(packetStats *PacketStats) {
+	stats := &DeviceRemotePacketStats{
+		PacketStats: packetStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.PacketStatsChanged", stats)
+}
+
+// contract stats
+
+// the `ContractStatsChangeListener`, `ContractDetailsChangeListener` and
+// `PacketStatsChangeListener` interfaces are shared by the egress and ingress
+// directions and by the client and provider stats, so `DeviceLocalRpc` cannot
+// implement them once per surface.
+// these small adapters subscribe to `DeviceLocal` per surface and forward to
+// a surface-specific reverse notification (`changed`, called with stateLock).
+
+type contractStatsForwarder struct {
+	rpc     *DeviceLocalRpc
+	changed func(contractStats *ContractStats)
+}
+
+// ContractStatsChangeListener
+func (self *contractStatsForwarder) ContractStatsChanged(contractStats *ContractStats) {
+	self.rpc.stateLock.Lock()
+	defer self.rpc.stateLock.Unlock()
+	self.changed(contractStats)
+}
+
+type contractDetailsForwarder struct {
+	rpc     *DeviceLocalRpc
+	changed func(contractDetails *ContractDetails)
+}
+
+// ContractDetailsChangeListener
+func (self *contractDetailsForwarder) ContractDetailsChanged(contractDetails *ContractDetails) {
+	self.rpc.stateLock.Lock()
+	defer self.rpc.stateLock.Unlock()
+	self.changed(contractDetails)
+}
+
+type packetStatsForwarder struct {
+	rpc     *DeviceLocalRpc
+	changed func(packetStats *PacketStats)
+}
+
+// PacketStatsChangeListener
+func (self *packetStatsForwarder) PacketStatsChanged(packetStats *PacketStats) {
+	self.rpc.stateLock.Lock()
+	defer self.rpc.stateLock.Unlock()
+	self.changed(packetStats)
+}
+
+func (self *DeviceLocalRpc) GetEgressContractStats(_ RpcNoArg, stats **DeviceRemoteContractStats) error {
+	*stats = &DeviceRemoteContractStats{
+		ContractStats: self.deviceLocal.GetEgressContractStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetEgressContractDetails(_ RpcNoArg, details **DeviceRemoteContractDetailsList) error {
+	*details = &DeviceRemoteContractDetailsList{
+		ContractDetailsList: newContractDetailsListRpc(self.deviceLocal.GetEgressContractDetails()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetIngressContractStats(_ RpcNoArg, stats **DeviceRemoteContractStats) error {
+	*stats = &DeviceRemoteContractStats{
+		ContractStats: self.deviceLocal.GetIngressContractStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetIngressContractDetails(_ RpcNoArg, details **DeviceRemoteContractDetailsList) error {
+	*details = &DeviceRemoteContractDetailsList{
+		ContractDetailsList: newContractDetailsListRpc(self.deviceLocal.GetIngressContractDetails()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddEgressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addEgressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addEgressContractStatsChangeListener(listenerId connect.Id) {
+	self.egressContractStatsChangeListenerIds[listenerId] = true
+	if self.egressContractStatsChangeListenerSub == nil {
+		self.egressContractStatsChangeListenerSub = self.deviceLocal.AddEgressContractStatsChangeListener(&contractStatsForwarder{rpc: self, changed: self.egressContractStatsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveEgressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeEgressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeEgressContractStatsChangeListener(listenerId connect.Id) {
+	delete(self.egressContractStatsChangeListenerIds, listenerId)
+	if len(self.egressContractStatsChangeListenerIds) == 0 && self.egressContractStatsChangeListenerSub != nil {
+		self.egressContractStatsChangeListenerSub.Close()
+		self.egressContractStatsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) egressContractStatsChanged(contractStats *ContractStats) {
+	stats := &DeviceRemoteContractStats{
+		ContractStats: contractStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.EgressContractStatsChanged", stats)
+}
+
+func (self *DeviceLocalRpc) AddEgressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addEgressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addEgressContractDetailsChangeListener(listenerId connect.Id) {
+	self.egressContractDetailsChangeListenerIds[listenerId] = true
+	if self.egressContractDetailsChangeListenerSub == nil {
+		self.egressContractDetailsChangeListenerSub = self.deviceLocal.AddEgressContractDetailsChangeListener(&contractDetailsForwarder{rpc: self, changed: self.egressContractDetailsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveEgressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeEgressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeEgressContractDetailsChangeListener(listenerId connect.Id) {
+	delete(self.egressContractDetailsChangeListenerIds, listenerId)
+	if len(self.egressContractDetailsChangeListenerIds) == 0 && self.egressContractDetailsChangeListenerSub != nil {
+		self.egressContractDetailsChangeListenerSub.Close()
+		self.egressContractDetailsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop).
+// unlike the full-state notifications, the payload is a single details item,
+// so coalesce per contract id (last value per contract) to not drop a
+// contract's latest details under back pressure
+func (self *DeviceLocalRpc) egressContractDetailsChanged(contractDetails *ContractDetails) {
+	if contractDetails == nil {
+		return
+	}
+	event := &DeviceRemoteContractDetails{
+		ContractDetails: newContractDetailsRpc(contractDetails),
+	}
+	key := "DeviceRemoteRpc.EgressContractDetailsChanged"
+	if contractDetails.ContractId != nil {
+		key += "/" + contractDetails.ContractId.IdStr
+	}
+	self.enqueueReverse(key, func() {
+		self.reverseCall("DeviceRemoteRpc.EgressContractDetailsChanged", event)
+	})
+}
+
+func (self *DeviceLocalRpc) AddIngressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addIngressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addIngressContractStatsChangeListener(listenerId connect.Id) {
+	self.ingressContractStatsChangeListenerIds[listenerId] = true
+	if self.ingressContractStatsChangeListenerSub == nil {
+		self.ingressContractStatsChangeListenerSub = self.deviceLocal.AddIngressContractStatsChangeListener(&contractStatsForwarder{rpc: self, changed: self.ingressContractStatsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveIngressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeIngressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeIngressContractStatsChangeListener(listenerId connect.Id) {
+	delete(self.ingressContractStatsChangeListenerIds, listenerId)
+	if len(self.ingressContractStatsChangeListenerIds) == 0 && self.ingressContractStatsChangeListenerSub != nil {
+		self.ingressContractStatsChangeListenerSub.Close()
+		self.ingressContractStatsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) ingressContractStatsChanged(contractStats *ContractStats) {
+	stats := &DeviceRemoteContractStats{
+		ContractStats: contractStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.IngressContractStatsChanged", stats)
+}
+
+func (self *DeviceLocalRpc) AddIngressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addIngressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addIngressContractDetailsChangeListener(listenerId connect.Id) {
+	self.ingressContractDetailsChangeListenerIds[listenerId] = true
+	if self.ingressContractDetailsChangeListenerSub == nil {
+		self.ingressContractDetailsChangeListenerSub = self.deviceLocal.AddIngressContractDetailsChangeListener(&contractDetailsForwarder{rpc: self, changed: self.ingressContractDetailsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveIngressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeIngressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeIngressContractDetailsChangeListener(listenerId connect.Id) {
+	delete(self.ingressContractDetailsChangeListenerIds, listenerId)
+	if len(self.ingressContractDetailsChangeListenerIds) == 0 && self.ingressContractDetailsChangeListenerSub != nil {
+		self.ingressContractDetailsChangeListenerSub.Close()
+		self.ingressContractDetailsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop).
+// see the egress note about the per contract id coalescing
+func (self *DeviceLocalRpc) ingressContractDetailsChanged(contractDetails *ContractDetails) {
+	if contractDetails == nil {
+		return
+	}
+	event := &DeviceRemoteContractDetails{
+		ContractDetails: newContractDetailsRpc(contractDetails),
+	}
+	key := "DeviceRemoteRpc.IngressContractDetailsChanged"
+	if contractDetails.ContractId != nil {
+		key += "/" + contractDetails.ContractId.IdStr
+	}
+	self.enqueueReverse(key, func() {
+		self.reverseCall("DeviceRemoteRpc.IngressContractDetailsChanged", event)
+	})
+}
+
+// provider packet stats
+
+func (self *DeviceLocalRpc) GetProviderPacketStats(_ RpcNoArg, stats **DeviceRemotePacketStats) error {
+	*stats = &DeviceRemotePacketStats{
+		PacketStats: self.deviceLocal.GetProviderPacketStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddProviderPacketStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderPacketStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderPacketStatsChangeListener(listenerId connect.Id) {
+	self.providerPacketStatsChangeListenerIds[listenerId] = true
+	if self.providerPacketStatsChangeListenerSub == nil {
+		self.providerPacketStatsChangeListenerSub = self.deviceLocal.AddProviderPacketStatsChangeListener(&packetStatsForwarder{rpc: self, changed: self.providerPacketStatsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderPacketStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderPacketStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderPacketStatsChangeListener(listenerId connect.Id) {
+	delete(self.providerPacketStatsChangeListenerIds, listenerId)
+	if len(self.providerPacketStatsChangeListenerIds) == 0 && self.providerPacketStatsChangeListenerSub != nil {
+		self.providerPacketStatsChangeListenerSub.Close()
+		self.providerPacketStatsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) providerPacketStatsChanged(packetStats *PacketStats) {
+	stats := &DeviceRemotePacketStats{
+		PacketStats: packetStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.ProviderPacketStatsChanged", stats)
+}
+
+// provider contract stats
+
+func (self *DeviceLocalRpc) GetProviderEgressContractStats(_ RpcNoArg, stats **DeviceRemoteContractStats) error {
+	*stats = &DeviceRemoteContractStats{
+		ContractStats: self.deviceLocal.GetProviderEgressContractStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProviderEgressContractDetails(_ RpcNoArg, details **DeviceRemoteContractDetailsList) error {
+	contractDetailsList := self.deviceLocal.GetProviderEgressContractDetails()
+	*details = &DeviceRemoteContractDetailsList{
+		ContractDetailsList: newContractDetailsListRpc(contractDetailsList),
+		Nil:                 contractDetailsList == nil,
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProviderIngressContractStats(_ RpcNoArg, stats **DeviceRemoteContractStats) error {
+	*stats = &DeviceRemoteContractStats{
+		ContractStats: self.deviceLocal.GetProviderIngressContractStats(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProviderIngressContractDetails(_ RpcNoArg, details **DeviceRemoteContractDetailsList) error {
+	contractDetailsList := self.deviceLocal.GetProviderIngressContractDetails()
+	*details = &DeviceRemoteContractDetailsList{
+		ContractDetailsList: newContractDetailsListRpc(contractDetailsList),
+		Nil:                 contractDetailsList == nil,
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddProviderEgressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderEgressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderEgressContractStatsChangeListener(listenerId connect.Id) {
+	self.providerEgressContractStatsChangeListenerIds[listenerId] = true
+	if self.providerEgressContractStatsChangeListenerSub == nil {
+		self.providerEgressContractStatsChangeListenerSub = self.deviceLocal.AddProviderEgressContractStatsChangeListener(&contractStatsForwarder{rpc: self, changed: self.providerEgressContractStatsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderEgressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderEgressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderEgressContractStatsChangeListener(listenerId connect.Id) {
+	delete(self.providerEgressContractStatsChangeListenerIds, listenerId)
+	if len(self.providerEgressContractStatsChangeListenerIds) == 0 && self.providerEgressContractStatsChangeListenerSub != nil {
+		self.providerEgressContractStatsChangeListenerSub.Close()
+		self.providerEgressContractStatsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) providerEgressContractStatsChanged(contractStats *ContractStats) {
+	stats := &DeviceRemoteContractStats{
+		ContractStats: contractStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.ProviderEgressContractStatsChanged", stats)
+}
+
+func (self *DeviceLocalRpc) AddProviderEgressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderEgressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderEgressContractDetailsChangeListener(listenerId connect.Id) {
+	self.providerEgressContractDetailsChangeListenerIds[listenerId] = true
+	if self.providerEgressContractDetailsChangeListenerSub == nil {
+		self.providerEgressContractDetailsChangeListenerSub = self.deviceLocal.AddProviderEgressContractDetailsChangeListener(&contractDetailsForwarder{rpc: self, changed: self.providerEgressContractDetailsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderEgressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderEgressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderEgressContractDetailsChangeListener(listenerId connect.Id) {
+	delete(self.providerEgressContractDetailsChangeListenerIds, listenerId)
+	if len(self.providerEgressContractDetailsChangeListenerIds) == 0 && self.providerEgressContractDetailsChangeListenerSub != nil {
+		self.providerEgressContractDetailsChangeListenerSub.Close()
+		self.providerEgressContractDetailsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop).
+// see the egress note about the per contract id coalescing
+func (self *DeviceLocalRpc) providerEgressContractDetailsChanged(contractDetails *ContractDetails) {
+	if contractDetails == nil {
+		return
+	}
+	event := &DeviceRemoteContractDetails{
+		ContractDetails: newContractDetailsRpc(contractDetails),
+	}
+	key := "DeviceRemoteRpc.ProviderEgressContractDetailsChanged"
+	if contractDetails.ContractId != nil {
+		key += "/" + contractDetails.ContractId.IdStr
+	}
+	self.enqueueReverse(key, func() {
+		self.reverseCall("DeviceRemoteRpc.ProviderEgressContractDetailsChanged", event)
+	})
+}
+
+func (self *DeviceLocalRpc) AddProviderIngressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderIngressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderIngressContractStatsChangeListener(listenerId connect.Id) {
+	self.providerIngressContractStatsChangeListenerIds[listenerId] = true
+	if self.providerIngressContractStatsChangeListenerSub == nil {
+		self.providerIngressContractStatsChangeListenerSub = self.deviceLocal.AddProviderIngressContractStatsChangeListener(&contractStatsForwarder{rpc: self, changed: self.providerIngressContractStatsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderIngressContractStatsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderIngressContractStatsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderIngressContractStatsChangeListener(listenerId connect.Id) {
+	delete(self.providerIngressContractStatsChangeListenerIds, listenerId)
+	if len(self.providerIngressContractStatsChangeListenerIds) == 0 && self.providerIngressContractStatsChangeListenerSub != nil {
+		self.providerIngressContractStatsChangeListenerSub.Close()
+		self.providerIngressContractStatsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) providerIngressContractStatsChanged(contractStats *ContractStats) {
+	stats := &DeviceRemoteContractStats{
+		ContractStats: contractStats,
+	}
+	self.reverseNotify("DeviceRemoteRpc.ProviderIngressContractStatsChanged", stats)
+}
+
+func (self *DeviceLocalRpc) AddProviderIngressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderIngressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderIngressContractDetailsChangeListener(listenerId connect.Id) {
+	self.providerIngressContractDetailsChangeListenerIds[listenerId] = true
+	if self.providerIngressContractDetailsChangeListenerSub == nil {
+		self.providerIngressContractDetailsChangeListenerSub = self.deviceLocal.AddProviderIngressContractDetailsChangeListener(&contractDetailsForwarder{rpc: self, changed: self.providerIngressContractDetailsChanged})
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderIngressContractDetailsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderIngressContractDetailsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderIngressContractDetailsChangeListener(listenerId connect.Id) {
+	delete(self.providerIngressContractDetailsChangeListenerIds, listenerId)
+	if len(self.providerIngressContractDetailsChangeListenerIds) == 0 && self.providerIngressContractDetailsChangeListenerSub != nil {
+		self.providerIngressContractDetailsChangeListenerSub.Close()
+		self.providerIngressContractDetailsChangeListenerSub = nil
+	}
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop).
+// see the egress note about the per contract id coalescing
+func (self *DeviceLocalRpc) providerIngressContractDetailsChanged(contractDetails *ContractDetails) {
+	if contractDetails == nil {
+		return
+	}
+	event := &DeviceRemoteContractDetails{
+		ContractDetails: newContractDetailsRpc(contractDetails),
+	}
+	key := "DeviceRemoteRpc.ProviderIngressContractDetailsChanged"
+	if contractDetails.ContractId != nil {
+		key += "/" + contractDetails.ContractId.IdStr
+	}
+	self.enqueueReverse(key, func() {
+		self.reverseCall("DeviceRemoteRpc.ProviderIngressContractDetailsChanged", event)
+	})
+}
+
+// dns
+
+func (self *DeviceLocalRpc) SetDnsResolverSettings(deviceSettings *DeviceRemoteDnsResolverSettings, _ RpcVoid) error {
+	self.deviceLocal.SetDnsResolverSettings(deviceSettings.DnsResolverSettings.toDnsResolverSettings())
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetDnsResolverSettings(_ RpcNoArg, deviceSettings **DeviceRemoteDnsResolverSettings) error {
+	*deviceSettings = &DeviceRemoteDnsResolverSettings{
+		DnsResolverSettings: newDnsResolverSettingsRpc(self.deviceLocal.GetDnsResolverSettings()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddDnsResolverSettingsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addDnsResolverSettingsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addDnsResolverSettingsChangeListener(listenerId connect.Id) {
+	self.dnsResolverSettingsChangeListenerIds[listenerId] = true
+	if self.dnsResolverSettingsChangeListenerSub == nil {
+		self.dnsResolverSettingsChangeListenerSub = self.deviceLocal.AddDnsResolverSettingsChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveDnsResolverSettingsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeDnsResolverSettingsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeDnsResolverSettingsChangeListener(listenerId connect.Id) {
+	delete(self.dnsResolverSettingsChangeListenerIds, listenerId)
+	if len(self.dnsResolverSettingsChangeListenerIds) == 0 && self.dnsResolverSettingsChangeListenerSub != nil {
+		self.dnsResolverSettingsChangeListenerSub.Close()
+		self.dnsResolverSettingsChangeListenerSub = nil
+	}
+}
+
+// DnsResolverSettingsChangeListener
+func (self *DeviceLocalRpc) DnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.dnsResolverSettingsChanged(dnsResolverSettings)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) dnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings) {
+	event := &DeviceRemoteDnsResolverSettings{
+		DnsResolverSettings: newDnsResolverSettingsRpc(dnsResolverSettings),
+	}
+	self.reverseNotify("DeviceRemoteRpc.DnsResolverSettingsChanged", event)
+}
+
+// network peers
+
+func (self *DeviceLocalRpc) GetNetworkPeers(_ RpcNoArg, peers **DeviceRemoteNetworkPeers) error {
+	*peers = &DeviceRemoteNetworkPeers{
+		NetworkPeers: newNetworkPeersRpc(self.deviceLocal.GetNetworkPeers()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) AddNetworkPeersChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addNetworkPeersChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addNetworkPeersChangeListener(listenerId connect.Id) {
+	self.networkPeersChangeListenerIds[listenerId] = true
+	if self.networkPeersChangeListenerSub == nil {
+		self.networkPeersChangeListenerSub = self.deviceLocal.AddNetworkPeersChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveNetworkPeersChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeNetworkPeersChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeNetworkPeersChangeListener(listenerId connect.Id) {
+	delete(self.networkPeersChangeListenerIds, listenerId)
+	if len(self.networkPeersChangeListenerIds) == 0 && self.networkPeersChangeListenerSub != nil {
+		self.networkPeersChangeListenerSub.Close()
+		self.networkPeersChangeListenerSub = nil
+	}
+}
+
+// NetworkPeersChangeListener
+func (self *DeviceLocalRpc) NetworkPeersChanged(networkPeers *NetworkPeers) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.networkPeersChanged(networkPeers)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) networkPeersChanged(networkPeers *NetworkPeers) {
+	event := &DeviceRemoteNetworkPeers{
+		NetworkPeers: newNetworkPeersRpc(networkPeers),
+	}
+	self.reverseNotify("DeviceRemoteRpc.NetworkPeersChanged", event)
+}
+
 func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
 	*stats = self.deviceLocal.GetStats()
 	return nil
@@ -4842,6 +7459,9 @@ func (self *DeviceLocalRpc) GetProvideControlMode(_ RpcNoArg, mode *ProvideContr
 }
 
 func (self *DeviceLocalRpc) SetProvideControlMode(mode ProvideControlMode, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideControlMode") {
+		return nil
+	}
 	self.deviceLocal.SetProvideControlMode(mode)
 	return nil
 }
@@ -4953,6 +7573,9 @@ func (self *DeviceLocalRpc) canReferChanged(canRefer bool) {
 }
 
 func (self *DeviceLocalRpc) SetRouteLocal(routeLocal bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetRouteLocal") {
+		return nil
+	}
 	self.deviceLocal.SetRouteLocal(routeLocal)
 	return nil
 }
@@ -5634,6 +8257,9 @@ func (self *DeviceLocalRpc) GetConnectEnabled(_ RpcNoArg, connectEnabled *bool) 
 }
 
 func (self *DeviceLocalRpc) SetProvideMode(provideMode ProvideMode, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideMode") {
+		return nil
+	}
 	self.deviceLocal.SetProvideMode(provideMode)
 	return nil
 }
@@ -5656,6 +8282,9 @@ func (self *DeviceLocalRpc) provideNetworkModeChanged(provideNetworkMode Provide
 }
 
 func (self *DeviceLocalRpc) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideNetworkMode") {
+		return nil
+	}
 	self.deviceLocal.SetProvideNetworkMode(provideNetworkMode)
 	return nil
 }
@@ -5697,6 +8326,9 @@ func (self *DeviceLocalRpc) removeProvideNetworkModeChangeListener(listenerId co
 }
 
 func (self *DeviceLocalRpc) SetProvidePaused(providePaused bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvidePaused") {
+		return nil
+	}
 	self.deviceLocal.SetProvidePaused(providePaused)
 	return nil
 }
@@ -5718,6 +8350,9 @@ func (self *DeviceLocalRpc) GetOffline(_ RpcNoArg, offline *bool) error {
 }
 
 func (self *DeviceLocalRpc) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetVpnInterfaceWhileOffline") {
+		return nil
+	}
 	self.deviceLocal.SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline)
 	return nil
 }
@@ -6107,6 +8742,126 @@ func (self *DeviceRemoteRpc) WindowStatusChanged(status *DeviceRemoteWindowStatu
 	self.deviceRemote.log.Infof("[drrpc]WindowStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.windowStatusChanged(status.WindowStatus)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) BlockActionWindowChanged(event *DeviceRemoteBlockActionWindow, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]BlockActionWindowChanged")
+	self.dispatch(func() {
+		self.deviceRemote.blockActionWindowChanged(event.BlockActionWindow.toBlockActionWindow())
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) BlockStatsChanged(stats *DeviceRemoteBlockStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]BlockStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.blockStatsChanged(stats.BlockStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) BlockActionOverridesChanged(event *DeviceRemoteBlockActionOverrides, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]BlockActionOverridesChanged")
+	self.dispatch(func() {
+		self.deviceRemote.blockActionOverridesChanged(event.BlockActionOverrides)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) PacketStatsChanged(stats *DeviceRemotePacketStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]PacketStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.packetStatsChanged(stats.PacketStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) EgressContractStatsChanged(stats *DeviceRemoteContractStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]EgressContractStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.egressContractStatsChanged(stats.ContractStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) EgressContractDetailsChanged(event *DeviceRemoteContractDetails, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]EgressContractDetailsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.egressContractDetailsChanged(event.ContractDetails.toContractDetails())
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) IngressContractStatsChanged(stats *DeviceRemoteContractStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]IngressContractStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.ingressContractStatsChanged(stats.ContractStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) IngressContractDetailsChanged(event *DeviceRemoteContractDetails, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]IngressContractDetailsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.ingressContractDetailsChanged(event.ContractDetails.toContractDetails())
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderPacketStatsChanged(stats *DeviceRemotePacketStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderPacketStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerPacketStatsChanged(stats.PacketStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderEgressContractStatsChanged(stats *DeviceRemoteContractStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderEgressContractStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerEgressContractStatsChanged(stats.ContractStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderEgressContractDetailsChanged(event *DeviceRemoteContractDetails, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderEgressContractDetailsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerEgressContractDetailsChanged(event.ContractDetails.toContractDetails())
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderIngressContractStatsChanged(stats *DeviceRemoteContractStats, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderIngressContractStatsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerIngressContractStatsChanged(stats.ContractStats)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderIngressContractDetailsChanged(event *DeviceRemoteContractDetails, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderIngressContractDetailsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerIngressContractDetailsChanged(event.ContractDetails.toContractDetails())
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) DnsResolverSettingsChanged(event *DeviceRemoteDnsResolverSettings, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]DnsResolverSettingsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.dnsResolverSettingsChanged(event.DnsResolverSettings)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) NetworkPeersChanged(event *DeviceRemoteNetworkPeers, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]NetworkPeersChanged")
+	self.dispatch(func() {
+		self.deviceRemote.networkPeersChanged(event.NetworkPeers.toNetworkPeers())
 	})
 	return nil
 }

@@ -351,6 +351,36 @@ func NewBlockActionList() *BlockActionList {
 	}
 }
 
+type ThroughputPointList struct {
+	exportedList[*ThroughputPoint]
+}
+
+func NewThroughputPointList() *ThroughputPointList {
+	return &ThroughputPointList{
+		exportedList: *newExportedList[*ThroughputPoint](),
+	}
+}
+
+type NetworkPeerList struct {
+	exportedList[*NetworkPeer]
+}
+
+func NewNetworkPeerList() *NetworkPeerList {
+	return &NetworkPeerList{
+		exportedList: *newExportedList[*NetworkPeer](),
+	}
+}
+
+type RegionalDnsServerList struct {
+	exportedList[*RegionalDnsServer]
+}
+
+func NewRegionalDnsServerList() *RegionalDnsServerList {
+	return &RegionalDnsServerList{
+		exportedList: *newExportedList[*RegionalDnsServer](),
+	}
+}
+
 type LeaderboardEarnersList struct {
 	exportedList[*LeaderboardEarner]
 }

@@ -33,6 +33,10 @@ type ViewControllerManager interface {
 
 	OpenReferralCodeViewController() *ReferralCodeViewController
 
+	OpenBlockActionViewController() *BlockActionViewController
+
+	OpenContractViewController() *ContractViewController
+
 	CloseViewController(vc ViewController)
 
 	Close()
@@ -130,6 +134,18 @@ func (self *viewControllerManager) OpenAccountPreferencesViewController() *Accou
 
 func (self *viewControllerManager) OpenReferralCodeViewController() *ReferralCodeViewController {
 	vc := newReferralCodeViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionViewController {
+	vc := newBlockActionViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenContractViewController() *ContractViewController {
+	vc := newContractViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

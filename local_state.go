@@ -249,6 +249,56 @@ func (self *LocalState) GetConnectLocation() *ConnectLocation {
 	return nil
 }
 
+func (self *LocalState) SetBlockActionOverrides(blockActionOverrides *BlockActionOverrideList) error {
+	path := filepath.Join(self.localStorageDir, ".block_action_overrides")
+	if blockActionOverrides == nil {
+		os.Remove(path)
+		return nil
+	} else {
+		blockActionOverridesBytes, err := json.Marshal(blockActionOverrides)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, blockActionOverridesBytes, LocalStorageFilePermissions)
+	}
+}
+
+func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
+	path := filepath.Join(self.localStorageDir, ".block_action_overrides")
+	if blockActionOverridesBytes, err := os.ReadFile(path); err == nil {
+		blockActionOverrides := NewBlockActionOverrideList()
+		if err := json.Unmarshal(blockActionOverridesBytes, blockActionOverrides); err == nil {
+			return blockActionOverrides
+		}
+	}
+	return nil
+}
+
+func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) error {
+	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
+	if dnsResolverSettings == nil {
+		os.Remove(path)
+		return nil
+	} else {
+		dnsResolverSettingsBytes, err := json.Marshal(dnsResolverSettings)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, dnsResolverSettingsBytes, LocalStorageFilePermissions)
+	}
+}
+
+func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
+	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
+	if dnsResolverSettingsBytes, err := os.ReadFile(path); err == nil {
+		var dnsResolverSettings DnsResolverSettings
+		if err := json.Unmarshal(dnsResolverSettingsBytes, &dnsResolverSettings); err == nil {
+			return &dnsResolverSettings
+		}
+	}
+	return nil
+}
+
 func (self *LocalState) SetDefaultLocation(connectLocation *ConnectLocation) error {
 	path := filepath.Join(self.localStorageDir, ".default_location")
 	if connectLocation == nil {
@@ -462,7 +512,8 @@ func (self *LocalState) GetProvideControlMode() ProvideControlMode {
 			return provideControlMode
 		}
 	}
-	return ProvideControlModeAuto
+	// providing is opt-in: a user with no stored choice defaults to never
+	return ProvideControlModeNever
 }
 
 func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error {

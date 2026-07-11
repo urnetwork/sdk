@@ -518,7 +518,7 @@ func startEchoProviderClient(t *testing.T, ctx context.Context) (*connect.Client
 	clientSettings.ForwardBufferSettings.SequenceBufferSize = 0
 
 	providerClient := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), clientSettings)
-	providerClient.AddReceiveCallback(func(src connect.TransferPath, frames []*protocol.Frame, provideMode protocol.ProvideMode) {
+	providerClient.AddReceiveCallback(func(src connect.TransferPath, frames []*protocol.Frame, peer connect.Peer) {
 		for _, frame := range frames {
 			msg, err := connect.FromFrame(frame)
 			if err != nil {

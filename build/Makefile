@@ -1,11 +1,10 @@
 
-all: init clean build_js build_android build_apple
+all: init clean build_android build_apple build_js build_windows build_linux
 
 clean:
 	rm -rf android*
 	rm -rf apple*
 	rm -rf ios*
-	rm -rf js*
 
 # to reduce binary file size:
 # -s omit symbol table and debug info
@@ -20,8 +19,8 @@ build_android:
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
 	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
 	# validate that all types could be exported
-	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*, DeviceRpcDialer/Listener and their
-	# Websocket* transports) should not be included in gomobile
+	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*, DeviceRpcDialer/Listener, their
+	# Websocket* transports, and the *Rpc gob payload types) should not be included in gomobile
 	# but due to limitations they are and should be ignored
 	# the same applies to the DeviceLocalSettings struct fields, the DeviceLocal security-policy
 	# generator setters, and testing-only constructors whose unsupported field/param types gomobile skips
@@ -54,7 +53,7 @@ build_android:
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
 			jar -xf URnetworkSdk-sources.jar; \
-			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'DeviceRpcDialer' | grep -ve 'DeviceRpcListener' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'DeviceLocalSettings' | grep -ve 'NewPlatformNetworkSpace' | grep -ve 'Testing_NewNetworkSpaceWithUrls'`; \
+			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'DeviceRpcDialer' | grep -ve 'DeviceRpcListener' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'DeviceLocalSettings' | grep -ve 'NewPlatformNetworkSpace' | grep -ve 'Testing_NewNetworkSpaceWithUrls' | grep -ve '[A-Za-z]Rpc'`; \
 			if [ "$$bad_exports" ]; then \
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
@@ -92,30 +91,18 @@ build_apple:
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" apple;
 
-# Generate TypeScript types from Go structs
-generate_types:
-	@echo "Generating TypeScript types from Go structs..."
-	@if [ -d "../sdk-js" ]; then \
-		go run gen_types.go; \
-	else \
-		echo "⚠️  sdk-js directory not found, skipping type generation"; \
-	fi
+# Build the JavaScript/WASM version of the SDK in the js dir
+build_js:
+	$(MAKE) -C ../js
 
-# Build the JavaScript/WASM version of the SDK and package it for npm consumption
-build_js: generate_types
-	# Ensure Go and gomobile are on the PATH, and set required Go environment variables
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GODEBUG=gotypesalias=0; \
-	export GOEXPERIMENT=greenteagc; \
-	BUILD_DIR=js.`date +%s`; \
-	mkdir -p "$$BUILD_DIR/URnetworkSdkJs"; \
-	GOOS=js GOARCH=wasm go build -o "$$BUILD_DIR/URnetworkSdkJs/sdk.wasm" .; \
-	cp /usr/local/go/lib/wasm/wasm_exec.js "$$BUILD_DIR/URnetworkSdkJs"; \
-	cp index.js "$$BUILD_DIR/URnetworkSdkJs"; \
-	cp index.html "$$BUILD_DIR/URnetworkSdkJs"; \
-	(cd "$$BUILD_DIR" && zip -r URnetworkSdkJs.zip URnetworkSdkJs); \
-	if [ -e "js" ]; then mv js js.old.`date +%s`; fi; \
-	mv "$$BUILD_DIR" js;
+# Build the c abi libraries for desktop apps in the cgo dir
+# note these need the cross toolchains from `make -C ../cgo init` on the build host,
+# and join `all` once the build host has them installed
+build_windows:
+	$(MAKE) -C ../cgo build_windows
+
+build_linux:
+	$(MAKE) -C ../cgo build_linux
 
 
 init:

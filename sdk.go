@@ -14,6 +14,7 @@ import (
 	// "math/big"
 	"os"
 	"runtime/debug"
+	"time"
 
 	// "strings"
 
@@ -147,14 +148,45 @@ func SetLogDir(logDir string) error {
 	return err
 }
 
+// SetMemoryLimit tunes the sdk to a process memory budget:
+//   - scales the memory-dominant connect defaults (queue caps, receive windows,
+//     socket buffers, cache bounds) for objects constructed after this call
+//   - bounds the message pool free lists to limit/8 total bytes
+//   - sets the go runtime soft memory limit
+//
+// call this at process start, before constructing devices
 func SetMemoryLimit(limit int64) {
+	connect.SetMemoryBudget(limit)
 	connect.ResizeMessagePools(limit / 8)
 	debug.SetMemoryLimit(limit)
 }
 
+// SetEgressInterfaceIndex binds the sdk's outbound sockets to the given
+// physical network interface indices (IPv4 and IPv6), so that when this process
+// provides a VPN tunnel its own platform and provider connections do not loop
+// back into that tunnel. Pass 0 for a family to leave it unbound. This is the
+// Windows self-exclusion mechanism (R1); it is a no-op on other platforms,
+// where the OS handles self-exclusion (macOS network extension, Android
+// VpnService). The Windows service updates these on every network change.
+func SetEgressInterfaceIndex(index4 int, index6 int) {
+	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
+}
+
+// FreeMemory drops recoverable memory in response to host memory pressure
 func FreeMemory() {
+	startTime := time.Now()
+	totalByteCountBefore := runtimeTotalByteCount()
+	// drop recoverable caches (resolver caches, pooled DoH connections, affinity maps)
+	// before releasing the pools and returning free spans to the OS
+	connect.ShedMemory()
 	connect.ClearMessagePools()
 	debug.FreeOSMemory()
+	glog.Infof(
+		"[mem]free memory %.1fmib -> %.1fmib (%dms)",
+		float64(totalByteCountBefore)/float64(1024*1024),
+		float64(runtimeTotalByteCount())/float64(1024*1024),
+		time.Since(startTime)/time.Millisecond,
+	)
 }
 
 func MessagePoolGet(n int) []byte {
@@ -711,4 +743,25 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 	box.Precompute(shared, &pub, &priv)
 
 	return shared[:], nil
+}
+
+// WalletKeyPair is an ephemeral Curve25519 keypair (base58-encoded) for the
+// wallet-connect (Phantom/Solflare) NaCl-box handshake. Apple apps generate this
+// with CryptoKit; desktop (cgo) apps that lack a Curve25519 primitive call
+// GenerateWalletKeyPair so the keypair is wire-compatible with
+// GenerateSharedSecret / EncryptData / DecryptData.
+type WalletKeyPair struct {
+	PrivateKeyBase58 string
+	PublicKeyBase58  string
+}
+
+func GenerateWalletKeyPair() (*WalletKeyPair, error) {
+	publicKey, privateKey, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return &WalletKeyPair{
+		PrivateKeyBase58: base58.Encode(privateKey[:]),
+		PublicKeyBase58:  base58.Encode(publicKey[:]),
+	}, nil
 }

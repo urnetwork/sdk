@@ -306,6 +306,21 @@ func Testing_NewNetworkSpaceWithUrls(
 	}
 }
 
+// NewUrlsNetworkSpace builds a storage-less NetworkSpace targeting explicit api
+// and platform urls. Used by the JS/wasm DeviceRemote, where the rpc path dials
+// the platform websocket directly (via the browser WebSocket dialer) and the
+// api/jwt is owned by the surrounding TypeScript layer; the NetworkSpace here
+// mainly carries the urls and a client strategy the device does not use for the
+// rpc connection.
+func NewUrlsNetworkSpace(apiUrl string, platformUrl string) *NetworkSpace {
+	return Testing_NewNetworkSpaceWithUrls(
+		context.Background(),
+		apiUrl,
+		platformUrl,
+		connect.DefaultConnectSettings(),
+	)
+}
+
 func (self *NetworkSpace) GetKey() *NetworkSpaceKey {
 	// make a copy
 	key := self.key
@@ -655,6 +670,19 @@ func (self *NetworkSpaceManager) GetNetworkSpace(key *NetworkSpaceKey) *NetworkS
 
 func (self *NetworkSpaceManager) UpdateNetworkSpace(key *NetworkSpaceKey, callback NetworkSpaceUpdate) *NetworkSpace {
 	return self.updateNetworkSpace(key, callback.Update)
+}
+
+// UpdateNetworkSpaceValues sets the network space for key to values and returns
+// it. Unlike UpdateNetworkSpace, it takes the values directly instead of via a
+// mutation callback, so it maps cleanly across the c abi where callback
+// arguments cannot be mutated in place (the cgo desktop SDK). A nil values
+// leaves the existing values unchanged.
+func (self *NetworkSpaceManager) UpdateNetworkSpaceValues(key *NetworkSpaceKey, values *NetworkSpaceValues) *NetworkSpace {
+	return self.updateNetworkSpace(key, func(v *NetworkSpaceValues) {
+		if values != nil {
+			*v = *values
+		}
+	})
 }
 
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {

@@ -2,6 +2,11 @@ module github.com/urnetwork/sdk
 
 go 1.26.3
 
+// pin the toolchain so every machine and CI builds the wasm with the same
+// compiler; wasm_exec.js is copied from this toolchain's GOROOT (see js/Makefile)
+// so the glue stays paired with the binary regardless of the locally installed go
+toolchain go1.26.4
+
 require (
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/go-playground/assert/v2 v2.2.0
