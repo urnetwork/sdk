@@ -43,17 +43,72 @@ const (
 	deviceRpcStreamCount         = 2
 )
 
+// websocket message types the mux uses. These match the gorilla constants
+// (BinaryMessage=2, PingMessage=9) so `*websocket.Conn` satisfies `DeviceRpcWs`
+// directly, while the js browser shim can implement the interface without
+// importing gorilla.
+const (
+	DeviceRpcWsBinary = 2
+	DeviceRpcWsPing   = 9
+)
+
+// The transport interfaces follow the gomobile companion convention (see
+// `Device`/`device` in device.go): gobind generates a Go proxy for every
+// exported interface but omits methods with unbindable signatures
+// (context.Context, net.Conn, net.Addr, io.Reader, time.Time, func values),
+// and the incomplete proxy fails to compile wherever the interface is a
+// parameter of a bound function (e.g. DeviceLocal.StartHostedRpc,
+// HostedDeviceRpcListener.ServeWs). So each exported interface carries only
+// gomobile-bindable methods, and the remaining methods live on a lowercase
+// companion interface that every implementation is assumed to also satisfy;
+// code casts to the companion to use them.
+
 // DeviceRpcDialer establishes the single underlying connection initiated by the
-// DeviceRemote and returns the two multiplexed bi-directional streams.
+// DeviceRemote and returns the two multiplexed bi-directional streams (see
+// deviceRpcDialer).
 type DeviceRpcDialer interface {
+}
+
+// unexported to gomobile
+type deviceRpcDialer interface {
+	DeviceRpcDialer
 	Dial(ctx context.Context) (forward net.Conn, reverse net.Conn, err error)
 }
 
 // DeviceRpcListener accepts the single underlying connection and returns the two
-// multiplexed bi-directional streams with the same orientation as the dialer.
+// multiplexed bi-directional streams with the same orientation as the dialer
+// (see deviceRpcListener).
 type DeviceRpcListener interface {
-	Accept(ctx context.Context) (forward net.Conn, reverse net.Conn, err error)
 	Close() error
+}
+
+// unexported to gomobile
+type deviceRpcListener interface {
+	DeviceRpcListener
+	Accept(ctx context.Context) (forward net.Conn, reverse net.Conn, err error)
+}
+
+// DeviceRpcWs is the subset of the websocket connection the mux uses (with
+// deviceRpcWs). Implemented by the gorilla connection natively and by the
+// browser websocket shim under js (see device_rpc_platform_js.go), where the
+// write-control ping is a zero-length binary message since browsers cannot
+// send protocol pings (the read loop discards zero-length messages, so native
+// peers tolerate it).
+type DeviceRpcWs interface {
+	WriteMessage(messageType int, data []byte) error
+	Close() error
+}
+
+// unexported to gomobile
+type deviceRpcWs interface {
+	DeviceRpcWs
+	WriteControl(messageType int, data []byte, deadline time.Time) error
+	NextReader() (messageType int, r io.Reader, err error)
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	SetPongHandler(h func(appData string) error)
+	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
 }
 
 // deviceRpcMux multiplexes deviceRpcStreamCount logical net.Conns over a single
@@ -63,7 +118,7 @@ type deviceRpcMux struct {
 	cancel context.CancelFunc
 	log    connect.Logger
 
-	ws *websocket.Conn
+	ws deviceRpcWs
 
 	pingTimeout  time.Duration
 	readTimeout  time.Duration
@@ -78,7 +133,7 @@ type deviceRpcMux struct {
 	closeOnce sync.Once
 }
 
-func newDeviceRpcMux(ctx context.Context, ws *websocket.Conn, settings *deviceRpcSettings) *deviceRpcMux {
+func newDeviceRpcMux(ctx context.Context, ws deviceRpcWs, settings *deviceRpcSettings) *deviceRpcMux {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	pingTimeout := settings.KeepAliveTimeout
@@ -148,24 +203,25 @@ func (self *deviceRpcMux) writeLoop() {
 			if 0 < self.writeTimeout {
 				self.ws.SetWriteDeadline(time.Now().Add(self.writeTimeout))
 			}
-			err := self.ws.WriteMessage(websocket.BinaryMessage, b)
+			err := self.ws.WriteMessage(DeviceRpcWsBinary, b)
 			connect.MessagePoolReturn(b)
 			if err != nil {
 				self.log.Infof("[mux]write done = %s", err)
 				return
 			}
 		case <-ping:
-			// match the message-write path: only apply a deadline when one is
-			// configured. with writeTimeout == 0 the zero time.Time means "no
-			// deadline"; passing time.Now() would be an already-expired deadline
-			// and every ping would fail immediately, tearing down the mux.
-			var deadline time.Time
+			// keepalive as a zero-length binary message rather than a websocket
+			// ping. The peer's read loop resets its read deadline on receipt and
+			// discards it (len < 1). Unlike a websocket ping — a per-leg control
+			// frame — a data message relays through intermediate hops (the device
+			// rpc bridge relays opaque binary frames), so it keeps the whole
+			// relay alive, not just the adjacent leg. It is also what the browser
+			// shim must use (browsers cannot send websocket pings).
 			if 0 < self.writeTimeout {
-				deadline = time.Now().Add(self.writeTimeout)
-				self.ws.SetWriteDeadline(deadline)
+				self.ws.SetWriteDeadline(time.Now().Add(self.writeTimeout))
 			}
-			if err := self.ws.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
-				self.log.Infof("[mux]ping done = %s", err)
+			if err := self.ws.WriteMessage(DeviceRpcWsBinary, nil); err != nil {
+				self.log.Infof("[mux]keepalive done = %s", err)
 				return
 			}
 		}
@@ -190,7 +246,7 @@ func (self *deviceRpcMux) readLoop() {
 			self.log.Infof("[mux]read done = %s", err)
 			return
 		}
-		if messageType != websocket.BinaryMessage {
+		if messageType != DeviceRpcWsBinary {
 			continue
 		}
 		message, err := connect.MessagePoolReadAll(r)
@@ -510,8 +566,8 @@ func deviceRpcKeepAliveConfig(settings *deviceRpcSettings) net.KeepAliveConfig {
 	return config
 }
 
-// compile check that WebsocketDeviceRpcDialer conforms to DeviceRpcDialer
-var _ DeviceRpcDialer = (*WebsocketDeviceRpcDialer)(nil)
+// compile check that WebsocketDeviceRpcDialer conforms to deviceRpcDialer
+var _ deviceRpcDialer = (*WebsocketDeviceRpcDialer)(nil)
 
 type WebsocketDeviceRpcDialer struct {
 	address       *DeviceRemoteAddress
@@ -569,8 +625,8 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 	return mux.conns[deviceRpcStreamForward], mux.conns[deviceRpcStreamReverse], nil
 }
 
-// compile check that WebsocketDeviceRpcListener conforms to DeviceRpcListener
-var _ DeviceRpcListener = (*WebsocketDeviceRpcListener)(nil)
+// compile check that WebsocketDeviceRpcListener conforms to deviceRpcListener
+var _ deviceRpcListener = (*WebsocketDeviceRpcListener)(nil)
 
 type WebsocketDeviceRpcListener struct {
 	ctx    context.Context

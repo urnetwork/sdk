@@ -20,7 +20,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error generating types: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("✅ Generated TypeScript types successfully")
+	fmt.Println("Generated TypeScript types successfully")
 }
 
 func generateTypes() error {

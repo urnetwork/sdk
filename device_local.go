@@ -192,6 +192,16 @@ type DeviceLocalSettings struct {
 	// It overrides `ClientSettings.Log`.
 	DisableLogging bool
 
+	// HostedIncompatible, when true, hard-guards the setters that must never
+	// change on a hosted (platform-embedded) device: route local and the
+	// provide settings, plus the identity/rpc setters that only make sense
+	// for a locally-owned device. The guarded setters become no-ops; their
+	// getters and change listeners keep working. This is defense in depth
+	// alongside `DeviceLocalRpc.DisableHostedIncompatible`, which stops the
+	// same operations at the rpc layer — either alone is sufficient, both
+	// together mean nothing reachable can flip these on a hosted device.
+	HostedIncompatible bool
+
 	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
 	// 10.x.y.h (RFC1918, DHCP-shaped) address instead of drawing from connect's
 	// 169.254/16 pool. 10.x is private, so the browser's mDNS obfuscation masks it
@@ -750,8 +760,13 @@ func newDeviceLocalWithOverrides(
 		// the provider client lives as long as the device, so its contract
 		// stats subscription does too
 		deviceLocal.providerContractStatsEventSub = provider.Client().ContractManager().AddContractStatsCallback(deviceLocal.updateProviderContractStatsEvents)
-		// the network peers are tracked by the provider client
-		go connect.HandleError(deviceLocal.watchNetworkPeers)
+		// the network peers are tracked by the provider client. Grab the
+		// monitor channel synchronously here (before any peer update can be
+		// delivered) so watchNetworkPeers never misses the first change.
+		networkPeersNotify := provider.Client().PeerManager().PeersMonitor().NotifyChannel()
+		go connect.HandleError(func() {
+			deviceLocal.watchNetworkPeers(networkPeersNotify)
+		})
 	}
 
 	if settings.EnableRpc {
@@ -1029,6 +1044,9 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 }
 
 func (self *DeviceLocal) SetTunnelStarted(tunnelStarted bool) {
+	if self.hostedIncompatibleGuarded("SetTunnelStarted") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -1147,6 +1165,9 @@ func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
  * auto, always, never
  */
 func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControlMode) {
+	if self.hostedIncompatibleGuarded("SetProvideControlMode") {
+		return
+	}
 	provideChanged := false
 	provideControlModeChanged := false
 	func() {
@@ -1193,6 +1214,9 @@ func (self *DeviceLocal) GetProvideNetworkMode() ProvideNetworkMode {
 }
 
 func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
+	if self.hostedIncompatibleGuarded("SetProvideNetworkMode") {
+		return
+	}
 	set := false
 	func() {
 		self.stateLock.Lock()
@@ -1251,7 +1275,20 @@ func (self *DeviceLocal) SetAllowForeground(allowForeground bool) {
 	}
 }
 
+// hostedIncompatibleGuarded reports whether a setter that must not run on a
+// hosted device should be skipped. It logs the skip for visibility.
+func (self *DeviceLocal) hostedIncompatibleGuarded(name string) bool {
+	if self.settings.HostedIncompatible {
+		self.log.Infof("[device]hosted incompatible: %s ignored\n", name)
+		return true
+	}
+	return false
+}
+
 func (self *DeviceLocal) SetRouteLocal(routeLocal bool) {
+	if self.hostedIncompatibleGuarded("SetRouteLocal") {
+		return
+	}
 	set := false
 	func() {
 		self.stateLock.Lock()
@@ -1826,6 +1863,9 @@ func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
 // emits ProvideSecretKeysChanged so callers can persist the resulting local
 // state through the existing provide-secret-keys listener path.
 func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
+	if self.hostedIncompatibleGuarded("SetKeyMaterial") {
+		return
+	}
 	if keyMaterial == nil || keyMaterial.IsEmpty() {
 		return
 	}
@@ -1878,6 +1918,9 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 }
 
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
+	if self.hostedIncompatibleGuarded("SetProvideMode") {
+		return
+	}
 	self.log.Infof("[device]provide = %d\n", provideMode)
 
 	changed := false
@@ -1967,6 +2010,9 @@ func (self *DeviceLocal) GetProvideMode() ProvideMode {
 }
 
 func (self *DeviceLocal) SetProvidePaused(providePaused bool) {
+	if self.hostedIncompatibleGuarded("SetProvidePaused") {
+		return
+	}
 	if client := self.providerClientSnapshot(); client != nil {
 		if client.ContractManager().SetProvidePaused(providePaused) {
 			self.log.Infof("[device]provide paused = %t\n", providePaused)
@@ -2005,6 +2051,9 @@ func (self *DeviceLocal) GetOffline() bool {
 }
 
 func (self *DeviceLocal) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool) {
+	if self.hostedIncompatibleGuarded("SetVpnInterfaceWhileOffline") {
+		return
+	}
 	changed := false
 	func() {
 		self.stateLock.Lock()
@@ -2541,6 +2590,9 @@ func (self *DeviceLocal) GetDone() bool {
 // after constructing the device with the per-session server key material and
 // client certificate received from the remote.
 func (self *DeviceLocal) SetRpcServer(serverPem string, clientCertPem string, hostPort string) error {
+	if self.hostedIncompatibleGuarded("SetRpcServer") {
+		return nil
+	}
 	address, err := parseDeviceRemoteAddress(hostPort)
 	if err != nil {
 		return err
@@ -2575,6 +2627,30 @@ func (self *DeviceLocal) SetRpcServer(serverPem string, clientCertPem string, ho
 	self.rpcServerPem = serverPem
 	self.rpcClientCertPem = clientCertPem
 	return nil
+}
+
+// StartHostedRpc runs the rpc over a custom listener (rather than binding a
+// localhost websocket server) and marks every rpc session as
+// hosted-incompatible, so the remote cannot change route local or provide
+// settings. deviceGeneration identifies this DeviceLocal instance; the host
+// stamps a fresh value each time it recreates the device, so a DeviceRemote
+// can detect the recreate across reconnects. Used by the platform proxy host,
+// where the resident bridge feeds the listener.
+func (self *DeviceLocal) StartHostedRpc(listener DeviceRpcListener, deviceGeneration string) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	settings := defaultDeviceRpcSettings()
+	settings.DisableLogging = self.settings.DisableLogging
+	settings.ClientSettings.Log = self.settings.ClientSettings.Log
+	settings.DisableHostedIncompatible = true
+	settings.DeviceGeneration = deviceGeneration
+
+	if self.deviceLocalRpcManager != nil {
+		self.deviceLocalRpcManager.Close()
+	}
+	// see the companion convention note in device_rpc_transport.go
+	self.deviceLocalRpcManager = newDeviceLocalRpcManager(self.ctx, self, settings, listener.(deviceRpcListener))
 }
 
 func parseByJwtClientId(byJwt string) (connect.Id, error) {
@@ -3814,29 +3890,30 @@ func (self *DeviceLocal) AddNetworkPeersChangeListener(listener NetworkPeersChan
 }
 
 // watchNetworkPeers fires the network peers change listeners when the
-// provider client's peer state changes, at most once per epoch
-func (self *DeviceLocal) watchNetworkPeers() {
+// provider client's peer state changes, at most once per epoch. `notify` is the
+// monitor channel grabbed synchronously at construction (before any change can
+// be injected), so the first change is never missed.
+func (self *DeviceLocal) watchNetworkPeers(notify chan struct{}) {
 	client := self.providerClientSnapshot()
 	if client == nil {
 		return
 	}
 	peersMonitor := client.PeerManager().PeersMonitor()
-	notify := peersMonitor.NotifyChannel()
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-notify:
 		}
+		// re-arm before coalescing so any change during the epoch window or
+		// the emit triggers the next round rather than being missed
+		notify = peersMonitor.NotifyChannel()
 		// coalesce changes within the epoch
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-time.After(self.settings.NetworkPeersEpoch):
 		}
-		// re-arm before the snapshot so a change during the emit
-		// notifies the next round
-		notify = peersMonitor.NotifyChannel()
 		self.networkPeersChanged(self.GetNetworkPeers())
 	}
 }

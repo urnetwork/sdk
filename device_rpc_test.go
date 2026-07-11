@@ -2168,11 +2168,11 @@ func testing_waitFor(timeout time.Duration, condition func() bool) bool {
 	}
 }
 
-func testing_deviceRpcDialer(settings *deviceRpcSettings) DeviceRpcDialer {
+func testing_deviceRpcDialer(settings *deviceRpcSettings) deviceRpcDialer {
 	return NewWebsocketDeviceRpcDialer(settings.Address, "", "", settings)
 }
 
-func testing_deviceRpcDialerDefault() DeviceRpcDialer {
+func testing_deviceRpcDialerDefault() deviceRpcDialer {
 	settings := defaultDeviceRpcSettings()
 	return NewWebsocketDeviceRpcDialer(settings.Address, "", "", settings)
 }
@@ -2706,6 +2706,100 @@ func testing_newSyncedDeviceLocalRemote(t *testing.T, ctx context.Context) (*Dev
 		t.Fatal("device remote is not connected after sync (http would not route through rpc)")
 	}
 	return deviceLocal, deviceRemote
+}
+
+// TestDeviceRemoteMultipleToOneLocal verifies that several DeviceRemotes can
+// control one DeviceLocal at the same time (e.g. the same hosted device open in
+// multiple browser tabs). The deviceLocalRpcManager accepts each remote's
+// connection and serves it with its own DeviceLocalRpc against the shared
+// DeviceLocal, so every remote syncs, a local change fans out to all of them,
+// and a change from any one remote applies to the local and reaches the others.
+func TestDeviceRemoteMultipleToOneLocal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+	settings := defaultDeviceRpcSettings()
+
+	// one hosted DeviceLocal with its rpc manager listening; its accept loop
+	// serves every remote that dials settings.Address
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, byJwt, "", "", "", instanceId, testDeviceLocalSettingsRpc(), clientId,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deviceLocal.Close()
+
+	// a known starting point the remotes sync to
+	deviceLocal.SetOffline(true)
+
+	const remoteCount = 3
+	remotes := make([]*DeviceRemote, 0, remoteCount)
+	for i := 0; i < remoteCount; i += 1 {
+		remote, err := newDeviceRemoteWithOverrides(
+			networkSpace, byJwt, instanceId, settings, clientId, testing_deviceRpcDialer(settings),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer remote.Close()
+		remote.Sync()
+		remotes = append(remotes, remote)
+	}
+
+	// every remote syncs and connects against the one local, and each reflects
+	// the local's current state
+	for i, remote := range remotes {
+		if !remote.waitForSync(5 * time.Second) {
+			t.Fatalf("remote %d did not sync", i)
+		}
+		assert.Equal(t, remote.GetRemoteConnected(), true)
+		assert.Equal(t, remote.GetOffline(), true)
+	}
+
+	waitOffline := func(remote *DeviceRemote, want bool) bool {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if remote.GetOffline() == want {
+				return true
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		return remote.GetOffline() == want
+	}
+
+	// a change on the local fans out to every remote's reverse channel
+	deviceLocal.SetOffline(false)
+	for i, remote := range remotes {
+		if !waitOffline(remote, false) {
+			t.Fatalf("remote %d did not observe local offline=false", i)
+		}
+	}
+
+	// a change from one remote applies to the local and reaches the other remotes
+	remotes[0].SetOffline(true)
+	if !waitOffline(remotes[0], true) {
+		t.Fatal("remote 0 did not apply offline=true")
+	}
+	// the local reflects the remote's change
+	localDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(localDeadline) && !deviceLocal.GetOffline() {
+		time.Sleep(50 * time.Millisecond)
+	}
+	assert.Equal(t, deviceLocal.GetOffline(), true)
+	// and the other remotes observe it via their own reverse channels
+	for i := 1; i < len(remotes); i += 1 {
+		if !waitOffline(remotes[i], true) {
+			t.Fatalf("remote %d did not observe remote-0-driven offline=true", i)
+		}
+	}
 }
 
 // TestDeviceRpcHttpOverRpc exercises the full http-over-rpc round trip: the remote

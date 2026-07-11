@@ -5,6 +5,7 @@ build/android*
 build/node_modules
 **/.DS_Store
 **/test.out
+js/js
 
 temp/*
 

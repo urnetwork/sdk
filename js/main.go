@@ -156,6 +156,7 @@ func main() {
 	}))
 
 	js.Global().Set("URnetworkNewProxyDeviceWithDefaults", js.FuncOf(NewProxyDeviceWithDefaults))
+	js.Global().Set("URnetworkNewPlatformDeviceRemote", js.FuncOf(NewPlatformDeviceRemote))
 
 	select {
 	case <-ctx.Done():

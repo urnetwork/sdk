@@ -289,6 +289,21 @@ func Testing_NewNetworkSpaceWithUrls(
 	}
 }
 
+// NewUrlsNetworkSpace builds a storage-less NetworkSpace targeting explicit api
+// and platform urls. Used by the JS/wasm DeviceRemote, where the rpc path dials
+// the platform websocket directly (via the browser WebSocket dialer) and the
+// api/jwt is owned by the surrounding TypeScript layer; the NetworkSpace here
+// mainly carries the urls and a client strategy the device does not use for the
+// rpc connection.
+func NewUrlsNetworkSpace(apiUrl string, platformUrl string) *NetworkSpace {
+	return Testing_NewNetworkSpaceWithUrls(
+		context.Background(),
+		apiUrl,
+		platformUrl,
+		connect.DefaultConnectSettings(),
+	)
+}
+
 func (self *NetworkSpace) GetKey() *NetworkSpaceKey {
 	// make a copy
 	key := self.key

@@ -386,10 +386,14 @@ func (self *Api) NetworkDelete(callback NetworkDeleteCallback) {
 type AuthNetworkClientCallback connect.ApiCallback[*AuthNetworkClientResult]
 
 type AuthNetworkClientArgs struct {
-	ClientId       *Id    `json:"client_id,omitempty"`
-	SourceClientId *Id    `json:"source_client_id,omitempty"`
-	Description    string `json:"description"`
-	DeviceSpec     string `json:"device_spec"`
+	ClientId       *Id `json:"client_id,omitempty"`
+	SourceClientId *Id `json:"source_client_id,omitempty"`
+	// note the field is named DeviceDescription and not Description because a
+	// `description` objc property collides with NSObject.description in the
+	// gomobile bindings (a property attribute mismatch error). The json name is
+	// unchanged.
+	DeviceDescription string `json:"description"`
+	DeviceSpec        string `json:"device_spec"`
 
 	ProxyConfig *ProxyConfig `json:"proxy_config,omitempty"`
 }
@@ -437,12 +441,13 @@ type NetworkClientsResult struct {
 }
 
 type NetworkClientInfo struct {
-	ClientId    *Id    `json:"client_id"`
-	DeviceId    *Id    `json:"device_id"`
-	NetworkId   *Id    `json:"network_id"`
-	Description string `json:"description"`
-	DeviceName  string `json:"device_name"`
-	DeviceSpec  string `json:"device_spec"`
+	ClientId  *Id `json:"client_id"`
+	DeviceId  *Id `json:"device_id"`
+	NetworkId *Id `json:"network_id"`
+	// see the naming note on AuthNetworkClientArgs.DeviceDescription
+	DeviceDescription string `json:"description"`
+	DeviceName        string `json:"device_name"`
+	DeviceSpec        string `json:"device_spec"`
 
 	CreateTime *Time `json:"create_time"`
 	AuthTime   *Time `json:"auth_time"`

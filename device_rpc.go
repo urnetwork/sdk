@@ -50,6 +50,14 @@ type RemoteChangeListener interface {
 	RemoteChanged(remoteConnected bool)
 }
 
+// DeviceRecreatedListener fires when the hosted device is recreated under the
+// remote (detected as a change in the device generation across reconnects).
+// The client should re-run its device setup (destination, listeners) since the
+// new device instance starts from its persisted initial state.
+type DeviceRecreatedListener interface {
+	DeviceRecreated()
+}
+
 type deviceRpcSettings struct {
 	RpcCallTimeout      time.Duration
 	RpcConnectTimeout   time.Duration
@@ -73,6 +81,23 @@ type deviceRpcSettings struct {
 	// request/response buffers + goroutines so a slow or suspended app cannot pile
 	// up unbounded memory in the (memory-capped) network extension.
 	HttpMaxConcurrent int
+
+	// DisableHostedIncompatible, when true, makes the DeviceLocalRpc noop the
+	// setters that must never change on a hosted device (route local, provide
+	// settings, tunnel/vpn, identity/rpc); the corresponding getters and change
+	// listeners keep working. Set by the platform hosted rpc. This is the rpc
+	// layer of the same guard `DeviceLocalSettings.HostedIncompatible` enforces
+	// inside DeviceLocal.
+	DisableHostedIncompatible bool
+
+	// DeviceGeneration identifies the specific hosted DeviceLocal instance an
+	// rpc serves. The host stamps a fresh value each time it (re)creates the
+	// device (e.g. after an idle reap or egress-death recreate). The
+	// DeviceRemote reads it from the sync response and fires
+	// DeviceRecreatedListener when it changes across reconnects, so the client
+	// can re-run its setup. Empty on non-hosted (localhost) rpc, where the
+	// device is not recreated under the remote.
+	DeviceGeneration string
 
 	DeviceLocalSettings
 }
@@ -126,14 +151,20 @@ type DeviceRemote struct {
 	instanceId     connect.Id
 	clientStrategy *connect.ClientStrategy
 
-	remoteChangeListeners *connect.CallbackList[RemoteChangeListener]
+	remoteChangeListeners    *connect.CallbackList[RemoteChangeListener]
+	deviceRecreatedListeners *connect.CallbackList[DeviceRecreatedListener]
+
+	// the device generation observed on the last successful sync; a change
+	// signals the host recreated the device. Guarded by stateLock.
+	deviceGeneration    string
+	hasDeviceGeneration bool
 
 	// egressSecurityPolicy *deviceRemoteEgressSecurityPolicy
 	// ingressSecurityPolicy *deviceRemote
 
 	stateLock sync.Mutex
 
-	dialer DeviceRpcDialer
+	dialer deviceRpcDialer
 	// current dialer config, so SetRpcServer is a no-op (no reset of a live
 	// connection) when the same transport is re-applied
 	rpcHostPort      string
@@ -205,12 +236,38 @@ func NewDeviceRemoteWithDefaults(
 	return newDeviceRemote(networkSpace, byJwt, instanceId, settings, dialer)
 }
 
+// NewPlatformDeviceRemote creates a DeviceRemote that reaches a hosted
+// DeviceLocal by connecting directly to the proxy host that runs it, at
+// wss://<proxyUrl>/device-rpc. This is the constructor a JS/wasm client uses
+// (with the browser websocket dialer). proxyUrl may be a bare host, host:port,
+// or ws/wss url; a bare host defaults to wss.
+//
+// Auth to the device-rpc endpoint is signedProxyId (the device's signed proxy
+// id — an HMAC bearer token, model.SignProxyId), not a jwt. byJwt is the
+// network member jwt used for the network space api; it also supplies the
+// remote's displayed client id.
+func NewPlatformDeviceRemote(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	proxyUrl string,
+	signedProxyId string,
+	instanceId *Id,
+) (*DeviceRemote, error) {
+	clientId, err := parseByJwtClientId(byJwt)
+	if err != nil {
+		return nil, err
+	}
+	settings := defaultDeviceRpcSettings()
+	dialer := NewPlatformDeviceRpcDialer(proxyUrl, signedProxyId, settings)
+	return newDeviceRemoteWithOverrides(networkSpace, byJwt, instanceId, settings, clientId, dialer)
+}
+
 func newDeviceRemote(
 	networkSpace *NetworkSpace,
 	byJwt string,
 	instanceId *Id,
 	settings *deviceRpcSettings,
-	dialer DeviceRpcDialer,
+	dialer deviceRpcDialer,
 ) (*DeviceRemote, error) {
 	clientId, err := parseByJwtClientId(byJwt)
 	if err != nil {
@@ -233,7 +290,7 @@ func newDeviceRemoteWithOverrides(
 	instanceId *Id,
 	settings *deviceRpcSettings,
 	clientId connect.Id,
-	dialer DeviceRpcDialer,
+	dialer deviceRpcDialer,
 ) (*DeviceRemote, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -241,20 +298,21 @@ func newDeviceRemoteWithOverrides(
 	api.SetByJwt(byJwt)
 
 	deviceRemote := &DeviceRemote{
-		ctx:                   ctx,
-		cancel:                cancel,
-		networkSpace:          networkSpace,
-		byJwt:                 byJwt,
-		settings:              settings,
-		log:                   settings.logger(),
-		reconnectMonitor:      connect.NewMonitor(),
-		syncMonitor:           connect.NewMonitor(),
-		resetMonitor:          connect.NewMonitor(),
-		clientId:              clientId,
-		instanceId:            instanceId.toConnectId(),
-		clientStrategy:        networkSpace.clientStrategy,
-		dialer:                dialer,
-		remoteChangeListeners: connect.NewCallbackList[RemoteChangeListener](),
+		ctx:                      ctx,
+		cancel:                   cancel,
+		networkSpace:             networkSpace,
+		byJwt:                    byJwt,
+		settings:                 settings,
+		log:                      settings.logger(),
+		reconnectMonitor:         connect.NewMonitor(),
+		syncMonitor:              connect.NewMonitor(),
+		resetMonitor:             connect.NewMonitor(),
+		clientId:                 clientId,
+		instanceId:               instanceId.toConnectId(),
+		clientStrategy:           networkSpace.clientStrategy,
+		dialer:                   dialer,
+		remoteChangeListeners:    connect.NewCallbackList[RemoteChangeListener](),
+		deviceRecreatedListeners: connect.NewCallbackList[DeviceRecreatedListener](),
 
 		canShowRatingDialogChangeListeners:      map[connect.Id]CanShowRatingDialogChangeListener{},
 		canPromptIntroFunnelChangeListeners:     map[connect.Id]CanPromptIntroFunnelChangeListener{},
@@ -356,6 +414,7 @@ func (self *DeviceRemote) run() {
 			var reverseConn net.Conn
 
 			synced := false
+			deviceRecreated := false
 			func() {
 				if initialLock {
 					defer func() {
@@ -499,6 +558,16 @@ func (self *DeviceRemote) run() {
 
 				self.service = service
 
+				// detect a hosted device recreate: a change in the device
+				// generation across syncs means the host built a new device
+				// instance, so the client must re-run its setup. The first
+				// sync establishes the baseline (not a recreate).
+				if self.hasDeviceGeneration && self.deviceGeneration != syncResponse.DeviceGeneration {
+					deviceRecreated = true
+				}
+				self.deviceGeneration = syncResponse.DeviceGeneration
+				self.hasDeviceGeneration = true
+
 				if initialLock {
 					initialLock = false
 					self.stateLock.Unlock()
@@ -509,6 +578,9 @@ func (self *DeviceRemote) run() {
 
 			if synced {
 				self.remoteChanged(true)
+				if deviceRecreated {
+					self.deviceRecreated()
+				}
 
 				self.log.Infof("[dr]sync done")
 				select {
@@ -3166,6 +3238,19 @@ func (self *DeviceRemote) remoteChanged(remoteConnected bool) {
 	}
 }
 
+func (self *DeviceRemote) AddDeviceRecreatedListener(listener DeviceRecreatedListener) Sub {
+	listenerId := self.deviceRecreatedListeners.Add(listener)
+	return newSub(func() {
+		self.deviceRecreatedListeners.Remove(listenerId)
+	})
+}
+
+func (self *DeviceRemote) deviceRecreated() {
+	for _, listener := range self.deviceRecreatedListeners.Get() {
+		listener.DeviceRecreated()
+	}
+}
+
 // privacy block
 
 func (self *DeviceRemote) GetBlockStats() *BlockStats {
@@ -4178,6 +4263,10 @@ type DeviceRemoteSyncRequest struct {
 type DeviceRemoteSyncResponse struct {
 	Error string
 	State DeviceRemoteState
+	// DeviceGeneration identifies the hosted DeviceLocal instance; a change
+	// across reconnects means the host recreated the device (see
+	// deviceRpcSettings.DeviceGeneration).
+	DeviceGeneration string
 }
 
 //gomobile:noexport
@@ -5094,7 +5183,7 @@ type deviceLocalRpcManager struct {
 	cancel      context.CancelFunc
 	deviceLocal *DeviceLocal
 	settings    *deviceRpcSettings
-	listener    DeviceRpcListener
+	listener    deviceRpcListener
 }
 
 func newDeviceLocalRpcManagerWithDefaults(
@@ -5113,7 +5202,7 @@ func newDeviceLocalRpcManager(
 	ctx context.Context,
 	deviceLocal *DeviceLocal,
 	settings *deviceRpcSettings,
-	listener DeviceRpcListener,
+	listener deviceRpcListener,
 ) *deviceLocalRpcManager {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -5806,13 +5895,19 @@ func (self *DeviceLocalRpc) Sync(
 
 	state := syncRequest.State
 
+	// the hosted-incompatible fields (route local, provide settings, tunnel/vpn)
+	// are guarded: skipped here at the rpc layer, and hard-guarded again inside
+	// DeviceLocal. The remote's getters/listeners still see the real device
+	// state, so a hosted device keeps its platform-owned values.
+	hostedIncompatible := self.settings.DisableHostedIncompatible
+
 	if state.CanShowRatingDialog.IsSet {
 		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
 	}
 	if state.CanPromptIntroFunnel.IsSet {
 		self.deviceLocal.SetCanPromptIntroFunnel(state.CanPromptIntroFunnel.Value)
 	}
-	if state.ProvideControlMode.IsSet {
+	if state.ProvideControlMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
 	}
 	if state.AllowForeground.IsSet {
@@ -5821,7 +5916,7 @@ func (self *DeviceLocalRpc) Sync(
 	if state.CanRefer.IsSet {
 		self.deviceLocal.SetCanRefer(state.CanRefer.Value)
 	}
-	if state.RouteLocal.IsSet {
+	if state.RouteLocal.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetRouteLocal(state.RouteLocal.Value)
 	}
 	if state.InitProvideSecretKeys.IsSet {
@@ -5832,19 +5927,19 @@ func (self *DeviceLocalRpc) Sync(
 		provideSecretKeyList.addAll(state.LoadProvideSecretKeys.Value...)
 		self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	}
-	if state.ProvideMode.IsSet {
+	if state.ProvideMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
 	}
-	if state.ProvideNetworkMode.IsSet {
+	if state.ProvideNetworkMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideNetworkMode(state.ProvideNetworkMode.Value)
 	}
-	if state.ProvidePaused.IsSet {
+	if state.ProvidePaused.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvidePaused(state.ProvidePaused.Value)
 	}
 	if state.Offline.IsSet {
 		self.deviceLocal.SetOffline(state.Offline.Value)
 	}
-	if state.VpnInterfaceWhileOffline.IsSet {
+	if state.VpnInterfaceWhileOffline.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetVpnInterfaceWhileOffline(state.VpnInterfaceWhileOffline.Value)
 	}
 	if state.RemoveDestination.IsSet {
@@ -5879,7 +5974,7 @@ func (self *DeviceLocalRpc) Sync(
 		self.ingressSecurityPolicy.Stats(true)
 	}
 
-	if state.TunnelStarted.IsSet {
+	if state.TunnelStarted.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetTunnelStarted(state.TunnelStarted.Value)
 	}
 
@@ -6013,7 +6108,8 @@ func (self *DeviceLocalRpc) Sync(
 	*syncResponse = &DeviceRemoteSyncResponse{
 		// WindowIds: self.windowIds(),
 		// RpcPublicKey: "test",
-		State: self.state(),
+		State:            self.state(),
+		DeviceGeneration: self.settings.DeviceGeneration,
 	}
 	return nil
 }
@@ -6181,7 +6277,20 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	return nil
 }
 
+// hostedIncompatibleRpcGuarded reports whether a hosted-incompatible rpc setter
+// should be skipped. Getters and listeners are never guarded.
+func (self *DeviceLocalRpc) hostedIncompatibleRpcGuarded(name string) bool {
+	if self.settings.DisableHostedIncompatible {
+		self.deviceLocal.log.Infof("[dlrpc]hosted incompatible: %s ignored\n", name)
+		return true
+	}
+	return false
+}
+
 func (self *DeviceLocalRpc) SetTunnelStarted(tunnelStarted bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetTunnelStarted") {
+		return nil
+	}
 	self.deviceLocal.SetTunnelStarted(tunnelStarted)
 	return nil
 }
@@ -7350,6 +7459,9 @@ func (self *DeviceLocalRpc) GetProvideControlMode(_ RpcNoArg, mode *ProvideContr
 }
 
 func (self *DeviceLocalRpc) SetProvideControlMode(mode ProvideControlMode, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideControlMode") {
+		return nil
+	}
 	self.deviceLocal.SetProvideControlMode(mode)
 	return nil
 }
@@ -7461,6 +7573,9 @@ func (self *DeviceLocalRpc) canReferChanged(canRefer bool) {
 }
 
 func (self *DeviceLocalRpc) SetRouteLocal(routeLocal bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetRouteLocal") {
+		return nil
+	}
 	self.deviceLocal.SetRouteLocal(routeLocal)
 	return nil
 }
@@ -8142,6 +8257,9 @@ func (self *DeviceLocalRpc) GetConnectEnabled(_ RpcNoArg, connectEnabled *bool) 
 }
 
 func (self *DeviceLocalRpc) SetProvideMode(provideMode ProvideMode, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideMode") {
+		return nil
+	}
 	self.deviceLocal.SetProvideMode(provideMode)
 	return nil
 }
@@ -8164,6 +8282,9 @@ func (self *DeviceLocalRpc) provideNetworkModeChanged(provideNetworkMode Provide
 }
 
 func (self *DeviceLocalRpc) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideNetworkMode") {
+		return nil
+	}
 	self.deviceLocal.SetProvideNetworkMode(provideNetworkMode)
 	return nil
 }
@@ -8205,6 +8326,9 @@ func (self *DeviceLocalRpc) removeProvideNetworkModeChangeListener(listenerId co
 }
 
 func (self *DeviceLocalRpc) SetProvidePaused(providePaused bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvidePaused") {
+		return nil
+	}
 	self.deviceLocal.SetProvidePaused(providePaused)
 	return nil
 }
@@ -8226,6 +8350,9 @@ func (self *DeviceLocalRpc) GetOffline(_ RpcNoArg, offline *bool) error {
 }
 
 func (self *DeviceLocalRpc) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetVpnInterfaceWhileOffline") {
+		return nil
+	}
 	self.deviceLocal.SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline)
 	return nil
 }

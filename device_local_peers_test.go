@@ -168,11 +168,14 @@ func TestDeviceLocalNetworkPeersEpochCoalesce(t *testing.T) {
 		})
 	}
 
-	// exactly one coalesced emit with the complete state
+	// exactly one coalesced emit with the complete state. The timeout is
+	// generous: under parallel test load the epoch goroutine can be starved
+	// well past the epoch, but the coalescing (one emit per epoch) is what is
+	// under test, not the latency.
 	select {
 	case networkPeers := <-listener.networkPeers:
 		assert.Equal(t, networkPeers.Connected.Len(), burstCount)
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for network peers change")
 	}
 	select {
