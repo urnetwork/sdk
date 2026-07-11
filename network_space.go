@@ -581,6 +581,24 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 		safeHost = "default"
 	}
 	envStoragePath := filepath.Join(self.storagePath, "network_spaces", safeHost, key.EnvName)
+
+	// Best-effort migration: before host-scoped storage existed, state lived at
+	// `network_spaces/<env>` (no host segment). If an install still has state
+	// there and nothing has been written to the new host-scoped path yet, move
+	// it over so upgrading users aren't silently signed out. This only ever
+	// fires once - after the first successful rename, the legacy path no
+	// longer exists for any subsequent host to (incorrectly) inherit.
+	if _, err := os.Stat(envStoragePath); os.IsNotExist(err) {
+		legacyEnvStoragePath := filepath.Join(self.storagePath, "network_spaces", key.EnvName)
+		if legacyInfo, err := os.Stat(legacyEnvStoragePath); err == nil && legacyInfo.IsDir() {
+			if err := os.MkdirAll(filepath.Dir(envStoragePath), LocalStorageFilePermissions); err == nil {
+				// ignore errors - this is best-effort, and the normal
+				// MkdirAll below still guarantees envStoragePath exists
+				_ = os.Rename(legacyEnvStoragePath, envStoragePath)
+			}
+		}
+	}
+
 	if err := os.MkdirAll(envStoragePath, LocalStorageFilePermissions); err != nil {
 		panic(err)
 	}
