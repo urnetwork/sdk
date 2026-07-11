@@ -21,6 +21,7 @@ EXPORTS
 	urnet_api_auth_password_reset
 	urnet_api_auth_verify
 	urnet_api_auth_verify_send
+	urnet_api_auth_wallet_challenge
 	urnet_api_close
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
@@ -251,6 +252,7 @@ EXPORTS
 	urnet_device_local_tunnel_dns_setting
 	urnet_device_local_tunnel_local_address
 	urnet_device_refresh_token
+	urnet_device_remote_add_device_recreated_listener
 	urnet_device_remote_add_remote_change_listener
 	urnet_device_remote_close_view_controller
 	urnet_device_remote_get_remote_connected
@@ -397,6 +399,8 @@ EXPORTS
 	urnet_network_space_get_api_url
 	urnet_network_space_get_async_local_state
 	urnet_network_space_get_bundled
+	urnet_network_space_get_configured_api_url
+	urnet_network_space_get_configured_platform_url
 	urnet_network_space_get_env_name
 	urnet_network_space_get_env_secret
 	urnet_network_space_get_host_name
@@ -447,10 +451,12 @@ EXPORTS
 	urnet_new_network_space_key
 	urnet_new_network_space_manager
 	urnet_new_network_space_manager_no_storage
+	urnet_new_platform_device_remote
 	urnet_new_proxy_device_with_defaults
 	urnet_new_time_unix_milli
 	urnet_new_transfer_path
 	urnet_new_tunnel
+	urnet_new_urls_network_space
 	urnet_normal_env_name
 	urnet_parse_id
 	urnet_points_to_nano_points

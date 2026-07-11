@@ -33,6 +33,8 @@ typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, c
 void urnet_invoke_auth_verify(urnet_auth_verify_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_verify_send(urnet_auth_verify_send_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_auth_wallet_challenge(urnet_auth_wallet_challenge_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 void urnet_invoke_block_action_overrides_change(urnet_block_action_overrides_change_cb cb, void* user_data, const char* block_action_overrides_json);
 typedef void (*urnet_block_action_stats_cb)(void* user_data);
@@ -71,6 +73,8 @@ typedef void (*urnet_default_location_change_cb)(void* user_data, const char* lo
 void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, void* user_data, const char* location_json);
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_delete_api_key(urnet_delete_api_key_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_device_recreated_cb)(void* user_data);
+void urnet_invoke_device_recreated(urnet_device_recreated_cb cb, void* user_data);
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_device_set_name(urnet_device_set_name_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_dns_resolver_settings_change_cb)(void* user_data, const char* dns_resolver_settings_json);

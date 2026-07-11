@@ -59,6 +59,8 @@ bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t se
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
+#define URNET_DEVICE_RPC_WS_BINARY 2
+#define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
@@ -124,6 +126,8 @@ typedef void (*urnet_auth_password_reset_cb)(void* user_data, const char* result
 typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthVerifySendCallback */
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthWalletChallengeCallback */
+typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
 /* BlockActionOverridesChangeListener */
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 /* BlockActionStatsListener */
@@ -162,6 +166,8 @@ typedef void (*urnet_create_api_key_cb)(void* user_data, const char* result_json
 typedef void (*urnet_default_location_change_cb)(void* user_data, const char* location_json);
 /* DeleteApiKeyCallback */
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
+/* DeviceRecreatedListener */
+typedef void (*urnet_device_recreated_cb)(void* user_data);
 /* DeviceSetNameCallback */
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* DnsResolverSettingsChangeListener */
@@ -377,6 +383,7 @@ void urnet_api_auth_network_client(uint64_t self, const char* auth_network_clien
 void urnet_api_auth_password_reset(uint64_t self, const char* auth_password_reset_json, urnet_auth_password_reset_cb callback_result, void* callback_user_data);
 void urnet_api_auth_verify(uint64_t self, const char* auth_verify_json, urnet_auth_verify_cb callback_result, void* callback_user_data);
 void urnet_api_auth_verify_send(uint64_t self, const char* auth_verify_send_json, urnet_auth_verify_send_cb callback_result, void* callback_user_data);
+void urnet_api_auth_wallet_challenge(uint64_t self, const char* args_json, urnet_auth_wallet_challenge_cb callback_result, void* callback_user_data);
 void urnet_api_close(uint64_t self);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
@@ -643,6 +650,7 @@ bool urnet_device_local_key_material_is_empty(uint64_t self);
 
 /* ----- DeviceRemote ----- */
 
+uint64_t urnet_device_remote_add_device_recreated_listener(uint64_t self, urnet_device_recreated_cb listener_device_recreated, void* listener_user_data);
 uint64_t urnet_device_remote_add_remote_change_listener(uint64_t self, urnet_remote_change_cb listener_remote_changed, void* listener_user_data);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -772,6 +780,8 @@ uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
 uint64_t urnet_network_space_get_async_local_state(uint64_t self);
 bool urnet_network_space_get_bundled(uint64_t self);
+char* urnet_network_space_get_configured_api_url(uint64_t self);
+char* urnet_network_space_get_configured_platform_url(uint64_t self);
 char* urnet_network_space_get_env_name(uint64_t self);
 char* urnet_network_space_get_env_secret(uint64_t self);
 char* urnet_network_space_get_host_name(uint64_t self);
@@ -918,10 +928,12 @@ uint64_t urnet_new_network_name_validation_view_controller(uint64_t api);
 char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
 uint64_t urnet_new_network_space_manager_no_storage(void);
+uint64_t urnet_new_platform_device_remote(uint64_t network_space, const char* by_jwt, const char* proxy_url, const char* signed_proxy_id, const char* instance_id, char** out_error);
 uint64_t urnet_new_proxy_device_with_defaults(const char* proxy_config_json, urnet_setup_new_device_cb setup_new_device_callback_setup_new_device, void* setup_new_device_callback_user_data);
 int64_t urnet_new_time_unix_milli(int64_t unix_milli);
 char* urnet_new_transfer_path(const char* source_id, const char* destination_id, const char* stream_id);
 uint64_t urnet_new_tunnel(void);
+uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
@@ -1144,6 +1156,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   user_auth: string
  */
 
+/* AuthWalletChallengeArgs (json):
+ *   wallet_address?: string
+ *   blockchain?: string
+ */
+
+/* AuthWalletChallengeResult (json):
+ *   challenge?: string
+ *   timestamp?: number
+ *   expires_in?: number
+ *   message_template?: string
+ *   error?: ApiError | null
+ */
+
 /* BlockAction (json):
  *   BlockActionId: string (uuid) | null
  *   Time: number
@@ -1325,6 +1350,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   BlockActionWindowDuration: number (ns)
  *   BlockActionWindowMaxCount: number
  *   ContractStatsEpoch: number (ns)
+ *   NetworkPeersEpoch: number (ns)
  *   DefaultRouteLocal: boolean
  *   DefaultCanShowRatingDialog: boolean
  *   DefaultCanShowIntroFunnel: boolean
@@ -1341,6 +1367,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   EnableRpc: boolean
  *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
+ *   HostedIncompatible: boolean
  *   UseExperimentalTunnelAddress: boolean
  */
 
@@ -1772,6 +1799,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   store?: string
  *   wallet?: string
  *   sso_google?: boolean
+ *   api_url?: string
+ *   platform_url?: string
  *   net_extender?: NetExtender | null
  *   net_extender_auto_configure?: NetExtenderAutoConfigure | null
  */

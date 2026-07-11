@@ -57,6 +57,10 @@ void urnet_invoke_auth_verify_send(urnet_auth_verify_send_cb cb, void* user_data
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_auth_wallet_challenge(urnet_auth_wallet_challenge_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_block_action_overrides_change(urnet_block_action_overrides_change_cb cb, void* user_data, const char* block_action_overrides_json) {
 	cb(user_data, block_action_overrides_json);
 }
@@ -131,6 +135,10 @@ void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, v
 
 void urnet_invoke_delete_api_key(urnet_delete_api_key_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_device_recreated(urnet_device_recreated_cb cb, void* user_data) {
+	cb(user_data);
 }
 
 void urnet_invoke_device_set_name(urnet_device_set_name_cb cb, void* user_data, const char* result_json, const char* err_param) {
