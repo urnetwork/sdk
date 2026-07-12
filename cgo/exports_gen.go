@@ -184,6 +184,16 @@ func (self *cAdapterAuthLoginWithPasswordCallback) Result(result *sdk.AuthLoginW
 	}
 }
 
+type cAdapterAuthLogoutListener struct {
+	cbAuthLogout C.urnet_auth_logout_cb
+	userData     unsafe.Pointer
+}
+
+func (self *cAdapterAuthLogoutListener) AuthLogout() {
+	defer cgoGuard("urnet_auth_logout_cb")
+	C.urnet_invoke_auth_logout(self.cbAuthLogout, self.userData)
+}
+
 type cAdapterAuthNetworkClientCallback struct {
 	cbResult C.urnet_auth_network_client_cb
 	userData unsafe.Pointer
@@ -349,6 +359,16 @@ func (self *cAdapterBlockStatsChangeListener) BlockStatsChanged(blockStats *sdk.
 	if blockStats_ != nil {
 		cStringFree(blockStats_)
 	}
+}
+
+type cAdapterBlockerEnabledChangeListener struct {
+	cbBlockerEnabledChanged C.urnet_blocker_enabled_change_cb
+	userData                unsafe.Pointer
+}
+
+func (self *cAdapterBlockerEnabledChangeListener) BlockerEnabledChanged(blockerEnabled bool) {
+	defer cgoGuard("urnet_blocker_enabled_change_cb")
+	C.urnet_invoke_blocker_enabled_change(self.cbBlockerEnabledChanged, self.userData, C.bool(bool(blockerEnabled)))
 }
 
 type cAdapterCanPromptIntroFunnelChangeListener struct {
@@ -1701,6 +1721,27 @@ func (self *cAdapterSolanaPaymentIntentCallback) Result(result *sdk.SolanaPaymen
 	}
 }
 
+type cAdapterStripeCreateCheckoutSessionCallback struct {
+	cbResult C.urnet_stripe_create_checkout_session_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterStripeCreateCheckoutSessionCallback) Result(result *sdk.StripeCreateCheckoutSessionResult, errParam error) {
+	defer cgoGuard("urnet_stripe_create_checkout_session_cb")
+	result_ := cJson(result, "urnet_stripe_create_checkout_session_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_stripe_create_checkout_session(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterStripeCreateCustomerPortalCallback struct {
 	cbResult C.urnet_stripe_create_customer_portal_cb
 	userData unsafe.Pointer
@@ -2486,6 +2527,27 @@ func urnet_api_create_solana_payment_intent(self C.uint64_t, args *C.char, callb
 		callback_ = &cAdapterSolanaPaymentIntentCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.CreateSolanaPaymentIntent(args_, callback_)
+}
+
+//export urnet_api_create_stripe_checkout_session
+func urnet_api_create_stripe_checkout_session(self C.uint64_t, args *C.char, callback_result C.urnet_stripe_create_checkout_session_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_create_stripe_checkout_session")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_create_stripe_checkout_session")
+	if !ok {
+		return
+	}
+	var args_ *sdk.StripeCreateCheckoutSessionArgs
+	if args != nil {
+		args_ = &sdk.StripeCreateCheckoutSessionArgs{}
+		if !goJson(args, args_, "urnet_api_create_stripe_checkout_session") {
+			return
+		}
+	}
+	var callback_ sdk.StripeCreateCheckoutSessionCallback
+	if callback_result != nil {
+		callback_ = &cAdapterStripeCreateCheckoutSessionCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.CreateStripeCheckoutSession(args_, callback_)
 }
 
 //export urnet_api_create_stripe_payment_intent
@@ -4158,6 +4220,21 @@ func urnet_device_add_allow_foreground_change_listener(self C.uint64_t, listener
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_auth_logout_listener
+func urnet_device_add_auth_logout_listener(self C.uint64_t, listener_auth_logout C.urnet_auth_logout_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_auth_logout_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_auth_logout_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.AuthLogoutListener
+	if listener_auth_logout != nil {
+		listener_ = &cAdapterAuthLogoutListener{cbAuthLogout: listener_auth_logout, userData: listener_user_data}
+	}
+	r0 := self_.AddAuthLogoutListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_block_action_override
 func urnet_device_add_block_action_override(self C.uint64_t, override *C.char) {
 	defer cgoGuard("urnet_device_add_block_action_override")
@@ -4217,6 +4294,21 @@ func urnet_device_add_block_stats_change_listener(self C.uint64_t, listener_bloc
 		listener_ = &cAdapterBlockStatsChangeListener{cbBlockStatsChanged: listener_block_stats_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddBlockStatsChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_add_blocker_enabled_change_listener
+func urnet_device_add_blocker_enabled_change_listener(self C.uint64_t, listener_blocker_enabled_changed C.urnet_blocker_enabled_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_blocker_enabled_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_blocker_enabled_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.BlockerEnabledChangeListener
+	if listener_blocker_enabled_changed != nil {
+		listener_ = &cAdapterBlockerEnabledChangeListener{cbBlockerEnabledChanged: listener_blocker_enabled_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddBlockerEnabledChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -4787,6 +4879,17 @@ func urnet_device_get_block_stats(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_block_stats")
 }
 
+//export urnet_device_get_blocker_enabled
+func urnet_device_get_blocker_enabled(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_get_blocker_enabled")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_blocker_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetBlockerEnabled()
+	return C.bool(r0)
+}
+
 //export urnet_device_get_can_prompt_intro_funnel
 func urnet_device_get_can_prompt_intro_funnel(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_get_can_prompt_intro_funnel")
@@ -5343,6 +5446,16 @@ func urnet_device_set_block_action_overrides(self C.uint64_t, overrides *C.char)
 	self_.SetBlockActionOverrides(overrides_)
 }
 
+//export urnet_device_set_blocker_enabled
+func urnet_device_set_blocker_enabled(self C.uint64_t, blockerEnabled C.bool) {
+	defer cgoGuard("urnet_device_set_blocker_enabled")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_blocker_enabled")
+	if !ok {
+		return
+	}
+	self_.SetBlockerEnabled(bool(blockerEnabled))
+}
+
 //export urnet_device_set_can_prompt_intro_funnel
 func urnet_device_set_can_prompt_intro_funnel(self C.uint64_t, canPrompt C.bool) {
 	defer cgoGuard("urnet_device_set_can_prompt_intro_funnel")
@@ -5864,6 +5977,34 @@ func urnet_device_local_set_tunnel_dns_setting(self C.uint64_t, setting *C.char)
 		}
 	}
 	self_.SetTunnelDnsSetting(setting_)
+}
+
+//export urnet_device_local_tunnel_dns_addresses_ipv4
+func urnet_device_local_tunnel_dns_addresses_ipv4(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_tunnel_dns_addresses_ipv4")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_tunnel_dns_addresses_ipv4")
+	if !ok {
+		return nil
+	}
+	r0 := self_.TunnelDnsAddressesIpv4()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_tunnel_dns_addresses_ipv4")
+}
+
+//export urnet_device_local_tunnel_dns_addresses_ipv6
+func urnet_device_local_tunnel_dns_addresses_ipv6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_tunnel_dns_addresses_ipv6")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_tunnel_dns_addresses_ipv6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.TunnelDnsAddressesIpv6()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_tunnel_dns_addresses_ipv6")
 }
 
 //export urnet_device_local_tunnel_dns_setting
@@ -6597,6 +6738,17 @@ func urnet_local_state_get_block_action_overrides(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_local_state_get_block_action_overrides")
 }
 
+//export urnet_local_state_get_blocker_enabled
+func urnet_local_state_get_blocker_enabled(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_local_state_get_blocker_enabled")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_blocker_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetBlockerEnabled()
+	return C.bool(r0)
+}
+
 //export urnet_local_state_get_by_client_jwt
 func urnet_local_state_get_by_client_jwt(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_local_state_get_by_client_jwt")
@@ -6865,6 +7017,21 @@ func urnet_local_state_set_block_action_overrides(self C.uint64_t, blockActionOv
 		}
 	}
 	err := self_.SetBlockActionOverrides(blockActionOverrides_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_blocker_enabled
+func urnet_local_state_set_blocker_enabled(self C.uint64_t, blockerEnabled C.bool, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_blocker_enabled")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_blocker_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetBlockerEnabled(bool(blockerEnabled))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

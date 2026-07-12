@@ -41,6 +41,10 @@ void urnet_invoke_auth_login_with_password(urnet_auth_login_with_password_cb cb,
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_auth_logout(urnet_auth_logout_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_auth_network_client(urnet_auth_network_client_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
@@ -79,6 +83,10 @@ void urnet_invoke_block_actions(urnet_block_actions_cb cb, void* user_data) {
 
 void urnet_invoke_block_stats_change(urnet_block_stats_change_cb cb, void* user_data, const char* block_stats_json) {
 	cb(user_data, block_stats_json);
+}
+
+void urnet_invoke_blocker_enabled_change(urnet_blocker_enabled_change_cb cb, void* user_data, bool blocker_enabled) {
+	cb(user_data, blocker_enabled);
 }
 
 void urnet_invoke_can_prompt_intro_funnel_change(urnet_can_prompt_intro_funnel_change_cb cb, void* user_data, bool can_prompt_intro_funnel) {
@@ -426,6 +434,10 @@ bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data
 }
 
 void urnet_invoke_solana_payment_intent(urnet_solana_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_stripe_create_checkout_session(urnet_stripe_create_checkout_session_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
 

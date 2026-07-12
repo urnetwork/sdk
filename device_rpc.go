@@ -186,6 +186,7 @@ type DeviceRemote struct {
 	vpnInterfaceWhileOfflineChangeListeners map[connect.Id]VpnInterfaceWhileOfflineChangeListener
 	connectChangeListeners                  map[connect.Id]ConnectChangeListener
 	routeLocalChangeListeners               map[connect.Id]RouteLocalChangeListener
+	blockerEnabledChangeListeners           map[connect.Id]BlockerEnabledChangeListener
 	connectLocationChangeListeners          map[connect.Id]ConnectLocationChangeListener
 	defaultLocationChangeListeners          map[connect.Id]DefaultLocationChangeListener
 	provideSecretKeysListeners              map[connect.Id]ProvideSecretKeysListener
@@ -211,6 +212,7 @@ type DeviceRemote struct {
 	providerIngressContractDetailsChangeListeners map[connect.Id]ContractDetailsChangeListener
 	// jwtRefreshListeners               map[connect.Id]JwtRefreshListener
 	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
 
@@ -328,6 +330,7 @@ func newDeviceRemoteWithOverrides(
 		vpnInterfaceWhileOfflineChangeListeners: map[connect.Id]VpnInterfaceWhileOfflineChangeListener{},
 		connectChangeListeners:                  map[connect.Id]ConnectChangeListener{},
 		routeLocalChangeListeners:               map[connect.Id]RouteLocalChangeListener{},
+		blockerEnabledChangeListeners:           map[connect.Id]BlockerEnabledChangeListener{},
 		connectLocationChangeListeners:          map[connect.Id]ConnectLocationChangeListener{},
 		defaultLocationChangeListeners:          map[connect.Id]DefaultLocationChangeListener{},
 		provideSecretKeysListeners:              map[connect.Id]ProvideSecretKeysListener{},
@@ -346,6 +349,7 @@ func newDeviceRemoteWithOverrides(
 		dnsResolverSettingsChangeListeners:      map[connect.Id]DnsResolverSettingsChangeListener{},
 		networkPeersChangeListeners:             map[connect.Id]NetworkPeersChangeListener{},
 		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
+		authLogoutListeners:                     connect.NewCallbackList[AuthLogoutListener](),
 		httpResponseChannels:                    map[connect.Id]chan *DeviceRemoteHttpResponse{},
 
 		providerPacketStatsChangeListeners:            map[connect.Id]PacketStatsChangeListener{},
@@ -372,7 +376,13 @@ func newDeviceRemoteWithOverrides(
 		deviceRemote.log,
 		api,
 		deviceRemote.setByJwt,
-		logout,
+		// clear the local auth state, then propagate the logout to the app
+		// (`AddAuthLogoutListener`) so the ui can return to the login flow
+		func() error {
+			err := logout()
+			deviceRemote.authLogout()
+			return err
+		},
 	)
 
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
@@ -480,6 +490,7 @@ func (self *DeviceRemote) run() {
 					VpnInterfaceWhileOfflineChangeListenerIds: maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners),
 					ConnectChangeListenerIds:                  maps.Keys(self.connectChangeListeners),
 					RouteLocalChangeListenerIds:               maps.Keys(self.routeLocalChangeListeners),
+					BlockerEnabledChangeListenerIds:           maps.Keys(self.blockerEnabledChangeListeners),
 					ConnectLocationChangeListenerIds:          maps.Keys(self.connectLocationChangeListeners),
 					DefaultLocationChangeListenerIds:          maps.Keys(self.defaultLocationChangeListeners),
 					ProvideSecretKeysListenerIds:              maps.Keys(self.provideSecretKeysListeners),
@@ -640,8 +651,13 @@ func (self *DeviceRemote) setByJwt(byJwt string) {
 	self.GetApi().SetByJwt(byJwt)
 
 	if self.networkSpace.asyncLocalState != nil {
-		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
+		// ORDER MATTERS. LocalState.SetByJwt clears the client jwt and the instance
+		// id whenever the value changes -- which is ALWAYS true on a refresh -- so
+		// calling SetByClientJwt first meant SetByJwt immediately wiped it, leaving
+		// .by_client_jwt empty and the user logged out on the next cold launch.
+		// Write the network jwt first, then the client jwt.
 		self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
 	}
 
 	func() {
@@ -1245,6 +1261,61 @@ func (self *DeviceRemote) GetRouteLocal() bool {
 	}
 }
 
+func (self *DeviceRemote) SetBlockerEnabled(blockerEnabled bool) {
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
+
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetBlockerEnabled", blockerEnabled, self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.BlockerEnabled.Unset()
+			self.lastKnownState.BlockerEnabled.Set(blockerEnabled)
+		} else {
+			event = true
+			self.state.BlockerEnabled.Set(blockerEnabled)
+		}
+	}()
+	if event {
+		self.blockerEnabledChanged(self.GetBlockerEnabled())
+	}
+}
+
+func (self *DeviceRemote) GetBlockerEnabled() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	blockerEnabled, success := func() (bool, bool) {
+		if self.service == nil {
+			return false, false
+		}
+
+		blockerEnabled, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.GetBlockerEnabled", self.closeService)
+		if err != nil {
+			return false, false
+		}
+		self.lastKnownState.BlockerEnabled.Set(blockerEnabled)
+		return blockerEnabled, true
+	}()
+	if success {
+		return blockerEnabled
+	} else {
+		return self.state.BlockerEnabled.Get(
+			self.lastKnownState.BlockerEnabled.Get(self.settings.DefaultBlockerEnabled),
+		)
+	}
+}
+
 func addListener[T any](
 	deviceRemote *DeviceRemote,
 	listener T,
@@ -1412,6 +1483,16 @@ func (self *DeviceRemote) AddRouteLocalChangeListener(listener RouteLocalChangeL
 	)
 }
 
+func (self *DeviceRemote) AddBlockerEnabledChangeListener(listener BlockerEnabledChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.blockerEnabledChangeListeners,
+		"DeviceLocalRpc.AddBlockerEnabledChangeListener",
+		"DeviceLocalRpc.RemoveBlockerEnabledChangeListener",
+	)
+}
+
 func (self *DeviceRemote) AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub {
 	return addListener(
 		self,
@@ -1476,6 +1557,13 @@ func (self *DeviceRemote) AddJwtRefreshListener(listener JwtRefreshListener) Sub
 	callbackId := self.jwtRefreshListeners.Add(listener)
 	return newSub(func() {
 		self.jwtRefreshListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceRemote) AddAuthLogoutListener(listener AuthLogoutListener) Sub {
+	callbackId := self.authLogoutListeners.Add(listener)
+	return newSub(func() {
+		self.authLogoutListeners.Remove(callbackId)
 	})
 }
 
@@ -2744,6 +2832,20 @@ func (self *DeviceRemote) routeLocalChanged(routeLocal bool) {
 	}
 }
 
+func (self *DeviceRemote) blockerEnabledChanged(blockerEnabled bool) {
+	listenerList := func() []BlockerEnabledChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.BlockerEnabled.Set(blockerEnabled)
+		return listenerList(self.blockerEnabledChangeListeners)
+	}()
+	for _, blockerEnabledChangeListener := range listenerList {
+		connect.HandleError(func() {
+			blockerEnabledChangeListener.BlockerEnabledChanged(blockerEnabled)
+		})
+	}
+}
+
 func (self *DeviceRemote) connectLocationChanged(deviceRemoteLocation *DeviceRemoteConnectLocation) {
 	listenerList := func() []ConnectLocationChangeListener {
 		self.stateLock.Lock()
@@ -2820,6 +2922,14 @@ func (self *DeviceRemote) jwtRefreshed(jwt string) {
 	for _, listener := range self.jwtRefreshListeners.Get() {
 		connect.HandleError(func() {
 			listener.JwtRefreshed(jwt)
+		})
+	}
+}
+
+func (self *DeviceRemote) authLogout() {
+	for _, listener := range self.authLogoutListeners.Get() {
+		connect.HandleError(func() {
+			listener.AuthLogout()
 		})
 	}
 }
@@ -4101,6 +4211,7 @@ type DeviceRemoteState struct {
 	CanRefer                 deviceRemoteValue[bool]
 	AllowForeground          deviceRemoteValue[bool]
 	RouteLocal               deviceRemoteValue[bool]
+	BlockerEnabled           deviceRemoteValue[bool]
 	InitProvideSecretKeys    deviceRemoteValue[bool]
 	LoadProvideSecretKeys    deviceRemoteValue[[]*ProvideSecretKey]
 	ProvideMode              deviceRemoteValue[ProvideMode]        // auto, always, never
@@ -4153,6 +4264,7 @@ func (self *DeviceRemoteState) Unset() {
 	self.ProvideControlMode.Unset()
 	self.CanRefer.Unset()
 	self.RouteLocal.Unset()
+	self.BlockerEnabled.Unset()
 	self.InitProvideSecretKeys.Unset()
 	self.LoadProvideSecretKeys.Unset()
 	self.ProvideMode.Unset()
@@ -4190,6 +4302,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.AllowForeground.Merge(update.AllowForeground)
 	self.CanRefer.Merge(update.CanRefer)
 	self.RouteLocal.Merge(update.RouteLocal)
+	self.BlockerEnabled.Merge(update.BlockerEnabled)
 	self.InitProvideSecretKeys.Merge(update.InitProvideSecretKeys)
 	self.LoadProvideSecretKeys.Merge(update.LoadProvideSecretKeys)
 	self.ProvideMode.Merge(update.ProvideMode)
@@ -4233,6 +4346,7 @@ type DeviceRemoteSyncRequest struct {
 	VpnInterfaceWhileOfflineChangeListenerIds []connect.Id
 	ConnectChangeListenerIds                  []connect.Id
 	RouteLocalChangeListenerIds               []connect.Id
+	BlockerEnabledChangeListenerIds           []connect.Id
 	ConnectLocationChangeListenerIds          []connect.Id
 	DefaultLocationChangeListenerIds          []connect.Id
 	ProvideSecretKeysListenerIds              []connect.Id
@@ -5292,6 +5406,7 @@ type DeviceLocalRpc struct {
 	vpnInterfaceWhileOfflineChangeListenerIds map[connect.Id]bool
 	connectChangeListenerIds                  map[connect.Id]bool
 	routeLocalChangeListenerIds               map[connect.Id]bool
+	blockerEnabledChangeListenerIds           map[connect.Id]bool
 	connectLocationChangeListenerIds          map[connect.Id]bool
 	defaultLocationChangeListenerIds          map[connect.Id]bool
 	provideSecretKeysListenerIds              map[connect.Id]bool
@@ -5335,6 +5450,7 @@ type DeviceLocalRpc struct {
 	vpnInterfaceWhileOfflineChangeListenerSub Sub
 	connectChangeListenerSub                  Sub
 	routeLocalChangeListenerSub               Sub
+	blockerEnabledChangeListenerSub           Sub
 	connectLocationChangeListenerSub          Sub
 	defaultLocationChangeListenerSub          Sub
 	provideSecretKeysListenerSub              Sub
@@ -5409,6 +5525,7 @@ func newDeviceLocalRpc(
 		vpnInterfaceWhileOfflineChangeListenerIds: map[connect.Id]bool{},
 		connectChangeListenerIds:                  map[connect.Id]bool{},
 		routeLocalChangeListenerIds:               map[connect.Id]bool{},
+		blockerEnabledChangeListenerIds:           map[connect.Id]bool{},
 		connectLocationChangeListenerIds:          map[connect.Id]bool{},
 		defaultLocationChangeListenerIds:          map[connect.Id]bool{},
 		provideSecretKeysListenerIds:              map[connect.Id]bool{},
@@ -5587,6 +5704,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for routeLocalChangeListenerId, _ := range self.routeLocalChangeListenerIds {
 		self.removeRouteLocalChangeListener(routeLocalChangeListenerId)
+	}
+	for blockerEnabledChangeListenerId, _ := range self.blockerEnabledChangeListenerIds {
+		self.removeBlockerEnabledChangeListener(blockerEnabledChangeListenerId)
 	}
 	for connectLocationChangeListenerId, _ := range self.connectLocationChangeListenerIds {
 		self.removeConnectLocationChangeListener(connectLocationChangeListenerId)
@@ -5838,6 +5958,7 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.CanRefer.Set(self.deviceLocal.GetCanRefer())
 	state.AllowForeground.Set(self.deviceLocal.GetAllowForeground())
 	state.RouteLocal.Set(self.deviceLocal.GetRouteLocal())
+	state.BlockerEnabled.Set(self.deviceLocal.GetBlockerEnabled())
 	state.LoadProvideSecretKeys.Set(self.deviceLocal.GetProvideSecretKeys().getAll())
 	state.ProvideMode.Set(self.deviceLocal.GetProvideMode())
 	state.ProvideNetworkMode.Set(self.deviceLocal.GetProvideNetworkMode())
@@ -5918,6 +6039,9 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	if state.RouteLocal.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetRouteLocal(state.RouteLocal.Value)
+	}
+	if state.BlockerEnabled.IsSet {
+		self.deviceLocal.SetBlockerEnabled(state.BlockerEnabled.Value)
 	}
 	if state.InitProvideSecretKeys.IsSet {
 		self.deviceLocal.InitProvideSecretKeys()
@@ -6031,6 +6155,9 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	for _, routeLocalChangeListenerId := range syncRequest.RouteLocalChangeListenerIds {
 		self.addRouteLocalChangeListener(routeLocalChangeListenerId)
+	}
+	for _, blockerEnabledChangeListenerId := range syncRequest.BlockerEnabledChangeListenerIds {
+		self.addBlockerEnabledChangeListener(blockerEnabledChangeListenerId)
 	}
 	for _, connectLocationChangeListenerId := range syncRequest.ConnectLocationChangeListenerIds {
 		self.addConnectLocationChangeListener(connectLocationChangeListenerId)
@@ -6181,6 +6308,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.routeLocalChangeListenerSub != nil {
 		self.routeLocalChanged(self.deviceLocal.GetRouteLocal())
+	}
+	if self.blockerEnabledChangeListenerSub != nil {
+		self.blockerEnabledChanged(self.deviceLocal.GetBlockerEnabled())
 	}
 	if self.connectLocationChangeListenerSub != nil {
 		self.connectLocationChanged(self.deviceLocal.GetConnectLocation())
@@ -7585,6 +7715,16 @@ func (self *DeviceLocalRpc) GetRouteLocal(_ RpcNoArg, routeLocal *bool) error {
 	return nil
 }
 
+func (self *DeviceLocalRpc) SetBlockerEnabled(blockerEnabled bool, _ RpcVoid) error {
+	self.deviceLocal.SetBlockerEnabled(blockerEnabled)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetBlockerEnabled(_ RpcNoArg, blockerEnabled *bool) error {
+	*blockerEnabled = self.deviceLocal.GetBlockerEnabled()
+	return nil
+}
+
 func (self *DeviceLocalRpc) SetPerformanceProfile(devicePerformanceProfile *DevicePerformanceProfile, _ RpcVoid) error {
 	self.deviceLocal.SetPerformanceProfile(devicePerformanceProfile.PerformanceProfile)
 	return nil
@@ -7990,6 +8130,49 @@ func (self *DeviceLocalRpc) RouteLocalChanged(routeLocal bool) {
 // enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) routeLocalChanged(routeLocal bool) {
 	self.reverseNotify("DeviceRemoteRpc.RouteLocalChanged", routeLocal)
+}
+
+func (self *DeviceLocalRpc) AddBlockerEnabledChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addBlockerEnabledChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addBlockerEnabledChangeListener(listenerId connect.Id) {
+	self.blockerEnabledChangeListenerIds[listenerId] = true
+	if self.blockerEnabledChangeListenerSub == nil {
+		self.blockerEnabledChangeListenerSub = self.deviceLocal.AddBlockerEnabledChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveBlockerEnabledChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeBlockerEnabledChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeBlockerEnabledChangeListener(listenerId connect.Id) {
+	delete(self.blockerEnabledChangeListenerIds, listenerId)
+	if len(self.blockerEnabledChangeListenerIds) == 0 && self.blockerEnabledChangeListenerSub != nil {
+		self.blockerEnabledChangeListenerSub.Close()
+		self.blockerEnabledChangeListenerSub = nil
+	}
+}
+
+// BlockerEnabledChangeListener
+func (self *DeviceLocalRpc) BlockerEnabledChanged(blockerEnabled bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.blockerEnabledChanged(blockerEnabled)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) blockerEnabledChanged(blockerEnabled bool) {
+	self.reverseNotify("DeviceRemoteRpc.BlockerEnabledChanged", blockerEnabled)
 }
 
 func (self *DeviceLocalRpc) AddConnectLocationChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -8681,6 +8864,14 @@ func (self *DeviceRemoteRpc) RouteLocalChanged(routeLocal bool, _ RpcVoid) error
 	self.deviceRemote.log.Infof("[drrpc]RouteLocalChanged routeLocal=%t", routeLocal)
 	self.dispatch(func() {
 		self.deviceRemote.routeLocalChanged(routeLocal)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) BlockerEnabledChanged(blockerEnabled bool, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]BlockerEnabledChanged blockerEnabled=%t", blockerEnabled)
+	self.dispatch(func() {
+		self.deviceRemote.blockerEnabledChanged(blockerEnabled)
 	})
 	return nil
 }

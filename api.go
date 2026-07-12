@@ -436,8 +436,13 @@ type AuthNetworkClientResult struct {
 
 type AuthNetworkClientError struct {
 	// can be a hard limit or a rate limit
-	ClientLimitExceeded bool   `json:"client_limit_exceeded"`
-	Message             string `json:"message"`
+	ClientLimitExceeded bool `json:"client_limit_exceeded"`
+	// the network is at its PLAN's limit for concurrent connected clients, rather
+	// than a hard cap. The client should prompt the user to upgrade (or, for an
+	// agent, pay inline over x402 -- the same request answers 402 with payment
+	// terms). Distinct from ClientLimitExceeded, which no upgrade can lift.
+	UpgradeRequired bool   `json:"upgrade_required,omitempty"`
+	Message         string `json:"message"`
 }
 
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
@@ -785,6 +790,9 @@ type Blockchain = string
 const (
 	SOL   Blockchain = "SOL"
 	MATIC Blockchain = "MATIC"
+	// TAO (bittensor) wallets are recorded for future use only: they cannot
+	// be the payout wallet (payouts are USDC on Solana/Polygon)
+	TAO Blockchain = "TAO"
 )
 
 type CreateAccountWalletArgs struct {
@@ -1982,6 +1990,52 @@ func (self *Api) StripeCreateCustomerPortal(args *StripeCreateCustomerPortalArgs
 }
 
 /**
+ * Stripe Checkout Session
+ */
+
+type StripeCreateCheckoutSessionArgs struct {
+	ItemId string `json:"item_id"`
+	// "hosted" (default) or "embedded". A single Stripe session carries one shape
+	// or the other, never both: hosted returns checkout_url for a browser,
+	// embedded returns client_secret + publishable_key for Stripe.js Embedded
+	// Checkout (the desktop apps load ur.io/checkout in a webview with these).
+	UiMode string `json:"ui_mode,omitempty"`
+}
+
+type StripeCreateCheckoutSessionError struct {
+	Message string `json:"message"`
+}
+
+type StripeCreateCheckoutSessionResult struct {
+	// which of the two shapes below is populated
+	UiMode string `json:"ui_mode,omitempty"`
+	// hosted mode only
+	CheckoutUrl string `json:"checkout_url,omitempty"`
+	// embedded mode only
+	ClientSecret   string `json:"client_secret,omitempty"`
+	PublishableKey string `json:"publishable_key,omitempty"`
+	// both modes; the caller can reconcile the purchase with this
+	SessionId string                            `json:"session_id,omitempty"`
+	Error     *StripeCreateCheckoutSessionError `json:"error,omitempty"`
+}
+
+type StripeCreateCheckoutSessionCallback connect.ApiCallback[*StripeCreateCheckoutSessionResult]
+
+func (self *Api) CreateStripeCheckoutSession(args *StripeCreateCheckoutSessionArgs, callback StripeCreateCheckoutSessionCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/stripe/create-checkout-session", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&StripeCreateCheckoutSessionResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Upload logs
  */
 
@@ -2042,8 +2096,15 @@ func (self *Api) RefreshJwt(callback RefreshJwtCallback) {
 }
 
 func (self *Api) RefreshJwtSync() (*RefreshJwtResult, error) {
+	return self.refreshJwtSyncWithContext(self.ctx)
+}
+
+// refreshJwtSyncWithContext bounds the request to the caller's ctx, so a
+// caller with a narrower lifetime than the api (e.g. the device token
+// manager) does not leave the request running after it closes
+func (self *Api) refreshJwtSyncWithContext(ctx context.Context) (*RefreshJwtResult, error) {
 	return connect.HttpGetWithRawFunction(
-		self.ctx,
+		ctx,
 		self.getHttpGetRaw(),
 		fmt.Sprintf("%s/auth/refresh", self.apiUrl),
 		self.GetByJwt(),

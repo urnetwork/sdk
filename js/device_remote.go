@@ -139,6 +139,15 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		return js.Null()
 	})
 
+	// ad/tracker blocker
+	m["getBlockerEnabled"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.GetBlockerEnabled())
+	})
+	m["setBlockerEnabled"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		device.SetBlockerEnabled(args[0].Bool())
+		return js.Null()
+	})
+
 	// provide paused (hosted-incompatible)
 	m["getProvidePaused"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(device.GetProvidePaused())

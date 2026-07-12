@@ -26,6 +26,7 @@ EXPORTS
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
 	urnet_api_create_solana_payment_intent
+	urnet_api_create_stripe_checkout_session
 	urnet_api_create_stripe_payment_intent
 	urnet_api_delete_api_key
 	urnet_api_device_set_name
@@ -139,10 +140,12 @@ EXPORTS
 	urnet_default_proxy_device_settings
 	urnet_default_tunnel_dns_setting
 	urnet_device_add_allow_foreground_change_listener
+	urnet_device_add_auth_logout_listener
 	urnet_device_add_block_action_override
 	urnet_device_add_block_action_overrides_change_listener
 	urnet_device_add_block_action_window_change_listener
 	urnet_device_add_block_stats_change_listener
+	urnet_device_add_blocker_enabled_change_listener
 	urnet_device_add_can_prompt_intro_funnel_change_listener
 	urnet_device_add_can_refer_change_listener
 	urnet_device_add_can_show_rating_dialog_change_listener
@@ -182,6 +185,7 @@ EXPORTS
 	urnet_device_get_block_action_overrides
 	urnet_device_get_block_actions
 	urnet_device_get_block_stats
+	urnet_device_get_blocker_enabled
 	urnet_device_get_can_prompt_intro_funnel
 	urnet_device_get_can_refer
 	urnet_device_get_can_show_rating_dialog
@@ -249,6 +253,8 @@ EXPORTS
 	urnet_device_local_set_key_material
 	urnet_device_local_set_rpc_server
 	urnet_device_local_set_tunnel_dns_setting
+	urnet_device_local_tunnel_dns_addresses_ipv4
+	urnet_device_local_tunnel_dns_addresses_ipv6
 	urnet_device_local_tunnel_dns_setting
 	urnet_device_local_tunnel_local_address
 	urnet_device_refresh_token
@@ -278,6 +284,7 @@ EXPORTS
 	urnet_device_rpc_key_material_get_server_pem
 	urnet_device_set_allow_foreground
 	urnet_device_set_block_action_overrides
+	urnet_device_set_blocker_enabled
 	urnet_device_set_can_prompt_intro_funnel
 	urnet_device_set_can_refer
 	urnet_device_set_can_show_rating_dialog
@@ -338,6 +345,7 @@ EXPORTS
 	urnet_local_state_close
 	urnet_local_state_get_allow_foreground
 	urnet_local_state_get_block_action_overrides
+	urnet_local_state_get_blocker_enabled
 	urnet_local_state_get_by_client_jwt
 	urnet_local_state_get_by_jwt
 	urnet_local_state_get_can_prompt_intro_funnel
@@ -359,6 +367,7 @@ EXPORTS
 	urnet_local_state_parse_by_jwt
 	urnet_local_state_set_allow_foreground
 	urnet_local_state_set_block_action_overrides
+	urnet_local_state_set_blocker_enabled
 	urnet_local_state_set_by_client_jwt
 	urnet_local_state_set_by_jwt
 	urnet_local_state_set_can_prompt_intro_funnel

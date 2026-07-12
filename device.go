@@ -48,6 +48,10 @@ type RouteLocalChangeListener interface {
 	RouteLocalChanged(routeLocal bool)
 }
 
+type BlockerEnabledChangeListener interface {
+	BlockerEnabledChanged(blockerEnabled bool)
+}
+
 type VpnInterfaceWhileOfflineChangeListener interface {
 	VpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline bool)
 }
@@ -136,6 +140,14 @@ type JwtRefreshListener interface {
 	// bridged over DeviceLocal RPC like durable device-state listeners.
 	// JwtRefreshed(jwt *ByJwt)
 	JwtRefreshed(jwt string)
+}
+
+type AuthLogoutListener interface {
+	// fired when the stored auth is no longer valid on the server (for
+	// example the jwt's client was removed) and the local auth state has
+	// been cleared. The app must treat this as a logout: drop the device
+	// and return to the login flow.
+	AuthLogout()
 }
 
 type IpProtocol = int
@@ -419,6 +431,10 @@ type Device interface {
 
 	GetRouteLocal() bool
 
+	SetBlockerEnabled(blockerEnabled bool)
+
+	GetBlockerEnabled() bool
+
 	LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList)
 
 	InitProvideSecretKeys()
@@ -484,6 +500,8 @@ type Device interface {
 	AddConnectChangeListener(listener ConnectChangeListener) Sub
 
 	AddRouteLocalChangeListener(listener RouteLocalChangeListener) Sub
+
+	AddBlockerEnabledChangeListener(listener BlockerEnabledChangeListener) Sub
 
 	AddConnectLocationChangeListener(listener ConnectLocationChangeListener) Sub
 
@@ -582,6 +600,8 @@ type Device interface {
 	AddWindowStatusChangeListener(listener WindowStatusChangeListener) Sub
 
 	AddJwtRefreshListener(listener JwtRefreshListener) Sub
+
+	AddAuthLogoutListener(listener AuthLogoutListener) Sub
 
 	GetWindowStatus() *WindowStatus
 
