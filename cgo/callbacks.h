@@ -25,6 +25,8 @@ typedef void (*urnet_auth_login_cb)(void* user_data, const char* result_json, co
 void urnet_invoke_auth_login(urnet_auth_login_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_login_with_password_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_login_with_password(urnet_auth_login_with_password_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_auth_logout_cb)(void* user_data);
+void urnet_invoke_auth_logout(urnet_auth_logout_cb cb, void* user_data);
 typedef void (*urnet_auth_network_client_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_network_client(urnet_auth_network_client_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_password_reset_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -43,6 +45,8 @@ typedef void (*urnet_block_actions_cb)(void* user_data);
 void urnet_invoke_block_actions(urnet_block_actions_cb cb, void* user_data);
 typedef void (*urnet_block_stats_change_cb)(void* user_data, const char* block_stats_json);
 void urnet_invoke_block_stats_change(urnet_block_stats_change_cb cb, void* user_data, const char* block_stats_json);
+typedef void (*urnet_blocker_enabled_change_cb)(void* user_data, bool blocker_enabled);
+void urnet_invoke_blocker_enabled_change(urnet_blocker_enabled_change_cb cb, void* user_data, bool blocker_enabled);
 typedef void (*urnet_can_prompt_intro_funnel_change_cb)(void* user_data, bool can_prompt_intro_funnel);
 void urnet_invoke_can_prompt_intro_funnel_change(urnet_can_prompt_intro_funnel_change_cb cb, void* user_data, bool can_prompt_intro_funnel);
 typedef void (*urnet_can_refer_change_cb)(void* user_data, bool can_refer);
@@ -71,6 +75,8 @@ typedef void (*urnet_default_location_change_cb)(void* user_data, const char* lo
 void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, void* user_data, const char* location_json);
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_delete_api_key(urnet_delete_api_key_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_device_recreated_cb)(void* user_data);
+void urnet_invoke_device_recreated(urnet_device_recreated_cb cb, void* user_data);
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_device_set_name(urnet_device_set_name_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_dns_resolver_settings_change_cb)(void* user_data, const char* dns_resolver_settings_json);
@@ -215,6 +221,8 @@ typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, cons
 bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data, uint64_t device, const char* proxy_config_result_json);
 typedef void (*urnet_solana_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_solana_payment_intent(urnet_solana_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_stripe_create_checkout_session_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_stripe_create_checkout_session(urnet_stripe_create_checkout_session_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_stripe_create_customer_portal_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_stripe_create_customer_portal(urnet_stripe_create_customer_portal_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_stripe_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);

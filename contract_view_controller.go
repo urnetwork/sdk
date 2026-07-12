@@ -126,6 +126,19 @@ func newContractViewController(ctx context.Context, device Device) *ContractView
 func (self *ContractViewController) run() {
 	defer self.cancel()
 
+	// the absolute deadline of the next sample. a settings change re-reads the
+	// interval but must NOT restart the clock: restarting it pushes the next
+	// sample out by a full interval, and `sampleSeriesWithLock` treats a late
+	// sample as a gap — zero-holding and backfilling a zero point. changing the
+	// chart's window while a transfer runs would punch a visible dropout into
+	// the series
+	var nextSampleTime time.Time
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		nextSampleTime = time.Now().Add(self.sampleInterval)
+	}()
+
 	for {
 		var notify chan struct{}
 		var sampleInterval time.Duration
@@ -141,12 +154,15 @@ func (self *ContractViewController) run() {
 		case <-self.ctx.Done():
 			return
 		case <-notify:
-			// the sampling settings changed. restart the wait.
+			// the sampling settings changed. re-read them, but keep the pending
+			// sample deadline. a shorter interval takes effect from the next
+			// sample on; nothing may delay the pending one
 			continue
-		case <-time.After(sampleInterval):
+		case <-time.After(time.Until(nextSampleTime)):
 		}
 
 		self.sample()
+		nextSampleTime = time.Now().Add(sampleInterval)
 	}
 }
 

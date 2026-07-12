@@ -119,6 +119,8 @@ inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
+inline constexpr int64_t DeviceRpcWsBinary = 2;
+inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
@@ -148,6 +150,7 @@ inline constexpr const char* ProviderStateInEvaluation = "InEvaluation";
 inline constexpr const char* ProviderStateNotAdded = "NotAdded";
 inline constexpr const char* ProviderStateRemoved = "Removed";
 inline constexpr const char* SOL = "SOL";
+inline constexpr const char* TAO = "TAO";
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
@@ -357,6 +360,9 @@ struct SetPayoutWalletResult;
 struct SolanaPaymentIntentArgs;
 struct SolanaPaymentIntentError;
 struct SolanaPaymentIntentResult;
+struct StripeCreateCheckoutSessionArgs;
+struct StripeCreateCheckoutSessionError;
+struct StripeCreateCheckoutSessionResult;
 struct StripeCreateCustomerPortalArgs;
 struct StripeCreateCustomerPortalError;
 struct StripeCreateCustomerPortalResult;
@@ -645,6 +651,7 @@ struct AuthNetworkClientArgs {
 
 struct AuthNetworkClientError {
 	bool client_limit_exceeded{};
+	std::optional<bool> upgrade_required;
 	std::string message{};
 };
 
@@ -847,7 +854,9 @@ struct DeviceLocalSettings {
 	int64_t BlockActionWindowDuration{};
 	int64_t BlockActionWindowMaxCount{};
 	int64_t ContractStatsEpoch{};
+	int64_t NetworkPeersEpoch{};
 	bool DefaultRouteLocal{};
+	bool DefaultBlockerEnabled{};
 	bool DefaultCanShowRatingDialog{};
 	bool DefaultCanShowIntroFunnel{};
 	std::string DefaultProvideControlMode{};
@@ -863,6 +872,7 @@ struct DeviceLocalSettings {
 	bool EnableRpc{};
 	std::optional<nlohmann::json> KeyMaterial;
 	bool DisableLogging{};
+	bool HostedIncompatible{};
 	bool UseExperimentalTunnelAddress{};
 };
 
@@ -1454,6 +1464,24 @@ struct SolanaPaymentIntentResult {
 	std::optional<SolanaPaymentIntentError> error;
 };
 
+struct StripeCreateCheckoutSessionArgs {
+	std::string item_id{};
+	std::optional<std::string> ui_mode;
+};
+
+struct StripeCreateCheckoutSessionError {
+	std::string message{};
+};
+
+struct StripeCreateCheckoutSessionResult {
+	std::optional<std::string> ui_mode;
+	std::optional<std::string> checkout_url;
+	std::optional<std::string> client_secret;
+	std::optional<std::string> publishable_key;
+	std::optional<std::string> session_id;
+	std::optional<StripeCreateCheckoutSessionError> error;
+};
+
 struct StripeCreateCustomerPortalArgs {
 };
 
@@ -2025,6 +2053,12 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentError& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentError& v);
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v);
+inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionArgs& v);
+inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& v);
+inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v);
+inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionError& v);
+inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionResult& v);
+inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionResult& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCustomerPortalArgs& v);
 inline void from_json(const nlohmann::json& j, StripeCreateCustomerPortalArgs& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCustomerPortalError& v);
@@ -3182,6 +3216,9 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 inline void to_json(nlohmann::json& j, const AuthNetworkClientError& v) {
 	j = nlohmann::json::object();
 	j["client_limit_exceeded"] = v.client_limit_exceeded;
+	if (v.upgrade_required) {
+		j["upgrade_required"] = *v.upgrade_required;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
@@ -3190,6 +3227,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientError& v) {
 	}
 	if (auto it = j.find("client_limit_exceeded"); it != j.end() && !it->is_null()) {
 		it->get_to(v.client_limit_exceeded);
+	}
+	if (auto it = j.find("upgrade_required"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.upgrade_required = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -4059,7 +4101,9 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["BlockActionWindowDuration"] = v.BlockActionWindowDuration;
 	j["BlockActionWindowMaxCount"] = v.BlockActionWindowMaxCount;
 	j["ContractStatsEpoch"] = v.ContractStatsEpoch;
+	j["NetworkPeersEpoch"] = v.NetworkPeersEpoch;
 	j["DefaultRouteLocal"] = v.DefaultRouteLocal;
+	j["DefaultBlockerEnabled"] = v.DefaultBlockerEnabled;
 	j["DefaultCanShowRatingDialog"] = v.DefaultCanShowRatingDialog;
 	j["DefaultCanShowIntroFunnel"] = v.DefaultCanShowIntroFunnel;
 	j["DefaultProvideControlMode"] = v.DefaultProvideControlMode;
@@ -4077,6 +4121,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 		j["KeyMaterial"] = *v.KeyMaterial;
 	}
 	j["DisableLogging"] = v.DisableLogging;
+	j["HostedIncompatible"] = v.HostedIncompatible;
 	j["UseExperimentalTunnelAddress"] = v.UseExperimentalTunnelAddress;
 }
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
@@ -4104,8 +4149,14 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (auto it = j.find("ContractStatsEpoch"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ContractStatsEpoch);
 	}
+	if (auto it = j.find("NetworkPeersEpoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkPeersEpoch);
+	}
 	if (auto it = j.find("DefaultRouteLocal"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultRouteLocal);
+	}
+	if (auto it = j.find("DefaultBlockerEnabled"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DefaultBlockerEnabled);
 	}
 	if (auto it = j.find("DefaultCanShowRatingDialog"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultCanShowRatingDialog);
@@ -4153,6 +4204,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("DisableLogging"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DisableLogging);
+	}
+	if (auto it = j.find("HostedIncompatible"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HostedIncompatible);
 	}
 	if (auto it = j.find("UseExperimentalTunnelAddress"); it != j.end() && !it->is_null()) {
 		it->get_to(v.UseExperimentalTunnelAddress);
@@ -6814,6 +6868,97 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionArgs& v) {
+	j = nlohmann::json::object();
+	j["item_id"] = v.item_id;
+	if (v.ui_mode) {
+		j["ui_mode"] = *v.ui_mode;
+	}
+}
+inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("item_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.item_id);
+	}
+	if (auto it = j.find("ui_mode"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ui_mode = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionResult& v) {
+	j = nlohmann::json::object();
+	if (v.ui_mode) {
+		j["ui_mode"] = *v.ui_mode;
+	}
+	if (v.checkout_url) {
+		j["checkout_url"] = *v.checkout_url;
+	}
+	if (v.client_secret) {
+		j["client_secret"] = *v.client_secret;
+	}
+	if (v.publishable_key) {
+		j["publishable_key"] = *v.publishable_key;
+	}
+	if (v.session_id) {
+		j["session_id"] = *v.session_id;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ui_mode"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ui_mode = std::move(tmp);
+	}
+	if (auto it = j.find("checkout_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.checkout_url = std::move(tmp);
+	}
+	if (auto it = j.find("client_secret"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_secret = std::move(tmp);
+	}
+	if (auto it = j.find("publishable_key"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.publishable_key = std::move(tmp);
+	}
+	if (auto it = j.find("session_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.session_id = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		StripeCreateCheckoutSessionError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const StripeCreateCustomerPortalArgs& v) {
 	j = nlohmann::json::object();
 }
@@ -7864,6 +8009,7 @@ using AuthCodeCreateCallback = std::function<void(std::optional<AuthCodeCreateRe
 using AuthCodeLoginCallback = std::function<void(std::optional<AuthCodeLoginResult> result, std::optional<std::string> err_param)>;
 using AuthLoginCallback = std::function<void(std::optional<AuthLoginResult> result, std::optional<std::string> err_param)>;
 using AuthLoginWithPasswordCallback = std::function<void(std::optional<AuthLoginWithPasswordResult> result, std::optional<std::string> err_param)>;
+using AuthLogoutListener = std::function<void()>;
 using AuthNetworkClientCallback = std::function<void(std::optional<AuthNetworkClientResult> result, std::optional<std::string> err_param)>;
 using AuthPasswordResetCallback = std::function<void(std::optional<AuthPasswordResetResult> result, std::optional<std::string> err_param)>;
 using AuthVerifyCallback = std::function<void(std::optional<AuthVerifyResult> result, std::optional<std::string> err_param)>;
@@ -7873,6 +8019,7 @@ using BlockActionStatsListener = std::function<void()>;
 using BlockActionWindowChangeListener = std::function<void(std::optional<BlockActionWindow> block_action_window)>;
 using BlockActionsListener = std::function<void()>;
 using BlockStatsChangeListener = std::function<void(std::optional<BlockStats> block_stats)>;
+using BlockerEnabledChangeListener = std::function<void(bool blocker_enabled)>;
 using CanPromptIntroFunnelChangeListener = std::function<void(bool can_prompt_intro_funnel)>;
 using CanReferChangeListener = std::function<void(bool can_refer)>;
 using CanShowRatingDialogChangeListener = std::function<void(bool can_show_rating_dialog)>;
@@ -7887,6 +8034,7 @@ using CreateAccountWalletCallback = std::function<void(std::optional<CreateAccou
 using CreateApiKeyCallback = std::function<void(std::optional<CreateApiKeyResult> result, std::optional<std::string> err_param)>;
 using DefaultLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult> result, std::optional<std::string> err_param)>;
+using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
 using FilteredLocationsListener = std::function<void(std::optional<FilteredLocations> locations, std::string state)>;
@@ -7958,6 +8106,7 @@ using SetNetworkReferralCallback = std::function<void(std::optional<SetNetworkRe
 using SetPayoutWalletCallback = std::function<void(std::optional<SetPayoutWalletResult> result, std::optional<std::string> err_param)>;
 using SetupNewDeviceCallback = std::function<bool(Device device, std::optional<ProxyConfigResult> proxy_config_result)>;
 using SolanaPaymentIntentCallback = std::function<void(std::optional<SolanaPaymentIntentResult> result, std::optional<std::string> err_param)>;
+using StripeCreateCheckoutSessionCallback = std::function<void(std::optional<StripeCreateCheckoutSessionResult> result, std::optional<std::string> err_param)>;
 using StripeCreateCustomerPortalCallback = std::function<void(std::optional<StripeCreateCustomerPortalResult> result, std::optional<std::string> err_param)>;
 using StripePaymentIntentCallback = std::function<void(std::optional<StripeCreatePaymentIntentResult> result, std::optional<std::string> err_param)>;
 using SubscriptionBalanceCallback = std::function<void(std::optional<SubscriptionBalanceResult> result, std::optional<std::string> err_param)>;
@@ -8013,10 +8162,12 @@ public:
 	Device() = default;
 	explicit Device(uint64_t h) : detail::Handle(h) {}
 	Sub addAllowForegroundChangeListener(AllowForegroundChangeListener listener) const;
+	Sub addAuthLogoutListener(AuthLogoutListener listener) const;
 	void addBlockActionOverride(const std::optional<BlockActionOverride>& override) const;
 	Sub addBlockActionOverridesChangeListener(BlockActionOverridesChangeListener listener) const;
 	Sub addBlockActionWindowChangeListener(BlockActionWindowChangeListener listener) const;
 	Sub addBlockStatsChangeListener(BlockStatsChangeListener listener) const;
+	Sub addBlockerEnabledChangeListener(BlockerEnabledChangeListener listener) const;
 	Sub addCanPromptIntroFunnelChangeListener(CanPromptIntroFunnelChangeListener listener) const;
 	Sub addCanReferChangeListener(CanReferChangeListener listener) const;
 	Sub addCanShowRatingDialogChangeListener(CanShowRatingDialogChangeListener listener) const;
@@ -8056,6 +8207,7 @@ public:
 	std::optional<BlockActionOverrideList> getBlockActionOverrides() const;
 	std::optional<BlockActionWindow> getBlockActions() const;
 	std::optional<BlockStats> getBlockStats() const;
+	bool getBlockerEnabled() const;
 	bool getCanPromptIntroFunnel() const;
 	bool getCanRefer() const;
 	bool getCanShowRatingDialog() const;
@@ -8100,6 +8252,7 @@ public:
 	void removeDestination() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
+	void setBlockerEnabled(bool blocker_enabled) const;
 	void setCanPromptIntroFunnel(bool can_prompt) const;
 	void setCanRefer(bool can_refer) const;
 	void setCanShowRatingDialog(bool can_show_rating_dialog) const;
@@ -8160,6 +8313,7 @@ public:
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
 	void createSolanaPaymentIntent(const std::optional<SolanaPaymentIntentArgs>& args, SolanaPaymentIntentCallback callback) const;
+	void createStripeCheckoutSession(const std::optional<StripeCreateCheckoutSessionArgs>& args, StripeCreateCheckoutSessionCallback callback) const;
 	void createStripePaymentIntent(const std::optional<StripeCreatePaymentIntentArgs>& args, StripePaymentIntentCallback callback) const;
 	void deleteApiKey(DeleteApiKeyCallback callback) const;
 	void deviceSetName(const std::optional<DeviceSetNameArgs>& device_set_name, DeviceSetNameCallback callback) const;
@@ -8322,6 +8476,8 @@ public:
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
+	std::optional<StringList> tunnelDnsAddressesIpv4() const;
+	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
 	std::string tunnelLocalAddress() const;
 	/* stable provider identity across process starts */
@@ -8344,6 +8500,7 @@ class DeviceRemote final : public Device {
 public:
 	DeviceRemote() = default;
 	explicit DeviceRemote(uint64_t h) : Device(h) {}
+	Sub addDeviceRecreatedListener(DeviceRecreatedListener listener) const;
 	Sub addRemoteChangeListener(RemoteChangeListener listener) const;
 	void closeViewController(ViewController vc) const;
 	bool getRemoteConnected() const;
@@ -8426,6 +8583,7 @@ public:
 	void close() const;
 	bool getAllowForeground() const;
 	std::optional<BlockActionOverrideList> getBlockActionOverrides() const;
+	bool getBlockerEnabled() const;
 	std::string getByClientJwt() const;
 	std::string getByJwt() const;
 	bool getCanPromptIntroFunnel() const;
@@ -8447,6 +8605,7 @@ public:
 	std::optional<ByJwt> parseByJwt() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& block_action_overrides) const;
+	void setBlockerEnabled(bool blocker_enabled) const;
 	void setByClientJwt(const std::string& by_client_jwt) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setCanPromptIntroFunnel(bool can_prompt) const;
@@ -8944,6 +9103,26 @@ inline void oneshot_auth_login_with_password(void* user_data, const char* result
 	delete f;
 }
 
+inline void retained_auth_logout(void* user_data) {
+	auto* f = static_cast<AuthLogoutListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_auth_logout(void* user_data) {
+	auto* f = static_cast<AuthLogoutListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_auth_network_client(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<AuthNetworkClientCallback*>(user_data);
 	try {
@@ -9205,6 +9384,26 @@ inline void oneshot_block_stats_change(void* user_data, const char* block_stats_
 			block_stats_v = parseJson<BlockStats>(block_stats_json);
 		}
 		(*f)(std::move(block_stats_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_blocker_enabled_change(void* user_data, bool blocker_enabled) {
+	auto* f = static_cast<BlockerEnabledChangeListener*>(user_data);
+	try {
+		(*f)(blocker_enabled);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_blocker_enabled_change(void* user_data, bool blocker_enabled) {
+	auto* f = static_cast<BlockerEnabledChangeListener*>(user_data);
+	try {
+		(*f)(blocker_enabled);
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -9573,6 +9772,26 @@ inline void oneshot_delete_api_key(void* user_data, const char* result_json, con
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_device_recreated(void* user_data) {
+	auto* f = static_cast<DeviceRecreatedListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_device_recreated(void* user_data) {
+	auto* f = static_cast<DeviceRecreatedListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -11644,6 +11863,42 @@ inline void oneshot_solana_payment_intent(void* user_data, const char* result_js
 	delete f;
 }
 
+inline void retained_stripe_create_checkout_session(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<StripeCreateCheckoutSessionCallback*>(user_data);
+	try {
+		std::optional<StripeCreateCheckoutSessionResult> result_v;
+		if (result_json) {
+			result_v = parseJson<StripeCreateCheckoutSessionResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_stripe_create_checkout_session(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<StripeCreateCheckoutSessionCallback*>(user_data);
+	try {
+		std::optional<StripeCreateCheckoutSessionResult> result_v;
+		if (result_json) {
+			result_v = parseJson<StripeCreateCheckoutSessionResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_stripe_create_customer_portal(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<StripeCreateCustomerPortalCallback*>(user_data);
 	try {
@@ -12328,6 +12583,17 @@ inline Sub Device::addAllowForegroundChangeListener(AllowForegroundChangeListene
 	}
 	return r;
 }
+inline Sub Device::addAuthLogoutListener(AuthLogoutListener listener) const {
+	std::shared_ptr<AuthLogoutListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<AuthLogoutListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_auth_logout_listener(handle(), listener_fn ? &detail::retained_auth_logout : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline void Device::addBlockActionOverride(const std::optional<BlockActionOverride>& override) const {
 	std::string override_json;
 	const char* override_c = nullptr;
@@ -12365,6 +12631,17 @@ inline Sub Device::addBlockStatsChangeListener(BlockStatsChangeListener listener
 		listener_fn = std::make_shared<BlockStatsChangeListener>(std::move(listener));
 	}
 	Sub r(urnet_device_add_block_stats_change_listener(handle(), listener_fn ? &detail::retained_block_stats_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline Sub Device::addBlockerEnabledChangeListener(BlockerEnabledChangeListener listener) const {
+	std::shared_ptr<BlockerEnabledChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<BlockerEnabledChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_blocker_enabled_change_listener(handle(), listener_fn ? &detail::retained_blocker_enabled_change : nullptr, listener_fn.get()));
 	if (listener_fn) {
 		r.retain(listener_fn);
 	}
@@ -12760,6 +13037,10 @@ inline std::optional<BlockStats> Device::getBlockStats() const {
 	}
 	return detail::parseJson<BlockStats>(r_s->c_str());
 }
+inline bool Device::getBlockerEnabled() const {
+	bool r = urnet_device_get_blocker_enabled(handle());
+	return r;
+}
 inline bool Device::getCanPromptIntroFunnel() const {
 	bool r = urnet_device_get_can_prompt_intro_funnel(handle());
 	return r;
@@ -13019,6 +13300,9 @@ inline void Device::setBlockActionOverrides(const std::optional<BlockActionOverr
 		overrides_c = overrides_json.c_str();
 	}
 	urnet_device_set_block_action_overrides(handle(), overrides_c);
+}
+inline void Device::setBlockerEnabled(bool blocker_enabled) const {
+	urnet_device_set_blocker_enabled(handle(), blocker_enabled);
 }
 inline void Device::setCanPromptIntroFunnel(bool can_prompt) const {
 	urnet_device_set_can_prompt_intro_funnel(handle(), can_prompt);
@@ -13284,6 +13568,16 @@ inline void Api::createSolanaPaymentIntent(const std::optional<SolanaPaymentInte
 	}
 	auto* callback_fn = callback ? new SolanaPaymentIntentCallback(std::move(callback)) : nullptr;
 	urnet_api_create_solana_payment_intent(handle(), args_c, callback_fn ? &detail::oneshot_solana_payment_intent : nullptr, callback_fn);
+}
+inline void Api::createStripeCheckoutSession(const std::optional<StripeCreateCheckoutSessionArgs>& args, StripeCreateCheckoutSessionCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new StripeCreateCheckoutSessionCallback(std::move(callback)) : nullptr;
+	urnet_api_create_stripe_checkout_session(handle(), args_c, callback_fn ? &detail::oneshot_stripe_create_checkout_session : nullptr, callback_fn);
 }
 inline void Api::createStripePaymentIntent(const std::optional<StripeCreatePaymentIntentArgs>& args, StripePaymentIntentCallback callback) const {
 	std::string args_json;
@@ -14083,6 +14377,22 @@ inline void DeviceLocal::setTunnelDnsSetting(const std::optional<TunnelDnsSettin
 	}
 	urnet_device_local_set_tunnel_dns_setting(handle(), setting_c);
 }
+inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv4() const {
+	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv4(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv6() const {
+	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv6(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline std::optional<TunnelDnsSetting> DeviceLocal::tunnelDnsSetting() const {
 	char* r_c = urnet_device_local_tunnel_dns_setting(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -14097,6 +14407,17 @@ inline std::string DeviceLocal::tunnelLocalAddress() const {
 }
 inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
+	return r;
+}
+inline Sub DeviceRemote::addDeviceRecreatedListener(DeviceRecreatedListener listener) const {
+	std::shared_ptr<DeviceRecreatedListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<DeviceRecreatedListener>(std::move(listener));
+	}
+	Sub r(urnet_device_remote_add_device_recreated_listener(handle(), listener_fn ? &detail::retained_device_recreated : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
 	return r;
 }
 inline Sub DeviceRemote::addRemoteChangeListener(RemoteChangeListener listener) const {
@@ -14301,6 +14622,10 @@ inline std::optional<BlockActionOverrideList> LocalState::getBlockActionOverride
 	}
 	return detail::parseJson<BlockActionOverrideList>(r_s->c_str());
 }
+inline bool LocalState::getBlockerEnabled() const {
+	bool r = urnet_local_state_get_blocker_enabled(handle());
+	return r;
+}
 inline std::string LocalState::getByClientJwt() const {
 	char* r_c = urnet_local_state_get_by_client_jwt(handle());
 	return detail::takeString(r_c);
@@ -14435,6 +14760,16 @@ inline void LocalState::setBlockActionOverrides(const std::optional<BlockActionO
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_block_action_overrides failed");
+	}
+}
+inline void LocalState::setBlockerEnabled(bool blocker_enabled) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_blocker_enabled(handle(), blocker_enabled, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_blocker_enabled failed");
 	}
 }
 inline void LocalState::setByClientJwt(const std::string& by_client_jwt) const {
@@ -15469,6 +15804,14 @@ inline NetworkSpaceManager newNetworkSpaceManagerNoStorage() {
 	NetworkSpaceManager r(urnet_new_network_space_manager_no_storage());
 	return r;
 }
+inline DeviceRemote newPlatformDeviceRemote(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& proxy_url, const std::string& signed_proxy_id, const std::string& instance_id) {
+	char* err_c = nullptr;
+	DeviceRemote r(urnet_new_platform_device_remote(network_space.handle(), by_jwt.c_str(), proxy_url.c_str(), signed_proxy_id.c_str(), instance_id.c_str(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline ProxyDevice newProxyDeviceWithDefaults(const std::optional<ProxyConfig>& proxy_config, SetupNewDeviceCallback setup_new_device_callback) {
 	std::string proxy_config_json;
 	const char* proxy_config_c = nullptr;
@@ -15500,6 +15843,10 @@ inline std::optional<TransferPath> newTransferPath(const std::string& source_id,
 }
 inline Tunnel newTunnel() {
 	Tunnel r(urnet_new_tunnel());
+	return r;
+}
+inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::string& platform_url) {
+	NetworkSpace r(urnet_new_urls_network_space(api_url.c_str(), platform_url.c_str()));
 	return r;
 }
 inline std::string normalEnvName(const std::string& env_name) {

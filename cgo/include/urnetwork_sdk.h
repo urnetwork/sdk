@@ -59,6 +59,8 @@ bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t se
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
+#define URNET_DEVICE_RPC_WS_BINARY 2
+#define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
@@ -88,6 +90,7 @@ bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t se
 #define URNET_PROVIDE_NETWORK_MODE_ALL "all"
 #define URNET_PROVIDE_NETWORK_MODE_WI_FI "wifi"
 #define URNET_SOL "SOL"
+#define URNET_TAO "TAO"
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -116,6 +119,8 @@ typedef void (*urnet_auth_code_login_cb)(void* user_data, const char* result_jso
 typedef void (*urnet_auth_login_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthLoginWithPasswordCallback */
 typedef void (*urnet_auth_login_with_password_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthLogoutListener */
+typedef void (*urnet_auth_logout_cb)(void* user_data);
 /* AuthNetworkClientCallback */
 typedef void (*urnet_auth_network_client_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthPasswordResetCallback */
@@ -134,6 +139,8 @@ typedef void (*urnet_block_action_window_change_cb)(void* user_data, const char*
 typedef void (*urnet_block_actions_cb)(void* user_data);
 /* BlockStatsChangeListener */
 typedef void (*urnet_block_stats_change_cb)(void* user_data, const char* block_stats_json);
+/* BlockerEnabledChangeListener */
+typedef void (*urnet_blocker_enabled_change_cb)(void* user_data, bool blocker_enabled);
 /* CanPromptIntroFunnelChangeListener */
 typedef void (*urnet_can_prompt_intro_funnel_change_cb)(void* user_data, bool can_prompt_intro_funnel);
 /* CanReferChangeListener */
@@ -162,6 +169,8 @@ typedef void (*urnet_create_api_key_cb)(void* user_data, const char* result_json
 typedef void (*urnet_default_location_change_cb)(void* user_data, const char* location_json);
 /* DeleteApiKeyCallback */
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
+/* DeviceRecreatedListener */
+typedef void (*urnet_device_recreated_cb)(void* user_data);
 /* DeviceSetNameCallback */
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* DnsResolverSettingsChangeListener */
@@ -304,6 +313,8 @@ typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_j
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);
 /* SolanaPaymentIntentCallback */
 typedef void (*urnet_solana_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);
+/* StripeCreateCheckoutSessionCallback */
+typedef void (*urnet_stripe_create_checkout_session_cb)(void* user_data, const char* result_json, const char* err_param);
 /* StripeCreateCustomerPortalCallback */
 typedef void (*urnet_stripe_create_customer_portal_cb)(void* user_data, const char* result_json, const char* err_param);
 /* StripePaymentIntentCallback */
@@ -381,6 +392,7 @@ void urnet_api_close(uint64_t self);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
 void urnet_api_create_solana_payment_intent(uint64_t self, const char* args_json, urnet_solana_payment_intent_cb callback_result, void* callback_user_data);
+void urnet_api_create_stripe_checkout_session(uint64_t self, const char* args_json, urnet_stripe_create_checkout_session_cb callback_result, void* callback_user_data);
 void urnet_api_create_stripe_payment_intent(uint64_t self, const char* args_json, urnet_stripe_payment_intent_cb callback_result, void* callback_user_data);
 void urnet_api_delete_api_key(uint64_t self, urnet_delete_api_key_cb callback_result, void* callback_user_data);
 void urnet_api_device_set_name(uint64_t self, const char* device_set_name_json, urnet_device_set_name_cb callback_result, void* callback_user_data);
@@ -505,10 +517,12 @@ void urnet_contract_view_controller_stop(uint64_t self);
 /* ----- Device ----- */
 
 uint64_t urnet_device_add_allow_foreground_change_listener(uint64_t self, urnet_allow_foreground_change_cb listener_allow_foreground_changed, void* listener_user_data);
+uint64_t urnet_device_add_auth_logout_listener(uint64_t self, urnet_auth_logout_cb listener_auth_logout, void* listener_user_data);
 void urnet_device_add_block_action_override(uint64_t self, const char* override_json);
 uint64_t urnet_device_add_block_action_overrides_change_listener(uint64_t self, urnet_block_action_overrides_change_cb listener_block_action_overrides_changed, void* listener_user_data);
 uint64_t urnet_device_add_block_action_window_change_listener(uint64_t self, urnet_block_action_window_change_cb listener_block_action_window_changed, void* listener_user_data);
 uint64_t urnet_device_add_block_stats_change_listener(uint64_t self, urnet_block_stats_change_cb listener_block_stats_changed, void* listener_user_data);
+uint64_t urnet_device_add_blocker_enabled_change_listener(uint64_t self, urnet_blocker_enabled_change_cb listener_blocker_enabled_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_prompt_intro_funnel_change_listener(uint64_t self, urnet_can_prompt_intro_funnel_change_cb listener_can_prompt_intro_funnel_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_refer_change_listener(uint64_t self, urnet_can_refer_change_cb listener_can_refer_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_show_rating_dialog_change_listener(uint64_t self, urnet_can_show_rating_dialog_change_cb listener_can_show_rating_dialog_changed, void* listener_user_data);
@@ -548,6 +562,7 @@ uint64_t urnet_device_get_api(uint64_t self);
 char* urnet_device_get_block_action_overrides(uint64_t self);
 char* urnet_device_get_block_actions(uint64_t self);
 char* urnet_device_get_block_stats(uint64_t self);
+bool urnet_device_get_blocker_enabled(uint64_t self);
 bool urnet_device_get_can_prompt_intro_funnel(uint64_t self);
 bool urnet_device_get_can_refer(uint64_t self);
 bool urnet_device_get_can_show_rating_dialog(uint64_t self);
@@ -592,6 +607,7 @@ void urnet_device_remove_block_action_override(uint64_t self, const char* overri
 void urnet_device_remove_destination(uint64_t self);
 void urnet_device_set_allow_foreground(uint64_t self, bool allow_foreground);
 void urnet_device_set_block_action_overrides(uint64_t self, const char* overrides_json);
+void urnet_device_set_blocker_enabled(uint64_t self, bool blocker_enabled);
 void urnet_device_set_can_prompt_intro_funnel(uint64_t self, bool can_prompt);
 void urnet_device_set_can_refer(uint64_t self, bool can_refer);
 void urnet_device_set_can_show_rating_dialog(uint64_t self, bool can_show_rating_dialog);
@@ -634,6 +650,8 @@ void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
 void urnet_device_local_set_tunnel_dns_setting(uint64_t self, const char* setting_json);
+char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
+char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
 char* urnet_device_local_tunnel_local_address(uint64_t self);
 
@@ -643,6 +661,7 @@ bool urnet_device_local_key_material_is_empty(uint64_t self);
 
 /* ----- DeviceRemote ----- */
 
+uint64_t urnet_device_remote_add_device_recreated_listener(uint64_t self, urnet_device_recreated_cb listener_device_recreated, void* listener_user_data);
 uint64_t urnet_device_remote_add_remote_change_listener(uint64_t self, urnet_remote_change_cb listener_remote_changed, void* listener_user_data);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -701,6 +720,7 @@ void urnet_feedback_view_controller_stop(uint64_t self);
 void urnet_local_state_close(uint64_t self);
 bool urnet_local_state_get_allow_foreground(uint64_t self);
 char* urnet_local_state_get_block_action_overrides(uint64_t self);
+bool urnet_local_state_get_blocker_enabled(uint64_t self);
 char* urnet_local_state_get_by_client_jwt(uint64_t self);
 char* urnet_local_state_get_by_jwt(uint64_t self);
 bool urnet_local_state_get_can_prompt_intro_funnel(uint64_t self);
@@ -722,6 +742,7 @@ bool urnet_local_state_logout(uint64_t self, char** out_error);
 char* urnet_local_state_parse_by_jwt(uint64_t self, char** out_error);
 bool urnet_local_state_set_allow_foreground(uint64_t self, bool allow_foreground, char** out_error);
 bool urnet_local_state_set_block_action_overrides(uint64_t self, const char* block_action_overrides_json, char** out_error);
+bool urnet_local_state_set_blocker_enabled(uint64_t self, bool blocker_enabled, char** out_error);
 bool urnet_local_state_set_by_client_jwt(uint64_t self, const char* by_client_jwt, char** out_error);
 bool urnet_local_state_set_by_jwt(uint64_t self, const char* by_jwt, char** out_error);
 bool urnet_local_state_set_can_prompt_intro_funnel(uint64_t self, bool can_prompt, char** out_error);
@@ -918,10 +939,12 @@ uint64_t urnet_new_network_name_validation_view_controller(uint64_t api);
 char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
 uint64_t urnet_new_network_space_manager_no_storage(void);
+uint64_t urnet_new_platform_device_remote(uint64_t network_space, const char* by_jwt, const char* proxy_url, const char* signed_proxy_id, const char* instance_id, char** out_error);
 uint64_t urnet_new_proxy_device_with_defaults(const char* proxy_config_json, urnet_setup_new_device_cb setup_new_device_callback_setup_new_device, void* setup_new_device_callback_user_data);
 int64_t urnet_new_time_unix_milli(int64_t unix_milli);
 char* urnet_new_transfer_path(const char* source_id, const char* destination_id, const char* stream_id);
 uint64_t urnet_new_tunnel(void);
+uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
@@ -1104,6 +1127,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* AuthNetworkClientError (json):
  *   client_limit_exceeded: boolean
+ *   upgrade_required?: boolean
  *   message: string
  */
 
@@ -1325,7 +1349,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   BlockActionWindowDuration: number (ns)
  *   BlockActionWindowMaxCount: number
  *   ContractStatsEpoch: number (ns)
+ *   NetworkPeersEpoch: number (ns)
  *   DefaultRouteLocal: boolean
+ *   DefaultBlockerEnabled: boolean
  *   DefaultCanShowRatingDialog: boolean
  *   DefaultCanShowIntroFunnel: boolean
  *   DefaultProvideControlMode: string
@@ -1341,6 +1367,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   EnableRpc: boolean
  *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
+ *   HostedIncompatible: boolean
  *   UseExperimentalTunnelAddress: boolean
  */
 
@@ -2050,6 +2077,24 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* StringList (json):
  *   = string[]
+ */
+
+/* StripeCreateCheckoutSessionArgs (json):
+ *   item_id: string
+ *   ui_mode?: string
+ */
+
+/* StripeCreateCheckoutSessionError (json):
+ *   message: string
+ */
+
+/* StripeCreateCheckoutSessionResult (json):
+ *   ui_mode?: string
+ *   checkout_url?: string
+ *   client_secret?: string
+ *   publishable_key?: string
+ *   session_id?: string
+ *   error?: StripeCreateCheckoutSessionError | null
  */
 
 /* StripeCreateCustomerPortalArgs (json):

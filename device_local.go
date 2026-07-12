@@ -99,7 +99,9 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 
 		NetworkPeersEpoch: 1 * time.Second,
 
-		DefaultRouteLocal:          true,
+		DefaultRouteLocal: true,
+		// the ad/tracker blocker is opt-in; the apps expose the toggle
+		DefaultBlockerEnabled:      false,
 		DefaultCanShowRatingDialog: true,
 		DefaultCanShowIntroFunnel:  true,
 
@@ -161,6 +163,7 @@ type DeviceLocalSettings struct {
 	NetworkPeersEpoch time.Duration
 
 	DefaultRouteLocal          bool
+	DefaultBlockerEnabled      bool
 	DefaultCanShowRatingDialog bool
 	DefaultCanShowIntroFunnel  bool
 
@@ -295,6 +298,13 @@ type DeviceLocal struct {
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
 
+	// the ad/tracker blocker, shared by the upgrade mux (dns hostnames) and
+	// the multi client (ips and reverse-index hostnames). a stable field:
+	// the mux and multi client are torn down and rebuilt on every
+	// destination change, and the blocker (with its enabled state) survives
+	// the rebuilds and is re-wired into the fresh instances.
+	blocker connect.Blocker
+
 	routeLocal           bool
 	canShowRatingDialog  bool
 	canPromptIntroFunnel bool
@@ -310,6 +320,13 @@ type DeviceLocal struct {
 
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
+	// the last WindowStatus dispatched to listeners. the monitor fires an event
+	// for transitions that do not change the derived status — notably a terminal
+	// provider state for a client that was never added, whose delete is a no-op —
+	// so the emit is gated on an actual change. an ungated emit re-sends an
+	// identical snapshot, and on the remote device path each one also crosses the
+	// rpc boundary
+	lastWindowStatus *WindowStatus
 
 	// insertion ordered, unique by override id
 	blockActionOverrides []*BlockActionOverride
@@ -358,6 +375,7 @@ type DeviceLocal struct {
 	vpnInterfaceWhileOfflineChangeListeners *connect.CallbackList[VpnInterfaceWhileOfflineChangeListener]
 	connectChangeListeners                  *connect.CallbackList[ConnectChangeListener]
 	routeLocalChangeListeners               *connect.CallbackList[RouteLocalChangeListener]
+	blockerEnabledChangeListeners           *connect.CallbackList[BlockerEnabledChangeListener]
 	connectLocationChangeListeners          *connect.CallbackList[ConnectLocationChangeListener]
 	defaultLocationChangeListeners          *connect.CallbackList[DefaultLocationChangeListener]
 	provideSecretKeysListeners              *connect.CallbackList[ProvideSecretKeysListener]
@@ -365,6 +383,7 @@ type DeviceLocal struct {
 	contractStatusChangeListeners           *connect.CallbackList[ContractStatusChangeListener]
 	windowStatusChangeListeners             *connect.CallbackList[WindowStatusChangeListener]
 	jwtRefreshListeners                     *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners                     *connect.CallbackList[AuthLogoutListener]
 
 	blockActionWindowChangeListeners      *connect.CallbackList[BlockActionWindowChangeListener]
 	blockStatsChangeListeners             *connect.CallbackList[BlockStatsChangeListener]
@@ -614,6 +633,12 @@ func newDeviceLocalWithOverrides(
 		defaultProvideControlMode = ProvideControlModeNever
 	}
 
+	// the blocker outlives the mux/multi client rebuilds; seed the initial
+	// enabled state from the settings. the persisted toggle is restored below,
+	// and the device persists on set (see SetBlockerEnabled)
+	blocker := connect.NewBlockerWithDefaults()
+	blocker.SetEnabled(settings.DefaultBlockerEnabled)
+
 	// EXPERIMENT: when UseExperimentalTunnelAddress is set (default on for now),
 	// assign the TUN interface a 10.x.y.h address (minimum free /24, host
 	// randomized in 2..254 like a DHCP lease) instead of reserving from connect's
@@ -662,6 +687,7 @@ func newDeviceLocalWithOverrides(
 		upgradeMuxSettings:                      connect.DefaultUpgradeMuxSettings(),
 		remoteUserNatProviderLocalUserNat:       nil,
 		remoteUserNatProvider:                   nil,
+		blocker:                                 blocker,
 		routeLocal:                              defaultRouteLocal,
 		canShowRatingDialog:                     settings.DefaultCanShowRatingDialog,
 		canPromptIntroFunnel:                    settings.DefaultCanShowIntroFunnel,
@@ -692,6 +718,7 @@ func newDeviceLocalWithOverrides(
 		vpnInterfaceWhileOfflineChangeListeners: connect.NewCallbackList[VpnInterfaceWhileOfflineChangeListener](),
 		connectChangeListeners:                  connect.NewCallbackList[ConnectChangeListener](),
 		routeLocalChangeListeners:               connect.NewCallbackList[RouteLocalChangeListener](),
+		blockerEnabledChangeListeners:           connect.NewCallbackList[BlockerEnabledChangeListener](),
 		connectLocationChangeListeners:          connect.NewCallbackList[ConnectLocationChangeListener](),
 		defaultLocationChangeListeners:          connect.NewCallbackList[DefaultLocationChangeListener](),
 		provideSecretKeysListeners:              connect.NewCallbackList[ProvideSecretKeysListener](),
@@ -699,6 +726,7 @@ func newDeviceLocalWithOverrides(
 		tunnelChangeListeners:                   connect.NewCallbackList[TunnelChangeListener](),
 		windowStatusChangeListeners:             connect.NewCallbackList[WindowStatusChangeListener](),
 		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
+		authLogoutListeners:                     connect.NewCallbackList[AuthLogoutListener](),
 		blockActionWindowChangeListeners:        connect.NewCallbackList[BlockActionWindowChangeListener](),
 		blockStatsChangeListeners:               connect.NewCallbackList[BlockStatsChangeListener](),
 		blockActionOverridesChangeListeners:     connect.NewCallbackList[BlockActionOverridesChangeListener](),
@@ -727,6 +755,9 @@ func newDeviceLocalWithOverrides(
 				deviceLocal.upgradeMuxSettings = upgradeMuxSettings
 			}
 		}
+		// the blocker toggle persists on set (see SetBlockerEnabled); unset
+		// reads false, matching the opt-in default
+		blocker.SetEnabled(localState.GetBlockerEnabled())
 	}
 
 	// publish the initial send-route snapshot so `sendPacket` always has a
@@ -749,8 +780,13 @@ func newDeviceLocalWithOverrides(
 		log,
 		api,
 		deviceLocal.SetByJwt,
-		// TODO the logout event should be propagated to the user
-		logout,
+		// clear the local auth state, then propagate the logout to the app
+		// (`AddAuthLogoutListener`) so the ui can return to the login flow
+		func() error {
+			err := logout()
+			deviceLocal.authLogout()
+			return err
+		},
 	)
 
 	// set up with nil destination
@@ -768,6 +804,11 @@ func newDeviceLocalWithOverrides(
 			deviceLocal.watchNetworkPeers(networkPeersNotify)
 		})
 	}
+
+	// the trailing edge of the contract stats epoch gate: carries out the last
+	// batch of a transfer, which lands inside the gate and would otherwise never
+	// be emitted, and decays the bit rate of idle contracts
+	go connect.HandleError(deviceLocal.runContractStatsFlush)
 
 	if settings.EnableRpc {
 		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
@@ -812,6 +853,63 @@ func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.tunnelDnsSetting = setting
+}
+
+// TunnelDnsAddressesIpv4 returns the plain-DNS IPv4 server IPs the platform should
+// apply to the TUN interface (Android `addDnsServer`), sourced from the device at
+// tunnel-build time like TunnelLocalAddress: the dns resolver settings' unencrypted
+// local servers when set, otherwise the default tunnel dns setting (plain 1.1.1.1).
+// Plain :53 keeps the UpgradeMux able to intercept and upgrade queries.
+func (self *DeviceLocal) TunnelDnsAddressesIpv4() *StringList {
+	return self.tunnelDnsAddressList(false)
+}
+
+// TunnelDnsAddressesIpv6 is TunnelDnsAddressesIpv4 for IPv6. There is no default
+// IPv6 tunnel dns, so this is empty unless the dns resolver settings set
+// unencrypted local IPv6 servers.
+func (self *DeviceLocal) TunnelDnsAddressesIpv6() *StringList {
+	return self.tunnelDnsAddressList(true)
+}
+
+func (self *DeviceLocal) tunnelDnsAddressList(ipv6 bool) *StringList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	var resolver *connect.DnsResolverSettings
+	if self.upgradeMuxSettings != nil && self.upgradeMuxSettings.Dns != nil {
+		resolver = self.upgradeMuxSettings.Dns.Resolver
+	}
+	addresses := NewStringList()
+	addresses.addAll(tunnelDnsAddresses(resolver, self.tunnelDnsSetting, ipv6)...)
+	return addresses
+}
+
+// tunnelDnsAddresses derives the plain-dns tunnel resolver ips of one address
+// family: the resolver settings' unencrypted local dns servers when enabled and
+// non-empty, otherwise the default tunnel dns setting's server. entries that do
+// not parse as an ip are dropped, so the platform never applies a bad address
+func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting *TunnelDnsSetting, ipv6 bool) []string {
+	family := func(servers []string) []string {
+		out := []string{}
+		for _, server := range servers {
+			server = strings.TrimSpace(server)
+			// `Is4() != ipv6` keeps v4 when !ipv6 and v6 when ipv6
+			if addr, err := netip.ParseAddr(server); err == nil && addr.Unmap().Is4() != ipv6 {
+				out = append(out, server)
+			}
+		}
+		return out
+	}
+	if resolver != nil && resolver.EnableLocalDns {
+		// family-classify the union so a misfiled entry still lands correctly
+		servers := family(append(append([]string{}, resolver.LocalDnsIpv4...), resolver.LocalDnsIpv6...))
+		if 0 < len(servers) {
+			return servers
+		}
+	}
+	if tunnelDnsSetting != nil {
+		return family([]string{tunnelDnsSetting.Server})
+	}
+	return []string{}
 }
 
 // SetUpgradeMuxSettings sets how the interposed mux resolves DNS and upgrades HTTP.
@@ -958,8 +1056,13 @@ func (self *DeviceLocal) SetByJwt(byJwt string) {
 	self.GetApi().SetByJwt(byJwt)
 
 	if self.networkSpace.asyncLocalState != nil {
-		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
+		// ORDER MATTERS. LocalState.SetByJwt clears the client jwt and the instance
+		// id whenever the value changes -- which is ALWAYS true on a refresh -- so
+		// calling SetByClientJwt first meant SetByJwt immediately wiped it, leaving
+		// .by_client_jwt empty and the user logged out on the next cold launch.
+		// Write the network jwt first, then the client jwt.
 		self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
+		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
 	}
 
 	// snapshot self.provider under stateLock, synchronizing with Close()'s
@@ -993,7 +1096,13 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		// track last n status updates and use all updates newer than M seconds
+		// track last n status updates and use all updates newer than M seconds.
+		// i walks up to the first update to KEEP: start past the count overflow
+		// (leaving room for the one appended below), then skip anything that
+		// aged out of the duration window. keep [i:] — slicing [:i] instead
+		// would retain exactly the updates that were meant to expire, which
+		// latches a stale Premium/error state forever and grows the slice
+		// without bound
 		now := time.Now()
 		windowStartTime := now.Add(-self.settings.NetContractStatusDuration)
 		i := max(
@@ -1003,7 +1112,7 @@ func (self *DeviceLocal) updateContractStatus(contractStatus *connect.ContractSt
 		for i < len(self.orderedContractStatusUpdates) && self.orderedContractStatusUpdates[i].updateTime.Before(windowStartTime) {
 			i += 1
 		}
-		self.orderedContractStatusUpdates = self.orderedContractStatusUpdates[:i]
+		self.orderedContractStatusUpdates = self.orderedContractStatusUpdates[i:]
 		update := &contractStatusUpdate{
 			updateTime:     now,
 			contractStatus: contractStatus,
@@ -1316,6 +1425,39 @@ func (self *DeviceLocal) GetRouteLocal() bool {
 	return self.routeLocal
 }
 
+func (self *DeviceLocal) SetBlockerEnabled(blockerEnabled bool) {
+	set := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if self.blocker.Enabled() != blockerEnabled {
+			// the blocker is shared with the live mux and multi client, so
+			// this takes effect immediately, and it survives their rebuilds
+			self.blocker.SetEnabled(blockerEnabled)
+			set = true
+		}
+	}()
+	if set {
+		self.persistBlockerEnabled(blockerEnabled)
+		self.blockerEnabledChanged(blockerEnabled)
+	}
+}
+
+// persists the blocker toggle to local state, asynchronously.
+// restored at device creation (see the constructor restore block)
+func (self *DeviceLocal) persistBlockerEnabled(blockerEnabled bool) {
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		asyncLocalState.serialAsync(func() error {
+			return asyncLocalState.GetLocalState().SetBlockerEnabled(blockerEnabled)
+		})
+	}
+}
+
+func (self *DeviceLocal) GetBlockerEnabled() bool {
+	return self.blocker.Enabled()
+}
+
 func (self *DeviceLocal) windowMonitor() windowMonitor {
 	switch v := self.remoteUserNatClient.(type) {
 	case *connect.RemoteUserNatClient:
@@ -1479,6 +1621,21 @@ func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub 
 	})
 }
 
+func (self *DeviceLocal) AddAuthLogoutListener(listener AuthLogoutListener) Sub {
+	callbackId := self.authLogoutListeners.Add(listener)
+	return newSub(func() {
+		self.authLogoutListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) authLogout() {
+	for _, listener := range self.authLogoutListeners.Get() {
+		connect.HandleError(func() {
+			listener.AuthLogout()
+		})
+	}
+}
+
 func (self *DeviceLocal) jwtRefreshed(jwt string) {
 	for _, listener := range self.jwtRefreshListeners.Get() {
 		connect.HandleError(func() {
@@ -1526,6 +1683,13 @@ func (self *DeviceLocal) AddRouteLocalChangeListener(listener RouteLocalChangeLi
 	callbackId := self.routeLocalChangeListeners.Add(listener)
 	return newSub(func() {
 		self.routeLocalChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) AddBlockerEnabledChangeListener(listener BlockerEnabledChangeListener) Sub {
+	callbackId := self.blockerEnabledChangeListeners.Add(listener)
+	return newSub(func() {
+		self.blockerEnabledChangeListeners.Remove(callbackId)
 	})
 }
 
@@ -1685,6 +1849,15 @@ func (self *DeviceLocal) routeLocalChanged(routeLocal bool) {
 	for _, listener := range self.routeLocalChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.RouteLocalChanged(routeLocal)
+		})
+	}
+}
+
+func (self *DeviceLocal) blockerEnabledChanged(blockerEnabled bool) {
+	// self.assertNotLockOwner()
+	for _, listener := range self.blockerEnabledChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.BlockerEnabledChanged(blockerEnabled)
 		})
 	}
 }
@@ -2244,16 +2417,34 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				upgradeMux.SetUpstream(multi.SendPacket)
 				// the mux's DNS reverse index drives ServerName path affinity (point 4)
 				multi.SetServerNameLookup(upgradeMux)
+				// the mux blocks ad/tracker hostnames at the dns layer
+				upgradeMux.SetBlocker(self.blocker)
 				self.upgradeMux = upgradeMux
 			}
 			monitor := multi.Monitor()
 			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
-				self.windowStatusChanged(toWindowStatus(monitor))
+				windowStatus := toWindowStatus(monitor)
+				changed := false
+				func() {
+					self.stateLock.Lock()
+					defer self.stateLock.Unlock()
+					if self.lastWindowStatus == nil || *self.lastWindowStatus != *windowStatus {
+						self.lastWindowStatus = windowStatus
+						changed = true
+					}
+				}()
+				if changed {
+					self.windowStatusChanged(windowStatus)
+				}
 			}
 			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 			// }
 
 			self.remoteUserNatClient.SetLocalSecurityBypass(self.routeLocal)
+
+			// the multi client blocks ad/tracker ips and reverse-index
+			// hostnames (the backstop under the mux's dns-layer blocking)
+			multi.SetBlocker(self.blocker)
 
 			multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides))
 			// exclude the resolver endpoints from the override and association logic
@@ -3249,6 +3440,12 @@ type deviceContractTracker struct {
 	ingressContracts map[connect.Id]*deviceContractState
 	// gates the listener dispatch to the contract stats epoch
 	lastEmitTime time.Time
+	// set when an update was folded in but gated, so `flushPending` still
+	// carries it out. the connect side only produces a batch while bytes are
+	// moving, so the last batch of a transfer lands in the gate and no further
+	// batch ever arrives to carry it — without the trailing flush the pushed
+	// stats sit permanently below what the getters report
+	pendingEmit bool
 }
 
 func newDeviceContractTracker() *deviceContractTracker {
@@ -3261,6 +3458,10 @@ func newDeviceContractTracker() *deviceContractTracker {
 func (self *deviceContractTracker) clear() {
 	clear(self.egressContracts)
 	clear(self.ingressContracts)
+	// emit the cleared (zero) stats. otherwise the listeners keep reporting the
+	// last pre-disconnect values while the getters, reading the now empty maps,
+	// report zero — push and pull disagreeing until the next connect
+	self.pendingEmit = true
 }
 
 // applies a contract stats event batch.
@@ -3303,9 +3504,19 @@ func (self *deviceContractTracker) update(
 		state.updateTime = now
 	}
 	if !hasClose && now.Sub(self.lastEmitTime) < epoch {
-		// gated. the state is updated and the next batch past the epoch emits it
+		// gated. fold the state in and mark it un-emitted; `flushPending` carries
+		// it out once the epoch passes. this used to just drop it, on the premise
+		// that "the next batch past the epoch emits it" — but batches only arrive
+		// while bytes are moving, so the final batch of a transfer was stranded
+		self.pendingEmit = true
 		return
 	}
+	return self.emit(now)
+}
+
+// emit builds the reports, evicts closed contracts, and opens a new epoch.
+func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+	self.pendingEmit = false
 	self.lastEmitTime = now
 	egressStats = self.stats(false)
 	ingressStats = self.stats(true)
@@ -3323,6 +3534,41 @@ func (self *deviceContractTracker) update(
 		}
 	}
 	return
+}
+
+// decayBitRates zeroes the bit rate of contracts that have gone idle, reporting
+// whether any changed. bitRate is a time derivative recomputed only when an
+// event for the contract arrives, and the connect side only produces an event
+// while the byte count moves — so when a transfer stops, no event is ever
+// generated again and the contract would otherwise report its last rate (say
+// "40 Mbps") forever, on both the listener and the getter paths.
+func (self *deviceContractTracker) decayBitRates(now time.Time, epoch time.Duration) bool {
+	decayed := false
+	for _, contracts := range []map[connect.Id]*deviceContractState{self.egressContracts, self.ingressContracts} {
+		for _, state := range contracts {
+			if state.bitRate != 0 && epoch <= now.Sub(state.updateTime) {
+				state.bitRate = 0
+				decayed = true
+			}
+		}
+	}
+	return decayed
+}
+
+// flushPending carries out a gated update once the epoch has passed, and decays
+// the bit rate of idle contracts. returns nil stats when there is nothing to
+// report. it settles: after the last real batch is emitted, one further emit
+// zeroes the idle bit rates and then nothing more fires.
+func (self *deviceContractTracker) flushPending(epoch time.Duration) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
+	now := time.Now()
+	if now.Sub(self.lastEmitTime) < epoch {
+		return
+	}
+	decayed := self.decayBitRates(now, epoch)
+	if !self.pendingEmit && !decayed {
+		return
+	}
+	return self.emit(now)
 }
 
 // the contract stats epoch callback from the multi client
@@ -3343,6 +3589,58 @@ func (self *DeviceLocal) updateContractStatsEvents(events []*connect.ContractSta
 	self.ingressContractStatsChanged(ingressStats)
 	self.egressContractDetailsChanged(egressDetails)
 	self.ingressContractDetailsChanged(ingressDetails)
+}
+
+// runContractStatsFlush carries out the trailing state of a gated contract stats
+// update, and decays the bit rate of contracts that have gone idle.
+//
+// `deviceContractTracker.update` folds a gated batch into the tracker and emits
+// nothing, on the assumption that a later batch will carry it. But the connect
+// side only produces a batch while a contract's byte count is moving, so the
+// final batch of a transfer lands inside the gate and no further batch ever
+// arrives — the pushed stats then sit permanently below what the getters report,
+// and a finished transfer keeps reporting its last bit rate. This loop is the
+// trailing edge the gate needs.
+func (self *DeviceLocal) runContractStatsFlush() {
+	for {
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-time.After(self.settings.ContractStatsEpoch):
+		}
+		self.flushContractStats()
+	}
+}
+
+func (self *DeviceLocal) flushContractStats() {
+	var egressStats *ContractStats
+	var ingressStats *ContractStats
+	var egressDetails *ContractDetailsList
+	var ingressDetails *ContractDetailsList
+	var providerEgressStats *ContractStats
+	var providerIngressStats *ContractStats
+	var providerEgressDetails *ContractDetailsList
+	var providerIngressDetails *ContractDetailsList
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		egressStats, ingressStats, egressDetails, ingressDetails =
+			self.contracts.flushPending(self.settings.ContractStatsEpoch)
+		providerEgressStats, providerIngressStats, providerEgressDetails, providerIngressDetails =
+			self.providerContracts.flushPending(self.settings.ContractStatsEpoch)
+	}()
+	if egressStats != nil {
+		self.egressContractStatsChanged(egressStats)
+		self.ingressContractStatsChanged(ingressStats)
+		self.egressContractDetailsChanged(egressDetails)
+		self.ingressContractDetailsChanged(ingressDetails)
+	}
+	if providerEgressStats != nil {
+		self.providerEgressContractStatsChanged(providerEgressStats)
+		self.providerIngressContractStatsChanged(providerIngressStats)
+		self.providerEgressContractDetailsChanged(providerEgressDetails)
+		self.providerIngressContractDetailsChanged(providerIngressDetails)
+	}
 }
 
 // the contract stats epoch callback from the provider client
@@ -3905,15 +4203,22 @@ func (self *DeviceLocal) watchNetworkPeers(notify chan struct{}) {
 			return
 		case <-notify:
 		}
-		// re-arm before coalescing so any change during the epoch window or
-		// the emit triggers the next round rather than being missed
-		notify = peersMonitor.NotifyChannel()
 		// coalesce changes within the epoch
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-time.After(self.settings.NetworkPeersEpoch):
 		}
+		// re-arm immediately before the snapshot, NOT before the coalescing
+		// window. the emit below reads the complete current peer state, so every
+		// change that lands during the window is already carried by it. arming
+		// ahead of the window instead leaves that channel closed by those same
+		// changes (`Monitor.NotifyAll` closes the live channel), so the next loop
+		// iteration fires immediately and re-emits an identical snapshot one epoch
+		// later — a duplicate emit that breaks the at-most-once-per-epoch contract.
+		// arm before the read and never after: a change racing the snapshot then
+		// triggers the next round rather than being lost.
+		notify = peersMonitor.NotifyChannel()
 		self.networkPeersChanged(self.GetNetworkPeers())
 	}
 }
