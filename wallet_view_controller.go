@@ -275,7 +275,7 @@ func (vc *WalletViewController) setIsCreatingExternalWallet(state bool) {
 func (vc *WalletViewController) AddExternalWallet(address string, blockchain Blockchain) {
 
 	blockchainUpper := strings.ToUpper(blockchain)
-	if blockchainUpper != "SOL" && blockchainUpper != "MATIC" {
+	if blockchainUpper != "SOL" && blockchainUpper != "MATIC" && blockchainUpper != "TAO" {
 		deviceLog(vc.device).Infof("[wvc]invalid blockchain passed: %s", blockchainUpper)
 		return
 	}

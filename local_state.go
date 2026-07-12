@@ -224,6 +224,23 @@ func (self *LocalState) GetRouteLocal() bool {
 	return true
 }
 
+func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
+	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
+	blockerEnabledBytes := []byte(fmt.Sprintf("%t", blockerEnabled))
+	return os.WriteFile(path, blockerEnabledBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) GetBlockerEnabled() bool {
+	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
+	if blockerEnabledBytes, err := os.ReadFile(path); err == nil {
+		var blockerEnabled bool
+		if _, err := fmt.Sscanf(string(blockerEnabledBytes), "%t", &blockerEnabled); err == nil {
+			return blockerEnabled
+		}
+	}
+	return false
+}
+
 func (self *LocalState) SetConnectLocation(connectLocation *ConnectLocation) error {
 	path := filepath.Join(self.localStorageDir, ".connect_location")
 	if connectLocation == nil {
