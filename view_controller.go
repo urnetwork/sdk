@@ -23,6 +23,8 @@ type ViewControllerManager interface {
 
 	OpenDevicesViewController() *DevicesViewController
 
+	OpenPeerViewController() *PeerViewController
+
 	OpenAccountViewController() *AccountViewController
 
 	OpenFeedbackViewController() *FeedbackViewController
@@ -104,6 +106,12 @@ func (self *viewControllerManager) OpenProvideViewController() *ProvideViewContr
 
 func (self *viewControllerManager) OpenDevicesViewController() *DevicesViewController {
 	vc := newDevicesViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenPeerViewController() *PeerViewController {
+	vc := newPeerViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

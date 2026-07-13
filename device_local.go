@@ -249,7 +249,9 @@ type DeviceLocal struct {
 	tunnelLocalAddress netip.Addr
 
 	// tunnelDnsSetting is the DNS config the platform applies to the TUN. Defaults
-	// to plain DNS 1.1.1.1 — plain (:53) is required for the UpgradeMux to intercept.
+	// to plain DNS with no single-server override, so the platform applies the
+	// default resolver list (9.9.9.9, 1.1.1.1) — plain (:53) is required for the
+	// UpgradeMux to intercept, and no OS-level encrypted DNS is enabled.
 	tunnelDnsSetting *TunnelDnsSetting
 
 	clientStrategy *connect.ClientStrategy
@@ -839,8 +841,8 @@ func (self *DeviceLocal) TunnelLocalAddress() string {
 }
 
 // TunnelDnsSetting returns the DNS configuration the platform should apply to the
-// TUN (defaults to plain DNS 1.1.1.1). Plain DNS is required for the UpgradeMux to
-// intercept and upgrade :53 traffic.
+// TUN (defaults to plain DNS, resolver list 9.9.9.9, 1.1.1.1). Plain DNS is
+// required for the UpgradeMux to intercept and upgrade :53 traffic.
 func (self *DeviceLocal) TunnelDnsSetting() *TunnelDnsSetting {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -848,7 +850,8 @@ func (self *DeviceLocal) TunnelDnsSetting() *TunnelDnsSetting {
 }
 
 // SetTunnelDnsSetting overrides the platform DNS configuration. Each use case sets
-// its own (the apps use plain 1.1.1.1; server/proxy may differ).
+// its own (the apps use the default plain-DNS resolver list; server/proxy may
+// differ). A non-empty Server narrows the tunnel to that single resolver.
 func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -858,8 +861,9 @@ func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 // TunnelDnsAddressesIpv4 returns the plain-DNS IPv4 server IPs the platform should
 // apply to the TUN interface (Android `addDnsServer`), sourced from the device at
 // tunnel-build time like TunnelLocalAddress: the dns resolver settings' unencrypted
-// local servers when set, otherwise the default tunnel dns setting (plain 1.1.1.1).
-// Plain :53 keeps the UpgradeMux able to intercept and upgrade queries.
+// local servers when set, otherwise the default tunnel dns setting (the default
+// plain-DNS resolvers 9.9.9.9, 1.1.1.1). Plain :53 keeps the UpgradeMux able to
+// intercept and upgrade queries.
 func (self *DeviceLocal) TunnelDnsAddressesIpv4() *StringList {
 	return self.tunnelDnsAddressList(false)
 }
@@ -885,8 +889,10 @@ func (self *DeviceLocal) tunnelDnsAddressList(ipv6 bool) *StringList {
 
 // tunnelDnsAddresses derives the plain-dns tunnel resolver ips of one address
 // family: the resolver settings' unencrypted local dns servers when enabled and
-// non-empty, otherwise the default tunnel dns setting's server. entries that do
-// not parse as an ip are dropped, so the platform never applies a bad address
+// non-empty, otherwise the tunnel dns setting's single-server override when set,
+// otherwise the default plain-dns resolver list (defaultTunnelDnsServersIpv4).
+// entries that do not parse as an ip are dropped, so the platform never applies a
+// bad address
 func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting *TunnelDnsSetting, ipv6 bool) []string {
 	family := func(servers []string) []string {
 		out := []string{}
@@ -907,7 +913,15 @@ func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting 
 		}
 	}
 	if tunnelDnsSetting != nil {
-		return family([]string{tunnelDnsSetting.Server})
+		// an explicit single-server override wins; otherwise (the default, empty
+		// Server) apply the default plain-dns resolver list. plain :53 keeps the
+		// UpgradeMux able to intercept and upgrade, and the default leads with a
+		// resolver the OS does not auto-upgrade to encrypted DNS (see
+		// defaultTunnelDnsServersIpv4)
+		if server := strings.TrimSpace(tunnelDnsSetting.Server); server != "" {
+			return family([]string{server})
+		}
+		return family(defaultTunnelDnsServers(ipv6))
 	}
 	return []string{}
 }

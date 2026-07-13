@@ -184,13 +184,17 @@ type AuthWalletChallengeResult struct {
 	Error           *ApiError `json:"error,omitempty"`
 }
 
-func (self *Api) AuthWalletChallenge(args *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
+// AuthWalletChallenge requests a challenge message for a wallet to sign — the
+// first step of wallet sign-in (POST /auth/wallet-challenge, unauthenticated).
+// The wallet signs the returned message_template and the signature is passed to
+// AuthLogin via WalletAuthArgs. Used by the apple + solana mobile wallet flow.
+func (self *Api) AuthWalletChallenge(authWalletChallenge *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/wallet-challenge", self.apiUrl),
-			args,
+			authWalletChallenge,
 			self.GetByJwt(),
 			&AuthWalletChallengeResult{},
 			callback,

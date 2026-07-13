@@ -194,6 +194,7 @@ export interface ProviderSpec {
 
 export interface AuthNetworkClientError {
   client_limit_exceeded: boolean;
+  upgrade_required?: boolean;
   message: string;
 }
 
