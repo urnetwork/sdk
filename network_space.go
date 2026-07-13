@@ -66,6 +66,18 @@ type NetworkSpaceValues struct {
 	Wallet                   string `json:"wallet,omitempty"`
 	SsoGoogle                bool   `json:"sso_google,omitempty"`
 
+	// Optional absolute service endpoints. When empty, URLs are derived from HostName/EnvName
+	// via ServiceUrl, matching main-branch behavior:
+	//   api:     https://api.<host>
+	//   connect: wss://connect.<host>
+	// no trailing slash: api.go builds paths as fmt.Sprintf("%s/path", apiUrl).
+	//
+	// When set, these overrides are used exactly as provided — the caller is
+	// responsible for any EnvSecret query parameter. ServiceUrl's automatic
+	// EnvSecret appending does not apply to explicit overrides.
+	ApiUrl      string `json:"api_url,omitempty"`
+	PlatformUrl string `json:"platform_url,omitempty"`
+
 	// custom extender
 	// this overrides any auto discovered extenders
 	NetExtender              *NetExtender              `json:"net_extender,omitempty"`
@@ -141,8 +153,17 @@ func newNetworkSpaceWithConnectSettings(
 ) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	apiUrl := ServiceUrl(&key, &values, "https", "api")
-	platformUrl := ServiceUrl(&key, &values, "wss", "connect")
+	// Prefer explicit overrides when set; otherwise derive from HostName/EnvName.
+	// no trailing slash: api.go builds paths as fmt.Sprintf("%s/path", apiUrl),
+	// so a trailing slash here would double up to "//path" and 404 every request.
+	apiUrl := strings.TrimRight(values.ApiUrl, "/")
+	if apiUrl == "" {
+		apiUrl = ServiceUrl(&key, &values, "https", "api")
+	}
+	platformUrl := strings.TrimRight(values.PlatformUrl, "/")
+	if platformUrl == "" {
+		platformUrl = ServiceUrl(&key, &values, "wss", "connect")
+	}
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
@@ -374,6 +395,14 @@ func (self *NetworkSpace) GetAsyncLocalState() *AsyncLocalState {
 	return self.asyncLocalState
 }
 
+func (self *NetworkSpace) GetConfiguredApiUrl() string {
+	return self.values.ApiUrl
+}
+
+func (self *NetworkSpace) GetConfiguredPlatformUrl() string {
+	return self.values.PlatformUrl
+}
+
 func (self *NetworkSpace) GetApiUrl() string {
 	return self.apiUrl
 }
@@ -550,7 +579,34 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 	if self.storagePath == "" {
 		return ""
 	}
-	envStoragePath := filepath.Join(self.storagePath, "network_spaces", key.EnvName)
+	// include host so multiple network servers can coexist without sharing auth state
+	safeHost := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key.HostName)
+	if safeHost == "" || safeHost == "." || safeHost == ".." {
+		safeHost = "default"
+	}
+	safeEnv := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key.EnvName)
+	if safeEnv == "" || safeEnv == "." || safeEnv == ".." {
+		safeEnv = "default"
+	}
+	envStoragePath := filepath.Join(self.storagePath, "network_spaces", safeHost, safeEnv)
+
+	// Best-effort migration: before host-scoped storage existed, state lived at
+	// `network_spaces/<env>` (no host segment). If an install still has state
+	// there and nothing has been written to the new host-scoped path yet, move
+	// it over so upgrading users aren't silently signed out. This only ever
+	// fires once - after the first successful rename, the legacy path no
+	// longer exists for any subsequent host to (incorrectly) inherit.
+	if _, err := os.Stat(envStoragePath); os.IsNotExist(err) {
+		legacyEnvStoragePath := filepath.Join(self.storagePath, "network_spaces", safeEnv)
+		if legacyInfo, err := os.Stat(legacyEnvStoragePath); err == nil && legacyInfo.IsDir() {
+			if err := os.MkdirAll(filepath.Dir(envStoragePath), LocalStorageFilePermissions); err == nil {
+				// ignore errors - this is best-effort, and the normal
+				// MkdirAll below still guarantees envStoragePath exists
+				_ = os.Rename(legacyEnvStoragePath, envStoragePath)
+			}
+		}
+	}
+
 	if err := os.MkdirAll(envStoragePath, LocalStorageFilePermissions); err != nil {
 		panic(err)
 	}

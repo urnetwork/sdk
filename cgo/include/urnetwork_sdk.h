@@ -129,6 +129,8 @@ typedef void (*urnet_auth_password_reset_cb)(void* user_data, const char* result
 typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AuthVerifySendCallback */
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AuthWalletChallengeCallback */
+typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
 /* BlockActionOverridesChangeListener */
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 /* BlockActionStatsListener */
@@ -388,6 +390,7 @@ void urnet_api_auth_network_client(uint64_t self, const char* auth_network_clien
 void urnet_api_auth_password_reset(uint64_t self, const char* auth_password_reset_json, urnet_auth_password_reset_cb callback_result, void* callback_user_data);
 void urnet_api_auth_verify(uint64_t self, const char* auth_verify_json, urnet_auth_verify_cb callback_result, void* callback_user_data);
 void urnet_api_auth_verify_send(uint64_t self, const char* auth_verify_send_json, urnet_auth_verify_send_cb callback_result, void* callback_user_data);
+void urnet_api_auth_wallet_challenge(uint64_t self, const char* args_json, urnet_auth_wallet_challenge_cb callback_result, void* callback_user_data);
 void urnet_api_close(uint64_t self);
 void urnet_api_create_account_wallet(uint64_t self, const char* create_account_wallet_json, urnet_create_account_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_create_api_key(uint64_t self, const char* args_json, urnet_create_api_key_cb callback_result, void* callback_user_data);
@@ -793,6 +796,8 @@ uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
 uint64_t urnet_network_space_get_async_local_state(uint64_t self);
 bool urnet_network_space_get_bundled(uint64_t self);
+char* urnet_network_space_get_configured_api_url(uint64_t self);
+char* urnet_network_space_get_configured_platform_url(uint64_t self);
 char* urnet_network_space_get_env_name(uint64_t self);
 char* urnet_network_space_get_env_secret(uint64_t self);
 char* urnet_network_space_get_host_name(uint64_t self);
@@ -1166,6 +1171,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* AuthVerifySendResult (json):
  *   user_auth: string
+ */
+
+/* AuthWalletChallengeArgs (json):
+ *   wallet_address?: string
+ *   blockchain?: string
+ */
+
+/* AuthWalletChallengeResult (json):
+ *   challenge?: string
+ *   timestamp?: number
+ *   expires_in?: number
+ *   message_template?: string
+ *   error?: ApiError | null
  */
 
 /* BlockAction (json):
@@ -1799,6 +1817,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   store?: string
  *   wallet?: string
  *   sso_google?: boolean
+ *   api_url?: string
+ *   platform_url?: string
  *   net_extender?: NetExtender | null
  *   net_extender_auto_configure?: NetExtenderAutoConfigure | null
  */

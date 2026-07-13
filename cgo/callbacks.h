@@ -35,6 +35,8 @@ typedef void (*urnet_auth_verify_cb)(void* user_data, const char* result_json, c
 void urnet_invoke_auth_verify(urnet_auth_verify_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_auth_verify_send_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_auth_verify_send(urnet_auth_verify_send_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_auth_wallet_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_auth_wallet_challenge(urnet_auth_wallet_challenge_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_block_action_overrides_change_cb)(void* user_data, const char* block_action_overrides_json);
 void urnet_invoke_block_action_overrides_change(urnet_block_action_overrides_change_cb cb, void* user_data, const char* block_action_overrides_json);
 typedef void (*urnet_block_action_stats_cb)(void* user_data);

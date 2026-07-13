@@ -21,6 +21,7 @@ EXPORTS
 	urnet_api_auth_password_reset
 	urnet_api_auth_verify
 	urnet_api_auth_verify_send
+	urnet_api_auth_wallet_challenge
 	urnet_api_close
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
@@ -407,6 +408,8 @@ EXPORTS
 	urnet_network_space_get_api_url
 	urnet_network_space_get_async_local_state
 	urnet_network_space_get_bundled
+	urnet_network_space_get_configured_api_url
+	urnet_network_space_get_configured_platform_url
 	urnet_network_space_get_env_name
 	urnet_network_space_get_env_secret
 	urnet_network_space_get_host_name

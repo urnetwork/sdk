@@ -278,6 +278,27 @@ func (self *cAdapterAuthVerifySendCallback) Result(result *sdk.AuthVerifySendRes
 	}
 }
 
+type cAdapterAuthWalletChallengeCallback struct {
+	cbResult C.urnet_auth_wallet_challenge_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAuthWalletChallengeCallback) Result(result *sdk.AuthWalletChallengeResult, errParam error) {
+	defer cgoGuard("urnet_auth_wallet_challenge_cb")
+	result_ := cJson(result, "urnet_auth_wallet_challenge_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_auth_wallet_challenge(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterBlockActionOverridesChangeListener struct {
 	cbBlockActionOverridesChanged C.urnet_block_action_overrides_change_cb
 	userData                      unsafe.Pointer
@@ -2412,6 +2433,27 @@ func urnet_api_auth_verify_send(self C.uint64_t, authVerifySend *C.char, callbac
 		callback_ = &cAdapterAuthVerifySendCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.AuthVerifySend(authVerifySend_, callback_)
+}
+
+//export urnet_api_auth_wallet_challenge
+func urnet_api_auth_wallet_challenge(self C.uint64_t, args *C.char, callback_result C.urnet_auth_wallet_challenge_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_auth_wallet_challenge")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_wallet_challenge")
+	if !ok {
+		return
+	}
+	var args_ *sdk.AuthWalletChallengeArgs
+	if args != nil {
+		args_ = &sdk.AuthWalletChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_auth_wallet_challenge") {
+			return
+		}
+	}
+	var callback_ sdk.AuthWalletChallengeCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAuthWalletChallengeCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AuthWalletChallenge(args_, callback_)
 }
 
 //export urnet_api_close
@@ -7544,6 +7586,28 @@ func urnet_network_space_get_bundled(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetBundled()
 	return C.bool(r0)
+}
+
+//export urnet_network_space_get_configured_api_url
+func urnet_network_space_get_configured_api_url(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_configured_api_url")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_configured_api_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetConfiguredApiUrl()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_configured_platform_url
+func urnet_network_space_get_configured_platform_url(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_configured_platform_url")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_configured_platform_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetConfiguredPlatformUrl()
+	return cString(string(r0))
 }
 
 //export urnet_network_space_get_env_name
