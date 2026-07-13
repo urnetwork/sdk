@@ -71,6 +71,10 @@ type NetworkSpaceValues struct {
 	//   api:     https://api.<host>
 	//   connect: wss://connect.<host>
 	// no trailing slash: api.go builds paths as fmt.Sprintf("%s/path", apiUrl).
+	//
+	// When set, these overrides are used exactly as provided — the caller is
+	// responsible for any EnvSecret query parameter. ServiceUrl's automatic
+	// EnvSecret appending does not apply to explicit overrides.
 	ApiUrl      string `json:"api_url,omitempty"`
 	PlatformUrl string `json:"platform_url,omitempty"`
 
@@ -580,7 +584,11 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 	if safeHost == "" || safeHost == "." || safeHost == ".." {
 		safeHost = "default"
 	}
-	envStoragePath := filepath.Join(self.storagePath, "network_spaces", safeHost, key.EnvName)
+	safeEnv := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key.EnvName)
+	if safeEnv == "" || safeEnv == "." || safeEnv == ".." {
+		safeEnv = "default"
+	}
+	envStoragePath := filepath.Join(self.storagePath, "network_spaces", safeHost, safeEnv)
 
 	// Best-effort migration: before host-scoped storage existed, state lived at
 	// `network_spaces/<env>` (no host segment). If an install still has state
@@ -589,7 +597,7 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 	// fires once - after the first successful rename, the legacy path no
 	// longer exists for any subsequent host to (incorrectly) inherit.
 	if _, err := os.Stat(envStoragePath); os.IsNotExist(err) {
-		legacyEnvStoragePath := filepath.Join(self.storagePath, "network_spaces", key.EnvName)
+		legacyEnvStoragePath := filepath.Join(self.storagePath, "network_spaces", safeEnv)
 		if legacyInfo, err := os.Stat(legacyEnvStoragePath); err == nil && legacyInfo.IsDir() {
 			if err := os.MkdirAll(filepath.Dir(envStoragePath), LocalStorageFilePermissions); err == nil {
 				// ignore errors - this is best-effort, and the normal
