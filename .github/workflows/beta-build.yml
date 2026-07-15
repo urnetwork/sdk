@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - beta/custom-server
+  pull_request:
+    branches:
+      - beta/custom-server
   workflow_dispatch:
 
 permissions:
@@ -64,6 +67,7 @@ jobs:
           fi
 
       - name: Create prerelease
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: beta-custom-server-${{ github.run_number }}-${{ github.run_attempt }}
