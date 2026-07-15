@@ -124,6 +124,7 @@ type AuthLoginArgs struct {
 	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
 	AuthJwt     string          `json:"auth_jwt,omitempty"`
 	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
+	Seedphrase  string          `json:"seedphrase,omitempty"`
 }
 
 type WalletAuthArgs struct {
@@ -352,7 +353,6 @@ type NetworkCreateArgs struct {
 	Password         string          `json:"password,omitempty"`
 	NetworkName      string          `json:"network_name,omitempty"`
 	Terms            bool            `json:"terms"`
-	GuestMode        bool            `json:"guest_mode"`
 	VerifyOtpNumeric bool            `json:"verify_use_numeric,omitempty"`
 	ReferralCode     string          `json:"referral_code,omitempty"`
 	WalletAuth       *WalletAuthArgs `json:"wallet_auth,omitempty"`
@@ -360,6 +360,7 @@ type NetworkCreateArgs struct {
 
 type NetworkCreateResult struct {
 	Network              *NetworkCreateResultNetwork      `json:"network,omitempty"`
+	Seedphrase           string                           `json:"seedphrase,omitempty"`
 	VerificationRequired *NetworkCreateResultVerification `json:"verification_required,omitempty"`
 	Error                *NetworkCreateResultError        `json:"error,omitempty"`
 }
