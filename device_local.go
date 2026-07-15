@@ -3443,6 +3443,13 @@ type deviceContractState struct {
 	bitRate           int
 	open              bool
 	updateTime        time.Time
+	// the id this contract atomically replaced on the same path (a renewal), or
+	// nil. Reported on the incoming (open) contract; the superseded one is dropped
+	// without its own Closed tombstone.
+	replacesContractId *connect.Id
+	// a closed contract is reported once as a Closed tombstone, then evicted on the
+	// next emit; this flags that its one report has been made.
+	closedReported bool
 }
 
 // the open contracts of one connect client (the multi client or the provider
@@ -3528,23 +3535,86 @@ func (self *deviceContractTracker) update(
 	return self.emit(now)
 }
 
-// emit builds the reports, evicts closed contracts, and opens a new epoch.
+// emit builds the reports and advances the contract lifecycle:
+//   - a contract superseded by a renewal on the same path is linked to its
+//     replacement (which carries ReplacesContractId) and dropped, so the swap is
+//     one atomic event rather than a bouncy close-then-open;
+//   - a contract that closed with no replacement is reported once as a Closed
+//     tombstone, kept one more cycle so a coalesced getter read still sees it,
+//     then evicted on the next emit.
 func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	self.pendingEmit = false
 	self.lastEmitTime = now
+
+	// drop tombstones whose one Closed report was made on a previous cycle
+	self.evictReportedClosed(self.egressContracts)
+	self.evictReportedClosed(self.ingressContracts)
+
+	// link atomic replacements (renewals on the same path), dropping the
+	// superseded contract without a separate Closed tombstone
+	self.linkReplacements(self.egressContracts)
+	self.linkReplacements(self.ingressContracts)
+
 	egressStats = self.stats(false)
 	ingressStats = self.stats(true)
 	egressDetails = self.details(false)
 	ingressDetails = self.details(true)
-	// evict closed contracts after the final report
-	for contractId, state := range self.egressContracts {
-		if !state.open {
-			delete(self.egressContracts, contractId)
+
+	// close out the one-shot signals just built into details (Closed tombstones
+	// and replace links); keep the settle loop alive while any tombstone remains
+	// so the next emit evicts it
+	if self.finalizeReported(self.egressContracts) || self.finalizeReported(self.ingressContracts) {
+		self.pendingEmit = true
+	}
+	return
+}
+
+// evictReportedClosed removes closed contracts whose Closed tombstone was already
+// emitted on a previous cycle.
+func (self *deviceContractTracker) evictReportedClosed(contracts map[connect.Id]*deviceContractState) {
+	for contractId, state := range contracts {
+		if !state.open && state.closedReported {
+			delete(contracts, contractId)
 		}
 	}
-	for contractId, state := range self.ingressContracts {
-		if !state.open {
-			delete(self.ingressContracts, contractId)
+}
+
+// linkReplacements pairs each just-closed contract with a contract that opened on
+// the same transfer path in the same window: the incoming contract takes
+// ReplacesContractId so the UI treats the swap as one atomic replace rather than
+// a close then an open. The superseded contract is NOT dropped here -- it is
+// still reported once as a Closed tombstone carrying its FINAL stats, so the
+// consumer can subtract the replaced stats out and add the new stats in without
+// losing the replaced contract's last bytes. It is evicted next emit like any
+// close.
+func (self *deviceContractTracker) linkReplacements(contracts map[connect.Id]*deviceContractState) {
+	for _, closing := range contracts {
+		if closing.open || closing.closedReported {
+			continue
+		}
+		for _, opening := range contracts {
+			if opening.open && opening.contractId != closing.contractId &&
+				opening.replacesContractId == nil && opening.path == closing.path {
+				replaced := closing.contractId
+				opening.replacesContractId = &replaced
+				break
+			}
+		}
+	}
+}
+
+// finalizeReported closes out an emit's one-shot signals: a Closed tombstone is
+// flagged reported (evicted next emit), and a reported replace link is cleared so
+// the incoming contract reads as a normal open from the next emit on. Returns
+// whether any Closed tombstone remains pending eviction.
+func (self *deviceContractTracker) finalizeReported(contracts map[connect.Id]*deviceContractState) (remaining bool) {
+	for _, state := range contracts {
+		if state.open {
+			// the replace link is one-shot: reported once, then a normal open
+			state.replacesContractId = nil
+		} else {
+			state.closedReported = true
+			remaining = true
 		}
 	}
 	return
@@ -3735,12 +3805,20 @@ func (self *deviceContractTracker) details(receive bool) *ContractDetailsList {
 				}
 			}
 		}
+		status := ContractStatusOpen
+		if !state.open {
+			status = ContractStatusClosed
+		}
 		contractDetails := &ContractDetails{
 			ContractId:            newId(state.contractId),
 			ContractUsedByteCount: state.usedByteCount,
 			ContractByteCount:     state.transferByteCount,
 			ContractBitRate:       state.bitRate,
 			ContractTransferPath:  fromConnect(state.path),
+			Status:                status,
+		}
+		if state.replacesContractId != nil {
+			contractDetails.ReplacesContractId = newId(*state.replacesContractId)
 		}
 		if companionState != nil {
 			contractDetails.CompanionContractId = newId(companionState.contractId)

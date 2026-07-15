@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -78,18 +76,18 @@ func TestBlockActionViewControllerLocalOverrideAppIds(t *testing.T) {
 	device.SetBlockActionOverrides(overrides)
 
 	localOverrideAppIds := vc.GetLocalOverrideAppIds()
-	assert.Equal(t, 1, localOverrideAppIds.Included.Len())
-	assert.Equal(t, 1, localOverrideAppIds.Excluded.Len())
-	assert.Equal(t, true, localOverrideAppIds.Included.Contains("com.example.local"))
-	assert.Equal(t, false, localOverrideAppIds.Included.Contains("com.example.remote"))
-	assert.Equal(t, true, localOverrideAppIds.Excluded.Contains("com.example.remote"))
-	assert.Equal(t, false, localOverrideAppIds.Excluded.Contains("com.example.local"))
-	assert.Equal(t, 1, listener.getCount())
+	connect.AssertEqual(t, 1, localOverrideAppIds.Included.Len())
+	connect.AssertEqual(t, 1, localOverrideAppIds.Excluded.Len())
+	connect.AssertEqual(t, true, localOverrideAppIds.Included.Contains("com.example.local"))
+	connect.AssertEqual(t, false, localOverrideAppIds.Included.Contains("com.example.remote"))
+	connect.AssertEqual(t, true, localOverrideAppIds.Excluded.Contains("com.example.remote"))
+	connect.AssertEqual(t, false, localOverrideAppIds.Excluded.Contains("com.example.local"))
+	connect.AssertEqual(t, 1, listener.getCount())
 
 	// setting the same overrides again must not fire the listener,
 	// since the derived sets did not change
 	device.SetBlockActionOverrides(overrides)
-	assert.Equal(t, 1, listener.getCount())
+	connect.AssertEqual(t, 1, listener.getCount())
 }
 
 func TestBlockActionViewControllerWindowTrim(t *testing.T) {
@@ -126,6 +124,6 @@ func TestBlockActionViewControllerWindowTrim(t *testing.T) {
 	})
 
 	windowBlockActions := vc.GetBlockActions()
-	assert.Equal(t, 1, windowBlockActions.Len())
-	assert.Equal(t, freshBlockAction.BlockActionId, windowBlockActions.Get(0).BlockActionId)
+	connect.AssertEqual(t, 1, windowBlockActions.Len())
+	connect.AssertEqual(t, freshBlockAction.BlockActionId, windowBlockActions.Get(0).BlockActionId)
 }

@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -40,28 +38,28 @@ func TestDeviceLocalBlockerEnabled(t *testing.T) {
 	deviceLocal, _ := testing_newBlockDevice(ctx, t, false)
 	defer deviceLocal.Close()
 
-	assert.Equal(t, false, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceLocal.GetBlockerEnabled())
 
 	listener := &testing_blockerEnabledChangeListener{}
 	sub := deviceLocal.AddBlockerEnabledChangeListener(listener)
 	defer sub.Close()
 
 	deviceLocal.SetBlockerEnabled(true)
-	assert.Equal(t, true, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceLocal.GetBlockerEnabled())
 	count, value := listener.get()
-	assert.Equal(t, 1, count)
-	assert.Equal(t, true, value)
+	connect.AssertEqual(t, 1, count)
+	connect.AssertEqual(t, true, value)
 
 	// setting the same value again does not re-emit
 	deviceLocal.SetBlockerEnabled(true)
 	count, _ = listener.get()
-	assert.Equal(t, 1, count)
+	connect.AssertEqual(t, 1, count)
 
 	deviceLocal.SetBlockerEnabled(false)
-	assert.Equal(t, false, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceLocal.GetBlockerEnabled())
 	count, value = listener.get()
-	assert.Equal(t, 2, count)
-	assert.Equal(t, false, value)
+	connect.AssertEqual(t, 2, count)
+	connect.AssertEqual(t, false, value)
 
 	// the toggle survives destination changes: the mux and multi client are
 	// torn down and rebuilt, and the stable blocker (with its enabled state)
@@ -76,11 +74,11 @@ func TestDeviceLocalBlockerEnabled(t *testing.T) {
 		},
 	}
 	deviceLocal.SetDestination(location, NewProviderSpecList())
-	assert.Equal(t, true, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceLocal.GetBlockerEnabled())
 	deviceLocal.Shuffle()
-	assert.Equal(t, true, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceLocal.GetBlockerEnabled())
 	deviceLocal.RemoveDestination()
-	assert.Equal(t, true, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceLocal.GetBlockerEnabled())
 }
 
 // TestDeviceLocalBlockerToggleChurn: rapid toggling (with listeners attached
@@ -104,7 +102,7 @@ func TestDeviceLocalBlockerToggleChurn(t *testing.T) {
 	sub.Close()
 
 	count, _ := listener.get()
-	assert.Equal(t, 1000, count)
+	connect.AssertEqual(t, 1000, count)
 
 	finalStacks := captureGoroutineStacks()
 	reportGoroutineLeaks(t, baseStacks, finalStacks, 2)
@@ -120,8 +118,8 @@ func TestDeviceRemoteBlockerEnabled(t *testing.T) {
 
 	deviceLocal, deviceRemote := testing_newSyncedDeviceLocalRemote(t, ctx)
 
-	assert.Equal(t, false, deviceRemote.GetBlockerEnabled())
-	assert.Equal(t, false, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceRemote.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceLocal.GetBlockerEnabled())
 
 	listener := &testing_blockerEnabledChangeListener{}
 	sub := deviceRemote.AddBlockerEnabledChangeListener(listener)
@@ -129,8 +127,8 @@ func TestDeviceRemoteBlockerEnabled(t *testing.T) {
 
 	// remote set applies to the local device
 	deviceRemote.SetBlockerEnabled(true)
-	assert.Equal(t, true, deviceRemote.GetBlockerEnabled())
-	assert.Equal(t, true, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceRemote.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceLocal.GetBlockerEnabled())
 
 	// the local change reverse-notifies the remote listener
 	waitFor := func(cond func() bool) bool {
@@ -160,7 +158,7 @@ func TestDeviceRemoteBlockerEnabled(t *testing.T) {
 	}) {
 		t.Fatal("remote listener did not observe the disable")
 	}
-	assert.Equal(t, false, deviceRemote.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceRemote.GetBlockerEnabled())
 }
 
 // TestDeviceRemoteBlockerEnabledOfflineSync: a set on a disconnected remote
@@ -192,12 +190,12 @@ func TestDeviceRemoteBlockerEnabledOfflineSync(t *testing.T) {
 	sub := deviceRemote.AddBlockerEnabledChangeListener(listener)
 	defer sub.Close()
 
-	assert.Equal(t, false, deviceRemote.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceRemote.GetBlockerEnabled())
 	deviceRemote.SetBlockerEnabled(true)
-	assert.Equal(t, true, deviceRemote.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceRemote.GetBlockerEnabled())
 	count, value := listener.get()
-	assert.Equal(t, 1, count)
-	assert.Equal(t, true, value)
+	connect.AssertEqual(t, 1, count)
+	connect.AssertEqual(t, true, value)
 
 	// the local device comes up and the remote syncs: the pending write is
 	// applied to the device
@@ -209,7 +207,7 @@ func TestDeviceRemoteBlockerEnabledOfflineSync(t *testing.T) {
 	}
 	defer deviceLocal.Close()
 
-	assert.Equal(t, false, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, false, deviceLocal.GetBlockerEnabled())
 
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(5 * time.Second) {
@@ -221,8 +219,8 @@ func TestDeviceRemoteBlockerEnabledOfflineSync(t *testing.T) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	assert.Equal(t, true, deviceLocal.GetBlockerEnabled())
-	assert.Equal(t, true, deviceRemote.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceLocal.GetBlockerEnabled())
+	connect.AssertEqual(t, true, deviceRemote.GetBlockerEnabled())
 }
 
 // TestLocalStateBlockerEnabled: the app-facing persistence pair round-trips
@@ -237,9 +235,9 @@ func TestLocalStateBlockerEnabled(t *testing.T) {
 	}
 	localState := networkSpace.GetAsyncLocalState().GetLocalState()
 
-	assert.Equal(t, false, localState.GetBlockerEnabled())
-	assert.Equal(t, nil, localState.SetBlockerEnabled(true))
-	assert.Equal(t, true, localState.GetBlockerEnabled())
-	assert.Equal(t, nil, localState.SetBlockerEnabled(false))
-	assert.Equal(t, false, localState.GetBlockerEnabled())
+	connect.AssertEqual(t, false, localState.GetBlockerEnabled())
+	connect.AssertEqual(t, nil, localState.SetBlockerEnabled(true))
+	connect.AssertEqual(t, true, localState.GetBlockerEnabled())
+	connect.AssertEqual(t, nil, localState.SetBlockerEnabled(false))
+	connect.AssertEqual(t, false, localState.GetBlockerEnabled())
 }

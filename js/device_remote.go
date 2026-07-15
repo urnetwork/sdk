@@ -192,6 +192,50 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		return jsNetworkPeers(device.GetNetworkPeers())
 	})
 
+	// custom DNS resolver settings (over the device-rpc)
+	m["getDnsResolverSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsDnsResolverSettings(device.GetDnsResolverSettings())
+	})
+	m["setDnsResolverSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) {
+			device.SetDnsResolverSettings(parseDnsResolverSettings(args[0]))
+		}
+		return js.Null()
+	})
+	m["addDnsResolverSettingsChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddDnsResolverSettingsChangeListener(&jsDnsResolverSettingsChangeListener{cb}))
+	})
+	// the default (most secure) settings, for a reset action
+	m["getDefaultDnsResolverSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsDnsResolverSettings(sdk.GetDefaultDnsResolverSettings())
+	})
+
+	// view controllers — the same layer the native app screens are built on
+	// (viewControllerManager is embedded in the device). The caller owns the
+	// returned vc and must close() it; see view_controllers.go.
+	m["openConnectViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsConnectViewController(device.OpenConnectViewController())
+	})
+	m["openContractDetailsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractDetailsViewController(device.OpenContractDetailsViewController())
+	})
+	m["openContractViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractViewController(device.OpenContractViewController())
+	})
+	m["openBlockActionViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsBlockActionViewController(device.OpenBlockActionViewController())
+	})
+	m["openLocationsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsLocationsViewController(device.OpenLocationsViewController())
+	})
+	m["openDevicesViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsDevicesViewController(device.OpenDevicesViewController())
+	})
+
 	// listeners
 	m["addRemoteChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		cb, ok := funcArg(args)
@@ -275,6 +319,88 @@ type jsNetworkPeersChangeListener struct{ cb js.Value }
 
 func (self *jsNetworkPeersChangeListener) NetworkPeersChanged(networkPeers *sdk.NetworkPeers) {
 	self.cb.Invoke(jsNetworkPeers(networkPeers))
+}
+
+// ── DNS resolver settings ────────────────────────────────────────────────────
+
+func jsStringListDR(list *sdk.StringList) js.Value {
+	out := []any{}
+	if list != nil {
+		for i := 0; i < list.Len(); i += 1 {
+			out = append(out, list.Get(i))
+		}
+	}
+	return js.ValueOf(out)
+}
+
+func parseStringListDR(v js.Value) *sdk.StringList {
+	list := sdk.NewStringList()
+	if v.Type() == js.TypeObject && v.Get("length").Type() == js.TypeNumber {
+		n := v.Get("length").Int()
+		for i := 0; i < n; i += 1 {
+			item := v.Index(i)
+			if item.Type() == js.TypeString {
+				list.Add(item.String())
+			}
+		}
+	}
+	return list
+}
+
+// jsDnsResolverSettings mirrors the DoH/DNS toggles + per-family server lists the
+// native DNS editor renders.
+func jsDnsResolverSettings(s *sdk.DnsResolverSettings) js.Value {
+	if s == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"enableRemoteDoh": s.EnableRemoteDoh,
+		"enableLocalDoh":  s.EnableLocalDoh,
+		"enableRemoteDns": s.EnableRemoteDns,
+		"enableLocalDns":  s.EnableLocalDns,
+		"enableFallback":  s.EnableFallback,
+
+		"remoteDohUrlsIpv4": jsStringListDR(s.RemoteDohUrlsIpv4),
+		"remoteDohUrlsIpv6": jsStringListDR(s.RemoteDohUrlsIpv6),
+		"localDohUrlsIpv4":  jsStringListDR(s.LocalDohUrlsIpv4),
+		"localDohUrlsIpv6":  jsStringListDR(s.LocalDohUrlsIpv6),
+		"remoteDnsIpv4":     jsStringListDR(s.RemoteDnsIpv4),
+		"remoteDnsIpv6":     jsStringListDR(s.RemoteDnsIpv6),
+		"localDnsIpv4":      jsStringListDR(s.LocalDnsIpv4),
+		"localDnsIpv6":      jsStringListDR(s.LocalDnsIpv6),
+	})
+}
+
+func parseDnsResolverSettings(v js.Value) *sdk.DnsResolverSettings {
+	if v.IsNull() || v.IsUndefined() {
+		return sdk.GetDefaultDnsResolverSettings()
+	}
+	b := func(key string) bool {
+		x := v.Get(key)
+		return x.Type() == js.TypeBoolean && x.Bool()
+	}
+	return &sdk.DnsResolverSettings{
+		EnableRemoteDoh: b("enableRemoteDoh"),
+		EnableLocalDoh:  b("enableLocalDoh"),
+		EnableRemoteDns: b("enableRemoteDns"),
+		EnableLocalDns:  b("enableLocalDns"),
+		EnableFallback:  b("enableFallback"),
+
+		RemoteDohUrlsIpv4: parseStringListDR(v.Get("remoteDohUrlsIpv4")),
+		RemoteDohUrlsIpv6: parseStringListDR(v.Get("remoteDohUrlsIpv6")),
+		LocalDohUrlsIpv4:  parseStringListDR(v.Get("localDohUrlsIpv4")),
+		LocalDohUrlsIpv6:  parseStringListDR(v.Get("localDohUrlsIpv6")),
+		RemoteDnsIpv4:     parseStringListDR(v.Get("remoteDnsIpv4")),
+		RemoteDnsIpv6:     parseStringListDR(v.Get("remoteDnsIpv6")),
+		LocalDnsIpv4:      parseStringListDR(v.Get("localDnsIpv4")),
+		LocalDnsIpv6:      parseStringListDR(v.Get("localDnsIpv6")),
+	}
+}
+
+type jsDnsResolverSettingsChangeListener struct{ cb js.Value }
+
+func (self *jsDnsResolverSettingsChangeListener) DnsResolverSettingsChanged(s *sdk.DnsResolverSettings) {
+	self.cb.Invoke(jsDnsResolverSettings(s))
 }
 
 // parseConnectLocation builds a ConnectLocation from a JS object with a

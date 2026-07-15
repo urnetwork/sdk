@@ -7,40 +7,40 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/go-playground/assert/v2"
+	"github.com/urnetwork/connect"
 )
 
 func TestNetworkSpaceManager(t *testing.T) {
 	storagePath, err := os.MkdirTemp("", "test_network_space_manager")
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	networkSpaceManager := NewNetworkSpaceManager(storagePath)
-	assert.Equal(t, networkSpaceManager.GetNetworkSpaces().Len(), 0)
-	assert.Equal(t, networkSpaceManager.GetActiveNetworkSpace(), nil)
+	connect.AssertEqual(t, networkSpaceManager.GetNetworkSpaces().Len(), 0)
+	connect.AssertEqual(t, networkSpaceManager.GetActiveNetworkSpace(), nil)
 
 	networkSpace := networkSpaceManager.updateNetworkSpace(
 		NewNetworkSpaceKey("ur.network", "main"),
 		func(values *NetworkSpaceValues) {
 		},
 	)
-	assert.Equal(t, networkSpaceManager.GetNetworkSpaces().Len(), 1)
-	assert.Equal(t, networkSpaceManager.GetNetworkSpaces().Get(0) == networkSpace, true)
-	assert.Equal(t, networkSpaceManager.GetActiveNetworkSpace(), nil)
+	connect.AssertEqual(t, networkSpaceManager.GetNetworkSpaces().Len(), 1)
+	connect.AssertEqual(t, networkSpaceManager.GetNetworkSpaces().Get(0) == networkSpace, true)
+	connect.AssertEqual(t, networkSpaceManager.GetActiveNetworkSpace(), nil)
 
 	networkSpaceManager.SetActiveNetworkSpace(networkSpace)
-	assert.Equal(t, networkSpaceManager.GetActiveNetworkSpace() == networkSpace, true)
+	connect.AssertEqual(t, networkSpaceManager.GetActiveNetworkSpace() == networkSpace, true)
 
 	networkSpaceManager.RemoveNetworkSpace(networkSpace)
-	assert.Equal(t, networkSpaceManager.GetNetworkSpaces().Len(), 1)
-	assert.Equal(t, networkSpaceManager.GetNetworkSpaces().Get(0) == networkSpace, true)
-	assert.Equal(t, networkSpaceManager.GetActiveNetworkSpace() == networkSpace, true)
+	connect.AssertEqual(t, networkSpaceManager.GetNetworkSpaces().Len(), 1)
+	connect.AssertEqual(t, networkSpaceManager.GetNetworkSpaces().Get(0) == networkSpace, true)
+	connect.AssertEqual(t, networkSpaceManager.GetActiveNetworkSpace() == networkSpace, true)
 
 	networkSpaceManager.Close()
 
 	networkSpaceManager2 := NewNetworkSpaceManager(storagePath)
-	assert.Equal(t, networkSpaceManager2.GetNetworkSpaces().Len(), 1)
+	connect.AssertEqual(t, networkSpaceManager2.GetNetworkSpaces().Len(), 1)
 	networkSpace = networkSpaceManager2.GetNetworkSpaces().Get(0)
-	assert.Equal(t, networkSpaceManager2.GetActiveNetworkSpace() == networkSpace, true)
+	connect.AssertEqual(t, networkSpaceManager2.GetActiveNetworkSpace() == networkSpace, true)
 
 	networkSpace2 := networkSpaceManager2.updateNetworkSpace(
 		NewNetworkSpaceKey("bringyour.com", "main"),
@@ -56,20 +56,20 @@ func TestNetworkSpaceManager(t *testing.T) {
 		networkSpaceManager2.GetNetworkSpace(NewNetworkSpaceKey("ur.network", "main")):    true,
 		networkSpaceManager2.GetNetworkSpace(NewNetworkSpaceKey("bringyour.com", "main")): true,
 	}
-	assert.Equal(t, m1, m2)
-	assert.Equal(t, networkSpaceManager2.GetActiveNetworkSpace() == networkSpace, true)
+	connect.AssertEqual(t, m1, m2)
+	connect.AssertEqual(t, networkSpaceManager2.GetActiveNetworkSpace() == networkSpace, true)
 	networkSpaceManager2.SetActiveNetworkSpace(networkSpace2)
-	assert.Equal(t, networkSpaceManager2.GetActiveNetworkSpace() == networkSpace2, true)
+	connect.AssertEqual(t, networkSpaceManager2.GetActiveNetworkSpace() == networkSpace2, true)
 	networkSpaceManager2.Close()
 
 	networkSpaceManager3 := NewNetworkSpaceManager(storagePath)
-	assert.Equal(t, networkSpaceManager3.GetNetworkSpaces().Len(), 2)
+	connect.AssertEqual(t, networkSpaceManager3.GetNetworkSpaces().Len(), 2)
 	networkSpaces3 := []*NetworkSpace{}
 	networkSpaces3List := networkSpaceManager3.GetNetworkSpaces()
 	for i := 0; i < networkSpaces3List.Len(); i += 1 {
 		networkSpaces3 = append(networkSpaces3, networkSpaces3List.Get(i))
 	}
-	assert.Equal(t, slices.Contains(networkSpaces3, networkSpaceManager3.GetActiveNetworkSpace()), true)
+	connect.AssertEqual(t, slices.Contains(networkSpaces3, networkSpaceManager3.GetActiveNetworkSpace()), true)
 
 	networkSpace3 := networkSpaceManager3.updateNetworkSpace(
 		NewNetworkSpaceKey("ur.io", "main"),
@@ -86,21 +86,21 @@ func TestNetworkSpaceManager(t *testing.T) {
 		networkSpaceManager3.GetNetworkSpace(NewNetworkSpaceKey("bringyour.com", "main")): true,
 		networkSpaceManager3.GetNetworkSpace(NewNetworkSpaceKey("ur.io", "main")):         true,
 	}
-	assert.Equal(t, m1, m2)
+	connect.AssertEqual(t, m1, m2)
 	networkSpaceManager3.SetActiveNetworkSpace(networkSpace3)
-	assert.Equal(t, networkSpaceManager3.GetActiveNetworkSpace() == networkSpace3, true)
+	connect.AssertEqual(t, networkSpaceManager3.GetActiveNetworkSpace() == networkSpace3, true)
 
 	networkSpaceManager3.RemoveNetworkSpace(networkSpaceManager3.GetNetworkSpace(NewNetworkSpaceKey("ur.network", "main")))
-	assert.Equal(t, networkSpaceManager3.GetNetworkSpaces().Len(), 2)
+	connect.AssertEqual(t, networkSpaceManager3.GetNetworkSpaces().Len(), 2)
 	networkSpaceManager3.RemoveNetworkSpace(networkSpaceManager3.GetNetworkSpace(NewNetworkSpaceKey("bringyour.com", "main")))
-	assert.Equal(t, networkSpaceManager3.GetNetworkSpaces().Len(), 1)
+	connect.AssertEqual(t, networkSpaceManager3.GetNetworkSpaces().Len(), 1)
 	// cannot remove active network space
 	networkSpaceManager3.RemoveNetworkSpace(networkSpaceManager3.GetNetworkSpace(NewNetworkSpaceKey("ur.io", "main")))
-	assert.Equal(t, networkSpaceManager3.GetNetworkSpaces().Len(), 1)
+	connect.AssertEqual(t, networkSpaceManager3.GetNetworkSpaces().Len(), 1)
 
 	networkSpaceManager3.SetActiveNetworkSpace(nil)
 	networkSpaceManager3.RemoveNetworkSpace(networkSpaceManager3.GetNetworkSpace(NewNetworkSpaceKey("ur.io", "main")))
-	assert.Equal(t, networkSpaceManager3.GetNetworkSpaces().Len(), 0)
+	connect.AssertEqual(t, networkSpaceManager3.GetNetworkSpaces().Len(), 0)
 
 	networkSpaceManager3.Close()
 }
@@ -114,8 +114,8 @@ func TestNetworkSpaceUrlResolution(t *testing.T) {
 		NetworkSpaceValues{},
 		"",
 	)
-	assert.Equal(t, networkSpace.GetApiUrl(), "https://api.ur.network")
-	assert.Equal(t, networkSpace.GetPlatformUrl(), "wss://connect.ur.network")
+	connect.AssertEqual(t, networkSpace.GetApiUrl(), "https://api.ur.network")
+	connect.AssertEqual(t, networkSpace.GetPlatformUrl(), "wss://connect.ur.network")
 	networkSpace.close()
 
 	secretNetworkSpace := newNetworkSpace(
@@ -124,8 +124,8 @@ func TestNetworkSpaceUrlResolution(t *testing.T) {
 		NetworkSpaceValues{EnvSecret: "secret"},
 		"",
 	)
-	assert.Equal(t, secretNetworkSpace.GetApiUrl(), "https://beta-api.example.com/secret")
-	assert.Equal(t, secretNetworkSpace.GetPlatformUrl(), "wss://beta-connect.example.com/secret")
+	connect.AssertEqual(t, secretNetworkSpace.GetApiUrl(), "https://beta-api.example.com/secret")
+	connect.AssertEqual(t, secretNetworkSpace.GetPlatformUrl(), "wss://beta-connect.example.com/secret")
 	secretNetworkSpace.close()
 
 	migratedNetworkSpace := newNetworkSpace(
@@ -134,8 +134,8 @@ func TestNetworkSpaceUrlResolution(t *testing.T) {
 		NetworkSpaceValues{MigrationHostName: "bringyour.com"},
 		"",
 	)
-	assert.Equal(t, migratedNetworkSpace.GetApiUrl(), "https://api.bringyour.com")
-	assert.Equal(t, migratedNetworkSpace.GetPlatformUrl(), "wss://connect.bringyour.com")
+	connect.AssertEqual(t, migratedNetworkSpace.GetApiUrl(), "https://api.bringyour.com")
+	connect.AssertEqual(t, migratedNetworkSpace.GetPlatformUrl(), "wss://connect.bringyour.com")
 	migratedNetworkSpace.close()
 
 	overrideNetworkSpace := newNetworkSpace(
@@ -147,16 +147,16 @@ func TestNetworkSpaceUrlResolution(t *testing.T) {
 		},
 		"",
 	)
-	assert.Equal(t, overrideNetworkSpace.GetApiUrl(), "http://api.custom.test:8080")
-	assert.Equal(t, overrideNetworkSpace.GetPlatformUrl(), "ws://connect.custom.test:5080")
-	assert.Equal(t, overrideNetworkSpace.GetConfiguredApiUrl(), "http://api.custom.test:8080/")
-	assert.Equal(t, overrideNetworkSpace.GetConfiguredPlatformUrl(), "ws://connect.custom.test:5080/")
+	connect.AssertEqual(t, overrideNetworkSpace.GetApiUrl(), "http://api.custom.test:8080")
+	connect.AssertEqual(t, overrideNetworkSpace.GetPlatformUrl(), "ws://connect.custom.test:5080")
+	connect.AssertEqual(t, overrideNetworkSpace.GetConfiguredApiUrl(), "http://api.custom.test:8080/")
+	connect.AssertEqual(t, overrideNetworkSpace.GetConfiguredPlatformUrl(), "ws://connect.custom.test:5080/")
 	overrideNetworkSpace.close()
 }
 
 func TestNetworkSpaceManagerHostSpecificStoragePath(t *testing.T) {
 	storagePath, err := os.MkdirTemp("", "test_network_space_manager_host_storage")
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	networkSpaceManager := NewNetworkSpaceManager(storagePath)
 	defer networkSpaceManager.Close()
@@ -170,8 +170,8 @@ func TestNetworkSpaceManagerHostSpecificStoragePath(t *testing.T) {
 		func(values *NetworkSpaceValues) {},
 	)
 
-	assert.Equal(t, firstNetworkSpace.storagePath, filepath.Join(storagePath, "network_spaces", "ur.network", "main"))
-	assert.Equal(t, secondNetworkSpace.storagePath, filepath.Join(storagePath, "network_spaces", "custom.example.com_8443", "main"))
+	connect.AssertEqual(t, firstNetworkSpace.storagePath, filepath.Join(storagePath, "network_spaces", "ur.network", "main"))
+	connect.AssertEqual(t, secondNetworkSpace.storagePath, filepath.Join(storagePath, "network_spaces", "custom.example.com_8443", "main"))
 	if firstNetworkSpace.storagePath == secondNetworkSpace.storagePath {
 		t.Fatalf("expected network spaces with different hosts to use different storage paths")
 	}
@@ -179,14 +179,14 @@ func TestNetworkSpaceManagerHostSpecificStoragePath(t *testing.T) {
 
 func TestNetworkSpaceManagerMigratesLegacyEnvOnlyStoragePath(t *testing.T) {
 	storagePath, err := os.MkdirTemp("", "test_network_space_manager_legacy_migration")
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	// simulate a pre-existing install that predates host-scoped storage:
 	// `network_spaces/<env>` with some local state file already in it.
 	legacyEnvStoragePath := filepath.Join(storagePath, "network_spaces", "main")
-	assert.Equal(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageFilePermissions), nil)
+	connect.AssertEqual(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageFilePermissions), nil)
 	legacyMarkerPath := filepath.Join(legacyEnvStoragePath, "legacy_marker")
-	assert.Equal(t, os.WriteFile(legacyMarkerPath, []byte("legacy state"), LocalStorageFilePermissions), nil)
+	connect.AssertEqual(t, os.WriteFile(legacyMarkerPath, []byte("legacy state"), LocalStorageFilePermissions), nil)
 
 	networkSpaceManager := NewNetworkSpaceManager(storagePath)
 	defer networkSpaceManager.Close()
@@ -197,12 +197,12 @@ func TestNetworkSpaceManagerMigratesLegacyEnvOnlyStoragePath(t *testing.T) {
 	)
 
 	expectedStoragePath := filepath.Join(storagePath, "network_spaces", "ur.network", "main")
-	assert.Equal(t, networkSpace.storagePath, expectedStoragePath)
+	connect.AssertEqual(t, networkSpace.storagePath, expectedStoragePath)
 
 	migratedMarkerPath := filepath.Join(expectedStoragePath, "legacy_marker")
 	migratedContents, err := os.ReadFile(migratedMarkerPath)
-	assert.Equal(t, err, nil)
-	assert.Equal(t, string(migratedContents), "legacy state")
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, string(migratedContents), "legacy state")
 
 	if _, err := os.Stat(legacyEnvStoragePath); !os.IsNotExist(err) {
 		t.Fatalf("expected legacy env-only storage path to be moved, not left behind")

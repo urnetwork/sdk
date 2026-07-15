@@ -23,7 +23,6 @@ import (
 
 	"github.com/urnetwork/glog"
 
-	"github.com/btcsuite/btcutil/base58"
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 	"golang.org/x/crypto/nacl/box"
@@ -651,11 +650,11 @@ type WindowSizeSettings struct {
  */
 
 func EncodeBase58(data []byte) string {
-	return base58.Encode(data)
+	return base58Encode(data)
 }
 
 func DecodeBase58(data string) ([]byte, error) {
-	result := base58.Decode(data)
+	result := base58Decode(data)
 	if len(result) == 0 {
 		err := fmt.Errorf("DecodeBase58 error: invalid base58 string")
 		glog.Errorf("DecodeBase58 error: %v", err)
@@ -667,8 +666,8 @@ func DecodeBase58(data string) ([]byte, error) {
 }
 
 func EncryptData(data []byte, nonceBase58, sharedSecretBase58 string) (string, error) {
-	nonce := base58.Decode(nonceBase58)
-	sharedSecret := base58.Decode(sharedSecretBase58)
+	nonce := base58Decode(nonceBase58)
+	sharedSecret := base58Decode(sharedSecretBase58)
 
 	if len(nonce) != 24 {
 		return "", fmt.Errorf("invalid nonce length")
@@ -687,7 +686,7 @@ func EncryptData(data []byte, nonceBase58, sharedSecretBase58 string) (string, e
 	encrypted := box.SealAfterPrecomputation(nil, data, &n, &k)
 
 	// Return base58 encoded encrypted data
-	return base58.Encode(encrypted), nil
+	return base58Encode(encrypted), nil
 }
 
 func GenerateNonce() string {
@@ -701,13 +700,13 @@ func GenerateNonce() string {
 		panic(err)
 	}
 
-	return base58.Encode(nonce[:])
+	return base58Encode(nonce[:])
 }
 
 func DecryptData(encryptedDataBase58, nonceBase58, sharedSecretBase58 string) ([]byte, error) {
-	encryptedData := base58.Decode(encryptedDataBase58)
-	nonce := base58.Decode(nonceBase58)
-	sharedSecret := base58.Decode(sharedSecretBase58)
+	encryptedData := base58Decode(encryptedDataBase58)
+	nonce := base58Decode(nonceBase58)
+	sharedSecret := base58Decode(sharedSecretBase58)
 
 	if len(nonce) != 24 {
 		return nil, fmt.Errorf("invalid nonce length")
@@ -761,7 +760,7 @@ func GenerateWalletKeyPair() (*WalletKeyPair, error) {
 		return nil, err
 	}
 	return &WalletKeyPair{
-		PrivateKeyBase58: base58.Encode(privateKey[:]),
-		PublicKeyBase58:  base58.Encode(publicKey[:]),
+		PrivateKeyBase58: base58Encode(privateKey[:]),
+		PublicKeyBase58:  base58Encode(publicKey[:]),
 	}, nil
 }

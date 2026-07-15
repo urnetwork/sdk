@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/go-playground/assert/v2"
+	"github.com/urnetwork/connect"
 )
 
 // TestDeviceRpcUrl covers deviceRpcUrl, which normalizes a proxy host into the
@@ -32,17 +32,17 @@ func TestDeviceRpcUrl(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s, err := deviceRpcUrl(c.in, signed)
-			assert.Equal(t, err, nil)
+			connect.AssertEqual(t, err, nil)
 
 			u, err := url.Parse(s)
-			assert.Equal(t, err, nil)
-			assert.Equal(t, u.Scheme, c.scheme)
-			assert.Equal(t, u.Host, c.host)
+			connect.AssertEqual(t, err, nil)
+			connect.AssertEqual(t, u.Scheme, c.scheme)
+			connect.AssertEqual(t, u.Host, c.host)
 			// the path is always /device-rpc
-			assert.Equal(t, u.Path, "/device-rpc")
+			connect.AssertEqual(t, u.Path, "/device-rpc")
 			// the signed proxy id round-trips through the query encoding intact,
 			// including the base64 specials
-			assert.Equal(t, u.Query().Get("proxy"), signed)
+			connect.AssertEqual(t, u.Query().Get("proxy"), signed)
 		})
 	}
 }

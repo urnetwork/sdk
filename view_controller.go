@@ -39,6 +39,8 @@ type ViewControllerManager interface {
 
 	OpenContractViewController() *ContractViewController
 
+	OpenContractDetailsViewController() *ContractDetailsViewController
+
 	CloseViewController(vc ViewController)
 
 	Close()
@@ -154,6 +156,12 @@ func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionV
 
 func (self *viewControllerManager) OpenContractViewController() *ContractViewController {
 	vc := newContractViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenContractDetailsViewController() *ContractDetailsViewController {
+	vc := newContractDetailsViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -144,19 +142,19 @@ func TestDeviceTokenManagerRefreshSemantics(t *testing.T) {
 
 			loggedOut, err := manager.refreshToken()
 
-			assert.Equal(t, loggedOut, c.expectLogout)
+			connect.AssertEqual(t, loggedOut, c.expectLogout)
 			if c.expectLogout {
-				assert.Equal(t, logoutCount, 1)
-				assert.Equal(t, err, nil)
+				connect.AssertEqual(t, logoutCount, 1)
+				connect.AssertEqual(t, err, nil)
 			} else {
-				assert.Equal(t, logoutCount, 0)
+				connect.AssertEqual(t, logoutCount, 0)
 			}
 			if c.expectErr {
-				assert.NotEqual(t, err, nil)
+				connect.AssertNotEqual(t, err, nil)
 			}
-			assert.Equal(t, refreshedJwt, c.expectJwt)
+			connect.AssertEqual(t, refreshedJwt, c.expectJwt)
 			if c.expectJwt != "" {
-				assert.Equal(t, err, nil)
+				connect.AssertEqual(t, err, nil)
 			}
 		}()
 	}
@@ -197,9 +195,9 @@ func TestDeviceTokenManagerRefreshOffline(t *testing.T) {
 	}()
 
 	loggedOut, err := manager.refreshToken()
-	assert.Equal(t, loggedOut, false)
-	assert.NotEqual(t, err, nil)
-	assert.Equal(t, logoutCount, 0)
+	connect.AssertEqual(t, loggedOut, false)
+	connect.AssertNotEqual(t, err, nil)
+	connect.AssertEqual(t, logoutCount, 0)
 }
 
 // the run loop validates the stored jwt immediately at start, and a confirmed
@@ -241,11 +239,11 @@ func TestDeviceTokenManagerRunLogsOutOnceAtStart(t *testing.T) {
 	for logoutCount.Load() == 0 && time.Now().Before(endTime) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	assert.Equal(t, logoutCount.Load(), int64(1))
+	connect.AssertEqual(t, logoutCount.Load(), int64(1))
 
 	// the loop stopped: no further refresh attempts
 	settledRequestCount := requestCount.Load()
 	time.Sleep(300 * time.Millisecond)
-	assert.Equal(t, requestCount.Load(), settledRequestCount)
-	assert.Equal(t, logoutCount.Load(), int64(1))
+	connect.AssertEqual(t, requestCount.Load(), settledRequestCount)
+	connect.AssertEqual(t, logoutCount.Load(), int64(1))
 }

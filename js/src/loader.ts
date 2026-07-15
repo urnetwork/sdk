@@ -4,6 +4,7 @@ declare global {
   interface Window {
     Go: any;
     URnetworkNewProxyDeviceWithDefaults: any;
+    URnetworkNewPlatformDeviceRemote: any;
     URnetworkClose: any;
   }
 }
@@ -11,13 +12,26 @@ declare global {
 let wasmInitialized = false;
 let wasmInitPromise: Promise<void> | null = null;
 
+// Resolve a packaged artifact relative to this module AT RUNTIME.
+//
+// The specifier is computed rather than a static literal on purpose. A literal
+// `new URL("../wasm/sdk.wasm", import.meta.url)` makes bundlers (vite/rollup)
+// statically emit the ~40 MB wasm as a bundle asset — even for consumers that
+// pass explicit wasmUrl/wasmExecUrl, and even for consumers that never call
+// init() at all (the browser extension was shipping ~19 MB of wasm it never
+// loads for exactly this reason). Runtime resolution is unchanged; consumers who
+// want a bundler-managed URL should pass wasmUrl/wasmExecUrl explicitly.
+function packagedUrl(name: string): string {
+  const rel = `../wasm/${name}`;
+  return new URL(rel, import.meta.url).href;
+}
+
 async function loadWasmExec(url?: string): Promise<void> {
   if (typeof window.Go !== "undefined") {
     return;
   }
 
-  const wasmExecUrl =
-    url || new URL("../wasm/wasm_exec.js", import.meta.url).href;
+  const wasmExecUrl = url || packagedUrl("wasm_exec.js");
 
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
@@ -67,8 +81,7 @@ export async function initWasm(options: InitOptions = {}): Promise<void> {
     try {
       await loadWasmExec(options.wasmExecUrl);
       const go = new window.Go();
-      const wasmUrl =
-        options.wasmUrl || new URL("../wasm/sdk.wasm", import.meta.url).href;
+      const wasmUrl = options.wasmUrl || packagedUrl("sdk.wasm");
       const wasmInstance = await instantiateWasm(wasmUrl, go);
       go.run(wasmInstance);
       wasmInitialized = true;
@@ -93,6 +106,9 @@ export function getWasmGlobals() {
   return {
     URnetworkNewProxyDeviceWithDefaults:
       window.URnetworkNewProxyDeviceWithDefaults,
+    // the DeviceRemote binding (sdk/js/device_remote.go) — a client's handle on
+    // a hosted DeviceLocal, reached over the proxy host's device-rpc websocket
+    URnetworkNewPlatformDeviceRemote: window.URnetworkNewPlatformDeviceRemote,
     URnetworkClose: window.URnetworkClose,
   };
 }

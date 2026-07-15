@@ -263,6 +263,22 @@ path     |   | path
 	  ⌄   |
 	companion contract
 */
+// Contract lifecycle status carried on ContractDetails.Status.
+//
+// A contract is Open while active. When it closes it is reported ONE more time
+// with Closed -- a one-shot tombstone -- so the UI can animate it leaving, then
+// it is evicted. An atomic replacement (a renewed contract taking over the same
+// transfer path) is not a separate close+open that would make the UI bounce:
+// the incoming contract is Open with ReplacesContractId set to the contract it
+// superseded, and the superseded contract is dropped without its own Closed
+// tombstone (its close is implied by the replacement). A plain close is just a
+// replacement by nothing (A -> nil); a plain open is a replacement of nothing
+// (nil -> B).
+const (
+	ContractStatusOpen   = "open"
+	ContractStatusClosed = "closed"
+)
+
 type ContractDetails struct {
 	ContractId            *Id
 	ContractUsedByteCount ByteCount
@@ -275,6 +291,14 @@ type ContractDetails struct {
 	CompanionContractByteCount     ByteCount
 	CompanionContractBitRate       int
 	CompanionContractTransferPath  *TransferPath
+
+	// ContractStatusOpen or ContractStatusClosed. Closed appears once (a
+	// tombstone) then the contract is evicted.
+	Status string
+	// set on an Open contract that atomically replaced another on the same
+	// transfer path (a renewal): the id of the contract it superseded, so the UI
+	// ejects the old and fades in the new as one transition. nil for a fresh open.
+	ReplacesContractId *Id
 }
 
 type WindowStatus struct {

@@ -5,7 +5,6 @@ import (
 	"runtime/debug"
 	"testing"
 
-	"github.com/go-playground/assert/v2"
 	"github.com/urnetwork/connect"
 )
 
@@ -18,11 +17,11 @@ func TestDeviceLocalSettingsMemoryScaled(t *testing.T) {
 
 	settings := DefaultDeviceLocalSettings()
 	// 24/64 of the unscaled 256
-	assert.Equal(t, settings.SequenceBufferSize, 96)
-	assert.Equal(t, settings.ClientSettings.SendBufferSize, 96)
-	assert.Equal(t, settings.ClientSettings.SendBufferSettings.SequenceBufferSize, 96)
+	connect.AssertEqual(t, settings.SequenceBufferSize, 96)
+	connect.AssertEqual(t, settings.ClientSettings.SendBufferSize, 96)
+	connect.AssertEqual(t, settings.ClientSettings.SendBufferSettings.SequenceBufferSize, 96)
 	// 24/64 of the unscaled 2 MiB resend queue cap
-	assert.Equal(t, settings.ClientSettings.SendBufferSettings.ResendQueueMaxByteCount, connect.ByteCount(768*1024))
+	connect.AssertEqual(t, settings.ClientSettings.SendBufferSettings.ResendQueueMaxByteCount, connect.ByteCount(768*1024))
 
 	// the device creates a shared transfer queue budget pair, scaled:
 	// 24/64 of the unscaled 6 MiB send / 8 MiB receive pools
@@ -31,8 +30,8 @@ func TestDeviceLocalSettingsMemoryScaled(t *testing.T) {
 	if sendBudget == nil || receiveBudget == nil {
 		t.Fatalf("expected device transfer queue budgets to be set")
 	}
-	assert.Equal(t, sendBudget.TotalByteCount(), connect.ByteCount(2304*1024))
-	assert.Equal(t, receiveBudget.TotalByteCount(), connect.ByteCount(3*1024*1024))
+	connect.AssertEqual(t, sendBudget.TotalByteCount(), connect.ByteCount(2304*1024))
+	connect.AssertEqual(t, receiveBudget.TotalByteCount(), connect.ByteCount(3*1024*1024))
 	// floor below the borrow cap
 	if settings.ClientSettings.SendBufferSettings.ResendQueueMaxByteCount < settings.ClientSettings.SendBufferSettings.ResendQueueMinByteCount {
 		t.Errorf("send floor above the borrow cap")
@@ -47,8 +46,8 @@ func TestDeviceLocalSettingsMemoryScaled(t *testing.T) {
 	// no budget leaves the defaults unscaled
 	connect.SetMemoryBudget(0)
 	settings = DefaultDeviceLocalSettings()
-	assert.Equal(t, settings.SequenceBufferSize, 256)
-	assert.Equal(t, settings.ClientSettings.SendBufferSettings.ResendQueueBudget.TotalByteCount(), connect.ByteCount(6*1024*1024))
+	connect.AssertEqual(t, settings.SequenceBufferSize, 256)
+	connect.AssertEqual(t, settings.ClientSettings.SendBufferSettings.ResendQueueBudget.TotalByteCount(), connect.ByteCount(6*1024*1024))
 }
 
 // TestDeviceLocalMemoryCeiling drives the loopback echo load with the sdk
@@ -86,7 +85,7 @@ func TestDeviceLocalMemoryCeiling(t *testing.T) {
 	// scaled defaults
 	device, tun, teardown := newLoopbackDeviceEnv(t, ctx, networkSpace, byJwt)
 	defer teardown()
-	assert.Equal(t, device.settings.SequenceBufferSize, 96)
+	connect.AssertEqual(t, device.settings.SequenceBufferSize, 96)
 
 	// move real traffic under the budget
 	const (
@@ -109,7 +108,7 @@ func TestDeviceLocalMemoryCeiling(t *testing.T) {
 		stats.PoolTakenCount, stats.PoolReturnedCount, stats.PoolCreatedCount)
 
 	// the telemetry reads sanely
-	assert.Equal(t, stats.MemoryLimitByteCount, ByteCount(budgetByteCount))
+	connect.AssertEqual(t, stats.MemoryLimitByteCount, ByteCount(budgetByteCount))
 	if stats.HeapLiveByteCount <= 0 {
 		t.Errorf("heap live gauge not populated")
 	}

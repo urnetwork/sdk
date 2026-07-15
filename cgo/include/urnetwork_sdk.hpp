@@ -118,6 +118,8 @@ protected:
 inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
+inline constexpr const char* ContractStatusClosed = "closed";
+inline constexpr const char* ContractStatusOpen = "open";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcWsBinary = 2;
 inline constexpr int64_t DeviceRpcWsPing = 9;
@@ -168,6 +170,7 @@ class AsyncLocalState;
 class BlockActionViewController;
 class ConnectGrid;
 class ConnectViewController;
+class ContractDetailsViewController;
 class ContractViewController;
 class DeviceLocal;
 class DeviceLocalKeyMaterial;
@@ -183,6 +186,7 @@ class NetworkNameValidationViewController;
 class NetworkSpace;
 class NetworkSpaceManager;
 class NetworkUserViewController;
+class PeerViewController;
 class ProvideViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
@@ -248,6 +252,7 @@ struct BlockedLocation;
 struct ByJwt;
 struct CircleUserToken;
 struct CircleWalletInfo;
+struct ContractClientRow;
 struct TransferPath;
 struct ContractDetails;
 struct ContractStats;
@@ -419,6 +424,7 @@ using BlockActionList = std::vector<BlockAction>;
 using BlockActionOverrideList = std::vector<BlockActionOverride>;
 using BlockedLocationsList = std::vector<BlockedLocation>;
 using ConnectLocationList = std::vector<ConnectLocation>;
+using ContractClientRowList = std::vector<ContractClientRow>;
 using ContractDetailsList = std::vector<ContractDetails>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
@@ -795,6 +801,20 @@ struct CircleWalletInfo {
 	int64_t balance_usdc_nano_cents{};
 };
 
+struct ContractClientRow {
+	std::string ClientId{};
+	std::string ContractId{};
+	std::string CompanionContractId{};
+	int64_t ContractUsedByteCount{};
+	int64_t ContractByteCount{};
+	int64_t ContractBitRate{};
+	int64_t CompanionContractUsedByteCount{};
+	int64_t CompanionContractByteCount{};
+	int64_t CompanionContractBitRate{};
+	int64_t PairCount{};
+	bool Closing{};
+};
+
 struct TransferPath {
 	std::optional<std::string> SourceId;
 	std::optional<std::string> DestinationId;
@@ -812,6 +832,8 @@ struct ContractDetails {
 	int64_t CompanionContractByteCount{};
 	int64_t CompanionContractBitRate{};
 	std::optional<TransferPath> CompanionContractTransferPath;
+	std::string Status{};
+	std::optional<std::string> ReplacesContractId;
 };
 
 struct ContractStats {
@@ -1846,6 +1868,8 @@ inline void to_json(nlohmann::json& j, const CircleUserToken& v);
 inline void from_json(const nlohmann::json& j, CircleUserToken& v);
 inline void to_json(nlohmann::json& j, const CircleWalletInfo& v);
 inline void from_json(const nlohmann::json& j, CircleWalletInfo& v);
+inline void to_json(nlohmann::json& j, const ContractClientRow& v);
+inline void from_json(const nlohmann::json& j, ContractClientRow& v);
 inline void to_json(nlohmann::json& j, const TransferPath& v);
 inline void from_json(const nlohmann::json& j, TransferPath& v);
 inline void to_json(nlohmann::json& j, const ContractDetails& v);
@@ -3897,6 +3921,59 @@ inline void from_json(const nlohmann::json& j, CircleWalletInfo& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ContractClientRow& v) {
+	j = nlohmann::json::object();
+	j["ClientId"] = v.ClientId;
+	j["ContractId"] = v.ContractId;
+	j["CompanionContractId"] = v.CompanionContractId;
+	j["ContractUsedByteCount"] = v.ContractUsedByteCount;
+	j["ContractByteCount"] = v.ContractByteCount;
+	j["ContractBitRate"] = v.ContractBitRate;
+	j["CompanionContractUsedByteCount"] = v.CompanionContractUsedByteCount;
+	j["CompanionContractByteCount"] = v.CompanionContractByteCount;
+	j["CompanionContractBitRate"] = v.CompanionContractBitRate;
+	j["PairCount"] = v.PairCount;
+	j["Closing"] = v.Closing;
+}
+inline void from_json(const nlohmann::json& j, ContractClientRow& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientId);
+	}
+	if (auto it = j.find("ContractId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractId);
+	}
+	if (auto it = j.find("CompanionContractId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractId);
+	}
+	if (auto it = j.find("ContractUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractUsedByteCount);
+	}
+	if (auto it = j.find("ContractByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractByteCount);
+	}
+	if (auto it = j.find("ContractBitRate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractBitRate);
+	}
+	if (auto it = j.find("CompanionContractUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractUsedByteCount);
+	}
+	if (auto it = j.find("CompanionContractByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractByteCount);
+	}
+	if (auto it = j.find("CompanionContractBitRate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractBitRate);
+	}
+	if (auto it = j.find("PairCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PairCount);
+	}
+	if (auto it = j.find("Closing"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Closing);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const TransferPath& v) {
 	j = nlohmann::json::object();
 	if (v.SourceId) {
@@ -3950,6 +4027,10 @@ inline void to_json(nlohmann::json& j, const ContractDetails& v) {
 	if (v.CompanionContractTransferPath) {
 		j["CompanionContractTransferPath"] = *v.CompanionContractTransferPath;
 	}
+	j["Status"] = v.Status;
+	if (v.ReplacesContractId) {
+		j["ReplacesContractId"] = *v.ReplacesContractId;
+	}
 }
 inline void from_json(const nlohmann::json& j, ContractDetails& v) {
 	if (!j.is_object()) {
@@ -3992,6 +4073,14 @@ inline void from_json(const nlohmann::json& j, ContractDetails& v) {
 		TransferPath tmp{};
 		it->get_to(tmp);
 		v.CompanionContractTransferPath = std::move(tmp);
+	}
+	if (auto it = j.find("Status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Status);
+	}
+	if (auto it = j.find("ReplacesContractId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ReplacesContractId = std::move(tmp);
 	}
 }
 
@@ -8140,6 +8229,7 @@ using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using ConnectionStatusListener = std::function<void()>;
 using ContractDetailsChangeListener = std::function<void(std::optional<ContractDetails> contract_details)>;
+using ContractRowsListener = std::function<void()>;
 using ContractStatsChangeListener = std::function<void(std::optional<ContractStats> contract_stats)>;
 using ContractStatusChangeListener = std::function<void(std::optional<ContractStatus> contract_status)>;
 using CreateAccountWalletCallback = std::function<void(std::optional<CreateAccountWalletResult> result, std::optional<std::string> err_param)>;
@@ -8197,6 +8287,7 @@ using PacketStatsChangeListener = std::function<void(std::optional<PacketStats> 
 using ParseByJwtCallback = std::function<void(std::optional<ByJwt> result, bool ok_param)>;
 using PaymentsListener = std::function<void()>;
 using PayoutWalletListener = std::function<void(std::string p0)>;
+using PeersListener = std::function<void(std::optional<NetworkPeerList> peers)>;
 using PerformanceProfileChangeListener = std::function<void(std::optional<PerformanceProfile> performance_profile)>;
 using ProvideChangeListener = std::function<void(bool provide_enabled)>;
 using ProvideControlModeChangeListener = std::function<void(std::string provide_control_mode)>;
@@ -8421,7 +8512,7 @@ public:
 	void authPasswordReset(const std::optional<AuthPasswordResetArgs>& auth_password_reset, AuthPasswordResetCallback callback) const;
 	void authVerify(const std::optional<AuthVerifyArgs>& auth_verify, AuthVerifyCallback callback) const;
 	void authVerifySend(const std::optional<AuthVerifySendArgs>& auth_verify_send, AuthVerifySendCallback callback) const;
-	void authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& args, AuthWalletChallengeCallback callback) const;
+	void authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& auth_wallet_challenge, AuthWalletChallengeCallback callback) const;
 	void close() const;
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
@@ -8547,6 +8638,18 @@ public:
 	void stop() const;
 };
 
+class ContractDetailsViewController final : public detail::Handle {
+public:
+	ContractDetailsViewController() = default;
+	explicit ContractDetailsViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addContractRowsListener(ContractRowsListener listener) const;
+	void close() const;
+	std::optional<ContractClientRowList> getClientContractRows() const;
+	std::optional<ContractClientRowList> getProviderContractRows() const;
+	void start() const;
+	void stop() const;
+};
+
 class ContractViewController final : public detail::Handle {
 public:
 	ContractViewController() = default;
@@ -8576,11 +8679,13 @@ public:
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
 	ConnectViewController openConnectViewController() const;
+	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
+	PeerViewController openPeerViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -8621,11 +8726,13 @@ public:
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
 	ConnectViewController openConnectViewController() const;
+	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
+	PeerViewController openPeerViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -8833,6 +8940,18 @@ public:
 	void start() const;
 	void stop() const;
 	void updateNetworkUser(const std::string& network_name) const;
+};
+
+class PeerViewController final : public detail::Handle {
+public:
+	PeerViewController() = default;
+	explicit PeerViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addPeersListener(PeersListener listener) const;
+	void close() const;
+	int64_t getPeerCount() const;
+	std::optional<NetworkPeerList> getPeers() const;
+	void start() const;
+	void stop() const;
 };
 
 class ProvideViewController final : public detail::Handle {
@@ -9731,6 +9850,26 @@ inline void oneshot_contract_details_change(void* user_data, const char* contrac
 			contract_details_v = parseJson<ContractDetails>(contract_details_json);
 		}
 		(*f)(std::move(contract_details_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_contract_rows(void* user_data) {
+	auto* f = static_cast<ContractRowsListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_contract_rows(void* user_data) {
+	auto* f = static_cast<ContractRowsListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -11421,6 +11560,34 @@ inline void oneshot_payout_wallet(void* user_data, const char* p0) {
 	auto* f = static_cast<PayoutWalletListener*>(user_data);
 	try {
 		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_peers(void* user_data, const char* peers_json) {
+	auto* f = static_cast<PeersListener*>(user_data);
+	try {
+		std::optional<NetworkPeerList> peers_v;
+		if (peers_json) {
+			peers_v = parseJson<NetworkPeerList>(peers_json);
+		}
+		(*f)(std::move(peers_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_peers(void* user_data, const char* peers_json) {
+	auto* f = static_cast<PeersListener*>(user_data);
+	try {
+		std::optional<NetworkPeerList> peers_v;
+		if (peers_json) {
+			peers_v = parseJson<NetworkPeerList>(peers_json);
+		}
+		(*f)(std::move(peers_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -13687,15 +13854,15 @@ inline void Api::authVerifySend(const std::optional<AuthVerifySendArgs>& auth_ve
 	auto* callback_fn = callback ? new AuthVerifySendCallback(std::move(callback)) : nullptr;
 	urnet_api_auth_verify_send(handle(), auth_verify_send_c, callback_fn ? &detail::oneshot_auth_verify_send : nullptr, callback_fn);
 }
-inline void Api::authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& args, AuthWalletChallengeCallback callback) const {
-	std::string args_json;
-	const char* args_c = nullptr;
-	if (args) {
-		args_json = nlohmann::json(*args).dump();
-		args_c = args_json.c_str();
+inline void Api::authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& auth_wallet_challenge, AuthWalletChallengeCallback callback) const {
+	std::string auth_wallet_challenge_json;
+	const char* auth_wallet_challenge_c = nullptr;
+	if (auth_wallet_challenge) {
+		auth_wallet_challenge_json = nlohmann::json(*auth_wallet_challenge).dump();
+		auth_wallet_challenge_c = auth_wallet_challenge_json.c_str();
 	}
 	auto* callback_fn = callback ? new AuthWalletChallengeCallback(std::move(callback)) : nullptr;
-	urnet_api_auth_wallet_challenge(handle(), args_c, callback_fn ? &detail::oneshot_auth_wallet_challenge : nullptr, callback_fn);
+	urnet_api_auth_wallet_challenge(handle(), auth_wallet_challenge_c, callback_fn ? &detail::oneshot_auth_wallet_challenge : nullptr, callback_fn);
 }
 inline void Api::close() const {
 	urnet_api_close(handle());
@@ -14360,6 +14527,42 @@ inline void ConnectViewController::start() const {
 inline void ConnectViewController::stop() const {
 	urnet_connect_view_controller_stop(handle());
 }
+inline Sub ContractDetailsViewController::addContractRowsListener(ContractRowsListener listener) const {
+	std::shared_ptr<ContractRowsListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ContractRowsListener>(std::move(listener));
+	}
+	Sub r(urnet_contract_details_view_controller_add_contract_rows_listener(handle(), listener_fn ? &detail::retained_contract_rows : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ContractDetailsViewController::close() const {
+	urnet_contract_details_view_controller_close(handle());
+}
+inline std::optional<ContractClientRowList> ContractDetailsViewController::getClientContractRows() const {
+	char* r_c = urnet_contract_details_view_controller_get_client_contract_rows(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ContractClientRowList>(r_s->c_str());
+}
+inline std::optional<ContractClientRowList> ContractDetailsViewController::getProviderContractRows() const {
+	char* r_c = urnet_contract_details_view_controller_get_provider_contract_rows(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ContractClientRowList>(r_s->c_str());
+}
+inline void ContractDetailsViewController::start() const {
+	urnet_contract_details_view_controller_start(handle());
+}
+inline void ContractDetailsViewController::stop() const {
+	urnet_contract_details_view_controller_stop(handle());
+}
 inline Sub ContractViewController::addThroughputListener(ThroughputListener listener) const {
 	std::shared_ptr<ThroughputListener> listener_fn;
 	if (listener) {
@@ -14477,6 +14680,10 @@ inline ConnectViewController DeviceLocal::openConnectViewController() const {
 	ConnectViewController r(urnet_device_local_open_connect_view_controller(handle()));
 	return r;
 }
+inline ContractDetailsViewController DeviceLocal::openContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_local_open_contract_details_view_controller(handle()));
+	return r;
+}
 inline ContractViewController DeviceLocal::openContractViewController() const {
 	ContractViewController r(urnet_device_local_open_contract_view_controller(handle()));
 	return r;
@@ -14495,6 +14702,10 @@ inline LocationsViewController DeviceLocal::openLocationsViewController() const 
 }
 inline NetworkUserViewController DeviceLocal::openNetworkUserViewController() const {
 	NetworkUserViewController r(urnet_device_local_open_network_user_view_controller(handle()));
+	return r;
+}
+inline PeerViewController DeviceLocal::openPeerViewController() const {
+	PeerViewController r(urnet_device_local_open_peer_view_controller(handle()));
 	return r;
 }
 inline ProvideViewController DeviceLocal::openProvideViewController() const {
@@ -14622,6 +14833,10 @@ inline ConnectViewController DeviceRemote::openConnectViewController() const {
 	ConnectViewController r(urnet_device_remote_open_connect_view_controller(handle()));
 	return r;
 }
+inline ContractDetailsViewController DeviceRemote::openContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_remote_open_contract_details_view_controller(handle()));
+	return r;
+}
 inline ContractViewController DeviceRemote::openContractViewController() const {
 	ContractViewController r(urnet_device_remote_open_contract_view_controller(handle()));
 	return r;
@@ -14640,6 +14855,10 @@ inline LocationsViewController DeviceRemote::openLocationsViewController() const
 }
 inline NetworkUserViewController DeviceRemote::openNetworkUserViewController() const {
 	NetworkUserViewController r(urnet_device_remote_open_network_user_view_controller(handle()));
+	return r;
+}
+inline PeerViewController DeviceRemote::openPeerViewController() const {
+	PeerViewController r(urnet_device_remote_open_peer_view_controller(handle()));
 	return r;
 }
 inline ProvideViewController DeviceRemote::openProvideViewController() const {
@@ -15484,6 +15703,38 @@ inline void NetworkUserViewController::stop() const {
 }
 inline void NetworkUserViewController::updateNetworkUser(const std::string& network_name) const {
 	urnet_network_user_view_controller_update_network_user(handle(), network_name.c_str());
+}
+inline Sub PeerViewController::addPeersListener(PeersListener listener) const {
+	std::shared_ptr<PeersListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<PeersListener>(std::move(listener));
+	}
+	Sub r(urnet_peer_view_controller_add_peers_listener(handle(), listener_fn ? &detail::retained_peers : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void PeerViewController::close() const {
+	urnet_peer_view_controller_close(handle());
+}
+inline int64_t PeerViewController::getPeerCount() const {
+	int64_t r = urnet_peer_view_controller_get_peer_count(handle());
+	return r;
+}
+inline std::optional<NetworkPeerList> PeerViewController::getPeers() const {
+	char* r_c = urnet_peer_view_controller_get_peers(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<NetworkPeerList>(r_s->c_str());
+}
+inline void PeerViewController::start() const {
+	urnet_peer_view_controller_start(handle());
+}
+inline void PeerViewController::stop() const {
+	urnet_peer_view_controller_stop(handle());
 }
 inline void ProvideViewController::close() const {
 	urnet_provide_view_controller_close(handle());

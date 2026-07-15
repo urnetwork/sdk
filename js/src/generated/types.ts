@@ -16,6 +16,8 @@ export interface NetworkSpaceValues {
   store?: string;
   wallet?: string;
   sso_google?: boolean;
+  api_url?: string;
+  platform_url?: string;
   net_extender?: NetExtender | null;
   net_extender_auto_configure?: NetExtenderAutoConfigure | null;
 }

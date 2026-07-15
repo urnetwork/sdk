@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 )
@@ -44,7 +42,7 @@ func TestDeviceLocalNetworkPeersUpdates(t *testing.T) {
 	defer cancel()
 
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	settings := DefaultDeviceLocalSettings()
 	settings.DisableLogging = true
@@ -52,7 +50,7 @@ func TestDeviceLocalNetworkPeersUpdates(t *testing.T) {
 	settings.NetworkPeersEpoch = 100 * time.Millisecond
 
 	device, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId())
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	defer device.Close()
 
 	listener := &testNetworkPeersListener{
@@ -62,7 +60,7 @@ func TestDeviceLocalNetworkPeersUpdates(t *testing.T) {
 	defer sub.Close()
 
 	providerClient := device.providerClientSnapshot()
-	assert.NotEqual(t, providerClient, nil)
+	connect.AssertNotEqual(t, providerClient, nil)
 
 	// inject a peer update as the platform would over the control channel
 	peerClientId := connect.NewId()
@@ -87,22 +85,22 @@ func TestDeviceLocalNetworkPeersUpdates(t *testing.T) {
 	// the listener fires on the epoch
 	select {
 	case networkPeers := <-listener.networkPeers:
-		assert.Equal(t, networkPeers.Connected.Len(), 1)
-		assert.Equal(t, networkPeers.DisconnectedCount, 0)
+		connect.AssertEqual(t, networkPeers.Connected.Len(), 1)
+		connect.AssertEqual(t, networkPeers.DisconnectedCount, 0)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for network peers change")
 	}
 
 	networkPeers := device.GetNetworkPeers()
-	assert.NotEqual(t, networkPeers, nil)
-	assert.Equal(t, networkPeers.Connected.Len(), 1)
+	connect.AssertNotEqual(t, networkPeers, nil)
+	connect.AssertEqual(t, networkPeers.Connected.Len(), 1)
 	peer := networkPeers.Connected.Get(0)
-	assert.Equal(t, peer.ClientId.Cmp(newId(peerClientId)), 0)
-	assert.Equal(t, peer.ProvideEnabled, true)
-	assert.Equal(t, peer.Principal, "svc-a")
-	assert.Equal(t, peer.Roles.Len(), 2)
-	assert.Equal(t, peer.DeviceName, "device a")
-	assert.Equal(t, peer.DeviceSpec, "spec a")
+	connect.AssertEqual(t, peer.ClientId.Cmp(newId(peerClientId)), 0)
+	connect.AssertEqual(t, peer.ProvideEnabled, true)
+	connect.AssertEqual(t, peer.Principal, "svc-a")
+	connect.AssertEqual(t, peer.Roles.Len(), 2)
+	connect.AssertEqual(t, peer.DeviceName, "device a")
+	connect.AssertEqual(t, peer.DeviceSpec, "spec a")
 
 	// a disconnect marker moves the peer to the disconnected count
 	disconnectTime := uint64(time.Now().UnixMilli())
@@ -122,8 +120,8 @@ func TestDeviceLocalNetworkPeersUpdates(t *testing.T) {
 
 	select {
 	case networkPeers := <-listener.networkPeers:
-		assert.Equal(t, networkPeers.Connected.Len(), 0)
-		assert.Equal(t, networkPeers.DisconnectedCount, 1)
+		connect.AssertEqual(t, networkPeers.Connected.Len(), 0)
+		connect.AssertEqual(t, networkPeers.DisconnectedCount, 1)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for network peers disconnect change")
 	}
@@ -137,7 +135,7 @@ func TestDeviceLocalNetworkPeersEpochCoalesce(t *testing.T) {
 	defer cancel()
 
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	settings := DefaultDeviceLocalSettings()
 	settings.DisableLogging = true
@@ -145,7 +143,7 @@ func TestDeviceLocalNetworkPeersEpochCoalesce(t *testing.T) {
 	settings.NetworkPeersEpoch = 500 * time.Millisecond
 
 	device, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId())
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	defer device.Close()
 
 	listener := &testNetworkPeersListener{
@@ -155,7 +153,7 @@ func TestDeviceLocalNetworkPeersEpochCoalesce(t *testing.T) {
 	defer sub.Close()
 
 	providerClient := device.providerClientSnapshot()
-	assert.NotEqual(t, providerClient, nil)
+	connect.AssertNotEqual(t, providerClient, nil)
 
 	// a burst of separate updates well within one epoch
 	burstCount := 10
@@ -174,7 +172,7 @@ func TestDeviceLocalNetworkPeersEpochCoalesce(t *testing.T) {
 	// under test, not the latency.
 	select {
 	case networkPeers := <-listener.networkPeers:
-		assert.Equal(t, networkPeers.Connected.Len(), burstCount)
+		connect.AssertEqual(t, networkPeers.Connected.Len(), burstCount)
 	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for network peers change")
 	}
@@ -193,7 +191,7 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 	defer cancel()
 
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	clientId := connect.NewId()
 	instanceId := NewId()
@@ -205,7 +203,7 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 	settings.NetworkPeersEpoch = 100 * time.Millisecond
 
 	deviceLocal, err := newDeviceLocalWithOverrides(networkSpace, byJwt, "", "", "", instanceId, settings, clientId)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	defer deviceLocal.Close()
 
 	deviceRemote, err := newDeviceRemoteWithOverrides(
@@ -216,7 +214,7 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 		clientId,
 		testing_deviceRpcDialerDefault(),
 	)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	defer deviceRemote.Close()
 
 	listener := &testNetworkPeersListener{
@@ -226,7 +224,7 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 	defer sub.Close()
 
 	providerClient := deviceLocal.providerClientSnapshot()
-	assert.NotEqual(t, providerClient, nil)
+	connect.AssertNotEqual(t, providerClient, nil)
 
 	peerClientId := connect.NewId()
 	testing_injectNetworkPeersUpdate(providerClient, []*protocol.NetworkPeer{
@@ -242,23 +240,23 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 	// the remote listener fires through the reverse channel
 	select {
 	case networkPeers := <-listener.networkPeers:
-		assert.Equal(t, networkPeers.Connected.Len(), 1)
-		assert.Equal(t, networkPeers.DisconnectedCount, 0)
+		connect.AssertEqual(t, networkPeers.Connected.Len(), 1)
+		connect.AssertEqual(t, networkPeers.DisconnectedCount, 0)
 		peer := networkPeers.Connected.Get(0)
-		assert.Equal(t, peer.ClientId.Cmp(newId(peerClientId)), 0)
-		assert.Equal(t, peer.ProvideEnabled, true)
-		assert.Equal(t, peer.Principal, "svc-a")
-		assert.Equal(t, peer.Roles.Len(), 2)
-		assert.Equal(t, peer.DeviceName, "device a")
+		connect.AssertEqual(t, peer.ClientId.Cmp(newId(peerClientId)), 0)
+		connect.AssertEqual(t, peer.ProvideEnabled, true)
+		connect.AssertEqual(t, peer.Principal, "svc-a")
+		connect.AssertEqual(t, peer.Roles.Len(), 2)
+		connect.AssertEqual(t, peer.DeviceName, "device a")
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for remote network peers change")
 	}
 
 	// the remote reads the peers over rpc
 	networkPeers := deviceRemote.GetNetworkPeers()
-	assert.NotEqual(t, networkPeers, nil)
-	assert.Equal(t, networkPeers.Connected.Len(), 1)
-	assert.Equal(t, networkPeers.Connected.Get(0).Principal, "svc-a")
+	connect.AssertNotEqual(t, networkPeers, nil)
+	connect.AssertEqual(t, networkPeers.Connected.Len(), 1)
+	connect.AssertEqual(t, networkPeers.Connected.Get(0).Principal, "svc-a")
 
 	// a disconnect marker propagates too
 	disconnectTime := uint64(time.Now().UnixMilli())
@@ -271,8 +269,8 @@ func TestDeviceRemoteNetworkPeers(t *testing.T) {
 
 	select {
 	case networkPeers := <-listener.networkPeers:
-		assert.Equal(t, networkPeers.Connected.Len(), 0)
-		assert.Equal(t, networkPeers.DisconnectedCount, 1)
+		connect.AssertEqual(t, networkPeers.Connected.Len(), 0)
+		connect.AssertEqual(t, networkPeers.DisconnectedCount, 1)
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for remote network peers disconnect change")
 	}
