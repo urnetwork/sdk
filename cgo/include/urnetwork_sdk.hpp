@@ -547,6 +547,7 @@ struct AuthLoginArgs {
 	std::optional<std::string> auth_jwt_type;
 	std::optional<std::string> auth_jwt;
 	std::optional<WalletAuthArgs> wallet_auth;
+	std::optional<std::string> seedphrase;
 };
 
 struct AuthLoginResultError {
@@ -1243,7 +1244,6 @@ struct NetworkCreateArgs {
 	std::optional<std::string> password;
 	std::optional<std::string> network_name;
 	bool terms{};
-	bool guest_mode{};
 	std::optional<bool> verify_use_numeric;
 	std::optional<std::string> referral_code;
 	std::optional<WalletAuthArgs> wallet_auth;
@@ -1264,6 +1264,7 @@ struct NetworkCreateResultVerification {
 
 struct NetworkCreateResult {
 	std::optional<NetworkCreateResultNetwork> network;
+	std::optional<std::string> seedphrase;
 	std::optional<NetworkCreateResultVerification> verification_required;
 	std::optional<NetworkCreateResultError> error;
 };
@@ -2693,6 +2694,9 @@ inline void to_json(nlohmann::json& j, const AuthLoginArgs& v) {
 	if (v.wallet_auth) {
 		j["wallet_auth"] = *v.wallet_auth;
 	}
+	if (v.seedphrase) {
+		j["seedphrase"] = *v.seedphrase;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 	if (!j.is_object()) {
@@ -2717,6 +2721,11 @@ inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 		WalletAuthArgs tmp{};
 		it->get_to(tmp);
 		v.wallet_auth = std::move(tmp);
+	}
+	if (auto it = j.find("seedphrase"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.seedphrase = std::move(tmp);
 	}
 }
 
@@ -5911,7 +5920,6 @@ inline void to_json(nlohmann::json& j, const NetworkCreateArgs& v) {
 		j["network_name"] = *v.network_name;
 	}
 	j["terms"] = v.terms;
-	j["guest_mode"] = v.guest_mode;
 	if (v.verify_use_numeric) {
 		j["verify_use_numeric"] = *v.verify_use_numeric;
 	}
@@ -5958,9 +5966,6 @@ inline void from_json(const nlohmann::json& j, NetworkCreateArgs& v) {
 	}
 	if (auto it = j.find("terms"); it != j.end() && !it->is_null()) {
 		it->get_to(v.terms);
-	}
-	if (auto it = j.find("guest_mode"); it != j.end() && !it->is_null()) {
-		it->get_to(v.guest_mode);
 	}
 	if (auto it = j.find("verify_use_numeric"); it != j.end() && !it->is_null()) {
 		bool tmp{};
@@ -6035,6 +6040,9 @@ inline void to_json(nlohmann::json& j, const NetworkCreateResult& v) {
 	if (v.network) {
 		j["network"] = *v.network;
 	}
+	if (v.seedphrase) {
+		j["seedphrase"] = *v.seedphrase;
+	}
 	if (v.verification_required) {
 		j["verification_required"] = *v.verification_required;
 	}
@@ -6050,6 +6058,11 @@ inline void from_json(const nlohmann::json& j, NetworkCreateResult& v) {
 		NetworkCreateResultNetwork tmp{};
 		it->get_to(tmp);
 		v.network = std::move(tmp);
+	}
+	if (auto it = j.find("seedphrase"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.seedphrase = std::move(tmp);
 	}
 	if (auto it = j.find("verification_required"); it != j.end() && !it->is_null()) {
 		NetworkCreateResultVerification tmp{};
