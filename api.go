@@ -2278,8 +2278,6 @@ func (self *Api) DeleteApiKey(callback DeleteApiKeyCallback) {
 		)
 	})
 }
-	})
-}
 
 // --- GenerateSeedphrase ---
 
