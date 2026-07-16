@@ -1143,6 +1143,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   auth_jwt_type?: string
  *   auth_jwt?: string
  *   wallet_auth?: WalletAuthArgs | null
+ *   seedphrase?: string
  */
 
 /* AuthLoginResult (json):
@@ -1870,6 +1871,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* NetworkCreateResult (json):
  *   network?: NetworkCreateResultNetwork | null
+ *   seedphrase?: string
  *   verification_required?: NetworkCreateResultVerification | null
  *   error?: NetworkCreateResultError | null
  */

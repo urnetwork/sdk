@@ -585,6 +585,7 @@ struct AuthLoginArgs {
 	std::optional<std::string> auth_jwt_type;
 	std::optional<std::string> auth_jwt;
 	std::optional<WalletAuthArgs> wallet_auth;
+	std::optional<std::string> seedphrase;
 };
 
 struct AuthLoginResultError {
@@ -1352,6 +1353,7 @@ struct NetworkCreateResultVerification {
 
 struct NetworkCreateResult {
 	std::optional<NetworkCreateResultNetwork> network;
+	std::optional<std::string> seedphrase;
 	std::optional<NetworkCreateResultVerification> verification_required;
 	std::optional<NetworkCreateResultError> error;
 };
@@ -2914,6 +2916,9 @@ inline void to_json(nlohmann::json& j, const AuthLoginArgs& v) {
 	if (v.wallet_auth) {
 		j["wallet_auth"] = *v.wallet_auth;
 	}
+	if (v.seedphrase) {
+		j["seedphrase"] = *v.seedphrase;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 	if (!j.is_object()) {
@@ -2938,6 +2943,11 @@ inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 		WalletAuthArgs tmp{};
 		it->get_to(tmp);
 		v.wallet_auth = std::move(tmp);
+	}
+	if (auto it = j.find("seedphrase"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.seedphrase = std::move(tmp);
 	}
 }
 
@@ -6445,6 +6455,9 @@ inline void to_json(nlohmann::json& j, const NetworkCreateResult& v) {
 	if (v.network) {
 		j["network"] = *v.network;
 	}
+	if (v.seedphrase) {
+		j["seedphrase"] = *v.seedphrase;
+	}
 	if (v.verification_required) {
 		j["verification_required"] = *v.verification_required;
 	}
@@ -6460,6 +6473,11 @@ inline void from_json(const nlohmann::json& j, NetworkCreateResult& v) {
 		NetworkCreateResultNetwork tmp{};
 		it->get_to(tmp);
 		v.network = std::move(tmp);
+	}
+	if (auto it = j.find("seedphrase"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.seedphrase = std::move(tmp);
 	}
 	if (auto it = j.find("verification_required"); it != j.end() && !it->is_null()) {
 		NetworkCreateResultVerification tmp{};

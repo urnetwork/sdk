@@ -124,6 +124,7 @@ type AuthLoginArgs struct {
 	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
 	AuthJwt     string          `json:"auth_jwt,omitempty"`
 	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
+	Seedphrase  string          `json:"seedphrase,omitempty"`
 }
 
 type WalletAuthArgs struct {
@@ -364,6 +365,7 @@ type NetworkCreateArgs struct {
 
 type NetworkCreateResult struct {
 	Network              *NetworkCreateResultNetwork      `json:"network,omitempty"`
+	Seedphrase           string                           `json:"seedphrase,omitempty"`
 	VerificationRequired *NetworkCreateResultVerification `json:"verification_required,omitempty"`
 	Error                *NetworkCreateResultError        `json:"error,omitempty"`
 }
