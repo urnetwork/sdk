@@ -133,6 +133,10 @@ void urnet_invoke_contract_details_change(urnet_contract_details_change_cb cb, v
 	cb(user_data, contract_details_json);
 }
 
+void urnet_invoke_contract_rows(urnet_contract_rows_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_contract_stats_change(urnet_contract_stats_change_cb cb, void* user_data, const char* contract_stats_json) {
 	cb(user_data, contract_stats_json);
 }
@@ -367,6 +371,10 @@ void urnet_invoke_payments(urnet_payments_cb cb, void* user_data) {
 
 void urnet_invoke_payout_wallet(urnet_payout_wallet_cb cb, void* user_data, const char* p0) {
 	cb(user_data, p0);
+}
+
+void urnet_invoke_peers(urnet_peers_cb cb, void* user_data, const char* peers_json) {
+	cb(user_data, peers_json);
 }
 
 void urnet_invoke_performance_profile_change(urnet_performance_profile_change_cb cb, void* user_data, const char* performance_profile_json) {

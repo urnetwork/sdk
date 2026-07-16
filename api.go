@@ -124,7 +124,6 @@ type AuthLoginArgs struct {
 	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
 	AuthJwt     string          `json:"auth_jwt,omitempty"`
 	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
-	Seedphrase  string          `json:"seedphrase,omitempty"`
 }
 
 type WalletAuthArgs struct {
@@ -185,13 +184,17 @@ type AuthWalletChallengeResult struct {
 	Error           *ApiError `json:"error,omitempty"`
 }
 
-func (self *Api) AuthWalletChallenge(args *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
+// AuthWalletChallenge requests a challenge message for a wallet to sign — the
+// first step of wallet sign-in (POST /auth/wallet-challenge, unauthenticated).
+// The wallet signs the returned message_template and the signature is passed to
+// AuthLogin via WalletAuthArgs. Used by the apple + solana mobile wallet flow.
+func (self *Api) AuthWalletChallenge(authWalletChallenge *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/auth/wallet-challenge", self.apiUrl),
-			args,
+			authWalletChallenge,
 			self.GetByJwt(),
 			&AuthWalletChallengeResult{},
 			callback,
@@ -353,6 +356,7 @@ type NetworkCreateArgs struct {
 	Password         string          `json:"password,omitempty"`
 	NetworkName      string          `json:"network_name,omitempty"`
 	Terms            bool            `json:"terms"`
+	GuestMode        bool            `json:"guest_mode"`
 	VerifyOtpNumeric bool            `json:"verify_use_numeric,omitempty"`
 	ReferralCode     string          `json:"referral_code,omitempty"`
 	WalletAuth       *WalletAuthArgs `json:"wallet_auth,omitempty"`
@@ -360,7 +364,6 @@ type NetworkCreateArgs struct {
 
 type NetworkCreateResult struct {
 	Network              *NetworkCreateResultNetwork      `json:"network,omitempty"`
-	Seedphrase           string                           `json:"seedphrase,omitempty"`
 	VerificationRequired *NetworkCreateResultVerification `json:"verification_required,omitempty"`
 	Error                *NetworkCreateResultError        `json:"error,omitempty"`
 }
@@ -2273,6 +2276,8 @@ func (self *Api) DeleteApiKey(callback DeleteApiKeyCallback) {
 			&DeleteApiKeyResult{},
 			callback,
 		)
+	})
+}
 	})
 }
 

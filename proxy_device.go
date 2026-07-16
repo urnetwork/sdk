@@ -36,8 +36,8 @@ func DefaultProxyConfig() *ProxyConfig {
 
 func DefaultProxyDeviceSettings() *ProxyDeviceSettings {
 	return &ProxyDeviceSettings{
-		ApiUrl:      "74.50.11.113:8080",
-		PlatformUrl: "74.50.11.113:5080",
+		ApiUrl:      "api.bringyour.com",
+		PlatformUrl: "connect.bringyour.com",
 	}
 }
 

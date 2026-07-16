@@ -96,5 +96,12 @@ smoke_hpp: build_host
 	clang++ -std=c++17 -Iinclude -I$(NLOHMANN_INCLUDE) -o build/host/smoke_hpp smoke/smoke_hpp.cpp build/host/libURnetworkSdk.dylib && \
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke_hpp;
 
+# Toolchains for the mac-host cgo cross-builds:
+#   zig            -> linux/{amd64,arm64} SDK (glibc-pinned for portability)
+#   nlohmann-json  -> host hpp smoke test (smoke_hpp)
+#   mingw-w64      -> optional local windows/amd64 dev builds
+# The shipped Windows SDK (amd64+arm64) now builds INSIDE the Windows VM, where
+# Go + llvm-mingw are provisioned (see build/all/build-windows.sh). There is no
+# `llvm-mingw` Homebrew formula — it was removed from this list.
 init:
-	brew install mingw-w64 llvm-mingw zig nlohmann-json
+	brew install mingw-w64 zig nlohmann-json

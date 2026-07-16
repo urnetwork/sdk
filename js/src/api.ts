@@ -28,7 +28,7 @@ export class URNetworkAPI {
   private baseURL: string;
 
   constructor(config?: { baseURL?: string; token?: string }) {
-    this.baseURL = config?.baseURL || "http://74.50.11.113:8080/";
+    this.baseURL = config?.baseURL || "https://api.bringyour.com";
   }
 
   /**

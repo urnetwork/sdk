@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/glog"
 
 	"github.com/urnetwork/connect"
@@ -69,23 +67,23 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	assert.Equal(t, true, deviceRemote.GetOffline())
-	assert.Equal(t, true, deviceLocal.GetOffline())
+	connect.AssertEqual(t, true, deviceRemote.GetOffline())
+	connect.AssertEqual(t, true, deviceLocal.GetOffline())
 
 	deviceRemote.SetOffline(false)
-	assert.Equal(t, false, deviceRemote.GetOffline())
-	assert.Equal(t, false, deviceLocal.GetOffline())
+	connect.AssertEqual(t, false, deviceRemote.GetOffline())
+	connect.AssertEqual(t, false, deviceLocal.GetOffline())
 
 	deviceLocal.SetOffline(true)
-	assert.Equal(t, true, deviceRemote.GetOffline())
-	assert.Equal(t, true, deviceLocal.GetOffline())
+	connect.AssertEqual(t, true, deviceRemote.GetOffline())
+	connect.AssertEqual(t, true, deviceLocal.GetOffline())
 
 	listener := &testing_offlineChangeListener{}
 	sub := deviceRemote.AddOfflineChangeListener(listener)
 	deviceRemote.SetOffline(false)
 	listener.with(func() {
-		assert.Equal(t, false, listener.event)
-		assert.Equal(t, false, listener.eventOffline)
+		connect.AssertEqual(t, false, listener.event)
+		connect.AssertEqual(t, false, listener.eventOffline)
 	})
 	sub.Close()
 
@@ -176,8 +174,8 @@ func TestDeviceRemoteFull(t *testing.T) {
 
 			windowMonitor := deviceRemote.windowMonitor()
 			windowExpandEvent, providerEvents := windowMonitor.Events()
-			assert.NotEqual(t, windowExpandEvent, nil)
-			assert.NotEqual(t, providerEvents, nil)
+			connect.AssertNotEqual(t, windowExpandEvent, nil)
+			connect.AssertNotEqual(t, providerEvents, nil)
 
 			monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
 			defer monitorEventCallbackSub()
@@ -208,69 +206,69 @@ func TestDeviceRemoteFull(t *testing.T) {
 			deviceRemote.SetDestination(location, NewProviderSpecList())
 			deviceRemote.Shuffle()
 
-			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-			assert.NotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
-			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-			assert.Equal(t, deviceRemote.GetOffline(), true)
-			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+			connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+			connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+			connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+			connect.AssertNotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
+			connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+			connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
 
 			// wait for event callbacks on goroutines to run
 			select {
 			case <-time.After(500 * time.Millisecond):
 			}
 
-			assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
-			assert.Equal(t, deviceLocal.GetCanRefer(), true)
-			assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
-			assert.NotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
-			assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
-			assert.Equal(t, deviceLocal.GetProvidePaused(), true)
-			assert.Equal(t, deviceLocal.GetOffline(), true)
-			assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceLocal.GetConnectLocation(), location)
+			connect.AssertEqual(t, deviceLocal.GetCanShowRatingDialog(), true)
+			connect.AssertEqual(t, deviceLocal.GetCanRefer(), true)
+			connect.AssertEqual(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
+			connect.AssertNotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
+			connect.AssertEqual(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+			connect.AssertEqual(t, deviceLocal.GetProvidePaused(), true)
+			connect.AssertEqual(t, deviceLocal.GetOffline(), true)
+			connect.AssertEqual(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+			connect.AssertEqual(t, deviceLocal.GetConnectLocation(), location)
 
-			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-			assert.NotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
-			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-			assert.Equal(t, deviceRemote.GetOffline(), true)
-			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+			connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+			connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+			connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+			connect.AssertNotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
+			connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+			connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
 
 			provideChangeListener.with(func() {
-				assert.Equal(t, provideChangeListener.event, true)
+				connect.AssertEqual(t, provideChangeListener.event, true)
 			})
 			providePausedChangeListener.with(func() {
-				assert.Equal(t, providePausedChangeListener.event, true)
+				connect.AssertEqual(t, providePausedChangeListener.event, true)
 			})
 			offlineChangeListener.with(func() {
-				assert.Equal(t, offlineChangeListener.event, true)
+				connect.AssertEqual(t, offlineChangeListener.event, true)
 			})
 			connectChangeListener.with(func() {
-				assert.Equal(t, connectChangeListener.event, true)
+				connect.AssertEqual(t, connectChangeListener.event, true)
 			})
 			routeLocalChangeListener.with(func() {
-				assert.Equal(t, routeLocalChangeListener.event, true)
+				connect.AssertEqual(t, routeLocalChangeListener.event, true)
 			})
 			connectLocationChangeListener.with(func() {
-				assert.Equal(t, connectLocationChangeListener.event, true)
+				connect.AssertEqual(t, connectLocationChangeListener.event, true)
 			})
 			provideSecretKeysListener.with(func() {
-				assert.Equal(t, provideSecretKeysListener.event, true)
+				connect.AssertEqual(t, provideSecretKeysListener.event, true)
 			})
 			performanceProfileChangeListener.with(func() {
-				assert.Equal(t, performanceProfileChangeListener.event, true)
-				assert.NotEqual(t, performanceProfileChangeListener.performanceProfile, nil)
+				connect.AssertEqual(t, performanceProfileChangeListener.event, true)
+				connect.AssertNotEqual(t, performanceProfileChangeListener.performanceProfile, nil)
 			})
 			// FIXME one difference with remote sync later versus now is that the monitor doesn't getted called with empty events
 			// monitorEventListener.with(func() {
-			// 	assert.Equal(t, monitorEventListener.event, true)
+			// 	connect.AssertEqual(t, monitorEventListener.event, true)
 			// })
 
 		}()
@@ -352,8 +350,8 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 
 			windowMonitor := deviceRemote.windowMonitor()
 			windowExpandEvent, providerEvents := windowMonitor.Events()
-			assert.NotEqual(t, windowExpandEvent, nil)
-			assert.NotEqual(t, providerEvents, nil)
+			connect.AssertNotEqual(t, windowExpandEvent, nil)
+			connect.AssertNotEqual(t, providerEvents, nil)
 
 			monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
 			defer monitorEventCallbackSub()
@@ -385,16 +383,16 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			deviceRemote.SetDestination(location, NewProviderSpecList())
 			deviceRemote.Shuffle()
 
-			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-			assert.NotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
-			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-			assert.Equal(t, deviceRemote.GetOffline(), true)
-			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
-			assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeWiFi)
+			connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+			connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+			connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+			connect.AssertNotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
+			connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+			connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
+			connect.AssertEqual(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeWiFi)
 
 			// sync
 
@@ -423,53 +421,53 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 			case <-time.After(500 * time.Millisecond):
 			}
 
-			assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
-			assert.Equal(t, deviceLocal.GetCanRefer(), true)
-			assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
-			assert.NotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
-			assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
-			assert.Equal(t, deviceLocal.GetProvidePaused(), true)
-			assert.Equal(t, deviceLocal.GetOffline(), true)
-			assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceLocal.GetConnectLocation(), location)
+			connect.AssertEqual(t, deviceLocal.GetCanShowRatingDialog(), true)
+			connect.AssertEqual(t, deviceLocal.GetCanRefer(), true)
+			connect.AssertEqual(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
+			connect.AssertNotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
+			connect.AssertEqual(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+			connect.AssertEqual(t, deviceLocal.GetProvidePaused(), true)
+			connect.AssertEqual(t, deviceLocal.GetOffline(), true)
+			connect.AssertEqual(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+			connect.AssertEqual(t, deviceLocal.GetConnectLocation(), location)
 
-			assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-			assert.Equal(t, deviceRemote.GetCanRefer(), true)
-			assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-			assert.NotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
-			assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-			assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-			assert.Equal(t, deviceRemote.GetOffline(), true)
-			assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-			assert.Equal(t, deviceRemote.GetConnectLocation(), location)
-			assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeWiFi)
+			connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+			connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+			connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+			connect.AssertNotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
+			connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+			connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+			connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+			connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
+			connect.AssertEqual(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeWiFi)
 
 			provideChangeListener.with(func() {
-				assert.Equal(t, provideChangeListener.event, true)
+				connect.AssertEqual(t, provideChangeListener.event, true)
 			})
 			providePausedChangeListener.with(func() {
-				assert.Equal(t, providePausedChangeListener.event, true)
+				connect.AssertEqual(t, providePausedChangeListener.event, true)
 			})
 			offlineChangeListener.with(func() {
-				assert.Equal(t, offlineChangeListener.event, true)
+				connect.AssertEqual(t, offlineChangeListener.event, true)
 			})
 			connectChangeListener.with(func() {
-				assert.Equal(t, connectChangeListener.event, true)
+				connect.AssertEqual(t, connectChangeListener.event, true)
 			})
 			routeLocalChangeListener.with(func() {
-				assert.Equal(t, routeLocalChangeListener.event, true)
+				connect.AssertEqual(t, routeLocalChangeListener.event, true)
 			})
 			connectLocationChangeListener.with(func() {
-				assert.Equal(t, connectLocationChangeListener.event, true)
+				connect.AssertEqual(t, connectLocationChangeListener.event, true)
 			})
 			provideSecretKeysListener.with(func() {
-				assert.Equal(t, provideSecretKeysListener.event, true)
+				connect.AssertEqual(t, provideSecretKeysListener.event, true)
 			})
 			monitorEventListener.with(func() {
-				assert.Equal(t, monitorEventListener.event, true)
+				connect.AssertEqual(t, monitorEventListener.event, true)
 			})
 			networkModeListener.with(func() {
-				assert.Equal(t, monitorEventListener.event, true)
+				connect.AssertEqual(t, monitorEventListener.event, true)
 			})
 
 		}()
@@ -524,15 +522,15 @@ func TestDeviceRemoteApi(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "http://74.50.11.113:8080/hello", "")
-	assert.Equal(t, err, nil)
-	assert.NotEqual(t, bodyBytes, nil)
+	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	connect.AssertEqual(t, err, nil)
+	connect.AssertNotEqual(t, bodyBytes, nil)
 	glog.Infof("response body=%s", string(bodyBytes))
-	assert.NotEqual(t, len(bodyBytes), 0)
+	connect.AssertNotEqual(t, len(bodyBytes), 0)
 
 	// FIXME allow POST on the hello route
-	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "http://74.50.11.113:8080/hello", "")
-	// assert.Equal(t, err, nil)
+	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	// connect.AssertEqual(t, err, nil)
 
 }
 
@@ -579,7 +577,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	defer deviceRemote.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(15*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
 
 	localOverridesListener := &testing_blockActionOverridesChangeListener{}
 	localOverridesSub := deviceLocal.AddBlockActionOverridesChangeListener(localOverridesListener)
@@ -611,18 +609,18 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	deviceRemote.SetBlockActionOverrides(overrides)
 
 	localOverrides := deviceLocal.GetBlockActionOverrides()
-	assert.Equal(t, localOverrides.Len(), 1)
+	connect.AssertEqual(t, localOverrides.Len(), 1)
 	remoteOverrides := deviceRemote.GetBlockActionOverrides()
-	assert.Equal(t, remoteOverrides.Len(), 1)
-	assert.Equal(t, remoteOverrides, localOverrides)
-	assert.Equal(t, remoteOverrides.Get(0).OverrideId, override.OverrideId)
-	assert.Equal(t, remoteOverrides.Get(0).Hosts.getAll(), []string{"example.com", "**.example.org"})
-	assert.Equal(t, remoteOverrides.Get(0).AppIds.getAll(), []string{"com.example.app"})
-	assert.Equal(t, remoteOverrides.Get(0).BlockOverride, &BlockOverride{Block: true})
-	assert.Equal(t, remoteOverrides.Get(0).RouteOverride, &RouteOverride{Local: true})
+	connect.AssertEqual(t, remoteOverrides.Len(), 1)
+	connect.AssertEqual(t, remoteOverrides, localOverrides)
+	connect.AssertEqual(t, remoteOverrides.Get(0).OverrideId, override.OverrideId)
+	connect.AssertEqual(t, remoteOverrides.Get(0).Hosts.getAll(), []string{"example.com", "**.example.org"})
+	connect.AssertEqual(t, remoteOverrides.Get(0).AppIds.getAll(), []string{"com.example.app"})
+	connect.AssertEqual(t, remoteOverrides.Get(0).BlockOverride, &BlockOverride{Block: true})
+	connect.AssertEqual(t, remoteOverrides.Get(0).RouteOverride, &RouteOverride{Local: true})
 
 	// setting via the remote fires the local overrides listener
-	assert.Equal(t, testing_waitFor(5*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(5*time.Second, func() bool {
 		event := false
 		localOverridesListener.with(func() {
 			event = localOverridesListener.event
@@ -633,10 +631,10 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	// (f) the local override app ids are derived from the synced overrides
 	localAppIds := deviceLocal.GetLocalOverrideAppIds()
 	remoteAppIds := deviceRemote.GetLocalOverrideAppIds()
-	assert.NotEqual(t, remoteAppIds, nil)
-	assert.Equal(t, remoteAppIds, localAppIds)
-	assert.Equal(t, remoteAppIds.Included.Contains("com.example.app"), true)
-	assert.Equal(t, remoteAppIds.Excluded.Len(), 0)
+	connect.AssertNotEqual(t, remoteAppIds, nil)
+	connect.AssertEqual(t, remoteAppIds, localAppIds)
+	connect.AssertEqual(t, remoteAppIds.Included.Contains("com.example.app"), true)
+	connect.AssertEqual(t, remoteAppIds.Excluded.Len(), 0)
 
 	// (b) add/remove round trip
 
@@ -649,19 +647,19 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	}
 	deviceRemote.AddBlockActionOverride(override2)
 
-	assert.Equal(t, deviceLocal.GetBlockActionOverrides().Len(), 2)
+	connect.AssertEqual(t, deviceLocal.GetBlockActionOverrides().Len(), 2)
 	remoteOverrides = deviceRemote.GetBlockActionOverrides()
-	assert.Equal(t, remoteOverrides.Len(), 2)
-	assert.Equal(t, remoteOverrides, deviceLocal.GetBlockActionOverrides())
-	assert.Equal(t, remoteOverrides.Get(1).OverrideId, override2.OverrideId)
-	assert.Equal(t, remoteOverrides.Get(1).BlockOverride, &BlockOverride{Block: false})
+	connect.AssertEqual(t, remoteOverrides.Len(), 2)
+	connect.AssertEqual(t, remoteOverrides, deviceLocal.GetBlockActionOverrides())
+	connect.AssertEqual(t, remoteOverrides.Get(1).OverrideId, override2.OverrideId)
+	connect.AssertEqual(t, remoteOverrides.Get(1).BlockOverride, &BlockOverride{Block: false})
 
 	deviceRemote.RemoveBlockActionOverride(override2.OverrideId)
 
-	assert.Equal(t, deviceLocal.GetBlockActionOverrides().Len(), 1)
+	connect.AssertEqual(t, deviceLocal.GetBlockActionOverrides().Len(), 1)
 	remoteOverrides = deviceRemote.GetBlockActionOverrides()
-	assert.Equal(t, remoteOverrides.Len(), 1)
-	assert.Equal(t, remoteOverrides.Get(0).OverrideId, override.OverrideId)
+	connect.AssertEqual(t, remoteOverrides.Len(), 1)
+	connect.AssertEqual(t, remoteOverrides.Get(0).OverrideId, override.OverrideId)
 
 	// (c) the remote overrides listener fires when changed via the local
 
@@ -675,7 +673,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	deviceLocal.AddBlockActionOverride(override3)
 
 	// wait for the reverse notification with the latest full list
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		remoteOverridesListener.with(func() {
 			found = remoteOverridesListener.event &&
@@ -688,7 +686,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	// and the local listener fires when changed via the remote
 	localOverridesListener.clear()
 	deviceRemote.RemoveBlockActionOverride(override3.OverrideId)
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		localOverridesListener.with(func() {
 			found = localOverridesListener.event &&
@@ -714,21 +712,21 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	deviceRemote.SetDnsResolverSettings(dnsResolverSettings)
 
 	localDns := deviceLocal.GetDnsResolverSettings()
-	assert.NotEqual(t, localDns, nil)
-	assert.Equal(t, localDns.EnableRemoteDoh, true)
-	assert.Equal(t, localDns.EnableLocalDns, true)
-	assert.Equal(t, localDns.EnableLocalDoh, false)
-	assert.Equal(t, localDns.EnableRemoteDns, false)
-	assert.Equal(t, localDns.EnableFallback, true)
-	assert.Equal(t, localDns.RemoteDohUrlsIpv4.getAll(), []string{"https://1.1.1.1/dns-query"})
-	assert.Equal(t, localDns.LocalDnsIpv4.getAll(), []string{"192.168.1.1"})
+	connect.AssertNotEqual(t, localDns, nil)
+	connect.AssertEqual(t, localDns.EnableRemoteDoh, true)
+	connect.AssertEqual(t, localDns.EnableLocalDns, true)
+	connect.AssertEqual(t, localDns.EnableLocalDoh, false)
+	connect.AssertEqual(t, localDns.EnableRemoteDns, false)
+	connect.AssertEqual(t, localDns.EnableFallback, true)
+	connect.AssertEqual(t, localDns.RemoteDohUrlsIpv4.getAll(), []string{"https://1.1.1.1/dns-query"})
+	connect.AssertEqual(t, localDns.LocalDnsIpv4.getAll(), []string{"192.168.1.1"})
 
 	remoteDns := deviceRemote.GetDnsResolverSettings()
-	assert.NotEqual(t, remoteDns, nil)
-	assert.Equal(t, remoteDns, localDns)
+	connect.AssertNotEqual(t, remoteDns, nil)
+	connect.AssertEqual(t, remoteDns, localDns)
 
 	// setting via the remote fires the remote dns listener (reverse notified)
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		remoteDnsListener.with(func() {
 			found = remoteDnsListener.event &&
@@ -741,13 +739,13 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 
 	// (e) the stats getters return non-nil while connected
 
-	assert.NotEqual(t, deviceRemote.GetPacketStats(), nil)
-	assert.NotEqual(t, deviceRemote.GetBlockStats(), nil)
-	assert.NotEqual(t, deviceRemote.GetEgressContractStats(), nil)
-	assert.NotEqual(t, deviceRemote.GetIngressContractStats(), nil)
-	assert.NotEqual(t, deviceRemote.GetBlockActions(), nil)
-	assert.NotEqual(t, deviceRemote.GetEgressContractDetails(), nil)
-	assert.NotEqual(t, deviceRemote.GetIngressContractDetails(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetPacketStats(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetBlockStats(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetEgressContractStats(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetIngressContractStats(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetBlockActions(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetEgressContractDetails(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetIngressContractDetails(), nil)
 
 	// (g) block actions round trip with the deciding override id
 
@@ -764,12 +762,12 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 		},
 	})
 	remoteWindow := deviceRemote.GetBlockActions()
-	assert.Equal(t, remoteWindow.BlockActions.Len(), 1)
+	connect.AssertEqual(t, remoteWindow.BlockActions.Len(), 1)
 	remoteAction := remoteWindow.BlockActions.Get(0)
-	assert.Equal(t, remoteAction.Block, true)
-	assert.Equal(t, remoteAction.Hosts.Contains("blocked.example.org"), true)
-	assert.NotEqual(t, remoteAction.OverrideId, nil)
-	assert.Equal(t, remoteAction.OverrideId.Cmp(newId(blockActionOverrideId)), 0)
+	connect.AssertEqual(t, remoteAction.Block, true)
+	connect.AssertEqual(t, remoteAction.Hosts.Contains("blocked.example.org"), true)
+	connect.AssertNotEqual(t, remoteAction.OverrideId, nil)
+	connect.AssertEqual(t, remoteAction.OverrideId.Cmp(newId(blockActionOverrideId)), 0)
 }
 
 // TestDeviceRemotePacketAndProviderStats threads the packet stats and the
@@ -823,9 +821,9 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	defer deviceLocal.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(15*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
 
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		fired := false
 		initialProviderPacketStatsListener.with(func() {
 			fired = initialProviderPacketStatsListener.event &&
@@ -837,16 +835,16 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	// (a) the getters return non-nil (zero) values while connected
 
 	providerPacketStats := deviceRemote.GetProviderPacketStats()
-	assert.NotEqual(t, providerPacketStats, nil)
-	assert.Equal(t, providerPacketStats.RemoteEgressPacketCount, int64(0))
-	assert.NotEqual(t, deviceRemote.GetProviderEgressContractStats(), nil)
-	assert.NotEqual(t, deviceRemote.GetProviderIngressContractStats(), nil)
+	connect.AssertNotEqual(t, providerPacketStats, nil)
+	connect.AssertEqual(t, providerPacketStats.RemoteEgressPacketCount, int64(0))
+	connect.AssertNotEqual(t, deviceRemote.GetProviderEgressContractStats(), nil)
+	connect.AssertNotEqual(t, deviceRemote.GetProviderIngressContractStats(), nil)
 	providerEgressDetails := deviceRemote.GetProviderEgressContractDetails()
-	assert.NotEqual(t, providerEgressDetails, nil)
-	assert.Equal(t, providerEgressDetails.Len(), 0)
+	connect.AssertNotEqual(t, providerEgressDetails, nil)
+	connect.AssertEqual(t, providerEgressDetails.Len(), 0)
 	providerIngressDetails := deviceRemote.GetProviderIngressContractDetails()
-	assert.NotEqual(t, providerIngressDetails, nil)
-	assert.Equal(t, providerIngressDetails.Len(), 0)
+	connect.AssertNotEqual(t, providerIngressDetails, nil)
+	connect.AssertEqual(t, providerIngressDetails.Len(), 0)
 
 	// (b) the client packet stats listener receives the reverse notification
 
@@ -858,7 +856,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 		RemoteEgressPacketCount: 10,
 		RemoteEgressByteCount:   1000,
 	})
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		packetStatsListener.with(func() {
 			found = packetStatsListener.packetStats != nil &&
@@ -877,7 +875,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 		RemoteIngressPacketCount: 7,
 		RemoteIngressByteCount:   700,
 	})
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		providerPacketStatsListener.with(func() {
 			found = providerPacketStatsListener.packetStats != nil &&
@@ -888,7 +886,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 
 	// the client packet stats listener must not see the provider event
 	packetStatsListener.with(func() {
-		assert.Equal(t, packetStatsListener.packetStats.RemoteIngressByteCount, ByteCount(0))
+		connect.AssertEqual(t, packetStatsListener.packetStats.RemoteIngressByteCount, ByteCount(0))
 	})
 
 	// (d) the provider contract stats and details listeners receive the
@@ -930,7 +928,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 		},
 	})
 
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		providerIngressStatsListener.with(func() {
 			found = providerIngressStatsListener.contractStats != nil &&
@@ -940,7 +938,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 		return found
 	}), true)
 
-	assert.Equal(t, testing_waitFor(10*time.Second, func() bool {
+	connect.AssertEqual(t, testing_waitFor(10*time.Second, func() bool {
 		found := false
 		providerIngressDetailsListener.with(func() {
 			found = providerIngressDetailsListener.contractDetails != nil &&
@@ -955,12 +953,12 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	// (e) the getters over rpc reflect the local state
 
 	remoteIngressStats := deviceRemote.GetProviderIngressContractStats()
-	assert.Equal(t, remoteIngressStats, deviceLocal.GetProviderIngressContractStats())
-	assert.Equal(t, remoteIngressStats.ContractUsedByteCount, ByteCount(1000))
+	connect.AssertEqual(t, remoteIngressStats, deviceLocal.GetProviderIngressContractStats())
+	connect.AssertEqual(t, remoteIngressStats.ContractUsedByteCount, ByteCount(1000))
 	remoteIngressDetails := deviceRemote.GetProviderIngressContractDetails()
-	assert.Equal(t, remoteIngressDetails.Len(), 1)
-	assert.Equal(t, remoteIngressDetails.Get(0).ContractUsedByteCount, ByteCount(1000))
-	assert.Equal(t, remoteIngressDetails.Get(0).CompanionContractUsedByteCount, ByteCount(500))
+	connect.AssertEqual(t, remoteIngressDetails.Len(), 1)
+	connect.AssertEqual(t, remoteIngressDetails.Get(0).ContractUsedByteCount, ByteCount(1000))
+	connect.AssertEqual(t, remoteIngressDetails.Get(0).CompanionContractUsedByteCount, ByteCount(500))
 }
 
 // TestDeviceRemoteProviderStatsNoProvider pins the noop provider surface over
@@ -1017,7 +1015,7 @@ func TestDeviceRemoteProviderStatsNoProvider(t *testing.T) {
 	defer providerEgressStatsSub.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(15*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
 
 	if packetStats := deviceRemote.GetProviderPacketStats(); packetStats != nil {
 		t.Fatalf("expected nil provider packet stats without a provider, got %+v", packetStats)
@@ -1041,10 +1039,10 @@ func TestDeviceRemoteProviderStatsNoProvider(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 	providerPacketStatsListener.with(func() {
-		assert.Equal(t, providerPacketStatsListener.event, false)
+		connect.AssertEqual(t, providerPacketStatsListener.event, false)
 	})
 	providerEgressStatsListener.with(func() {
-		assert.Equal(t, providerEgressStatsListener.event, false)
+		connect.AssertEqual(t, providerEgressStatsListener.event, false)
 	})
 }
 
@@ -1132,44 +1130,44 @@ func TestDeviceRemoteLastKnownValues(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 
-	assert.Equal(t, deviceLocal.GetProvideControlMode(), ProvideControlModeManual)
-	assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
-	assert.Equal(t, deviceLocal.GetCanRefer(), true)
-	assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
-	assert.NotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
-	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
-	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
-	assert.Equal(t, deviceLocal.GetOffline(), true)
-	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceLocal.GetConnectLocation(), location)
+	connect.AssertEqual(t, deviceLocal.GetProvideControlMode(), ProvideControlModeManual)
+	connect.AssertEqual(t, deviceLocal.GetCanShowRatingDialog(), true)
+	connect.AssertEqual(t, deviceLocal.GetCanRefer(), true)
+	connect.AssertEqual(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
+	connect.AssertNotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
+	connect.AssertEqual(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+	connect.AssertEqual(t, deviceLocal.GetProvidePaused(), true)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), true)
+	connect.AssertEqual(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+	connect.AssertEqual(t, deviceLocal.GetConnectLocation(), location)
 
-	assert.Equal(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
-	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-	assert.NotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
-	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-	assert.Equal(t, deviceRemote.GetOffline(), true)
-	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
-	// assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
+	connect.AssertEqual(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
+	connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+	connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+	connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+	connect.AssertNotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
+	connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+	connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
+	// connect.AssertEqual(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
 
 	deviceLocal.Close()
 
 	// make sure the remote value retains the last know state
 
-	assert.Equal(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
-	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-	assert.NotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
-	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-	assert.Equal(t, deviceRemote.GetOffline(), true)
-	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
-	// assert.Equal(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
+	connect.AssertEqual(t, deviceRemote.GetProvideControlMode(), ProvideControlModeManual)
+	connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+	connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+	connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+	connect.AssertNotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
+	connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+	connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
+	// connect.AssertEqual(t, deviceRemote.GetProvideNetworkMode(), ProvideNetworkModeAll)
 
 }
 
@@ -1238,8 +1236,8 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 
 	windowMonitor := deviceRemote.windowMonitor()
 	windowExpandEvent, providerEvents := windowMonitor.Events()
-	assert.NotEqual(t, windowExpandEvent, nil)
-	assert.NotEqual(t, providerEvents, nil)
+	connect.AssertNotEqual(t, windowExpandEvent, nil)
+	connect.AssertNotEqual(t, providerEvents, nil)
 
 	monitorEventCallbackSub := windowMonitor.AddMonitorEventCallback(monitorEventListener.MonitorEventCallback)
 	defer monitorEventCallbackSub()
@@ -1295,39 +1293,39 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 
-	assert.Equal(t, deviceLocal.GetCanShowRatingDialog(), true)
-	assert.Equal(t, deviceLocal.GetCanRefer(), true)
-	assert.Equal(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
-	assert.NotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
-	assert.Equal(t, deviceLocal.GetProvideMode(), ProvideModeStream)
-	assert.Equal(t, deviceLocal.GetProvidePaused(), true)
-	assert.Equal(t, deviceLocal.GetOffline(), true)
-	assert.Equal(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceLocal.GetConnectLocation(), location)
+	connect.AssertEqual(t, deviceLocal.GetCanShowRatingDialog(), true)
+	connect.AssertEqual(t, deviceLocal.GetCanRefer(), true)
+	connect.AssertEqual(t, deviceLocal.GetRouteLocal(), !settings.DefaultRouteLocal)
+	connect.AssertNotEqual(t, deviceLocal.GetPerformanceProfile(), nil)
+	connect.AssertEqual(t, deviceLocal.GetProvideMode(), ProvideModeStream)
+	connect.AssertEqual(t, deviceLocal.GetProvidePaused(), true)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), true)
+	connect.AssertEqual(t, deviceLocal.GetVpnInterfaceWhileOffline(), true)
+	connect.AssertEqual(t, deviceLocal.GetConnectLocation(), location)
 
 	provideChangeListener.with(func() {
-		assert.Equal(t, provideChangeListener.event, true)
+		connect.AssertEqual(t, provideChangeListener.event, true)
 	})
 	providePausedChangeListener.with(func() {
-		assert.Equal(t, providePausedChangeListener.event, true)
+		connect.AssertEqual(t, providePausedChangeListener.event, true)
 	})
 	offlineChangeListener.with(func() {
-		assert.Equal(t, offlineChangeListener.event, true)
+		connect.AssertEqual(t, offlineChangeListener.event, true)
 	})
 	connectChangeListener.with(func() {
-		assert.Equal(t, connectChangeListener.event, true)
+		connect.AssertEqual(t, connectChangeListener.event, true)
 	})
 	routeLocalChangeListener.with(func() {
-		assert.Equal(t, routeLocalChangeListener.event, true)
+		connect.AssertEqual(t, routeLocalChangeListener.event, true)
 	})
 	connectLocationChangeListener.with(func() {
-		assert.Equal(t, connectLocationChangeListener.event, true)
+		connect.AssertEqual(t, connectLocationChangeListener.event, true)
 	})
 	provideSecretKeysListener.with(func() {
-		assert.Equal(t, provideSecretKeysListener.event, true)
+		connect.AssertEqual(t, provideSecretKeysListener.event, true)
 	})
 	monitorEventListener.with(func() {
-		assert.Equal(t, monitorEventListener.event, true)
+		connect.AssertEqual(t, monitorEventListener.event, true)
 	})
 
 	deviceLocal.Close()
@@ -1335,15 +1333,15 @@ func TestDeviceRemoteLastKnownValuesListeners(t *testing.T) {
 	// make sure the remote value retains the last know state
 	// the last known state was set in the listeners
 
-	assert.Equal(t, deviceRemote.GetCanShowRatingDialog(), true)
-	assert.Equal(t, deviceRemote.GetCanRefer(), true)
-	assert.Equal(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
-	assert.NotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
-	assert.Equal(t, deviceRemote.GetProvideMode(), ProvideModeStream)
-	assert.Equal(t, deviceRemote.GetProvidePaused(), true)
-	assert.Equal(t, deviceRemote.GetOffline(), true)
-	assert.Equal(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
-	assert.Equal(t, deviceRemote.GetConnectLocation(), location)
+	connect.AssertEqual(t, deviceRemote.GetCanShowRatingDialog(), true)
+	connect.AssertEqual(t, deviceRemote.GetCanRefer(), true)
+	connect.AssertEqual(t, deviceRemote.GetRouteLocal(), !settings.DefaultRouteLocal)
+	connect.AssertNotEqual(t, deviceRemote.GetPerformanceProfile(), nil)
+	connect.AssertEqual(t, deviceRemote.GetProvideMode(), ProvideModeStream)
+	connect.AssertEqual(t, deviceRemote.GetProvidePaused(), true)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetVpnInterfaceWhileOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetConnectLocation(), location)
 
 }
 
@@ -1419,13 +1417,13 @@ func TestDeviceRemoteSelfSignedCert(t *testing.T) {
 	instanceId := NewId()
 
 	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	clientPem := keyMaterial.GetClientPem()
 	clientCertPem := keyMaterial.GetClientCertPem()
 	serverPem := keyMaterial.GetServerPem()
 	serverCertPem := keyMaterial.GetServerCertPem()
-	assert.NotEqual(t, len(clientPem), 0)
-	assert.NotEqual(t, len(serverPem), 0)
+	connect.AssertNotEqual(t, len(clientPem), 0)
+	connect.AssertNotEqual(t, len(serverPem), 0)
 
 	settings := defaultDeviceRpcSettings()
 
@@ -1469,16 +1467,16 @@ func TestDeviceRemoteSelfSignedCert(t *testing.T) {
 
 	deviceRemote.Sync()
 	synced := deviceRemote.waitForSync(5 * time.Second)
-	assert.Equal(t, synced, true)
+	connect.AssertEqual(t, synced, true)
 
 	// state propagates over the tls connection in both directions
 	deviceRemote.SetOffline(false)
-	assert.Equal(t, deviceRemote.GetOffline(), false)
-	assert.Equal(t, deviceLocal.GetOffline(), false)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), false)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), false)
 
 	deviceLocal.SetOffline(true)
-	assert.Equal(t, deviceRemote.GetOffline(), true)
-	assert.Equal(t, deviceLocal.GetOffline(), true)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), true)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), true)
 }
 
 // testing_mtlsPinMismatch runs an mTLS session where one side's pin is wrong and
@@ -1535,16 +1533,16 @@ func testing_mtlsPinMismatch(t *testing.T, serverPem string, clientCertPem strin
 	deviceRemote.Sync()
 	// the pin does not match, so the handshake fails and sync never completes
 	synced := deviceRemote.waitForSync(2 * time.Second)
-	assert.Equal(t, synced, false)
+	connect.AssertEqual(t, synced, false)
 }
 
 // TestDeviceRemoteSelfSignedCertServerPinMismatch verifies the dialer rejects a
 // server presenting a certificate other than the pinned one.
 func TestDeviceRemoteSelfSignedCertServerPinMismatch(t *testing.T) {
 	km, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	wrong, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	// dialer pins the wrong server cert
 	testing_mtlsPinMismatch(t, km.GetServerPem(), km.GetClientCertPem(), km.GetClientPem(), wrong.GetServerCertPem())
@@ -1554,9 +1552,9 @@ func TestDeviceRemoteSelfSignedCertServerPinMismatch(t *testing.T) {
 // client presenting a certificate other than the pinned one (mTLS).
 func TestDeviceRemoteSelfSignedCertClientPinMismatch(t *testing.T) {
 	km, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	wrong, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	// dialer presents the wrong client identity
 	testing_mtlsPinMismatch(t, km.GetServerPem(), km.GetClientCertPem(), wrong.GetClientPem(), km.GetServerCertPem())
@@ -1577,7 +1575,7 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	instanceId := NewId()
 
 	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	hostPort := "127.0.0.1:12077"
 	settings := defaultDeviceRpcSettings()
@@ -1601,7 +1599,7 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	defer deviceLocal.Close()
 
 	err = deviceLocal.SetRpcServer(keyMaterial.GetServerPem(), keyMaterial.GetClientCertPem(), hostPort)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	// remote starts pointed at a dead port, so it cannot connect
 	deadDialer := NewWebsocketDeviceRpcDialer(requireRemoteAddress("127.0.0.1:12099"), "", "", settings)
@@ -1618,16 +1616,16 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	assert.Equal(t, deviceRemote.waitForSync(500*time.Millisecond), false)
+	connect.AssertEqual(t, deviceRemote.waitForSync(500*time.Millisecond), false)
 
 	// reset the transport to the tls listener; this should connect
 	err = deviceRemote.SetRpcServer(keyMaterial.GetClientPem(), keyMaterial.GetServerCertPem(), hostPort)
-	assert.Equal(t, err, nil)
-	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 
 	deviceRemote.SetOffline(false)
-	assert.Equal(t, deviceRemote.GetOffline(), false)
-	assert.Equal(t, deviceLocal.GetOffline(), false)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), false)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), false)
 }
 
 // TestDeviceLocalSetRpcServerRebind verifies that calling SetRpcServer again
@@ -1669,15 +1667,15 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 
 	// bind once
 	km1, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	err = deviceLocal.SetRpcServer(km1.GetServerPem(), km1.GetClientCertPem(), hostPort)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	// rebind on the SAME port with fresh material
 	km2, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	err = deviceLocal.SetRpcServer(km2.GetServerPem(), km2.GetClientCertPem(), hostPort)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	// a remote using the new material must connect to the rebound listener
 	dialer := NewWebsocketDeviceRpcDialer(requireRemoteAddress(hostPort), km2.GetClientPem(), km2.GetServerCertPem(), settings)
@@ -1694,9 +1692,9 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 	deviceRemote.SetOffline(false)
-	assert.Equal(t, deviceLocal.GetOffline(), false)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), false)
 }
 
 type testing_remoteChangeCounter struct {
@@ -1767,7 +1765,7 @@ func TestDeviceRemoteStaysConnected(t *testing.T) {
 	defer sub.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 
 	// hold; a healthy session stays connected (one connect event), a tight loop
 	// produces many
@@ -1777,7 +1775,7 @@ func TestDeviceRemoteStaysConnected(t *testing.T) {
 
 	c := counter.count()
 	glog.Infof("[test]remote connect count = %d", c)
-	assert.Equal(t, c <= 1, true)
+	connect.AssertEqual(t, c <= 1, true)
 }
 
 // TestDeviceRpcSetRpcServerIdempotent verifies that re-applying the same rpc
@@ -1832,11 +1830,11 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	defer sub.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 
 	// record the transport config on both sides (may rebind/reconnect once)
-	assert.Equal(t, deviceLocal.SetRpcServer("", "", hostPort), nil)
-	assert.Equal(t, deviceRemote.SetRpcServer("", "", hostPort), nil)
+	connect.AssertEqual(t, deviceLocal.SetRpcServer("", "", hostPort), nil)
+	connect.AssertEqual(t, deviceRemote.SetRpcServer("", "", hostPort), nil)
 	deviceRemote.waitForSync(5 * time.Second)
 	select {
 	case <-time.After(1 * time.Second):
@@ -1846,8 +1844,8 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 
 	// re-applying the same transport repeatedly must be a no-op (no reconnects)
 	for range 10 {
-		assert.Equal(t, deviceLocal.SetRpcServer("", "", hostPort), nil)
-		assert.Equal(t, deviceRemote.SetRpcServer("", "", hostPort), nil)
+		connect.AssertEqual(t, deviceLocal.SetRpcServer("", "", hostPort), nil)
+		connect.AssertEqual(t, deviceRemote.SetRpcServer("", "", hostPort), nil)
 		select {
 		case <-time.After(100 * time.Millisecond):
 		}
@@ -1857,7 +1855,7 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	}
 
 	glog.Infof("[test]connect count baseline=%d final=%d", baseline, counter.count())
-	assert.Equal(t, counter.count(), baseline)
+	connect.AssertEqual(t, counter.count(), baseline)
 }
 
 // TestDeviceRpcKeyMaterialStrings verifies the generated PEM strings are
@@ -1876,7 +1874,7 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	instanceId := NewId()
 
 	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	clientPem := keyMaterial.GetClientPem()
 	clientCertPem := keyMaterial.GetClientCertPem()
@@ -1884,11 +1882,11 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	serverCertPem := keyMaterial.GetServerCertPem()
 
 	// the values are opaque PEM strings, carried verbatim by the app/extension
-	assert.Equal(t, strings.Contains(serverCertPem, "BEGIN CERTIFICATE"), true)
-	assert.Equal(t, strings.Contains(serverPem, "BEGIN CERTIFICATE"), true)
-	assert.Equal(t, strings.Contains(serverPem, "PRIVATE KEY"), true)
-	assert.Equal(t, strings.Contains(clientCertPem, "BEGIN CERTIFICATE"), true)
-	assert.Equal(t, strings.Contains(clientPem, "PRIVATE KEY"), true)
+	connect.AssertEqual(t, strings.Contains(serverCertPem, "BEGIN CERTIFICATE"), true)
+	connect.AssertEqual(t, strings.Contains(serverPem, "BEGIN CERTIFICATE"), true)
+	connect.AssertEqual(t, strings.Contains(serverPem, "PRIVATE KEY"), true)
+	connect.AssertEqual(t, strings.Contains(clientCertPem, "BEGIN CERTIFICATE"), true)
+	connect.AssertEqual(t, strings.Contains(clientPem, "PRIVATE KEY"), true)
 
 	settings := defaultDeviceRpcSettings()
 
@@ -1910,7 +1908,7 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	defer deviceLocal.Close()
 
 	err = deviceLocal.SetRpcServer(serverPem, clientCertPem, settings.Address.HostPort())
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	dialer := NewWebsocketDeviceRpcDialer(settings.Address, clientPem, serverCertPem, settings)
 	deviceRemote, err := newDeviceRemoteWithOverrides(
@@ -1927,11 +1925,11 @@ func TestDeviceRpcKeyMaterialStrings(t *testing.T) {
 	defer deviceRemote.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 
 	deviceRemote.SetOffline(false)
-	assert.Equal(t, deviceRemote.GetOffline(), false)
-	assert.Equal(t, deviceLocal.GetOffline(), false)
+	connect.AssertEqual(t, deviceRemote.GetOffline(), false)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), false)
 }
 
 type testing_listener struct {
@@ -2245,8 +2243,8 @@ func TestDeviceLocalRpcReverseCoalesceLastValue(t *testing.T) {
 	pendingLen := len(rpc.sendPending)
 	order := append([]string{}, rpc.sendOrder...)
 	rpc.sendMu.Unlock()
-	assert.Equal(t, pendingLen, 2)
-	assert.Equal(t, order, []string{"status", "provide"})
+	connect.AssertEqual(t, pendingLen, 2)
+	connect.AssertEqual(t, order, []string{"status", "provide"})
 
 	// resume delivery; only the latest value for each key is delivered
 	close(release)
@@ -2258,8 +2256,8 @@ func TestDeviceLocalRpcReverseCoalesceLastValue(t *testing.T) {
 		pv := append([]int{}, provideVals...)
 		mu.Unlock()
 		if len(sv) == 1 && len(pv) == 1 {
-			assert.Equal(t, sv, []int{n - 1})
-			assert.Equal(t, pv, []int{n - 1})
+			connect.AssertEqual(t, sv, []int{n - 1})
+			connect.AssertEqual(t, pv, []int{n - 1})
 			break
 		}
 		if time.Now().After(deadline) {
@@ -2295,13 +2293,13 @@ func TestDeviceLocalRpcReverseNotifyKeys(t *testing.T) {
 	pendingLen := len(rpc.sendPending)
 	rpc.sendMu.Unlock()
 
-	assert.Equal(t, order, []string{
+	connect.AssertEqual(t, order, []string{
 		"DeviceRemoteRpc.TunnelChanged",
 		"DeviceRemoteRpc.ProvideChanged",
 		"DeviceRemoteRpc.ConnectChanged",
 		"DeviceRemoteRpc.RouteLocalChanged",
 	})
-	assert.Equal(t, pendingLen, 4)
+	connect.AssertEqual(t, pendingLen, 4)
 }
 
 // TestDeviceLocalRpcWindowMonitorMerge verifies window monitor events coalesce
@@ -2356,17 +2354,17 @@ func TestDeviceLocalRpcWindowMonitorMerge(t *testing.T) {
 	pendingLen := len(rpc.sendPending)
 	rpc.sendMu.Unlock()
 
-	assert.Equal(t, order, []string{"DeviceRemoteRpc.WindowMonitorEventCallback"})
-	assert.Equal(t, pendingLen, 1)
+	connect.AssertEqual(t, order, []string{"DeviceRemoteRpc.WindowMonitorEventCallback"})
+	connect.AssertEqual(t, pendingLen, 1)
 	if merged == nil {
 		t.Fatal("expected a merged window monitor event")
 	}
-	assert.Equal(t, merged.Reset, false)
-	assert.Equal(t, merged.WindowExpandEvent, expand2)
-	assert.Equal(t, merged.WindowIds, map[connect.Id]bool{w1: true, w2: true})
-	assert.Equal(t, len(merged.ProviderEvents), 2)
-	assert.Equal(t, merged.ProviderEvents[cA].State, connect.ProviderStateAdded)
-	assert.Equal(t, merged.ProviderEvents[cB].State, connect.ProviderStateInEvaluation)
+	connect.AssertEqual(t, merged.Reset, false)
+	connect.AssertEqual(t, merged.WindowExpandEvent, expand2)
+	connect.AssertEqual(t, merged.WindowIds, map[connect.Id]bool{w1: true, w2: true})
+	connect.AssertEqual(t, len(merged.ProviderEvents), 2)
+	connect.AssertEqual(t, merged.ProviderEvents[cA].State, connect.ProviderStateAdded)
+	connect.AssertEqual(t, merged.ProviderEvents[cB].State, connect.ProviderStateInEvaluation)
 
 	// a reset event discards the accumulated state
 	cC := connect.NewId()
@@ -2385,10 +2383,10 @@ func TestDeviceLocalRpcWindowMonitorMerge(t *testing.T) {
 	if merged == nil {
 		t.Fatal("expected a window monitor event after reset")
 	}
-	assert.Equal(t, merged.Reset, true)
-	assert.Equal(t, merged.WindowIds, map[connect.Id]bool{w2: true})
-	assert.Equal(t, len(merged.ProviderEvents), 1)
-	assert.Equal(t, merged.ProviderEvents[cC].State, connect.ProviderStateInEvaluation)
+	connect.AssertEqual(t, merged.Reset, true)
+	connect.AssertEqual(t, merged.WindowIds, map[connect.Id]bool{w2: true})
+	connect.AssertEqual(t, len(merged.ProviderEvents), 1)
+	connect.AssertEqual(t, merged.ProviderEvents[cC].State, connect.ProviderStateInEvaluation)
 }
 
 type testing_blockingRouteLocalListener struct {
@@ -2463,7 +2461,7 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 	defer sub.Close()
 
 	deviceRemote.Sync()
-	assert.Equal(t, deviceRemote.waitForSync(5*time.Second), true)
+	connect.AssertEqual(t, deviceRemote.waitForSync(5*time.Second), true)
 
 	// force a change to drive the remote listener, then wait until it is parked
 	initial := deviceLocal.GetRouteLocal()
@@ -2485,7 +2483,7 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 		deviceLocal.SetRouteLocal(final)
 	}
 	elapsed := time.Since(start)
-	assert.Equal(t, elapsed < time.Second, true)
+	connect.AssertEqual(t, elapsed < time.Second, true)
 
 	// resume the remote and let it drain
 	doRelease()
@@ -2498,8 +2496,8 @@ func TestDeviceLocalRpcReverseStalledRemote(t *testing.T) {
 
 	// converged to the final value, and coalescing collapsed the burst far below
 	// the number of updates fired (1 initial + 2*burst)
-	assert.Equal(t, last, final)
-	assert.Equal(t, count < 1+2*burst, true)
+	connect.AssertEqual(t, last, final)
+	connect.AssertEqual(t, count < 1+2*burst, true)
 }
 
 // testing_blockingReverseRpc stands in for the app side of the reverse rpc. The
@@ -2760,8 +2758,8 @@ func TestDeviceRemoteMultipleToOneLocal(t *testing.T) {
 		if !remote.waitForSync(5 * time.Second) {
 			t.Fatalf("remote %d did not sync", i)
 		}
-		assert.Equal(t, remote.GetRemoteConnected(), true)
-		assert.Equal(t, remote.GetOffline(), true)
+		connect.AssertEqual(t, remote.GetRemoteConnected(), true)
+		connect.AssertEqual(t, remote.GetOffline(), true)
 	}
 
 	waitOffline := func(remote *DeviceRemote, want bool) bool {
@@ -2793,7 +2791,7 @@ func TestDeviceRemoteMultipleToOneLocal(t *testing.T) {
 	for time.Now().Before(localDeadline) && !deviceLocal.GetOffline() {
 		time.Sleep(50 * time.Millisecond)
 	}
-	assert.Equal(t, deviceLocal.GetOffline(), true)
+	connect.AssertEqual(t, deviceLocal.GetOffline(), true)
 	// and the other remotes observe it via their own reverse channels
 	for i := 1; i < len(remotes); i += 1 {
 		if !waitOffline(remotes[i], true) {
@@ -2826,16 +2824,16 @@ func TestDeviceRpcHttpOverRpc(t *testing.T) {
 	_, deviceRemote := testing_newSyncedDeviceLocalRemote(t, ctx)
 
 	getBody, err := deviceRemote.httpGetRaw(ctx, ts.URL+"/ok", "")
-	assert.Equal(t, err, nil)
-	assert.Equal(t, string(getBody), "GET:/ok:")
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, string(getBody), "GET:/ok:")
 
 	postBody, err := deviceRemote.httpPostRaw(ctx, ts.URL+"/ok", []byte("payload"), "")
-	assert.Equal(t, err, nil)
-	assert.Equal(t, string(postBody), "POST:/ok:payload")
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, string(postBody), "POST:/ok:payload")
 
 	// a non-200 is surfaced as an error carried back over the reverse rpc
 	_, err = deviceRemote.httpGetRaw(ctx, ts.URL+"/fail", "")
-	assert.NotEqual(t, err, nil)
+	connect.AssertNotEqual(t, err, nil)
 }
 
 // TestDeviceRpcHttpOverRpcConcurrent fires many http requests at once. Each
@@ -2879,9 +2877,9 @@ func TestDeviceRpcHttpOverRpcConcurrent(t *testing.T) {
 	wg.Wait()
 
 	for i := 0; i < n; i++ {
-		assert.Equal(t, errs[i], nil)
+		connect.AssertEqual(t, errs[i], nil)
 		// each request got its own response, not another request's
-		assert.Equal(t, results[i], fmt.Sprintf("%d", i))
+		connect.AssertEqual(t, results[i], fmt.Sprintf("%d", i))
 	}
 }
 
@@ -2969,14 +2967,14 @@ func TestDeviceLocalRpcHttpResponseNotBlockedByStuckNotification(t *testing.T) {
 
 	select {
 	case got := <-server.httpReceived:
-		assert.Equal(t, got.RequestId, httpResponse.RequestId)
-		assert.Equal(t, string(got.BodyBytes), "ok")
+		connect.AssertEqual(t, got.RequestId, httpResponse.RequestId)
+		connect.AssertEqual(t, string(got.BodyBytes), "ok")
 	case <-time.After(time.Second):
 		t.Fatal("http response was not delivered while a state notification was stuck in sendLoop")
 	}
 	// delivered promptly, i.e. it did not wait behind the state notification that
 	// is blocking sendLoop
-	assert.Equal(t, elapsed < time.Second, true)
+	connect.AssertEqual(t, elapsed < time.Second, true)
 }
 
 // testing_panicRpc has a served method that panics, to exercise the forward
@@ -3042,7 +3040,7 @@ func TestDeviceLocalRpcServedPanicRecovered(t *testing.T) {
 	go func() { done <- client.Call("T.Ping", true, &void) }()
 	select {
 	case err := <-done:
-		assert.Equal(t, err, nil)
+		connect.AssertEqual(t, err, nil)
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not continue serving after a recovered handler panic")
 	}

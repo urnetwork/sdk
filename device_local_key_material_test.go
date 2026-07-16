@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/connect"
 )
 
@@ -21,11 +19,11 @@ func TestDeviceClientSettingsInstallsPeerKeyFetcherWithoutMutatingInput(t *testi
 
 	clientSettings := newDeviceClientSettings(settings, "https://api.example", clientStrategy)
 
-	assert.NotEqual(t, clientSettings, settings)
-	assert.NotEqual(t, clientSettings.EncryptionSettings, originalEncryptionSettings)
-	assert.Equal(t, settings.EncryptionSettings, originalEncryptionSettings)
-	assert.Equal(t, settings.EncryptionSettings.NewPeerClientPublicKeyFetcher == nil, true)
-	assert.Equal(t, clientSettings.EncryptionSettings.NewPeerClientPublicKeyFetcher != nil, true)
+	connect.AssertNotEqual(t, clientSettings, settings)
+	connect.AssertNotEqual(t, clientSettings.EncryptionSettings, originalEncryptionSettings)
+	connect.AssertEqual(t, settings.EncryptionSettings, originalEncryptionSettings)
+	connect.AssertEqual(t, settings.EncryptionSettings.NewPeerClientPublicKeyFetcher == nil, true)
+	connect.AssertEqual(t, clientSettings.EncryptionSettings.NewPeerClientPublicKeyFetcher != nil, true)
 }
 
 func TestDeviceClientSettingsPreservesConfiguredPeerKeyFetcher(t *testing.T) {
@@ -44,8 +42,8 @@ func TestDeviceClientSettingsPreservesConfiguredPeerKeyFetcher(t *testing.T) {
 	clientId := connect.NewId()
 	publicKey, err := clientSettings.EncryptionSettings.NewPeerClientPublicKeyFetcher(clientId)(ctx)
 
-	assert.Equal(t, err, nil)
-	assert.Equal(t, publicKey, clientId.Bytes())
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, publicKey, clientId.Bytes())
 }
 
 func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
@@ -53,7 +51,7 @@ func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
 	defer cancel()
 
 	networkSpace, _, err := testing_newNetworkSpace(ctx)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	seed := make([]byte, 32)
 	for i := range seed {
@@ -72,13 +70,13 @@ func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
 		false,
 		keyMaterial,
 	)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	defer deviceLocal.Close()
 
 	seed[0] = 99
 
 	got := deviceLocal.GetClientKeySeed()
-	assert.Equal(t, got, []byte{
+	connect.AssertEqual(t, got, []byte{
 		0, 1, 2, 3, 4, 5, 6, 7,
 		8, 9, 10, 11, 12, 13, 14, 15,
 		16, 17, 18, 19, 20, 21, 22, 23,
@@ -86,7 +84,7 @@ func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
 	})
 
 	got[2] = 99
-	assert.Equal(t, deviceLocal.GetClientKeySeed()[2], byte(2))
+	connect.AssertEqual(t, deviceLocal.GetClientKeySeed()[2], byte(2))
 }
 
 func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T) {
@@ -94,7 +92,7 @@ func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T)
 	defer cancel()
 
 	networkSpace, _, err := testing_newNetworkSpace(ctx)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 
 	seed := make([]byte, 32)
 	for i := range seed {
@@ -111,7 +109,7 @@ func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T)
 		NewId(),
 		false,
 	)
-	assert.Equal(t, err, nil)
+	connect.AssertEqual(t, err, nil)
 	defer deviceLocal.Close()
 
 	listener := &testing_provideSecretKeysListener{}
@@ -121,10 +119,10 @@ func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T)
 	deviceLocal.SetKeyMaterial(NewDeviceLocalKeyMaterial(seed, nil, nil))
 
 	got := deviceLocal.GetClientKeySeed()
-	assert.Equal(t, got, seed)
+	connect.AssertEqual(t, got, seed)
 	listener.with(func() {
-		assert.Equal(t, listener.event, true)
-		assert.NotEqual(t, listener.provideSecretKeyList, nil)
+		connect.AssertEqual(t, listener.event, true)
+		connect.AssertNotEqual(t, listener.provideSecretKeyList, nil)
 	})
 }
 
@@ -138,9 +136,9 @@ func TestDeviceLocalKeyMaterialClonesBytes(t *testing.T) {
 	provideTlsCertificate[0] = 9
 	provideTlsPrivateKey[0] = 9
 
-	assert.Equal(t, keyMaterial.GetClientKeySeed(), []byte{1})
-	assert.Equal(t, keyMaterial.GetProvideTlsCertificatePem(), []byte{2})
-	assert.Equal(t, keyMaterial.GetProvideTlsPrivateKeyPem(), []byte{3})
+	connect.AssertEqual(t, keyMaterial.GetClientKeySeed(), []byte{1})
+	connect.AssertEqual(t, keyMaterial.GetProvideTlsCertificatePem(), []byte{2})
+	connect.AssertEqual(t, keyMaterial.GetProvideTlsPrivateKeyPem(), []byte{3})
 }
 
 func TestLocalStatePersistsDeviceLocalKeyMaterial(t *testing.T) {
@@ -151,15 +149,15 @@ func TestLocalStatePersistsDeviceLocalKeyMaterial(t *testing.T) {
 	defer localState.Close()
 
 	keyMaterial := NewDeviceLocalKeyMaterial([]byte{1}, []byte{2}, []byte{3})
-	assert.Equal(t, localState.SetDeviceLocalKeyMaterial(keyMaterial), nil)
+	connect.AssertEqual(t, localState.SetDeviceLocalKeyMaterial(keyMaterial), nil)
 
 	got := localState.GetDeviceLocalKeyMaterial()
-	assert.Equal(t, got.GetClientKeySeed(), []byte{1})
-	assert.Equal(t, got.GetProvideTlsCertificatePem(), []byte{2})
-	assert.Equal(t, got.GetProvideTlsPrivateKeyPem(), []byte{3})
+	connect.AssertEqual(t, got.GetClientKeySeed(), []byte{1})
+	connect.AssertEqual(t, got.GetProvideTlsCertificatePem(), []byte{2})
+	connect.AssertEqual(t, got.GetProvideTlsPrivateKeyPem(), []byte{3})
 
-	assert.Equal(t, localState.SetDeviceLocalKeyMaterial(nil), nil)
-	assert.Equal(t, localState.GetDeviceLocalKeyMaterial(), (*DeviceLocalKeyMaterial)(nil))
+	connect.AssertEqual(t, localState.SetDeviceLocalKeyMaterial(nil), nil)
+	connect.AssertEqual(t, localState.GetDeviceLocalKeyMaterial(), (*DeviceLocalKeyMaterial)(nil))
 }
 
 func TestLocalStateLogoutClearsDeviceLocalKeyMaterial(t *testing.T) {
@@ -169,9 +167,9 @@ func TestLocalStateLogoutClearsDeviceLocalKeyMaterial(t *testing.T) {
 	localState := newLocalState(ctx, t.TempDir())
 	defer localState.Close()
 
-	assert.Equal(t, localState.SetDeviceLocalKeyMaterial(NewDeviceLocalKeyMaterial([]byte{1}, nil, nil)), nil)
-	assert.Equal(t, localState.Logout(), nil)
-	assert.Equal(t, localState.GetDeviceLocalKeyMaterial(), (*DeviceLocalKeyMaterial)(nil))
+	connect.AssertEqual(t, localState.SetDeviceLocalKeyMaterial(NewDeviceLocalKeyMaterial([]byte{1}, nil, nil)), nil)
+	connect.AssertEqual(t, localState.Logout(), nil)
+	connect.AssertEqual(t, localState.GetDeviceLocalKeyMaterial(), (*DeviceLocalKeyMaterial)(nil))
 }
 
 func testingByJwt(clientId connect.Id) string {

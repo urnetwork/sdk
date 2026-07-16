@@ -21,7 +21,7 @@ func TestTunnelDnsAddresses(t *testing.T) {
 	assertAddresses(
 		"nil resolver ipv4",
 		tunnelDnsAddresses(nil, defaultSetting, false),
-		[]string{"1.1.1.1"},
+		[]string{"9.9.9.9", "1.1.1.1"},
 	)
 	assertAddresses(
 		"nil resolver ipv6",
@@ -37,7 +37,7 @@ func TestTunnelDnsAddresses(t *testing.T) {
 	assertAddresses(
 		"disabled local dns",
 		tunnelDnsAddresses(disabled, defaultSetting, false),
-		[]string{"1.1.1.1"},
+		[]string{"9.9.9.9", "1.1.1.1"},
 	)
 
 	// unencrypted local addresses set: use them
@@ -70,7 +70,7 @@ func TestTunnelDnsAddresses(t *testing.T) {
 	assertAddresses(
 		"misfiled leaves ipv4 to the default",
 		tunnelDnsAddresses(misfiled, defaultSetting, false),
-		[]string{"1.1.1.1"},
+		[]string{"9.9.9.9", "1.1.1.1"},
 	)
 
 	// entries that do not parse as ips are dropped; all-invalid uses the default
@@ -81,7 +81,7 @@ func TestTunnelDnsAddresses(t *testing.T) {
 	assertAddresses(
 		"invalid local entries",
 		tunnelDnsAddresses(invalid, defaultSetting, false),
-		[]string{"1.1.1.1"},
+		[]string{"9.9.9.9", "1.1.1.1"},
 	)
 
 	// local dns enabled with no addresses: use the default
@@ -91,7 +91,22 @@ func TestTunnelDnsAddresses(t *testing.T) {
 	assertAddresses(
 		"enabled with no addresses",
 		tunnelDnsAddresses(empty, defaultSetting, false),
-		[]string{"1.1.1.1"},
+		[]string{"9.9.9.9", "1.1.1.1"},
+	)
+
+	// an explicit single-server override narrows the tunnel to that resolver
+	// instead of the default list
+	override := &TunnelDnsSetting{Server: "223.5.5.5"}
+	assertAddresses(
+		"single-server override ipv4",
+		tunnelDnsAddresses(nil, override, false),
+		[]string{"223.5.5.5"},
+	)
+	// a v4-only override contributes nothing to the ipv6 list
+	assertAddresses(
+		"single-server override ipv6",
+		tunnelDnsAddresses(nil, override, true),
+		[]string{},
 	)
 
 	// no default setting and nothing set: no addresses
@@ -109,9 +124,9 @@ func TestDeviceLocalTunnelDnsAddresses(t *testing.T) {
 	device, _ := testing_newBlockDevice(ctx, t, false)
 	defer device.Close()
 
-	// the default resolver settings enable unencrypted local dns on 1.1.1.1,
-	// which matches the default tunnel dns setting
-	if addresses := device.TunnelDnsAddressesIpv4().getAll(); !slices.Equal(addresses, []string{"1.1.1.1"}) {
+	// no unencrypted local dns is enabled by default, so the tunnel dns comes from
+	// the default tunnel dns setting: the default plain-DNS resolver list
+	if addresses := device.TunnelDnsAddressesIpv4().getAll(); !slices.Equal(addresses, []string{"9.9.9.9", "1.1.1.1"}) {
 		t.Fatalf("default tunnel dns ipv4 = %v", addresses)
 	}
 	if addresses := device.TunnelDnsAddressesIpv6().getAll(); len(addresses) != 0 {
@@ -130,7 +145,7 @@ func TestDeviceLocalTunnelDnsAddresses(t *testing.T) {
 	// disabling local dns falls back to the default tunnel dns setting
 	settings.EnableLocalDns = false
 	device.SetDnsResolverSettings(settings)
-	if addresses := device.TunnelDnsAddressesIpv4().getAll(); !slices.Equal(addresses, []string{"1.1.1.1"}) {
+	if addresses := device.TunnelDnsAddressesIpv4().getAll(); !slices.Equal(addresses, []string{"9.9.9.9", "1.1.1.1"}) {
 		t.Fatalf("tunnel dns ipv4 = %v", addresses)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
+	"github.com/urnetwork/connect"
 )
 
 // TestDeviceLocalBlockerEnabledPersistRestore: the toggle persists to local
@@ -21,11 +21,11 @@ func TestDeviceLocalBlockerEnabledPersistRestore(t *testing.T) {
 	localState := networkSpace.GetAsyncLocalState().GetLocalState()
 
 	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	assert.Equal(t, false, device.GetBlockerEnabled())
+	connect.AssertEqual(t, false, device.GetBlockerEnabled())
 
 	// the set persists asynchronously to local state
 	device.SetBlockerEnabled(true)
-	assert.Equal(t, true, device.GetBlockerEnabled())
+	connect.AssertEqual(t, true, device.GetBlockerEnabled())
 	persisted := false
 	for i := 0; i < 100; i += 1 {
 		if localState.GetBlockerEnabled() {
@@ -34,11 +34,11 @@ func TestDeviceLocalBlockerEnabledPersistRestore(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	assert.Equal(t, true, persisted)
+	connect.AssertEqual(t, true, persisted)
 	device.Close()
 
 	// a new device on the same network space restores the persisted toggle
 	restored := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
 	defer restored.Close()
-	assert.Equal(t, true, restored.GetBlockerEnabled())
+	connect.AssertEqual(t, true, restored.GetBlockerEnabled())
 }

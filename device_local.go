@@ -249,7 +249,9 @@ type DeviceLocal struct {
 	tunnelLocalAddress netip.Addr
 
 	// tunnelDnsSetting is the DNS config the platform applies to the TUN. Defaults
-	// to plain DNS 1.1.1.1 — plain (:53) is required for the UpgradeMux to intercept.
+	// to plain DNS with no single-server override, so the platform applies the
+	// default resolver list (9.9.9.9, 1.1.1.1) — plain (:53) is required for the
+	// UpgradeMux to intercept, and no OS-level encrypted DNS is enabled.
 	tunnelDnsSetting *TunnelDnsSetting
 
 	clientStrategy *connect.ClientStrategy
@@ -839,8 +841,8 @@ func (self *DeviceLocal) TunnelLocalAddress() string {
 }
 
 // TunnelDnsSetting returns the DNS configuration the platform should apply to the
-// TUN (defaults to plain DNS 1.1.1.1). Plain DNS is required for the UpgradeMux to
-// intercept and upgrade :53 traffic.
+// TUN (defaults to plain DNS, resolver list 9.9.9.9, 1.1.1.1). Plain DNS is
+// required for the UpgradeMux to intercept and upgrade :53 traffic.
 func (self *DeviceLocal) TunnelDnsSetting() *TunnelDnsSetting {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -848,7 +850,8 @@ func (self *DeviceLocal) TunnelDnsSetting() *TunnelDnsSetting {
 }
 
 // SetTunnelDnsSetting overrides the platform DNS configuration. Each use case sets
-// its own (the apps use plain 1.1.1.1; server/proxy may differ).
+// its own (the apps use the default plain-DNS resolver list; server/proxy may
+// differ). A non-empty Server narrows the tunnel to that single resolver.
 func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -858,8 +861,9 @@ func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 // TunnelDnsAddressesIpv4 returns the plain-DNS IPv4 server IPs the platform should
 // apply to the TUN interface (Android `addDnsServer`), sourced from the device at
 // tunnel-build time like TunnelLocalAddress: the dns resolver settings' unencrypted
-// local servers when set, otherwise the default tunnel dns setting (plain 1.1.1.1).
-// Plain :53 keeps the UpgradeMux able to intercept and upgrade queries.
+// local servers when set, otherwise the default tunnel dns setting (the default
+// plain-DNS resolvers 9.9.9.9, 1.1.1.1). Plain :53 keeps the UpgradeMux able to
+// intercept and upgrade queries.
 func (self *DeviceLocal) TunnelDnsAddressesIpv4() *StringList {
 	return self.tunnelDnsAddressList(false)
 }
@@ -885,8 +889,10 @@ func (self *DeviceLocal) tunnelDnsAddressList(ipv6 bool) *StringList {
 
 // tunnelDnsAddresses derives the plain-dns tunnel resolver ips of one address
 // family: the resolver settings' unencrypted local dns servers when enabled and
-// non-empty, otherwise the default tunnel dns setting's server. entries that do
-// not parse as an ip are dropped, so the platform never applies a bad address
+// non-empty, otherwise the tunnel dns setting's single-server override when set,
+// otherwise the default plain-dns resolver list (defaultTunnelDnsServersIpv4).
+// entries that do not parse as an ip are dropped, so the platform never applies a
+// bad address
 func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting *TunnelDnsSetting, ipv6 bool) []string {
 	family := func(servers []string) []string {
 		out := []string{}
@@ -907,7 +913,15 @@ func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting 
 		}
 	}
 	if tunnelDnsSetting != nil {
-		return family([]string{tunnelDnsSetting.Server})
+		// an explicit single-server override wins; otherwise (the default, empty
+		// Server) apply the default plain-dns resolver list. plain :53 keeps the
+		// UpgradeMux able to intercept and upgrade, and the default leads with a
+		// resolver the OS does not auto-upgrade to encrypted DNS (see
+		// defaultTunnelDnsServersIpv4)
+		if server := strings.TrimSpace(tunnelDnsSetting.Server); server != "" {
+			return family([]string{server})
+		}
+		return family(defaultTunnelDnsServers(ipv6))
 	}
 	return []string{}
 }
@@ -3429,6 +3443,13 @@ type deviceContractState struct {
 	bitRate           int
 	open              bool
 	updateTime        time.Time
+	// the id this contract atomically replaced on the same path (a renewal), or
+	// nil. Reported on the incoming (open) contract; the superseded one is dropped
+	// without its own Closed tombstone.
+	replacesContractId *connect.Id
+	// a closed contract is reported once as a Closed tombstone, then evicted on the
+	// next emit; this flags that its one report has been made.
+	closedReported bool
 }
 
 // the open contracts of one connect client (the multi client or the provider
@@ -3514,23 +3535,86 @@ func (self *deviceContractTracker) update(
 	return self.emit(now)
 }
 
-// emit builds the reports, evicts closed contracts, and opens a new epoch.
+// emit builds the reports and advances the contract lifecycle:
+//   - a contract superseded by a renewal on the same path is linked to its
+//     replacement (which carries ReplacesContractId) and dropped, so the swap is
+//     one atomic event rather than a bouncy close-then-open;
+//   - a contract that closed with no replacement is reported once as a Closed
+//     tombstone, kept one more cycle so a coalesced getter read still sees it,
+//     then evicted on the next emit.
 func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	self.pendingEmit = false
 	self.lastEmitTime = now
+
+	// drop tombstones whose one Closed report was made on a previous cycle
+	self.evictReportedClosed(self.egressContracts)
+	self.evictReportedClosed(self.ingressContracts)
+
+	// link atomic replacements (renewals on the same path), dropping the
+	// superseded contract without a separate Closed tombstone
+	self.linkReplacements(self.egressContracts)
+	self.linkReplacements(self.ingressContracts)
+
 	egressStats = self.stats(false)
 	ingressStats = self.stats(true)
 	egressDetails = self.details(false)
 	ingressDetails = self.details(true)
-	// evict closed contracts after the final report
-	for contractId, state := range self.egressContracts {
-		if !state.open {
-			delete(self.egressContracts, contractId)
+
+	// close out the one-shot signals just built into details (Closed tombstones
+	// and replace links); keep the settle loop alive while any tombstone remains
+	// so the next emit evicts it
+	if self.finalizeReported(self.egressContracts) || self.finalizeReported(self.ingressContracts) {
+		self.pendingEmit = true
+	}
+	return
+}
+
+// evictReportedClosed removes closed contracts whose Closed tombstone was already
+// emitted on a previous cycle.
+func (self *deviceContractTracker) evictReportedClosed(contracts map[connect.Id]*deviceContractState) {
+	for contractId, state := range contracts {
+		if !state.open && state.closedReported {
+			delete(contracts, contractId)
 		}
 	}
-	for contractId, state := range self.ingressContracts {
-		if !state.open {
-			delete(self.ingressContracts, contractId)
+}
+
+// linkReplacements pairs each just-closed contract with a contract that opened on
+// the same transfer path in the same window: the incoming contract takes
+// ReplacesContractId so the UI treats the swap as one atomic replace rather than
+// a close then an open. The superseded contract is NOT dropped here -- it is
+// still reported once as a Closed tombstone carrying its FINAL stats, so the
+// consumer can subtract the replaced stats out and add the new stats in without
+// losing the replaced contract's last bytes. It is evicted next emit like any
+// close.
+func (self *deviceContractTracker) linkReplacements(contracts map[connect.Id]*deviceContractState) {
+	for _, closing := range contracts {
+		if closing.open || closing.closedReported {
+			continue
+		}
+		for _, opening := range contracts {
+			if opening.open && opening.contractId != closing.contractId &&
+				opening.replacesContractId == nil && opening.path == closing.path {
+				replaced := closing.contractId
+				opening.replacesContractId = &replaced
+				break
+			}
+		}
+	}
+}
+
+// finalizeReported closes out an emit's one-shot signals: a Closed tombstone is
+// flagged reported (evicted next emit), and a reported replace link is cleared so
+// the incoming contract reads as a normal open from the next emit on. Returns
+// whether any Closed tombstone remains pending eviction.
+func (self *deviceContractTracker) finalizeReported(contracts map[connect.Id]*deviceContractState) (remaining bool) {
+	for _, state := range contracts {
+		if state.open {
+			// the replace link is one-shot: reported once, then a normal open
+			state.replacesContractId = nil
+		} else {
+			state.closedReported = true
+			remaining = true
 		}
 	}
 	return
@@ -3721,12 +3805,20 @@ func (self *deviceContractTracker) details(receive bool) *ContractDetailsList {
 				}
 			}
 		}
+		status := ContractStatusOpen
+		if !state.open {
+			status = ContractStatusClosed
+		}
 		contractDetails := &ContractDetails{
 			ContractId:            newId(state.contractId),
 			ContractUsedByteCount: state.usedByteCount,
 			ContractByteCount:     state.transferByteCount,
 			ContractBitRate:       state.bitRate,
 			ContractTransferPath:  fromConnect(state.path),
+			Status:                status,
+		}
+		if state.replacesContractId != nil {
+			contractDetails.ReplacesContractId = newId(*state.replacesContractId)
 		}
 		if companionState != nil {
 			contractDetails.CompanionContractId = newId(companionState.contractId)

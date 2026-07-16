@@ -15,7 +15,7 @@ import (
 
 	// "runtime/debug"
 
-	"golang.org/x/exp/maps"
+	"maps"
 
 	"github.com/urnetwork/connect"
 )
@@ -472,47 +472,47 @@ func (self *DeviceRemote) run() {
 
 				windowMonitorListenerIds := map[connect.Id][]connect.Id{}
 				for windowId, windowMonitor := range self.windowMonitors {
-					windowMonitorListenerIds[windowId] = maps.Keys(windowMonitor.listeners)
+					windowMonitorListenerIds[windowId] = slices.Collect(maps.Keys(windowMonitor.listeners))
 				}
 
 				syncRequest := &DeviceRemoteSyncRequest{
-					CanShowRatingDialogChangeListenerIds:      maps.Keys(self.canShowRatingDialogChangeListeners),
-					CanPromptIntroFunnelChangeListenerIds:     maps.Keys(self.canPromptIntroFunnelChangeListeners),
-					AllowForegroundChangeListenerIds:          maps.Keys(self.allowForegroundChangeListeners),
-					CanReferChangeListenerIds:                 maps.Keys(self.canReferChangeListeners),
-					ProvideModeChangeListenerIds:              maps.Keys(self.provideModeChangeListeners),
-					ProvideChangeListenerIds:                  maps.Keys(self.provideChangeListeners),
-					ProvideControlModeChangeListenerIds:       maps.Keys(self.provideControlModeChangeListeners),
-					PerformanceProfileChangeListenerIds:       maps.Keys(self.performanceProfileChangeListeners),
-					ProvidePausedChangeListenerIds:            maps.Keys(self.providePausedChangeListeners),
-					ProvideNetworkModeChangeListenerIds:       maps.Keys(self.provideNetworkModeChangeListeners),
-					OfflineChangeListenerIds:                  maps.Keys(self.offlineChangeListeners),
-					VpnInterfaceWhileOfflineChangeListenerIds: maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners),
-					ConnectChangeListenerIds:                  maps.Keys(self.connectChangeListeners),
-					RouteLocalChangeListenerIds:               maps.Keys(self.routeLocalChangeListeners),
-					BlockerEnabledChangeListenerIds:           maps.Keys(self.blockerEnabledChangeListeners),
-					ConnectLocationChangeListenerIds:          maps.Keys(self.connectLocationChangeListeners),
-					DefaultLocationChangeListenerIds:          maps.Keys(self.defaultLocationChangeListeners),
-					ProvideSecretKeysListenerIds:              maps.Keys(self.provideSecretKeysListeners),
-					TunnelChangeListenerIds:                   maps.Keys(self.tunnelChangeListeners),
-					ContractStatusChangeListenerIds:           maps.Keys(self.contractStatusChangeListeners),
-					WindowStatusChangeListenerIds:             maps.Keys(self.windowStatusChangeListeners),
-					BlockActionWindowChangeListenerIds:        maps.Keys(self.blockActionWindowChangeListeners),
-					BlockStatsChangeListenerIds:               maps.Keys(self.blockStatsChangeListeners),
-					BlockActionOverridesChangeListenerIds:     maps.Keys(self.blockActionOverridesChangeListeners),
-					PacketStatsChangeListenerIds:              maps.Keys(self.packetStatsChangeListeners),
-					EgressContractStatsChangeListenerIds:      maps.Keys(self.egressContractStatsChangeListeners),
-					EgressContractDetailsChangeListenerIds:    maps.Keys(self.egressContractDetailsChangeListeners),
-					IngressContractStatsChangeListenerIds:     maps.Keys(self.ingressContractStatsChangeListeners),
-					IngressContractDetailsChangeListenerIds:   maps.Keys(self.ingressContractDetailsChangeListeners),
-					DnsResolverSettingsChangeListenerIds:      maps.Keys(self.dnsResolverSettingsChangeListeners),
-					NetworkPeersChangeListenerIds:             maps.Keys(self.networkPeersChangeListeners),
+					CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
+					CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
+					AllowForegroundChangeListenerIds:          slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
+					CanReferChangeListenerIds:                 slices.Collect(maps.Keys(self.canReferChangeListeners)),
+					ProvideModeChangeListenerIds:              slices.Collect(maps.Keys(self.provideModeChangeListeners)),
+					ProvideChangeListenerIds:                  slices.Collect(maps.Keys(self.provideChangeListeners)),
+					ProvideControlModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
+					PerformanceProfileChangeListenerIds:       slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
+					ProvidePausedChangeListenerIds:            slices.Collect(maps.Keys(self.providePausedChangeListeners)),
+					ProvideNetworkModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
+					OfflineChangeListenerIds:                  slices.Collect(maps.Keys(self.offlineChangeListeners)),
+					VpnInterfaceWhileOfflineChangeListenerIds: slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
+					ConnectChangeListenerIds:                  slices.Collect(maps.Keys(self.connectChangeListeners)),
+					RouteLocalChangeListenerIds:               slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
+					BlockerEnabledChangeListenerIds:           slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
+					ConnectLocationChangeListenerIds:          slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
+					DefaultLocationChangeListenerIds:          slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
+					ProvideSecretKeysListenerIds:              slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
+					TunnelChangeListenerIds:                   slices.Collect(maps.Keys(self.tunnelChangeListeners)),
+					ContractStatusChangeListenerIds:           slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
+					WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
+					BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
+					BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
+					BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
+					PacketStatsChangeListenerIds:              slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
+					EgressContractStatsChangeListenerIds:      slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
+					EgressContractDetailsChangeListenerIds:    slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
+					IngressContractStatsChangeListenerIds:     slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
+					IngressContractDetailsChangeListenerIds:   slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
+					DnsResolverSettingsChangeListenerIds:      slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
+					NetworkPeersChangeListenerIds:             slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
 
-					ProviderPacketStatsChangeListenerIds:            maps.Keys(self.providerPacketStatsChangeListeners),
-					ProviderEgressContractStatsChangeListenerIds:    maps.Keys(self.providerEgressContractStatsChangeListeners),
-					ProviderEgressContractDetailsChangeListenerIds:  maps.Keys(self.providerEgressContractDetailsChangeListeners),
-					ProviderIngressContractStatsChangeListenerIds:   maps.Keys(self.providerIngressContractStatsChangeListeners),
-					ProviderIngressContractDetailsChangeListenerIds: maps.Keys(self.providerIngressContractDetailsChangeListeners),
+					ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
+					ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
+					ProviderEgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.providerEgressContractDetailsChangeListeners)),
+					ProviderIngressContractStatsChangeListenerIds:   slices.Collect(maps.Keys(self.providerIngressContractStatsChangeListeners)),
+					ProviderIngressContractDetailsChangeListenerIds: slices.Collect(maps.Keys(self.providerIngressContractDetailsChangeListeners)),
 					WindowMonitorEventListenerIds:                   windowMonitorListenerIds,
 					State:                                           self.state,
 				}
@@ -2624,7 +2624,7 @@ func (self *DeviceRemote) ingressSecurityPolicy() securityPolicy {
 func listenerList[T any](listenerMap map[connect.Id]T) []T {
 	// consistent dispatch order
 	n := len(listenerMap)
-	orderedKeys := maps.Keys(listenerMap)
+	orderedKeys := slices.Collect(maps.Keys(listenerMap))
 	slices.SortFunc(orderedKeys, func(a connect.Id, b connect.Id) int {
 		return a.Cmp(b)
 	})
@@ -4923,6 +4923,9 @@ type ContractDetailsRpc struct {
 	CompanionContractByteCount     ByteCount
 	CompanionContractBitRate       int
 	CompanionContractTransferPath  *DeviceRemoteTransferPath
+
+	Status             string
+	ReplacesContractId *connect.Id
 }
 
 func newContractDetailsRpc(contractDetails *ContractDetails) *ContractDetailsRpc {
@@ -4939,6 +4942,12 @@ func newContractDetailsRpc(contractDetails *ContractDetails) *ContractDetailsRpc
 		CompanionContractByteCount:     contractDetails.CompanionContractByteCount,
 		CompanionContractBitRate:       contractDetails.CompanionContractBitRate,
 		CompanionContractTransferPath:  newDeviceRemoteTransferPath(contractDetails.CompanionContractTransferPath),
+
+		Status: contractDetails.Status,
+	}
+	if contractDetails.ReplacesContractId != nil {
+		id := contractDetails.ReplacesContractId.toConnectId()
+		contractDetailsRpc.ReplacesContractId = &id
 	}
 	if contractDetails.ContractId != nil {
 		id := contractDetails.ContractId.toConnectId()
@@ -4965,12 +4974,17 @@ func (self *ContractDetailsRpc) toContractDetails() *ContractDetails {
 		CompanionContractByteCount:     self.CompanionContractByteCount,
 		CompanionContractBitRate:       self.CompanionContractBitRate,
 		CompanionContractTransferPath:  self.CompanionContractTransferPath.toTransferPath(),
+
+		Status: self.Status,
 	}
 	if self.ContractId != nil {
 		contractDetails.ContractId = newId(*self.ContractId)
 	}
 	if self.CompanionContractId != nil {
 		contractDetails.CompanionContractId = newId(*self.CompanionContractId)
+	}
+	if self.ReplacesContractId != nil {
+		contractDetails.ReplacesContractId = newId(*self.ReplacesContractId)
 	}
 	return contractDetails
 }

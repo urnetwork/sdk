@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"golang.org/x/exp/maps"
+	"maps"
 
 	"github.com/urnetwork/connect"
 )
@@ -45,7 +45,7 @@ func (self *securityPolicyMonitor) run() {
 func printSecurityPolicyStats(log connect.Logger, prefix string, stats connect.SecurityPolicyStats) {
 	log.Infof("%s security policy stats:", prefix)
 	for result, destinationCounts := range stats {
-		destinations := maps.Keys(destinationCounts)
+		destinations := slices.Collect(maps.Keys(destinationCounts))
 		slices.SortFunc(destinations, func(a connect.SecurityDestination, b connect.SecurityDestination) int {
 			return a.Cmp(b)
 		})

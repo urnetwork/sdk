@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/assert/v2"
-
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 )
@@ -51,7 +49,7 @@ func TestDeviceLocalContractStatusWindowExpires(t *testing.T) {
 	defer device.Close()
 
 	device.updateContractStatus(&connect.ContractStatus{Premium: true})
-	assert.Equal(t, true, device.GetContractStatus().Premium)
+	connect.AssertEqual(t, true, device.GetContractStatus().Premium)
 
 	// age the premium update out of the window, then report a non-premium
 	// status: the expired update must no longer contribute
@@ -64,7 +62,7 @@ func TestDeviceLocalContractStatusWindowExpires(t *testing.T) {
 		t.Fatalf("premium latched on after the update aged out of the window")
 	}
 	// only the in-window update is retained
-	assert.Equal(t, 1, testing_contractStatusUpdateCount(device))
+	connect.AssertEqual(t, 1, testing_contractStatusUpdateCount(device))
 }
 
 // TestDeviceLocalContractStatusWindowBounded asserts the retained window is
@@ -99,9 +97,9 @@ func TestDeviceLocalContractStatusErrorClears(t *testing.T) {
 
 	insufficientBalance := protocol.ContractError_InsufficientBalance
 	device.updateContractStatus(&connect.ContractStatus{Error: &insufficientBalance})
-	assert.Equal(t, true, device.GetContractStatus().InsufficientBalance)
+	connect.AssertEqual(t, true, device.GetContractStatus().InsufficientBalance)
 
 	// a healthy status inside the same window resets the error state
 	device.updateContractStatus(&connect.ContractStatus{})
-	assert.Equal(t, false, device.GetContractStatus().InsufficientBalance)
+	connect.AssertEqual(t, false, device.GetContractStatus().InsufficientBalance)
 }

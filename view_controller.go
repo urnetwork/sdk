@@ -23,6 +23,8 @@ type ViewControllerManager interface {
 
 	OpenDevicesViewController() *DevicesViewController
 
+	OpenPeerViewController() *PeerViewController
+
 	OpenAccountViewController() *AccountViewController
 
 	OpenFeedbackViewController() *FeedbackViewController
@@ -36,6 +38,8 @@ type ViewControllerManager interface {
 	OpenBlockActionViewController() *BlockActionViewController
 
 	OpenContractViewController() *ContractViewController
+
+	OpenContractDetailsViewController() *ContractDetailsViewController
 
 	CloseViewController(vc ViewController)
 
@@ -108,6 +112,12 @@ func (self *viewControllerManager) OpenDevicesViewController() *DevicesViewContr
 	return vc
 }
 
+func (self *viewControllerManager) OpenPeerViewController() *PeerViewController {
+	vc := newPeerViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
 func (self *viewControllerManager) OpenAccountViewController() *AccountViewController {
 	vc := newAccountViewController(self.ctx, self.device)
 	self.openViewController(vc)
@@ -146,6 +156,12 @@ func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionV
 
 func (self *viewControllerManager) OpenContractViewController() *ContractViewController {
 	vc := newContractViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenContractDetailsViewController() *ContractDetailsViewController {
+	vc := newContractDetailsViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

@@ -16,6 +16,8 @@ export interface NetworkSpaceValues {
   store?: string;
   wallet?: string;
   sso_google?: boolean;
+  api_url?: string;
+  platform_url?: string;
   net_extender?: NetExtender | null;
   net_extender_auto_configure?: NetExtenderAutoConfigure | null;
 }
@@ -194,6 +196,7 @@ export interface ProviderSpec {
 
 export interface AuthNetworkClientError {
   client_limit_exceeded: boolean;
+  upgrade_required?: boolean;
   message: string;
 }
 
