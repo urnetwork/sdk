@@ -5,7 +5,7 @@ package main
 import (
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // JS bindings for the SDK view controllers — the same layer the iOS/Android
