@@ -2,11 +2,11 @@ module github.com/urnetwork/sdk/build
 
 go 1.26.3
 
+require github.com/urnetwork/sdk/v2026 v2026.7.15-993810200
+
 require (
-	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/btree v1.1.3 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
@@ -26,20 +26,15 @@ require (
 	github.com/pion/turn/v5 v5.0.10 // indirect
 	github.com/pion/webrtc/v4 v4.2.15 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.7.15-993810200
-	github.com/urnetwork/glog/v2026 v2026.7.15-993810200
-	github.com/urnetwork/sdk/v2026 v2026.7.15-993810200
+	github.com/urnetwork/connect/v2026 v2026.7.15-993810200 // indirect
+	github.com/urnetwork/glog/v2026 v2026.7.15-993810200 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976 // indirect
-	golang.org/x/mobile v0.0.0-20260611195102-4dd8f1dbf5d2 // indirect
-	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.46.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gvisor.dev/gvisor v0.0.0-20260624000029-d10071d63566 // indirect
 	src.agwa.name/tlshacks v0.0.3 // indirect
