@@ -2275,3 +2275,179 @@ func (self *Api) DeleteApiKey(callback DeleteApiKeyCallback) {
 		)
 	})
 }
+
+// --- GenerateSeedphrase ---
+
+type GenerateSeedphraseCallback connect.ApiCallback[*GenerateSeedphraseResult]
+
+type GenerateSeedphraseArgs struct{}
+
+type GenerateSeedphraseResult struct {
+	Seedphrase string    `json:"seedphrase"`
+	Error      *ApiError `json:"error,omitempty"`
+}
+
+func (self *Api) GenerateSeedphrase(args *GenerateSeedphraseArgs, callback GenerateSeedphraseCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/generate-seedphrase", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&GenerateSeedphraseResult{},
+			callback,
+		)
+	})
+}
+
+// --- RegenerateSeedphrase ---
+
+type RegenerateSeedphraseCallback connect.ApiCallback[*RegenerateSeedphraseResult]
+
+type RegenerateSeedphraseArgs struct{}
+
+type RegenerateSeedphraseResult struct {
+	Seedphrase string    `json:"seedphrase"`
+	Error      *ApiError `json:"error,omitempty"`
+}
+
+func (self *Api) RegenerateSeedphrase(args *RegenerateSeedphraseArgs, callback RegenerateSeedphraseCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/regenerate-seedphrase", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RegenerateSeedphraseResult{},
+			callback,
+		)
+	})
+}
+
+// --- AddAuth ---
+
+type AddAuthCallback connect.ApiCallback[*AddAuthResult]
+
+type AddAuthArgs struct {
+	UserAuth    *string         `json:"user_auth,omitempty"`
+	Password    *string         `json:"password,omitempty"`
+	AuthJwt     *string         `json:"auth_jwt,omitempty"`
+	AuthJwtType *string         `json:"auth_jwt_type,omitempty"`
+	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
+}
+
+type AddAuthResult struct {
+	Error *AddAuthError `json:"error,omitempty"`
+}
+
+type AddAuthError struct {
+	Message string `json:"message"`
+}
+
+func (self *Api) AddAuth(args *AddAuthArgs, callback AddAuthCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/add-auth", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&AddAuthResult{},
+			callback,
+		)
+	})
+}
+
+// --- RemoveAuth ---
+
+type RemoveAuthCallback connect.ApiCallback[*RemoveAuthResult]
+
+type RemoveAuthArgs struct {
+	AuthType string `json:"auth_type"`
+}
+
+type RemoveAuthResult struct {
+	Error *RemoveAuthError `json:"error,omitempty"`
+}
+
+type RemoveAuthError struct {
+	Message string `json:"message"`
+}
+
+func (self *Api) RemoveAuth(args *RemoveAuthArgs, callback RemoveAuthCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/auth/remove-auth", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RemoveAuthResult{},
+			callback,
+		)
+	})
+}
+
+// --- ChangeNetworkName ---
+
+type ChangeNetworkNameCallback connect.ApiCallback[*ChangeNetworkNameResult]
+
+type ChangeNetworkNameArgs struct {
+	NewName string `json:"new_name"`
+}
+
+type ChangeNetworkNameResult struct {
+	NetworkName string                  `json:"network_name"`
+	Error       *ChangeNetworkNameError `json:"error,omitempty"`
+}
+
+type ChangeNetworkNameError struct {
+	Message string `json:"message"`
+}
+
+func (self *Api) ChangeNetworkName(args *ChangeNetworkNameArgs, callback ChangeNetworkNameCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/account/change-name", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&ChangeNetworkNameResult{},
+			callback,
+		)
+	})
+}
+
+// --- ClaimNetworkName ---
+
+type ClaimNetworkNameCallback connect.ApiCallback[*ClaimNetworkNameResult]
+
+type ClaimNetworkNameArgs struct {
+	NewName string `json:"new_name"`
+}
+
+type ClaimNetworkNameResult struct {
+	NetworkName string                 `json:"network_name"`
+	Error       *ClaimNetworkNameError `json:"error,omitempty"`
+}
+
+type ClaimNetworkNameError struct {
+	Message string `json:"message"`
+}
+
+func (self *Api) ClaimNetworkName(args *ClaimNetworkNameArgs, callback ClaimNetworkNameCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/account/claim-name", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&ClaimNetworkNameResult{},
+			callback,
+		)
+	})
+}
