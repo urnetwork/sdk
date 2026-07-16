@@ -2,11 +2,11 @@ module github.com/urnetwork/sdk/js
 
 go 1.26.3
 
+require github.com/urnetwork/sdk/v2026 v2026.7.16-993865310
+
 require (
-	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
@@ -26,9 +26,8 @@ require (
 	github.com/pion/turn/v5 v5.0.9 // indirect
 	github.com/pion/webrtc/v4 v4.2.15 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.7.16-993865310
-	github.com/urnetwork/glog/v2026 v2026.7.16-993865310
-	github.com/urnetwork/sdk/v2026 v2026.7.16-993865310
+	github.com/urnetwork/connect/v2026 v2026.7.16-993865310 // indirect
+	github.com/urnetwork/glog/v2026 v2026.7.16-993865310 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976 // indirect
