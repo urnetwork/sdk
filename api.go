@@ -2336,10 +2336,10 @@ func (self *Api) RegenerateSeedphrase(args *RegenerateSeedphraseArgs, callback R
 type AddAuthCallback connect.ApiCallback[*AddAuthResult]
 
 type AddAuthArgs struct {
-	UserAuth    *string         `json:"user_auth,omitempty"`
-	Password    *string         `json:"password,omitempty"`
-	AuthJwt     *string         `json:"auth_jwt,omitempty"`
-	AuthJwtType *string         `json:"auth_jwt_type,omitempty"`
+	UserAuth    string          `json:"user_auth,omitempty"`
+	Password    string          `json:"password,omitempty"`
+	AuthJwt     string          `json:"auth_jwt,omitempty"`
+	AuthJwtType string          `json:"auth_jwt_type,omitempty"`
 	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
 }
 
