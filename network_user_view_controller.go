@@ -174,12 +174,14 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 			}
 
 			networkUser := &NetworkUser{
-				UserId:      result.NetworkUser.UserId,
-				UserName:    result.NetworkUser.UserName,
-				UserAuth:    result.NetworkUser.UserAuth,
-				Verified:    result.NetworkUser.Verified,
-				AuthType:    result.NetworkUser.AuthType,
-				NetworkName: result.NetworkUser.NetworkName,
+				UserId:        result.NetworkUser.UserId,
+				UserName:      result.NetworkUser.UserName,
+				UserAuth:      result.NetworkUser.UserAuth,
+				Verified:      result.NetworkUser.Verified,
+				AuthType:      result.NetworkUser.AuthType,
+				NetworkName:   result.NetworkUser.NetworkName,
+				WalletAddress: result.NetworkUser.WalletAddress,
+				AuthTypes:     result.NetworkUser.AuthTypes,
 			}
 
 			self.setNetworkUser(networkUser)
