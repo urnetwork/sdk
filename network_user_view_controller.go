@@ -28,14 +28,14 @@ type NetworkUserUpdateSuccessListener interface {
 }
 
 type NetworkUser struct {
-	UserId      *Id         `json:"userId"`
-	UserName    string      `json:"user_name"`
-	UserAuth    string      `json:"user_auth,omitempty"`
-	Verified    bool        `json:"verified"`
-	AuthType    string      `json:"auth_type"`
-	NetworkName string      `json:"network_name"`
-	WalletAddress string   `json:"wallet_address,omitempty"`
-	AuthTypes   *StringList `json:"auth_types,omitempty"`
+	UserId        *Id         `json:"userId"`
+	UserName      string      `json:"user_name"`
+	UserAuth      string      `json:"user_auth,omitempty"`
+	Verified      bool        `json:"verified"`
+	AuthType      string      `json:"auth_type"`
+	NetworkName   string      `json:"network_name"`
+	WalletAddress string      `json:"wallet_address,omitempty"`
+	AuthTypes     *StringList `json:"auth_types,omitempty"`
 }
 
 type NetworkUserViewController struct {
