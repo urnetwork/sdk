@@ -138,6 +138,7 @@ inline constexpr const char* MATIC = "MATIC";
 inline constexpr const char* ProvideControlModeAlways = "always";
 inline constexpr const char* ProvideControlModeAuto = "auto";
 inline constexpr const char* ProvideControlModeManual = "manual";
+inline constexpr const char* ProvideControlModeNetwork = "network";
 inline constexpr const char* ProvideControlModeNever = "never";
 inline constexpr int64_t ProvideModeFriendsAndFamily = 2;
 inline constexpr int64_t ProvideModeNetwork = 1;
@@ -252,9 +253,10 @@ struct BlockedLocation;
 struct ByJwt;
 struct CircleUserToken;
 struct CircleWalletInfo;
-struct ContractClientRow;
 struct TransferPath;
 struct ContractDetails;
+struct ContractEntry;
+struct ContractPeerRow;
 struct ContractStats;
 struct ContractStatus;
 struct CountryMultiplier;
@@ -424,8 +426,9 @@ using BlockActionList = std::vector<BlockAction>;
 using BlockActionOverrideList = std::vector<BlockActionOverride>;
 using BlockedLocationsList = std::vector<BlockedLocation>;
 using ConnectLocationList = std::vector<ConnectLocation>;
-using ContractClientRowList = std::vector<ContractClientRow>;
 using ContractDetailsList = std::vector<ContractDetails>;
+using ContractEntryList = std::vector<ContractEntry>;
+using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
 using Float64List = std::vector<double>;
@@ -617,6 +620,7 @@ struct ConnectLocation {
 	std::optional<std::string> country_location_id;
 	bool stable{};
 	bool strong_privacy{};
+	std::optional<bool> network_peer;
 };
 
 struct WindowSizeSettings {
@@ -746,6 +750,8 @@ struct BlockAction {
 	int64_t Time{};
 	std::optional<StringList> Ips;
 	std::optional<StringList> Hosts;
+	std::optional<StringList> MatchedIps;
+	std::optional<StringList> MatchedHosts;
 	bool Block{};
 	bool Local{};
 	std::optional<std::string> OverrideId;
@@ -801,20 +807,6 @@ struct CircleWalletInfo {
 	int64_t balance_usdc_nano_cents{};
 };
 
-struct ContractClientRow {
-	std::string ClientId{};
-	std::string ContractId{};
-	std::string CompanionContractId{};
-	int64_t ContractUsedByteCount{};
-	int64_t ContractByteCount{};
-	int64_t ContractBitRate{};
-	int64_t CompanionContractUsedByteCount{};
-	int64_t CompanionContractByteCount{};
-	int64_t CompanionContractBitRate{};
-	int64_t PairCount{};
-	bool Closing{};
-};
-
 struct TransferPath {
 	std::optional<std::string> SourceId;
 	std::optional<std::string> DestinationId;
@@ -827,13 +819,25 @@ struct ContractDetails {
 	int64_t ContractByteCount{};
 	int64_t ContractBitRate{};
 	std::optional<TransferPath> ContractTransferPath;
-	std::optional<std::string> CompanionContractId;
-	int64_t CompanionContractUsedByteCount{};
-	int64_t CompanionContractByteCount{};
-	int64_t CompanionContractBitRate{};
-	std::optional<TransferPath> CompanionContractTransferPath;
 	std::string Status{};
-	std::optional<std::string> ReplacesContractId;
+};
+
+struct ContractEntry {
+	std::string ContractId{};
+	int64_t UsedByteCount{};
+	int64_t TotalByteCount{};
+	int64_t BitRate{};
+	bool HasStream{};
+};
+
+struct ContractPeerRow {
+	std::string ClientId{};
+	std::optional<ContractEntryList> SendContracts;
+	std::optional<ContractEntryList> ReceiveContracts;
+	int64_t SendByteCount{};
+	int64_t ReceiveByteCount{};
+	int64_t LastActivityMillis{};
+	bool Closing{};
 };
 
 struct ContractStats {
@@ -1868,12 +1872,14 @@ inline void to_json(nlohmann::json& j, const CircleUserToken& v);
 inline void from_json(const nlohmann::json& j, CircleUserToken& v);
 inline void to_json(nlohmann::json& j, const CircleWalletInfo& v);
 inline void from_json(const nlohmann::json& j, CircleWalletInfo& v);
-inline void to_json(nlohmann::json& j, const ContractClientRow& v);
-inline void from_json(const nlohmann::json& j, ContractClientRow& v);
 inline void to_json(nlohmann::json& j, const TransferPath& v);
 inline void from_json(const nlohmann::json& j, TransferPath& v);
 inline void to_json(nlohmann::json& j, const ContractDetails& v);
 inline void from_json(const nlohmann::json& j, ContractDetails& v);
+inline void to_json(nlohmann::json& j, const ContractEntry& v);
+inline void from_json(const nlohmann::json& j, ContractEntry& v);
+inline void to_json(nlohmann::json& j, const ContractPeerRow& v);
+inline void from_json(const nlohmann::json& j, ContractPeerRow& v);
 inline void to_json(nlohmann::json& j, const ContractStats& v);
 inline void from_json(const nlohmann::json& j, ContractStats& v);
 inline void to_json(nlohmann::json& j, const ContractStatus& v);
@@ -3015,6 +3021,9 @@ inline void to_json(nlohmann::json& j, const ConnectLocation& v) {
 	}
 	j["stable"] = v.stable;
 	j["strong_privacy"] = v.strong_privacy;
+	if (v.network_peer) {
+		j["network_peer"] = *v.network_peer;
+	}
 }
 inline void from_json(const nlohmann::json& j, ConnectLocation& v) {
 	if (!j.is_object()) {
@@ -3090,6 +3099,11 @@ inline void from_json(const nlohmann::json& j, ConnectLocation& v) {
 	}
 	if (auto it = j.find("strong_privacy"); it != j.end() && !it->is_null()) {
 		it->get_to(v.strong_privacy);
+	}
+	if (auto it = j.find("network_peer"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.network_peer = std::move(tmp);
 	}
 }
 
@@ -3657,6 +3671,12 @@ inline void to_json(nlohmann::json& j, const BlockAction& v) {
 	if (v.Hosts) {
 		j["Hosts"] = *v.Hosts;
 	}
+	if (v.MatchedIps) {
+		j["MatchedIps"] = *v.MatchedIps;
+	}
+	if (v.MatchedHosts) {
+		j["MatchedHosts"] = *v.MatchedHosts;
+	}
 	j["Block"] = v.Block;
 	j["Local"] = v.Local;
 	if (v.OverrideId) {
@@ -3692,6 +3712,16 @@ inline void from_json(const nlohmann::json& j, BlockAction& v) {
 		StringList tmp{};
 		it->get_to(tmp);
 		v.Hosts = std::move(tmp);
+	}
+	if (auto it = j.find("MatchedIps"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.MatchedIps = std::move(tmp);
+	}
+	if (auto it = j.find("MatchedHosts"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.MatchedHosts = std::move(tmp);
 	}
 	if (auto it = j.find("Block"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Block);
@@ -3921,59 +3951,6 @@ inline void from_json(const nlohmann::json& j, CircleWalletInfo& v) {
 	}
 }
 
-inline void to_json(nlohmann::json& j, const ContractClientRow& v) {
-	j = nlohmann::json::object();
-	j["ClientId"] = v.ClientId;
-	j["ContractId"] = v.ContractId;
-	j["CompanionContractId"] = v.CompanionContractId;
-	j["ContractUsedByteCount"] = v.ContractUsedByteCount;
-	j["ContractByteCount"] = v.ContractByteCount;
-	j["ContractBitRate"] = v.ContractBitRate;
-	j["CompanionContractUsedByteCount"] = v.CompanionContractUsedByteCount;
-	j["CompanionContractByteCount"] = v.CompanionContractByteCount;
-	j["CompanionContractBitRate"] = v.CompanionContractBitRate;
-	j["PairCount"] = v.PairCount;
-	j["Closing"] = v.Closing;
-}
-inline void from_json(const nlohmann::json& j, ContractClientRow& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ClientId);
-	}
-	if (auto it = j.find("ContractId"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ContractId);
-	}
-	if (auto it = j.find("CompanionContractId"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractId);
-	}
-	if (auto it = j.find("ContractUsedByteCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ContractUsedByteCount);
-	}
-	if (auto it = j.find("ContractByteCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ContractByteCount);
-	}
-	if (auto it = j.find("ContractBitRate"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ContractBitRate);
-	}
-	if (auto it = j.find("CompanionContractUsedByteCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractUsedByteCount);
-	}
-	if (auto it = j.find("CompanionContractByteCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractByteCount);
-	}
-	if (auto it = j.find("CompanionContractBitRate"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractBitRate);
-	}
-	if (auto it = j.find("PairCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.PairCount);
-	}
-	if (auto it = j.find("Closing"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Closing);
-	}
-}
-
 inline void to_json(nlohmann::json& j, const TransferPath& v) {
 	j = nlohmann::json::object();
 	if (v.SourceId) {
@@ -4018,19 +3995,7 @@ inline void to_json(nlohmann::json& j, const ContractDetails& v) {
 	if (v.ContractTransferPath) {
 		j["ContractTransferPath"] = *v.ContractTransferPath;
 	}
-	if (v.CompanionContractId) {
-		j["CompanionContractId"] = *v.CompanionContractId;
-	}
-	j["CompanionContractUsedByteCount"] = v.CompanionContractUsedByteCount;
-	j["CompanionContractByteCount"] = v.CompanionContractByteCount;
-	j["CompanionContractBitRate"] = v.CompanionContractBitRate;
-	if (v.CompanionContractTransferPath) {
-		j["CompanionContractTransferPath"] = *v.CompanionContractTransferPath;
-	}
 	j["Status"] = v.Status;
-	if (v.ReplacesContractId) {
-		j["ReplacesContractId"] = *v.ReplacesContractId;
-	}
 }
 inline void from_json(const nlohmann::json& j, ContractDetails& v) {
 	if (!j.is_object()) {
@@ -4055,32 +4020,82 @@ inline void from_json(const nlohmann::json& j, ContractDetails& v) {
 		it->get_to(tmp);
 		v.ContractTransferPath = std::move(tmp);
 	}
-	if (auto it = j.find("CompanionContractId"); it != j.end() && !it->is_null()) {
-		std::string tmp{};
-		it->get_to(tmp);
-		v.CompanionContractId = std::move(tmp);
-	}
-	if (auto it = j.find("CompanionContractUsedByteCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractUsedByteCount);
-	}
-	if (auto it = j.find("CompanionContractByteCount"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractByteCount);
-	}
-	if (auto it = j.find("CompanionContractBitRate"); it != j.end() && !it->is_null()) {
-		it->get_to(v.CompanionContractBitRate);
-	}
-	if (auto it = j.find("CompanionContractTransferPath"); it != j.end() && !it->is_null()) {
-		TransferPath tmp{};
-		it->get_to(tmp);
-		v.CompanionContractTransferPath = std::move(tmp);
-	}
 	if (auto it = j.find("Status"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Status);
 	}
-	if (auto it = j.find("ReplacesContractId"); it != j.end() && !it->is_null()) {
-		std::string tmp{};
+}
+
+inline void to_json(nlohmann::json& j, const ContractEntry& v) {
+	j = nlohmann::json::object();
+	j["ContractId"] = v.ContractId;
+	j["UsedByteCount"] = v.UsedByteCount;
+	j["TotalByteCount"] = v.TotalByteCount;
+	j["BitRate"] = v.BitRate;
+	j["HasStream"] = v.HasStream;
+}
+inline void from_json(const nlohmann::json& j, ContractEntry& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ContractId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractId);
+	}
+	if (auto it = j.find("UsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UsedByteCount);
+	}
+	if (auto it = j.find("TotalByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TotalByteCount);
+	}
+	if (auto it = j.find("BitRate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BitRate);
+	}
+	if (auto it = j.find("HasStream"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasStream);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ContractPeerRow& v) {
+	j = nlohmann::json::object();
+	j["ClientId"] = v.ClientId;
+	if (v.SendContracts) {
+		j["SendContracts"] = *v.SendContracts;
+	}
+	if (v.ReceiveContracts) {
+		j["ReceiveContracts"] = *v.ReceiveContracts;
+	}
+	j["SendByteCount"] = v.SendByteCount;
+	j["ReceiveByteCount"] = v.ReceiveByteCount;
+	j["LastActivityMillis"] = v.LastActivityMillis;
+	j["Closing"] = v.Closing;
+}
+inline void from_json(const nlohmann::json& j, ContractPeerRow& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientId);
+	}
+	if (auto it = j.find("SendContracts"); it != j.end() && !it->is_null()) {
+		ContractEntryList tmp{};
 		it->get_to(tmp);
-		v.ReplacesContractId = std::move(tmp);
+		v.SendContracts = std::move(tmp);
+	}
+	if (auto it = j.find("ReceiveContracts"); it != j.end() && !it->is_null()) {
+		ContractEntryList tmp{};
+		it->get_to(tmp);
+		v.ReceiveContracts = std::move(tmp);
+	}
+	if (auto it = j.find("SendByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SendByteCount);
+	}
+	if (auto it = j.find("ReceiveByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ReceiveByteCount);
+	}
+	if (auto it = j.find("LastActivityMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastActivityMillis);
+	}
+	if (auto it = j.find("Closing"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Closing);
 	}
 }
 
@@ -8600,7 +8615,9 @@ public:
 	std::optional<BlockActionList> getBlockActions() const;
 	std::optional<BlockStats> getBlockStats() const;
 	std::optional<OverrideLocalAppIds> getLocalOverrideAppIds() const;
+	int64_t getMaxBlockActions() const;
 	int64_t getWindowDurationSeconds() const;
+	void setMaxBlockActions(int64_t max_block_actions) const;
 	void setWindowDurationSeconds(int64_t seconds) const;
 	void start() const;
 	void stop() const;
@@ -8644,8 +8661,9 @@ public:
 	explicit ContractDetailsViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addContractRowsListener(ContractRowsListener listener) const;
 	void close() const;
-	std::optional<ContractClientRowList> getClientContractRows() const;
-	std::optional<ContractClientRowList> getProviderContractRows() const;
+	std::optional<ContractPeerRowList> getContractRows() const;
+	int64_t pendingCount() const;
+	void setAtTop(bool at_top) const;
 	void start() const;
 	void stop() const;
 };
@@ -8678,8 +8696,8 @@ public:
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
+	ContractDetailsViewController openClientContractDetailsViewController() const;
 	ConnectViewController openConnectViewController() const;
-	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
@@ -8687,6 +8705,7 @@ public:
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
 	ProvideViewController openProvideViewController() const;
+	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
@@ -8725,8 +8744,8 @@ public:
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
+	ContractDetailsViewController openClientContractDetailsViewController() const;
 	ConnectViewController openConnectViewController() const;
-	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
@@ -8734,6 +8753,7 @@ public:
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
 	ProvideViewController openProvideViewController() const;
+	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
 	void setRpcServer(const std::string& client_pem, const std::string& server_cert_pem, const std::string& host_port) const;
@@ -8948,6 +8968,7 @@ public:
 	explicit PeerViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addPeersListener(PeersListener listener) const;
 	void close() const;
+	int64_t getConnectedCount() const;
 	int64_t getPeerCount() const;
 	std::optional<NetworkPeerList> getPeers() const;
 	void start() const;
@@ -14396,9 +14417,16 @@ inline std::optional<OverrideLocalAppIds> BlockActionViewController::getLocalOve
 	}
 	return detail::parseJson<OverrideLocalAppIds>(r_s->c_str());
 }
+inline int64_t BlockActionViewController::getMaxBlockActions() const {
+	int64_t r = urnet_block_action_view_controller_get_max_block_actions(handle());
+	return r;
+}
 inline int64_t BlockActionViewController::getWindowDurationSeconds() const {
 	int64_t r = urnet_block_action_view_controller_get_window_duration_seconds(handle());
 	return r;
+}
+inline void BlockActionViewController::setMaxBlockActions(int64_t max_block_actions) const {
+	urnet_block_action_view_controller_set_max_block_actions(handle(), max_block_actions);
 }
 inline void BlockActionViewController::setWindowDurationSeconds(int64_t seconds) const {
 	urnet_block_action_view_controller_set_window_duration_seconds(handle(), seconds);
@@ -14541,21 +14569,20 @@ inline Sub ContractDetailsViewController::addContractRowsListener(ContractRowsLi
 inline void ContractDetailsViewController::close() const {
 	urnet_contract_details_view_controller_close(handle());
 }
-inline std::optional<ContractClientRowList> ContractDetailsViewController::getClientContractRows() const {
-	char* r_c = urnet_contract_details_view_controller_get_client_contract_rows(handle());
+inline std::optional<ContractPeerRowList> ContractDetailsViewController::getContractRows() const {
+	char* r_c = urnet_contract_details_view_controller_get_contract_rows(handle());
 	auto r_s = detail::takeStringOpt(r_c);
 	if (!r_s) {
 		return std::nullopt;
 	}
-	return detail::parseJson<ContractClientRowList>(r_s->c_str());
+	return detail::parseJson<ContractPeerRowList>(r_s->c_str());
 }
-inline std::optional<ContractClientRowList> ContractDetailsViewController::getProviderContractRows() const {
-	char* r_c = urnet_contract_details_view_controller_get_provider_contract_rows(handle());
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<ContractClientRowList>(r_s->c_str());
+inline int64_t ContractDetailsViewController::pendingCount() const {
+	int64_t r = urnet_contract_details_view_controller_pending_count(handle());
+	return r;
+}
+inline void ContractDetailsViewController::setAtTop(bool at_top) const {
+	urnet_contract_details_view_controller_set_at_top(handle(), at_top);
 }
 inline void ContractDetailsViewController::start() const {
 	urnet_contract_details_view_controller_start(handle());
@@ -14676,12 +14703,12 @@ inline BlockActionViewController DeviceLocal::openBlockActionViewController() co
 	BlockActionViewController r(urnet_device_local_open_block_action_view_controller(handle()));
 	return r;
 }
-inline ConnectViewController DeviceLocal::openConnectViewController() const {
-	ConnectViewController r(urnet_device_local_open_connect_view_controller(handle()));
+inline ContractDetailsViewController DeviceLocal::openClientContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_local_open_client_contract_details_view_controller(handle()));
 	return r;
 }
-inline ContractDetailsViewController DeviceLocal::openContractDetailsViewController() const {
-	ContractDetailsViewController r(urnet_device_local_open_contract_details_view_controller(handle()));
+inline ConnectViewController DeviceLocal::openConnectViewController() const {
+	ConnectViewController r(urnet_device_local_open_connect_view_controller(handle()));
 	return r;
 }
 inline ContractViewController DeviceLocal::openContractViewController() const {
@@ -14710,6 +14737,10 @@ inline PeerViewController DeviceLocal::openPeerViewController() const {
 }
 inline ProvideViewController DeviceLocal::openProvideViewController() const {
 	ProvideViewController r(urnet_device_local_open_provide_view_controller(handle()));
+	return r;
+}
+inline ContractDetailsViewController DeviceLocal::openProviderContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_local_open_provider_contract_details_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceLocal::openReferralCodeViewController() const {
@@ -14829,12 +14860,12 @@ inline BlockActionViewController DeviceRemote::openBlockActionViewController() c
 	BlockActionViewController r(urnet_device_remote_open_block_action_view_controller(handle()));
 	return r;
 }
-inline ConnectViewController DeviceRemote::openConnectViewController() const {
-	ConnectViewController r(urnet_device_remote_open_connect_view_controller(handle()));
+inline ContractDetailsViewController DeviceRemote::openClientContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_remote_open_client_contract_details_view_controller(handle()));
 	return r;
 }
-inline ContractDetailsViewController DeviceRemote::openContractDetailsViewController() const {
-	ContractDetailsViewController r(urnet_device_remote_open_contract_details_view_controller(handle()));
+inline ConnectViewController DeviceRemote::openConnectViewController() const {
+	ConnectViewController r(urnet_device_remote_open_connect_view_controller(handle()));
 	return r;
 }
 inline ContractViewController DeviceRemote::openContractViewController() const {
@@ -14863,6 +14894,10 @@ inline PeerViewController DeviceRemote::openPeerViewController() const {
 }
 inline ProvideViewController DeviceRemote::openProvideViewController() const {
 	ProvideViewController r(urnet_device_remote_open_provide_view_controller(handle()));
+	return r;
+}
+inline ContractDetailsViewController DeviceRemote::openProviderContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_remote_open_provider_contract_details_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceRemote::openReferralCodeViewController() const {
@@ -15718,6 +15753,10 @@ inline Sub PeerViewController::addPeersListener(PeersListener listener) const {
 inline void PeerViewController::close() const {
 	urnet_peer_view_controller_close(handle());
 }
+inline int64_t PeerViewController::getConnectedCount() const {
+	int64_t r = urnet_peer_view_controller_get_connected_count(handle());
+	return r;
+}
 inline int64_t PeerViewController::getPeerCount() const {
 	int64_t r = urnet_peer_view_controller_get_peer_count(handle());
 	return r;
@@ -15969,6 +16008,29 @@ inline std::string version() { return detail::takeString(urnet_version()); }
 /* number of live handles, for leak checks */
 inline int64_t liveHandleCount() { return urnet_live_handle_count(); }
 
+inline std::vector<std::string> collapseHostNames(const std::vector<std::string>& hosts) {
+	std::string hosts_json = nlohmann::json(hosts).dump();
+	char* r_c = urnet_collapse_host_names(hosts_json.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::vector<std::string>{};
+	}
+	return detail::parseJson<std::vector<std::string>>(r_s->c_str());
+}
+inline std::optional<StringList> collapseHostNamesList(const std::optional<StringList>& hosts) {
+	std::string hosts_json;
+	const char* hosts_c = nullptr;
+	if (hosts) {
+		hosts_json = nlohmann::json(*hosts).dump();
+		hosts_c = hosts_json.c_str();
+	}
+	char* r_c = urnet_collapse_host_names_list(hosts_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline std::string connectLinkUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& target) {
 	std::string key_json;
 	const char* key_c = nullptr;

@@ -39,7 +39,8 @@ type ViewControllerManager interface {
 
 	OpenContractViewController() *ContractViewController
 
-	OpenContractDetailsViewController() *ContractDetailsViewController
+	OpenClientContractDetailsViewController() *ContractDetailsViewController
+	OpenProviderContractDetailsViewController() *ContractDetailsViewController
 
 	CloseViewController(vc ViewController)
 
@@ -160,8 +161,14 @@ func (self *viewControllerManager) OpenContractViewController() *ContractViewCon
 	return vc
 }
 
-func (self *viewControllerManager) OpenContractDetailsViewController() *ContractDetailsViewController {
-	vc := newContractDetailsViewController(self.ctx, self.device)
+func (self *viewControllerManager) OpenClientContractDetailsViewController() *ContractDetailsViewController {
+	vc := newContractDetailsViewController(self.ctx, self.device, false)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenProviderContractDetailsViewController() *ContractDetailsViewController {
+	vc := newContractDetailsViewController(self.ctx, self.device, true)
 	self.openViewController(vc)
 	return vc
 }

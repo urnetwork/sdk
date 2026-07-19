@@ -3737,6 +3737,17 @@ func urnet_block_action_view_controller_get_local_override_app_ids(self C.uint64
 	return cJson(r0, "urnet_block_action_view_controller_get_local_override_app_ids")
 }
 
+//export urnet_block_action_view_controller_get_max_block_actions
+func urnet_block_action_view_controller_get_max_block_actions(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_block_action_view_controller_get_max_block_actions")
+	self_, ok := resolveHandle[*sdk.BlockActionViewController](uint64(self), "urnet_block_action_view_controller_get_max_block_actions")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetMaxBlockActions()
+	return C.int64_t(r0)
+}
+
 //export urnet_block_action_view_controller_get_window_duration_seconds
 func urnet_block_action_view_controller_get_window_duration_seconds(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_block_action_view_controller_get_window_duration_seconds")
@@ -3746,6 +3757,16 @@ func urnet_block_action_view_controller_get_window_duration_seconds(self C.uint6
 	}
 	r0 := self_.GetWindowDurationSeconds()
 	return C.int64_t(r0)
+}
+
+//export urnet_block_action_view_controller_set_max_block_actions
+func urnet_block_action_view_controller_set_max_block_actions(self C.uint64_t, maxBlockActions C.int64_t) {
+	defer cgoGuard("urnet_block_action_view_controller_set_max_block_actions")
+	self_, ok := resolveHandle[*sdk.BlockActionViewController](uint64(self), "urnet_block_action_view_controller_set_max_block_actions")
+	if !ok {
+		return
+	}
+	self_.SetMaxBlockActions(int(int64(maxBlockActions)))
 }
 
 //export urnet_block_action_view_controller_set_window_duration_seconds
@@ -3776,6 +3797,34 @@ func urnet_block_action_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
+}
+
+//export urnet_collapse_host_names
+func urnet_collapse_host_names(hosts *C.char) *C.char {
+	defer cgoGuard("urnet_collapse_host_names")
+	var hosts_ []string
+	if !goJson(hosts, &hosts_, "urnet_collapse_host_names") {
+		return nil
+	}
+	r0 := sdk.CollapseHostNames(hosts_)
+	return cJson(r0, "urnet_collapse_host_names")
+}
+
+//export urnet_collapse_host_names_list
+func urnet_collapse_host_names_list(hosts *C.char) *C.char {
+	defer cgoGuard("urnet_collapse_host_names_list")
+	var hosts_ *sdk.StringList
+	if hosts != nil {
+		hosts_ = &sdk.StringList{}
+		if !goJson(hosts, hosts_, "urnet_collapse_host_names_list") {
+			return nil
+		}
+	}
+	r0 := sdk.CollapseHostNamesList(hosts_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_collapse_host_names_list")
 }
 
 //export urnet_connect_grid_get_height
@@ -4075,32 +4124,39 @@ func urnet_contract_details_view_controller_close(self C.uint64_t) {
 	self_.Close()
 }
 
-//export urnet_contract_details_view_controller_get_client_contract_rows
-func urnet_contract_details_view_controller_get_client_contract_rows(self C.uint64_t) *C.char {
-	defer cgoGuard("urnet_contract_details_view_controller_get_client_contract_rows")
-	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_get_client_contract_rows")
+//export urnet_contract_details_view_controller_get_contract_rows
+func urnet_contract_details_view_controller_get_contract_rows(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_details_view_controller_get_contract_rows")
+	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_get_contract_rows")
 	if !ok {
 		return nil
 	}
-	r0 := self_.GetClientContractRows()
+	r0 := self_.GetContractRows()
 	if r0 == nil {
 		return nil
 	}
-	return cJson(r0, "urnet_contract_details_view_controller_get_client_contract_rows")
+	return cJson(r0, "urnet_contract_details_view_controller_get_contract_rows")
 }
 
-//export urnet_contract_details_view_controller_get_provider_contract_rows
-func urnet_contract_details_view_controller_get_provider_contract_rows(self C.uint64_t) *C.char {
-	defer cgoGuard("urnet_contract_details_view_controller_get_provider_contract_rows")
-	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_get_provider_contract_rows")
+//export urnet_contract_details_view_controller_pending_count
+func urnet_contract_details_view_controller_pending_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_contract_details_view_controller_pending_count")
+	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_pending_count")
 	if !ok {
-		return nil
+		return 0
 	}
-	r0 := self_.GetProviderContractRows()
-	if r0 == nil {
-		return nil
+	r0 := self_.PendingCount()
+	return C.int64_t(r0)
+}
+
+//export urnet_contract_details_view_controller_set_at_top
+func urnet_contract_details_view_controller_set_at_top(self C.uint64_t, atTop C.bool) {
+	defer cgoGuard("urnet_contract_details_view_controller_set_at_top")
+	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_set_at_top")
+	if !ok {
+		return
 	}
-	return cJson(r0, "urnet_contract_details_view_controller_get_provider_contract_rows")
+	self_.SetAtTop(bool(atTop))
 }
 
 //export urnet_contract_details_view_controller_start
@@ -5883,6 +5939,20 @@ func urnet_device_local_open_block_action_view_controller(self C.uint64_t) C.uin
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_open_client_contract_details_view_controller
+func urnet_device_local_open_client_contract_details_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_client_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_client_contract_details_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenClientContractDetailsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_local_open_connect_view_controller
 func urnet_device_local_open_connect_view_controller(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_local_open_connect_view_controller")
@@ -5891,20 +5961,6 @@ func urnet_device_local_open_connect_view_controller(self C.uint64_t) C.uint64_t
 		return 0
 	}
 	r0 := self_.OpenConnectViewController()
-	if r0 == nil {
-		return 0
-	}
-	return C.uint64_t(newHandle(r0))
-}
-
-//export urnet_device_local_open_contract_details_view_controller
-func urnet_device_local_open_contract_details_view_controller(self C.uint64_t) C.uint64_t {
-	defer cgoGuard("urnet_device_local_open_contract_details_view_controller")
-	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_contract_details_view_controller")
-	if !ok {
-		return 0
-	}
-	r0 := self_.OpenContractDetailsViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -6003,6 +6059,20 @@ func urnet_device_local_open_provide_view_controller(self C.uint64_t) C.uint64_t
 		return 0
 	}
 	r0 := self_.OpenProvideViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_open_provider_contract_details_view_controller
+func urnet_device_local_open_provider_contract_details_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_provider_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_provider_contract_details_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProviderContractDetailsViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -6265,6 +6335,20 @@ func urnet_device_remote_open_block_action_view_controller(self C.uint64_t) C.ui
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_remote_open_client_contract_details_view_controller
+func urnet_device_remote_open_client_contract_details_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_client_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_client_contract_details_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenClientContractDetailsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_remote_open_connect_view_controller
 func urnet_device_remote_open_connect_view_controller(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_remote_open_connect_view_controller")
@@ -6273,20 +6357,6 @@ func urnet_device_remote_open_connect_view_controller(self C.uint64_t) C.uint64_
 		return 0
 	}
 	r0 := self_.OpenConnectViewController()
-	if r0 == nil {
-		return 0
-	}
-	return C.uint64_t(newHandle(r0))
-}
-
-//export urnet_device_remote_open_contract_details_view_controller
-func urnet_device_remote_open_contract_details_view_controller(self C.uint64_t) C.uint64_t {
-	defer cgoGuard("urnet_device_remote_open_contract_details_view_controller")
-	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_contract_details_view_controller")
-	if !ok {
-		return 0
-	}
-	r0 := self_.OpenContractDetailsViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -6385,6 +6455,20 @@ func urnet_device_remote_open_provide_view_controller(self C.uint64_t) C.uint64_
 		return 0
 	}
 	r0 := self_.OpenProvideViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_provider_contract_details_view_controller
+func urnet_device_remote_open_provider_contract_details_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_provider_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_provider_contract_details_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProviderContractDetailsViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -8565,6 +8649,17 @@ func urnet_peer_view_controller_close(self C.uint64_t) {
 		return
 	}
 	self_.Close()
+}
+
+//export urnet_peer_view_controller_get_connected_count
+func urnet_peer_view_controller_get_connected_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_peer_view_controller_get_connected_count")
+	self_, ok := resolveHandle[*sdk.PeerViewController](uint64(self), "urnet_peer_view_controller_get_connected_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetConnectedCount()
+	return C.int64_t(r0)
 }
 
 //export urnet_peer_view_controller_get_peer_count

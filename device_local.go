@@ -281,6 +281,13 @@ type DeviceLocal struct {
 	contractStatusSub   func()
 	windowMonitorSub    func()
 
+	// a stable windowMonitor instance per remoteUserNatClient for the
+	// fixed/empty monitor types (see cachedWindowMonitor). Guarded by its own
+	// leaf lock so windowMonitor() adds no lock-order edges.
+	windowMonitorCacheLock   sync.Mutex
+	windowMonitorCacheClient connect.UserNatClient
+	windowMonitorCache       windowMonitor
+
 	// upgradeMux interposes on `remoteUserNatClient` (the exit/egress path) to
 	// intercept and upgrade plaintext DNS (UDP/53) and HTTP (TCP/80). It is created and
 	// torn down with `remoteUserNatClient`. When set, the send path runs through it (it
@@ -314,7 +321,7 @@ type DeviceLocal struct {
 	allowForeground      bool
 
 	provideMode              ProvideMode
-	provideControlMode       ProvideControlMode // auto, always, never
+	provideControlMode       ProvideControlMode // auto, always, network, never
 	provideNetworkMode       ProvideNetworkMode // wifi, cellular
 	offline                  bool
 	vpnInterfaceWhileOffline bool
@@ -965,7 +972,30 @@ func (self *DeviceLocal) RefreshToken(attempt int) error {
 	return nil
 }
 
+// hostedSafePerformanceProfile forces direct mode (`AllowDirect`) off on the
+// way into a hosted device's stored state, so `GetPerformanceProfile` is
+// truthful and the input profile is not mutated in place. Direct mode on a
+// hosted device would leak that the device is hosted, and where it is hosted,
+// via the host addresses in the direct connection setup. Defense in depth
+// alongside the equivalent hard limit on the live multi client
+// (`connect.MultiClientSettings.NeverAllowDirect`).
+func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if !self.settings.HostedIncompatible {
+		return performanceProfile
+	}
+	if performanceProfile == nil || !performanceProfile.AllowDirect {
+		return performanceProfile
+	}
+	limited := *performanceProfile
+	limited.AllowDirect = false
+	return &limited
+}
+
 func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
+	if limited := self.hostedSafePerformanceProfile(performanceProfile); limited != performanceProfile {
+		self.log.Infof("[device]hosted incompatible: AllowDirect forced off\n")
+		performanceProfile = limited
+	}
 	var remoteUserNatClient connect.UserNatClient
 	changed := false
 	func() {
@@ -1299,21 +1329,34 @@ func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControl
 		if self.provideControlMode != provideControlMode {
 			self.provideControlMode = provideControlMode
 			provideControlModeChanged = true
+		}
 
-			switch provideControlMode {
-			case ProvideControlModeAuto:
-				if self.remoteUserNatClient != nil {
-					// if user is connected, start providing
-					provideChanged = self.setProvideModeWithLock(ProvideModePublic)
-				} else {
-					// if user is not connected, stop providing
-					provideChanged = self.setProvideModeWithLock(ProvideModeNone)
-				}
-			case ProvideControlModeAlways:
+		// enforce the control mode's provide mapping even when the control mode
+		// value is unchanged: the provide mode may have been set independently
+		// (e.g. a stale persisted mode applied at init), and the control mode
+		// owns the provide mode. `setProvideModeWithLock` no-ops when already
+		// consistent, so redundant calls are cheap.
+		switch self.provideControlMode {
+		case ProvideControlModeAuto:
+			if self.remoteUserNatClient != nil {
+				// if user is connected, provide publicly
 				provideChanged = self.setProvideModeWithLock(ProvideModePublic)
-			default:
-				provideChanged = self.setProvideModeWithLock(ProvideModeNone)
+			} else {
+				// if not connected, keep providing to same-network peers so this
+				// device stays reachable/discoverable as a peer even when idle
+				provideChanged = self.setProvideModeWithLock(ProvideModeNetwork)
 			}
+		case ProvideControlModeAlways:
+			provideChanged = self.setProvideModeWithLock(ProvideModePublic)
+		case ProvideControlModeNetwork:
+			// the private provider: always on, but only for same-network peers
+			provideChanged = self.setProvideModeWithLock(ProvideModeNetwork)
+		case ProvideControlModeManual:
+			// manual: the explicitly set provide mode is the truth — the
+			// control mode enforces nothing
+		default:
+			// never (and any unknown mode, conservatively): no providing
+			provideChanged = self.setProvideModeWithLock(ProvideModeNone)
 		}
 	}()
 
@@ -1475,13 +1518,32 @@ func (self *DeviceLocal) GetBlockerEnabled() bool {
 func (self *DeviceLocal) windowMonitor() windowMonitor {
 	switch v := self.remoteUserNatClient.(type) {
 	case *connect.RemoteUserNatClient:
-		return newFixedWindowMonitor(v.DestinationIds())
+		return self.cachedWindowMonitor(self.remoteUserNatClient, func() windowMonitor {
+			return newFixedWindowMonitor(v.DestinationIds())
+		})
 	case *connect.RemoteUserNatMultiClient:
+		// the multi client's monitor is already a stable instance
 		return v.Monitor()
 	default:
-		// return an empty window monitor to be consistent with the device remote behavior
-		return &emptyWindowMonitor{}
+		// an empty window monitor to be consistent with the device remote behavior
+		return self.cachedWindowMonitor(self.remoteUserNatClient, func() windowMonitor {
+			return &emptyWindowMonitor{}
+		})
 	}
+}
+
+// cachedWindowMonitor returns a stable windowMonitor instance per
+// remoteUserNatClient value, so callers that detect monitor changes by identity
+// (DeviceLocalRpc.updateWindowMonitor) do not see a spurious change on every
+// call for the fixed/empty monitor types.
+func (self *DeviceLocal) cachedWindowMonitor(client connect.UserNatClient, create func() windowMonitor) windowMonitor {
+	self.windowMonitorCacheLock.Lock()
+	defer self.windowMonitorCacheLock.Unlock()
+	if self.windowMonitorCacheClient != client || self.windowMonitorCache == nil {
+		self.windowMonitorCache = create()
+		self.windowMonitorCacheClient = client
+	}
+	return self.windowMonitorCache
 }
 
 type deviceLocalEgressSecurityPolicy struct {
@@ -2104,6 +2166,22 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 	return self.remoteUserNatClient != nil
 }
 
+// providerLocalUserNatSettings builds the settings for the provide exit nat.
+// Unlike the local-traffic nats (a single trusted source, no limits), the
+// exit nat serves unbounded remote sources, so the per source and aggregate
+// flow counts are bounded (lru evict of the idle-most flow) to put a hard
+// ceiling on flow state, sockets, and goroutines under any remote behavior.
+// Scaled by the memory budget (see `SetMemoryLimit`).
+func providerLocalUserNatSettings(log connect.Logger) *connect.LocalUserNatSettings {
+	localUserNatSettings := connect.DefaultLocalUserNatSettings()
+	localUserNatSettings.Log = log
+	localUserNatSettings.UdpBufferSettings.UserLimit = connect.MemoryScaledCount(512, 64)
+	localUserNatSettings.UdpBufferSettings.GlobalLimit = connect.MemoryScaledCount(2048, 256)
+	localUserNatSettings.TcpBufferSettings.UserLimit = connect.MemoryScaledCount(256, 32)
+	localUserNatSettings.TcpBufferSettings.GlobalLimit = connect.MemoryScaledCount(512, 64)
+	return localUserNatSettings
+}
+
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 	if self.hostedIncompatibleGuarded("SetProvideMode") {
 		return
@@ -2133,8 +2211,7 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 				// recreate the provider user nat only as needed
 				// this avoid connection disruptions
 				if self.remoteUserNatProviderLocalUserNat == nil {
-					localUserNatSettings := connect.DefaultLocalUserNatSettings()
-					localUserNatSettings.Log = self.log
+					localUserNatSettings := providerLocalUserNatSettings(self.log)
 					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(client.Ctx(), self.clientId.String(), localUserNatSettings)
 				}
 				if self.remoteUserNatProvider == nil {
@@ -2186,11 +2263,6 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 }
 
 func (self *DeviceLocal) GetProvideMode() ProvideMode {
-	// maxProvideMode := protocol.ProvideMode_None
-	// for provideMode, _ := range self.client.ContractManager().GetProvideModes() {
-	// 	maxProvideMode = max(maxProvideMode, provideMode)
-	// }
-	// return ProvideMode(maxProvideMode)
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.provideMode
@@ -2282,7 +2354,15 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			self.windowMonitorSub()
 			self.windowMonitorSub = nil
 		}
+		// the prior mux is closed here but its learned IP→hostname names are carried
+		// into the new mux below (AdoptServerNames): server names outlive the physical
+		// connection, so a reconnect/location change must not blank the reverse index —
+		// and the block-action host feed — for flows the OS keeps open (or dials from its
+		// long-TTL DNS cache) across the rebuild. Close() cancels the ctx but leaves the
+		// reverse map intact for the adopt.
+		var priorUpgradeMux *connect.UpgradeMux
 		if self.upgradeMux != nil {
+			priorUpgradeMux = self.upgradeMux
 			self.upgradeMux.Close()
 			self.upgradeMux = nil
 		}
@@ -2293,14 +2373,6 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			for i := 0; i < specs.Len(); i += 1 {
 				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
 			}
-
-			// specClientIds := []connect.Id{}
-			// for _, spec := range connectSpecs {
-			// 	if spec.ClientId != nil {
-			// 		specClientIds = append(specClientIds, *spec.ClientId)
-			// 	}
-			// }
-			// fixedDestinationSize := len(specClientIds) == len(connectSpecs)
 
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				// self.log.Infof("[trace]receive packet\n")
@@ -2391,6 +2463,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			settings := connect.DefaultMultiClientSettings()
 			settings.Log = self.log
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+			// hosted hard limit: the hosted multi client must never allow
+			// direct mode, superseding any performance profile and the
+			// same-network force inside the multi client
+			settings.NeverAllowDirect = self.settings.HostedIncompatible
 			if self.clientSecurityPolicyGenerator != nil {
 				settings.SecurityPolicyGenerator = self.clientSecurityPolicyGenerator
 			}
@@ -2414,15 +2490,26 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 					self.log.Infof("[device]upgrade mux unavailable, passing through: %s\n", err)
 				} else {
 					upgradeMux = m
+					// carry the prior mux's learned server names across the rebuild
+					upgradeMux.AdoptServerNames(priorUpgradeMux)
 					muxReceive = m.Receive
 				}
 			}
 
+			// A trusted same-network peer (the user tapped one of their own devices in
+			// the peer list) egresses under ProvideMode_Network so the security
+			// relationship is not downgraded to Public. This is explicit state from
+			// the app (location.NetworkPeer), never inferred from the destination
+			// shape — a fixed client id can also be a public exit.
+			peerProvideMode := protocol.ProvideMode_Public
+			if location != nil && location.NetworkPeer {
+				peerProvideMode = protocol.ProvideMode_Network
+			}
 			multi := connect.NewRemoteUserNatMultiClient(
 				self.ctx,
 				generator,
 				muxReceive,
-				protocol.ProvideMode_Public,
+				peerProvideMode,
 				settings,
 			)
 			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
@@ -2460,7 +2547,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// hostnames (the backstop under the mux's dns-layer blocking)
 			multi.SetBlocker(self.blocker)
 
-			multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides))
+			multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides, self.settings.HostedIncompatible))
 			// exclude the resolver endpoints from the override and association logic
 			multi.SetBlockActionIgnoreHosts(dnsIgnoreHostValues(self.dnsResolverSettingsWithLock()))
 			self.blockActionSub = multi.AddBlockActionCallback(self.updateBlockActions)
@@ -2471,9 +2558,11 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				provideChanged = self.setProvideModeWithLock(ProvideModePublic)
 			}
 		} else {
-			// else no specs, not an error
+			// else no specs, not an error. Auto stops providing publicly on
+			// disconnect but keeps Network provide, so the device stays a
+			// reachable/discoverable peer.
 			if self.provideControlMode == ProvideControlModeAuto {
-				provideChanged = self.setProvideModeWithLock(ProvideModeNone)
+				provideChanged = self.setProvideModeWithLock(ProvideModeNetwork)
 			}
 		}
 		self.updateSendRouteWithLock()
@@ -2989,8 +3078,17 @@ func addConnectPacketStats(out *connect.PacketStats, add *connect.PacketStats) {
 }
 
 // overrides with no hosts (app id only) are applied by the platform,
-// not the packet path
-func connectBlockActionOverrides(overrides []*BlockActionOverride) []*connect.BlockActionOverride {
+// not the packet path.
+//
+// hostedIncompatible forces every RouteOverride to remote (Local=false). A
+// hosted (platform-embedded, e.g. cloud proxy) device must never route any
+// traffic locally: local egress leaves the host's real network interface,
+// reaching the datacenter LAN, loopback, and the metadata endpoint. A local
+// route override is the one client-reachable way to reach the multi client's
+// LocalUserNat, so it is neutralized here — the single translation point every
+// override source (rpc, sync-replay, persisted state, config) passes through on
+// its way to the live client. Block overrides are unaffected.
+func connectBlockActionOverrides(overrides []*BlockActionOverride, hostedIncompatible bool) []*connect.BlockActionOverride {
 	connectOverrides := []*connect.BlockActionOverride{}
 	for _, override := range overrides {
 		if override.OverrideId == nil || override.Hosts == nil || override.Hosts.Len() == 0 {
@@ -3004,7 +3102,8 @@ func connectBlockActionOverrides(overrides []*BlockActionOverride) []*connect.Bl
 			connectOverride.BlockOverride = &connect.BlockOverride{Block: override.BlockOverride.Block}
 		}
 		if override.RouteOverride != nil {
-			connectOverride.RouteOverride = &connect.RouteOverride{Local: override.RouteOverride.Local}
+			local := override.RouteOverride.Local && !hostedIncompatible
+			connectOverride.RouteOverride = &connect.RouteOverride{Local: local}
 		}
 		connectOverrides = append(connectOverrides, connectOverride)
 	}
@@ -3161,11 +3260,20 @@ func (self *DeviceLocal) blockActionFromConnectWithLock(blockAction *connect.Blo
 	}
 	hosts := NewStringList()
 	hosts.addAll(blockAction.Hosts...)
+	// the exact ips/hosts an override matched, disjoint from ips/hosts above
+	matchedIps := NewStringList()
+	for _, ip := range blockAction.MatchedIps {
+		matchedIps.Add(ip.String())
+	}
+	matchedHosts := NewStringList()
+	matchedHosts.addAll(blockAction.MatchedHosts...)
 	out := &BlockAction{
 		BlockActionId: NewId(),
 		Time:          blockAction.Time.UnixMilli(),
 		Ips:           ips,
 		Hosts:         hosts,
+		MatchedIps:    matchedIps,
+		MatchedHosts:  matchedHosts,
 		Block:         blockAction.Block,
 		Local:         blockAction.Local,
 		PacketCount:   blockAction.PacketCount,
@@ -3238,7 +3346,7 @@ func (self *DeviceLocal) GetBlockActions() *BlockActionWindow {
 // applies the overrides to the live client
 func (self *DeviceLocal) updateBlockActionOverridesWithLock() {
 	if multi, ok := self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
-		multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides))
+		multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides, self.settings.HostedIncompatible))
 	}
 }
 
@@ -3258,10 +3366,30 @@ func (self *DeviceLocal) persistBlockActionOverrides(overrides *BlockActionOverr
 	}
 }
 
+// hostedSafeBlockActionOverride returns the override to store on this device. On a
+// hosted (cloud proxy) device a local route override is neutralized to remote
+// routing (Local=false), so neither the stored nor the applied state can ever
+// route locally; block overrides are unaffected. Non-hosted devices store the
+// override unchanged. This makes the stored state truthful; connectBlockActionOverrides
+// applies the same strip as a backstop for paths that do not go through the setters
+// (persisted-state load, multi client re-create).
+func (self *DeviceLocal) hostedSafeBlockActionOverride(override *BlockActionOverride) *BlockActionOverride {
+	if override == nil || !self.settings.HostedIncompatible {
+		return override
+	}
+	if override.RouteOverride != nil && override.RouteOverride.Local {
+		safe := *override
+		safe.RouteOverride = &RouteOverride{Local: false}
+		return &safe
+	}
+	return override
+}
+
 func (self *DeviceLocal) AddBlockActionOverride(override *BlockActionOverride) {
 	if override == nil || override.OverrideId == nil {
 		return
 	}
+	override = self.hostedSafeBlockActionOverride(override)
 	var overrides *BlockActionOverrideList
 	func() {
 		self.stateLock.Lock()
@@ -3322,6 +3450,7 @@ func (self *DeviceLocal) SetBlockActionOverrides(overrides *BlockActionOverrideL
 				if override.OverrideId == nil {
 					continue
 				}
+				override = self.hostedSafeBlockActionOverride(override)
 				self.removeBlockActionOverrideWithLock(override.OverrideId)
 				self.blockActionOverrides = append(self.blockActionOverrides, override)
 			}
@@ -3437,16 +3566,11 @@ func (self *DeviceLocal) packetStatsChanged(packetStats *PacketStats) {
 type deviceContractState struct {
 	contractId        connect.Id
 	path              connect.TransferPath
-	companion         bool
 	usedByteCount     ByteCount
 	transferByteCount ByteCount
 	bitRate           int
 	open              bool
 	updateTime        time.Time
-	// the id this contract atomically replaced on the same path (a renewal), or
-	// nil. Reported on the incoming (open) contract; the superseded one is dropped
-	// without its own Closed tombstone.
-	replacesContractId *connect.Id
 	// a closed contract is reported once as a Closed tombstone, then evicted on the
 	// next emit; this flags that its one report has been made.
 	closedReported bool
@@ -3507,7 +3631,6 @@ func (self *deviceContractTracker) update(
 			state = &deviceContractState{
 				contractId: event.ContractId,
 				path:       event.Path,
-				companion:  event.Companion,
 				updateTime: now,
 			}
 			contracts[event.ContractId] = state
@@ -3535,13 +3658,10 @@ func (self *deviceContractTracker) update(
 	return self.emit(now)
 }
 
-// emit builds the reports and advances the contract lifecycle:
-//   - a contract superseded by a renewal on the same path is linked to its
-//     replacement (which carries ReplacesContractId) and dropped, so the swap is
-//     one atomic event rather than a bouncy close-then-open;
-//   - a contract that closed with no replacement is reported once as a Closed
-//     tombstone, kept one more cycle so a coalesced getter read still sees it,
-//     then evicted on the next emit.
+// emit builds the reports and advances the contract lifecycle: a contract that
+// closed is reported once as a Closed tombstone carrying its final byte counts,
+// kept one more cycle so a coalesced getter read still sees it, then evicted on
+// the next emit.
 func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractStats, ingressStats *ContractStats, egressDetails *ContractDetailsList, ingressDetails *ContractDetailsList) {
 	self.pendingEmit = false
 	self.lastEmitTime = now
@@ -3550,20 +3670,17 @@ func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractSta
 	self.evictReportedClosed(self.egressContracts)
 	self.evictReportedClosed(self.ingressContracts)
 
-	// link atomic replacements (renewals on the same path), dropping the
-	// superseded contract without a separate Closed tombstone
-	self.linkReplacements(self.egressContracts)
-	self.linkReplacements(self.ingressContracts)
-
 	egressStats = self.stats(false)
 	ingressStats = self.stats(true)
 	egressDetails = self.details(false)
 	ingressDetails = self.details(true)
 
-	// close out the one-shot signals just built into details (Closed tombstones
-	// and replace links); keep the settle loop alive while any tombstone remains
-	// so the next emit evicts it
-	if self.finalizeReported(self.egressContracts) || self.finalizeReported(self.ingressContracts) {
+	// flag the Closed tombstones just reported; keep the settle loop alive while
+	// any tombstone remains so the next emit evicts it. Both directions must be
+	// finalized -- `a() || b()` would short-circuit past the ingress tombstones.
+	egressRemaining := self.finalizeReported(self.egressContracts)
+	ingressRemaining := self.finalizeReported(self.ingressContracts)
+	if egressRemaining || ingressRemaining {
 		self.pendingEmit = true
 	}
 	return
@@ -3579,40 +3696,11 @@ func (self *deviceContractTracker) evictReportedClosed(contracts map[connect.Id]
 	}
 }
 
-// linkReplacements pairs each just-closed contract with a contract that opened on
-// the same transfer path in the same window: the incoming contract takes
-// ReplacesContractId so the UI treats the swap as one atomic replace rather than
-// a close then an open. The superseded contract is NOT dropped here -- it is
-// still reported once as a Closed tombstone carrying its FINAL stats, so the
-// consumer can subtract the replaced stats out and add the new stats in without
-// losing the replaced contract's last bytes. It is evicted next emit like any
-// close.
-func (self *deviceContractTracker) linkReplacements(contracts map[connect.Id]*deviceContractState) {
-	for _, closing := range contracts {
-		if closing.open || closing.closedReported {
-			continue
-		}
-		for _, opening := range contracts {
-			if opening.open && opening.contractId != closing.contractId &&
-				opening.replacesContractId == nil && opening.path == closing.path {
-				replaced := closing.contractId
-				opening.replacesContractId = &replaced
-				break
-			}
-		}
-	}
-}
-
-// finalizeReported closes out an emit's one-shot signals: a Closed tombstone is
-// flagged reported (evicted next emit), and a reported replace link is cleared so
-// the incoming contract reads as a normal open from the next emit on. Returns
-// whether any Closed tombstone remains pending eviction.
+// finalizeReported flags each just-reported Closed tombstone (evicted next
+// emit). Returns whether any tombstone remains pending eviction.
 func (self *deviceContractTracker) finalizeReported(contracts map[connect.Id]*deviceContractState) (remaining bool) {
 	for _, state := range contracts {
-		if state.open {
-			// the replace link is one-shot: reported once, then a normal open
-			state.replacesContractId = nil
-		} else {
+		if !state.open {
 			state.closedReported = true
 			remaining = true
 		}
@@ -3769,65 +3857,27 @@ func (self *deviceContractTracker) stats(receive bool) *ContractStats {
 	return stats
 }
 
-// pairs each contract with its companion in the opposite direction by the peer
-// client id: an exact reverse path match wins, else the most recently updated
-// contract with the same peer
+// one entry per contract of the direction. Contracts are never paired with the
+// opposite direction -- send and receive contracts are many-to-many per peer.
 func (self *deviceContractTracker) details(receive bool) *ContractDetailsList {
 	own := self.egressContracts
-	other := self.ingressContracts
 	if receive {
-		own, other = other, own
+		own = self.ingressContracts
 	}
 	details := NewContractDetailsList()
 	for _, state := range own {
-		peerClientId := state.path.DestinationId
-		if receive {
-			peerClientId = state.path.SourceId
-		}
-		var companionState *deviceContractState
-		reversePath := connect.TransferPath{
-			SourceId:      state.path.DestinationId,
-			DestinationId: state.path.SourceId,
-			StreamId:      state.path.StreamId,
-		}
-		for _, otherState := range other {
-			otherPeerClientId := otherState.path.SourceId
-			if receive {
-				otherPeerClientId = otherState.path.DestinationId
-			}
-			if otherState.path == reversePath {
-				companionState = otherState
-				break
-			}
-			if otherPeerClientId == peerClientId {
-				if companionState == nil || companionState.updateTime.Before(otherState.updateTime) {
-					companionState = otherState
-				}
-			}
-		}
 		status := ContractStatusOpen
 		if !state.open {
 			status = ContractStatusClosed
 		}
-		contractDetails := &ContractDetails{
+		details.Add(&ContractDetails{
 			ContractId:            newId(state.contractId),
 			ContractUsedByteCount: state.usedByteCount,
 			ContractByteCount:     state.transferByteCount,
 			ContractBitRate:       state.bitRate,
 			ContractTransferPath:  fromConnect(state.path),
 			Status:                status,
-		}
-		if state.replacesContractId != nil {
-			contractDetails.ReplacesContractId = newId(*state.replacesContractId)
-		}
-		if companionState != nil {
-			contractDetails.CompanionContractId = newId(companionState.contractId)
-			contractDetails.CompanionContractUsedByteCount = companionState.usedByteCount
-			contractDetails.CompanionContractByteCount = companionState.transferByteCount
-			contractDetails.CompanionContractBitRate = companionState.bitRate
-			contractDetails.CompanionContractTransferPath = fromConnect(companionState.path)
-		}
-		details.Add(contractDetails)
+		})
 	}
 	return details
 }
@@ -4311,7 +4361,13 @@ func (self *DeviceLocal) watchNetworkPeers(notify chan struct{}) {
 		// arm before the read and never after: a change racing the snapshot then
 		// triggers the next round rather than being lost.
 		notify = peersMonitor.NotifyChannel()
-		self.networkPeersChanged(self.GetNetworkPeers())
+		// contain panics to the tick: a failed snapshot or emit must never kill
+		// the watch loop — the device would silently stop receiving peer
+		// updates for the life of the tunnel (the same failure class as the
+		// server-side peer listener death fixed 2026-07-15)
+		connect.HandleError(func() {
+			self.networkPeersChanged(self.GetNetworkPeers())
+		})
 	}
 }
 

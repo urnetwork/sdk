@@ -47,7 +47,15 @@ type ThroughputSample struct {
 // a throughput sample over one sample interval, split by route.
 // remote is traffic egressed to providers. local is traffic routed
 // to the local user nat. block is traffic dropped by the security rules.
-// see `PacketStats` for the route semantics
+// see `PacketStats` for the route semantics.
+//
+// the provider series reuses these fields with a mirrored meaning: the raw
+// provider counters only populate the remote and block routes (there is no
+// split-tunnel local route when relaying), so its local route is synthesized
+// as a mirror of the remote relay traffic — remote ingress (a client's egress
+// relayed out to the internet) is presented as local egress, and remote egress
+// (the return relayed back to the client) as local ingress. see
+// `mirrorProviderThroughputPoint`
 type ThroughputPoint struct {
 	// sample end time, unix millis
 	Time   int64
@@ -178,10 +186,10 @@ func (self *ContractViewController) sample() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		if self.sampleSeriesWithLock(self.clientSeries, packetStats, sampleTime) {
+		if self.sampleSeriesWithLock(self.clientSeries, packetStats, sampleTime, false) {
 			appended = true
 		}
-		if self.sampleSeriesWithLock(self.providerSeries, providerPacketStats, sampleTime) {
+		if self.sampleSeriesWithLock(self.providerSeries, providerPacketStats, sampleTime, true) {
 			appended = true
 		}
 	}()
@@ -195,7 +203,7 @@ func (self *ContractViewController) sample() {
 // appends the points for one series at one tick: zero-hold backfill for
 // missed ticks, then a delta point (or a zero-hold when there are no
 // stats or the delta spans a gap). returns whether any point was appended
-func (self *ContractViewController) sampleSeriesWithLock(series *throughputSeries, packetStats *PacketStats, sampleTime time.Time) bool {
+func (self *ContractViewController) sampleSeriesWithLock(series *throughputSeries, packetStats *PacketStats, sampleTime time.Time, provider bool) bool {
 	appended := false
 
 	// backfill zero holds for missed ticks so the series stays
@@ -231,12 +239,18 @@ func (self *ContractViewController) sampleSeriesWithLock(series *throughputSerie
 				// interval. rebase and zero-hold this tick.
 				series.points = append(series.points, zeroThroughputPoint(sampleTime))
 			} else {
-				series.points = append(series.points, newThroughputPoint(
+				point := newThroughputPoint(
 					sampleTime,
 					elapsed,
 					series.prevPacketStats,
 					packetStats,
-				))
+				)
+				if provider {
+					// the provider has no split-tunnel local route; present its
+					// relay (remote) traffic on the local route the provider ui reads
+					point = mirrorProviderThroughputPoint(point)
+				}
+				series.points = append(series.points, point)
 			}
 			series.lastPointTime = sampleTime
 			appended = true
@@ -299,6 +313,30 @@ func newThroughputPoint(sampleTime time.Time, elapsed time.Duration, prev *Packe
 			delta(current.BlockEgressPacketCount, prev.BlockEgressPacketCount),
 			delta(current.BlockIngressPacketCount, prev.BlockIngressPacketCount),
 		),
+	}
+}
+
+// mirrorProviderThroughputPoint synthesizes the provider's local route from its
+// remote relay route. the provider counters only fill remote and block (there is
+// no split-tunnel local route when relaying), so the provider stats ui — which
+// reads the local route — would otherwise be flat. the mirror swaps direction so
+// the labels read naturally from the provider's vantage: remote ingress (a
+// client's egress relayed out to the internet) becomes local egress, and remote
+// egress (the return relayed back to the client) becomes local ingress. remote
+// and block are passed through unchanged
+func mirrorProviderThroughputPoint(point *ThroughputPoint) *ThroughputPoint {
+	return &ThroughputPoint{
+		Time:   point.Time,
+		Remote: point.Remote,
+		Local: &ThroughputSample{
+			EgressByteCount:    point.Remote.IngressByteCount,
+			IngressByteCount:   point.Remote.EgressByteCount,
+			EgressPacketCount:  point.Remote.IngressPacketCount,
+			IngressPacketCount: point.Remote.EgressPacketCount,
+			EgressBitRate:      point.Remote.IngressBitRate,
+			IngressBitRate:     point.Remote.EgressBitRate,
+		},
+		Block: point.Block,
 	}
 }
 

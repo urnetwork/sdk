@@ -50,6 +50,32 @@ func TestDeviceLocalSettingsMemoryScaled(t *testing.T) {
 	connect.AssertEqual(t, settings.ClientSettings.SendBufferSettings.ResendQueueBudget.TotalByteCount(), connect.ByteCount(6*1024*1024))
 }
 
+// TestProviderLocalUserNatSettings verifies the provide exit nat bounds the
+// per source and aggregate flow counts (the local-traffic nats stay
+// unlimited), scaled by the memory budget.
+func TestProviderLocalUserNatSettings(t *testing.T) {
+	// the ios packet tunnel budget
+	connect.SetMemoryBudget(24 * 1024 * 1024)
+	defer connect.SetMemoryBudget(0)
+
+	settings := providerLocalUserNatSettings(connect.NewNoopLogger())
+	// 24/64 of the unscaled limits
+	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 192)
+	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 768)
+	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 96)
+	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 192)
+	// the scaled per flow depths flow through from the connect defaults
+	connect.AssertEqual(t, settings.UdpBufferSettings.SequenceBufferSize, 96)
+	connect.AssertEqual(t, settings.TcpBufferSettings.SequenceBufferSize, 384)
+
+	connect.SetMemoryBudget(0)
+	settings = providerLocalUserNatSettings(connect.NewNoopLogger())
+	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 512)
+	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 2048)
+	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 256)
+	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 512)
+}
+
 // TestDeviceLocalMemoryCeiling drives the loopback echo load with the sdk
 // configured for the ios packet tunnel budget (`SetMemoryLimit(24 MiB)`) and
 // checks that the device keeps moving traffic inside the budget and that the
