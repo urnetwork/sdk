@@ -1,5 +1,3 @@
-import { ProxyConfigResult } from "./generated";
-
 /**
  * Configuration for proxy behavior
  */
@@ -17,6 +15,22 @@ export interface ProxyConfig {
 export interface ProxyAuthResult {
   username: string;
   password: string;
+}
+
+/**
+ * The proxy config reported by the wasm proxy-device binding
+ * (`ProxyDevice.getProxyConfigResult()` and the setup callback). This is the
+ * camelCase wasm projection (js/main.go jsProxyConfigResult) — the REST
+ * /network/auth-client response carries the snake_case generated shape instead.
+ */
+export interface ProxyConfigResult {
+  /** unix epoch milliseconds */
+  expirationTime: number;
+  keepaliveSeconds: number;
+  httpProxyUrl: string;
+  socksProxyUrl: string;
+  httpProxyAuth: ProxyAuthResult | null;
+  socksProxyAuth: ProxyAuthResult | null;
 }
 
 /**
@@ -39,7 +53,7 @@ export type SetupDeviceCallback = (
  */
 export interface ProxyDevice {
   getDevice(): Device;
-  getProxyConfigResult(): ProxyConfigResult;
+  getProxyConfigResult(): ProxyConfigResult | null;
   cancel(): void;
   close(): void;
   isDone(): boolean;
@@ -154,7 +168,10 @@ export interface DeviceRemote {
   // view controllers — the same layer the native app screens use. The caller
   // owns each returned controller and must close() it.
   openConnectViewController(): ConnectViewController;
+  /** @deprecated Use the split client/provider methods. */
   openContractDetailsViewController(): ContractDetailsViewController;
+  openClientContractDetailsViewController(): ContractDetailsViewController;
+  openProviderContractDetailsViewController(): ContractDetailsViewController;
   openContractViewController(): ContractViewController;
   openBlockActionViewController(): BlockActionViewController;
   openLocationsViewController(): LocationsViewController;
@@ -225,12 +242,7 @@ export interface ConnectViewController {
   addGridListener(cb: () => void): Unsubscribe;
 }
 
-/**
- * One peer client's aggregated contract pair, ready to render: summed usage of
- * that client's contracts (egress = "contract", ingress = "companion"), a
- * signature of the open contract ids (a CHANGE means the contract was replaced
- * — swap the circle rather than resize it), and a closing/eject flag.
- */
+/** @deprecated Aggregate compatibility projection; use ContractPeerRow. */
 export interface ContractClientRow {
   clientId: string;
 
@@ -251,17 +263,44 @@ export interface ContractClientRow {
 }
 
 /**
- * ContractDetailsViewController — the shared contract-details aggregator. It
- * owns egress/ingress coalescing, RENEWAL coalescing (a close-then-open renewal
- * is one atomic replace, not a bouncy gap), per-peer aggregation, and the
- * closing lifecycle. Render the rows; do not reimplement any of that.
+ * One individual contract in a peer row's newest-first direction stack.
+ */
+export interface ContractEntry {
+  contractId: string;
+  usedByteCount: number;
+  totalByteCount: number;
+  bitRate: number;
+  hasStream: boolean;
+}
+
+/** The runtime row returned by getContractRows(). */
+export interface ContractPeerRow {
+  clientId: string;
+  sendContracts: ContractEntry[];
+  receiveContracts: ContractEntry[];
+  sendByteCount: number;
+  receiveByteCount: number;
+  lastActivityMillis: number;
+  closing: boolean;
+}
+
+/**
+ * One client- or provider-feed contract-details controller. It groups
+ * individual contracts by peer, owns the closing lifecycle and at-top
+ * ordering, and reports rows that exactly match the WASM runtime object.
  */
 export interface ContractDetailsViewController {
   close(): void;
   start(): void;
   stop(): void;
 
+  getContractRows(): ContractPeerRow[];
+  setAtTop(atTop: boolean): void;
+  pendingCount(): number;
+
+  /** @deprecated Available on the combined compatibility controller. */
   getClientContractRows(): ContractClientRow[];
+  /** @deprecated Available on the combined compatibility controller. */
   getProviderContractRows(): ContractClientRow[];
 
   addContractRowsListener(cb: () => void): Unsubscribe;
@@ -326,8 +365,16 @@ export interface BlockAction {
   time: number;
   block: boolean;
   local: boolean;
+  /** cluster ips/hosts that did NOT match an override (disjoint from matchedIps/matchedHosts) */
   ips: string[];
   hosts: string[];
+  /**
+   * the exact ips and hosts that matched an override rule, disjoint from
+   * ips/hosts so nothing is shown or counted twice (empty when no override
+   * matched). The UI renders these distinctly at the front of the row.
+   */
+  matchedIps: string[];
+  matchedHosts: string[];
 }
 
 /**
@@ -344,6 +391,9 @@ export interface BlockActionViewController {
   getBlockActions(): BlockAction[];
   getWindowDurationSeconds(): number;
   setWindowDurationSeconds(seconds: number): void;
+  /** the retained block-action feed length cap */
+  getMaxBlockActions(): number;
+  setMaxBlockActions(maxBlockActions: number): void;
 
   addBlockActionsListener(cb: () => void): Unsubscribe;
   addBlockActionStatsListener(cb: () => void): Unsubscribe;

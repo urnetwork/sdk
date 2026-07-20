@@ -17,6 +17,9 @@ const (
 	defaultBlockActionWindowDuration = 5 * time.Minute
 	// how often the run loop evicts expired block actions
 	blockActionEvictInterval = 10 * time.Second
+	// keep at most this many of the most recent block actions, dropping older,
+	// so the list can't accumulate unbounded (in addition to the time window)
+	defaultMaxBlockActions = 200
 )
 
 type BlockActionsListener interface {
@@ -43,6 +46,8 @@ type BlockActionViewController struct {
 	blockActionOverridesChangedSub Sub
 
 	windowDuration time.Duration
+	// keep at most this many of the most recent block actions
+	maxBlockActions int
 	// newest last
 	blockActions        []*BlockAction
 	blockStats          *BlockStats
@@ -61,8 +66,9 @@ func newBlockActionViewController(ctx context.Context, device Device) *BlockActi
 		cancel: cancel,
 		device: device,
 
-		windowDuration: defaultBlockActionWindowDuration,
-		blockActions:   []*BlockAction{},
+		windowDuration:  defaultBlockActionWindowDuration,
+		maxBlockActions: defaultMaxBlockActions,
+		blockActions:    []*BlockAction{},
 
 		blockActionsListeners:        connect.NewCallbackList[BlockActionsListener](),
 		blockActionStatsListeners:    connect.NewCallbackList[BlockActionStatsListener](),
@@ -111,7 +117,8 @@ func (self *BlockActionViewController) run() {
 }
 
 // must be called with `stateLock`.
-// returns the block actions inside the window, preserving order
+// returns the block actions inside the window capped to the most recent
+// maxBlockActions, preserving order (newest last)
 func (self *BlockActionViewController) trimBlockActionsWithLock(blockActions []*BlockAction) []*BlockAction {
 	windowStartTime := time.Now().Add(-self.windowDuration).UnixMilli()
 	windowBlockActions := []*BlockAction{}
@@ -119,6 +126,14 @@ func (self *BlockActionViewController) trimBlockActionsWithLock(blockActions []*
 		if windowStartTime <= blockAction.Time {
 			windowBlockActions = append(windowBlockActions, blockAction)
 		}
+	}
+	// keep only the most recent maxBlockActions (the list is newest-last), so it
+	// can't accumulate a very long history. Copy into a fresh slice so we don't
+	// retain the (possibly large) incoming backing array.
+	if 0 < self.maxBlockActions && self.maxBlockActions < len(windowBlockActions) {
+		recent := make([]*BlockAction, self.maxBlockActions)
+		copy(recent, windowBlockActions[len(windowBlockActions)-self.maxBlockActions:])
+		windowBlockActions = recent
 	}
 	return windowBlockActions
 }
@@ -242,6 +257,21 @@ func (self *BlockActionViewController) GetWindowDurationSeconds() int {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return int(self.windowDuration / time.Second)
+}
+
+// SetMaxBlockActions caps how many of the most recent block actions are kept
+// (in addition to the time window); older actions beyond the cap are dropped so
+// the list can't accumulate unbounded. <= 0 disables the count cap.
+func (self *BlockActionViewController) SetMaxBlockActions(maxBlockActions int) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.maxBlockActions = maxBlockActions
+}
+
+func (self *BlockActionViewController) GetMaxBlockActions() int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.maxBlockActions
 }
 
 func (self *BlockActionViewController) blockActionsChanged() {

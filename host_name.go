@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -126,4 +127,75 @@ func HostBaseName(host string) string {
 		return strings.Join(labels[len(labels)-3:], ".")
 	}
 	return strings.Join(labels[len(labels)-2:], ".")
+}
+
+// CollapseHostNames collapses a set of hostnames for display, set-aware: a hostname that
+// is a strict subdomain of another hostname PRESENT IN THE SET collapses to "*.<parent>",
+// where the parent is its longest (most specific) ancestor that is itself in the set. A
+// hostname with no ancestor in the set is shown unchanged.
+//
+// Crucially, a wildcard is only ever formed against a parent that is a member of the set:
+// "*.example.com" appears only when "example.com" is in the set. A set of
+// {a.example.com, b.example.com} without "example.com" is left as [a.example.com,
+// b.example.com] — never collapsed to "*.example.com" (we never invent a base that isn't
+// itself observed). The set's own base names therefore stay visible alongside any
+// "*.base" chip for their subdomains.
+//
+// The result is de-duplicated and sorted. Case-insensitive; trailing dots trimmed.
+func CollapseHostNames(hosts []string) []string {
+	set := map[string]bool{}
+	order := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		h = strings.ToLower(strings.TrimSuffix(h, "."))
+		if h == "" || set[h] {
+			continue
+		}
+		set[h] = true
+		order = append(order, h)
+	}
+
+	out := map[string]bool{}
+	for _, h := range order {
+		// the longest (most specific) strict ancestor of h that is in the set. The
+		// leading "." keeps the match label-aligned (so "example.com" is an ancestor of
+		// "a.example.com" but "xample.com" is not).
+		best := ""
+		for m := range set {
+			if m != h && len(m) > len(best) && strings.HasSuffix(h, "."+m) {
+				best = m
+			}
+		}
+		if best != "" {
+			out["*."+best] = true
+		} else {
+			out[h] = true
+		}
+	}
+
+	// "*.X" also matches the base "X" in our wildcard semantics, so a base that also
+	// appears as a wildcard parent is absorbed into the wildcard: drop the bare base
+	// ({itunes.apple.com, x.itunes.apple.com} -> {*.itunes.apple.com}, not both).
+	for h := range out {
+		if strings.HasPrefix(h, "*.") {
+			delete(out, h[len("*."):])
+		}
+	}
+
+	result := make([]string, 0, len(out))
+	for h := range out {
+		result = append(result, h)
+	}
+	slices.Sort(result)
+	return result
+}
+
+// CollapseHostNamesList is the gomobile/StringList form of CollapseHostNames
+// (gomobile cannot bind the []string signature). The apps call this so every
+// platform collapses host names for display through the exact same logic.
+func CollapseHostNamesList(hosts *StringList) *StringList {
+	out := NewStringList()
+	if hosts != nil {
+		out.addAll(CollapseHostNames(hosts.getAll())...)
+	}
+	return out
 }

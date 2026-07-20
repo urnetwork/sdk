@@ -83,6 +83,7 @@ bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t se
 #define URNET_PROVIDE_CONTROL_MODE_ALWAYS "always"
 #define URNET_PROVIDE_CONTROL_MODE_AUTO "auto"
 #define URNET_PROVIDE_CONTROL_MODE_MANUAL "manual"
+#define URNET_PROVIDE_CONTROL_MODE_NETWORK "network"
 #define URNET_PROVIDE_CONTROL_MODE_NEVER "never"
 #define URNET_PROVIDE_MODE_FRIENDS_AND_FAMILY 2
 #define URNET_PROVIDE_MODE_NETWORK 1
@@ -496,7 +497,9 @@ void urnet_block_action_view_controller_close(uint64_t self);
 char* urnet_block_action_view_controller_get_block_actions(uint64_t self);
 char* urnet_block_action_view_controller_get_block_stats(uint64_t self);
 char* urnet_block_action_view_controller_get_local_override_app_ids(uint64_t self);
+int64_t urnet_block_action_view_controller_get_max_block_actions(uint64_t self);
 int64_t urnet_block_action_view_controller_get_window_duration_seconds(uint64_t self);
+void urnet_block_action_view_controller_set_max_block_actions(uint64_t self, int64_t max_block_actions);
 void urnet_block_action_view_controller_set_window_duration_seconds(uint64_t self, int64_t seconds);
 void urnet_block_action_view_controller_start(uint64_t self);
 void urnet_block_action_view_controller_stop(uint64_t self);
@@ -532,7 +535,10 @@ void urnet_connect_view_controller_stop(uint64_t self);
 uint64_t urnet_contract_details_view_controller_add_contract_rows_listener(uint64_t self, urnet_contract_rows_cb listener_contract_rows_changed, void* listener_user_data);
 void urnet_contract_details_view_controller_close(uint64_t self);
 char* urnet_contract_details_view_controller_get_client_contract_rows(uint64_t self);
+char* urnet_contract_details_view_controller_get_contract_rows(uint64_t self);
 char* urnet_contract_details_view_controller_get_provider_contract_rows(uint64_t self);
+int64_t urnet_contract_details_view_controller_pending_count(uint64_t self);
+void urnet_contract_details_view_controller_set_at_top(uint64_t self, bool at_top);
 void urnet_contract_details_view_controller_start(uint64_t self);
 void urnet_contract_details_view_controller_stop(uint64_t self);
 
@@ -672,6 +678,7 @@ char* urnet_device_local_get_provide_secret_keys(uint64_t self);
 uint64_t urnet_device_local_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_block_action_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_client_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_view_controller(uint64_t self);
@@ -681,6 +688,7 @@ uint64_t urnet_device_local_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_peer_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provide_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_provider_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_wallet_view_controller(uint64_t self);
 bool urnet_device_local_send_packet(uint64_t self, const uint8_t* packet, int32_t packet_len, int64_t n);
@@ -706,6 +714,7 @@ bool urnet_device_remote_get_remote_connected(uint64_t self);
 uint64_t urnet_device_remote_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_block_action_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_client_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_view_controller(uint64_t self);
@@ -715,6 +724,7 @@ uint64_t urnet_device_remote_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_peer_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provide_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_provider_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_wallet_view_controller(uint64_t self);
 bool urnet_device_remote_set_rpc_server(uint64_t self, const char* client_pem, const char* server_cert_pem, const char* host_port, char** out_error);
@@ -884,6 +894,7 @@ void urnet_network_user_view_controller_update_network_user(uint64_t self, const
 
 uint64_t urnet_peer_view_controller_add_peers_listener(uint64_t self, urnet_peers_cb listener_peers_changed, void* listener_user_data);
 void urnet_peer_view_controller_close(uint64_t self);
+int64_t urnet_peer_view_controller_get_connected_count(uint64_t self);
 int64_t urnet_peer_view_controller_get_peer_count(uint64_t self);
 char* urnet_peer_view_controller_get_peers(uint64_t self);
 void urnet_peer_view_controller_start(uint64_t self);
@@ -954,6 +965,8 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 
 /* ----- functions ----- */
 
+char* urnet_collapse_host_names(const char* hosts_json);
+char* urnet_collapse_host_names_list(const char* hosts_json);
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_default_device_local_settings(void);
 char* urnet_default_proxy_config(void);
@@ -1093,10 +1106,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* AddAuthArgs (json):
- *   user_auth?: string | null
- *   password?: string | null
- *   auth_jwt?: string | null
- *   auth_jwt_type?: string | null
+ *   user_auth?: string
+ *   password?: string
+ *   auth_jwt?: string
+ *   auth_jwt_type?: string
  *   wallet_auth?: WalletAuthArgs | null
  */
 
@@ -1254,6 +1267,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Time: number
  *   Ips: StringList | null
  *   Hosts: StringList | null
+ *   MatchedIps: StringList | null
+ *   MatchedHosts: StringList | null
  *   Block: boolean
  *   Local: boolean
  *   OverrideId: string (uuid) | null
@@ -1367,6 +1382,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   country_location_id?: string (uuid) | null
  *   stable: boolean
  *   strong_privacy: boolean
+ *   network_peer?: boolean
  */
 
 /* ConnectLocationId (json):
@@ -1404,17 +1420,37 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ContractByteCount: number
  *   ContractBitRate: number
  *   ContractTransferPath: TransferPath | null
- *   CompanionContractId: string (uuid) | null
- *   CompanionContractUsedByteCount: number
- *   CompanionContractByteCount: number
- *   CompanionContractBitRate: number
- *   CompanionContractTransferPath: TransferPath | null
  *   Status: string
- *   ReplacesContractId: string (uuid) | null
  */
 
 /* ContractDetailsList (json):
  *   = ContractDetails | null[]
+ */
+
+/* ContractEntry (json):
+ *   ContractId: string
+ *   UsedByteCount: number
+ *   TotalByteCount: number
+ *   BitRate: number
+ *   HasStream: boolean
+ */
+
+/* ContractEntryList (json):
+ *   = ContractEntry | null[]
+ */
+
+/* ContractPeerRow (json):
+ *   ClientId: string
+ *   SendContracts: ContractEntryList | null
+ *   ReceiveContracts: ContractEntryList | null
+ *   SendByteCount: number
+ *   ReceiveByteCount: number
+ *   LastActivityMillis: number
+ *   Closing: boolean
+ */
+
+/* ContractPeerRowList (json):
+ *   = ContractPeerRow | null[]
  */
 
 /* ContractStats (json):
@@ -1491,6 +1527,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   AllowProvider: boolean
  *   Verbose: boolean
  *   GeneratorFunc: any
+ *   MultiClientIdentityStore: any
  *   EnableRpc: boolean
  *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
@@ -1960,6 +1997,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   verified: boolean
  *   auth_type: string
  *   network_name: string
+ *   wallet_address?: string
+ *   auth_types?: StringList | null
  */
 
 /* NetworkUserUpdateArgs (json):

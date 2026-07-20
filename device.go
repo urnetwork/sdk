@@ -205,12 +205,17 @@ type RouteOverride struct {
 type BlockAction struct {
 	BlockActionId *Id
 	Time          int64
-	// all ips in the cluster
+	// cluster ips that did NOT match an override (disjoint from MatchedIps)
 	Ips *StringList
-	// all hosts observed for the cluster ips
+	// cluster hosts that did NOT match an override (disjoint from MatchedHosts)
 	Hosts *StringList
-	Block bool
-	Local bool
+	// the exact ips and hosts that matched an override rule, disjoint from Ips/Hosts
+	// so nothing is shown or counted twice (empty when no override matched). The UI
+	// renders these distinctly (green) at the front of the row.
+	MatchedIps   *StringList
+	MatchedHosts *StringList
+	Block        bool
+	Local        bool
 	// the applied overrides, when an override determined the decision.
 	// `OverrideId` is the deciding override (see `BlockActionOverride.OverrideId`);
 	// the block override's id when the block and route decisions came from
@@ -252,33 +257,20 @@ type ContractStats struct {
 	CompanionContractBitRate       int
 }
 
-/*
-	contract
-	  |   ^
-
-contract |   | companion contract
-transfer |   | transfer
-path     |   | path
-
-	  ⌄   |
-	companion contract
-*/
 // Contract lifecycle status carried on ContractDetails.Status.
 //
 // A contract is Open while active. When it closes it is reported ONE more time
-// with Closed -- a one-shot tombstone -- so the UI can animate it leaving, then
-// it is evicted. An atomic replacement (a renewed contract taking over the same
-// transfer path) is not a separate close+open that would make the UI bounce:
-// the incoming contract is Open with ReplacesContractId set to the contract it
-// superseded, and the superseded contract is dropped without its own Closed
-// tombstone (its close is implied by the replacement). A plain close is just a
-// replacement by nothing (A -> nil); a plain open is a replacement of nothing
-// (nil -> B).
+// with Closed -- a one-shot tombstone -- so consumers see its final byte counts,
+// then it is evicted. There is no pairing between contracts: a renewal is simply
+// a close of one contract and an open of another.
 const (
 	ContractStatusOpen   = "open"
 	ContractStatusClosed = "closed"
 )
 
+// ContractDetails is one contract of one direction (egress or ingress, per the
+// feed it is reported on). Contracts are not paired across directions -- the
+// send and receive contracts of a peer are fundamentally many-to-many.
 type ContractDetails struct {
 	ContractId            *Id
 	ContractUsedByteCount ByteCount
@@ -286,19 +278,9 @@ type ContractDetails struct {
 	ContractBitRate       int
 	ContractTransferPath  *TransferPath
 
-	CompanionContractId            *Id
-	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount     ByteCount
-	CompanionContractBitRate       int
-	CompanionContractTransferPath  *TransferPath
-
 	// ContractStatusOpen or ContractStatusClosed. Closed appears once (a
 	// tombstone) then the contract is evicted.
 	Status string
-	// set on an Open contract that atomically replaced another on the same
-	// transfer path (a renewal): the id of the contract it superseded, so the UI
-	// ejects the old and fades in the new as one transition. nil for a fresh open.
-	ReplacesContractId *Id
 }
 
 type WindowStatus struct {
@@ -663,6 +645,15 @@ func deviceLog(d Device) connect.Logger {
 type windowMonitor interface {
 	AddMonitorEventCallback(monitorEventCallback connect.MonitorEventFunction) func()
 	Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent)
+}
+
+// windowMonitorWithAvailability is an optional windowMonitor capability: Events
+// plus whether the monitor state was actually readable. A remote device cannot
+// read the monitor while its rpc is down; consumers that reconcile against
+// Events (ConnectGrid) freeze rather than drain when the state is unavailable.
+type windowMonitorWithAvailability interface {
+	windowMonitor
+	EventsWithAvailability() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent, bool)
 }
 
 type securityPolicy interface {

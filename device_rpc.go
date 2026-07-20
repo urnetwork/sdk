@@ -1568,28 +1568,39 @@ func (self *DeviceRemote) AddAuthLogoutListener(listener AuthLogoutListener) Sub
 }
 
 func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
 
-	success := func() bool {
-		if self.service == nil {
-			return false
-		}
+		success := func() bool {
+			if self.service == nil {
+				return false
+			}
 
-		err := rpcCallVoid(self.service, "DeviceLocalRpc.LoadProvideSecretKeys", provideSecretKeyList.getAll(), self.closeService)
-		if err != nil {
-			return false
+			err := rpcCallVoid(self.service, "DeviceLocalRpc.LoadProvideSecretKeys", provideSecretKeyList.getAll(), self.closeService)
+			if err != nil {
+				return false
+			}
+			return true
+		}()
+		if success {
+			self.state.LoadProvideSecretKeys.Unset()
+			self.state.InitProvideSecretKeys.Unset()
+			self.lastKnownState.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
+			self.lastKnownState.InitProvideSecretKeys.Unset()
+		} else {
+			self.state.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
+			self.state.InitProvideSecretKeys.Unset()
+			event = true
 		}
-		return true
 	}()
-	if success {
-		self.state.LoadProvideSecretKeys.Unset()
-		self.state.InitProvideSecretKeys.Unset()
-		self.lastKnownState.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
-		self.lastKnownState.InitProvideSecretKeys.Unset()
-	} else {
-		self.state.LoadProvideSecretKeys.Set(provideSecretKeyList.getAll())
-		self.state.InitProvideSecretKeys.Unset()
+	if event {
+		// the rpc is not connected, so nothing else will announce the loaded
+		// keys — fire the local listeners with them (the ui's
+		// has-network-provide-key signal depends on this). When the rpc IS
+		// connected, DeviceLocal fires and the reverse push delivers instead.
+		self.provideSecretKeysChanged(provideSecretKeyList.getAll())
 	}
 }
 
@@ -1706,18 +1717,24 @@ func (self *DeviceRemote) GetProvideEnabled() bool {
 			return false
 		case ProvideControlModeAlways:
 			return true
+		case ProvideControlModeNetwork:
+			// the private provider is always on (peers only)
+			return true
 		case ProvideControlModeAuto:
-			// connect enabled
-			if self.state.Location.IsSet {
-				return self.state.Location.Value.ConnectLocation != nil
-			} else if self.state.Destination.IsSet {
-				return self.state.Destination.Value.Location.ConnectLocation != nil
-			} else if self.state.RemoveDestination.IsSet {
-				return false
-			} else {
-				return self.lastKnownState.ConnectEnabled.Get(false)
-			}
+			// auto always provides: public while connected, network
+			// (peer-reachable) while idle — the provider exists either way
+			return true
 		case ProvideControlModeManual:
+			// manual: a queued explicit provide mode is the truth — the
+			// provider exists for any mode but none (per-case; bit set)
+			if self.state.ProvideMode.IsSet {
+				switch self.state.ProvideMode.Value {
+				case ProvideModeNetwork, ProvideModeFriendsAndFamily, ProvideModePublic:
+					return true
+				default:
+					return false
+				}
+			}
 			return self.lastKnownState.ProvideEnabled.Get(false)
 		default:
 			return false
@@ -1808,9 +1825,45 @@ func (self *DeviceRemote) GetProvideMode() ProvideMode {
 	if success {
 		return provideMode
 	} else {
-		return self.state.ProvideMode.Get(
-			self.lastKnownState.ProvideMode.Get(ProvideModeNone),
+		// derive the EFFECTIVE mode from the queued/last-known control mode,
+		// mirroring DeviceLocal's control-mode mapping (and GetProvideEnabled
+		// below): the raw queued provide mode can be stale relative to a
+		// queued control mode (e.g. a persisted mode applied at init), which
+		// left the ui reading the wrong mode until the rpc connected.
+		// ProvideMode is a bit set: compare per-case, never with ranges.
+		provideControlMode := self.state.ProvideControlMode.Get(
+			self.lastKnownState.ProvideControlMode.Get(self.settings.DefaultProvideControlMode),
 		)
+		switch provideControlMode {
+		case ProvideControlModeNever:
+			return ProvideModeNone
+		case ProvideControlModeAlways:
+			return ProvideModePublic
+		case ProvideControlModeNetwork:
+			// the private provider is always on (peers only)
+			return ProvideModeNetwork
+		case ProvideControlModeAuto:
+			// public while connected; network (peer-reachable) while idle
+			connected := false
+			if self.state.Location.IsSet {
+				connected = self.state.Location.Value.ConnectLocation != nil
+			} else if self.state.Destination.IsSet {
+				connected = self.state.Destination.Value.Location.ConnectLocation != nil
+			} else if self.state.RemoveDestination.IsSet {
+				connected = false
+			} else {
+				connected = self.lastKnownState.ConnectEnabled.Get(false)
+			}
+			if connected {
+				return ProvideModePublic
+			}
+			return ProvideModeNetwork
+		default:
+			// manual: the explicitly set mode is the truth
+			return self.state.ProvideMode.Get(
+				self.lastKnownState.ProvideMode.Get(ProvideModeNone),
+			)
+		}
 	}
 }
 
@@ -2366,25 +2419,29 @@ func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(windowMonitor *de
 	}
 }
 
-func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowMonitor) (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+// the bool reports whether the monitor state was actually readable: false when
+// the window is stale, the rpc service is down, the call fails, or the device
+// has no local monitor. Consumers reconciling against the events (ConnectGrid)
+// freeze on unavailable rather than treating the empty result as truth.
+func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowMonitor) (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent, bool) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	if _, ok := self.windowMonitors[windowMonitor.windowId]; !ok {
 		// window no longer active
-		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}, false
 	}
 
 	if self.service == nil {
-		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}, false
 	}
 
 	event, err := rpcCallNoArg[*DeviceRemoteWindowMonitorEvent](self.service, "DeviceLocalRpc.WindowMonitorEvents", self.closeService)
 	if err != nil {
-		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}, false
 	}
 	if event == nil {
-		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
+		return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}, false
 	}
 
 	/*
@@ -2398,11 +2455,11 @@ func (self *DeviceRemote) windowMonitorEvents(windowMonitor *deviceRemoteWindowM
 
 		if _, ok := self.windowMonitors[windowMonitor.windowId]; !ok {
 			// window no longer active
-			return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}
+			return &connect.WindowExpandEvent{}, map[connect.Id]*connect.ProviderEvent{}, false
 		}
 	*/
 
-	return event.WindowExpandEvent, event.ProviderEvents
+	return event.WindowExpandEvent, event.ProviderEvents, true
 }
 
 // this object is locked under the DeviceRemote.stateLock
@@ -2430,6 +2487,12 @@ func (self *deviceRemoteWindowMonitor) AddMonitorEventCallback(monitorEventCallb
 }
 
 func (self *deviceRemoteWindowMonitor) Events() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent) {
+	windowExpandEvent, providerEvents, _ := self.deviceRemote.windowMonitorEvents(self)
+	return windowExpandEvent, providerEvents
+}
+
+// windowMonitorWithAvailability
+func (self *deviceRemoteWindowMonitor) EventsWithAvailability() (*connect.WindowExpandEvent, map[connect.Id]*connect.ProviderEvent, bool) {
 	return self.deviceRemote.windowMonitorEvents(self)
 }
 
@@ -4686,6 +4749,8 @@ type BlockActionRpc struct {
 	Time          int64
 	Ips           []string
 	Hosts         []string
+	MatchedIps    []string
+	MatchedHosts  []string
 	Block         bool
 	Local         bool
 	OverrideId    *connect.Id
@@ -4703,6 +4768,8 @@ func newBlockActionRpc(blockAction *BlockAction) *BlockActionRpc {
 		Time:          blockAction.Time,
 		Ips:           stringsFromStringList(blockAction.Ips),
 		Hosts:         stringsFromStringList(blockAction.Hosts),
+		MatchedIps:    stringsFromStringList(blockAction.MatchedIps),
+		MatchedHosts:  stringsFromStringList(blockAction.MatchedHosts),
 		Block:         blockAction.Block,
 		Local:         blockAction.Local,
 		BlockOverride: copyBlockOverride(blockAction.BlockOverride),
@@ -4729,6 +4796,8 @@ func (self *BlockActionRpc) toBlockAction() *BlockAction {
 		Time:          self.Time,
 		Ips:           stringListFromStrings(self.Ips),
 		Hosts:         stringListFromStrings(self.Hosts),
+		MatchedIps:    stringListFromStrings(self.MatchedIps),
+		MatchedHosts:  stringListFromStrings(self.MatchedHosts),
 		Block:         self.Block,
 		Local:         self.Local,
 		BlockOverride: copyBlockOverride(self.BlockOverride),
@@ -4918,14 +4987,7 @@ type ContractDetailsRpc struct {
 	ContractBitRate       int
 	ContractTransferPath  *DeviceRemoteTransferPath
 
-	CompanionContractId            *connect.Id
-	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount     ByteCount
-	CompanionContractBitRate       int
-	CompanionContractTransferPath  *DeviceRemoteTransferPath
-
-	Status             string
-	ReplacesContractId *connect.Id
+	Status string
 }
 
 func newContractDetailsRpc(contractDetails *ContractDetails) *ContractDetailsRpc {
@@ -4938,24 +5000,11 @@ func newContractDetailsRpc(contractDetails *ContractDetails) *ContractDetailsRpc
 		ContractBitRate:       contractDetails.ContractBitRate,
 		ContractTransferPath:  newDeviceRemoteTransferPath(contractDetails.ContractTransferPath),
 
-		CompanionContractUsedByteCount: contractDetails.CompanionContractUsedByteCount,
-		CompanionContractByteCount:     contractDetails.CompanionContractByteCount,
-		CompanionContractBitRate:       contractDetails.CompanionContractBitRate,
-		CompanionContractTransferPath:  newDeviceRemoteTransferPath(contractDetails.CompanionContractTransferPath),
-
 		Status: contractDetails.Status,
-	}
-	if contractDetails.ReplacesContractId != nil {
-		id := contractDetails.ReplacesContractId.toConnectId()
-		contractDetailsRpc.ReplacesContractId = &id
 	}
 	if contractDetails.ContractId != nil {
 		id := contractDetails.ContractId.toConnectId()
 		contractDetailsRpc.ContractId = &id
-	}
-	if contractDetails.CompanionContractId != nil {
-		id := contractDetails.CompanionContractId.toConnectId()
-		contractDetailsRpc.CompanionContractId = &id
 	}
 	return contractDetailsRpc
 }
@@ -4970,21 +5019,10 @@ func (self *ContractDetailsRpc) toContractDetails() *ContractDetails {
 		ContractBitRate:       self.ContractBitRate,
 		ContractTransferPath:  self.ContractTransferPath.toTransferPath(),
 
-		CompanionContractUsedByteCount: self.CompanionContractUsedByteCount,
-		CompanionContractByteCount:     self.CompanionContractByteCount,
-		CompanionContractBitRate:       self.CompanionContractBitRate,
-		CompanionContractTransferPath:  self.CompanionContractTransferPath.toTransferPath(),
-
 		Status: self.Status,
 	}
 	if self.ContractId != nil {
 		contractDetails.ContractId = newId(*self.ContractId)
-	}
-	if self.CompanionContractId != nil {
-		contractDetails.CompanionContractId = newId(*self.CompanionContractId)
-	}
-	if self.ReplacesContractId != nil {
-		contractDetails.ReplacesContractId = newId(*self.ReplacesContractId)
 	}
 	return contractDetails
 }
@@ -6042,9 +6080,6 @@ func (self *DeviceLocalRpc) Sync(
 	if state.CanPromptIntroFunnel.IsSet {
 		self.deviceLocal.SetCanPromptIntroFunnel(state.CanPromptIntroFunnel.Value)
 	}
-	if state.ProvideControlMode.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
-	}
 	if state.AllowForeground.IsSet {
 		self.deviceLocal.SetAllowForeground(state.AllowForeground.Value)
 	}
@@ -6067,6 +6102,14 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	if state.ProvideMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
+	}
+	// ORDER MATTERS: the control mode applies AFTER the raw provide mode —
+	// SetProvideControlMode enforces the control mode's provide mapping, so
+	// the control mode owns the effective mode. Applying the (possibly stale,
+	// persisted) raw mode after it silently overrode the mapping on every rpc
+	// connect (the ios red-light / not-discoverable-at-startup bug).
+	if state.ProvideControlMode.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
 	}
 	if state.ProvideNetworkMode.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideNetworkMode(state.ProvideNetworkMode.Value)
@@ -8286,10 +8329,25 @@ func (self *DeviceLocalRpc) updateWindowMonitor() {
 			self.windowMonitorEventListenerSub()
 			self.windowMonitorEventListenerSub = nil
 		}
-		clear(self.localWindowIds)
 
 		self.localWindowId = connect.NewId()
 		self.localWindowMonitor = localWindowMonitor
+
+		// re-bind the registered remote windows to the new local window and
+		// resubscribe, so remote listeners keep receiving events across a local
+		// monitor change (the multi client is recreated on destination change).
+		// without this the old subscription is dropped and nothing subscribes to
+		// the new monitor until a listener add, leaving remote grids frozen. a
+		// reset snapshot resyncs the remote grids to the new monitor's state.
+		clear(self.localWindowIds)
+		for windowId := range self.windowMonitorEventListenerIds {
+			self.localWindowIds[windowId] = self.localWindowId
+		}
+		if 0 < len(self.windowMonitorEventListenerIds) {
+			self.windowMonitorEventListenerSub = localWindowMonitor.AddMonitorEventCallback(self.WindowMonitorEventCallback)
+			windowExpandEvent, providerEvents := localWindowMonitor.Events()
+			self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
+		}
 	}
 }
 
