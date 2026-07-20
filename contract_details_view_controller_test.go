@@ -633,3 +633,62 @@ func TestContractDetailsViewControllerRunTotalsAcrossEvents(t *testing.T) {
 		t.Fatalf("expected the rows listener to fire on each event, got %d", notified)
 	}
 }
+
+func TestContractDetailsViewControllerExpiresRunTotalWithoutMoreEvents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	us := connect.NewId()
+	peer := connect.NewId()
+	stream := connect.NewId()
+	contractId := connect.NewId()
+	egress := NewContractDetailsList()
+	egress.Add(testing_peerContractDetails(
+		contractId,
+		us,
+		peer,
+		stream,
+		2000,
+		100000,
+		200,
+		ContractStatusOpen,
+	))
+	dev := &testing_contractDetailsDevice{
+		egress:  egress,
+		ingress: NewContractDetailsList(),
+	}
+	vc := newContractDetailsViewController(ctx, dev, false)
+	vc.settings.RowsUpdateThrottle = 10 * time.Millisecond
+	vc.settings.ActivityWindow = 80 * time.Millisecond
+	vc.aggregator.idleWindow = vc.settings.ActivityWindow
+
+	changed := make(chan struct{}, 4)
+	vc.AddContractRowsListener(&testing_contractRowsListener{onChange: func() {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}})
+	go vc.run()
+	vc.scheduleUpdate()
+
+	select {
+	case <-changed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial rows were not published")
+	}
+	if row := testing_rowForClient(vc.GetContractRows(), peer.String()); row == nil || row.SendByteCount != 2000 {
+		t.Fatalf("initial run total = %v, want 2000", row)
+	}
+
+	// No more feed events arrive. The exact activity deadline still resets the
+	// cached total and publishes it, without a 10 Hz polling ticker or RPC pull.
+	select {
+	case <-changed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("run total did not expire without another contract event")
+	}
+	if row := testing_rowForClient(vc.GetContractRows(), peer.String()); row == nil || row.SendByteCount != 0 {
+		t.Fatalf("expired run total = %v, want 0", row)
+	}
+}

@@ -53,7 +53,10 @@ func jsProxyConfigResult(proxyConfigResult *sdk.ProxyConfigResult) js.Value {
 	}
 
 	return js.ValueOf(map[string]any{
-		"expirationTime":   js.ValueOf(proxyConfigResult.ExpirationTime),
+		// `time.Time` is converted as int unix epoch milliseconds (see the
+		// conversion notes at the top of this file). `js.ValueOf` on the
+		// raw `time.Time` struct would panic at runtime.
+		"expirationTime":   js.ValueOf(proxyConfigResult.ExpirationTime.UnixMilli()),
 		"keepaliveSeconds": js.ValueOf(proxyConfigResult.KeepaliveSeconds),
 		"httpProxyUrl":     js.ValueOf(proxyConfigResult.HttpProxyUrl),
 		"socksProxyUrl":    js.ValueOf(proxyConfigResult.SocksProxyUrl),

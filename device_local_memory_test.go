@@ -70,10 +70,10 @@ func TestProviderLocalUserNatSettings(t *testing.T) {
 
 	connect.SetMemoryBudget(0)
 	settings = providerLocalUserNatSettings(connect.NewNoopLogger())
-	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 512)
-	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 2048)
-	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 256)
-	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 512)
+	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 0)
+	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 0)
+	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 0)
+	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 0)
 }
 
 // TestDeviceLocalMemoryCeiling drives the loopback echo load with the sdk

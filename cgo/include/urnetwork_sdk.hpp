@@ -253,6 +253,7 @@ struct BlockedLocation;
 struct ByJwt;
 struct CircleUserToken;
 struct CircleWalletInfo;
+struct ContractClientRow;
 struct TransferPath;
 struct ContractDetails;
 struct ContractEntry;
@@ -426,6 +427,7 @@ using BlockActionList = std::vector<BlockAction>;
 using BlockActionOverrideList = std::vector<BlockActionOverride>;
 using BlockedLocationsList = std::vector<BlockedLocation>;
 using ConnectLocationList = std::vector<ConnectLocation>;
+using ContractClientRowList = std::vector<ContractClientRow>;
 using ContractDetailsList = std::vector<ContractDetails>;
 using ContractEntryList = std::vector<ContractEntry>;
 using ContractPeerRowList = std::vector<ContractPeerRow>;
@@ -807,6 +809,20 @@ struct CircleWalletInfo {
 	int64_t balance_usdc_nano_cents{};
 };
 
+struct ContractClientRow {
+	std::string ClientId{};
+	std::string ContractId{};
+	std::string CompanionContractId{};
+	int64_t ContractUsedByteCount{};
+	int64_t ContractByteCount{};
+	int64_t ContractBitRate{};
+	int64_t CompanionContractUsedByteCount{};
+	int64_t CompanionContractByteCount{};
+	int64_t CompanionContractBitRate{};
+	int64_t PairCount{};
+	bool Closing{};
+};
+
 struct TransferPath {
 	std::optional<std::string> SourceId;
 	std::optional<std::string> DestinationId;
@@ -910,6 +926,7 @@ struct DeviceLocalSettings {
 	bool AllowProvider{};
 	bool Verbose{};
 	nlohmann::json GeneratorFunc{};
+	nlohmann::json MultiClientIdentityStore{};
 	bool EnableRpc{};
 	std::optional<nlohmann::json> KeyMaterial;
 	bool DisableLogging{};
@@ -1872,6 +1889,8 @@ inline void to_json(nlohmann::json& j, const CircleUserToken& v);
 inline void from_json(const nlohmann::json& j, CircleUserToken& v);
 inline void to_json(nlohmann::json& j, const CircleWalletInfo& v);
 inline void from_json(const nlohmann::json& j, CircleWalletInfo& v);
+inline void to_json(nlohmann::json& j, const ContractClientRow& v);
+inline void from_json(const nlohmann::json& j, ContractClientRow& v);
 inline void to_json(nlohmann::json& j, const TransferPath& v);
 inline void from_json(const nlohmann::json& j, TransferPath& v);
 inline void to_json(nlohmann::json& j, const ContractDetails& v);
@@ -3951,6 +3970,59 @@ inline void from_json(const nlohmann::json& j, CircleWalletInfo& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ContractClientRow& v) {
+	j = nlohmann::json::object();
+	j["ClientId"] = v.ClientId;
+	j["ContractId"] = v.ContractId;
+	j["CompanionContractId"] = v.CompanionContractId;
+	j["ContractUsedByteCount"] = v.ContractUsedByteCount;
+	j["ContractByteCount"] = v.ContractByteCount;
+	j["ContractBitRate"] = v.ContractBitRate;
+	j["CompanionContractUsedByteCount"] = v.CompanionContractUsedByteCount;
+	j["CompanionContractByteCount"] = v.CompanionContractByteCount;
+	j["CompanionContractBitRate"] = v.CompanionContractBitRate;
+	j["PairCount"] = v.PairCount;
+	j["Closing"] = v.Closing;
+}
+inline void from_json(const nlohmann::json& j, ContractClientRow& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientId);
+	}
+	if (auto it = j.find("ContractId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractId);
+	}
+	if (auto it = j.find("CompanionContractId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractId);
+	}
+	if (auto it = j.find("ContractUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractUsedByteCount);
+	}
+	if (auto it = j.find("ContractByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractByteCount);
+	}
+	if (auto it = j.find("ContractBitRate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ContractBitRate);
+	}
+	if (auto it = j.find("CompanionContractUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractUsedByteCount);
+	}
+	if (auto it = j.find("CompanionContractByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractByteCount);
+	}
+	if (auto it = j.find("CompanionContractBitRate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CompanionContractBitRate);
+	}
+	if (auto it = j.find("PairCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PairCount);
+	}
+	if (auto it = j.find("Closing"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Closing);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const TransferPath& v) {
 	j = nlohmann::json::object();
 	if (v.SourceId) {
@@ -4315,6 +4387,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["AllowProvider"] = v.AllowProvider;
 	j["Verbose"] = v.Verbose;
 	j["GeneratorFunc"] = v.GeneratorFunc;
+	j["MultiClientIdentityStore"] = v.MultiClientIdentityStore;
 	j["EnableRpc"] = v.EnableRpc;
 	if (v.KeyMaterial) {
 		j["KeyMaterial"] = *v.KeyMaterial;
@@ -4392,6 +4465,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("GeneratorFunc"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GeneratorFunc);
+	}
+	if (auto it = j.find("MultiClientIdentityStore"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MultiClientIdentityStore);
 	}
 	if (auto it = j.find("EnableRpc"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableRpc);
@@ -8661,7 +8737,9 @@ public:
 	explicit ContractDetailsViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addContractRowsListener(ContractRowsListener listener) const;
 	void close() const;
+	std::optional<ContractClientRowList> getClientContractRows() const;
 	std::optional<ContractPeerRowList> getContractRows() const;
+	std::optional<ContractClientRowList> getProviderContractRows() const;
 	int64_t pendingCount() const;
 	void setAtTop(bool at_top) const;
 	void start() const;
@@ -8698,6 +8776,7 @@ public:
 	BlockActionViewController openBlockActionViewController() const;
 	ContractDetailsViewController openClientContractDetailsViewController() const;
 	ConnectViewController openConnectViewController() const;
+	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
@@ -8746,6 +8825,7 @@ public:
 	BlockActionViewController openBlockActionViewController() const;
 	ContractDetailsViewController openClientContractDetailsViewController() const;
 	ConnectViewController openConnectViewController() const;
+	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
@@ -14569,6 +14649,14 @@ inline Sub ContractDetailsViewController::addContractRowsListener(ContractRowsLi
 inline void ContractDetailsViewController::close() const {
 	urnet_contract_details_view_controller_close(handle());
 }
+inline std::optional<ContractClientRowList> ContractDetailsViewController::getClientContractRows() const {
+	char* r_c = urnet_contract_details_view_controller_get_client_contract_rows(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ContractClientRowList>(r_s->c_str());
+}
 inline std::optional<ContractPeerRowList> ContractDetailsViewController::getContractRows() const {
 	char* r_c = urnet_contract_details_view_controller_get_contract_rows(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -14576,6 +14664,14 @@ inline std::optional<ContractPeerRowList> ContractDetailsViewController::getCont
 		return std::nullopt;
 	}
 	return detail::parseJson<ContractPeerRowList>(r_s->c_str());
+}
+inline std::optional<ContractClientRowList> ContractDetailsViewController::getProviderContractRows() const {
+	char* r_c = urnet_contract_details_view_controller_get_provider_contract_rows(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ContractClientRowList>(r_s->c_str());
 }
 inline int64_t ContractDetailsViewController::pendingCount() const {
 	int64_t r = urnet_contract_details_view_controller_pending_count(handle());
@@ -14709,6 +14805,10 @@ inline ContractDetailsViewController DeviceLocal::openClientContractDetailsViewC
 }
 inline ConnectViewController DeviceLocal::openConnectViewController() const {
 	ConnectViewController r(urnet_device_local_open_connect_view_controller(handle()));
+	return r;
+}
+inline ContractDetailsViewController DeviceLocal::openContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_local_open_contract_details_view_controller(handle()));
 	return r;
 }
 inline ContractViewController DeviceLocal::openContractViewController() const {
@@ -14866,6 +14966,10 @@ inline ContractDetailsViewController DeviceRemote::openClientContractDetailsView
 }
 inline ConnectViewController DeviceRemote::openConnectViewController() const {
 	ConnectViewController r(urnet_device_remote_open_connect_view_controller(handle()));
+	return r;
+}
+inline ContractDetailsViewController DeviceRemote::openContractDetailsViewController() const {
+	ContractDetailsViewController r(urnet_device_remote_open_contract_details_view_controller(handle()));
 	return r;
 }
 inline ContractViewController DeviceRemote::openContractViewController() const {

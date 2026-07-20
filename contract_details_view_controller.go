@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,10 +16,6 @@ import (
 // so the UI can animate its remaining circles sliding off before the row is
 // removed. A contract reopening for the peer before that cancels the removal.
 const contractEjectWindow = 500 * time.Millisecond
-
-// How often the controller re-checks eject deadlines while any are pending.
-// Idle (no closing rows) it does not tick.
-const contractDeadlineTick = 100 * time.Millisecond
 
 // contractDetailsSettings holds the view controller's tunables.
 type contractDetailsSettings struct {
@@ -36,18 +33,12 @@ type contractDetailsSettings struct {
 	// the top, sorts above idle rows -- if any of its contracts moved bytes within
 	// this window (judged against LastActivityMillis).
 	ActivityWindow time.Duration
-
-	// ResortCadence: how often the at-top ordering is re-evaluated, so a row ages
-	// from active to idle on time even when no new contract data arrives. Only
-	// re-emits when the order actually changes.
-	ResortCadence time.Duration
 }
 
 func defaultContractDetailsSettings() *contractDetailsSettings {
 	return &contractDetailsSettings{
 		RowsUpdateThrottle: 1 * time.Second,
 		ActivityWindow:     5 * time.Second,
-		ResortCadence:      1 * time.Second,
 	}
 }
 
@@ -127,6 +118,39 @@ func NewContractPeerRowList() *ContractPeerRowList {
 	}
 }
 
+// ContractClientRow is the pre-split, aggregated contract-details shape.
+// Deprecated: use ContractPeerRow and its individual SendContracts /
+// ReceiveContracts stacks. It remains for one compatibility release so Go and
+// native consumers can migrate without a source/ABI break.
+type ContractClientRow struct {
+	ClientId string
+
+	ContractId          string
+	CompanionContractId string
+
+	ContractUsedByteCount ByteCount
+	ContractByteCount     ByteCount
+	ContractBitRate       int
+
+	CompanionContractUsedByteCount ByteCount
+	CompanionContractByteCount     ByteCount
+	CompanionContractBitRate       int
+
+	PairCount int
+	Closing   bool
+}
+
+// ContractClientRowList is the deprecated aggregate-list compatibility type.
+type ContractClientRowList struct {
+	exportedList[*ContractClientRow]
+}
+
+func NewContractClientRowList() *ContractClientRowList {
+	return &ContractClientRowList{
+		exportedList: *newExportedList[*ContractClientRow](),
+	}
+}
+
 // ContractDetailsViewController is the shared source of one feed's per-contract
 // rows for every app. It groups the feed's raw contracts by peer client into two
 // per-direction stacks (send and receive), newest first; runs the closing
@@ -177,6 +201,11 @@ type ContractDetailsViewController struct {
 
 	rowsListeners *connect.CallbackList[ContractRowsListener]
 	subs          []Sub
+
+	// A controller opened through the deprecated combined entry point owns a
+	// second provider-feed controller. New split controllers leave this nil.
+	legacyProvider    *ContractDetailsViewController
+	legacyProviderSub Sub
 }
 
 func newContractDetailsViewController(ctx context.Context, device Device, provider bool) *ContractDetailsViewController {
@@ -203,6 +232,16 @@ func newContractDetailsViewController(ctx context.Context, device Device, provid
 	return vc
 }
 
+func newLegacyContractDetailsViewController(ctx context.Context, device Device) *ContractDetailsViewController {
+	client := newContractDetailsViewController(ctx, device, false)
+	provider := newContractDetailsViewController(ctx, device, true)
+	client.legacyProvider = provider
+	client.legacyProviderSub = provider.AddContractRowsListener(
+		&legacyContractRowsListener{controller: client},
+	)
+	return client
+}
+
 func (self *ContractDetailsViewController) Start() {
 	listener := &contractDetailsViewControllerListener{self}
 	if self.provider {
@@ -218,6 +257,9 @@ func (self *ContractDetailsViewController) Start() {
 	}
 	go self.run()
 	self.scheduleUpdate()
+	if self.legacyProvider != nil {
+		self.legacyProvider.Start()
+	}
 }
 
 func (self *ContractDetailsViewController) Stop() {}
@@ -225,6 +267,14 @@ func (self *ContractDetailsViewController) Stop() {}
 func (self *ContractDetailsViewController) Close() {
 	deviceLog(self.device).Info("[cdvc]close")
 
+	if self.legacyProviderSub != nil {
+		self.legacyProviderSub.Close()
+		self.legacyProviderSub = nil
+	}
+	if self.legacyProvider != nil {
+		self.legacyProvider.Close()
+		self.legacyProvider = nil
+	}
 	self.cancel()
 	for _, sub := range self.subs {
 		if sub != nil {
@@ -245,18 +295,57 @@ func (self *ContractDetailsViewController) scheduleUpdate() {
 	}
 }
 
-// run recomputes coalesced changes at most once per RowsUpdateThrottle (contract
-// stats change continuously and the app animates between updates, so a faster
-// cadence just burns work), while still servicing pending eject deadlines
-// promptly on the tick so closing rows animate out on time. Idle (no changes, no
-// closing rows) it does nothing but a cheap tick check.
+// run recomputes coalesced changes at most once per RowsUpdateThrottle and arms
+// a timer only for real work: a throttle boundary, closing-row eject deadline,
+// or activity/run-total expiry. With no changes or deadlines an open controller
+// has no periodic wakeup.
 func (self *ContractDetailsViewController) run() {
-	ticker := time.NewTicker(contractDeadlineTick)
-	defer ticker.Stop()
 	var lastRecompute time.Time
-	var lastResort time.Time
 	dirty := false
 	resortRequested := false
+
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+	armTimer := func(deadline time.Time) {
+		if deadline.IsZero() {
+			if timer != nil && !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timerC = nil
+			return
+		}
+		delay := time.Until(deadline)
+		if delay < 0 {
+			delay = 0
+		}
+		if timer == nil {
+			timer = time.NewTimer(delay)
+		} else {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(delay)
+		}
+		timerC = timer.C
+	}
+	earlier := func(current time.Time, candidate time.Time) time.Time {
+		if candidate.IsZero() || (!current.IsZero() && !candidate.Before(current)) {
+			return current
+		}
+		return candidate
+	}
+
 	for {
 		select {
 		case <-self.ctx.Done():
@@ -265,30 +354,54 @@ func (self *ContractDetailsViewController) run() {
 			dirty = true
 		case <-self.resortNotify:
 			resortRequested = true
-		case <-ticker.C:
+		case <-timerC:
 		}
 
 		now := time.Now()
-		// rate-limit data-driven recomputes; a still-pending eject deadline
-		// bypasses the throttle so the closing animation stays on time (closes
-		// are per-peer and infrequent, so this does not defeat the throttle)
+		recomputed := false
+		// Rate-limit data-driven recomputes. A due eject deadline bypasses the
+		// throttle so closing animation completes on time.
 		throttled := !lastRecompute.IsZero() && now.Sub(lastRecompute) < self.settings.RowsUpdateThrottle
 		switch {
-		case (dirty && !throttled) || self.pendingDeadlines():
-			// new contract data (or a closing deadline): refresh the base rows
-			// (the aggregators, incl. RPC pulls) and re-order + notify
+		case (dirty && !throttled) || self.aggregator.closingDeadlineDue(now):
 			self.recompute(now)
 			lastRecompute = now
-			lastResort = now
 			dirty = false
 			resortRequested = false
-		case resortRequested || (!lastResort.IsZero() && self.settings.ResortCadence <= now.Sub(lastResort)):
-			// no new data: re-order the cached base only (apply an at-top change,
-			// or age active rows to idle), notifying only if the order changed
-			self.applyOrder(now, false)
-			lastResort = now
-			resortRequested = false
+			recomputed = true
 		}
+
+		// Expire cached run totals and active ordering without pulling the
+		// device/RPC feed. This covers the trailing zero-rate event arriving
+		// before ActivityWindow and then the tracker going silent.
+		if !recomputed {
+			if expired := self.aggregator.expireIdle(now); 0 < len(expired) {
+				nextBase := make([]*ContractPeerRow, len(self.base))
+				for i, row := range self.base {
+					rowCopy := *row
+					if expired[row.ClientId] {
+						rowCopy.SendByteCount = 0
+						rowCopy.ReceiveByteCount = 0
+					}
+					nextBase[i] = &rowCopy
+				}
+				self.base = nextBase
+				self.applyOrder(now, true)
+				resortRequested = false
+			} else if resortRequested {
+				// Apply a scroll-position change without a feed recompute.
+				self.applyOrder(now, false)
+				resortRequested = false
+			}
+		}
+
+		var nextDeadline time.Time
+		if dirty && !lastRecompute.IsZero() {
+			nextDeadline = earlier(nextDeadline, lastRecompute.Add(self.settings.RowsUpdateThrottle))
+		}
+		nextDeadline = earlier(nextDeadline, self.aggregator.nextClosingDeadline())
+		nextDeadline = earlier(nextDeadline, self.aggregator.nextIdleDeadline())
+		armTimer(nextDeadline)
 	}
 }
 
@@ -348,6 +461,64 @@ func (self *ContractDetailsViewController) GetContractRows() *ContractPeerRowLis
 	return self.rows
 }
 
+// GetClientContractRows returns the legacy aggregate projection of the client
+// feed. Deprecated: use GetContractRows on a controller opened with
+// OpenClientContractDetailsViewController.
+func (self *ContractDetailsViewController) GetClientContractRows() *ContractClientRowList {
+	return legacyContractClientRows(self.GetContractRows())
+}
+
+// GetProviderContractRows returns the legacy aggregate projection of the
+// provider feed. Deprecated: open a provider controller and use
+// GetContractRows. It is populated when this controller came from the
+// deprecated combined OpenContractDetailsViewController entry point.
+func (self *ContractDetailsViewController) GetProviderContractRows() *ContractClientRowList {
+	if self.legacyProvider == nil {
+		if self.provider {
+			return legacyContractClientRows(self.GetContractRows())
+		}
+		return NewContractClientRowList()
+	}
+	return legacyContractClientRows(self.legacyProvider.GetContractRows())
+}
+
+func legacyContractClientRows(rows *ContractPeerRowList) *ContractClientRowList {
+	result := NewContractClientRowList()
+	if rows == nil {
+		return result
+	}
+	for i := 0; i < rows.Len(); i += 1 {
+		row := rows.Get(i)
+		legacy := &ContractClientRow{
+			ClientId: row.ClientId,
+			Closing:  row.Closing,
+		}
+		sendIds := make([]string, 0, row.SendContracts.Len())
+		for j := 0; j < row.SendContracts.Len(); j += 1 {
+			entry := row.SendContracts.Get(j)
+			sendIds = append(sendIds, entry.ContractId)
+			legacy.ContractUsedByteCount += entry.UsedByteCount
+			legacy.ContractByteCount += entry.TotalByteCount
+			legacy.ContractBitRate += entry.BitRate
+		}
+		receiveIds := make([]string, 0, row.ReceiveContracts.Len())
+		for j := 0; j < row.ReceiveContracts.Len(); j += 1 {
+			entry := row.ReceiveContracts.Get(j)
+			receiveIds = append(receiveIds, entry.ContractId)
+			legacy.CompanionContractUsedByteCount += entry.UsedByteCount
+			legacy.CompanionContractByteCount += entry.TotalByteCount
+			legacy.CompanionContractBitRate += entry.BitRate
+		}
+		sort.Strings(sendIds)
+		sort.Strings(receiveIds)
+		legacy.ContractId = strings.Join(sendIds, ",")
+		legacy.CompanionContractId = strings.Join(receiveIds, ",")
+		legacy.PairCount = max(len(sendIds), len(receiveIds))
+		result.Add(legacy)
+	}
+	return result
+}
+
 // SetAtTop reports whether the app's list is scrolled to the top. At the top the
 // rows re-sort (active above idle); scrolled away the membership and order freeze
 // and newly-arrived rows collect into the pending count.
@@ -392,6 +563,14 @@ func (self *ContractDetailsViewController) rowsChanged() {
 
 type contractDetailsViewControllerListener struct {
 	vc *ContractDetailsViewController
+}
+
+type legacyContractRowsListener struct {
+	controller *ContractDetailsViewController
+}
+
+func (self *legacyContractRowsListener) ContractRowsChanged() {
+	self.controller.rowsChanged()
 }
 
 func (self *contractDetailsViewControllerListener) ContractDetailsChanged(contractDetails *ContractDetails) {
@@ -522,6 +701,9 @@ type contractPeerAggregator struct {
 	// rate). Kept across recomputes so an idle peer keeps its last-active time;
 	// pruned when the peer is removed.
 	lastActivity map[string]time.Time
+	// peers whose activity-window deadline has already been applied. A new
+	// positive-rate sample clears the marker and arms a fresh exact deadline.
+	activityExpired map[string]bool
 
 	// contractId -> last seen used byte count, so a per-recompute byte delta can
 	// be summed into the peer's run total (a single contract's used count is
@@ -542,6 +724,7 @@ func newContractPeerAggregator(idleWindow time.Duration) *contractPeerAggregator
 		arrival:          map[string]int{},
 		closingDeadlines: map[string]time.Time{},
 		lastActivity:     map[string]time.Time{},
+		activityExpired:  map[string]bool{},
 		lastUsed:         map[string]ByteCount{},
 		runSend:          map[string]ByteCount{},
 		runReceive:       map[string]ByteCount{},
@@ -550,6 +733,55 @@ func newContractPeerAggregator(idleWindow time.Duration) *contractPeerAggregator
 
 func (self *contractPeerAggregator) pending() bool {
 	return 0 < len(self.closingDeadlines)
+}
+
+func (self *contractPeerAggregator) closingDeadlineDue(now time.Time) bool {
+	for _, deadline := range self.closingDeadlines {
+		if !now.Before(deadline) {
+			return true
+		}
+	}
+	return false
+}
+
+func (self *contractPeerAggregator) nextClosingDeadline() time.Time {
+	var next time.Time
+	for _, deadline := range self.closingDeadlines {
+		if next.IsZero() || deadline.Before(next) {
+			next = deadline
+		}
+	}
+	return next
+}
+
+func (self *contractPeerAggregator) nextIdleDeadline() time.Time {
+	var next time.Time
+	for clientId, lastActivity := range self.lastActivity {
+		if self.activityExpired[clientId] {
+			continue
+		}
+		deadline := lastActivity.Add(self.idleWindow)
+		if next.IsZero() || deadline.Before(next) {
+			next = deadline
+		}
+	}
+	return next
+}
+
+// expireIdle applies activity deadlines without needing another contract
+// sample. It returns the peer ids whose cached published totals must be reset.
+func (self *contractPeerAggregator) expireIdle(now time.Time) map[string]bool {
+	expired := map[string]bool{}
+	for clientId, lastActivity := range self.lastActivity {
+		if self.activityExpired[clientId] || now.Before(lastActivity.Add(self.idleWindow)) {
+			continue
+		}
+		self.activityExpired[clientId] = true
+		self.runSend[clientId] = 0
+		self.runReceive[clientId] = 0
+		expired[clientId] = true
+	}
+	return expired
 }
 
 // one peer's stacks as they are collected
@@ -666,6 +898,7 @@ func (self *contractPeerAggregator) update(
 	for clientId := range self.lastActivity {
 		if _, ok := self.clientOrder[clientId]; !ok {
 			delete(self.lastActivity, clientId)
+			delete(self.activityExpired, clientId)
 		}
 	}
 	for clientId := range self.runSend {
@@ -698,6 +931,7 @@ func (self *contractPeerAggregator) update(
 		// its last-active time so the app can age it out against its own clock
 		if 0 < sendBitRate || 0 < receiveBitRate {
 			self.lastActivity[clientId] = now
+			delete(self.activityExpired, clientId)
 		}
 		if t, ok := self.lastActivity[clientId]; ok {
 			row.LastActivityMillis = t.UnixMilli()
@@ -710,6 +944,7 @@ func (self *contractPeerAggregator) update(
 		if self.isIdle(clientId, now) {
 			self.runSend[clientId] = 0
 			self.runReceive[clientId] = 0
+			self.activityExpired[clientId] = true
 		} else {
 			self.runSend[clientId] += sendDelta
 			self.runReceive[clientId] += receiveDelta

@@ -186,6 +186,11 @@ type DeviceLocalSettings struct {
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
 	GeneratorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
+	// MultiClientIdentityStore, when set, persists the api generator's
+	// window client identities so a process restart reuses them against the
+	// same destinations — keeping provider-side NAT flows resumable
+	// (PROXYDRAIN1.md §3.5). Only applies to the default api generator.
+	MultiClientIdentityStore connect.MultiClientIdentityStore
 	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 	EnableRpc bool
 	// KeyMaterial, when set, is applied to `ClientSettings` at construction
@@ -2173,12 +2178,8 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 // ceiling on flow state, sockets, and goroutines under any remote behavior.
 // Scaled by the memory budget (see `SetMemoryLimit`).
 func providerLocalUserNatSettings(log connect.Logger) *connect.LocalUserNatSettings {
-	localUserNatSettings := connect.DefaultLocalUserNatSettings()
+	localUserNatSettings := connect.DefaultProviderLocalUserNatSettings()
 	localUserNatSettings.Log = log
-	localUserNatSettings.UdpBufferSettings.UserLimit = connect.MemoryScaledCount(512, 64)
-	localUserNatSettings.UdpBufferSettings.GlobalLimit = connect.MemoryScaledCount(2048, 256)
-	localUserNatSettings.TcpBufferSettings.UserLimit = connect.MemoryScaledCount(256, 32)
-	localUserNatSettings.TcpBufferSettings.GlobalLimit = connect.MemoryScaledCount(512, 64)
 	return localUserNatSettings
 }
 
@@ -2430,7 +2431,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			if self.generatorFunc != nil {
 				generator = self.generatorFunc(connectSpecs)
 			} else {
-				generator = connect.NewApiMultiClientGenerator(
+				apiGenerator := connect.NewApiMultiClientGenerator(
 					self.ctx,
 					connectSpecs,
 					self.clientStrategy,
@@ -2459,6 +2460,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
 				)
+				// window identity persistence across a process restart, when the
+				// embedding host provides a store (e.g. the proxy service,
+				// PROXYDRAIN1.md §3.5)
+				if self.settings.MultiClientIdentityStore != nil {
+					apiGenerator.SetIdentityStore(self.settings.MultiClientIdentityStore)
+				}
+				generator = apiGenerator
 			}
 			settings := connect.DefaultMultiClientSettings()
 			settings.Log = self.log
@@ -3583,6 +3591,17 @@ type deviceContractTracker struct {
 	// egress (send) and ingress (receive) contracts, keyed by contract id
 	egressContracts  map[connect.Id]*deviceContractState
 	ingressContracts map[connect.Id]*deviceContractState
+	// the highest consumed `ContractStatsEvent.Sequence` per contract id.
+	// the producer assigns strictly increasing sequences per contract id
+	// (the send and receive entries of a contract share one counter), so an
+	// event at or below the recorded high-water mark is a reordered or
+	// replayed delivery and is discarded — most importantly a stale
+	// `Open=true` arriving after the final close, which must not resurrect
+	// the contract. an entry is dropped once the contract's last state entry
+	// is evicted, mirroring the producer's counter lifecycle (the producer
+	// resets only after the final `Open=false`, so any post-reset straggler
+	// is discarded here as stale while the tombstone is still tracked)
+	lastSeenSequences map[connect.Id]uint64
 	// gates the listener dispatch to the contract stats epoch
 	lastEmitTime time.Time
 	// set when an update was folded in but gated, so `flushPending` still
@@ -3595,14 +3614,18 @@ type deviceContractTracker struct {
 
 func newDeviceContractTracker() *deviceContractTracker {
 	return &deviceContractTracker{
-		egressContracts:  map[connect.Id]*deviceContractState{},
-		ingressContracts: map[connect.Id]*deviceContractState{},
+		egressContracts:   map[connect.Id]*deviceContractState{},
+		ingressContracts:  map[connect.Id]*deviceContractState{},
+		lastSeenSequences: map[connect.Id]uint64{},
 	}
 }
 
 func (self *deviceContractTracker) clear() {
 	clear(self.egressContracts)
 	clear(self.ingressContracts)
+	// the torn-down client's contract ids are single-use and never reappear;
+	// keeping their high-water marks would only leak
+	clear(self.lastSeenSequences)
 	// emit the cleared (zero) stats. otherwise the listeners keep reporting the
 	// last pre-disconnect values while the getters, reading the now empty maps,
 	// report zero — push and pull disagreeing until the next connect
@@ -3622,6 +3645,20 @@ func (self *deviceContractTracker) update(
 	now := time.Now()
 	hasClose := false
 	for _, event := range events {
+		if 0 < event.Sequence {
+			// the producer's per-contract sequence contract: discard an
+			// event at or below the last consumed sequence — a reordered or
+			// replayed delivery (callbacks run outside the producer lock and
+			// may further reorder across an rpc boundary). in particular a
+			// stale `Open=true` delivered after the final close must be
+			// ignored instead of resurrecting the contract.
+			// (emitted events never carry Sequence 0; 0 means an
+			// unsequenced source and bypasses the filter)
+			if event.Sequence <= self.lastSeenSequences[event.ContractId] {
+				continue
+			}
+			self.lastSeenSequences[event.ContractId] = event.Sequence
+		}
 		contracts := self.egressContracts
 		if event.Receive {
 			contracts = self.ingressContracts
@@ -3667,8 +3704,8 @@ func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractSta
 	self.lastEmitTime = now
 
 	// drop tombstones whose one Closed report was made on a previous cycle
-	self.evictReportedClosed(self.egressContracts)
-	self.evictReportedClosed(self.ingressContracts)
+	self.evictReportedClosed(self.egressContracts, self.ingressContracts)
+	self.evictReportedClosed(self.ingressContracts, self.egressContracts)
 
 	egressStats = self.stats(false)
 	ingressStats = self.stats(true)
@@ -3687,11 +3724,17 @@ func (self *deviceContractTracker) emit(now time.Time) (egressStats *ContractSta
 }
 
 // evictReportedClosed removes closed contracts whose Closed tombstone was already
-// emitted on a previous cycle.
-func (self *deviceContractTracker) evictReportedClosed(contracts map[connect.Id]*deviceContractState) {
+// emitted on a previous cycle. once no entry remains for a contract id in either
+// direction, its sequence high-water mark is dropped with it (mirroring the
+// producer, whose per-contract counter is dropped when its last entry closes),
+// keeping `lastSeenSequences` bounded by the tracked contracts.
+func (self *deviceContractTracker) evictReportedClosed(contracts map[connect.Id]*deviceContractState, siblingContracts map[connect.Id]*deviceContractState) {
 	for contractId, state := range contracts {
 		if !state.open && state.closedReported {
 			delete(contracts, contractId)
+			if _, ok := siblingContracts[contractId]; !ok {
+				delete(self.lastSeenSequences, contractId)
+			}
 		}
 	}
 }

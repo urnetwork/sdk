@@ -220,6 +220,11 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["openConnectViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsConnectViewController(device.OpenConnectViewController())
 	})
+	// Deprecated combined controller retained for runtime/declaration and
+	// mixed-version compatibility.
+	m["openContractDetailsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractDetailsViewController(device.OpenContractDetailsViewController())
+	})
 	m["openClientContractDetailsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsContractDetailsViewController(device.OpenClientContractDetailsViewController())
 	})

@@ -4124,6 +4124,20 @@ func urnet_contract_details_view_controller_close(self C.uint64_t) {
 	self_.Close()
 }
 
+//export urnet_contract_details_view_controller_get_client_contract_rows
+func urnet_contract_details_view_controller_get_client_contract_rows(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_details_view_controller_get_client_contract_rows")
+	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_get_client_contract_rows")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetClientContractRows()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_details_view_controller_get_client_contract_rows")
+}
+
 //export urnet_contract_details_view_controller_get_contract_rows
 func urnet_contract_details_view_controller_get_contract_rows(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_contract_details_view_controller_get_contract_rows")
@@ -4136,6 +4150,20 @@ func urnet_contract_details_view_controller_get_contract_rows(self C.uint64_t) *
 		return nil
 	}
 	return cJson(r0, "urnet_contract_details_view_controller_get_contract_rows")
+}
+
+//export urnet_contract_details_view_controller_get_provider_contract_rows
+func urnet_contract_details_view_controller_get_provider_contract_rows(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_details_view_controller_get_provider_contract_rows")
+	self_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(self), "urnet_contract_details_view_controller_get_provider_contract_rows")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderContractRows()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_details_view_controller_get_provider_contract_rows")
 }
 
 //export urnet_contract_details_view_controller_pending_count
@@ -5967,6 +5995,20 @@ func urnet_device_local_open_connect_view_controller(self C.uint64_t) C.uint64_t
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_open_contract_details_view_controller
+func urnet_device_local_open_contract_details_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_contract_details_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenContractDetailsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_local_open_contract_view_controller
 func urnet_device_local_open_contract_view_controller(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_local_open_contract_view_controller")
@@ -6357,6 +6399,20 @@ func urnet_device_remote_open_connect_view_controller(self C.uint64_t) C.uint64_
 		return 0
 	}
 	r0 := self_.OpenConnectViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_contract_details_view_controller
+func urnet_device_remote_open_contract_details_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_contract_details_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenContractDetailsViewController()
 	if r0 == nil {
 		return 0
 	}

@@ -232,6 +232,39 @@ func jsContractPeerRowList(list *sdk.ContractPeerRowList) js.Value {
 	return js.ValueOf(rows)
 }
 
+func jsContractClientRow(row *sdk.ContractClientRow) js.Value {
+	if row == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"clientId": row.ClientId,
+
+		"contractId":          row.ContractId,
+		"companionContractId": row.CompanionContractId,
+
+		"contractUsedByteCount": row.ContractUsedByteCount,
+		"contractByteCount":     row.ContractByteCount,
+		"contractBitRate":       row.ContractBitRate,
+
+		"companionContractUsedByteCount": row.CompanionContractUsedByteCount,
+		"companionContractByteCount":     row.CompanionContractByteCount,
+		"companionContractBitRate":       row.CompanionContractBitRate,
+
+		"pairCount": row.PairCount,
+		"closing":   row.Closing,
+	})
+}
+
+func jsContractClientRowList(list *sdk.ContractClientRowList) js.Value {
+	rows := []any{}
+	if list != nil {
+		for i := 0; i < list.Len(); i += 1 {
+			rows = append(rows, jsContractClientRow(list.Get(i)))
+		}
+	}
+	return js.ValueOf(rows)
+}
+
 // jsContractDetailsViewController binds the shared per-contract rows source:
 // per-peer grouping into send/receive stacks (newest first, stable order) and
 // the closing lifecycle. The web app renders these rows exactly like the native
@@ -258,6 +291,14 @@ func jsContractDetailsViewController(vc *sdk.ContractDetailsViewController) js.V
 
 	m["getContractRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsContractPeerRowList(vc.GetContractRows())
+	})
+	// Deprecated aggregate projections retained with the old combined open
+	// method for a compatibility release.
+	m["getClientContractRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractClientRowList(vc.GetClientContractRows())
+	})
+	m["getProviderContractRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractClientRowList(vc.GetProviderContractRows())
 	})
 
 	// the view controller owns the at-top activity ordering; the app reports its

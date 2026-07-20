@@ -39,6 +39,8 @@ type ViewControllerManager interface {
 
 	OpenContractViewController() *ContractViewController
 
+	// Deprecated: use the split client/provider entry points below.
+	OpenContractDetailsViewController() *ContractDetailsViewController
 	OpenClientContractDetailsViewController() *ContractDetailsViewController
 	OpenProviderContractDetailsViewController() *ContractDetailsViewController
 
@@ -157,6 +159,16 @@ func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionV
 
 func (self *viewControllerManager) OpenContractViewController() *ContractViewController {
 	vc := newContractViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+// OpenContractDetailsViewController preserves the pre-split controller for a
+// compatibility release. It owns both feed controllers and exposes their
+// aggregate projections through GetClientContractRows/GetProviderContractRows.
+// Deprecated: use the split entry points.
+func (self *viewControllerManager) OpenContractDetailsViewController() *ContractDetailsViewController {
+	vc := newLegacyContractDetailsViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

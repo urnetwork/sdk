@@ -516,7 +516,9 @@ void urnet_connect_view_controller_stop(uint64_t self);
 
 uint64_t urnet_contract_details_view_controller_add_contract_rows_listener(uint64_t self, urnet_contract_rows_cb listener_contract_rows_changed, void* listener_user_data);
 void urnet_contract_details_view_controller_close(uint64_t self);
+char* urnet_contract_details_view_controller_get_client_contract_rows(uint64_t self);
 char* urnet_contract_details_view_controller_get_contract_rows(uint64_t self);
+char* urnet_contract_details_view_controller_get_provider_contract_rows(uint64_t self);
 int64_t urnet_contract_details_view_controller_pending_count(uint64_t self);
 void urnet_contract_details_view_controller_set_at_top(uint64_t self, bool at_top);
 void urnet_contract_details_view_controller_start(uint64_t self);
@@ -660,6 +662,7 @@ uint64_t urnet_device_local_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_block_action_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_client_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_connect_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_devices_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_feedback_view_controller(uint64_t self);
@@ -695,6 +698,7 @@ uint64_t urnet_device_remote_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_block_action_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_client_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_connect_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_devices_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_feedback_view_controller(uint64_t self);
@@ -1331,6 +1335,24 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   = ConnectLocation | null[]
  */
 
+/* ContractClientRow (json):
+ *   ClientId: string
+ *   ContractId: string
+ *   CompanionContractId: string
+ *   ContractUsedByteCount: number
+ *   ContractByteCount: number
+ *   ContractBitRate: number
+ *   CompanionContractUsedByteCount: number
+ *   CompanionContractByteCount: number
+ *   CompanionContractBitRate: number
+ *   PairCount: number
+ *   Closing: boolean
+ */
+
+/* ContractClientRowList (json):
+ *   = ContractClientRow | null[]
+ */
+
 /* ContractDetails (json):
  *   ContractId: string (uuid) | null
  *   ContractUsedByteCount: number
@@ -1444,6 +1466,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   AllowProvider: boolean
  *   Verbose: boolean
  *   GeneratorFunc: any
+ *   MultiClientIdentityStore: any
  *   EnableRpc: boolean
  *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
