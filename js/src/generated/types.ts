@@ -292,6 +292,7 @@ export interface ConnectLocation {
   country_location_id?: string | null;
   stable: boolean;
   strong_privacy: boolean;
+  network_peer?: boolean;
 }
 
 export interface ProxyDeviceState {

@@ -143,7 +143,7 @@ func TestContractViewControllerDenseSampling(t *testing.T) {
 	sample := func(packetStats *PacketStats, at time.Time) {
 		vc.stateLock.Lock()
 		defer vc.stateLock.Unlock()
-		vc.sampleSeriesWithLock(series, packetStats, at)
+		vc.sampleSeriesWithLock(series, packetStats, at, false)
 	}
 	remoteEgress := func(i int) ByteCount {
 		return series.points[i].Remote.EgressByteCount
@@ -211,5 +211,72 @@ func TestContractViewControllerDenseSampling(t *testing.T) {
 		if dt < 500 || 1500 < dt {
 			t.Fatalf("expected dense sampling, got %dms between points %d and %d", dt, i-1, i)
 		}
+	}
+}
+
+// TestContractViewControllerProviderMirror asserts that provider-series points
+// present the relay (remote) traffic mirrored onto the local route: remote
+// ingress becomes local egress and remote egress becomes local ingress, since
+// the provider counters never fill the local route themselves and the provider
+// stats ui reads the local route
+func TestContractViewControllerProviderMirror(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	device, err := testing_newViewControllerDevice(ctx)
+	if err != nil {
+		t.Fatalf("new device: %v", err)
+	}
+	defer device.Close()
+
+	vc := device.OpenContractViewController()
+	defer device.CloseViewController(vc)
+
+	series := &throughputSeries{}
+	interval := defaultThroughputSampleInterval
+
+	sample := func(packetStats *PacketStats, at time.Time) {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		vc.sampleSeriesWithLock(series, packetStats, at, true)
+	}
+
+	t0 := time.Now()
+	sample(&PacketStats{}, t0)
+	sample(&PacketStats{
+		// the forward relay: a remote client's traffic egressed to the internet
+		RemoteIngressByteCount:   3000,
+		RemoteIngressPacketCount: 30,
+		// the return relay: internet traffic back to the remote client
+		RemoteEgressByteCount:   1000,
+		RemoteEgressPacketCount: 10,
+		BlockIngressByteCount:   500,
+		BlockIngressPacketCount: 5,
+	}, t0.Add(interval))
+
+	if n := len(series.points); n != 1 {
+		t.Fatalf("expected 1 point, got %d", n)
+	}
+	point := series.points[0]
+	// remote passes through unchanged
+	if point.Remote.IngressByteCount != 3000 || point.Remote.EgressByteCount != 1000 {
+		t.Fatalf("expected remote passthrough, got %+v", point.Remote)
+	}
+	if point.Remote.IngressPacketCount != 30 || point.Remote.EgressPacketCount != 10 {
+		t.Fatalf("expected remote packet passthrough, got %+v", point.Remote)
+	}
+	// local mirrors remote with the direction swapped
+	if point.Local.EgressByteCount != 3000 || point.Local.IngressByteCount != 1000 {
+		t.Fatalf("expected mirrored local bytes, got %+v", point.Local)
+	}
+	if point.Local.EgressPacketCount != 30 || point.Local.IngressPacketCount != 10 {
+		t.Fatalf("expected mirrored local packets, got %+v", point.Local)
+	}
+	if point.Local.EgressBitRate != point.Remote.IngressBitRate || point.Local.IngressBitRate != point.Remote.EgressBitRate {
+		t.Fatalf("expected mirrored local bit rates, got local %+v remote %+v", point.Local, point.Remote)
+	}
+	// block passes through unchanged
+	if point.Block.IngressByteCount != 500 || point.Block.IngressPacketCount != 5 {
+		t.Fatalf("expected block passthrough, got %+v", point.Block)
 	}
 }

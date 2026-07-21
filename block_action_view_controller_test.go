@@ -127,3 +127,46 @@ func TestBlockActionViewControllerWindowTrim(t *testing.T) {
 	connect.AssertEqual(t, 1, windowBlockActions.Len())
 	connect.AssertEqual(t, freshBlockAction.BlockActionId, windowBlockActions.Get(0).BlockActionId)
 }
+
+func TestBlockActionViewControllerCountCap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	device, err := testing_newViewControllerDevice(ctx)
+	if err != nil {
+		t.Fatalf("new device: %v", err)
+	}
+	defer device.Close()
+
+	vc := device.OpenBlockActionViewController()
+	defer device.CloseViewController(vc)
+
+	// default cap is 200
+	connect.AssertEqual(t, 200, vc.GetMaxBlockActions())
+
+	// cap to the most recent 3 (all actions are inside the time window, so only
+	// the count cap applies here)
+	vc.SetMaxBlockActions(3)
+
+	now := time.Now()
+	ids := []*Id{}
+	blockActions := NewBlockActionList()
+	for i := 0; i < 5; i += 1 {
+		id := NewId()
+		ids = append(ids, id)
+		// increasing time so the list is oldest-first / newest-last
+		blockActions.Add(&BlockAction{
+			BlockActionId: id,
+			Time:          now.Add(time.Duration(i) * time.Second).UnixMilli(),
+			Block:         true,
+		})
+	}
+	vc.BlockActionWindowChanged(&BlockActionWindow{BlockActions: blockActions})
+
+	got := vc.GetBlockActions()
+	// only the 3 most recent survive (ids[2..4]), in oldest-first order
+	connect.AssertEqual(t, 3, got.Len())
+	connect.AssertEqual(t, ids[2], got.Get(0).BlockActionId)
+	connect.AssertEqual(t, ids[3], got.Get(1).BlockActionId)
+	connect.AssertEqual(t, ids[4], got.Get(2).BlockActionId)
+}

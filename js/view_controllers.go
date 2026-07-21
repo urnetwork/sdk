@@ -174,10 +174,64 @@ func (self *jsGridListener) GridChanged() {
 
 // ── ContractDetailsViewController ────────────────────────────────────────────
 
-// jsContractClientRow converts one aggregated per-peer contract row. This is
-// the row the apps animate: egress ("contract") and ingress ("companion")
-// usage, a contract-id signature (a change means the contract was REPLACED, so
-// swap the circle rather than resize it), and the Closing eject flag.
+// jsContractEntry converts one un-aggregated contract: its own used/total byte
+// counts and bit rate. Contracts are never paired across directions.
+func jsContractEntry(entry *sdk.ContractEntry) js.Value {
+	if entry == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"contractId":     entry.ContractId,
+		"usedByteCount":  entry.UsedByteCount,
+		"totalByteCount": entry.TotalByteCount,
+		"bitRate":        entry.BitRate,
+		"hasStream":      entry.HasStream,
+	})
+}
+
+func jsContractEntryList(list *sdk.ContractEntryList) js.Value {
+	entries := []any{}
+	if list != nil {
+		for i := 0; i < list.Len(); i += 1 {
+			entries = append(entries, jsContractEntry(list.Get(i)))
+		}
+	}
+	return js.ValueOf(entries)
+}
+
+// jsContractPeerRow converts one peer's row: two independent newest-first
+// stacks of contracts (send and receive), the per-direction cumulative bytes
+// moved in the current run (reset when the peer goes idle), and the Closing
+// eject flag.
+func jsContractPeerRow(row *sdk.ContractPeerRow) js.Value {
+	if row == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"clientId": row.ClientId,
+
+		"sendContracts":    jsContractEntryList(row.SendContracts),
+		"receiveContracts": jsContractEntryList(row.ReceiveContracts),
+
+		"sendByteCount":    row.SendByteCount,
+		"receiveByteCount": row.ReceiveByteCount,
+
+		"lastActivityMillis": row.LastActivityMillis,
+
+		"closing": row.Closing,
+	})
+}
+
+func jsContractPeerRowList(list *sdk.ContractPeerRowList) js.Value {
+	rows := []any{}
+	if list != nil {
+		for i := 0; i < list.Len(); i += 1 {
+			rows = append(rows, jsContractPeerRow(list.Get(i)))
+		}
+	}
+	return js.ValueOf(rows)
+}
+
 func jsContractClientRow(row *sdk.ContractClientRow) js.Value {
 	if row == nil {
 		return js.Null()
@@ -211,11 +265,10 @@ func jsContractClientRowList(list *sdk.ContractClientRowList) js.Value {
 	return js.ValueOf(rows)
 }
 
-// jsContractDetailsViewController binds the shared contract-details aggregator:
-// egress/ingress coalescing, renewal coalescing (close-then-open is one atomic
-// replace, not a bouncy gap), per-peer aggregation, and the closing lifecycle.
-// The web app renders these rows exactly like the native apps do — none of that
-// logic is reimplemented in JS.
+// jsContractDetailsViewController binds the shared per-contract rows source:
+// per-peer grouping into send/receive stacks (newest first, stable order) and
+// the closing lifecycle. The web app renders these rows exactly like the native
+// apps do — none of that logic is reimplemented in JS.
 func jsContractDetailsViewController(vc *sdk.ContractDetailsViewController) js.Value {
 	if vc == nil {
 		return js.Null()
@@ -236,11 +289,28 @@ func jsContractDetailsViewController(vc *sdk.ContractDetailsViewController) js.V
 		return js.Null()
 	})
 
+	m["getContractRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractPeerRowList(vc.GetContractRows())
+	})
+	// Deprecated aggregate projections retained with the old combined open
+	// method for a compatibility release.
 	m["getClientContractRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsContractClientRowList(vc.GetClientContractRows())
 	})
 	m["getProviderContractRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsContractClientRowList(vc.GetProviderContractRows())
+	})
+
+	// the view controller owns the at-top activity ordering; the app reports its
+	// scroll position and reads the pending ("N new") count
+	m["setAtTop"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) {
+			vc.SetAtTop(args[0].Truthy())
+		}
+		return js.Null()
+	})
+	m["pendingCount"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return vc.PendingCount()
 	})
 
 	m["addContractRowsListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {

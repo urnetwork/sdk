@@ -414,6 +414,9 @@ const (
 	ProvideControlModeAlways ProvideControlMode = "always"
 	ProvideControlModeAuto   ProvideControlMode = "auto"
 	ProvideControlModeManual ProvideControlMode = "manual"
+	// the private provider: the provider is always on, but provides ONLY to
+	// same-network peers (Network provide mode) — never publicly
+	ProvideControlModeNetwork ProvideControlMode = "network"
 )
 
 type ProvideNetworkMode = string
@@ -469,6 +472,12 @@ type ConnectLocation struct {
 
 	Stable        bool `json:"stable"`
 	StrongPrivacy bool `json:"strong_privacy"`
+
+	// NetworkPeer marks this location as one of the user's own trusted network
+	// peers (selected from the network peers list). Such a connection egresses
+	// under ProvideMode_Network. This is explicit state set by the caller — a
+	// fixed client id alone does not imply a trusted peer (it can be a public exit).
+	NetworkPeer bool `json:"network_peer,omitempty"`
 }
 
 func (self *ConnectLocation) IsGroup() bool {

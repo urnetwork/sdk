@@ -26,6 +26,8 @@ type PeerViewController struct {
 
 	stateLock sync.Mutex
 	peers     *NetworkPeerList
+	// count of ALL connected peers, before the provide filter
+	connectedCount int
 
 	peersListeners  *connect.CallbackList[PeersListener]
 	networkPeersSub Sub
@@ -60,14 +62,18 @@ func (self *PeerViewController) Close() {
 	}
 }
 
-// update recomputes the filtered peer set (connected AND provide enabled) and fans it out.
+// update recomputes the connected count and the filtered peer set
+// (connected AND provide enabled) and fans the change out.
 func (self *PeerViewController) update() {
 	peers := NewNetworkPeerList()
+	connectedCount := 0
 	if networkPeers := self.device.GetNetworkPeers(); networkPeers != nil && networkPeers.Connected != nil {
 		connected := networkPeers.Connected
+		connectedCount = connected.Len()
 		for i := 0; i < connected.Len(); i += 1 {
 			peer := connected.Get(i)
-			// surface only peers that are connected AND providing to the network
+			// the connectable list surfaces only peers that are connected AND
+			// providing to the network
 			if peer != nil && peer.ProvideEnabled {
 				peers.Add(peer)
 			}
@@ -78,6 +84,7 @@ func (self *PeerViewController) update() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.peers = peers
+		self.connectedCount = connectedCount
 	}()
 
 	self.peersChanged(peers)
@@ -90,11 +97,20 @@ func (self *PeerViewController) GetPeers() *NetworkPeerList {
 	return self.peers
 }
 
-// GetPeerCount is the number of connected, provide-enabled peers (for a drawer count label).
+// GetPeerCount is the number of connected, provide-enabled (connectable) peers.
 func (self *PeerViewController) GetPeerCount() int {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.peers.Len()
+}
+
+// GetConnectedCount is the number of ALL connected peers, whether or not they
+// provide — the "You have {n} other devices online" count. A device is online
+// regardless of its provide mode; only CONNECTING to it requires provide.
+func (self *PeerViewController) GetConnectedCount() int {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.connectedCount
 }
 
 func (self *PeerViewController) AddPeersListener(listener PeersListener) Sub {

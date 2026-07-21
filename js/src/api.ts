@@ -23,6 +23,7 @@ import {
   RemoveNetworkClientArgs,
   RemoveNetworkClientResult,
 } from "./generated";
+import { fetchWithGetRetry } from "./utils/fetch_retry";
 
 export class URNetworkAPI {
   private baseURL: string;
@@ -325,7 +326,7 @@ export class URNetworkAPI {
    */
   async networkProviderLocations(): Promise<FindLocationsResult> {
     try {
-      const response = await fetch(
+      const response = await fetchWithGetRetry(
         `${this.baseURL}/network/provider-locations`,
         {
           method: "GET",
@@ -598,7 +599,7 @@ export class URNetworkAPI {
 
   async listApiKeys(token: string): Promise<ListApiKeysResult> {
     try {
-      const response = await fetch(`${this.baseURL}/account/api-keys`, {
+      const response = await fetchWithGetRetry(`${this.baseURL}/account/api-keys`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",

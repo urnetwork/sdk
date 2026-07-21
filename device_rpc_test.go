@@ -943,9 +943,7 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 		providerIngressDetailsListener.with(func() {
 			found = providerIngressDetailsListener.contractDetails != nil &&
 				providerIngressDetailsListener.contractDetails.ContractId != nil &&
-				providerIngressDetailsListener.contractDetails.ContractId.Cmp(newId(ingressContractId)) == 0 &&
-				providerIngressDetailsListener.contractDetails.CompanionContractId != nil &&
-				providerIngressDetailsListener.contractDetails.CompanionContractId.Cmp(newId(companionContractId)) == 0
+				providerIngressDetailsListener.contractDetails.ContractId.Cmp(newId(ingressContractId)) == 0
 		})
 		return found
 	}), true)
@@ -958,7 +956,10 @@ func TestDeviceRemotePacketAndProviderStats(t *testing.T) {
 	remoteIngressDetails := deviceRemote.GetProviderIngressContractDetails()
 	connect.AssertEqual(t, remoteIngressDetails.Len(), 1)
 	connect.AssertEqual(t, remoteIngressDetails.Get(0).ContractUsedByteCount, ByteCount(1000))
-	connect.AssertEqual(t, remoteIngressDetails.Get(0).CompanionContractUsedByteCount, ByteCount(500))
+	connect.AssertEqual(t, remoteIngressDetails.Get(0).Status, ContractStatusOpen)
+	if p := remoteIngressDetails.Get(0).ContractTransferPath; p == nil || p.SourceId == nil || p.SourceId.Cmp(newId(peer)) != 0 {
+		t.Fatalf("expected the contract transfer path over rpc, got %+v", p)
+	}
 }
 
 // TestDeviceRemoteProviderStatsNoProvider pins the noop provider surface over

@@ -1,4 +1,3 @@
-go.sum
 node_modules
 dist
 wasm/

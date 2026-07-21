@@ -401,9 +401,10 @@ type gridPoint struct {
 
 func defaultConnectGridSettings() *connectGridSettings {
 	return &connectGridSettings{
-		MinSideLength:  16,
-		ExpandFraction: 1.5,
-		RemoveTimeout:  8 * time.Second,
+		MinSideLength:    16,
+		ExpandFraction:   1.5,
+		RemoveTimeout:    8 * time.Second,
+		ReconcileTimeout: 30 * time.Second,
 	}
 }
 
@@ -411,6 +412,12 @@ type connectGridSettings struct {
 	MinSideLength  int
 	ExpandFraction float32
 	RemoveTimeout  time.Duration
+	// ReconcileTimeout is the cadence for re-syncing the grid against the window
+	// monitor's retained events (see ConnectGrid.reconcile). The monitor retains
+	// exactly the live (non-terminal) providers, so the reconcile heals the grid
+	// from any lost event — a missed add appears, and a missed terminal event is
+	// reclaimed — bounding how long the grid can diverge from the window.
+	ReconcileTimeout time.Duration
 }
 
 type ConnectGrid struct {
@@ -428,6 +435,9 @@ type ConnectGrid struct {
 	windowCurrentSize int
 
 	windowSub func()
+	// the monitor this grid listens to; the run loop periodically reconciles
+	// the grid against its retained events (see reconcile)
+	windowMonitor windowMonitor
 
 	sideLength         int
 	gridPoints         map[gridPointCoord]*gridPoint
@@ -529,6 +539,7 @@ func (self *ConnectGrid) listenToWindow(windowMonitor windowMonitor) {
 		if self.windowSub != nil {
 			self.windowSub()
 		}
+		self.windowMonitor = windowMonitor
 		self.windowSub = windowMonitor.AddMonitorEventCallback(self.windowMonitorEventCallback)
 	}()
 
@@ -552,17 +563,19 @@ func (self *ConnectGrid) close() {
 			self.windowSub()
 			self.windowSub = nil
 		}
+		self.windowMonitor = nil
 	}()
 }
 
 func (self *ConnectGrid) run() {
 	defer self.cancel()
 
+	lastReconcileTime := time.Now()
 	for {
 		providerGridPointChanged := false
 		var notify chan struct{}
 		var minEndPoint *ProviderGridPoint
-		var timeout time.Duration
+		var reapTimeout time.Duration
 		func() {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
@@ -584,7 +597,7 @@ func (self *ConnectGrid) run() {
 				}
 			}
 			if minEndPoint != nil {
-				timeout = minEndPoint.EndTime.toTime().Sub(now)
+				reapTimeout = minEndPoint.EndTime.toTime().Sub(now)
 			}
 
 			if 0 < removedCount {
@@ -602,21 +615,114 @@ func (self *ConnectGrid) run() {
 			self.connectViewController.gridChanged()
 		}
 
-		if minEndPoint != nil {
-			// there is a next point to be removed after `timeout`
-			select {
-			case <-self.ctx.Done():
-				return
-			case <-notify:
-			case <-time.After(timeout):
-			}
-		} else {
-			select {
-			case <-self.ctx.Done():
-				return
-			case <-notify:
+		// periodically re-sync against the monitor's retained events, healing the
+		// grid from any lost event (see reconcile)
+		if self.settings.ReconcileTimeout <= time.Now().Sub(lastReconcileTime) {
+			lastReconcileTime = time.Now()
+			self.reconcile()
+			// recompute the reap deadlines with the reconciled points
+			continue
+		}
+
+		// wake at the next reap deadline, the next reconcile, or an event
+		timeout := lastReconcileTime.Add(self.settings.ReconcileTimeout).Sub(time.Now())
+		if minEndPoint != nil && reapTimeout < timeout {
+			timeout = reapTimeout
+		}
+		select {
+		case <-self.ctx.Done():
+			return
+		case <-notify:
+		case <-time.After(timeout):
+		}
+	}
+}
+
+// reconcile re-syncs the grid against the window monitor's retained events, so
+// the grid self-heals from lost events. The monitor retains exactly the live
+// (non-terminal) providers, so
+//  1. retained entries the grid is missing or has stale (a lost add or state
+//     update) are replayed through the normal event path, and
+//  2. non-terminal grid points absent from the retained events must have missed
+//     their terminal event; they are moved to Removed and scheduled to be
+//     reclaimed after RemoveTimeout.
+//
+// Without this, a single lost event (an rpc gap to a remote device, a dropped
+// callback) would leave a dot on the grid forever, and dots would accumulate
+// without bound over a long session.
+func (self *ConnectGrid) reconcile() {
+	// snapshot the current non-terminal points, then pull the monitor's retained
+	// events. the pull must happen outside the state lock: for a remote device it
+	// is an rpc round trip, and the event dispatch that takes this lock must
+	// never be blocked behind it
+	var windowMonitor windowMonitor
+	candidateClientIds := []connect.Id{}
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		windowMonitor = self.windowMonitor
+		for clientId, point := range self.providerGridPoints {
+			if point.EndTime == nil {
+				candidateClientIds = append(candidateClientIds, clientId)
 			}
 		}
+	}()
+	if windowMonitor == nil {
+		return
+	}
+	select {
+	case <-self.ctx.Done():
+		return
+	default:
+	}
+
+	var windowExpandEvent *connect.WindowExpandEvent
+	var providerEvents map[connect.Id]*connect.ProviderEvent
+	if m, ok := windowMonitor.(windowMonitorWithAvailability); ok {
+		var available bool
+		windowExpandEvent, providerEvents, available = m.EventsWithAvailability()
+		if !available {
+			// the monitor state is unreadable (e.g. the rpc to the remote device
+			// is down). freeze rather than drain: keep the current dots and skip
+			// this reconcile; the next readable reconcile (or the reset that
+			// follows a reconnect sync) re-syncs them.
+			return
+		}
+	} else {
+		windowExpandEvent, providerEvents = windowMonitor.Events()
+	}
+
+	// 1. replay the retained events through the normal event path. this inserts
+	// points the grid missed and corrects stale states. points that arrived after
+	// the candidate snapshot are not candidates, so the replay cannot race them
+	// into removal below.
+	self.windowMonitorEventCallback(windowExpandEvent, providerEvents, false)
+
+	// 2. candidates absent from the retained events missed their terminal event:
+	// move them to Removed and schedule the removal
+	reclaimedCount := 0
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		for _, clientId := range candidateClientIds {
+			if _, ok := providerEvents[clientId]; ok {
+				continue
+			}
+			if point, ok := self.providerGridPoints[clientId]; ok && point.EndTime == nil {
+				point.State = ProviderStateRemoved
+				point.EndTime = newTime(time.Now().Add(self.settings.RemoveTimeout))
+				point.Active = false
+				reclaimedCount += 1
+			}
+		}
+	}()
+	if 0 < reclaimedCount {
+		deviceLog(self.connectViewController.device).Infof(
+			"[grid]reconcile reclaimed %d points missing terminal events\n",
+			reclaimedCount,
+		)
+		self.providerGridPointsMonitor.NotifyAll()
+		self.connectViewController.gridChanged()
 	}
 }
 

@@ -46,11 +46,13 @@ func jsBlockAction(a *sdk.BlockAction) js.Value {
 		return js.Null()
 	}
 	m := map[string]any{
-		"time":  a.Time,
-		"block": a.Block,
-		"local": a.Local,
-		"ips":   jsStringList(a.Ips),
-		"hosts": jsStringList(a.Hosts),
+		"time":         a.Time,
+		"block":        a.Block,
+		"local":        a.Local,
+		"ips":          jsStringList(a.Ips),
+		"hosts":        jsStringList(a.Hosts),
+		"matchedIps":   jsStringList(a.MatchedIps),
+		"matchedHosts": jsStringList(a.MatchedHosts),
 	}
 	if a.BlockActionId != nil {
 		m["blockActionId"] = a.BlockActionId.String()
@@ -100,6 +102,15 @@ func jsBlockActionViewController(vc *sdk.BlockActionViewController) js.Value {
 	m["setWindowDurationSeconds"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
 			vc.SetWindowDurationSeconds(args[0].Int())
+		}
+		return js.Null()
+	})
+	m["getMaxBlockActions"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetMaxBlockActions())
+	})
+	m["setMaxBlockActions"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) {
+			vc.SetMaxBlockActions(args[0].Int())
 		}
 		return js.Null()
 	})

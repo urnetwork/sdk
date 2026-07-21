@@ -255,7 +255,7 @@ func newLoopbackDeviceEnv(t *testing.T, ctx context.Context, networkSpace *Netwo
 	// The LocalUserNat assumes the source->NAT link is lossless and in-order
 	// (ip.go: "do not implement any retransmit logic"), but DeviceLocal's
 	// routeLocal send is non-blocking and drops when the NAT's send channel
-	// (SequenceBufferSize=1024 packets) is full. A dropped packet corrupts the
+	// (SequenceBufferSize packets, memory-budget scaled) is full. A dropped packet corrupts the
 	// NAT's per-flow tcp state and stalls the flow to its deadline. So keep the
 	// tun tcp windows small: bounded in-flight bytes stay far below the channel
 	// depth, and no packet is ever dropped. A larger channel buffer further

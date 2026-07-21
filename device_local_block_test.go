@@ -482,7 +482,7 @@ func TestDeviceLocalContractStats(t *testing.T) {
 		t.Fatalf("unexpected ingress stats %+v", ingressStats)
 	}
 
-	// the egress contract pairs with the exact reverse path companion
+	// each direction reports its own contracts, un-paired
 	egressDetails := device.GetEgressContractDetails()
 	if egressDetails.Len() != 1 {
 		t.Fatalf("expected 1 egress details, got %d", egressDetails.Len())
@@ -491,24 +491,44 @@ func TestDeviceLocalContractStats(t *testing.T) {
 	if details.ContractId.Cmp(newId(egressContractId)) != 0 {
 		t.Fatalf("unexpected contract id")
 	}
-	if details.CompanionContractId == nil || details.CompanionContractId.Cmp(newId(companionContractId)) != 0 {
-		t.Fatalf("expected the reverse path companion")
-	}
-	if details.ContractUsedByteCount != 1000 || details.CompanionContractUsedByteCount != 500 {
+	if details.ContractUsedByteCount != 1000 || details.ContractByteCount != 10000 {
 		t.Fatalf("unexpected details %+v", details)
 	}
+	if details.Status != ContractStatusOpen {
+		t.Fatalf("expected open status, got %s", details.Status)
+	}
+	ingressDetails := device.GetIngressContractDetails()
+	if ingressDetails.Len() != 2 {
+		t.Fatalf("expected 2 ingress details, got %d", ingressDetails.Len())
+	}
 
-	// closing evicts after the final report
+	// closing reports the contract one more time as a Closed tombstone carrying
+	// its final counts
 	device.updateContractStatsEvents([]*connect.ContractStatsEvent{
 		{
 			ContractId:        egressContractId,
 			Receive:           false,
 			Path:              connect.TransferPath{SourceId: us, DestinationId: peer1, StreamId: stream},
 			TransferByteCount: 10000,
-			UsedByteCount:     1000,
+			UsedByteCount:     2000,
 			Open:              false,
 		},
 	})
+	egressDetails = device.GetEgressContractDetails()
+	if egressDetails.Len() != 1 {
+		t.Fatalf("expected the closed tombstone, got %d", egressDetails.Len())
+	}
+	tombstone := egressDetails.Get(0)
+	if tombstone.Status != ContractStatusClosed || tombstone.ContractUsedByteCount != 2000 {
+		t.Fatalf("unexpected tombstone %+v", tombstone)
+	}
+
+	// the next emit evicts the reported tombstone
+	func() {
+		device.stateLock.Lock()
+		defer device.stateLock.Unlock()
+		device.contracts.emit(time.Now())
+	}()
 	if count := device.GetEgressContractDetails().Len(); count != 0 {
 		t.Fatalf("expected closed contract evicted, got %d", count)
 	}
@@ -837,7 +857,7 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 		t.Fatalf("unexpected provider egress stats %+v", egressStats)
 	}
 
-	// the ingress contract pairs with the exact reverse path companion
+	// each direction reports its own contracts, un-paired
 	ingressDetails := providerDevice.GetProviderIngressContractDetails()
 	if ingressDetails.Len() != 1 {
 		t.Fatalf("expected 1 provider ingress details, got %d", ingressDetails.Len())
@@ -846,8 +866,9 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 	if details.ContractId.Cmp(newId(ingressContractId)) != 0 {
 		t.Fatalf("unexpected provider contract id")
 	}
-	if details.CompanionContractId == nil || details.CompanionContractId.Cmp(newId(companionContractId)) != 0 {
-		t.Fatalf("expected the reverse path companion")
+	egressDetails := providerDevice.GetProviderEgressContractDetails()
+	if egressDetails.Len() != 1 || egressDetails.Get(0).ContractId.Cmp(newId(companionContractId)) != 0 {
+		t.Fatalf("expected 1 provider egress details")
 	}
 	if count := ingressDetailsListener.fireCount(); count != 1 {
 		t.Fatalf("expected 1 provider ingress details fire, got %d", count)
@@ -858,7 +879,8 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 		t.Fatalf("provider contracts must not leak into the client stats %+v", clientStats)
 	}
 
-	// closing evicts after the final report
+	// closing reports the contracts once as Closed tombstones, then the next
+	// emit evicts them
 	providerDevice.updateProviderContractStatsEvents([]*connect.ContractStatsEvent{
 		{
 			ContractId:        ingressContractId,
@@ -878,6 +900,15 @@ func TestDeviceLocalProviderContractStats(t *testing.T) {
 			Open:              false,
 		},
 	})
+	ingressDetails = providerDevice.GetProviderIngressContractDetails()
+	if ingressDetails.Len() != 1 || ingressDetails.Get(0).Status != ContractStatusClosed {
+		t.Fatalf("expected the closed provider tombstone")
+	}
+	func() {
+		providerDevice.stateLock.Lock()
+		defer providerDevice.stateLock.Unlock()
+		providerDevice.providerContracts.emit(time.Now())
+	}()
 	if count := providerDevice.GetProviderIngressContractDetails().Len(); count != 0 {
 		t.Fatalf("expected closed provider contracts evicted, got %d", count)
 	}
