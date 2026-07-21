@@ -5,7 +5,6 @@ go 1.26.3
 require golang.org/x/tools v0.46.0
 
 require (
-	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -27,7 +26,7 @@ require (
 	github.com/pion/turn/v5 v5.0.9 // indirect
 	github.com/pion/webrtc/v4 v4.2.15 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.7.21-998430760
+	github.com/urnetwork/connect/v2026 v2026.7.21-998430760 // indirect
 	github.com/urnetwork/glog/v2026 v2026.7.21-998430760
 	github.com/urnetwork/sdk/v2026 v2026.7.21-998430760
 	github.com/wlynxg/anet v0.0.5 // indirect
