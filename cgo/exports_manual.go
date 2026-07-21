@@ -9,7 +9,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // hand-written exports for surface the generator cannot express:
