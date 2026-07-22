@@ -33,7 +33,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const sdkPath = "github.com/urnetwork/sdk"
+const sdkPath = "github.com/urnetwork/sdk/v2026"
 
 // behavioral types cross the abi as opaque handles
 var behavioralTypes = map[string]bool{
@@ -1391,7 +1391,7 @@ func (g *gen) write() error {
 		}
 		b.WriteString("package main\n\n")
 		b.WriteString("/*\n#include <stdint.h>\n#include <stdbool.h>\n#include \"callbacks.h\"\n*/\nimport \"C\"\n\n")
-		b.WriteString("import (\n\t\"unsafe\"\n\n\t\"github.com/urnetwork/sdk\"\n)\n\n")
+		b.WriteString("import (\n\t\"unsafe\"\n\n\t\"github.com/urnetwork/sdk/v2026\"\n)\n\n")
 		b.WriteString("var _ = unsafe.Pointer(nil)\n\n")
 
 		// callback adapters
