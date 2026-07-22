@@ -26,9 +26,9 @@ require (
 	github.com/pion/turn/v5 v5.0.9 // indirect
 	github.com/pion/webrtc/v4 v4.2.15 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.7.22-999364020
+	github.com/urnetwork/connect/v2026 v2026.7.22-999364020 // indirect
 	github.com/urnetwork/glog/v2026 v2026.7.22-999364020
-	github.com/urnetwork/goidenticons/v2026 v2026.7.22-999364020
+	github.com/urnetwork/goidenticons/v2026 v2026.7.22-999364020 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.7.22-999364020
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
