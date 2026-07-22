@@ -187,6 +187,8 @@ typedef void (*urnet_peers_cb)(void* user_data, const char* peers_json);
 void urnet_invoke_peers(urnet_peers_cb cb, void* user_data, const char* peers_json);
 typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char* performance_profile_json);
 void urnet_invoke_performance_profile_change(urnet_performance_profile_change_cb cb, void* user_data, const char* performance_profile_json);
+typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
+void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void* user_data);
 typedef void (*urnet_provide_change_cb)(void* user_data, bool provide_enabled);
 void urnet_invoke_provide_change(urnet_provide_change_cb cb, void* user_data, bool provide_enabled);
 typedef void (*urnet_provide_control_mode_change_cb)(void* user_data, const char* provide_control_mode);
@@ -199,6 +201,8 @@ typedef void (*urnet_provide_paused_change_cb)(void* user_data, bool provide_pau
 void urnet_invoke_provide_paused_change(urnet_provide_paused_change_cb cb, void* user_data, bool provide_paused);
 typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provide_secret_key_list_json);
 void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* user_data, const char* provide_secret_key_list_json);
+typedef void (*urnet_provider_identity_change_cb)(void* user_data);
+void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data);
 typedef void (*urnet_receive_packet_cb)(void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
 void urnet_invoke_receive_packet(urnet_receive_packet_cb cb, void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
 typedef void (*urnet_redeem_balance_code_cb)(void* user_data, const char* result_json, const char* err_param);

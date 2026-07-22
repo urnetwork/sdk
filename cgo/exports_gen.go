@@ -1433,6 +1433,16 @@ func (self *cAdapterPerformanceProfileChangeListener) PerformanceProfileChanged(
 	}
 }
 
+type cAdapterPostQuantumIdentityListener struct {
+	cbProviderIdentitiesChanged C.urnet_post_quantum_identity_cb
+	userData                    unsafe.Pointer
+}
+
+func (self *cAdapterPostQuantumIdentityListener) ProviderIdentitiesChanged() {
+	defer cgoGuard("urnet_post_quantum_identity_cb")
+	C.urnet_invoke_post_quantum_identity(self.cbProviderIdentitiesChanged, self.userData)
+}
+
 type cAdapterProvideChangeListener struct {
 	cbProvideChanged C.urnet_provide_change_cb
 	userData         unsafe.Pointer
@@ -1499,6 +1509,16 @@ func (self *cAdapterProvideSecretKeysListener) ProvideSecretKeysChanged(provideS
 	if provideSecretKeyList_ != nil {
 		cStringFree(provideSecretKeyList_)
 	}
+}
+
+type cAdapterProviderIdentityChangeListener struct {
+	cbProviderIdentitiesChanged C.urnet_provider_identity_change_cb
+	userData                    unsafe.Pointer
+}
+
+func (self *cAdapterProviderIdentityChangeListener) ProviderIdentitiesChanged() {
+	defer cgoGuard("urnet_provider_identity_change_cb")
+	C.urnet_invoke_provider_identity_change(self.cbProviderIdentitiesChanged, self.userData)
 }
 
 type cAdapterReceivePacket struct {
@@ -4868,6 +4888,21 @@ func urnet_device_add_provider_egress_contract_stats_change_listener(self C.uint
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_provider_identity_change_listener
+func urnet_device_add_provider_identity_change_listener(self C.uint64_t, listener_provider_identities_changed C.urnet_provider_identity_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_provider_identity_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_provider_identity_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ProviderIdentityChangeListener
+	if listener_provider_identities_changed != nil {
+		listener_ = &cAdapterProviderIdentityChangeListener{cbProviderIdentitiesChanged: listener_provider_identities_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddProviderIdentityChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_provider_ingress_contract_details_change_listener
 func urnet_device_add_provider_ingress_contract_details_change_listener(self C.uint64_t, listener_contract_details_changed C.urnet_contract_details_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_provider_ingress_contract_details_change_listener")
@@ -5424,6 +5459,20 @@ func urnet_device_get_provider_egress_contract_stats(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_provider_egress_contract_stats")
 }
 
+//export urnet_device_get_provider_identities
+func urnet_device_get_provider_identities(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provider_identities")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provider_identities")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderIdentities()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provider_identities")
+}
+
 //export urnet_device_get_provider_ingress_contract_details
 func urnet_device_get_provider_ingress_contract_details(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_provider_ingress_contract_details")
@@ -5464,6 +5513,17 @@ func urnet_device_get_provider_packet_stats(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_get_provider_packet_stats")
+}
+
+//export urnet_device_get_public_identity_key_hash
+func urnet_device_get_public_identity_key_hash(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_public_identity_key_hash")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_public_identity_key_hash")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPublicIdentityKeyHash()
+	return cString(string(r0))
 }
 
 //export urnet_device_get_route_local
@@ -6093,6 +6153,20 @@ func urnet_device_local_open_peer_view_controller(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_open_post_quantum_identity_view_controller
+func urnet_device_local_open_post_quantum_identity_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_post_quantum_identity_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_post_quantum_identity_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenPostQuantumIdentityViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_local_open_provide_view_controller
 func urnet_device_local_open_provide_view_controller(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_local_open_provide_view_controller")
@@ -6497,6 +6571,20 @@ func urnet_device_remote_open_peer_view_controller(self C.uint64_t) C.uint64_t {
 		return 0
 	}
 	r0 := self_.OpenPeerViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_post_quantum_identity_view_controller
+func urnet_device_remote_open_post_quantum_identity_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_post_quantum_identity_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_post_quantum_identity_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenPostQuantumIdentityViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -8770,6 +8858,86 @@ func urnet_points_to_nano_points(points C.double) C.int64_t {
 	return C.int64_t(r0)
 }
 
+//export urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener
+func urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener(self C.uint64_t, listener_provider_identities_changed C.urnet_post_quantum_identity_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.PostQuantumIdentityListener
+	if listener_provider_identities_changed != nil {
+		listener_ = &cAdapterPostQuantumIdentityListener{cbProviderIdentitiesChanged: listener_provider_identities_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddPostQuantumIdentityListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_post_quantum_identity_view_controller_close
+func urnet_post_quantum_identity_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_close")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_post_quantum_identity_view_controller_get_provider_identities
+func urnet_post_quantum_identity_view_controller_get_provider_identities(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_get_provider_identities")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_get_provider_identities")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderIdentities()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_post_quantum_identity_view_controller_get_provider_identities")
+}
+
+//export urnet_post_quantum_identity_view_controller_get_public_identity_key_hash
+func urnet_post_quantum_identity_view_controller_get_public_identity_key_hash(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_get_public_identity_key_hash")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_get_public_identity_key_hash")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPublicIdentityKeyHash()
+	return cString(string(r0))
+}
+
+//export urnet_post_quantum_identity_view_controller_provider_identities_changed
+func urnet_post_quantum_identity_view_controller_provider_identities_changed(self C.uint64_t) {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_provider_identities_changed")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_provider_identities_changed")
+	if !ok {
+		return
+	}
+	self_.ProviderIdentitiesChanged()
+}
+
+//export urnet_post_quantum_identity_view_controller_start
+func urnet_post_quantum_identity_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_start")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_post_quantum_identity_view_controller_stop
+func urnet_post_quantum_identity_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_post_quantum_identity_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(self), "urnet_post_quantum_identity_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
+}
+
 //export urnet_provide_view_controller_close
 func urnet_provide_view_controller_close(self C.uint64_t) {
 	defer cgoGuard("urnet_provide_view_controller_close")
@@ -8854,6 +9022,13 @@ func urnet_proxy_device_get_proxy_config_result(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_proxy_device_get_proxy_config_result")
+}
+
+//export urnet_public_identity_key_hash
+func urnet_public_identity_key_hash(publicKey *C.uint8_t, publicKey_len C.int32_t) *C.char {
+	defer cgoGuard("urnet_public_identity_key_hash")
+	r0 := sdk.PublicIdentityKeyHash(goBytes(publicKey, publicKey_len))
+	return cString(string(r0))
 }
 
 //export urnet_referral_code_view_controller_add_referral_code_listener

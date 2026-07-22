@@ -157,6 +157,7 @@ inline constexpr const char* TAO = "TAO";
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
+inline constexpr const char* WindowTypeAuto = "auto";
 inline constexpr const char* WindowTypeQuality = "quality";
 inline constexpr const char* WindowTypeSpeed = "speed";
 
@@ -188,6 +189,7 @@ class NetworkSpace;
 class NetworkSpaceManager;
 class NetworkUserViewController;
 class PeerViewController;
+class PostQuantumIdentityViewController;
 class ProvideViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
@@ -345,6 +347,7 @@ struct OverrideLocalAppIds;
 struct PacketStats;
 struct ProvideSecretKey;
 struct ProviderGridPoint;
+struct ProviderIdentity;
 struct ProviderSpec;
 struct ProxyDeviceSettings;
 struct PublicAccountApiKey;
@@ -446,6 +449,7 @@ using NetworkPeerList = std::vector<NetworkPeer>;
 using NetworkSpaceList = std::vector<nlohmann::json>;
 using ProvideSecretKeyList = std::vector<ProvideSecretKey>;
 using ProviderGridPointList = std::vector<ProviderGridPoint>;
+using ProviderIdentityList = std::vector<ProviderIdentity>;
 using ProviderSpecList = std::vector<ProviderSpec>;
 using PublicAccountApiKeyList = std::vector<PublicAccountApiKey>;
 using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
@@ -639,6 +643,7 @@ struct PerformanceProfile {
 	std::string window_type{};
 	std::optional<WindowSizeSettings> window_size;
 	bool allow_direct{};
+	bool post_quantum_encryption{};
 };
 
 struct ProxyDeviceState {
@@ -1407,6 +1412,11 @@ struct ProviderGridPoint {
 	bool Active{};
 };
 
+struct ProviderIdentity {
+	std::optional<std::string> ClientId;
+	std::string PublicKey{};
+};
+
 struct ProviderSpec {
 	std::optional<std::string> location_id;
 	std::optional<std::string> location_group_id;
@@ -2073,6 +2083,8 @@ inline void to_json(nlohmann::json& j, const ProvideSecretKey& v);
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v);
 inline void to_json(nlohmann::json& j, const ProviderGridPoint& v);
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v);
+inline void to_json(nlohmann::json& j, const ProviderIdentity& v);
+inline void from_json(const nlohmann::json& j, ProviderIdentity& v);
 inline void to_json(nlohmann::json& j, const ProviderSpec& v);
 inline void from_json(const nlohmann::json& j, ProviderSpec& v);
 inline void to_json(nlohmann::json& j, const ProxyDeviceSettings& v);
@@ -3170,6 +3182,7 @@ inline void to_json(nlohmann::json& j, const PerformanceProfile& v) {
 		j["window_size"] = *v.window_size;
 	}
 	j["allow_direct"] = v.allow_direct;
+	j["post_quantum_encryption"] = v.post_quantum_encryption;
 }
 inline void from_json(const nlohmann::json& j, PerformanceProfile& v) {
 	if (!j.is_object()) {
@@ -3185,6 +3198,9 @@ inline void from_json(const nlohmann::json& j, PerformanceProfile& v) {
 	}
 	if (auto it = j.find("allow_direct"); it != j.end() && !it->is_null()) {
 		it->get_to(v.allow_direct);
+	}
+	if (auto it = j.find("post_quantum_encryption"); it != j.end() && !it->is_null()) {
+		it->get_to(v.post_quantum_encryption);
 	}
 }
 
@@ -6682,6 +6698,27 @@ inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderIdentity& v) {
+	j = nlohmann::json::object();
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["PublicKey"] = v.PublicKey;
+}
+inline void from_json(const nlohmann::json& j, ProviderIdentity& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("PublicKey"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PublicKey);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderSpec& v) {
 	j = nlohmann::json::object();
 	if (v.location_id) {
@@ -8380,12 +8417,14 @@ using PaymentsListener = std::function<void()>;
 using PayoutWalletListener = std::function<void(std::string p0)>;
 using PeersListener = std::function<void(std::optional<NetworkPeerList> peers)>;
 using PerformanceProfileChangeListener = std::function<void(std::optional<PerformanceProfile> performance_profile)>;
+using PostQuantumIdentityListener = std::function<void()>;
 using ProvideChangeListener = std::function<void(bool provide_enabled)>;
 using ProvideControlModeChangeListener = std::function<void(std::string provide_control_mode)>;
 using ProvideModeChangeListener = std::function<void(int64_t provide_mode)>;
 using ProvideNetworkModeChangeListener = std::function<void(std::string provide_network_mode)>;
 using ProvidePausedChangeListener = std::function<void(bool provide_paused)>;
 using ProvideSecretKeysListener = std::function<void(std::optional<ProvideSecretKeyList> provide_secret_key_list)>;
+using ProviderIdentityChangeListener = std::function<void()>;
 using ReceivePacket = std::function<void(int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len)>;
 using RedeemBalanceCodeCallback = std::function<void(std::optional<RedeemBalanceCodeResult> result, std::optional<std::string> err_param)>;
 using ReferralCodeListener = std::function<void(std::string p0)>;
@@ -8487,6 +8526,7 @@ public:
 	Sub addProvideSecretKeysListener(ProvideSecretKeysListener listener) const;
 	Sub addProviderEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addProviderEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
+	Sub addProviderIdentityChangeListener(ProviderIdentityChangeListener listener) const;
 	Sub addProviderIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addProviderIngressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addProviderPacketStatsChangeListener(PacketStatsChangeListener listener) const;
@@ -8530,9 +8570,11 @@ public:
 	bool getProvidePaused() const;
 	std::optional<ContractDetailsList> getProviderEgressContractDetails() const;
 	std::optional<ContractStats> getProviderEgressContractStats() const;
+	std::optional<ProviderIdentityList> getProviderIdentities() const;
 	std::optional<ContractDetailsList> getProviderIngressContractDetails() const;
 	std::optional<ContractStats> getProviderIngressContractStats() const;
 	std::optional<PacketStats> getProviderPacketStats() const;
+	std::string getPublicIdentityKeyHash() const;
 	bool getRouteLocal() const;
 	bool getShouldShowRatingDialog() const;
 	DeviceStats getStats() const;
@@ -8783,6 +8825,7 @@ public:
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
+	PostQuantumIdentityViewController openPostQuantumIdentityViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
@@ -8800,6 +8843,8 @@ public:
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	/* the raw public identity key (post quantum identity) */
+	std::vector<uint8_t> getPublicIdentityKey() const;
 };
 
 class DeviceLocalKeyMaterial final : public detail::Handle {
@@ -8832,12 +8877,15 @@ public:
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
+	PostQuantumIdentityViewController openPostQuantumIdentityViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
 	void setRpcServer(const std::string& client_pem, const std::string& server_cert_pem, const std::string& host_port) const;
 	void sync() const;
+	/* the raw public identity key (post quantum identity) */
+	std::vector<uint8_t> getPublicIdentityKey() const;
 };
 
 class DeviceRpcKeyMaterial final : public detail::Handle {
@@ -9051,6 +9099,19 @@ public:
 	int64_t getConnectedCount() const;
 	int64_t getPeerCount() const;
 	std::optional<NetworkPeerList> getPeers() const;
+	void start() const;
+	void stop() const;
+};
+
+class PostQuantumIdentityViewController final : public detail::Handle {
+public:
+	PostQuantumIdentityViewController() = default;
+	explicit PostQuantumIdentityViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addPostQuantumIdentityListener(PostQuantumIdentityListener listener) const;
+	void close() const;
+	std::optional<ProviderIdentityList> getProviderIdentities() const;
+	std::string getPublicIdentityKeyHash() const;
+	void providerIdentitiesChanged() const;
 	void start() const;
 	void stop() const;
 };
@@ -11724,6 +11785,26 @@ inline void oneshot_performance_profile_change(void* user_data, const char* perf
 	delete f;
 }
 
+inline void retained_post_quantum_identity(void* user_data) {
+	auto* f = static_cast<PostQuantumIdentityListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_post_quantum_identity(void* user_data) {
+	auto* f = static_cast<PostQuantumIdentityListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_provide_change(void* user_data, bool provide_enabled) {
 	auto* f = static_cast<ProvideChangeListener*>(user_data);
 	try {
@@ -11845,6 +11926,26 @@ inline void oneshot_provide_secret_keys(void* user_data, const char* provide_sec
 			provide_secret_key_list_v = parseJson<ProvideSecretKeyList>(provide_secret_key_list_json);
 		}
 		(*f)(std::move(provide_secret_key_list_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_provider_identity_change(void* user_data) {
+	auto* f = static_cast<ProviderIdentityChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_provider_identity_change(void* user_data) {
+	auto* f = static_cast<ProviderIdentityChangeListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -13341,6 +13442,17 @@ inline Sub Device::addProviderEgressContractStatsChangeListener(ContractStatsCha
 	}
 	return r;
 }
+inline Sub Device::addProviderIdentityChangeListener(ProviderIdentityChangeListener listener) const {
+	std::shared_ptr<ProviderIdentityChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ProviderIdentityChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_provider_identity_change_listener(handle(), listener_fn ? &detail::retained_provider_identity_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addProviderIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const {
 	std::shared_ptr<ContractDetailsChangeListener> listener_fn;
 	if (listener) {
@@ -13628,6 +13740,14 @@ inline std::optional<ContractStats> Device::getProviderEgressContractStats() con
 	}
 	return detail::parseJson<ContractStats>(r_s->c_str());
 }
+inline std::optional<ProviderIdentityList> Device::getProviderIdentities() const {
+	char* r_c = urnet_device_get_provider_identities(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderIdentityList>(r_s->c_str());
+}
 inline std::optional<ContractDetailsList> Device::getProviderIngressContractDetails() const {
 	char* r_c = urnet_device_get_provider_ingress_contract_details(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -13651,6 +13771,10 @@ inline std::optional<PacketStats> Device::getProviderPacketStats() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<PacketStats>(r_s->c_str());
+}
+inline std::string Device::getPublicIdentityKeyHash() const {
+	char* r_c = urnet_device_get_public_identity_key_hash(handle());
+	return detail::takeString(r_c);
 }
 inline bool Device::getRouteLocal() const {
 	bool r = urnet_device_get_route_local(handle());
@@ -14835,6 +14959,10 @@ inline PeerViewController DeviceLocal::openPeerViewController() const {
 	PeerViewController r(urnet_device_local_open_peer_view_controller(handle()));
 	return r;
 }
+inline PostQuantumIdentityViewController DeviceLocal::openPostQuantumIdentityViewController() const {
+	PostQuantumIdentityViewController r(urnet_device_local_open_post_quantum_identity_view_controller(handle()));
+	return r;
+}
 inline ProvideViewController DeviceLocal::openProvideViewController() const {
 	ProvideViewController r(urnet_device_local_open_provide_view_controller(handle()));
 	return r;
@@ -14994,6 +15122,10 @@ inline NetworkUserViewController DeviceRemote::openNetworkUserViewController() c
 }
 inline PeerViewController DeviceRemote::openPeerViewController() const {
 	PeerViewController r(urnet_device_remote_open_peer_view_controller(handle()));
+	return r;
+}
+inline PostQuantumIdentityViewController DeviceRemote::openPostQuantumIdentityViewController() const {
+	PostQuantumIdentityViewController r(urnet_device_remote_open_post_quantum_identity_view_controller(handle()));
 	return r;
 }
 inline ProvideViewController DeviceRemote::openProvideViewController() const {
@@ -15879,6 +16011,41 @@ inline void PeerViewController::start() const {
 inline void PeerViewController::stop() const {
 	urnet_peer_view_controller_stop(handle());
 }
+inline Sub PostQuantumIdentityViewController::addPostQuantumIdentityListener(PostQuantumIdentityListener listener) const {
+	std::shared_ptr<PostQuantumIdentityListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<PostQuantumIdentityListener>(std::move(listener));
+	}
+	Sub r(urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener(handle(), listener_fn ? &detail::retained_post_quantum_identity : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void PostQuantumIdentityViewController::close() const {
+	urnet_post_quantum_identity_view_controller_close(handle());
+}
+inline std::optional<ProviderIdentityList> PostQuantumIdentityViewController::getProviderIdentities() const {
+	char* r_c = urnet_post_quantum_identity_view_controller_get_provider_identities(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderIdentityList>(r_s->c_str());
+}
+inline std::string PostQuantumIdentityViewController::getPublicIdentityKeyHash() const {
+	char* r_c = urnet_post_quantum_identity_view_controller_get_public_identity_key_hash(handle());
+	return detail::takeString(r_c);
+}
+inline void PostQuantumIdentityViewController::providerIdentitiesChanged() const {
+	urnet_post_quantum_identity_view_controller_provider_identities_changed(handle());
+}
+inline void PostQuantumIdentityViewController::start() const {
+	urnet_post_quantum_identity_view_controller_start(handle());
+}
+inline void PostQuantumIdentityViewController::stop() const {
+	urnet_post_quantum_identity_view_controller_stop(handle());
+}
 inline void ProvideViewController::close() const {
 	urnet_provide_view_controller_close(handle());
 }
@@ -16451,6 +16618,10 @@ inline int64_t pointsToNanoPoints(double points) {
 	int64_t r = urnet_points_to_nano_points(points);
 	return r;
 }
+inline std::string publicIdentityKeyHash(const uint8_t* public_key, int32_t public_key_len) {
+	char* r_c = urnet_public_identity_key_hash(public_key, public_key_len);
+	return detail::takeString(r_c);
+}
 inline std::string serviceUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& scheme, const std::string& service) {
 	std::string key_json;
 	const char* key_c = nullptr;
@@ -16524,6 +16695,31 @@ inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsCertificatePem(
 }
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_provide_tls_private_key_pem(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceRemote::getPublicIdentityKey() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });
+}
+
+/* the canonical identicon png for arbitrary input bytes (identity keys):
+ * deterministic and byte-identical on every platform for the same input */
+inline std::vector<uint8_t> renderIdenticonPng(const std::vector<uint8_t>& input, int32_t size) {
+	char* err = nullptr;
+	int32_t len = 0;
+	urnet_render_identicon_png(input.data(), (int32_t)input.size(), size, nullptr, &len, &err);
+	if (err) {
+		detail::throwError(err);
+	}
+	std::vector<uint8_t> out((size_t)len);
+	if (0 < len) {
+		if (!urnet_render_identicon_png(input.data(), (int32_t)input.size(), size, out.data(), &len, &err)) {
+			detail::throwError(err);
+		}
+	}
+	out.resize((size_t)len);
+	return out;
 }
 
 /* decode a base58 string; std::nullopt when invalid */

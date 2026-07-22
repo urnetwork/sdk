@@ -365,6 +365,10 @@ void urnet_invoke_performance_profile_change(urnet_performance_profile_change_cb
 	cb(user_data, performance_profile_json);
 }
 
+void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_provide_change(urnet_provide_change_cb cb, void* user_data, bool provide_enabled) {
 	cb(user_data, provide_enabled);
 }
@@ -387,6 +391,10 @@ void urnet_invoke_provide_paused_change(urnet_provide_paused_change_cb cb, void*
 
 void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* user_data, const char* provide_secret_key_list_json) {
 	cb(user_data, provide_secret_key_list_json);
+}
+
+void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data) {
+	cb(user_data);
 }
 
 void urnet_invoke_receive_packet(urnet_receive_packet_cb cb, void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len) {

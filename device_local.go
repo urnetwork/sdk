@@ -369,6 +369,7 @@ type DeviceLocal struct {
 	blockActionSub        func()
 	packetStatsSub        func()
 	contractStatsEventSub func()
+	peerIdentitySub       func()
 
 	providerPacketStatsSub        func()
 	providerContractStatsEventSub func()
@@ -383,6 +384,7 @@ type DeviceLocal struct {
 	provideChangeListeners                  *connect.CallbackList[ProvideChangeListener]
 	provideControlModeChangeListeners       *connect.CallbackList[ProvideControlModeChangeListener]
 	performanceProfileChangeListeners       *connect.CallbackList[PerformanceProfileChangeListener]
+	providerIdentityChangeListeners         *connect.CallbackList[ProviderIdentityChangeListener]
 	providePausedChangeListeners            *connect.CallbackList[ProvidePausedChangeListener]
 	provideNetworkModeChangeListeners       *connect.CallbackList[ProvideNetworkModeChangeListener]
 	offlineChangeListeners                  *connect.CallbackList[OfflineChangeListener]
@@ -726,6 +728,7 @@ func newDeviceLocalWithOverrides(
 		provideChangeListeners:                  connect.NewCallbackList[ProvideChangeListener](),
 		provideControlModeChangeListeners:       connect.NewCallbackList[ProvideControlModeChangeListener](),
 		performanceProfileChangeListeners:       connect.NewCallbackList[PerformanceProfileChangeListener](),
+		providerIdentityChangeListeners:         connect.NewCallbackList[ProviderIdentityChangeListener](),
 		providePausedChangeListeners:            connect.NewCallbackList[ProvidePausedChangeListener](),
 		provideNetworkModeChangeListeners:       connect.NewCallbackList[ProvideNetworkModeChangeListener](),
 		offlineChangeListeners:                  connect.NewCallbackList[OfflineChangeListener](),
@@ -983,7 +986,7 @@ func (self *DeviceLocal) RefreshToken(attempt int) error {
 // hosted device would leak that the device is hosted, and where it is hosted,
 // via the host addresses in the direct connection setup. Defense in depth
 // alongside the equivalent hard limit on the live multi client
-// (`connect.MultiClientSettings.NeverAllowDirect`).
+// (`connect.MultiClientSettings.OverrideAllowDirect` = false).
 func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
 	if !self.settings.HostedIncompatible {
 		return performanceProfile
@@ -1014,6 +1017,8 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 	if remoteUserNatClient != nil {
 		switch v := remoteUserNatClient.(type) {
 		case *connect.RemoteUserNatClient:
+			// pqe applies to the multi client window clients only; the
+			// single client path carries just the direct-mode setting
 			if performanceProfile != nil {
 				v.SetAllowDirect(performanceProfile.AllowDirect)
 			} else {
@@ -1035,11 +1040,53 @@ func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
 	return self.performanceProfile
 }
 
+// GetPublicIdentityKey returns a copy of the provider client's long-lived
+// public identity key, or nil when the device has no provider
+func (self *DeviceLocal) GetPublicIdentityKey() []byte {
+	client := self.providerClientSnapshot()
+	if client == nil {
+		return nil
+	}
+	// `ClientKeyManager.PublicKey` returns a fresh copy
+	return []byte(client.ClientKeyManager().PublicKey())
+}
+
+func (self *DeviceLocal) GetPublicIdentityKeyHash() string {
+	publicKey := self.GetPublicIdentityKey()
+	if len(publicKey) == 0 {
+		return ""
+	}
+	return PublicIdentityKeyHash(publicKey)
+}
+
+// GetProviderIdentities returns the providers with an established,
+// identity-verified e2e session. Empty (never nil) when disconnected
+func (self *DeviceLocal) GetProviderIdentities() *ProviderIdentityList {
+	var remoteUserNatClient connect.UserNatClient
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		remoteUserNatClient = self.remoteUserNatClient
+	}()
+
+	providerIdentities := NewProviderIdentityList()
+	if multi, ok := remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+		for _, peerIdentity := range multi.PeerIdentities() {
+			providerIdentities.Add(&ProviderIdentity{
+				ClientId:  newId(peerIdentity.PeerId),
+				PublicKey: bytes.Clone(peerIdentity.PublicKey),
+			})
+		}
+	}
+	return providerIdentities
+}
+
 func performanceProfilesEqual(a *PerformanceProfile, b *PerformanceProfile) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	if a.WindowType != b.WindowType || a.AllowDirect != b.AllowDirect {
+	if a.WindowType != b.WindowType || a.AllowDirect != b.AllowDirect ||
+		a.PostQuantumEncryption != b.PostQuantumEncryption {
 		return false
 	}
 	return windowSizeSettingsEqual(a.WindowSize, b.WindowSize)
@@ -1695,6 +1742,13 @@ func (self *DeviceLocal) AddPerformanceProfileChangeListener(listener Performanc
 	})
 }
 
+func (self *DeviceLocal) AddProviderIdentityChangeListener(listener ProviderIdentityChangeListener) Sub {
+	callbackId := self.providerIdentityChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerIdentityChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
 	callbackId := self.jwtRefreshListeners.Add(listener)
 	return newSub(func() {
@@ -1886,6 +1940,14 @@ func (self *DeviceLocal) performanceProfileChanged(performanceProfile *Performan
 	for _, listener := range self.performanceProfileChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.PerformanceProfileChanged(performanceProfile)
+		})
+	}
+}
+
+func (self *DeviceLocal) providerIdentitiesChanged() {
+	for _, listener := range self.providerIdentityChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProviderIdentitiesChanged()
 		})
 	}
 }
@@ -2474,7 +2536,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// hosted hard limit: the hosted multi client must never allow
 			// direct mode, superseding any performance profile and the
 			// same-network force inside the multi client
-			settings.NeverAllowDirect = self.settings.HostedIncompatible
+			if self.settings.HostedIncompatible {
+				overrideAllowDirect := false
+				settings.OverrideAllowDirect = &overrideAllowDirect
+			}
 			if self.clientSecurityPolicyGenerator != nil {
 				settings.SecurityPolicyGenerator = self.clientSecurityPolicyGenerator
 			}
@@ -2521,6 +2586,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				settings,
 			)
 			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
+			self.peerIdentitySub = multi.AddPeerIdentityChangeCallback(self.providerIdentitiesChanged)
 			self.remoteUserNatClient = multi
 			if upgradeMux != nil {
 				upgradeMux.SetUpstream(multi.SendPacket)
@@ -2581,6 +2647,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 	self.stats.UpdateConnect(connectEnabled)
 	self.connectChanged(connectEnabled)
 	self.windowStatusChanged(self.GetWindowStatus())
+	// the destination change replaced (or tore down) the multi client, so the
+	// established provider identity set was reset. Fire once so consumers
+	// re-read (and observe the empty set on disconnect)
+	self.providerIdentitiesChanged()
 
 	if provideChanged {
 		self.provideModeChanged(self.GetProvideMode())
@@ -3051,6 +3121,10 @@ func (self *DeviceLocal) closeRemoteUserNatClientWithLock() {
 	if self.blockActionSub != nil {
 		self.blockActionSub()
 		self.blockActionSub = nil
+	}
+	if self.peerIdentitySub != nil {
+		self.peerIdentitySub()
+		self.peerIdentitySub = nil
 	}
 	if self.packetStatsSub != nil {
 		self.packetStatsSub()
@@ -4538,12 +4612,14 @@ func toConnectPerformanceProfile(performanceProfile *PerformanceProfile) *connec
 	case WindowTypeSpeed:
 		connectWindowType = connect.WindowTypeSpeed
 	default:
-		connectWindowType = connect.WindowTypeQuality
+		// auto or unset: no fixed window type
+		connectWindowType = connect.WindowTypeAuto
 	}
 	p := &connect.PerformanceProfile{
-		WindowType:  connectWindowType,
-		WindowSize:  toConnectWindowSize(performanceProfile.WindowSize),
-		AllowDirect: performanceProfile.AllowDirect,
+		WindowType:            connectWindowType,
+		WindowSize:            toConnectWindowSize(performanceProfile.WindowSize),
+		AllowDirect:           performanceProfile.AllowDirect,
+		PostQuantumEncryption: performanceProfile.PostQuantumEncryption,
 	}
 	return p
 }

@@ -53,6 +53,10 @@ bool urnet_device_local_key_material_get_client_key_seed(uint64_t self, uint8_t*
 bool urnet_device_local_key_material_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 
+/* post quantum identity (canonical identicon raster + raw identity key) */
+bool urnet_render_identicon_png(const uint8_t* input, int32_t input_len, int32_t size, uint8_t* out, int32_t* inout_len, char** out_error);
+bool urnet_device_get_public_identity_key(uint64_t self, uint8_t* out, int32_t* inout_len);
+
 /* ----- constants ----- */
 
 #define URNET_ASYNC_QUEUE_SIZE 32
@@ -97,6 +101,7 @@ bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t se
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
+#define URNET_WINDOW_TYPE_AUTO "auto"
 #define URNET_WINDOW_TYPE_QUALITY "quality"
 #define URNET_WINDOW_TYPE_SPEED "speed"
 
@@ -282,6 +287,8 @@ typedef void (*urnet_payout_wallet_cb)(void* user_data, const char* p0);
 typedef void (*urnet_peers_cb)(void* user_data, const char* peers_json);
 /* PerformanceProfileChangeListener */
 typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char* performance_profile_json);
+/* PostQuantumIdentityListener */
+typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
 /* ProvideChangeListener */
 typedef void (*urnet_provide_change_cb)(void* user_data, bool provide_enabled);
 /* ProvideControlModeChangeListener */
@@ -294,6 +301,8 @@ typedef void (*urnet_provide_network_mode_change_cb)(void* user_data, const char
 typedef void (*urnet_provide_paused_change_cb)(void* user_data, bool provide_paused);
 /* ProvideSecretKeysListener */
 typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provide_secret_key_list_json);
+/* ProviderIdentityChangeListener */
+typedef void (*urnet_provider_identity_change_cb)(void* user_data);
 /* ReceivePacket */
 typedef void (*urnet_receive_packet_cb)(void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
 /* RedeemBalanceCodeCallback */
@@ -572,6 +581,7 @@ uint64_t urnet_device_add_provide_paused_change_listener(uint64_t self, urnet_pr
 uint64_t urnet_device_add_provide_secret_keys_listener(uint64_t self, urnet_provide_secret_keys_cb listener_provide_secret_keys_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_egress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_egress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
+uint64_t urnet_device_add_provider_identity_change_listener(uint64_t self, urnet_provider_identity_change_cb listener_provider_identities_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_ingress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_ingress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_packet_stats_change_listener(uint64_t self, urnet_packet_stats_change_cb listener_packet_stats_changed, void* listener_user_data);
@@ -615,9 +625,11 @@ char* urnet_device_get_provide_network_mode(uint64_t self);
 bool urnet_device_get_provide_paused(uint64_t self);
 char* urnet_device_get_provider_egress_contract_details(uint64_t self);
 char* urnet_device_get_provider_egress_contract_stats(uint64_t self);
+char* urnet_device_get_provider_identities(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_details(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_stats(uint64_t self);
 char* urnet_device_get_provider_packet_stats(uint64_t self);
+char* urnet_device_get_public_identity_key_hash(uint64_t self);
 bool urnet_device_get_route_local(uint64_t self);
 bool urnet_device_get_should_show_rating_dialog(uint64_t self);
 uint64_t urnet_device_get_stats(uint64_t self);
@@ -669,6 +681,7 @@ uint64_t urnet_device_local_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_peer_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_post_quantum_identity_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provider_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_referral_code_view_controller(uint64_t self);
@@ -705,6 +718,7 @@ uint64_t urnet_device_remote_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_peer_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_post_quantum_identity_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provider_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_referral_code_view_controller(uint64_t self);
@@ -882,6 +896,16 @@ char* urnet_peer_view_controller_get_peers(uint64_t self);
 void urnet_peer_view_controller_start(uint64_t self);
 void urnet_peer_view_controller_stop(uint64_t self);
 
+/* ----- PostQuantumIdentityViewController ----- */
+
+uint64_t urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener(uint64_t self, urnet_post_quantum_identity_cb listener_provider_identities_changed, void* listener_user_data);
+void urnet_post_quantum_identity_view_controller_close(uint64_t self);
+char* urnet_post_quantum_identity_view_controller_get_provider_identities(uint64_t self);
+char* urnet_post_quantum_identity_view_controller_get_public_identity_key_hash(uint64_t self);
+void urnet_post_quantum_identity_view_controller_provider_identities_changed(uint64_t self);
+void urnet_post_quantum_identity_view_controller_start(uint64_t self);
+void urnet_post_quantum_identity_view_controller_stop(uint64_t self);
+
 /* ----- ProvideViewController ----- */
 
 void urnet_provide_view_controller_close(uint64_t self);
@@ -994,6 +1018,7 @@ uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
+char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
@@ -1965,6 +1990,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   window_type: string
  *   window_size: WindowSizeSettings | null
  *   allow_direct: boolean
+ *   post_quantum_encryption: boolean
  */
 
 /* ProvideSecretKey (json):
@@ -1987,6 +2013,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ProviderGridPointList (json):
  *   = ProviderGridPoint | null[]
+ */
+
+/* ProviderIdentity (json):
+ *   ClientId: string (uuid) | null
+ *   PublicKey: string (base64)
+ */
+
+/* ProviderIdentityList (json):
+ *   = ProviderIdentity | null[]
  */
 
 /* ProviderSpec (json):

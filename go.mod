@@ -1,11 +1,6 @@
 module github.com/urnetwork/sdk
 
-go 1.26.3
-
-// pin the toolchain so every machine and CI builds the wasm with the same
-// compiler; wasm_exec.js is copied from this toolchain's GOROOT (see js/Makefile)
-// so the glue stays paired with the binary regardless of the locally installed go
-toolchain go1.26.4
+go 1.26.5
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -13,6 +8,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/glog v0.0.0
+	github.com/urnetwork/goidenticons v0.0.0-00010101000000-000000000000
 	golang.org/x/crypto v0.53.0
 )
 
@@ -38,9 +34,10 @@ require (
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976 // indirect
+	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gvisor.dev/gvisor v0.0.0-20260624000029-d10071d63566 // indirect
@@ -52,3 +49,5 @@ retract [v0.0.1, v1.0.0]
 replace github.com/urnetwork/connect => ../connect
 
 replace github.com/urnetwork/glog => ../glog
+
+replace github.com/urnetwork/goidenticons => ../goidenticons

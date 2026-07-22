@@ -180,6 +180,7 @@ type DeviceRemote struct {
 	provideChangeListeners                  map[connect.Id]ProvideChangeListener
 	provideControlModeChangeListeners       map[connect.Id]ProvideControlModeChangeListener
 	performanceProfileChangeListeners       map[connect.Id]PerformanceProfileChangeListener
+	providerIdentityChangeListeners         map[connect.Id]ProviderIdentityChangeListener
 	providePausedChangeListeners            map[connect.Id]ProvidePausedChangeListener
 	provideNetworkModeChangeListeners       map[connect.Id]ProvideNetworkModeChangeListener
 	offlineChangeListeners                  map[connect.Id]OfflineChangeListener
@@ -219,6 +220,12 @@ type DeviceRemote struct {
 	state DeviceRemoteState
 	// last observed values
 	lastKnownState DeviceRemoteState
+
+	// last observed post quantum identity values. Read-only data (there are
+	// no setters), so these are cached outside the settable
+	// `DeviceRemoteState` sync. Guarded by `stateLock`
+	lastPublicIdentityKey  []byte
+	lastProviderIdentities []*ProviderIdentity
 
 	viewControllerManager
 }
@@ -324,6 +331,7 @@ func newDeviceRemoteWithOverrides(
 		provideChangeListeners:                  map[connect.Id]ProvideChangeListener{},
 		provideControlModeChangeListeners:       map[connect.Id]ProvideControlModeChangeListener{},
 		performanceProfileChangeListeners:       map[connect.Id]PerformanceProfileChangeListener{},
+		providerIdentityChangeListeners:         map[connect.Id]ProviderIdentityChangeListener{},
 		providePausedChangeListeners:            map[connect.Id]ProvidePausedChangeListener{},
 		provideNetworkModeChangeListeners:       map[connect.Id]ProvideNetworkModeChangeListener{},
 		offlineChangeListeners:                  map[connect.Id]OfflineChangeListener{},
@@ -484,6 +492,7 @@ func (self *DeviceRemote) run() {
 					ProvideChangeListenerIds:                  slices.Collect(maps.Keys(self.provideChangeListeners)),
 					ProvideControlModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
 					PerformanceProfileChangeListenerIds:       slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
+					ProviderIdentityChangeListenerIds:         slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
 					ProvidePausedChangeListenerIds:            slices.Collect(maps.Keys(self.providePausedChangeListeners)),
 					ProvideNetworkModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
 					OfflineChangeListenerIds:                  slices.Collect(maps.Keys(self.offlineChangeListeners)),
@@ -730,6 +739,70 @@ func (self *DeviceRemote) GetPerformanceProfile() *PerformanceProfile {
 		return self.state.PerformanceProfile.Get(
 			self.lastKnownState.PerformanceProfile.Get(nil),
 		)
+	}
+}
+
+// post quantum identity
+
+func (self *DeviceRemote) GetPublicIdentityKey() []byte {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	publicIdentityKey, success := func() ([]byte, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		devicePublicIdentityKey, err := rpcCallNoArg[*DevicePublicIdentityKey](self.service, "DeviceLocalRpc.GetPublicIdentityKey", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		publicIdentityKey := devicePublicIdentityKey.PublicKey
+		self.lastPublicIdentityKey = publicIdentityKey
+		return publicIdentityKey, true
+	}()
+	if success {
+		return publicIdentityKey
+	} else {
+		// retain last-known state on disconnect, consistent with the other
+		// getters (the identity key is long-lived). nil when never observed
+		return self.lastPublicIdentityKey
+	}
+}
+
+func (self *DeviceRemote) GetPublicIdentityKeyHash() string {
+	publicIdentityKey := self.GetPublicIdentityKey()
+	if len(publicIdentityKey) == 0 {
+		return ""
+	}
+	return PublicIdentityKeyHash(publicIdentityKey)
+}
+
+func (self *DeviceRemote) GetProviderIdentities() *ProviderIdentityList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	providerIdentities, success := func() (*ProviderIdentityList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceProviderIdentities, err := rpcCallNoArg[*DeviceProviderIdentities](self.service, "DeviceLocalRpc.GetProviderIdentities", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		providerIdentities := deviceProviderIdentities.toProviderIdentityList()
+		self.lastProviderIdentities = providerIdentities.getAll()
+		return providerIdentities, true
+	}()
+	if success {
+		return providerIdentities
+	} else {
+		// retain last-known state on disconnect, consistent with the other
+		// getters. empty (never nil) when never observed
+		lastProviderIdentities := NewProviderIdentityList()
+		lastProviderIdentities.addAll(self.lastProviderIdentities...)
+		return lastProviderIdentities
 	}
 }
 
@@ -1420,6 +1493,16 @@ func (self *DeviceRemote) AddPerformanceProfileChangeListener(listener Performan
 		self.performanceProfileChangeListeners,
 		"DeviceLocalRpc.AddPerformanceProfileChangeListener",
 		"DeviceLocalRpc.RemovePerformanceProfileChangeListener",
+	)
+}
+
+func (self *DeviceRemote) AddProviderIdentityChangeListener(listener ProviderIdentityChangeListener) Sub {
+	return addListener(
+		self,
+		listener,
+		self.providerIdentityChangeListeners,
+		"DeviceLocalRpc.AddProviderIdentityChangeListener",
+		"DeviceLocalRpc.RemoveProviderIdentityChangeListener",
 	)
 }
 
@@ -2806,6 +2889,24 @@ func (self *DeviceRemote) provideControlModeChanged(provideControlMode ProvideCo
 	for _, provideControlModeChangeListener := range listenerList {
 		connect.HandleError(func() {
 			provideControlModeChangeListener.ProvideControlModeChanged(provideControlMode)
+		})
+	}
+}
+
+func (self *DeviceRemote) providerIdentitiesChanged(providerIdentities *ProviderIdentityList) {
+	listenerList := func() []ProviderIdentityChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if providerIdentities != nil {
+			self.lastProviderIdentities = providerIdentities.getAll()
+		} else {
+			self.lastProviderIdentities = nil
+		}
+		return listenerList(self.providerIdentityChangeListeners)
+	}()
+	for _, providerIdentityChangeListener := range listenerList {
+		connect.HandleError(func() {
+			providerIdentityChangeListener.ProviderIdentitiesChanged()
 		})
 	}
 }
@@ -4403,6 +4504,7 @@ type DeviceRemoteSyncRequest struct {
 	ProvideChangeListenerIds                  []connect.Id
 	ProvideControlModeChangeListenerIds       []connect.Id
 	PerformanceProfileChangeListenerIds       []connect.Id
+	ProviderIdentityChangeListenerIds         []connect.Id
 	ProvidePausedChangeListenerIds            []connect.Id
 	ProvideNetworkModeChangeListenerIds       []connect.Id
 	OfflineChangeListenerIds                  []connect.Id
@@ -4513,6 +4615,13 @@ type DeviceRemoteConnectLocationValue struct {
 	CityLocationId    *connect.Id
 	RegionLocationId  *connect.Id
 	CountryLocationId *connect.Id
+
+	Stable        bool
+	StrongPrivacy bool
+
+	// a trusted same-network peer destination; drives the multi client's
+	// ProvideMode_Network allow-direct force (see DeviceLocal.SetDestination)
+	NetworkPeer bool
 }
 
 func newDeviceRemoteConnectLocationValue(connectLocation *ConnectLocation) *DeviceRemoteConnectLocationValue {
@@ -4529,6 +4638,11 @@ func newDeviceRemoteConnectLocationValue(connectLocation *ConnectLocation) *Devi
 		Region:      connectLocation.Region,
 		Country:     connectLocation.Country,
 		CountryCode: connectLocation.CountryCode,
+
+		Stable:        connectLocation.Stable,
+		StrongPrivacy: connectLocation.StrongPrivacy,
+
+		NetworkPeer: connectLocation.NetworkPeer,
 	}
 	if connectLocation.ConnectLocationId != nil {
 		deviceRemoteConnectLocationValue.ConnectLocationId = newDeviceRemoteConnectLocationId(connectLocation.ConnectLocationId)
@@ -4562,6 +4676,11 @@ func (self *DeviceRemoteConnectLocationValue) toConnectLocation() *ConnectLocati
 		Region:      self.Region,
 		Country:     self.Country,
 		CountryCode: self.CountryCode,
+
+		Stable:        self.Stable,
+		StrongPrivacy: self.StrongPrivacy,
+
+		NetworkPeer: self.NetworkPeer,
 	}
 	if self.ConnectLocationId != nil {
 		connectLocation.ConnectLocationId = self.ConnectLocationId.toConnectLocationId()
@@ -4572,7 +4691,7 @@ func (self *DeviceRemoteConnectLocationValue) toConnectLocation() *ConnectLocati
 	if self.RegionLocationId != nil {
 		connectLocation.RegionLocationId = newId(*self.RegionLocationId)
 	}
-	if connectLocation.CountryLocationId != nil {
+	if self.CountryLocationId != nil {
 		connectLocation.CountryLocationId = newId(*self.CountryLocationId)
 	}
 	return connectLocation
@@ -5135,7 +5254,77 @@ func (self *NetworkPeersRpc) toNetworkPeers() *NetworkPeers {
 	}
 }
 
+//gomobile:noexport
+type ProviderIdentityRpc struct {
+	ClientId  connect.Id
+	PublicKey []byte
+}
+
+func newProviderIdentityRpc(providerIdentity *ProviderIdentity) *ProviderIdentityRpc {
+	if providerIdentity == nil {
+		return nil
+	}
+	providerIdentityRpc := &ProviderIdentityRpc{
+		PublicKey: providerIdentity.PublicKey,
+	}
+	if providerIdentity.ClientId != nil {
+		providerIdentityRpc.ClientId = providerIdentity.ClientId.toConnectId()
+	}
+	return providerIdentityRpc
+}
+
+func (self *ProviderIdentityRpc) toProviderIdentity() *ProviderIdentity {
+	if self == nil {
+		return nil
+	}
+	return &ProviderIdentity{
+		ClientId:  newId(self.ClientId),
+		PublicKey: self.PublicKey,
+	}
+}
+
+// the rpc payload/event for the provider identities getter and change event
+
+//gomobile:noexport
+type DeviceProviderIdentities struct {
+	ProviderIdentities []*ProviderIdentityRpc
+}
+
+func newDeviceProviderIdentities(providerIdentities *ProviderIdentityList) *DeviceProviderIdentities {
+	deviceProviderIdentities := &DeviceProviderIdentities{}
+	if providerIdentities != nil {
+		for _, providerIdentity := range providerIdentities.getAll() {
+			if providerIdentity == nil {
+				continue
+			}
+			deviceProviderIdentities.ProviderIdentities = append(
+				deviceProviderIdentities.ProviderIdentities,
+				newProviderIdentityRpc(providerIdentity),
+			)
+		}
+	}
+	return deviceProviderIdentities
+}
+
+func (self *DeviceProviderIdentities) toProviderIdentityList() *ProviderIdentityList {
+	providerIdentities := NewProviderIdentityList()
+	if self != nil {
+		for _, providerIdentityRpc := range self.ProviderIdentities {
+			if providerIdentityRpc == nil {
+				continue
+			}
+			providerIdentities.Add(providerIdentityRpc.toProviderIdentity())
+		}
+	}
+	return providerIdentities
+}
+
 // nil-able reply/event wrappers (net/rpc rejects nil args and replies)
+
+//gomobile:noexport
+type DevicePublicIdentityKey struct {
+	PublicKey []byte
+}
 
 //gomobile:noexport
 type DeviceRemoteBlockStats struct {
@@ -5452,6 +5641,7 @@ type DeviceLocalRpc struct {
 	provideChangeListenerIds                  map[connect.Id]bool
 	provideControlModeChangeListenerIds       map[connect.Id]bool
 	performanceProfileChangeListenerIds       map[connect.Id]bool
+	providerIdentityChangeListenerIds         map[connect.Id]bool
 	providePausedChangeListenerIds            map[connect.Id]bool
 	provideNetworkModeChangeListenerIds       map[connect.Id]bool
 	offlineChangeListenerIds                  map[connect.Id]bool
@@ -5497,6 +5687,7 @@ type DeviceLocalRpc struct {
 	provideChangeListenerSub                  Sub
 	provideControlModeChangeListenerSub       Sub
 	performanceProfileChangeListenerSub       Sub
+	providerIdentityChangeListenerSub         Sub
 	providePausedChangeListenerSub            Sub
 	offlineChangeListenerSub                  Sub
 	vpnInterfaceWhileOfflineChangeListenerSub Sub
@@ -5571,6 +5762,7 @@ func newDeviceLocalRpc(
 		provideChangeListenerIds:                  map[connect.Id]bool{},
 		provideControlModeChangeListenerIds:       map[connect.Id]bool{},
 		performanceProfileChangeListenerIds:       map[connect.Id]bool{},
+		providerIdentityChangeListenerIds:         map[connect.Id]bool{},
 		provideNetworkModeChangeListenerIds:       map[connect.Id]bool{},
 		providePausedChangeListenerIds:            map[connect.Id]bool{},
 		offlineChangeListenerIds:                  map[connect.Id]bool{},
@@ -5738,6 +5930,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for performanceProfileChangeListenerId, _ := range self.performanceProfileChangeListenerIds {
 		self.removePerformanceProfileChangeListener(performanceProfileChangeListenerId)
+	}
+	for providerIdentityChangeListenerId, _ := range self.providerIdentityChangeListenerIds {
+		self.removeProviderIdentityChangeListener(providerIdentityChangeListenerId)
 	}
 	for providePausedChangeListenerId, _ := range self.providePausedChangeListenerIds {
 		self.removeProvidePausedChangeListener(providePausedChangeListenerId)
@@ -6195,6 +6390,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, performanceProfileChangeListenerId := range syncRequest.PerformanceProfileChangeListenerIds {
 		self.addPerformanceProfileChangeListener(performanceProfileChangeListenerId)
 	}
+	for _, providerIdentityChangeListenerId := range syncRequest.ProviderIdentityChangeListenerIds {
+		self.addProviderIdentityChangeListener(providerIdentityChangeListenerId)
+	}
 	for _, providePausedChangeListenerId := range syncRequest.ProvidePausedChangeListenerIds {
 		self.addProvidePausedChangeListener(providePausedChangeListenerId)
 	}
@@ -6350,6 +6548,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.performanceProfileChangeListenerSub != nil {
 		self.performanceProfileChanged(self.deviceLocal.GetPerformanceProfile())
+	}
+	if self.providerIdentityChangeListenerSub != nil {
+		self.providerIdentitiesChanged(self.deviceLocal.GetProviderIdentities())
 	}
 	if self.provideNetworkModeChangeListenerSub != nil {
 		self.provideNetworkModeChanged(self.deviceLocal.GetProvideNetworkMode())
@@ -7787,6 +7988,18 @@ func (self *DeviceLocalRpc) SetPerformanceProfile(devicePerformanceProfile *Devi
 	return nil
 }
 
+func (self *DeviceLocalRpc) GetPublicIdentityKey(_ RpcNoArg, devicePublicIdentityKey **DevicePublicIdentityKey) error {
+	*devicePublicIdentityKey = &DevicePublicIdentityKey{
+		PublicKey: self.deviceLocal.GetPublicIdentityKey(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProviderIdentities(_ RpcNoArg, deviceProviderIdentities **DeviceProviderIdentities) error {
+	*deviceProviderIdentities = newDeviceProviderIdentities(self.deviceLocal.GetProviderIdentities())
+	return nil
+}
+
 func (self *DeviceLocalRpc) GetPerformanceProfile(_ RpcNoArg, devicePerformanceProfile **DevicePerformanceProfile) error {
 	*devicePerformanceProfile = &DevicePerformanceProfile{
 		PerformanceProfile: self.deviceLocal.GetPerformanceProfile(),
@@ -7967,6 +8180,52 @@ func (self *DeviceLocalRpc) performanceProfileChanged(performanceProfile *Perfor
 		PerformanceProfile: performanceProfile,
 	}
 	self.reverseNotify("DeviceRemoteRpc.PerformanceProfileChanged", event)
+}
+
+func (self *DeviceLocalRpc) AddProviderIdentityChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderIdentityChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderIdentityChangeListener(listenerId connect.Id) {
+	self.providerIdentityChangeListenerIds[listenerId] = true
+	if self.providerIdentityChangeListenerSub == nil {
+		self.providerIdentityChangeListenerSub = self.deviceLocal.AddProviderIdentityChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderIdentityChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderIdentityChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderIdentityChangeListener(listenerId connect.Id) {
+	delete(self.providerIdentityChangeListenerIds, listenerId)
+	if len(self.providerIdentityChangeListenerIds) == 0 && self.providerIdentityChangeListenerSub != nil {
+		self.providerIdentityChangeListenerSub.Close()
+		self.providerIdentityChangeListenerSub = nil
+	}
+}
+
+// ProviderIdentityChangeListener
+func (self *DeviceLocalRpc) ProviderIdentitiesChanged() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	// the change event carries no payload; the event sent to the remote
+	// carries the current list (same order as `SyncReverse`)
+	self.providerIdentitiesChanged(self.deviceLocal.GetProviderIdentities())
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) providerIdentitiesChanged(providerIdentities *ProviderIdentityList) {
+	event := newDeviceProviderIdentities(providerIdentities)
+	self.reverseNotify("DeviceRemoteRpc.ProviderIdentitiesChanged", event)
 }
 
 func (self *DeviceLocalRpc) AddProvidePausedChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -8904,6 +9163,14 @@ func (self *DeviceRemoteRpc) PerformanceProfileChanged(event *DevicePerformanceP
 	self.deviceRemote.log.Infof("[drrpc]PerformanceProfileChanged")
 	self.dispatch(func() {
 		self.deviceRemote.performanceProfileChanged(event.PerformanceProfile)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderIdentitiesChanged(event *DeviceProviderIdentities, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderIdentitiesChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerIdentitiesChanged(event.toProviderIdentityList())
 	})
 	return nil
 }

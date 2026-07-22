@@ -57,8 +57,10 @@ func initGlog() {
 	flag.Set("alsologtostderr", "true")
 	flag.Set("stderrthreshold", "INFO")
 	flag.Set("v", "0")
-	// unlike unix, the android/ios standard is for diagnostics to go to stdout
-	os.Stderr = os.Stdout
+	// unlike unix, the android/ios standard is for diagnostics to go to
+	// stdout (redirectStderrForPlatform is a no-op on other platforms —
+	// desktop consumers like sim-latency need stdout clean for data output)
+	redirectStderrForPlatform()
 }
 
 func clearOldLogs(logDir string) {
@@ -622,15 +624,26 @@ type ProvideSecretKey struct {
 type WindowType = string
 
 const (
+	// no fixed window type. A nil performance profile and window type auto
+	// mean the same thing: traffic balances across the window types and the
+	// window size settings are ignored.
+	WindowTypeAuto    WindowType = "auto"
 	WindowTypeQuality WindowType = "quality"
 	WindowTypeSpeed   WindowType = "speed"
 )
 
+// a nil profile, or a profile with window type auto (or unset), uses the
+// default "auto" mode. The orthogonal settings (`AllowDirect`,
+// `PostQuantumEncryption`) apply in every mode.
 type PerformanceProfile struct {
 	WindowType WindowType          `json:"window_type"`
 	WindowSize *WindowSizeSettings `json:"window_size"`
 	// setting this to true exposes the real source IP to the provider
 	AllowDirect bool `json:"allow_direct"`
+	// enable post-quantum e2e encryption to providers that support it.
+	// Opportunistic: providers without support fall back to plaintext at
+	// this layer.
+	PostQuantumEncryption bool `json:"post_quantum_encryption"`
 }
 
 type WindowSizeSettings struct {
