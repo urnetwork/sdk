@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -87,6 +88,90 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	})
 	sub.Close()
 
+}
+
+// TestDeviceRemotePostQuantumIdentity mirrors the performance profile round
+// trip for the post quantum identity surface: the remote getters read through
+// to the local device (degrading to nil/""/empty when the service is
+// unavailable), and the provider identity change listener bridges
+// local -> remote over the reverse rpc.
+func TestDeviceRemotePostQuantumIdentity(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		testDeviceLocalSettingsRpc(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		settings,
+		clientId,
+		testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	// the local provider client exists (`AllowProvider`), so the public
+	// identity key is available on both ends and hashes consistently
+	localPublicKey := deviceLocal.GetPublicIdentityKey()
+	connect.AssertEqual(t, len(localPublicKey), 32)
+	remotePublicKey := deviceRemote.GetPublicIdentityKey()
+	connect.AssertEqual(t, true, bytes.Equal(localPublicKey, remotePublicKey))
+	connect.AssertEqual(t, deviceLocal.GetPublicIdentityKeyHash(), PublicIdentityKeyHash(localPublicKey))
+	connect.AssertEqual(t, deviceRemote.GetPublicIdentityKeyHash(), deviceLocal.GetPublicIdentityKeyHash())
+
+	// disconnected: empty, never nil
+	localProviderIdentities := deviceLocal.GetProviderIdentities()
+	connect.AssertNotEqual(t, localProviderIdentities, nil)
+	connect.AssertEqual(t, localProviderIdentities.Len(), 0)
+	remoteProviderIdentities := deviceRemote.GetProviderIdentities()
+	connect.AssertNotEqual(t, remoteProviderIdentities, nil)
+	connect.AssertEqual(t, remoteProviderIdentities.Len(), 0)
+
+	// the change listener bridges local -> remote over the reverse rpc
+	providerIdentityChangeListener := &testing_providerIdentityChangeListener{}
+	providerIdentityChangeListenerSub := deviceRemote.AddProviderIdentityChangeListener(providerIdentityChangeListener)
+	defer providerIdentityChangeListenerSub.Close()
+
+	// a destination change resets the established provider identity set and
+	// fires the change once so consumers observe the (empty) current set
+	deviceLocal.RemoveDestination()
+
+	// wait for event callbacks on goroutines to run
+	select {
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	providerIdentityChangeListener.with(func() {
+		connect.AssertEqual(t, providerIdentityChangeListener.event, true)
+	})
 }
 
 func TestDeviceRemoteFull(t *testing.T) {
@@ -187,6 +272,10 @@ func TestDeviceRemoteFull(t *testing.T) {
 					LocationGroupId: NewId(),
 					BestAvailable:   true,
 				},
+				// pin the rpc mirror round trip for the same-network peer
+				// flag and the country id (both were dropped historically)
+				NetworkPeer:       true,
+				CountryLocationId: NewId(),
 			}
 
 			// set all properties
@@ -363,6 +452,10 @@ func TestDeviceRemoteFullSync(t *testing.T) {
 					LocationGroupId: NewId(),
 					BestAvailable:   true,
 				},
+				// pin the rpc mirror round trip for the same-network peer
+				// flag and the country id (both were dropped historically)
+				NetworkPeer:       true,
+				CountryLocationId: NewId(),
 			}
 
 			// set all properties
@@ -2056,6 +2149,17 @@ func (self *testing_performanceProfileChangeListener) PerformanceProfileChanged(
 
 	self.event = true
 	self.performanceProfile = performanceProfile
+}
+
+type testing_providerIdentityChangeListener struct {
+	testing_listener
+}
+
+func (self *testing_providerIdentityChangeListener) ProviderIdentitiesChanged() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.event = true
 }
 
 type testing_monitorEventListener struct {

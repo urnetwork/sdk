@@ -73,6 +73,14 @@ func newDeviceLocalProviderWithOverrides(
 	clientOob := connect.NewApiOutOfBandControl(ctx, clientStrategy, byJwt, apiUrl)
 
 	clientSettings := newDeviceClientSettings(settings, apiUrl, clientStrategy)
+	// the provider always enables the e2e encryption sessions: the responder
+	// serves plain and e2e peers seamlessly (a session only forms when an
+	// initiator starts a handshake), and every enabled provider grows the
+	// e2e-capable pool for pqe initiators
+	if clientSettings.EncryptionSettings == nil {
+		clientSettings.EncryptionSettings = connect.DefaultEncryptionSettings()
+	}
+	clientSettings.EncryptionSettings.Encrypt = true
 
 	client := connect.NewClient(
 		ctx,

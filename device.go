@@ -36,6 +36,13 @@ type PerformanceProfileChangeListener interface {
 	PerformanceProfileChanged(performanceProfile *PerformanceProfile)
 }
 
+// fired whenever the set of providers with an established, identity-verified
+// e2e session may have changed. Consumers re-read
+// `Device.GetProviderIdentities`.
+type ProviderIdentityChangeListener interface {
+	ProviderIdentitiesChanged()
+}
+
 type OfflineChangeListener interface {
 	OfflineChanged(offline bool, vpnInterfaceWhileOffline bool)
 }
@@ -620,6 +627,22 @@ type Device interface {
 	GetPerformanceProfile() *PerformanceProfile
 
 	AddPerformanceProfileChangeListener(listener PerformanceProfileChangeListener) Sub
+
+	// post quantum identity
+
+	// the device provider client's long-lived public identity key.
+	// nil when unavailable (no provider)
+	GetPublicIdentityKey() []byte
+
+	// the canonical display hash of the public identity key
+	// (see `PublicIdentityKeyHash`). "" when unavailable
+	GetPublicIdentityKeyHash() string
+
+	// the providers with an established, identity-verified e2e session.
+	// empty (never nil) when disconnected
+	GetProviderIdentities() *ProviderIdentityList
+
+	AddProviderIdentityChangeListener(listener ProviderIdentityChangeListener) Sub
 }
 
 // unexported to gomobile

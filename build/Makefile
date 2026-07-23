@@ -1,5 +1,10 @@
 
-all: init clean build_android build_apple build_js build_windows build_linux
+# build_windows is not in `all`: the shipped Windows SDK (amd64+arm64) builds
+# inside the Windows VM (build/all/build-windows.sh), which provisions Go +
+# llvm-mingw and copies URnetworkSdkWindows.zip back to ../cgo/build. The
+# host-side target below stays for local dev (needs the ../cgo init toolchains;
+# arm64 additionally needs llvm-mingw, which has no brew formula).
+all: init clean build_android build_apple build_js build_linux
 
 clean:
 	rm -rf android*
@@ -96,8 +101,7 @@ build_js:
 	$(MAKE) -C ../js
 
 # Build the c abi libraries for desktop apps in the cgo dir
-# note these need the cross toolchains from `make -C ../cgo init` on the build host,
-# and join `all` once the build host has them installed
+# note these need the cross toolchains from `make -C ../cgo init` on the build host
 build_windows:
 	$(MAKE) -C ../cgo build_windows
 
