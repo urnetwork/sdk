@@ -80,6 +80,27 @@ func (self *cAdapterActiveNetworkSpaceChangeListener) ActiveNetworkSpaceChanged(
 	C.urnet_invoke_active_network_space_change(self.cbActiveNetworkSpaceChanged, self.userData, networkSpace_)
 }
 
+type cAdapterAddAuthCallback struct {
+	cbResult C.urnet_add_auth_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterAddAuthCallback) Result(result *sdk.AddAuthResult, errParam error) {
+	defer cgoGuard("urnet_add_auth_cb")
+	result_ := cJson(result, "urnet_add_auth_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_add_auth(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterAllowForegroundChangeListener struct {
 	cbAllowForegroundChanged C.urnet_allow_foreground_change_cb
 	userData                 unsafe.Pointer
@@ -401,6 +422,48 @@ func (self *cAdapterCanShowRatingDialogChangeListener) CanShowRatingDialogChange
 	C.urnet_invoke_can_show_rating_dialog_change(self.cbCanShowRatingDialogChanged, self.userData, C.bool(bool(canShowRatingDialog)))
 }
 
+type cAdapterChangeNetworkNameCallback struct {
+	cbResult C.urnet_change_network_name_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterChangeNetworkNameCallback) Result(result *sdk.ChangeNetworkNameResult, errParam error) {
+	defer cgoGuard("urnet_change_network_name_cb")
+	result_ := cJson(result, "urnet_change_network_name_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_change_network_name(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterClaimNetworkNameCallback struct {
+	cbResult C.urnet_claim_network_name_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterClaimNetworkNameCallback) Result(result *sdk.ClaimNetworkNameResult, errParam error) {
+	defer cgoGuard("urnet_claim_network_name_cb")
+	result_ := cJson(result, "urnet_claim_network_name_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_claim_network_name(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterCommitCallback struct {
 	cbComplete C.urnet_commit_cb
 	userData   unsafe.Pointer
@@ -690,6 +753,27 @@ func (self *cAdapterFindProvidersCallback) Result(result *sdk.FindProvidersResul
 		errParam_ = cString(errParam.Error())
 	}
 	C.urnet_invoke_find_providers(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterGenerateSeedphraseCallback struct {
+	cbResult C.urnet_generate_seedphrase_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterGenerateSeedphraseCallback) Result(result *sdk.GenerateSeedphraseResult, errParam error) {
+	defer cgoGuard("urnet_generate_seedphrase_cb")
+	result_ := cJson(result, "urnet_generate_seedphrase_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_generate_seedphrase(self.cbResult, self.userData, result_, errParam_)
 	if result_ != nil {
 		cStringFree(result_)
 	}
@@ -1589,6 +1673,27 @@ func (self *cAdapterRefreshJwtCallback) Result(result *sdk.RefreshJwtResult, err
 	}
 }
 
+type cAdapterRegenerateSeedphraseCallback struct {
+	cbResult C.urnet_regenerate_seedphrase_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterRegenerateSeedphraseCallback) Result(result *sdk.RegenerateSeedphraseResult, errParam error) {
+	defer cgoGuard("urnet_regenerate_seedphrase_cb")
+	result_ := cJson(result, "urnet_regenerate_seedphrase_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_regenerate_seedphrase(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterRemoteChangeListener struct {
 	cbRemoteChanged C.urnet_remote_change_cb
 	userData        unsafe.Pointer
@@ -1597,6 +1702,27 @@ type cAdapterRemoteChangeListener struct {
 func (self *cAdapterRemoteChangeListener) RemoteChanged(remoteConnected bool) {
 	defer cgoGuard("urnet_remote_change_cb")
 	C.urnet_invoke_remote_change(self.cbRemoteChanged, self.userData, C.bool(bool(remoteConnected)))
+}
+
+type cAdapterRemoveAuthCallback struct {
+	cbResult C.urnet_remove_auth_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterRemoveAuthCallback) Result(result *sdk.RemoveAuthResult, errParam error) {
+	defer cgoGuard("urnet_remove_auth_cb")
+	result_ := cJson(result, "urnet_remove_auth_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_remove_auth(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
 }
 
 type cAdapterRemoveWalletCallback struct {
@@ -2311,6 +2437,27 @@ func urnet_api_account_preferences_update(self C.uint64_t, accountPreferences *C
 	self_.AccountPreferencesUpdate(accountPreferences_, callback_)
 }
 
+//export urnet_api_add_auth
+func urnet_api_add_auth(self C.uint64_t, args *C.char, callback_result C.urnet_add_auth_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_add_auth")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_add_auth")
+	if !ok {
+		return
+	}
+	var args_ *sdk.AddAuthArgs
+	if args != nil {
+		args_ = &sdk.AddAuthArgs{}
+		if !goJson(args, args_, "urnet_api_add_auth") {
+			return
+		}
+	}
+	var callback_ sdk.AddAuthCallback
+	if callback_result != nil {
+		callback_ = &cAdapterAddAuthCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.AddAuth(args_, callback_)
+}
+
 //export urnet_api_auth_code_create
 func urnet_api_auth_code_create(self C.uint64_t, codeCreateArgs *C.char, callback_result C.urnet_auth_code_create_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_auth_code_create")
@@ -2498,6 +2645,48 @@ func urnet_api_auth_wallet_challenge(self C.uint64_t, authWalletChallenge *C.cha
 		callback_ = &cAdapterAuthWalletChallengeCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.AuthWalletChallenge(authWalletChallenge_, callback_)
+}
+
+//export urnet_api_change_network_name
+func urnet_api_change_network_name(self C.uint64_t, args *C.char, callback_result C.urnet_change_network_name_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_change_network_name")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_change_network_name")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ChangeNetworkNameArgs
+	if args != nil {
+		args_ = &sdk.ChangeNetworkNameArgs{}
+		if !goJson(args, args_, "urnet_api_change_network_name") {
+			return
+		}
+	}
+	var callback_ sdk.ChangeNetworkNameCallback
+	if callback_result != nil {
+		callback_ = &cAdapterChangeNetworkNameCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ChangeNetworkName(args_, callback_)
+}
+
+//export urnet_api_claim_network_name
+func urnet_api_claim_network_name(self C.uint64_t, args *C.char, callback_result C.urnet_claim_network_name_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_claim_network_name")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_claim_network_name")
+	if !ok {
+		return
+	}
+	var args_ *sdk.ClaimNetworkNameArgs
+	if args != nil {
+		args_ = &sdk.ClaimNetworkNameArgs{}
+		if !goJson(args, args_, "urnet_api_claim_network_name") {
+			return
+		}
+	}
+	var callback_ sdk.ClaimNetworkNameCallback
+	if callback_result != nil {
+		callback_ = &cAdapterClaimNetworkNameCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.ClaimNetworkName(args_, callback_)
 }
 
 //export urnet_api_close
@@ -2732,6 +2921,27 @@ func urnet_api_find_providers2(self C.uint64_t, findProviders2 *C.char, callback
 		callback_ = &cAdapterFindProviders2Callback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.FindProviders2(findProviders2_, callback_)
+}
+
+//export urnet_api_generate_seedphrase
+func urnet_api_generate_seedphrase(self C.uint64_t, args *C.char, callback_result C.urnet_generate_seedphrase_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_generate_seedphrase")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_generate_seedphrase")
+	if !ok {
+		return
+	}
+	var args_ *sdk.GenerateSeedphraseArgs
+	if args != nil {
+		args_ = &sdk.GenerateSeedphraseArgs{}
+		if !goJson(args, args_, "urnet_api_generate_seedphrase") {
+			return
+		}
+	}
+	var callback_ sdk.GenerateSeedphraseCallback
+	if callback_result != nil {
+		callback_ = &cAdapterGenerateSeedphraseCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GenerateSeedphrase(args_, callback_)
 }
 
 //export urnet_api_get_account_payments
@@ -3146,6 +3356,48 @@ func urnet_api_refresh_jwt_sync(self C.uint64_t, outError **C.char) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_api_refresh_jwt_sync")
+}
+
+//export urnet_api_regenerate_seedphrase
+func urnet_api_regenerate_seedphrase(self C.uint64_t, args *C.char, callback_result C.urnet_regenerate_seedphrase_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_regenerate_seedphrase")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_regenerate_seedphrase")
+	if !ok {
+		return
+	}
+	var args_ *sdk.RegenerateSeedphraseArgs
+	if args != nil {
+		args_ = &sdk.RegenerateSeedphraseArgs{}
+		if !goJson(args, args_, "urnet_api_regenerate_seedphrase") {
+			return
+		}
+	}
+	var callback_ sdk.RegenerateSeedphraseCallback
+	if callback_result != nil {
+		callback_ = &cAdapterRegenerateSeedphraseCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RegenerateSeedphrase(args_, callback_)
+}
+
+//export urnet_api_remove_auth
+func urnet_api_remove_auth(self C.uint64_t, args *C.char, callback_result C.urnet_remove_auth_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_remove_auth")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_remove_auth")
+	if !ok {
+		return
+	}
+	var args_ *sdk.RemoveAuthArgs
+	if args != nil {
+		args_ = &sdk.RemoveAuthArgs{}
+		if !goJson(args, args_, "urnet_api_remove_auth") {
+			return
+		}
+	}
+	var callback_ sdk.RemoveAuthCallback
+	if callback_result != nil {
+		callback_ = &cAdapterRemoveAuthCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RemoveAuth(args_, callback_)
 }
 
 //export urnet_api_remove_wallet
