@@ -265,10 +265,6 @@ void urnet_invoke_grid(urnet_grid_cb cb, void* user_data) {
 	cb(user_data);
 }
 
-void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data) {
-	cb(user_data);
-}
-
 void urnet_invoke_is_creating_external_wallet(urnet_is_creating_external_wallet_cb cb, void* user_data, bool p0) {
 	cb(user_data, p0);
 }

@@ -283,6 +283,7 @@ struct DeviceSetNameArgs;
 struct DeviceSetNameError;
 struct DeviceSetNameResult;
 struct DnsResolverSettings;
+struct Exit;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
 struct FeedbackSendResult;
@@ -372,6 +373,7 @@ struct RefreshJwtResult;
 struct RegenerateSeedphraseArgs;
 struct RegenerateSeedphraseResult;
 struct RegionalDnsServer;
+struct ReliabilitySettings;
 struct RemoveAuthArgs;
 struct RemoveAuthError;
 struct RemoveAuthResult;
@@ -451,6 +453,7 @@ using ContractDetailsList = std::vector<ContractDetails>;
 using ContractEntryList = std::vector<ContractEntry>;
 using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
+using ExitList = std::vector<Exit>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
 using Float64List = std::vector<double>;
 using IdList = std::vector<std::string>;
@@ -1032,6 +1035,15 @@ struct DnsResolverSettings {
 	std::optional<StringList> LocalDnsIpv6;
 };
 
+struct Exit {
+	std::optional<std::string> ClientId;
+	std::string WindowType{};
+	bool Warning{};
+	bool Done{};
+	bool P2pOnly{};
+	int32_t FlowCount{};
+};
+
 struct FeedbackSendNeeds {
 	std::string other{};
 };
@@ -1556,6 +1568,15 @@ struct RegionalDnsServer {
 	std::string Ipv4{};
 };
 
+struct ReliabilitySettings {
+	bool UdpTeardownSignal{};
+	int64_t TcpCollapseMaxHoldMillis{};
+	bool ClusterAffinityFallback{};
+	bool ServerNameAffinityBridge{};
+	int64_t SequenceIdleTimeoutMillis{};
+	int64_t TcpSequenceIdleTimeoutMillis{};
+};
+
 struct RemoveAuthArgs {
 	std::string auth_type{};
 };
@@ -2045,6 +2066,8 @@ inline void to_json(nlohmann::json& j, const DeviceSetNameResult& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v);
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v);
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v);
+inline void to_json(nlohmann::json& j, const Exit& v);
+inline void from_json(const nlohmann::json& j, Exit& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
 inline void from_json(const nlohmann::json& j, FeedbackSendNeeds& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendArgs& v);
@@ -2223,6 +2246,8 @@ inline void to_json(nlohmann::json& j, const RegenerateSeedphraseResult& v);
 inline void from_json(const nlohmann::json& j, RegenerateSeedphraseResult& v);
 inline void to_json(nlohmann::json& j, const RegionalDnsServer& v);
 inline void from_json(const nlohmann::json& j, RegionalDnsServer& v);
+inline void to_json(nlohmann::json& j, const ReliabilitySettings& v);
+inline void from_json(const nlohmann::json& j, ReliabilitySettings& v);
 inline void to_json(nlohmann::json& j, const RemoveAuthArgs& v);
 inline void from_json(const nlohmann::json& j, RemoveAuthArgs& v);
 inline void to_json(nlohmann::json& j, const RemoveAuthError& v);
@@ -4968,6 +4993,43 @@ inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const Exit& v) {
+	j = nlohmann::json::object();
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["WindowType"] = v.WindowType;
+	j["Warning"] = v.Warning;
+	j["Done"] = v.Done;
+	j["P2pOnly"] = v.P2pOnly;
+	j["FlowCount"] = v.FlowCount;
+}
+inline void from_json(const nlohmann::json& j, Exit& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("WindowType"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WindowType);
+	}
+	if (auto it = j.find("Warning"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Warning);
+	}
+	if (auto it = j.find("Done"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Done);
+	}
+	if (auto it = j.find("P2pOnly"); it != j.end() && !it->is_null()) {
+		it->get_to(v.P2pOnly);
+	}
+	if (auto it = j.find("FlowCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowCount);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v) {
 	j = nlohmann::json::object();
 	j["other"] = v.other;
@@ -7381,6 +7443,39 @@ inline void from_json(const nlohmann::json& j, RegionalDnsServer& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
+	j = nlohmann::json::object();
+	j["UdpTeardownSignal"] = v.UdpTeardownSignal;
+	j["TcpCollapseMaxHoldMillis"] = v.TcpCollapseMaxHoldMillis;
+	j["ClusterAffinityFallback"] = v.ClusterAffinityFallback;
+	j["ServerNameAffinityBridge"] = v.ServerNameAffinityBridge;
+	j["SequenceIdleTimeoutMillis"] = v.SequenceIdleTimeoutMillis;
+	j["TcpSequenceIdleTimeoutMillis"] = v.TcpSequenceIdleTimeoutMillis;
+}
+inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("UdpTeardownSignal"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UdpTeardownSignal);
+	}
+	if (auto it = j.find("TcpCollapseMaxHoldMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TcpCollapseMaxHoldMillis);
+	}
+	if (auto it = j.find("ClusterAffinityFallback"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClusterAffinityFallback);
+	}
+	if (auto it = j.find("ServerNameAffinityBridge"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ServerNameAffinityBridge);
+	}
+	if (auto it = j.find("SequenceIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SequenceIdleTimeoutMillis);
+	}
+	if (auto it = j.find("TcpSequenceIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TcpSequenceIdleTimeoutMillis);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const RemoveAuthArgs& v) {
 	j = nlohmann::json::object();
 	j["auth_type"] = v.auth_type;
@@ -8902,7 +8997,6 @@ using WalletCircleTransferOutCallback = std::function<void(std::optional<WalletC
 using WalletValidateAddressCallback = std::function<void(std::optional<WalletValidateAddressResult> result, std::optional<std::string> err_param)>;
 using WindowStatusChangeListener = std::function<void(std::optional<WindowStatus> window_status)>;
 #if !defined(_WIN32)
-using IoLoopDoneCallback = std::function<void()>;
 #endif
 
 class Sub final : public detail::Handle {
@@ -9253,8 +9347,11 @@ public:
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
 	void closeViewController(ViewController vc) const;
+	bool dropExit(const std::string& client_id) const;
+	std::optional<ExitList> getExits() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
+	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
@@ -9272,11 +9369,15 @@ public:
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
+	void resetReliabilitySettings() const;
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
+	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
+	void shuffleExits() const;
+	bool stallExit(const std::string& client_id, bool stalled) const;
 	std::optional<StringList> tunnelDnsAddressesIpv4() const;
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
@@ -9382,7 +9483,6 @@ class IoLoop final : public detail::Handle {
 public:
 	IoLoop() = default;
 	explicit IoLoop(uint64_t h) : detail::Handle(h) {}
-	void close() const;
 };
 #endif
 
@@ -11621,28 +11721,6 @@ inline void oneshot_grid(void* user_data) {
 	delete f;
 }
 
-#if !defined(_WIN32)
-inline void retained_io_loop_done(void* user_data) {
-	auto* f = static_cast<IoLoopDoneCallback*>(user_data);
-	try {
-		(*f)();
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-}
-inline void oneshot_io_loop_done(void* user_data) {
-	auto* f = static_cast<IoLoopDoneCallback*>(user_data);
-	try {
-		(*f)();
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-	delete f;
-}
-
-#endif
 inline void retained_is_creating_external_wallet(void* user_data, bool p0) {
 	auto* f = static_cast<IsCreatingExternalWalletListener*>(user_data);
 	try {
@@ -15617,6 +15695,18 @@ inline void DeviceLocal::closeViewController(ViewController vc) const {
 	}
 	urnet_device_local_close_view_controller(handle(), vc_fn ? &detail::retained_view_controller_close : nullptr, vc_fn ? &detail::retained_view_controller_start : nullptr, vc_fn ? &detail::retained_view_controller_stop : nullptr, vc_fn.get());
 }
+inline bool DeviceLocal::dropExit(const std::string& client_id) const {
+	bool r = urnet_device_local_drop_exit(handle(), client_id.c_str());
+	return r;
+}
+inline std::optional<ExitList> DeviceLocal::getExits() const {
+	char* r_c = urnet_device_local_get_exits(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExitList>(r_s->c_str());
+}
 inline DeviceLocalKeyMaterial DeviceLocal::getKeyMaterial() const {
 	DeviceLocalKeyMaterial r(urnet_device_local_get_key_material(handle()));
 	return r;
@@ -15628,6 +15718,14 @@ inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() c
 		return std::nullopt;
 	}
 	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
+}
+inline std::optional<ReliabilitySettings> DeviceLocal::getReliabilitySettings() const {
+	char* r_c = urnet_device_local_get_reliability_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ReliabilitySettings>(r_s->c_str());
 }
 inline AccountPreferencesViewController DeviceLocal::openAccountPreferencesViewController() const {
 	AccountPreferencesViewController r(urnet_device_local_open_account_preferences_view_controller(handle()));
@@ -15697,6 +15795,9 @@ inline WalletViewController DeviceLocal::openWalletViewController() const {
 	WalletViewController r(urnet_device_local_open_wallet_view_controller(handle()));
 	return r;
 }
+inline void DeviceLocal::resetReliabilitySettings() const {
+	urnet_device_local_reset_reliability_settings(handle());
+}
 inline bool DeviceLocal::sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const {
 	bool r = urnet_device_local_send_packet(handle(), packet, packet_len, n);
 	return r;
@@ -15706,6 +15807,15 @@ inline void DeviceLocal::setByJwt(const std::string& by_jwt) const {
 }
 inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const {
 	urnet_device_local_set_key_material(handle(), key_material.handle());
+}
+inline void DeviceLocal::setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const {
+	std::string reliability_settings_json;
+	const char* reliability_settings_c = nullptr;
+	if (reliability_settings) {
+		reliability_settings_json = nlohmann::json(*reliability_settings).dump();
+		reliability_settings_c = reliability_settings_json.c_str();
+	}
+	urnet_device_local_set_reliability_settings(handle(), reliability_settings_c);
 }
 inline void DeviceLocal::setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const {
 	char* err_c = nullptr;
@@ -15725,6 +15835,13 @@ inline void DeviceLocal::setTunnelDnsSetting(const std::optional<TunnelDnsSettin
 		setting_c = setting_json.c_str();
 	}
 	urnet_device_local_set_tunnel_dns_setting(handle(), setting_c);
+}
+inline void DeviceLocal::shuffleExits() const {
+	urnet_device_local_shuffle_exits(handle());
+}
+inline bool DeviceLocal::stallExit(const std::string& client_id, bool stalled) const {
+	bool r = urnet_device_local_stall_exit(handle(), client_id.c_str(), stalled);
+	return r;
 }
 inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv4() const {
 	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv4(handle());
@@ -15971,11 +16088,6 @@ inline void FeedbackViewController::start() const {
 inline void FeedbackViewController::stop() const {
 	urnet_feedback_view_controller_stop(handle());
 }
-#if !defined(_WIN32)
-inline void IoLoop::close() const {
-	urnet_io_loop_close(handle());
-}
-#endif
 inline void LocalState::close() const {
 	urnet_local_state_close(handle());
 }
@@ -17238,19 +17350,6 @@ inline std::string newId() {
 	char* r_c = urnet_new_id();
 	return detail::takeString(r_c);
 }
-#if !defined(_WIN32)
-inline IoLoop newIoLoop(const DeviceLocal& device_local, int64_t fd, IoLoopDoneCallback done_callback) {
-	std::shared_ptr<IoLoopDoneCallback> done_callback_fn;
-	if (done_callback) {
-		done_callback_fn = std::make_shared<IoLoopDoneCallback>(std::move(done_callback));
-	}
-	IoLoop r(urnet_new_io_loop(device_local.handle(), fd, done_callback_fn ? &detail::retained_io_loop_done : nullptr, done_callback_fn.get()));
-	if (done_callback_fn) {
-		r.retain(done_callback_fn);
-	}
-	return r;
-}
-#endif
 inline LoginViewController newLoginViewController(const Api& api) {
 	LoginViewController r(urnet_new_login_view_controller(api.handle()));
 	return r;

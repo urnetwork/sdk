@@ -6209,6 +6209,31 @@ func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_
 	self_.CloseViewController(vc_)
 }
 
+//export urnet_device_local_drop_exit
+func urnet_device_local_drop_exit(self C.uint64_t, clientId *C.char) C.bool {
+	defer cgoGuard("urnet_device_local_drop_exit")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_drop_exit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.DropExit(goId(clientId, "urnet_device_local_drop_exit"))
+	return C.bool(r0)
+}
+
+//export urnet_device_local_get_exits
+func urnet_device_local_get_exits(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_exits")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_exits")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExits()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_exits")
+}
+
 //export urnet_device_local_get_key_material
 func urnet_device_local_get_key_material(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_local_get_key_material")
@@ -6235,6 +6260,20 @@ func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_local_get_provide_secret_keys")
+}
+
+//export urnet_device_local_get_reliability_settings
+func urnet_device_local_get_reliability_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_reliability_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReliabilitySettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_reliability_settings")
 }
 
 //export urnet_device_local_open_account_preferences_view_controller
@@ -6475,6 +6514,16 @@ func urnet_device_local_open_wallet_view_controller(self C.uint64_t) C.uint64_t 
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_reset_reliability_settings
+func urnet_device_local_reset_reliability_settings(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_reset_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_reset_reliability_settings")
+	if !ok {
+		return
+	}
+	self_.ResetReliabilitySettings()
+}
+
 //export urnet_device_local_send_packet
 func urnet_device_local_send_packet(self C.uint64_t, packet *C.uint8_t, packet_len C.int32_t, n C.int64_t) C.bool {
 	defer cgoGuard("urnet_device_local_send_packet")
@@ -6510,6 +6559,23 @@ func urnet_device_local_set_key_material(self C.uint64_t, keyMaterial C.uint64_t
 	self_.SetKeyMaterial(keyMaterial_)
 }
 
+//export urnet_device_local_set_reliability_settings
+func urnet_device_local_set_reliability_settings(self C.uint64_t, reliabilitySettings *C.char) {
+	defer cgoGuard("urnet_device_local_set_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_reliability_settings")
+	if !ok {
+		return
+	}
+	var reliabilitySettings_ *sdk.ReliabilitySettings
+	if reliabilitySettings != nil {
+		reliabilitySettings_ = &sdk.ReliabilitySettings{}
+		if !goJson(reliabilitySettings, reliabilitySettings_, "urnet_device_local_set_reliability_settings") {
+			return
+		}
+	}
+	self_.SetReliabilitySettings(reliabilitySettings_)
+}
+
 //export urnet_device_local_set_rpc_server
 func urnet_device_local_set_rpc_server(self C.uint64_t, serverPem *C.char, clientCertPem *C.char, hostPort *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_local_set_rpc_server")
@@ -6540,6 +6606,27 @@ func urnet_device_local_set_tunnel_dns_setting(self C.uint64_t, setting *C.char)
 		}
 	}
 	self_.SetTunnelDnsSetting(setting_)
+}
+
+//export urnet_device_local_shuffle_exits
+func urnet_device_local_shuffle_exits(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_shuffle_exits")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_shuffle_exits")
+	if !ok {
+		return
+	}
+	self_.ShuffleExits()
+}
+
+//export urnet_device_local_stall_exit
+func urnet_device_local_stall_exit(self C.uint64_t, clientId *C.char, stalled C.bool) C.bool {
+	defer cgoGuard("urnet_device_local_stall_exit")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_stall_exit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.StallExit(goId(clientId, "urnet_device_local_stall_exit"), bool(stalled))
+	return C.bool(r0)
 }
 
 //export urnet_device_local_tunnel_dns_addresses_ipv4
