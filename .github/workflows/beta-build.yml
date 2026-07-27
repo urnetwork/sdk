@@ -34,6 +34,11 @@ jobs:
       - name: Check out glog dependency
         run: git clone --depth 1 https://github.com/urnetwork/glog.git ../glog
 
+      # every go.mod here resolves this with `replace ... => ../goidenticons`,
+      # so it has to sit beside the checkout like connect and glog do
+      - name: Check out goidenticons dependency
+        run: git clone --depth 1 https://github.com/urnetwork/goidenticons.git ../goidenticons
+
       - name: Set up Android NDK
         uses: nttld/setup-ndk@v1
         with:
