@@ -51,6 +51,11 @@ var hppExtraClassDecls = map[string]string{
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	/* the raw public identity key (post quantum identity) */
+	std::vector<uint8_t> getPublicIdentityKey() const;
+`,
+	"DeviceRemote": `	/* the raw public identity key (post quantum identity) */
+	std::vector<uint8_t> getPublicIdentityKey() const;
 `,
 	"DeviceLocalKeyMaterial": `	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
@@ -94,6 +99,31 @@ inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsCertificatePem(
 }
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_provide_tls_private_key_pem(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceRemote::getPublicIdentityKey() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });
+}
+
+/* the canonical identicon png for arbitrary input bytes (identity keys):
+ * deterministic and byte-identical on every platform for the same input */
+inline std::vector<uint8_t> renderIdenticonPng(const std::vector<uint8_t>& input, int32_t size) {
+	char* err = nullptr;
+	int32_t len = 0;
+	urnet_render_identicon_png(input.data(), (int32_t)input.size(), size, nullptr, &len, &err);
+	if (err) {
+		detail::throwError(err);
+	}
+	std::vector<uint8_t> out((size_t)len);
+	if (0 < len) {
+		if (!urnet_render_identicon_png(input.data(), (int32_t)input.size(), size, out.data(), &len, &err)) {
+			detail::throwError(err);
+		}
+	}
+	out.resize((size_t)len);
+	return out;
 }
 
 /* decode a base58 string; std::nullopt when invalid */

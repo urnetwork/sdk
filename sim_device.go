@@ -45,6 +45,11 @@ type SimProviderConfig struct {
 	// allow egress to loopback/private destinations (the simulated origin
 	// site is on a local address, which the default policy blocks)
 	DisableSecurityPolicy bool
+	// caps the egress NAT's concurrent flows (tcp and udp each), modeling a
+	// device connection limit (ulimit). Over the cap the NAT admits the new
+	// flow and lru-evicts the idle-most established flow (see the
+	// `LocalUserNat` flow limits). 0 = unlimited.
+	MaxConcurrentFlows int
 	// nil uses `connect.DefaultClientSettings()`
 	ClientSettings *connect.ClientSettings
 	Log            connect.Logger
@@ -114,6 +119,13 @@ func NewSimProvider(ctx context.Context, config *SimProviderConfig) *SimProvider
 	// budget installed.
 	localUserNatSettings := connect.DefaultProviderLocalUserNatSettings()
 	localUserNatSettings.Log = log
+	if 0 < config.MaxConcurrentFlows {
+		// the provider profile leaves flow counts unlimited when no device
+		// memory budget is installed (the sim case); an explicit cap applies
+		// regardless
+		localUserNatSettings.TcpBufferSettings.GlobalLimit = config.MaxConcurrentFlows
+		localUserNatSettings.UdpBufferSettings.GlobalLimit = config.MaxConcurrentFlows
+	}
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), config.ClientId.String(), localUserNatSettings)
 
 	remoteUserNatProviderSettings := connect.DefaultRemoteUserNatProviderSettings()

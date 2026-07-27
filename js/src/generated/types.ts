@@ -304,6 +304,7 @@ export interface PerformanceProfile {
   window_type: string;
   window_size: WindowSizeSettings | null;
   allow_direct: boolean;
+  post_quantum_encryption: boolean;
 }
 
 export interface WindowSizeSettings {

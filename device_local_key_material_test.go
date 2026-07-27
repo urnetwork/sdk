@@ -172,6 +172,61 @@ func TestLocalStateLogoutClearsDeviceLocalKeyMaterial(t *testing.T) {
 	connect.AssertEqual(t, localState.GetDeviceLocalKeyMaterial(), (*DeviceLocalKeyMaterial)(nil))
 }
 
+// TestDeviceLocalKeyMaterialIdentityStableAcrossRestart pins the
+// device-identity persistence contract the apps rely on: the material a
+// device EXPORTS (generated seed + provide TLS pems) is non-empty (the
+// app-side save guard depends on it), restoring it reproduces the same
+// public identity key and the same provide TLS cert commitment, and a start
+// without material generates a fresh identity.
+func TestDeviceLocalKeyMaterialIdentityStableAcrossRestart(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, _, err := testing_newNetworkSpace(ctx)
+	connect.AssertEqual(t, err, nil)
+
+	newDevice := func(keyMaterial *DeviceLocalKeyMaterial) *DeviceLocal {
+		deviceLocal, err := NewDeviceLocalWithKeyMaterial(
+			networkSpace,
+			testingByJwt(connect.NewId()),
+			"",
+			"",
+			"",
+			NewId(),
+			false,
+			keyMaterial,
+		)
+		connect.AssertEqual(t, err, nil)
+		return deviceLocal
+	}
+
+	// first start: no persisted material
+	d1 := newDevice(nil)
+	key1 := d1.GetPublicIdentityKey()
+	cert1 := d1.GetProvideTlsCertificatePem()
+	keyMaterial := d1.GetKeyMaterial()
+	d1.Close()
+
+	connect.AssertEqual(t, 0 < len(key1), true)
+	connect.AssertNotEqual(t, keyMaterial, (*DeviceLocalKeyMaterial)(nil))
+	connect.AssertEqual(t, keyMaterial.IsEmpty(), false)
+
+	// second start with the exported material: same identity key and the
+	// same provide TLS cert commitment
+	d2 := newDevice(keyMaterial)
+	key2 := d2.GetPublicIdentityKey()
+	cert2 := d2.GetProvideTlsCertificatePem()
+	d2.Close()
+	connect.AssertEqual(t, key2, key1)
+	connect.AssertEqual(t, cert2, cert1)
+
+	// a start without material generates a fresh identity
+	d3 := newDevice(nil)
+	key3 := d3.GetPublicIdentityKey()
+	d3.Close()
+	connect.AssertNotEqual(t, key3, key1)
+}
+
 func testingByJwt(clientId connect.Id) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"client_id":"%s"}`, clientId)))

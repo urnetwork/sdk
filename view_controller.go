@@ -37,6 +37,8 @@ type ViewControllerManager interface {
 
 	OpenBlockActionViewController() *BlockActionViewController
 
+	OpenPostQuantumIdentityViewController() *PostQuantumIdentityViewController
+
 	OpenContractViewController() *ContractViewController
 
 	// Deprecated: use the split client/provider entry points below.
@@ -153,6 +155,12 @@ func (self *viewControllerManager) OpenReferralCodeViewController() *ReferralCod
 
 func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionViewController {
 	vc := newBlockActionViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenPostQuantumIdentityViewController() *PostQuantumIdentityViewController {
+	vc := newPostQuantumIdentityViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

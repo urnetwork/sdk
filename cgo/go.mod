@@ -1,15 +1,14 @@
 module github.com/urnetwork/sdk/cgo
 
-go 1.26.3
+go 1.26.5
 
 require (
 	github.com/urnetwork/glog v0.0.0
 	github.com/urnetwork/sdk v0.0.0
-	golang.org/x/tools v0.46.0
+	golang.org/x/tools v0.47.0
 )
 
 require (
-	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -32,14 +31,16 @@ require (
 	github.com/pion/webrtc/v4 v4.2.15 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/urnetwork/connect v0.0.0 // indirect
+	github.com/urnetwork/goidenticons v0.0.0-00010101000000-000000000000 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976 // indirect
+	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gvisor.dev/gvisor v0.0.0-20260624000029-d10071d63566 // indirect
@@ -51,3 +52,5 @@ replace github.com/urnetwork/sdk => ..
 replace github.com/urnetwork/connect => ../../connect
 
 replace github.com/urnetwork/glog => ../../glog
+
+replace github.com/urnetwork/goidenticons => ../../goidenticons

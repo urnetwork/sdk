@@ -138,3 +138,30 @@ func urnet_device_local_key_material_get_provide_tls_private_key_pem(self C.uint
 	}
 	return copyOut(out, inoutLen, self_.GetProvideTlsPrivateKeyPem())
 }
+
+// post quantum identity: the canonical identicon raster and the raw public
+// identity key (see sdk.RenderIdenticonPng and Device.GetPublicIdentityKey)
+
+//export urnet_render_identicon_png
+func urnet_render_identicon_png(input *C.uint8_t, inputLen C.int32_t, size C.int32_t, out *C.uint8_t, inoutLen *C.int32_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_render_identicon_png")
+	data, err := sdk.RenderIdenticonPng(goBytes(input, inputLen), int(size))
+	if err != nil {
+		setErrorOut(outError, err)
+		if inoutLen != nil {
+			*inoutLen = 0
+		}
+		return C.bool(false)
+	}
+	return copyOut(out, inoutLen, data)
+}
+
+//export urnet_device_get_public_identity_key
+func urnet_device_get_public_identity_key(self C.uint64_t, out *C.uint8_t, inoutLen *C.int32_t) C.bool {
+	defer cgoGuard("urnet_device_get_public_identity_key")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_public_identity_key")
+	if !ok || self_ == nil {
+		return C.bool(false)
+	}
+	return copyOut(out, inoutLen, self_.GetPublicIdentityKey())
+}
