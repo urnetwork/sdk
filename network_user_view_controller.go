@@ -28,12 +28,14 @@ type NetworkUserUpdateSuccessListener interface {
 }
 
 type NetworkUser struct {
-	UserId      *Id    `json:"userId"`
-	UserName    string `json:"user_name"`
-	UserAuth    string `json:"user_auth,omitempty"`
-	Verified    bool   `json:"verified"`
-	AuthType    string `json:"auth_type"`
-	NetworkName string `json:"network_name"`
+	UserId        *Id         `json:"userId"`
+	UserName      string      `json:"user_name"`
+	UserAuth      string      `json:"user_auth,omitempty"`
+	Verified      bool        `json:"verified"`
+	AuthType      string      `json:"auth_type"`
+	NetworkName   string      `json:"network_name"`
+	WalletAddress string      `json:"wallet_address,omitempty"`
+	AuthTypes     *StringList `json:"auth_types,omitempty"`
 }
 
 type NetworkUserViewController struct {
@@ -172,12 +174,14 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 			}
 
 			networkUser := &NetworkUser{
-				UserId:      result.NetworkUser.UserId,
-				UserName:    result.NetworkUser.UserName,
-				UserAuth:    result.NetworkUser.UserAuth,
-				Verified:    result.NetworkUser.Verified,
-				AuthType:    result.NetworkUser.AuthType,
-				NetworkName: result.NetworkUser.NetworkName,
+				UserId:        result.NetworkUser.UserId,
+				UserName:      result.NetworkUser.UserName,
+				UserAuth:      result.NetworkUser.UserAuth,
+				Verified:      result.NetworkUser.Verified,
+				AuthType:      result.NetworkUser.AuthType,
+				NetworkName:   result.NetworkUser.NetworkName,
+				WalletAddress: result.NetworkUser.WalletAddress,
+				AuthTypes:     result.NetworkUser.AuthTypes,
 			}
 
 			self.setNetworkUser(networkUser)

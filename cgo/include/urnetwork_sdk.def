@@ -13,6 +13,7 @@ EXPORTS
 	urnet_account_view_controller_wallet_validate_address
 	urnet_api_account_preferences_get
 	urnet_api_account_preferences_update
+	urnet_api_add_auth
 	urnet_api_auth_code_create
 	urnet_api_auth_code_login
 	urnet_api_auth_login
@@ -22,6 +23,8 @@ EXPORTS
 	urnet_api_auth_verify
 	urnet_api_auth_verify_send
 	urnet_api_auth_wallet_challenge
+	urnet_api_change_network_name
+	urnet_api_claim_network_name
 	urnet_api_close
 	urnet_api_create_account_wallet
 	urnet_api_create_api_key
@@ -34,6 +37,7 @@ EXPORTS
 	urnet_api_find_provider_locations
 	urnet_api_find_providers
 	urnet_api_find_providers2
+	urnet_api_generate_seedphrase
 	urnet_api_get_account_payments
 	urnet_api_get_account_points
 	urnet_api_get_account_wallets
@@ -60,6 +64,8 @@ EXPORTS
 	urnet_api_redeem_balance_code
 	urnet_api_refresh_jwt
 	urnet_api_refresh_jwt_sync
+	urnet_api_regenerate_seedphrase
+	urnet_api_remove_auth
 	urnet_api_remove_wallet
 	urnet_api_send_feedback
 	urnet_api_set_by_jwt
