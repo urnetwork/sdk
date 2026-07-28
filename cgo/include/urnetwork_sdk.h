@@ -2231,6 +2231,7 @@ int64_t urnet_usd_to_nano_cents(double usd);
 /* ReliabilitySettings (json):
  *   UdpTeardownSignal: boolean
  *   TcpCollapseMaxHoldMillis: number
+ *   SendStallTimeoutMillis: number
  *   ClusterAffinityFallback: boolean
  *   ServerNameAffinityBridge: boolean
  *   SequenceIdleTimeoutMillis: number

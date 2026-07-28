@@ -48,6 +48,10 @@ type ReliabilitySettings struct {
 	// TcpCollapseMaxHoldMillis bounds how long a stalled exit may keep
 	// swallowing a sender's retransmits. 0 disables the bound
 	TcpCollapseMaxHoldMillis int64
+	// SendStallTimeoutMillis is how long an exit may hold unacknowledged sends
+	// before it is treated as failed and removed. 0 waits for the 30s ack
+	// timeout instead, which is what freezes a flow until the app retries
+	SendStallTimeoutMillis int64
 	// ClusterAffinityFallback groups a site's ips when no hostname is known
 	ClusterAffinityFallback bool
 	// ServerNameAffinityBridge converges late-named flows onto the exit an
@@ -67,6 +71,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 	return &ReliabilitySettings{
 		UdpTeardownSignal:            reliabilitySettings.UdpTeardownSignal,
 		TcpCollapseMaxHoldMillis:     reliabilitySettings.TcpCollapseMaxHold.Milliseconds(),
+		SendStallTimeoutMillis:       reliabilitySettings.SendStallTimeout.Milliseconds(),
 		ClusterAffinityFallback:      reliabilitySettings.ClusterAffinityFallback,
 		ServerNameAffinityBridge:     reliabilitySettings.ServerNameAffinityBridge,
 		SequenceIdleTimeoutMillis:    reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
@@ -78,6 +83,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 	return &connect.ReliabilitySettings{
 		UdpTeardownSignal:        self.UdpTeardownSignal,
 		TcpCollapseMaxHold:       millis(self.TcpCollapseMaxHoldMillis),
+		SendStallTimeout:         millis(self.SendStallTimeoutMillis),
 		ClusterAffinityFallback:  self.ClusterAffinityFallback,
 		ServerNameAffinityBridge: self.ServerNameAffinityBridge,
 		SequenceIdleTimeout:      millis(self.SequenceIdleTimeoutMillis),

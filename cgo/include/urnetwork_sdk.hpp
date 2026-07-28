@@ -1571,6 +1571,7 @@ struct RegionalDnsServer {
 struct ReliabilitySettings {
 	bool UdpTeardownSignal{};
 	int64_t TcpCollapseMaxHoldMillis{};
+	int64_t SendStallTimeoutMillis{};
 	bool ClusterAffinityFallback{};
 	bool ServerNameAffinityBridge{};
 	int64_t SequenceIdleTimeoutMillis{};
@@ -7447,6 +7448,7 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j = nlohmann::json::object();
 	j["UdpTeardownSignal"] = v.UdpTeardownSignal;
 	j["TcpCollapseMaxHoldMillis"] = v.TcpCollapseMaxHoldMillis;
+	j["SendStallTimeoutMillis"] = v.SendStallTimeoutMillis;
 	j["ClusterAffinityFallback"] = v.ClusterAffinityFallback;
 	j["ServerNameAffinityBridge"] = v.ServerNameAffinityBridge;
 	j["SequenceIdleTimeoutMillis"] = v.SequenceIdleTimeoutMillis;
@@ -7461,6 +7463,9 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("TcpCollapseMaxHoldMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TcpCollapseMaxHoldMillis);
+	}
+	if (auto it = j.find("SendStallTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SendStallTimeoutMillis);
 	}
 	if (auto it = j.find("ClusterAffinityFallback"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ClusterAffinityFallback);
