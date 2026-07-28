@@ -376,6 +376,11 @@ type DeviceLocal struct {
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
 
+	// probeSuiteState owns the in-app test suite. It pumps its own userspace
+	// tun through this device, so probes take the same exits as real traffic
+	// -- see probe_suite.go for why an ordinary http client cannot.
+	probeSuiteState *probeSuite
+
 	canShowRatingDialogChangeListeners      *connect.CallbackList[CanShowRatingDialogChangeListener]
 	canPromptIntroFunnelChangeListeners     *connect.CallbackList[CanPromptIntroFunnelChangeListener]
 	allowForegroundChangeListeners          *connect.CallbackList[AllowForegroundChangeListener]
@@ -720,6 +725,7 @@ func newDeviceLocalWithOverrides(
 		contracts:                               newDeviceContractTracker(),
 		providerContracts:                       newDeviceContractTracker(),
 		receiveCallbacks:                        connect.NewCallbackList[connect.ReceivePacketFunction](),
+		probeSuiteState:                         &probeSuite{},
 		canShowRatingDialogChangeListeners:      connect.NewCallbackList[CanShowRatingDialogChangeListener](),
 		canPromptIntroFunnelChangeListeners:     connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
 		allowForegroundChangeListeners:          connect.NewCallbackList[AllowForegroundChangeListener](),

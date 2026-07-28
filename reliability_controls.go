@@ -192,3 +192,78 @@ func (self *DeviceLocal) ShuffleExits() {
 		multi.Shuffle()
 	}
 }
+
+// ReliabilityMetrics is what the toggles above are judged against.
+//
+// The controls are only worth having if a change can be shown to help, and
+// "the freeze felt shorter" is not a measurement. These counters give each
+// candidate a number: how many connections a provider failure destroys, and
+// how long the sites behind them stay dark.
+//
+// Counts are int64 rather than uint64 because gomobile does not bind unsigned
+// types, and durations are milliseconds for the same reason time.Duration is
+// not bound.
+type ReliabilityMetrics struct {
+	// FlowsOpened is how many flows have been started since the last reset.
+	// It is the denominator that makes the loss counts comparable between two
+	// runs of different lengths.
+	FlowsOpened int64
+
+	// ExitLossEvents is how many exits have died; FlowsLostToExit is how many
+	// connections died with them.
+	ExitLossEvents  int64
+	FlowsLostToExit int64
+	// MaxFlowsLostInOneEvent is the worst single failure observed, which is
+	// what the user actually experiences -- an average of 4 is no comfort if
+	// one event took out 55.
+	MaxFlowsLostInOneEvent int64
+	// MeanFlowsLostPerExitLoss is the blast radius: connections lost per
+	// provider failure. Lower is the goal, and it is the headline number for
+	// comparing a candidate against the shipped behavior.
+	MeanFlowsLostPerExitLoss float64
+
+	// RecoveryCount is how many destinations came back after losing their
+	// exit; RecoveryMissed is how many never did inside the tracking window.
+	// A fix that abandons flows rather than recovering them shows up as a
+	// rising RecoveryMissed, so the two have to be read together.
+	RecoveryCount  int64
+	RecoveryMissed int64
+	// RecoveryMeanMillis and RecoveryMaxMillis span from an exit dying to the
+	// first packet back from that destination over a replacement exit. This
+	// is the interval the user sits through.
+	RecoveryMeanMillis int64
+	RecoveryMaxMillis  int64
+	// RecoveryPending is how many destinations are still dark right now.
+	RecoveryPending int32
+}
+
+// GetReliabilityMetrics reports what provider failures have cost since the
+// last reset. Safe to call while disconnected, which reads back as zeros.
+func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
+	multi, ok := self.multiClient()
+	if !ok {
+		return &ReliabilityMetrics{}
+	}
+
+	s := multi.ReliabilityMetrics()
+	return &ReliabilityMetrics{
+		FlowsOpened:              int64(s.FlowsOpened),
+		ExitLossEvents:           int64(s.ExitLossEvents),
+		FlowsLostToExit:          int64(s.FlowsLostToExit),
+		MaxFlowsLostInOneEvent:   int64(s.MaxFlowsLostInOneEvent),
+		MeanFlowsLostPerExitLoss: s.MeanFlowsLostPerExitLoss,
+		RecoveryCount:            int64(s.RecoveryCount),
+		RecoveryMissed:           int64(s.RecoveryMissed),
+		RecoveryMeanMillis:       s.RecoveryMeanNanos / int64(time.Millisecond),
+		RecoveryMaxMillis:        s.RecoveryMaxNanos / int64(time.Millisecond),
+		RecoveryPending:          int32(s.RecoveryPending),
+	}
+}
+
+// ResetReliabilityMetrics zeroes the counters. An A/B run is: reset, set the
+// config, drive the same workload, read the metrics back.
+func (self *DeviceLocal) ResetReliabilityMetrics() {
+	if multi, ok := self.multiClient(); ok {
+		multi.ResetReliabilityMetrics()
+	}
+}
