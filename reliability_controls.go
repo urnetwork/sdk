@@ -71,6 +71,14 @@ type ReliabilitySettings struct {
 	// 0 disables the check, which is the comparison point for measuring how
 	// much churn it causes.
 	BlackholeReceiveTimeoutMillis int64
+	// MaxFlowsPerExit bounds how many live flows may be pinned to one exit.
+	// Providers are split-tcp, so removing an exit destroys every flow on it.
+	// Measured over 40 minutes of real use: 25 removals destroyed 821 flows,
+	// but four of them accounted for 756 -- the worst single event was 484
+	// connections at once, a visible stall. 0 is unbounded, the previous
+	// behavior. The cost is that a site's flows can be split across exits, so
+	// it sees more than one egress ip.
+	MaxFlowsPerExit int32
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -86,6 +94,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		SequenceIdleTimeoutMillis:     reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
 		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
+		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
 	}
 }
 
@@ -99,6 +108,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		SequenceIdleTimeout:      millis(self.SequenceIdleTimeoutMillis),
 		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
 		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
+		MaxFlowsPerExit:          int(self.MaxFlowsPerExit),
 	}
 }
 
