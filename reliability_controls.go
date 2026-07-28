@@ -62,6 +62,15 @@ type ReliabilitySettings struct {
 	// TcpSequenceIdleTimeoutMillis is the idle bound for tcp flows. 0 falls
 	// back to SequenceIdleTimeoutMillis
 	TcpSequenceIdleTimeoutMillis int64
+	// BlackholeReceiveTimeoutMillis bounds the weaker blackhole signal: the
+	// provider is acknowledging our sends, so it is alive, but nothing has
+	// come back from the destination. That is ambiguous -- a flow waiting on a
+	// slow origin looks the same -- and removing an exit kills every flow on
+	// it, so it gets a longer bar than the unambiguous "acknowledges nothing"
+	// case. At 5s this removed a provider roughly every 18s under real load.
+	// 0 disables the check, which is the comparison point for measuring how
+	// much churn it causes.
+	BlackholeReceiveTimeoutMillis int64
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -69,13 +78,14 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		return &ReliabilitySettings{}
 	}
 	return &ReliabilitySettings{
-		UdpTeardownSignal:            reliabilitySettings.UdpTeardownSignal,
-		TcpCollapseMaxHoldMillis:     reliabilitySettings.TcpCollapseMaxHold.Milliseconds(),
-		SendStallTimeoutMillis:       reliabilitySettings.SendStallTimeout.Milliseconds(),
-		ClusterAffinityFallback:      reliabilitySettings.ClusterAffinityFallback,
-		ServerNameAffinityBridge:     reliabilitySettings.ServerNameAffinityBridge,
-		SequenceIdleTimeoutMillis:    reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
-		TcpSequenceIdleTimeoutMillis: reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
+		UdpTeardownSignal:             reliabilitySettings.UdpTeardownSignal,
+		TcpCollapseMaxHoldMillis:      reliabilitySettings.TcpCollapseMaxHold.Milliseconds(),
+		SendStallTimeoutMillis:        reliabilitySettings.SendStallTimeout.Milliseconds(),
+		ClusterAffinityFallback:       reliabilitySettings.ClusterAffinityFallback,
+		ServerNameAffinityBridge:      reliabilitySettings.ServerNameAffinityBridge,
+		SequenceIdleTimeoutMillis:     reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
+		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
+		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
 	}
 }
 
@@ -88,6 +98,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		ServerNameAffinityBridge: self.ServerNameAffinityBridge,
 		SequenceIdleTimeout:      millis(self.SequenceIdleTimeoutMillis),
 		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
+		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
 	}
 }
 
