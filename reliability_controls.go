@@ -45,6 +45,9 @@ type ReliabilitySettings struct {
 	// UdpTeardownSignal sends an icmp unreachable when a udp flow's exit is
 	// removed, so dns and quic learn the path is gone instead of stalling
 	UdpTeardownSignal bool
+	// DialFailureRerace moves a flow to another exit when a provider reports it
+	// could not open the upstream connection, instead of letting the flow hang
+	DialFailureRerace bool
 	// TcpCollapseMaxHoldMillis bounds how long a stalled exit may keep
 	// swallowing a sender's retransmits. 0 disables the bound
 	TcpCollapseMaxHoldMillis int64
@@ -87,6 +90,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 	}
 	return &ReliabilitySettings{
 		UdpTeardownSignal:             reliabilitySettings.UdpTeardownSignal,
+		DialFailureRerace:             reliabilitySettings.DialFailureRerace,
 		TcpCollapseMaxHoldMillis:      reliabilitySettings.TcpCollapseMaxHold.Milliseconds(),
 		SendStallTimeoutMillis:        reliabilitySettings.SendStallTimeout.Milliseconds(),
 		ClusterAffinityFallback:       reliabilitySettings.ClusterAffinityFallback,
@@ -101,6 +105,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 	return &connect.ReliabilitySettings{
 		UdpTeardownSignal:        self.UdpTeardownSignal,
+		DialFailureRerace:        self.DialFailureRerace,
 		TcpCollapseMaxHold:       millis(self.TcpCollapseMaxHoldMillis),
 		SendStallTimeout:         millis(self.SendStallTimeoutMillis),
 		ClusterAffinityFallback:  self.ClusterAffinityFallback,
@@ -125,6 +130,9 @@ type Exit struct {
 	// FlowCount is how many live flows are pinned to this exit. A site split
 	// across exits shows up as flows spread over several entries
 	FlowCount int32
+	// DialFailureCount is how many upstream dials this exit has reported
+	// failing in the recent window, the signal that it is out of capacity
+	DialFailureCount int32
 }
 
 type ExitList struct {
@@ -172,12 +180,13 @@ func (self *DeviceLocal) GetExits() *ExitList {
 	if multi, ok := self.multiClient(); ok {
 		for _, exit := range multi.Exits() {
 			exits.Add(&Exit{
-				ClientId:   newId(exit.ClientId),
-				WindowType: exit.WindowType.RankMode(),
-				Warning:    exit.Warning,
-				Done:       exit.Done,
-				P2pOnly:    exit.P2pOnly,
-				FlowCount:  int32(exit.FlowCount),
+				ClientId:         newId(exit.ClientId),
+				WindowType:       exit.WindowType.RankMode(),
+				Warning:          exit.Warning,
+				Done:             exit.Done,
+				P2pOnly:          exit.P2pOnly,
+				FlowCount:        int32(exit.FlowCount),
+				DialFailureCount: int32(exit.DialFailureCount),
 			})
 		}
 	}
@@ -256,6 +265,13 @@ type ReliabilityMetrics struct {
 	RecoveryMaxMillis  int64
 	// RecoveryPending is how many destinations are still dark right now.
 	RecoveryPending int32
+
+	// DialFailuresIntercepted counts provider could-not-connect signals seen;
+	// FlowsReraced counts how many of those flows were quietly moved to another
+	// exit instead of being left to hang. The gap between them is the failures
+	// that were already established or otherwise not eligible to move.
+	DialFailuresIntercepted int64
+	FlowsReraced            int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
@@ -278,6 +294,8 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 		RecoveryMeanMillis:       s.RecoveryMeanNanos / int64(time.Millisecond),
 		RecoveryMaxMillis:        s.RecoveryMaxNanos / int64(time.Millisecond),
 		RecoveryPending:          int32(s.RecoveryPending),
+		DialFailuresIntercepted:  int64(s.DialFailuresIntercepted),
+		FlowsReraced:             int64(s.FlowsReraced),
 	}
 }
 
