@@ -133,6 +133,10 @@ type Exit struct {
 	// DialFailureCount is how many upstream dials this exit has reported
 	// failing in the recent window, the signal that it is out of capacity
 	DialFailureCount int32
+	// Tier is the platform's rank for this provider (0 is best). Only the best
+	// rank present is raced until it fills, so an exit with 0 flows on a higher
+	// tier is a spare, not a failure
+	Tier int32
 }
 
 type ExitList struct {
@@ -187,6 +191,7 @@ func (self *DeviceLocal) GetExits() *ExitList {
 				P2pOnly:          exit.P2pOnly,
 				FlowCount:        int32(exit.FlowCount),
 				DialFailureCount: int32(exit.DialFailureCount),
+				Tier:             int32(exit.Tier),
 			})
 		}
 	}
