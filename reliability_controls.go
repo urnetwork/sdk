@@ -133,6 +133,24 @@ type ReliabilitySettings struct {
 	// demonstrably alive. 0 or 1 restores the single-destination behavior,
 	// the A/B comparison point.
 	MinBlackholeDestinations int32
+	// ProviderProbe enables client-side provider qualification: crafted tcp
+	// and dns probes through each exit to real destinations, where an answer
+	// PROVES the provider dials the internet and a non-answer proves nothing
+	// at all -- probes qualify, they never convict. Off removes the whole
+	// mechanism (no probes, no demerit, no admit preference), the A/B
+	// comparison point.
+	ProviderProbe bool
+	// ProbeTimeoutMillis bounds one probe pass. 0 falls back to the built-in
+	// 4s. It bounds how long positive evidence is waited for, never a timer
+	// that produces a verdict.
+	ProbeTimeoutMillis int64
+	// EvaluationPoolMultiple makes window expansion request and ping-evaluate
+	// this multiple of the candidates it needs, admit the needed count
+	// preferring qualified providers, and politely cancel the flowless
+	// surplus. Applies to the candidate-request count only -- window size
+	// bounds are untouched. 1 restores exact-count evaluation, the A/B
+	// comparison point; 2 is the mainnet-aggressive default.
+	EvaluationPoolMultiple int32
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -158,6 +176,9 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		StandingReserve:               reliabilitySettings.StandingReserve,
 		EffectiveTierSelection:        reliabilitySettings.EffectiveTierSelection,
 		MinBlackholeDestinations:      int32(reliabilitySettings.MinBlackholeDestinations),
+		ProviderProbe:                 reliabilitySettings.ProviderProbe,
+		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
+		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
 	}
 }
 
@@ -181,6 +202,9 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		StandingReserve:          self.StandingReserve,
 		EffectiveTierSelection:   self.EffectiveTierSelection,
 		MinBlackholeDestinations: int(self.MinBlackholeDestinations),
+		ProviderProbe:            self.ProviderProbe,
+		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
+		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
 	}
 }
 
@@ -206,10 +230,18 @@ type Exit struct {
 	Tier int32
 	// EffectiveTier is the rank selection actually uses: Tier plus live
 	// demerits for dial starvation, an active or recently survived
-	// quarantine, and an unhealthy stats window. Greater than Tier means the
-	// exit is currently demoted; equal means clean (or effective-tier
-	// selection is off)
+	// quarantine, an unhealthy stats window, and an unproven qualification.
+	// Greater than Tier means the exit is currently demoted; equal means
+	// clean (or effective-tier selection is off)
 	EffectiveTier int32
+	// Proven reports a current qualification: a probe pass or live receive
+	// traffic proved this provider dials real destinations within the last
+	// ~30 minutes. False is "not yet proven", never "bad" -- the probe design
+	// records no negative state to report
+	Proven bool
+	// ProbeAgeSeconds is how long ago the provider was last proven; -1 means
+	// never. Can exceed the qualification window (then Proven is false)
+	ProbeAgeSeconds int64
 }
 
 type ExitList struct {
@@ -256,6 +288,12 @@ func (self *DeviceLocal) GetExits() *ExitList {
 	exits := NewExitList()
 	if multi, ok := self.multiClient(); ok {
 		for _, exit := range multi.Exits() {
+			// -1 crosses the boundary as the "never proven" sentinel; any
+			// non-negative age is truncated to whole seconds
+			probeAgeSeconds := int64(-1)
+			if 0 <= exit.ProbeAge {
+				probeAgeSeconds = int64(exit.ProbeAge / time.Second)
+			}
 			exits.Add(&Exit{
 				ClientId:         newId(exit.ClientId),
 				WindowType:       exit.WindowType.RankMode(),
@@ -266,6 +304,8 @@ func (self *DeviceLocal) GetExits() *ExitList {
 				DialFailureCount: int32(exit.DialFailureCount),
 				Tier:             int32(exit.Tier),
 				EffectiveTier:    int32(exit.EffectiveTier),
+				Proven:           exit.Proven,
+				ProbeAgeSeconds:  probeAgeSeconds,
 			})
 		}
 	}
@@ -374,6 +414,15 @@ type ReliabilityMetrics struct {
 	VerdictsHeldUplinkStale   int64
 	VerdictsHeldTransportDown int64
 	RemovalsDeferred          int64
+
+	// ProbesSent and ProbesAnswered are the provider-qualification probes
+	// asked and answered this session; ProvidersQualified counts providers
+	// that crossed into the qualified state (transitions, not re-proofs).
+	// There is deliberately no failure counter -- a probe failure is not an
+	// event about the provider.
+	ProbesSent         int64
+	ProbesAnswered     int64
+	ProvidersQualified int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
@@ -404,6 +453,9 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 		VerdictsHeldUplinkStale:   int64(s.VerdictsHeldUplinkStale),
 		VerdictsHeldTransportDown: int64(s.VerdictsHeldTransportDown),
 		RemovalsDeferred:          int64(s.RemovalsDeferred),
+		ProbesSent:                int64(s.ProbesSent),
+		ProbesAnswered:            int64(s.ProbesAnswered),
+		ProvidersQualified:        int64(s.ProvidersQualified),
 	}
 }
 
