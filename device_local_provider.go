@@ -111,8 +111,13 @@ func newDeviceLocalProviderWithOverrides(
 		receiveQueueBudget = connect.NewTransferMemoryBudget(max(pairTarget*4/7, 384*1024))
 		clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 		clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
-		// provider p2p peer connections admit against the provider budget
-		clientSettings.WebRtcSettings.MemoryBudget = receiveQueueBudget
+		// provider p2p peer connections admit against a DEDICATED budget with
+		// a phone-sized SCTP buffer, NOT the receive queue: a providing phone
+		// serving a download consumes its receive queue, so a shared budget
+		// refused every peer-connection setup exactly while it served traffic,
+		// pinning every peer on the WAN relay (PACKETRESEARCH1 §17)
+		clientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
+		clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(memoryTargetByteCount)
 	}
 
 	client := connect.NewClient(

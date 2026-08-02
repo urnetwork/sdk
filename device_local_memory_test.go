@@ -52,8 +52,65 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 	connect.AssertEqual(t, sendBudget.TotalByteCount(), connect.ByteCount(6*1024*1024))
 	connect.AssertEqual(t, receiveBudget.TotalByteCount(), clientShare*4/7)
 	connect.AssertEqual(t, receiveBudget.TotalByteCount(), connect.ByteCount(8*1024*1024))
-	// p2p admission draws from the shared receive budget
-	connect.AssertEqual(t, settings.ClientSettings.WebRtcSettings.MemoryBudget, receiveBudget)
+	// p2p admits against a DEDICATED budget, NOT the shared receive queue: a
+	// shared budget let active transfer starve every peer-connection setup,
+	// pinning peers on the WAN relay (PACKETRESEARCH1 §17). The dedicated
+	// budget + phone-sized SCTP buffer must admit the mobile peer-count floor.
+	webRtcBudget := settings.ClientSettings.WebRtcSettings.MemoryBudget
+	if webRtcBudget == nil {
+		t.Fatalf("expected a dedicated p2p webRtc budget")
+	}
+	if webRtcBudget == receiveBudget {
+		t.Fatalf("p2p budget must not be the shared receive queue budget (starvation regression)")
+	}
+	connect.AssertEqual(t, webRtcBudget.TotalByteCount(), clientShare/8)
+	connect.AssertEqual(t, settings.ClientSettings.WebRtcSettings.ReceiveBufferSize, deviceLocalP2pReceiveBufferByteCount)
+	connect.AssertEqual(t, settings.ClientSettings.WebRtcSettings.UseEgressOnlyIceInterfaces, true)
+	if webRtcBudget.TotalByteCount() < deviceLocalP2pMinPeerConnectionCount*settings.ClientSettings.WebRtcSettings.ReceiveBufferSize {
+		t.Fatalf("p2p budget %d too small to admit %d peer connections of %d",
+			webRtcBudget.TotalByteCount(),
+			deviceLocalP2pMinPeerConnectionCount,
+			settings.ClientSettings.WebRtcSettings.ReceiveBufferSize)
+	}
+	providerWebRtcBudget := deviceLocalWebRtcBudget(
+		connect.ByteCount(defaultDeviceLocalMemoryTargetByteCount) *
+			deviceMemoryRatioProvider / deviceMemoryRatioParts,
+	)
+	connect.AssertEqual(
+		t,
+		providerWebRtcBudget.TotalByteCount(),
+		connect.ByteCount(deviceLocalP2pMinPeerConnectionCount)*deviceLocalP2pReceiveBufferByteCount,
+	)
+
+	// Public destinations keep the shared many-peer budget and 128 KiB
+	// receive window. A trusted fixed network-peer destination gets its own
+	// two-connection budget and the measured 2 MiB high-throughput window, so
+	// it cannot consume or enlarge the public window pool.
+	publicReceiveBuffer, publicWebRtcBudget := deviceLocalDestinationWebRtcSettings(
+		settings.ClientSettings.WebRtcSettings,
+		false,
+	)
+	connect.AssertEqual(t, publicReceiveBuffer, deviceLocalP2pReceiveBufferByteCount)
+	if publicWebRtcBudget != webRtcBudget {
+		t.Fatal("public destination must retain the device-shared webRtc budget")
+	}
+	networkPeerReceiveBuffer, networkPeerWebRtcBudget := deviceLocalDestinationWebRtcSettings(
+		settings.ClientSettings.WebRtcSettings,
+		true,
+	)
+	connect.AssertEqual(
+		t,
+		networkPeerReceiveBuffer,
+		deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+	)
+	if networkPeerWebRtcBudget == nil || networkPeerWebRtcBudget == webRtcBudget {
+		t.Fatal("network peer must own a destination-local webRtc budget")
+	}
+	connect.AssertEqual(
+		t,
+		networkPeerWebRtcBudget.TotalByteCount(),
+		connect.ByteCount(deviceLocalNetworkPeerP2pConnectionCount)*networkPeerReceiveBuffer,
+	)
 	// floor below the borrow cap
 	if settings.ClientSettings.SendBufferSettings.ResendQueueMaxByteCount < settings.ClientSettings.SendBufferSettings.ResendQueueMinByteCount {
 		t.Errorf("send floor above the borrow cap")

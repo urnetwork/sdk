@@ -140,6 +140,73 @@ func deviceLocalTransferBudgets(clientShareByteCount ByteCount) (resendQueueBudg
 		connect.NewTransferMemoryBudget(receiveQueueByteCount)
 }
 
+// deviceLocalP2pReceiveBufferByteCount is the per-peer-connection SCTP receive
+// buffer (and therefore the per-connection budget reservation) for the
+// many-peer public/automatic mobile windows. It deliberately trades
+// single-connection throughput for a quarter of the historical 512 KiB
+// footprint so a modest dedicated budget admits several concurrent peer
+// connections. Explicit fixed network-peer destinations use the larger
+// measured window below. The 512 KiB default previously starved p2p when it
+// was admitted against the shared transfer queue. See PACKETRESEARCH1 §17.
+const deviceLocalP2pReceiveBufferByteCount = ByteCount(128 * 1024)
+const deviceLocalP2pMinPeerConnectionCount = 8
+
+// A user-selected network peer is a fixed one-client window, so it can use a
+// larger SCTP receive window without multiplying that footprint across the
+// public quality/speed windows. Pion advertises this value as SCTP a_rwnd: at
+// a controlled 50 ms RTT, 128 KiB delivered 2.26 MiB/s, 1 MiB delivered
+// 17.50 MiB/s, and 2 MiB delivered 28-29 MiB/s. The larger bounded window is
+// important on real mobile peer paths whose RTT can vary above 100 ms even
+// between nearby devices. Keep two reservations so one replacement can
+// connect before the old stream tears down; with the default this is a hard
+// 4 MiB destination-local ceiling (an explicit larger caller setting scales
+// both).
+const deviceLocalNetworkPeerP2pReceiveBufferByteCount = ByteCount(2 * 1024 * 1024)
+const deviceLocalNetworkPeerP2pConnectionCount = 2
+
+func deviceLocalDestinationWebRtcSettings(
+	settings *connect.WebRtcSettings,
+	networkPeer bool,
+) (receiveBufferByteCount ByteCount, memoryBudget *connect.TransferMemoryBudget) {
+	receiveBufferByteCount = settings.ReceiveBufferSize
+	memoryBudget = settings.MemoryBudget
+	if !networkPeer {
+		return
+	}
+	receiveBufferByteCount = max(
+		receiveBufferByteCount,
+		deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+	)
+	memoryBudget = connect.NewTransferMemoryBudget(
+		deviceLocalNetworkPeerP2pConnectionCount * receiveBufferByteCount,
+	)
+	return
+}
+
+// deviceLocalWebRtcBudget creates the DEDICATED p2p peer-connection admission
+// budget for a memory share. p2p must not share the transfer receive-queue
+// budget: an active download legitimately consumes the receive queue, so a
+// shared budget refused every peer-connection setup exactly while traffic
+// flowed — the moment p2p is needed — pinning the flow on the WAN relay
+// forever (PACKETRESEARCH1 §17). A dedicated budget breaks that catch-22. It
+// gates admission only; the SCTP buffer memory a formed connection uses is the
+// same either way, so this adds no steady-state footprint beyond connections
+// that actually establish. The original four-buffer floor was below the normal
+// quality+speed window demand and was observed saturated indefinitely on both
+// physical Android peers (thousands of refused retries). Eight buffers keep the
+// provider-side floor aligned with connect's mobile peer-count floor; larger
+// client shares still scale above it. A zero share keeps p2p unbudgeted
+// (desktop/server).
+func deviceLocalWebRtcBudget(shareByteCount ByteCount) *connect.TransferMemoryBudget {
+	if shareByteCount <= 0 {
+		return nil
+	}
+	return connect.NewTransferMemoryBudget(max(
+		shareByteCount/8,
+		deviceLocalP2pMinPeerConnectionCount*deviceLocalP2pReceiveBufferByteCount,
+	))
+}
+
 func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 	memoryTargetByteCount := ByteCount(defaultDeviceLocalMemoryTargetByteCount)
 	// provisional sizing from the unfolded client share; device construction
@@ -147,6 +214,11 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 	clientShareByteCount := memoryTargetByteCount * deviceMemoryRatioClient / deviceMemoryRatioParts
 	bufferSize := deviceLocalSequenceBufferSize(clientShareByteCount)
 	clientSettings := connect.DefaultClientSettingsWithBufferSize(bufferSize)
+	// A VPN device needs only the current physical/default-route addresses.
+	// Enumerating every bridge, stale tunnel, AWDL, and VM interface makes
+	// ICE check a local×remote candidate cross-product for every window
+	// client, producing avoidable CPU bursts and setup pauses on macOS.
+	clientSettings.WebRtcSettings.UseEgressOnlyIceInterfaces = true
 	// one transfer queue budget pair shared across all of the device's
 	// clients (the provider client plus every window client): the provider
 	// client replaces it with its own pair from the provider share; the
@@ -157,8 +229,15 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
 	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
-	// p2p peer connections admit against the shared receive budget
-	clientSettings.WebRtcSettings.MemoryBudget = receiveQueueBudget
+	// p2p peer connections admit against a DEDICATED budget (see
+	// deviceLocalWebRtcBudget) with a phone-sized SCTP buffer, not the shared
+	// receive queue that active transfer starves. Only on a memory-targeted
+	// device (mobile); a zero share (desktop/server) keeps the connect
+	// defaults (512 KiB buffer, unbudgeted).
+	if 0 < clientShareByteCount {
+		clientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
+		clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(clientShareByteCount)
+	}
 	return &DeviceLocalSettings{
 		MemoryTargetByteCount: memoryTargetByteCount,
 		// this works with the `SequenceBufferSize` to control packet loss during back pressure
@@ -784,7 +863,13 @@ func newDeviceLocalWithOverrides(
 	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
 	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
-	settings.ClientSettings.WebRtcSettings.MemoryBudget = receiveQueueBudget
+	// dedicated p2p admission budget + phone-sized SCTP buffer (see
+	// deviceLocalWebRtcBudget / PACKETRESEARCH1 §17). Only on a
+	// memory-targeted device; a zero share keeps the connect defaults.
+	if 0 < clientShareByteCount {
+		settings.ClientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
+		settings.ClientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(clientShareByteCount)
+	}
 
 	var provider *deviceLocalProvider
 	if settings.AllowProvider {
@@ -2803,6 +2888,11 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
+			networkPeerDestination := location != nil && location.NetworkPeer
+			webRtcReceiveBufferSize, webRtcMemoryBudget := deviceLocalDestinationWebRtcSettings(
+				self.settings.WebRtcSettings,
+				networkPeerDestination,
+			)
 
 			// if fixedDestinationSize && self.providerClient() == nil {
 			// 	// a minimal efficient setup to send to fixed client id destinations
@@ -2879,9 +2969,14 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 						// queues draw from the same pools
 						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
 						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
-						// p2p peer connections admit against the shared
-						// receive budget
-						clientSettings.WebRtcSettings.MemoryBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
+						// every window client's p2p admits against the ONE
+						// dedicated device webRtc budget with the phone-sized
+						// SCTP buffer — never the receive queue that active
+						// transfer starves (PACKETRESEARCH1 §17)
+						clientSettings.WebRtcSettings.ReceiveBufferSize = webRtcReceiveBufferSize
+						clientSettings.WebRtcSettings.MemoryBudget = webRtcMemoryBudget
+						clientSettings.WebRtcSettings.UseEgressOnlyIceInterfaces =
+							self.settings.WebRtcSettings.UseEgressOnlyIceInterfaces
 						return clientSettings
 					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
@@ -2946,7 +3041,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// the app (location.NetworkPeer), never inferred from the destination
 			// shape — a fixed client id can also be a public exit.
 			peerProvideMode := protocol.ProvideMode_Public
-			if location != nil && location.NetworkPeer {
+			if networkPeerDestination {
 				peerProvideMode = protocol.ProvideMode_Network
 			}
 			multi := connect.NewRemoteUserNatMultiClient(
