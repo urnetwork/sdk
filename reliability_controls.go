@@ -151,6 +151,50 @@ type ReliabilitySettings struct {
 	// bounds are untouched. 1 restores exact-count evaluation, the A/B
 	// comparison point; 2 is the mainnet-aggressive default.
 	EvaluationPoolMultiple int32
+	// FormationPollTimeoutMillis is how often a flow with no candidate exits at
+	// all re-checks its forming window. While the window is empty there is
+	// nothing to race, only the wait for the first client to land, and polling
+	// that wait at the 2s send-retry pace left the first dns+syn of a fresh
+	// connect sitting up to 2s after an exit was already usable. 0 falls back to
+	// the send-retry pace, the pre-change behavior -- unlike the other duration
+	// knobs here, 0 is not "off".
+	FormationPollTimeoutMillis int64
+	// BusyProbe interposes an active liveness probe on the send-stall bar:
+	// instead of convicting a stalled exit immediately, one control ping is
+	// fired through it with a snappy budget -- an ack acquits (the exit is
+	// congested but alive, the stall clock is cleared), a timeout convicts with
+	// the same "send stalled" reason. A congested-but-alive exit answers and
+	// keeps its flows; a dead one is still removed. false convicts immediately,
+	// the A/B comparison point.
+	BusyProbe bool
+	// BusyProbeBudgetMillis is how long a busy probe waits for its ack before
+	// the exit is convicted. 0 derives max(1s, SendStallTimeout/2). Only has an
+	// effect while BusyProbe is on.
+	BusyProbeBudgetMillis int64
+	// SchedulerPauseToleranceMillis is how much later than armed a timer may
+	// fire before the gap is read as a host suspend (doze, freezer, thermal)
+	// rather than a real stall: verdicts collected across the pause are held and
+	// the receive clocks rebased, so a just-resumed phone does not convict every
+	// exit at once. 0 disables the suspend detector, the A/B comparison point.
+	SchedulerPauseToleranceMillis int64
+	// SchedulerPauseRecoveryTimeoutMillis is how long after a detected suspend
+	// the hold stays in effect, giving the transports time to re-register and
+	// the first return packets to land before convictions resume. 0 falls back
+	// to the built-in 5s (only meaningful while the detector is on).
+	SchedulerPauseRecoveryTimeoutMillis int64
+	// BlackholeConnectComparativeTimeoutMillis is the shorter bar the
+	// no-receive-syn blackhole branch fires at while the rest of the pool is
+	// demonstrably working -- two sibling exits receiving return traffic right
+	// now removes the ambiguity that makes the full 30s bar patient, so an exit
+	// that has established nothing is cut ~20s sooner. 0 disables the cut,
+	// restoring the single full bar, the A/B comparison point.
+	BlackholeConnectComparativeTimeoutMillis int64
+	// HeartbeatIntervalMillis is how often the multi client logs one line
+	// summarizing live state (exits, proven, quarantined, flows, held, rebinds,
+	// probes). Mirrored so a field capture can silence the beat to keep an hour
+	// of buffer, or speed it up to spot a transition, without a reconnect. 0
+	// disables the heartbeat.
+	HeartbeatIntervalMillis int64
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -179,6 +223,14 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		ProviderProbe:                 reliabilitySettings.ProviderProbe,
 		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
 		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
+
+		FormationPollTimeoutMillis:               reliabilitySettings.FormationPollTimeout.Milliseconds(),
+		BusyProbe:                                reliabilitySettings.BusyProbe,
+		BusyProbeBudgetMillis:                    reliabilitySettings.BusyProbeBudget.Milliseconds(),
+		SchedulerPauseToleranceMillis:            reliabilitySettings.SchedulerPauseTolerance.Milliseconds(),
+		SchedulerPauseRecoveryTimeoutMillis:      reliabilitySettings.SchedulerPauseRecoveryTimeout.Milliseconds(),
+		BlackholeConnectComparativeTimeoutMillis: reliabilitySettings.BlackholeConnectComparativeTimeout.Milliseconds(),
+		HeartbeatIntervalMillis:                  reliabilitySettings.HeartbeatInterval.Milliseconds(),
 	}
 }
 
@@ -205,6 +257,14 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		ProviderProbe:            self.ProviderProbe,
 		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
 		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
+
+		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
+		BusyProbe:                          self.BusyProbe,
+		BusyProbeBudget:                    millis(self.BusyProbeBudgetMillis),
+		SchedulerPauseTolerance:            millis(self.SchedulerPauseToleranceMillis),
+		SchedulerPauseRecoveryTimeout:      millis(self.SchedulerPauseRecoveryTimeoutMillis),
+		BlackholeConnectComparativeTimeout: millis(self.BlackholeConnectComparativeTimeoutMillis),
+		HeartbeatInterval:                  millis(self.HeartbeatIntervalMillis),
 	}
 }
 
@@ -216,8 +276,14 @@ type Exit struct {
 	// Warning marks an exit new flows already avoid -- unhealthy, or past its
 	// lifetime and draining
 	Warning bool
-	Done    bool
-	P2pOnly bool
+	// Quarantined is the narrower state behind a warning: a blackhole verdict
+	// matured against this exit and was demoted rather than executed because the
+	// exit is carrying flows. Reported apart from Warning because "out of
+	// selection" and "out of selection because a verdict was held" are different
+	// facts to a reconstruction
+	Quarantined bool
+	Done        bool
+	P2pOnly     bool
 	// FlowCount is how many live flows are pinned to this exit. A site split
 	// across exits shows up as flows spread over several entries
 	FlowCount int32
@@ -298,6 +364,7 @@ func (self *DeviceLocal) GetExits() *ExitList {
 				ClientId:         newId(exit.ClientId),
 				WindowType:       exit.WindowType.RankMode(),
 				Warning:          exit.Warning,
+				Quarantined:      exit.Quarantined,
 				Done:             exit.Done,
 				P2pOnly:          exit.P2pOnly,
 				FlowCount:        int32(exit.FlowCount),
@@ -339,6 +406,42 @@ func (self *DeviceLocal) StallExit(clientId *Id, stalled bool) bool {
 func (self *DeviceLocal) ShuffleExits() {
 	if multi, ok := self.multiClient(); ok {
 		multi.Shuffle()
+	}
+}
+
+// ProbeAllExits fires a qualification probe pass at every exit in the windows
+// right now instead of waiting for the background sweep's own schedule, and
+// returns how many passes were scheduled. Non-blocking by contract: the passes
+// run on their own goroutines behind the same bounded semaphore the prober loop
+// uses, so this can be called from the ui thread. Returns 0 while disconnected
+// or while provider probing is off (the connect side logs the refusal).
+func (self *DeviceLocal) ProbeAllExits() int32 {
+	if multi, ok := self.multiClient(); ok {
+		return int32(multi.ProbeAllExits())
+	}
+	return 0
+}
+
+// SimulateNetworkChange fires the platform network-change path on demand -- the
+// uplink staleness epoch reset and the process-wide transport kick a real
+// wifi-to-cellular migration triggers -- so the storm drill the uplink gate
+// exists for becomes one tap instead of physically moving between networks. It
+// routes through the same production path as NotifyNetworkChange so the drill
+// cannot drift from it. No-op while disconnected.
+func (self *DeviceLocal) SimulateNetworkChange() {
+	if multi, ok := self.multiClient(); ok {
+		multi.SimulateNetworkChange()
+	}
+}
+
+// NotifyNetworkChange is the production entry the android ConnectivityManager
+// callback calls when the OS reports the network changed: it rebases the uplink
+// staleness epoch and kicks every registered platform transport to drop its
+// connection and re-dial immediately over the new path, instead of waiting out
+// ping timeouts. No-op while disconnected.
+func (self *DeviceLocal) NotifyNetworkChange() {
+	if multi, ok := self.multiClient(); ok {
+		multi.NotifyNetworkChanged()
 	}
 }
 
@@ -423,6 +526,16 @@ type ReliabilityMetrics struct {
 	ProbesSent         int64
 	ProbesAnswered     int64
 	ProvidersQualified int64
+
+	// BusyProbesSent and BusyProbesAcquitted are the busy-flow liveness probes
+	// fired at stalled exits and the ones answered inside the budget -- each
+	// acquittal is a removal the probe prevented, an exit that was congested
+	// rather than dead. SchedulerPausesDetected counts host suspends (doze,
+	// freezer, thermal) the pause detector caught, each one a batch of verdicts
+	// held rather than executed on a just-resumed phone.
+	BusyProbesSent          int64
+	BusyProbesAcquitted     int64
+	SchedulerPausesDetected int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
@@ -456,6 +569,9 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 		ProbesSent:                int64(s.ProbesSent),
 		ProbesAnswered:            int64(s.ProbesAnswered),
 		ProvidersQualified:        int64(s.ProvidersQualified),
+		BusyProbesSent:            int64(s.BusyProbesSent),
+		BusyProbesAcquitted:       int64(s.BusyProbesAcquitted),
+		SchedulerPausesDetected:   int64(s.SchedulerPausesDetected),
 	}
 }
 
