@@ -45,6 +45,14 @@ type ReliabilitySettings struct {
 	// UdpTeardownSignal sends an icmp unreachable when a udp flow's exit is
 	// removed, so dns and quic learn the path is gone instead of stalling
 	UdpTeardownSignal bool
+	// QuicRebindOnExitLoss re-pins an established quic (udp/443) flow to a
+	// live replacement exit inside the removal of its dying exit, so the
+	// app's next packet egresses through a warm exit and the server
+	// path-validates the same quic connection id from a new address --
+	// recovery in one packet interval instead of waiting out a re-race.
+	// false restores teardown-on-removal for every flow, the A/B comparison
+	// point
+	QuicRebindOnExitLoss bool
 	// DialFailureRerace moves a flow to another exit when a provider reports it
 	// could not open the upstream connection, instead of letting the flow hang
 	DialFailureRerace bool
@@ -112,6 +120,19 @@ type ReliabilitySettings struct {
 	// it, failover backfill took ~45s because replacement only started after
 	// a loss. false restores exact-target sizing, the A/B comparison point.
 	StandingReserve bool
+	// EffectiveTierSelection ranks exits for new flows by the platform tier
+	// plus live demerits (dial starvation +2, active or recently survived
+	// quarantine +2, unhealthy stats window +1), so a provider failing dials
+	// falls in the ranking within about a second while promotion back is
+	// slow and requires positive evidence. false selects on the static
+	// platform tier alone, the A/B comparison point.
+	EffectiveTierSelection bool
+	// MinBlackholeDestinations is how many distinct send destinations the
+	// stats window must contain before the no-receive-ack blackhole verdict
+	// can fire, so one dead website's silence cannot convict an exit that is
+	// demonstrably alive. 0 or 1 restores the single-destination behavior,
+	// the A/B comparison point.
+	MinBlackholeDestinations int32
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -120,6 +141,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 	}
 	return &ReliabilitySettings{
 		UdpTeardownSignal:             reliabilitySettings.UdpTeardownSignal,
+		QuicRebindOnExitLoss:          reliabilitySettings.QuicRebindOnExitLoss,
 		DialFailureRerace:             reliabilitySettings.DialFailureRerace,
 		TcpCollapseMaxHoldMillis:      reliabilitySettings.TcpCollapseMaxHold.Milliseconds(),
 		SendStallTimeoutMillis:        reliabilitySettings.SendStallTimeout.Milliseconds(),
@@ -134,12 +156,15 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
 		RemovalBudgetWindowMillis:     reliabilitySettings.RemovalBudgetWindow.Milliseconds(),
 		StandingReserve:               reliabilitySettings.StandingReserve,
+		EffectiveTierSelection:        reliabilitySettings.EffectiveTierSelection,
+		MinBlackholeDestinations:      int32(reliabilitySettings.MinBlackholeDestinations),
 	}
 }
 
 func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 	return &connect.ReliabilitySettings{
 		UdpTeardownSignal:        self.UdpTeardownSignal,
+		QuicRebindOnExitLoss:     self.QuicRebindOnExitLoss,
 		DialFailureRerace:        self.DialFailureRerace,
 		TcpCollapseMaxHold:       millis(self.TcpCollapseMaxHoldMillis),
 		SendStallTimeout:         millis(self.SendStallTimeoutMillis),
@@ -154,6 +179,8 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		RemovalBudgetCount:       int(self.RemovalBudgetCount),
 		RemovalBudgetWindow:      millis(self.RemovalBudgetWindowMillis),
 		StandingReserve:          self.StandingReserve,
+		EffectiveTierSelection:   self.EffectiveTierSelection,
+		MinBlackholeDestinations: int(self.MinBlackholeDestinations),
 	}
 }
 
@@ -177,6 +204,12 @@ type Exit struct {
 	// rank present is raced until it fills, so an exit with 0 flows on a higher
 	// tier is a spare, not a failure
 	Tier int32
+	// EffectiveTier is the rank selection actually uses: Tier plus live
+	// demerits for dial starvation, an active or recently survived
+	// quarantine, and an unhealthy stats window. Greater than Tier means the
+	// exit is currently demoted; equal means clean (or effective-tier
+	// selection is off)
+	EffectiveTier int32
 }
 
 type ExitList struct {
@@ -232,6 +265,7 @@ func (self *DeviceLocal) GetExits() *ExitList {
 				FlowCount:        int32(exit.FlowCount),
 				DialFailureCount: int32(exit.DialFailureCount),
 				Tier:             int32(exit.Tier),
+				EffectiveTier:    int32(exit.EffectiveTier),
 			})
 		}
 	}
@@ -318,6 +352,18 @@ type ReliabilityMetrics struct {
 	DialFailuresIntercepted int64
 	FlowsReraced            int64
 
+	// FlowsRebound counts established quic flows proactively re-pinned to a
+	// replacement exit inside a removal instead of torn down (the proactive
+	// rebind). RebindsAccepted are rebinds whose destination answered on the
+	// same local source port -- the server accepted the quic path migration;
+	// RebindsRedialed answered on a new port -- the app re-dialed around the
+	// moved connection. Their sum can lag FlowsRebound when a destination
+	// never answers inside the tracking window. The accepted/redialed split
+	// is the field answer to how well servers actually accept path changes.
+	FlowsRebound    int64
+	RebindsAccepted int64
+	RebindsRedialed int64
+
 	// VerdictsHeldUplinkStale and VerdictsHeldTransportDown count blackhole
 	// verdicts suppressed because the evidence was inadmissible -- the local
 	// uplink was stale (tunnel-wide silence convicts the phone, not the
@@ -352,6 +398,9 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 		RecoveryPending:           int32(s.RecoveryPending),
 		DialFailuresIntercepted:   int64(s.DialFailuresIntercepted),
 		FlowsReraced:              int64(s.FlowsReraced),
+		FlowsRebound:              int64(s.FlowsRebound),
+		RebindsAccepted:           int64(s.RebindsAccepted),
+		RebindsRedialed:           int64(s.RebindsRedialed),
 		VerdictsHeldUplinkStale:   int64(s.VerdictsHeldUplinkStale),
 		VerdictsHeldTransportDown: int64(s.VerdictsHeldTransportDown),
 		RemovalsDeferred:          int64(s.RemovalsDeferred),
