@@ -82,6 +82,36 @@ type ReliabilitySettings struct {
 	// behavior. The cost is that a site's flows can be split across exits, so
 	// it sees more than one egress ip.
 	MaxFlowsPerExit int32
+	// UplinkStalenessGateMillis is how long the whole tunnel may go without a
+	// single provider-originated ingress packet before the receive-branch
+	// blackhole verdicts are held as inadmissible. Tunnel-wide silence
+	// convicts the phone's own uplink, not the providers: one wifi network
+	// migration executed 7 exits in 79s, every verdict no-receive-ack with
+	// nothing received anywhere. 0 disables the gate, which is the comparison
+	// point for measuring how many verdicts it holds.
+	UplinkStalenessGateMillis int64
+	// SoftVerdictDemote demotes the soft removal verdicts (no-receive-ack,
+	// no-receive-syn, stats-unhealthy) against an exit carrying live flows:
+	// the exit is warned out of selection and kept, its established flows
+	// running, until it is flowless or the same evidence has held
+	// continuously past the sustained bound. false restores the pre-change
+	// execute-immediately behavior, which is the A/B comparison point.
+	SoftVerdictDemote bool
+	// RemovalBudgetCount and RemovalBudgetWindowMillis are the verdict-removal
+	// storm breaker: at most this many verdict-driven removals per window per
+	// budget window, the rest deferred (warned and kept) until budget ages
+	// back in. A removal storm is more likely one local cause than that many
+	// independent provider failures. User action, dead-transport cleanup,
+	// lifetime drains, and capacity collapse are exempt. 0 count turns the
+	// breaker off.
+	RemovalBudgetCount        int32
+	RemovalBudgetWindowMillis int64
+	// StandingReserve sizes each window one spare exit beyond its computed
+	// target (bounded by the window hard max), so a failed or draining exit's
+	// replacement is already connected when it is needed -- measured without
+	// it, failover backfill took ~45s because replacement only started after
+	// a loss. false restores exact-target sizing, the A/B comparison point.
+	StandingReserve bool
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -99,6 +129,11 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
 		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
+		UplinkStalenessGateMillis:     reliabilitySettings.UplinkStalenessGate.Milliseconds(),
+		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
+		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
+		RemovalBudgetWindowMillis:     reliabilitySettings.RemovalBudgetWindow.Milliseconds(),
+		StandingReserve:               reliabilitySettings.StandingReserve,
 	}
 }
 
@@ -114,6 +149,11 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
 		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
 		MaxFlowsPerExit:          int(self.MaxFlowsPerExit),
+		UplinkStalenessGate:      millis(self.UplinkStalenessGateMillis),
+		SoftVerdictDemote:        self.SoftVerdictDemote,
+		RemovalBudgetCount:       int(self.RemovalBudgetCount),
+		RemovalBudgetWindow:      millis(self.RemovalBudgetWindowMillis),
+		StandingReserve:          self.StandingReserve,
 	}
 }
 
@@ -277,6 +317,17 @@ type ReliabilityMetrics struct {
 	// that were already established or otherwise not eligible to move.
 	DialFailuresIntercepted int64
 	FlowsReraced            int64
+
+	// VerdictsHeldUplinkStale and VerdictsHeldTransportDown count blackhole
+	// verdicts suppressed because the evidence was inadmissible -- the local
+	// uplink was stale (tunnel-wide silence convicts the phone, not the
+	// provider), or the channel's own transport was known down.
+	// RemovalsDeferred counts provider removals postponed while such a hold
+	// was in effect. Against the 7-exits-in-79s network-migration incident,
+	// these are the executions that did not happen.
+	VerdictsHeldUplinkStale   int64
+	VerdictsHeldTransportDown int64
+	RemovalsDeferred          int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
@@ -289,18 +340,21 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 
 	s := multi.ReliabilityMetrics()
 	return &ReliabilityMetrics{
-		FlowsOpened:              int64(s.FlowsOpened),
-		ExitLossEvents:           int64(s.ExitLossEvents),
-		FlowsLostToExit:          int64(s.FlowsLostToExit),
-		MaxFlowsLostInOneEvent:   int64(s.MaxFlowsLostInOneEvent),
-		MeanFlowsLostPerExitLoss: s.MeanFlowsLostPerExitLoss,
-		RecoveryCount:            int64(s.RecoveryCount),
-		RecoveryMissed:           int64(s.RecoveryMissed),
-		RecoveryMeanMillis:       s.RecoveryMeanNanos / int64(time.Millisecond),
-		RecoveryMaxMillis:        s.RecoveryMaxNanos / int64(time.Millisecond),
-		RecoveryPending:          int32(s.RecoveryPending),
-		DialFailuresIntercepted:  int64(s.DialFailuresIntercepted),
-		FlowsReraced:             int64(s.FlowsReraced),
+		FlowsOpened:               int64(s.FlowsOpened),
+		ExitLossEvents:            int64(s.ExitLossEvents),
+		FlowsLostToExit:           int64(s.FlowsLostToExit),
+		MaxFlowsLostInOneEvent:    int64(s.MaxFlowsLostInOneEvent),
+		MeanFlowsLostPerExitLoss:  s.MeanFlowsLostPerExitLoss,
+		RecoveryCount:             int64(s.RecoveryCount),
+		RecoveryMissed:            int64(s.RecoveryMissed),
+		RecoveryMeanMillis:        s.RecoveryMeanNanos / int64(time.Millisecond),
+		RecoveryMaxMillis:         s.RecoveryMaxNanos / int64(time.Millisecond),
+		RecoveryPending:           int32(s.RecoveryPending),
+		DialFailuresIntercepted:   int64(s.DialFailuresIntercepted),
+		FlowsReraced:              int64(s.FlowsReraced),
+		VerdictsHeldUplinkStale:   int64(s.VerdictsHeldUplinkStale),
+		VerdictsHeldTransportDown: int64(s.VerdictsHeldTransportDown),
+		RemovalsDeferred:          int64(s.RemovalsDeferred),
 	}
 }
 
