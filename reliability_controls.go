@@ -90,6 +90,14 @@ type ReliabilitySettings struct {
 	// behavior. The cost is that a site's flows can be split across exits, so
 	// it sees more than one egress ip.
 	MaxFlowsPerExit int32
+	// AffinityStickyPastCap exempts a site's OWN growth from the flow cap: a
+	// new flow whose site already lives on an exit stays there even past
+	// MaxFlowsPerExit, while races and rebinds (placements that would put a
+	// new site on the exit) stay capped. This is what keeps a busy site on
+	// one egress ip -- video cdns bind signed media urls to the client ip,
+	// and the cap veto was splitting exactly the sites that were busiest.
+	// false restores the veto, the A/B comparison point.
+	AffinityStickyPastCap bool
 	// UplinkStalenessGateMillis is how long the whole tunnel may go without a
 	// single provider-originated ingress packet before the receive-branch
 	// blackhole verdicts are held as inadmissible. Tunnel-wide silence
@@ -144,6 +152,12 @@ type ReliabilitySettings struct {
 	// 4s. It bounds how long positive evidence is waited for, never a timer
 	// that produces a verdict.
 	ProbeTimeoutMillis int64
+	// ProbeSampleHostCount is how many health hosts one qualification pass
+	// asks about. 0 (the default) means the ENTIRE embedded table every pass;
+	// a positive value narrows the pass to a rotating block of that many
+	// hosts. Width costs a few kilobytes per pass, never wall time -- every
+	// probe of a pass is in flight together against one timeout.
+	ProbeSampleHostCount int32
 	// EvaluationPoolMultiple makes window expansion request and ping-evaluate
 	// this multiple of the candidates it needs, admit the needed count
 	// preferring qualified providers, and politely cancel the flowless
@@ -213,6 +227,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
 		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
+		AffinityStickyPastCap:         reliabilitySettings.AffinityStickyPastCap,
 		UplinkStalenessGateMillis:     reliabilitySettings.UplinkStalenessGate.Milliseconds(),
 		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
@@ -222,6 +237,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		MinBlackholeDestinations:      int32(reliabilitySettings.MinBlackholeDestinations),
 		ProviderProbe:                 reliabilitySettings.ProviderProbe,
 		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
+		ProbeSampleHostCount:          int32(reliabilitySettings.ProbeSampleHostCount),
 		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
 
 		FormationPollTimeoutMillis:               reliabilitySettings.FormationPollTimeout.Milliseconds(),
@@ -247,6 +263,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
 		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
 		MaxFlowsPerExit:          int(self.MaxFlowsPerExit),
+		AffinityStickyPastCap:    self.AffinityStickyPastCap,
 		UplinkStalenessGate:      millis(self.UplinkStalenessGateMillis),
 		SoftVerdictDemote:        self.SoftVerdictDemote,
 		RemovalBudgetCount:       int(self.RemovalBudgetCount),
@@ -256,6 +273,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		MinBlackholeDestinations: int(self.MinBlackholeDestinations),
 		ProviderProbe:            self.ProviderProbe,
 		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
+		ProbeSampleHostCount:     int(self.ProbeSampleHostCount),
 		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
 
 		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
