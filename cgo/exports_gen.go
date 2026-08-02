@@ -6209,6 +6209,17 @@ func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_
 	self_.CloseViewController(vc_)
 }
 
+//export urnet_device_local_get_first_load_timeline_json
+func urnet_device_local_get_first_load_timeline_json(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_first_load_timeline_json")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_first_load_timeline_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetFirstLoadTimelineJson()
+	return cString(string(r0))
+}
+
 //export urnet_device_local_get_key_material
 func urnet_device_local_get_key_material(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_local_get_key_material")
@@ -6235,6 +6246,30 @@ func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_local_get_provide_secret_keys")
+}
+
+//export urnet_device_local_memory_used
+func urnet_device_local_memory_used(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_memory_used")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_memory_used")
+	if !ok {
+		return nil
+	}
+	r0 := self_.MemoryUsed()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_memory_used")
+}
+
+//export urnet_device_local_network_changed
+func urnet_device_local_network_changed(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_network_changed")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_network_changed")
+	if !ok {
+		return
+	}
+	self_.NetworkChanged()
 }
 
 //export urnet_device_local_open_account_preferences_view_controller
@@ -6508,6 +6543,16 @@ func urnet_device_local_set_key_material(self C.uint64_t, keyMaterial C.uint64_t
 		return
 	}
 	self_.SetKeyMaterial(keyMaterial_)
+}
+
+//export urnet_device_local_set_performance_degraded
+func urnet_device_local_set_performance_degraded(self C.uint64_t, degraded C.bool) {
+	defer cgoGuard("urnet_device_local_set_performance_degraded")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_performance_degraded")
+	if !ok {
+		return
+	}
+	self_.SetPerformanceDegraded(bool(degraded))
 }
 
 //export urnet_device_local_set_rpc_server
@@ -8845,6 +8890,28 @@ func urnet_new_device_local_with_key_material(networkSpace C.uint64_t, byJwt *C.
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_device_local_with_memory_target
+func urnet_new_device_local_with_memory_target(networkSpace C.uint64_t, byJwt *C.char, deviceDescription *C.char, deviceSpec *C.char, appVersion *C.char, instanceId *C.char, enableRpc C.bool, keyMaterial C.uint64_t, memoryTargetByteCount C.int64_t, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_device_local_with_memory_target")
+	networkSpace_, ok := resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_device_local_with_memory_target")
+	if !ok {
+		return 0
+	}
+	keyMaterial_, ok := resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(keyMaterial), "urnet_new_device_local_with_memory_target")
+	if !ok {
+		return 0
+	}
+	r0, err := sdk.NewDeviceLocalWithMemoryTarget(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local_with_memory_target"), bool(enableRpc), keyMaterial_, int64(memoryTargetByteCount))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_device_remote_with_defaults
 func urnet_new_device_remote_with_defaults(networkSpace C.uint64_t, byJwt *C.char, instanceId *C.char, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_new_device_remote_with_defaults")
@@ -9370,6 +9437,12 @@ func urnet_set_log_dir(logDir *C.char, outError **C.char) C.bool {
 func urnet_set_memory_limit(limit C.int64_t) {
 	defer cgoGuard("urnet_set_memory_limit")
 	sdk.SetMemoryLimit(int64(limit))
+}
+
+//export urnet_set_message_pool_memory_targets
+func urnet_set_message_pool_memory_targets(packetPoolByteCount C.int64_t, largeObjectPoolByteCount C.int64_t) {
+	defer cgoGuard("urnet_set_message_pool_memory_targets")
+	sdk.SetMessagePoolMemoryTargets(int64(packetPoolByteCount), int64(largeObjectPoolByteCount))
 }
 
 //export urnet_sub_close

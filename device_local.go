@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -68,22 +69,98 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 	return windowExpandEvent, providerEvents
 }
 
+// defaultDeviceLocalMemoryTargetByteCount is the default per-device memory
+// target (see DeviceLocalSettings.MemoryTargetByteCount). Hosts pass an
+// explicit value where the device is created
+// (NewDeviceLocalWithMemoryTarget); this default keeps a plain construction
+// bounded.
+const defaultDeviceLocalMemoryTargetByteCount = 20 * 1024 * 1024
+
+// device memory target split, in parts of `deviceMemoryRatioParts`:
+// dns 2 : client 14 : provider 4. The client share carries the in-flight
+// (bandwidth-delay) window, so it takes the largest share — at the 20 MB
+// reference target the provide-on client pair lands on the historically
+// proven 6 MiB send / 8 MiB receive; dns needs only enough to keep parallel
+// resolution above its demand caps. The provider share follows the provide
+// state: while providing is off it backs the client pair instead of idling
+// (see applyProvideMemorySharesWithLock), and when the device can never
+// provide it folds statically (see deviceMemoryShares).
+const (
+	deviceMemoryRatioDns      = 2
+	deviceMemoryRatioClient   = 14
+	deviceMemoryRatioProvider = 4
+	deviceMemoryRatioParts    = 20
+)
+
+// deviceMemoryShares splits the device memory target into the dns, client,
+// and provider shares, folding the provider share into the client share
+// when the device cannot provide. A zero target returns zero shares (legacy
+// process-budget scaling everywhere).
+func deviceMemoryShares(settings *DeviceLocalSettings) (dnsByteCount ByteCount, clientByteCount ByteCount, providerByteCount ByteCount) {
+	target := settings.MemoryTargetByteCount
+	if target <= 0 {
+		return 0, 0, 0
+	}
+	dnsByteCount = target * deviceMemoryRatioDns / deviceMemoryRatioParts
+	clientByteCount = target * deviceMemoryRatioClient / deviceMemoryRatioParts
+	providerByteCount = target * deviceMemoryRatioProvider / deviceMemoryRatioParts
+	if settings.HostedIncompatible || !settings.AllowProvider {
+		clientByteCount += providerByteCount
+		providerByteCount = 0
+	}
+	return
+}
+
+// deviceLocalSequenceBufferSize derives the sequence channel depth from the
+// client share of the device memory target (one slot per 16 KiB — the depth
+// pins in-flight pool buffers under sustained backpressure, outside the byte
+// budgets), within the historical working range. A zero share keeps the
+// process-budget scaled default.
+func deviceLocalSequenceBufferSize(clientShareByteCount ByteCount) int {
+	if clientShareByteCount <= 0 {
+		return connect.MemoryScaledCount(256, 32)
+	}
+	return max(32, min(256, int(clientShareByteCount/(16*1024))))
+}
+
+// deviceLocalTransferBudgets creates the device's shared transfer queue
+// budget pair from the client share of the device memory target (3:4
+// send:receive with working floors), or the legacy process-budget scaled
+// sizes for a zero share. Per-sequence queues borrow above their floor
+// from these pools, so the aggregate queue memory stays flat as the window
+// grows.
+func deviceLocalTransferBudgets(clientShareByteCount ByteCount) (resendQueueBudget *connect.TransferMemoryBudget, receiveQueueBudget *connect.TransferMemoryBudget) {
+	resendQueueByteCount := connect.MemoryScaledByteCount(6*1024*1024, 1024*1024)
+	receiveQueueByteCount := connect.MemoryScaledByteCount(8*1024*1024, 1536*1024)
+	if 0 < clientShareByteCount {
+		resendQueueByteCount = max(clientShareByteCount*3/7, 1024*1024)
+		receiveQueueByteCount = max(clientShareByteCount*4/7, 1536*1024)
+	}
+	return connect.NewTransferMemoryBudget(resendQueueByteCount),
+		connect.NewTransferMemoryBudget(receiveQueueByteCount)
+}
+
 func DefaultDeviceLocalSettings() *DeviceLocalSettings {
-	// scaled by the memory budget: deep sequence channels pin in-flight pool
-	// buffers under sustained backpressure (see `SetMemoryLimit`)
-	bufferSize := connect.MemoryScaledCount(256, 32)
+	memoryTargetByteCount := ByteCount(defaultDeviceLocalMemoryTargetByteCount)
+	// provisional sizing from the unfolded client share; device construction
+	// re-derives from the final settings (target overrides, provider fold)
+	clientShareByteCount := memoryTargetByteCount * deviceMemoryRatioClient / deviceMemoryRatioParts
+	bufferSize := deviceLocalSequenceBufferSize(clientShareByteCount)
 	clientSettings := connect.DefaultClientSettingsWithBufferSize(bufferSize)
 	// one transfer queue budget pair shared across all of the device's
-	// clients (the provider client plus every window client): per-sequence
-	// queues borrow above their floor from these pools, so the aggregate
-	// queue memory stays flat as the window grows (scaled by the memory
-	// budget). the provider client shares by settings copy; the window
-	// client generator stamps the same pointers.
-	clientSettings.SendBufferSettings.ResendQueueBudget =
-		connect.NewTransferMemoryBudget(connect.MemoryScaledByteCount(6*1024*1024, 1024*1024))
-	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget =
-		connect.NewTransferMemoryBudget(connect.MemoryScaledByteCount(8*1024*1024, 1536*1024))
+	// clients (the provider client plus every window client): the provider
+	// client replaces it with its own pair from the provider share; the
+	// window client generator stamps the same pointers. these are resized
+	// from the final settings value at device construction (see
+	// newDeviceLocalWithOverrides), so a caller override of
+	// MemoryTargetByteCount after this constructor takes effect.
+	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
+	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
+	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	// p2p peer connections admit against the shared receive budget
+	clientSettings.WebRtcSettings.MemoryBudget = receiveQueueBudget
 	return &DeviceLocalSettings{
+		MemoryTargetByteCount: memoryTargetByteCount,
 		// this works with the `SequenceBufferSize` to control packet loss during back pressure
 		SendTimeout:        5 * time.Second,
 		SequenceBufferSize: bufferSize,
@@ -143,6 +220,21 @@ func (self *DeviceLocalSettings) logger() connect.Logger {
 
 //gomobile:noexport
 type DeviceLocalSettings struct {
+	// MemoryTargetByteCount is this device's memory target, split by ratio
+	// (dns 2 : client 14 : provider 4, see deviceMemoryShares) among dns
+	// resolution (a live byte budget on the device's resolvers), the client
+	// transfer buffers (the shared queue budget pair + p2p peer connection
+	// admission), and the provider path (the provider client's budget pair +
+	// the egress nat flow caps). When the device cannot provide, the
+	// provider share folds into the client share. Per device, so a
+	// multi-device process (the cloud proxy) gives each instance independent
+	// admission and sizing state; the message pools are the process-global complement
+	// (SetMemoryLimit / SetMessagePoolMemoryTargets). 0 disables the
+	// per-device target (legacy process-budget scaling). Hosts set this
+	// explicitly where the device is created; the default keeps a plain
+	// construction bounded.
+	MemoryTargetByteCount ByteCount
+
 	// time to give up (drop) sending a packet to a destination
 	SendTimeout time.Duration
 	// ClientDrainTimeout time.Duration
@@ -274,6 +366,7 @@ type DeviceLocal struct {
 	rpcClientCertPem string
 
 	stateLock sync.Mutex
+	closeOnce sync.Once
 	// stateLockGoid atomic.Int64
 
 	connectLocation *ConnectLocation // reconnects when launched
@@ -300,6 +393,31 @@ type DeviceLocal struct {
 	// receive callback is the mux's `Receive`. nil => no interposition.
 	upgradeMux         *connect.UpgradeMux
 	upgradeMuxSettings *connect.UpgradeMuxSettings
+
+	// dnsMemoryTarget is the dns share of the device memory target: one live
+	// byte budget shared by the device's resolver caches across mux rebuilds
+	// (in-flight accounting carries over). stamped into the mux settings at
+	// mux construction.
+	dnsMemoryTarget *connect.MemoryTarget
+
+	// dohServerScoresSeed is the per-DoH-server success ordering carried into
+	// each mux build: loaded from local storage at construction (the last
+	// session's experience) and refreshed from the live mux at teardown —
+	// which also persists it for the next session. Guarded by stateLock.
+	dohServerScoresSeed map[string]float64
+
+	// performanceDegraded is the host's degraded-performance state (low power
+	// mode, thermal throttling, constrained network), reported by the apps
+	// via SetPerformanceDegraded; carried into each window build and
+	// forwarded live so the liveness probe timings ease on a slow device.
+	performanceDegraded atomic.Bool
+
+	// windowIdentityStore, when the device owns its storage (not hosted, not
+	// host-provided), persists the window client identities so a relaunch
+	// that reconnects to the same destination reuses them (see
+	// window_identity_store.go). The device stamps the connect-spec
+	// fingerprint before each generator build. nil when unavailable.
+	windowIdentityStore *localStateWindowIdentityStore
 
 	// sendRoute is an immutable snapshot of the routing fields read on the
 	// per-packet send path (`remoteUserNatClient`, `routeLocal`, `provider`).
@@ -473,6 +591,38 @@ func NewDeviceLocalWithKeyMaterial(
 	)
 }
 
+// NewDeviceLocalWithMemoryTarget creates a device with an explicit
+// per-device memory target (see DeviceLocalSettings.MemoryTargetByteCount:
+// split dns 2 : client 14 : provider 4 by ratio, with the provider share
+// folded into the client share when the device cannot provide). This is the
+// host-facing constructor for sizing a device's memory where it is created;
+// keyMaterial may be nil.
+func NewDeviceLocalWithMemoryTarget(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	enableRpc bool,
+	keyMaterial *DeviceLocalKeyMaterial,
+	memoryTargetByteCount int64,
+) (*DeviceLocal, error) {
+	settings := DefaultDeviceLocalSettings()
+	settings.EnableRpc = enableRpc
+	settings.KeyMaterial = keyMaterial
+	settings.MemoryTargetByteCount = memoryTargetByteCount
+	return NewDeviceLocal(
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		settings,
+	)
+}
+
 // NewDeviceLocal creates a device with all options carried on `settings`
 // (see `DeviceLocalSettings`).
 //
@@ -625,6 +775,17 @@ func newDeviceLocalWithOverrides(
 	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
 
+	// (re)size the device's shared transfer budget pair and p2p admission
+	// from the final per-device memory shares: the settings constructor
+	// sized them from its default, and the caller may have overridden
+	// MemoryTargetByteCount (or disabled providing, folding the provider
+	// share into the client share) since
+	dnsShareByteCount, clientShareByteCount, providerShareByteCount := deviceMemoryShares(settings)
+	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
+	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
+	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	settings.ClientSettings.WebRtcSettings.MemoryBudget = receiveQueueBudget
+
 	var provider *deviceLocalProvider
 	if settings.AllowProvider {
 		provider = newDeviceLocalProviderWithOverrides(
@@ -635,6 +796,8 @@ func newDeviceLocalWithOverrides(
 			instanceId.toConnectId(),
 			&settings.ClientSettings,
 			clientId,
+			// the provider share of the device memory target
+			providerShareByteCount,
 		)
 	}
 
@@ -691,8 +854,11 @@ func newDeviceLocalWithOverrides(
 		tunnelLocalAddress: tunnelLocalAddress,
 		tunnelDnsSetting:   DefaultTunnelDnsSetting(),
 		clientStrategy:     clientStrategy,
-		generatorFunc:      settings.GeneratorFunc,
-		provider:           provider,
+		// the dns share of the device memory target; one live budget for the
+		// life of the device (see the field doc)
+		dnsMemoryTarget: connect.NewMemoryTarget(dnsShareByteCount),
+		generatorFunc:   settings.GeneratorFunc,
+		provider:        provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
 		stats:                                   newDeviceStats(),
@@ -775,6 +941,19 @@ func newDeviceLocalWithOverrides(
 		// the blocker toggle persists on set (see SetBlockerEnabled); unset
 		// reads false, matching the opt-in default
 		blocker.SetEnabled(localState.GetBlockerEnabled())
+		// seed the DoH fan-out order from the last session's per-server scores,
+		// so the first lookups after launch pick the known-fastest server
+		deviceLocal.dohServerScoresSeed = localState.getDohServerScores()
+		// window identity persistence: a relaunch that reconnects to the same
+		// destination reuses the last session's window client identities —
+		// skipping an auth api round trip per window client during formation
+		// (see window_identity_store.go). Only when no store was provided and
+		// the device is locally owned (a hosted device's store comes from the
+		// embedding host).
+		if !settings.HostedIncompatible && settings.MultiClientIdentityStore == nil {
+			deviceLocal.windowIdentityStore = newLocalStateWindowIdentityStore(localState, clientId)
+			settings.MultiClientIdentityStore = deviceLocal.windowIdentityStore
+		}
 	}
 
 	// publish the initial send-route snapshot so `sendPacket` always has a
@@ -832,6 +1011,10 @@ func newDeviceLocalWithOverrides(
 	} else if settings.Verbose {
 		newSecurityPolicyMonitor(ctx, deviceLocal)
 	}
+
+	// initial allocation: providing starts off (provide mode none), so the
+	// provider share backs the client pair until SetProvideMode enables it
+	deviceLocal.applyProvideMemorySharesWithLock(false)
 
 	return deviceLocal, nil
 }
@@ -950,12 +1133,63 @@ func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting 
 func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSettings) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	if settings != nil && settings.Dns != nil {
+		// the device's dns byte budget always rides the mux settings (the
+		// caller does not own memory sizing), as does the learned DoH server
+		// ordering
+		settings.Dns.MemoryTarget = self.dnsMemoryTarget
+		settings.Dns.ServerStatsSeed = self.dohServerScoresSeed
+	}
 	self.upgradeMuxSettings = settings
 	// apply to the live mux immediately when non-nil (rebuilds its DohCache); nil takes
 	// effect on the next client recreation, which then creates no mux
 	if self.upgradeMux != nil && settings != nil {
 		self.upgradeMux.SetSettings(settings)
 	}
+}
+
+// DeviceLocalMemoryUsage is a point-in-time sample of the device's tracked
+// memory accounting versus its target (see
+// `DeviceLocalSettings.MemoryTargetByteCount`). Tracked usage covers the
+// live budget accounting: in-flight dns resolution, the client transfer
+// queue pair (including p2p peer connection reservations), and the provider
+// client's pair. The egress nat's per-flow memory is bounded by flow-count
+// caps rather than live byte accounting, so it is not included here — the
+// memory target load test measures that remainder as process heap.
+type DeviceLocalMemoryUsage struct {
+	TargetByteCount          ByteCount
+	DnsByteCount             ByteCount
+	ClientSendByteCount      ByteCount
+	ClientReceiveByteCount   ByteCount
+	ProviderSendByteCount    ByteCount
+	ProviderReceiveByteCount ByteCount
+	TotalByteCount           ByteCount
+}
+
+// MemoryUsed samples the tracked memory accounting of this device's areas
+func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
+	usage := &DeviceLocalMemoryUsage{
+		TargetByteCount: self.settings.MemoryTargetByteCount,
+		DnsByteCount:    self.dnsMemoryTarget.Used(),
+	}
+	if sendBufferSettings := self.settings.ClientSettings.SendBufferSettings; sendBufferSettings != nil && sendBufferSettings.ResendQueueBudget != nil {
+		usage.ClientSendByteCount = sendBufferSettings.ResendQueueBudget.UsedByteCount()
+	}
+	if receiveBufferSettings := self.settings.ClientSettings.ReceiveBufferSettings; receiveBufferSettings != nil && receiveBufferSettings.ReceiveQueueBudget != nil {
+		usage.ClientReceiveByteCount = receiveBufferSettings.ReceiveQueueBudget.UsedByteCount()
+	}
+	if self.provider != nil {
+		// a nil pair means the provider shares the device client budgets
+		// (already counted above)
+		if resendQueueBudget, receiveQueueBudget := self.provider.transferBudgets(); resendQueueBudget != nil {
+			usage.ProviderSendByteCount = resendQueueBudget.UsedByteCount()
+			usage.ProviderReceiveByteCount = receiveQueueBudget.UsedByteCount()
+		}
+	}
+	usage.TotalByteCount = usage.DnsByteCount +
+		usage.ClientSendByteCount + usage.ClientReceiveByteCount +
+		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount
+	return usage
 }
 
 // SetClientSecurityPolicyGenerator sets the multi-client (the device's own traffic) security policy.
@@ -2239,8 +2473,47 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 // flow counts are bounded (lru evict of the idle-most flow) to put a hard
 // ceiling on flow state, sockets, and goroutines under any remote behavior.
 // Scaled by the memory budget (see `SetMemoryLimit`).
-func providerLocalUserNatSettings(log connect.Logger) *connect.LocalUserNatSettings {
-	localUserNatSettings := connect.DefaultProviderLocalUserNatSettings()
+// applyProvideMemorySharesWithLock reallocates the transfer budget
+// capacities between the client and provider pairs for the provide state:
+// while providing is off, the provider share backs the client pair instead
+// of idling, and the provider pair drops to its working floor. The dns
+// share is unaffected. Applies live — queues admit against the new
+// capacities immediately (a shrunken pool admits nothing new above its new
+// total until it drains). Called under stateLock (and once single-threaded
+// at construction with the initial off state).
+func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
+	_, clientShareByteCount, providerShareByteCount := deviceMemoryShares(self.settings)
+	if clientShareByteCount <= 0 {
+		// no target: legacy static sizing
+		return
+	}
+	clientPairByteCount := clientShareByteCount
+	providerPairByteCount := ByteCount(0)
+	if provideActive {
+		// half the provider share backs the provider client's pair; the
+		// other half sizes the egress nat flow caps (rebuilt on provide-on)
+		providerPairByteCount = providerShareByteCount / 2
+	} else {
+		clientPairByteCount += providerShareByteCount
+	}
+	if resendQueueBudget := self.settings.ClientSettings.SendBufferSettings.ResendQueueBudget; resendQueueBudget != nil {
+		resendQueueBudget.SetTotalByteCount(max(clientPairByteCount*3/7, 1024*1024))
+	}
+	if receiveQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget; receiveQueueBudget != nil {
+		receiveQueueBudget.SetTotalByteCount(max(clientPairByteCount*4/7, 1536*1024))
+	}
+	if self.provider != nil {
+		if resendQueueBudget, receiveQueueBudget := self.provider.transferBudgets(); resendQueueBudget != nil {
+			// the floors keep the idle provider client's control sequences
+			// working while its pool is reallocated
+			resendQueueBudget.SetTotalByteCount(max(providerPairByteCount*3/7, 256*1024))
+			receiveQueueBudget.SetTotalByteCount(max(providerPairByteCount*4/7, 384*1024))
+		}
+	}
+}
+
+func providerLocalUserNatSettings(memoryTargetByteCount ByteCount, log connect.Logger) *connect.LocalUserNatSettings {
+	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(memoryTargetByteCount)
 	localUserNatSettings.Log = log
 	return localUserNatSettings
 }
@@ -2270,18 +2543,24 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 			self.provideMode = provideMode
 			changed = true
 
+			// reallocate the provider share of the memory target between the
+			// client and provider pairs for the new provide state
+			self.applyProvideMemorySharesWithLock(provideMode != ProvideModeNone)
+
 			if provideMode != ProvideModeNone {
 				// recreate the provider user nat only as needed
 				// this avoid connection disruptions
 				if self.remoteUserNatProviderLocalUserNat == nil {
-					localUserNatSettings := providerLocalUserNatSettings(self.log)
+					_, _, providerShareByteCount := deviceMemoryShares(self.settings)
+					localUserNatSettings := providerLocalUserNatSettings(providerShareByteCount, self.log)
 					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(client.Ctx(), self.clientId.String(), localUserNatSettings)
 				}
 				if self.remoteUserNatProvider == nil {
 					// the provider egresses remote clients' traffic and runs its own security policy:
 					// the connect default is the reversed client policy
 					// (DefaultProviderSecurityPolicyWithStats), or an explicitly set provider policy
-					providerSettings := connect.DefaultRemoteUserNatProviderSettings()
+					_, _, providerShareByteCount := deviceMemoryShares(self.settings)
+					providerSettings := connect.DefaultRemoteUserNatProviderSettingsWithMemoryTarget(providerShareByteCount)
 					if self.providerSecurityPolicyGenerator != nil {
 						providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
 					}
@@ -2401,6 +2680,78 @@ func (self *DeviceLocal) RemoveDestination() {
 	self.SetDestination(nil, nil)
 }
 
+// saveDohServerScoresWithLock captures a mux's learned per-DoH-server ordering into the
+// in-session seed (so the next mux build starts from live experience) and persists it in the
+// background for the next session's first lookups. Callers hold stateLock; the file write
+// happens off the lock.
+func (self *DeviceLocal) saveDohServerScoresWithLock(upgradeMux *connect.UpgradeMux) {
+	scores := upgradeMux.DnsServerScores()
+	if len(scores) == 0 {
+		return
+	}
+	self.dohServerScoresSeed = scores
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		localState := asyncLocalState.GetLocalState()
+		go connect.HandleError(func() {
+			localState.setDohServerScores(scores)
+		})
+	}
+}
+
+// NetworkChanged reacts to a host network path change (wifi<->cell, interface
+// change): every platform transport closes its live connection and re-dials
+// over the new path immediately — instead of discovering the dead socket via
+// ping timeouts seconds later — and the mux drops its pooled DoH connections,
+// treats the tunnel-DoH as unproven (short local fallback until it re-proves),
+// and re-warms in the background. Apps call this from the OS path-update
+// signal (NWPathMonitor / ConnectivityManager); it is cheap and safe to call
+// on every update.
+// SetPerformanceDegraded reports the host's degraded-performance state: low
+// power mode, thermal throttling, or a weak/constrained network. While set,
+// the window clients' liveness probe timings are scaled up (default 3x) so a
+// device that legitimately answers slowly is not misdiagnosed as a dead peer
+// — a false removal (flow resets + reconnect churn) costs more than slower
+// dead-peer detection. Apps call this from the OS signals (iOS low power
+// mode / thermal state / constrained path; android power save mode); cheap
+// and safe to call on every change.
+func (self *DeviceLocal) SetPerformanceDegraded(degraded bool) {
+	self.performanceDegraded.Store(degraded)
+	self.stateLock.Lock()
+	remoteUserNatClient := self.remoteUserNatClient
+	self.stateLock.Unlock()
+	if multi, ok := remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+		multi.SetPerformanceDegraded(degraded)
+	}
+}
+
+func (self *DeviceLocal) NetworkChanged() {
+	// kick every platform transport in the process (window clients + the
+	// provider client); connections bound to the old path re-dial now
+	connect.NetworkChanged()
+	self.stateLock.Lock()
+	upgradeMux := self.upgradeMux
+	self.stateLock.Unlock()
+	if upgradeMux != nil {
+		upgradeMux.NetworkChanged()
+	}
+}
+
+// GetFirstLoadTimelineJson returns the current connect's first-load timeline samples (dns
+// query→answer, tcp/443 syn→synack and first payload byte for the first flows after connect)
+// as json, for diagnostics. Empty when not connected. See connect.FirstLoadSample.
+func (self *DeviceLocal) GetFirstLoadTimelineJson() string {
+	self.stateLock.Lock()
+	upgradeMux := self.upgradeMux
+	self.stateLock.Unlock()
+	if upgradeMux == nil {
+		return ""
+	}
+	if samplesBytes, err := json.Marshal(upgradeMux.FirstLoadSamples()); err == nil {
+		return string(samplesBytes)
+	}
+	return ""
+}
+
 func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList) {
 	provideChanged := false
 	func() {
@@ -2426,6 +2777,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 		var priorUpgradeMux *connect.UpgradeMux
 		if self.upgradeMux != nil {
 			priorUpgradeMux = self.upgradeMux
+			// capture the mux's learned DoH server ordering before teardown: it seeds
+			// the next mux this session and persists for the next session's first
+			// lookups (see dohServerScoresSeed)
+			self.saveDohServerScoresWithLock(priorUpgradeMux)
 			self.upgradeMux.Close()
 			self.upgradeMux = nil
 		}
@@ -2435,6 +2790,12 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			connectSpecs := []*connect.ProviderSpec{}
 			for i := 0; i < specs.Len(); i += 1 {
 				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
+			}
+			// scope window identity persistence to this destination: identities
+			// recorded under one connect's specs must never steer a connect to a
+			// different destination (restored identities are dialed first)
+			if self.windowIdentityStore != nil {
+				self.windowIdentityStore.SetSpecsFingerprint(providerSpecsFingerprint(connectSpecs))
 			}
 
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
@@ -2518,6 +2879,9 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 						// queues draw from the same pools
 						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
 						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
+						// p2p peer connections admit against the shared
+						// receive budget
+						clientSettings.WebRtcSettings.MemoryBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
 						return clientSettings
 					},
 					connect.DefaultApiMultiClientGeneratorSettings(),
@@ -2550,6 +2914,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			muxReceive := connect.ReceivePacketFunction(remoteReceive)
 			var upgradeMux *connect.UpgradeMux
 			if self.upgradeMuxSettings != nil {
+				if self.upgradeMuxSettings.Dns != nil {
+					// the device's dns byte budget bounds this mux's
+					// resolvers (persistent across mux rebuilds)
+					self.upgradeMuxSettings.Dns.MemoryTarget = self.dnsMemoryTarget
+					// carry the learned DoH server ordering into the fresh resolvers
+					self.upgradeMuxSettings.Dns.ServerStatsSeed = self.dohServerScoresSeed
+				}
 				m, err := connect.NewUpgradeMux(
 					self.ctx,
 					connect.SourceId(self.clientId),
@@ -2585,6 +2956,9 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				peerProvideMode,
 				settings,
 			)
+			// carry the host's degraded-performance state into the fresh window
+			// (eases the liveness probe timings; see SetPerformanceDegraded)
+			multi.SetPerformanceDegraded(self.performanceDegraded.Load())
 			self.contractStatusSub = multi.AddContractStatusCallback(self.updateContractStatus)
 			self.peerIdentitySub = multi.AddPeerIdentityChangeCallback(self.providerIdentitiesChanged)
 			self.remoteUserNatClient = multi
@@ -2595,6 +2969,10 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				// the mux blocks ad/tracker hostnames at the dns layer
 				upgradeMux.SetBlocker(self.blocker)
 				self.upgradeMux = upgradeMux
+				// pre-warm the DoH connections in the background: the tunnel dials park
+				// until the window can carry traffic and complete at tunnel-up, so the
+				// first lookup rides an already-open connection (see UpgradeMux.WarmDns)
+				upgradeMux.WarmDns()
 			}
 			monitor := multi.Monitor()
 			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
@@ -2878,6 +3256,15 @@ func (self *DeviceLocal) Cancel() {
 }
 
 func (self *DeviceLocal) Close() {
+	self.closeOnce.Do(self.close)
+}
+
+func (self *DeviceLocal) close() {
+	// Controllers can hold device listeners and window monitor callbacks.
+	// Release them before taking the device state lock so their transitive
+	// Close methods can safely call back into the device.
+	self.viewControllerManager.Close()
+
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -2908,6 +3295,8 @@ func (self *DeviceLocal) Close() {
 		self.windowMonitorSub = nil
 	}
 	if self.upgradeMux != nil {
+		// persist the learned DoH server ordering for the next session
+		self.saveDohServerScoresWithLock(self.upgradeMux)
 		self.upgradeMux.Close()
 		self.upgradeMux = nil
 	}

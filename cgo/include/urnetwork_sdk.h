@@ -685,8 +685,11 @@ bool urnet_device_upload_logs(uint64_t self, const char* feedback_id, urnet_uplo
 
 uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_packet_cb receive_packet_receive_packet, void* receive_packet_user_data);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
+char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
+char* urnet_device_local_memory_used(uint64_t self);
+void urnet_device_local_network_changed(uint64_t self);
 uint64_t urnet_device_local_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_block_action_view_controller(uint64_t self);
@@ -707,6 +710,7 @@ uint64_t urnet_device_local_open_wallet_view_controller(uint64_t self);
 bool urnet_device_local_send_packet(uint64_t self, const uint8_t* packet, int32_t packet_len, int64_t n);
 void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
+void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
 void urnet_device_local_set_tunnel_dns_setting(uint64_t self, const char* setting_json);
 char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
@@ -1020,6 +1024,7 @@ uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, cons
 uint64_t urnet_new_device_local_key_material(const uint8_t* client_key_seed, int32_t client_key_seed_len, const uint8_t* provide_tls_certificate_pem, int32_t provide_tls_certificate_pem_len, const uint8_t* provide_tls_private_key_pem, int32_t provide_tls_private_key_pem_len);
 uint64_t urnet_new_device_local_with_defaults(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, char** out_error);
 uint64_t urnet_new_device_local_with_key_material(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, char** out_error);
+uint64_t urnet_new_device_local_with_memory_target(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, int64_t memory_target_byte_count, char** out_error);
 uint64_t urnet_new_device_remote_with_defaults(uint64_t network_space, const char* by_jwt, const char* instance_id, char** out_error);
 char* urnet_new_id(void);
 uint64_t urnet_new_login_view_controller(uint64_t api);
@@ -1041,6 +1046,7 @@ char* urnet_service_url(const char* key_json, const char* values_json, const cha
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
+void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
 int64_t urnet_usd_to_nano_cents(double usd);
 
 /* ----- linux/unix only ----- */
@@ -1529,7 +1535,18 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: ApiError | null
  */
 
+/* DeviceLocalMemoryUsage (json):
+ *   TargetByteCount: number
+ *   DnsByteCount: number
+ *   ClientSendByteCount: number
+ *   ClientReceiveByteCount: number
+ *   ProviderSendByteCount: number
+ *   ProviderReceiveByteCount: number
+ *   TotalByteCount: number
+ */
+
 /* DeviceLocalSettings (json):
+ *   MemoryTargetByteCount: number
  *   SendTimeout: number (ns)
  *   SequenceBufferSize: number
  *   NetContractStatusDuration: number (ns)

@@ -250,7 +250,21 @@ func newLoopbackDeviceEnv(t *testing.T, ctx context.Context, networkSpace *Netwo
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
-	device.SetRouteLocal(true) // explicit; already the default
+	tun, bridgeTeardown := newLoopbackBridgeForDevice(t, device)
+	teardown = func() {
+		// device first: canceling the device ctx releases any bridge send
+		// parked in the retry loop, then the bridge close joins cleanly
+		device.Close() // cancels device ctx, closes provider + mux/nat
+		bridgeTeardown()
+	}
+	return device, tun, teardown
+}
+
+// newLoopbackBridgeForDevice attaches a gvisor tun to an existing device over
+// the route-local path, bridging packets both ways. The returned teardown
+// closes the bridge (not the device).
+func newLoopbackBridgeForDevice(t *testing.T, device *DeviceLocal) (tun *connect.Tun, teardown func()) {
+	device.SetRouteLocal(true) // explicit; already the default for the loopback env
 
 	// The LocalUserNat assumes the source->NAT link is lossless and in-order
 	// (ip.go: "do not implement any retransmit logic"), but DeviceLocal's
@@ -264,9 +278,8 @@ func newLoopbackDeviceEnv(t *testing.T, ctx context.Context, networkSpace *Netwo
 	tunSettings.Log = connect.NewNoopLogger()
 	tunSettings.TcpSendBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
 	tunSettings.TcpReceiveBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
-	tun, err = connect.CreateTun(ctx, tunSettings)
+	tun, err := connect.CreateTun(device.Ctx(), tunSettings)
 	if err != nil {
-		device.Close()
 		t.Fatalf("create tun: %v", err)
 	}
 
@@ -317,14 +330,13 @@ func newLoopbackDeviceEnv(t *testing.T, ctx context.Context, networkSpace *Netwo
 
 	teardown = func() {
 		unsub()
-		device.Close() // cancels device ctx, closes provider + mux/nat
-		tun.Close()    // unblocks tun.Read -> bridge goroutine exits
+		tun.Close() // unblocks tun.Read -> bridge goroutine exits
 		wg.Wait()
 		if r := retries.Load(); r > 0 {
 			t.Logf("bridge retried %d sends (transient downstream backpressure; no packets dropped)", r)
 		}
 	}
-	return device, tun, teardown
+	return tun, teardown
 }
 
 func runLoadIteration(ctx context.Context, tun *connect.Tun, addr string, rounds int, flows int, bytesPerFlow int) error {

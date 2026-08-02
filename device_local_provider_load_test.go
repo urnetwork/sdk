@@ -20,7 +20,7 @@ import (
 
 // TestDeviceLocalProviderMemoryUnderLoad measures the total process memory of
 // a DeviceLocal serving remote peers as a provider, configured with the ios
-// packet tunnel budget (`SetMemoryLimit(24 MiB)`). It is the provider-side
+// packet tunnel budget (`SetMemoryLimit(32 MiB)`). It is the provider-side
 // counterpart of TestDeviceLocalMemoryCeiling: that test drives the device's
 // own client path; this one drives the provide path that serves other clients.
 //
@@ -40,21 +40,23 @@ import (
 // measurement set, to compare across provider memory changes:
 //
 //   - idle: quiesced heap with the device + peers connected, before load
-//   - peakTotal/peakHeap: max sampled go runtime total / live heap during load.
-//     Total is the number the ios jetsam footprint sees (plus non-go memory),
-//     so peakTotal is the headline number.
+//   - peakTotal/peakHeap: max sampled Go soft-limit usage / live heap during
+//     load. peakTotal is not RSS or the iOS jetsam footprint: binary mappings,
+//     C allocations, and kernel memory are outside this gauge.
 //   - loaded: quiesced heap right after load (flows closed, nat entries and
 //     pools still warm)
 //   - final: quiesced heap after the peers disconnect
 //
 // Set URNETWORK_PROVIDER_MEM_PROFILE_DIR to also write pprof heap profiles at
-// the loaded and final points for allocation-site attribution.
+// the loaded and final points for allocation-site attribution. Set
+// URNETWORK_PROVIDER_GOROUTINE_PROFILE=1 to print the loaded goroutine profile
+// grouped by stack, for per-flow goroutine attribution.
 func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DeviceLocal provider memory test in -short mode")
 	}
 
-	const budgetByteCount = 24 * 1024 * 1024
+	const budgetByteCount = 32 * 1024 * 1024
 
 	const (
 		peerCount    = 6
@@ -78,11 +80,12 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		peakTotalCeiling  = 40 << 20
 	)
 
+	pinIosGcPacing(t)
 	prevLimit := debug.SetMemoryLimit(-1)
 	SetMemoryLimit(budgetByteCount)
 	t.Cleanup(func() {
 		connect.SetMemoryBudget(0)
-		connect.ResizeMessagePools(connect.InitialMessagePoolByteCount)
+		SetMessagePoolMemoryTargets(connect.InitialMessagePoolByteCount/2, connect.InitialMessagePoolByteCount/2)
 		debug.SetMemoryLimit(prevLimit)
 	})
 
@@ -188,6 +191,13 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		loadedGoroutines, humanBytes(loadedHeap),
 		stats.PoolTakenCount, stats.PoolReturnedCount, stats.PoolCreatedCount,
 		stats.PoolTakenCount-stats.PoolReturnedCount)
+	if os.Getenv("URNETWORK_PROVIDER_GOROUTINE_PROFILE") != "" {
+		if profile := pprof.Lookup("goroutine"); profile != nil {
+			if err := profile.WriteTo(os.Stdout, 1); err != nil {
+				t.Logf("write goroutine profile: %v", err)
+			}
+		}
+	}
 	writeProviderMemProfile(t, "provider_mem_loaded")
 
 	closePeers()
@@ -240,9 +250,16 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	peerSettings.Log = connect.NewNoopLogger()
 	peerClient := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), peerSettings)
 
-	// lossless in-memory routes in both directions
-	routeToProvider := make(chan []byte)
-	routeToPeer := make(chan []byte)
+	// lossless in-memory routes in both directions, buffered to mirror the
+	// production transports (TransportBufferSize=32 buffered routes). an
+	// unbuffered route serializes the pipeline on per-frame scheduler
+	// rendezvous and under-measures the device by ~25%. burst safety at this
+	// depth depends on the nat ingress dispatch applying bounded
+	// backpressure instead of drop-on-full (see RemoteUserNatProvider
+	// ClientReceive) — without it, bursts corrupt per-flow tcp state and
+	// collapse runs into stall-to-timeout.
+	routeToProvider := make(chan []byte, 64)
+	routeToPeer := make(chan []byte, 64)
 
 	peerSend := connect.NewSendGatewayTransport()
 	peerReceive := connect.NewReceiveGatewayTransport()
@@ -376,10 +393,9 @@ func startUdpEchoServer(t *testing.T) (addr string, closeFn func()) {
 	}
 }
 
-// peakSampler tracks the max go runtime total bytes, live heap, and goroutine
-// count while running. The runtime total is what the os footprint accounting
-// sees for the go side, so its peak is the number that pushes an ios extension
-// over the jetsam limit.
+// peakSampler tracks the max Go soft-limit-accounted bytes, live heap, and
+// goroutine count while running. This is runtime-managed memory minus released
+// heap pages, not process RSS or the iOS jetsam footprint.
 type peakSampler struct {
 	stopCh chan struct{}
 	doneCh chan struct{}

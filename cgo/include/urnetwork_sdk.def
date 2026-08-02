@@ -251,6 +251,7 @@ EXPORTS
 	urnet_device_local_add_receive_packet
 	urnet_device_local_close_view_controller
 	urnet_device_local_get_client_key_seed
+	urnet_device_local_get_first_load_timeline_json
 	urnet_device_local_get_key_material
 	urnet_device_local_get_provide_secret_keys
 	urnet_device_local_get_provide_tls_certificate_pem
@@ -259,6 +260,8 @@ EXPORTS
 	urnet_device_local_key_material_get_provide_tls_certificate_pem
 	urnet_device_local_key_material_get_provide_tls_private_key_pem
 	urnet_device_local_key_material_is_empty
+	urnet_device_local_memory_used
+	urnet_device_local_network_changed
 	urnet_device_local_open_account_preferences_view_controller
 	urnet_device_local_open_account_view_controller
 	urnet_device_local_open_block_action_view_controller
@@ -279,6 +282,7 @@ EXPORTS
 	urnet_device_local_send_packet
 	urnet_device_local_set_by_jwt
 	urnet_device_local_set_key_material
+	urnet_device_local_set_performance_degraded
 	urnet_device_local_set_rpc_server
 	urnet_device_local_set_tunnel_dns_setting
 	urnet_device_local_tunnel_dns_addresses_ipv4
@@ -486,6 +490,7 @@ EXPORTS
 	urnet_new_device_local_key_material
 	urnet_new_device_local_with_defaults
 	urnet_new_device_local_with_key_material
+	urnet_new_device_local_with_memory_target
 	urnet_new_device_remote_with_defaults
 	urnet_new_id
 	urnet_new_login_view_controller
@@ -535,6 +540,7 @@ EXPORTS
 	urnet_set_egress_interface_index
 	urnet_set_log_dir
 	urnet_set_memory_limit
+	urnet_set_message_pool_memory_targets
 	urnet_sub_close
 	urnet_tunnel_cancel
 	urnet_tunnel_close

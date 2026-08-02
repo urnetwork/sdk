@@ -214,6 +214,38 @@ func TestContractViewControllerDenseSampling(t *testing.T) {
 	}
 }
 
+func TestThroughputSeriesNotificationHasBoundedIdleTail(t *testing.T) {
+	active := zeroThroughputPoint(time.Now())
+	active.Remote.EgressByteCount = 1
+	series := &throughputSeries{points: []*ThroughputPoint{active}}
+
+	if !throughputSeriesNeedsNotification(series) {
+		t.Fatal("active series did not request a notification")
+	}
+
+	for i := 1; i <= throughputQuietNotifySampleCount; i++ {
+		series.points = append(series.points, zeroThroughputPoint(time.Now().Add(time.Duration(i)*time.Second)))
+		if !throughputSeriesNeedsNotification(series) {
+			t.Fatalf("quiet sample %d stopped notifications before the bounded settle tail", i)
+		}
+	}
+
+	series.points = append(
+		series.points,
+		zeroThroughputPoint(time.Now().Add(time.Duration(throughputQuietNotifySampleCount+1)*time.Second)),
+	)
+	if throughputSeriesNeedsNotification(series) {
+		t.Fatal("idle series continued notifying after its bounded settle tail")
+	}
+
+	resumed := zeroThroughputPoint(time.Now().Add(10 * time.Second))
+	resumed.Local.IngressPacketCount = 1
+	series.points = append(series.points, resumed)
+	if !throughputSeriesNeedsNotification(series) {
+		t.Fatal("new activity did not resume notifications")
+	}
+}
+
 // TestContractViewControllerProviderMirror asserts that provider-series points
 // present the relay (remote) traffic mirrored onto the local route: remote
 // ingress becomes local egress and remote egress becomes local ingress, since

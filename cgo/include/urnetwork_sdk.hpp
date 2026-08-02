@@ -277,6 +277,7 @@ struct CreateAccountWalletResult;
 struct CreateApiKeyArgs;
 struct CreateApiKeyResult;
 struct DeleteApiKeyResult;
+struct DeviceLocalMemoryUsage;
 struct DeviceLocalSettings;
 struct DeviceRemoteAddress;
 struct DeviceSetNameArgs;
@@ -967,7 +968,18 @@ struct DeleteApiKeyResult {
 	std::optional<ApiError> error;
 };
 
+struct DeviceLocalMemoryUsage {
+	int64_t TargetByteCount{};
+	int64_t DnsByteCount{};
+	int64_t ClientSendByteCount{};
+	int64_t ClientReceiveByteCount{};
+	int64_t ProviderSendByteCount{};
+	int64_t ProviderReceiveByteCount{};
+	int64_t TotalByteCount{};
+};
+
 struct DeviceLocalSettings {
+	int64_t MemoryTargetByteCount{};
 	int64_t SendTimeout{};
 	int64_t SequenceBufferSize{};
 	int64_t NetContractStatusDuration{};
@@ -2033,6 +2045,8 @@ inline void to_json(nlohmann::json& j, const CreateApiKeyResult& v);
 inline void from_json(const nlohmann::json& j, CreateApiKeyResult& v);
 inline void to_json(nlohmann::json& j, const DeleteApiKeyResult& v);
 inline void from_json(const nlohmann::json& j, DeleteApiKeyResult& v);
+inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v);
+inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v);
 inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v);
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v);
 inline void to_json(nlohmann::json& j, const DeviceRemoteAddress& v);
@@ -4682,8 +4696,46 @@ inline void from_json(const nlohmann::json& j, DeleteApiKeyResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
+	j = nlohmann::json::object();
+	j["TargetByteCount"] = v.TargetByteCount;
+	j["DnsByteCount"] = v.DnsByteCount;
+	j["ClientSendByteCount"] = v.ClientSendByteCount;
+	j["ClientReceiveByteCount"] = v.ClientReceiveByteCount;
+	j["ProviderSendByteCount"] = v.ProviderSendByteCount;
+	j["ProviderReceiveByteCount"] = v.ProviderReceiveByteCount;
+	j["TotalByteCount"] = v.TotalByteCount;
+}
+inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("TargetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TargetByteCount);
+	}
+	if (auto it = j.find("DnsByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsByteCount);
+	}
+	if (auto it = j.find("ClientSendByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientSendByteCount);
+	}
+	if (auto it = j.find("ClientReceiveByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientReceiveByteCount);
+	}
+	if (auto it = j.find("ProviderSendByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderSendByteCount);
+	}
+	if (auto it = j.find("ProviderReceiveByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderReceiveByteCount);
+	}
+	if (auto it = j.find("TotalByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TotalByteCount);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j = nlohmann::json::object();
+	j["MemoryTargetByteCount"] = v.MemoryTargetByteCount;
 	j["SendTimeout"] = v.SendTimeout;
 	j["SequenceBufferSize"] = v.SequenceBufferSize;
 	j["NetContractStatusDuration"] = v.NetContractStatusDuration;
@@ -4718,6 +4770,9 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("MemoryTargetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MemoryTargetByteCount);
 	}
 	if (auto it = j.find("SendTimeout"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SendTimeout);
@@ -9253,8 +9308,11 @@ public:
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
 	void closeViewController(ViewController vc) const;
+	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
+	std::optional<DeviceLocalMemoryUsage> memoryUsed() const;
+	void networkChanged() const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
@@ -9275,6 +9333,7 @@ public:
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
+	void setPerformanceDegraded(bool degraded) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
 	std::optional<StringList> tunnelDnsAddressesIpv4() const;
@@ -15617,6 +15676,10 @@ inline void DeviceLocal::closeViewController(ViewController vc) const {
 	}
 	urnet_device_local_close_view_controller(handle(), vc_fn ? &detail::retained_view_controller_close : nullptr, vc_fn ? &detail::retained_view_controller_start : nullptr, vc_fn ? &detail::retained_view_controller_stop : nullptr, vc_fn.get());
 }
+inline std::string DeviceLocal::getFirstLoadTimelineJson() const {
+	char* r_c = urnet_device_local_get_first_load_timeline_json(handle());
+	return detail::takeString(r_c);
+}
 inline DeviceLocalKeyMaterial DeviceLocal::getKeyMaterial() const {
 	DeviceLocalKeyMaterial r(urnet_device_local_get_key_material(handle()));
 	return r;
@@ -15628,6 +15691,17 @@ inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() c
 		return std::nullopt;
 	}
 	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
+}
+inline std::optional<DeviceLocalMemoryUsage> DeviceLocal::memoryUsed() const {
+	char* r_c = urnet_device_local_memory_used(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DeviceLocalMemoryUsage>(r_s->c_str());
+}
+inline void DeviceLocal::networkChanged() const {
+	urnet_device_local_network_changed(handle());
 }
 inline AccountPreferencesViewController DeviceLocal::openAccountPreferencesViewController() const {
 	AccountPreferencesViewController r(urnet_device_local_open_account_preferences_view_controller(handle()));
@@ -15706,6 +15780,9 @@ inline void DeviceLocal::setByJwt(const std::string& by_jwt) const {
 }
 inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const {
 	urnet_device_local_set_key_material(handle(), key_material.handle());
+}
+inline void DeviceLocal::setPerformanceDegraded(bool degraded) const {
+	urnet_device_local_set_performance_degraded(handle(), degraded);
 }
 inline void DeviceLocal::setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const {
 	char* err_c = nullptr;
@@ -17226,6 +17303,14 @@ inline DeviceLocal newDeviceLocalWithKeyMaterial(const NetworkSpace& network_spa
 	}
 	return r;
 }
+inline DeviceLocal newDeviceLocalWithMemoryTarget(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& device_description, const std::string& device_spec, const std::string& app_version, const std::string& instance_id, bool enable_rpc, const DeviceLocalKeyMaterial& key_material, int64_t memory_target_byte_count) {
+	char* err_c = nullptr;
+	DeviceLocal r(urnet_new_device_local_with_memory_target(network_space.handle(), by_jwt.c_str(), device_description.c_str(), device_spec.c_str(), app_version.c_str(), instance_id.c_str(), enable_rpc, key_material.handle(), memory_target_byte_count, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline DeviceRemote newDeviceRemoteWithDefaults(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& instance_id) {
 	char* err_c = nullptr;
 	DeviceRemote r(urnet_new_device_remote_with_defaults(network_space.handle(), by_jwt.c_str(), instance_id.c_str(), &err_c));
@@ -17371,6 +17456,9 @@ inline void setLogDir(const std::string& log_dir) {
 }
 inline void setMemoryLimit(int64_t limit) {
 	urnet_set_memory_limit(limit);
+}
+inline void setMessagePoolMemoryTargets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count) {
+	urnet_set_message_pool_memory_targets(packet_pool_byte_count, large_object_pool_byte_count);
 }
 inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);

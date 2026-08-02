@@ -20,6 +20,10 @@ import (
 const (
 	defaultThroughputSampleInterval = 1 * time.Second
 	defaultThroughputWindowDuration = 60 * time.Second
+	// Keep enough trailing zero samples to settle short rolling-rate labels,
+	// then stop emitting identical idle snapshots. Sampling continues, so
+	// the first new non-zero point wakes clients immediately.
+	throughputQuietNotifySampleCount = 5
 	// hard cap on retained points, independent of the window settings
 	throughputPointMaxCount = 1024
 	// points kept just before the window start, so the spline that renders the
@@ -182,6 +186,7 @@ func (self *ContractViewController) sample() {
 	sampleTime := time.Now()
 
 	appended := false
+	notify := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -192,11 +197,49 @@ func (self *ContractViewController) sample() {
 		if self.sampleSeriesWithLock(self.providerSeries, providerPacketStats, sampleTime, true) {
 			appended = true
 		}
+		if appended {
+			notify = throughputSeriesNeedsNotification(self.clientSeries) ||
+				throughputSeriesNeedsNotification(self.providerSeries)
+		}
 	}()
 
-	if appended {
+	if notify {
 		self.throughputChanged()
 	}
+}
+
+// throughputSeriesNeedsNotification returns true while a series is active and
+// for a short, bounded zero tail after it becomes idle. Once that tail is
+// fully zero, later timestamp-only snapshots are semantically redundant to UI
+// clients; time-based charts scroll the retained points using their own clock.
+func throughputSeriesNeedsNotification(series *throughputSeries) bool {
+	trailingZeroCount := 0
+	for i := len(series.points) - 1; 0 <= i; i-- {
+		if throughputPointActive(series.points[i]) {
+			return true
+		}
+		trailingZeroCount++
+		if throughputQuietNotifySampleCount < trailingZeroCount {
+			return false
+		}
+	}
+	return 0 < trailingZeroCount && trailingZeroCount <= throughputQuietNotifySampleCount
+}
+
+func throughputPointActive(point *ThroughputPoint) bool {
+	if point == nil {
+		return false
+	}
+	for _, sample := range []*ThroughputSample{point.Remote, point.Local, point.Block} {
+		if sample != nil &&
+			(0 < sample.EgressByteCount ||
+				0 < sample.IngressByteCount ||
+				0 < sample.EgressPacketCount ||
+				0 < sample.IngressPacketCount) {
+			return true
+		}
+	}
+	return false
 }
 
 // must be called with `stateLock`.

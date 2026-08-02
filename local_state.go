@@ -305,6 +305,54 @@ func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverS
 	}
 }
 
+// dohServerScoresStaleAfter discards a persisted DoH server score snapshot older than this:
+// server rankings are fairly stable, but a weeks-old snapshot should not bias a fresh session.
+const dohServerScoresStaleAfter = 7 * 24 * time.Hour
+
+// persistedDohServerScores is the on-disk form of the per-DoH-server success scores
+// (connect.DohSettings.ServerStatsSeed), stamped with the save time for staleness.
+type persistedDohServerScores struct {
+	SavedAt time.Time          `json:"saved_at"`
+	Scores  map[string]float64 `json:"scores"`
+}
+
+// GetDohServerScores returns the persisted per-DoH-server success scores from the last
+// session (nil if none, unreadable, or stale), used to seed the resolver fan-out order so
+// the first lookups after launch pick the known-fastest server. See
+// connect.DohSettings.ServerStatsSeed.
+func (self *LocalState) getDohServerScores() map[string]float64 {
+	path := filepath.Join(self.localStorageDir, ".doh_server_scores")
+	scoresBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var persisted persistedDohServerScores
+	if err := json.Unmarshal(scoresBytes, &persisted); err != nil {
+		return nil
+	}
+	if persisted.SavedAt.IsZero() || dohServerScoresStaleAfter < time.Since(persisted.SavedAt) {
+		return nil
+	}
+	return persisted.Scores
+}
+
+// SetDohServerScores persists the per-DoH-server success scores (nil/empty removes).
+func (self *LocalState) setDohServerScores(scores map[string]float64) error {
+	path := filepath.Join(self.localStorageDir, ".doh_server_scores")
+	if len(scores) == 0 {
+		os.Remove(path)
+		return nil
+	}
+	scoresBytes, err := json.Marshal(&persistedDohServerScores{
+		SavedAt: time.Now(),
+		Scores:  scores,
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, scoresBytes, LocalStorageFilePermissions)
+}
+
 func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettingsBytes, err := os.ReadFile(path); err == nil {

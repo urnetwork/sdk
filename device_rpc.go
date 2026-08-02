@@ -131,9 +131,10 @@ var _ device = (*DeviceRemote)(nil)
 var _ ViewControllerManager = (*DeviceRemote)(nil)
 
 type DeviceRemote struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	log    connect.Logger
+	ctx       context.Context
+	cancel    context.CancelFunc
+	log       connect.Logger
+	closeOnce sync.Once
 
 	networkSpace *NetworkSpace
 	byJwt        string
@@ -480,7 +481,9 @@ func (self *DeviceRemote) run() {
 
 				windowMonitorListenerIds := map[connect.Id][]connect.Id{}
 				for windowId, windowMonitor := range self.windowMonitors {
-					windowMonitorListenerIds[windowId] = slices.Collect(maps.Keys(windowMonitor.listeners))
+					if 0 < len(windowMonitor.listeners) {
+						windowMonitorListenerIds[windowId] = slices.Collect(maps.Keys(windowMonitor.listeners))
+					}
 				}
 
 				syncRequest := &DeviceRemoteSyncRequest{
@@ -2408,25 +2411,27 @@ func (self *DeviceRemote) Cancel() {
 }
 
 func (self *DeviceRemote) Close() {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	self.closeOnce.Do(func() {
+		// Close child controllers while the RPC service is still available so
+		// their listener removals reach the hosted device. In particular,
+		// ConnectViewController.Close now detaches its current window monitor.
+		self.viewControllerManager.Close()
+		self.cancel()
 
-	self.cancel()
+		self.stateLock.Lock()
+		tokenManager := self.tokenManager
+		self.tokenManager = nil
+		self.stateLock.Unlock()
 
-	// if self.service != nil {
-	// 	self.service.Close()
-	// 	self.service = nil
-	// }
+		if tokenManager != nil {
+			tokenManager.Close()
+		}
 
-	if self.tokenManager != nil {
-		self.tokenManager.Close()
-	}
-
-	api := self.networkSpace.GetApi()
-	api.SetByJwt("")
-	api.setHttpPostRaw(nil)
-	api.setHttpGetRaw(nil)
-
+		api := self.networkSpace.GetApi()
+		api.SetByJwt("")
+		api.setHttpPostRaw(nil)
+		api.setHttpGetRaw(nil)
+	})
 }
 
 func (self *DeviceRemote) GetDone() bool {
@@ -2439,23 +2444,23 @@ func (self *DeviceRemote) GetDone() bool {
 }
 
 func (self *DeviceRemote) windowMonitor() windowMonitor {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
-	windowMonitor := newDeviceRemoteWindowMonitor(self)
-	self.windowMonitors[windowMonitor.windowId] = windowMonitor
-	return windowMonitor
+	// Registration is deferred until the first callback is attached. A grid
+	// can be canceled between requesting a monitor and subscribing to it; eagerly
+	// retaining here would leave an empty historical window in every reconnect
+	// sync request.
+	return newDeviceRemoteWindowMonitor(self)
 }
 
 func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(windowMonitor *deviceRemoteWindowMonitor, monitorEventCallback connect.MonitorEventFunction) func() {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	_, ok := self.windowMonitors[windowMonitor.windowId]
-	if !ok {
-		// the window is not longer active
+	if existing, ok := self.windowMonitors[windowMonitor.windowId]; ok && existing != windowMonitor {
+		// IDs are unique, but do not allow an obsolete object to replace a live
+		// monitor if a malformed caller reuses one.
 		return func() {}
 	}
+	self.windowMonitors[windowMonitor.windowId] = windowMonitor
 
 	listenerId := connect.NewId()
 	windowMonitor.listeners[listenerId] = monitorEventCallback
@@ -2486,6 +2491,9 @@ func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(windowMonitor *de
 		defer self.stateLock.Unlock()
 
 		delete(windowMonitor.listeners, listenerId)
+		if len(windowMonitor.listeners) == 0 {
+			delete(self.windowMonitors, windowMonitor.windowId)
+		}
 
 		if self.service != nil {
 			func() {

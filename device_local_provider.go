@@ -56,6 +56,19 @@ type deviceLocalProvider struct {
 	auth              *connect.ClientAuth
 	authVersion       uint64
 	platformTransport migratablePlatformTransport
+
+	// the provider client's own transfer budget pair, when sized from the
+	// provider share of the device memory target (see
+	// newDeviceLocalProviderWithOverrides). nil when the provider shares the
+	// device client budgets (no target).
+	resendQueueBudget  *connect.TransferMemoryBudget
+	receiveQueueBudget *connect.TransferMemoryBudget
+}
+
+// transferBudgets returns the provider client's own budget pair, or nils
+// when the provider shares the device client budgets
+func (self *deviceLocalProvider) transferBudgets() (resendQueueBudget *connect.TransferMemoryBudget, receiveQueueBudget *connect.TransferMemoryBudget) {
+	return self.resendQueueBudget, self.receiveQueueBudget
 }
 
 func newDeviceLocalProviderWithOverrides(
@@ -66,6 +79,7 @@ func newDeviceLocalProviderWithOverrides(
 	instanceId connect.Id,
 	settings *connect.ClientSettings,
 	clientId connect.Id,
+	memoryTargetByteCount ByteCount,
 ) *deviceLocalProvider {
 	apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
@@ -81,6 +95,25 @@ func newDeviceLocalProviderWithOverrides(
 		clientSettings.EncryptionSettings = connect.DefaultEncryptionSettings()
 	}
 	clientSettings.EncryptionSettings.Encrypt = true
+
+	// the provider client owns its own transfer budget pair, sized from the
+	// provider share of the device memory target: half that share, split 3:4
+	// send:receive like the client pair (the egress nat flow caps take the
+	// other half, see DefaultProviderLocalUserNatSettingsWithMemoryTarget).
+	// without a target the provider keeps the historical wiring — its
+	// sequences share the device client budgets carried in on the settings
+	// copy.
+	var resendQueueBudget *connect.TransferMemoryBudget
+	var receiveQueueBudget *connect.TransferMemoryBudget
+	if 0 < memoryTargetByteCount {
+		pairTarget := memoryTargetByteCount / 2
+		resendQueueBudget = connect.NewTransferMemoryBudget(max(pairTarget*3/7, 256*1024))
+		receiveQueueBudget = connect.NewTransferMemoryBudget(max(pairTarget*4/7, 384*1024))
+		clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
+		clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+		// provider p2p peer connections admit against the provider budget
+		clientSettings.WebRtcSettings.MemoryBudget = receiveQueueBudget
+	}
 
 	client := connect.NewClient(
 		ctx,
@@ -105,10 +138,11 @@ func newDeviceLocalProviderWithOverrides(
 		platformTransportSettings,
 	)
 
-	// This NAT is the provider egress surface: use the explicit provider
-	// profile so an unbudgeted desktop/server build does not become
-	// unbounded, while generic local NAT callers do not inherit phone caps.
-	localUserNatSettings := connect.DefaultProviderLocalUserNatSettings()
+	// This NAT is the local-fallback egress surface: use the explicit
+	// provider profile sized from the provider share, so an unbudgeted
+	// desktop/server build does not become unbounded, while generic local
+	// NAT callers do not inherit phone caps.
+	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(memoryTargetByteCount)
 	localUserNatSettings.Log = clientSettings.Log
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
@@ -127,6 +161,8 @@ func newDeviceLocalProviderWithOverrides(
 		migrateConnectTimeout:     platformTransportMigrateConnectTimeout,
 		migrateMaxScheduleDelay:   platformTransportMigrateMaxScheduleDelay,
 		auth:                      auth,
+		resendQueueBudget:         resendQueueBudget,
+		receiveQueueBudget:        receiveQueueBudget,
 	}
 	// the platform asks the client to migrate its transport when the resident
 	// is draining (make-before-break, CONNECTDRAIN2.md §3.3)
@@ -292,6 +328,22 @@ func newDeviceClientSettings(
 	if clientSettings.EncryptionSettings != nil {
 		encryptionSettings := *clientSettings.EncryptionSettings
 		clientSettings.EncryptionSettings = &encryptionSettings
+	}
+	// copy the buffer settings structs too, so a caller-specific budget
+	// assignment (the provider pair, the window client stamps) never mutates
+	// the caller's structs through the alias. the budget pointers inside
+	// carry over, preserving sharing until a caller overwrites them.
+	if clientSettings.SendBufferSettings != nil {
+		sendBufferSettings := *clientSettings.SendBufferSettings
+		clientSettings.SendBufferSettings = &sendBufferSettings
+	}
+	if clientSettings.ReceiveBufferSettings != nil {
+		receiveBufferSettings := *clientSettings.ReceiveBufferSettings
+		clientSettings.ReceiveBufferSettings = &receiveBufferSettings
+	}
+	if clientSettings.WebRtcSettings != nil {
+		webRtcSettings := *clientSettings.WebRtcSettings
+		clientSettings.WebRtcSettings = &webRtcSettings
 	}
 
 	// Install the default out-of-band peer-key cross-check when none

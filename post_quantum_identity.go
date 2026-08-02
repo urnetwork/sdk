@@ -15,8 +15,9 @@ import (
 // RenderIdenticonPng renders the canonical identicon raster for `input` as an
 // opaque size x size png. This is the one true identicon rendering for
 // identity keys on every platform; apps clip the corners client-side.
+// Renders the goidenticons v2 scheme (URnetwork brand palette).
 func RenderIdenticonPng(input []byte, size int) ([]byte, error) {
-	return goidenticons.RenderPng(input, size)
+	return goidenticons.RenderPngV2(input, size)
 }
 
 // publicIdentityKeyHashEncoding is unpadded uppercase base32 (RFC 4648)

@@ -44,6 +44,8 @@ type ConnectViewController struct {
 	device Device
 
 	stateLock sync.Mutex
+	closeOnce sync.Once
+	closed    bool
 
 	connectLocationChangedSub Sub
 
@@ -114,9 +116,24 @@ func (self *ConnectViewController) Start() {}
 func (self *ConnectViewController) Stop() {}
 
 func (self *ConnectViewController) Close() {
-	deviceLog(self.device).Info("[cvc]close")
-	self.cancel()
-	self.connectLocationChangedSub.Close()
+	self.closeOnce.Do(func() {
+		deviceLog(self.device).Info("[cvc]close")
+		self.cancel()
+
+		var grid *ConnectGrid
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+
+			self.closed = true
+			grid = self.grid
+			self.grid = nil
+		}()
+		self.connectLocationChangedSub.Close()
+		if grid != nil {
+			grid.close()
+		}
+	})
 }
 
 func (self *ConnectViewController) GetConnected() bool {
@@ -288,24 +305,37 @@ func (self *ConnectViewController) Disconnect() {
 
 func (self *ConnectViewController) setGrid() {
 	var grid *ConnectGrid
+	var previousGrid *ConnectGrid
 	changed := false
+	closed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		if self.closed {
+			closed = true
+			return
+		}
+
 		if self.connected {
-			if self.grid != nil {
-				self.grid.close()
-			}
+			previousGrid = self.grid
 			grid = newConnectGridWithDefaults(self.ctx, self)
 			self.grid = grid
 			changed = true
 		} else if self.grid != nil {
-			self.grid.close()
+			previousGrid = self.grid
 			self.grid = nil
 			changed = true
 		}
 	}()
+
+	if closed {
+		return
+	}
+
+	if previousGrid != nil {
+		previousGrid.close()
+	}
 
 	if grid != nil {
 		self.setConnectionStatus(DestinationSet)

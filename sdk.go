@@ -13,6 +13,7 @@ import (
 
 	// "math/big"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"time"
 
@@ -45,7 +46,24 @@ import (
 // `warp` environment expectations, which is not compatible with the client lib
 
 func init() {
-	debug.SetGCPercent(10)
+	// gc pacing: the go soft memory limit (see SetMemoryLimit) is the
+	// footprint backstop; gogc paces how often the collector runs below it.
+	// ios keeps the historical 10 (a collection every 10% of heap growth):
+	// the network extension carries ~16 MiB of baseline under a ~50 MiB
+	// jetsam limit, and a higher float measurably regressed throughput there
+	// — the raised heap triggers os memory-pressure events whose FreeMemory
+	// response drains the pools (cold reuse caches), and the footprint
+	// approaches the soft limit where allocation pays gc assist. Android and
+	// desktop/server hosts have real headroom and run mostly off it, with
+	// the soft limit bounding the footprint.
+	switch runtime.GOOS {
+	case "ios":
+		debug.SetGCPercent(10)
+	case "android":
+		debug.SetGCPercent(50)
+	default:
+		debug.SetGCPercent(100)
+	}
 
 	initGlog()
 
@@ -149,17 +167,60 @@ func SetLogDir(logDir string) error {
 	return err
 }
 
-// SetMemoryLimit tunes the sdk to a process memory budget:
-//   - scales the memory-dominant connect defaults (queue caps, receive windows,
-//     socket buffers, cache bounds) for objects constructed after this call
-//   - bounds the message pool free lists to limit/8 total bytes
+// memory target ratio: how SetMemoryLimit divides the process budget into
+// the global message pool bounds, in parts of `memoryTargetRatioParts`. at
+// the reference 34 MB budget this lands on 12 MB packet pool / 2 MB large
+// object pools. Pool retention is live heap against the go soft memory
+// limit, so oversized pool caps squeeze the collector into assist mode near
+// the limit (measured as an ios throughput regression at 22 MB of caps) —
+// the caps only need to cover the in-flight high-water. The remaining 20
+// parts are the reference per-device 20 MB memory target (split dns 2 :
+// client 14 : provider 4 inside the device) — each device's target is set
+// explicitly where the device is created (see
+// DeviceLocalSettings.MemoryTargetByteCount and
+// NewDeviceLocalWithMemoryTarget), not by this call.
+const (
+	memoryTargetRatioPacketPool      = 12
+	memoryTargetRatioLargeObjectPool = 2
+	memoryTargetRatioParts           = 34
+)
+
+// SetMemoryLimit tunes the sdk to a process memory budget. the app-facing
+// process-level knob:
+//   - bounds the global message pool free lists by ratio (packet pool 12 :
+//     large object pools 2, of 34 parts) via SetMessagePoolMemoryTargets
+//   - scales the remaining memory-dominant connect defaults (receive
+//     windows, socket buffers, cache bounds) for objects constructed after
+//     this call
 //   - sets the go runtime soft memory limit
 //
-// call this at process start, before constructing devices
+// call this at process start. It deliberately does NOT size per-device
+// memory: each DeviceLocal's target is passed explicitly where the device
+// is created, so a multi-device process bounds every device independently.
 func SetMemoryLimit(limit int64) {
+	SetMessagePoolMemoryTargets(
+		limit*memoryTargetRatioPacketPool/memoryTargetRatioParts,
+		limit*memoryTargetRatioLargeObjectPool/memoryTargetRatioParts,
+	)
+	// Pre-warm up to 1 MiB (and no more than a quarter of the packet-class
+	// cap) so the first traffic burst skips the cold allocation storm.
+	// Startup only — the pressure path (FreeMemory) deliberately leaves pools
+	// cold.
+	connect.WarmMessagePools()
 	connect.SetMemoryBudget(limit)
-	connect.ResizeMessagePools(limit / 8)
 	debug.SetMemoryLimit(limit)
+}
+
+// SetMessagePoolMemoryTargets bounds the global message pool free lists:
+// packetPoolByteCount bounds the packet (2048) class, and
+// largeObjectPoolByteCount is split evenly among the larger size classes.
+// The pools are the process-global complement to the per-device memory
+// target (DeviceLocalSettings.MemoryTargetByteCount). Applies live.
+func SetMessagePoolMemoryTargets(
+	packetPoolByteCount int64,
+	largeObjectPoolByteCount int64,
+) {
+	connect.ResizeMessagePools(packetPoolByteCount, largeObjectPoolByteCount)
 }
 
 // SetEgressInterfaceIndex binds the sdk's outbound sockets to the given
