@@ -3,8 +3,6 @@ package sdk
 import (
 	"net/url"
 	"testing"
-
-	"github.com/urnetwork/connect"
 )
 
 // TestDeviceRpcUrl covers deviceRpcUrl, which normalizes a proxy host into the
@@ -21,28 +19,70 @@ func TestDeviceRpcUrl(t *testing.T) {
 		scheme string
 		host   string
 	}{
-		{"bare host defaults to wss", "proxy.example.com", "wss", "proxy.example.com"},
-		{"host:port defaults to wss", "proxy.example.com:8443", "wss", "proxy.example.com:8443"},
-		{"wss passthrough", "wss://proxy.example.com", "wss", "proxy.example.com"},
-		{"ws passthrough", "ws://127.0.0.1:7500", "ws", "127.0.0.1:7500"},
-		{"https upgrades to wss", "https://proxy.example.com", "wss", "proxy.example.com"},
-		{"http downgrades to ws", "http://127.0.0.1:7500", "ws", "127.0.0.1:7500"},
+		{
+			name:   "bare host defaults to wss",
+			in:     "proxy.example.com",
+			scheme: "wss",
+			host:   "proxy.example.com",
+		},
+		{
+			name:   "host:port defaults to wss",
+			in:     "proxy.example.com:8443",
+			scheme: "wss",
+			host:   "proxy.example.com:8443",
+		},
+		{
+			name:   "wss passthrough",
+			in:     "wss://proxy.example.com",
+			scheme: "wss",
+			host:   "proxy.example.com",
+		},
+		{
+			name:   "ws passthrough",
+			in:     "ws://127.0.0.1:7500",
+			scheme: "ws",
+			host:   "127.0.0.1:7500",
+		},
+		{
+			name:   "https upgrades to wss",
+			in:     "https://proxy.example.com",
+			scheme: "wss",
+			host:   "proxy.example.com",
+		},
+		{
+			name:   "http downgrades to ws",
+			in:     "http://127.0.0.1:7500",
+			scheme: "ws",
+			host:   "127.0.0.1:7500",
+		},
 	}
 
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			s, err := deviceRpcUrl(c.in, signed)
-			connect.AssertEqual(t, err, nil)
+		s, err := deviceRpcUrl(c.in, signed)
+		if err != nil {
+			t.Errorf("%s: deviceRpcUrl: %v", c.name, err)
+			continue
+		}
 
-			u, err := url.Parse(s)
-			connect.AssertEqual(t, err, nil)
-			connect.AssertEqual(t, u.Scheme, c.scheme)
-			connect.AssertEqual(t, u.Host, c.host)
-			// the path is always /device-rpc
-			connect.AssertEqual(t, u.Path, "/device-rpc")
-			// the signed proxy id round-trips through the query encoding intact,
-			// including the base64 specials
-			connect.AssertEqual(t, u.Query().Get("proxy"), signed)
-		})
+		u, err := url.Parse(s)
+		if err != nil {
+			t.Errorf("%s: parse %q: %v", c.name, s, err)
+			continue
+		}
+		if u.Scheme != c.scheme {
+			t.Errorf("%s: scheme = %q, want %q", c.name, u.Scheme, c.scheme)
+		}
+		if u.Host != c.host {
+			t.Errorf("%s: host = %q, want %q", c.name, u.Host, c.host)
+		}
+		// the path is always /device-rpc
+		if u.Path != "/device-rpc" {
+			t.Errorf("%s: path = %q, want /device-rpc", c.name, u.Path)
+		}
+		// the signed proxy id round-trips through the query encoding intact,
+		// including the base64 specials
+		if proxy := u.Query().Get("proxy"); proxy != signed {
+			t.Errorf("%s: proxy = %q, want %q", c.name, proxy, signed)
+		}
 	}
 }

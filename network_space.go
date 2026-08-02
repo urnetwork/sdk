@@ -247,6 +247,16 @@ func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, b
 		values,
 		storagePath,
 	)
+	// AsyncLocalState owns a background-context worker rather than inheriting
+	// the NetworkSpace context. Tests historically canceled ctx but never
+	// closed that worker, retaining one goroutine and its temporary storage per
+	// test invocation. Tie both test-only resources to the supplied lifetime.
+	context.AfterFunc(ctx, func() {
+		if networkSpace.asyncLocalState != nil {
+			networkSpace.asyncLocalState.Close()
+		}
+		_ = os.RemoveAll(storagePath)
+	})
 	byJwt = ""
 	return
 }

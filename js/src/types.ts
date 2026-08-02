@@ -461,7 +461,9 @@ export interface DevicesViewController {
 /**
  * Custom DNS resolver settings — DoH/plain-DNS toggles and the per-family server
  * lists, matching the native DNS editor. `enableFallback` races a handicapped
- * host-network resolver during tunnel startup.
+ * host-network resolver during tunnel startup. `dnsUpgradeMaskAddress` is the
+ * plain-DNS stand-in advertised while UpgradeMux intercepts port 53; it is not
+ * an upstream resolver.
  */
 export interface DnsResolverSettings {
   enableRemoteDoh: boolean;
@@ -469,6 +471,7 @@ export interface DnsResolverSettings {
   enableRemoteDns: boolean;
   enableLocalDns: boolean;
   enableFallback: boolean;
+  dnsUpgradeMaskAddress: string;
 
   remoteDohUrlsIpv4: string[];
   remoteDohUrlsIpv6: string[];

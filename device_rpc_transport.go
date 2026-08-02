@@ -571,8 +571,10 @@ var _ deviceRpcDialer = (*WebsocketDeviceRpcDialer)(nil)
 
 type WebsocketDeviceRpcDialer struct {
 	address       *DeviceRemoteAddress
-	clientPem     string // client identity to present (cert+key); optional
-	serverCertPem string // server cert to pin; empty => unencrypted
+	tlsConfig     *tls.Config
+	tlsConfigErr  error
+	useMtls       bool
+	lastDialError string
 	settings      *deviceRpcSettings
 	log           connect.Logger
 }
@@ -583,12 +585,22 @@ type WebsocketDeviceRpcDialer struct {
 // non-empty it is presented as the client identity (mTLS). These are the
 // GetClientPem / GetServerCertPem values from GenerateDeviceRpcKeyMaterial.
 func NewWebsocketDeviceRpcDialer(address *DeviceRemoteAddress, clientPem string, serverCertPem string, settings *deviceRpcSettings) *WebsocketDeviceRpcDialer {
+	log := settings.logger()
+	var tlsConfig *tls.Config
+	var tlsConfigErr error
+	if len(serverCertPem) != 0 {
+		// The identity and pin are immutable for the lifetime of a dialer.
+		// Parsing them once avoids repeating PEM, ASN.1, and private-key work
+		// on every reconnect; gorilla clones the config before each handshake.
+		tlsConfig, tlsConfigErr = clientTlsConfig(log, serverCertPem, clientPem)
+	}
 	return &WebsocketDeviceRpcDialer{
-		address:       address,
-		clientPem:     clientPem,
-		serverCertPem: serverCertPem,
-		settings:      settings,
-		log:           settings.logger(),
+		address:      address,
+		tlsConfig:    tlsConfig,
+		tlsConfigErr: tlsConfigErr,
+		useMtls:      len(serverCertPem) != 0 && len(clientPem) != 0,
+		settings:     settings,
+		log:          log,
 	}
 }
 
@@ -603,23 +615,29 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 		HandshakeTimeout: self.settings.RpcConnectTimeout,
 		NetDialContext:   netDialer.DialContext,
 	}
+	if self.tlsConfigErr != nil {
+		return nil, nil, self.tlsConfigErr
+	}
 	scheme := "ws"
-	if len(self.serverCertPem) != 0 {
-		tlsConfig, err := clientTlsConfig(self.log, self.serverCertPem, self.clientPem)
-		if err != nil {
-			return nil, nil, err
-		}
-		dialer.TLSClientConfig = tlsConfig
+	if self.tlsConfig != nil {
+		dialer.TLSClientConfig = self.tlsConfig
 		scheme = "wss"
 	}
 	u := url.URL{Scheme: scheme, Host: self.address.HostPort(), Path: "/"}
 
-	self.log.Infof("[dr]dial %s (mtls=%t)", u.String(), len(self.clientPem) != 0)
+	if self.log.V(2).Enabled() {
+		self.log.Infof("[dr]dial %s (mtls=%t)", u.String(), self.useMtls)
+	}
 	ws, _, err := dialer.DialContext(ctx, u.String(), nil)
 	if err != nil {
-		self.log.Infof("[dr]dial %s err = %s", u.String(), err)
+		dialError := err.Error()
+		if dialError != self.lastDialError {
+			self.log.Infof("[dr]dial %s err = %s", u.String(), err)
+			self.lastDialError = dialError
+		}
 		return nil, nil, err
 	}
+	self.lastDialError = ""
 	self.log.Infof("[dr]dial %s connected", u.String())
 	mux := newDeviceRpcMux(ctx, ws, self.settings)
 	return mux.conns[deviceRpcStreamForward], mux.conns[deviceRpcStreamReverse], nil

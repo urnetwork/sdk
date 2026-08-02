@@ -1034,6 +1034,7 @@ struct DnsResolverSettings {
 	bool EnableRemoteDns{};
 	bool EnableLocalDns{};
 	bool EnableFallback{};
+	std::string DnsUpgradeMaskAddress{};
 	std::optional<StringList> RemoteDohUrlsIpv4;
 	std::optional<StringList> RemoteDohUrlsIpv6;
 	std::optional<StringList> LocalDohUrlsIpv4;
@@ -4937,6 +4938,7 @@ inline void to_json(nlohmann::json& j, const DnsResolverSettings& v) {
 	j["EnableRemoteDns"] = v.EnableRemoteDns;
 	j["EnableLocalDns"] = v.EnableLocalDns;
 	j["EnableFallback"] = v.EnableFallback;
+	j["DnsUpgradeMaskAddress"] = v.DnsUpgradeMaskAddress;
 	if (v.RemoteDohUrlsIpv4) {
 		j["RemoteDohUrlsIpv4"] = *v.RemoteDohUrlsIpv4;
 	}
@@ -4980,6 +4982,9 @@ inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 	}
 	if (auto it = j.find("EnableFallback"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableFallback);
+	}
+	if (auto it = j.find("DnsUpgradeMaskAddress"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsUpgradeMaskAddress);
 	}
 	if (auto it = j.find("RemoteDohUrlsIpv4"); it != j.end() && !it->is_null()) {
 		StringList tmp{};
@@ -9307,6 +9312,14 @@ public:
 	DeviceLocal() = default;
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
+	void closeBlockActionViewController(const BlockActionViewController& vc) const;
+	void closeConnectViewController(const ConnectViewController& vc) const;
+	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
+	void closeContractViewController(const ContractViewController& vc) const;
+	void closeDevicesViewController(const DevicesViewController& vc) const;
+	void closeLocationsViewController(const LocationsViewController& vc) const;
+	void closePeerViewController(const PeerViewController& vc) const;
+	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
@@ -9364,6 +9377,14 @@ public:
 	explicit DeviceRemote(uint64_t h) : Device(h) {}
 	Sub addDeviceRecreatedListener(DeviceRecreatedListener listener) const;
 	Sub addRemoteChangeListener(RemoteChangeListener listener) const;
+	void closeBlockActionViewController(const BlockActionViewController& vc) const;
+	void closeConnectViewController(const ConnectViewController& vc) const;
+	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
+	void closeContractViewController(const ContractViewController& vc) const;
+	void closeDevicesViewController(const DevicesViewController& vc) const;
+	void closeLocationsViewController(const LocationsViewController& vc) const;
+	void closePeerViewController(const PeerViewController& vc) const;
+	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	bool getRemoteConnected() const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
@@ -15666,6 +15687,30 @@ inline Sub DeviceLocal::addReceivePacket(ReceivePacket receive_packet) const {
 	}
 	return r;
 }
+inline void DeviceLocal::closeBlockActionViewController(const BlockActionViewController& vc) const {
+	urnet_device_local_close_block_action_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeConnectViewController(const ConnectViewController& vc) const {
+	urnet_device_local_close_connect_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeContractDetailsViewController(const ContractDetailsViewController& vc) const {
+	urnet_device_local_close_contract_details_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeContractViewController(const ContractViewController& vc) const {
+	urnet_device_local_close_contract_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeDevicesViewController(const DevicesViewController& vc) const {
+	urnet_device_local_close_devices_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeLocationsViewController(const LocationsViewController& vc) const {
+	urnet_device_local_close_locations_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closePeerViewController(const PeerViewController& vc) const {
+	urnet_device_local_close_peer_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const {
+	urnet_device_local_close_post_quantum_identity_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -15856,6 +15901,30 @@ inline Sub DeviceRemote::addRemoteChangeListener(RemoteChangeListener listener) 
 		r.retain(listener_fn);
 	}
 	return r;
+}
+inline void DeviceRemote::closeBlockActionViewController(const BlockActionViewController& vc) const {
+	urnet_device_remote_close_block_action_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closeConnectViewController(const ConnectViewController& vc) const {
+	urnet_device_remote_close_connect_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closeContractDetailsViewController(const ContractDetailsViewController& vc) const {
+	urnet_device_remote_close_contract_details_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closeContractViewController(const ContractViewController& vc) const {
+	urnet_device_remote_close_contract_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closeDevicesViewController(const DevicesViewController& vc) const {
+	urnet_device_remote_close_devices_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closeLocationsViewController(const LocationsViewController& vc) const {
+	urnet_device_remote_close_locations_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closePeerViewController(const PeerViewController& vc) const {
+	urnet_device_remote_close_peer_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const {
+	urnet_device_remote_close_post_quantum_identity_view_controller(handle(), vc.handle());
 }
 inline void DeviceRemote::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
@@ -17198,6 +17267,10 @@ inline std::optional<DnsResolverSettings> getDefaultDnsResolverSettings() {
 		return std::nullopt;
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
+}
+inline std::string getDefaultTunnelDnsAddressIpv4() {
+	char* r_c = urnet_get_default_tunnel_dns_address_ipv4();
+	return detail::takeString(r_c);
 }
 inline std::optional<FilteredLocations> getFilteredLocationsFromResult(const std::optional<FindLocationsResult>& result, const std::string& filter) {
 	std::string result_json;

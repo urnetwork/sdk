@@ -81,11 +81,16 @@ func reportGoroutineLeaks(t *testing.T, before, after map[string]int, tolerance 
 	var leaks []string
 	for sig, n := range after {
 		if n-before[sig] > tolerance && !isRuntimeSignature(sig) {
-			top := sig
-			if i := strings.IndexByte(sig, '\n'); i >= 0 {
-				top = sig[:i]
-			}
-			leaks = append(leaks, fmt.Sprintf("+%d %s", n-before[sig], top))
+			// Include the complete normalized creation chain. Several
+			// lifecycle workers can share the same top frame (for example,
+			// concurrent Tun.DialContext attempts) while being owned by
+			// different parents; printing only the top frame makes that
+			// distinction—and therefore the actual missing teardown—opaque.
+			leaks = append(leaks, fmt.Sprintf(
+				"+%d %s",
+				n-before[sig],
+				strings.ReplaceAll(sig, "\n", "\n      "),
+			))
 		}
 	}
 	if len(leaks) > 0 {

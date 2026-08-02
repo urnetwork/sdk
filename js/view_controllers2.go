@@ -70,17 +70,17 @@ func jsBlockActionList(list *sdk.BlockActionList) js.Value {
 	return js.ValueOf(out)
 }
 
-func jsBlockActionViewController(vc *sdk.BlockActionViewController) js.Value {
+func jsBlockActionViewController(
+	vc *sdk.BlockActionViewController,
+	closeController func(),
+) js.Value {
 	if vc == nil {
 		return js.Null()
 	}
 
 	m := map[string]any{}
 
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		vc.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(closeController)
 	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc.Start()
 		return js.Null()
@@ -175,17 +175,14 @@ func jsFilteredLocations(f *sdk.FilteredLocations) js.Value {
 	})
 }
 
-func jsLocationsViewController(vc *sdk.LocationsViewController) js.Value {
+func jsLocationsViewController(vc *sdk.LocationsViewController, closeController func()) js.Value {
 	if vc == nil {
 		return js.Null()
 	}
 
 	m := map[string]any{}
 
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		vc.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(closeController)
 	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc.Start()
 		return js.Null()
@@ -280,17 +277,14 @@ func jsNetworkClientInfoList(list *sdk.NetworkClientInfoList) js.Value {
 	return js.ValueOf(out)
 }
 
-func jsDevicesViewController(vc *sdk.DevicesViewController) js.Value {
+func jsDevicesViewController(vc *sdk.DevicesViewController, closeController func()) js.Value {
 	if vc == nil {
 		return js.Null()
 	}
 
 	m := map[string]any{}
 
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		vc.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(closeController)
 	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc.Start()
 		return js.Null()

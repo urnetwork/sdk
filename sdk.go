@@ -19,9 +19,6 @@ import (
 
 	// "strings"
 
-	// "net/http"
-	// _ "net/http/pprof"
-
 	"github.com/urnetwork/glog"
 
 	"github.com/urnetwork/connect"
@@ -66,8 +63,6 @@ func init() {
 	}
 
 	initGlog()
-
-	// initPprof()
 }
 
 func initGlog() {
@@ -265,12 +260,6 @@ func MessagePoolGetRaw(n int) []byte {
 func MessagePoolReturn(b []byte) {
 	connect.MessagePoolReturn(b)
 }
-
-// func initPprof() {
-// 	go func() {
-// 		glog.Infof("pprof = %s\n", http.ListenAndServe(":6060", nil))
-// 	}()
-// }
 
 // this value is set via the linker, e.g.
 // -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
@@ -599,8 +588,8 @@ func (self *ConnectLocation) Equals(b *ConnectLocation) bool {
 	if b == nil {
 		return false
 	}
-	if self.ConnectLocationId == nil {
-		return b.ConnectLocationId == nil
+	if self.ConnectLocationId == nil || b.ConnectLocationId == nil {
+		return self.ConnectLocationId == nil && b.ConnectLocationId == nil
 	}
 	return self.ConnectLocationId.Cmp(b.ConnectLocationId) == 0
 }

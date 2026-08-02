@@ -6195,6 +6195,118 @@ func urnet_device_local_add_receive_packet(self C.uint64_t, receivePacket_receiv
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_close_block_action_view_controller
+func urnet_device_local_close_block_action_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_block_action_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_block_action_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.BlockActionViewController](uint64(vc), "urnet_device_local_close_block_action_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseBlockActionViewController(vc_)
+}
+
+//export urnet_device_local_close_connect_view_controller
+func urnet_device_local_close_connect_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_connect_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_connect_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ConnectViewController](uint64(vc), "urnet_device_local_close_connect_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseConnectViewController(vc_)
+}
+
+//export urnet_device_local_close_contract_details_view_controller
+func urnet_device_local_close_contract_details_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_contract_details_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(vc), "urnet_device_local_close_contract_details_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseContractDetailsViewController(vc_)
+}
+
+//export urnet_device_local_close_contract_view_controller
+func urnet_device_local_close_contract_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_contract_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_contract_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ContractViewController](uint64(vc), "urnet_device_local_close_contract_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseContractViewController(vc_)
+}
+
+//export urnet_device_local_close_devices_view_controller
+func urnet_device_local_close_devices_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_devices_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.DevicesViewController](uint64(vc), "urnet_device_local_close_devices_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseDevicesViewController(vc_)
+}
+
+//export urnet_device_local_close_locations_view_controller
+func urnet_device_local_close_locations_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_locations_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_locations_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.LocationsViewController](uint64(vc), "urnet_device_local_close_locations_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseLocationsViewController(vc_)
+}
+
+//export urnet_device_local_close_peer_view_controller
+func urnet_device_local_close_peer_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_peer_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_peer_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.PeerViewController](uint64(vc), "urnet_device_local_close_peer_view_controller")
+	if !ok {
+		return
+	}
+	self_.ClosePeerViewController(vc_)
+}
+
+//export urnet_device_local_close_post_quantum_identity_view_controller
+func urnet_device_local_close_post_quantum_identity_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_post_quantum_identity_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_post_quantum_identity_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(vc), "urnet_device_local_close_post_quantum_identity_view_controller")
+	if !ok {
+		return
+	}
+	self_.ClosePostQuantumIdentityViewController(vc_)
+}
+
 //export urnet_device_local_close_view_controller
 func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_view_controller_close_cb, vc_start C.urnet_view_controller_start_cb, vc_stop C.urnet_view_controller_stop_cb, vc_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_local_close_view_controller")
@@ -6679,6 +6791,118 @@ func urnet_device_remote_add_remote_change_listener(self C.uint64_t, listener_re
 	}
 	r0 := self_.AddRemoteChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_close_block_action_view_controller
+func urnet_device_remote_close_block_action_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_block_action_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_block_action_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.BlockActionViewController](uint64(vc), "urnet_device_remote_close_block_action_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseBlockActionViewController(vc_)
+}
+
+//export urnet_device_remote_close_connect_view_controller
+func urnet_device_remote_close_connect_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_connect_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_connect_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ConnectViewController](uint64(vc), "urnet_device_remote_close_connect_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseConnectViewController(vc_)
+}
+
+//export urnet_device_remote_close_contract_details_view_controller
+func urnet_device_remote_close_contract_details_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_contract_details_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_contract_details_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ContractDetailsViewController](uint64(vc), "urnet_device_remote_close_contract_details_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseContractDetailsViewController(vc_)
+}
+
+//export urnet_device_remote_close_contract_view_controller
+func urnet_device_remote_close_contract_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_contract_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_contract_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ContractViewController](uint64(vc), "urnet_device_remote_close_contract_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseContractViewController(vc_)
+}
+
+//export urnet_device_remote_close_devices_view_controller
+func urnet_device_remote_close_devices_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_devices_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_devices_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.DevicesViewController](uint64(vc), "urnet_device_remote_close_devices_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseDevicesViewController(vc_)
+}
+
+//export urnet_device_remote_close_locations_view_controller
+func urnet_device_remote_close_locations_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_locations_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_locations_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.LocationsViewController](uint64(vc), "urnet_device_remote_close_locations_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseLocationsViewController(vc_)
+}
+
+//export urnet_device_remote_close_peer_view_controller
+func urnet_device_remote_close_peer_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_peer_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_peer_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.PeerViewController](uint64(vc), "urnet_device_remote_close_peer_view_controller")
+	if !ok {
+		return
+	}
+	self_.ClosePeerViewController(vc_)
+}
+
+//export urnet_device_remote_close_post_quantum_identity_view_controller
+func urnet_device_remote_close_post_quantum_identity_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_post_quantum_identity_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_post_quantum_identity_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.PostQuantumIdentityViewController](uint64(vc), "urnet_device_remote_close_post_quantum_identity_view_controller")
+	if !ok {
+		return
+	}
+	self_.ClosePostQuantumIdentityViewController(vc_)
 }
 
 //export urnet_device_remote_close_view_controller
@@ -7300,6 +7524,13 @@ func urnet_get_default_dns_resolver_settings() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_get_default_dns_resolver_settings")
+}
+
+//export urnet_get_default_tunnel_dns_address_ipv4
+func urnet_get_default_tunnel_dns_address_ipv4() *C.char {
+	defer cgoGuard("urnet_get_default_tunnel_dns_address_ipv4")
+	r0 := sdk.GetDefaultTunnelDnsAddressIpv4()
+	return cString(string(r0))
 }
 
 //export urnet_get_filtered_locations_from_result

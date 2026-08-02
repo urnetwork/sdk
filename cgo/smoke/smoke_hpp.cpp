@@ -21,6 +21,7 @@
 int main() {
 	std::printf("version: \"%s\"\n", urnet::version().c_str());
 	CHECK(urnet::liveHandleCount() == 0);
+	CHECK(urnet::getDefaultTunnelDnsAddressIpv4() == "65.49.70.65");
 
 	// id roundtrip and the throwing error path
 	std::string id = urnet::newId();

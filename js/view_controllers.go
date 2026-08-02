@@ -3,10 +3,19 @@
 package main
 
 import (
+	"sync"
 	"syscall/js"
 
 	"github.com/urnetwork/sdk"
 )
+
+func jsViewControllerClose(closeController func()) js.Func {
+	var closeOnce sync.Once
+	return js.FuncOf(func(this js.Value, args []js.Value) any {
+		closeOnce.Do(closeController)
+		return js.Null()
+	})
+}
 
 // JS bindings for the SDK view controllers — the same layer the iOS/Android
 // screens are built on, so the web app renders from the same source of truth
@@ -78,17 +87,14 @@ func jsConnectGrid(grid *sdk.ConnectGrid) js.Value {
 // jsConnectViewController binds the connect state machine the app screens use:
 // connection status (DISCONNECTED / CONNECTING / DESTINATION_SET / CONNECTED),
 // the selected location, the provider grid, and connect/disconnect.
-func jsConnectViewController(vc *sdk.ConnectViewController) js.Value {
+func jsConnectViewController(vc *sdk.ConnectViewController, closeController func()) js.Value {
 	if vc == nil {
 		return js.Null()
 	}
 
 	m := map[string]any{}
 
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		vc.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(closeController)
 	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc.Start()
 		return js.Null()
@@ -269,17 +275,17 @@ func jsContractClientRowList(list *sdk.ContractClientRowList) js.Value {
 // per-peer grouping into send/receive stacks (newest first, stable order) and
 // the closing lifecycle. The web app renders these rows exactly like the native
 // apps do — none of that logic is reimplemented in JS.
-func jsContractDetailsViewController(vc *sdk.ContractDetailsViewController) js.Value {
+func jsContractDetailsViewController(
+	vc *sdk.ContractDetailsViewController,
+	closeController func(),
+) js.Value {
 	if vc == nil {
 		return js.Null()
 	}
 
 	m := map[string]any{}
 
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		vc.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(closeController)
 	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc.Start()
 		return js.Null()
@@ -385,17 +391,14 @@ func jsPacketStats(s *sdk.PacketStats) js.Value {
 	})
 }
 
-func jsContractViewController(vc *sdk.ContractViewController) js.Value {
+func jsContractViewController(vc *sdk.ContractViewController, closeController func()) js.Value {
 	if vc == nil {
 		return js.Null()
 	}
 
 	m := map[string]any{}
 
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		vc.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(closeController)
 	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc.Start()
 		return js.Null()

@@ -104,9 +104,12 @@ type deviceRpcSettings struct {
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
-		RpcCallTimeout:      60 * time.Second,
-		RpcConnectTimeout:   30 * time.Second,
-		RpcReconnectTimeout: 1 * time.Second,
+		RpcCallTimeout:    60 * time.Second,
+		RpcConnectTimeout: 30 * time.Second,
+		// Full-jitter over one second previously averaged two attempts per
+		// second but allowed millisecond retry clusters. A fixed half-second
+		// pace preserves that work rate while bounding resume detection sooner.
+		RpcReconnectTimeout: 500 * time.Millisecond,
 		// 5s ping; the read side tears down only after KeepAliveTimeout *
 		// (KeepAliveRetryCount+1) = 30s of silence, so normal iOS app suspension
 		// (the app process is frozen while backgrounded) does not flap the rpc,
@@ -397,7 +400,7 @@ func newDeviceRemoteWithOverrides(
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
 	api.setHttpGetRaw(deviceRemote.httpGetRaw)
 
-	newSecurityPolicyMonitor(ctx, deviceRemote)
+	newSecurityPolicyMonitor(ctx, deviceRemote, settings.Verbose)
 
 	// remote starts locked
 	// only after the first attempt to connect to the local does it unlock
@@ -418,11 +421,10 @@ func (self *DeviceRemote) run() {
 	initialLock := true
 	intialLockEndTime := time.Now().Add(self.settings.InitialLockTimeout)
 	for {
-		// rate-limit reconnects: ensure at least RpcReconnectTimeout between the
-		// start of one connect attempt and the next. Created per-iteration so the
-		// minimum applies to every attempt (after a long-lived connection drops,
-		// `After` fires immediately with no artificial delay).
-		syncReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
+		// Rate-limit local reconnects: ensure at least RpcReconnectTimeout
+		// between attempt starts. Sync and transport replacement still wake the
+		// loop immediately, so explicit recovery never waits for the pace.
+		syncReconnect := connect.NewPacedReconnect(self.settings.RpcReconnectTimeout)
 		handleCtx, handleCancel := context.WithCancel(self.ctx)
 
 		notify := self.reconnectMonitor.NotifyChannel()
@@ -692,9 +694,23 @@ func (self *DeviceRemote) RefreshToken(attempt int) error {
 }
 
 func (self *DeviceRemote) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
+	performanceProfile = clonePerformanceProfile(performanceProfile)
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+
+		if self.state.PerformanceProfile.IsSet {
+			if performanceProfileValuesEqual(self.state.PerformanceProfile.Value, performanceProfile) {
+				return
+			}
+		} else if self.lastKnownState.PerformanceProfile.IsSet &&
+			performanceProfileValuesEqual(self.lastKnownState.PerformanceProfile.Value, performanceProfile) {
+			// Reapplying the same app value after resume must not cross the
+			// process boundary. Representation changes still cross once so the
+			// DeviceLocal getter/listener contract preserves what the app set;
+			// DeviceLocal suppresses transport work when behavior is equivalent.
+			return
+		}
 
 		success := func() bool {
 			if self.service == nil {
@@ -733,15 +749,16 @@ func (self *DeviceRemote) GetPerformanceProfile() *PerformanceProfile {
 			return nil, false
 		}
 		performanceProfile := devicePerformanceProfile.PerformanceProfile
-		self.lastKnownState.PerformanceProfile.Set(performanceProfile)
-		return performanceProfile, true
+		self.lastKnownState.PerformanceProfile.Set(clonePerformanceProfile(performanceProfile))
+		return clonePerformanceProfile(performanceProfile), true
 	}()
 	if success {
 		return performanceProfile
 	} else {
-		return self.state.PerformanceProfile.Get(
+		performanceProfile := self.state.PerformanceProfile.Get(
 			self.lastKnownState.PerformanceProfile.Get(nil),
 		)
+		return clonePerformanceProfile(performanceProfile)
 	}
 }
 
@@ -1848,9 +1865,14 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 		return connectEnabled
 	} else {
 		if self.state.Location.IsSet {
-			return self.state.Location.Value.ConnectLocation != nil
+			return self.state.Location.Value != nil &&
+				self.state.Location.Value.ConnectLocation != nil
 		} else if self.state.Destination.IsSet {
-			return self.state.Destination.Value.Location.ConnectLocation != nil
+			// SetDestination supports a spec-only custom destination. Its
+			// display location may legitimately be nil; the spec list is the
+			// installed connection command.
+			return self.state.Destination.Value != nil &&
+				0 < len(self.state.Destination.Value.Specs)
 		} else if self.state.RemoveDestination.IsSet {
 			return false
 		} else {
@@ -2180,6 +2202,13 @@ func (self *DeviceRemote) RemoveDestination() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		if self.state.RemoveDestination.IsSet ||
+			(!self.state.Destination.IsSet &&
+				!self.state.Location.IsSet &&
+				self.lastKnownState.RemoveDestination.IsSet) {
+			return
+		}
+
 		success := func() bool {
 			if self.service == nil {
 				return false
@@ -2213,14 +2242,29 @@ func (self *DeviceRemote) RemoveDestination() {
 }
 
 func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *ProviderSpecList) {
+	var providerSpecs []*ProviderSpec
+	if specs != nil {
+		providerSpecs = cloneProviderSpecs(specs.getAll())
+	}
+	destination := &DeviceRemoteDestination{
+		Location: newDeviceRemoteConnectLocation(location),
+		Specs:    providerSpecs,
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		destination := &DeviceRemoteDestination{
-			Location: newDeviceRemoteConnectLocation(location),
-			Specs:    specs.getAll(),
+		if self.state.Destination.IsSet &&
+			deviceRemoteDestinationsEqual(self.state.Destination.Value, destination) {
+			return
+		}
+		if !self.state.Destination.IsSet &&
+			!self.state.Location.IsSet &&
+			!self.state.RemoveDestination.IsSet &&
+			self.lastKnownState.Destination.IsSet &&
+			deviceRemoteDestinationsEqual(self.lastKnownState.Destination.Value, destination) {
+			return
 		}
 
 		success := func() bool {
@@ -2255,12 +2299,39 @@ func (self *DeviceRemote) SetDestination(location *ConnectLocation, specs *Provi
 	}
 }
 
+func deviceRemoteDestinationsEqual(a *DeviceRemoteDestination, b *DeviceRemoteDestination) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	var aLocation *ConnectLocation
+	if a.Location != nil {
+		aLocation = a.Location.toConnectLocation()
+	}
+	var bLocation *ConnectLocation
+	if b.Location != nil {
+		bLocation = b.Location.toConnectLocation()
+	}
+	return connectLocationValuesEqual(aLocation, bLocation) &&
+		sdkProviderSpecsFingerprint(a.Specs) == sdkProviderSpecsFingerprint(b.Specs)
+}
+
 func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
 	deviceRemoteLocation := newDeviceRemoteConnectLocation(location)
 	event := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+
+		// Only a pending SetConnectLocation carries enough provenance to
+		// suppress here. A last-known Location may have come from a custom
+		// SetDestination whose spec list differs despite the same display
+		// location; DeviceLocal performs the authoritative installed-
+		// destination fingerprint check.
+		if self.state.Location.IsSet &&
+			self.state.Location.Value != nil &&
+			connectLocationValuesEqual(self.state.Location.Value.toConnectLocation(), location) {
+			return
+		}
 
 		success := func() bool {
 			if self.service == nil {
@@ -2307,21 +2378,40 @@ func (self *DeviceRemote) GetConnectLocation() *ConnectLocation {
 			return nil, false
 		}
 		self.lastKnownState.Location.Set(deviceRemoteLocation)
+		self.lastKnownState.Destination.Unset()
+		self.lastKnownState.RemoveDestination.Unset()
 		return deviceRemoteLocation.toConnectLocation(), true
 	}()
 	if success {
 		return location
 	} else {
-		if self.state.Location.IsSet {
-			return self.state.Location.Value.toConnectLocation()
-		} else if self.state.Destination.IsSet {
-			return self.state.Destination.Value.Location.toConnectLocation()
-		} else if self.lastKnownState.Location.IsSet {
-			return self.lastKnownState.Location.Value.toConnectLocation()
-		} else {
-			return nil
+		if location, known := deviceRemoteStateConnectLocation(&self.state); known {
+			return location
 		}
+		if location, known := deviceRemoteStateConnectLocation(&self.lastKnownState); known {
+			return location
+		}
+		return nil
 	}
+}
+
+func deviceRemoteStateConnectLocation(state *DeviceRemoteState) (*ConnectLocation, bool) {
+	if state.RemoveDestination.IsSet {
+		return nil, true
+	}
+	if state.Location.IsSet {
+		if state.Location.Value == nil {
+			return nil, true
+		}
+		return state.Location.Value.toConnectLocation(), true
+	}
+	if state.Destination.IsSet {
+		if state.Destination.Value == nil || state.Destination.Value.Location == nil {
+			return nil, true
+		}
+		return state.Destination.Value.Location.toConnectLocation(), true
+	}
+	return nil, false
 }
 
 func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
@@ -2337,13 +2427,23 @@ func (self *DeviceRemote) GetDefaultLocation() *ConnectLocation {
 		if err != nil {
 			return nil, false
 		}
+		self.lastKnownState.DefaultLocation.Set(defaultLocation)
 		return defaultLocation.toConnectLocation(), true
 	}()
 	if success {
 		return defaultLocation
 	} else {
 		if self.state.DefaultLocation.IsSet {
-			return self.state.DefaultLocation.Value.ConnectLocation.toConnectLocation()
+			if self.state.DefaultLocation.Value == nil {
+				return nil
+			}
+			return self.state.DefaultLocation.Value.toConnectLocation()
+		}
+		if self.lastKnownState.DefaultLocation.IsSet {
+			if self.lastKnownState.DefaultLocation.Value == nil {
+				return nil
+			}
+			return self.lastKnownState.DefaultLocation.Value.toConnectLocation()
 		}
 		self.log.Infof("No default location set, returning nil")
 		return nil
@@ -2357,6 +2457,21 @@ func (self *DeviceRemote) SetDefaultLocation(connectLocation *ConnectLocation) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+
+		if self.state.DefaultLocation.IsSet {
+			if self.state.DefaultLocation.Value != nil {
+				current := self.state.DefaultLocation.Value.toConnectLocation()
+				if connectLocationValuesEqual(current, connectLocation) {
+					return
+				}
+			}
+		} else if self.lastKnownState.DefaultLocation.IsSet &&
+			self.lastKnownState.DefaultLocation.Value != nil {
+			current := self.lastKnownState.DefaultLocation.Value.toConnectLocation()
+			if connectLocationValuesEqual(current, connectLocation) {
+				return
+			}
+		}
 
 		success := func() bool {
 			if self.service == nil {
@@ -2920,6 +3035,7 @@ func (self *DeviceRemote) providerIdentitiesChanged(providerIdentities *Provider
 }
 
 func (self *DeviceRemote) performanceProfileChanged(performanceProfile *PerformanceProfile) {
+	performanceProfile = clonePerformanceProfile(performanceProfile)
 	listenerList := func() []PerformanceProfileChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -2928,7 +3044,9 @@ func (self *DeviceRemote) performanceProfileChanged(performanceProfile *Performa
 	}()
 	for _, performanceProfileChangeListener := range listenerList {
 		connect.HandleError(func() {
-			performanceProfileChangeListener.PerformanceProfileChanged(performanceProfile)
+			performanceProfileChangeListener.PerformanceProfileChanged(
+				clonePerformanceProfile(performanceProfile),
+			)
 		})
 	}
 }
@@ -3023,12 +3141,14 @@ func (self *DeviceRemote) connectLocationChanged(deviceRemoteLocation *DeviceRem
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.lastKnownState.Location.Set(deviceRemoteLocation)
+		self.lastKnownState.Destination.Unset()
+		self.lastKnownState.RemoveDestination.Unset()
 		return listenerList(self.connectLocationChangeListeners)
 	}()
 	location := deviceRemoteLocation.toConnectLocation()
 	for _, connectLocationChangeListener := range listenerList {
 		connect.HandleError(func() {
-			connectLocationChangeListener.ConnectLocationChanged(location)
+			connectLocationChangeListener.ConnectLocationChanged(cloneConnectLocation(location))
 		})
 	}
 }
@@ -3042,7 +3162,7 @@ func (self *DeviceRemote) defaultLocationChanged(location *ConnectLocation) {
 	}()
 	for _, defaultLocationChangeListener := range listenerList {
 		connect.HandleError(func() {
-			defaultLocationChangeListener.DefaultLocationChanged(location)
+			defaultLocationChangeListener.DefaultLocationChanged(cloneConnectLocation(location))
 		})
 	}
 }
@@ -5003,11 +5123,12 @@ func (self *OverrideLocalAppIdsRpc) toOverrideLocalAppIds() *OverrideLocalAppIds
 
 //gomobile:noexport
 type DnsResolverSettingsRpc struct {
-	EnableRemoteDoh bool
-	EnableLocalDoh  bool
-	EnableRemoteDns bool
-	EnableLocalDns  bool
-	EnableFallback  bool
+	EnableRemoteDoh       bool
+	EnableLocalDoh        bool
+	EnableRemoteDns       bool
+	EnableLocalDns        bool
+	EnableFallback        bool
+	DnsUpgradeMaskAddress string
 
 	RemoteDohUrlsIpv4 []string
 	RemoteDohUrlsIpv6 []string
@@ -5024,19 +5145,20 @@ func newDnsResolverSettingsRpc(dnsResolverSettings *DnsResolverSettings) *DnsRes
 		return nil
 	}
 	return &DnsResolverSettingsRpc{
-		EnableRemoteDoh:   dnsResolverSettings.EnableRemoteDoh,
-		EnableLocalDoh:    dnsResolverSettings.EnableLocalDoh,
-		EnableRemoteDns:   dnsResolverSettings.EnableRemoteDns,
-		EnableLocalDns:    dnsResolverSettings.EnableLocalDns,
-		EnableFallback:    dnsResolverSettings.EnableFallback,
-		RemoteDohUrlsIpv4: stringsFromStringList(dnsResolverSettings.RemoteDohUrlsIpv4),
-		RemoteDohUrlsIpv6: stringsFromStringList(dnsResolverSettings.RemoteDohUrlsIpv6),
-		LocalDohUrlsIpv4:  stringsFromStringList(dnsResolverSettings.LocalDohUrlsIpv4),
-		LocalDohUrlsIpv6:  stringsFromStringList(dnsResolverSettings.LocalDohUrlsIpv6),
-		RemoteDnsIpv4:     stringsFromStringList(dnsResolverSettings.RemoteDnsIpv4),
-		RemoteDnsIpv6:     stringsFromStringList(dnsResolverSettings.RemoteDnsIpv6),
-		LocalDnsIpv4:      stringsFromStringList(dnsResolverSettings.LocalDnsIpv4),
-		LocalDnsIpv6:      stringsFromStringList(dnsResolverSettings.LocalDnsIpv6),
+		EnableRemoteDoh:       dnsResolverSettings.EnableRemoteDoh,
+		EnableLocalDoh:        dnsResolverSettings.EnableLocalDoh,
+		EnableRemoteDns:       dnsResolverSettings.EnableRemoteDns,
+		EnableLocalDns:        dnsResolverSettings.EnableLocalDns,
+		EnableFallback:        dnsResolverSettings.EnableFallback,
+		DnsUpgradeMaskAddress: dnsResolverSettings.DnsUpgradeMaskAddress,
+		RemoteDohUrlsIpv4:     stringsFromStringList(dnsResolverSettings.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6:     stringsFromStringList(dnsResolverSettings.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:      stringsFromStringList(dnsResolverSettings.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:      stringsFromStringList(dnsResolverSettings.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:         stringsFromStringList(dnsResolverSettings.RemoteDnsIpv4),
+		RemoteDnsIpv6:         stringsFromStringList(dnsResolverSettings.RemoteDnsIpv6),
+		LocalDnsIpv4:          stringsFromStringList(dnsResolverSettings.LocalDnsIpv4),
+		LocalDnsIpv6:          stringsFromStringList(dnsResolverSettings.LocalDnsIpv6),
 	}
 }
 
@@ -5046,19 +5168,20 @@ func (self *DnsResolverSettingsRpc) toDnsResolverSettings() *DnsResolverSettings
 		return nil
 	}
 	return &DnsResolverSettings{
-		EnableRemoteDoh:   self.EnableRemoteDoh,
-		EnableLocalDoh:    self.EnableLocalDoh,
-		EnableRemoteDns:   self.EnableRemoteDns,
-		EnableLocalDns:    self.EnableLocalDns,
-		EnableFallback:    self.EnableFallback,
-		RemoteDohUrlsIpv4: stringListFromStrings(self.RemoteDohUrlsIpv4),
-		RemoteDohUrlsIpv6: stringListFromStrings(self.RemoteDohUrlsIpv6),
-		LocalDohUrlsIpv4:  stringListFromStrings(self.LocalDohUrlsIpv4),
-		LocalDohUrlsIpv6:  stringListFromStrings(self.LocalDohUrlsIpv6),
-		RemoteDnsIpv4:     stringListFromStrings(self.RemoteDnsIpv4),
-		RemoteDnsIpv6:     stringListFromStrings(self.RemoteDnsIpv6),
-		LocalDnsIpv4:      stringListFromStrings(self.LocalDnsIpv4),
-		LocalDnsIpv6:      stringListFromStrings(self.LocalDnsIpv6),
+		EnableRemoteDoh:       self.EnableRemoteDoh,
+		EnableLocalDoh:        self.EnableLocalDoh,
+		EnableRemoteDns:       self.EnableRemoteDns,
+		EnableLocalDns:        self.EnableLocalDns,
+		EnableFallback:        self.EnableFallback,
+		DnsUpgradeMaskAddress: dnsUpgradeMaskAddress(self.DnsUpgradeMaskAddress),
+		RemoteDohUrlsIpv4:     stringListFromStrings(self.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6:     stringListFromStrings(self.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:      stringListFromStrings(self.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:      stringListFromStrings(self.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:         stringListFromStrings(self.RemoteDnsIpv4),
+		RemoteDnsIpv6:         stringListFromStrings(self.RemoteDnsIpv6),
+		LocalDnsIpv4:          stringListFromStrings(self.LocalDnsIpv4),
+		LocalDnsIpv6:          stringListFromStrings(self.LocalDnsIpv6),
 	}
 }
 
@@ -5584,8 +5707,7 @@ func newDeviceLocalRpcManager(
 func (self *deviceLocalRpcManager) run() {
 	defer self.listener.Close()
 
-	acceptReconnect := connect.NewReconnect(self.settings.RpcReconnectTimeout)
-
+	lastAcceptError := ""
 	for {
 		select {
 		case <-self.ctx.Done():
@@ -5593,9 +5715,22 @@ func (self *deviceLocalRpcManager) run() {
 		default:
 		}
 
+		// Recreate the pace for every Accept. Reusing one deadline means every
+		// error after the first interval receives an already-closed channel and
+		// hot-spins forever.
+		acceptReconnect := connect.NewPacedReconnect(self.settings.RpcReconnectTimeout)
 		forwardConn, reverseConn, err := self.listener.Accept(self.ctx)
 		if err != nil {
-			self.deviceLocal.log.Infof("[dlrcp]accept err = %s", err)
+			select {
+			case <-self.ctx.Done():
+				return
+			default:
+			}
+			acceptError := err.Error()
+			if acceptError != lastAcceptError {
+				self.deviceLocal.log.Infof("[dlrcp]accept err = %s", err)
+				lastAcceptError = acceptError
+			}
 			select {
 			case <-self.ctx.Done():
 				return
@@ -5603,6 +5738,7 @@ func (self *deviceLocalRpcManager) run() {
 				continue
 			}
 		}
+		lastAcceptError = ""
 
 		// each connection manages its own lifecycle; the rpc closes its
 		// connection when its context is cancelled

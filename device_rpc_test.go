@@ -796,11 +796,12 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	localDnsIpv4 := NewStringList()
 	localDnsIpv4.addAll("192.168.1.1")
 	dnsResolverSettings := &DnsResolverSettings{
-		EnableRemoteDoh:   true,
-		EnableLocalDns:    true,
-		RemoteDohUrlsIpv4: remoteDohUrlsIpv4,
-		LocalDnsIpv4:      localDnsIpv4,
-		EnableFallback:    true,
+		EnableRemoteDoh:       true,
+		EnableLocalDns:        true,
+		DnsUpgradeMaskAddress: "65.49.70.66",
+		RemoteDohUrlsIpv4:     remoteDohUrlsIpv4,
+		LocalDnsIpv4:          localDnsIpv4,
+		EnableFallback:        true,
 	}
 	deviceRemote.SetDnsResolverSettings(dnsResolverSettings)
 
@@ -811,6 +812,7 @@ func TestDeviceRemoteBlockAndDns(t *testing.T) {
 	connect.AssertEqual(t, localDns.EnableLocalDoh, false)
 	connect.AssertEqual(t, localDns.EnableRemoteDns, false)
 	connect.AssertEqual(t, localDns.EnableFallback, true)
+	connect.AssertEqual(t, localDns.DnsUpgradeMaskAddress, "65.49.70.66")
 	connect.AssertEqual(t, localDns.RemoteDohUrlsIpv4.getAll(), []string{"https://1.1.1.1/dns-query"})
 	connect.AssertEqual(t, localDns.LocalDnsIpv4.getAll(), []string{"192.168.1.1"})
 

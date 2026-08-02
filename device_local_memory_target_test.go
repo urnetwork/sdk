@@ -38,6 +38,9 @@ func TestDeviceLocalMemoryTargetUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DeviceLocal memory target test in -short mode")
 	}
+	if runIsolatedLoadTest(t) {
+		return
+	}
 
 	const memoryTargetByteCount = 20 * 1024 * 1024
 	// budgets admission-gate then reserve, so the tracked total can pass the
@@ -60,6 +63,13 @@ func TestDeviceLocalMemoryTargetUnderLoad(t *testing.T) {
 	)
 
 	pinIosGcPacing(t)
+	// Testing cleanups run after this function's deferred device, peer, bridge,
+	// and resolver teardown. Wait for their asynchronous gVisor stack shutdown
+	// so a following memory-budget test does not inherit transient heap and
+	// goroutines from this one.
+	t.Cleanup(func() {
+		sampleStable()
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

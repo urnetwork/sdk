@@ -92,6 +92,27 @@ const (
 	deviceMemoryRatioParts    = 20
 )
 
+// byteCountFraction returns floor(byteCount*numerator/denominator) without
+// multiplying the full byte count first. Memory targets enter through a
+// host-facing int64 API; multiplication-before-division can wrap even though
+// every resulting share is no larger than the original target.
+//
+// All callers use 0 <= numerator <= denominator and small constant ratios.
+func byteCountFraction(
+	byteCount ByteCount,
+	numerator ByteCount,
+	denominator ByteCount,
+) ByteCount {
+	if byteCount <= 0 || numerator <= 0 {
+		return 0
+	}
+	if denominator <= 0 || denominator < numerator {
+		panic("invalid byte-count fraction")
+	}
+	return byteCount/denominator*numerator +
+		byteCount%denominator*numerator/denominator
+}
+
 // deviceMemoryShares splits the device memory target into the dns, client,
 // and provider shares, folding the provider share into the client share
 // when the device cannot provide. A zero target returns zero shares (legacy
@@ -101,9 +122,9 @@ func deviceMemoryShares(settings *DeviceLocalSettings) (dnsByteCount ByteCount, 
 	if target <= 0 {
 		return 0, 0, 0
 	}
-	dnsByteCount = target * deviceMemoryRatioDns / deviceMemoryRatioParts
-	clientByteCount = target * deviceMemoryRatioClient / deviceMemoryRatioParts
-	providerByteCount = target * deviceMemoryRatioProvider / deviceMemoryRatioParts
+	dnsByteCount = byteCountFraction(target, deviceMemoryRatioDns, deviceMemoryRatioParts)
+	clientByteCount = byteCountFraction(target, deviceMemoryRatioClient, deviceMemoryRatioParts)
+	providerByteCount = byteCountFraction(target, deviceMemoryRatioProvider, deviceMemoryRatioParts)
 	if settings.HostedIncompatible || !settings.AllowProvider {
 		clientByteCount += providerByteCount
 		providerByteCount = 0
@@ -120,7 +141,9 @@ func deviceLocalSequenceBufferSize(clientShareByteCount ByteCount) int {
 	if clientShareByteCount <= 0 {
 		return connect.MemoryScaledCount(256, 32)
 	}
-	return max(32, min(256, int(clientShareByteCount/(16*1024))))
+	// Clamp while the value is still int64. Converting an untrusted
+	// host-supplied target before min() can wrap on 32-bit app targets.
+	return max(32, int(min(ByteCount(256), clientShareByteCount/(16*1024))))
 }
 
 // deviceLocalTransferBudgets creates the device's shared transfer queue
@@ -133,8 +156,8 @@ func deviceLocalTransferBudgets(clientShareByteCount ByteCount) (resendQueueBudg
 	resendQueueByteCount := connect.MemoryScaledByteCount(6*1024*1024, 1024*1024)
 	receiveQueueByteCount := connect.MemoryScaledByteCount(8*1024*1024, 1536*1024)
 	if 0 < clientShareByteCount {
-		resendQueueByteCount = max(clientShareByteCount*3/7, 1024*1024)
-		receiveQueueByteCount = max(clientShareByteCount*4/7, 1536*1024)
+		resendQueueByteCount = max(byteCountFraction(clientShareByteCount, 3, 7), 1024*1024)
+		receiveQueueByteCount = max(byteCountFraction(clientShareByteCount, 4, 7), 1536*1024)
 	}
 	return connect.NewTransferMemoryBudget(resendQueueByteCount),
 		connect.NewTransferMemoryBudget(receiveQueueByteCount)
@@ -151,17 +174,20 @@ func deviceLocalTransferBudgets(clientShareByteCount ByteCount) (resendQueueBudg
 const deviceLocalP2pReceiveBufferByteCount = ByteCount(128 * 1024)
 const deviceLocalP2pMinPeerConnectionCount = 8
 
-// A user-selected network peer is a fixed one-client window, so it can use a
-// larger SCTP receive window without multiplying that footprint across the
-// public quality/speed windows. Pion advertises this value as SCTP a_rwnd: at
-// a controlled 50 ms RTT, 128 KiB delivered 2.26 MiB/s, 1 MiB delivered
-// 17.50 MiB/s, and 2 MiB delivered 28-29 MiB/s. The larger bounded window is
-// important on real mobile peer paths whose RTT can vary above 100 ms even
-// between nearby devices. Keep two reservations so one replacement can
-// connect before the old stream tears down; with the default this is a hard
-// 4 MiB destination-local ceiling (an explicit larger caller setting scales
-// both).
-const deviceLocalNetworkPeerP2pReceiveBufferByteCount = ByteCount(2 * 1024 * 1024)
+// A user-selected network destination is fixed to one window client:
+// ApiMultiClientGenerator.FixedDestinationSize returns one for its single
+// ClientId spec, so the normal 6-quality + 2-speed auto-window maxima do not
+// apply. Pion advertises this value as SCTP a_rwnd. Three controlled 50 ms runs
+// put a 512 KiB window at 9.28-9.53 MiB/s, comfortably above the measured
+// physical peer path (4.8-5.9 MiB/s), while using one quarter of the former
+// 2 MiB per association.
+//
+// Reserve two associations so resident migration/reform can connect a
+// replacement before closing the old stream. This gives the selected-peer
+// WebRTC manager a predictable 1 MiB ceiling; browser DNS and TCP flows
+// multiplex over that one client/association rather than consuming one P2P
+// connection each.
+const deviceLocalNetworkPeerP2pReceiveBufferByteCount = ByteCount(512 * 1024)
 const deviceLocalNetworkPeerP2pConnectionCount = 2
 
 func deviceLocalDestinationWebRtcSettings(
@@ -181,6 +207,29 @@ func deviceLocalDestinationWebRtcSettings(
 		deviceLocalNetworkPeerP2pConnectionCount * receiveBufferByteCount,
 	)
 	return
+}
+
+// applyDeviceLocalDestinationWebRtcSettings configures one window client. A
+// selected peer uses one destination-local pool for both the fallback and
+// trusted-Network admission views: the peer is proactively marked before its
+// first P2P offer, while sharing the pool keeps the hard ceiling at two 512 KiB
+// associations instead of silently summing two pools.
+func applyDeviceLocalDestinationWebRtcSettings(
+	settings *connect.WebRtcSettings,
+	networkPeer bool,
+	networkPeerId *connect.Id,
+	receiveBufferByteCount ByteCount,
+	memoryBudget *connect.TransferMemoryBudget,
+) {
+	settings.ReceiveBufferSize = receiveBufferByteCount
+	settings.MemoryBudget = memoryBudget
+	if networkPeer {
+		settings.NetworkPeerReceiveBufferSize = receiveBufferByteCount
+		settings.NetworkPeerMemoryBudget = memoryBudget
+		if networkPeerId != nil {
+			settings.InitialNetworkPeerIds = []connect.Id{*networkPeerId}
+		}
+	}
 }
 
 // deviceLocalWebRtcBudget creates the DEDICATED p2p peer-connection admission
@@ -275,7 +324,10 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		UseExperimentalTunnelAddress: true,
 
 		AllowProvider: true,
-		Verbose:       true,
+		// Security-policy monitoring clones diagnostic maps and, for a
+		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
+		// object never owns background polling.
+		Verbose: false,
 
 		ClientSettings: *clientSettings,
 	}
@@ -352,7 +404,9 @@ type DeviceLocalSettings struct {
 	// The app constructors default this to true; the platform constructors
 	// set false (the device is embedded inside the platform).
 	AllowProvider bool
-	// Verbose runs the security policy monitor when rpc is not enabled
+	// Verbose opts into periodic, summarized security-policy diagnostics. It
+	// is disabled by default because a DeviceRemote poll performs RPC and app
+	// foreground/background polling belongs to view controllers.
 	Verbose bool
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
@@ -424,10 +478,10 @@ type DeviceLocal struct {
 	// with an IpMux-reserved address.
 	tunnelLocalAddress netip.Addr
 
-	// tunnelDnsSetting is the DNS config the platform applies to the TUN. Defaults
-	// to plain DNS with no single-server override, so the platform applies the
-	// default resolver list (9.9.9.9, 1.1.1.1) — plain (:53) is required for the
-	// UpgradeMux to intercept, and no OS-level encrypted DNS is enabled.
+	// tunnelDnsSetting is the DNS config the platform applies to the TUN. It
+	// defaults to the URnetwork-owned plain-DNS identity: UpgradeMux claims :53
+	// before that address is reached, and Android does not recognize it as a
+	// public resolver to opportunistically encrypt around the mux.
 	tunnelDnsSetting *TunnelDnsSetting
 
 	clientStrategy *connect.ClientStrategy
@@ -450,6 +504,11 @@ type DeviceLocal struct {
 
 	connectLocation *ConnectLocation // reconnects when launched
 	defaultLocation *ConnectLocation // persisting the location after the client has disconnected
+	// SetDestination is also used by app/extension state synchronization.
+	// Keep the installed transport identity so an equivalent sync does not
+	// close and recreate the entire mux + multi-client provider window.
+	destinationInitialized      bool
+	destinationSpecsFingerprint string
 
 	performanceProfile *PerformanceProfile
 
@@ -1093,8 +1152,8 @@ func newDeviceLocalWithOverrides(
 
 	if settings.EnableRpc {
 		deviceLocal.deviceLocalRpcManager = newDeviceLocalRpcManagerWithDefaults(ctx, deviceLocal)
-	} else if settings.Verbose {
-		newSecurityPolicyMonitor(ctx, deviceLocal)
+	} else {
+		newSecurityPolicyMonitor(ctx, deviceLocal, settings.Verbose)
 	}
 
 	// initial allocation: providing starts off (provide mode none), so the
@@ -1124,17 +1183,18 @@ func (self *DeviceLocal) TunnelLocalAddress() string {
 }
 
 // TunnelDnsSetting returns the DNS configuration the platform should apply to the
-// TUN (defaults to plain DNS, resolver list 9.9.9.9, 1.1.1.1). Plain DNS is
-// required for the UpgradeMux to intercept and upgrade :53 traffic.
+// TUN. With no explicit server, DeviceLocal advertises the resolver's dedicated
+// upgrade-mask address; plain DNS is required for the UpgradeMux to intercept and
+// upgrade :53 traffic.
 func (self *DeviceLocal) TunnelDnsSetting() *TunnelDnsSetting {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.tunnelDnsSetting
 }
 
-// SetTunnelDnsSetting overrides the platform DNS configuration. Each use case sets
-// its own (the apps use the default plain-DNS resolver list; server/proxy may
-// differ). A non-empty Server narrows the tunnel to that single resolver.
+// SetTunnelDnsSetting overrides the platform DNS configuration. Each use case
+// sets its own (apps use the default URnetwork-owned identity; server/proxy may
+// differ). A non-empty Server narrows the tunnel to that single identity.
 func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1143,10 +1203,12 @@ func (self *DeviceLocal) SetTunnelDnsSetting(setting *TunnelDnsSetting) {
 
 // TunnelDnsAddressesIpv4 returns the plain-DNS IPv4 server IPs the platform should
 // apply to the TUN interface (Android `addDnsServer`), sourced from the device at
-// tunnel-build time like TunnelLocalAddress: the dns resolver settings' unencrypted
-// local servers when set, otherwise the default tunnel dns setting (the default
-// plain-DNS resolvers 9.9.9.9, 1.1.1.1). Plain :53 keeps the UpgradeMux able to
-// intercept and upgrade queries.
+// tunnel-build time like TunnelLocalAddress: the dns resolver settings'
+// unencrypted local servers when set, otherwise DnsUpgradeMaskAddress. The mask
+// must differ from TunnelLocalAddress: an OS treats its assigned interface
+// address as a local host destination, so DNS sent there never reaches the TUN
+// packet reader. Plain :53 keeps the UpgradeMux able to intercept and upgrade
+// the query before the stand-in address is reached.
 func (self *DeviceLocal) TunnelDnsAddressesIpv4() *StringList {
 	return self.tunnelDnsAddressList(false)
 }
@@ -1165,18 +1227,52 @@ func (self *DeviceLocal) tunnelDnsAddressList(ipv6 bool) *StringList {
 	if self.upgradeMuxSettings != nil && self.upgradeMuxSettings.Dns != nil {
 		resolver = self.upgradeMuxSettings.Dns.Resolver
 	}
+	dnsAddresses := tunnelDnsAddresses(resolver, self.tunnelDnsSetting, ipv6)
+	if self.tunnelLocalAddress.IsValid() {
+		filteredAddresses := make([]string, 0, len(dnsAddresses))
+		for _, dnsAddress := range dnsAddresses {
+			address, err := netip.ParseAddr(dnsAddress)
+			if err == nil && address.Unmap() == self.tunnelLocalAddress.Unmap() {
+				continue
+			}
+			filteredAddresses = append(filteredAddresses, dnsAddress)
+		}
+		dnsAddresses = filteredAddresses
+	}
+	// A persisted/custom mask or explicit resolver can accidentally equal the
+	// assigned TUN address. Never emit an empty resolver list for that collision:
+	// fall back to the separately owned, routable-through-TUN mask identity.
+	if len(dnsAddresses) == 0 && self.tunnelDnsSetting != nil {
+		dnsAddresses = defaultTunnelDnsServers(ipv6)
+	}
 	addresses := NewStringList()
-	addresses.addAll(tunnelDnsAddresses(resolver, self.tunnelDnsSetting, ipv6)...)
+	addresses.addAll(dnsAddresses...)
 	return addresses
 }
 
 // tunnelDnsAddresses derives the plain-dns tunnel resolver ips of one address
-// family: the resolver settings' unencrypted local dns servers when enabled and
-// non-empty, otherwise the tunnel dns setting's single-server override when set,
-// otherwise the default plain-dns resolver list (defaultTunnelDnsServersIpv4).
-// entries that do not parse as an ip are dropped, so the platform never applies a
-// bad address
+// family with the context-free fallback.
 func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting *TunnelDnsSetting, ipv6 bool) []string {
+	return tunnelDnsAddressesWithDefault(
+		resolver,
+		tunnelDnsSetting,
+		defaultTunnelDnsServers(ipv6),
+		ipv6,
+	)
+}
+
+// tunnelDnsAddressesWithDefault derives the platform DNS addresses for one
+// family. Explicit local DNS remains an actual resolver override. Otherwise an
+// explicit TunnelDnsSetting server wins, then the resolver's
+// DnsUpgradeMaskAddress, then defaultServers. The mask is the platform-facing
+// stand-in for UpgradeMux, not an upstream resolver. Entries that do not parse
+// as IPs are dropped so the platform never applies a bad address.
+func tunnelDnsAddressesWithDefault(
+	resolver *connect.DnsResolverSettings,
+	tunnelDnsSetting *TunnelDnsSetting,
+	defaultServers []string,
+	ipv6 bool,
+) []string {
 	family := func(servers []string) []string {
 		out := []string{}
 		for _, server := range servers {
@@ -1196,15 +1292,18 @@ func tunnelDnsAddresses(resolver *connect.DnsResolverSettings, tunnelDnsSetting 
 		}
 	}
 	if tunnelDnsSetting != nil {
-		// an explicit single-server override wins; otherwise (the default, empty
-		// Server) apply the default plain-dns resolver list. plain :53 keeps the
-		// UpgradeMux able to intercept and upgrade, and the default leads with a
-		// resolver the OS does not auto-upgrade to encrypted DNS (see
-		// defaultTunnelDnsServersIpv4)
+		// Preserve the older explicit per-tunnel override.
 		if server := strings.TrimSpace(tunnelDnsSetting.Server); server != "" {
 			return family([]string{server})
 		}
-		return family(defaultTunnelDnsServers(ipv6))
+	}
+	if tunnelDnsSetting != nil {
+		if resolver != nil {
+			if servers := family([]string{resolver.DnsUpgradeMaskAddress}); 0 < len(servers) {
+				return servers
+			}
+		}
+		return family(defaultServers)
 	}
 	return []string{}
 }
@@ -1323,16 +1422,32 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 		self.log.Infof("[device]hosted incompatible: AllowDirect forced off\n")
 		performanceProfile = limited
 	}
+	// Own the stored value. App presentation layers commonly retain and mutate
+	// their model objects; retaining the caller's pointer would let those
+	// mutations silently change transport policy without change detection,
+	// callbacks, or a corresponding multi-client update.
+	performanceProfile = clonePerformanceProfile(performanceProfile)
 	var remoteUserNatClient connect.UserNatClient
-	changed := false
+	storedChanged := false
+	behaviorChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		changed = !performanceProfilesEqual(self.performanceProfile, performanceProfile)
-		self.performanceProfile = performanceProfile
-		remoteUserNatClient = self.remoteUserNatClient
+		storedChanged = !performanceProfileValuesEqual(self.performanceProfile, performanceProfile)
+		if storedChanged {
+			behaviorChanged = !performanceProfilesEqual(self.performanceProfile, performanceProfile)
+			self.performanceProfile = performanceProfile
+			if behaviorChanged {
+				remoteUserNatClient = self.remoteUserNatClient
+			}
+		}
 	}()
+	if !storedChanged {
+		// Presentation layers reconstruct value objects when they resume.
+		// An exactly equal value changes neither public state nor behavior.
+		return
+	}
 	if remoteUserNatClient != nil {
 		switch v := remoteUserNatClient.(type) {
 		case *connect.RemoteUserNatClient:
@@ -1347,16 +1462,18 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
 		}
 	}
-	if changed {
-		self.performanceProfileChanged(performanceProfile)
-	}
+	// Preserve the public value contract even when this was only a
+	// representation change (for example nil -> explicit auto). Listeners and
+	// getters see what was set, while the live transport above remains
+	// untouched unless installed behavior changed.
+	self.performanceProfileChanged(performanceProfile)
 }
 
 func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	return self.performanceProfile
+	return clonePerformanceProfile(self.performanceProfile)
 }
 
 // GetPublicIdentityKey returns a copy of the provider client's long-lived
@@ -1401,27 +1518,89 @@ func (self *DeviceLocal) GetProviderIdentities() *ProviderIdentityList {
 }
 
 func performanceProfilesEqual(a *PerformanceProfile, b *PerformanceProfile) bool {
-	if a == nil || b == nil {
-		return a == b
+	allowDirect := func(profile *PerformanceProfile) bool {
+		return profile != nil && profile.AllowDirect
 	}
-	if a.WindowType != b.WindowType || a.AllowDirect != b.AllowDirect ||
-		a.PostQuantumEncryption != b.PostQuantumEncryption {
+	postQuantumEncryption := func(profile *PerformanceProfile) bool {
+		return profile != nil && profile.PostQuantumEncryption
+	}
+	if allowDirect(a) != allowDirect(b) ||
+		postQuantumEncryption(a) != postQuantumEncryption(b) {
 		return false
+	}
+
+	windowType := func(profile *PerformanceProfile) WindowType {
+		if profile == nil {
+			return WindowTypeAuto
+		}
+		switch profile.WindowType {
+		case WindowTypeQuality, WindowTypeSpeed:
+			return profile.WindowType
+		default:
+			return WindowTypeAuto
+		}
+	}
+	aWindowType := windowType(a)
+	bWindowType := windowType(b)
+	if aWindowType != bWindowType {
+		return false
+	}
+	if aWindowType == WindowTypeAuto {
+		// Auto mode ignores WindowSize; nil, unset, and explicit auto install
+		// the same transport behavior.
+		return true
 	}
 	return windowSizeSettingsEqual(a.WindowSize, b.WindowSize)
 }
 
-func windowSizeSettingsEqual(a *WindowSizeSettings, b *WindowSizeSettings) bool {
+// performanceProfileValuesEqual compares the exact public value rather than
+// installed transport behavior. It deliberately distinguishes nil, unset,
+// and explicit auto so Set/Get and listener round trips preserve app state.
+func performanceProfileValuesEqual(a *PerformanceProfile, b *PerformanceProfile) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return a.WindowSizeMin == b.WindowSizeMin &&
-		a.WindowSizeMinP2pOnly == b.WindowSizeMinP2pOnly &&
-		a.WindowSizeMax == b.WindowSizeMax &&
-		a.WindowSizeHardMax == b.WindowSizeHardMax &&
-		a.WindowSizeReconnectScale == b.WindowSizeReconnectScale &&
-		a.KeepHealthiestCount == b.KeepHealthiestCount &&
-		a.Ulimit == b.Ulimit
+	if a.WindowType != b.WindowType ||
+		a.AllowDirect != b.AllowDirect ||
+		a.PostQuantumEncryption != b.PostQuantumEncryption {
+		return false
+	}
+	if a.WindowSize == nil || b.WindowSize == nil {
+		return a.WindowSize == nil && b.WindowSize == nil
+	}
+	return *a.WindowSize == *b.WindowSize
+}
+
+func clonePerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if performanceProfile == nil {
+		return nil
+	}
+	cloned := *performanceProfile
+	if performanceProfile.WindowSize != nil {
+		windowSize := *performanceProfile.WindowSize
+		cloned.WindowSize = &windowSize
+	}
+	return &cloned
+}
+
+func windowSizeSettingsEqual(a *WindowSizeSettings, b *WindowSizeSettings) bool {
+	effective := func(settings *WindowSizeSettings) WindowSizeSettings {
+		if settings != nil {
+			return *settings
+		}
+		// Mirrors connect.DefaultWindowSizeSettings, which is what
+		// toConnectWindowSize installs for an omitted fixed window.
+		return WindowSizeSettings{
+			WindowSizeMin:            1,
+			WindowSizeMax:            1,
+			WindowSizeHardMax:        4,
+			WindowSizeReconnectScale: 1.0,
+			KeepHealthiestCount:      1,
+		}
+	}
+	aEffective := effective(a)
+	bEffective := effective(b)
+	return aEffective == bEffective
 }
 
 func connectLocationsEqual(a *ConnectLocation, b *ConnectLocation) bool {
@@ -1429,6 +1608,108 @@ func connectLocationsEqual(a *ConnectLocation, b *ConnectLocation) bool {
 		return a == b
 	}
 	return a.Equals(b)
+}
+
+func connectLocationTransportEqual(a *ConnectLocation, b *ConnectLocation) bool {
+	if !connectLocationsEqual(a, b) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	// NetworkPeer changes admission, receive-buffer sizing, and the provider
+	// mode used by this destination. The other descriptive location fields do
+	// not affect the installed transport.
+	return a.NetworkPeer == b.NetworkPeer
+}
+
+func idsEqual(a *Id, b *Id) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Cmp(b) == 0
+}
+
+func connectLocationValuesEqual(a *ConnectLocation, b *ConnectLocation) bool {
+	if !connectLocationsEqual(a, b) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	return a.Name == b.Name &&
+		a.ProviderCount == b.ProviderCount &&
+		a.Promoted == b.Promoted &&
+		a.MatchDistance == b.MatchDistance &&
+		a.LocationType == b.LocationType &&
+		a.City == b.City &&
+		a.Region == b.Region &&
+		a.Country == b.Country &&
+		a.CountryCode == b.CountryCode &&
+		idsEqual(a.CityLocationId, b.CityLocationId) &&
+		idsEqual(a.RegionLocationId, b.RegionLocationId) &&
+		idsEqual(a.CountryLocationId, b.CountryLocationId) &&
+		a.Stable == b.Stable &&
+		a.StrongPrivacy == b.StrongPrivacy &&
+		a.NetworkPeer == b.NetworkPeer
+}
+
+func cloneId(id *Id) *Id {
+	if id == nil {
+		return nil
+	}
+	cloned := *id
+	return &cloned
+}
+
+func cloneConnectLocation(location *ConnectLocation) *ConnectLocation {
+	if location == nil {
+		return nil
+	}
+	cloned := *location
+	if location.ConnectLocationId != nil {
+		connectLocationId := *location.ConnectLocationId
+		connectLocationId.ClientId = cloneId(location.ConnectLocationId.ClientId)
+		connectLocationId.LocationId = cloneId(location.ConnectLocationId.LocationId)
+		connectLocationId.LocationGroupId = cloneId(location.ConnectLocationId.LocationGroupId)
+		cloned.ConnectLocationId = &connectLocationId
+	}
+	cloned.CityLocationId = cloneId(location.CityLocationId)
+	cloned.RegionLocationId = cloneId(location.RegionLocationId)
+	cloned.CountryLocationId = cloneId(location.CountryLocationId)
+	return &cloned
+}
+
+func cloneProviderSpec(spec *ProviderSpec) *ProviderSpec {
+	if spec == nil {
+		return nil
+	}
+	cloned := *spec
+	cloned.LocationId = cloneId(spec.LocationId)
+	cloned.LocationGroupId = cloneId(spec.LocationGroupId)
+	cloned.ClientId = cloneId(spec.ClientId)
+	return &cloned
+}
+
+func cloneProviderSpecs(specs []*ProviderSpec) []*ProviderSpec {
+	if specs == nil {
+		return nil
+	}
+	cloned := make([]*ProviderSpec, 0, len(specs))
+	for _, spec := range specs {
+		cloned = append(cloned, cloneProviderSpec(spec))
+	}
+	return cloned
+}
+
+func sdkProviderSpecsFingerprint(specs []*ProviderSpec) string {
+	connectSpecs := make([]*connect.ProviderSpec, 0, len(specs))
+	for _, spec := range specs {
+		if spec != nil {
+			connectSpecs = append(connectSpecs, spec.toConnectProviderSpec())
+		}
+	}
+	return providerSpecsFingerprint(connectSpecs)
 }
 
 // func (self *DeviceLocal) lock() {
@@ -2258,7 +2539,10 @@ func (self *DeviceLocal) provideControlModeChanged(provideControlMode ProvideCon
 func (self *DeviceLocal) performanceProfileChanged(performanceProfile *PerformanceProfile) {
 	for _, listener := range self.performanceProfileChangeListeners.Get() {
 		connect.HandleError(func() {
-			listener.PerformanceProfileChanged(performanceProfile)
+			// Each callback receives an owned snapshot. One app listener must
+			// not be able to mutate the device state or another listener's
+			// observation through a shared gomobile pointer.
+			listener.PerformanceProfileChanged(clonePerformanceProfile(performanceProfile))
 		})
 	}
 }
@@ -2328,7 +2612,7 @@ func (self *DeviceLocal) connectLocationChanged(location *ConnectLocation) {
 	// self.assertNotLockOwner()
 	for _, listener := range self.connectLocationChangeListeners.Get() {
 		connect.HandleError(func() {
-			listener.ConnectLocationChanged(location)
+			listener.ConnectLocationChanged(cloneConnectLocation(location))
 		})
 	}
 }
@@ -2336,7 +2620,7 @@ func (self *DeviceLocal) connectLocationChanged(location *ConnectLocation) {
 func (self *DeviceLocal) defaultLocationChanged(location *ConnectLocation) {
 	for _, listener := range self.defaultLocationChangeListeners.Get() {
 		connect.HandleError(func() {
-			listener.DefaultLocationChanged(location)
+			listener.DefaultLocationChanged(cloneConnectLocation(location))
 		})
 	}
 }
@@ -2582,17 +2866,17 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		clientPairByteCount += providerShareByteCount
 	}
 	if resendQueueBudget := self.settings.ClientSettings.SendBufferSettings.ResendQueueBudget; resendQueueBudget != nil {
-		resendQueueBudget.SetTotalByteCount(max(clientPairByteCount*3/7, 1024*1024))
+		resendQueueBudget.SetTotalByteCount(max(byteCountFraction(clientPairByteCount, 3, 7), 1024*1024))
 	}
 	if receiveQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget; receiveQueueBudget != nil {
-		receiveQueueBudget.SetTotalByteCount(max(clientPairByteCount*4/7, 1536*1024))
+		receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(clientPairByteCount, 4, 7), 1536*1024))
 	}
 	if self.provider != nil {
 		if resendQueueBudget, receiveQueueBudget := self.provider.transferBudgets(); resendQueueBudget != nil {
 			// the floors keep the idle provider client's control sequences
 			// working while its pool is reallocated
-			resendQueueBudget.SetTotalByteCount(max(providerPairByteCount*3/7, 256*1024))
-			receiveQueueBudget.SetTotalByteCount(max(providerPairByteCount*4/7, 384*1024))
+			resendQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 3, 7), 256*1024))
+			receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 4, 7), 384*1024))
 		}
 	}
 }
@@ -2838,11 +3122,35 @@ func (self *DeviceLocal) GetFirstLoadTimelineJson() string {
 }
 
 func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList) {
+	location = cloneConnectLocation(location)
+	connectSpecs := []*connect.ProviderSpec{}
+	if specs != nil {
+		for i := 0; i < specs.Len(); i += 1 {
+			if spec := specs.Get(i); spec != nil {
+				connectSpecs = append(connectSpecs, spec.toConnectProviderSpec())
+			}
+		}
+	}
+	specsFingerprint := providerSpecsFingerprint(connectSpecs)
+
 	provideChanged := false
+	sameTransport := false
+	locationChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		if self.destinationInitialized &&
+			self.destinationSpecsFingerprint == specsFingerprint &&
+			connectLocationTransportEqual(self.connectLocation, location) {
+			locationChanged = !connectLocationValuesEqual(self.connectLocation, location)
+			self.connectLocation = location
+			sameTransport = true
+			return
+		}
+
+		self.destinationInitialized = true
+		self.destinationSpecsFingerprint = specsFingerprint
 		self.connectLocation = location
 
 		if self.contractStatusSub != nil {
@@ -2871,16 +3179,12 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 		}
 		self.closeRemoteUserNatClientWithLock()
 
-		if specs != nil && 0 < specs.Len() {
-			connectSpecs := []*connect.ProviderSpec{}
-			for i := 0; i < specs.Len(); i += 1 {
-				connectSpecs = append(connectSpecs, specs.Get(i).toConnectProviderSpec())
-			}
+		if 0 < len(connectSpecs) {
 			// scope window identity persistence to this destination: identities
 			// recorded under one connect's specs must never steer a connect to a
 			// different destination (restored identities are dialed first)
 			if self.windowIdentityStore != nil {
-				self.windowIdentityStore.SetSpecsFingerprint(providerSpecsFingerprint(connectSpecs))
+				self.windowIdentityStore.SetSpecsFingerprint(specsFingerprint)
 			}
 
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
@@ -2889,6 +3193,16 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.receive(source, provideMode, ipPath, packet)
 			}
 			networkPeerDestination := location != nil && location.NetworkPeer
+			var networkPeerDestinationId *connect.Id
+			if networkPeerDestination {
+				for _, connectSpec := range connectSpecs {
+					if connectSpec.ClientId != nil {
+						peerId := *connectSpec.ClientId
+						networkPeerDestinationId = &peerId
+						break
+					}
+				}
+			}
 			webRtcReceiveBufferSize, webRtcMemoryBudget := deviceLocalDestinationWebRtcSettings(
 				self.settings.WebRtcSettings,
 				networkPeerDestination,
@@ -2973,8 +3287,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 						// dedicated device webRtc budget with the phone-sized
 						// SCTP buffer — never the receive queue that active
 						// transfer starves (PACKETRESEARCH1 §17)
-						clientSettings.WebRtcSettings.ReceiveBufferSize = webRtcReceiveBufferSize
-						clientSettings.WebRtcSettings.MemoryBudget = webRtcMemoryBudget
+						applyDeviceLocalDestinationWebRtcSettings(
+							clientSettings.WebRtcSettings,
+							networkPeerDestination,
+							networkPeerDestinationId,
+							webRtcReceiveBufferSize,
+							webRtcMemoryBudget,
+						)
 						clientSettings.WebRtcSettings.UseEgressOnlyIceInterfaces =
 							self.settings.WebRtcSettings.UseEgressOnlyIceInterfaces
 						return clientSettings
@@ -3115,6 +3434,13 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 		self.updateSendRouteWithLock()
 	}()
 
+	if sameTransport {
+		if locationChanged {
+			self.connectLocationChanged(location)
+		}
+		return
+	}
+
 	self.connectLocationChanged(self.GetConnectLocation())
 	connectEnabled := self.GetConnectEnabled()
 	self.stats.UpdateConnect(connectEnabled)
@@ -3195,21 +3521,22 @@ func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
 func (self *DeviceLocal) GetConnectLocation() *ConnectLocation {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.connectLocation
+	return cloneConnectLocation(self.connectLocation)
 }
 
 func (self *DeviceLocal) GetDefaultLocation() *ConnectLocation {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.defaultLocation
+	return cloneConnectLocation(self.defaultLocation)
 }
 
 func (self *DeviceLocal) SetDefaultLocation(location *ConnectLocation) {
+	location = cloneConnectLocation(location)
 	changed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if !connectLocationsEqual(self.defaultLocation, location) {
+		if !connectLocationValuesEqual(self.defaultLocation, location) {
 			self.defaultLocation = location
 			changed = true
 		}
@@ -4682,18 +5009,19 @@ func dnsResolverSettingsFromConnect(resolver *connect.DnsResolverSettings) *DnsR
 		return list
 	}
 	return &DnsResolverSettings{
-		EnableRemoteDoh:   resolver.EnableRemoteDoh,
-		EnableLocalDoh:    resolver.EnableLocalDoh,
-		EnableRemoteDns:   resolver.EnableRemoteDns,
-		EnableLocalDns:    resolver.EnableLocalDns,
-		RemoteDohUrlsIpv4: stringListOf(resolver.RemoteDohUrlsIpv4),
-		RemoteDohUrlsIpv6: stringListOf(resolver.RemoteDohUrlsIpv6),
-		LocalDohUrlsIpv4:  stringListOf(resolver.LocalDohUrlsIpv4),
-		LocalDohUrlsIpv6:  stringListOf(resolver.LocalDohUrlsIpv6),
-		RemoteDnsIpv4:     stringListOf(resolver.RemoteDnsIpv4),
-		RemoteDnsIpv6:     stringListOf(resolver.RemoteDnsIpv6),
-		LocalDnsIpv4:      stringListOf(resolver.LocalDnsIpv4),
-		LocalDnsIpv6:      stringListOf(resolver.LocalDnsIpv6),
+		EnableRemoteDoh:       resolver.EnableRemoteDoh,
+		EnableLocalDoh:        resolver.EnableLocalDoh,
+		EnableRemoteDns:       resolver.EnableRemoteDns,
+		EnableLocalDns:        resolver.EnableLocalDns,
+		DnsUpgradeMaskAddress: dnsUpgradeMaskAddress(resolver.DnsUpgradeMaskAddress),
+		RemoteDohUrlsIpv4:     stringListOf(resolver.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6:     stringListOf(resolver.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:      stringListOf(resolver.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:      stringListOf(resolver.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:         stringListOf(resolver.RemoteDnsIpv4),
+		RemoteDnsIpv6:         stringListOf(resolver.RemoteDnsIpv6),
+		LocalDnsIpv4:          stringListOf(resolver.LocalDnsIpv4),
+		LocalDnsIpv6:          stringListOf(resolver.LocalDnsIpv6),
 	}
 }
 
@@ -4705,19 +5033,30 @@ func (self *DnsResolverSettings) toConnect() *connect.DnsResolverSettings {
 		return list.getAll()
 	}
 	return &connect.DnsResolverSettings{
-		EnableRemoteDoh:   self.EnableRemoteDoh,
-		EnableLocalDoh:    self.EnableLocalDoh,
-		EnableRemoteDns:   self.EnableRemoteDns,
-		EnableLocalDns:    self.EnableLocalDns,
-		RemoteDohUrlsIpv4: stringsOf(self.RemoteDohUrlsIpv4),
-		RemoteDohUrlsIpv6: stringsOf(self.RemoteDohUrlsIpv6),
-		LocalDohUrlsIpv4:  stringsOf(self.LocalDohUrlsIpv4),
-		LocalDohUrlsIpv6:  stringsOf(self.LocalDohUrlsIpv6),
-		RemoteDnsIpv4:     stringsOf(self.RemoteDnsIpv4),
-		RemoteDnsIpv6:     stringsOf(self.RemoteDnsIpv6),
-		LocalDnsIpv4:      stringsOf(self.LocalDnsIpv4),
-		LocalDnsIpv6:      stringsOf(self.LocalDnsIpv6),
+		EnableRemoteDoh:       self.EnableRemoteDoh,
+		EnableLocalDoh:        self.EnableLocalDoh,
+		EnableRemoteDns:       self.EnableRemoteDns,
+		EnableLocalDns:        self.EnableLocalDns,
+		DnsUpgradeMaskAddress: dnsUpgradeMaskAddress(self.DnsUpgradeMaskAddress),
+		RemoteDohUrlsIpv4:     stringsOf(self.RemoteDohUrlsIpv4),
+		RemoteDohUrlsIpv6:     stringsOf(self.RemoteDohUrlsIpv6),
+		LocalDohUrlsIpv4:      stringsOf(self.LocalDohUrlsIpv4),
+		LocalDohUrlsIpv6:      stringsOf(self.LocalDohUrlsIpv6),
+		RemoteDnsIpv4:         stringsOf(self.RemoteDnsIpv4),
+		RemoteDnsIpv6:         stringsOf(self.RemoteDnsIpv6),
+		LocalDnsIpv4:          stringsOf(self.LocalDnsIpv4),
+		LocalDnsIpv6:          stringsOf(self.LocalDnsIpv6),
 	}
+}
+
+// dnsUpgradeMaskAddress upgrades settings persisted by older SDKs, which did
+// not carry the mask field. An empty value therefore means the safe default,
+// not that the mux stand-in is disabled.
+func dnsUpgradeMaskAddress(value string) string {
+	if value = strings.TrimSpace(value); value != "" {
+		return value
+	}
+	return connect.DefaultDnsUpgradeMaskAddress
 }
 
 // upgradeMuxSettingsWithDnsResolverSettings builds the next upgrade mux settings
@@ -4779,6 +5118,11 @@ func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolver
 	if dnsResolverSettings == nil {
 		return
 	}
+	// The caller owns this mutable gomobile settings object and may reuse it as
+	// soon as this method returns. Snapshot it before handing it to the async
+	// local-state writer; otherwise a UI edit immediately following Set can race
+	// JSON serialization (and persist a torn combination of toggles/addresses).
+	dnsResolverSettings = cloneDnsResolverSettings(dnsResolverSettings)
 	var upgradeMuxSettings *connect.UpgradeMuxSettings
 	func() {
 		self.stateLock.Lock()
@@ -4795,6 +5139,15 @@ func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolver
 	self.SetUpgradeMuxSettings(upgradeMuxSettings)
 	self.persistDnsResolverSettings(dnsResolverSettings)
 	self.dnsResolverSettingsChanged(self.GetDnsResolverSettings())
+}
+
+func cloneDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
+	if dnsResolverSettings == nil {
+		return nil
+	}
+	cloned := dnsResolverSettingsFromConnect(dnsResolverSettings.toConnect())
+	cloned.EnableFallback = dnsResolverSettings.EnableFallback
+	return cloned
 }
 
 // persists the dns resolver settings to local state, asynchronously
@@ -4873,6 +5226,7 @@ func dnsIgnoreHostValues(dnsResolverSettings *DnsResolverSettings) []string {
 	addUrlHosts(dnsResolverSettings.RemoteDohUrlsIpv6)
 	addUrlHosts(dnsResolverSettings.LocalDohUrlsIpv4)
 	addUrlHosts(dnsResolverSettings.LocalDohUrlsIpv6)
+	add(dnsUpgradeMaskAddress(dnsResolverSettings.DnsUpgradeMaskAddress))
 	addAll(dnsResolverSettings.RemoteDnsIpv4)
 	addAll(dnsResolverSettings.RemoteDnsIpv6)
 	addAll(dnsResolverSettings.LocalDnsIpv4)

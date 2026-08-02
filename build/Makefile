@@ -37,12 +37,15 @@ build_android:
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
 	# see https://github.com/wlynxg/anet/pull/9
 	# see https://github.com/pion/webrtc/issues/2640
+	set -e; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
-	OBJCOPY=`find "$$ANDROID_NDK_HOME" -iname 'llvm-objcopy'`; \
+	OBJCOPY=`find "$$ANDROID_NDK_HOME" -type f -iname 'llvm-objcopy' -print -quit`; \
+	test -n "$$OBJCOPY"; \
 	BUILD_DIR=android.`date +%s`; \
-	mkdir -p "$$BUILD_DIR"; \
+	test ! -e "$$BUILD_DIR"; \
+	mkdir "$$BUILD_DIR"; \
 	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-javapkg com.bringyour \
@@ -51,6 +54,8 @@ build_android:
 		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		"github.com/urnetwork/sdk"; \
+	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
+	test -s "$$BUILD_DIR/URnetworkSdk-sources.jar"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
 	find "$$BUILD_DIR/edit" -iname '*.so' -exec checksec file {} --output json \; ; \
@@ -61,7 +66,7 @@ build_android:
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
 			jar -xf URnetworkSdk-sources.jar; \
-			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'DeviceRpcDialer' | grep -ve 'DeviceRpcListener' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'DeviceLocalSettings' | grep -ve 'NewPlatformNetworkSpace' | grep -ve 'Testing_NewNetworkSpaceWithUrls' | grep -ve '[A-Za-z]Rpc' | grep -ve 'Sim[A-Z]' | grep -ve 'CollapseHostNames'`; \
+			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'DeviceRpcDialer' | grep -ve 'DeviceRpcListener' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'DeviceLocalSettings' | grep -ve 'NewPlatformNetworkSpace' | grep -ve 'Testing_NewNetworkSpaceWithUrls' | grep -ve '[A-Za-z]Rpc' | grep -ve 'Sim[A-Z]' | grep -ve 'CollapseHostNames' || true`; \
 			if [ "$$bad_exports" ]; then \
 				echo "Some types could not be exported:"; \
 				echo "$$bad_exports"; \
@@ -79,12 +84,14 @@ build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	set -e; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
 	export MACOSX_DEPLOYMENT_TARGET=13.5; \
 	BUILD_DIR=apple.`date +%s`; \
-	mkdir -p "$$BUILD_DIR"; \
+	test ! -e "$$BUILD_DIR"; \
+	mkdir "$$BUILD_DIR"; \
 	gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
@@ -93,7 +100,9 @@ build_apple:
 		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
+	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
+	test -s "$$BUILD_DIR/URnetworkSdk.xcframework.zip"; \
 	if [ -e "ios" ]; then mv ios ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" ios; \
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \

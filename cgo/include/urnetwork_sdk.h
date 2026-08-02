@@ -684,6 +684,14 @@ bool urnet_device_upload_logs(uint64_t self, const char* feedback_id, urnet_uplo
 /* ----- DeviceLocal ----- */
 
 uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_packet_cb receive_packet_receive_packet, void* receive_packet_user_data);
+void urnet_device_local_close_block_action_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_connect_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_contract_details_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_contract_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_devices_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_locations_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_peer_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
@@ -726,6 +734,14 @@ bool urnet_device_local_key_material_is_empty(uint64_t self);
 
 uint64_t urnet_device_remote_add_device_recreated_listener(uint64_t self, urnet_device_recreated_cb listener_device_recreated, void* listener_user_data);
 uint64_t urnet_device_remote_add_remote_change_listener(uint64_t self, urnet_remote_change_cb listener_remote_changed, void* listener_user_data);
+void urnet_device_remote_close_block_action_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_connect_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_contract_details_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_contract_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_devices_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
 uint64_t urnet_device_remote_open_account_preferences_view_controller(uint64_t self);
@@ -1009,6 +1025,7 @@ char* urnet_generate_nonce(void);
 char* urnet_generate_wallet_key_pair(char** out_error);
 char* urnet_get_color_hex(const char* code);
 char* urnet_get_default_dns_resolver_settings(void);
+char* urnet_get_default_tunnel_dns_address_ipv4(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
 char* urnet_get_log_dir(void);
 char* urnet_get_memory_stats(void);
@@ -1601,6 +1618,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   EnableRemoteDns: boolean
  *   EnableLocalDns: boolean
  *   EnableFallback: boolean
+ *   DnsUpgradeMaskAddress: string
  *   RemoteDohUrlsIpv4: StringList | null
  *   RemoteDohUrlsIpv6: StringList | null
  *   LocalDohUrlsIpv4: StringList | null

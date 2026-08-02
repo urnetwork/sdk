@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -590,6 +591,14 @@ func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error
 		profileBytes, err := json.Marshal(profile)
 		if err != nil {
 			return err
+		}
+		// App view models reconstruct equivalent value objects while
+		// resuming. Avoid an identical filesystem write independently of the
+		// live-device no-op guards; exact JSON equality preserves the caller's
+		// persisted representation while removing needless flash I/O.
+		if currentBytes, readErr := os.ReadFile(path); readErr == nil &&
+			bytes.Equal(currentBytes, profileBytes) {
+			return nil
 		}
 		return os.WriteFile(path, profileBytes, LocalStorageFilePermissions)
 	}

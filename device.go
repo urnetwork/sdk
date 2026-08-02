@@ -328,6 +328,10 @@ type DnsResolverSettings struct {
 	// servers are derived as the host-side projection of the resolver settings
 	// above. When false, DNS only ever resolves through the tunnel
 	EnableFallback bool
+	// DnsUpgradeMaskAddress is the plain-DNS address advertised to the OS while
+	// the UpgradeMux intercepts UDP/TCP :53. It is a stand-in for the mux, not
+	// an upstream resolver.
+	DnsUpgradeMaskAddress string
 
 	RemoteDohUrlsIpv4 *StringList
 	RemoteDohUrlsIpv6 *StringList

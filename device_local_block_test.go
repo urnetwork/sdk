@@ -553,13 +553,17 @@ func TestDeviceLocalDnsResolverSettings(t *testing.T) {
 	if !dnsResolverSettings.EnableFallback {
 		t.Fatalf("expected the default fallback enabled %+v", dnsResolverSettings)
 	}
+	if dnsResolverSettings.DnsUpgradeMaskAddress != connect.DefaultDnsUpgradeMaskAddress {
+		t.Fatalf("unexpected default dns upgrade mask %q", dnsResolverSettings.DnsUpgradeMaskAddress)
+	}
 
 	next := &DnsResolverSettings{
-		EnableRemoteDoh:   true,
-		RemoteDohUrlsIpv4: testing_stringList("https://9.9.9.9/dns-query"),
-		EnableLocalDns:    true,
-		LocalDnsIpv4:      testing_stringList("9.9.9.9"),
-		EnableFallback:    true,
+		EnableRemoteDoh:       true,
+		DnsUpgradeMaskAddress: "65.49.70.66",
+		RemoteDohUrlsIpv4:     testing_stringList("https://9.9.9.9/dns-query"),
+		EnableLocalDns:        true,
+		LocalDnsIpv4:          testing_stringList("9.9.9.9"),
+		EnableFallback:        true,
 	}
 	device.SetDnsResolverSettings(next)
 
@@ -575,6 +579,9 @@ func TestDeviceLocalDnsResolverSettings(t *testing.T) {
 	}
 	if !dnsResolverSettings.EnableFallback {
 		t.Fatalf("expected the fallback enabled %+v", dnsResolverSettings)
+	}
+	if dnsResolverSettings.DnsUpgradeMaskAddress != "65.49.70.66" {
+		t.Fatalf("unexpected dns upgrade mask %q", dnsResolverSettings.DnsUpgradeMaskAddress)
 	}
 
 	// the fallback is the host-side projection of the resolver
@@ -615,6 +622,9 @@ func TestDeviceLocalDnsResolverSettings(t *testing.T) {
 	}
 	if !restored.EnableFallback {
 		t.Fatalf("expected the restored fallback enabled %+v", restored)
+	}
+	if restored.DnsUpgradeMaskAddress != "65.49.70.66" {
+		t.Fatalf("unexpected restored dns upgrade mask %q", restored.DnsUpgradeMaskAddress)
 	}
 
 	// disabling the fallback clears it from the mux settings
@@ -943,8 +953,9 @@ func TestDnsIgnoreHostValues(t *testing.T) {
 	}
 
 	settings := &DnsResolverSettings{
-		EnableRemoteDoh: true,
-		EnableRemoteDns: true,
+		EnableRemoteDoh:       true,
+		EnableRemoteDns:       true,
+		DnsUpgradeMaskAddress: "65.49.70.66",
 	}
 	remoteDohUrlsIpv4 := NewStringList()
 	remoteDohUrlsIpv4.addAll("https://dns.google/dns-query", "https://1.1.1.1/dns-query")
@@ -963,6 +974,7 @@ func TestDnsIgnoreHostValues(t *testing.T) {
 		"dns.google",
 		"1.1.1.1",
 		"2606:4700:4700::1111",
+		"65.49.70.66",
 		"9.9.9.9",
 	}
 	if !slices.Equal(expected, values) {

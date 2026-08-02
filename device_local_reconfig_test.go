@@ -91,6 +91,17 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 	}
 	defer device.Close()
 
+	// This test targets ownership of the mux, multi-client, security policy,
+	// provider NAT, and their workers. It sends no DNS packets, so disable DNS
+	// interception/warming: otherwise every cycle deliberately races live
+	// public DoH servers and the sample can catch a bounded h2 warm request
+	// that is still active (network timing, not retired-owner retention).
+	// Dedicated Connect tests cover permanent-cache and one-shot DoH teardown,
+	// including a detached late dial.
+	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
+	upgradeMuxSettings.Dns = nil
+	device.SetUpgradeMuxSettings(upgradeMuxSettings)
+
 	unsub := device.AddReceivePacketCallback(func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 	})
 	defer unsub()
@@ -125,6 +136,7 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 	}
 
 	finalGoroutines, finalHeap := sampleStable()
+	finalStacks := captureGoroutineStacks()
 	finalFds := openFdCount()
 	// pool outstanding grows while the device is OPEN with the platform
 	// unreachable: every provide toggle queues control frames (provide modes,
@@ -138,8 +150,13 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 	if finalGoroutines > baseGoroutines+goroutineBaselineTolerance {
 		t.Errorf("goroutines leaked across %d reconfiguration cycles: final=%d baseline=%d (tol +%d)",
 			cycles, finalGoroutines, baseGoroutines, goroutineBaselineTolerance)
+		// Attribute a total-count failure even when several different worker
+		// signatures each grow by less than the per-signature leak threshold.
+		// Without this, a real distributed lifecycle leak is reported only as
+		// a flaky aggregate count.
+		reportGoroutineLeaks(t, baseStacks, finalStacks, 0)
 	}
-	reportGoroutineLeaks(t, baseStacks, captureGoroutineStacks(), goroutineStackTolerance)
+	reportGoroutineLeaks(t, baseStacks, finalStacks, goroutineStackTolerance)
 	if baseFds >= 0 && finalFds > baseFds+fdBaselineTolerance {
 		t.Errorf("file descriptors leaked across %d cycles: final=%d baseline=%d (tol +%d)",
 			cycles, finalFds, baseFds, fdBaselineTolerance)
@@ -220,6 +237,9 @@ func TestDeviceLocalConcurrentLifecycleChaos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
+	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
+	upgradeMuxSettings.Dns = nil
+	device.SetUpgradeMuxSettings(upgradeMuxSettings)
 
 	location := &ConnectLocation{ConnectLocationId: &ConnectLocationId{BestAvailable: true}}
 	probes := [][]byte{

@@ -95,30 +95,16 @@ func newDeviceLocalProviderWithOverrides(
 		clientSettings.EncryptionSettings = connect.DefaultEncryptionSettings()
 	}
 	clientSettings.EncryptionSettings.Encrypt = true
+	// This top-level client exists to provide/relay traffic. Apply provide-mode
+	// reductions to every P2P stream direction, including stale companion
+	// return streams restored by StreamReset after a process restart. Window
+	// clients created for an outbound destination leave this false.
+	clientSettings.ProviderStreamPolicy = true
 
-	// the provider client owns its own transfer budget pair, sized from the
-	// provider share of the device memory target: half that share, split 3:4
-	// send:receive like the client pair (the egress nat flow caps take the
-	// other half, see DefaultProviderLocalUserNatSettingsWithMemoryTarget).
-	// without a target the provider keeps the historical wiring — its
-	// sequences share the device client budgets carried in on the settings
-	// copy.
-	var resendQueueBudget *connect.TransferMemoryBudget
-	var receiveQueueBudget *connect.TransferMemoryBudget
-	if 0 < memoryTargetByteCount {
-		pairTarget := memoryTargetByteCount / 2
-		resendQueueBudget = connect.NewTransferMemoryBudget(max(pairTarget*3/7, 256*1024))
-		receiveQueueBudget = connect.NewTransferMemoryBudget(max(pairTarget*4/7, 384*1024))
-		clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
-		clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
-		// provider p2p peer connections admit against a DEDICATED budget with
-		// a phone-sized SCTP buffer, NOT the receive queue: a providing phone
-		// serving a download consumes its receive queue, so a shared budget
-		// refused every peer-connection setup exactly while it served traffic,
-		// pinning every peer on the WAN relay (PACKETRESEARCH1 §17)
-		clientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
-		clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(memoryTargetByteCount)
-	}
+	resendQueueBudget, receiveQueueBudget := configureDeviceLocalProviderMemory(
+		clientSettings,
+		memoryTargetByteCount,
+	)
 
 	client := connect.NewClient(
 		ctx,
@@ -173,6 +159,42 @@ func newDeviceLocalProviderWithOverrides(
 	// is draining (make-before-break, CONNECTDRAIN2.md §3.3)
 	client.AddReceiveCallback(provider.handleControlFrames)
 	return provider
+}
+
+// configureDeviceLocalProviderMemory applies all provider-owned queue and P2P
+// budgets in one testable step. Without a target the provider keeps the
+// historical wiring and shares the budgets carried in on the copied settings.
+func configureDeviceLocalProviderMemory(
+	clientSettings *connect.ClientSettings,
+	memoryTargetByteCount ByteCount,
+) (resendQueueBudget *connect.TransferMemoryBudget, receiveQueueBudget *connect.TransferMemoryBudget) {
+	if memoryTargetByteCount <= 0 {
+		return
+	}
+
+	// Half the provider share is the transfer pair, split 3:4 send:receive;
+	// egress NAT flow caps own the other half.
+	pairTarget := memoryTargetByteCount / 2
+	resendQueueBudget = connect.NewTransferMemoryBudget(max(byteCountFraction(pairTarget, 3, 7), 256*1024))
+	receiveQueueBudget = connect.NewTransferMemoryBudget(max(byteCountFraction(pairTarget, 4, 7), 384*1024))
+	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
+	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+
+	// Public P2P connections admit against a dedicated phone-sized pool, not
+	// the active transfer receive queue (which is legitimately full precisely
+	// when P2P is needed).
+	clientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
+	clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(memoryTargetByteCount)
+
+	// A trusted ProvideMode_Network peer gets the symmetric selected-peer
+	// window from its own bounded two-connection pool. It cannot enlarge or
+	// starve the many-peer public pool.
+	clientSettings.WebRtcSettings.NetworkPeerReceiveBufferSize =
+		deviceLocalNetworkPeerP2pReceiveBufferByteCount
+	clientSettings.WebRtcSettings.NetworkPeerMemoryBudget = connect.NewTransferMemoryBudget(
+		deviceLocalNetworkPeerP2pConnectionCount * deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+	)
+	return
 }
 
 // ReceiveFunction
@@ -348,6 +370,23 @@ func newDeviceClientSettings(
 	}
 	if clientSettings.WebRtcSettings != nil {
 		webRtcSettings := *clientSettings.WebRtcSettings
+		clientSettings.WebRtcSettings = &webRtcSettings
+	}
+	// A caller may intentionally provide a partial ClientSettings override.
+	// Provider memory sizing dereferences these nested settings before
+	// connect.NewClient fills defaults, so complete only the missing pieces
+	// here while preserving every supplied value and pointer-sharing choice.
+	defaults := connect.DefaultClientSettings()
+	if clientSettings.SendBufferSettings == nil {
+		sendBufferSettings := *defaults.SendBufferSettings
+		clientSettings.SendBufferSettings = &sendBufferSettings
+	}
+	if clientSettings.ReceiveBufferSettings == nil {
+		receiveBufferSettings := *defaults.ReceiveBufferSettings
+		clientSettings.ReceiveBufferSettings = &receiveBufferSettings
+	}
+	if clientSettings.WebRtcSettings == nil {
+		webRtcSettings := *defaults.WebRtcSettings
 		clientSettings.WebRtcSettings = &webRtcSettings
 	}
 

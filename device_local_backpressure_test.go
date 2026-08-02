@@ -4,12 +4,10 @@ import (
 	"context"
 	"io"
 	"net"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -275,19 +273,7 @@ func TestDeviceLocalIoLoopEndToEnd(t *testing.T) {
 
 	// a unix datagram socketpair stands in for the platform TUN fd: datagram
 	// framing preserves packet boundaries, one datagram = one IP packet.
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_DGRAM, 0)
-	if err != nil {
-		t.Fatalf("socketpair: %v", err)
-	}
-	for _, fd := range fds {
-		syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, 512<<10)
-		syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 512<<10)
-	}
-	// the io loop contract requires a non-blocking fd (it is handed to os.NewFile,
-	// which then uses the runtime poller)
-	syscall.SetNonblock(fds[0], true)
-	syscall.SetNonblock(fds[1], true)
-	testSide := os.NewFile(uintptr(fds[1]), "test-tun")
+	ioLoopFd, testSide := testingIoLoopSocketPair(t)
 	defer testSide.Close()
 
 	// test side of the socketpair <-> gvisor tun. The two directions get separate
@@ -329,7 +315,7 @@ func TestDeviceLocalIoLoopEndToEnd(t *testing.T) {
 	basePool := poolOutstanding()
 	baseFds := openFdCount()
 
-	ioLoop := NewIoLoop(device, int32(fds[0]), nil)
+	ioLoop := testingNewIoLoop(t, device, ioLoopFd)
 
 	// real traffic through the production loop
 	if err := runLoadIteration(ctx, tun, echoAddr, 4, 2, 64<<10); err != nil {

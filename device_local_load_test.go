@@ -344,9 +344,13 @@ func runLoadIteration(ctx context.Context, tun *connect.Tun, addr string, rounds
 		errs := make(chan error, flows)
 		for f := 0; f < flows; f++ {
 			payload := makeLoadPayload(round*flows+f, bytesPerFlow)
-			go func() {
-				errs <- runEchoFlow(ctx, tun, addr, payload)
-			}()
+			go func(round int, flow int, payload []byte) {
+				err := runEchoFlow(ctx, tun, addr, payload)
+				if err != nil {
+					err = fmt.Errorf("round=%d flow=%d: %w", round, flow, err)
+				}
+				errs <- err
+			}(round, f, payload)
 		}
 		for f := 0; f < flows; f++ {
 			if err := <-errs; err != nil {
@@ -366,20 +370,25 @@ func runEchoFlow(ctx context.Context, tun *connect.Tun, addr string, payload []b
 	}
 	defer conn.Close()
 
-	// generous deadline: under -race the gvisor stack runs ~30x slower, so this
-	// is a stall detector, not a throughput target.
-	const flowDeadline = 120 * time.Second
+	// This is a stall detector, not a throughput target. Native loopback flows
+	// finish in milliseconds, so fail a wedged generation promptly; retain the
+	// generous bound under -race, where gvisor runs roughly 30x slower.
+	flowDeadline := 30 * time.Second
+	if raceEnabled {
+		flowDeadline = 120 * time.Second
+	}
+	connection := fmt.Sprintf("%s->%s", conn.LocalAddr(), conn.RemoteAddr())
 
 	readErr := make(chan error, 1)
 	go func() {
 		echo := make([]byte, len(payload))
 		conn.SetReadDeadline(time.Now().Add(flowDeadline))
 		if _, err := io.ReadFull(conn, echo); err != nil {
-			readErr <- fmt.Errorf("read: %w", err)
+			readErr <- fmt.Errorf("read %s: %w", connection, err)
 			return
 		}
 		if !bytes.Equal(payload, echo) {
-			readErr <- fmt.Errorf("echo mismatch (%d bytes)", len(payload))
+			readErr <- fmt.Errorf("echo mismatch %s (%d bytes)", connection, len(payload))
 			return
 		}
 		readErr <- nil
@@ -387,7 +396,7 @@ func runEchoFlow(ctx context.Context, tun *connect.Tun, addr string, payload []b
 
 	conn.SetWriteDeadline(time.Now().Add(flowDeadline))
 	if _, err := conn.Write(payload); err != nil {
-		return fmt.Errorf("write: %w", err)
+		return fmt.Errorf("write %s: %w", connection, err)
 	}
 	return <-readErr
 }

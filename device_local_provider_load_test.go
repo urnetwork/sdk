@@ -55,6 +55,9 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DeviceLocal provider memory test in -short mode")
 	}
+	if runIsolatedLoadTest(t) {
+		return
+	}
 
 	const budgetByteCount = 32 * 1024 * 1024
 
@@ -87,6 +90,13 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		connect.SetMemoryBudget(0)
 		SetMessagePoolMemoryTargets(connect.InitialMessagePoolByteCount/2, connect.InitialMessagePoolByteCount/2)
 		debug.SetMemoryLimit(prevLimit)
+	})
+	// Testing cleanups run after this function's deferred device/peer teardown.
+	// Let the asynchronously closing gVisor stacks drain before another
+	// load-budget test starts in the same process; otherwise the next test
+	// measures the prior test's transient stacks as part of its idle baseline.
+	t.Cleanup(func() {
+		sampleStable()
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -304,9 +314,12 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 		providerTransport: [2]connect.Transport{providerSend, providerReceive},
 	}
 
-	// peer tun -> nat. SendPacket takes its own pool references (share on the
-	// allow path), so the bridge always returns its own; a blocking send (-1)
-	// keeps the source lossless, and unblocks when the peer client closes.
+	// peer tun -> nat. SendPacket consumes the pooled packet on success and
+	// leaves ownership with the caller on failure. Return only a rejected
+	// packet: returning unconditionally double-frees successful raw-v2 frames,
+	// allowing the pool to reuse bytes that are still queued by SendSequence
+	// and corrupting the synthetic TCP stream. A blocking send (-1) keeps the
+	// source lossless, and unblocks when the peer client closes.
 	source := connect.SourceId(peerClient.ClientId())
 	peer.bridgeWg.Add(1)
 	go func() {
@@ -318,8 +331,9 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 				return
 			}
 			for _, packet := range packets[:n] {
-				peer.nat.SendPacket(source, protocol.ProvideMode_Network, packet, -1)
-				MessagePoolReturn(packet)
+				if !peer.nat.SendPacket(source, protocol.ProvideMode_Network, packet, -1) {
+					MessagePoolReturn(packet)
+				}
 			}
 		}
 	}()

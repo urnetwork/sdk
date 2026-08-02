@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"math"
 	"runtime/debug"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 
 	// Public destinations keep the shared many-peer budget and 128 KiB
 	// receive window. A trusted fixed network-peer destination gets its own
-	// two-connection budget and the measured 2 MiB high-throughput window, so
+	// two-connection budget and the measured 512 KiB high-throughput window, so
 	// it cannot consume or enlarge the public window pool.
 	publicReceiveBuffer, publicWebRtcBudget := deviceLocalDestinationWebRtcSettings(
 		settings.ClientSettings.WebRtcSettings,
@@ -111,6 +112,25 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 		networkPeerWebRtcBudget.TotalByteCount(),
 		connect.ByteCount(deviceLocalNetworkPeerP2pConnectionCount)*networkPeerReceiveBuffer,
 	)
+	selectedSettings := connect.DefaultWebRtcSettings()
+	selectedPeerId := connect.NewId()
+	applyDeviceLocalDestinationWebRtcSettings(
+		selectedSettings,
+		true,
+		&selectedPeerId,
+		networkPeerReceiveBuffer,
+		networkPeerWebRtcBudget,
+	)
+	connect.AssertEqual(t, selectedSettings.ReceiveBufferSize, networkPeerReceiveBuffer)
+	connect.AssertEqual(t, selectedSettings.NetworkPeerReceiveBufferSize, networkPeerReceiveBuffer)
+	if selectedSettings.MemoryBudget != networkPeerWebRtcBudget ||
+		selectedSettings.NetworkPeerMemoryBudget != networkPeerWebRtcBudget {
+		t.Fatal("selected peer fallback and network admission must share one hard budget")
+	}
+	if len(selectedSettings.InitialNetworkPeerIds) != 1 ||
+		selectedSettings.InitialNetworkPeerIds[0] != selectedPeerId {
+		t.Fatal("selected peer was not trusted before initial p2p setup")
+	}
 	// floor below the borrow cap
 	if settings.ClientSettings.SendBufferSettings.ResendQueueMaxByteCount < settings.ClientSettings.SendBufferSettings.ResendQueueMinByteCount {
 		t.Errorf("send floor above the borrow cap")
@@ -130,19 +150,139 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 	connect.AssertEqual(t, deviceLocalSequenceBufferSize(0), 96)
 }
 
+func TestDeviceLocalMemorySizingDoesNotOverflowHostTarget(t *testing.T) {
+	settings := DefaultDeviceLocalSettings()
+	settings.MemoryTargetByteCount = math.MaxInt64
+
+	dnsShare, clientShare, providerShare := deviceMemoryShares(settings)
+	target := ByteCount(math.MaxInt64)
+	wantDns := target/deviceMemoryRatioParts*deviceMemoryRatioDns +
+		target%deviceMemoryRatioParts*deviceMemoryRatioDns/deviceMemoryRatioParts
+	wantClient := target/deviceMemoryRatioParts*deviceMemoryRatioClient +
+		target%deviceMemoryRatioParts*deviceMemoryRatioClient/deviceMemoryRatioParts
+	wantProvider := target/deviceMemoryRatioParts*deviceMemoryRatioProvider +
+		target%deviceMemoryRatioParts*deviceMemoryRatioProvider/deviceMemoryRatioParts
+	connect.AssertEqual(t, dnsShare, wantDns)
+	connect.AssertEqual(t, clientShare, wantClient)
+	connect.AssertEqual(t, providerShare, wantProvider)
+	if dnsShare <= 0 || clientShare <= 0 || providerShare <= 0 {
+		t.Fatalf("overflowed shares dns=%d client=%d provider=%d", dnsShare, clientShare, providerShare)
+	}
+
+	if got := deviceLocalSequenceBufferSize(clientShare); got != 256 {
+		t.Fatalf("large-target sequence depth = %d, want capped 256", got)
+	}
+
+	resendBudget, receiveBudget := deviceLocalTransferBudgets(clientShare)
+	wantResend := clientShare/7*3 + clientShare%7*3/7
+	wantReceive := clientShare/7*4 + clientShare%7*4/7
+	connect.AssertEqual(t, resendBudget.TotalByteCount(), wantResend)
+	connect.AssertEqual(t, receiveBudget.TotalByteCount(), wantReceive)
+
+	providerSettings := connect.DefaultClientSettings()
+	providerResend, providerReceive := configureDeviceLocalProviderMemory(
+		providerSettings,
+		providerShare,
+	)
+	pairTarget := providerShare / 2
+	wantProviderResend := pairTarget/7*3 + pairTarget%7*3/7
+	wantProviderReceive := pairTarget/7*4 + pairTarget%7*4/7
+	connect.AssertEqual(t, providerResend.TotalByteCount(), wantProviderResend)
+	connect.AssertEqual(t, providerReceive.TotalByteCount(), wantProviderReceive)
+
+	settings.HostedIncompatible = true
+	_, foldedClientShare, foldedProviderShare := deviceMemoryShares(settings)
+	connect.AssertEqual(t, foldedClientShare, wantClient+wantProvider)
+	connect.AssertEqual(t, foldedProviderShare, ByteCount(0))
+}
+
+func TestConfigureDeviceLocalProviderMemoryUsesIndependentBoundedP2pPools(t *testing.T) {
+	partial := &connect.ClientSettings{}
+	settings := newDeviceClientSettings(partial, "", nil)
+	if partial.SendBufferSettings != nil ||
+		partial.ReceiveBufferSettings != nil ||
+		partial.WebRtcSettings != nil {
+		t.Fatal("completing partial provider settings mutated the caller")
+	}
+
+	const memoryTarget = ByteCount(8 * 1024 * 1024)
+	resendBudget, receiveBudget := configureDeviceLocalProviderMemory(settings, memoryTarget)
+	if resendBudget == nil || receiveBudget == nil {
+		t.Fatal("provider transfer budgets were not configured")
+	}
+	if settings.SendBufferSettings.ResendQueueBudget != resendBudget ||
+		settings.ReceiveBufferSettings.ReceiveQueueBudget != receiveBudget {
+		t.Fatal("provider transfer settings did not retain their owned budgets")
+	}
+
+	webRtc := settings.WebRtcSettings
+	if webRtc.MemoryBudget == nil || webRtc.NetworkPeerMemoryBudget == nil {
+		t.Fatal("provider P2P pools were not configured")
+	}
+	if webRtc.MemoryBudget == receiveBudget {
+		t.Fatal("public P2P admission shares the active transfer receive queue")
+	}
+	if webRtc.NetworkPeerMemoryBudget == webRtc.MemoryBudget ||
+		webRtc.NetworkPeerMemoryBudget == receiveBudget {
+		t.Fatal("network-peer P2P admission does not own an independent pool")
+	}
+	connect.AssertEqual(t, webRtc.ReceiveBufferSize, deviceLocalP2pReceiveBufferByteCount)
+	connect.AssertEqual(
+		t,
+		webRtc.MemoryBudget.TotalByteCount(),
+		deviceLocalWebRtcBudget(memoryTarget).TotalByteCount(),
+	)
+	connect.AssertEqual(
+		t,
+		webRtc.NetworkPeerReceiveBufferSize,
+		deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+	)
+	connect.AssertEqual(
+		t,
+		webRtc.NetworkPeerMemoryBudget.TotalByteCount(),
+		connect.ByteCount(deviceLocalNetworkPeerP2pConnectionCount)*
+			deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+	)
+
+	// A zero target preserves the copied caller/default wiring.
+	unchanged := newDeviceClientSettings(nil, "", nil)
+	publicBudget := unchanged.WebRtcSettings.MemoryBudget
+	resend, receive := configureDeviceLocalProviderMemory(unchanged, 0)
+	if resend != nil || receive != nil {
+		t.Fatal("zero memory target unexpectedly allocated provider budgets")
+	}
+	if unchanged.WebRtcSettings.MemoryBudget != publicBudget {
+		t.Fatal("zero memory target changed P2P budget wiring")
+	}
+}
+
+// TestDeviceLocalNetworkPeerP2pCapacityCoversReplacementPair prevents the
+// fixed one-client network-peer path from losing make-before-break capacity or
+// silently regrowing its bounded receive-window footprint.
+func TestDeviceLocalNetworkPeerP2pCapacityCoversReplacementPair(t *testing.T) {
+	connect.AssertEqual(t, deviceLocalNetworkPeerP2pConnectionCount, 2)
+	connect.AssertEqual(
+		t,
+		connect.ByteCount(deviceLocalNetworkPeerP2pConnectionCount)*
+			deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+		connect.ByteCount(1024*1024),
+	)
+}
+
 // TestProviderLocalUserNatSettings verifies the provide exit nat bounds the
 // per source and aggregate flow counts (the local-traffic nats stay
 // unlimited), sized from the provider share of the device memory target.
 func TestProviderLocalUserNatSettings(t *testing.T) {
 	// the provider share (4/20) of the default 20 MB device target: half the
 	// share sizes the nat, 60% udp / 40% tcp by bytes over the per-flow cost
-	// model
+	// model. Functional floors retain one real cold multi-origin page without
+	// unbounding the aggregate tables.
 	providerTarget := connect.ByteCount(4 * 1024 * 1024)
 	settings := providerLocalUserNatSettings(providerTarget, connect.NewNoopLogger())
 	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 614)
-	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 153)
-	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 102)
-	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 51)
+	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 256)
+	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 512)
+	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 256)
 
 	// a zero target with a process budget keeps the legacy scaled caps
 	// (24/64 of the unscaled limits)

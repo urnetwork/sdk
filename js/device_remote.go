@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"syscall/js"
 
 	"github.com/urnetwork/sdk"
@@ -218,30 +219,54 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	// (viewControllerManager is embedded in the device). The caller owns the
 	// returned vc and must close() it; see view_controllers.go.
 	m["openConnectViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsConnectViewController(device.OpenConnectViewController())
+		vc := device.OpenConnectViewController()
+		return jsConnectViewController(vc, func() {
+			device.CloseConnectViewController(vc)
+		})
 	})
 	// Deprecated combined controller retained for runtime/declaration and
 	// mixed-version compatibility.
 	m["openContractDetailsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsContractDetailsViewController(device.OpenContractDetailsViewController())
+		vc := device.OpenContractDetailsViewController()
+		return jsContractDetailsViewController(vc, func() {
+			device.CloseContractDetailsViewController(vc)
+		})
 	})
 	m["openClientContractDetailsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsContractDetailsViewController(device.OpenClientContractDetailsViewController())
+		vc := device.OpenClientContractDetailsViewController()
+		return jsContractDetailsViewController(vc, func() {
+			device.CloseContractDetailsViewController(vc)
+		})
 	})
 	m["openProviderContractDetailsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsContractDetailsViewController(device.OpenProviderContractDetailsViewController())
+		vc := device.OpenProviderContractDetailsViewController()
+		return jsContractDetailsViewController(vc, func() {
+			device.CloseContractDetailsViewController(vc)
+		})
 	})
 	m["openContractViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsContractViewController(device.OpenContractViewController())
+		vc := device.OpenContractViewController()
+		return jsContractViewController(vc, func() {
+			device.CloseContractViewController(vc)
+		})
 	})
 	m["openBlockActionViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsBlockActionViewController(device.OpenBlockActionViewController())
+		vc := device.OpenBlockActionViewController()
+		return jsBlockActionViewController(vc, func() {
+			device.CloseBlockActionViewController(vc)
+		})
 	})
 	m["openLocationsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsLocationsViewController(device.OpenLocationsViewController())
+		vc := device.OpenLocationsViewController()
+		return jsLocationsViewController(vc, func() {
+			device.CloseLocationsViewController(vc)
+		})
 	})
 	m["openDevicesViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		return jsDevicesViewController(device.OpenDevicesViewController())
+		vc := device.OpenDevicesViewController()
+		return jsDevicesViewController(vc, func() {
+			device.CloseDevicesViewController(vc)
+		})
 	})
 
 	// listeners
@@ -362,11 +387,12 @@ func jsDnsResolverSettings(s *sdk.DnsResolverSettings) js.Value {
 		return js.Null()
 	}
 	return js.ValueOf(map[string]any{
-		"enableRemoteDoh": s.EnableRemoteDoh,
-		"enableLocalDoh":  s.EnableLocalDoh,
-		"enableRemoteDns": s.EnableRemoteDns,
-		"enableLocalDns":  s.EnableLocalDns,
-		"enableFallback":  s.EnableFallback,
+		"enableRemoteDoh":       s.EnableRemoteDoh,
+		"enableLocalDoh":        s.EnableLocalDoh,
+		"enableRemoteDns":       s.EnableRemoteDns,
+		"enableLocalDns":        s.EnableLocalDns,
+		"enableFallback":        s.EnableFallback,
+		"dnsUpgradeMaskAddress": s.DnsUpgradeMaskAddress,
 
 		"remoteDohUrlsIpv4": jsStringListDR(s.RemoteDohUrlsIpv4),
 		"remoteDohUrlsIpv6": jsStringListDR(s.RemoteDohUrlsIpv6),
@@ -387,12 +413,21 @@ func parseDnsResolverSettings(v js.Value) *sdk.DnsResolverSettings {
 		x := v.Get(key)
 		return x.Type() == js.TypeBoolean && x.Bool()
 	}
+	defaults := sdk.GetDefaultDnsResolverSettings()
+	dnsUpgradeMaskAddress := ""
+	if defaults != nil {
+		dnsUpgradeMaskAddress = defaults.DnsUpgradeMaskAddress
+	}
+	if x := v.Get("dnsUpgradeMaskAddress"); x.Type() == js.TypeString && strings.TrimSpace(x.String()) != "" {
+		dnsUpgradeMaskAddress = strings.TrimSpace(x.String())
+	}
 	return &sdk.DnsResolverSettings{
-		EnableRemoteDoh: b("enableRemoteDoh"),
-		EnableLocalDoh:  b("enableLocalDoh"),
-		EnableRemoteDns: b("enableRemoteDns"),
-		EnableLocalDns:  b("enableLocalDns"),
-		EnableFallback:  b("enableFallback"),
+		EnableRemoteDoh:       b("enableRemoteDoh"),
+		EnableLocalDoh:        b("enableLocalDoh"),
+		EnableRemoteDns:       b("enableRemoteDns"),
+		EnableLocalDns:        b("enableLocalDns"),
+		EnableFallback:        b("enableFallback"),
+		DnsUpgradeMaskAddress: dnsUpgradeMaskAddress,
 
 		RemoteDohUrlsIpv4: parseStringListDR(v.Get("remoteDohUrlsIpv4")),
 		RemoteDohUrlsIpv6: parseStringListDR(v.Get("remoteDohUrlsIpv6")),
