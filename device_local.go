@@ -3080,9 +3080,11 @@ func (self *DeviceLocal) saveDohServerScoresWithLock(upgradeMux *connect.Upgrade
 // the window clients' liveness probe timings are scaled up (default 3x) so a
 // device that legitimately answers slowly is not misdiagnosed as a dead peer
 // — a false removal (flow resets + reconnect churn) costs more than slower
-// dead-peer detection. Apps call this from the OS signals (iOS low power
-// mode / thermal state / constrained path; android power save mode); cheap
-// and safe to call on every change.
+// dead-peer detection. The idle keepalive rest stretches by the same factor,
+// so an idle tunnel wakes the radio less often while the host is trying to
+// save power. Apps call this from the OS signals (iOS low power mode /
+// thermal state / constrained path; android power save mode / thermal
+// status); cheap and safe to call on every change.
 func (self *DeviceLocal) SetPerformanceDegraded(degraded bool) {
 	self.performanceDegraded.Store(degraded)
 	self.stateLock.Lock()
