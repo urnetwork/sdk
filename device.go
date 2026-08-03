@@ -204,6 +204,12 @@ type BlockOverride struct {
 
 type RouteOverride struct {
 	Local bool
+	// Pin holds the matching traffic to one stable exit. For host rules the
+	// matched cluster, for app rules every flow the app owns, joins a single
+	// affinity group that follows its exit through benches. Routing
+	// (local/remote) is unchanged. Stored rules from before this field read
+	// back unpinned (the store is json).
+	Pin bool
 }
 
 // a routing decision, aggregated per cluster per event epoch.

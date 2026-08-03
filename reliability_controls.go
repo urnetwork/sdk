@@ -468,6 +468,49 @@ func (self *DeviceLocal) GetDestinationExits() *DestinationExitList {
 	return destinationExits
 }
 
+// FlowOwnerLookup is the platform's resolver for "which PINNED app owns this
+// flow" -- "" for none, which covers both "no app pin rules" and "the owner
+// is not pinned". On android the implementation is one
+// ConnectivityManager.getConnectionOwnerUid binder call checked against the
+// pinned apps' uids (api 29+). Called once per NEW flow (the go side caches
+// per flow key), never per packet. gomobile-safe: basic types only.
+type FlowOwnerLookup interface {
+	PinnedFlowAppId(version int32, protocol int32, sourceIp string, sourcePort int32, destinationIp string, destinationPort int32) string
+}
+
+// SetFlowOwnerLookup installs (or, with nil, removes) the platform flow-owner
+// resolver that powers per-app pinning. Safe at runtime and safe while
+// disconnected: the lookup is stored on the device and re-applied to every
+// multi client the device builds, so pinning survives reconnects.
+func (self *DeviceLocal) SetFlowOwnerLookup(lookup FlowOwnerLookup) {
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.flowOwnerLookup = lookup
+	}()
+	if multi, ok := self.multiClient(); ok {
+		applyFlowOwnerLookup(multi, lookup)
+	}
+}
+
+// applyFlowOwnerLookup adapts the gomobile interface to the connect func.
+func applyFlowOwnerLookup(multi *connect.RemoteUserNatMultiClient, lookup FlowOwnerLookup) {
+	if lookup == nil {
+		multi.SetFlowOwnerLookup(nil)
+		return
+	}
+	multi.SetFlowOwnerLookup(func(ipPath *connect.IpPath) string {
+		return lookup.PinnedFlowAppId(
+			int32(ipPath.Version),
+			int32(ipPath.Protocol),
+			ipPath.SourceIp.String(),
+			int32(ipPath.SourcePort),
+			ipPath.DestinationIp.String(),
+			int32(ipPath.DestinationPort),
+		)
+	})
+}
+
 // MigrateExit hands one exit's movable (established quic) flows to live
 // replacements NOW, while the exit is still alive -- the drain-time
 // coordinated hand-off, run on demand. Nothing is killed: tcp and anything
