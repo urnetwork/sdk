@@ -103,11 +103,12 @@ type ReliabilitySettings struct {
 	// site's egress ip. New sites, races, and rebinds still avoid the exit.
 	// false restores the scatter, the A/B comparison point.
 	QuarantineGroupFollow bool
-	// GroupFollowReceiveFreshnessMillis is the follow's safety gate: a site
-	// follows its benched exit only while the exit received return traffic
-	// this recently. A receive-silent bench gets no fresh flows. 0 disables
+	// GroupFollowWindowMillis is the follow's safety gate: a site follows its
+	// benched exit only through the FIRST this-long of a quarantine episode,
+	// when the verdict is least proven. A bench that sustains toward the
+	// drain-to-conviction execution stops collecting flows first. 0 disables
 	// the follow entirely.
-	GroupFollowReceiveFreshnessMillis int64
+	GroupFollowWindowMillis int64
 	// UplinkStalenessGateMillis is how long the whole tunnel may go without a
 	// single provider-originated ingress packet before the receive-branch
 	// blackhole verdicts are held as inadmissible. Tunnel-wide silence
@@ -247,7 +248,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		MaxFlowsPerExit:                   int32(reliabilitySettings.MaxFlowsPerExit),
 		AffinityStickyPastCap:             reliabilitySettings.AffinityStickyPastCap,
 		QuarantineGroupFollow:             reliabilitySettings.QuarantineGroupFollow,
-		GroupFollowReceiveFreshnessMillis: reliabilitySettings.GroupFollowReceiveFreshness.Milliseconds(),
+		GroupFollowWindowMillis:           reliabilitySettings.GroupFollowWindow.Milliseconds(),
 		UplinkStalenessGateMillis:         reliabilitySettings.UplinkStalenessGate.Milliseconds(),
 		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
@@ -286,7 +287,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		MaxFlowsPerExit:             int(self.MaxFlowsPerExit),
 		AffinityStickyPastCap:       self.AffinityStickyPastCap,
 		QuarantineGroupFollow:       self.QuarantineGroupFollow,
-		GroupFollowReceiveFreshness: millis(self.GroupFollowReceiveFreshnessMillis),
+		GroupFollowWindow:           millis(self.GroupFollowWindowMillis),
 		UplinkStalenessGate:         millis(self.UplinkStalenessGateMillis),
 		SoftVerdictDemote:        self.SoftVerdictDemote,
 		RemovalBudgetCount:       int(self.RemovalBudgetCount),
