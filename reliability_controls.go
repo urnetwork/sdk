@@ -98,6 +98,16 @@ type ReliabilitySettings struct {
 	// and the cap veto was splitting exactly the sites that were busiest.
 	// false restores the veto, the A/B comparison point.
 	AffinityStickyPastCap bool
+	// QuarantineGroupFollow lets a quarantined exit keep inheriting new
+	// flows from sites already living on it, so a bench does not split the
+	// site's egress ip. New sites, races, and rebinds still avoid the exit.
+	// false restores the scatter, the A/B comparison point.
+	QuarantineGroupFollow bool
+	// GroupFollowReceiveFreshnessMillis is the follow's safety gate: a site
+	// follows its benched exit only while the exit received return traffic
+	// this recently. A receive-silent bench gets no fresh flows. 0 disables
+	// the follow entirely.
+	GroupFollowReceiveFreshnessMillis int64
 	// UplinkStalenessGateMillis is how long the whole tunnel may go without a
 	// single provider-originated ingress packet before the receive-branch
 	// blackhole verdicts are held as inadmissible. Tunnel-wide silence
@@ -141,6 +151,14 @@ type ReliabilitySettings struct {
 	// demonstrably alive. 0 or 1 restores the single-destination behavior,
 	// the A/B comparison point.
 	MinBlackholeDestinations int32
+	// BlackholeLoadCorroboration widens the corroboration with load: the
+	// effective distinct-destination requirement for the soft no-receive
+	// verdict is max(MinBlackholeDestinations, flowCount/this). The busier
+	// the exit, the broader the silence must be before suspicion is
+	// admissible -- at the default 8, a 24-flow exit needs 3 silent
+	// destinations instead of 2. 0 disables the scaling, the flat A/B
+	// comparison point.
+	BlackholeLoadCorroboration int32
 	// ProviderProbe enables client-side provider qualification: crafted tcp
 	// and dns probes through each exit to real destinations, where an answer
 	// PROVES the provider dials the internet and a non-answer proves nothing
@@ -226,15 +244,18 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		SequenceIdleTimeoutMillis:     reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
 		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
-		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
-		AffinityStickyPastCap:         reliabilitySettings.AffinityStickyPastCap,
-		UplinkStalenessGateMillis:     reliabilitySettings.UplinkStalenessGate.Milliseconds(),
+		MaxFlowsPerExit:                   int32(reliabilitySettings.MaxFlowsPerExit),
+		AffinityStickyPastCap:             reliabilitySettings.AffinityStickyPastCap,
+		QuarantineGroupFollow:             reliabilitySettings.QuarantineGroupFollow,
+		GroupFollowReceiveFreshnessMillis: reliabilitySettings.GroupFollowReceiveFreshness.Milliseconds(),
+		UplinkStalenessGateMillis:         reliabilitySettings.UplinkStalenessGate.Milliseconds(),
 		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
 		RemovalBudgetWindowMillis:     reliabilitySettings.RemovalBudgetWindow.Milliseconds(),
 		StandingReserve:               reliabilitySettings.StandingReserve,
 		EffectiveTierSelection:        reliabilitySettings.EffectiveTierSelection,
 		MinBlackholeDestinations:      int32(reliabilitySettings.MinBlackholeDestinations),
+		BlackholeLoadCorroboration:    int32(reliabilitySettings.BlackholeLoadCorroboration),
 		ProviderProbe:                 reliabilitySettings.ProviderProbe,
 		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
 		ProbeSampleHostCount:          int32(reliabilitySettings.ProbeSampleHostCount),
@@ -262,16 +283,19 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		SequenceIdleTimeout:      millis(self.SequenceIdleTimeoutMillis),
 		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
 		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
-		MaxFlowsPerExit:          int(self.MaxFlowsPerExit),
-		AffinityStickyPastCap:    self.AffinityStickyPastCap,
-		UplinkStalenessGate:      millis(self.UplinkStalenessGateMillis),
+		MaxFlowsPerExit:             int(self.MaxFlowsPerExit),
+		AffinityStickyPastCap:       self.AffinityStickyPastCap,
+		QuarantineGroupFollow:       self.QuarantineGroupFollow,
+		GroupFollowReceiveFreshness: millis(self.GroupFollowReceiveFreshnessMillis),
+		UplinkStalenessGate:         millis(self.UplinkStalenessGateMillis),
 		SoftVerdictDemote:        self.SoftVerdictDemote,
 		RemovalBudgetCount:       int(self.RemovalBudgetCount),
 		RemovalBudgetWindow:      millis(self.RemovalBudgetWindowMillis),
 		StandingReserve:          self.StandingReserve,
 		EffectiveTierSelection:   self.EffectiveTierSelection,
-		MinBlackholeDestinations: int(self.MinBlackholeDestinations),
-		ProviderProbe:            self.ProviderProbe,
+		MinBlackholeDestinations:   int(self.MinBlackholeDestinations),
+		BlackholeLoadCorroboration: int(self.BlackholeLoadCorroboration),
+		ProviderProbe:              self.ProviderProbe,
 		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
 		ProbeSampleHostCount:     int(self.ProbeSampleHostCount),
 		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
@@ -300,8 +324,13 @@ type Exit struct {
 	// selection" and "out of selection because a verdict was held" are different
 	// facts to a reconstruction
 	Quarantined bool
-	Done        bool
-	P2pOnly     bool
+	// WarningCause names WHY the exit is warned: "draining" (past lifetime,
+	// healthy, retiring), "starved" (its upstream failing dials),
+	// "unhealthy" (a verdict demoted or deferred against it), or "" when
+	// only quarantined or not warned at all.
+	WarningCause string
+	Done         bool
+	P2pOnly      bool
 	// FlowCount is how many live flows are pinned to this exit. A site split
 	// across exits shows up as flows spread over several entries
 	FlowCount int32
@@ -383,6 +412,7 @@ func (self *DeviceLocal) GetExits() *ExitList {
 				WindowType:       exit.WindowType.RankMode(),
 				Warning:          exit.Warning,
 				Quarantined:      exit.Quarantined,
+				WarningCause:     exit.WarningCause,
 				Done:             exit.Done,
 				P2pOnly:          exit.P2pOnly,
 				FlowCount:        int32(exit.FlowCount),
@@ -395,6 +425,46 @@ func (self *DeviceLocal) GetExits() *ExitList {
 		}
 	}
 	return exits
+}
+
+// DestinationExit is one (destination ip, exit) pairing in the live flow
+// table: FlowCount flows to DestinationIp currently ride the exit ClientId.
+// This is the join the Local statistics screen renders -- the block-action
+// rows name the sites (hosts + cluster ips), and this says which egress each
+// ip is riding right now.
+type DestinationExit struct {
+	// DestinationIp is the flow destination, as a string ip literal
+	DestinationIp string
+	ClientId      *Id
+	FlowCount     int32
+}
+
+type DestinationExitList struct {
+	exportedList[*DestinationExit]
+}
+
+func NewDestinationExitList() *DestinationExitList {
+	return &DestinationExitList{
+		exportedList: *newExportedList[*DestinationExit](),
+	}
+}
+
+// GetDestinationExits reports which exit currently carries each destination
+// ip, aggregated over live flows. Pull-model: the answer reflects the CURRENT
+// exit after any re-race or rebind, which is what lets the statistics screen
+// stay live. Empty while disconnected.
+func (self *DeviceLocal) GetDestinationExits() *DestinationExitList {
+	destinationExits := NewDestinationExitList()
+	if multi, ok := self.multiClient(); ok {
+		for _, destinationExit := range multi.DestinationExits() {
+			destinationExits.Add(&DestinationExit{
+				DestinationIp: destinationExit.DestinationIp.String(),
+				ClientId:      newId(destinationExit.ClientId),
+				FlowCount:     int32(destinationExit.FlowCount),
+			})
+		}
+	}
+	return destinationExits
 }
 
 // DropExit kills a single exit, as if that provider had died, leaving the
@@ -554,6 +624,14 @@ type ReliabilityMetrics struct {
 	BusyProbesSent          int64
 	BusyProbesAcquitted     int64
 	SchedulerPausesDetected int64
+
+	// GroupsFollowed counts new flows a quarantined exit kept under
+	// group-follow (its site stayed on its egress ip through the bench);
+	// GroupsScattered counts the ones quarantine still turned away -- each a
+	// site whose egress ip split on suspicion. A rising scattered count with
+	// follow enabled means the benched exits were receive-silent.
+	GroupsFollowed  int64
+	GroupsScattered int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
@@ -590,6 +668,8 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 		BusyProbesSent:            int64(s.BusyProbesSent),
 		BusyProbesAcquitted:       int64(s.BusyProbesAcquitted),
 		SchedulerPausesDetected:   int64(s.SchedulerPausesDetected),
+		GroupsFollowed:            int64(s.GroupsFollowed),
+		GroupsScattered:           int64(s.GroupsScattered),
 	}
 }
 
