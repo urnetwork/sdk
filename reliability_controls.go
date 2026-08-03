@@ -468,6 +468,18 @@ func (self *DeviceLocal) GetDestinationExits() *DestinationExitList {
 	return destinationExits
 }
 
+// MigrateExit hands one exit's movable (established quic) flows to live
+// replacements NOW, while the exit is still alive -- the drain-time
+// coordinated hand-off, run on demand. Nothing is killed: tcp and anything
+// unplaceable keeps working where it is. Returns the number of flows moved,
+// -1 when no such exit is in the window.
+func (self *DeviceLocal) MigrateExit(clientId *Id) int32 {
+	if multi, ok := self.multiClient(); ok {
+		return int32(multi.MigrateExit(clientId.toConnectId()))
+	}
+	return -1
+}
+
 // DropExit kills a single exit, as if that provider had died, leaving the
 // others working. This is the failure the teardown fixes address -- unlike
 // Shuffle, which replaces every exit at once and looks nothing like a real
