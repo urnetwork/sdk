@@ -3395,7 +3395,10 @@ func (self *DeviceLocal) blockActionFromConnectWithLock(blockAction *connect.Blo
 		}
 		out.RouteOverride = &RouteOverride{Local: blockAction.Local}
 		if override := self.blockActionOverrideWithLock(*blockAction.RouteOverrideId); override != nil && override.RouteOverride != nil {
-			out.RouteOverride = &RouteOverride{Local: override.RouteOverride.Local}
+			out.RouteOverride = &RouteOverride{
+				Local: override.RouteOverride.Local,
+				Pin:   override.RouteOverride.Pin,
+			}
 		}
 	}
 	return out
@@ -3479,7 +3482,9 @@ func (self *DeviceLocal) hostedSafeBlockActionOverride(override *BlockActionOver
 	}
 	if override.RouteOverride != nil && override.RouteOverride.Local {
 		safe := *override
-		safe.RouteOverride = &RouteOverride{Local: false}
+		// only the local half is unsafe on a hosted device; a pin is exit
+		// placement and must survive the rewrite
+		safe.RouteOverride = &RouteOverride{Local: false, Pin: override.RouteOverride.Pin}
 		return &safe
 	}
 	return override
@@ -3617,6 +3622,12 @@ func (self *DeviceLocal) GetPinnedAppIds() *StringList {
 	seen := map[string]bool{}
 	for _, override := range self.blockActionOverrides {
 		if override.RouteOverride == nil || !override.RouteOverride.Pin || override.AppIds == nil {
+			continue
+		}
+		if override.RouteOverride.Local {
+			// a local-routed app bypasses the tunnel entirely; there is no
+			// exit to pin it to, and reporting it pinned would put a
+			// bypassing app in the platform's allow-list union
 			continue
 		}
 		for _, appId := range override.AppIds.getAll() {
