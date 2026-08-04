@@ -277,6 +277,7 @@ struct CreateAccountWalletResult;
 struct CreateApiKeyArgs;
 struct CreateApiKeyResult;
 struct DeleteApiKeyResult;
+struct DestinationExit;
 struct DeviceLocalMemoryUsage;
 struct DeviceLocalSettings;
 struct DeviceRemoteAddress;
@@ -284,6 +285,7 @@ struct DeviceSetNameArgs;
 struct DeviceSetNameError;
 struct DeviceSetNameResult;
 struct DnsResolverSettings;
+struct Exit;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
 struct FeedbackSendResult;
@@ -357,6 +359,8 @@ struct NetworkUserUpdateError;
 struct NetworkUserUpdateResult;
 struct OverrideLocalAppIds;
 struct PacketStats;
+struct ProbeResult;
+struct ProbeSuiteConfig;
 struct ProvideSecretKey;
 struct ProviderGridPoint;
 struct ProviderIdentity;
@@ -373,6 +377,8 @@ struct RefreshJwtResult;
 struct RegenerateSeedphraseArgs;
 struct RegenerateSeedphraseResult;
 struct RegionalDnsServer;
+struct ReliabilityMetrics;
+struct ReliabilitySettings;
 struct RemoveAuthArgs;
 struct RemoveAuthError;
 struct RemoveAuthResult;
@@ -452,6 +458,8 @@ using ContractDetailsList = std::vector<ContractDetails>;
 using ContractEntryList = std::vector<ContractEntry>;
 using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
+using DestinationExitList = std::vector<DestinationExit>;
+using ExitList = std::vector<Exit>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
 using Float64List = std::vector<double>;
 using IdList = std::vector<std::string>;
@@ -464,6 +472,7 @@ using NetworkClientConnectionList = std::vector<NetworkClientConnection>;
 using NetworkClientInfoList = std::vector<NetworkClientInfo>;
 using NetworkPeerList = std::vector<NetworkPeer>;
 using NetworkSpaceList = std::vector<nlohmann::json>;
+using ProbeResultList = std::vector<ProbeResult>;
 using ProvideSecretKeyList = std::vector<ProvideSecretKey>;
 using ProviderGridPointList = std::vector<ProviderGridPoint>;
 using ProviderIdentityList = std::vector<ProviderIdentity>;
@@ -784,6 +793,7 @@ struct BlockOverride {
 
 struct RouteOverride {
 	bool Local{};
+	bool Pin{};
 };
 
 struct BlockAction {
@@ -968,6 +978,12 @@ struct DeleteApiKeyResult {
 	std::optional<ApiError> error;
 };
 
+struct DestinationExit {
+	std::string DestinationIp{};
+	std::optional<std::string> ClientId;
+	int32_t FlowCount{};
+};
+
 struct DeviceLocalMemoryUsage {
 	int64_t TargetByteCount{};
 	int64_t DnsByteCount{};
@@ -1043,6 +1059,22 @@ struct DnsResolverSettings {
 	std::optional<StringList> RemoteDnsIpv6;
 	std::optional<StringList> LocalDnsIpv4;
 	std::optional<StringList> LocalDnsIpv6;
+};
+
+struct Exit {
+	std::optional<std::string> ClientId;
+	std::string WindowType{};
+	bool Warning{};
+	bool Quarantined{};
+	std::string WarningCause{};
+	bool Done{};
+	bool P2pOnly{};
+	int32_t FlowCount{};
+	int32_t DialFailureCount{};
+	int32_t Tier{};
+	int32_t EffectiveTier{};
+	bool Proven{};
+	int64_t ProbeAgeSeconds{};
 };
 
 struct FeedbackSendNeeds {
@@ -1481,6 +1513,29 @@ struct PacketStats {
 	int64_t BlockIngressByteCount{};
 };
 
+struct ProbeResult {
+	std::string Name{};
+	std::string Kind{};
+	bool Ok{};
+	std::string Error{};
+	int64_t DnsMillis{};
+	int64_t ConnectMillis{};
+	int64_t TtfbMillis{};
+	int64_t TotalMillis{};
+	int64_t ByteCount{};
+	int64_t StartOffsetMillis{};
+};
+
+struct ProbeSuiteConfig {
+	int32_t Concurrency{};
+	int64_t TimeoutMillis{};
+	int32_t RepeatCount{};
+	bool IncludeDns{};
+	bool IncludeHttp{};
+	bool IncludeDownload{};
+	int64_t DownloadByteCount{};
+};
+
 struct ProvideSecretKey {
 	int64_t provide_mode{};
 	std::string provide_secret_key{};
@@ -1567,6 +1622,72 @@ struct RegionalDnsServer {
 	std::string CountryCode{};
 	std::string Name{};
 	std::string Ipv4{};
+};
+
+struct ReliabilityMetrics {
+	int64_t FlowsOpened{};
+	int64_t ExitLossEvents{};
+	int64_t FlowsLostToExit{};
+	int64_t MaxFlowsLostInOneEvent{};
+	double MeanFlowsLostPerExitLoss{};
+	int64_t RecoveryCount{};
+	int64_t RecoveryMissed{};
+	int64_t RecoveryMeanMillis{};
+	int64_t RecoveryMaxMillis{};
+	int32_t RecoveryPending{};
+	int64_t DialFailuresIntercepted{};
+	int64_t FlowsReraced{};
+	int64_t FlowsRebound{};
+	int64_t RebindsAccepted{};
+	int64_t RebindsRedialed{};
+	int64_t VerdictsHeldUplinkStale{};
+	int64_t VerdictsHeldTransportDown{};
+	int64_t RemovalsDeferred{};
+	int64_t ProbesSent{};
+	int64_t ProbesAnswered{};
+	int64_t ProvidersQualified{};
+	int64_t BusyProbesSent{};
+	int64_t BusyProbesAcquitted{};
+	int64_t SchedulerPausesDetected{};
+	int64_t GroupsFollowed{};
+	int64_t GroupsScattered{};
+};
+
+struct ReliabilitySettings {
+	bool UdpTeardownSignal{};
+	bool QuicRebindOnExitLoss{};
+	bool DialFailureRerace{};
+	int64_t TcpCollapseMaxHoldMillis{};
+	int64_t SendStallTimeoutMillis{};
+	bool ClusterAffinityFallback{};
+	bool ServerNameAffinityBridge{};
+	int64_t SequenceIdleTimeoutMillis{};
+	int64_t TcpSequenceIdleTimeoutMillis{};
+	int64_t BlackholeReceiveTimeoutMillis{};
+	int32_t MaxFlowsPerExit{};
+	bool AffinityStickyPastCap{};
+	bool QuarantineGroupFollow{};
+	int64_t GroupFollowWindowMillis{};
+	int64_t UplinkStalenessGateMillis{};
+	bool SoftVerdictDemote{};
+	int32_t RemovalBudgetCount{};
+	int64_t RemovalBudgetWindowMillis{};
+	bool StandingReserve{};
+	bool EffectiveTierSelection{};
+	int32_t MinBlackholeDestinations{};
+	int32_t BlackholeLoadCorroboration{};
+	bool ProviderProbe{};
+	int64_t ProbeTimeoutMillis{};
+	int32_t ProbeSampleHostCount{};
+	int32_t ProbeSilenceWarnStreak{};
+	int32_t EvaluationPoolMultiple{};
+	int64_t FormationPollTimeoutMillis{};
+	bool BusyProbe{};
+	int64_t BusyProbeBudgetMillis{};
+	int64_t SchedulerPauseToleranceMillis{};
+	int64_t SchedulerPauseRecoveryTimeoutMillis{};
+	int64_t BlackholeConnectComparativeTimeoutMillis{};
+	int64_t HeartbeatIntervalMillis{};
 };
 
 struct RemoveAuthArgs {
@@ -2046,6 +2167,8 @@ inline void to_json(nlohmann::json& j, const CreateApiKeyResult& v);
 inline void from_json(const nlohmann::json& j, CreateApiKeyResult& v);
 inline void to_json(nlohmann::json& j, const DeleteApiKeyResult& v);
 inline void from_json(const nlohmann::json& j, DeleteApiKeyResult& v);
+inline void to_json(nlohmann::json& j, const DestinationExit& v);
+inline void from_json(const nlohmann::json& j, DestinationExit& v);
 inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v);
 inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v);
 inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v);
@@ -2060,6 +2183,8 @@ inline void to_json(nlohmann::json& j, const DeviceSetNameResult& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v);
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v);
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v);
+inline void to_json(nlohmann::json& j, const Exit& v);
+inline void from_json(const nlohmann::json& j, Exit& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
 inline void from_json(const nlohmann::json& j, FeedbackSendNeeds& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendArgs& v);
@@ -2206,6 +2331,10 @@ inline void to_json(nlohmann::json& j, const OverrideLocalAppIds& v);
 inline void from_json(const nlohmann::json& j, OverrideLocalAppIds& v);
 inline void to_json(nlohmann::json& j, const PacketStats& v);
 inline void from_json(const nlohmann::json& j, PacketStats& v);
+inline void to_json(nlohmann::json& j, const ProbeResult& v);
+inline void from_json(const nlohmann::json& j, ProbeResult& v);
+inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
+inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v);
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v);
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v);
 inline void to_json(nlohmann::json& j, const ProviderGridPoint& v);
@@ -2238,6 +2367,10 @@ inline void to_json(nlohmann::json& j, const RegenerateSeedphraseResult& v);
 inline void from_json(const nlohmann::json& j, RegenerateSeedphraseResult& v);
 inline void to_json(nlohmann::json& j, const RegionalDnsServer& v);
 inline void from_json(const nlohmann::json& j, RegionalDnsServer& v);
+inline void to_json(nlohmann::json& j, const ReliabilityMetrics& v);
+inline void from_json(const nlohmann::json& j, ReliabilityMetrics& v);
+inline void to_json(nlohmann::json& j, const ReliabilitySettings& v);
+inline void from_json(const nlohmann::json& j, ReliabilitySettings& v);
 inline void to_json(nlohmann::json& j, const RemoveAuthArgs& v);
 inline void from_json(const nlohmann::json& j, RemoveAuthArgs& v);
 inline void to_json(nlohmann::json& j, const RemoveAuthError& v);
@@ -3908,6 +4041,7 @@ inline void from_json(const nlohmann::json& j, BlockOverride& v) {
 inline void to_json(nlohmann::json& j, const RouteOverride& v) {
 	j = nlohmann::json::object();
 	j["Local"] = v.Local;
+	j["Pin"] = v.Pin;
 }
 inline void from_json(const nlohmann::json& j, RouteOverride& v) {
 	if (!j.is_object()) {
@@ -3915,6 +4049,9 @@ inline void from_json(const nlohmann::json& j, RouteOverride& v) {
 	}
 	if (auto it = j.find("Local"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Local);
+	}
+	if (auto it = j.find("Pin"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Pin);
 	}
 }
 
@@ -4697,6 +4834,31 @@ inline void from_json(const nlohmann::json& j, DeleteApiKeyResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const DestinationExit& v) {
+	j = nlohmann::json::object();
+	j["DestinationIp"] = v.DestinationIp;
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["FlowCount"] = v.FlowCount;
+}
+inline void from_json(const nlohmann::json& j, DestinationExit& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("DestinationIp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DestinationIp);
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("FlowCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowCount);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j = nlohmann::json::object();
 	j["TargetByteCount"] = v.TargetByteCount;
@@ -5025,6 +5187,71 @@ inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 		StringList tmp{};
 		it->get_to(tmp);
 		v.LocalDnsIpv6 = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const Exit& v) {
+	j = nlohmann::json::object();
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["WindowType"] = v.WindowType;
+	j["Warning"] = v.Warning;
+	j["Quarantined"] = v.Quarantined;
+	j["WarningCause"] = v.WarningCause;
+	j["Done"] = v.Done;
+	j["P2pOnly"] = v.P2pOnly;
+	j["FlowCount"] = v.FlowCount;
+	j["DialFailureCount"] = v.DialFailureCount;
+	j["Tier"] = v.Tier;
+	j["EffectiveTier"] = v.EffectiveTier;
+	j["Proven"] = v.Proven;
+	j["ProbeAgeSeconds"] = v.ProbeAgeSeconds;
+}
+inline void from_json(const nlohmann::json& j, Exit& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("WindowType"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WindowType);
+	}
+	if (auto it = j.find("Warning"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Warning);
+	}
+	if (auto it = j.find("Quarantined"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Quarantined);
+	}
+	if (auto it = j.find("WarningCause"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WarningCause);
+	}
+	if (auto it = j.find("Done"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Done);
+	}
+	if (auto it = j.find("P2pOnly"); it != j.end() && !it->is_null()) {
+		it->get_to(v.P2pOnly);
+	}
+	if (auto it = j.find("FlowCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowCount);
+	}
+	if (auto it = j.find("DialFailureCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DialFailureCount);
+	}
+	if (auto it = j.find("Tier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Tier);
+	}
+	if (auto it = j.find("EffectiveTier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EffectiveTier);
+	}
+	if (auto it = j.find("Proven"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Proven);
+	}
+	if (auto it = j.find("ProbeAgeSeconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProbeAgeSeconds);
 	}
 }
 
@@ -7057,6 +7284,92 @@ inline void from_json(const nlohmann::json& j, PacketStats& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProbeResult& v) {
+	j = nlohmann::json::object();
+	j["Name"] = v.Name;
+	j["Kind"] = v.Kind;
+	j["Ok"] = v.Ok;
+	j["Error"] = v.Error;
+	j["DnsMillis"] = v.DnsMillis;
+	j["ConnectMillis"] = v.ConnectMillis;
+	j["TtfbMillis"] = v.TtfbMillis;
+	j["TotalMillis"] = v.TotalMillis;
+	j["ByteCount"] = v.ByteCount;
+	j["StartOffsetMillis"] = v.StartOffsetMillis;
+}
+inline void from_json(const nlohmann::json& j, ProbeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("Kind"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Kind);
+	}
+	if (auto it = j.find("Ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ok);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+	if (auto it = j.find("DnsMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsMillis);
+	}
+	if (auto it = j.find("ConnectMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ConnectMillis);
+	}
+	if (auto it = j.find("TtfbMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TtfbMillis);
+	}
+	if (auto it = j.find("TotalMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TotalMillis);
+	}
+	if (auto it = j.find("ByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ByteCount);
+	}
+	if (auto it = j.find("StartOffsetMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StartOffsetMillis);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v) {
+	j = nlohmann::json::object();
+	j["Concurrency"] = v.Concurrency;
+	j["TimeoutMillis"] = v.TimeoutMillis;
+	j["RepeatCount"] = v.RepeatCount;
+	j["IncludeDns"] = v.IncludeDns;
+	j["IncludeHttp"] = v.IncludeHttp;
+	j["IncludeDownload"] = v.IncludeDownload;
+	j["DownloadByteCount"] = v.DownloadByteCount;
+}
+inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Concurrency"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Concurrency);
+	}
+	if (auto it = j.find("TimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TimeoutMillis);
+	}
+	if (auto it = j.find("RepeatCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RepeatCount);
+	}
+	if (auto it = j.find("IncludeDns"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IncludeDns);
+	}
+	if (auto it = j.find("IncludeHttp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IncludeHttp);
+	}
+	if (auto it = j.find("IncludeDownload"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IncludeDownload);
+	}
+	if (auto it = j.find("DownloadByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DownloadByteCount);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v) {
 	j = nlohmann::json::object();
 	j["provide_mode"] = v.provide_mode;
@@ -7438,6 +7751,264 @@ inline void from_json(const nlohmann::json& j, RegionalDnsServer& v) {
 	}
 	if (auto it = j.find("Ipv4"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Ipv4);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ReliabilityMetrics& v) {
+	j = nlohmann::json::object();
+	j["FlowsOpened"] = v.FlowsOpened;
+	j["ExitLossEvents"] = v.ExitLossEvents;
+	j["FlowsLostToExit"] = v.FlowsLostToExit;
+	j["MaxFlowsLostInOneEvent"] = v.MaxFlowsLostInOneEvent;
+	j["MeanFlowsLostPerExitLoss"] = v.MeanFlowsLostPerExitLoss;
+	j["RecoveryCount"] = v.RecoveryCount;
+	j["RecoveryMissed"] = v.RecoveryMissed;
+	j["RecoveryMeanMillis"] = v.RecoveryMeanMillis;
+	j["RecoveryMaxMillis"] = v.RecoveryMaxMillis;
+	j["RecoveryPending"] = v.RecoveryPending;
+	j["DialFailuresIntercepted"] = v.DialFailuresIntercepted;
+	j["FlowsReraced"] = v.FlowsReraced;
+	j["FlowsRebound"] = v.FlowsRebound;
+	j["RebindsAccepted"] = v.RebindsAccepted;
+	j["RebindsRedialed"] = v.RebindsRedialed;
+	j["VerdictsHeldUplinkStale"] = v.VerdictsHeldUplinkStale;
+	j["VerdictsHeldTransportDown"] = v.VerdictsHeldTransportDown;
+	j["RemovalsDeferred"] = v.RemovalsDeferred;
+	j["ProbesSent"] = v.ProbesSent;
+	j["ProbesAnswered"] = v.ProbesAnswered;
+	j["ProvidersQualified"] = v.ProvidersQualified;
+	j["BusyProbesSent"] = v.BusyProbesSent;
+	j["BusyProbesAcquitted"] = v.BusyProbesAcquitted;
+	j["SchedulerPausesDetected"] = v.SchedulerPausesDetected;
+	j["GroupsFollowed"] = v.GroupsFollowed;
+	j["GroupsScattered"] = v.GroupsScattered;
+}
+inline void from_json(const nlohmann::json& j, ReliabilityMetrics& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("FlowsOpened"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowsOpened);
+	}
+	if (auto it = j.find("ExitLossEvents"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExitLossEvents);
+	}
+	if (auto it = j.find("FlowsLostToExit"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowsLostToExit);
+	}
+	if (auto it = j.find("MaxFlowsLostInOneEvent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MaxFlowsLostInOneEvent);
+	}
+	if (auto it = j.find("MeanFlowsLostPerExitLoss"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MeanFlowsLostPerExitLoss);
+	}
+	if (auto it = j.find("RecoveryCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RecoveryCount);
+	}
+	if (auto it = j.find("RecoveryMissed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RecoveryMissed);
+	}
+	if (auto it = j.find("RecoveryMeanMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RecoveryMeanMillis);
+	}
+	if (auto it = j.find("RecoveryMaxMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RecoveryMaxMillis);
+	}
+	if (auto it = j.find("RecoveryPending"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RecoveryPending);
+	}
+	if (auto it = j.find("DialFailuresIntercepted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DialFailuresIntercepted);
+	}
+	if (auto it = j.find("FlowsReraced"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowsReraced);
+	}
+	if (auto it = j.find("FlowsRebound"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FlowsRebound);
+	}
+	if (auto it = j.find("RebindsAccepted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RebindsAccepted);
+	}
+	if (auto it = j.find("RebindsRedialed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RebindsRedialed);
+	}
+	if (auto it = j.find("VerdictsHeldUplinkStale"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerdictsHeldUplinkStale);
+	}
+	if (auto it = j.find("VerdictsHeldTransportDown"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerdictsHeldTransportDown);
+	}
+	if (auto it = j.find("RemovalsDeferred"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RemovalsDeferred);
+	}
+	if (auto it = j.find("ProbesSent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProbesSent);
+	}
+	if (auto it = j.find("ProbesAnswered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProbesAnswered);
+	}
+	if (auto it = j.find("ProvidersQualified"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvidersQualified);
+	}
+	if (auto it = j.find("BusyProbesSent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BusyProbesSent);
+	}
+	if (auto it = j.find("BusyProbesAcquitted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BusyProbesAcquitted);
+	}
+	if (auto it = j.find("SchedulerPausesDetected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SchedulerPausesDetected);
+	}
+	if (auto it = j.find("GroupsFollowed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupsFollowed);
+	}
+	if (auto it = j.find("GroupsScattered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupsScattered);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
+	j = nlohmann::json::object();
+	j["UdpTeardownSignal"] = v.UdpTeardownSignal;
+	j["QuicRebindOnExitLoss"] = v.QuicRebindOnExitLoss;
+	j["DialFailureRerace"] = v.DialFailureRerace;
+	j["TcpCollapseMaxHoldMillis"] = v.TcpCollapseMaxHoldMillis;
+	j["SendStallTimeoutMillis"] = v.SendStallTimeoutMillis;
+	j["ClusterAffinityFallback"] = v.ClusterAffinityFallback;
+	j["ServerNameAffinityBridge"] = v.ServerNameAffinityBridge;
+	j["SequenceIdleTimeoutMillis"] = v.SequenceIdleTimeoutMillis;
+	j["TcpSequenceIdleTimeoutMillis"] = v.TcpSequenceIdleTimeoutMillis;
+	j["BlackholeReceiveTimeoutMillis"] = v.BlackholeReceiveTimeoutMillis;
+	j["MaxFlowsPerExit"] = v.MaxFlowsPerExit;
+	j["AffinityStickyPastCap"] = v.AffinityStickyPastCap;
+	j["QuarantineGroupFollow"] = v.QuarantineGroupFollow;
+	j["GroupFollowWindowMillis"] = v.GroupFollowWindowMillis;
+	j["UplinkStalenessGateMillis"] = v.UplinkStalenessGateMillis;
+	j["SoftVerdictDemote"] = v.SoftVerdictDemote;
+	j["RemovalBudgetCount"] = v.RemovalBudgetCount;
+	j["RemovalBudgetWindowMillis"] = v.RemovalBudgetWindowMillis;
+	j["StandingReserve"] = v.StandingReserve;
+	j["EffectiveTierSelection"] = v.EffectiveTierSelection;
+	j["MinBlackholeDestinations"] = v.MinBlackholeDestinations;
+	j["BlackholeLoadCorroboration"] = v.BlackholeLoadCorroboration;
+	j["ProviderProbe"] = v.ProviderProbe;
+	j["ProbeTimeoutMillis"] = v.ProbeTimeoutMillis;
+	j["ProbeSampleHostCount"] = v.ProbeSampleHostCount;
+	j["ProbeSilenceWarnStreak"] = v.ProbeSilenceWarnStreak;
+	j["EvaluationPoolMultiple"] = v.EvaluationPoolMultiple;
+	j["FormationPollTimeoutMillis"] = v.FormationPollTimeoutMillis;
+	j["BusyProbe"] = v.BusyProbe;
+	j["BusyProbeBudgetMillis"] = v.BusyProbeBudgetMillis;
+	j["SchedulerPauseToleranceMillis"] = v.SchedulerPauseToleranceMillis;
+	j["SchedulerPauseRecoveryTimeoutMillis"] = v.SchedulerPauseRecoveryTimeoutMillis;
+	j["BlackholeConnectComparativeTimeoutMillis"] = v.BlackholeConnectComparativeTimeoutMillis;
+	j["HeartbeatIntervalMillis"] = v.HeartbeatIntervalMillis;
+}
+inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("UdpTeardownSignal"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UdpTeardownSignal);
+	}
+	if (auto it = j.find("QuicRebindOnExitLoss"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuicRebindOnExitLoss);
+	}
+	if (auto it = j.find("DialFailureRerace"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DialFailureRerace);
+	}
+	if (auto it = j.find("TcpCollapseMaxHoldMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TcpCollapseMaxHoldMillis);
+	}
+	if (auto it = j.find("SendStallTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SendStallTimeoutMillis);
+	}
+	if (auto it = j.find("ClusterAffinityFallback"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClusterAffinityFallback);
+	}
+	if (auto it = j.find("ServerNameAffinityBridge"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ServerNameAffinityBridge);
+	}
+	if (auto it = j.find("SequenceIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SequenceIdleTimeoutMillis);
+	}
+	if (auto it = j.find("TcpSequenceIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TcpSequenceIdleTimeoutMillis);
+	}
+	if (auto it = j.find("BlackholeReceiveTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlackholeReceiveTimeoutMillis);
+	}
+	if (auto it = j.find("MaxFlowsPerExit"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MaxFlowsPerExit);
+	}
+	if (auto it = j.find("AffinityStickyPastCap"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AffinityStickyPastCap);
+	}
+	if (auto it = j.find("QuarantineGroupFollow"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuarantineGroupFollow);
+	}
+	if (auto it = j.find("GroupFollowWindowMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GroupFollowWindowMillis);
+	}
+	if (auto it = j.find("UplinkStalenessGateMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.UplinkStalenessGateMillis);
+	}
+	if (auto it = j.find("SoftVerdictDemote"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SoftVerdictDemote);
+	}
+	if (auto it = j.find("RemovalBudgetCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RemovalBudgetCount);
+	}
+	if (auto it = j.find("RemovalBudgetWindowMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RemovalBudgetWindowMillis);
+	}
+	if (auto it = j.find("StandingReserve"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StandingReserve);
+	}
+	if (auto it = j.find("EffectiveTierSelection"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EffectiveTierSelection);
+	}
+	if (auto it = j.find("MinBlackholeDestinations"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MinBlackholeDestinations);
+	}
+	if (auto it = j.find("BlackholeLoadCorroboration"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlackholeLoadCorroboration);
+	}
+	if (auto it = j.find("ProviderProbe"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderProbe);
+	}
+	if (auto it = j.find("ProbeTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProbeTimeoutMillis);
+	}
+	if (auto it = j.find("ProbeSampleHostCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProbeSampleHostCount);
+	}
+	if (auto it = j.find("ProbeSilenceWarnStreak"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProbeSilenceWarnStreak);
+	}
+	if (auto it = j.find("EvaluationPoolMultiple"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EvaluationPoolMultiple);
+	}
+	if (auto it = j.find("FormationPollTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FormationPollTimeoutMillis);
+	}
+	if (auto it = j.find("BusyProbe"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BusyProbe);
+	}
+	if (auto it = j.find("BusyProbeBudgetMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BusyProbeBudgetMillis);
+	}
+	if (auto it = j.find("SchedulerPauseToleranceMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SchedulerPauseToleranceMillis);
+	}
+	if (auto it = j.find("SchedulerPauseRecoveryTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SchedulerPauseRecoveryTimeoutMillis);
+	}
+	if (auto it = j.find("BlackholeConnectComparativeTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BlackholeConnectComparativeTimeoutMillis);
+	}
+	if (auto it = j.find("HeartbeatIntervalMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeartbeatIntervalMillis);
 	}
 }
 
@@ -8864,6 +9435,7 @@ using FilteredLocationsListener = std::function<void(std::optional<FilteredLocat
 using FindLocationsCallback = std::function<void(std::optional<FindLocationsResult> result, std::optional<std::string> err_param)>;
 using FindProviders2Callback = std::function<void(std::optional<FindProviders2Result> result, std::optional<std::string> err_param)>;
 using FindProvidersCallback = std::function<void(std::optional<FindProvidersResult> result, std::optional<std::string> err_param)>;
+using FlowOwnerLookup = std::function<std::string(int64_t version, int64_t protocol, std::string source_ip, int64_t source_port, std::string destination_ip, int64_t destination_port)>;
 using GenerateSeedphraseCallback = std::function<void(std::optional<GenerateSeedphraseResult> result, std::optional<std::string> err_param)>;
 using GetAccountPaymentsCallback = std::function<void(std::optional<GetNetworkAccountPaymentsResult> result, std::optional<std::string> err_param)>;
 using GetAccountPointsCallback = std::function<void(std::optional<AccountPointsResult> result, std::optional<std::string> err_param)>;
@@ -8962,7 +9534,6 @@ using WalletCircleTransferOutCallback = std::function<void(std::optional<WalletC
 using WalletValidateAddressCallback = std::function<void(std::optional<WalletValidateAddressResult> result, std::optional<std::string> err_param)>;
 using WindowStatusChangeListener = std::function<void(std::optional<WindowStatus> window_status)>;
 #if !defined(_WIN32)
-using IoLoopDoneCallback = std::function<void()>;
 #endif
 
 class Sub final : public detail::Handle {
@@ -9321,11 +9892,20 @@ public:
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeViewController(ViewController vc) const;
+	bool dropExit(const std::string& client_id) const;
+	std::optional<DestinationExitList> getDestinationExits() const;
+	std::optional<ExitList> getExits() const;
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
+	std::optional<StringList> getPinnedAppIds() const;
+	std::optional<ProbeResultList> getProbeResults() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
+	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
+	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	std::optional<DeviceLocalMemoryUsage> memoryUsed() const;
+	int64_t migrateExit(const std::string& client_id) const;
 	void networkChanged() const;
+	void notifyNetworkChange() const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
@@ -9343,12 +9923,23 @@ public:
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
+	int64_t probeAllExits() const;
+	bool probeSuiteRunning() const;
+	void resetReliabilityMetrics() const;
+	void resetReliabilitySettings() const;
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
 	void setByJwt(const std::string& by_jwt) const;
+	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setPerformanceDegraded(bool degraded) const;
+	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
+	void shuffleExits() const;
+	void simulateNetworkChange() const;
+	bool stallExit(const std::string& client_id, bool stalled) const;
+	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
+	void stopProbeSuite() const;
 	std::optional<StringList> tunnelDnsAddressesIpv4() const;
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
@@ -9462,7 +10053,6 @@ class IoLoop final : public detail::Handle {
 public:
 	IoLoop() = default;
 	explicit IoLoop(uint64_t h) : detail::Handle(h) {}
-	void close() const;
 };
 #endif
 
@@ -11081,6 +11671,30 @@ inline void oneshot_find_providers(void* user_data, const char* result_json, con
 	delete f;
 }
 
+inline std::string retained_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+	auto* f = static_cast<FlowOwnerLookup*>(user_data);
+	std::string r{};
+	try {
+		r = (*f)(version, protocol, std::string(source_ip ? source_ip : ""), source_port, std::string(destination_ip ? destination_ip : ""), destination_port);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	return r;
+}
+inline std::string oneshot_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+	auto* f = static_cast<FlowOwnerLookup*>(user_data);
+	std::string r{};
+	try {
+		r = (*f)(version, protocol, std::string(source_ip ? source_ip : ""), source_port, std::string(destination_ip ? destination_ip : ""), destination_port);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+	return r;
+}
+
 inline void retained_generate_seedphrase(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<GenerateSeedphraseCallback*>(user_data);
 	try {
@@ -11701,28 +12315,6 @@ inline void oneshot_grid(void* user_data) {
 	delete f;
 }
 
-#if !defined(_WIN32)
-inline void retained_io_loop_done(void* user_data) {
-	auto* f = static_cast<IoLoopDoneCallback*>(user_data);
-	try {
-		(*f)();
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-}
-inline void oneshot_io_loop_done(void* user_data) {
-	auto* f = static_cast<IoLoopDoneCallback*>(user_data);
-	try {
-		(*f)();
-	} catch (const std::exception& e) {
-		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
-	} catch (...) {
-	}
-	delete f;
-}
-
-#endif
 inline void retained_is_creating_external_wallet(void* user_data, bool p0) {
 	auto* f = static_cast<IsCreatingExternalWalletListener*>(user_data);
 	try {
@@ -15721,6 +16313,26 @@ inline void DeviceLocal::closeViewController(ViewController vc) const {
 	}
 	urnet_device_local_close_view_controller(handle(), vc_fn ? &detail::retained_view_controller_close : nullptr, vc_fn ? &detail::retained_view_controller_start : nullptr, vc_fn ? &detail::retained_view_controller_stop : nullptr, vc_fn.get());
 }
+inline bool DeviceLocal::dropExit(const std::string& client_id) const {
+	bool r = urnet_device_local_drop_exit(handle(), client_id.c_str());
+	return r;
+}
+inline std::optional<DestinationExitList> DeviceLocal::getDestinationExits() const {
+	char* r_c = urnet_device_local_get_destination_exits(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DestinationExitList>(r_s->c_str());
+}
+inline std::optional<ExitList> DeviceLocal::getExits() const {
+	char* r_c = urnet_device_local_get_exits(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExitList>(r_s->c_str());
+}
 inline std::string DeviceLocal::getFirstLoadTimelineJson() const {
 	char* r_c = urnet_device_local_get_first_load_timeline_json(handle());
 	return detail::takeString(r_c);
@@ -15728,6 +16340,22 @@ inline std::string DeviceLocal::getFirstLoadTimelineJson() const {
 inline DeviceLocalKeyMaterial DeviceLocal::getKeyMaterial() const {
 	DeviceLocalKeyMaterial r(urnet_device_local_get_key_material(handle()));
 	return r;
+}
+inline std::optional<StringList> DeviceLocal::getPinnedAppIds() const {
+	char* r_c = urnet_device_local_get_pinned_app_ids(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<ProbeResultList> DeviceLocal::getProbeResults() const {
+	char* r_c = urnet_device_local_get_probe_results(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProbeResultList>(r_s->c_str());
 }
 inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() const {
 	char* r_c = urnet_device_local_get_provide_secret_keys(handle());
@@ -15737,6 +16365,22 @@ inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() c
 	}
 	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
 }
+inline std::optional<ReliabilityMetrics> DeviceLocal::getReliabilityMetrics() const {
+	char* r_c = urnet_device_local_get_reliability_metrics(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ReliabilityMetrics>(r_s->c_str());
+}
+inline std::optional<ReliabilitySettings> DeviceLocal::getReliabilitySettings() const {
+	char* r_c = urnet_device_local_get_reliability_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ReliabilitySettings>(r_s->c_str());
+}
 inline std::optional<DeviceLocalMemoryUsage> DeviceLocal::memoryUsed() const {
 	char* r_c = urnet_device_local_memory_used(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -15745,8 +16389,15 @@ inline std::optional<DeviceLocalMemoryUsage> DeviceLocal::memoryUsed() const {
 	}
 	return detail::parseJson<DeviceLocalMemoryUsage>(r_s->c_str());
 }
+inline int64_t DeviceLocal::migrateExit(const std::string& client_id) const {
+	int64_t r = urnet_device_local_migrate_exit(handle(), client_id.c_str());
+	return r;
+}
 inline void DeviceLocal::networkChanged() const {
 	urnet_device_local_network_changed(handle());
+}
+inline void DeviceLocal::notifyNetworkChange() const {
+	urnet_device_local_notify_network_change(handle());
 }
 inline AccountPreferencesViewController DeviceLocal::openAccountPreferencesViewController() const {
 	AccountPreferencesViewController r(urnet_device_local_open_account_preferences_view_controller(handle()));
@@ -15816,6 +16467,20 @@ inline WalletViewController DeviceLocal::openWalletViewController() const {
 	WalletViewController r(urnet_device_local_open_wallet_view_controller(handle()));
 	return r;
 }
+inline int64_t DeviceLocal::probeAllExits() const {
+	int64_t r = urnet_device_local_probe_all_exits(handle());
+	return r;
+}
+inline bool DeviceLocal::probeSuiteRunning() const {
+	bool r = urnet_device_local_probe_suite_running(handle());
+	return r;
+}
+inline void DeviceLocal::resetReliabilityMetrics() const {
+	urnet_device_local_reset_reliability_metrics(handle());
+}
+inline void DeviceLocal::resetReliabilitySettings() const {
+	urnet_device_local_reset_reliability_settings(handle());
+}
 inline bool DeviceLocal::sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const {
 	bool r = urnet_device_local_send_packet(handle(), packet, packet_len, n);
 	return r;
@@ -15823,11 +16488,30 @@ inline bool DeviceLocal::sendPacket(const uint8_t* packet, int32_t packet_len, i
 inline void DeviceLocal::setByJwt(const std::string& by_jwt) const {
 	urnet_device_local_set_by_jwt(handle(), by_jwt.c_str());
 }
+inline void DeviceLocal::setFlowOwnerLookup(FlowOwnerLookup lookup) const {
+	std::shared_ptr<FlowOwnerLookup> lookup_fn;
+	if (lookup) {
+		lookup_fn = std::make_shared<FlowOwnerLookup>(std::move(lookup));
+	}
+	if (lookup_fn) {
+		retain(lookup_fn);
+	}
+	urnet_device_local_set_flow_owner_lookup(handle(), lookup_fn ? &detail::retained_flow_owner_lookup : nullptr, lookup_fn.get());
+}
 inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const {
 	urnet_device_local_set_key_material(handle(), key_material.handle());
 }
 inline void DeviceLocal::setPerformanceDegraded(bool degraded) const {
 	urnet_device_local_set_performance_degraded(handle(), degraded);
+}
+inline void DeviceLocal::setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const {
+	std::string reliability_settings_json;
+	const char* reliability_settings_c = nullptr;
+	if (reliability_settings) {
+		reliability_settings_json = nlohmann::json(*reliability_settings).dump();
+		reliability_settings_c = reliability_settings_json.c_str();
+	}
+	urnet_device_local_set_reliability_settings(handle(), reliability_settings_c);
 }
 inline void DeviceLocal::setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const {
 	char* err_c = nullptr;
@@ -15847,6 +16531,29 @@ inline void DeviceLocal::setTunnelDnsSetting(const std::optional<TunnelDnsSettin
 		setting_c = setting_json.c_str();
 	}
 	urnet_device_local_set_tunnel_dns_setting(handle(), setting_c);
+}
+inline void DeviceLocal::shuffleExits() const {
+	urnet_device_local_shuffle_exits(handle());
+}
+inline void DeviceLocal::simulateNetworkChange() const {
+	urnet_device_local_simulate_network_change(handle());
+}
+inline bool DeviceLocal::stallExit(const std::string& client_id, bool stalled) const {
+	bool r = urnet_device_local_stall_exit(handle(), client_id.c_str(), stalled);
+	return r;
+}
+inline bool DeviceLocal::startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const {
+	std::string config_json;
+	const char* config_c = nullptr;
+	if (config) {
+		config_json = nlohmann::json(*config).dump();
+		config_c = config_json.c_str();
+	}
+	bool r = urnet_device_local_start_probe_suite(handle(), config_c);
+	return r;
+}
+inline void DeviceLocal::stopProbeSuite() const {
+	urnet_device_local_stop_probe_suite(handle());
 }
 inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv4() const {
 	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv4(handle());
@@ -16117,11 +16824,6 @@ inline void FeedbackViewController::start() const {
 inline void FeedbackViewController::stop() const {
 	urnet_feedback_view_controller_stop(handle());
 }
-#if !defined(_WIN32)
-inline void IoLoop::close() const {
-	urnet_io_loop_close(handle());
-}
-#endif
 inline void LocalState::close() const {
 	urnet_local_state_close(handle());
 }
@@ -17268,6 +17970,14 @@ inline std::optional<DnsResolverSettings> getDefaultDnsResolverSettings() {
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
 }
+inline std::optional<ProbeSuiteConfig> getDefaultProbeSuiteConfig() {
+	char* r_c = urnet_get_default_probe_suite_config();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProbeSuiteConfig>(r_s->c_str());
+}
 inline std::string getDefaultTunnelDnsAddressIpv4() {
 	char* r_c = urnet_get_default_tunnel_dns_address_ipv4();
 	return detail::takeString(r_c);
@@ -17396,19 +18106,6 @@ inline std::string newId() {
 	char* r_c = urnet_new_id();
 	return detail::takeString(r_c);
 }
-#if !defined(_WIN32)
-inline IoLoop newIoLoop(const DeviceLocal& device_local, int64_t fd, IoLoopDoneCallback done_callback) {
-	std::shared_ptr<IoLoopDoneCallback> done_callback_fn;
-	if (done_callback) {
-		done_callback_fn = std::make_shared<IoLoopDoneCallback>(std::move(done_callback));
-	}
-	IoLoop r(urnet_new_io_loop(device_local.handle(), fd, done_callback_fn ? &detail::retained_io_loop_done : nullptr, done_callback_fn.get()));
-	if (done_callback_fn) {
-		r.retain(done_callback_fn);
-	}
-	return r;
-}
-#endif
 inline LoginViewController newLoginViewController(const Api& api) {
 	LoginViewController r(urnet_new_login_view_controller(api.handle()));
 	return r;

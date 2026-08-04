@@ -176,6 +176,14 @@ func (self *BlockActionViewController) BlockActionOverridesChanged(blockActionOv
 			if override.RouteOverride == nil || override.AppIds == nil {
 				continue
 			}
+			if override.RouteOverride.Pin && !override.RouteOverride.Local {
+				// a pin is exit placement inside the tunnel, never tunnel
+				// membership. This must stay identical to
+				// DeviceLocal.GetLocalOverrideAppIds's skip -- both derive the
+				// same safety-critical set, and a pinned app landing in either
+				// platform list is a vpn bypass or an allowlist flip.
+				continue
+			}
 			for _, appId := range override.AppIds.getAll() {
 				if seenAppIds[appId] {
 					continue

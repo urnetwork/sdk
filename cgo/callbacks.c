@@ -189,6 +189,10 @@ void urnet_invoke_find_providers(urnet_find_providers_cb cb, void* user_data, co
 	cb(user_data, result_json, err_param);
 }
 
+char* urnet_invoke_flow_owner_lookup(urnet_flow_owner_lookup_cb cb, void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+	return cb(user_data, version, protocol, source_ip, source_port, destination_ip, destination_port);
+}
+
 void urnet_invoke_generate_seedphrase(urnet_generate_seedphrase_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
@@ -262,10 +266,6 @@ void urnet_invoke_get_transfer_stats(urnet_get_transfer_stats_cb cb, void* user_
 }
 
 void urnet_invoke_grid(urnet_grid_cb cb, void* user_data) {
-	cb(user_data);
-}
-
-void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data) {
 	cb(user_data);
 }
 

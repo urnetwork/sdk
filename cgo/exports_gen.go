@@ -761,6 +761,25 @@ func (self *cAdapterFindProvidersCallback) Result(result *sdk.FindProvidersResul
 	}
 }
 
+type cAdapterFlowOwnerLookup struct {
+	cbPinnedFlowAppId C.urnet_flow_owner_lookup_cb
+	userData          unsafe.Pointer
+}
+
+func (self *cAdapterFlowOwnerLookup) PinnedFlowAppId(version int32, protocol int32, sourceIp string, sourcePort int32, destinationIp string, destinationPort int32) string {
+	defer cgoGuard("urnet_flow_owner_lookup_cb")
+	sourceIp_ := cString(string(sourceIp))
+	destinationIp_ := cString(string(destinationIp))
+	r0_ := C.urnet_invoke_flow_owner_lookup(self.cbPinnedFlowAppId, self.userData, C.int64_t(int64(version)), C.int64_t(int64(protocol)), sourceIp_, C.int64_t(int64(sourcePort)), destinationIp_, C.int64_t(int64(destinationPort)))
+	cStringFree(sourceIp_)
+	cStringFree(destinationIp_)
+	r0 := goString(r0_)
+	if r0_ != nil {
+		urnet_free_string(r0_)
+	}
+	return r0
+}
+
 type cAdapterGenerateSeedphraseCallback struct {
 	cbResult C.urnet_generate_seedphrase_cb
 	userData unsafe.Pointer
@@ -6321,6 +6340,45 @@ func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_
 	self_.CloseViewController(vc_)
 }
 
+//export urnet_device_local_drop_exit
+func urnet_device_local_drop_exit(self C.uint64_t, clientId *C.char) C.bool {
+	defer cgoGuard("urnet_device_local_drop_exit")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_drop_exit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.DropExit(goId(clientId, "urnet_device_local_drop_exit"))
+	return C.bool(r0)
+}
+
+//export urnet_device_local_get_destination_exits
+func urnet_device_local_get_destination_exits(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_destination_exits")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_destination_exits")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetDestinationExits()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_destination_exits")
+}
+
+//export urnet_device_local_get_exits
+func urnet_device_local_get_exits(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_exits")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_exits")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExits()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_exits")
+}
+
 //export urnet_device_local_get_first_load_timeline_json
 func urnet_device_local_get_first_load_timeline_json(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_get_first_load_timeline_json")
@@ -6346,6 +6404,34 @@ func urnet_device_local_get_key_material(self C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_get_pinned_app_ids
+func urnet_device_local_get_pinned_app_ids(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_pinned_app_ids")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_pinned_app_ids")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPinnedAppIds()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_pinned_app_ids")
+}
+
+//export urnet_device_local_get_probe_results
+func urnet_device_local_get_probe_results(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_probe_results")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_probe_results")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProbeResults()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_probe_results")
+}
+
 //export urnet_device_local_get_provide_secret_keys
 func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_get_provide_secret_keys")
@@ -6358,6 +6444,34 @@ func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_local_get_provide_secret_keys")
+}
+
+//export urnet_device_local_get_reliability_metrics
+func urnet_device_local_get_reliability_metrics(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_reliability_metrics")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_reliability_metrics")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReliabilityMetrics()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_reliability_metrics")
+}
+
+//export urnet_device_local_get_reliability_settings
+func urnet_device_local_get_reliability_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_reliability_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReliabilitySettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_reliability_settings")
 }
 
 //export urnet_device_local_memory_used
@@ -6374,6 +6488,17 @@ func urnet_device_local_memory_used(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_local_memory_used")
 }
 
+//export urnet_device_local_migrate_exit
+func urnet_device_local_migrate_exit(self C.uint64_t, clientId *C.char) C.int64_t {
+	defer cgoGuard("urnet_device_local_migrate_exit")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_migrate_exit")
+	if !ok {
+		return 0
+	}
+	r0 := self_.MigrateExit(goId(clientId, "urnet_device_local_migrate_exit"))
+	return C.int64_t(r0)
+}
+
 //export urnet_device_local_network_changed
 func urnet_device_local_network_changed(self C.uint64_t) {
 	defer cgoGuard("urnet_device_local_network_changed")
@@ -6382,6 +6507,16 @@ func urnet_device_local_network_changed(self C.uint64_t) {
 		return
 	}
 	self_.NetworkChanged()
+}
+
+//export urnet_device_local_notify_network_change
+func urnet_device_local_notify_network_change(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_notify_network_change")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_notify_network_change")
+	if !ok {
+		return
+	}
+	self_.NotifyNetworkChange()
 }
 
 //export urnet_device_local_open_account_preferences_view_controller
@@ -6622,6 +6757,48 @@ func urnet_device_local_open_wallet_view_controller(self C.uint64_t) C.uint64_t 
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_probe_all_exits
+func urnet_device_local_probe_all_exits(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_device_local_probe_all_exits")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_probe_all_exits")
+	if !ok {
+		return 0
+	}
+	r0 := self_.ProbeAllExits()
+	return C.int64_t(r0)
+}
+
+//export urnet_device_local_probe_suite_running
+func urnet_device_local_probe_suite_running(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_probe_suite_running")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_probe_suite_running")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.ProbeSuiteRunning()
+	return C.bool(r0)
+}
+
+//export urnet_device_local_reset_reliability_metrics
+func urnet_device_local_reset_reliability_metrics(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_reset_reliability_metrics")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_reset_reliability_metrics")
+	if !ok {
+		return
+	}
+	self_.ResetReliabilityMetrics()
+}
+
+//export urnet_device_local_reset_reliability_settings
+func urnet_device_local_reset_reliability_settings(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_reset_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_reset_reliability_settings")
+	if !ok {
+		return
+	}
+	self_.ResetReliabilitySettings()
+}
+
 //export urnet_device_local_send_packet
 func urnet_device_local_send_packet(self C.uint64_t, packet *C.uint8_t, packet_len C.int32_t, n C.int64_t) C.bool {
 	defer cgoGuard("urnet_device_local_send_packet")
@@ -6641,6 +6818,20 @@ func urnet_device_local_set_by_jwt(self C.uint64_t, byJwt *C.char) {
 		return
 	}
 	self_.SetByJwt(goString(byJwt))
+}
+
+//export urnet_device_local_set_flow_owner_lookup
+func urnet_device_local_set_flow_owner_lookup(self C.uint64_t, lookup_pinned_flow_app_id C.urnet_flow_owner_lookup_cb, lookup_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_set_flow_owner_lookup")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_flow_owner_lookup")
+	if !ok {
+		return
+	}
+	var lookup_ sdk.FlowOwnerLookup
+	if lookup_pinned_flow_app_id != nil {
+		lookup_ = &cAdapterFlowOwnerLookup{cbPinnedFlowAppId: lookup_pinned_flow_app_id, userData: lookup_user_data}
+	}
+	self_.SetFlowOwnerLookup(lookup_)
 }
 
 //export urnet_device_local_set_key_material
@@ -6665,6 +6856,23 @@ func urnet_device_local_set_performance_degraded(self C.uint64_t, degraded C.boo
 		return
 	}
 	self_.SetPerformanceDegraded(bool(degraded))
+}
+
+//export urnet_device_local_set_reliability_settings
+func urnet_device_local_set_reliability_settings(self C.uint64_t, reliabilitySettings *C.char) {
+	defer cgoGuard("urnet_device_local_set_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_reliability_settings")
+	if !ok {
+		return
+	}
+	var reliabilitySettings_ *sdk.ReliabilitySettings
+	if reliabilitySettings != nil {
+		reliabilitySettings_ = &sdk.ReliabilitySettings{}
+		if !goJson(reliabilitySettings, reliabilitySettings_, "urnet_device_local_set_reliability_settings") {
+			return
+		}
+	}
+	self_.SetReliabilitySettings(reliabilitySettings_)
 }
 
 //export urnet_device_local_set_rpc_server
@@ -6697,6 +6905,65 @@ func urnet_device_local_set_tunnel_dns_setting(self C.uint64_t, setting *C.char)
 		}
 	}
 	self_.SetTunnelDnsSetting(setting_)
+}
+
+//export urnet_device_local_shuffle_exits
+func urnet_device_local_shuffle_exits(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_shuffle_exits")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_shuffle_exits")
+	if !ok {
+		return
+	}
+	self_.ShuffleExits()
+}
+
+//export urnet_device_local_simulate_network_change
+func urnet_device_local_simulate_network_change(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_simulate_network_change")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_simulate_network_change")
+	if !ok {
+		return
+	}
+	self_.SimulateNetworkChange()
+}
+
+//export urnet_device_local_stall_exit
+func urnet_device_local_stall_exit(self C.uint64_t, clientId *C.char, stalled C.bool) C.bool {
+	defer cgoGuard("urnet_device_local_stall_exit")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_stall_exit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.StallExit(goId(clientId, "urnet_device_local_stall_exit"), bool(stalled))
+	return C.bool(r0)
+}
+
+//export urnet_device_local_start_probe_suite
+func urnet_device_local_start_probe_suite(self C.uint64_t, config *C.char) C.bool {
+	defer cgoGuard("urnet_device_local_start_probe_suite")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_start_probe_suite")
+	if !ok {
+		return C.bool(false)
+	}
+	var config_ *sdk.ProbeSuiteConfig
+	if config != nil {
+		config_ = &sdk.ProbeSuiteConfig{}
+		if !goJson(config, config_, "urnet_device_local_start_probe_suite") {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.StartProbeSuite(config_)
+	return C.bool(r0)
+}
+
+//export urnet_device_local_stop_probe_suite
+func urnet_device_local_stop_probe_suite(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_stop_probe_suite")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_stop_probe_suite")
+	if !ok {
+		return
+	}
+	self_.StopProbeSuite()
 }
 
 //export urnet_device_local_tunnel_dns_addresses_ipv4
@@ -7524,6 +7791,16 @@ func urnet_get_default_dns_resolver_settings() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_get_default_dns_resolver_settings")
+}
+
+//export urnet_get_default_probe_suite_config
+func urnet_get_default_probe_suite_config() *C.char {
+	defer cgoGuard("urnet_get_default_probe_suite_config")
+	r0 := sdk.GetDefaultProbeSuiteConfig()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_get_default_probe_suite_config")
 }
 
 //export urnet_get_default_tunnel_dns_address_ipv4
