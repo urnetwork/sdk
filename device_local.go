@@ -600,6 +600,9 @@ type DeviceLocal struct {
 
 	// insertion ordered, unique by override id
 	blockActionOverrides []*BlockActionOverride
+	// the platform flow-owner resolver for per-app pinning; re-applied to
+	// every multi client the device builds
+	flowOwnerLookup FlowOwnerLookup
 	// the recent routing decisions, newest last, gated by
 	// `BlockActionWindowDuration`/`BlockActionWindowMaxCount`
 	blockActions []*BlockAction
@@ -631,6 +634,11 @@ type DeviceLocal struct {
 	providerContractStatsEventSub func()
 
 	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
+
+	// probeSuiteState owns the in-app test suite. It pumps its own userspace
+	// tun through this device, so probes take the same exits as real traffic
+	// -- see probe_suite.go for why an ordinary http client cannot.
+	probeSuiteState *probeSuite
 
 	canShowRatingDialogChangeListeners      *connect.CallbackList[CanShowRatingDialogChangeListener]
 	canPromptIntroFunnelChangeListeners     *connect.CallbackList[CanPromptIntroFunnelChangeListener]
@@ -1030,6 +1038,7 @@ func newDeviceLocalWithOverrides(
 		contracts:                               newDeviceContractTracker(),
 		providerContracts:                       newDeviceContractTracker(),
 		receiveCallbacks:                        connect.NewCallbackList[connect.ReceivePacketFunction](),
+		probeSuiteState:                         &probeSuite{},
 		canShowRatingDialogChangeListeners:      connect.NewCallbackList[CanShowRatingDialogChangeListener](),
 		canPromptIntroFunnelChangeListeners:     connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
 		allowForegroundChangeListeners:          connect.NewCallbackList[AllowForegroundChangeListener](),
@@ -3418,6 +3427,12 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			multi.SetBlockActionOverrides(connectBlockActionOverrides(self.blockActionOverrides, self.settings.HostedIncompatible))
 			// exclude the resolver endpoints from the override and association logic
 			multi.SetBlockActionIgnoreHosts(dnsIgnoreHostValues(self.dnsResolverSettingsWithLock()))
+			// re-apply the platform flow-owner resolver so per-app pinning
+			// survives reconnects (SetFlowOwnerLookup stores it here for
+			// exactly this moment)
+			if self.flowOwnerLookup != nil {
+				applyFlowOwnerLookup(multi, self.flowOwnerLookup)
+			}
 			self.blockActionSub = multi.AddBlockActionCallback(self.updateBlockActions)
 			self.packetStatsSub = multi.AddPacketStatsCallback(self.updatePacketStats)
 			self.contractStatsEventSub = multi.AddContractStatsCallback(self.updateContractStatsEvents)
@@ -3998,7 +4013,10 @@ func connectBlockActionOverrides(overrides []*BlockActionOverride, hostedIncompa
 		}
 		if override.RouteOverride != nil {
 			local := override.RouteOverride.Local && !hostedIncompatible
-			connectOverride.RouteOverride = &connect.RouteOverride{Local: local}
+			connectOverride.RouteOverride = &connect.RouteOverride{
+				Local: local,
+				Pin:   override.RouteOverride.Pin,
+			}
 		}
 		connectOverrides = append(connectOverrides, connectOverride)
 	}
@@ -4190,7 +4208,10 @@ func (self *DeviceLocal) blockActionFromConnectWithLock(blockAction *connect.Blo
 		}
 		out.RouteOverride = &RouteOverride{Local: blockAction.Local}
 		if override := self.blockActionOverrideWithLock(*blockAction.RouteOverrideId); override != nil && override.RouteOverride != nil {
-			out.RouteOverride = &RouteOverride{Local: override.RouteOverride.Local}
+			out.RouteOverride = &RouteOverride{
+				Local: override.RouteOverride.Local,
+				Pin:   override.RouteOverride.Pin,
+			}
 		}
 	}
 	return out
@@ -4274,7 +4295,9 @@ func (self *DeviceLocal) hostedSafeBlockActionOverride(override *BlockActionOver
 	}
 	if override.RouteOverride != nil && override.RouteOverride.Local {
 		safe := *override
-		safe.RouteOverride = &RouteOverride{Local: false}
+		// only the local half is unsafe on a hosted device; a pin is exit
+		// placement and must survive the rewrite
+		safe.RouteOverride = &RouteOverride{Local: false, Pin: override.RouteOverride.Pin}
 		return &safe
 	}
 	return override
@@ -4377,6 +4400,13 @@ func (self *DeviceLocal) GetLocalOverrideAppIds() *OverrideLocalAppIds {
 		if override.RouteOverride == nil || override.AppIds == nil {
 			continue
 		}
+		if override.RouteOverride.Pin && !override.RouteOverride.Local {
+			// a pin rule holds the app to one exit INSIDE the tunnel; it is
+			// not a tunnel-membership rule. Counting it here would flip the
+			// vpn into allowlist mode and route ONLY the pinned apps -- the
+			// exact opposite of what pinning means.
+			continue
+		}
 		for _, appId := range override.AppIds.getAll() {
 			if seen[appId] {
 				continue
@@ -4393,6 +4423,34 @@ func (self *DeviceLocal) GetLocalOverrideAppIds() *OverrideLocalAppIds {
 		Included: included,
 		Excluded: excluded,
 	}
+}
+
+// GetPinnedAppIds lists the app ids held to one exit by pin rules -- the set
+// the platform's FlowOwnerLookup implementation answers for.
+func (self *DeviceLocal) GetPinnedAppIds() *StringList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	pinned := NewStringList()
+	seen := map[string]bool{}
+	for _, override := range self.blockActionOverrides {
+		if override.RouteOverride == nil || !override.RouteOverride.Pin || override.AppIds == nil {
+			continue
+		}
+		if override.RouteOverride.Local {
+			// a local-routed app bypasses the tunnel entirely; there is no
+			// exit to pin it to, and reporting it pinned would put a
+			// bypassing app in the platform's allow-list union
+			continue
+		}
+		for _, appId := range override.AppIds.getAll() {
+			if !seen[appId] {
+				seen[appId] = true
+				pinned.Add(appId)
+			}
+		}
+	}
+	return pinned
 }
 
 func (self *DeviceLocal) AddBlockActionWindowChangeListener(listener BlockActionWindowChangeListener) Sub {

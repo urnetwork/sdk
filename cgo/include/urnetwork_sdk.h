@@ -201,6 +201,8 @@ typedef void (*urnet_find_locations_cb)(void* user_data, const char* result_json
 typedef void (*urnet_find_providers2_cb)(void* user_data, const char* result_json, const char* err_param);
 /* FindProvidersCallback */
 typedef void (*urnet_find_providers_cb)(void* user_data, const char* result_json, const char* err_param);
+/* FlowOwnerLookup */
+typedef char* (*urnet_flow_owner_lookup_cb)(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port);
 /* GenerateSeedphraseCallback */
 typedef void (*urnet_generate_seedphrase_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetAccountPaymentsCallback */
@@ -693,11 +695,20 @@ void urnet_device_local_close_locations_view_controller(uint64_t self, uint64_t 
 void urnet_device_local_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
+bool urnet_device_local_drop_exit(uint64_t self, const char* client_id);
+char* urnet_device_local_get_destination_exits(uint64_t self);
+char* urnet_device_local_get_exits(uint64_t self);
 char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
+char* urnet_device_local_get_pinned_app_ids(uint64_t self);
+char* urnet_device_local_get_probe_results(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
+char* urnet_device_local_get_reliability_metrics(uint64_t self);
+char* urnet_device_local_get_reliability_settings(uint64_t self);
 char* urnet_device_local_memory_used(uint64_t self);
+int64_t urnet_device_local_migrate_exit(uint64_t self, const char* client_id);
 void urnet_device_local_network_changed(uint64_t self);
+void urnet_device_local_notify_network_change(uint64_t self);
 uint64_t urnet_device_local_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_block_action_view_controller(uint64_t self);
@@ -715,12 +726,23 @@ uint64_t urnet_device_local_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provider_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_wallet_view_controller(uint64_t self);
+int64_t urnet_device_local_probe_all_exits(uint64_t self);
+bool urnet_device_local_probe_suite_running(uint64_t self);
+void urnet_device_local_reset_reliability_metrics(uint64_t self);
+void urnet_device_local_reset_reliability_settings(uint64_t self);
 bool urnet_device_local_send_packet(uint64_t self, const uint8_t* packet, int32_t packet_len, int64_t n);
 void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
+void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lookup_cb lookup_pinned_flow_app_id, void* lookup_user_data);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
 void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
+void urnet_device_local_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
 void urnet_device_local_set_tunnel_dns_setting(uint64_t self, const char* setting_json);
+void urnet_device_local_shuffle_exits(uint64_t self);
+void urnet_device_local_simulate_network_change(uint64_t self);
+bool urnet_device_local_stall_exit(uint64_t self, const char* client_id, bool stalled);
+bool urnet_device_local_start_probe_suite(uint64_t self, const char* config_json);
+void urnet_device_local_stop_probe_suite(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
@@ -1025,6 +1047,7 @@ char* urnet_generate_nonce(void);
 char* urnet_generate_wallet_key_pair(char** out_error);
 char* urnet_get_color_hex(const char* code);
 char* urnet_get_default_dns_resolver_settings(void);
+char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
 char* urnet_get_log_dir(void);
@@ -1065,18 +1088,6 @@ bool urnet_set_log_dir(const char* log_dir, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
 int64_t urnet_usd_to_nano_cents(double usd);
-
-/* ----- linux/unix only ----- */
-
-#if !defined(_WIN32)
-
-/* IoLoopDoneCallback */
-typedef void (*urnet_io_loop_done_cb)(void* user_data);
-
-void urnet_io_loop_close(uint64_t self);
-uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done_cb done_callback_io_loop_done, void* done_callback_user_data);
-
-#endif /* !_WIN32 */
 
 /* ----- data type reference (json shapes) ----- */
 
@@ -1552,6 +1563,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: ApiError | null
  */
 
+/* DestinationExit (json):
+ *   DestinationIp: string
+ *   ClientId: string (uuid) | null
+ *   FlowCount: number
+ */
+
+/* DestinationExitList (json):
+ *   = DestinationExit | null[]
+ */
+
 /* DeviceLocalMemoryUsage (json):
  *   TargetByteCount: number
  *   DnsByteCount: number
@@ -1627,6 +1648,26 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   RemoteDnsIpv6: StringList | null
  *   LocalDnsIpv4: StringList | null
  *   LocalDnsIpv6: StringList | null
+ */
+
+/* Exit (json):
+ *   ClientId: string (uuid) | null
+ *   WindowType: string
+ *   Warning: boolean
+ *   Quarantined: boolean
+ *   WarningCause: string
+ *   Done: boolean
+ *   P2pOnly: boolean
+ *   FlowCount: number
+ *   DialFailureCount: number
+ *   Tier: number
+ *   EffectiveTier: number
+ *   Proven: boolean
+ *   ProbeAgeSeconds: number
+ */
+
+/* ExitList (json):
+ *   = Exit | null[]
  */
 
 /* FeedbackSendArgs (json):
@@ -2100,6 +2141,33 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   post_quantum_encryption: boolean
  */
 
+/* ProbeResult (json):
+ *   Name: string
+ *   Kind: string
+ *   Ok: boolean
+ *   Error: string
+ *   DnsMillis: number
+ *   ConnectMillis: number
+ *   TtfbMillis: number
+ *   TotalMillis: number
+ *   ByteCount: number
+ *   StartOffsetMillis: number
+ */
+
+/* ProbeResultList (json):
+ *   = ProbeResult | null[]
+ */
+
+/* ProbeSuiteConfig (json):
+ *   Concurrency: number
+ *   TimeoutMillis: number
+ *   RepeatCount: number
+ *   IncludeDns: boolean
+ *   IncludeHttp: boolean
+ *   IncludeDownload: boolean
+ *   DownloadByteCount: number
+ */
+
 /* ProvideSecretKey (json):
  *   provide_mode: number
  *   provide_secret_key: string
@@ -2255,6 +2323,72 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   = RegionalDnsServer | null[]
  */
 
+/* ReliabilityMetrics (json):
+ *   FlowsOpened: number
+ *   ExitLossEvents: number
+ *   FlowsLostToExit: number
+ *   MaxFlowsLostInOneEvent: number
+ *   MeanFlowsLostPerExitLoss: number
+ *   RecoveryCount: number
+ *   RecoveryMissed: number
+ *   RecoveryMeanMillis: number
+ *   RecoveryMaxMillis: number
+ *   RecoveryPending: number
+ *   DialFailuresIntercepted: number
+ *   FlowsReraced: number
+ *   FlowsRebound: number
+ *   RebindsAccepted: number
+ *   RebindsRedialed: number
+ *   VerdictsHeldUplinkStale: number
+ *   VerdictsHeldTransportDown: number
+ *   RemovalsDeferred: number
+ *   ProbesSent: number
+ *   ProbesAnswered: number
+ *   ProvidersQualified: number
+ *   BusyProbesSent: number
+ *   BusyProbesAcquitted: number
+ *   SchedulerPausesDetected: number
+ *   GroupsFollowed: number
+ *   GroupsScattered: number
+ */
+
+/* ReliabilitySettings (json):
+ *   UdpTeardownSignal: boolean
+ *   QuicRebindOnExitLoss: boolean
+ *   DialFailureRerace: boolean
+ *   TcpCollapseMaxHoldMillis: number
+ *   SendStallTimeoutMillis: number
+ *   ClusterAffinityFallback: boolean
+ *   ServerNameAffinityBridge: boolean
+ *   SequenceIdleTimeoutMillis: number
+ *   TcpSequenceIdleTimeoutMillis: number
+ *   BlackholeReceiveTimeoutMillis: number
+ *   MaxFlowsPerExit: number
+ *   AffinityStickyPastCap: boolean
+ *   QuarantineGroupFollow: boolean
+ *   GroupFollowWindowMillis: number
+ *   UplinkStalenessGateMillis: number
+ *   SoftVerdictDemote: boolean
+ *   RemovalBudgetCount: number
+ *   RemovalBudgetWindowMillis: number
+ *   StandingReserve: boolean
+ *   EffectiveTierSelection: boolean
+ *   MinBlackholeDestinations: number
+ *   BlackholeLoadCorroboration: number
+ *   ProviderProbe: boolean
+ *   ProbeTimeoutMillis: number
+ *   ProbeSampleHostCount: number
+ *   ProbeSilenceWarnStreak: number
+ *   EvaluationPoolMultiple: number
+ *   FormationPollTimeoutMillis: number
+ *   BusyProbe: boolean
+ *   BusyProbeBudgetMillis: number
+ *   SchedulerPauseToleranceMillis: number
+ *   SchedulerPauseRecoveryTimeoutMillis: number
+ *   BlackholeConnectComparativeTimeoutMillis: number
+ *   HeartbeatIntervalMillis: number
+ */
+
 /* ReliabilityWindow (json):
  *   mean_reliability_weight: number
  *   min_time_unix_milli: number
@@ -2297,6 +2431,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* RouteOverride (json):
  *   Local: boolean
+ *   Pin: boolean
  */
 
 /* SetNetworkRankingPublicArgs (json):

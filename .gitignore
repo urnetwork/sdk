@@ -11,3 +11,7 @@ temp/*
 
 .vscode/*
 .direnv
+
+# agent planning artifacts -- internal workflow, never shipped upstream
+.superpowers/
+docs/superpowers/
