@@ -102,6 +102,12 @@ type deviceRpcSettings struct {
 	DeviceLocalSettings
 }
 
+// deviceRpcDefaultAddress is the default localhost rpc address, used by both
+// the DeviceLocal listener and the DeviceRemote dialer when no explicit
+// transport is set. A var so the test harness can point an entire test process
+// at a per-process ephemeral port (see TestMain).
+var deviceRpcDefaultAddress = "127.0.0.1:12025"
+
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
 		RpcCallTimeout:    60 * time.Second,
@@ -116,7 +122,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		// while a genuinely dead connection is still reaped.
 		KeepAliveTimeout:     5 * time.Second,
 		KeepAliveRetryCount:  5,
-		Address:              requireRemoteAddress("127.0.0.1:12025"),
+		Address:              requireRemoteAddress(deviceRpcDefaultAddress),
 		InitialLockTimeout:   1 * time.Second,
 		CallbackBufferSize:   64,
 		MuxSendBufferSize:    32,
@@ -489,6 +495,8 @@ func (self *DeviceRemote) run() {
 				}
 
 				syncRequest := &DeviceRemoteSyncRequest{
+					InstanceId: self.instanceId,
+
 					CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
 					CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
 					AllowForegroundChangeListenerIds:          slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
@@ -4624,6 +4632,13 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 
 //gomobile:noexport
 type DeviceRemoteSyncRequest struct {
+	// InstanceId is the device instance the remote expects to reach. Pairing is
+	// by address, and an address can be reused (a stale process still bound to
+	// the port, another app): the local rejects a sync from a remote built for
+	// a different instance instead of silently applying its state and serving
+	// its listeners. Zero skips the check (older remote).
+	InstanceId connect.Id
+
 	CanShowRatingDialogChangeListenerIds      []connect.Id
 	CanPromptIntroFunnelChangeListenerIds     []connect.Id
 	AllowForegroundChangeListenerIds          []connect.Id
@@ -6397,6 +6412,25 @@ func (self *DeviceLocalRpc) Sync(
 			}
 		}()
 	*/
+
+	// reject a remote built for a different device instance before any side
+	// effect — before applying its state below and before it can register
+	// listeners. The remote surfaces syncResponse.Error, stays unsynced, and
+	// reconnects paced, so a foreign listener on a reused address is loud and
+	// recoverable rather than a silent wrong-device pairing.
+	if syncRequest.InstanceId != (connect.Id{}) && syncRequest.InstanceId != self.deviceLocal.instanceId {
+		self.deviceLocal.log.Infof(
+			"[dlrpc]sync rejected: remote expects instance %s, local is %s",
+			syncRequest.InstanceId, self.deviceLocal.instanceId,
+		)
+		*syncResponse = &DeviceRemoteSyncResponse{
+			Error: fmt.Sprintf(
+				"device instance mismatch: remote expects %s, local is %s",
+				syncRequest.InstanceId, self.deviceLocal.instanceId,
+			),
+		}
+		return nil
+	}
 
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

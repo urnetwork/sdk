@@ -87,6 +87,7 @@ export interface AuthLoginArgs {
   auth_jwt_type?: string;
   auth_jwt?: string;
   wallet_auth?: WalletAuthArgs | null;
+  seedphrase?: string;
 }
 
 export interface NetworkCheckArgs {
@@ -113,6 +114,7 @@ export interface NetworkCreateArgs {
 
 export interface NetworkCreateResult {
   network?: NetworkCreateResultNetwork | null;
+  seedphrase?: string;
   verification_required?: NetworkCreateResultVerification | null;
   error?: NetworkCreateResultError | null;
 }

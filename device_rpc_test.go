@@ -1673,7 +1673,7 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	keyMaterial, err := GenerateDeviceRpcKeyMaterial()
 	connect.AssertEqual(t, err, nil)
 
-	hostPort := "127.0.0.1:12077"
+	hostPort := testing_freeHostPort()
 	settings := defaultDeviceRpcSettings()
 
 	// local with built-in rpc disabled; start a tls listener via SetRpcServer
@@ -1697,8 +1697,9 @@ func TestDeviceRemoteSetRpcServerReset(t *testing.T) {
 	err = deviceLocal.SetRpcServer(keyMaterial.GetServerPem(), keyMaterial.GetClientCertPem(), hostPort)
 	connect.AssertEqual(t, err, nil)
 
-	// remote starts pointed at a dead port, so it cannot connect
-	deadDialer := NewWebsocketDeviceRpcDialer(requireRemoteAddress("127.0.0.1:12099"), "", "", settings)
+	// remote starts pointed at a dead port (reserved then released, so nothing
+	// listens on it), so it cannot connect
+	deadDialer := NewWebsocketDeviceRpcDialer(requireRemoteAddress(testing_freeHostPort()), "", "", settings)
 	deviceRemote, err := newDeviceRemoteWithOverrides(
 		networkSpace,
 		byJwt,
@@ -1741,7 +1742,7 @@ func TestDeviceLocalSetRpcServerRebind(t *testing.T) {
 	clientId := connect.NewId()
 	instanceId := NewId()
 
-	hostPort := "127.0.0.1:12078"
+	hostPort := testing_freeHostPort()
 	settings := defaultDeviceRpcSettings()
 
 	deviceLocalSettings := DefaultDeviceLocalSettings()
@@ -1890,8 +1891,10 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 	clientId := connect.NewId()
 	instanceId := NewId()
 
-	hostPort := "127.0.0.1:12025"
 	settings := defaultDeviceRpcSettings()
+	// the default transport, restated explicitly: SetRpcServer with the address
+	// already in use must be a no-op on both sides
+	hostPort := settings.Address.HostPort()
 
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace,
@@ -1952,6 +1955,62 @@ func TestDeviceRpcSetRpcServerIdempotent(t *testing.T) {
 
 	glog.Infof("[test]connect count baseline=%d final=%d", baseline, counter.count())
 	connect.AssertEqual(t, counter.count(), baseline)
+}
+
+// TestDeviceRpcSyncRejectsInstanceMismatch: a remote must only pair with the
+// device instance it was built for. The rpc address can be reused (a stale
+// process still bound to the port, another app on the same machine), so the
+// local rejects a sync carrying a different instance id — before applying any
+// of the remote's cached state — and the remote stays unsynced instead of
+// silently driving (and being driven by) the wrong device.
+func TestDeviceRpcSyncRejectsInstanceMismatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	settings := defaultDeviceRpcSettings()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, byJwt, "", "", "", NewId(), testDeviceLocalSettingsRpc(), clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	// the remote expects a different instance on the same address. seed a
+	// cached write while offline: a rejected sync must never apply it.
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace, byJwt, NewId(), settings, clientId, testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	localRouteLocal := deviceLocal.GetRouteLocal()
+	deviceRemote.SetRouteLocal(!localRouteLocal)
+
+	deviceRemote.Sync()
+	connect.AssertEqual(t, deviceRemote.waitForSync(2*time.Second), false)
+	connect.AssertEqual(t, deviceLocal.GetRouteLocal(), localRouteLocal)
+
+	// a remote built for the local's instance syncs on the same address
+	matchedRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace, byJwt, deviceLocal.GetInstanceId(), settings, clientId, testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer matchedRemote.Close()
+
+	matchedRemote.Sync()
+	connect.AssertEqual(t, matchedRemote.waitForSync(5*time.Second), true)
 }
 
 // TestDeviceRpcKeyMaterialStrings verifies the generated PEM strings are
