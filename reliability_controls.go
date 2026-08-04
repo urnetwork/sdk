@@ -177,6 +177,13 @@ type ReliabilitySettings struct {
 	// hosts. Width costs a few kilobytes per pass, never wall time -- every
 	// probe of a pass is in flight together against one timeout.
 	ProbeSampleHostCount int32
+	// ProbeSilenceWarnStreak: after this many consecutive probe passes
+	// answered with total silence (no answer, no dns resolution), the exit is
+	// warned out of new-flow placement -- the compensation for provider
+	// devices that leave the network mid-session. Placement only: removal
+	// stays traffic-based, and any evidence of life clears the streak. 0 is
+	// off.
+	ProbeSilenceWarnStreak int32
 	// EvaluationPoolMultiple makes window expansion request and ping-evaluate
 	// this multiple of the candidates it needs, admit the needed count
 	// preferring qualified providers, and politely cancel the flowless
@@ -260,6 +267,7 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		ProviderProbe:                 reliabilitySettings.ProviderProbe,
 		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
 		ProbeSampleHostCount:          int32(reliabilitySettings.ProbeSampleHostCount),
+		ProbeSilenceWarnStreak:        int32(reliabilitySettings.ProbeSilenceWarnStreak),
 		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
 
 		FormationPollTimeoutMillis:               reliabilitySettings.FormationPollTimeout.Milliseconds(),
@@ -299,6 +307,7 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		ProviderProbe:              self.ProviderProbe,
 		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
 		ProbeSampleHostCount:     int(self.ProbeSampleHostCount),
+		ProbeSilenceWarnStreak:   int(self.ProbeSilenceWarnStreak),
 		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
 
 		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
