@@ -204,6 +204,19 @@ func TestReliabilitySettingsNilWithoutMultiClient(t *testing.T) {
 	deviceRemote.lastKnownState.ReliabilitySettings.Set(nil)
 	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
 
+	// and a POPULATED last known state must not read back as in force
+	// either. Non-nil means "these are in force right now" -- the developer
+	// screen enables its controls on it and presents the values as
+	// effective. Last session's settings are not in force while the local is
+	// unreachable, and on ios the extension holding the local is stopped on
+	// every disconnect, so serving them would leave the screen live-looking
+	// with every action a silent no-op.
+	deviceRemote.lastKnownState.ReliabilitySettings.Set(&ReliabilitySettings{
+		HeartbeatIntervalMillis: 60000,
+		SoftVerdictDemote:       true,
+	})
+	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
+
 	// and a nil argument can never become a queued override
 	deviceRemote.SetReliabilitySettings(nil)
 	queued := deviceRemote.state.ReliabilitySettings

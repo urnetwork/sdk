@@ -4427,13 +4427,19 @@ func (self *DeviceRemote) GetReliabilitySettings() *ReliabilitySettings {
 		// nil, which is "no multi client, nothing in force"
 		return settings
 	}
-	// rpc down: report the queued override if one is pending
+	// rpc down: report the queued override if one is pending, since that IS
+	// what will be in force the moment the local comes back
 	if override := self.state.ReliabilitySettings.Get(nil); override != nil {
 		return cloneReliabilitySettings(override)
 	}
-	// a queued reset (IsSet with a nil value) and an empty queue both land
-	// here: the last known effective settings, or nil when there are none
-	return cloneReliabilitySettings(self.lastKnownState.ReliabilitySettings.Get(nil))
+	// otherwise nil, and deliberately NOT lastKnownState. The caller's whole
+	// contract is "non-nil means these settings are in force right now" -- a
+	// developer screen enables its controls on it and presents the values as
+	// effective. Last session's settings are not in force while the local is
+	// unreachable, and on ios the extension holding the local is stopped on
+	// every disconnect, so serving them would leave the screen live-looking
+	// and every action a silent no-op against a device that is not there.
+	return nil
 }
 
 // SetReliabilitySettings overrides the reliability behavior at runtime, no
