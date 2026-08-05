@@ -655,6 +655,24 @@ type Device interface {
 	GetProviderIdentities() *ProviderIdentityList
 
 	AddProviderIdentityChangeListener(listener ProviderIdentityChangeListener) Sub
+
+	// the currently connected (routing-eligible) window providers with their
+	// locations, sorted oldest-connected first. empty (never nil) when
+	// disconnected. A remote device retains the last readable list while its
+	// rpc is down (see `GetRemoteConnected` for the availability signal)
+	GetConnectedProviderLocations() *ConnectedProviderLocationList
+
+	AddConnectedProviderLocationChangeListener(listener ConnectedProviderLocationChangeListener) Sub
+
+	// drop this provider (by its egress client id, as reported by
+	// `GetConnectedProviderLocations`) from the connection and stop it being
+	// re-discovered. The exclusion lasts for the current connection: changing
+	// the destination or reconnecting clears it.
+	//
+	// A connection to fixed destinations only (an explicitly chosen network
+	// peer) is not excluded — there would be nothing left to route through —
+	// so the provider is dropped and redialed instead
+	RemoveConnectedProvider(clientId *Id)
 }
 
 // unexported to gomobile

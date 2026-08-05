@@ -65,6 +65,7 @@ bool urnet_device_get_public_identity_key(uint64_t self, uint8_t* out, int32_t* 
 #define URNET_CONTRACT_STATUS_CLOSED "closed"
 #define URNET_CONTRACT_STATUS_OPEN "open"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
+#define URNET_DEVICE_RPC_VERSION 1
 #define URNET_DEVICE_RPC_WS_BINARY 2
 #define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
@@ -169,6 +170,8 @@ typedef void (*urnet_commit_cb)(void* user_data, bool success);
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
 /* ConnectLocationChangeListener */
 typedef void (*urnet_connect_location_change_cb)(void* user_data, const char* location_json);
+/* ConnectedProviderLocationChangeListener */
+typedef void (*urnet_connected_provider_location_change_cb)(void* user_data);
 /* ConnectionStatusListener */
 typedef void (*urnet_connection_status_cb)(void* user_data);
 /* ContractDetailsChangeListener */
@@ -581,6 +584,7 @@ uint64_t urnet_device_add_can_refer_change_listener(uint64_t self, urnet_can_ref
 uint64_t urnet_device_add_can_show_rating_dialog_change_listener(uint64_t self, urnet_can_show_rating_dialog_change_cb listener_can_show_rating_dialog_changed, void* listener_user_data);
 uint64_t urnet_device_add_connect_change_listener(uint64_t self, urnet_connect_change_cb listener_connect_changed, void* listener_user_data);
 uint64_t urnet_device_add_connect_location_change_listener(uint64_t self, urnet_connect_location_change_cb listener_connect_location_changed, void* listener_user_data);
+uint64_t urnet_device_add_connected_provider_location_change_listener(uint64_t self, urnet_connected_provider_location_change_cb listener_connected_provider_locations_changed, void* listener_user_data);
 uint64_t urnet_device_add_contract_status_change_listener(uint64_t self, urnet_contract_status_change_cb listener_contract_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_default_location_change_listener(uint64_t self, urnet_default_location_change_cb listener_default_location_changed, void* listener_user_data);
 uint64_t urnet_device_add_dns_resolver_settings_change_listener(uint64_t self, urnet_dns_resolver_settings_change_cb listener_dns_resolver_settings_changed, void* listener_user_data);
@@ -623,6 +627,7 @@ bool urnet_device_get_can_show_rating_dialog(uint64_t self);
 char* urnet_device_get_client_id(uint64_t self);
 bool urnet_device_get_connect_enabled(uint64_t self);
 char* urnet_device_get_connect_location(uint64_t self);
+char* urnet_device_get_connected_provider_locations(uint64_t self);
 char* urnet_device_get_contract_status(uint64_t self);
 char* urnet_device_get_default_location(uint64_t self);
 char* urnet_device_get_dns_resolver_settings(uint64_t self);
@@ -660,6 +665,7 @@ void urnet_device_init_provide_secret_keys(uint64_t self);
 void urnet_device_load_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json);
 bool urnet_device_refresh_token(uint64_t self, int64_t attempt, char** out_error);
 void urnet_device_remove_block_action_override(uint64_t self, const char* override_id);
+void urnet_device_remove_connected_provider(uint64_t self, const char* client_id);
 void urnet_device_remove_destination(uint64_t self);
 void urnet_device_set_allow_foreground(uint64_t self, bool allow_foreground);
 void urnet_device_set_block_action_overrides(uint64_t self, const char* overrides_json);
@@ -770,6 +776,7 @@ char* urnet_device_remote_get_exits(uint64_t self);
 char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
+char* urnet_device_remote_get_sync_error(uint64_t self);
 void urnet_device_remote_migrate_exit(uint64_t self, const char* exit_client_id);
 uint64_t urnet_device_remote_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_account_view_controller(uint64_t self);
@@ -1098,6 +1105,18 @@ bool urnet_set_log_dir(const char* log_dir, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
 int64_t urnet_usd_to_nano_cents(double usd);
+
+/* ----- linux/unix only ----- */
+
+#if !defined(_WIN32)
+
+/* IoLoopDoneCallback */
+typedef void (*urnet_io_loop_done_cb)(void* user_data);
+
+void urnet_io_loop_close(uint64_t self);
+uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done_cb done_callback_io_loop_done, void* done_callback_user_data);
+
+#endif /* !_WIN32 */
 
 /* ----- data type reference (json shapes) ----- */
 
@@ -1463,6 +1482,26 @@ int64_t urnet_usd_to_nano_cents(double usd);
 
 /* ConnectLocationList (json):
  *   = ConnectLocation | null[]
+ */
+
+/* ConnectedProviderLocation (json):
+ *   ClientId: string (uuid) | null
+ *   Country: string
+ *   CountryCode: string
+ *   Region: string
+ *   City: string
+ *   RegionLat: number
+ *   RegionLon: number
+ *   CityLat: number
+ *   CityLon: number
+ *   HasLocation: boolean
+ *   HasRegionCoordinates: boolean
+ *   HasCityCoordinates: boolean
+ *   ConnectedSinceMillis: number
+ */
+
+/* ConnectedProviderLocationList (json):
+ *   = ConnectedProviderLocation | null[]
  */
 
 /* ContractClientRow (json):

@@ -21,7 +21,9 @@ build_wasm:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GOEXPERIMENT=greenteagc; \
 	mkdir -p wasm; \
-	GOOS=js GOARCH=wasm go build -o wasm/sdk.wasm .; \
+	GOOS=js GOARCH=wasm go build \
+		-ldflags "-X github.com/urnetwork/sdk.Version=$${WARP_VERSION}" \
+		-o wasm/sdk.wasm .; \
 	GOROOT="$$(go env GOROOT)"; \
 	if [ -f "$$GOROOT/lib/wasm/wasm_exec.js" ]; then \
 		cp "$$GOROOT/lib/wasm/wasm_exec.js" wasm/; \

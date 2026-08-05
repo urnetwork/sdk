@@ -98,6 +98,37 @@ export interface NetworkPeersInfo {
   disconnectedCount: number;
 }
 
+/**
+ * One currently connected (routing-eligible) provider and where it is.
+ *
+ * `clientId` is the provider's EGRESS client id — the id that identifies it to
+ * the user, and the one `removeConnectedProvider` takes.
+ *
+ * The `has*` flags are meaningful state, not just null-guards: `hasLocation` is
+ * false for the user's own fixed peers and for restored window identities, and
+ * 0,0 is a valid coordinate. Plot `city*` when `hasCityCoordinates`, else
+ * `region*` when `hasRegionCoordinates`, else do not plot.
+ *
+ * `connectedSinceMillis` is an absolute unix-millis stamp taken on the device
+ * hosting the connection (0 when unknown); derive the duration locally rather
+ * than expecting it to tick.
+ */
+export interface ConnectedProviderLocationInfo {
+  clientId?: string;
+  country: string;
+  countryCode: string;
+  region: string;
+  city: string;
+  regionLat: number;
+  regionLon: number;
+  cityLat: number;
+  cityLon: number;
+  hasLocation: boolean;
+  hasRegionCoordinates: boolean;
+  hasCityCoordinates: boolean;
+  connectedSinceMillis: number;
+}
+
 /** Listener adders return an unsubscribe function. */
 export type Unsubscribe = () => void;
 
@@ -145,6 +176,14 @@ export interface DeviceRemote {
   // peers
   getNetworkPeers(): NetworkPeersInfo | null;
 
+  // connected provider locations, sorted oldest-connected first. While the rpc
+  // is down the last readable list is retained rather than drained, so pair an
+  // empty result with getRemoteConnected before showing "none".
+  getConnectedProviderLocations(): ConnectedProviderLocationInfo[];
+  // drop a provider and stop it being re-discovered for the rest of this
+  // connection. Takes the egress client id
+  removeConnectedProvider(clientId: string): void;
+
   // listeners
   addRemoteChangeListener(cb: (remoteConnected: boolean) => void): Unsubscribe;
   addDeviceRecreatedListener(cb: () => void): Unsubscribe;
@@ -156,6 +195,8 @@ export interface DeviceRemote {
     cb: (location: ConnectLocationInfo | null) => void,
   ): Unsubscribe;
   addNetworkPeersChangeListener(cb: (peers: NetworkPeersInfo | null) => void): Unsubscribe;
+  /** signal only — re-read getConnectedProviderLocations */
+  addConnectedProviderLocationChangeListener(cb: () => void): Unsubscribe;
 
   // custom DNS resolver settings (over the device-rpc)
   getDnsResolverSettings(): DnsResolverSettings | null;

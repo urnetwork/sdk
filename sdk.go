@@ -263,7 +263,13 @@ func MessagePoolReturn(b []byte) {
 
 // this value is set via the linker, e.g.
 // -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
-const Version string = ""
+//
+// MUST stay a `var`. `-X` only sets string *variables* declared uninitialized
+// or initialized to a constant expression — against a `const` it is silently a
+// no-op, and every build reports "". This was a const until 2026-08-05, so
+// `urnet_version()` had always returned the empty string despite the flag being
+// passed. Verified by rebuilding with -X set and reading it back.
+var Version string = ""
 
 type Id struct {
 	id [16]byte

@@ -38,11 +38,16 @@ func (self *emptyWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 
 type fixedWindowMonitor struct {
 	clientIds []connect.Id
+	// createTime approximates connected-since for the fixed destination: the
+	// monitor is created when the fixed client connects (see
+	// cachedWindowMonitor, one instance per remoteUserNatClient value)
+	createTime time.Time
 }
 
 func newFixedWindowMonitor(clientIds []connect.Id) *fixedWindowMonitor {
 	return &fixedWindowMonitor{
-		clientIds: clientIds,
+		clientIds:  clientIds,
+		createTime: time.Now(),
 	}
 }
 
@@ -62,8 +67,12 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 	providerEvents := map[connect.Id]*connect.ProviderEvent{}
 	for _, clientId := range self.clientIds {
 		providerEvents[clientId] = &connect.ProviderEvent{
-			ClientId: clientId,
-			State:    connect.ProviderStateAdded,
+			EventTime: self.createTime,
+			ClientId:  clientId,
+			State:     connect.ProviderStateAdded,
+			// each fixed destination id is its own provider dot; there is no
+			// separate window client id. Location stays nil (no discovery).
+			EgressClientId: clientId,
 		}
 	}
 	return windowExpandEvent, providerEvents
@@ -646,30 +655,31 @@ type DeviceLocal struct {
 	// -- see probe_suite.go for why an ordinary http client cannot.
 	probeSuiteState *probeSuite
 
-	canShowRatingDialogChangeListeners      *connect.CallbackList[CanShowRatingDialogChangeListener]
-	canPromptIntroFunnelChangeListeners     *connect.CallbackList[CanPromptIntroFunnelChangeListener]
-	allowForegroundChangeListeners          *connect.CallbackList[AllowForegroundChangeListener]
-	canReferChangeListeners                 *connect.CallbackList[CanReferChangeListener]
-	provideModeChangeListeners              *connect.CallbackList[ProvideModeChangeListener]
-	provideChangeListeners                  *connect.CallbackList[ProvideChangeListener]
-	provideControlModeChangeListeners       *connect.CallbackList[ProvideControlModeChangeListener]
-	performanceProfileChangeListeners       *connect.CallbackList[PerformanceProfileChangeListener]
-	providerIdentityChangeListeners         *connect.CallbackList[ProviderIdentityChangeListener]
-	providePausedChangeListeners            *connect.CallbackList[ProvidePausedChangeListener]
-	provideNetworkModeChangeListeners       *connect.CallbackList[ProvideNetworkModeChangeListener]
-	offlineChangeListeners                  *connect.CallbackList[OfflineChangeListener]
-	vpnInterfaceWhileOfflineChangeListeners *connect.CallbackList[VpnInterfaceWhileOfflineChangeListener]
-	connectChangeListeners                  *connect.CallbackList[ConnectChangeListener]
-	routeLocalChangeListeners               *connect.CallbackList[RouteLocalChangeListener]
-	blockerEnabledChangeListeners           *connect.CallbackList[BlockerEnabledChangeListener]
-	connectLocationChangeListeners          *connect.CallbackList[ConnectLocationChangeListener]
-	defaultLocationChangeListeners          *connect.CallbackList[DefaultLocationChangeListener]
-	provideSecretKeysListeners              *connect.CallbackList[ProvideSecretKeysListener]
-	tunnelChangeListeners                   *connect.CallbackList[TunnelChangeListener]
-	contractStatusChangeListeners           *connect.CallbackList[ContractStatusChangeListener]
-	windowStatusChangeListeners             *connect.CallbackList[WindowStatusChangeListener]
-	jwtRefreshListeners                     *connect.CallbackList[JwtRefreshListener]
-	authLogoutListeners                     *connect.CallbackList[AuthLogoutListener]
+	canShowRatingDialogChangeListeners       *connect.CallbackList[CanShowRatingDialogChangeListener]
+	canPromptIntroFunnelChangeListeners      *connect.CallbackList[CanPromptIntroFunnelChangeListener]
+	allowForegroundChangeListeners           *connect.CallbackList[AllowForegroundChangeListener]
+	canReferChangeListeners                  *connect.CallbackList[CanReferChangeListener]
+	provideModeChangeListeners               *connect.CallbackList[ProvideModeChangeListener]
+	provideChangeListeners                   *connect.CallbackList[ProvideChangeListener]
+	provideControlModeChangeListeners        *connect.CallbackList[ProvideControlModeChangeListener]
+	performanceProfileChangeListeners        *connect.CallbackList[PerformanceProfileChangeListener]
+	providerIdentityChangeListeners          *connect.CallbackList[ProviderIdentityChangeListener]
+	connectedProviderLocationChangeListeners *connect.CallbackList[ConnectedProviderLocationChangeListener]
+	providePausedChangeListeners             *connect.CallbackList[ProvidePausedChangeListener]
+	provideNetworkModeChangeListeners        *connect.CallbackList[ProvideNetworkModeChangeListener]
+	offlineChangeListeners                   *connect.CallbackList[OfflineChangeListener]
+	vpnInterfaceWhileOfflineChangeListeners  *connect.CallbackList[VpnInterfaceWhileOfflineChangeListener]
+	connectChangeListeners                   *connect.CallbackList[ConnectChangeListener]
+	routeLocalChangeListeners                *connect.CallbackList[RouteLocalChangeListener]
+	blockerEnabledChangeListeners            *connect.CallbackList[BlockerEnabledChangeListener]
+	connectLocationChangeListeners           *connect.CallbackList[ConnectLocationChangeListener]
+	defaultLocationChangeListeners           *connect.CallbackList[DefaultLocationChangeListener]
+	provideSecretKeysListeners               *connect.CallbackList[ProvideSecretKeysListener]
+	tunnelChangeListeners                    *connect.CallbackList[TunnelChangeListener]
+	contractStatusChangeListeners            *connect.CallbackList[ContractStatusChangeListener]
+	windowStatusChangeListeners              *connect.CallbackList[WindowStatusChangeListener]
+	jwtRefreshListeners                      *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners                      *connect.CallbackList[AuthLogoutListener]
 
 	blockActionWindowChangeListeners      *connect.CallbackList[BlockActionWindowChangeListener]
 	blockStatsChangeListeners             *connect.CallbackList[BlockStatsChangeListener]
@@ -1019,66 +1029,67 @@ func newDeviceLocalWithOverrides(
 		provider:        provider,
 		// contractManager: contractManager,
 		// routeManager: routeManager,
-		stats:                                   newDeviceStats(),
-		connectLocation:                         nil,
-		defaultLocation:                         nil,
-		remoteUserNatClient:                     nil,
-		upgradeMux:                              nil,
-		upgradeMuxSettings:                      connect.DefaultUpgradeMuxSettings(),
-		remoteUserNatProviderLocalUserNat:       nil,
-		remoteUserNatProvider:                   nil,
-		blocker:                                 blocker,
-		routeLocal:                              defaultRouteLocal,
-		canShowRatingDialog:                     settings.DefaultCanShowRatingDialog,
-		canPromptIntroFunnel:                    settings.DefaultCanShowIntroFunnel,
-		canRefer:                                settings.DefaultCanRefer,
-		allowForeground:                         settings.DefaultAllowForeground,
-		provideMode:                             ProvideModeNone,
-		provideControlMode:                      defaultProvideControlMode,
-		provideNetworkMode:                      settings.DefaultProvideNetworkMode,
-		offline:                                 settings.DefaultOffline,
-		vpnInterfaceWhileOffline:                settings.DefaultVpnInterfaceWhileOffline,
-		tunnelStarted:                           settings.DefaultTunnelStarted,
-		orderedContractStatusUpdates:            []*contractStatusUpdate{},
-		netContractStatus:                       &ContractStatus{},
-		contracts:                               newDeviceContractTracker(),
-		providerContracts:                       newDeviceContractTracker(),
-		receiveCallbacks:                        connect.NewCallbackList[connect.ReceivePacketFunction](),
-		probeSuiteState:                         &probeSuite{},
-		canShowRatingDialogChangeListeners:      connect.NewCallbackList[CanShowRatingDialogChangeListener](),
-		canPromptIntroFunnelChangeListeners:     connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
-		allowForegroundChangeListeners:          connect.NewCallbackList[AllowForegroundChangeListener](),
-		canReferChangeListeners:                 connect.NewCallbackList[CanReferChangeListener](),
-		provideModeChangeListeners:              connect.NewCallbackList[ProvideModeChangeListener](),
-		provideChangeListeners:                  connect.NewCallbackList[ProvideChangeListener](),
-		provideControlModeChangeListeners:       connect.NewCallbackList[ProvideControlModeChangeListener](),
-		performanceProfileChangeListeners:       connect.NewCallbackList[PerformanceProfileChangeListener](),
-		providerIdentityChangeListeners:         connect.NewCallbackList[ProviderIdentityChangeListener](),
-		providePausedChangeListeners:            connect.NewCallbackList[ProvidePausedChangeListener](),
-		provideNetworkModeChangeListeners:       connect.NewCallbackList[ProvideNetworkModeChangeListener](),
-		offlineChangeListeners:                  connect.NewCallbackList[OfflineChangeListener](),
-		vpnInterfaceWhileOfflineChangeListeners: connect.NewCallbackList[VpnInterfaceWhileOfflineChangeListener](),
-		connectChangeListeners:                  connect.NewCallbackList[ConnectChangeListener](),
-		routeLocalChangeListeners:               connect.NewCallbackList[RouteLocalChangeListener](),
-		blockerEnabledChangeListeners:           connect.NewCallbackList[BlockerEnabledChangeListener](),
-		connectLocationChangeListeners:          connect.NewCallbackList[ConnectLocationChangeListener](),
-		defaultLocationChangeListeners:          connect.NewCallbackList[DefaultLocationChangeListener](),
-		provideSecretKeysListeners:              connect.NewCallbackList[ProvideSecretKeysListener](),
-		contractStatusChangeListeners:           connect.NewCallbackList[ContractStatusChangeListener](),
-		tunnelChangeListeners:                   connect.NewCallbackList[TunnelChangeListener](),
-		windowStatusChangeListeners:             connect.NewCallbackList[WindowStatusChangeListener](),
-		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
-		authLogoutListeners:                     connect.NewCallbackList[AuthLogoutListener](),
-		blockActionWindowChangeListeners:        connect.NewCallbackList[BlockActionWindowChangeListener](),
-		blockStatsChangeListeners:               connect.NewCallbackList[BlockStatsChangeListener](),
-		blockActionOverridesChangeListeners:     connect.NewCallbackList[BlockActionOverridesChangeListener](),
-		packetStatsChangeListeners:              connect.NewCallbackList[PacketStatsChangeListener](),
-		egressContractStatsChangeListeners:      connect.NewCallbackList[ContractStatsChangeListener](),
-		egressContractDetailsChangeListeners:    connect.NewCallbackList[ContractDetailsChangeListener](),
-		ingressContractStatsChangeListeners:     connect.NewCallbackList[ContractStatsChangeListener](),
-		ingressContractDetailsChangeListeners:   connect.NewCallbackList[ContractDetailsChangeListener](),
-		dnsResolverSettingsChangeListeners:      connect.NewCallbackList[DnsResolverSettingsChangeListener](),
-		networkPeersChangeListeners:             connect.NewCallbackList[NetworkPeersChangeListener](),
+		stats:                                    newDeviceStats(),
+		connectLocation:                          nil,
+		defaultLocation:                          nil,
+		remoteUserNatClient:                      nil,
+		upgradeMux:                               nil,
+		upgradeMuxSettings:                       connect.DefaultUpgradeMuxSettings(),
+		remoteUserNatProviderLocalUserNat:        nil,
+		remoteUserNatProvider:                    nil,
+		blocker:                                  blocker,
+		routeLocal:                               defaultRouteLocal,
+		canShowRatingDialog:                      settings.DefaultCanShowRatingDialog,
+		canPromptIntroFunnel:                     settings.DefaultCanShowIntroFunnel,
+		canRefer:                                 settings.DefaultCanRefer,
+		allowForeground:                          settings.DefaultAllowForeground,
+		provideMode:                              ProvideModeNone,
+		provideControlMode:                       defaultProvideControlMode,
+		provideNetworkMode:                       settings.DefaultProvideNetworkMode,
+		offline:                                  settings.DefaultOffline,
+		vpnInterfaceWhileOffline:                 settings.DefaultVpnInterfaceWhileOffline,
+		tunnelStarted:                            settings.DefaultTunnelStarted,
+		orderedContractStatusUpdates:             []*contractStatusUpdate{},
+		netContractStatus:                        &ContractStatus{},
+		contracts:                                newDeviceContractTracker(),
+		providerContracts:                        newDeviceContractTracker(),
+		receiveCallbacks:                         connect.NewCallbackList[connect.ReceivePacketFunction](),
+		probeSuiteState:                          &probeSuite{},
+		canShowRatingDialogChangeListeners:       connect.NewCallbackList[CanShowRatingDialogChangeListener](),
+		canPromptIntroFunnelChangeListeners:      connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
+		allowForegroundChangeListeners:           connect.NewCallbackList[AllowForegroundChangeListener](),
+		canReferChangeListeners:                  connect.NewCallbackList[CanReferChangeListener](),
+		provideModeChangeListeners:               connect.NewCallbackList[ProvideModeChangeListener](),
+		provideChangeListeners:                   connect.NewCallbackList[ProvideChangeListener](),
+		provideControlModeChangeListeners:        connect.NewCallbackList[ProvideControlModeChangeListener](),
+		performanceProfileChangeListeners:        connect.NewCallbackList[PerformanceProfileChangeListener](),
+		providerIdentityChangeListeners:          connect.NewCallbackList[ProviderIdentityChangeListener](),
+		connectedProviderLocationChangeListeners: connect.NewCallbackList[ConnectedProviderLocationChangeListener](),
+		providePausedChangeListeners:             connect.NewCallbackList[ProvidePausedChangeListener](),
+		provideNetworkModeChangeListeners:        connect.NewCallbackList[ProvideNetworkModeChangeListener](),
+		offlineChangeListeners:                   connect.NewCallbackList[OfflineChangeListener](),
+		vpnInterfaceWhileOfflineChangeListeners:  connect.NewCallbackList[VpnInterfaceWhileOfflineChangeListener](),
+		connectChangeListeners:                   connect.NewCallbackList[ConnectChangeListener](),
+		routeLocalChangeListeners:                connect.NewCallbackList[RouteLocalChangeListener](),
+		blockerEnabledChangeListeners:            connect.NewCallbackList[BlockerEnabledChangeListener](),
+		connectLocationChangeListeners:           connect.NewCallbackList[ConnectLocationChangeListener](),
+		defaultLocationChangeListeners:           connect.NewCallbackList[DefaultLocationChangeListener](),
+		provideSecretKeysListeners:               connect.NewCallbackList[ProvideSecretKeysListener](),
+		contractStatusChangeListeners:            connect.NewCallbackList[ContractStatusChangeListener](),
+		tunnelChangeListeners:                    connect.NewCallbackList[TunnelChangeListener](),
+		windowStatusChangeListeners:              connect.NewCallbackList[WindowStatusChangeListener](),
+		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
+		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
+		blockActionWindowChangeListeners:         connect.NewCallbackList[BlockActionWindowChangeListener](),
+		blockStatsChangeListeners:                connect.NewCallbackList[BlockStatsChangeListener](),
+		blockActionOverridesChangeListeners:      connect.NewCallbackList[BlockActionOverridesChangeListener](),
+		packetStatsChangeListeners:               connect.NewCallbackList[PacketStatsChangeListener](),
+		egressContractStatsChangeListeners:       connect.NewCallbackList[ContractStatsChangeListener](),
+		egressContractDetailsChangeListeners:     connect.NewCallbackList[ContractDetailsChangeListener](),
+		ingressContractStatsChangeListeners:      connect.NewCallbackList[ContractStatsChangeListener](),
+		ingressContractDetailsChangeListeners:    connect.NewCallbackList[ContractDetailsChangeListener](),
+		dnsResolverSettingsChangeListeners:       connect.NewCallbackList[DnsResolverSettingsChangeListener](),
+		networkPeersChangeListeners:              connect.NewCallbackList[NetworkPeersChangeListener](),
 
 		providerPacketStatsChangeListeners:            connect.NewCallbackList[PacketStatsChangeListener](),
 		providerEgressContractStatsChangeListeners:    connect.NewCallbackList[ContractStatsChangeListener](),
@@ -1530,6 +1541,18 @@ func (self *DeviceLocal) GetProviderIdentities() *ProviderIdentityList {
 		}
 	}
 	return providerIdentities
+}
+
+// GetConnectedProviderLocations returns the currently connected
+// (routing-eligible) window providers with their locations, sorted
+// oldest-connected first. Empty (never nil) when disconnected
+func (self *DeviceLocal) GetConnectedProviderLocations() *ConnectedProviderLocationList {
+	monitor := self.windowMonitor()
+	if monitor == nil {
+		return NewConnectedProviderLocationList()
+	}
+	_, providerEvents := monitor.Events()
+	return deriveConnectedProviderLocations(providerEvents)
 }
 
 func performanceProfilesEqual(a *PerformanceProfile, b *PerformanceProfile) bool {
@@ -2364,6 +2387,13 @@ func (self *DeviceLocal) AddProviderIdentityChangeListener(listener ProviderIden
 	})
 }
 
+func (self *DeviceLocal) AddConnectedProviderLocationChangeListener(listener ConnectedProviderLocationChangeListener) Sub {
+	callbackId := self.connectedProviderLocationChangeListeners.Add(listener)
+	return newSub(func() {
+		self.connectedProviderLocationChangeListeners.Remove(callbackId)
+	})
+}
+
 func (self *DeviceLocal) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
 	callbackId := self.jwtRefreshListeners.Add(listener)
 	return newSub(func() {
@@ -2566,6 +2596,14 @@ func (self *DeviceLocal) providerIdentitiesChanged() {
 	for _, listener := range self.providerIdentityChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProviderIdentitiesChanged()
+		})
+	}
+}
+
+func (self *DeviceLocal) connectedProviderLocationsChanged() {
+	for _, listener := range self.connectedProviderLocationChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ConnectedProviderLocationsChanged()
 		})
 	}
 }
@@ -3420,6 +3458,11 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				if changed {
 					self.windowStatusChanged(windowStatus)
 				}
+				// expand-only events (nil providerEvents) cannot change the
+				// connected provider set
+				if reset || 0 < len(providerEvents) {
+					self.connectedProviderLocationsChanged()
+				}
 			}
 			self.windowMonitorSub = monitor.AddMonitorEventCallback(windowMonitorEvent)
 			// }
@@ -3482,6 +3525,9 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 	// established provider identity set was reset. Fire once so consumers
 	// re-read (and observe the empty set on disconnect)
 	self.providerIdentitiesChanged()
+	// same for the connected provider locations, which derive from the
+	// replaced window monitor
+	self.connectedProviderLocationsChanged()
 
 	if provideChanged {
 		self.provideModeChanged(self.GetProvideMode())
@@ -3588,6 +3634,30 @@ func (self *DeviceLocal) Shuffle() {
 
 	if remoteUserNatClient != nil {
 		remoteUserNatClient.Shuffle()
+	}
+}
+
+// RemoveConnectedProvider drops the provider from the connection window and
+// excludes it from further discovery for the life of this connection. See the
+// `Device` interface for the exclusion's lifetime.
+func (self *DeviceLocal) RemoveConnectedProvider(clientId *Id) {
+	if clientId == nil {
+		return
+	}
+
+	var remoteUserNatClient connect.UserNatClient
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		remoteUserNatClient = self.remoteUserNatClient
+	}()
+
+	if multi, ok := remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
+		if multi.RemoveProvider(clientId.toConnectId()) {
+			// the window reaps the canceled client asynchronously; fire now so
+			// the ui drops the row immediately rather than on the next event
+			self.connectedProviderLocationsChanged()
+		}
 	}
 }
 

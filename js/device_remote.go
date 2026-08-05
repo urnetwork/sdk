@@ -91,6 +91,46 @@ func jsNetworkPeers(networkPeers *sdk.NetworkPeers) js.Value {
 	})
 }
 
+// jsConnectedProviderLocation marshals one connected provider. The flags are
+// carried through rather than collapsed to nulls: `hasLocation` false is a
+// real state (the user's own fixed peers and restored window identities never
+// have one), and 0,0 is a valid coordinate.
+func jsConnectedProviderLocation(location *sdk.ConnectedProviderLocation) js.Value {
+	if location == nil {
+		return js.Null()
+	}
+	m := map[string]any{
+		"country":              location.Country,
+		"countryCode":          location.CountryCode,
+		"region":               location.Region,
+		"city":                 location.City,
+		"regionLat":            location.RegionLat,
+		"regionLon":            location.RegionLon,
+		"cityLat":              location.CityLat,
+		"cityLon":              location.CityLon,
+		"hasLocation":          location.HasLocation,
+		"hasRegionCoordinates": location.HasRegionCoordinates,
+		"hasCityCoordinates":   location.HasCityCoordinates,
+		"connectedSinceMillis": location.ConnectedSinceMillis,
+	}
+	if location.ClientId != nil {
+		m["clientId"] = location.ClientId.String()
+	}
+	return js.ValueOf(m)
+}
+
+// jsConnectedProviderLocations marshals the list, preserving the sdk's order
+// (oldest connected first).
+func jsConnectedProviderLocations(locations *sdk.ConnectedProviderLocationList) js.Value {
+	out := []any{}
+	if locations != nil {
+		for i := 0; i < locations.Len(); i += 1 {
+			out = append(out, jsConnectedProviderLocation(locations.Get(i)))
+		}
+	}
+	return js.ValueOf(out)
+}
+
 // jsDeviceRemote binds the DeviceRemote surface. See the file header for the
 // binding conventions.
 func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
@@ -191,6 +231,27 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	// network peers
 	m["getNetworkPeers"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsNetworkPeers(device.GetNetworkPeers())
+	})
+
+	// connected provider locations. While the rpc is down the device retains
+	// the last readable list rather than draining it, so an empty array here
+	// is a fact, not a stale zero — pair it with getRemoteConnected.
+	m["getConnectedProviderLocations"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsConnectedProviderLocations(device.GetConnectedProviderLocations())
+	})
+	// drop a provider from the connection and stop it being re-discovered for
+	// the rest of this connection. Takes the egress client id as reported by
+	// getConnectedProviderLocations
+	m["removeConnectedProvider"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) == 0 || args[0].Type() != js.TypeString {
+			return js.Null()
+		}
+		clientId, err := sdk.ParseId(args[0].String())
+		if err != nil {
+			return js.Null()
+		}
+		device.RemoveConnectedProvider(clientId)
+		return js.Null()
 	})
 
 	// custom DNS resolver settings (over the device-rpc)
@@ -312,6 +373,17 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		}
 		return jsSub(device.AddNetworkPeersChangeListener(&jsNetworkPeersChangeListener{cb}))
 	})
+	// signal only: the callback takes no arguments and the consumer re-reads
+	// getConnectedProviderLocations
+	m["addConnectedProviderLocationChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddConnectedProviderLocationChangeListener(
+			&jsConnectedProviderLocationChangeListener{cb},
+		))
+	})
 
 	return js.ValueOf(m)
 }
@@ -352,6 +424,12 @@ type jsNetworkPeersChangeListener struct{ cb js.Value }
 
 func (self *jsNetworkPeersChangeListener) NetworkPeersChanged(networkPeers *sdk.NetworkPeers) {
 	self.cb.Invoke(jsNetworkPeers(networkPeers))
+}
+
+type jsConnectedProviderLocationChangeListener struct{ cb js.Value }
+
+func (self *jsConnectedProviderLocationChangeListener) ConnectedProviderLocationsChanged() {
+	self.cb.Invoke()
 }
 
 // ── DNS resolver settings ────────────────────────────────────────────────────

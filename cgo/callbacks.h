@@ -67,6 +67,8 @@ typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
 void urnet_invoke_connect_change(urnet_connect_change_cb cb, void* user_data, bool connect_enabled);
 typedef void (*urnet_connect_location_change_cb)(void* user_data, const char* location_json);
 void urnet_invoke_connect_location_change(urnet_connect_location_change_cb cb, void* user_data, const char* location_json);
+typedef void (*urnet_connected_provider_location_change_cb)(void* user_data);
+void urnet_invoke_connected_provider_location_change(urnet_connected_provider_location_change_cb cb, void* user_data);
 typedef void (*urnet_connection_status_cb)(void* user_data);
 void urnet_invoke_connection_status(urnet_connection_status_cb cb, void* user_data);
 typedef void (*urnet_contract_details_change_cb)(void* user_data, const char* contract_details_json);
@@ -139,6 +141,8 @@ typedef void (*urnet_get_transfer_stats_cb)(void* user_data, const char* result_
 void urnet_invoke_get_transfer_stats(urnet_get_transfer_stats_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_grid_cb)(void* user_data);
 void urnet_invoke_grid(urnet_grid_cb cb, void* user_data);
+typedef void (*urnet_io_loop_done_cb)(void* user_data);
+void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data);
 typedef void (*urnet_is_creating_external_wallet_cb)(void* user_data, bool p0);
 void urnet_invoke_is_creating_external_wallet(urnet_is_creating_external_wallet_cb cb, void* user_data, bool p0);
 typedef void (*urnet_is_network_user_loading_cb)(void* user_data, bool p0);

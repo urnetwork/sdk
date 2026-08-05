@@ -51,7 +51,7 @@ build_android:
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		"github.com/urnetwork/sdk"; \
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
@@ -97,7 +97,7 @@ build_apple:
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \

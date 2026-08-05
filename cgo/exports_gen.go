@@ -498,6 +498,16 @@ func (self *cAdapterConnectLocationChangeListener) ConnectLocationChanged(locati
 	}
 }
 
+type cAdapterConnectedProviderLocationChangeListener struct {
+	cbConnectedProviderLocationsChanged C.urnet_connected_provider_location_change_cb
+	userData                            unsafe.Pointer
+}
+
+func (self *cAdapterConnectedProviderLocationChangeListener) ConnectedProviderLocationsChanged() {
+	defer cgoGuard("urnet_connected_provider_location_change_cb")
+	C.urnet_invoke_connected_provider_location_change(self.cbConnectedProviderLocationsChanged, self.userData)
+}
+
 type cAdapterConnectionStatusListener struct {
 	cbConnectionStatusChanged C.urnet_connection_status_cb
 	userData                  unsafe.Pointer
@@ -4859,6 +4869,21 @@ func urnet_device_add_connect_location_change_listener(self C.uint64_t, listener
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_connected_provider_location_change_listener
+func urnet_device_add_connected_provider_location_change_listener(self C.uint64_t, listener_connected_provider_locations_changed C.urnet_connected_provider_location_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_connected_provider_location_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_connected_provider_location_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ConnectedProviderLocationChangeListener
+	if listener_connected_provider_locations_changed != nil {
+		listener_ = &cAdapterConnectedProviderLocationChangeListener{cbConnectedProviderLocationsChanged: listener_connected_provider_locations_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddConnectedProviderLocationChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_contract_status_change_listener
 func urnet_device_add_contract_status_change_listener(self C.uint64_t, listener_contract_status_changed C.urnet_contract_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_contract_status_change_listener")
@@ -5446,6 +5471,20 @@ func urnet_device_get_connect_location(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_connect_location")
 }
 
+//export urnet_device_get_connected_provider_locations
+func urnet_device_get_connected_provider_locations(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_connected_provider_locations")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_connected_provider_locations")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetConnectedProviderLocations()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_connected_provider_locations")
+}
+
 //export urnet_device_get_contract_status
 func urnet_device_get_contract_status(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_contract_status")
@@ -5919,6 +5958,16 @@ func urnet_device_remove_block_action_override(self C.uint64_t, overrideId *C.ch
 		return
 	}
 	self_.RemoveBlockActionOverride(goId(overrideId, "urnet_device_remove_block_action_override"))
+}
+
+//export urnet_device_remove_connected_provider
+func urnet_device_remove_connected_provider(self C.uint64_t, clientId *C.char) {
+	defer cgoGuard("urnet_device_remove_connected_provider")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_remove_connected_provider")
+	if !ok {
+		return
+	}
+	self_.RemoveConnectedProvider(goId(clientId, "urnet_device_remove_connected_provider"))
 }
 
 //export urnet_device_remove_destination
@@ -7251,6 +7300,17 @@ func urnet_device_remote_get_remote_connected(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetRemoteConnected()
 	return C.bool(r0)
+}
+
+//export urnet_device_remote_get_sync_error
+func urnet_device_remote_get_sync_error(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_remote_get_sync_error")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_sync_error")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSyncError()
+	return cString(string(r0))
 }
 
 //export urnet_device_remote_migrate_exit

@@ -125,6 +125,10 @@ void urnet_invoke_connect_location_change(urnet_connect_location_change_cb cb, v
 	cb(user_data, location_json);
 }
 
+void urnet_invoke_connected_provider_location_change(urnet_connected_provider_location_change_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_connection_status(urnet_connection_status_cb cb, void* user_data) {
 	cb(user_data);
 }
@@ -266,6 +270,10 @@ void urnet_invoke_get_transfer_stats(urnet_get_transfer_stats_cb cb, void* user_
 }
 
 void urnet_invoke_grid(urnet_grid_cb cb, void* user_data) {
+	cb(user_data);
+}
+
+void urnet_invoke_io_loop_done(urnet_io_loop_done_cb cb, void* user_data) {
 	cb(user_data);
 }
 

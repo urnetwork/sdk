@@ -121,6 +121,7 @@ inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* ContractStatusClosed = "closed";
 inline constexpr const char* ContractStatusOpen = "open";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
+inline constexpr int64_t DeviceRpcVersion = 1;
 inline constexpr int64_t DeviceRpcWsBinary = 2;
 inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
@@ -264,6 +265,7 @@ struct CircleWalletInfo;
 struct ClaimNetworkNameArgs;
 struct ClaimNetworkNameError;
 struct ClaimNetworkNameResult;
+struct ConnectedProviderLocation;
 struct ContractClientRow;
 struct TransferPath;
 struct ContractDetails;
@@ -453,6 +455,7 @@ using BlockActionList = std::vector<BlockAction>;
 using BlockActionOverrideList = std::vector<BlockActionOverride>;
 using BlockedLocationsList = std::vector<BlockedLocation>;
 using ConnectLocationList = std::vector<ConnectLocation>;
+using ConnectedProviderLocationList = std::vector<ConnectedProviderLocation>;
 using ContractClientRowList = std::vector<ContractClientRow>;
 using ContractDetailsList = std::vector<ContractDetails>;
 using ContractEntryList = std::vector<ContractEntry>;
@@ -882,6 +885,22 @@ struct ClaimNetworkNameError {
 struct ClaimNetworkNameResult {
 	std::string network_name{};
 	std::optional<ClaimNetworkNameError> error;
+};
+
+struct ConnectedProviderLocation {
+	std::optional<std::string> ClientId;
+	std::string Country{};
+	std::string CountryCode{};
+	std::string Region{};
+	std::string City{};
+	double RegionLat{};
+	double RegionLon{};
+	double CityLat{};
+	double CityLon{};
+	bool HasLocation{};
+	bool HasRegionCoordinates{};
+	bool HasCityCoordinates{};
+	int64_t ConnectedSinceMillis{};
 };
 
 struct ContractClientRow {
@@ -2141,6 +2160,8 @@ inline void to_json(nlohmann::json& j, const ClaimNetworkNameError& v);
 inline void from_json(const nlohmann::json& j, ClaimNetworkNameError& v);
 inline void to_json(nlohmann::json& j, const ClaimNetworkNameResult& v);
 inline void from_json(const nlohmann::json& j, ClaimNetworkNameResult& v);
+inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
+inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v);
 inline void to_json(nlohmann::json& j, const ContractClientRow& v);
 inline void from_json(const nlohmann::json& j, ContractClientRow& v);
 inline void to_json(nlohmann::json& j, const TransferPath& v);
@@ -4438,6 +4459,71 @@ inline void from_json(const nlohmann::json& j, ClaimNetworkNameResult& v) {
 		ClaimNetworkNameError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v) {
+	j = nlohmann::json::object();
+	if (v.ClientId) {
+		j["ClientId"] = *v.ClientId;
+	}
+	j["Country"] = v.Country;
+	j["CountryCode"] = v.CountryCode;
+	j["Region"] = v.Region;
+	j["City"] = v.City;
+	j["RegionLat"] = v.RegionLat;
+	j["RegionLon"] = v.RegionLon;
+	j["CityLat"] = v.CityLat;
+	j["CityLon"] = v.CityLon;
+	j["HasLocation"] = v.HasLocation;
+	j["HasRegionCoordinates"] = v.HasRegionCoordinates;
+	j["HasCityCoordinates"] = v.HasCityCoordinates;
+	j["ConnectedSinceMillis"] = v.ConnectedSinceMillis;
+}
+inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ClientId"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ClientId = std::move(tmp);
+	}
+	if (auto it = j.find("Country"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Country);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("Region"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Region);
+	}
+	if (auto it = j.find("City"); it != j.end() && !it->is_null()) {
+		it->get_to(v.City);
+	}
+	if (auto it = j.find("RegionLat"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RegionLat);
+	}
+	if (auto it = j.find("RegionLon"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RegionLon);
+	}
+	if (auto it = j.find("CityLat"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CityLat);
+	}
+	if (auto it = j.find("CityLon"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CityLon);
+	}
+	if (auto it = j.find("HasLocation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasLocation);
+	}
+	if (auto it = j.find("HasRegionCoordinates"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasRegionCoordinates);
+	}
+	if (auto it = j.find("HasCityCoordinates"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasCityCoordinates);
+	}
+	if (auto it = j.find("ConnectedSinceMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ConnectedSinceMillis);
 	}
 }
 
@@ -9419,6 +9505,7 @@ using ClaimNetworkNameCallback = std::function<void(std::optional<ClaimNetworkNa
 using CommitCallback = std::function<void(bool success)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
+using ConnectedProviderLocationChangeListener = std::function<void()>;
 using ConnectionStatusListener = std::function<void()>;
 using ContractDetailsChangeListener = std::function<void(std::optional<ContractDetails> contract_details)>;
 using ContractRowsListener = std::function<void()>;
@@ -9534,6 +9621,7 @@ using WalletCircleTransferOutCallback = std::function<void(std::optional<WalletC
 using WalletValidateAddressCallback = std::function<void(std::optional<WalletValidateAddressResult> result, std::optional<std::string> err_param)>;
 using WindowStatusChangeListener = std::function<void(std::optional<WindowStatus> window_status)>;
 #if !defined(_WIN32)
+using IoLoopDoneCallback = std::function<void()>;
 #endif
 
 class Sub final : public detail::Handle {
@@ -9573,6 +9661,7 @@ public:
 	Sub addCanShowRatingDialogChangeListener(CanShowRatingDialogChangeListener listener) const;
 	Sub addConnectChangeListener(ConnectChangeListener listener) const;
 	Sub addConnectLocationChangeListener(ConnectLocationChangeListener listener) const;
+	Sub addConnectedProviderLocationChangeListener(ConnectedProviderLocationChangeListener listener) const;
 	Sub addContractStatusChangeListener(ContractStatusChangeListener listener) const;
 	Sub addDefaultLocationChangeListener(DefaultLocationChangeListener listener) const;
 	Sub addDnsResolverSettingsChangeListener(DnsResolverSettingsChangeListener listener) const;
@@ -9615,6 +9704,7 @@ public:
 	std::string getClientId() const;
 	bool getConnectEnabled() const;
 	std::optional<ConnectLocation> getConnectLocation() const;
+	std::optional<ConnectedProviderLocationList> getConnectedProviderLocations() const;
 	std::optional<ContractStatus> getContractStatus() const;
 	std::optional<ConnectLocation> getDefaultLocation() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
@@ -9652,6 +9742,7 @@ public:
 	void loadProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
 	void refreshToken(int64_t attempt) const;
 	void removeBlockActionOverride(const std::string& override_id) const;
+	void removeConnectedProvider(const std::string& client_id) const;
 	void removeDestination() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
@@ -9982,6 +10073,7 @@ public:
 	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
 	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	bool getRemoteConnected() const;
+	std::string getSyncError() const;
 	void migrateExit(const std::string& exit_client_id) const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
@@ -10063,6 +10155,7 @@ class IoLoop final : public detail::Handle {
 public:
 	IoLoop() = default;
 	explicit IoLoop(uint64_t h) : detail::Handle(h) {}
+	void close() const;
 };
 #endif
 
@@ -11201,6 +11294,26 @@ inline void oneshot_connect_location_change(void* user_data, const char* locatio
 	delete f;
 }
 
+inline void retained_connected_provider_location_change(void* user_data) {
+	auto* f = static_cast<ConnectedProviderLocationChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_connected_provider_location_change(void* user_data) {
+	auto* f = static_cast<ConnectedProviderLocationChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_connection_status(void* user_data) {
 	auto* f = static_cast<ConnectionStatusListener*>(user_data);
 	try {
@@ -12325,6 +12438,28 @@ inline void oneshot_grid(void* user_data) {
 	delete f;
 }
 
+#if !defined(_WIN32)
+inline void retained_io_loop_done(void* user_data) {
+	auto* f = static_cast<IoLoopDoneCallback*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_io_loop_done(void* user_data) {
+	auto* f = static_cast<IoLoopDoneCallback*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+#endif
 inline void retained_is_creating_external_wallet(void* user_data, bool p0) {
 	auto* f = static_cast<IsCreatingExternalWalletListener*>(user_data);
 	try {
@@ -14562,6 +14697,17 @@ inline Sub Device::addConnectLocationChangeListener(ConnectLocationChangeListene
 	}
 	return r;
 }
+inline Sub Device::addConnectedProviderLocationChangeListener(ConnectedProviderLocationChangeListener listener) const {
+	std::shared_ptr<ConnectedProviderLocationChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ConnectedProviderLocationChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_connected_provider_location_change_listener(handle(), listener_fn ? &detail::retained_connected_provider_location_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addContractStatusChangeListener(ContractStatusChangeListener listener) const {
 	std::shared_ptr<ContractStatusChangeListener> listener_fn;
 	if (listener) {
@@ -14940,6 +15086,14 @@ inline std::optional<ConnectLocation> Device::getConnectLocation() const {
 	}
 	return detail::parseJson<ConnectLocation>(r_s->c_str());
 }
+inline std::optional<ConnectedProviderLocationList> Device::getConnectedProviderLocations() const {
+	char* r_c = urnet_device_get_connected_provider_locations(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectedProviderLocationList>(r_s->c_str());
+}
 inline std::optional<ContractStatus> Device::getContractStatus() const {
 	char* r_c = urnet_device_get_contract_status(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -15168,6 +15322,9 @@ inline void Device::refreshToken(int64_t attempt) const {
 }
 inline void Device::removeBlockActionOverride(const std::string& override_id) const {
 	urnet_device_remove_block_action_override(handle(), override_id.c_str());
+}
+inline void Device::removeConnectedProvider(const std::string& client_id) const {
+	urnet_device_remove_connected_provider(handle(), client_id.c_str());
 }
 inline void Device::removeDestination() const {
 	urnet_device_remove_destination(handle());
@@ -16689,6 +16846,10 @@ inline bool DeviceRemote::getRemoteConnected() const {
 	bool r = urnet_device_remote_get_remote_connected(handle());
 	return r;
 }
+inline std::string DeviceRemote::getSyncError() const {
+	char* r_c = urnet_device_remote_get_sync_error(handle());
+	return detail::takeString(r_c);
+}
 inline void DeviceRemote::migrateExit(const std::string& exit_client_id) const {
 	urnet_device_remote_migrate_exit(handle(), exit_client_id.c_str());
 }
@@ -16890,6 +17051,11 @@ inline void FeedbackViewController::start() const {
 inline void FeedbackViewController::stop() const {
 	urnet_feedback_view_controller_stop(handle());
 }
+#if !defined(_WIN32)
+inline void IoLoop::close() const {
+	urnet_io_loop_close(handle());
+}
+#endif
 inline void LocalState::close() const {
 	urnet_local_state_close(handle());
 }
@@ -18172,6 +18338,19 @@ inline std::string newId() {
 	char* r_c = urnet_new_id();
 	return detail::takeString(r_c);
 }
+#if !defined(_WIN32)
+inline IoLoop newIoLoop(const DeviceLocal& device_local, int64_t fd, IoLoopDoneCallback done_callback) {
+	std::shared_ptr<IoLoopDoneCallback> done_callback_fn;
+	if (done_callback) {
+		done_callback_fn = std::make_shared<IoLoopDoneCallback>(std::move(done_callback));
+	}
+	IoLoop r(urnet_new_io_loop(device_local.handle(), fd, done_callback_fn ? &detail::retained_io_loop_done : nullptr, done_callback_fn.get()));
+	if (done_callback_fn) {
+		r.retain(done_callback_fn);
+	}
+	return r;
+}
+#endif
 inline LoginViewController newLoginViewController(const Api& api) {
 	LoginViewController r(urnet_new_login_view_controller(api.handle()));
 	return r;

@@ -77,6 +77,14 @@ type deviceRpcSettings struct {
 	// decoupled from RpcCallTimeout so the rpc call timeout can be long (back
 	// pressure during spin-up) without letting a stuck write hang that long.
 	MuxWriteTimeout time.Duration
+
+	// RpcVersion is the device rpc wire version a DeviceRemote puts on its
+	// sync request. Always DeviceRpcVersion in production; per-settings rather
+	// than a package global only so a test can stand up a remote from an
+	// incompatible build without a second binary. The DeviceLocal always
+	// enforces against the DeviceRpcVersion const.
+	RpcVersion int
+
 	// max concurrent http-over-rpc fetch+deliver operations. bounds in-flight
 	// request/response buffers + goroutines so a slow or suspended app cannot pile
 	// up unbounded memory in the (memory-capped) network extension.
@@ -129,6 +137,7 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		MuxReceiveBufferSize: 32,
 		MuxWriteTimeout:      15 * time.Second,
 		HttpMaxConcurrent:    16,
+		RpcVersion:           DeviceRpcVersion,
 
 		DeviceLocalSettings: *DefaultDeviceLocalSettings(),
 	}
@@ -168,6 +177,13 @@ type DeviceRemote struct {
 	// signals the host recreated the device. Guarded by stateLock.
 	deviceGeneration    string
 	hasDeviceGeneration bool
+
+	// the error from the last sync attempt that the local REJECTED
+	// (DeviceRemoteSyncResponse.Error), empty after a sync succeeds. A
+	// rejection is otherwise invisible to the app: the remote just stays
+	// unsynced and reconnects paced, which looks the same as a local that is
+	// not running. Guarded by stateLock.
+	syncError string
 
 	// egressSecurityPolicy *deviceRemoteEgressSecurityPolicy
 	// ingressSecurityPolicy *deviceRemote
@@ -225,6 +241,12 @@ type DeviceRemote struct {
 	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
 
+	// connectedProviderLocationChangeListeners is a plain local callback list,
+	// not an rpc-mirrored listener map: the change signal rides the existing
+	// bridged window-monitor events (see providerLocationsMonitor), so no
+	// dedicated rpc listener methods exist for it
+	connectedProviderLocationChangeListeners *connect.CallbackList[ConnectedProviderLocationChangeListener]
+
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
 
 	state DeviceRemoteState
@@ -236,6 +258,19 @@ type DeviceRemote struct {
 	// `DeviceRemoteState` sync. Guarded by `stateLock`
 	lastPublicIdentityKey  []byte
 	lastProviderIdentities []*ProviderIdentity
+
+	// providerLocationsMonitor is a lazily created, internally subscribed
+	// window monitor: registration is what makes windowMonitorEvents readable,
+	// and the subscription fans bridged monitor events out to
+	// connectedProviderLocationChangeListeners. Created on first use so an app
+	// that never reads provider locations adds no window listener to the sync.
+	// Guarded by `providerLocationsMonitorLock` (never take `stateLock` first)
+	providerLocationsMonitorLock  sync.Mutex
+	providerLocationsMonitor      windowMonitor
+	providerLocationsMonitorUnsub func()
+	// last readable derivation, retained while the rpc is down (freeze rather
+	// than drain). Guarded by `stateLock`
+	lastConnectedProviderLocations []*ConnectedProviderLocation
 
 	viewControllerManager
 }
@@ -333,42 +368,43 @@ func newDeviceRemoteWithOverrides(
 		remoteChangeListeners:    connect.NewCallbackList[RemoteChangeListener](),
 		deviceRecreatedListeners: connect.NewCallbackList[DeviceRecreatedListener](),
 
-		canShowRatingDialogChangeListeners:      map[connect.Id]CanShowRatingDialogChangeListener{},
-		canPromptIntroFunnelChangeListeners:     map[connect.Id]CanPromptIntroFunnelChangeListener{},
-		allowForegroundChangeListeners:          map[connect.Id]AllowForegroundChangeListener{},
-		canReferChangeListeners:                 map[connect.Id]CanReferChangeListener{},
-		provideModeChangeListeners:              map[connect.Id]ProvideModeChangeListener{},
-		provideChangeListeners:                  map[connect.Id]ProvideChangeListener{},
-		provideControlModeChangeListeners:       map[connect.Id]ProvideControlModeChangeListener{},
-		performanceProfileChangeListeners:       map[connect.Id]PerformanceProfileChangeListener{},
-		providerIdentityChangeListeners:         map[connect.Id]ProviderIdentityChangeListener{},
-		providePausedChangeListeners:            map[connect.Id]ProvidePausedChangeListener{},
-		provideNetworkModeChangeListeners:       map[connect.Id]ProvideNetworkModeChangeListener{},
-		offlineChangeListeners:                  map[connect.Id]OfflineChangeListener{},
-		vpnInterfaceWhileOfflineChangeListeners: map[connect.Id]VpnInterfaceWhileOfflineChangeListener{},
-		connectChangeListeners:                  map[connect.Id]ConnectChangeListener{},
-		routeLocalChangeListeners:               map[connect.Id]RouteLocalChangeListener{},
-		blockerEnabledChangeListeners:           map[connect.Id]BlockerEnabledChangeListener{},
-		connectLocationChangeListeners:          map[connect.Id]ConnectLocationChangeListener{},
-		defaultLocationChangeListeners:          map[connect.Id]DefaultLocationChangeListener{},
-		provideSecretKeysListeners:              map[connect.Id]ProvideSecretKeysListener{},
-		windowMonitors:                          map[connect.Id]*deviceRemoteWindowMonitor{},
-		tunnelChangeListeners:                   map[connect.Id]TunnelChangeListener{},
-		contractStatusChangeListeners:           map[connect.Id]ContractStatusChangeListener{},
-		windowStatusChangeListeners:             map[connect.Id]WindowStatusChangeListener{},
-		blockActionWindowChangeListeners:        map[connect.Id]BlockActionWindowChangeListener{},
-		blockStatsChangeListeners:               map[connect.Id]BlockStatsChangeListener{},
-		blockActionOverridesChangeListeners:     map[connect.Id]BlockActionOverridesChangeListener{},
-		packetStatsChangeListeners:              map[connect.Id]PacketStatsChangeListener{},
-		egressContractStatsChangeListeners:      map[connect.Id]ContractStatsChangeListener{},
-		egressContractDetailsChangeListeners:    map[connect.Id]ContractDetailsChangeListener{},
-		ingressContractStatsChangeListeners:     map[connect.Id]ContractStatsChangeListener{},
-		ingressContractDetailsChangeListeners:   map[connect.Id]ContractDetailsChangeListener{},
-		dnsResolverSettingsChangeListeners:      map[connect.Id]DnsResolverSettingsChangeListener{},
-		networkPeersChangeListeners:             map[connect.Id]NetworkPeersChangeListener{},
-		jwtRefreshListeners:                     connect.NewCallbackList[JwtRefreshListener](),
-		authLogoutListeners:                     connect.NewCallbackList[AuthLogoutListener](),
-		httpResponseChannels:                    map[connect.Id]chan *DeviceRemoteHttpResponse{},
+		canShowRatingDialogChangeListeners:       map[connect.Id]CanShowRatingDialogChangeListener{},
+		canPromptIntroFunnelChangeListeners:      map[connect.Id]CanPromptIntroFunnelChangeListener{},
+		allowForegroundChangeListeners:           map[connect.Id]AllowForegroundChangeListener{},
+		canReferChangeListeners:                  map[connect.Id]CanReferChangeListener{},
+		provideModeChangeListeners:               map[connect.Id]ProvideModeChangeListener{},
+		provideChangeListeners:                   map[connect.Id]ProvideChangeListener{},
+		provideControlModeChangeListeners:        map[connect.Id]ProvideControlModeChangeListener{},
+		performanceProfileChangeListeners:        map[connect.Id]PerformanceProfileChangeListener{},
+		providerIdentityChangeListeners:          map[connect.Id]ProviderIdentityChangeListener{},
+		providePausedChangeListeners:             map[connect.Id]ProvidePausedChangeListener{},
+		provideNetworkModeChangeListeners:        map[connect.Id]ProvideNetworkModeChangeListener{},
+		offlineChangeListeners:                   map[connect.Id]OfflineChangeListener{},
+		vpnInterfaceWhileOfflineChangeListeners:  map[connect.Id]VpnInterfaceWhileOfflineChangeListener{},
+		connectChangeListeners:                   map[connect.Id]ConnectChangeListener{},
+		routeLocalChangeListeners:                map[connect.Id]RouteLocalChangeListener{},
+		blockerEnabledChangeListeners:            map[connect.Id]BlockerEnabledChangeListener{},
+		connectLocationChangeListeners:           map[connect.Id]ConnectLocationChangeListener{},
+		defaultLocationChangeListeners:           map[connect.Id]DefaultLocationChangeListener{},
+		provideSecretKeysListeners:               map[connect.Id]ProvideSecretKeysListener{},
+		windowMonitors:                           map[connect.Id]*deviceRemoteWindowMonitor{},
+		tunnelChangeListeners:                    map[connect.Id]TunnelChangeListener{},
+		contractStatusChangeListeners:            map[connect.Id]ContractStatusChangeListener{},
+		windowStatusChangeListeners:              map[connect.Id]WindowStatusChangeListener{},
+		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
+		blockStatsChangeListeners:                map[connect.Id]BlockStatsChangeListener{},
+		blockActionOverridesChangeListeners:      map[connect.Id]BlockActionOverridesChangeListener{},
+		packetStatsChangeListeners:               map[connect.Id]PacketStatsChangeListener{},
+		egressContractStatsChangeListeners:       map[connect.Id]ContractStatsChangeListener{},
+		egressContractDetailsChangeListeners:     map[connect.Id]ContractDetailsChangeListener{},
+		ingressContractStatsChangeListeners:      map[connect.Id]ContractStatsChangeListener{},
+		ingressContractDetailsChangeListeners:    map[connect.Id]ContractDetailsChangeListener{},
+		dnsResolverSettingsChangeListeners:       map[connect.Id]DnsResolverSettingsChangeListener{},
+		networkPeersChangeListeners:              map[connect.Id]NetworkPeersChangeListener{},
+		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
+		connectedProviderLocationChangeListeners: connect.NewCallbackList[ConnectedProviderLocationChangeListener](),
+		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
+		httpResponseChannels:                     map[connect.Id]chan *DeviceRemoteHttpResponse{},
 
 		providerPacketStatsChangeListeners:            map[connect.Id]PacketStatsChangeListener{},
 		providerEgressContractStatsChangeListeners:    map[connect.Id]ContractStatsChangeListener{},
@@ -496,6 +532,7 @@ func (self *DeviceRemote) run() {
 
 				syncRequest := &DeviceRemoteSyncRequest{
 					InstanceId: self.instanceId,
+					RpcVersion: self.settings.RpcVersion,
 
 					CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
 					CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
@@ -543,10 +580,19 @@ func (self *DeviceRemote) run() {
 					return
 				}
 
+				// stateLock is held for the whole body (taken above, or carried
+				// in as initialLock), so syncError is assigned directly here.
 				if syncResponse.Error != "" {
 					self.log.Infof("Sync error: %s", syncResponse.Error)
+					// keep the rejection readable by the app (GetSyncError).
+					// The remote stays unsynced and reconnects paced, so
+					// without this the only trace of a hard, non-recoverable
+					// rejection (wrong device instance, incompatible rpc
+					// version) is a log line.
+					self.syncError = syncResponse.Error
 					return
 				}
+				self.syncError = ""
 
 				// trim the windows
 				// for windowId, windowMonitor := range self.windowMonitors {
@@ -1552,6 +1598,82 @@ func (self *DeviceRemote) AddProviderIdentityChangeListener(listener ProviderIde
 	)
 }
 
+// ensureConnectedProviderLocationsMonitor lazily creates and subscribes the
+// internal window monitor. The subscription both registers the window (making
+// its events readable over rpc) and drives the local change listeners from
+// the bridged monitor events.
+func (self *DeviceRemote) ensureConnectedProviderLocationsMonitor() windowMonitor {
+	self.providerLocationsMonitorLock.Lock()
+	defer self.providerLocationsMonitorLock.Unlock()
+
+	if self.providerLocationsMonitor == nil {
+		monitor := self.windowMonitor()
+		// AddMonitorEventCallback takes stateLock internally; the lock order
+		// providerLocationsMonitorLock -> stateLock is fixed
+		unsub := monitor.AddMonitorEventCallback(func(
+			windowExpandEvent *connect.WindowExpandEvent,
+			providerEvents map[connect.Id]*connect.ProviderEvent,
+			reset bool,
+		) {
+			// expand-only events (nil providerEvents) cannot change the
+			// connected provider set
+			if reset || 0 < len(providerEvents) {
+				self.connectedProviderLocationsChanged()
+			}
+		})
+		self.providerLocationsMonitor = monitor
+		self.providerLocationsMonitorUnsub = unsub
+	}
+	return self.providerLocationsMonitor
+}
+
+// GetConnectedProviderLocations returns the currently connected
+// (routing-eligible) window providers with their locations, sorted
+// oldest-connected first. While the rpc is down, the last readable list is
+// retained (freeze rather than drain); `GetRemoteConnected` is the
+// availability signal. Empty (never nil) when never observed
+func (self *DeviceRemote) GetConnectedProviderLocations() *ConnectedProviderLocationList {
+	monitor := self.ensureConnectedProviderLocationsMonitor()
+
+	var providerEvents map[connect.Id]*connect.ProviderEvent
+	available := true
+	if m, ok := monitor.(windowMonitorWithAvailability); ok {
+		_, providerEvents, available = m.EventsWithAvailability()
+	} else {
+		_, providerEvents = monitor.Events()
+	}
+
+	if available {
+		connectedProviderLocations := deriveConnectedProviderLocations(providerEvents)
+		self.stateLock.Lock()
+		self.lastConnectedProviderLocations = connectedProviderLocations.getAll()
+		self.stateLock.Unlock()
+		return connectedProviderLocations
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	lastConnectedProviderLocations := NewConnectedProviderLocationList()
+	lastConnectedProviderLocations.addAll(self.lastConnectedProviderLocations...)
+	return lastConnectedProviderLocations
+}
+
+func (self *DeviceRemote) AddConnectedProviderLocationChangeListener(listener ConnectedProviderLocationChangeListener) Sub {
+	self.ensureConnectedProviderLocationsMonitor()
+	callbackId := self.connectedProviderLocationChangeListeners.Add(listener)
+	return newSub(func() {
+		self.connectedProviderLocationChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceRemote) connectedProviderLocationsChanged() {
+	for _, listener := range self.connectedProviderLocationChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ConnectedProviderLocationsChanged()
+		})
+	}
+}
+
 func (self *DeviceRemote) AddProvidePausedChangeListener(listener ProvidePausedChangeListener) Sub {
 	return addListener(
 		self,
@@ -2547,6 +2669,25 @@ func (self *DeviceRemote) Shuffle() {
 	}
 }
 
+// RemoveConnectedProvider is an action on the hosted device (unlike the
+// read-only provider-locations surface, which derives from the bridged window
+// monitor), so it is a plain rpc call. It is dropped when the rpc is down —
+// the exclusion only lives as long as the connection anyway.
+func (self *DeviceRemote) RemoveConnectedProvider(clientId *Id) {
+	if clientId == nil {
+		return
+	}
+
+	self.stateLock.Lock()
+	service := self.service
+	self.stateLock.Unlock()
+
+	if service == nil {
+		return
+	}
+	rpcCallVoid(service, "DeviceLocalRpc.RemoveConnectedProvider", clientId.toConnectId(), self.closeService)
+}
+
 func (self *DeviceRemote) Cancel() {
 	self.cancel()
 }
@@ -2557,6 +2698,15 @@ func (self *DeviceRemote) Close() {
 		// their listener removals reach the hosted device. In particular,
 		// ConnectViewController.Close now detaches its current window monitor.
 		self.viewControllerManager.Close()
+		func() {
+			self.providerLocationsMonitorLock.Lock()
+			defer self.providerLocationsMonitorLock.Unlock()
+			if self.providerLocationsMonitorUnsub != nil {
+				self.providerLocationsMonitorUnsub()
+				self.providerLocationsMonitorUnsub = nil
+				self.providerLocationsMonitor = nil
+			}
+		}()
 		self.cancel()
 
 		self.stateLock.Lock()
@@ -3651,6 +3801,21 @@ func (self *DeviceRemote) GetRemoteConnected() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.service != nil
+}
+
+// GetSyncError returns the message from the last sync the local REJECTED, or
+// "" when the last sync succeeded (or none has been rejected). Pair it with
+// GetRemoteConnected: not-connected plus an empty sync error is the ordinary
+// "local is not running / not reachable yet" case, while not-connected plus a
+// non-empty sync error is a rejection that reconnecting will not fix — the
+// remote is talking to the wrong device instance, or was built against an
+// incompatible device rpc wire version (see DeviceRpcVersion). The two are
+// distinguishable by prefix: "device rpc version mismatch: ..." vs "device
+// instance mismatch: ...".
+func (self *DeviceRemote) GetSyncError() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.syncError
 }
 
 func (self *DeviceRemote) AddRemoteChangeListener(listener RemoteChangeListener) Sub {
@@ -4942,6 +5107,24 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 }
 */
 
+// DeviceRpcVersion is the wire-compatibility version of the device rpc gob
+// structs. It is NOT the release/SDK version (see `Version`) and must never be
+// tied to it: on the hosted/web path the two halves deploy on completely
+// independent schedules — the browser runs DeviceRemote out of a cached
+// sdk.wasm while DeviceLocal runs server side and redeploys continuously — so
+// gating on the release version would reject every remote after every server
+// deploy.
+//
+// BUMP ONLY when the gob wire shape changes INCOMPATIBLY:
+//   - a field is renamed (gob matches by name, so the renamed field silently
+//     decodes as its zero value: a feature dies with no error anywhere)
+//   - a field's type changes (gob errors at decode)
+//   - a field's MEANING changes while its name and type stay the same (gob
+//     cannot see this at all)
+//
+// Adding or removing a field is tolerated by gob and does NOT require a bump.
+const DeviceRpcVersion = 1
+
 //gomobile:noexport
 type DeviceRemoteSyncRequest struct {
 	// InstanceId is the device instance the remote expects to reach. Pairing is
@@ -4950,6 +5133,14 @@ type DeviceRemoteSyncRequest struct {
 	// a different instance instead of silently applying its state and serving
 	// its listeners. Zero skips the check (older remote).
 	InstanceId connect.Id
+
+	// RpcVersion is the device rpc wire version the remote was built against
+	// (DeviceRpcVersion). The remote and the local are separately deployed
+	// artifacts on the hosted path, and gob fails quietly across an
+	// incompatible struct change (a renamed field decodes as zero), so the
+	// local rejects a mismatched remote outright instead of half-applying a
+	// misread state. Zero skips the check (older remote).
+	RpcVersion int
 
 	CanShowRatingDialogChangeListenerIds      []connect.Id
 	CanPromptIntroFunnelChangeListenerIds     []connect.Id
@@ -6915,6 +7106,29 @@ func (self *DeviceLocalRpc) Sync(
 			}
 		}()
 	*/
+
+	// reject a remote built against an incompatible rpc wire version before any
+	// side effect — before applying its state below and before it can register
+	// listeners. The remote and the local are separately deployed artifacts on
+	// the hosted path, and gob fails QUIETLY across an incompatible struct
+	// change (a renamed field decodes as its zero value, with no error
+	// anywhere), so a mismatched remote must be rejected outright rather than
+	// left to half-apply a state it misread. Same handling as the instance
+	// mismatch below: the remote surfaces syncResponse.Error, stays unsynced,
+	// and reconnects paced.
+	if syncRequest.RpcVersion != 0 && syncRequest.RpcVersion != DeviceRpcVersion {
+		self.deviceLocal.log.Infof(
+			"[dlrpc]sync rejected: remote rpc version %d, local is %d",
+			syncRequest.RpcVersion, DeviceRpcVersion,
+		)
+		*syncResponse = &DeviceRemoteSyncResponse{
+			Error: fmt.Sprintf(
+				"device rpc version mismatch: remote is %d, local is %d",
+				syncRequest.RpcVersion, DeviceRpcVersion,
+			),
+		}
+		return nil
+	}
 
 	// reject a remote built for a different device instance before any side
 	// effect — before applying its state below and before it can register
@@ -9715,6 +9929,11 @@ func (self *DeviceLocalRpc) defaultLocationChanged(location *ConnectLocation) {
 
 func (self *DeviceLocalRpc) Shuffle(_ RpcNoArg, _ RpcVoid) error {
 	self.deviceLocal.Shuffle()
+	return nil
+}
+
+func (self *DeviceLocalRpc) RemoveConnectedProvider(clientId connect.Id, _ RpcVoid) error {
+	self.deviceLocal.RemoveConnectedProvider(newId(clientId))
 	return nil
 }
 
