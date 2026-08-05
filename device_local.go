@@ -603,6 +603,12 @@ type DeviceLocal struct {
 	// the platform flow-owner resolver for per-app pinning; re-applied to
 	// every multi client the device builds
 	flowOwnerLookup FlowOwnerLookup
+	// the runtime reliability override, nil when none is set; re-applied to
+	// every multi client the device builds. The override lives on the multi
+	// client, which is rebuilt on every connect, so without this copy a
+	// developer-menu experiment set before connecting -- or simply surviving
+	// a reconnect -- would evaporate silently
+	reliabilitySettings *connect.ReliabilitySettings
 	// the recent routing decisions, newest last, gated by
 	// `BlockActionWindowDuration`/`BlockActionWindowMaxCount`
 	blockActions []*BlockAction
@@ -3432,6 +3438,15 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// exactly this moment)
 			if self.flowOwnerLookup != nil {
 				applyFlowOwnerLookup(multi, self.flowOwnerLookup)
+			}
+			// re-apply the runtime reliability override for the same reason:
+			// the override lives on the multi client, and this is a fresh
+			// one. Without this a dev override set before connecting never
+			// takes effect, and one set while connected dies at the next
+			// reconnect -- the "mechanism with no field-observable signal"
+			// failure class (SetReliabilitySettings stores it here)
+			if self.reliabilitySettings != nil {
+				multi.SetReliabilitySettings(self.reliabilitySettings)
 			}
 			self.blockActionSub = multi.AddBlockActionCallback(self.updateBlockActions)
 			self.packetStatsSub = multi.AddPacketStatsCallback(self.updatePacketStats)
