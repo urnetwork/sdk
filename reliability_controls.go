@@ -380,26 +380,68 @@ func NewExitList() *ExitList {
 // GetReliabilitySettings reports the reliability behavior currently in effect,
 // which is the runtime override when one is set and the shipped defaults
 // otherwise.
+//
+// nil while there is no multi client: nothing is in force, so there is no
+// effective config to report. It deliberately does NOT report a zero struct,
+// because this is the read half of a read-modify-WRITE: every caller reads
+// the effective settings, changes one field, and writes the whole struct
+// back (SetReliabilitySettings takes no partials). A zero struct handed to
+// that loop is indistinguishable from "every fix off", and writing it back
+// turns a single toggle into an all-off override -- silently, for the rest
+// of the session, since the override outlives the disconnected moment that
+// produced it. nil makes the disconnected case unusable by construction
+// instead of quietly wrong.
+//
+// Callers treat nil as "the controls have nothing to act on": the android
+// developer menu holds `ReliabilitySettings?` and gates its whole section on
+// it, and the ios developer screen does the same over the rpc bridge.
 func (self *DeviceLocal) GetReliabilitySettings() *ReliabilitySettings {
 	if multi, ok := self.multiClient(); ok {
 		return reliabilitySettingsFromConnect(multi.ReliabilitySettings())
 	}
-	return &ReliabilitySettings{}
+	return nil
 }
 
 // SetReliabilitySettings overrides the reliability behavior at runtime. Takes
 // effect on the next packet -- no reconnect -- so a fix can be switched off
 // and back on while a freeze is happening.
+//
+// The override is ALSO stored on the device and re-applied to every multi
+// client it builds, because the multi client is rebuilt on every connect and
+// the override otherwise lives only on the current one. Without that copy an
+// override set while disconnected never takes effect at all, and one set
+// while connected dies at the next reconnect -- silently, which is the whole
+// failure class these controls exist to make observable. Safe while
+// disconnected: it is stored now and applied when a window is built.
+//
+// nil is ignored; use ResetReliabilitySettings to clear the override.
 func (self *DeviceLocal) SetReliabilitySettings(reliabilitySettings *ReliabilitySettings) {
+	if reliabilitySettings == nil {
+		return
+	}
+	// convert once, under no lock, and store an owned copy so a caller
+	// mutating its struct afterwards cannot reach the device's state
+	connectReliabilitySettings := reliabilitySettings.toConnect()
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.reliabilitySettings = connectReliabilitySettings
+	}()
 	if multi, ok := self.multiClient(); ok {
-		multi.SetReliabilitySettings(reliabilitySettings.toConnect())
+		multi.SetReliabilitySettings(connectReliabilitySettings)
 	}
 }
 
 // ResetReliabilitySettings clears any override, restoring the shipped
 // behavior. This is the "put it back" the menu needs so an experiment can
-// always be undone.
+// always be undone. Clears the device-held copy too, so the override is not
+// re-applied to the next multi client.
 func (self *DeviceLocal) ResetReliabilitySettings() {
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.reliabilitySettings = nil
+	}()
 	if multi, ok := self.multiClient(); ok {
 		multi.SetReliabilitySettings(nil)
 	}

@@ -591,10 +591,18 @@ func (self *DeviceRemote) run() {
 				// reconnect. Without this, an override set while connected
 				// would silently vanish on the next extension restart.
 				// See `DeviceRemote.SetReliabilitySettings`.
+				//
+				// only a real override (a non-nil value) is carried: a queued
+				// RESET was just delivered by this sync and has no values to
+				// re-apply, so it is cleared with the rest of the state. That
+				// keeps the queue's nil unambiguous -- it is always "clear the
+				// override", never "an all-zero override".
 				reliabilitySettings := self.state.ReliabilitySettings
 				self.lastKnownState = syncResponse.State
 				self.state = DeviceRemoteState{}
-				self.state.ReliabilitySettings = reliabilitySettings
+				if reliabilitySettings.Value != nil {
+					self.state.ReliabilitySettings = reliabilitySettings
+				}
 				// self.lastKnownState.Merge(&self.state)
 				// self.state.Unset()
 				self.syncMonitor.NotifyAll()
@@ -4367,15 +4375,33 @@ func (self *DeviceRemote) AddNetworkPeersChangeListener(listener NetworkPeersCha
 
 // reliability (see reliability_controls.go for the `DeviceLocal` side)
 //
-// The getters read through to the local device and degrade to the same
-// values `DeviceLocal` reports while disconnected (zero settings/metrics,
-// empty lists), so a store polling the remote never sees nil. The actions
-// are no-ops while the rpc is down, matching the `DeviceLocal` methods that
-// no-op while there is no multi client to act on.
+// The getters read through to the local device and report what it reports.
+// Metrics and the two list readouts degrade to zeros and empty lists, which
+// are honest answers ("nothing measured yet", "no exits") and keep a nil
+// list from crossing gomobile. SETTINGS do not degrade: they are nil-able
+// end to end, because settings is the read-modify-WRITE path and a
+// synthesized zero struct written back is an all-off override (see
+// `DeviceLocal.GetReliabilitySettings`). The actions are no-ops while the
+// rpc is down, matching the `DeviceLocal` methods that no-op while there is
+// no multi client to act on.
 
 // GetReliabilitySettings reports the reliability behavior currently in
-// effect on the local device: the runtime override when one is set, the
-// shipped defaults otherwise, and zeros while the local is disconnected.
+// effect on the local device: the runtime override when one is set and the
+// shipped defaults otherwise.
+//
+// nil when there is no effective config to report -- the local has no multi
+// client (tunnel down), or the rpc is down with nothing pending to describe.
+// Zeros are NEVER synthesized here: on ios the DeviceRemote is created at
+// login and outlives every tunnel session, so a getter that manufactured a
+// zero struct while the tunnel was down would hand the developer screen's
+// read-modify-write an all-off struct to write back. nil is the signal that
+// the controls have nothing to act on.
+//
+// While the rpc is down a queued override IS reported, since that is a real
+// struct the caller itself set and will be applied on the next sync -- a
+// read-modify-write on it preserves the caller's intent. A queued RESET
+// carries no values, so it falls through to the last known effective
+// settings, and to nil when there are none.
 func (self *DeviceRemote) GetReliabilitySettings() *ReliabilitySettings {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -4390,25 +4416,24 @@ func (self *DeviceRemote) GetReliabilitySettings() *ReliabilitySettings {
 			return nil, false
 		}
 		settings := deviceSettings.ReliabilitySettings
+		// mirror the local's answer, nil included: once the rpc drops, the
+		// fallback below must not resurrect settings the local has already
+		// stopped reporting
 		self.lastKnownState.ReliabilitySettings.Set(cloneReliabilitySettings(settings))
 		return settings, true
 	}()
-	if success && settings != nil {
+	if success {
+		// the local is reachable, so its answer is authoritative -- including
+		// nil, which is "no multi client, nothing in force"
 		return settings
 	}
-	// rpc down: prefer the queued override; a queued reset (nil value) means
-	// the effective defaults are unknown here, so report zeros the same way
-	// `DeviceLocal` does while disconnected
-	if self.state.ReliabilitySettings.IsSet {
-		if override := self.state.ReliabilitySettings.Value; override != nil {
-			return cloneReliabilitySettings(override)
-		}
-		return &ReliabilitySettings{}
+	// rpc down: report the queued override if one is pending
+	if override := self.state.ReliabilitySettings.Get(nil); override != nil {
+		return cloneReliabilitySettings(override)
 	}
-	if lastKnown := self.lastKnownState.ReliabilitySettings.Get(nil); lastKnown != nil {
-		return cloneReliabilitySettings(lastKnown)
-	}
-	return &ReliabilitySettings{}
+	// a queued reset (IsSet with a nil value) and an empty queue both land
+	// here: the last known effective settings, or nil when there are none
+	return cloneReliabilitySettings(self.lastKnownState.ReliabilitySettings.Get(nil))
 }
 
 // SetReliabilitySettings overrides the reliability behavior at runtime, no
@@ -4813,8 +4838,15 @@ type DeviceRemoteState struct {
 	// the runtime reliability settings override. Unlike the fields above this
 	// is runtime-only state on the local (nothing persists it), so the remote
 	// keeps it queued across syncs and re-applies it on every reconnect and
-	// extension restart. IsSet with a nil value queues a reset (clear the
-	// override). See `DeviceRemote.SetReliabilitySettings`.
+	// extension restart. See `DeviceRemote.SetReliabilitySettings`.
+	//
+	// a nil value never means "an all-zero override" -- zero settings are
+	// never synthesized on this path. Its meaning depends on the direction:
+	// in a sync REQUEST (the remote's queued state) IsSet with nil queues a
+	// reset, clearing the override; in a sync RESPONSE (the local's current
+	// state) nil means the local has no multi client, so nothing is in force.
+	// Nothing copies response state into request state, which is what keeps
+	// the two readings from colliding.
 	ReliabilitySettings deviceRemoteValue[*ReliabilitySettings]
 
 	// only last known state
@@ -5807,7 +5839,8 @@ type DeviceRemoteNetworkPeers struct {
 // `DevicePerformanceProfile` convention. `Exit` and `DestinationExit` carry
 // an `*Id`, whose uuid bytes are unexported and would be silently dropped by
 // gob, so they cross via hand mirrors with `connect.Id` like every other rpc
-// payload id (see device_rpc_mirror_test.go for the completeness guard).
+// payload id (see device_rpc_reliability_test.go for the completeness
+// guards, which follow the device_rpc_mirror_test.go convention).
 
 func cloneReliabilitySettings(reliabilitySettings *ReliabilitySettings) *ReliabilitySettings {
 	if reliabilitySettings == nil {
@@ -6835,8 +6868,11 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.TunnelStarted.Set(self.deviceLocal.GetTunnelStarted())
 	state.BlockActionOverrides.Set(newBlockActionOverridesRpc(self.deviceLocal.GetBlockActionOverrides()))
 	state.DnsResolverSettings.Set(newDnsResolverSettingsRpc(self.deviceLocal.GetDnsResolverSettings()))
-	// the effective reliability settings (override applied when one is set,
-	// zeros while disconnected); lands in the remote's last known state
+	// the effective reliability settings (the override when one is set, the
+	// shipped defaults otherwise, and nil when the local has no multi
+	// client); lands in the remote's last known state. This is RESPONSE
+	// state: its nil says "nothing in force", not "reset the override" --
+	// see the `DeviceRemoteState.ReliabilitySettings` note
 	state.ReliabilitySettings.Set(self.deviceLocal.GetReliabilitySettings())
 
 	state.ConnectEnabled.Set(self.deviceLocal.GetConnectEnabled())
