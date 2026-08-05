@@ -9977,7 +9977,12 @@ public:
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeViewController(ViewController vc) const;
+	std::optional<DestinationExitList> getDestinationExits() const;
+	std::optional<ExitList> getExits() const;
+	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
+	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	bool getRemoteConnected() const;
+	void migrateExit(const std::string& exit_client_id) const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
@@ -9995,7 +10000,12 @@ public:
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	WalletViewController openWalletViewController() const;
+	void probeAllExits() const;
+	void resetReliabilityMetrics() const;
+	void resetReliabilitySettings() const;
+	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
 	void setRpcServer(const std::string& client_pem, const std::string& server_cert_pem, const std::string& host_port) const;
+	void simulateNetworkChange() const;
 	void sync() const;
 	/* the raw public identity key (post quantum identity) */
 	std::vector<uint8_t> getPublicIdentityKey() const;
@@ -16643,9 +16653,44 @@ inline void DeviceRemote::closeViewController(ViewController vc) const {
 	}
 	urnet_device_remote_close_view_controller(handle(), vc_fn ? &detail::retained_view_controller_close : nullptr, vc_fn ? &detail::retained_view_controller_start : nullptr, vc_fn ? &detail::retained_view_controller_stop : nullptr, vc_fn.get());
 }
+inline std::optional<DestinationExitList> DeviceRemote::getDestinationExits() const {
+	char* r_c = urnet_device_remote_get_destination_exits(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DestinationExitList>(r_s->c_str());
+}
+inline std::optional<ExitList> DeviceRemote::getExits() const {
+	char* r_c = urnet_device_remote_get_exits(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExitList>(r_s->c_str());
+}
+inline std::optional<ReliabilityMetrics> DeviceRemote::getReliabilityMetrics() const {
+	char* r_c = urnet_device_remote_get_reliability_metrics(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ReliabilityMetrics>(r_s->c_str());
+}
+inline std::optional<ReliabilitySettings> DeviceRemote::getReliabilitySettings() const {
+	char* r_c = urnet_device_remote_get_reliability_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ReliabilitySettings>(r_s->c_str());
+}
 inline bool DeviceRemote::getRemoteConnected() const {
 	bool r = urnet_device_remote_get_remote_connected(handle());
 	return r;
+}
+inline void DeviceRemote::migrateExit(const std::string& exit_client_id) const {
+	urnet_device_remote_migrate_exit(handle(), exit_client_id.c_str());
 }
 inline AccountPreferencesViewController DeviceRemote::openAccountPreferencesViewController() const {
 	AccountPreferencesViewController r(urnet_device_remote_open_account_preferences_view_controller(handle()));
@@ -16715,6 +16760,24 @@ inline WalletViewController DeviceRemote::openWalletViewController() const {
 	WalletViewController r(urnet_device_remote_open_wallet_view_controller(handle()));
 	return r;
 }
+inline void DeviceRemote::probeAllExits() const {
+	urnet_device_remote_probe_all_exits(handle());
+}
+inline void DeviceRemote::resetReliabilityMetrics() const {
+	urnet_device_remote_reset_reliability_metrics(handle());
+}
+inline void DeviceRemote::resetReliabilitySettings() const {
+	urnet_device_remote_reset_reliability_settings(handle());
+}
+inline void DeviceRemote::setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const {
+	std::string reliability_settings_json;
+	const char* reliability_settings_c = nullptr;
+	if (reliability_settings) {
+		reliability_settings_json = nlohmann::json(*reliability_settings).dump();
+		reliability_settings_c = reliability_settings_json.c_str();
+	}
+	urnet_device_remote_set_reliability_settings(handle(), reliability_settings_c);
+}
 inline void DeviceRemote::setRpcServer(const std::string& client_pem, const std::string& server_cert_pem, const std::string& host_port) const {
 	char* err_c = nullptr;
 	bool ok = urnet_device_remote_set_rpc_server(handle(), client_pem.c_str(), server_cert_pem.c_str(), host_port.c_str(), &err_c);
@@ -16724,6 +16787,9 @@ inline void DeviceRemote::setRpcServer(const std::string& client_pem, const std:
 	if (!ok) {
 		throw Error("urnet: urnet_device_remote_set_rpc_server failed");
 	}
+}
+inline void DeviceRemote::simulateNetworkChange() const {
+	urnet_device_remote_simulate_network_change(handle());
 }
 inline void DeviceRemote::sync() const {
 	urnet_device_remote_sync(handle());

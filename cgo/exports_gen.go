@@ -7186,6 +7186,62 @@ func urnet_device_remote_close_view_controller(self C.uint64_t, vc_close C.urnet
 	self_.CloseViewController(vc_)
 }
 
+//export urnet_device_remote_get_destination_exits
+func urnet_device_remote_get_destination_exits(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_remote_get_destination_exits")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_destination_exits")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetDestinationExits()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_remote_get_destination_exits")
+}
+
+//export urnet_device_remote_get_exits
+func urnet_device_remote_get_exits(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_remote_get_exits")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_exits")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExits()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_remote_get_exits")
+}
+
+//export urnet_device_remote_get_reliability_metrics
+func urnet_device_remote_get_reliability_metrics(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_remote_get_reliability_metrics")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_reliability_metrics")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReliabilityMetrics()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_remote_get_reliability_metrics")
+}
+
+//export urnet_device_remote_get_reliability_settings
+func urnet_device_remote_get_reliability_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_remote_get_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_reliability_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReliabilitySettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_remote_get_reliability_settings")
+}
+
 //export urnet_device_remote_get_remote_connected
 func urnet_device_remote_get_remote_connected(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_remote_get_remote_connected")
@@ -7195,6 +7251,16 @@ func urnet_device_remote_get_remote_connected(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetRemoteConnected()
 	return C.bool(r0)
+}
+
+//export urnet_device_remote_migrate_exit
+func urnet_device_remote_migrate_exit(self C.uint64_t, exitClientId *C.char) {
+	defer cgoGuard("urnet_device_remote_migrate_exit")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_migrate_exit")
+	if !ok {
+		return
+	}
+	self_.MigrateExit(goString(exitClientId))
 }
 
 //export urnet_device_remote_open_account_preferences_view_controller
@@ -7435,6 +7501,53 @@ func urnet_device_remote_open_wallet_view_controller(self C.uint64_t) C.uint64_t
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_remote_probe_all_exits
+func urnet_device_remote_probe_all_exits(self C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_probe_all_exits")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_probe_all_exits")
+	if !ok {
+		return
+	}
+	self_.ProbeAllExits()
+}
+
+//export urnet_device_remote_reset_reliability_metrics
+func urnet_device_remote_reset_reliability_metrics(self C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_reset_reliability_metrics")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_reset_reliability_metrics")
+	if !ok {
+		return
+	}
+	self_.ResetReliabilityMetrics()
+}
+
+//export urnet_device_remote_reset_reliability_settings
+func urnet_device_remote_reset_reliability_settings(self C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_reset_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_reset_reliability_settings")
+	if !ok {
+		return
+	}
+	self_.ResetReliabilitySettings()
+}
+
+//export urnet_device_remote_set_reliability_settings
+func urnet_device_remote_set_reliability_settings(self C.uint64_t, reliabilitySettings *C.char) {
+	defer cgoGuard("urnet_device_remote_set_reliability_settings")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_set_reliability_settings")
+	if !ok {
+		return
+	}
+	var reliabilitySettings_ *sdk.ReliabilitySettings
+	if reliabilitySettings != nil {
+		reliabilitySettings_ = &sdk.ReliabilitySettings{}
+		if !goJson(reliabilitySettings, reliabilitySettings_, "urnet_device_remote_set_reliability_settings") {
+			return
+		}
+	}
+	self_.SetReliabilitySettings(reliabilitySettings_)
+}
+
 //export urnet_device_remote_set_rpc_server
 func urnet_device_remote_set_rpc_server(self C.uint64_t, clientPem *C.char, serverCertPem *C.char, hostPort *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_remote_set_rpc_server")
@@ -7448,6 +7561,16 @@ func urnet_device_remote_set_rpc_server(self C.uint64_t, clientPem *C.char, serv
 		return C.bool(false)
 	}
 	return C.bool(true)
+}
+
+//export urnet_device_remote_simulate_network_change
+func urnet_device_remote_simulate_network_change(self C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_simulate_network_change")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_simulate_network_change")
+	if !ok {
+		return
+	}
+	self_.SimulateNetworkChange()
 }
 
 //export urnet_device_remote_sync
