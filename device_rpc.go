@@ -4588,23 +4588,15 @@ func (self *DeviceRemote) MigrateExit(exitClientId string) {
 	rpcCallVoid(self.service, "DeviceLocalRpc.MigrateExit", exitId.toConnectId(), self.closeService)
 }
 
-// ProbeExit fires one qualification pass for the named exit. See the
-// `DeviceLocalRpc.ProbeExit` note: connect exposes no per-exit probe seam,
-// so the pass currently runs as a full sweep that includes the named exit.
-func (self *DeviceRemote) ProbeExit(exitClientId string) {
-	exitId, err := ParseId(exitClientId)
-	if err != nil {
-		return
-	}
-
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
-	if self.service == nil {
-		return
-	}
-	rpcCallVoid(self.service, "DeviceLocalRpc.ProbeExit", exitId.toConnectId(), self.closeService)
-}
+// NOTE: the WP1 contract lists `ProbeExit(exitClientId string)` (one
+// qualification pass for one exit). It is deliberately NOT bridged: neither
+// `DeviceLocal` nor connect's `RemoteUserNatMultiClient` exposes a per-exit
+// probe seam (the per-client pass, the window client enumeration, and the
+// qualification table are all unexported in connect; the only exported seam
+// is `ProbeAllExits`). Bridging it would have meant inventing semantics.
+// Add `RemoteUserNatMultiClient.ProbeExit(clientId Id)` in connect, mirror
+// it in reliability_controls.go, and bridge it here following the
+// `MigrateExit` shape.
 
 // ProbeAllExits fires a qualification probe pass at every exit in the
 // windows now, instead of waiting for the background sweep. Non-blocking on
@@ -8412,17 +8404,6 @@ func (self *DeviceLocalRpc) GetDestinationExits(_ RpcNoArg, deviceDestinationExi
 
 func (self *DeviceLocalRpc) MigrateExit(exitClientId connect.Id, _ RpcVoid) error {
 	self.deviceLocal.MigrateExit(newId(exitClientId))
-	return nil
-}
-
-// ProbeExit fires one qualification pass for the named exit. connect exposes
-// no per-exit probe seam (`RemoteUserNatMultiClient` has only
-// `ProbeAllExits`; the per-client pass is private), so the named exit gets
-// its pass from the full sweep, which runs behind the same bounded semaphore
-// as the background prober. Narrow this to the single exit when connect
-// grows a per-exit seam.
-func (self *DeviceLocalRpc) ProbeExit(exitClientId connect.Id, _ RpcVoid) error {
-	self.deviceLocal.ProbeAllExits()
 	return nil
 }
 
