@@ -17,6 +17,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
@@ -40,6 +42,19 @@ public:
 namespace detail {
 
 /* take ownership of a returned char*, freeing it */
+// dupCString copies a c++ string into a buffer GO takes ownership of. A
+// callback that returns a string hands the pointer across the c abi and go
+// frees it with urnet_free_string -> free(), so it must come from malloc and
+// not from new or std::string's allocator.
+inline char* dupCString(const std::string& s) {
+	char* p = static_cast<char*>(std::malloc(s.size() + 1));
+	if (!p) {
+		return nullptr;
+	}
+	std::memcpy(p, s.c_str(), s.size() + 1);
+	return p;
+}
+
 inline std::string takeString(char* s) {
 	if (!s) {
 		return {};
