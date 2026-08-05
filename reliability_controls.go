@@ -184,6 +184,12 @@ type ReliabilitySettings struct {
 	// stays traffic-based, and any evidence of life clears the streak. 0 is
 	// off.
 	ProbeSilenceWarnStreak int32
+	// SharedFateMinExits / SharedFateWindowMillis: when at least MinExits
+	// distinct exits develop silence/stall evidence inside one window, the
+	// shared path is the likely cause and destructive verdicts hold while
+	// the correlation stands. 0 for either is off.
+	SharedFateMinExits     int32
+	SharedFateWindowMillis int64
 	// EvaluationPoolMultiple makes window expansion request and ping-evaluate
 	// this multiple of the candidates it needs, admit the needed count
 	// preferring qualified providers, and politely cancel the flowless
@@ -268,6 +274,8 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
 		ProbeSampleHostCount:          int32(reliabilitySettings.ProbeSampleHostCount),
 		ProbeSilenceWarnStreak:        int32(reliabilitySettings.ProbeSilenceWarnStreak),
+		SharedFateMinExits:            int32(reliabilitySettings.SharedFateMinExits),
+		SharedFateWindowMillis:        reliabilitySettings.SharedFateWindow.Milliseconds(),
 		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
 
 		FormationPollTimeoutMillis:               reliabilitySettings.FormationPollTimeout.Milliseconds(),
@@ -308,6 +316,8 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
 		ProbeSampleHostCount:     int(self.ProbeSampleHostCount),
 		ProbeSilenceWarnStreak:   int(self.ProbeSilenceWarnStreak),
+		SharedFateMinExits:       int(self.SharedFateMinExits),
+		SharedFateWindow:         millis(self.SharedFateWindowMillis),
 		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
 
 		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
@@ -711,6 +721,10 @@ type ReliabilityMetrics struct {
 	// these are the executions that did not happen.
 	VerdictsHeldUplinkStale   int64
 	VerdictsHeldTransportDown int64
+	// VerdictsHeldSharedFate counts destructive verdicts held because enough
+	// distinct exits went silent inside one shared-fate window that the
+	// shared path is the likely cause
+	VerdictsHeldSharedFate int64
 	RemovalsDeferred          int64
 
 	// ProbesSent and ProbesAnswered are the provider-qualification probes
@@ -768,6 +782,7 @@ func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 		RebindsRedialed:           int64(s.RebindsRedialed),
 		VerdictsHeldUplinkStale:   int64(s.VerdictsHeldUplinkStale),
 		VerdictsHeldTransportDown: int64(s.VerdictsHeldTransportDown),
+		VerdictsHeldSharedFate:    int64(s.VerdictsHeldSharedFate),
 		RemovalsDeferred:          int64(s.RemovalsDeferred),
 		ProbesSent:                int64(s.ProbesSent),
 		ProbesAnswered:            int64(s.ProbesAnswered),

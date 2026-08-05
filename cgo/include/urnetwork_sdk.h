@@ -2351,6 +2351,7 @@ int64_t urnet_usd_to_nano_cents(double usd);
  *   RebindsRedialed: number
  *   VerdictsHeldUplinkStale: number
  *   VerdictsHeldTransportDown: number
+ *   VerdictsHeldSharedFate: number
  *   RemovalsDeferred: number
  *   ProbesSent: number
  *   ProbesAnswered: number
@@ -2389,6 +2390,8 @@ int64_t urnet_usd_to_nano_cents(double usd);
  *   ProbeTimeoutMillis: number
  *   ProbeSampleHostCount: number
  *   ProbeSilenceWarnStreak: number
+ *   SharedFateMinExits: number
+ *   SharedFateWindowMillis: number
  *   EvaluationPoolMultiple: number
  *   FormationPollTimeoutMillis: number
  *   BusyProbe: boolean

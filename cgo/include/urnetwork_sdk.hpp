@@ -1657,6 +1657,7 @@ struct ReliabilityMetrics {
 	int64_t RebindsRedialed{};
 	int64_t VerdictsHeldUplinkStale{};
 	int64_t VerdictsHeldTransportDown{};
+	int64_t VerdictsHeldSharedFate{};
 	int64_t RemovalsDeferred{};
 	int64_t ProbesSent{};
 	int64_t ProbesAnswered{};
@@ -1695,6 +1696,8 @@ struct ReliabilitySettings {
 	int64_t ProbeTimeoutMillis{};
 	int32_t ProbeSampleHostCount{};
 	int32_t ProbeSilenceWarnStreak{};
+	int32_t SharedFateMinExits{};
+	int64_t SharedFateWindowMillis{};
 	int32_t EvaluationPoolMultiple{};
 	int64_t FormationPollTimeoutMillis{};
 	bool BusyProbe{};
@@ -7788,6 +7791,7 @@ inline void to_json(nlohmann::json& j, const ReliabilityMetrics& v) {
 	j["RebindsRedialed"] = v.RebindsRedialed;
 	j["VerdictsHeldUplinkStale"] = v.VerdictsHeldUplinkStale;
 	j["VerdictsHeldTransportDown"] = v.VerdictsHeldTransportDown;
+	j["VerdictsHeldSharedFate"] = v.VerdictsHeldSharedFate;
 	j["RemovalsDeferred"] = v.RemovalsDeferred;
 	j["ProbesSent"] = v.ProbesSent;
 	j["ProbesAnswered"] = v.ProbesAnswered;
@@ -7853,6 +7857,9 @@ inline void from_json(const nlohmann::json& j, ReliabilityMetrics& v) {
 	if (auto it = j.find("VerdictsHeldTransportDown"); it != j.end() && !it->is_null()) {
 		it->get_to(v.VerdictsHeldTransportDown);
 	}
+	if (auto it = j.find("VerdictsHeldSharedFate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerdictsHeldSharedFate);
+	}
 	if (auto it = j.find("RemovalsDeferred"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RemovalsDeferred);
 	}
@@ -7910,6 +7917,8 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["ProbeTimeoutMillis"] = v.ProbeTimeoutMillis;
 	j["ProbeSampleHostCount"] = v.ProbeSampleHostCount;
 	j["ProbeSilenceWarnStreak"] = v.ProbeSilenceWarnStreak;
+	j["SharedFateMinExits"] = v.SharedFateMinExits;
+	j["SharedFateWindowMillis"] = v.SharedFateWindowMillis;
 	j["EvaluationPoolMultiple"] = v.EvaluationPoolMultiple;
 	j["FormationPollTimeoutMillis"] = v.FormationPollTimeoutMillis;
 	j["BusyProbe"] = v.BusyProbe;
@@ -8000,6 +8009,12 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("ProbeSilenceWarnStreak"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProbeSilenceWarnStreak);
+	}
+	if (auto it = j.find("SharedFateMinExits"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SharedFateMinExits);
+	}
+	if (auto it = j.find("SharedFateWindowMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SharedFateWindowMillis);
 	}
 	if (auto it = j.find("EvaluationPoolMultiple"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EvaluationPoolMultiple);
