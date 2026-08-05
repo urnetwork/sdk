@@ -2,7 +2,10 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,8 +18,8 @@ import (
 // is built from the stub generator, so the settings round trip is observable
 // end to end: remote -> rpc -> DeviceLocal -> connect multi client -> back.
 //
-// NOTE for CI: the sdk test binary does not build on Windows (pre-existing
-// unix-only test file), so these must run in the Linux sdk CI.
+// These are ordinary build-tag-free tests in the default compile set, and
+// run on Windows as well as in the Linux sdk CI.
 
 // gob wire fidelity for the whole-struct payloads
 
@@ -136,6 +139,100 @@ func TestRpcBlockActionOverridePinRouteOverride(t *testing.T) {
 	connect.AssertEqual(t, roundTrippedList.Get(0).RouteOverride.Pin, true)
 }
 
+// TestReliabilitySettingsNilWithoutMultiClient pins the zero-value-off trap
+// shut at every layer of the settings path.
+//
+// Settings is a read-modify-WRITE surface: a caller reads the effective
+// settings, changes one field, and writes the WHOLE struct back. If any
+// layer answers a disconnected read with a zero struct, that loop turns one
+// toggle into an override with every reliability fix off -- and on ios the
+// override then outlives the disconnected moment, because the DeviceRemote
+// exists from login and its queued override is re-applied when the extension
+// comes up. nil is what makes the disconnected read unusable by construction.
+//
+// The nil-able contract is settings-only and deliberately asymmetric:
+// metrics and the list readouts still degrade, since zeros and empty lists
+// are honest answers there and are not written back to anything.
+func TestReliabilitySettingsNilWithoutMultiClient(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	connect.AssertEqual(t, err, nil)
+
+	// the DeviceLocal layer (shared with android): no multi client, no
+	// effective config to report
+	settings := DefaultDeviceLocalSettings()
+	settings.DisableLogging = true
+	settings.AllowProvider = false
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		NewId(),
+		settings,
+		connect.NewId(),
+	)
+	connect.AssertEqual(t, err, nil)
+	defer deviceLocal.Close()
+
+	connect.AssertEqual(t, deviceLocal.GetReliabilitySettings(), nil)
+	// the writes a disconnected caller might still make are safe no-ops
+	deviceLocal.SetReliabilitySettings(&ReliabilitySettings{})
+	deviceLocal.ResetReliabilitySettings()
+	connect.AssertEqual(t, deviceLocal.GetReliabilitySettings(), nil)
+
+	// the readouts on the same disconnected device still degrade, never nil
+	connect.AssertNotEqual(t, deviceLocal.GetReliabilityMetrics(), nil)
+	connect.AssertEqual(t, deviceLocal.GetExits().Len(), 0)
+	connect.AssertEqual(t, deviceLocal.GetDestinationExits().Len(), 0)
+
+	// the DeviceRemote layer with no service at all (the ios cold launch:
+	// the remote exists from login, the extension is not up)
+	deviceRemote := &DeviceRemote{}
+	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
+
+	// a queued RESET carries no values, so it must not read back as a struct
+	deviceRemote.state.ReliabilitySettings.Set(nil)
+	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
+
+	// last known state from a local that had no multi client is nil too: the
+	// fallback must not resurrect settings the local stopped reporting
+	deviceRemote.state.ReliabilitySettings.Unset()
+	deviceRemote.lastKnownState.ReliabilitySettings.Set(nil)
+	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
+
+	// and a nil argument can never become a queued override
+	deviceRemote.SetReliabilitySettings(nil)
+	queued := deviceRemote.state.ReliabilitySettings
+	connect.AssertEqual(t, queued.IsSet, false)
+	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
+
+	// the remote readouts still degrade with no service, never nil
+	connect.AssertNotEqual(t, deviceRemote.GetReliabilityMetrics(), nil)
+	connect.AssertEqual(t, deviceRemote.GetExits().Len(), 0)
+	connect.AssertEqual(t, deviceRemote.GetDestinationExits().Len(), 0)
+}
+
+// TestRpcGobReliabilitySettingsNilCrossesWire covers the two directions a
+// nil settings value travels: the payload wrapper (the local reporting "no
+// multi client") and the sync state (the remote queueing a reset). gob omits
+// nil pointer fields, so both must decode back to nil rather than a zero
+// struct -- a zero struct arriving as an override is the trap by another
+// route.
+func TestRpcGobReliabilitySettingsNilCrossesWire(t *testing.T) {
+	wired := gobRoundTrip(t, &DeviceRemoteReliabilitySettingsRpc{ReliabilitySettings: nil})
+	connect.AssertEqual(t, wired.ReliabilitySettings, nil)
+
+	state := DeviceRemoteState{}
+	state.ReliabilitySettings.Set(nil)
+	wiredState := gobRoundTrip(t, state)
+	connect.AssertEqual(t, wiredState.ReliabilitySettings.IsSet, true)
+	connect.AssertEqual(t, wiredState.ReliabilitySettings.Value, nil)
+}
+
 // live rpc helpers
 
 func testingReliabilityWaitFor(t *testing.T, description string, cond func() bool) {
@@ -195,6 +292,17 @@ func testingNewReliabilityDeviceLocal(
 	}
 }
 
+// testingReliabilityHeartbeatMillis reads the local's effective heartbeat,
+// reporting -1 when there is no effective config (nil settings). Settings
+// are nil-able on this path, so no assertion may dereference them blindly.
+func testingReliabilityHeartbeatMillis(deviceLocal *DeviceLocal) int64 {
+	settings := deviceLocal.GetReliabilitySettings()
+	if settings == nil {
+		return -1
+	}
+	return settings.HeartbeatIntervalMillis
+}
+
 func testingReliabilityConnectLocation(name string) *ConnectLocation {
 	return &ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{BestAvailable: true},
@@ -244,10 +352,13 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	connect.AssertEqual(t, err, nil)
 	defer deviceRemote.Close()
 
-	// disconnected multi client: zeros and empty, never nil, on both ends
-	localSettings := deviceLocal.GetReliabilitySettings()
-	connect.AssertNotEqual(t, localSettings, nil)
-	connect.AssertEqual(t, localSettings.HeartbeatIntervalMillis, int64(0))
+	// no multi client: settings are nil on BOTH ends (never a zero struct --
+	// see TestReliabilitySettingsNilWithoutMultiClient), while the readouts
+	// degrade to zeros and empty
+	connect.AssertEqual(t, deviceLocal.GetReliabilitySettings(), nil)
+	testingReliabilityWaitFor(t, "remote reports nil settings with no multi client", func() bool {
+		return deviceRemote.GetReliabilitySettings() == nil
+	})
 
 	remoteExits := deviceRemote.GetExits()
 	connect.AssertNotEqual(t, remoteExits, nil)
@@ -263,11 +374,13 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	// the shipped defaults
 	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability bridge"))
 	defaultSettings := deviceLocal.GetReliabilitySettings()
+	connect.AssertNotEqual(t, defaultSettings, nil)
 	connect.AssertNotEqual(t, defaultSettings.HeartbeatIntervalMillis, int64(0))
 
 	// the remote reads the same effective settings through the bridge
 	testingReliabilityWaitFor(t, "remote reads the local effective settings", func() bool {
-		return deviceRemote.GetReliabilitySettings().HeartbeatIntervalMillis == defaultSettings.HeartbeatIntervalMillis
+		remoteSettings := deviceRemote.GetReliabilitySettings()
+		return remoteSettings != nil && remoteSettings.HeartbeatIntervalMillis == defaultSettings.HeartbeatIntervalMillis
 	})
 	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), defaultSettings)
 
@@ -309,6 +422,227 @@ func TestDeviceRemoteReliabilityBridge(t *testing.T) {
 	connect.AssertNotEqual(t, deviceRemote.GetReliabilityMetrics(), nil)
 }
 
+// testingReliabilityActionLogger captures the connect-side `[rel]` action
+// lines. Every dev action logs one (see `RemoteUserNatMultiClient.logAction`),
+// which is the only observable the action bridges have: the DeviceLocal
+// methods return nothing through the bridge, and against a stub window they
+// change no state.
+type testingReliabilityActionLogger struct {
+	lock  sync.Mutex
+	lines []string
+}
+
+func (self *testingReliabilityActionLogger) record(line string) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	self.lines = append(self.lines, line)
+}
+
+// count reports how many captured lines contain every fragment
+func (self *testingReliabilityActionLogger) count(fragments ...string) int {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	matches := 0
+	for _, line := range self.lines {
+		matched := true
+		for _, fragment := range fragments {
+			if !strings.Contains(line, fragment) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			matches += 1
+		}
+	}
+	return matches
+}
+
+func (self *testingReliabilityActionLogger) contains(fragments ...string) bool {
+	return 0 < self.count(fragments...)
+}
+
+func (self *testingReliabilityActionLogger) Info(args ...any) {
+	self.record(fmt.Sprint(args...))
+}
+
+func (self *testingReliabilityActionLogger) Infof(format string, args ...any) {
+	self.record(fmt.Sprintf(format, args...))
+}
+
+func (self *testingReliabilityActionLogger) Warningf(format string, args ...any) {
+	self.record(fmt.Sprintf(format, args...))
+}
+
+func (self *testingReliabilityActionLogger) Errorf(format string, args ...any) {
+	self.record(fmt.Sprintf(format, args...))
+}
+
+func (self *testingReliabilityActionLogger) V(level int32) connect.Verbose {
+	return connect.NewNoopLogger().V(level)
+}
+
+// TestDeviceRemoteReliabilityActionsReachTheLocal asserts each action bridge
+// actually reached the DeviceLocal side, rather than merely returning without
+// error. No-oping any of the three DeviceLocalRpc handlers must fail this.
+//
+// The observable is the connect-side action log every dev action emits: the
+// bridge drops the DeviceLocal return values by contract, and against a stub
+// window with no admitted clients the actions change no readable state. For
+// MigrateExit the log also carries the exit id, which is what pins the
+// ARGUMENT crossing the wire (string -> connect.Id -> *Id -> connect).
+func TestDeviceRemoteReliabilityActionsReachTheLocal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	connect.AssertEqual(t, err, nil)
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	actionLogger := &testingReliabilityActionLogger{}
+	settings := testDeviceLocalSettingsRpc()
+	// the capturing logger only reaches connect when logging is enabled
+	settings.DisableLogging = false
+	settings.ClientSettings.Log = actionLogger
+	settings.AllowProvider = false
+	settings.GeneratorFunc = func(specs []*connect.ProviderSpec) connect.MultiClientGenerator {
+		return &rpcLeakTestGenerator{}
+	}
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		settings,
+		clientId,
+	)
+	connect.AssertEqual(t, err, nil)
+	defer deviceLocal.Close()
+
+	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
+	upgradeMuxSettings.Dns = nil
+	deviceLocal.SetUpgradeMuxSettings(upgradeMuxSettings)
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	connect.AssertEqual(t, err, nil)
+	defer deviceRemote.Close()
+
+	// the actions need a multi client to act on
+	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability actions"))
+	testingReliabilityWaitFor(t, "the remote reaches the local", func() bool {
+		return deviceRemote.GetReliabilitySettings() != nil
+	})
+
+	// MigrateExit: the action ran AND the exit id arrived intact. The `[rel]`
+	// grammar renders a client id as its 8-char tail, so that tail is what
+	// pins the argument crossing string -> connect.Id -> *Id -> connect
+	exitClientId := NewId()
+	exitIdTail := exitClientId.IdStr[len(exitClientId.IdStr)-8:]
+	deviceRemote.MigrateExit(exitClientId.IdStr)
+	testingReliabilityWaitFor(t, "migrate_exit reached the local with its exit id", func() bool {
+		return actionLogger.contains("migrate_exit", "exit="+exitIdTail)
+	})
+
+	deviceRemote.ProbeAllExits()
+	testingReliabilityWaitFor(t, "probe_all reached the local", func() bool {
+		return actionLogger.contains("probe_all")
+	})
+
+	deviceRemote.SimulateNetworkChange()
+	testingReliabilityWaitFor(t, "network_change reached the local", func() bool {
+		return actionLogger.contains("network_change")
+	})
+
+	// a malformed exit id is rejected client-side and never reaches the local
+	migrateCount := actionLogger.count("migrate_exit")
+	deviceRemote.MigrateExit("not-an-id")
+	select {
+	case <-time.After(500 * time.Millisecond):
+	}
+	connect.AssertEqual(t, actionLogger.count("migrate_exit"), migrateCount)
+}
+
+// TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart pins the
+// deliberate deviation from the ordinary setter convention.
+//
+// Every other DeviceRemote setter unsets its queued state once the call
+// succeeds, because DeviceLocal persists the value. The reliability override
+// is runtime-only on the local, so it stays queued even on success and is
+// re-applied by every later sync. The distinguishing case is setting while
+// CONNECTED (the success path) and then losing the local: with the ordinary
+// Unset()-on-success convention the queue would be empty and the override
+// would never come back.
+func TestDeviceRemoteReliabilityConnectedOverrideSurvivesRestart(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	connect.AssertEqual(t, err, nil)
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	deviceLocal := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
+	firstLocalClosed := false
+	defer func() {
+		if !firstLocalClosed {
+			deviceLocal.Close()
+		}
+	}()
+	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("connected override"))
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	connect.AssertEqual(t, err, nil)
+	defer deviceRemote.Close()
+
+	// set while CONNECTED: the rpc call succeeds, so an ordinary setter
+	// would clear its queued state here
+	testingReliabilityWaitFor(t, "the remote reaches the local", func() bool {
+		return deviceRemote.GetReliabilitySettings() != nil
+	})
+	override := deviceRemote.GetReliabilitySettings()
+	override.HeartbeatIntervalMillis = 654321
+	deviceRemote.SetReliabilitySettings(override)
+	testingReliabilityWaitFor(t, "the override lands while connected", func() bool {
+		return testingReliabilityHeartbeatMillis(deviceLocal) == int64(654321)
+	})
+
+	// the extension restarts: a fresh local with no memory of the override
+	deviceLocal.Close()
+	firstLocalClosed = true
+
+	deviceLocal2 := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
+	defer deviceLocal2.Close()
+	testingForceDeviceRpcResync(deviceRemote)
+	testingReliabilityWaitFor(t, "the remote syncs to the restarted local", func() bool {
+		return deviceRemote.GetRemoteConnected()
+	})
+	deviceLocal2.SetConnectLocation(testingReliabilityConnectLocation("connected override restart"))
+
+	// only the retained queue can put it back
+	testingReliabilityWaitFor(t, "the connected-set override is re-applied", func() bool {
+		return testingReliabilityHeartbeatMillis(deviceLocal2) == int64(654321)
+	})
+}
+
 // TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply covers the two
 // sync-state traps by name:
 //   - an override set while the rpc is DOWN is queued and applied on the
@@ -338,6 +672,10 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	connect.AssertEqual(t, err, nil)
 	defer deviceRemote.Close()
 
+	// no service and nothing queued: nil, so a caller has nothing to
+	// read-modify-write (see TestReliabilitySettingsNilWithoutMultiClient)
+	connect.AssertEqual(t, deviceRemote.GetReliabilitySettings(), nil)
+
 	override := &ReliabilitySettings{
 		UdpTeardownSignal:       true,
 		DialFailureRerace:       true,
@@ -357,10 +695,13 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.GetDestinationExits().Len(), 0)
 	connect.AssertEqual(t, deviceRemote.GetReliabilityMetrics().FlowsOpened, int64(0))
 
-	// the local appears with a live multi client; the queued override must
-	// land on it via the sync. The forced resync makes the test independent
-	// of whether the remote managed to sync before the multi client existed
-	// (a sync-time apply against a multi-less local is a no-op).
+	// the local appears WITHOUT a multi client -- the real ios ordering: the
+	// extension starts, the rpc syncs, and only later does the tunnel come
+	// up. The sync delivers the override to a device that has no multi
+	// client to apply it to, so it must be held on the device and applied
+	// when the window is built. Syncing FIRST and connecting SECOND is the
+	// ordering that catches a bridge which only writes through to the
+	// current multi client.
 	deviceLocal := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
 	firstLocalClosed := false
 	defer func() {
@@ -368,38 +709,69 @@ func TestDeviceRemoteReliabilityOfflineQueueAndRestartReapply(t *testing.T) {
 			deviceLocal.Close()
 		}
 	}()
-	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability restart 1"))
 	testingForceDeviceRpcResync(deviceRemote)
+	testingReliabilityWaitFor(t, "the remote syncs to the multi-less local", func() bool {
+		return deviceRemote.GetRemoteConnected()
+	})
+	// nothing is in force yet: there is no multi client
+	connect.AssertEqual(t, deviceLocal.GetReliabilitySettings(), nil)
+
+	// the tunnel comes up; the held override is applied to the new window
+	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability restart 1"))
 	testingReliabilityWaitFor(t, "queued override lands on the first local", func() bool {
-		return deviceLocal.GetReliabilitySettings().HeartbeatIntervalMillis == int64(123456)
+		return testingReliabilityHeartbeatMillis(deviceLocal) == int64(123456)
+	})
+
+	// a reconnect rebuilds the multi client; the override must survive it
+	deviceLocal.SetConnectLocation(testingReliabilityConnectLocation("reliability reconnect"))
+	testingReliabilityWaitFor(t, "override survives the multi client rebuild", func() bool {
+		return testingReliabilityHeartbeatMillis(deviceLocal) == int64(123456)
 	})
 
 	// the extension restart: tear the local down and recreate it. The
 	// override is runtime-only state -- nothing on the local persists it --
-	// so only the remote's sync-state re-apply can restore it.
+	// so only the remote's sync-state re-apply can restore it. Again the
+	// sync lands before the tunnel is up.
 	deviceLocal.Close()
 	firstLocalClosed = true
 
 	deviceLocal2 := testingNewReliabilityDeviceLocal(t, networkSpace, byJwt, instanceId, clientId)
 	defer deviceLocal2.Close()
-	deviceLocal2.SetConnectLocation(testingReliabilityConnectLocation("reliability restart 2"))
-	// the fresh local starts from the shipped defaults
-	connect.AssertNotEqual(t, deviceLocal2.GetReliabilitySettings().HeartbeatIntervalMillis, int64(123456))
 	testingForceDeviceRpcResync(deviceRemote)
+	testingReliabilityWaitFor(t, "the remote syncs to the restarted local", func() bool {
+		return deviceRemote.GetRemoteConnected()
+	})
+	deviceLocal2.SetConnectLocation(testingReliabilityConnectLocation("reliability restart 2"))
 	testingReliabilityWaitFor(t, "override re-applied after the local restart", func() bool {
-		return deviceLocal2.GetReliabilitySettings().HeartbeatIntervalMillis == int64(123456)
+		return testingReliabilityHeartbeatMillis(deviceLocal2) == int64(123456)
 	})
 
-	// reset clears the override on the local AND clears the queued sync
-	// state, so it is no longer re-applied
-	deviceRemote.ResetReliabilitySettings()
-	testingReliabilityWaitFor(t, "reset restores the second local", func() bool {
-		return deviceLocal2.GetReliabilitySettings().HeartbeatIntervalMillis != int64(123456)
-	})
-	queued := func() bool {
+	// reset with the rpc DOWN: the reset queues as the nil sentinel, the next
+	// sync delivers it, and -- unlike an override -- it is NOT carried across
+	// the sync, so it stops being re-applied. Both the direct and the queued
+	// path converge on the same end state, so this does not race the
+	// reconnect loop.
+	func() {
 		deviceRemote.stateLock.Lock()
 		defer deviceRemote.stateLock.Unlock()
-		return deviceRemote.state.ReliabilitySettings.IsSet
+		deviceRemote.closeService()
 	}()
-	connect.AssertEqual(t, queued, false)
+	deviceRemote.ResetReliabilitySettings()
+	deviceRemote.Sync()
+	testingReliabilityWaitFor(t, "reset restores the second local", func() bool {
+		heartbeat := testingReliabilityHeartbeatMillis(deviceLocal2)
+		return heartbeat != int64(-1) && heartbeat != int64(123456)
+	})
+	testingReliabilityWaitFor(t, "the queued reset is cleared by the sync", func() bool {
+		deviceRemote.stateLock.Lock()
+		defer deviceRemote.stateLock.Unlock()
+		return !deviceRemote.state.ReliabilitySettings.IsSet
+	})
+
+	// and the override does not come back on a later reconnect
+	testingForceDeviceRpcResync(deviceRemote)
+	testingReliabilityWaitFor(t, "remote reconnects after the reset", func() bool {
+		return deviceRemote.GetReliabilitySettings() != nil
+	})
+	connect.AssertNotEqual(t, testingReliabilityHeartbeatMillis(deviceLocal2), int64(123456))
 }
