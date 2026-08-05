@@ -583,8 +583,26 @@ func (self *DeviceRemote) run() {
 				// because the local state changes always win,
 				// the last known state can be copied from the local state changes
 				// note if there were conflict rules, we would need to get the remote state here
+				//
+				// the reliability settings override is the exception to the
+				// post-sync state clear: it is runtime-only state on the local
+				// (nothing persists it across an extension restart), so it
+				// stays queued after every sync and is re-applied on each
+				// reconnect. Without this, an override set while connected
+				// would silently vanish on the next extension restart.
+				// See `DeviceRemote.SetReliabilitySettings`.
+				//
+				// only a real override (a non-nil value) is carried: a queued
+				// RESET was just delivered by this sync and has no values to
+				// re-apply, so it is cleared with the rest of the state. That
+				// keeps the queue's nil unambiguous -- it is always "clear the
+				// override", never "an all-zero override".
+				reliabilitySettings := self.state.ReliabilitySettings
 				self.lastKnownState = syncResponse.State
 				self.state = DeviceRemoteState{}
+				if reliabilitySettings.Value != nil {
+					self.state.ReliabilitySettings = reliabilitySettings
+				}
 				// self.lastKnownState.Merge(&self.state)
 				// self.state.Unset()
 				self.syncMonitor.NotifyAll()
@@ -4355,6 +4373,287 @@ func (self *DeviceRemote) AddNetworkPeersChangeListener(listener NetworkPeersCha
 	)
 }
 
+// reliability (see reliability_controls.go for the `DeviceLocal` side)
+//
+// The getters read through to the local device and report what it reports.
+// Metrics and the two list readouts degrade to zeros and empty lists, which
+// are honest answers ("nothing measured yet", "no exits") and keep a nil
+// list from crossing gomobile. SETTINGS do not degrade: they are nil-able
+// end to end, because settings is the read-modify-WRITE path and a
+// synthesized zero struct written back is an all-off override (see
+// `DeviceLocal.GetReliabilitySettings`). The actions are no-ops while the
+// rpc is down, matching the `DeviceLocal` methods that no-op while there is
+// no multi client to act on.
+
+// GetReliabilitySettings reports the reliability behavior currently in
+// effect on the local device: the runtime override when one is set and the
+// shipped defaults otherwise.
+//
+// nil when there is no effective config to report -- the local has no multi
+// client (tunnel down), or the rpc is down with nothing pending to describe.
+// Zeros are NEVER synthesized here: on ios the DeviceRemote is created at
+// login and outlives every tunnel session, so a getter that manufactured a
+// zero struct while the tunnel was down would hand the developer screen's
+// read-modify-write an all-off struct to write back. nil is the signal that
+// the controls have nothing to act on.
+//
+// While the rpc is down a queued override IS reported, since that is a real
+// struct the caller itself set and will be applied on the next sync -- a
+// read-modify-write on it preserves the caller's intent. A queued RESET
+// carries no values, so it falls through to the last known effective
+// settings, and to nil when there are none.
+func (self *DeviceRemote) GetReliabilitySettings() *ReliabilitySettings {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	settings, success := func() (*ReliabilitySettings, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceSettings, err := rpcCallNoArg[*DeviceRemoteReliabilitySettingsRpc](self.service, "DeviceLocalRpc.GetReliabilitySettings", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		settings := deviceSettings.ReliabilitySettings
+		// mirror the local's answer, nil included: once the rpc drops, the
+		// fallback below must not resurrect settings the local has already
+		// stopped reporting
+		self.lastKnownState.ReliabilitySettings.Set(cloneReliabilitySettings(settings))
+		return settings, true
+	}()
+	if success {
+		// the local is reachable, so its answer is authoritative -- including
+		// nil, which is "no multi client, nothing in force"
+		return settings
+	}
+	// rpc down: report the queued override if one is pending, since that IS
+	// what will be in force the moment the local comes back
+	if override := self.state.ReliabilitySettings.Get(nil); override != nil {
+		return cloneReliabilitySettings(override)
+	}
+	// otherwise nil, and deliberately NOT lastKnownState. The caller's whole
+	// contract is "non-nil means these settings are in force right now" -- a
+	// developer screen enables its controls on it and presents the values as
+	// effective. Last session's settings are not in force while the local is
+	// unreachable, and on ios the extension holding the local is stopped on
+	// every disconnect, so serving them would leave the screen live-looking
+	// and every action a silent no-op against a device that is not there.
+	return nil
+}
+
+// SetReliabilitySettings overrides the reliability behavior at runtime, no
+// reconnect. The override is runtime-only state on the local device --
+// nothing persists it across an extension restart -- so unlike the other
+// setters it stays queued in the sync state even after a successful call and
+// is re-applied by every sync (rpc reconnect or extension restart), until
+// `ResetReliabilitySettings` clears it.
+func (self *DeviceRemote) SetReliabilitySettings(reliabilitySettings *ReliabilitySettings) {
+	// a nil override is invalid (`DeviceLocal.SetReliabilitySettings` does
+	// not accept nil); use `ResetReliabilitySettings` to clear the override
+	if reliabilitySettings == nil {
+		return
+	}
+	// own a copy so a caller mutating its struct after the call (the
+	// read-modify-write ui pattern) cannot corrupt the queued sync state
+	settings := cloneReliabilitySettings(reliabilitySettings)
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func() bool {
+		if self.service == nil {
+			return false
+		}
+
+		deviceSettings := &DeviceRemoteReliabilitySettingsRpc{
+			ReliabilitySettings: settings,
+		}
+		err := rpcCallVoid(self.service, "DeviceLocalRpc.SetReliabilitySettings", deviceSettings, self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+	// queued on success AND failure: the sync-state re-apply is what keeps
+	// the override alive across extension restarts
+	self.state.ReliabilitySettings.Set(settings)
+	if success {
+		self.lastKnownState.ReliabilitySettings.Set(cloneReliabilitySettings(settings))
+	}
+}
+
+// ResetReliabilitySettings clears any runtime override, restoring the
+// shipped behavior. Clears the queued sync-state override so it is no longer
+// re-applied on reconnect; while the rpc is down the reset itself is queued
+// and applied on the next sync.
+func (self *DeviceRemote) ResetReliabilitySettings() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func() bool {
+		if self.service == nil {
+			return false
+		}
+
+		err := rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ResetReliabilitySettings", self.closeService)
+		if err != nil {
+			return false
+		}
+		return true
+	}()
+	if success {
+		// the local override is cleared and a fresh local starts without
+		// one, so there is nothing left to re-apply on sync. The last known
+		// effective settings are stale now (they may reflect the override);
+		// drop them and let the next connected get repopulate.
+		self.state.ReliabilitySettings.Unset()
+		self.lastKnownState.ReliabilitySettings.Unset()
+	} else {
+		// queue the reset so the next sync clears any override the local
+		// still holds
+		self.state.ReliabilitySettings.Set(nil)
+	}
+}
+
+// GetReliabilityMetrics reports what provider failures have cost since the
+// last reset. Zeros while the rpc is down, matching `DeviceLocal` while
+// disconnected -- a fresh extension starts from zero counters anyway.
+func (self *DeviceRemote) GetReliabilityMetrics() *ReliabilityMetrics {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	metrics, success := func() (*ReliabilityMetrics, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceMetrics, err := rpcCallNoArg[*DeviceRemoteReliabilityMetricsRpc](self.service, "DeviceLocalRpc.GetReliabilityMetrics", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return deviceMetrics.ReliabilityMetrics, true
+	}()
+	if success && metrics != nil {
+		return metrics
+	}
+	return &ReliabilityMetrics{}
+}
+
+// ResetReliabilityMetrics zeroes the counters. A dev action: no-op while the
+// rpc is down rather than queued, so a reset can never zero a later run the
+// user is not watching.
+func (self *DeviceRemote) ResetReliabilityMetrics() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ResetReliabilityMetrics", self.closeService)
+}
+
+// GetExits lists the current provider channels with the flow count pinned to
+// each. Empty (never nil) while the rpc is down, matching `DeviceLocal`
+// while disconnected.
+func (self *DeviceRemote) GetExits() *ExitList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	exits, success := func() (*ExitList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceExits, err := rpcCallNoArg[*DeviceRemoteExitListRpc](self.service, "DeviceLocalRpc.GetExits", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return toExitList(deviceExits.Exits), true
+	}()
+	if success && exits != nil {
+		return exits
+	}
+	return NewExitList()
+}
+
+// GetDestinationExits reports which exit currently carries each destination
+// ip, aggregated over live flows. Empty (never nil) while the rpc is down.
+func (self *DeviceRemote) GetDestinationExits() *DestinationExitList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	destinationExits, success := func() (*DestinationExitList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceDestinationExits, err := rpcCallNoArg[*DeviceRemoteDestinationExitListRpc](self.service, "DeviceLocalRpc.GetDestinationExits", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return toDestinationExitList(deviceDestinationExits.DestinationExits), true
+	}()
+	if success && destinationExits != nil {
+		return destinationExits
+	}
+	return NewDestinationExitList()
+}
+
+// MigrateExit hands one exit's movable flows to live replacements now (the
+// drain-style hand-off; see `DeviceLocal.MigrateExit`). The exit client id
+// is the string form (`Exit.ClientId.IdStr`); an unparseable id or a down
+// rpc is a no-op.
+func (self *DeviceRemote) MigrateExit(exitClientId string) {
+	exitId, err := ParseId(exitClientId)
+	if err != nil {
+		return
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallVoid(self.service, "DeviceLocalRpc.MigrateExit", exitId.toConnectId(), self.closeService)
+}
+
+// NOTE: the WP1 contract lists `ProbeExit(exitClientId string)` (one
+// qualification pass for one exit). It is deliberately NOT bridged: neither
+// `DeviceLocal` nor connect's `RemoteUserNatMultiClient` exposes a per-exit
+// probe seam (the per-client pass, the window client enumeration, and the
+// qualification table are all unexported in connect; the only exported seam
+// is `ProbeAllExits`). Bridging it would have meant inventing semantics.
+// Add `RemoteUserNatMultiClient.ProbeExit(clientId Id)` in connect, mirror
+// it in reliability_controls.go, and bridge it here following the
+// `MigrateExit` shape.
+
+// ProbeAllExits fires a qualification probe pass at every exit in the
+// windows now, instead of waiting for the background sweep. Non-blocking on
+// the local side; no-op while the rpc is down.
+func (self *DeviceRemote) ProbeAllExits() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ProbeAllExits", self.closeService)
+}
+
+// SimulateNetworkChange fires the platform network-change path on demand --
+// the storm drill. No-op while the rpc is down.
+func (self *DeviceRemote) SimulateNetworkChange() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.SimulateNetworkChange", self.closeService)
+}
+
 func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
 	logsUploaded := false
 	func() {
@@ -4542,6 +4841,19 @@ type DeviceRemoteState struct {
 	// add/remove/set on the remote all funnel through it
 	BlockActionOverrides deviceRemoteValue[[]*BlockActionOverrideRpc]
 	DnsResolverSettings  deviceRemoteValue[*DnsResolverSettingsRpc]
+	// the runtime reliability settings override. Unlike the fields above this
+	// is runtime-only state on the local (nothing persists it), so the remote
+	// keeps it queued across syncs and re-applies it on every reconnect and
+	// extension restart. See `DeviceRemote.SetReliabilitySettings`.
+	//
+	// a nil value never means "an all-zero override" -- zero settings are
+	// never synthesized on this path. Its meaning depends on the direction:
+	// in a sync REQUEST (the remote's queued state) IsSet with nil queues a
+	// reset, clearing the override; in a sync RESPONSE (the local's current
+	// state) nil means the local has no multi client, so nothing is in force.
+	// Nothing copies response state into request state, which is what keeps
+	// the two readings from colliding.
+	ReliabilitySettings deviceRemoteValue[*ReliabilitySettings]
 
 	// only last known state
 
@@ -5525,6 +5837,191 @@ type DeviceRemoteNetworkPeers struct {
 	NetworkPeers *NetworkPeersRpc
 }
 
+// reliability rpc payloads
+//
+// `ReliabilitySettings` and `ReliabilityMetrics` are flat gomobile-safe
+// structs (bools, int32/int64 millis, float64) with every field exported, so
+// they cross the gob wire whole inside nil-able wrappers, mirroring the
+// `DevicePerformanceProfile` convention. `Exit` and `DestinationExit` carry
+// an `*Id`, whose uuid bytes are unexported and would be silently dropped by
+// gob, so they cross via hand mirrors with `connect.Id` like every other rpc
+// payload id (see device_rpc_reliability_test.go for the completeness
+// guards, which follow the device_rpc_mirror_test.go convention).
+
+func cloneReliabilitySettings(reliabilitySettings *ReliabilitySettings) *ReliabilitySettings {
+	if reliabilitySettings == nil {
+		return nil
+	}
+	out := *reliabilitySettings
+	return &out
+}
+
+//gomobile:noexport
+type DeviceRemoteReliabilitySettingsRpc struct {
+	ReliabilitySettings *ReliabilitySettings
+}
+
+//gomobile:noexport
+type DeviceRemoteReliabilityMetricsRpc struct {
+	ReliabilityMetrics *ReliabilityMetrics
+}
+
+//gomobile:noexport
+type ExitRpc struct {
+	ClientId         connect.Id
+	WindowType       string
+	Warning          bool
+	Quarantined      bool
+	WarningCause     string
+	Done             bool
+	P2pOnly          bool
+	FlowCount        int32
+	DialFailureCount int32
+	Tier             int32
+	EffectiveTier    int32
+	Proven           bool
+	ProbeAgeSeconds  int64
+}
+
+func newExitRpc(exit *Exit) *ExitRpc {
+	if exit == nil {
+		return nil
+	}
+	exitRpc := &ExitRpc{
+		WindowType:       exit.WindowType,
+		Warning:          exit.Warning,
+		Quarantined:      exit.Quarantined,
+		WarningCause:     exit.WarningCause,
+		Done:             exit.Done,
+		P2pOnly:          exit.P2pOnly,
+		FlowCount:        exit.FlowCount,
+		DialFailureCount: exit.DialFailureCount,
+		Tier:             exit.Tier,
+		EffectiveTier:    exit.EffectiveTier,
+		Proven:           exit.Proven,
+		ProbeAgeSeconds:  exit.ProbeAgeSeconds,
+	}
+	if exit.ClientId != nil {
+		exitRpc.ClientId = exit.ClientId.toConnectId()
+	}
+	return exitRpc
+}
+
+func (self *ExitRpc) toExit() *Exit {
+	if self == nil {
+		return nil
+	}
+	return &Exit{
+		ClientId:         newId(self.ClientId),
+		WindowType:       self.WindowType,
+		Warning:          self.Warning,
+		Quarantined:      self.Quarantined,
+		WarningCause:     self.WarningCause,
+		Done:             self.Done,
+		P2pOnly:          self.P2pOnly,
+		FlowCount:        self.FlowCount,
+		DialFailureCount: self.DialFailureCount,
+		Tier:             self.Tier,
+		EffectiveTier:    self.EffectiveTier,
+		Proven:           self.Proven,
+		ProbeAgeSeconds:  self.ProbeAgeSeconds,
+	}
+}
+
+// always returns a non-nil slice with non-nil elements
+// (gob cannot encode nil slice elements)
+func newExitListRpc(exits *ExitList) []*ExitRpc {
+	exitsRpc := []*ExitRpc{}
+	if exits != nil {
+		for _, exit := range exits.getAll() {
+			if exit == nil {
+				continue
+			}
+			exitsRpc = append(exitsRpc, newExitRpc(exit))
+		}
+	}
+	return exitsRpc
+}
+
+func toExitList(exitsRpc []*ExitRpc) *ExitList {
+	exits := NewExitList()
+	for _, exitRpc := range exitsRpc {
+		if exitRpc == nil {
+			continue
+		}
+		exits.Add(exitRpc.toExit())
+	}
+	return exits
+}
+
+//gomobile:noexport
+type DeviceRemoteExitListRpc struct {
+	Exits []*ExitRpc
+}
+
+//gomobile:noexport
+type DestinationExitRpc struct {
+	DestinationIp string
+	ClientId      connect.Id
+	FlowCount     int32
+}
+
+func newDestinationExitRpc(destinationExit *DestinationExit) *DestinationExitRpc {
+	if destinationExit == nil {
+		return nil
+	}
+	destinationExitRpc := &DestinationExitRpc{
+		DestinationIp: destinationExit.DestinationIp,
+		FlowCount:     destinationExit.FlowCount,
+	}
+	if destinationExit.ClientId != nil {
+		destinationExitRpc.ClientId = destinationExit.ClientId.toConnectId()
+	}
+	return destinationExitRpc
+}
+
+func (self *DestinationExitRpc) toDestinationExit() *DestinationExit {
+	if self == nil {
+		return nil
+	}
+	return &DestinationExit{
+		DestinationIp: self.DestinationIp,
+		ClientId:      newId(self.ClientId),
+		FlowCount:     self.FlowCount,
+	}
+}
+
+// always returns a non-nil slice with non-nil elements
+// (gob cannot encode nil slice elements)
+func newDestinationExitListRpc(destinationExits *DestinationExitList) []*DestinationExitRpc {
+	destinationExitsRpc := []*DestinationExitRpc{}
+	if destinationExits != nil {
+		for _, destinationExit := range destinationExits.getAll() {
+			if destinationExit == nil {
+				continue
+			}
+			destinationExitsRpc = append(destinationExitsRpc, newDestinationExitRpc(destinationExit))
+		}
+	}
+	return destinationExitsRpc
+}
+
+func toDestinationExitList(destinationExitsRpc []*DestinationExitRpc) *DestinationExitList {
+	destinationExits := NewDestinationExitList()
+	for _, destinationExitRpc := range destinationExitsRpc {
+		if destinationExitRpc == nil {
+			continue
+		}
+		destinationExits.Add(destinationExitRpc.toDestinationExit())
+	}
+	return destinationExits
+}
+
+//gomobile:noexport
+type DeviceRemoteDestinationExitListRpc struct {
+	DestinationExits []*DestinationExitRpc
+}
+
 // rpc wrappers
 
 type rpcClient = rpcClientWithTimeout
@@ -6377,6 +6874,12 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.TunnelStarted.Set(self.deviceLocal.GetTunnelStarted())
 	state.BlockActionOverrides.Set(newBlockActionOverridesRpc(self.deviceLocal.GetBlockActionOverrides()))
 	state.DnsResolverSettings.Set(newDnsResolverSettingsRpc(self.deviceLocal.GetDnsResolverSettings()))
+	// the effective reliability settings (the override when one is set, the
+	// shipped defaults otherwise, and nil when the local has no multi
+	// client); lands in the remote's last known state. This is RESPONSE
+	// state: its nil says "nothing in force", not "reset the override" --
+	// see the `DeviceRemoteState.ReliabilitySettings` note
+	state.ReliabilitySettings.Set(self.deviceLocal.GetReliabilitySettings())
 
 	state.ConnectEnabled.Set(self.deviceLocal.GetConnectEnabled())
 	state.ProvideEnabled.Set(self.deviceLocal.GetProvideEnabled())
@@ -6537,6 +7040,17 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	if state.DnsResolverSettings.IsSet {
 		self.deviceLocal.SetDnsResolverSettings(state.DnsResolverSettings.Value.toDnsResolverSettings())
+	}
+	if state.ReliabilitySettings.IsSet {
+		// the runtime reliability override; a nil value queues a reset. The
+		// remote keeps this queued across syncs (nothing persists it), so an
+		// extension restart or rpc reconnect re-applies the override here --
+		// see `DeviceRemote.SetReliabilitySettings`
+		if reliabilitySettings := state.ReliabilitySettings.Value; reliabilitySettings != nil {
+			self.deviceLocal.SetReliabilitySettings(reliabilitySettings)
+		} else {
+			self.deviceLocal.ResetReliabilitySettings()
+		}
 	}
 
 	// if state.RefreshToken.IsSet {
@@ -7877,6 +8391,72 @@ func (self *DeviceLocalRpc) networkPeersChanged(networkPeers *NetworkPeers) {
 		NetworkPeers: newNetworkPeersRpc(networkPeers),
 	}
 	self.reverseNotify("DeviceRemoteRpc.NetworkPeersChanged", event)
+}
+
+// reliability (see reliability_controls.go for the `DeviceLocal` side)
+
+func (self *DeviceLocalRpc) GetReliabilitySettings(_ RpcNoArg, deviceSettings **DeviceRemoteReliabilitySettingsRpc) error {
+	*deviceSettings = &DeviceRemoteReliabilitySettingsRpc{
+		ReliabilitySettings: self.deviceLocal.GetReliabilitySettings(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetReliabilitySettings(deviceSettings *DeviceRemoteReliabilitySettingsRpc, _ RpcVoid) error {
+	if deviceSettings.ReliabilitySettings == nil {
+		// a nil override is a reset; `DeviceLocal.SetReliabilitySettings`
+		// does not accept nil
+		self.deviceLocal.ResetReliabilitySettings()
+		return nil
+	}
+	self.deviceLocal.SetReliabilitySettings(deviceSettings.ReliabilitySettings)
+	return nil
+}
+
+func (self *DeviceLocalRpc) ResetReliabilitySettings(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.ResetReliabilitySettings()
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetReliabilityMetrics(_ RpcNoArg, deviceMetrics **DeviceRemoteReliabilityMetricsRpc) error {
+	*deviceMetrics = &DeviceRemoteReliabilityMetricsRpc{
+		ReliabilityMetrics: self.deviceLocal.GetReliabilityMetrics(),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) ResetReliabilityMetrics(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.ResetReliabilityMetrics()
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetExits(_ RpcNoArg, deviceExits **DeviceRemoteExitListRpc) error {
+	*deviceExits = &DeviceRemoteExitListRpc{
+		Exits: newExitListRpc(self.deviceLocal.GetExits()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetDestinationExits(_ RpcNoArg, deviceDestinationExits **DeviceRemoteDestinationExitListRpc) error {
+	*deviceDestinationExits = &DeviceRemoteDestinationExitListRpc{
+		DestinationExits: newDestinationExitListRpc(self.deviceLocal.GetDestinationExits()),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) MigrateExit(exitClientId connect.Id, _ RpcVoid) error {
+	self.deviceLocal.MigrateExit(newId(exitClientId))
+	return nil
+}
+
+func (self *DeviceLocalRpc) ProbeAllExits(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.ProbeAllExits()
+	return nil
+}
+
+func (self *DeviceLocalRpc) SimulateNetworkChange(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.SimulateNetworkChange()
+	return nil
 }
 
 func (self *DeviceLocalRpc) GetStats(_ RpcNoArg, stats **DeviceStats) error {
