@@ -11681,7 +11681,7 @@ inline void oneshot_find_providers(void* user_data, const char* result_json, con
 	delete f;
 }
 
-inline std::string retained_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+inline char* retained_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
 	auto* f = static_cast<FlowOwnerLookup*>(user_data);
 	std::string r{};
 	try {
@@ -11690,9 +11690,9 @@ inline std::string retained_flow_owner_lookup(void* user_data, int64_t version, 
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
 	}
-	return r;
+	return dupCString(r);
 }
-inline std::string oneshot_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+inline char* oneshot_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
 	auto* f = static_cast<FlowOwnerLookup*>(user_data);
 	std::string r{};
 	try {
@@ -11702,7 +11702,7 @@ inline std::string oneshot_flow_owner_lookup(void* user_data, int64_t version, i
 	} catch (...) {
 	}
 	delete f;
-	return r;
+	return dupCString(r);
 }
 
 inline void retained_generate_seedphrase(void* user_data, const char* result_json, const char* err_param) {

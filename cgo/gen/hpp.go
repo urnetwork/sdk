@@ -793,6 +793,19 @@ func (g *gen) cppCallbackRet(cm *callbackMethod) string {
 	return "void"
 }
 
+// cCallbackRet is the TRAMPOLINE's return type, which is not always the c++
+// callback's: a std::function returning std::string crosses the c abi as a
+// malloc'd char* (see detail::dupCString). Emitting the c++ type for the
+// trampoline produced a function that could not convert to its own typedef --
+// uncompilable, and invisible until a c++ consumer actually built the wrapper
+// for a string-returning callback (the windows client, on FlowOwnerLookup).
+func (g *gen) cCallbackRet(cm *callbackMethod) string {
+	if cm.result != nil && cm.result.kind == kindString {
+		return "char*"
+	}
+	return g.cppCallbackRet(cm)
+}
+
 func (g *gen) hppCallbackAlias(b *strings.Builder, info *callbackInfo) {
 	if len(info.methods) == 1 {
 		cm := info.methods[0]
@@ -818,6 +831,7 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 			cSig += ", " + strings.Join(cm.cParams, ", ")
 		}
 		ret := g.cppCallbackRet(cm)
+		cRet := g.cCallbackRet(cm)
 
 		// conversions from the c params to the c++ invocation args
 		var conv []string
@@ -866,7 +880,7 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 		argList := strings.Join(args, ", ")
 
 		emitTramp := func(variant string, oneshot bool) {
-			fmt.Fprintf(b, "inline %s %s_%s(%s) {\n", ret, variant, invokeName, cSig)
+			fmt.Fprintf(b, "inline %s %s_%s(%s) {\n", cRet, variant, invokeName, cSig)
 			fmt.Fprintf(b, "\tauto* f = static_cast<%s*>(user_data);\n", info.ifaceName)
 			if ret != "void" {
 				fmt.Fprintf(b, "\t%s r{};\n", ret)
@@ -891,7 +905,13 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 				b.WriteString("\tdelete f;\n")
 			}
 			if ret != "void" {
-				b.WriteString("\treturn r;\n")
+				if cRet != ret {
+					// a string result crosses as a malloc'd copy that go
+					// takes ownership of and frees (urnet_free_string)
+					b.WriteString("\treturn dupCString(r);\n")
+				} else {
+					b.WriteString("\treturn r;\n")
+				}
 			}
 			b.WriteString("}\n")
 		}
