@@ -262,13 +262,26 @@ func MessagePoolReturn(b []byte) {
 }
 
 // this value is set via the linker, e.g.
-// -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
+// -ldflags "-X github.com/urnetwork/sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
 //
 // MUST stay a `var`. `-X` only sets string *variables* declared uninitialized
 // or initialized to a constant expression — against a `const` it is silently a
 // no-op, and every build reports "". This was a const until 2026-08-05, so
 // `urnet_version()` had always returned the empty string despite the flag being
 // passed. Verified by rebuilding with -X set and reading it back.
+//
+// The var/const distinction also changes the SHAPE of the gomobile binding.
+// gomobile binds a package-level var as an accessor pair rather than a
+// constant, so the bound call sites had to change with it:
+//
+//	as const:  apple `SdkVersion`      · android `Sdk.Version`
+//	as var:    apple `SdkVersion()`    · android `Sdk.getVersion()`
+//
+// Do NOT add a hand-written `func GetVersion()` alongside this — gobind already
+// emits `Java_com_bringyour_sdk_Sdk_getVersion` for the var, and the extra func
+// collides with it ("redefinition of ...Sdk_getVersion") and breaks
+// build_android. The cgo C ABI is unaffected either way: exports_core.go reads
+// the var directly at runtime.
 var Version string = ""
 
 type Id struct {
