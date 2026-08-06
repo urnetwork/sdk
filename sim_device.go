@@ -27,7 +27,7 @@ import (
 
 // SimProviderConfig configures a headless egress provider.
 //
-// gomobile:ignore
+//gomobile:noexport
 type SimProviderConfig struct {
 	ApiUrl      string
 	PlatformUrl string
@@ -62,7 +62,7 @@ type SimProviderConfig struct {
 // (a fresh connection, as a real provider reconnect would be) while the
 // client and its provide state persist.
 //
-// gomobile:ignore
+//gomobile:noexport
 type SimProvider struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -82,7 +82,7 @@ type SimProvider struct {
 
 // NewSimProvider builds the provider and connects its transport.
 //
-// gomobile:ignore
+//gomobile:noexport
 func NewSimProvider(ctx context.Context, config *SimProviderConfig) *SimProvider {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -216,7 +216,7 @@ func (self *SimProvider) Close() {
 
 // SimClientConfig configures a headless client.
 //
-// gomobile:ignore
+//gomobile:noexport
 type SimClientConfig struct {
 	ApiUrl      string
 	PlatformUrl string
@@ -246,7 +246,7 @@ type SimClientConfig struct {
 // a gvisor `Tun` so tcp/udp flows can be driven at the socket level with
 // `DialContext`.
 //
-// gomobile:ignore
+//gomobile:noexport
 type SimClient struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -261,7 +261,7 @@ type SimClient struct {
 // NewSimClient builds the client. The multi client begins discovering
 // providers (via find-providers2) immediately.
 //
-// gomobile:ignore
+//gomobile:noexport
 func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, error) {
 	cancelCtx, cancel := context.WithCancel(ctx)
 

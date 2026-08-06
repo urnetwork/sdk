@@ -21,9 +21,26 @@ type Api struct {
 
 	mutex sync.Mutex
 	byJwt string
+	log   connect.Logger
 
 	httpPostRaw connect.HttpPostRawFunction
 	httpGetRaw  connect.HttpGetRawFunction
+
+	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
+	tokenManager        *apiTokenManager
+}
+
+type jwtRefreshListenerFunc func(string)
+
+func (self jwtRefreshListenerFunc) JwtRefreshed(jwt string) {
+	self(jwt)
+}
+
+type authLogoutListenerFunc func()
+
+func (self authLogoutListenerFunc) AuthLogout() {
+	self()
 }
 
 func newApi(
@@ -33,22 +50,43 @@ func newApi(
 ) *Api {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	return &Api{
+	api := &Api{
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
 		apiUrl:         apiUrl,
+		log:            connect.DefaultLogger(),
 		httpPostRaw:    nil,
 		httpGetRaw:     nil,
+
+		jwtRefreshListeners: connect.NewCallbackList[JwtRefreshListener](),
+		authLogoutListeners: connect.NewCallbackList[AuthLogoutListener](),
 	}
+	api.tokenManager = newApiTokenManager(cancelCtx, api)
+	return api
+}
+
+// NewApi creates a standalone SDK API using the caller-owned client strategy.
+// The API owns the current JWT and its refresh worker; callers that install a
+// renewable client JWT should register refresh/logout listeners and then call
+// StartJwtRefresh. The worker shares the API lifetime and stops on Close.
+//
+//gomobile:noexport
+func NewApi(ctx context.Context, clientStrategy *connect.ClientStrategy, apiUrl string) *Api {
+	return newApi(ctx, clientStrategy, apiUrl)
 }
 
 // this gets attached to api calls that need it
 func (self *Api) SetByJwt(byJwt string) {
 	self.mutex.Lock()
-	defer self.mutex.Unlock()
-
+	changed := self.byJwt != byJwt
 	self.byJwt = byJwt
+	tokenManager := self.tokenManager
+	self.mutex.Unlock()
+
+	if changed && tokenManager != nil {
+		tokenManager.TokenChanged()
+	}
 }
 
 func (self *Api) GetByJwt() string {
@@ -56,6 +94,101 @@ func (self *Api) GetByJwt() string {
 	defer self.mutex.Unlock()
 
 	return self.byJwt
+}
+
+func (self *Api) setLog(log connect.Logger) {
+	if log == nil {
+		log = connect.DefaultLogger()
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.log = log
+}
+
+func (self *Api) logger() connect.Logger {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.log
+}
+
+// setRefreshedByJwt installs a refresh result only if the token used for the
+// request is still current. This prevents an in-flight refresh from replacing
+// a newer login/session installed concurrently.
+func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string) bool {
+	self.mutex.Lock()
+	if self.byJwt != previousByJwt {
+		self.mutex.Unlock()
+		return false
+	}
+	self.byJwt = byJwt
+	self.mutex.Unlock()
+
+	for _, listener := range self.jwtRefreshListeners.Get() {
+		listener := listener
+		connect.HandleError(func() {
+			listener.JwtRefreshed(byJwt)
+		})
+	}
+	return true
+}
+
+// rejectByJwt clears a token only if it is still the one rejected by the API.
+// Authentication-rejection listeners own persistence/UI/process policy.
+func (self *Api) rejectByJwt(rejectedByJwt string) bool {
+	self.mutex.Lock()
+	if self.byJwt != rejectedByJwt {
+		self.mutex.Unlock()
+		return false
+	}
+	self.byJwt = ""
+	self.mutex.Unlock()
+
+	for _, listener := range self.authLogoutListeners.Get() {
+		listener := listener
+		connect.HandleError(listener.AuthLogout)
+	}
+	return true
+}
+
+// AddJwtRefreshListener observes successfully installed refreshed JWTs. The
+// callback runs after Api.GetByJwt has begun returning the new value.
+//
+//gomobile:noexport
+func (self *Api) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
+	callbackId := self.jwtRefreshListeners.Add(listener)
+	return newSub(func() {
+		self.jwtRefreshListeners.Remove(callbackId)
+	})
+}
+
+// AddAuthLogoutListener observes a confirmed server rejection of the current
+// client JWT. Transport failures and non-401 server failures never fire it.
+//
+//gomobile:noexport
+func (self *Api) AddAuthLogoutListener(listener AuthLogoutListener) Sub {
+	callbackId := self.authLogoutListeners.Add(listener)
+	return newSub(func() {
+		self.authLogoutListeners.Remove(callbackId)
+	})
+}
+
+// StartJwtRefresh idempotently enables the API-owned refresh worker. Network
+// login JWTs are not refreshable and remain dormant; a client JWT containing
+// client_id and device_id is validated/refreshed immediately and then ahead of
+// expiry.
+//
+//gomobile:noexport
+func (self *Api) StartJwtRefresh() {
+	self.tokenManager.Start()
+}
+
+// RequestJwtRefresh asks the API worker to refresh the current client JWT as
+// soon as possible. The request is level-triggered and cannot be lost behind
+// an in-flight refresh.
+//
+//gomobile:noexport
+func (self *Api) RequestJwtRefresh() {
+	self.tokenManager.RefreshToken()
 }
 
 func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
@@ -238,6 +371,19 @@ func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPassw
 			callback,
 		)
 	})
+}
+
+//gomobile:noexport
+func (self *Api) AuthLoginWithPasswordSyncWithContext(ctx context.Context, args *AuthLoginWithPasswordArgs) (*AuthLoginWithPasswordResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/auth/login-with-password", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&AuthLoginWithPasswordResult{},
+		connect.NewNoopApiCallback[*AuthLoginWithPasswordResult](),
+	)
 }
 
 type AuthVerifyCallback connect.ApiCallback[*AuthVerifyResult]
@@ -463,6 +609,30 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 			callback,
 		)
 	})
+}
+
+// AuthNetworkClientSyncWithContext is the caller-bounded headless form used
+// to turn a network-login JWT into a renewable client JWT before starting a
+// long-lived service.
+//
+//gomobile:noexport
+func (self *Api) AuthNetworkClientSyncWithContext(ctx context.Context, authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/auth-client", self.apiUrl),
+		authNetworkClient,
+		self.GetByJwt(),
+		&AuthNetworkClientResult{},
+		connect.NewNoopApiCallback[*AuthNetworkClientResult](),
+	)
+}
+
+// AuthNetworkClientSync uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) AuthNetworkClientSync(authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
+	return self.AuthNetworkClientSyncWithContext(self.ctx, authNetworkClient)
 }
 
 type GetNetworkClientsCallback connect.ApiCallback[*NetworkClientsResult]
@@ -707,6 +877,7 @@ type FindProviders2Args struct {
 	Specs            *ProviderSpecList `json:"specs"`
 	Count            int               `json:"count"`
 	ExcludeClientIds *IdList           `json:"exclude_client_ids"`
+	RankMode         string            `json:"rank_mode,omitempty"`
 }
 
 type FindProviders2Result struct {
@@ -730,6 +901,21 @@ func (self *Api) FindProviders2(findProviders2 *FindProviders2Args, callback Fin
 			callback,
 		)
 	})
+}
+
+// FindProviders2SyncWithContext is the caller-bounded Go/headless form.
+//
+//gomobile:noexport
+func (self *Api) FindProviders2SyncWithContext(ctx context.Context, args *FindProviders2Args) (*FindProviders2Result, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/find-providers2", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&FindProviders2Result{},
+		connect.NewNoopApiCallback[*FindProviders2Result](),
+	)
 }
 
 type WalletCircleInitCallback connect.ApiCallback[*WalletCircleInitResult]
@@ -1458,6 +1644,19 @@ func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCa
 	})
 }
 
+//gomobile:noexport
+func (self *Api) AuthCodeLoginSyncWithContext(ctx context.Context, args *AuthCodeLoginArgs) (*AuthCodeLoginResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/auth/code-login", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&AuthCodeLoginResult{},
+		connect.NewNoopApiCallback[*AuthCodeLoginResult](),
+	)
+}
+
 /**
  * Auth code create
  */
@@ -2109,11 +2308,15 @@ func (self *Api) RefreshJwtSync() (*RefreshJwtResult, error) {
 // caller with a narrower lifetime than the api (e.g. the device token
 // manager) does not leave the request running after it closes
 func (self *Api) refreshJwtSyncWithContext(ctx context.Context) (*RefreshJwtResult, error) {
+	return self.refreshJwtSyncWithContextAndJwt(ctx, self.GetByJwt())
+}
+
+func (self *Api) refreshJwtSyncWithContextAndJwt(ctx context.Context, byJwt string) (*RefreshJwtResult, error) {
 	return connect.HttpGetWithRawFunction(
 		ctx,
 		self.getHttpGetRaw(),
 		fmt.Sprintf("%s/auth/refresh", self.apiUrl),
-		self.GetByJwt(),
+		byJwt,
 		&RefreshJwtResult{},
 		connect.NewNoopApiCallback[*RefreshJwtResult](),
 	)

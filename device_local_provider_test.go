@@ -161,12 +161,15 @@ func TestDeviceLocalProviderMigrationReappliesRacingAuth(t *testing.T) {
 		AppVersion: "0.0.0",
 	}
 	oldTransport := newFakeMigratablePlatformTransport(oldAuth, true)
+	oobApi := connect.NewBringYourApi(ctx, connect.NewClientStrategyWithDefaults(ctx), "http://unused.invalid")
+	oobApi.SetByJwt(oldAuth.ByJwt)
 	nextCreated := make(chan *fakeMigratablePlatformTransport, 1)
 	provider := &deviceLocalProvider{
 		ctx:                     ctx,
 		appVersion:              oldAuth.AppVersion,
 		instanceId:              oldAuth.InstanceId,
 		auth:                    oldAuth,
+		clientOob:               connect.NewApiOutOfBandControlWithApi(oobApi),
 		platformTransport:       oldTransport,
 		migrateConnectTimeout:   2 * time.Second,
 		migrateMaxScheduleDelay: 50 * time.Millisecond,
@@ -195,6 +198,9 @@ func TestDeviceLocalProviderMigrationReappliesRacingAuth(t *testing.T) {
 	// Rotate auth after the replacement captured the old token but before it
 	// connects and swaps.
 	provider.SetByJwt("new")
+	if got := oobApi.ByJwt(); got != "new" {
+		t.Fatalf("out-of-band auth = %q, want refreshed JWT", got)
+	}
 	next.connect()
 	select {
 	case <-done:

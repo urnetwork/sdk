@@ -207,7 +207,7 @@ func newNetworkSpaceWithConnectSettings(
 	}
 }
 
-// gomobile:ignore
+//gomobile:noexport
 func NewPlatformNetworkSpace(
 	ctx context.Context,
 	env string,
@@ -271,24 +271,13 @@ func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, b
 // connectSettings whose TlsConfig has InsecureSkipVerify=true so the SDK accepts
 // the local self-signed certificates (every dialer honors ConnectSettings.TlsConfig).
 //
-// gomobile:ignore
+//gomobile:noexport
 func Testing_NewNetworkSpaceWithUrls(
 	ctx context.Context,
 	apiUrl string,
 	platformUrl string,
 	connectSettings *connect.ConnectSettings,
 ) *NetworkSpace {
-	cancelCtx, cancel := context.WithCancel(ctx)
-
-	key := NetworkSpaceKey{
-		HostName: "test",
-		EnvName:  "test",
-	}
-	values := NetworkSpaceValues{
-		NetExposeServerIps:       true,
-		NetExposeServerHostNames: true,
-	}
-
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
 	clientStrategySettings.Log = connectSettings.Log
@@ -299,9 +288,39 @@ func Testing_NewNetworkSpaceWithUrls(
 	clientStrategySettings.EnableNormal = true
 	clientStrategySettings.EnableResilient = false
 
-	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
+	return NewNetworkSpaceWithUrls(ctx, apiUrl, platformUrl, clientStrategySettings)
+}
 
-	api := newApi(cancelCtx, clientStrategy, apiUrl)
+// NewNetworkSpaceWithUrls creates a production, storage-less NetworkSpace for
+// explicit API/connect URLs and a full client-strategy configuration. It is
+// the server/headless counterpart to NewPlatformNetworkSpace: callers can
+// retain proxy, TLS, resolver, timeout, and logging settings while using SDK
+// DeviceLocal and the API-owned JWT refresh lifecycle.
+//
+//gomobile:noexport
+func NewNetworkSpaceWithUrls(
+	ctx context.Context,
+	apiUrl string,
+	platformUrl string,
+	clientStrategySettings *connect.ClientStrategySettings,
+) *NetworkSpace {
+	cancelCtx, cancel := context.WithCancel(ctx)
+	if clientStrategySettings == nil {
+		clientStrategySettings = connect.DefaultClientStrategySettings()
+	}
+
+	key := NetworkSpaceKey{
+		HostName: "custom",
+		EnvName:  "custom",
+	}
+	values := NetworkSpaceValues{
+		ApiUrl:                   strings.TrimRight(apiUrl, "/"),
+		PlatformUrl:              strings.TrimRight(platformUrl, "/"),
+		NetExposeServerIps:       clientStrategySettings.ExposeServerIps,
+		NetExposeServerHostNames: clientStrategySettings.ExposeServerHostNames,
+	}
+	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
+	api := newApi(cancelCtx, clientStrategy, values.ApiUrl)
 
 	return &NetworkSpace{
 		ctx:    cancelCtx,
@@ -311,8 +330,8 @@ func Testing_NewNetworkSpaceWithUrls(
 		values:      values,
 		storagePath: "",
 
-		apiUrl:      apiUrl,
-		platformUrl: platformUrl,
+		apiUrl:      values.ApiUrl,
+		platformUrl: values.PlatformUrl,
 
 		clientStrategy:  clientStrategy,
 		asyncLocalState: nil,

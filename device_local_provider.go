@@ -30,6 +30,7 @@ type deviceLocalProvider struct {
 	ctx context.Context
 	// this is the client for provide
 	client       *connect.Client
+	clientOob    *connect.ApiOutOfBandControl
 	localUserNat *connect.LocalUserNat
 
 	appVersion string
@@ -140,6 +141,7 @@ func newDeviceLocalProviderWithOverrides(
 	provider := &deviceLocalProvider{
 		ctx:               ctx,
 		client:            client,
+		clientOob:         clientOob,
 		platformTransport: platformTransport,
 		localUserNat:      localUserNat,
 
@@ -326,6 +328,9 @@ func (self *deviceLocalProvider) SetByJwt(byJwt string) {
 	defer self.stateLock.Unlock()
 	self.auth = auth
 	self.authVersion += 1
+	if self.clientOob != nil {
+		self.clientOob.SetByJwt(byJwt)
+	}
 	self.platformTransport.SetAuth(auth)
 }
 

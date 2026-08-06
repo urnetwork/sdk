@@ -154,9 +154,10 @@ type DeviceRemote struct {
 	log       connect.Logger
 	closeOnce sync.Once
 
-	networkSpace *NetworkSpace
-	byJwt        string
-	tokenManager *deviceTokenManager
+	networkSpace     *NetworkSpace
+	byJwt            string
+	apiJwtRefreshSub Sub
+	apiAuthLogoutSub Sub
 
 	settings *deviceRpcSettings
 
@@ -349,7 +350,6 @@ func newDeviceRemoteWithOverrides(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	api := networkSpace.GetApi()
-	api.SetByJwt(byJwt)
 
 	deviceRemote := &DeviceRemote{
 		ctx:                      ctx,
@@ -425,22 +425,24 @@ func newDeviceRemoteWithOverrides(
 		}
 	}
 
-	deviceRemote.tokenManager = newDeviceTokenManager(
-		ctx,
-		deviceRemote.log,
-		api,
-		deviceRemote.setByJwt,
-		// clear the local auth state, then propagate the logout to the app
-		// (`AddAuthLogoutListener`) so the ui can return to the login flow
-		func() error {
-			err := logout()
-			deviceRemote.authLogout()
-			return err
-		},
-	)
-
+	// Install the RPC HTTP functions before enabling the API-owned refresh
+	// worker, so its immediate startup validation follows the remote path.
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
 	api.setHttpGetRaw(deviceRemote.httpGetRaw)
+	api.setLog(deviceRemote.log)
+	deviceRemote.apiJwtRefreshSub = api.AddJwtRefreshListener(
+		jwtRefreshListenerFunc(deviceRemote.setByJwt),
+	)
+	deviceRemote.apiAuthLogoutSub = api.AddAuthLogoutListener(
+		authLogoutListenerFunc(func() {
+			if err := logout(); err != nil {
+				deviceRemote.log.Errorf("failed to clear local auth state: %v", err)
+			}
+			deviceRemote.handleApiAuthLogout()
+		}),
+	)
+	api.SetByJwt(byJwt)
+	api.StartJwtRefresh()
 
 	newSecurityPolicyMonitor(ctx, deviceRemote, settings.Verbose)
 
@@ -759,9 +761,16 @@ func (self *DeviceRemote) setByJwt(byJwt string) {
 	self.log.Infof("DeviceRemote onTokenRefreshSuccess complete, should have fired listeners")
 }
 
+func (self *DeviceRemote) handleApiAuthLogout() {
+	self.stateLock.Lock()
+	self.byJwt = ""
+	self.stateLock.Unlock()
+	self.authLogout()
+}
+
 func (self *DeviceRemote) RefreshToken(attempt int) error {
 	self.log.Infof("DeviceRemote RefreshToken attempt %d", attempt)
-	self.tokenManager.RefreshToken()
+	self.GetApi().RequestJwtRefresh()
 	return nil
 }
 
@@ -2709,13 +2718,13 @@ func (self *DeviceRemote) Close() {
 		}()
 		self.cancel()
 
-		self.stateLock.Lock()
-		tokenManager := self.tokenManager
-		self.tokenManager = nil
-		self.stateLock.Unlock()
-
-		if tokenManager != nil {
-			tokenManager.Close()
+		if self.apiJwtRefreshSub != nil {
+			self.apiJwtRefreshSub.Close()
+			self.apiJwtRefreshSub = nil
+		}
+		if self.apiAuthLogoutSub != nil {
+			self.apiAuthLogoutSub.Close()
+			self.apiAuthLogoutSub = nil
 		}
 
 		api := self.networkSpace.GetApi()
@@ -4859,6 +4868,13 @@ func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallb
 // we use a made-up annotation gomobile:noexport to try to document this
 // however, the types must be exported for net.rpc to work
 // this leads to some unfortunate gomobile warnings currently
+//
+//gomobile:noexport is the type-level equivalent of the gomobile:noexport
+// marker used elsewhere in the package, and it stands in for it here: gobind
+// does emit classes for these types and silently drops ~123 fields across
+// them (connect.Id, []string, netip.Addr, time.Duration, deviceRemoteValue[T],
+// slices of structs). None of that is a bug — nothing below is meant to reach
+// an app — so the omissions are deliberate and are not marked field by field.
 
 // *important* argument and return values from rpc fucntios CANNOT be nil
 // this is a limitation in net.rpc

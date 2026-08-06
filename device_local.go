@@ -358,7 +358,70 @@ func (self *DeviceLocalSettings) logger() connect.Logger {
 	return connect.DefaultLogger()
 }
 
-//gomobile:noexport
+// ---- millisecond accessors for the time.Duration tunables ----------------
+//
+// Go always uses time.Duration; these exist purely as the Sdk translation,
+// because gomobile cannot bind time.Duration and the fields were therefore
+// silently unsettable from android/apple on a type apps do construct. The
+// bound name drops the redundant "Duration"/reads as "<thing>Millis", matching
+// BusyProbeBudgetMillis and friends elsewhere in the sdk.
+//
+// Millisecond granularity is not a narrowing in practice: every default here
+// is whole seconds (5s, 10s, 300s, 1s, 1s). A sub-millisecond value set from
+// Go still round-trips through the Go field untouched — only the bound view
+// truncates.
+
+func (self *DeviceLocalSettings) GetSendTimeoutMillis() int64 {
+	return self.SendTimeout.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetSendTimeoutMillis(millis int64) {
+	self.SendTimeout = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetNetContractStatusMillis() int64 {
+	return self.NetContractStatusDuration.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetNetContractStatusMillis(millis int64) {
+	self.NetContractStatusDuration = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetBlockActionWindowMillis() int64 {
+	return self.BlockActionWindowDuration.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetBlockActionWindowMillis(millis int64) {
+	self.BlockActionWindowDuration = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetContractStatsEpochMillis() int64 {
+	return self.ContractStatsEpoch.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetContractStatsEpochMillis(millis int64) {
+	self.ContractStatsEpoch = time.Duration(millis) * time.Millisecond
+}
+
+func (self *DeviceLocalSettings) GetNetworkPeersEpochMillis() int64 {
+	return self.NetworkPeersEpoch.Milliseconds()
+}
+
+func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
+	self.NetworkPeersEpoch = time.Duration(millis) * time.Millisecond
+}
+
+// DeviceLocalSettings is BOUND and app-facing, despite what a
+// `//gomobile:noexport` on this type used to claim: gobind emits the class
+// with ~50 working members, and Sdk exposes both defaultDeviceLocalSettings()
+// and newDeviceLocal(..., settings). Apps construct and mutate it.
+//
+// What gobind does drop is a handful of individual fields — the embedded
+// connect.ClientSettings, GeneratorFunc (a func value),
+// MultiClientIdentityStore (a foreign interface) and the time.Duration
+// tunables. Those carry their own field-level markers below. The durations
+// are reachable through the *Millis accessor pairs at the end of this file,
+// so an app can set them; the other three are Go-construction only.
 type DeviceLocalSettings struct {
 	// MemoryTargetByteCount is this device's memory target, split by ratio
 	// (dns 2 : client 14 : provider 4, see deviceMemoryShares) among dns
@@ -376,22 +439,31 @@ type DeviceLocalSettings struct {
 	MemoryTargetByteCount ByteCount
 
 	// time to give up (drop) sending a packet to a destination
+	//
+	//gomobile:noexport time.Duration — bound as GetSendTimeoutMillis/SetSendTimeoutMillis
 	SendTimeout time.Duration
 	// ClientDrainTimeout time.Duration
 	SequenceBufferSize int
 
+	//gomobile:noexport time.Duration — bound as GetNetContractStatusMillis/SetNetContractStatusMillis
 	NetContractStatusDuration time.Duration
 	NetContractStatusCount    int
 
 	// the time window and max count of retained block actions
+	//
+	//gomobile:noexport time.Duration — bound as GetBlockActionWindowMillis/SetBlockActionWindowMillis
 	BlockActionWindowDuration time.Duration
 	BlockActionWindowMaxCount int
 
 	// the contract stats/details listeners emit at most once per epoch across
 	// all window clients (a close event always emits)
+	//
+	//gomobile:noexport time.Duration — bound as GetContractStatsEpochMillis/SetContractStatsEpochMillis
 	ContractStatsEpoch time.Duration
 
 	// the network peers change listeners emit at most once per epoch
+	//
+	//gomobile:noexport time.Duration — bound as GetNetworkPeersEpochMillis/SetNetworkPeersEpochMillis
 	NetworkPeersEpoch time.Duration
 
 	DefaultRouteLocal          bool
@@ -419,11 +491,17 @@ type DeviceLocalSettings struct {
 	Verbose bool
 	// GeneratorFunc, when set, builds the multi client generator instead of
 	// the default api generator
+	//
+	//gomobile:noexport func value — gomobile cannot bind funcs (only interfaces).
+	// Go/headless hosts only; apps get the default api generator.
 	GeneratorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
 	// MultiClientIdentityStore, when set, persists the api generator's
 	// window client identities so a process restart reuses them against the
 	// same destinations — keeping provider-side NAT flows resumable
 	// (PROXYDRAIN1.md §3.5). Only applies to the default api generator.
+	//
+	//gomobile:noexport connect.MultiClientIdentityStore is an interface from
+	// another package, which gomobile does not bind. Go/headless hosts only.
 	MultiClientIdentityStore connect.MultiClientIdentityStore
 	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 	EnableRpc bool
@@ -451,6 +529,10 @@ type DeviceLocalSettings struct {
 	// EXPERIMENT: defaults true for now (testing).
 	UseExperimentalTunnelAddress bool
 
+	//gomobile:noexport connect.ClientSettings is a struct from another package,
+	// which gomobile does not bind — the whole embedded block (and every
+	// field promoted from it) is absent on android/apple. Apps configure the
+	// client through the constructors and the setters on DeviceLocal instead.
 	connect.ClientSettings
 }
 
@@ -465,8 +547,9 @@ type DeviceLocal struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	byJwt        string
-	tokenManager *deviceTokenManager
+	byJwt            string
+	apiJwtRefreshSub Sub
+	apiAuthLogoutSub Sub
 	// platformUrl string
 	// apiUrl      string
 
@@ -813,7 +896,7 @@ func NewDeviceLocal(
 	)
 }
 
-// gomobile:ignore
+//gomobile:noexport
 func NewPlatformDeviceLocalWithDefaults(
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
@@ -835,7 +918,7 @@ func NewPlatformDeviceLocalWithDefaults(
 	)
 }
 
-// gomobile:ignore
+//gomobile:noexport
 func NewPlatformDeviceLocalWithKeyMaterial(
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
@@ -862,7 +945,8 @@ func NewPlatformDeviceLocalWithKeyMaterial(
 
 // a local device that does not use the default platform transport
 // this device is typically embedded inside the platform
-// gomobile:ignore
+//
+//gomobile:noexport
 func NewPlatformDeviceLocal(
 	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator,
 	networkSpace *NetworkSpace,
@@ -971,7 +1055,6 @@ func newDeviceLocalWithOverrides(
 
 	// api := newBringYourApiWithContext(cancelCtx, clientStrategy, apiUrl)
 	api := networkSpace.GetApi()
-	api.SetByJwt(byJwt)
 
 	defaultRouteLocal := settings.DefaultRouteLocal
 	defaultProvideControlMode := settings.DefaultProvideControlMode
@@ -1141,19 +1224,23 @@ func newDeviceLocalWithOverrides(
 		}
 	}
 
-	deviceLocal.tokenManager = newDeviceTokenManager(
-		ctx,
-		log,
-		api,
-		deviceLocal.SetByJwt,
-		// clear the local auth state, then propagate the logout to the app
-		// (`AddAuthLogoutListener`) so the ui can return to the login flow
-		func() error {
-			err := logout()
-			deviceLocal.authLogout()
-			return err
-		},
+	// Api is the credential owner. DeviceLocal subscribes to apply rotations
+	// to persistence and connect transports, while keeping its established
+	// device-level listener contract for the applications.
+	api.setLog(log)
+	deviceLocal.apiJwtRefreshSub = api.AddJwtRefreshListener(
+		jwtRefreshListenerFunc(deviceLocal.SetByJwt),
 	)
+	deviceLocal.apiAuthLogoutSub = api.AddAuthLogoutListener(
+		authLogoutListenerFunc(func() {
+			if err := logout(); err != nil {
+				log.Errorf("failed to clear local auth state: %v", err)
+			}
+			deviceLocal.handleApiAuthLogout()
+		}),
+	)
+	api.SetByJwt(byJwt)
+	api.StartJwtRefresh()
 
 	// set up with nil destination
 	if provider != nil {
@@ -1189,7 +1276,7 @@ func newDeviceLocalWithOverrides(
 	return deviceLocal, nil
 }
 
-// gomobile:ignore
+//gomobile:noexport
 func (self *DeviceLocal) Ctx() context.Context {
 	return self.ctx
 }
@@ -1336,10 +1423,10 @@ func tunnelDnsAddressesWithDefault(
 
 // SetUpgradeMuxSettings sets how the interposed mux resolves DNS and upgrades HTTP.
 // It takes effect when the remote client is next (re)created. nil disables the mux
-// (direct pass-through to the exit). gomobile:ignore until a platform-friendly
+// (direct pass-through to the exit). gomobile:noexport until a platform-friendly
 // settings surface lands with the per-use-case defaults.
 //
-// gomobile:ignore
+//gomobile:noexport
 func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSettings) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1403,7 +1490,8 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 }
 
 // SetClientSecurityPolicyGenerator sets the multi-client (the device's own traffic) security policy.
-// gomobile:ignore
+//
+//gomobile:noexport
 func (self *DeviceLocal) SetClientSecurityPolicyGenerator(g func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1412,7 +1500,8 @@ func (self *DeviceLocal) SetClientSecurityPolicyGenerator(g func(context.Context
 
 // SetProviderSecurityPolicyGenerator sets the provider (egressing remote clients' traffic) security
 // policy. Defaults to the reversed client policy (connect.DefaultProviderSecurityPolicyWithStats).
-// gomobile:ignore
+//
+//gomobile:noexport
 func (self *DeviceLocal) SetProviderSecurityPolicyGenerator(g func(context.Context, *connect.SecurityPolicyStatsCollector) connect.SecurityPolicy) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1420,7 +1509,7 @@ func (self *DeviceLocal) SetProviderSecurityPolicyGenerator(g func(context.Conte
 }
 
 func (self *DeviceLocal) RefreshToken(attempt int) error {
-	self.tokenManager.RefreshToken()
+	self.GetApi().RequestJwtRefresh()
 	return nil
 }
 
@@ -1817,6 +1906,20 @@ func (self *DeviceLocal) SetByJwt(byJwt string) {
 
 	// fire listeners
 	self.jwtRefreshed(byJwt)
+}
+
+func (self *DeviceLocal) handleApiAuthLogout() {
+	var provider *deviceLocalProvider
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.byJwt = ""
+		provider = self.provider
+	}()
+	if provider != nil {
+		provider.SetByJwt("")
+	}
+	self.authLogout()
 }
 
 type contractStatusUpdate struct {
@@ -3767,7 +3870,7 @@ func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	})
 }
 
-// gomobile:ignore
+//gomobile:noexport
 func (self *DeviceLocal) AddReceivePacketCallback(callback func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte)) func() {
 	callbackId := self.receiveCallbacks.Add(callback)
 	return func() {
@@ -3850,9 +3953,13 @@ func (self *DeviceLocal) close() {
 		self.deviceLocalRpcManager.Close()
 	}
 
-	if self.tokenManager != nil {
-		self.tokenManager.Close()
-		self.tokenManager = nil
+	if self.apiJwtRefreshSub != nil {
+		self.apiJwtRefreshSub.Close()
+		self.apiJwtRefreshSub = nil
+	}
+	if self.apiAuthLogoutSub != nil {
+		self.apiAuthLogoutSub.Close()
+		self.apiAuthLogoutSub = nil
 	}
 
 	api := self.networkSpace.GetApi()
