@@ -301,6 +301,16 @@ func NewTransferBalanceList() *TransferBalanceList {
 	}
 }
 
+type SubscriptionList struct {
+	exportedList[*Subscription]
+}
+
+func NewSubscriptionList() *SubscriptionList {
+	return &SubscriptionList{
+		exportedList: *newExportedList[*Subscription](),
+	}
+}
+
 type NetworkSpaceList struct {
 	exportedList[*NetworkSpace]
 }

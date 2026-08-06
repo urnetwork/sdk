@@ -111,9 +111,15 @@ func (self *apiTokenManager) run() {
 				// permanent. Revalidate it on a conservative weekly cadence.
 				refreshTimeout = 7 * 24 * time.Hour
 			} else {
-				// Server client JWTs currently last 30 days. Start attempting
-				// 14 days early, leaving ample room for a prolonged outage.
-				refreshTimeout = expirationTime.Add(-14 * 24 * time.Hour).Sub(time.Now())
+				// Rotate at half-life. This adapts automatically as the server
+				// shortens token lifetimes, without creating an immediate-refresh
+				// loop when the lifetime is less than the old 14-day lead time.
+				issuedAt := jwtIssuedAt(byJwt)
+				refreshAt := expirationTime.Add(-12 * time.Hour)
+				if !issuedAt.IsZero() && issuedAt.Before(expirationTime) {
+					refreshAt = issuedAt.Add(expirationTime.Sub(issuedAt) / 2)
+				}
+				refreshTimeout = refreshAt.Sub(time.Now())
 			}
 		}
 
@@ -180,6 +186,18 @@ func (self *apiTokenManager) run() {
 			break
 		}
 	}
+}
+
+func jwtIssuedAt(byJwt string) time.Time {
+	claims := gojwt.MapClaims{}
+	if _, _, err := gojwt.NewParser().ParseUnverified(byJwt, claims); err != nil {
+		return time.Time{}
+	}
+	issuedAt, err := claims.GetIssuedAt()
+	if err != nil || issuedAt == nil {
+		return time.Time{}
+	}
+	return issuedAt.Time
 }
 
 // refreshToken refreshes one captured JWT. loggedOut means that exact token

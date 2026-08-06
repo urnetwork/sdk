@@ -1198,8 +1198,22 @@ type SubscriptionBalanceResult struct {
 	/**
 	 * OpenTransferByteCount - The total number of bytes tied up in open transfers
 	 */
-	OpenTransferByteCount     ByteCount            `json:"open_transfer_byte_count"`
-	CurrentSubscription       *Subscription        `json:"current_subscription,omitempty"`
+	OpenTransferByteCount ByteCount `json:"open_transfer_byte_count"`
+	/**
+	 * CurrentSubscription - ONE of the active subscriptions, or nil. Shipped apps
+	 * read this as the plan indicator, so it keeps its exact single-value meaning;
+	 * it cannot name more than one store. Use Subscriptions for the full set.
+	 */
+	CurrentSubscription *Subscription `json:"current_subscription,omitempty"`
+	/**
+	 * Subscriptions - EVERY store currently billing this network, one entry per
+	 * store, so each can be offered its own cancel path. Subscribing on two stores
+	 * means being charged by both, and each is cancelled only where it was bought.
+	 *
+	 * A list rather than a slice because gomobile binds neither slices of struct
+	 * pointers nor slices of slices (same reason as ActiveTransferBalances).
+	 */
+	Subscriptions             *SubscriptionList    `json:"subscriptions,omitempty"`
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
 	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
 	UpdateTime                string               `json:"update_time"`
