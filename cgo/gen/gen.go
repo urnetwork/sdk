@@ -1705,7 +1705,12 @@ func manualExports() []string {
 	if err != nil {
 		return names
 	}
-	re := regexp.MustCompile(`(?m)^//export (\w+)$`)
+	// tolerate CRLF: on a windows checkout the trailing  sits between the
+	// name and the line end, so an anchored `$` never matches and every
+	// hand-written export silently vanishes from the def -- the import lib
+	// then builds fine and the CONSUMER fails at link time with unresolved
+	// externals, a long way from the cause
+	re := regexp.MustCompile(`(?m)^//export (\w+)[ \t\r]*$`)
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasPrefix(name, "exports_gen") || name == "exports_core.go" {

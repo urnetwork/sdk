@@ -17,6 +17,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
@@ -40,6 +42,19 @@ public:
 namespace detail {
 
 /* take ownership of a returned char*, freeing it */
+// dupCString copies a c++ string into a buffer GO takes ownership of. A
+// callback that returns a string hands the pointer across the c abi and go
+// frees it with urnet_free_string -> free(), so it must come from malloc and
+// not from new or std::string's allocator.
+inline char* dupCString(const std::string& s) {
+	char* p = static_cast<char*>(std::malloc(s.size() + 1));
+	if (!p) {
+		return nullptr;
+	}
+	std::memcpy(p, s.c_str(), s.size() + 1);
+	return p;
+}
+
 inline std::string takeString(char* s) {
 	if (!s) {
 		return {};
@@ -1661,6 +1676,7 @@ struct ReliabilityMetrics {
 	int64_t RebindsRedialed{};
 	int64_t VerdictsHeldUplinkStale{};
 	int64_t VerdictsHeldTransportDown{};
+	int64_t VerdictsHeldSharedFate{};
 	int64_t RemovalsDeferred{};
 	int64_t ProbesSent{};
 	int64_t ProbesAnswered{};
@@ -1699,6 +1715,8 @@ struct ReliabilitySettings {
 	int64_t ProbeTimeoutMillis{};
 	int32_t ProbeSampleHostCount{};
 	int32_t ProbeSilenceWarnStreak{};
+	int32_t SharedFateMinExits{};
+	int64_t SharedFateWindowMillis{};
 	int32_t EvaluationPoolMultiple{};
 	int64_t FormationPollTimeoutMillis{};
 	bool BusyProbe{};
@@ -7859,6 +7877,7 @@ inline void to_json(nlohmann::json& j, const ReliabilityMetrics& v) {
 	j["RebindsRedialed"] = v.RebindsRedialed;
 	j["VerdictsHeldUplinkStale"] = v.VerdictsHeldUplinkStale;
 	j["VerdictsHeldTransportDown"] = v.VerdictsHeldTransportDown;
+	j["VerdictsHeldSharedFate"] = v.VerdictsHeldSharedFate;
 	j["RemovalsDeferred"] = v.RemovalsDeferred;
 	j["ProbesSent"] = v.ProbesSent;
 	j["ProbesAnswered"] = v.ProbesAnswered;
@@ -7924,6 +7943,9 @@ inline void from_json(const nlohmann::json& j, ReliabilityMetrics& v) {
 	if (auto it = j.find("VerdictsHeldTransportDown"); it != j.end() && !it->is_null()) {
 		it->get_to(v.VerdictsHeldTransportDown);
 	}
+	if (auto it = j.find("VerdictsHeldSharedFate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.VerdictsHeldSharedFate);
+	}
 	if (auto it = j.find("RemovalsDeferred"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RemovalsDeferred);
 	}
@@ -7981,6 +8003,8 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["ProbeTimeoutMillis"] = v.ProbeTimeoutMillis;
 	j["ProbeSampleHostCount"] = v.ProbeSampleHostCount;
 	j["ProbeSilenceWarnStreak"] = v.ProbeSilenceWarnStreak;
+	j["SharedFateMinExits"] = v.SharedFateMinExits;
+	j["SharedFateWindowMillis"] = v.SharedFateWindowMillis;
 	j["EvaluationPoolMultiple"] = v.EvaluationPoolMultiple;
 	j["FormationPollTimeoutMillis"] = v.FormationPollTimeoutMillis;
 	j["BusyProbe"] = v.BusyProbe;
@@ -8071,6 +8095,12 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("ProbeSilenceWarnStreak"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProbeSilenceWarnStreak);
+	}
+	if (auto it = j.find("SharedFateMinExits"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SharedFateMinExits);
+	}
+	if (auto it = j.find("SharedFateWindowMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SharedFateWindowMillis);
 	}
 	if (auto it = j.find("EvaluationPoolMultiple"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EvaluationPoolMultiple);
@@ -11794,7 +11824,7 @@ inline void oneshot_find_providers(void* user_data, const char* result_json, con
 	delete f;
 }
 
-inline std::string retained_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+inline char* retained_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
 	auto* f = static_cast<FlowOwnerLookup*>(user_data);
 	std::string r{};
 	try {
@@ -11803,9 +11833,9 @@ inline std::string retained_flow_owner_lookup(void* user_data, int64_t version, 
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
 	}
-	return r;
+	return dupCString(r);
 }
-inline std::string oneshot_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
+inline char* oneshot_flow_owner_lookup(void* user_data, int64_t version, int64_t protocol, const char* source_ip, int64_t source_port, const char* destination_ip, int64_t destination_port) {
 	auto* f = static_cast<FlowOwnerLookup*>(user_data);
 	std::string r{};
 	try {
@@ -11815,7 +11845,7 @@ inline std::string oneshot_flow_owner_lookup(void* user_data, int64_t version, i
 	} catch (...) {
 	}
 	delete f;
-	return r;
+	return dupCString(r);
 }
 
 inline void retained_generate_seedphrase(void* user_data, const char* result_json, const char* err_param) {

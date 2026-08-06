@@ -2390,6 +2390,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   RebindsRedialed: number
  *   VerdictsHeldUplinkStale: number
  *   VerdictsHeldTransportDown: number
+ *   VerdictsHeldSharedFate: number
  *   RemovalsDeferred: number
  *   ProbesSent: number
  *   ProbesAnswered: number
@@ -2428,6 +2429,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProbeTimeoutMillis: number
  *   ProbeSampleHostCount: number
  *   ProbeSilenceWarnStreak: number
+ *   SharedFateMinExits: number
+ *   SharedFateWindowMillis: number
  *   EvaluationPoolMultiple: number
  *   FormationPollTimeoutMillis: number
  *   BusyProbe: boolean
