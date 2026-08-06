@@ -53,7 +53,7 @@ build_android:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2026"; \
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
 	test -s "$$BUILD_DIR/URnetworkSdk-sources.jar"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
@@ -99,7 +99,7 @@ build_apple:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2026"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	test -s "$$BUILD_DIR/URnetworkSdk.xcframework.zip"; \
@@ -129,7 +129,7 @@ init:
 	gomobile init && \
 	CHECKSEC_VERSION=v3.1.0 && \
 	go install github.com/slimm609/checksec/v3@$$CHECKSEC_VERSION && \
-	go mod download "github.com/urnetwork/sdk" && \
-	go mod download "github.com/urnetwork/connect" && \
+	go mod download "github.com/urnetwork/sdk/v2026" && \
+	go mod download "github.com/urnetwork/connect/v2026" && \
 	go clean -cache && \
 	go clean -modcache;
