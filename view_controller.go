@@ -41,6 +41,8 @@ type ViewControllerManager interface {
 
 	OpenContractViewController() *ContractViewController
 
+	OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController
+
 	// Deprecated: use the split client/provider entry points below.
 	OpenContractDetailsViewController() *ContractDetailsViewController
 	OpenClientContractDetailsViewController() *ContractDetailsViewController
@@ -167,6 +169,12 @@ func (self *viewControllerManager) OpenPostQuantumIdentityViewController() *Post
 
 func (self *viewControllerManager) OpenContractViewController() *ContractViewController {
 	vc := newContractViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController {
+	vc := newSubscriptionBalanceViewController(self.ctx, self.device.GetApi())
 	self.openViewController(vc)
 	return vc
 }

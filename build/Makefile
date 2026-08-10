@@ -143,14 +143,23 @@ build_linux:
 	$(MAKE) -C ../cgo build_linux
 
 
-init:
+GOMOBILE_VERSION ?= v0.0.0-20260611195102-4dd8f1dbf5d2
+CHECKSEC_VERSION ?= v3.1.0
+
+# Install only the pinned build tools. Platform setup scripts use this target
+# so acceptance builds do not install tools or clean shared Go caches.
+# gomobile init installs gobind@latest, so restore the matching version after it.
+.PHONY: init_tools init
+init_tools:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
-	GOMOBILE_VERSION=v0.0.0-20260611195102-4dd8f1dbf5d2 && \
-	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
-	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
+	go install golang.org/x/mobile/cmd/gomobile@$(GOMOBILE_VERSION) && \
 	gomobile init && \
-	CHECKSEC_VERSION=v3.1.0 && \
-	go install github.com/slimm609/checksec/v3@$$CHECKSEC_VERSION && \
+	go install golang.org/x/mobile/cmd/gobind@$(GOMOBILE_VERSION) && \
+	go install github.com/slimm609/checksec/v3@$(CHECKSEC_VERSION)
+
+init: init_tools
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	go get golang.org/x/mobile/bind@$(GOMOBILE_VERSION) && \
 	go mod download "github.com/urnetwork/sdk" && \
 	go mod download "github.com/urnetwork/connect" && \
 	go clean -cache && \

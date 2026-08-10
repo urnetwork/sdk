@@ -310,7 +310,14 @@ func NewPlatformDeviceRemote(
 ) (*DeviceRemote, error) {
 	clientId, err := parseByJwtClientId(byJwt)
 	if err != nil {
-		return nil, err
+		if err != errByJwtNoClientId {
+			return nil, err
+		}
+		// A NETWORK member jwt — the documented input here — carries no
+		// client_id claim. On the platform path the client id is display-only
+		// (rpc auth is signedProxyId, device pairing is instanceId), so use
+		// the zero id rather than refusing to construct the remote.
+		clientId = connect.Id{}
 	}
 	settings := defaultDeviceRpcSettings()
 	dialer := NewPlatformDeviceRpcDialer(proxyUrl, signedProxyId, settings)

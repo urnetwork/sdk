@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -1744,17 +1745,16 @@ type UpgradeGuesteResultError struct {
 	Message string `json:"message"`
 }
 
+// UpgradeGuest upgraded a guest network to a brand new named network.
+//
+// Deprecated: the server route POST /auth/upgrade-guest was removed (server
+// commit 340d828a, 2026-07-15) with no remaining handler, so every call
+// 404s. The method now fails immediately with a clear error instead of
+// making the doomed round-trip. It is kept only for ABI compatibility; there
+// is currently no supported guest-conversion path through the SDK.
 func (self *Api) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGuestCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/auth/upgrade-guest", self.apiUrl),
-			upgradeGuest,
-			self.GetByJwt(),
-			&UpgradeGuestResult{},
-			callback,
-		)
+		callback.Result(nil, errGuestUpgradeRouteRemoved)
 	})
 }
 
@@ -1790,17 +1790,25 @@ type UpgradeGuestExistingResult struct {
 	Error                *UpgradeGuesteExistingResultError       `json:"error,omitempty"`
 }
 
+// errGuestUpgradeRouteRemoved is the immediate failure for the deprecated
+// guest-upgrade methods, replacing the confusing 404 round-trip the removed
+// server routes would produce.
+var errGuestUpgradeRouteRemoved = errors.New(
+	"guest upgrade is no longer supported: the /auth/upgrade-guest and " +
+		"/auth/upgrade-guest-existing server routes were removed " +
+		"(server commit 340d828a); this call fails without contacting the server",
+)
+
+// UpgradeGuestExisting merged a guest network into an existing account.
+//
+// Deprecated: the server route POST /auth/upgrade-guest-existing was removed
+// (server commit 340d828a, 2026-07-15) with no remaining handler, so every
+// call 404s. The method now fails immediately with a clear error instead of
+// making the doomed round-trip. It is kept only for ABI compatibility; there
+// is currently no supported guest-conversion path through the SDK.
 func (self *Api) UpgradeGuestExisting(upgradeGuest *UpgradeGuestExistingArgs, callback UpgradeGuestExistingCallback) {
 	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/auth/upgrade-guest-existing", self.apiUrl),
-			upgradeGuest,
-			self.GetByJwt(),
-			&UpgradeGuestExistingResult{},
-			callback,
-		)
+		callback.Result(nil, errGuestUpgradeRouteRemoved)
 	})
 }
 
@@ -2117,10 +2125,20 @@ func (self *Api) GetNetworkReliability(callback GetNetworkReliabilityCallback) {
 
 type SolanaPaymentIntentArgs struct {
 	Reference string `json:"reference"`
+	// The plan the customer picked ("monthly" or "yearly"). REQUIRED: the server
+	// looks the price up from pro.yml by plan and rejects the intent with
+	// "Unknown plan." when this is empty, so an app that omits it cannot sell at
+	// all. The price is deliberately not a field here -- a client-supplied amount
+	// would let anyone quote themselves a year for a cent.
+	Plan string `json:"plan"`
 }
 
 type SolanaPaymentIntentResult struct {
-	Error *SolanaPaymentIntentError `json:"error,omitempty"`
+	// The price the SERVER quoted. Pass this to BuildSolanaPaymentUrl. The webhook
+	// checks the arriving payment against this same number, so a client-side price
+	// constant is how a customer pays and gets nothing.
+	AmountUsd float64                   `json:"amount_usd,omitempty"`
+	Error     *SolanaPaymentIntentError `json:"error,omitempty"`
 }
 
 type SolanaPaymentIntentError struct {
@@ -2214,11 +2232,18 @@ func (self *Api) StripeCreateCustomerPortal(args *StripeCreateCustomerPortalArgs
 
 type StripeCreateCheckoutSessionArgs struct {
 	ItemId string `json:"item_id"`
-	// "hosted" (default) or "embedded". A single Stripe session carries one shape
-	// or the other, never both: hosted returns checkout_url for a browser,
-	// embedded returns client_secret + publishable_key for Stripe.js Embedded
-	// Checkout (the desktop apps load ur.io/checkout in a webview with these).
+	// "hosted" (default) or "embedded" (StripeUiModeHosted /
+	// StripeUiModeEmbedded). A single Stripe session carries one shape or the
+	// other, never both: hosted returns checkout_url for a browser, embedded
+	// returns client_secret + publishable_key for Stripe.js Embedded Checkout
+	// (the desktop apps load ur.io/checkout in a webview with these).
 	UiMode string `json:"ui_mode,omitempty"`
+	// "never" (StripeRedirectOnCompletionNever) keeps an EMBEDDED checkout
+	// fully inline: Stripe fires the client's onComplete callback instead of
+	// redirecting anywhere, so the page the customer is on never navigates.
+	// Only valid with ui_mode "embedded". Empty means the embedded flow
+	// redirects to the configured return_url, and hosted behaves as always.
+	RedirectOnCompletion string `json:"redirect_on_completion,omitempty"`
 }
 
 type StripeCreateCheckoutSessionError struct {
@@ -2362,6 +2387,12 @@ type RedeemBalanceCodeError struct {
 
 type RedeemBalanceCodeCallback connect.ApiCallback[*RedeemBalanceCodeResult]
 
+// RedeemBalanceCode redeems a balance code into this network. Note the
+// server reports the SAME error payload ({"error":{"message":"Unknown
+// balance code."}}) for a nonexistent code and an already-redeemed one; use
+// ClassifyBalanceCodeRedeem (with GetNetworkRedeemedBalanceCodes) to
+// distinguish transport failure / invalid / already-redeemed before telling
+// the user anything.
 func (self *Api) RedeemBalanceCode(args *RedeemBalanceCodeArgs, callback RedeemBalanceCodeCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
@@ -2374,6 +2405,179 @@ func (self *Api) RedeemBalanceCode(args *RedeemBalanceCodeArgs, callback RedeemB
 			callback,
 		)
 	})
+}
+
+/**
+ * check balance code (without redeeming it)
+ */
+
+type CheckBalanceCodeArgs struct {
+	Secret string `json:"secret"`
+}
+
+type CheckBalanceCodeBalance struct {
+	StartTime        *Time     `json:"start_time"`
+	EndTime          *Time     `json:"end_time"`
+	BalanceByteCount ByteCount `json:"balance_byte_count"`
+}
+
+type CheckBalanceCodeError struct {
+	Message string `json:"message"`
+}
+
+type CheckBalanceCodeResult struct {
+	Balance *CheckBalanceCodeBalance `json:"balance,omitempty"`
+	Error   *CheckBalanceCodeError   `json:"error,omitempty"`
+}
+
+type CheckBalanceCodeCallback connect.ApiCallback[*CheckBalanceCodeResult]
+
+// CheckBalanceCode looks a balance code up WITHOUT redeeming it, so a UI can
+// preview what the code grants before the user commits. Mirrors the server's
+// POST /subscription/check-balance-code (previously reached by raw HTTP from
+// the apps). Like RedeemBalanceCode, the server reports "Unknown balance
+// code." for both a nonexistent and an already-redeemed code.
+func (self *Api) CheckBalanceCode(args *CheckBalanceCodeArgs, callback CheckBalanceCodeCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/check-balance-code", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&CheckBalanceCodeResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * purchase reporting (verify proof of purchase with the store)
+ *
+ * The wave-2 half of the lost-webhook fix: the app reports proof of purchase
+ * (Play purchase token, App Store transaction JWS) and the server verifies it
+ * with the store and credits through the same idempotency gates as the
+ * webhooks and the payment reconciler. See PurchaseReportBackoffMillis for
+ * the client retry contract (persist proof -> retry until terminal -> only
+ * then acknowledge/finish).
+ */
+
+type VerifyPlayPurchaseArgs struct {
+	// PackageName is optional; the server defaults to (and requires) the
+	// app's own package.
+	PackageName string `json:"package_name,omitempty"`
+	// ProductId is the sku the client believes it bought (e.g. "supporter").
+	ProductId     string `json:"product_id"`
+	PurchaseToken string `json:"purchase_token"`
+}
+
+type VerifyAppleTransactionArgs struct {
+	// SignedTransaction is the StoreKit transaction JWS
+	// (Transaction.jwsRepresentation).
+	SignedTransaction string `json:"signed_transaction"`
+}
+
+// VerifyStorePurchaseResult is the shared response of both verify endpoints.
+// Status is one of the PurchaseReportStatus* values; use
+// IsPurchaseReportTerminal to decide whether to keep retrying.
+type VerifyStorePurchaseResult struct {
+	Status     string `json:"status"`
+	ExpiryTime *Time  `json:"expiry_time,omitempty"`
+}
+
+// ExpiryTimeMillis is the store-side subscription expiry as unix millis, or 0
+// when the server sent none (pending/invalid/wrong_network answers).
+func (self *VerifyStorePurchaseResult) ExpiryTimeMillis() int64 {
+	if self.ExpiryTime == nil {
+		return 0
+	}
+	return self.ExpiryTime.UnixMilli()
+}
+
+type VerifyPlayPurchaseCallback connect.ApiCallback[*VerifyStorePurchaseResult]
+
+// VerifyPlayPurchase reports a Play purchase token to the server, which
+// verifies it with the Android Publisher API and credits it idempotently.
+// Call BEFORE acknowledging the purchase; acknowledge only once the status is
+// terminal (IsPurchaseReportTerminal).
+func (self *Api) VerifyPlayPurchase(args *VerifyPlayPurchaseArgs, callback VerifyPlayPurchaseCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/verify-play-purchase", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&VerifyStorePurchaseResult{},
+			callback,
+		)
+	})
+}
+
+// VerifyPlayPurchaseSyncWithContext is the caller-bounded headless form, for
+// retry loops (e.g. a WorkManager job) that outlive no context of their own.
+//
+//gomobile:noexport
+func (self *Api) VerifyPlayPurchaseSyncWithContext(ctx context.Context, args *VerifyPlayPurchaseArgs) (*VerifyStorePurchaseResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/subscription/verify-play-purchase", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&VerifyStorePurchaseResult{},
+		connect.NewNoopApiCallback[*VerifyStorePurchaseResult](),
+	)
+}
+
+// VerifyPlayPurchaseSync uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) VerifyPlayPurchaseSync(args *VerifyPlayPurchaseArgs) (*VerifyStorePurchaseResult, error) {
+	return self.VerifyPlayPurchaseSyncWithContext(self.ctx, args)
+}
+
+type VerifyAppleTransactionCallback connect.ApiCallback[*VerifyStorePurchaseResult]
+
+// VerifyAppleTransaction reports a StoreKit transaction JWS to the server,
+// which verifies it (full pinned-root verification, same as the App Store
+// webhook) and credits it idempotently. Call BEFORE Transaction.finish();
+// finish only once the status is terminal (IsPurchaseReportTerminal).
+func (self *Api) VerifyAppleTransaction(args *VerifyAppleTransactionArgs, callback VerifyAppleTransactionCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/verify-apple-transaction", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&VerifyStorePurchaseResult{},
+			callback,
+		)
+	})
+}
+
+// VerifyAppleTransactionSyncWithContext is the caller-bounded headless form,
+// for retry loops with their own lifetime.
+//
+//gomobile:noexport
+func (self *Api) VerifyAppleTransactionSyncWithContext(ctx context.Context, args *VerifyAppleTransactionArgs) (*VerifyStorePurchaseResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/subscription/verify-apple-transaction", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&VerifyStorePurchaseResult{},
+		connect.NewNoopApiCallback[*VerifyStorePurchaseResult](),
+	)
+}
+
+// VerifyAppleTransactionSync uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) VerifyAppleTransactionSync(args *VerifyAppleTransactionArgs) (*VerifyStorePurchaseResult, error) {
+	return self.VerifyAppleTransactionSyncWithContext(self.ctx, args)
 }
 
 /**

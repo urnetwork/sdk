@@ -4045,13 +4045,18 @@ func (self *DeviceLocal) StartHostedRpc(listener DeviceRpcListener, deviceGenera
 	self.deviceLocalRpcManager = newDeviceLocalRpcManager(self.ctx, self, settings, listener.(deviceRpcListener))
 }
 
+// Sentinel for a jwt with NO client_id claim at all (a network member jwt).
+// Callers that accept a network jwt (NewPlatformDeviceRemote) treat exactly
+// this case as non-fatal; a PRESENT-but-malformed claim still fails loudly.
+var errByJwtNoClientId = fmt.Errorf("byJwt does not contain claim client_id")
+
 func parseByJwtClientId(byJwt string) (connect.Id, error) {
 	claims := gojwt.MapClaims{}
 	gojwt.NewParser().ParseUnverified(byJwt, claims)
 
 	jwtClientId, ok := claims["client_id"]
 	if !ok {
-		return connect.Id{}, fmt.Errorf("byJwt does not contain claim client_id")
+		return connect.Id{}, errByJwtNoClientId
 	}
 	switch v := jwtClientId.(type) {
 	case string:

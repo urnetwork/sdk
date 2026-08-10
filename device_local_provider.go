@@ -95,7 +95,7 @@ func newDeviceLocalProviderWithOverrides(
 	if clientSettings.EncryptionSettings == nil {
 		clientSettings.EncryptionSettings = connect.DefaultEncryptionSettings()
 	}
-	clientSettings.EncryptionSettings.Encrypt = true
+	clientSettings.EncryptionSettings.Mode = connect.EncryptionModeOpportunistic
 	// This top-level client exists to provide/relay traffic. Apply provide-mode
 	// reductions to every P2P stream direction, including stale companion
 	// return streams restored by StreamReset after a process restart. Window

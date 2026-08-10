@@ -61,6 +61,7 @@ var behavioralTypes = map[string]bool{
 	"BlockActionViewController":           true,
 	"ConnectViewController":               true,
 	"ContractViewController":              true,
+	"SubscriptionBalanceViewController":   true,
 	"ContractDetailsViewController":       true,
 	"DevicesViewController":               true,
 	"FeedbackViewController":              true,
@@ -1705,7 +1706,7 @@ func manualExports() []string {
 	if err != nil {
 		return names
 	}
-	// tolerate CRLF: on a windows checkout the trailing  sits between the
+	// tolerate CRLF: on a windows checkout the trailing \r sits between the
 	// name and the line end, so an anchored `$` never matches and every
 	// hand-written export silently vanishes from the def -- the import lib
 	// then builds fine and the CONSUMER fails at link time with unresolved

@@ -420,6 +420,12 @@ type RedeemedBalanceCodeList struct {
 	exportedList[*RedeemedBalanceCode]
 }
 
+func NewRedeemedBalanceCodeList() *RedeemedBalanceCodeList {
+	return &RedeemedBalanceCodeList{
+		exportedList: *newExportedList[*RedeemedBalanceCode](),
+	}
+}
+
 type PublicAccountApiKey struct {
 	Id         *Id    `json:"id"`
 	Name       string `json:"name"`
