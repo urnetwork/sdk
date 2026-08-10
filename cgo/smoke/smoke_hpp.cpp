@@ -44,6 +44,26 @@ int main() {
 	CHECK(decoded && *decoded == data);
 	CHECK(!urnet::decodeBase58("!!! not base58 !!!"));
 
+	// packet-batch app bridge types compile through the generated C++ surface;
+	// the callback receives a borrowed handle and copies only packets the app
+	// actually consumes.
+	urnet::ReceivePackets receivePackets = [](urnet::PacketBatch packetBatch) {
+		for (int64_t packetIndex = 0; packetIndex < packetBatch.len();
+			 packetIndex += 1) {
+			(void)packetBatch.ipVersion(packetIndex);
+			(void)packetBatch.ipProtocol(packetIndex);
+			(void)packetBatch.get(packetIndex);
+		}
+	};
+	CHECK(static_cast<bool>(receivePackets));
+	urnet::ReceivePacketBatch receivePacketBatch = [](
+		const uint8_t* packetBatchBytes,
+		int32_t packetBatchByteCount) {
+		(void)packetBatchBytes;
+		(void)packetBatchByteCount;
+	};
+	CHECK(static_cast<bool>(receivePacketBatch));
+
 	// typed json data structs
 	auto proxyConfig = urnet::defaultProxyConfig();
 	CHECK(proxyConfig);

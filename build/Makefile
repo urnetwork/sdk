@@ -82,7 +82,7 @@ build_android:
 			allow_skipped='DeviceLocalRpc'; \
 			allow_skipped="$$allow_skipped|DeviceRemote[A-Z]|DeviceRpcDialer|DeviceRpcListener|[A-Za-z]Rpc"; \
 			allow_skipped="$$allow_skipped|NewPlatformDeviceLocal|NewPlatformNetworkSpace|Proxy"; \
-			allow_skipped="$$allow_skipped|DeviceLocal\.AddReceivePacketCallback|DeviceLocal\.Ctx"; \
+			allow_skipped="$$allow_skipped|DeviceLocal\.AddReceivePacket(sCallback|Callback)|DeviceLocal\.SendPacketsNoCopy|DeviceLocal\.Ctx"; \
 			allow_skipped="$$allow_skipped|DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator"; \
 			allow_skipped="$$allow_skipped|SetUpgradeMuxSettings|DeviceLocalSettings"; \
 			allow_skipped="$$allow_skipped|Testing_NewNetworkSpaceWithUrls|Sim[A-Z]|CollapseHostNames"; \

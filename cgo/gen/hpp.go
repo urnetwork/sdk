@@ -61,6 +61,9 @@ var hppExtraClassDecls = map[string]string{
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
 `,
+	"PacketBatch": `	/* one borrowed packet copied into c++-owned storage */
+	std::vector<uint8_t> get(int64_t index) const;
+`,
 }
 
 const hppExtraDefinitions = `/* ----- hand-written wrappers (buffer-out c functions) ----- */
@@ -105,6 +108,9 @@ inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
 }
 inline std::vector<uint8_t> DeviceRemote::getPublicIdentityKey() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });
+}
+inline std::vector<uint8_t> PacketBatch::get(int64_t index) const {
+	return detail::bufferOut([h = handle(), index](uint8_t* out, int32_t* len) { return urnet_packet_batch_get(h, index, out, len); });
 }
 
 /* the canonical identicon png for arbitrary input bytes (identity keys):

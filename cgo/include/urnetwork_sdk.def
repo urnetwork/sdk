@@ -271,6 +271,8 @@ EXPORTS
 	urnet_device_init_provide_secret_keys
 	urnet_device_load_provide_secret_keys
 	urnet_device_local_add_receive_packet
+	urnet_device_local_add_receive_packet_batch
+	urnet_device_local_add_receive_packets
 	urnet_device_local_close_block_action_view_controller
 	urnet_device_local_close_connect_view_controller
 	urnet_device_local_close_contract_details_view_controller
@@ -324,6 +326,7 @@ EXPORTS
 	urnet_device_local_reset_reliability_metrics
 	urnet_device_local_reset_reliability_settings
 	urnet_device_local_send_packet
+	urnet_device_local_send_packet_batch
 	urnet_device_local_set_by_jwt
 	urnet_device_local_set_flow_owner_lookup
 	urnet_device_local_set_key_material
@@ -594,6 +597,10 @@ EXPORTS
 	urnet_new_tunnel
 	urnet_new_urls_network_space
 	urnet_normal_env_name
+	urnet_packet_batch_get
+	urnet_packet_batch_ip_protocol
+	urnet_packet_batch_ip_version
+	urnet_packet_batch_len
 	urnet_parse_checkout_redirect
 	urnet_parse_id
 	urnet_peer_view_controller_add_peers_listener

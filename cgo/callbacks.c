@@ -433,6 +433,14 @@ void urnet_invoke_receive_packet(urnet_receive_packet_cb cb, void* user_data, in
 	cb(user_data, ip_version, ip_protocol, packet, packet_len);
 }
 
+void urnet_invoke_receive_packet_batch(urnet_receive_packet_batch_cb cb, void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) {
+	cb(user_data, packet_batch_bytes, packet_batch_bytes_len);
+}
+
+void urnet_invoke_receive_packets(urnet_receive_packets_cb cb, void* user_data, uint64_t packet_batch) {
+	cb(user_data, packet_batch);
+}
+
 void urnet_invoke_redeem_balance_code(urnet_redeem_balance_code_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

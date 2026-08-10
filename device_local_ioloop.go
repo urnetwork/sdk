@@ -82,18 +82,25 @@ func (self *IoLoop) run() {
 
 	var writeMutex sync.Mutex
 
-	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-		// note `packet` is only valid for the lifecycle of this call
+	receivePackets := func(
+		source connect.TransferPath,
+		provideMode protocol.ProvideMode,
+		ipPath *connect.IpPath,
+		packets [][]byte,
+	) {
+		// Every packet is borrowed for this call only. The synchronous TUN write
+		// is the device-side flow-control exception documented in CODESTYLE.md.
 		writeMutex.Lock()
 		defer writeMutex.Unlock()
-
-		_, err := f.Write(packet)
-		if err != nil {
-			self.cancel()
+		for _, packet := range packets {
+			if _, err := f.Write(packet); err != nil {
+				self.cancel()
+				return
+			}
 		}
 	}
 
-	unsub := self.deviceLocal.AddReceivePacketCallback(receive)
+	unsub := self.deviceLocal.AddReceivePacketsCallback(receivePackets)
 	defer unsub()
 
 	for {
@@ -103,18 +110,37 @@ func (self *IoLoop) run() {
 		default:
 		}
 
+		var packetStorage [64][]byte
 		packet := MessagePoolGet(2048)
-		n, err := f.Read(packet)
-		// self.log.Infof("[io]READ PACKET %d (%s)\n", n, err)
-		if 0 < n {
-			success := self.deviceLocal.SendPacketNoCopy(packet, int32(n))
-			if !success {
-				MessagePoolReturn(packet)
-			}
-		} else {
+		n, readErr := f.Read(packet)
+		if n <= 0 {
 			MessagePoolReturn(packet)
+			if readErr != nil {
+				return
+			}
+			continue
 		}
-		if err != nil {
+		packetStorage[0] = packet[:n]
+		packetCount := 1
+		for packetCount < len(packetStorage) {
+			nextPacket := MessagePoolGet(2048)
+			nextByteCount, err := syscall.Read(self.fd, nextPacket)
+			if 0 < nextByteCount {
+				packetStorage[packetCount] = nextPacket[:nextByteCount]
+				packetCount += 1
+				continue
+			}
+			MessagePoolReturn(nextPacket)
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				break
+			}
+			if err != nil {
+				readErr = err
+			}
+			break
+		}
+		self.deviceLocal.sendPacketsNoCopy(packetStorage[:packetCount])
+		if readErr != nil {
 			return
 		}
 	}

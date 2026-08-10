@@ -165,3 +165,13 @@ func urnet_device_get_public_identity_key(self C.uint64_t, out *C.uint8_t, inout
 	}
 	return copyOut(out, inoutLen, self_.GetPublicIdentityKey())
 }
+
+//export urnet_packet_batch_get
+func urnet_packet_batch_get(self C.uint64_t, index C.int64_t, out *C.uint8_t, inoutLen *C.int32_t) C.bool {
+	defer cgoGuard("urnet_packet_batch_get")
+	self_, ok := resolveHandle[*sdk.PacketBatch](uint64(self), "urnet_packet_batch_get")
+	if !ok || self_ == nil {
+		return C.bool(false)
+	}
+	return copyOut(out, inoutLen, self_.Get(int(index)))
+}

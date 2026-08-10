@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -738,7 +739,9 @@ type DeviceLocal struct {
 	providerPacketStatsSub        func()
 	providerContractStatsEventSub func()
 
-	receiveCallbacks *connect.CallbackList[connect.ReceivePacketFunction]
+	receiveCallbacks            *connect.CallbackList[connect.ReceivePacketFunction]
+	receivePacketsCallbacks     *connect.CallbackList[connect.ReceivePacketsFunction]
+	receivePacketBatchCallbacks *connect.CallbackList[receivePacketBatchFunction]
 
 	// probeSuiteState owns the in-app test suite. It pumps its own userspace
 	// tun through this device, so probes take the same exits as real traffic
@@ -1144,6 +1147,8 @@ func newDeviceLocalWithOverrides(
 		contracts:                                newDeviceContractTracker(),
 		providerContracts:                        newDeviceContractTracker(),
 		receiveCallbacks:                         connect.NewCallbackList[connect.ReceivePacketFunction](),
+		receivePacketsCallbacks:                  connect.NewCallbackList[connect.ReceivePacketsFunction](),
+		receivePacketBatchCallbacks:              connect.NewCallbackList[receivePacketBatchFunction](),
 		probeSuiteState:                          &probeSuite{},
 		canShowRatingDialogChangeListeners:       connect.NewCallbackList[CanShowRatingDialogChangeListener](),
 		canPromptIntroFunnelChangeListeners:      connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
@@ -2834,8 +2839,66 @@ func (self *DeviceLocal) windowStatusChanged(windowStatus *WindowStatus) {
 func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 	// self.assertNotLockOwner()
 	// deviceLog("GOT A PACKET %d", len(packet))
+	packetStorage := [1][]byte{packet}
+	self.receivePacketBatch(packetStorage[:])
+	for _, receivePacketsCallback := range self.receivePacketsCallbacks.Get() {
+		receivePacketsCallback(source, provideMode, ipPath, packetStorage[:])
+	}
 	for _, receiveCallback := range self.receiveCallbacks.Get() {
 		receiveCallback(source, provideMode, ipPath, packet)
+	}
+}
+
+// A common remote burst crosses the app boundary once. Singular observers
+// still receive every packet because callback subscriptions are independent.
+func (self *DeviceLocal) receivePackets(
+	source connect.TransferPath,
+	provideMode protocol.ProvideMode,
+	ipPath *connect.IpPath,
+	packets [][]byte,
+) {
+	self.receivePacketBatch(packets)
+	for _, receivePacketsCallback := range self.receivePacketsCallbacks.Get() {
+		receivePacketsCallback(source, provideMode, ipPath, packets)
+	}
+	for _, receiveCallback := range self.receiveCallbacks.Get() {
+		for _, packet := range packets {
+			receiveCallback(source, provideMode, ipPath, packet)
+		}
+	}
+}
+
+// Native adapters receive one borrowed buffer rather than crossing the ABI
+// once per packet. Framing matches SendPacketBatch in the reverse direction.
+func (self *DeviceLocal) receivePacketBatch(packets [][]byte) {
+	callbacks := self.receivePacketBatchCallbacks.Get()
+	if len(callbacks) == 0 {
+		return
+	}
+	packetBatchByteCount := 0
+	for _, packet := range packets {
+		if len(packet) == 0 || 65535 < len(packet) {
+			return
+		}
+		packetBatchByteCount += 2 + len(packet)
+	}
+	if packetBatchByteCount == 0 {
+		return
+	}
+	packetBatchBytes := connect.MessagePoolGet(packetBatchByteCount)
+	defer connect.MessagePoolReturn(packetBatchBytes)
+	offset := 0
+	for _, packet := range packets {
+		binary.BigEndian.PutUint16(
+			packetBatchBytes[offset:offset+2],
+			uint16(len(packet)),
+		)
+		offset += 2
+		copy(packetBatchBytes[offset:offset+len(packet)], packet)
+		offset += len(packet)
+	}
+	for _, callback := range callbacks {
+		callback(packetBatchBytes)
 	}
 }
 
@@ -3363,6 +3426,19 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
 				self.receive(source, provideMode, ipPath, packet)
 			}
+			remoteReceivePackets := func(
+				source connect.TransferPath,
+				provideMode protocol.ProvideMode,
+				ipPath *connect.IpPath,
+				packets [][]byte,
+			) {
+				remoteReceiveByteCount := 0
+				for _, packet := range packets {
+					remoteReceiveByteCount += len(packet)
+				}
+				self.stats.UpdateRemoteReceive(ByteCount(remoteReceiveByteCount))
+				self.receivePackets(source, provideMode, ipPath, packets)
+			}
 			networkPeerDestination := location != nil && location.NetworkPeer
 			var networkPeerDestinationId *connect.Id
 			if networkPeerDestination {
@@ -3509,6 +3585,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			// the rest flow on to remoteReceive), and the send path runs through the mux
 			// (it claims DNS/HTTP, else forwards to the multi-client).
 			muxReceive := connect.ReceivePacketFunction(remoteReceive)
+			muxReceivePackets := connect.ReceivePacketsFunction(remoteReceivePackets)
 			var upgradeMux *connect.UpgradeMux
 			if self.upgradeMuxSettings != nil {
 				if self.upgradeMuxSettings.Dns != nil {
@@ -3534,6 +3611,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 					// carry the prior mux's learned server names across the rebuild
 					upgradeMux.AdoptServerNames(priorUpgradeMux)
 					muxReceive = m.Receive
+					muxReceivePackets = m.ReceivePackets
+					m.AddPacketsReceiver(remoteReceivePackets)
 				}
 			}
 
@@ -3553,6 +3632,7 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 				peerProvideMode,
 				settings,
 			)
+			multi.SetReceivePacketsCallback(muxReceivePackets)
 			// carry the host's degraded-performance state into the fresh window
 			// (eases the liveness probe timings; see SetPerformanceDegraded)
 			multi.SetPerformanceDegraded(self.performanceDegraded.Load())
@@ -3804,6 +3884,48 @@ func (self *DeviceLocal) SendPacketNoCopy(packet []byte, n int32) bool {
 	return self.sendPacket(packet[:n])
 }
 
+// Go embedders hand over a complete pooled burst. The device consumes every
+// packet regardless of whether its selected route accepts it.
+//
+//gomobile:noexport
+func (self *DeviceLocal) SendPacketsNoCopy(packets [][]byte) int {
+	return self.sendPacketsNoCopy(packets)
+}
+
+// SendPacketBatch parses a compact sequence of uint16 length-prefixed packets
+// and crosses the Go/native boundary once. Invalid framing is rejected before
+// any packet is sent. The return value is the number accepted by the route.
+func (self *DeviceLocal) SendPacketBatch(packetBatchBytes []byte) int32 {
+	const maxPacketCount = 64
+	var packetRanges [maxPacketCount][2]int
+	packetCount := 0
+	offset := 0
+	for offset < len(packetBatchBytes) {
+		if len(packetBatchBytes)-offset < 2 || maxPacketCount <= packetCount {
+			return 0
+		}
+		packetByteCount := int(binary.BigEndian.Uint16(packetBatchBytes[offset : offset+2]))
+		offset += 2
+		if packetByteCount == 0 || len(packetBatchBytes)-offset < packetByteCount {
+			return 0
+		}
+		packetRanges[packetCount] = [2]int{offset, offset + packetByteCount}
+		packetCount += 1
+		offset += packetByteCount
+	}
+	if packetCount == 0 {
+		return 0
+	}
+	var packetStorage [maxPacketCount][]byte
+	packets := packetStorage[:packetCount]
+	for packetIndex, packetRange := range packetRanges[:packetCount] {
+		packets[packetIndex] = connect.MessagePoolCopy(
+			packetBatchBytes[packetRange[0]:packetRange[1]],
+		)
+	}
+	return int32(self.sendPacketsNoCopy(packets))
+}
+
 // deviceLocalSendRoute is an immutable snapshot of the routing fields read on
 // the per-packet send path. see `DeviceLocal.sendRoute`.
 type deviceLocalSendRoute struct {
@@ -3877,23 +3999,107 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 	}
 }
 
+// The batch send owns every pooled packet on entry. Accepted packets transfer
+// to the route; rejected packets are returned here. One immutable route and
+// one stats update cover the whole burst.
+func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
+	route := self.sendRoute.Load()
+	remoteSendByteCount := 0
+	if route.upgradeMux != nil || route.remoteUserNatClient != nil {
+		for _, packet := range packets {
+			remoteSendByteCount += len(packet)
+		}
+		self.stats.UpdateRemoteSend(ByteCount(remoteSendByteCount))
+	}
+	sentPacketCount := 0
+	source := connect.SourceId(self.clientId)
+	for _, packet := range packets {
+		sent := false
+		switch {
+		case route.upgradeMux != nil:
+			sent = route.upgradeMux.SendPacket(
+				source,
+				protocol.ProvideMode_Network,
+				packet,
+				self.settings.SendTimeout,
+			)
+		case route.remoteUserNatClient != nil:
+			sent = route.remoteUserNatClient.SendPacket(
+				source,
+				protocol.ProvideMode_Network,
+				packet,
+				self.settings.SendTimeout,
+			)
+		case route.routeLocal && route.provider != nil:
+			if localUserNat := route.provider.LocalUserNat(); localUserNat != nil {
+				sent = localUserNat.SendPacket(
+					source,
+					protocol.ProvideMode_Network,
+					packet,
+					self.settings.SendTimeout,
+				)
+				if sent {
+					self.localFallbackEgressPacketCount.Add(1)
+					self.localFallbackEgressByteCount.Add(int64(len(packet)))
+				}
+			}
+		}
+		if sent {
+			sentPacketCount += 1
+		} else {
+			connect.MessagePoolReturn(packet)
+		}
+	}
+	return sentPacketCount
+}
+
 func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-		var ipProtocol IpProtocol
-		switch ipPath.Protocol {
-		case connect.IpProtocolUdp:
-			ipProtocol = IpProtocolUdp
-		case connect.IpProtocolTcp:
-			ipProtocol = IpProtocolTcp
-		default:
-			ipProtocol = IpProtocolUnknown
+		packetStorage := [1][]byte{packet}
+		packetBatch := PacketBatch{packets: packetStorage[:]}
+		ipVersion := packetBatch.IpVersion(0)
+		ipProtocol := packetBatch.IpProtocol(0)
+		if ipPath != nil {
+			ipVersion = ipPath.Version
+			switch ipPath.Protocol {
+			case connect.IpProtocolUdp:
+				ipProtocol = IpProtocolUdp
+			case connect.IpProtocolTcp:
+				ipProtocol = IpProtocolTcp
+			default:
+				ipProtocol = IpProtocolUnknown
+			}
 		}
 
-		receivePacket.ReceivePacket(ipPath.Version, ipProtocol, packet)
+		receivePacket.ReceivePacket(ipVersion, ipProtocol, packet)
 	}
 	callbackId := self.receiveCallbacks.Add(receive)
 	return newSub(func() {
 		self.receiveCallbacks.Remove(callbackId)
+	})
+}
+
+// A mobile callback receives one borrowed packet object per upstream burst.
+func (self *DeviceLocal) AddReceivePackets(receivePackets ReceivePackets) Sub {
+	receive := func(
+		source connect.TransferPath,
+		provideMode protocol.ProvideMode,
+		ipPath *connect.IpPath,
+		packets [][]byte,
+	) {
+		receivePackets.ReceivePackets(&PacketBatch{packets: packets})
+	}
+	callbackId := self.receivePacketsCallbacks.Add(receive)
+	return newSub(func() {
+		self.receivePacketsCallbacks.Remove(callbackId)
+	})
+}
+
+// A native callback receives the whole borrowed burst in compact framing.
+func (self *DeviceLocal) AddReceivePacketBatch(receivePacketBatch ReceivePacketBatch) Sub {
+	callbackId := self.receivePacketBatchCallbacks.Add(receivePacketBatch.ReceivePacketBatch)
+	return newSub(func() {
+		self.receivePacketBatchCallbacks.Remove(callbackId)
 	})
 }
 
@@ -3902,6 +4108,16 @@ func (self *DeviceLocal) AddReceivePacketCallback(callback func(source connect.T
 	callbackId := self.receiveCallbacks.Add(callback)
 	return func() {
 		self.receiveCallbacks.Remove(callbackId)
+	}
+}
+
+// Internal adapters avoid constructing a mobile PacketBatch wrapper.
+//
+//gomobile:noexport
+func (self *DeviceLocal) AddReceivePacketsCallback(callback connect.ReceivePacketsFunction) func() {
+	callbackId := self.receivePacketsCallbacks.Add(callback)
+	return func() {
+		self.receivePacketsCallbacks.Remove(callbackId)
 	}
 }
 

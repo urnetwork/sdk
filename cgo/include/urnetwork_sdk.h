@@ -57,6 +57,9 @@ bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t se
 bool urnet_render_identicon_png(const uint8_t* input, int32_t input_len, int32_t size, uint8_t* out, int32_t* inout_len, char** out_error);
 bool urnet_device_get_public_identity_key(uint64_t self, uint8_t* out, int32_t* inout_len);
 
+/* one borrowed packet from a receive batch */
+bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t* inout_len);
+
 /* ----- constants ----- */
 
 #define URNET_ASYNC_QUEUE_SIZE 32
@@ -354,6 +357,10 @@ typedef void (*urnet_provider_identity_change_cb)(void* user_data);
 typedef void (*urnet_purchase_confirmation_cb)(void* user_data, const char* state);
 /* ReceivePacket */
 typedef void (*urnet_receive_packet_cb)(void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
+/* ReceivePacketBatch */
+typedef void (*urnet_receive_packet_batch_cb)(void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len);
+/* ReceivePackets */
+typedef void (*urnet_receive_packets_cb)(void* user_data, uint64_t packet_batch);
 /* RedeemBalanceCodeCallback */
 typedef void (*urnet_redeem_balance_code_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ReferralCodeListener */
@@ -750,6 +757,8 @@ bool urnet_device_upload_logs(uint64_t self, const char* feedback_id, urnet_uplo
 /* ----- DeviceLocal ----- */
 
 uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_packet_cb receive_packet_receive_packet, void* receive_packet_user_data);
+uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receive_packet_batch_cb receive_packet_batch_receive_packet_batch, void* receive_packet_batch_user_data);
+uint64_t urnet_device_local_add_receive_packets(uint64_t self, urnet_receive_packets_cb receive_packets_receive_packets, void* receive_packets_user_data);
 void urnet_device_local_close_block_action_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_connect_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_contract_details_view_controller(uint64_t self, uint64_t vc);
@@ -796,6 +805,7 @@ bool urnet_device_local_probe_suite_running(uint64_t self);
 void urnet_device_local_reset_reliability_metrics(uint64_t self);
 void urnet_device_local_reset_reliability_settings(uint64_t self);
 bool urnet_device_local_send_packet(uint64_t self, const uint8_t* packet, int32_t packet_len, int64_t n);
+int64_t urnet_device_local_send_packet_batch(uint64_t self, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len);
 void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
 void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lookup_cb lookup_pinned_flow_app_id, void* lookup_user_data);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
@@ -1032,6 +1042,12 @@ char* urnet_network_user_view_controller_get_network_user(uint64_t self);
 void urnet_network_user_view_controller_start(uint64_t self);
 void urnet_network_user_view_controller_stop(uint64_t self);
 void urnet_network_user_view_controller_update_network_user(uint64_t self, const char* network_name);
+
+/* ----- PacketBatch ----- */
+
+int64_t urnet_packet_batch_ip_protocol(uint64_t self, int64_t index);
+int64_t urnet_packet_batch_ip_version(uint64_t self, int64_t index);
+int64_t urnet_packet_batch_len(uint64_t self);
 
 /* ----- PeerViewController ----- */
 

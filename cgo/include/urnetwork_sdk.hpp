@@ -236,6 +236,7 @@ class NetworkNameValidationViewController;
 class NetworkSpace;
 class NetworkSpaceManager;
 class NetworkUserViewController;
+class PacketBatch;
 class PeerViewController;
 class PostQuantumIdentityViewController;
 class ProvideViewController;
@@ -10247,6 +10248,8 @@ using ProvideSecretKeysListener = std::function<void(std::optional<ProvideSecret
 using ProviderIdentityChangeListener = std::function<void()>;
 using PurchaseConfirmationListener = std::function<void(std::string state)>;
 using ReceivePacket = std::function<void(int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len)>;
+using ReceivePacketBatch = std::function<void(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len)>;
+using ReceivePackets = std::function<void(PacketBatch packet_batch)>;
 using RedeemBalanceCodeCallback = std::function<void(std::optional<RedeemBalanceCodeResult> result, std::optional<std::string> err_param)>;
 using ReferralCodeListener = std::function<void(std::string p0)>;
 using RefreshJwtCallback = std::function<void(std::optional<RefreshJwtResult> result, std::optional<std::string> err_param)>;
@@ -10660,6 +10663,8 @@ public:
 	DeviceLocal() = default;
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
+	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
+	Sub addReceivePackets(ReceivePackets receive_packets) const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
 	void closeConnectViewController(const ConnectViewController& vc) const;
 	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
@@ -10706,6 +10711,7 @@ public:
 	void resetReliabilityMetrics() const;
 	void resetReliabilitySettings() const;
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
+	int64_t sendPacketBatch(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
@@ -11001,6 +11007,17 @@ public:
 	void start() const;
 	void stop() const;
 	void updateNetworkUser(const std::string& network_name) const;
+};
+
+class PacketBatch final : public detail::Handle {
+public:
+	PacketBatch() = default;
+	explicit PacketBatch(uint64_t h) : detail::Handle(h) {}
+	int64_t ipProtocol(int64_t index) const;
+	int64_t ipVersion(int64_t index) const;
+	int64_t len() const;
+	/* one borrowed packet copied into c++-owned storage */
+	std::vector<uint8_t> get(int64_t index) const;
 };
 
 class PeerViewController final : public detail::Handle {
@@ -14158,6 +14175,48 @@ inline void oneshot_receive_packet(void* user_data, int64_t ip_version, int64_t 
 	auto* f = static_cast<ReceivePacket*>(user_data);
 	try {
 		(*f)(ip_version, ip_protocol, packet, packet_len);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_receive_packet_batch(void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) {
+	auto* f = static_cast<ReceivePacketBatch*>(user_data);
+	try {
+		(*f)(packet_batch_bytes, packet_batch_bytes_len);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_receive_packet_batch(void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) {
+	auto* f = static_cast<ReceivePacketBatch*>(user_data);
+	try {
+		(*f)(packet_batch_bytes, packet_batch_bytes_len);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_receive_packets(void* user_data, uint64_t packet_batch) {
+	auto* f = static_cast<ReceivePackets*>(user_data);
+	try {
+		PacketBatch packet_batch_v(packet_batch);
+		(*f)(std::move(packet_batch_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_receive_packets(void* user_data, uint64_t packet_batch) {
+	auto* f = static_cast<ReceivePackets*>(user_data);
+	try {
+		PacketBatch packet_batch_v(packet_batch);
+		(*f)(std::move(packet_batch_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -17519,6 +17578,28 @@ inline Sub DeviceLocal::addReceivePacket(ReceivePacket receive_packet) const {
 	}
 	return r;
 }
+inline Sub DeviceLocal::addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const {
+	std::shared_ptr<ReceivePacketBatch> receive_packet_batch_fn;
+	if (receive_packet_batch) {
+		receive_packet_batch_fn = std::make_shared<ReceivePacketBatch>(std::move(receive_packet_batch));
+	}
+	Sub r(urnet_device_local_add_receive_packet_batch(handle(), receive_packet_batch_fn ? &detail::retained_receive_packet_batch : nullptr, receive_packet_batch_fn.get()));
+	if (receive_packet_batch_fn) {
+		r.retain(receive_packet_batch_fn);
+	}
+	return r;
+}
+inline Sub DeviceLocal::addReceivePackets(ReceivePackets receive_packets) const {
+	std::shared_ptr<ReceivePackets> receive_packets_fn;
+	if (receive_packets) {
+		receive_packets_fn = std::make_shared<ReceivePackets>(std::move(receive_packets));
+	}
+	Sub r(urnet_device_local_add_receive_packets(handle(), receive_packets_fn ? &detail::retained_receive_packets : nullptr, receive_packets_fn.get()));
+	if (receive_packets_fn) {
+		r.retain(receive_packets_fn);
+	}
+	return r;
+}
 inline void DeviceLocal::closeBlockActionViewController(const BlockActionViewController& vc) const {
 	urnet_device_local_close_block_action_view_controller(handle(), vc.handle());
 }
@@ -17727,6 +17808,10 @@ inline void DeviceLocal::resetReliabilitySettings() const {
 }
 inline bool DeviceLocal::sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const {
 	bool r = urnet_device_local_send_packet(handle(), packet, packet_len, n);
+	return r;
+}
+inline int64_t DeviceLocal::sendPacketBatch(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) const {
+	int64_t r = urnet_device_local_send_packet_batch(handle(), packet_batch_bytes, packet_batch_bytes_len);
 	return r;
 }
 inline void DeviceLocal::setByJwt(const std::string& by_jwt) const {
@@ -18909,6 +18994,18 @@ inline void NetworkUserViewController::stop() const {
 inline void NetworkUserViewController::updateNetworkUser(const std::string& network_name) const {
 	urnet_network_user_view_controller_update_network_user(handle(), network_name.c_str());
 }
+inline int64_t PacketBatch::ipProtocol(int64_t index) const {
+	int64_t r = urnet_packet_batch_ip_protocol(handle(), index);
+	return r;
+}
+inline int64_t PacketBatch::ipVersion(int64_t index) const {
+	int64_t r = urnet_packet_batch_ip_version(handle(), index);
+	return r;
+}
+inline int64_t PacketBatch::len() const {
+	int64_t r = urnet_packet_batch_len(handle());
+	return r;
+}
 inline Sub PeerViewController::addPeersListener(PeersListener listener) const {
 	std::shared_ptr<PeersListener> listener_fn;
 	if (listener) {
@@ -19874,6 +19971,9 @@ inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
 }
 inline std::vector<uint8_t> DeviceRemote::getPublicIdentityKey() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });
+}
+inline std::vector<uint8_t> PacketBatch::get(int64_t index) const {
+	return detail::bufferOut([h = handle(), index](uint8_t* out, int32_t* len) { return urnet_packet_batch_get(h, index, out, len); });
 }
 
 /* the canonical identicon png for arbitrary input bytes (identity keys):

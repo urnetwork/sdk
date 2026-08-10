@@ -1681,6 +1681,31 @@ func (self *cAdapterReceivePacket) ReceivePacket(ipVersion int, ipProtocol sdk.I
 	C.urnet_invoke_receive_packet(self.cbReceivePacket, self.userData, C.int64_t(int64(ipVersion)), C.int64_t(int64(ipProtocol)), packet_, C.int32_t(len(packet)))
 }
 
+type cAdapterReceivePacketBatch struct {
+	cbReceivePacketBatch C.urnet_receive_packet_batch_cb
+	userData             unsafe.Pointer
+}
+
+func (self *cAdapterReceivePacketBatch) ReceivePacketBatch(packetBatchBytes []byte) {
+	defer cgoGuard("urnet_receive_packet_batch_cb")
+	var packetBatchBytes_ *C.uint8_t
+	if 0 < len(packetBatchBytes) {
+		packetBatchBytes_ = (*C.uint8_t)(unsafe.Pointer(&packetBatchBytes[0]))
+	}
+	C.urnet_invoke_receive_packet_batch(self.cbReceivePacketBatch, self.userData, packetBatchBytes_, C.int32_t(len(packetBatchBytes)))
+}
+
+type cAdapterReceivePackets struct {
+	cbReceivePackets C.urnet_receive_packets_cb
+	userData         unsafe.Pointer
+}
+
+func (self *cAdapterReceivePackets) ReceivePackets(packetBatch *sdk.PacketBatch) {
+	defer cgoGuard("urnet_receive_packets_cb")
+	packetBatch_ := C.uint64_t(newHandle(packetBatch))
+	C.urnet_invoke_receive_packets(self.cbReceivePackets, self.userData, packetBatch_)
+}
+
 type cAdapterRedeemBalanceCodeCallback struct {
 	cbResult C.urnet_redeem_balance_code_cb
 	userData unsafe.Pointer
@@ -6699,6 +6724,36 @@ func urnet_device_local_add_receive_packet(self C.uint64_t, receivePacket_receiv
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_add_receive_packet_batch
+func urnet_device_local_add_receive_packet_batch(self C.uint64_t, receivePacketBatch_receive_packet_batch C.urnet_receive_packet_batch_cb, receivePacketBatch_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_local_add_receive_packet_batch")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_add_receive_packet_batch")
+	if !ok {
+		return 0
+	}
+	var receivePacketBatch_ sdk.ReceivePacketBatch
+	if receivePacketBatch_receive_packet_batch != nil {
+		receivePacketBatch_ = &cAdapterReceivePacketBatch{cbReceivePacketBatch: receivePacketBatch_receive_packet_batch, userData: receivePacketBatch_user_data}
+	}
+	r0 := self_.AddReceivePacketBatch(receivePacketBatch_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_add_receive_packets
+func urnet_device_local_add_receive_packets(self C.uint64_t, receivePackets_receive_packets C.urnet_receive_packets_cb, receivePackets_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_local_add_receive_packets")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_add_receive_packets")
+	if !ok {
+		return 0
+	}
+	var receivePackets_ sdk.ReceivePackets
+	if receivePackets_receive_packets != nil {
+		receivePackets_ = &cAdapterReceivePackets{cbReceivePackets: receivePackets_receive_packets, userData: receivePackets_user_data}
+	}
+	r0 := self_.AddReceivePackets(receivePackets_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_local_close_block_action_view_controller
 func urnet_device_local_close_block_action_view_controller(self C.uint64_t, vc C.uint64_t) {
 	defer cgoGuard("urnet_device_local_close_block_action_view_controller")
@@ -7307,6 +7362,17 @@ func urnet_device_local_send_packet(self C.uint64_t, packet *C.uint8_t, packet_l
 	}
 	r0 := self_.SendPacket(goBytes(packet, packet_len), int32(int64(n)))
 	return C.bool(r0)
+}
+
+//export urnet_device_local_send_packet_batch
+func urnet_device_local_send_packet_batch(self C.uint64_t, packetBatchBytes *C.uint8_t, packetBatchBytes_len C.int32_t) C.int64_t {
+	defer cgoGuard("urnet_device_local_send_packet_batch")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_send_packet_batch")
+	if !ok {
+		return 0
+	}
+	r0 := self_.SendPacketBatch(goBytes(packetBatchBytes, packetBatchBytes_len))
+	return C.int64_t(r0)
 }
 
 //export urnet_device_local_set_by_jwt
@@ -10396,6 +10462,39 @@ func urnet_normal_env_name(envName *C.char) *C.char {
 	defer cgoGuard("urnet_normal_env_name")
 	r0 := sdk.NormalEnvName(goString(envName))
 	return cString(string(r0))
+}
+
+//export urnet_packet_batch_ip_protocol
+func urnet_packet_batch_ip_protocol(self C.uint64_t, index C.int64_t) C.int64_t {
+	defer cgoGuard("urnet_packet_batch_ip_protocol")
+	self_, ok := resolveHandle[*sdk.PacketBatch](uint64(self), "urnet_packet_batch_ip_protocol")
+	if !ok {
+		return 0
+	}
+	r0 := self_.IpProtocol(int(int64(index)))
+	return C.int64_t(r0)
+}
+
+//export urnet_packet_batch_ip_version
+func urnet_packet_batch_ip_version(self C.uint64_t, index C.int64_t) C.int64_t {
+	defer cgoGuard("urnet_packet_batch_ip_version")
+	self_, ok := resolveHandle[*sdk.PacketBatch](uint64(self), "urnet_packet_batch_ip_version")
+	if !ok {
+		return 0
+	}
+	r0 := self_.IpVersion(int(int64(index)))
+	return C.int64_t(r0)
+}
+
+//export urnet_packet_batch_len
+func urnet_packet_batch_len(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_packet_batch_len")
+	self_, ok := resolveHandle[*sdk.PacketBatch](uint64(self), "urnet_packet_batch_len")
+	if !ok {
+		return 0
+	}
+	r0 := self_.Len()
+	return C.int64_t(r0)
 }
 
 //export urnet_parse_checkout_redirect

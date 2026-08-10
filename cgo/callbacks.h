@@ -221,6 +221,10 @@ typedef void (*urnet_purchase_confirmation_cb)(void* user_data, const char* stat
 void urnet_invoke_purchase_confirmation(urnet_purchase_confirmation_cb cb, void* user_data, const char* state);
 typedef void (*urnet_receive_packet_cb)(void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
 void urnet_invoke_receive_packet(urnet_receive_packet_cb cb, void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
+typedef void (*urnet_receive_packet_batch_cb)(void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len);
+void urnet_invoke_receive_packet_batch(urnet_receive_packet_batch_cb cb, void* user_data, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len);
+typedef void (*urnet_receive_packets_cb)(void* user_data, uint64_t packet_batch);
+void urnet_invoke_receive_packets(urnet_receive_packets_cb cb, void* user_data, uint64_t packet_batch);
 typedef void (*urnet_redeem_balance_code_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_redeem_balance_code(urnet_redeem_balance_code_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_referral_code_cb)(void* user_data, const char* p0);
