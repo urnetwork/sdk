@@ -2688,20 +2688,21 @@ func (self *DeviceRemote) Shuffle() {
 // RemoveConnectedProvider is an action on the hosted device (unlike the
 // read-only provider-locations surface, which derives from the bridged window
 // monitor), so it is a plain rpc call. It is dropped when the rpc is down —
-// the exclusion only lives as long as the connection anyway.
+// the exclusion only lives as long as the connection anyway. stateLock is held
+// across the call like every other forward rpc: the closeService cleanup
+// requires the lock.
 func (self *DeviceRemote) RemoveConnectedProvider(clientId *Id) {
 	if clientId == nil {
 		return
 	}
 
 	self.stateLock.Lock()
-	service := self.service
-	self.stateLock.Unlock()
+	defer self.stateLock.Unlock()
 
-	if service == nil {
+	if self.service == nil {
 		return
 	}
-	rpcCallVoid(service, "DeviceLocalRpc.RemoveConnectedProvider", clientId.toConnectId(), self.closeService)
+	rpcCallVoid(self.service, "DeviceLocalRpc.RemoveConnectedProvider", clientId.toConnectId(), self.closeService)
 }
 
 func (self *DeviceRemote) Cancel() {
@@ -3690,7 +3691,15 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
 
-			err = rpcCallVoid(service, "DeviceLocalRpc.HttpPostRaw", httpRequest, self.closeService)
+			// the capture above only chose the remote path. The run goroutine can
+			// tear down and replace the service between the capture and here, and
+			// a failed call on a stale client must not closeService the live one
+			if self.service == nil {
+				err = fmt.Errorf("rpc service is down")
+				close(httpResponseChannel)
+				return
+			}
+			err = rpcCallVoid(self.service, "DeviceLocalRpc.HttpPostRaw", httpRequest, self.closeService)
 			if err != nil {
 				close(httpResponseChannel)
 				return
@@ -3755,7 +3764,15 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
 
-			err = rpcCallVoid(service, "DeviceLocalRpc.HttpGetRaw", httpRequest, self.closeService)
+			// the capture above only chose the remote path. The run goroutine can
+			// tear down and replace the service between the capture and here, and
+			// a failed call on a stale client must not closeService the live one
+			if self.service == nil {
+				err = fmt.Errorf("rpc service is down")
+				close(httpResponseChannel)
+				return
+			}
+			err = rpcCallVoid(self.service, "DeviceLocalRpc.HttpGetRaw", httpRequest, self.closeService)
 			if err != nil {
 				close(httpResponseChannel)
 				return

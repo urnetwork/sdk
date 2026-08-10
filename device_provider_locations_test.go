@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"net"
+	"net/rpc"
 	"testing"
 	"time"
 
@@ -103,6 +105,112 @@ func TestRemoveConnectedProviderIsSafeWhenDisconnected(t *testing.T) {
 	// and with the rpc down
 	deviceLocal.Close()
 	deviceRemote.RemoveConnectedProvider(newId(connect.NewId()))
+}
+
+// TestRemoveConnectedProviderIsSafeWhenDisconnected could only catch this on a
+// lucky interleaving: DeviceRemote.RemoveConnectedProvider used to release
+// stateLock before the rpc call, so when the call failed, the closeService
+// cleanup ran unlocked and raced the run goroutine's locked teardown of
+// self.service. This test pins the ordering deterministically. The service is
+// swapped for a client whose calls fail instantly (a closed pipe) while the
+// live transport stays untouched — so the run goroutine stays parked and
+// cannot steal the teardown — and a pre-spawned reader takes the locked read
+// the run goroutine's teardown would take. With the cleanup unlocked the race
+// detector fails this every run, in either access order; with the cleanup
+// under stateLock the mutex orders the pair.
+func TestRemoveConnectedProviderTeardownHoldsStateLock(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		testDeviceLocalSettingsRpc(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+
+	deviceRemote.Sync()
+	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
+
+	// an rpc client over a closed pipe: calls fail instantly, and closing it
+	// again in the cleanup touches nothing shared with the live transport
+	clientConn, serverConn := net.Pipe()
+	clientConn.Close()
+	serverConn.Close()
+	settings := defaultDeviceRpcSettings()
+	doctored := &rpcClientWithTimeout{
+		ctx:         ctx,
+		log:         settings.logger(),
+		timeout:     settings.RpcCallTimeout,
+		closeClient: clientConn.Close,
+		client:      rpc.NewClient(clientConn),
+	}
+
+	deviceRemote.stateLock.Lock()
+	liveService := deviceRemote.service
+	deviceRemote.service = doctored
+	deviceRemote.stateLock.Unlock()
+	if liveService == nil {
+		t.Fatal("a synced remote must have a live rpc service")
+	}
+	// restore the live service (torn down by the failed call below) so Close
+	// tears the real transport down on the normal path
+	defer func() {
+		deviceRemote.stateLock.Lock()
+		defer deviceRemote.stateLock.Unlock()
+		if deviceRemote.service == nil {
+			deviceRemote.service = liveService
+		}
+	}()
+
+	// The locked read the run goroutine's teardown would take. It must already
+	// be running before the racing cleanup write — spawning it afterward would
+	// hand the race detector a happens-before edge — and the sleep keeps its
+	// read after the write without synchronizing with it.
+	serviceAfterRemove := make(chan *rpcClient)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		deviceRemote.stateLock.Lock()
+		service := deviceRemote.service
+		deviceRemote.stateLock.Unlock()
+		serviceAfterRemove <- service
+	}()
+
+	// fails instantly on the closed pipe, so the closeService cleanup runs
+	deviceRemote.RemoveConnectedProvider(newId(connect.NewId()))
+
+	if service := <-serviceAfterRemove; service != nil {
+		t.Fatal("a failed remove must tear down the rpc service")
+	}
 }
 
 // The remote surface derives from the bridged window monitor rather than a

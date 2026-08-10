@@ -615,16 +615,40 @@ func TestDeviceRemoteApi(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	// a local stand-in for the api: what is under test is the http bridge
+	// (remote request -> rpc -> local strategy fetch -> reverse response), and
+	// a live endpoint made the assertions depend on external network conditions
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(`{"message":"hello"}`))
+		case http.MethodPost:
+			requestBodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Write(requestBodyBytes)
+		default:
+			http.Error(w, "unsupported method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	// sync first so the requests deterministically take the rpc bridge rather
+	// than racing the background connect into the local fallback
+	deviceRemote.Sync()
+	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
+
+	bodyBytes, err := deviceRemote.httpGetRaw(ctx, server.URL+"/hello", "")
 	connect.AssertEqual(t, err, nil)
 	connect.AssertNotEqual(t, bodyBytes, nil)
 	glog.Infof("response body=%s", string(bodyBytes))
-	connect.AssertNotEqual(t, len(bodyBytes), 0)
+	connect.AssertEqual(t, string(bodyBytes), `{"message":"hello"}`)
 
-	// FIXME allow POST on the hello route
-	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
-	// connect.AssertEqual(t, err, nil)
-
+	postBodyBytes, err := deviceRemote.httpPostRaw(ctx, server.URL+"/hello", []byte(`{"echo":true}`), "")
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, string(postBodyBytes), `{"echo":true}`)
 }
 
 func TestDeviceRemoteBlockAndDns(t *testing.T) {
