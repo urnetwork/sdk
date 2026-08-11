@@ -938,6 +938,29 @@ Implemented 2026-08-04. Deviations and details worth knowing:
 - cgo regenerated: `urnet_device_get_connected_provider_locations` +
   `urnet_device_add_connected_provider_location_change_listener`, structs auto-classified
   as json, listener as a callback typedef. `make smoke` passes.
+- `provider_locations_view_controller.go`: `ProviderLocationsViewController`, opened
+  from the view controller manager (`OpenProviderLocationsViewController` /
+  `CloseProviderLocationsViewController`) like every other shared controller. It owns
+  the globe's **selection** (`GetSelectedClientId` / `SetSelectedClientId`, "" = none,
+  `SelectedProviderLocationChangeListener` to observe) and its **scroll wheel**
+  (`StepSelection(steps)`, positive east). It subscribes to the connected-provider
+  change listener itself, so a selection whose provider leaves the window is dropped
+  here rather than in five app-side copies. It also owns the default selection and
+  the removal hand-off (`RemoveProvider`) — see "Globe interaction" above. Wheel
+  order and clamping are described there too; the pure helpers
+  (`deriveProviderWindow`, `centroidLongitude`, `signedLonDelta`,
+  `stepWheelSelection`, `clampWheelIndex`, `providerWindow.longestConnected` /
+  `.successorTo`) are Go-tested, including the antimeridian cluster, the latitude
+  weighting, the stick-at-both-ends semantics, the longest-connected default, and
+  the next-older hand-off (including several providers leaving at once). Added to
+  the cgo generator's behavioral list so it crosses the ABI as a handle, and bound
+  in `sdk/js` for the browser app.
+- `js/main.go` also exports `URnetworkFilteredLocationsFromResult(json, filter)` —
+  the package-level `GetFilteredLocationsFromResult` over a raw
+  find-provider-locations response. The apple app already ran its own api results
+  through that function (`UrApiService`); this gives the web chooser the same
+  grouping and order (provider count descending, then name, per section) on its
+  REST path, where it previously rendered the server's reply order raw.
 
 ### server
 - Migration appends `latitude`/`longitude` (nullable) to `location`; `CreateLocation`
@@ -991,23 +1014,75 @@ Implemented 2026-08-04. Deviations and details worth knowing:
   component. `clipToBounds()` remains as a backstop (a Canvas does not clip).
 - Selection ring (globe): solid dot plus an outline ring 4 units outside its edge
   (`DOT_RADIUS + SELECTED_RING_GAP + stroke/2`).
-- **Globe interaction is a scroll wheel** when providers are present. The wheel is
-  ordered by **longitude** (west→east), independent of the list's duration order.
-  A horizontal drag accumulates travel; crossing `WHEEL_STEP_WIDTH_FRACTION` of the
-  globe's width steps the selection, and the step consumes exactly one threshold of
-  travel — that leftover is the hysteresis, so a finger resting on the boundary
-  cannot flicker between two providers. A fast drag crosses several steps at once.
-  Swiping left advances (the globe spins east under the finger). The wheel wraps at
-  both ends, which is correct *because* longitude is cyclic: stepping east past the
-  last provider lands on the westernmost, which is also the shortest way round.
-  Each step recenters the globe on the new selection (the existing selection-centering
-  effect), so free rotation is disabled in this mode — it would fight the animation.
-  With **no** plottable providers there is nothing to traverse, so the globe falls
-  back to free-form drag. The gesture handler reads the selection through
-  `rememberUpdatedState` rather than a `pointerInput` key, or every step would cancel
-  the in-flight drag. Recenter timing dropped from the web's 1000 ms to 450 ms:
-  recentering is now a per-step interaction, not an occasional one.
-  `wheelStep`/`wrapIndex` live in the tested geometry module.
+- **The selected dot is darker, and drawn last.** Its fill is the provider's own
+  country color with each RGB channel scaled by `SELECTED_DOT_DARKEN = 0.55`
+  (the same factor in every app — a visual constant of the port, like
+  `DOT_RADIUS`), while the ring keeps the full-strength color: a darker core
+  inside a bright ring. It is also held back and painted after every other dot,
+  because providers in one city project to the same point and the selection must
+  never end up underneath one of them.
+- **Globe interaction is a scroll wheel** when providers are present. A horizontal
+  drag accumulates travel; crossing `WHEEL_STEP_WIDTH_FRACTION` of the globe's width
+  steps the selection, and the step consumes exactly one threshold of travel — that
+  leftover is the hysteresis, so a finger resting on the boundary cannot flicker
+  between two providers. A fast drag crosses several steps at once. Swiping left
+  advances (the globe spins east under the finger). Each step recenters the globe on
+  the new selection (the existing selection-centering effect), so free rotation is
+  disabled in this mode — it would fight the animation. With **no** plottable
+  providers there is nothing to traverse, so the globe falls back to free-form drag.
+  On android the gesture handler reads through `rememberUpdatedState` rather than a
+  `pointerInput` key, or every step would cancel the in-flight drag. Recenter timing
+  dropped from the web's 1000 ms to 450 ms: recentering is now a per-step
+  interaction, not an occasional one.
+- **The wheel itself is the SDK's, not each app's**:
+  `sdk/provider_locations_view_controller.go` (`ProviderLocationsViewController`)
+  owns the selection and the stepping, and every app binds it — android through
+  gomobile, apple through the xcframework, windows/linux through the cgo ABI, the
+  browser through the wasm bridge (`sdk/js`, `useProviderLocationsSelection`). Two
+  rules live there:
+  - **Order: west→east about the providers' CENTROID.** Each plottable provider is
+    ranked by its signed longitude offset from the spherical centroid of the set
+    (unit vectors summed, the horizontal direction of the sum taken; latitude only
+    weights, so a near-pole provider pulls less). That puts the wheel's two ends on
+    the meridian *opposite* the data's center — the farthest place from the
+    providers. A raw longitude sort instead cuts at ±180 and splits a cluster
+    straddling the antimeridian: a provider at −178 would sort to the far west end
+    even though it sits just east of one at +175.
+  - **The ends STICK: `StepSelection` clamps, it does not wrap.** Stepping past the
+    extreme west or east stays there rather than teleporting the long way round the
+    globe. (This replaced a wrapping wheel, which was defensible while the order was
+    raw longitude — cyclic data, cyclic wheel — but reads as a glitch: a swipe left
+    at the eastern end jumped the globe halfway around the world.)
+  The apps keep only the gesture→step conversion (`wheelStep`, one notch per mouse
+  wheel detent) in their tested geometry modules: the threshold is in UI pixels and
+  the travel accumulator is per-gesture state (drag and scroll accumulate
+  separately), so it belongs on the UI side of the boundary.
+- **The selection always points at a connected provider**, also in the view
+  controller, so the screen never rests on nothing while providers are connected:
+  - **Default: the longest connected provider.** With nothing selected the
+    window's first entry is selected (the sdk sorts it oldest-connected first),
+    so opening the screen lands on a selection rather than an empty one.
+  - **On removal, the selection moves to the next OLDER provider** — the nearest
+    one connected longer than it, falling back to the nearest younger when the
+    removed provider was the oldest (which is then the new longest connected).
+    It applies whether the user removed the provider or the window rotated it
+    out, and skips neighbors that left in the same update. Handing the selection
+    to an older neighbor keeps it on a row that has been there all along rather
+    than on a newcomer.
+  `RemoveProvider(clientId)` on the controller is the removal entry point: it
+  moves the selection first and then calls `Device.RemoveConnectedProvider`, so
+  the ui never blinks through "nothing selected" while the window round trips.
+  `GetSelectedClientId() == ""` therefore means only "no providers connected",
+  and `SetSelectedClientId("")` falls back to the default rather than clearing.
+  Selecting is consequently **not a toggle** in any app.
+- **The selected row is scrolled into view** when it is off screen — the selection
+  moves without the list being touched (a wheel step, the default, a removal
+  handing it to an older provider), and a selection the user cannot see is not a
+  selection. Each app uses its toolkit's minimal-scroll primitive, which is a
+  no-op for a row already visible: `animateScrollToItem` past a visibility check
+  (android), `ScrollViewReader.scrollTo` with no anchor (apple), a vadjustment
+  nudge (linux), `StartBringIntoView` (windows), `scrollIntoView({block: "nearest"})`
+  (web).
 - Row layout: a fixed-size dot column on the left (24 dp box, so the width never
   changes with selection; the 12 dp dot gains a ring with a 4 dp gap when selected),
   top-aligned, and a right column of four stacked, right-aligned rows — client id

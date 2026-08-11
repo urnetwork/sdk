@@ -1857,6 +1857,16 @@ func (self *cAdapterSelectedLocationListener) SelectedLocationChanged(location *
 	}
 }
 
+type cAdapterSelectedProviderLocationChangeListener struct {
+	cbSelectedProviderLocationChanged C.urnet_selected_provider_location_change_cb
+	userData                          unsafe.Pointer
+}
+
+func (self *cAdapterSelectedProviderLocationChangeListener) SelectedProviderLocationChanged() {
+	defer cgoGuard("urnet_selected_provider_location_change_cb")
+	C.urnet_invoke_selected_provider_location_change(self.cbSelectedProviderLocationChanged, self.userData)
+}
+
 type cAdapterSendFeedbackCallback struct {
 	cbResult C.urnet_send_feedback_cb
 	userData unsafe.Pointer
@@ -6866,6 +6876,20 @@ func urnet_device_local_close_post_quantum_identity_view_controller(self C.uint6
 	self_.ClosePostQuantumIdentityViewController(vc_)
 }
 
+//export urnet_device_local_close_provider_locations_view_controller
+func urnet_device_local_close_provider_locations_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_provider_locations_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_provider_locations_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(vc), "urnet_device_local_close_provider_locations_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseProviderLocationsViewController(vc_)
+}
+
 //export urnet_device_local_close_view_controller
 func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_view_controller_close_cb, vc_start C.urnet_view_controller_start_cb, vc_stop C.urnet_view_controller_stop_cb, vc_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_local_close_view_controller")
@@ -7263,6 +7287,20 @@ func urnet_device_local_open_provider_contract_details_view_controller(self C.ui
 		return 0
 	}
 	r0 := self_.OpenProviderContractDetailsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_open_provider_locations_view_controller
+func urnet_device_local_open_provider_locations_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_provider_locations_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_provider_locations_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProviderLocationsViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -7747,6 +7785,20 @@ func urnet_device_remote_close_post_quantum_identity_view_controller(self C.uint
 	self_.ClosePostQuantumIdentityViewController(vc_)
 }
 
+//export urnet_device_remote_close_provider_locations_view_controller
+func urnet_device_remote_close_provider_locations_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_provider_locations_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_provider_locations_view_controller")
+	if !ok {
+		return
+	}
+	vc_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(vc), "urnet_device_remote_close_provider_locations_view_controller")
+	if !ok {
+		return
+	}
+	self_.CloseProviderLocationsViewController(vc_)
+}
+
 //export urnet_device_remote_close_view_controller
 func urnet_device_remote_close_view_controller(self C.uint64_t, vc_close C.urnet_view_controller_close_cb, vc_start C.urnet_view_controller_start_cb, vc_stop C.urnet_view_controller_stop_cb, vc_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_remote_close_view_controller")
@@ -8079,6 +8131,20 @@ func urnet_device_remote_open_provider_contract_details_view_controller(self C.u
 		return 0
 	}
 	r0 := self_.OpenProviderContractDetailsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_provider_locations_view_controller
+func urnet_device_remote_open_provider_locations_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_provider_locations_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_provider_locations_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProviderLocationsViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -10714,6 +10780,102 @@ func urnet_provide_view_controller_start(self C.uint64_t) {
 func urnet_provide_view_controller_stop(self C.uint64_t) {
 	defer cgoGuard("urnet_provide_view_controller_stop")
 	self_, ok := resolveHandle[*sdk.ProvideViewController](uint64(self), "urnet_provide_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
+}
+
+//export urnet_provider_locations_view_controller_add_selected_provider_location_change_listener
+func urnet_provider_locations_view_controller_add_selected_provider_location_change_listener(self C.uint64_t, listener_selected_provider_location_changed C.urnet_selected_provider_location_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_provider_locations_view_controller_add_selected_provider_location_change_listener")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_add_selected_provider_location_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SelectedProviderLocationChangeListener
+	if listener_selected_provider_location_changed != nil {
+		listener_ = &cAdapterSelectedProviderLocationChangeListener{cbSelectedProviderLocationChanged: listener_selected_provider_location_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddSelectedProviderLocationChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_provider_locations_view_controller_close
+func urnet_provider_locations_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_locations_view_controller_close")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_provider_locations_view_controller_connected_provider_locations_changed
+func urnet_provider_locations_view_controller_connected_provider_locations_changed(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_locations_view_controller_connected_provider_locations_changed")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_connected_provider_locations_changed")
+	if !ok {
+		return
+	}
+	self_.ConnectedProviderLocationsChanged()
+}
+
+//export urnet_provider_locations_view_controller_get_selected_client_id
+func urnet_provider_locations_view_controller_get_selected_client_id(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_locations_view_controller_get_selected_client_id")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_get_selected_client_id")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSelectedClientId()
+	return cString(string(r0))
+}
+
+//export urnet_provider_locations_view_controller_remove_provider
+func urnet_provider_locations_view_controller_remove_provider(self C.uint64_t, clientId *C.char) {
+	defer cgoGuard("urnet_provider_locations_view_controller_remove_provider")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_remove_provider")
+	if !ok {
+		return
+	}
+	self_.RemoveProvider(goString(clientId))
+}
+
+//export urnet_provider_locations_view_controller_set_selected_client_id
+func urnet_provider_locations_view_controller_set_selected_client_id(self C.uint64_t, clientId *C.char) {
+	defer cgoGuard("urnet_provider_locations_view_controller_set_selected_client_id")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_set_selected_client_id")
+	if !ok {
+		return
+	}
+	self_.SetSelectedClientId(goString(clientId))
+}
+
+//export urnet_provider_locations_view_controller_start
+func urnet_provider_locations_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_locations_view_controller_start")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_provider_locations_view_controller_step_selection
+func urnet_provider_locations_view_controller_step_selection(self C.uint64_t, steps C.int64_t) {
+	defer cgoGuard("urnet_provider_locations_view_controller_step_selection")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_step_selection")
+	if !ok {
+		return
+	}
+	self_.StepSelection(int32(int64(steps)))
+}
+
+//export urnet_provider_locations_view_controller_stop
+func urnet_provider_locations_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_locations_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_stop")
 	if !ok {
 		return
 	}

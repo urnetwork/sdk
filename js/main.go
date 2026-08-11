@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"syscall/js"
 
 	"github.com/urnetwork/sdk"
@@ -150,6 +151,35 @@ func NewProxyDeviceWithDefaults(this js.Value, args []js.Value) any {
 	return jsProxyDevice(proxyDevice)
 }
 
+// FilteredLocationsFromResult groups and orders a raw
+// /network/find-provider-locations (or /network/provider-locations) response
+// the way every app's location chooser renders it: best matches, promoted,
+// then countries / regions / cities / devices, each ordered by provider count
+// descending and then by name.
+//
+// This is the SAME sdk function the native apps run their own api results
+// through (apple's UrApiService calls GetFilteredLocationsFromResult), exposed
+// so a caller that has a result but no device — the web chooser before the
+// device plane attaches — orders it identically instead of rendering whatever
+// order the server replied in.
+//
+// args: (resultJson string, filter string). Returns null when the json cannot
+// be read, so the caller can fall back.
+func FilteredLocationsFromResult(this js.Value, args []js.Value) any {
+	if len(args) < 1 || args[0].Type() != js.TypeString {
+		return js.Null()
+	}
+	filter := ""
+	if 1 < len(args) && args[1].Type() == js.TypeString {
+		filter = args[1].String()
+	}
+	var result sdk.FindLocationsResult
+	if err := json.Unmarshal([]byte(args[0].String()), &result); err != nil {
+		return js.Null()
+	}
+	return jsFilteredLocations(sdk.GetFilteredLocationsFromResult(&result, filter))
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -160,6 +190,7 @@ func main() {
 
 	js.Global().Set("URnetworkNewProxyDeviceWithDefaults", js.FuncOf(NewProxyDeviceWithDefaults))
 	js.Global().Set("URnetworkNewPlatformDeviceRemote", js.FuncOf(NewPlatformDeviceRemote))
+	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
 
 	select {
 	case <-ctx.Done():

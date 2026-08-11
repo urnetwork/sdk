@@ -543,7 +543,7 @@ func startEchoProviderClient(t *testing.T, ctx context.Context) (*connect.Client
 			if err != nil {
 				continue
 			}
-			providerClient.SendWithTimeout(echoFrame, src.Reverse(), func(err error) {}, -1)
+			providerClient.SendWithTimeout(echoFrame, src.SourceId, func(err error) {}, -1)
 		}
 	})
 	return providerClient, func() { providerClient.Cancel() }

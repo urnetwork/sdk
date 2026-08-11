@@ -15,6 +15,8 @@ type ViewController interface {
 type ViewControllerManager interface {
 	OpenLocationsViewController() *LocationsViewController
 
+	OpenProviderLocationsViewController() *ProviderLocationsViewController
+
 	OpenConnectViewController() *ConnectViewController
 
 	OpenWalletViewController() *WalletViewController
@@ -93,6 +95,12 @@ func (self *viewControllerManager) OpenLocationsViewController() *LocationsViewC
 	vm := newLocationsViewController(self.ctx, self.device)
 	self.openViewController(vm)
 	return vm
+}
+
+func (self *viewControllerManager) OpenProviderLocationsViewController() *ProviderLocationsViewController {
+	vc := newProviderLocationsViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
 }
 
 func (self *viewControllerManager) OpenConnectViewController() *ConnectViewController {

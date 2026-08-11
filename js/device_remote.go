@@ -53,7 +53,21 @@ func jsConnectLocation(location *sdk.ConnectLocation) js.Value {
 		"providerCount": location.ProviderCount,
 	}
 	if location.ConnectLocationId != nil {
+		// the composite id, the one to hand back to the sdk
 		m["connectLocationId"] = location.ConnectLocationId.String()
+		// ...and its parts, for callers that persist or forward a bare id
+		// (the web settings doc and the extension both carry a location id,
+		// not the composite). Exactly one of these is set.
+		if location.ConnectLocationId.LocationId != nil {
+			m["locationId"] = location.ConnectLocationId.LocationId.String()
+		}
+		if location.ConnectLocationId.LocationGroupId != nil {
+			m["locationGroupId"] = location.ConnectLocationId.LocationGroupId.String()
+		}
+		if location.ConnectLocationId.ClientId != nil {
+			m["clientId"] = location.ConnectLocationId.ClientId.String()
+		}
+		m["bestAvailable"] = location.ConnectLocationId.BestAvailable
 	}
 	return js.ValueOf(m)
 }
@@ -327,6 +341,12 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		vc := device.OpenDevicesViewController()
 		return jsDevicesViewController(vc, func() {
 			device.CloseDevicesViewController(vc)
+		})
+	})
+	m["openProviderLocationsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc := device.OpenProviderLocationsViewController()
+		return jsProviderLocationsViewController(vc, func() {
+			device.CloseProviderLocationsViewController(vc)
 		})
 	})
 

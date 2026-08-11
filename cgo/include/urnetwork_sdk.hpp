@@ -240,6 +240,7 @@ class PacketBatch;
 class PeerViewController;
 class PostQuantumIdentityViewController;
 class ProvideViewController;
+class ProviderLocationsViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
 class SubscriptionBalanceViewController;
@@ -10259,6 +10260,7 @@ using RemoveAuthCallback = std::function<void(std::optional<RemoveAuthResult> re
 using RemoveWalletCallback = std::function<void(std::optional<RemoveWalletResult> result, std::optional<std::string> err_param)>;
 using RouteLocalChangeListener = std::function<void(bool route_local)>;
 using SelectedLocationListener = std::function<void(std::optional<ConnectLocation> location)>;
+using SelectedProviderLocationChangeListener = std::function<void()>;
 using SendFeedbackCallback = std::function<void(std::optional<FeedbackSendResult> result, std::optional<std::string> err_param)>;
 using SetNetworkLeaderboardPublicCallback = std::function<void(std::optional<SetNetworkRankingPublicResult> result, std::optional<std::string> err_param)>;
 using SetNetworkReferralCallback = std::function<void(std::optional<SetNetworkReferralResult> result, std::optional<std::string> err_param)>;
@@ -10673,6 +10675,7 @@ public:
 	void closeLocationsViewController(const LocationsViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
+	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	bool dropExit(const std::string& client_id) const;
 	std::optional<DestinationExitList> getDestinationExits() const;
@@ -10703,6 +10706,7 @@ public:
 	PostQuantumIdentityViewController openPostQuantumIdentityViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
+	ProviderLocationsViewController openProviderLocationsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -10761,6 +10765,7 @@ public:
 	void closeLocationsViewController(const LocationsViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
+	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	bool dropExit(const std::string& exit_client_id) const;
 	std::optional<DestinationExitList> getDestinationExits() const;
@@ -10786,6 +10791,7 @@ public:
 	PostQuantumIdentityViewController openPostQuantumIdentityViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
+	ProviderLocationsViewController openProviderLocationsViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -11052,6 +11058,21 @@ public:
 	explicit ProvideViewController(uint64_t h) : detail::Handle(h) {}
 	void close() const;
 	void start() const;
+	void stop() const;
+};
+
+class ProviderLocationsViewController final : public detail::Handle {
+public:
+	ProviderLocationsViewController() = default;
+	explicit ProviderLocationsViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addSelectedProviderLocationChangeListener(SelectedProviderLocationChangeListener listener) const;
+	void close() const;
+	void connectedProviderLocationsChanged() const;
+	std::string getSelectedClientId() const;
+	void removeProvider(const std::string& client_id) const;
+	void setSelectedClientId(const std::string& client_id) const;
+	void start() const;
+	void stepSelection(int64_t steps) const;
 	void stop() const;
 };
 
@@ -14492,6 +14513,26 @@ inline void oneshot_selected_location(void* user_data, const char* location_json
 	delete f;
 }
 
+inline void retained_selected_provider_location_change(void* user_data) {
+	auto* f = static_cast<SelectedProviderLocationChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_selected_provider_location_change(void* user_data) {
+	auto* f = static_cast<SelectedProviderLocationChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_send_feedback(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SendFeedbackCallback*>(user_data);
 	try {
@@ -17624,6 +17665,9 @@ inline void DeviceLocal::closePeerViewController(const PeerViewController& vc) c
 inline void DeviceLocal::closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const {
 	urnet_device_local_close_post_quantum_identity_view_controller(handle(), vc.handle());
 }
+inline void DeviceLocal::closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const {
+	urnet_device_local_close_provider_locations_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -17778,6 +17822,10 @@ inline ProvideViewController DeviceLocal::openProvideViewController() const {
 }
 inline ContractDetailsViewController DeviceLocal::openProviderContractDetailsViewController() const {
 	ContractDetailsViewController r(urnet_device_local_open_provider_contract_details_view_controller(handle()));
+	return r;
+}
+inline ProviderLocationsViewController DeviceLocal::openProviderLocationsViewController() const {
+	ProviderLocationsViewController r(urnet_device_local_open_provider_locations_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceLocal::openReferralCodeViewController() const {
@@ -17965,6 +18013,9 @@ inline void DeviceRemote::closePeerViewController(const PeerViewController& vc) 
 inline void DeviceRemote::closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const {
 	urnet_device_remote_close_post_quantum_identity_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const {
+	urnet_device_remote_close_provider_locations_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -18089,6 +18140,10 @@ inline ProvideViewController DeviceRemote::openProvideViewController() const {
 }
 inline ContractDetailsViewController DeviceRemote::openProviderContractDetailsViewController() const {
 	ContractDetailsViewController r(urnet_device_remote_open_provider_contract_details_view_controller(handle()));
+	return r;
+}
+inline ProviderLocationsViewController DeviceRemote::openProviderLocationsViewController() const {
+	ProviderLocationsViewController r(urnet_device_remote_open_provider_locations_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceRemote::openReferralCodeViewController() const {
@@ -19085,6 +19140,42 @@ inline void ProvideViewController::start() const {
 }
 inline void ProvideViewController::stop() const {
 	urnet_provide_view_controller_stop(handle());
+}
+inline Sub ProviderLocationsViewController::addSelectedProviderLocationChangeListener(SelectedProviderLocationChangeListener listener) const {
+	std::shared_ptr<SelectedProviderLocationChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SelectedProviderLocationChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_provider_locations_view_controller_add_selected_provider_location_change_listener(handle(), listener_fn ? &detail::retained_selected_provider_location_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ProviderLocationsViewController::close() const {
+	urnet_provider_locations_view_controller_close(handle());
+}
+inline void ProviderLocationsViewController::connectedProviderLocationsChanged() const {
+	urnet_provider_locations_view_controller_connected_provider_locations_changed(handle());
+}
+inline std::string ProviderLocationsViewController::getSelectedClientId() const {
+	char* r_c = urnet_provider_locations_view_controller_get_selected_client_id(handle());
+	return detail::takeString(r_c);
+}
+inline void ProviderLocationsViewController::removeProvider(const std::string& client_id) const {
+	urnet_provider_locations_view_controller_remove_provider(handle(), client_id.c_str());
+}
+inline void ProviderLocationsViewController::setSelectedClientId(const std::string& client_id) const {
+	urnet_provider_locations_view_controller_set_selected_client_id(handle(), client_id.c_str());
+}
+inline void ProviderLocationsViewController::start() const {
+	urnet_provider_locations_view_controller_start(handle());
+}
+inline void ProviderLocationsViewController::stepSelection(int64_t steps) const {
+	urnet_provider_locations_view_controller_step_selection(handle(), steps);
+}
+inline void ProviderLocationsViewController::stop() const {
+	urnet_provider_locations_view_controller_stop(handle());
 }
 inline void ProxyDevice::cancel() const {
 	urnet_proxy_device_cancel(handle());

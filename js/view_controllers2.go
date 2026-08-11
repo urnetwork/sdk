@@ -13,6 +13,7 @@ import (
 //   - BlockActionViewController      ad/tracker blocking + live allow/block stats
 //   - LocationsViewController        grouped/promoted location browse with state
 //   - DevicesViewController          the network's clients/devices, live
+//   - ProviderLocationsViewController  the globe's selection + scroll wheel
 // (Account-plane controllers whose screens are already correct on REST — wallet,
 // network user, preferences, referral code — are intentionally not rebound;
 // their VCs are request/response equivalents of the endpoints those screens use.)
@@ -309,4 +310,76 @@ type jsNetworkClientsListener struct{ cb js.Value }
 
 func (self *jsNetworkClientsListener) NetworkClientsChanged(list *sdk.NetworkClientInfoList) {
 	self.cb.Invoke(jsNetworkClientInfoList(list))
+}
+
+// ── ProviderLocationsViewController ──────────────────────────────────────────
+
+// The provider-locations globe's selection and its scroll wheel. `stepSelection`
+// moves along the providers ordered west to east relative to their centroid and
+// clamps at the ends, so scrolling past the extreme west or east sticks there
+// instead of cycling round the globe.
+func jsProviderLocationsViewController(
+	vc *sdk.ProviderLocationsViewController,
+	closeController func(),
+) js.Value {
+	if vc == nil {
+		return js.Null()
+	}
+
+	m := map[string]any{}
+
+	m["close"] = jsViewControllerClose(closeController)
+	m["start"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.Start()
+		return js.Null()
+	})
+	m["stop"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.Stop()
+		return js.Null()
+	})
+
+	// "" when nothing is selected
+	m["getSelectedClientId"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetSelectedClientId())
+	})
+	m["setSelectedClientId"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		clientId := ""
+		if 0 < len(args) && args[0].Type() == js.TypeString {
+			clientId = args[0].String()
+		}
+		vc.SetSelectedClientId(clientId)
+		return js.Null()
+	})
+	m["stepSelection"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) && args[0].Type() == js.TypeNumber {
+			vc.StepSelection(int32(args[0].Int()))
+		}
+		return js.Null()
+	})
+	// drops the provider AND moves the selection to the next older one when it
+	// was the selected provider
+	m["removeProvider"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) && args[0].Type() == js.TypeString {
+			vc.RemoveProvider(args[0].String())
+		}
+		return js.Null()
+	})
+
+	m["addSelectedProviderLocationChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddSelectedProviderLocationChangeListener(
+			&jsSelectedProviderLocationChangeListener{cb},
+		))
+	})
+
+	return js.ValueOf(m)
+}
+
+type jsSelectedProviderLocationChangeListener struct{ cb js.Value }
+
+func (self *jsSelectedProviderLocationChangeListener) SelectedProviderLocationChanged() {
+	self.cb.Invoke()
 }

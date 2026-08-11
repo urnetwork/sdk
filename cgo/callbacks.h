@@ -243,6 +243,8 @@ typedef void (*urnet_route_local_change_cb)(void* user_data, bool route_local);
 void urnet_invoke_route_local_change(urnet_route_local_change_cb cb, void* user_data, bool route_local);
 typedef void (*urnet_selected_location_cb)(void* user_data, const char* location_json);
 void urnet_invoke_selected_location(urnet_selected_location_cb cb, void* user_data, const char* location_json);
+typedef void (*urnet_selected_provider_location_change_cb)(void* user_data);
+void urnet_invoke_selected_provider_location_change(urnet_selected_provider_location_change_cb cb, void* user_data);
 typedef void (*urnet_send_feedback_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_send_feedback(urnet_send_feedback_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_set_network_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);

@@ -73,6 +73,7 @@ var behavioralTypes = map[string]bool{
 	"PeerViewController":                  true,
 	"PostQuantumIdentityViewController":   true,
 	"ProvideViewController":               true,
+	"ProviderLocationsViewController":     true,
 	"ReferralCodeViewController":          true,
 	"WalletViewController":                true,
 }

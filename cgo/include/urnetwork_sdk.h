@@ -379,6 +379,8 @@ typedef void (*urnet_remove_wallet_cb)(void* user_data, const char* result_json,
 typedef void (*urnet_route_local_change_cb)(void* user_data, bool route_local);
 /* SelectedLocationListener */
 typedef void (*urnet_selected_location_cb)(void* user_data, const char* location_json);
+/* SelectedProviderLocationChangeListener */
+typedef void (*urnet_selected_provider_location_change_cb)(void* user_data);
 /* SendFeedbackCallback */
 typedef void (*urnet_send_feedback_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetNetworkLeaderboardPublicCallback */
@@ -767,6 +769,7 @@ void urnet_device_local_close_devices_view_controller(uint64_t self, uint64_t vc
 void urnet_device_local_close_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_provider_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 bool urnet_device_local_drop_exit(uint64_t self, const char* client_id);
 char* urnet_device_local_get_destination_exits(uint64_t self);
@@ -797,6 +800,7 @@ uint64_t urnet_device_local_open_peer_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_post_quantum_identity_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provider_contract_details_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_provider_locations_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_subscription_balance_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_wallet_view_controller(uint64_t self);
@@ -840,6 +844,7 @@ void urnet_device_remote_close_devices_view_controller(uint64_t self, uint64_t v
 void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_provider_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 bool urnet_device_remote_drop_exit(uint64_t self, const char* exit_client_id);
 char* urnet_device_remote_get_destination_exits(uint64_t self);
@@ -865,6 +870,7 @@ uint64_t urnet_device_remote_open_peer_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_post_quantum_identity_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provider_contract_details_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_provider_locations_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_subscription_balance_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_wallet_view_controller(uint64_t self);
@@ -1074,6 +1080,18 @@ void urnet_post_quantum_identity_view_controller_stop(uint64_t self);
 void urnet_provide_view_controller_close(uint64_t self);
 void urnet_provide_view_controller_start(uint64_t self);
 void urnet_provide_view_controller_stop(uint64_t self);
+
+/* ----- ProviderLocationsViewController ----- */
+
+uint64_t urnet_provider_locations_view_controller_add_selected_provider_location_change_listener(uint64_t self, urnet_selected_provider_location_change_cb listener_selected_provider_location_changed, void* listener_user_data);
+void urnet_provider_locations_view_controller_close(uint64_t self);
+void urnet_provider_locations_view_controller_connected_provider_locations_changed(uint64_t self);
+char* urnet_provider_locations_view_controller_get_selected_client_id(uint64_t self);
+void urnet_provider_locations_view_controller_remove_provider(uint64_t self, const char* client_id);
+void urnet_provider_locations_view_controller_set_selected_client_id(uint64_t self, const char* client_id);
+void urnet_provider_locations_view_controller_start(uint64_t self);
+void urnet_provider_locations_view_controller_step_selection(uint64_t self, int64_t steps);
+void urnet_provider_locations_view_controller_stop(uint64_t self);
 
 /* ----- ProxyDevice ----- */
 

@@ -37,6 +37,12 @@ func (self *viewControllerManager) CloseLocationsViewController(vc *LocationsVie
 	}
 }
 
+func (self *viewControllerManager) CloseProviderLocationsViewController(vc *ProviderLocationsViewController) {
+	if vc != nil {
+		self.CloseViewController(vc)
+	}
+}
+
 func (self *viewControllerManager) ClosePeerViewController(vc *PeerViewController) {
 	if vc != nil {
 		self.CloseViewController(vc)

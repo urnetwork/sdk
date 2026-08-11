@@ -217,6 +217,7 @@ export interface DeviceRemote {
   openBlockActionViewController(): BlockActionViewController;
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
+  openProviderLocationsViewController(): ProviderLocationsViewController;
 }
 
 // ── view controllers ─────────────────────────────────────────────────────────
@@ -497,6 +498,38 @@ export interface DevicesViewController {
   stop(): void;
 
   addNetworkClientsListener(cb: (clients: NetworkClientInfo[]) => void): Unsubscribe;
+}
+
+/**
+ * ProviderLocationsViewController — the provider-locations globe's selection
+ * and its scroll wheel, shared by every URnetwork app so they all traverse the
+ * globe identically.
+ *
+ * The wheel is the providers that have coordinates, ordered west to east
+ * relative to their centroid — so a cluster straddling the antimeridian stays
+ * contiguous — and `stepSelection` CLAMPS at its ends: stepping past the
+ * extreme west or east sticks there rather than cycling round the globe.
+ *
+ * The selection always points at a connected provider: the longest connected
+ * one by default, and when the selected provider leaves the window (removed,
+ * or rotated out) the next OLDER one. `getSelectedClientId` is "" only when no
+ * providers are connected.
+ */
+export interface ProviderLocationsViewController {
+  close(): void;
+  start(): void;
+  stop(): void;
+
+  /** the selected provider's egress client id, "" when none are connected */
+  getSelectedClientId(): string;
+  /** select explicitly (a dot tap or a list row); "" falls back to the default */
+  setSelectedClientId(clientId: string): void;
+  /** move `steps` providers along the wheel, positive east, clamped at the ends */
+  stepSelection(steps: number): void;
+  /** drop the provider, moving the selection to the next older one if it was selected */
+  removeProvider(clientId: string): void;
+
+  addSelectedProviderLocationChangeListener(cb: () => void): Unsubscribe;
 }
 
 /**

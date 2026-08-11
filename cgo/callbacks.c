@@ -477,6 +477,10 @@ void urnet_invoke_selected_location(urnet_selected_location_cb cb, void* user_da
 	cb(user_data, location_json);
 }
 
+void urnet_invoke_selected_provider_location_change(urnet_selected_provider_location_change_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_send_feedback(urnet_send_feedback_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
