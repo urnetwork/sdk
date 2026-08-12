@@ -396,6 +396,18 @@ func (self *LocalState) getProviderPriors() map[string]connect.ProviderPrior {
 	if err := json.Unmarshal(priorsBytes, &persisted); err != nil {
 		return nil
 	}
+	// IsZero is a VALIDITY check on the envelope (was SavedAt even set?),
+	// separate from and evaluated before the retention/age comparison below
+	// -- it does not conflict with "Retention == 0 skips the staleness
+	// check." Without it, syntactically valid but truncated/tampered JSON
+	// missing saved_at reads as SavedAt's zero value, and with Retention
+	// also 0 (unlimited) the staleness comparison never even runs, so
+	// corrupt data would be trusted forever in exactly the configuration
+	// meant to keep real data forever. Mirrors getDohServerScores's
+	// `persisted.SavedAt.IsZero() || <stale>` guard.
+	if persisted.SavedAt.IsZero() {
+		return nil
+	}
 	if persisted.Retention != 0 && persisted.Retention < time.Since(persisted.SavedAt) {
 		return nil
 	}
@@ -442,6 +454,16 @@ func (self *localStatePriorsStore) Load() map[string]connect.ProviderPrior {
 func (self *localStatePriorsStore) Save(priors map[string]connect.ProviderPrior) error {
 	return self.localState.setProviderPriors(priors)
 }
+
+// var _ connect.PriorsStore = ... is a compile-time assertion that
+// localStatePriorsStore satisfies connect.PriorsStore. Nothing in shipped
+// code assigns this adapter to the interface yet (its consumer, the multi
+// client wiring, lands in a later task), so without this line the compiler
+// never checks the signatures line up -- only a manual read confirmed it
+// here. Kept even though there is no other precedent for this pattern in
+// the package, specifically because this implementation ships ahead of its
+// consumer.
+var _ connect.PriorsStore = (*localStatePriorsStore)(nil)
 
 func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -114,6 +115,32 @@ func TestProviderPriorsCorruptionTolerance(t *testing.T) {
 	}
 	if out := ls.getProviderPriors(); out != nil {
 		t.Fatalf("malformed json must read nil, got %v", out)
+	}
+
+	// syntactically VALID json that is missing saved_at (zero time.Time),
+	// e.g. a truncated or tampered envelope carrying only "priors". This is
+	// the case the retention comparison alone cannot catch: with Retention
+	// also 0 (unlimited), time.Since(zero SavedAt) is never even compared,
+	// so corrupt/incomplete data would otherwise be trusted forever in
+	// exactly the configuration meant to keep real data forever. Checked in
+	// BOTH the unlimited and default-retention shapes so the guard is
+	// proven independent of which retention branch runs.
+	zeroSavedAtUnlimited := []byte(`{"retention":0,"priors":{"p1":{"ScoreEwma":0.9}}}`)
+	if err := os.WriteFile(path, zeroSavedAtUnlimited, LocalStorageFilePermissions); err != nil {
+		t.Fatal(err)
+	}
+	if out := ls.getProviderPriors(); out != nil {
+		t.Fatalf("zero SavedAt with unlimited retention must read nil, got %v", out)
+	}
+
+	zeroSavedAtDefaultRetention := []byte(`{"retention":` +
+		strconv.FormatInt(int64(providerPriorsStaleAfter), 10) +
+		`,"priors":{"p1":{"ScoreEwma":0.9}}}`)
+	if err := os.WriteFile(path, zeroSavedAtDefaultRetention, LocalStorageFilePermissions); err != nil {
+		t.Fatal(err)
+	}
+	if out := ls.getProviderPriors(); out != nil {
+		t.Fatalf("zero SavedAt with default (90d) retention must read nil, got %v", out)
 	}
 }
 
