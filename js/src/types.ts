@@ -169,6 +169,13 @@ export interface DeviceRemote {
   // connect location / destination
   getConnectLocation(): ConnectLocationInfo | null;
   setConnectLocation(location: ConnectLocationSpec | null): void;
+  /**
+   * The explicit "connect to this" action. Unlike setConnectLocation, this
+   * rebuilds the connection even when the location is already the installed
+   * destination — a new multi client and a fresh set of peers — so choosing the
+   * location you are already on reconnects instead of doing nothing.
+   */
+  reconnect(location: ConnectLocationSpec | null): void;
   removeDestination(): void;
   shuffle(): void;
   getConnectEnabled(): boolean;

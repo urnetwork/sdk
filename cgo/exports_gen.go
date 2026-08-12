@@ -6406,6 +6406,23 @@ func urnet_device_load_provide_secret_keys(self C.uint64_t, provideSecretKeyList
 	self_.LoadProvideSecretKeys(provideSecretKeyList_)
 }
 
+//export urnet_device_reconnect
+func urnet_device_reconnect(self C.uint64_t, location *C.char) {
+	defer cgoGuard("urnet_device_reconnect")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_reconnect")
+	if !ok {
+		return
+	}
+	var location_ *sdk.ConnectLocation
+	if location != nil {
+		location_ = &sdk.ConnectLocation{}
+		if !goJson(location, location_, "urnet_device_reconnect") {
+			return
+		}
+	}
+	self_.Reconnect(location_)
+}
+
 //export urnet_device_refresh_token
 func urnet_device_refresh_token(self C.uint64_t, attempt C.int64_t, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_refresh_token")

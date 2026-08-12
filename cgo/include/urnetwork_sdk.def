@@ -346,6 +346,7 @@ EXPORTS
 	urnet_device_local_tunnel_dns_addresses_ipv6
 	urnet_device_local_tunnel_dns_setting
 	urnet_device_local_tunnel_local_address
+	urnet_device_reconnect
 	urnet_device_refresh_token
 	urnet_device_remote_add_device_recreated_listener
 	urnet_device_remote_add_remote_change_listener

@@ -272,7 +272,10 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 
 	// persist the connection location for automatic reconnect
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
-	self.device.SetConnectLocation(location)
+	// Reconnect, not SetConnectLocation: this is the explicit "connect to
+	// this" action, so choosing the location already connected rebuilds it —
+	// a new multi client and a new set of peers — instead of doing nothing.
+	self.device.Reconnect(location)
 
 	// set location as default location
 	// if user disconnects, we still want that location populated when they reload the app

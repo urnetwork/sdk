@@ -10417,6 +10417,7 @@ public:
 	std::optional<WindowStatus> getWindowStatus() const;
 	void initProvideSecretKeys() const;
 	void loadProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
+	void reconnect(const std::optional<ConnectLocation>& location) const;
 	void refreshToken(int64_t attempt) const;
 	void removeBlockActionOverride(const std::string& override_id) const;
 	void removeConnectedProvider(const std::string& client_id) const;
@@ -16310,6 +16311,15 @@ inline void Device::loadProvideSecretKeys(const std::optional<ProvideSecretKeyLi
 		provide_secret_key_list_c = provide_secret_key_list_json.c_str();
 	}
 	urnet_device_load_provide_secret_keys(handle(), provide_secret_key_list_c);
+}
+inline void Device::reconnect(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	urnet_device_reconnect(handle(), location_c);
 }
 inline void Device::refreshToken(int64_t attempt) const {
 	char* err_c = nullptr;

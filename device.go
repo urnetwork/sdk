@@ -504,6 +504,18 @@ type Device interface {
 
 	SetConnectLocation(location *ConnectLocation)
 
+	// Reconnect installs `location` like `SetConnectLocation` but always
+	// rebuilds the connection, even when that location is already the
+	// installed destination: a NEW multi client and a fresh set of peers.
+	//
+	// This is the explicit "connect to this" action — tapping a location in
+	// the chooser, including the one already connected. `SetConnectLocation`
+	// deliberately leaves a live connection alone when nothing about the
+	// destination changed, because it is re-applied implicitly (the device rpc
+	// replays pending state, and apps persist and restore it); reconnecting on
+	// those would drop every flow for no reason.
+	Reconnect(location *ConnectLocation)
+
 	GetConnectLocation() *ConnectLocation
 
 	SetDefaultLocation(location *ConnectLocation)

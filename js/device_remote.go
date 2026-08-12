@@ -220,6 +220,12 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		device.SetConnectLocation(parseConnectLocation(args[0]))
 		return js.Null()
 	})
+	// the explicit "connect to this" action: rebuilds even when the location is
+	// already the installed destination (see Device.Reconnect)
+	m["reconnect"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		device.Reconnect(parseConnectLocation(args[0]))
+		return js.Null()
+	})
 	m["removeDestination"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.RemoveDestination()
 		return js.Null()

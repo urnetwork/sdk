@@ -72,6 +72,75 @@ func TestDeviceLocalEquivalentDestinationDoesNotRebuildProviders(t *testing.T) {
 	}
 }
 
+// TestDeviceLocalReconnectRebuildsTheSameDestination covers choosing the
+// location you are already connected to. SetConnectLocation deliberately keeps
+// the live window (see the equivalent-destination test above), so the explicit
+// action goes through Reconnect, which must build a NEW multi client — and with
+// it a new set of peers — for that same location.
+func TestDeviceLocalReconnectRebuildsTheSameDestination(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		t.Fatalf("network space: %v", err)
+	}
+
+	var generatorCalls atomic.Int64
+	settings := DefaultDeviceLocalSettings()
+	settings.DisableLogging = true
+	settings.AllowProvider = false
+	settings.GeneratorFunc = func(specs []*connect.ProviderSpec) connect.MultiClientGenerator {
+		generatorCalls.Add(1)
+		return &rpcLeakTestGenerator{}
+	}
+	device, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		NewId(),
+		settings,
+		connect.NewId(),
+	)
+	if err != nil {
+		t.Fatalf("new device: %v", err)
+	}
+	defer device.Close()
+
+	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
+	upgradeMuxSettings.Dns = nil
+	device.SetUpgradeMuxSettings(upgradeMuxSettings)
+
+	location := &ConnectLocation{
+		ConnectLocationId: &ConnectLocationId{BestAvailable: true},
+		Name:              "the connected location",
+	}
+	device.SetConnectLocation(location)
+	firstClient := device.remoteUserNatClient
+	if calls := generatorCalls.Load(); calls != 1 {
+		t.Fatalf("first destination generator calls = %d, want 1", calls)
+	}
+
+	// re-applying it implicitly still leaves the live connection alone
+	device.SetConnectLocation(cloneConnectLocation(location))
+	if calls := generatorCalls.Load(); calls != 1 {
+		t.Fatalf("equivalent destination rebuilt generator: calls = %d", calls)
+	}
+
+	device.Reconnect(cloneConnectLocation(location))
+	if calls := generatorCalls.Load(); calls != 2 {
+		t.Fatalf("reconnect to the same destination: generator calls = %d, want 2", calls)
+	}
+	if device.remoteUserNatClient == firstClient {
+		t.Fatalf("reconnect kept the live provider window")
+	}
+	if got := device.GetConnectLocation(); got == nil || !got.Equals(location) {
+		t.Fatalf("reconnect changed the destination: %+v", got)
+	}
+}
+
 func TestDeviceLocalDestinationTransportChangeRebuildsProviders(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

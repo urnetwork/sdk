@@ -2479,8 +2479,28 @@ func deviceRemoteDestinationsEqual(a *DeviceRemoteDestination, b *DeviceRemoteDe
 		sdkProviderSpecsFingerprint(a.Specs) == sdkProviderSpecsFingerprint(b.Specs)
 }
 
+// Reconnect is `SetConnectLocation` for an explicit user action: it rebuilds
+// the connection even when `location` is already the installed destination.
+// See the `Device` interface.
+//
+// It suppresses nothing — suppressing is the whole thing being asked for here —
+// and falls back to the same pending state as `SetConnectLocation` when the rpc
+// is down: with no reachable device there is no live connection to rebuild, so
+// installing the location on the next sync is the right landing.
+func (self *DeviceRemote) Reconnect(location *ConnectLocation) {
+	self.setConnectLocation(location, true)
+}
+
 func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
+	self.setConnectLocation(location, false)
+}
+
+func (self *DeviceRemote) setConnectLocation(location *ConnectLocation, rebuild bool) {
 	deviceRemoteLocation := newDeviceRemoteConnectLocation(location)
+	rpcMethod := "DeviceLocalRpc.SetConnectLocation"
+	if rebuild {
+		rpcMethod = "DeviceLocalRpc.Reconnect"
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2491,7 +2511,8 @@ func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
 		// SetDestination whose spec list differs despite the same display
 		// location; DeviceLocal performs the authoritative installed-
 		// destination fingerprint check.
-		if self.state.Location.IsSet &&
+		if !rebuild &&
+			self.state.Location.IsSet &&
 			self.state.Location.Value != nil &&
 			connectLocationValuesEqual(self.state.Location.Value.toConnectLocation(), location) {
 			return
@@ -2502,7 +2523,7 @@ func (self *DeviceRemote) SetConnectLocation(location *ConnectLocation) {
 				return false
 			}
 
-			err := rpcCallVoid(self.service, "DeviceLocalRpc.SetConnectLocation", deviceRemoteLocation, self.closeService)
+			err := rpcCallVoid(self.service, rpcMethod, deviceRemoteLocation, self.closeService)
 			if err != nil {
 				return false
 			}
@@ -10174,6 +10195,11 @@ func (self *DeviceLocalRpc) SetDestination(destination *DeviceRemoteDestination,
 
 func (self *DeviceLocalRpc) SetConnectLocation(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
 	self.deviceLocal.SetConnectLocation(location.toConnectLocation())
+	return nil
+}
+
+func (self *DeviceLocalRpc) Reconnect(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
+	self.deviceLocal.Reconnect(location.toConnectLocation())
 	return nil
 }
 

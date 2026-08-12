@@ -3356,6 +3356,21 @@ func (self *DeviceLocal) GetFirstLoadTimelineJson() string {
 }
 
 func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *ProviderSpecList) {
+	self.setDestination(location, specs, false)
+}
+
+// setDestination installs the destination. An unchanged destination normally
+// keeps the live connection — the same transport, multi client and window —
+// because it is re-applied implicitly all the time (the rpc replays pending
+// state, and callers persist and restore it). `rebuild` is the explicit user
+// action asking for a fresh connection anyway: it tears the transport down and
+// builds a new one, so the same location gets a NEW multi client and a new set
+// of peers. See `Device.Reconnect`.
+func (self *DeviceLocal) setDestination(
+	location *ConnectLocation,
+	specs *ProviderSpecList,
+	rebuild bool,
+) {
 	location = cloneConnectLocation(location)
 	connectSpecs := []*connect.ProviderSpec{}
 	if specs != nil {
@@ -3374,7 +3389,8 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		if self.destinationInitialized &&
+		if !rebuild &&
+			self.destinationInitialized &&
 			self.destinationSpecsFingerprint == specsFingerprint &&
 			connectLocationTransportEqual(self.connectLocation, location) {
 			locationChanged = !connectLocationValuesEqual(self.connectLocation, location)
@@ -3792,6 +3808,17 @@ func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 }
 
 func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
+	self.setConnectLocation(location, false)
+}
+
+// Reconnect is `SetConnectLocation` for an explicit user action: it rebuilds
+// the connection even when `location` is already the installed destination.
+// See the `Device` interface.
+func (self *DeviceLocal) Reconnect(location *ConnectLocation) {
+	self.setConnectLocation(location, true)
+}
+
+func (self *DeviceLocal) setConnectLocation(location *ConnectLocation, rebuild bool) {
 	if location == nil {
 		self.RemoveDestination()
 	} else {
@@ -3802,7 +3829,7 @@ func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
 			ClientId:        location.ConnectLocationId.ClientId,
 			BestAvailable:   location.ConnectLocationId.BestAvailable,
 		})
-		self.SetDestination(location, specs)
+		self.setDestination(location, specs, rebuild)
 	}
 }
 

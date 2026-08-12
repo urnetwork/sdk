@@ -1102,6 +1102,36 @@ Implemented 2026-08-04. Deviations and details worth knowing:
   exist in all 19 locale dirs, where HEAD had English only). Anyone regenerating should
   check `git diff .../values/strings.xml | grep '^-'` for the same class of drift.
 
+### Reconnecting to the location you are already on
+
+- **`Device.Reconnect(location)`** is the explicit "connect to this" action, as
+  distinct from `SetConnectLocation`. It installs the destination the same way
+  but always rebuilds: choosing the location already connected gets a **new
+  multi client and a fresh set of peers** instead of doing nothing.
+- The distinction is necessary because `SetConnectLocation` deliberately keeps a
+  live connection when the destination is unchanged (`DeviceLocal.setDestination`
+  short-circuits on the specs fingerprint + transport equality). That guard is
+  not an optimization to delete: the destination is re-applied *implicitly* all
+  the time — the device rpc replays pending state on resync, and apps restore a
+  persisted location on attach (apple's `DeviceManager` even guards it a second
+  time, with the comment "avoid resetting the connection"). Rebuilding on those
+  would drop every flow for no reason.
+- So the fork is by INTENT, not by comparing locations: `ConnectViewController.
+  Connect` — the path every app's chooser tap and connect button already takes —
+  calls `Reconnect`, while restore/replay paths keep calling
+  `SetConnectLocation`. No app needs a "is this the same location?" check.
+- Over the device rpc it is a distinct method (`DeviceLocalRpc.Reconnect`), and
+  `DeviceRemote.Reconnect` suppresses nothing — suppression is the thing being
+  asked to skip. With the rpc down it falls back to the same pending state as
+  `SetConnectLocation`: no reachable device means no live connection to rebuild,
+  so installing on the next sync is the right landing.
+- The web calls it directly (`deviceReconnect`), because its chooser applies the
+  location straight to the `DeviceRemote` rather than through the view
+  controller — both the in-page pick and the extension-delegated `APPLY_LOCATION`
+  (both are user picks). See ur.io `APP.md` "Location sync".
+- Distinct from `Shuffle()`, which cancels the window's clients so it refills
+  with new peers but keeps the same multi client and transport.
+
 ### Provider removal (swipe to remove)
 
 - `Device.RemoveConnectedProvider(clientId)` drops a provider by its **egress**

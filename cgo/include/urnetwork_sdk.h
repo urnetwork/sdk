@@ -730,6 +730,7 @@ bool urnet_device_get_vpn_interface_while_offline(uint64_t self);
 char* urnet_device_get_window_status(uint64_t self);
 void urnet_device_init_provide_secret_keys(uint64_t self);
 void urnet_device_load_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json);
+void urnet_device_reconnect(uint64_t self, const char* location_json);
 bool urnet_device_refresh_token(uint64_t self, int64_t attempt, char** out_error);
 void urnet_device_remove_block_action_override(uint64_t self, const char* override_id);
 void urnet_device_remove_connected_provider(uint64_t self, const char* client_id);
