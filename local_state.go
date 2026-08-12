@@ -726,6 +726,33 @@ func (self *LocalState) GetPerformanceProfile() *PerformanceProfile {
 	return nil
 }
 
+// SetRoutingTier persists the RoutingTier dial (see routing_tier.go), the
+// same shape as SetPerformanceProfile: a plain JSON-encoded value in its own
+// dotfile under the local storage dir. Stored as a bare int, matching the
+// gomobile-safe type SetRoutingTier takes on DeviceLocal.
+func (self *LocalState) SetRoutingTier(tier int) error {
+	path := filepath.Join(self.localStorageDir, ".routing_tier")
+	tierBytes, err := json.Marshal(tier)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, tierBytes, LocalStorageFilePermissions)
+}
+
+// GetRoutingTier reads back the persisted tier. Unset or unreadable (fresh
+// install, corrupt file) both read as RoutingTierOff -- the fail-safe
+// default that matches RoutingTier's zero value.
+func (self *LocalState) GetRoutingTier() int {
+	path := filepath.Join(self.localStorageDir, ".routing_tier")
+	if tierBytes, err := os.ReadFile(path); err == nil {
+		var tier int
+		if err := json.Unmarshal(tierBytes, &tier); err == nil {
+			return tier
+		}
+	}
+	return int(RoutingTierOff)
+}
+
 func (self *LocalState) SetAllowForeground(allowForeground bool) error {
 	path := filepath.Join(self.localStorageDir, ".allow_foreground")
 	allowForegroundBytes, err := json.Marshal(allowForeground)

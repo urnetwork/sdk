@@ -701,6 +701,13 @@ type DeviceLocal struct {
 	// developer-menu experiment set before connecting -- or simply surviving
 	// a reconnect -- would evaporate silently
 	reliabilitySettings *connect.ReliabilitySettings
+	// routingTier is the persisted RoutingTier dial (off/light/full, see
+	// routing_tier.go), stored as a bare int for the same reason
+	// SetRoutingTier takes one. Zero value is RoutingTierOff, so a device that
+	// never restores a persisted tier (fresh install) gets legacy behavior.
+	// Baked into settings at every window build (see SetDestination) and
+	// pushed live via SetReliabilitySettings on SetRoutingTier
+	routingTier int
 	// the recent routing decisions, newest last, gated by
 	// `BlockActionWindowDuration`/`BlockActionWindowMaxCount`
 	blockActions []*BlockAction
@@ -1194,6 +1201,12 @@ func newDeviceLocalWithOverrides(
 		// the blocker toggle persists on set (see SetBlockerEnabled); unset
 		// reads false, matching the opt-in default
 		blocker.SetEnabled(localState.GetBlockerEnabled())
+		// the routing tier persists on set (see SetRoutingTier); unset reads
+		// RoutingTierOff, matching its zero value. Restoring here (rather than
+		// leaving the zero-initialized field) is what makes a tier chosen in a
+		// PRIOR process survive into the very first window this process
+		// builds, before SetRoutingTier is ever called again
+		deviceLocal.routingTier = localState.GetRoutingTier()
 		// seed the DoH fan-out order from the last session's per-server scores,
 		// so the first lookups after launch pick the known-fastest server
 		deviceLocal.dohServerScoresSeed = localState.getDohServerScores()
@@ -3469,6 +3482,18 @@ func (self *DeviceLocal) SetDestination(location *ConnectLocation, specs *Provid
 			settings := connect.DefaultMultiClientSettings()
 			settings.Log = self.log
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
+			// smart-routing tier (Phase 1): bake self.routingTier's knobs into
+			// the constructed baseline so a fresh window -- the very first one
+			// after a restart, or any later reconnect -- reflects the tier even
+			// before SetRoutingTier is ever called again in this process. A
+			// SetRoutingTier call while already connected pushes the same knobs
+			// onto the CURRENT window immediately through SetReliabilitySettings
+			// (see routing_tier.go); this is what the NEXT window is built
+			// with. A developer-menu override set afterwards
+			// (self.reliabilitySettings, re-applied below) supersedes this
+			// baseline entirely, same as it already supersedes the six
+			// always-on reliability fixes.
+			applyRoutingTierToMultiClientSettings(settings, self.routingTier)
 			// hosted hard limit: the hosted multi client must never allow
 			// direct mode, superseding any performance profile and the
 			// same-network force inside the multi client
