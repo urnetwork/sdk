@@ -15,11 +15,25 @@ import "github.com/urnetwork/connect"
 // task interface calls for them, but they never appear in the signature of
 // any exported DeviceLocal method -- SetRoutingTier takes a bare int (see
 // below) -- so gomobile's binder has nothing here to generate .aar surface
-// for.
+// for the TYPE.
+//
+// The constants below are deliberately declared WITHOUT this type (plain
+// untyped int constants, defaulting to `int`), even though `RoutingTier`
+// exists and would read more naturally attached to them. gomobile's
+// bind/gen.go includes every exported package-level identifier purely by
+// capitalization, with no check of whether it is actually reachable from an
+// exported signature; genjava.go's genConst then requires the constant's
+// type to be *types.Basic and emits "// skipped const ... unsupported type"
+// for anything else, including a *types.Named like RoutingTier. The Android
+// build greps generated sources for "// skipped" and fails unless the hit
+// matches one of a small set of pre-existing exclusions -- RoutingTier is
+// not among them. `RoutingTierOff RoutingTier = iota` would default-type
+// the whole const block to *types.Named and break that build. Keep these
+// untyped (or explicitly `int`); do not attach RoutingTier to them.
 type RoutingTier int
 
 const (
-	RoutingTierOff RoutingTier = iota
+	RoutingTierOff = iota
 	RoutingTierLight
 	RoutingTierFull
 )
