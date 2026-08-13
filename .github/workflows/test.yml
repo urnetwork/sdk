@@ -1,0 +1,50 @@
+name: Test — sdk
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sdk
+        uses: actions/checkout@v4
+
+      # go.mod resolves these with `replace github.com/urnetwork/<x> => ../<x>`,
+      # so they have to sit beside the checkout. The directory names must match
+      # the replace targets exactly — `connect`, not whatever a fork is named.
+      - name: Check out connect dependency
+        run: git clone --depth 1 https://github.com/urnetwork/connect.git ../connect
+
+      - name: Check out glog dependency
+        run: git clone --depth 1 https://github.com/urnetwork/glog.git ../glog
+
+      - name: Check out goidenticons dependency
+        run: git clone --depth 1 https://github.com/urnetwork/goidenticons.git ../goidenticons
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Build
+        run: go build ./...
+
+      # -count=1 defeats the test result cache so a green run always means the
+      # tests actually ran.
+      #
+      # sdk/cgo is a separate Go module with its own go.mod, so `./...` does not
+      # reach it. That is deliberate: it is also what keeps a cgo dependency
+      # invisible to gomobile builds by construction.
+      - name: Test
+        run: go test -count=1 -timeout 20m ./...
