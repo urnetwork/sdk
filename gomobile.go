@@ -53,6 +53,9 @@ func (self *exportedList[T]) UnmarshalJSON(b []byte) error {
 }
 
 func (self *exportedList[T]) MarshalJSON() ([]byte, error) {
+	if self.values == nil {
+		return []byte("[]"), nil
+	}
 	return json.Marshal(self.values)
 }
 

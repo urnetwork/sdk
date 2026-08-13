@@ -113,6 +113,9 @@ bool urnet_device_get_public_identity_key(uint64_t self, uint8_t* out, int32_t* 
 #define URNET_PURCHASE_REPORT_STATUS_INVALID "invalid"
 #define URNET_PURCHASE_REPORT_STATUS_PENDING "pending"
 #define URNET_PURCHASE_REPORT_STATUS_WRONG_NETWORK "wrong_network"
+#define URNET_ROUTING_TIER_FULL 2
+#define URNET_ROUTING_TIER_LIGHT 1
+#define URNET_ROUTING_TIER_OFF 0
 #define URNET_SOL "SOL"
 #define URNET_SOLANA_PAY_REFERENCE_BYTES 32
 #define URNET_STRIPE_ITEM_DATA10_TIB "data_10tib"
@@ -798,6 +801,7 @@ void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lo
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
 void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
 void urnet_device_local_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
+void urnet_device_local_set_routing_tier(uint64_t self, int64_t tier);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
 void urnet_device_local_set_tunnel_dns_setting(uint64_t self, const char* setting_json);
 void urnet_device_local_shuffle_exits(uint64_t self);
@@ -827,8 +831,10 @@ void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t
 void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
+bool urnet_device_remote_drop_exit(uint64_t self, const char* exit_client_id);
 char* urnet_device_remote_get_destination_exits(uint64_t self);
 char* urnet_device_remote_get_exits(uint64_t self);
+char* urnet_device_remote_get_probe_results(uint64_t self);
 char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -853,11 +859,16 @@ uint64_t urnet_device_remote_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_subscription_balance_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_wallet_view_controller(uint64_t self);
 void urnet_device_remote_probe_all_exits(uint64_t self);
+bool urnet_device_remote_probe_suite_running(uint64_t self);
 void urnet_device_remote_reset_reliability_metrics(uint64_t self);
 void urnet_device_remote_reset_reliability_settings(uint64_t self);
 void urnet_device_remote_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
 bool urnet_device_remote_set_rpc_server(uint64_t self, const char* client_pem, const char* server_cert_pem, const char* host_port, char** out_error);
+void urnet_device_remote_shuffle_exits(uint64_t self);
 void urnet_device_remote_simulate_network_change(uint64_t self);
+bool urnet_device_remote_stall_exit(uint64_t self, const char* exit_client_id, bool stalled);
+bool urnet_device_remote_start_probe_suite(uint64_t self, const char* config_json);
+void urnet_device_remote_stop_probe_suite(uint64_t self);
 void urnet_device_remote_sync(uint64_t self);
 
 /* ----- DeviceRpcKeyMaterial ----- */
@@ -917,6 +928,7 @@ int64_t urnet_local_state_get_provide_mode(uint64_t self);
 char* urnet_local_state_get_provide_network_mode(uint64_t self);
 char* urnet_local_state_get_provide_secret_keys(uint64_t self);
 bool urnet_local_state_get_route_local(uint64_t self);
+int64_t urnet_local_state_get_routing_tier(uint64_t self);
 bool urnet_local_state_get_vpn_interface_while_offline(uint64_t self);
 bool urnet_local_state_logout(uint64_t self, char** out_error);
 char* urnet_local_state_parse_by_jwt(uint64_t self, char** out_error);
@@ -940,6 +952,7 @@ bool urnet_local_state_set_provide_mode(uint64_t self, int64_t provide_mode, cha
 bool urnet_local_state_set_provide_network_mode(uint64_t self, const char* provide_network_mode, char** out_error);
 bool urnet_local_state_set_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json, char** out_error);
 bool urnet_local_state_set_route_local(uint64_t self, bool route_local, char** out_error);
+bool urnet_local_state_set_routing_tier(uint64_t self, int64_t tier, char** out_error);
 bool urnet_local_state_set_vpn_interface_while_offline(uint64_t self, bool vpn_interface_while_offline, char** out_error);
 
 /* ----- LocationsViewController ----- */
@@ -2568,6 +2581,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   SchedulerPauseRecoveryTimeoutMillis: number
  *   BlackholeConnectComparativeTimeoutMillis: number
  *   HeartbeatIntervalMillis: number
+ *   ScoredPlacement: boolean
+ *   PlacementHysteresisPct: number
+ *   PlacementDemoteConsecutive: number
+ *   RewardInstrumentation: boolean
+ *   QuarantineDampening: boolean
  */
 
 /* ReliabilityWindow (json):

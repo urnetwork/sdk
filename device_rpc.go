@@ -4840,6 +4840,165 @@ func (self *DeviceRemote) ProbeAllExits() {
 	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ProbeAllExits", self.closeService)
 }
 
+// DropExit kills a single exit, as if that provider had died, leaving the
+// others working (fault injection; see `DeviceLocal.DropExit`). The exit
+// client id is the string form (`Exit.ClientId.IdStr`). Returns false when
+// the exit is no longer in the window, and for an unparseable id or a down
+// rpc.
+func (self *DeviceRemote) DropExit(exitClientId string) bool {
+	exitId, err := ParseId(exitClientId)
+	if err != nil {
+		return false
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return false
+	}
+	dropped, err := rpcCall[bool](self.service, "DeviceLocalRpc.DropExit", exitId.toConnectId(), self.closeService)
+	if err != nil {
+		return false
+	}
+	return dropped
+}
+
+// StallExit makes an exit swallow packets without acknowledging them and
+// without erroring, so it is neither healthy nor detectably dead (fault
+// injection; see `DeviceLocal.StallExit`). Returns false when the exit is no
+// longer in the window, and for an unparseable id or a down rpc.
+//
+// Deliberately not recorded in the sync state: a stall is a live-session
+// fault injection, and replaying it onto a fresh device after a reconnect
+// would resurrect a fault the user never asked for twice.
+func (self *DeviceRemote) StallExit(exitClientId string, stalled bool) bool {
+	exitId, err := ParseId(exitClientId)
+	if err != nil {
+		return false
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return false
+	}
+	stallExit := &DeviceRemoteStallExitRpc{
+		ClientId: exitId.toConnectId(),
+		Stalled:  stalled,
+	}
+	set, err := rpcCall[bool](self.service, "DeviceLocalRpc.StallExit", stallExit, self.closeService)
+	if err != nil {
+		return false
+	}
+	return set
+}
+
+// ShuffleExits replaces every exit at once. No-op while the rpc is down.
+//
+// This reaches the same connect call as `DeviceRemote.Shuffle` -- both end at
+// `RemoteUserNatMultiClient.Shuffle` -- and both exist because they differ in
+// the only way that matters for a fault injection control: what happens when
+// the call FAILS.
+//
+// `Shuffle` is a queued action. A failed call sets `state.Shuffle`, and the
+// next successful sync replays it. That is right for the connect-flow caller
+// it was built for, where "shuffle once the device is reachable again" is the
+// intent. It is wrong here. In Advanced Mode the user presses this while
+// watching an exit table; if the service is down the press does nothing
+// visible, and a queued replay would then swap every exit minutes later,
+// under a user who has moved on -- the same "a fault the user did not ask for
+// twice" that `StallExit` refuses. Fault injection is immediate or nothing.
+//
+// So this is deliberately non-queued, like the other six advanced-mode
+// actions, and `Shuffle` is left exactly as it was for its existing callers.
+func (self *DeviceRemote) ShuffleExits() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ShuffleExits", self.closeService)
+}
+
+// StartProbeSuite begins a probe run and returns immediately. Returns false
+// when a run is already in progress, and for a down rpc. A nil config means
+// the local default (`GetDefaultProbeSuiteConfig`).
+func (self *DeviceRemote) StartProbeSuite(config *ProbeSuiteConfig) bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return false
+	}
+	// the wrapper exists so a nil config can cross: `rpcCall` panics on a
+	// nil arg, and a nil `*ProbeSuiteConfig` is a meaningful value here
+	probeSuiteConfig := &DeviceRemoteProbeSuiteConfigRpc{
+		Config: config,
+	}
+	started, err := rpcCall[bool](self.service, "DeviceLocalRpc.StartProbeSuite", probeSuiteConfig, self.closeService)
+	if err != nil {
+		return false
+	}
+	return started
+}
+
+// StopProbeSuite cancels a run in progress. Results collected so far are
+// kept, so `GetProbeResults` stays meaningful after a stop. No-op while the
+// rpc is down.
+func (self *DeviceRemote) StopProbeSuite() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.StopProbeSuite", self.closeService)
+}
+
+// ProbeSuiteRunning reports whether a run is in progress. This is polled by
+// the ui, so a down rpc reports false (not running) rather than failing.
+func (self *DeviceRemote) ProbeSuiteRunning() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return false
+	}
+	running, err := rpcCallNoArg[bool](self.service, "DeviceLocalRpc.ProbeSuiteRunning", self.closeService)
+	if err != nil {
+		return false
+	}
+	return running
+}
+
+// GetProbeResults reports what has completed so far. Safe to call during a
+// run. Empty (never nil) while the rpc is down or before a run has started --
+// matching `GetExits`, and load-bearing for the c++ wrapper, which unwraps a
+// list getter into a `std::vector`.
+func (self *DeviceRemote) GetProbeResults() *ProbeResultList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	results, success := func() (*ProbeResultList, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+
+		deviceProbeResults, err := rpcCallNoArg[*DeviceRemoteProbeResultListRpc](self.service, "DeviceLocalRpc.GetProbeResults", self.closeService)
+		if err != nil {
+			return nil, false
+		}
+		return toProbeResultList(deviceProbeResults.Results), true
+	}()
+	if success && results != nil {
+		return results
+	}
+	return NewProbeResultList()
+}
+
 // SimulateNetworkChange fires the platform network-change path on demand --
 // the storm drill. No-op while the rpc is down.
 func (self *DeviceRemote) SimulateNetworkChange() {
@@ -6251,6 +6410,67 @@ func toDestinationExitList(destinationExitsRpc []*DestinationExitRpc) *Destinati
 //gomobile:noexport
 type DeviceRemoteDestinationExitListRpc struct {
 	DestinationExits []*DestinationExitRpc
+}
+
+// StallExit is the only reliability control that takes more than one
+// argument, and net/rpc takes exactly one, so the pair travels as a struct.
+//
+//gomobile:noexport
+type DeviceRemoteStallExitRpc struct {
+	ClientId connect.Id
+	Stalled  bool
+}
+
+// `ProbeSuiteConfig` has only exported scalar fields, so it gobs as-is; the
+// wrapper is here so that a nil config (meaning "use the local default") can
+// cross, since `rpcCall` panics on a nil arg.
+//
+//gomobile:noexport
+type DeviceRemoteProbeSuiteConfigRpc struct {
+	Config *ProbeSuiteConfig
+}
+
+// The nil config is carried, not resolved, on this side. Normalization lives
+// in `DeviceLocal.StartProbeSuite` so that the rpc path and the direct
+// gomobile/cgo callers get identical treatment -- a guard here would have
+// covered only the remote path, leaving
+// `urnet_device_local_start_probe_suite(handle, NULL)` to panic a spawned
+// goroutine inside the privileged service.
+
+// always returns a non-nil slice with non-nil elements
+// (gob cannot encode nil slice elements)
+//
+// `ProbeResult` needs no rpc mirror type: unlike `Exit`, every field is an
+// exported scalar, so gob encodes it directly. Only the enclosing
+// `ProbeResultList` needs unwrapping, because `exportedList` keeps its
+// `values` slice unexported.
+func newProbeResultListRpc(results *ProbeResultList) []*ProbeResult {
+	resultsRpc := []*ProbeResult{}
+	if results != nil {
+		for _, result := range results.getAll() {
+			if result == nil {
+				continue
+			}
+			resultsRpc = append(resultsRpc, result)
+		}
+	}
+	return resultsRpc
+}
+
+func toProbeResultList(resultsRpc []*ProbeResult) *ProbeResultList {
+	results := NewProbeResultList()
+	for _, resultRpc := range resultsRpc {
+		if resultRpc == nil {
+			continue
+		}
+		results.Add(resultRpc)
+	}
+	return results
+}
+
+//gomobile:noexport
+type DeviceRemoteProbeResultListRpc struct {
+	Results []*ProbeResult
 }
 
 // rpc wrappers
@@ -8705,6 +8925,47 @@ func (self *DeviceLocalRpc) MigrateExit(exitClientId connect.Id, _ RpcVoid) erro
 
 func (self *DeviceLocalRpc) ProbeAllExits(_ RpcNoArg, _ RpcVoid) error {
 	self.deviceLocal.ProbeAllExits()
+	return nil
+}
+
+func (self *DeviceLocalRpc) DropExit(exitClientId connect.Id, dropped *bool) error {
+	*dropped = self.deviceLocal.DropExit(newId(exitClientId))
+	return nil
+}
+
+func (self *DeviceLocalRpc) StallExit(stallExit *DeviceRemoteStallExitRpc, set *bool) error {
+	*set = self.deviceLocal.StallExit(newId(stallExit.ClientId), stallExit.Stalled)
+	return nil
+}
+
+func (self *DeviceLocalRpc) ShuffleExits(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.ShuffleExits()
+	return nil
+}
+
+// the nil config is passed through rather than defaulted here:
+// `DeviceLocal.StartProbeSuite` normalizes it (nil -> default, every field
+// bounded), so the rpc path and the direct gomobile/cgo path cannot disagree
+// about what an out-of-range or absent config means
+func (self *DeviceLocalRpc) StartProbeSuite(probeSuiteConfig *DeviceRemoteProbeSuiteConfigRpc, started *bool) error {
+	*started = self.deviceLocal.StartProbeSuite(probeSuiteConfig.Config)
+	return nil
+}
+
+func (self *DeviceLocalRpc) StopProbeSuite(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.StopProbeSuite()
+	return nil
+}
+
+func (self *DeviceLocalRpc) ProbeSuiteRunning(_ RpcNoArg, running *bool) error {
+	*running = self.deviceLocal.ProbeSuiteRunning()
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProbeResults(_ RpcNoArg, deviceProbeResults **DeviceRemoteProbeResultListRpc) error {
+	*deviceProbeResults = &DeviceRemoteProbeResultListRpc{
+		Results: newProbeResultListRpc(self.deviceLocal.GetProbeResults()),
+	}
 	return nil
 }
 

@@ -7374,6 +7374,16 @@ func urnet_device_local_set_reliability_settings(self C.uint64_t, reliabilitySet
 	self_.SetReliabilitySettings(reliabilitySettings_)
 }
 
+//export urnet_device_local_set_routing_tier
+func urnet_device_local_set_routing_tier(self C.uint64_t, tier C.int64_t) {
+	defer cgoGuard("urnet_device_local_set_routing_tier")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_routing_tier")
+	if !ok {
+		return
+	}
+	self_.SetRoutingTier(int(int64(tier)))
+}
+
 //export urnet_device_local_set_rpc_server
 func urnet_device_local_set_rpc_server(self C.uint64_t, serverPem *C.char, clientCertPem *C.char, hostPort *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_local_set_rpc_server")
@@ -7685,6 +7695,17 @@ func urnet_device_remote_close_view_controller(self C.uint64_t, vc_close C.urnet
 	self_.CloseViewController(vc_)
 }
 
+//export urnet_device_remote_drop_exit
+func urnet_device_remote_drop_exit(self C.uint64_t, exitClientId *C.char) C.bool {
+	defer cgoGuard("urnet_device_remote_drop_exit")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_drop_exit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.DropExit(goString(exitClientId))
+	return C.bool(r0)
+}
+
 //export urnet_device_remote_get_destination_exits
 func urnet_device_remote_get_destination_exits(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_remote_get_destination_exits")
@@ -7711,6 +7732,20 @@ func urnet_device_remote_get_exits(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_remote_get_exits")
+}
+
+//export urnet_device_remote_get_probe_results
+func urnet_device_remote_get_probe_results(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_remote_get_probe_results")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_probe_results")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProbeResults()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_remote_get_probe_results")
 }
 
 //export urnet_device_remote_get_reliability_metrics
@@ -8035,6 +8070,17 @@ func urnet_device_remote_probe_all_exits(self C.uint64_t) {
 	self_.ProbeAllExits()
 }
 
+//export urnet_device_remote_probe_suite_running
+func urnet_device_remote_probe_suite_running(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_remote_probe_suite_running")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_probe_suite_running")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.ProbeSuiteRunning()
+	return C.bool(r0)
+}
+
 //export urnet_device_remote_reset_reliability_metrics
 func urnet_device_remote_reset_reliability_metrics(self C.uint64_t) {
 	defer cgoGuard("urnet_device_remote_reset_reliability_metrics")
@@ -8087,6 +8133,16 @@ func urnet_device_remote_set_rpc_server(self C.uint64_t, clientPem *C.char, serv
 	return C.bool(true)
 }
 
+//export urnet_device_remote_shuffle_exits
+func urnet_device_remote_shuffle_exits(self C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_shuffle_exits")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_shuffle_exits")
+	if !ok {
+		return
+	}
+	self_.ShuffleExits()
+}
+
 //export urnet_device_remote_simulate_network_change
 func urnet_device_remote_simulate_network_change(self C.uint64_t) {
 	defer cgoGuard("urnet_device_remote_simulate_network_change")
@@ -8095,6 +8151,45 @@ func urnet_device_remote_simulate_network_change(self C.uint64_t) {
 		return
 	}
 	self_.SimulateNetworkChange()
+}
+
+//export urnet_device_remote_stall_exit
+func urnet_device_remote_stall_exit(self C.uint64_t, exitClientId *C.char, stalled C.bool) C.bool {
+	defer cgoGuard("urnet_device_remote_stall_exit")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_stall_exit")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.StallExit(goString(exitClientId), bool(stalled))
+	return C.bool(r0)
+}
+
+//export urnet_device_remote_start_probe_suite
+func urnet_device_remote_start_probe_suite(self C.uint64_t, config *C.char) C.bool {
+	defer cgoGuard("urnet_device_remote_start_probe_suite")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_start_probe_suite")
+	if !ok {
+		return C.bool(false)
+	}
+	var config_ *sdk.ProbeSuiteConfig
+	if config != nil {
+		config_ = &sdk.ProbeSuiteConfig{}
+		if !goJson(config, config_, "urnet_device_remote_start_probe_suite") {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.StartProbeSuite(config_)
+	return C.bool(r0)
+}
+
+//export urnet_device_remote_stop_probe_suite
+func urnet_device_remote_stop_probe_suite(self C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_stop_probe_suite")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_stop_probe_suite")
+	if !ok {
+		return
+	}
+	self_.StopProbeSuite()
 }
 
 //export urnet_device_remote_sync
@@ -8804,6 +8899,17 @@ func urnet_local_state_get_route_local(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_local_state_get_routing_tier
+func urnet_local_state_get_routing_tier(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_local_state_get_routing_tier")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_routing_tier")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetRoutingTier()
+	return C.int64_t(r0)
+}
+
 //export urnet_local_state_get_vpn_interface_while_offline
 func urnet_local_state_get_vpn_interface_while_offline(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_local_state_get_vpn_interface_while_offline")
@@ -9187,6 +9293,21 @@ func urnet_local_state_set_route_local(self C.uint64_t, routeLocal C.bool, outEr
 		return C.bool(false)
 	}
 	err := self_.SetRouteLocal(bool(routeLocal))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_routing_tier
+func urnet_local_state_set_routing_tier(self C.uint64_t, tier C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_routing_tier")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_routing_tier")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetRoutingTier(int(int64(tier)))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

@@ -113,6 +113,64 @@ type ProbeSuiteConfig struct {
 	DownloadByteCount int64
 }
 
+// Bounds for a probe config.
+//
+// The config is untrusted input at the point it is used, not a local literal:
+// on desktop it is composed in the ui process and applied in the privileged
+// service, so every field crosses a process boundary before anything reads
+// it. Concurrency is a goroutine count -- `ProbeSuiteConfig{Concurrency:
+// 1<<30}` is a billion goroutines inside the service -- RepeatCount
+// multiplies the job list, and DownloadByteCount is bytes pulled over the
+// tunnel by every repeat.
+//
+// Only the ceilings are enforced for Concurrency and RepeatCount, since
+// `buildProbeJobs`/`run` already raise a low value to 1. DownloadByteCount
+// deliberately has no floor: `buildProbeJobs` treats a non-positive value as
+// "no download probe", which is a meaningful choice rather than an error.
+const (
+	probeMaxConcurrency = 64
+	probeMaxRepeatCount = 100
+
+	// a zero timeout is "no deadline", which is how a stalled probe becomes a
+	// goroutine that never returns
+	probeMinTimeoutMillis = 100
+	probeMaxTimeoutMillis = 300_000
+
+	probeMaxDownloadByteCount = 256 << 20
+)
+
+// normalizeProbeSuiteConfig resolves a nil config to the default and bounds
+// every field. It returns a COPY, so a caller that keeps mutating its struct
+// after starting a run cannot change the run in flight.
+func normalizeProbeSuiteConfig(config *ProbeSuiteConfig, log connect.Logger) *ProbeSuiteConfig {
+	if config == nil {
+		return GetDefaultProbeSuiteConfig()
+	}
+
+	normalized := *config
+
+	clamp := func(name string, value int64, low int64, high int64) int64 {
+		bounded := min(max(value, low), high)
+		if bounded != value && log != nil {
+			log.Infof("[probe]%s %d out of range, clamped to %d\n", name, value, bounded)
+		}
+		return bounded
+	}
+	// ceiling only: `run` and `buildProbeJobs` already raise a low value to 1,
+	// and a floor here would turn "0 means whatever the runner decides" into a
+	// second spelling of the same thing
+	ceiling := func(name string, value int64, high int64) int64 {
+		return clamp(name, value, min(value, high), high)
+	}
+
+	normalized.Concurrency = int32(ceiling("concurrency", int64(normalized.Concurrency), probeMaxConcurrency))
+	normalized.RepeatCount = int32(ceiling("repeat_count", int64(normalized.RepeatCount), probeMaxRepeatCount))
+	normalized.TimeoutMillis = clamp("timeout_millis", normalized.TimeoutMillis, probeMinTimeoutMillis, probeMaxTimeoutMillis)
+	normalized.DownloadByteCount = ceiling("download_byte_count", normalized.DownloadByteCount, probeMaxDownloadByteCount)
+
+	return &normalized
+}
+
 // Named Get* to match the other bound defaults (GetDefaultDnsResolverSettings),
 // which is how gomobile surfaces them as Sdk.getDefault... on the app side.
 func GetDefaultProbeSuiteConfig() *ProbeSuiteConfig {
@@ -496,11 +554,19 @@ func (self *DeviceLocal) ProbeSuiteRunning() bool {
 // StartProbeSuite begins a run and returns immediately. Returns false if one
 // is already running -- two concurrent runs would contend for the same exits
 // and neither result would mean anything.
+//
+// A nil config means the default. This is enforced HERE rather than at any
+// one caller because the config reaches `buildProbeJobs` on a spawned
+// goroutine: a nil deref there is not recoverable by the cgo boundary's
+// recover, so it aborts the whole process -- on Windows, the privileged
+// service. `urnet_device_local_start_probe_suite(handle, NULL)` and gomobile's
+// `startProbeSuite(null)` both reach this directly, with no rpc in between.
 func (self *DeviceLocal) StartProbeSuite(config *ProbeSuiteConfig) bool {
 	suite := self.probeSuiteState
 	if suite == nil {
 		return false
 	}
+	config = normalizeProbeSuiteConfig(config, self.log)
 
 	suite.stateLock.Lock()
 	if suite.running {
