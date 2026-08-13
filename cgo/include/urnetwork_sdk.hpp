@@ -184,6 +184,9 @@ inline constexpr const char* PurchaseReportStatusCredited = "credited";
 inline constexpr const char* PurchaseReportStatusInvalid = "invalid";
 inline constexpr const char* PurchaseReportStatusPending = "pending";
 inline constexpr const char* PurchaseReportStatusWrongNetwork = "wrong_network";
+inline constexpr int64_t RoutingTierFull = 2;
+inline constexpr int64_t RoutingTierLight = 1;
+inline constexpr int64_t RoutingTierOff = 0;
 inline constexpr const char* SOL = "SOL";
 inline constexpr int64_t SolanaPayReferenceBytes = 32;
 inline constexpr const char* StripeItemData10Tib = "data_10tib";
@@ -1800,6 +1803,11 @@ struct ReliabilitySettings {
 	int64_t SchedulerPauseRecoveryTimeoutMillis{};
 	int64_t BlackholeConnectComparativeTimeoutMillis{};
 	int64_t HeartbeatIntervalMillis{};
+	bool ScoredPlacement{};
+	double PlacementHysteresisPct{};
+	int32_t PlacementDemoteConsecutive{};
+	bool RewardInstrumentation{};
+	bool QuarantineDampening{};
 };
 
 struct RemoveAuthArgs {
@@ -2205,6 +2213,8 @@ struct WindowStatus {
 	int64_t ProviderStateNotAdded{};
 	int64_t ProviderStateAdded{};
 	int64_t ProviderStateRemoved{};
+	std::string StallReason{};
+	bool Failed{};
 };
 
 inline void to_json(nlohmann::json& j, const AccountPayment& v);
@@ -8311,6 +8321,11 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["SchedulerPauseRecoveryTimeoutMillis"] = v.SchedulerPauseRecoveryTimeoutMillis;
 	j["BlackholeConnectComparativeTimeoutMillis"] = v.BlackholeConnectComparativeTimeoutMillis;
 	j["HeartbeatIntervalMillis"] = v.HeartbeatIntervalMillis;
+	j["ScoredPlacement"] = v.ScoredPlacement;
+	j["PlacementHysteresisPct"] = v.PlacementHysteresisPct;
+	j["PlacementDemoteConsecutive"] = v.PlacementDemoteConsecutive;
+	j["RewardInstrumentation"] = v.RewardInstrumentation;
+	j["QuarantineDampening"] = v.QuarantineDampening;
 }
 inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	if (!j.is_object()) {
@@ -8423,6 +8438,21 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("HeartbeatIntervalMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.HeartbeatIntervalMillis);
+	}
+	if (auto it = j.find("ScoredPlacement"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ScoredPlacement);
+	}
+	if (auto it = j.find("PlacementHysteresisPct"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlacementHysteresisPct);
+	}
+	if (auto it = j.find("PlacementDemoteConsecutive"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlacementDemoteConsecutive);
+	}
+	if (auto it = j.find("RewardInstrumentation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RewardInstrumentation);
+	}
+	if (auto it = j.find("QuarantineDampening"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuarantineDampening);
 	}
 }
 
@@ -10072,6 +10102,8 @@ inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 	j["ProviderStateNotAdded"] = v.ProviderStateNotAdded;
 	j["ProviderStateAdded"] = v.ProviderStateAdded;
 	j["ProviderStateRemoved"] = v.ProviderStateRemoved;
+	j["StallReason"] = v.StallReason;
+	j["Failed"] = v.Failed;
 }
 inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	if (!j.is_object()) {
@@ -10097,6 +10129,12 @@ inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	}
 	if (auto it = j.find("ProviderStateRemoved"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderStateRemoved);
+	}
+	if (auto it = j.find("StallReason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StallReason);
+	}
+	if (auto it = j.find("Failed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Failed);
 	}
 }
 
@@ -10673,6 +10711,7 @@ public:
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setPerformanceDegraded(bool degraded) const;
 	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
+	void setRoutingTier(int64_t tier) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
 	void shuffleExits() const;
@@ -10833,6 +10872,7 @@ public:
 	std::string getProvideNetworkMode() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
 	bool getRouteLocal() const;
+	int64_t getRoutingTier() const;
 	bool getVpnInterfaceWhileOffline() const;
 	void logout() const;
 	std::optional<ByJwt> parseByJwt() const;
@@ -10856,6 +10896,7 @@ public:
 	void setProvideNetworkMode(const std::string& provide_network_mode) const;
 	void setProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
 	void setRouteLocal(bool route_local) const;
+	void setRoutingTier(int64_t tier) const;
 	void setVpnInterfaceWhileOffline(bool vpn_interface_while_offline) const;
 };
 
@@ -17709,6 +17750,9 @@ inline void DeviceLocal::setReliabilitySettings(const std::optional<ReliabilityS
 	}
 	urnet_device_local_set_reliability_settings(handle(), reliability_settings_c);
 }
+inline void DeviceLocal::setRoutingTier(int64_t tier) const {
+	urnet_device_local_set_routing_tier(handle(), tier);
+}
 inline void DeviceLocal::setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const {
 	char* err_c = nullptr;
 	bool ok = urnet_device_local_set_rpc_server(handle(), server_pem.c_str(), client_cert_pem.c_str(), host_port.c_str(), &err_c);
@@ -18192,6 +18236,10 @@ inline bool LocalState::getRouteLocal() const {
 	bool r = urnet_local_state_get_route_local(handle());
 	return r;
 }
+inline int64_t LocalState::getRoutingTier() const {
+	int64_t r = urnet_local_state_get_routing_tier(handle());
+	return r;
+}
 inline bool LocalState::getVpnInterfaceWhileOffline() const {
 	bool r = urnet_local_state_get_vpn_interface_while_offline(handle());
 	return r;
@@ -18452,6 +18500,16 @@ inline void LocalState::setRouteLocal(bool route_local) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_route_local failed");
+	}
+}
+inline void LocalState::setRoutingTier(int64_t tier) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_routing_tier(handle(), tier, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_routing_tier failed");
 	}
 }
 inline void LocalState::setVpnInterfaceWhileOffline(bool vpn_interface_while_offline) const {
