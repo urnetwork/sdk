@@ -4802,19 +4802,23 @@ func (self *DeviceRemote) GetDestinationExits() *DestinationExitList {
 // drain-style hand-off; see `DeviceLocal.MigrateExit`). The exit client id
 // is the string form (`Exit.ClientId.IdStr`); an unparseable id or a down
 // rpc is a no-op.
-func (self *DeviceRemote) MigrateExit(exitClientId string) {
+func (self *DeviceRemote) MigrateExit(exitClientId string) int32 {
 	exitId, err := ParseId(exitClientId)
 	if err != nil {
-		return
+		return -1
 	}
 
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	if self.service == nil {
-		return
+		return -1
 	}
-	rpcCallVoid(self.service, "DeviceLocalRpc.MigrateExit", exitId.toConnectId(), self.closeService)
+	migratedCount, err := rpcCall[int32](self.service, "DeviceLocalRpc.MigrateExit", exitId.toConnectId(), self.closeService)
+	if err != nil {
+		return -1
+	}
+	return migratedCount
 }
 
 // NOTE: the WP1 contract lists `ProbeExit(exitClientId string)` (one
@@ -4830,14 +4834,18 @@ func (self *DeviceRemote) MigrateExit(exitClientId string) {
 // ProbeAllExits fires a qualification probe pass at every exit in the
 // windows now, instead of waiting for the background sweep. Non-blocking on
 // the local side; no-op while the rpc is down.
-func (self *DeviceRemote) ProbeAllExits() {
+func (self *DeviceRemote) ProbeAllExits() int32 {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
 	if self.service == nil {
-		return
+		return 0
 	}
-	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.ProbeAllExits", self.closeService)
+	probeCount, err := rpcCallNoArg[int32](self.service, "DeviceLocalRpc.ProbeAllExits", self.closeService)
+	if err != nil {
+		return 0
+	}
+	return probeCount
 }
 
 // DropExit kills a single exit, as if that provider had died, leaving the
@@ -8918,13 +8926,13 @@ func (self *DeviceLocalRpc) GetDestinationExits(_ RpcNoArg, deviceDestinationExi
 	return nil
 }
 
-func (self *DeviceLocalRpc) MigrateExit(exitClientId connect.Id, _ RpcVoid) error {
-	self.deviceLocal.MigrateExit(newId(exitClientId))
+func (self *DeviceLocalRpc) MigrateExit(exitClientId connect.Id, migratedCount *int32) error {
+	*migratedCount = self.deviceLocal.MigrateExit(newId(exitClientId))
 	return nil
 }
 
-func (self *DeviceLocalRpc) ProbeAllExits(_ RpcNoArg, _ RpcVoid) error {
-	self.deviceLocal.ProbeAllExits()
+func (self *DeviceLocalRpc) ProbeAllExits(_ RpcNoArg, probeCount *int32) error {
+	*probeCount = self.deviceLocal.ProbeAllExits()
 	return nil
 }
 

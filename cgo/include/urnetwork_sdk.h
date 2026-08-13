@@ -839,7 +839,7 @@ char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
 char* urnet_device_remote_get_sync_error(uint64_t self);
-void urnet_device_remote_migrate_exit(uint64_t self, const char* exit_client_id);
+int64_t urnet_device_remote_migrate_exit(uint64_t self, const char* exit_client_id);
 uint64_t urnet_device_remote_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_block_action_view_controller(uint64_t self);
@@ -858,7 +858,7 @@ uint64_t urnet_device_remote_open_provider_contract_details_view_controller(uint
 uint64_t urnet_device_remote_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_subscription_balance_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_wallet_view_controller(uint64_t self);
-void urnet_device_remote_probe_all_exits(uint64_t self);
+int64_t urnet_device_remote_probe_all_exits(uint64_t self);
 bool urnet_device_remote_probe_suite_running(uint64_t self);
 void urnet_device_remote_reset_reliability_metrics(uint64_t self);
 void urnet_device_remote_reset_reliability_settings(uint64_t self);
