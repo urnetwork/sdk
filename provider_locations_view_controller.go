@@ -17,26 +17,32 @@ type SelectedProviderLocationChangeListener interface {
 	SelectedProviderLocationChanged()
 }
 
-// ProviderLocationsViewController owns the provider-locations globe's
-// selection and its scroll wheel, so every app shares one behavior instead of
-// hand-rolling it per platform.
+// ProviderLocationsViewController owns the provider-locations screen's shared
+// behavior — the display order, the selection, and the globe's scroll wheel —
+// so every app shares one behavior instead of hand-rolling it per platform.
 //
-// The wheel is the plottable providers (the ones with coordinates) ordered
-// west to east by longitude relative to the providers' spherical centroid:
-// each provider is ranked by its signed longitude offset from the centroid,
-// so the wheel's two ends fall on the meridian opposite the data's center —
-// the farthest place from the providers. A raw longitude sort would instead
-// cut at the +/-180 antimeridian and split a cluster that straddles it (a
-// provider at -178 would sort to the far west end even though it sits just
-// east of one at +175).
+// DISPLAY ORDER is west to east about the providers' spherical centroid: each
+// plottable provider is ranked by its signed longitude offset from the
+// centroid, so the order's two ends fall on the meridian opposite the data's
+// center — the farthest place from the providers. A raw longitude sort would
+// instead cut at the +/-180 antimeridian and split a cluster that straddles it
+// (a provider at -178 would sort to the far west end even though it sits just
+// east of one at +175). Providers with no coordinates have no place on the
+// globe, so they follow, in the sdk's own order.
 //
-// Scrolling does not cycle: `StepSelection` clamps at the wheel's ends, so
-// stepping past the extreme west or east sticks there instead of teleporting
-// the long way round the globe. The apps translate their gestures (drag
-// travel past a hysteresis threshold, scroll-wheel notches) into step counts;
-// everything after that — order, clamping, selection — lives here.
+// `GetProviderLocations` returns the window in that order and is what the apps
+// render their list from. The list therefore reads left to right in the same
+// order the globe steps through — sorting the list by connected duration
+// instead put the rows in an order the globe's wheel did not follow.
 //
-// The selection is the egress client id as a string. It is not restricted to
+// The WHEEL is the plottable head of that order. Scrolling does not cycle:
+// `StepSelection` clamps at the wheel's ends, so stepping past the extreme
+// west or east sticks there instead of teleporting the long way round the
+// globe. The apps translate their gestures (drag travel past a hysteresis
+// threshold, scroll-wheel notches) into step counts; everything after that —
+// order, clamping, selection — lives here.
+//
+// The SELECTION is the egress client id as a string. It is not restricted to
 // plottable providers (the list lets the user select a row with no
 // coordinates); a step from such a selection starts at the wheel's west end.
 // Two rules keep it pointed at something real, so the screen never rests on
@@ -46,9 +52,10 @@ type SelectedProviderLocationChangeListener interface {
 //     window's first entry — the sdk sorts it oldest-connected first);
 //   - when the selected provider leaves the window (the user removed it, or it
 //     rotated out at the window's client lifetime), the selection moves to the
-//     nearest provider connected LONGER than it, falling back to the nearest
-//     younger one. Handing it to an older neighbor keeps the selection on a row
-//     that has been there all along rather than on a newcomer.
+//     NEAREST surviving provider — the smallest great-circle distance from the
+//     one that left. The globe is centered on the selection, so handing it to
+//     the nearest provider moves the globe the shortest way to the dot beside
+//     the one that just disappeared, instead of throwing it across the world.
 //
 // "" therefore means only "no providers are connected".
 type ProviderLocationsViewController struct {
@@ -66,45 +73,83 @@ type ProviderLocationsViewController struct {
 	selectedListeners *connect.CallbackList[SelectedProviderLocationChangeListener]
 }
 
-// providerWindow is the current connect window as the selection needs it: the
-// providers in the sdk's order, the set for membership tests, and the globe's
-// wheel.
+// providerWindow is the current connect window as the screen needs it: the
+// providers in display order, an index over them, the globe's wheel, and the
+// longest connected provider.
 type providerWindow struct {
-	// every provider's egress client id, longest connected first
-	order []string
-	// the same ids as a set, for "is this provider still connected"
-	clientIds map[string]bool
-	// the plottable providers, west to east about their centroid (see the
+	// every provider in display order: the plottable ones west to east about
+	// their centroid, then the ones with no coordinates (see the
 	// ProviderLocationsViewController comment)
+	order []*ConnectedProviderLocation
+	// each provider's position in `order`, keyed by egress client id; doubles
+	// as the set for "is this provider still connected"
+	index map[string]int
+	// the plottable head of `order` as client ids — the globe's wheel
 	wheel []string
+	// the provider that has been connected the longest, which is the first
+	// entry of the sdk's own (oldest-connected-first) order, not of `order`
+	longest string
 }
 
-// longestConnected is the provider that has been connected the longest — the
-// window's first entry — or "" when nothing is connected.
+// has reports whether the provider is in this window.
+func (self providerWindow) has(clientId string) bool {
+	_, ok := self.index[clientId]
+	return ok
+}
+
+// longestConnected is the provider that has been connected the longest, or ""
+// when nothing is connected.
 func (self providerWindow) longestConnected() string {
-	if len(self.order) == 0 {
-		return ""
-	}
-	return self.order[0]
+	return self.longest
 }
 
 // successorTo is who inherits the selection when `clientId` goes away: the
-// nearest provider connected longer than it that `present` still reports, else
-// the nearest younger one. "" when nothing survives or the id is not in this
-// window.
+// NEAREST provider `present` still reports, by great-circle distance from the
+// one that left. Ties keep the earlier provider in display order.
+//
+// Distance needs coordinates at both ends, so when the departing provider has
+// none — or nothing that survives has any — it falls back to the neighbor in
+// display order: the entry before it, else the one after. That is the nearest
+// row on screen, which is the same idea one dimension down.
+//
+// "" when nothing survives or the id is not in this window.
 func (self providerWindow) successorTo(clientId string, present func(string) bool) string {
-	index := slices.Index(self.order, clientId)
-	if index < 0 {
+	index, ok := self.index[clientId]
+	if !ok {
 		return ""
 	}
+	if lat, lon, plottable := plotCoordinates(self.order[index]); plottable {
+		nearest := ""
+		nearestDistance := math.MaxFloat64
+		for i, location := range self.order {
+			if i == index {
+				continue
+			}
+			otherLat, otherLon, otherPlottable := plotCoordinates(location)
+			if !otherPlottable {
+				continue
+			}
+			otherClientId := location.ClientId.String()
+			if !present(otherClientId) {
+				continue
+			}
+			if distance := angularDistance(lat, lon, otherLat, otherLon); distance < nearestDistance {
+				nearest = otherClientId
+				nearestDistance = distance
+			}
+		}
+		if nearest != "" {
+			return nearest
+		}
+	}
 	for i := index - 1; 0 <= i; i -= 1 {
-		if present(self.order[i]) {
-			return self.order[i]
+		if id := self.order[i].ClientId.String(); present(id) {
+			return id
 		}
 	}
 	for i := index + 1; i < len(self.order); i += 1 {
-		if present(self.order[i]) {
-			return self.order[i]
+		if id := self.order[i].ClientId.String(); present(id) {
+			return id
 		}
 	}
 	return ""
@@ -134,9 +179,10 @@ func (self *ProviderLocationsViewController) ConnectedProviderLocationsChanged()
 }
 
 // setLocations rebuilds the window and re-points the selection at something
-// real: an older neighbor when the selected provider has left, the longest
-// connected provider when nothing is selected. Split from the listener so the
-// state transition is exercised directly by tests, with no device to stand up.
+// real: the nearest surviving provider when the selected one has left, the
+// longest connected provider when nothing is selected. Split from the listener
+// so the state transition is exercised directly by tests, with no device to
+// stand up.
 func (self *ProviderLocationsViewController) setLocations(locations *ConnectedProviderLocationList) {
 	changed := false
 	func() {
@@ -145,11 +191,11 @@ func (self *ProviderLocationsViewController) setLocations(locations *ConnectedPr
 		previous := self.window
 		self.window = deriveProviderWindow(locations)
 		next := self.selectedClientId
-		if next != "" && !self.window.clientIds[next] {
-			// removed by the user, or rotated out of the window
-			next = previous.successorTo(next, func(clientId string) bool {
-				return self.window.clientIds[clientId]
-			})
+		if next != "" && !self.window.has(next) {
+			// removed by the user, or rotated out of the window. The previous
+			// window is what still knows where the departing provider was, so
+			// the nearest surviving one is measured from there.
+			next = previous.successorTo(next, self.window.has)
 		}
 		if next == "" {
 			next = self.window.longestConnected()
@@ -167,8 +213,8 @@ func (self *ProviderLocationsViewController) setLocations(locations *ConnectedPr
 // RemoveProvider drops the provider from the connection and stops it being
 // re-discovered for the rest of this connection (see
 // `Device.RemoveConnectedProvider`). When it is the selected one the selection
-// moves to the next older provider up front, rather than after the window
-// round trip, so the ui never blinks through "nothing selected".
+// moves to the nearest provider up front, rather than after the window round
+// trip, so the ui never blinks through "nothing selected".
 //
 // The caller still trims its own row list optimistically: that is a rendering
 // choice, and the sdk only reports the removal once the window drops the
@@ -188,7 +234,7 @@ func (self *ProviderLocationsViewController) RemoveProvider(clientId string) {
 	self.device.RemoveConnectedProvider(id)
 }
 
-// selectSuccessorTo hands the selection to the next older provider when
+// selectSuccessorTo hands the selection to the nearest other provider when
 // `clientId` is the one selected, ahead of the window reporting it gone. A
 // no-op for any other provider.
 func (self *ProviderLocationsViewController) selectSuccessorTo(clientId string) {
@@ -211,6 +257,29 @@ func (self *ProviderLocationsViewController) selectSuccessorTo(clientId string) 
 	if changed {
 		self.selectedProviderLocationChanged()
 	}
+}
+
+// GetProviderLocations returns the connected providers in display order — the
+// same providers `Device.GetConnectedProviderLocations` reports, ordered west
+// to east about their centroid with the ones that have no coordinates after
+// them. Apps render their list from this rather than from the device, so the
+// rows read left to right in the order the globe steps through, and the order
+// can never disagree with the selection: both come from one window snapshot.
+//
+// Re-read it on `ConnectedProviderLocationChangeListener`. This controller
+// subscribes to that same listener when it is opened, and `connect.CallbackList`
+// fires callbacks in subscription order, so the snapshot an app reads from its
+// own callback is already the new one — PROVIDED the app opens the controller
+// BEFORE it registers its own connected-provider listener. An app that
+// registers first reads a window one notify behind (the next notify corrects
+// it); this is not derived on read because `setLocations` needs the previous
+// window to find where a departing provider was.
+func (self *ProviderLocationsViewController) GetProviderLocations() *ConnectedProviderLocationList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	locations := NewConnectedProviderLocationList()
+	locations.addAll(self.window.order...)
+	return locations
 }
 
 // GetSelectedClientId returns the selected provider's egress client id, or ""
@@ -292,61 +361,70 @@ func (self *ProviderLocationsViewController) Close() {
 	self.locationsChangedSub.Close()
 }
 
-// deriveProviderWindow maps the current window locations to what the selection
-// needs: the providers in the sdk's order (longest connected first), the same
-// ids as a set, and the wheel — the plottable providers ordered west to east
-// by signed longitude offset from their spherical centroid. The wheel sort is
-// stable, so providers sharing a longitude keep the list's oldest-first
-// duration order.
+// deriveProviderWindow maps the current window locations to what the screen
+// needs: the providers in display order, their positions in it, the wheel, and
+// the longest connected provider.
+//
+// Display order is the plottable providers sorted by signed longitude offset
+// from their spherical centroid, then the ones with no coordinates. Both sorts
+// are stable, so providers sharing a longitude — and every unplottable one —
+// keep the sdk's oldest-connected-first order.
 func deriveProviderWindow(locations *ConnectedProviderLocationList) providerWindow {
-	type plot struct {
-		clientId string
-		lon      float64
-		lat      float64
+	plottable := []*ConnectedProviderLocation{}
+	unplottable := []*ConnectedProviderLocation{}
+	lonLats := [][2]float64{}
+	longest := ""
+	seen := map[string]bool{}
+	// both device implementations return an empty list rather than nil, but a
+	// nil here would be a crash rather than an empty globe
+	if locations != nil {
+		for i := 0; i < locations.Len(); i += 1 {
+			location := locations.Get(i)
+			if location == nil || location.ClientId == nil {
+				continue
+			}
+			clientId := location.ClientId.String()
+			if seen[clientId] {
+				// the same provider twice would give the selection two homes
+				continue
+			}
+			seen[clientId] = true
+			if longest == "" {
+				// the sdk sorts the window oldest-connected first
+				longest = clientId
+			}
+			if lat, lon, ok := plotCoordinates(location); ok {
+				plottable = append(plottable, location)
+				lonLats = append(lonLats, [2]float64{lon, lat})
+			} else {
+				unplottable = append(unplottable, location)
+			}
+		}
 	}
 
-	order := []string{}
-	clientIds := map[string]bool{}
-	plots := []plot{}
-	if locations == nil {
-		// both device implementations return an empty list rather than nil, but
-		// a nil here would be a crash rather than an empty globe
-		return providerWindow{order: order, clientIds: clientIds, wheel: []string{}}
-	}
-	for i := 0; i < locations.Len(); i += 1 {
-		location := locations.Get(i)
-		if location == nil || location.ClientId == nil {
-			continue
-		}
-		clientId := location.ClientId.String()
-		if clientIds[clientId] {
-			// the same provider twice would give the selection two homes
-			continue
-		}
-		order = append(order, clientId)
-		clientIds[clientId] = true
-		if lat, lon, ok := plotCoordinates(location); ok {
-			plots = append(plots, plot{clientId: clientId, lon: lon, lat: lat})
-		}
-	}
-
-	lonLats := make([][2]float64, len(plots))
-	for i, p := range plots {
-		lonLats[i] = [2]float64{p.lon, p.lat}
-	}
 	centroidLon := centroidLongitude(lonLats)
-	slices.SortStableFunc(plots, func(a, b plot) int {
+	slices.SortStableFunc(plottable, func(a, b *ConnectedProviderLocation) int {
+		_, aLon, _ := plotCoordinates(a)
+		_, bLon, _ := plotCoordinates(b)
 		return cmp.Compare(
-			signedLonDelta(a.lon, centroidLon),
-			signedLonDelta(b.lon, centroidLon),
+			signedLonDelta(aLon, centroidLon),
+			signedLonDelta(bLon, centroidLon),
 		)
 	})
 
-	wheel := make([]string, len(plots))
-	for i, p := range plots {
-		wheel[i] = p.clientId
+	order := make([]*ConnectedProviderLocation, 0, len(plottable)+len(unplottable))
+	order = append(order, plottable...)
+	order = append(order, unplottable...)
+	index := map[string]int{}
+	wheel := make([]string, len(plottable))
+	for i, location := range order {
+		clientId := location.ClientId.String()
+		index[clientId] = i
+		if i < len(plottable) {
+			wheel[i] = clientId
+		}
 	}
-	return providerWindow{order: order, clientIds: clientIds, wheel: wheel}
+	return providerWindow{order: order, index: index, wheel: wheel, longest: longest}
 }
 
 // plotCoordinates is the provider's dot position on the globe: the city
@@ -415,6 +493,23 @@ func centroidLongitude(lonLats [][2]float64) float64 {
 		y += math.Cos(phi) * math.Sin(lambda)
 	}
 	return math.Atan2(y, x) * 180 / math.Pi
+}
+
+// angularDistance is the great-circle distance between two {lat, lon} points
+// given in degrees, as radians of arc — a pure ranking quantity here, so the
+// earth's radius never enters. Haversine rather than acos of the unit-vector
+// dot product: two providers in neighboring cities are a very small angle
+// apart, exactly where acos loses its precision.
+func angularDistance(latDeg1 float64, lonDeg1 float64, latDeg2 float64, lonDeg2 float64) float64 {
+	lat1 := latDeg1 * math.Pi / 180
+	lat2 := latDeg2 * math.Pi / 180
+	halfDeltaLat := (lat2 - lat1) / 2
+	halfDeltaLon := (lonDeg2 - lonDeg1) * math.Pi / 360
+	sinHalfLat := math.Sin(halfDeltaLat)
+	sinHalfLon := math.Sin(halfDeltaLon)
+	a := sinHalfLat*sinHalfLat + math.Cos(lat1)*math.Cos(lat2)*sinHalfLon*sinHalfLon
+	// rounding can push a just past 1 for antipodal points, where Asin is NaN
+	return 2 * math.Asin(math.Sqrt(min(1, a)))
 }
 
 // signedLonDelta is the signed east-west offset of `lonDeg` from

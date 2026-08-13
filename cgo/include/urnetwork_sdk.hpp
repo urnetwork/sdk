@@ -11069,6 +11069,7 @@ public:
 	Sub addSelectedProviderLocationChangeListener(SelectedProviderLocationChangeListener listener) const;
 	void close() const;
 	void connectedProviderLocationsChanged() const;
+	std::optional<ConnectedProviderLocationList> getProviderLocations() const;
 	std::string getSelectedClientId() const;
 	void removeProvider(const std::string& client_id) const;
 	void setSelectedClientId(const std::string& client_id) const;
@@ -19167,6 +19168,14 @@ inline void ProviderLocationsViewController::close() const {
 }
 inline void ProviderLocationsViewController::connectedProviderLocationsChanged() const {
 	urnet_provider_locations_view_controller_connected_provider_locations_changed(handle());
+}
+inline std::optional<ConnectedProviderLocationList> ProviderLocationsViewController::getProviderLocations() const {
+	char* r_c = urnet_provider_locations_view_controller_get_provider_locations(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectedProviderLocationList>(r_s->c_str());
 }
 inline std::string ProviderLocationsViewController::getSelectedClientId() const {
 	char* r_c = urnet_provider_locations_view_controller_get_selected_client_id(handle());

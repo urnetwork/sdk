@@ -10838,6 +10838,20 @@ func urnet_provider_locations_view_controller_connected_provider_locations_chang
 	self_.ConnectedProviderLocationsChanged()
 }
 
+//export urnet_provider_locations_view_controller_get_provider_locations
+func urnet_provider_locations_view_controller_get_provider_locations(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_locations_view_controller_get_provider_locations")
+	self_, ok := resolveHandle[*sdk.ProviderLocationsViewController](uint64(self), "urnet_provider_locations_view_controller_get_provider_locations")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderLocations()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_locations_view_controller_get_provider_locations")
+}
+
 //export urnet_provider_locations_view_controller_get_selected_client_id
 func urnet_provider_locations_view_controller_get_selected_client_id(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_provider_locations_view_controller_get_selected_client_id")

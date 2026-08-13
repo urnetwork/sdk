@@ -314,10 +314,12 @@ func (self *jsNetworkClientsListener) NetworkClientsChanged(list *sdk.NetworkCli
 
 // ── ProviderLocationsViewController ──────────────────────────────────────────
 
-// The provider-locations globe's selection and its scroll wheel. `stepSelection`
-// moves along the providers ordered west to east relative to their centroid and
-// clamps at the ends, so scrolling past the extreme west or east sticks there
-// instead of cycling round the globe.
+// The provider-locations screen's display order, selection and scroll wheel.
+// `getProviderLocations` is the window in display order — west to east relative
+// to the providers' centroid, then the ones with no coordinates — and is what
+// the list renders, so the rows read left to right in the order
+// `stepSelection` walks. Stepping clamps at the ends, so scrolling past the
+// extreme west or east sticks there instead of cycling round the globe.
 func jsProviderLocationsViewController(
 	vc *sdk.ProviderLocationsViewController,
 	closeController func(),
@@ -338,6 +340,12 @@ func jsProviderLocationsViewController(
 		return js.Null()
 	})
 
+	// the connected providers in display order; re-read on the device's
+	// connectedProviderLocationsChanged
+	m["getProviderLocations"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsConnectedProviderLocations(vc.GetProviderLocations())
+	})
+
 	// "" when nothing is selected
 	m["getSelectedClientId"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(vc.GetSelectedClientId())
@@ -356,8 +364,8 @@ func jsProviderLocationsViewController(
 		}
 		return js.Null()
 	})
-	// drops the provider AND moves the selection to the next older one when it
-	// was the selected provider
+	// drops the provider AND moves the selection to the nearest remaining one
+	// when it was the selected provider
 	m["removeProvider"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) && args[0].Type() == js.TypeString {
 			vc.RemoveProvider(args[0].String())

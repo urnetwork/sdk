@@ -26,11 +26,20 @@ func testing_plottableLocation(clientId *Id, lon float64, lat float64) *Connecte
 	}
 }
 
-// The wheel order is west to east as seen from the providers' centroid, so a
+// testing_orderIds is the window's display order as client id strings.
+func testing_orderIds(window providerWindow) []string {
+	ids := []string{}
+	for _, location := range window.order {
+		ids = append(ids, location.ClientId.String())
+	}
+	return ids
+}
+
+// The display order is west to east as seen from the providers' centroid, so a
 // cluster straddling the +/-180 antimeridian stays contiguous: the -175
 // provider is the EASTERN end, where a raw longitude sort would make it the
 // western one.
-func TestWheelOrderKeepsADateLineClusterContiguous(t *testing.T) {
+func TestDisplayOrderKeepsADateLineClusterContiguous(t *testing.T) {
 	at160 := newId(connect.NewId())
 	at170 := newId(connect.NewId())
 	atMinus175 := newId(connect.NewId())
@@ -41,18 +50,25 @@ func TestWheelOrderKeepsADateLineClusterContiguous(t *testing.T) {
 	locations.Add(testing_plottableLocation(at170, 170, 0))
 
 	window := deriveProviderWindow(locations)
-	connect.AssertEqual(t, len(window.clientIds), 3)
+	connect.AssertEqual(t, len(window.index), 3)
 	connect.AssertEqual(t, window.wheel, []string{
 		at160.String(),
 		at170.String(),
 		atMinus175.String(),
 	})
+	// the wheel is the plottable head of the display order, so with every
+	// provider plottable they are the same list
+	connect.AssertEqual(t, testing_orderIds(window), window.wheel)
+	// the longest connected provider is the window's first entry whatever the
+	// display order does with it
+	connect.AssertEqual(t, window.longestConnected(), atMinus175.String())
 }
 
-// Only plottable providers ride the wheel, the city centroid wins over the
-// region centroid, and providers sharing a longitude keep the list's
-// oldest-first order (the sort is stable).
-func TestWheelOrderPlotsAndTieBreaks(t *testing.T) {
+// The list is the wheel plus the providers that have no place on the globe:
+// plottable ones west to east, then the unplottable ones. The city centroid
+// wins over the region centroid, and providers sharing a longitude keep the
+// sdk's oldest-first order (the sort is stable).
+func TestDisplayOrderPlotsAndTieBreaks(t *testing.T) {
 	cityWins := newId(connect.NewId())
 	regionOnly := newId(connect.NewId())
 	unplottable := newId(connect.NewId())
@@ -81,16 +97,14 @@ func TestWheelOrderPlotsAndTieBreaks(t *testing.T) {
 	locations.Add(testing_plottableLocation(sharedYounger, 30, 0))
 
 	window := deriveProviderWindow(locations)
-	connect.AssertEqual(t, len(window.clientIds), 5)
-	connect.AssertEqual(t, window.clientIds[unplottable.String()], true)
-	// the window keeps the sdk's order, longest connected first, whether or not
-	// a provider can be plotted
-	connect.AssertEqual(t, window.order, []string{
+	connect.AssertEqual(t, len(window.index), 5)
+	connect.AssertEqual(t, window.has(unplottable.String()), true)
+	connect.AssertEqual(t, testing_orderIds(window), []string{
 		cityWins.String(),
 		regionOnly.String(),
-		unplottable.String(),
 		sharedOlder.String(),
 		sharedYounger.String(),
+		unplottable.String(),
 	})
 	connect.AssertEqual(t, window.wheel, []string{
 		cityWins.String(),
@@ -98,19 +112,22 @@ func TestWheelOrderPlotsAndTieBreaks(t *testing.T) {
 		sharedOlder.String(),
 		sharedYounger.String(),
 	})
+	connect.AssertEqual(t, window.index[sharedYounger.String()], 3)
+	connect.AssertEqual(t, window.longestConnected(), cityWins.String())
 }
 
 // An empty window and (defensively) a nil list are an empty wheel, not a crash.
 // A row whose client id is missing is skipped rather than keyed on "".
-func TestWheelOrderToleratesEmptyAndMalformedInput(t *testing.T) {
+func TestDisplayOrderToleratesEmptyAndMalformedInput(t *testing.T) {
 	window := deriveProviderWindow(nil)
-	connect.AssertEqual(t, len(window.clientIds), 0)
+	connect.AssertEqual(t, len(window.index), 0)
 	connect.AssertEqual(t, len(window.wheel), 0)
 	connect.AssertEqual(t, len(window.order), 0)
+	connect.AssertEqual(t, window.longestConnected(), "")
 
 	locations := NewConnectedProviderLocationList()
 	window = deriveProviderWindow(locations)
-	connect.AssertEqual(t, len(window.clientIds), 0)
+	connect.AssertEqual(t, len(window.index), 0)
 	connect.AssertEqual(t, len(window.wheel), 0)
 
 	// no client id: nothing can select it, so it is neither listed nor plotted
@@ -119,9 +136,52 @@ func TestWheelOrderToleratesEmptyAndMalformedInput(t *testing.T) {
 		HasCityCoordinates: true,
 	})
 	window = deriveProviderWindow(locations)
-	connect.AssertEqual(t, len(window.clientIds), 0)
+	connect.AssertEqual(t, len(window.index), 0)
 	connect.AssertEqual(t, len(window.wheel), 0)
 	connect.AssertEqual(t, len(window.order), 0)
+	connect.AssertEqual(t, window.longestConnected(), "")
+}
+
+// The list an app renders is the controller's, in display order — not the
+// device's, which is sorted by connected duration.
+func TestGetProviderLocationsIsInDisplayOrder(t *testing.T) {
+	east := newId(connect.NewId())
+	west := newId(connect.NewId())
+	unplottable := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	locations.Add(testing_plottableLocation(east, 40, 0))
+	locations.Add(&ConnectedProviderLocation{ClientId: unplottable})
+	locations.Add(testing_plottableLocation(west, -40, 0))
+
+	vc := &ProviderLocationsViewController{
+		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
+	}
+	connect.AssertEqual(t, vc.GetProviderLocations().Len(), 0)
+
+	vc.setLocations(locations)
+	ordered := vc.GetProviderLocations()
+	connect.AssertEqual(t, ordered.Len(), 3)
+	connect.AssertEqual(t, ordered.Get(0).ClientId.String(), west.String())
+	connect.AssertEqual(t, ordered.Get(1).ClientId.String(), east.String())
+	connect.AssertEqual(t, ordered.Get(2).ClientId.String(), unplottable.String())
+	// the default selection is still the longest connected provider, wherever
+	// the display order puts it
+	connect.AssertEqual(t, vc.GetSelectedClientId(), east.String())
+}
+
+// Great-circle distance in radians of arc, used only to rank successors.
+func TestAngularDistance(t *testing.T) {
+	testing_expectNear(t, 0, angularDistance(37.8, -122.4, 37.8, -122.4), 0)
+	// a quarter turn along the equator, and from the equator to the pole
+	testing_expectNear(t, math.Pi/2, angularDistance(0, 0, 0, 90), 1e-12)
+	testing_expectNear(t, math.Pi/2, angularDistance(0, 0, 90, 0), 1e-12)
+	// antipodes: a is exactly 1 (or a hair past it), which must not be NaN
+	testing_expectNear(t, math.Pi, angularDistance(0, 0, 0, 180), 1e-9)
+	testing_expectNear(t, math.Pi, angularDistance(45, 10, -45, -170), 1e-9)
+	// a degree of longitude shrinks with the cosine of the latitude: at 60N it
+	// is half of the degree of latitude it would be at the equator
+	testing_expectNear(t, math.Pi/360, angularDistance(60, 0, 60, 1), 1e-5)
 }
 
 func TestCentroidLongitudeIsTheHorizontalMeanDirection(t *testing.T) {
@@ -205,12 +265,17 @@ func TestStepWheelSelection(t *testing.T) {
 // behavior — clamping at the ends and reporting only real changes — is tested
 // without standing up a connection.
 func TestStepSelectionClampsAtTheWheelEnds(t *testing.T) {
+	west := newId(connect.NewId())
+	mid := newId(connect.NewId())
+	east := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	locations.Add(testing_plottableLocation(west, -20, 0))
+	locations.Add(testing_plottableLocation(mid, 0, 0))
+	locations.Add(testing_plottableLocation(east, 20, 0))
+
 	vc := &ProviderLocationsViewController{
-		window: providerWindow{
-			order:     []string{"west", "mid", "east"},
-			clientIds: map[string]bool{"west": true, "mid": true, "east": true},
-			wheel:     []string{"west", "mid", "east"},
-		},
+		window:            deriveProviderWindow(locations),
 		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
 	}
 
@@ -222,7 +287,7 @@ func TestStepSelectionClampsAtTheWheelEnds(t *testing.T) {
 
 	// nothing selected: the first step lands on the west end
 	vc.StepSelection(1)
-	connect.AssertEqual(t, vc.GetSelectedClientId(), "west")
+	connect.AssertEqual(t, vc.GetSelectedClientId(), west.String())
 	connect.AssertEqual(t, changes, 1)
 
 	// a zero step is not a step
@@ -231,25 +296,25 @@ func TestStepSelectionClampsAtTheWheelEnds(t *testing.T) {
 
 	// stepping west from the west end sticks there and reports nothing
 	vc.StepSelection(-1)
-	connect.AssertEqual(t, vc.GetSelectedClientId(), "west")
+	connect.AssertEqual(t, vc.GetSelectedClientId(), west.String())
 	connect.AssertEqual(t, changes, 1)
 
 	vc.StepSelection(1)
-	connect.AssertEqual(t, vc.GetSelectedClientId(), "mid")
+	connect.AssertEqual(t, vc.GetSelectedClientId(), mid.String())
 	connect.AssertEqual(t, changes, 2)
 
 	// a fast drag past the east end clamps to it rather than wrapping west
 	vc.StepSelection(9)
-	connect.AssertEqual(t, vc.GetSelectedClientId(), "east")
+	connect.AssertEqual(t, vc.GetSelectedClientId(), east.String())
 	connect.AssertEqual(t, changes, 3)
 
 	vc.StepSelection(1)
-	connect.AssertEqual(t, vc.GetSelectedClientId(), "east")
+	connect.AssertEqual(t, vc.GetSelectedClientId(), east.String())
 	connect.AssertEqual(t, changes, 3)
 
 	// and back the other way, clamping at the west end
 	vc.StepSelection(-9)
-	connect.AssertEqual(t, vc.GetSelectedClientId(), "west")
+	connect.AssertEqual(t, vc.GetSelectedClientId(), west.String())
 	connect.AssertEqual(t, changes, 4)
 }
 
@@ -303,9 +368,11 @@ func TestTheLongestConnectedProviderIsSelectedByDefault(t *testing.T) {
 	connect.AssertEqual(t, changes, 3)
 }
 
-// When the selected provider leaves the window the selection moves to the next
-// OLDER provider — the neighbor that has been connected longer.
-func TestSelectionMovesToTheNextOlderProviderWhenItsProviderLeaves(t *testing.T) {
+// When the selected provider leaves the window the selection moves to the
+// NEAREST surviving provider, so the globe travels the short way to the dot
+// beside the one that just disappeared.
+func TestSelectionMovesToTheNearestProviderWhenItsProviderLeaves(t *testing.T) {
+	// spread 10 degrees apart, so each one's nearest neighbor is unambiguous
 	oldest := newId(connect.NewId())
 	middle := newId(connect.NewId())
 	youngest := newId(connect.NewId())
@@ -324,13 +391,13 @@ func TestSelectionMovesToTheNextOlderProviderWhenItsProviderLeaves(t *testing.T)
 	vc.SetSelectedClientId(youngest.String())
 	connect.AssertEqual(t, changes, 1)
 
-	// the youngest goes away: the selection lands on the one connected next
-	// longest, not on the oldest and not on nothing
+	// the easternmost goes away: the selection lands on its western neighbor,
+	// not on the far end of the wheel and not on nothing
 	vc.setLocations(testing_window(t, oldest, middle))
 	connect.AssertEqual(t, vc.GetSelectedClientId(), middle.String())
 	connect.AssertEqual(t, changes, 2)
 
-	// and again, down to the oldest
+	// and again, down to the last one standing
 	vc.setLocations(testing_window(t, oldest))
 	connect.AssertEqual(t, vc.GetSelectedClientId(), oldest.String())
 	connect.AssertEqual(t, changes, 3)
@@ -341,21 +408,94 @@ func TestSelectionMovesToTheNextOlderProviderWhenItsProviderLeaves(t *testing.T)
 	connect.AssertEqual(t, changes, 4)
 }
 
-// The oldest provider has no older neighbor, so the selection falls to the
-// nearest younger one — which is the new longest connected.
-func TestRemovingTheOldestSelectedProviderFallsToTheNextYoungest(t *testing.T) {
-	oldest := newId(connect.NewId())
-	middle := newId(connect.NewId())
-	youngest := newId(connect.NewId())
+// Nearest is measured on the globe, not in the list: the provider next to the
+// departing one in display order can be much further away than one several
+// rows off, because the order only ranks longitude while distance also counts
+// latitude.
+func TestTheNearestSuccessorIsNotAlwaysTheNeighboringRow(t *testing.T) {
+	selected := newId(connect.NewId())
+	adjacentButFar := newId(connect.NewId())
+	distantRowButNear := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	locations.Add(testing_plottableLocation(selected, 0, 0))
+	// 5 degrees east but 80 degrees north: the very next row, ~80 degrees away
+	locations.Add(testing_plottableLocation(adjacentButFar, 5, 80))
+	// two rows along the equator, 30 degrees away
+	locations.Add(testing_plottableLocation(distantRowButNear, 30, 0))
+
+	window := deriveProviderWindow(locations)
+	connect.AssertEqual(t, testing_orderIds(window), []string{
+		selected.String(),
+		adjacentButFar.String(),
+		distantRowButNear.String(),
+	})
 
 	vc := &ProviderLocationsViewController{
 		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
 	}
-	vc.setLocations(testing_window(t, oldest, middle, youngest))
-	connect.AssertEqual(t, vc.GetSelectedClientId(), oldest.String())
+	vc.setLocations(locations)
+	vc.SetSelectedClientId(selected.String())
 
-	vc.setLocations(testing_window(t, middle, youngest))
-	connect.AssertEqual(t, vc.GetSelectedClientId(), middle.String())
+	vc.selectSuccessorTo(selected.String())
+	connect.AssertEqual(t, vc.GetSelectedClientId(), distantRowButNear.String())
+}
+
+// Two providers exactly as far away: the one earlier in display order wins, so
+// the hand-off is the same every time rather than map-iteration roulette.
+func TestEquallyNearSuccessorsResolveByDisplayOrder(t *testing.T) {
+	west := newId(connect.NewId())
+	selected := newId(connect.NewId())
+	east := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	locations.Add(testing_plottableLocation(selected, 0, 0))
+	locations.Add(testing_plottableLocation(east, 10, 0))
+	locations.Add(testing_plottableLocation(west, -10, 0))
+
+	vc := &ProviderLocationsViewController{
+		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
+	}
+	vc.setLocations(locations)
+	vc.SetSelectedClientId(selected.String())
+
+	vc.selectSuccessorTo(selected.String())
+	connect.AssertEqual(t, vc.GetSelectedClientId(), west.String())
+}
+
+// A provider with no coordinates has no distance to anything, and neither does
+// a window where nothing plottable is left. Both fall back to the neighboring
+// row — the entry before it in display order, else the one after.
+func TestSuccessorFallsBackToTheNeighboringRowWithoutCoordinates(t *testing.T) {
+	west := newId(connect.NewId())
+	east := newId(connect.NewId())
+	unplottable := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	locations.Add(testing_plottableLocation(east, 10, 0))
+	locations.Add(&ConnectedProviderLocation{ClientId: unplottable})
+	locations.Add(testing_plottableLocation(west, -10, 0))
+
+	vc := &ProviderLocationsViewController{
+		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
+	}
+	// display order is west, east, unplottable
+	vc.setLocations(locations)
+	vc.SetSelectedClientId(unplottable.String())
+
+	// the departing provider has no position to measure from: the row above it
+	vc.selectSuccessorTo(unplottable.String())
+	connect.AssertEqual(t, vc.GetSelectedClientId(), east.String())
+
+	// nothing plottable survives, so the same fallback applies from the other
+	// end: no row above, so the row below
+	firstRowOnly := NewConnectedProviderLocationList()
+	firstRowOnly.Add(testing_plottableLocation(west, -10, 0))
+	firstRowOnly.Add(&ConnectedProviderLocation{ClientId: unplottable})
+	vc.setLocations(firstRowOnly)
+	vc.SetSelectedClientId(west.String())
+	vc.selectSuccessorTo(west.String())
+	connect.AssertEqual(t, vc.GetSelectedClientId(), unplottable.String())
 }
 
 // Removing the selected provider moves the selection immediately, without
@@ -363,14 +503,20 @@ func TestRemovingTheOldestSelectedProviderFallsToTheNextYoungest(t *testing.T) {
 // selected". (RemoveProvider itself also calls the device; this is the
 // selection half of it.)
 func TestRemovingTheSelectedProviderMovesTheSelectionUpFront(t *testing.T) {
-	oldest := newId(connect.NewId())
+	west := newId(connect.NewId())
 	middle := newId(connect.NewId())
-	youngest := newId(connect.NewId())
+	east := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	// west is the longest connected, so it is also the default selection
+	locations.Add(testing_plottableLocation(west, 0, 0))
+	locations.Add(testing_plottableLocation(middle, 30, 0))
+	locations.Add(testing_plottableLocation(east, 35, 0))
 
 	vc := &ProviderLocationsViewController{
 		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
 	}
-	vc.setLocations(testing_window(t, oldest, middle, youngest))
+	vc.setLocations(locations)
 
 	changes := 0
 	sub := vc.AddSelectedProviderLocationChangeListener(
@@ -379,38 +525,46 @@ func TestRemovingTheSelectedProviderMovesTheSelectionUpFront(t *testing.T) {
 	defer sub.Close()
 
 	// removing a provider that is not selected leaves the selection alone
-	vc.selectSuccessorTo(youngest.String())
-	connect.AssertEqual(t, vc.GetSelectedClientId(), oldest.String())
+	vc.selectSuccessorTo(east.String())
+	connect.AssertEqual(t, vc.GetSelectedClientId(), west.String())
 	connect.AssertEqual(t, changes, 0)
 
 	vc.SetSelectedClientId(middle.String())
 	connect.AssertEqual(t, changes, 1)
 
+	// east is 5 degrees away, west is 30
 	vc.selectSuccessorTo(middle.String())
-	connect.AssertEqual(t, vc.GetSelectedClientId(), oldest.String())
+	connect.AssertEqual(t, vc.GetSelectedClientId(), east.String())
 	connect.AssertEqual(t, changes, 2)
 
-	// removing the oldest with nothing older left falls to the next younger
-	vc.selectSuccessorTo(oldest.String())
+	vc.selectSuccessorTo(east.String())
 	connect.AssertEqual(t, vc.GetSelectedClientId(), middle.String())
 	connect.AssertEqual(t, changes, 3)
 }
 
-// Several providers rotating out at once: the selection walks back to the
-// nearest SURVIVING older provider, skipping the ones that also went.
+// Several providers rotating out at once: the selection lands on the nearest
+// SURVIVOR, skipping the ones that also went — even when one of those was
+// closer than anything left.
 func TestSelectionSkipsProvidersThatLeftAlongsideIt(t *testing.T) {
-	oldest := newId(connect.NewId())
+	farSurvivor := newId(connect.NewId())
 	alsoLeft := newId(connect.NewId())
 	selected := newId(connect.NewId())
+
+	locations := NewConnectedProviderLocationList()
+	locations.Add(testing_plottableLocation(farSurvivor, -60, 0))
+	locations.Add(testing_plottableLocation(alsoLeft, 25, 0))
+	locations.Add(testing_plottableLocation(selected, 30, 0))
 
 	vc := &ProviderLocationsViewController{
 		selectedListeners: connect.NewCallbackList[SelectedProviderLocationChangeListener](),
 	}
-	vc.setLocations(testing_window(t, oldest, alsoLeft, selected))
+	vc.setLocations(locations)
 	vc.SetSelectedClientId(selected.String())
 
-	vc.setLocations(testing_window(t, oldest))
-	connect.AssertEqual(t, vc.GetSelectedClientId(), oldest.String())
+	survivors := NewConnectedProviderLocationList()
+	survivors.Add(testing_plottableLocation(farSurvivor, -60, 0))
+	vc.setLocations(survivors)
+	connect.AssertEqual(t, vc.GetSelectedClientId(), farSurvivor.String())
 }
 
 type testing_selectedProviderLocationCounter func()

@@ -133,8 +133,9 @@ func jsConnectedProviderLocation(location *sdk.ConnectedProviderLocation) js.Val
 	return js.ValueOf(m)
 }
 
-// jsConnectedProviderLocations marshals the list, preserving the sdk's order
-// (oldest connected first).
+// jsConnectedProviderLocations marshals the list, preserving whatever order it
+// arrives in — the sdk's own (oldest connected first) from the device, display
+// order from `ProviderLocationsViewController.getProviderLocations`.
 func jsConnectedProviderLocations(locations *sdk.ConnectedProviderLocationList) js.Value {
 	out := []any{}
 	if locations != nil {

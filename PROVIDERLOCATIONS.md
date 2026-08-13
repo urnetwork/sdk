@@ -27,6 +27,10 @@ oldest connected provider.
      dot in the same color.
    - Below: providers listed descending by connected duration. Each row: client id on top,
      country-color dot at left, "city, region" and "lat, lon" stacked at right.
+     *(Superseded 2026-08-13, user request: the list is sorted in the globe's own
+     west→east iteration order instead — the duration sort did not match the order
+     the globe's wheel steps through, which read as two unrelated orderings. See
+     "List order" under "As built".)*
    - Tapping a row selects it in both list and globe and spins/centers the globe on that dot.
      Selection stays in sync between globe and list.
    - Tapping the client id copies it (existing app convention).
@@ -941,18 +945,22 @@ Implemented 2026-08-04. Deviations and details worth knowing:
 - `provider_locations_view_controller.go`: `ProviderLocationsViewController`, opened
   from the view controller manager (`OpenProviderLocationsViewController` /
   `CloseProviderLocationsViewController`) like every other shared controller. It owns
+  the **display order** (`GetProviderLocations`, added 2026-08-13),
   the globe's **selection** (`GetSelectedClientId` / `SetSelectedClientId`, "" = none,
   `SelectedProviderLocationChangeListener` to observe) and its **scroll wheel**
   (`StepSelection(steps)`, positive east). It subscribes to the connected-provider
   change listener itself, so a selection whose provider leaves the window is dropped
   here rather than in five app-side copies. It also owns the default selection and
-  the removal hand-off (`RemoveProvider`) — see "Globe interaction" above. Wheel
-  order and clamping are described there too; the pure helpers
+  the removal hand-off (`RemoveProvider`) — see "Globe interaction" above. Order
+  and clamping are described there too; the pure helpers
   (`deriveProviderWindow`, `centroidLongitude`, `signedLonDelta`,
-  `stepWheelSelection`, `clampWheelIndex`, `providerWindow.longestConnected` /
+  `angularDistance`, `stepWheelSelection`, `clampWheelIndex`,
+  `providerWindow.longestConnected` /
   `.successorTo`) are Go-tested, including the antimeridian cluster, the latitude
-  weighting, the stick-at-both-ends semantics, the longest-connected default, and
-  the next-older hand-off (including several providers leaving at once). Added to
+  weighting, the unplottable tail, the stick-at-both-ends semantics, the
+  longest-connected default, and the nearest-provider hand-off (a nearest that is
+  not the neighboring row, equal distances, no coordinates at either end, and
+  several providers leaving at once). Added to
   the cgo generator's behavioral list so it crosses the ABI as a handle, and bound
   in `sdk/js` for the browser app.
 - `js/main.go` also exports `URnetworkFilteredLocationsFromResult(json, filter)` —
@@ -1034,41 +1042,69 @@ Implemented 2026-08-04. Deviations and details worth knowing:
   `pointerInput` key, or every step would cancel the in-flight drag. Recenter timing
   dropped from the web's 1000 ms to 450 ms: recentering is now a per-step
   interaction, not an occasional one.
-- **The wheel itself is the SDK's, not each app's**:
+- **The order, the wheel and the selection are the SDK's, not each app's**:
   `sdk/provider_locations_view_controller.go` (`ProviderLocationsViewController`)
-  owns the selection and the stepping, and every app binds it — android through
+  owns all three, and every app binds it — android through
   gomobile, apple through the xcframework, windows/linux through the cgo ABI, the
-  browser through the wasm bridge (`sdk/js`, `useProviderLocationsSelection`). Two
+  browser through the wasm bridge (`sdk/js`, `useProviderLocationsSelection`). Three
   rules live there:
-  - **Order: west→east about the providers' CENTROID.** Each plottable provider is
+  - **Display order: west→east about the providers' CENTROID.** Each plottable
+    provider is
     ranked by its signed longitude offset from the spherical centroid of the set
     (unit vectors summed, the horizontal direction of the sum taken; latitude only
-    weights, so a near-pole provider pulls less). That puts the wheel's two ends on
+    weights, so a near-pole provider pulls less). That puts the order's two ends on
     the meridian *opposite* the data's center — the farthest place from the
     providers. A raw longitude sort instead cuts at ±180 and splits a cluster
     straddling the antimeridian: a provider at −178 would sort to the far west end
-    even though it sits just east of one at +175.
-  - **The ends STICK: `StepSelection` clamps, it does not wrap.** Stepping past the
+    even though it sits just east of one at +175. Providers with no coordinates
+    have no place on the globe, so they follow, in the sdk's own order.
+    `GetProviderLocations()` returns the window in that order and is what the apps
+    render their list from — see "List order" below.
+  - **The wheel is the plottable head of that order, and its ends STICK:
+    `StepSelection` clamps, it does not wrap.** Stepping past the
     extreme west or east stays there rather than teleporting the long way round the
     globe. (This replaced a wrapping wheel, which was defensible while the order was
     raw longitude — cyclic data, cyclic wheel — but reads as a glitch: a swipe left
-    at the eastern end jumped the globe halfway around the world.)
+    at the eastern end jumped the globe halfway around the world.) The unplottable
+    tail is not on the wheel: stepping onto a provider with no dot would leave the
+    globe motionless, which reads as the wheel being stuck.
   The apps keep only the gesture→step conversion (`wheelStep`, one notch per mouse
   wheel detent) in their tested geometry modules: the threshold is in UI pixels and
   the travel accumulator is per-gesture state (drag and scroll accumulate
   separately), so it belongs on the UI side of the boundary.
+- **List order = the display order** (revised 2026-08-13, user request; landed on
+  apple first, other platforms to follow). The list was originally sorted
+  descending by connected duration, which put the rows in an order the globe's
+  wheel did not follow: stepping the wheel jumped the selection up and down a
+  list that looked unrelated to it. Now both walk the providers the same way, so
+  the list reads left to right exactly as the globe iterates.
+  - The apps read `ProviderLocationsViewController.GetProviderLocations()` instead
+    of `Device.GetConnectedProviderLocations()`. Same window, ordered — and read
+    from the controller so the rows and the selection always come from one
+    snapshot. The controller subscribes to the device's change listener when it is
+    opened, ahead of any app listener, and `connect.CallbackList` fires in
+    subscription order, so an app reading from its own callback already sees the
+    new snapshot.
+  - The device getter keeps its duration sort: it is the raw window, and the
+    android mock-location sync still wants the oldest-connected provider from it.
 - **The selection always points at a connected provider**, also in the view
   controller, so the screen never rests on nothing while providers are connected:
   - **Default: the longest connected provider.** With nothing selected the
     window's first entry is selected (the sdk sorts it oldest-connected first),
-    so opening the screen lands on a selection rather than an empty one.
-  - **On removal, the selection moves to the next OLDER provider** — the nearest
-    one connected longer than it, falling back to the nearest younger when the
-    removed provider was the oldest (which is then the new longest connected).
+    so opening the screen lands on a selection rather than an empty one. This
+    stayed duration-based when the list order stopped being: it is the most
+    stable provider, not a position in a list.
+  - **On removal, the selection moves to the NEAREST surviving provider**
+    (revised 2026-08-13, user request; was: the next older one) — the smallest
+    great-circle distance from the one that left, ties resolved by display order.
     It applies whether the user removed the provider or the window rotated it
-    out, and skips neighbors that left in the same update. Handing the selection
-    to an older neighbor keeps it on a row that has been there all along rather
-    than on a newcomer.
+    out, and skips neighbors that left in the same update. The globe is centered
+    on the selection, so the nearest provider is the one that moves the globe
+    least: the dot beside the one that just disappeared, instead of a throw
+    across the world. Distance needs coordinates at both ends, so a departing
+    provider with none — or a window where nothing plottable survives — falls
+    back to the neighboring row in display order (the entry above it, else the
+    one below), which is the same idea one dimension down.
   `RemoveProvider(clientId)` on the controller is the removal entry point: it
   moves the selection first and then calls `Device.RemoveConnectedProvider`, so
   the ui never blinks through "nothing selected" while the window round trips.
@@ -1077,7 +1113,7 @@ Implemented 2026-08-04. Deviations and details worth knowing:
   Selecting is consequently **not a toggle** in any app.
 - **The selected row is scrolled into view** when it is off screen — the selection
   moves without the list being touched (a wheel step, the default, a removal
-  handing it to an older provider), and a selection the user cannot see is not a
+  handing it to the nearest provider), and a selection the user cannot see is not a
   selection. Each app uses its toolkit's minimal-scroll primitive, which is a
   no-op for a row already visible: `animateScrollToItem` past a visibility check
   (android), `ScrollViewReader.scrollTo` with no anchor (apple), a vadjustment
@@ -1165,6 +1201,109 @@ Implemented 2026-08-04. Deviations and details worth knowing:
   (blocked locations, and this screen's first cut) were converted to it, so
   every swipe-to-delete list in the app now shares one implementation and
   swiping alone can never delete.
+
+### Centering, list order and nearest hand-off (2026-08-13)
+
+Three user-requested changes, landed on the sdk and **apple first**, then ported
+to android, web, windows and linux the same day. The sdk half is shared, so the
+ports were UI work only:
+
+1. **The globe centers on the selected provider, always.** It already recentered
+   on a selection change, but the trigger was the selected client id plus "the
+   first plottable row changed" — so a provider whose coordinates arrived after
+   its row did left the globe parked where it was. Apple now derives a center
+   *target* (client id + lat + lon) and recenters whenever that value changes,
+   which covers every way the center can move.
+2. **The centering animation is a spring, not an ease.** Steps overlap — a wheel
+   drag fires several in a row, and a removal recenters on top of whatever was
+   running — and a timing curve restarts each one from a standstill, which is
+   what made rapid stepping stutter. Apple: `Animation.spring(response: 0.45,
+   dampingFraction: 1)`, critically damped so the globe settles on the provider
+   without swinging past it; the 0.45 s response matches the previous duration,
+   so nothing got slower. Ports want their toolkit's equivalent
+   (`spring(dampingRatio = 1f)` on android, a critically damped spring
+   elsewhere) — **not** a re-tuned duration curve.
+3. **List order and nearest hand-off** — see "List order" and "On removal" under
+   "Globe interaction" above for the behavior and the rationale.
+
+Sdk surface added: `ProviderLocationsViewController.GetProviderLocations()`
+(bound automatically in the gomobile aar and the generated cgo ABI; added by
+hand to `sdk/js` and its TypeScript surface). Sdk behavior changed:
+`providerWindow.successorTo` is now nearest-by-great-circle (`angularDistance`)
+rather than next-older, and `providerWindow.order` is the display order rather
+than the sdk's duration order. Every platform inherits both the moment it links
+the rebuilt sdk, whether or not its UI has been ported.
+
+The port, per platform:
+- **apple** — `ProviderLocationsStore.update()` reads the controller;
+  `ProviderGlobeView` derives a `GlobeCenterTarget` and recenters on
+  `Animation.spring(response: 0.45, dampingFraction: 1)`.
+- **android** — `ProviderLocationsViewModel.refresh()` reads `vc.providerLocations`;
+  `ProviderGlobe` keys its `LaunchedEffect` on a `GlobeCenterTarget` and animates
+  with `spring(DampingRatioNoBouncy, StiffnessLow)`. `Animatable.animateTo`
+  carries the current velocity into the new spring by default, which is what
+  makes overlapping steps continuous.
+- **windows** — `SdkHost::PublishProviderLocations` reads the controller;
+  `ProviderGlobe` replaced its eased tween with an analytically stepped
+  critically damped spring (`StepRecenterSpring`) and a `GlobeCenterTarget`
+  compare. Analytic rather than Euler because the globe runs on the window's
+  shared ~10 fps drawer tick, where `omega * dt` is close to the explicit
+  integrator's stability limit.
+- **linux** — `SdkHost::ConnectedProviderLocations` reads the controller;
+  `ProviderGlobe::AnimateToSelection` became `RecenterIfTargetChanged` over the
+  same analytic spring.
+- **web** — `useConnectedProviderLocations` and `useProviderLocationsSelection`
+  merged into one `useProviderLocations` that owns the controller and reads both
+  rows and selection from it. `Globe.jsx` spins to a selection on a
+  requestAnimationFrame spring; the mount and pointer-leave recenters keep their
+  d3 transition (they never overlap), and the two interrupt each other so only
+  one ever writes `projection.rotate()`.
+
+Two traps the ports had to handle, worth knowing before touching this again:
+
+- **Anything that wanted "the oldest connected provider" was taking the first
+  row.** That was correct while the list was duration-sorted and is silently
+  wrong now. The linux location override and the extension geo-sync feed both
+  depend on it. Fixed by: linux `OldestPlottableIndex` now searches by the
+  smallest non-zero `connectedSinceMillis` (unit tested), the android
+  `MockLocationViewModel` and the web geo-sync feed keep reading the DEVICE
+  getter, which is still the raw duration order, and android's unused
+  `ProviderLocationsViewModel.oldestPlottable()` was deleted rather than fixed.
+  `Device.GetConnectedProviderLocations` deliberately keeps its duration sort for
+  exactly these consumers.
+- **The controller must be opened BEFORE the app registers its own
+  connected-provider listener.** The controller subscribes to that same device
+  listener when it opens and `connect.CallbackList` fires in subscription order,
+  so an app that registers first reads a window one notify behind. Windows and
+  linux registered first and were reordered; apple, android and the merged web
+  hook already opened first.
+
+### Verification (2026-08-13, the changes above)
+- sdk: `go build ./...`, `go vet`, and the provider-locations view controller
+  suite pass — the display-order tests (antimeridian cluster, unplottable tail,
+  `GetProviderLocations`), the nearest hand-off (nearest-is-not-the-neighboring-row,
+  equal distances, no coordinates at either end, several providers leaving at
+  once) and `angularDistance`. `sdk/js` builds for js/wasm; cgo `make generate`
+  emits `urnet_provider_locations_view_controller_get_provider_locations` and
+  `make smoke` passes.
+- apple: xcframework rebuilt (`make -C build build_apple`); `xcodebuild` Release
+  succeeds for `generic/platform=iOS` and `generic/platform=macOS`; the
+  `networkTests` suite passes on the iOS 26.5 simulator.
+- android: aar rebuilt (`make -C build build_android`), and the bound Java
+  surface has `ProviderLocationsViewController.getProviderLocations()`;
+  `:app:compileGithubDebugKotlin` and `:app:testGithubDebugUnitTest` both
+  BUILD SUCCESSFUL.
+- linux: the pure-logic tests build and pass standalone on the mac host
+  (`ProviderLocationRowTest` + `GlobeGeometryTest`, 31 tests), including the
+  three new `OldestPlottableIndex` cases. The GTK app itself was NOT compiled —
+  it needs gtkmm/libadwaita and a refetched `third_party/urnetwork-sdk` (the
+  vendored `.so`/headers are gitignored build artifacts, produced by
+  `sdk/cgo make build_linux` and staged by `scripts/fetch-deps.sh`).
+- windows: source-only change; NOT compiled here. It needs the Windows VM and a
+  refetched `third_party/urnetwork-sdk` (same story as linux —
+  `tools/fetch-deps.ps1`).
+- web: the sdk wasm rebuilds through `npm run sync:sdk` and exports
+  `getProviderLocations`; `eslint` is clean on the four changed files.
 
 ### Verification (2026-08-04)
 - connect: `go build ./...`, monitor + multi-client suites pass (incl. the new
