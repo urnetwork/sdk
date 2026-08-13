@@ -2213,6 +2213,8 @@ struct WindowStatus {
 	int64_t ProviderStateNotAdded{};
 	int64_t ProviderStateAdded{};
 	int64_t ProviderStateRemoved{};
+	std::string StallReason{};
+	bool Failed{};
 };
 
 inline void to_json(nlohmann::json& j, const AccountPayment& v);
@@ -10100,6 +10102,8 @@ inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 	j["ProviderStateNotAdded"] = v.ProviderStateNotAdded;
 	j["ProviderStateAdded"] = v.ProviderStateAdded;
 	j["ProviderStateRemoved"] = v.ProviderStateRemoved;
+	j["StallReason"] = v.StallReason;
+	j["Failed"] = v.Failed;
 }
 inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	if (!j.is_object()) {
@@ -10125,6 +10129,12 @@ inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	}
 	if (auto it = j.find("ProviderStateRemoved"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderStateRemoved);
+	}
+	if (auto it = j.find("StallReason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StallReason);
+	}
+	if (auto it = j.find("Failed"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Failed);
 	}
 }
 

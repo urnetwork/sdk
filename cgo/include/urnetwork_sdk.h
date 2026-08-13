@@ -3054,6 +3054,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProviderStateNotAdded: number
  *   ProviderStateAdded: number
  *   ProviderStateRemoved: number
+ *   StallReason: string
+ *   Failed: boolean
  */
 
 #ifdef __cplusplus
