@@ -7374,6 +7374,16 @@ func urnet_device_local_set_reliability_settings(self C.uint64_t, reliabilitySet
 	self_.SetReliabilitySettings(reliabilitySettings_)
 }
 
+//export urnet_device_local_set_routing_tier
+func urnet_device_local_set_routing_tier(self C.uint64_t, tier C.int64_t) {
+	defer cgoGuard("urnet_device_local_set_routing_tier")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_routing_tier")
+	if !ok {
+		return
+	}
+	self_.SetRoutingTier(int(int64(tier)))
+}
+
 //export urnet_device_local_set_rpc_server
 func urnet_device_local_set_rpc_server(self C.uint64_t, serverPem *C.char, clientCertPem *C.char, hostPort *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_local_set_rpc_server")
@@ -8804,6 +8814,17 @@ func urnet_local_state_get_route_local(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_local_state_get_routing_tier
+func urnet_local_state_get_routing_tier(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_local_state_get_routing_tier")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_routing_tier")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetRoutingTier()
+	return C.int64_t(r0)
+}
+
 //export urnet_local_state_get_vpn_interface_while_offline
 func urnet_local_state_get_vpn_interface_while_offline(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_local_state_get_vpn_interface_while_offline")
@@ -9187,6 +9208,21 @@ func urnet_local_state_set_route_local(self C.uint64_t, routeLocal C.bool, outEr
 		return C.bool(false)
 	}
 	err := self_.SetRouteLocal(bool(routeLocal))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_routing_tier
+func urnet_local_state_set_routing_tier(self C.uint64_t, tier C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_routing_tier")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_routing_tier")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetRoutingTier(int(int64(tier)))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

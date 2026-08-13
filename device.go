@@ -306,6 +306,16 @@ type WindowStatus struct {
 	ProviderStateNotAdded         int
 	ProviderStateAdded            int
 	ProviderStateRemoved          int
+	// StallReason is the machine-readable diagnosis while the window is still
+	// forming: evaluating | platform-unreachable | providers-unresponsive |
+	// rate-limited | auth-failing (the connect WindowStall* constants).
+	// Empty when the source predates the field; treat as evaluating.
+	StallReason string
+	// Failed is the terminal outcome state: the window hit its outcome
+	// deadline twice with zero providers Added (see the connect package's
+	// window honesty layer). Cleared when a provider lands or the session is
+	// rebuilt.
+	Failed bool
 }
 
 type NetworkPeers struct {

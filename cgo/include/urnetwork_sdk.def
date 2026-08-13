@@ -329,6 +329,7 @@ EXPORTS
 	urnet_device_local_set_key_material
 	urnet_device_local_set_performance_degraded
 	urnet_device_local_set_reliability_settings
+	urnet_device_local_set_routing_tier
 	urnet_device_local_set_rpc_server
 	urnet_device_local_set_tunnel_dns_setting
 	urnet_device_local_shuffle_exits
@@ -477,6 +478,7 @@ EXPORTS
 	urnet_local_state_get_provide_network_mode
 	urnet_local_state_get_provide_secret_keys
 	urnet_local_state_get_route_local
+	urnet_local_state_get_routing_tier
 	urnet_local_state_get_vpn_interface_while_offline
 	urnet_local_state_logout
 	urnet_local_state_parse_by_jwt
@@ -500,6 +502,7 @@ EXPORTS
 	urnet_local_state_set_provide_network_mode
 	urnet_local_state_set_provide_secret_keys
 	urnet_local_state_set_route_local
+	urnet_local_state_set_routing_tier
 	urnet_local_state_set_vpn_interface_while_offline
 	urnet_locations_view_controller_add_filtered_locations_listener
 	urnet_locations_view_controller_close
