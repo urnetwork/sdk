@@ -3656,7 +3656,7 @@ func (self *DeviceLocal) setDestination(
 			self.peerIdentitySub = multi.AddPeerIdentityChangeCallback(self.providerIdentitiesChanged)
 			self.remoteUserNatClient = multi
 			if upgradeMux != nil {
-				upgradeMux.SetUpstream(multi.SendPacket)
+				upgradeMux.SetUpstreamBatchClient(multi)
 				// the mux's DNS reverse index drives ServerName path affinity (point 4)
 				multi.SetServerNameLookup(upgradeMux)
 				// the mux blocks ad/tracker hostnames at the dns layer
@@ -4031,25 +4031,55 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 // one stats update cover the whole burst.
 func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 	route := self.sendRoute.Load()
-	remoteSendByteCount := 0
-	if route.upgradeMux != nil || route.remoteUserNatClient != nil {
-		for _, packet := range packets {
-			remoteSendByteCount += len(packet)
-		}
-		self.stats.UpdateRemoteSend(ByteCount(remoteSendByteCount))
+	packetByteCount := 0
+	for _, packet := range packets {
+		packetByteCount += len(packet)
 	}
-	sentPacketCount := 0
+	if route.upgradeMux != nil || route.remoteUserNatClient != nil {
+		self.stats.UpdateRemoteSend(ByteCount(packetByteCount))
+	}
 	source := connect.SourceId(self.clientId)
+	if route.upgradeMux != nil {
+		return route.upgradeMux.SendPacketBatch(
+			source,
+			protocol.ProvideMode_Network,
+			packets,
+			self.settings.SendTimeout,
+		)
+	}
+	if route.remoteUserNatClient != nil {
+		if batchClient, ok := route.remoteUserNatClient.(connect.UserNatBatchClient); ok {
+			return batchClient.SendPacketBatch(
+				source,
+				protocol.ProvideMode_Network,
+				packets,
+				self.settings.SendTimeout,
+			)
+		}
+	}
+	if route.routeLocal && route.provider != nil {
+		if localUserNat := route.provider.LocalUserNat(); localUserNat != nil {
+			sentPacketCount := localUserNat.SendPacketBatch(
+				source,
+				protocol.ProvideMode_Network,
+				packets,
+				self.settings.SendTimeout,
+			)
+			self.localFallbackEgressPacketCount.Add(int64(sentPacketCount))
+			if sentPacketCount == len(packets) {
+				self.localFallbackEgressByteCount.Add(int64(packetByteCount))
+			}
+			return sentPacketCount
+		}
+	}
+
+	// Compatibility fallback for a custom UserNatClient that implements only
+	// the original singular send contract. Production routes implement the
+	// batch capability above.
+	sentPacketCount := 0
 	for _, packet := range packets {
 		sent := false
 		switch {
-		case route.upgradeMux != nil:
-			sent = route.upgradeMux.SendPacket(
-				source,
-				protocol.ProvideMode_Network,
-				packet,
-				self.settings.SendTimeout,
-			)
 		case route.remoteUserNatClient != nil:
 			sent = route.remoteUserNatClient.SendPacket(
 				source,
@@ -4057,19 +4087,6 @@ func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 				packet,
 				self.settings.SendTimeout,
 			)
-		case route.routeLocal && route.provider != nil:
-			if localUserNat := route.provider.LocalUserNat(); localUserNat != nil {
-				sent = localUserNat.SendPacket(
-					source,
-					protocol.ProvideMode_Network,
-					packet,
-					self.settings.SendTimeout,
-				)
-				if sent {
-					self.localFallbackEgressPacketCount.Add(1)
-					self.localFallbackEgressByteCount.Add(int64(len(packet)))
-				}
-			}
 		}
 		if sent {
 			sentPacketCount += 1

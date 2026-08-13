@@ -15,9 +15,11 @@ import (
 // A successful fake copies the borrowed observation and takes ownership of
 // each pooled send buffer exactly like a production user NAT.
 type packetBatchTestUserNat struct {
-	capture     bool
-	packetCount int
-	packets     [][]byte
+	capture        bool
+	packetCount    int
+	batchCallCount int
+	batchSizes     []int
+	packets        [][]byte
 }
 
 // Every valid packet is accepted and returned to its pool after observation.
@@ -33,6 +35,27 @@ func (self *packetBatchTestUserNat) SendPacket(
 	}
 	connect.MessagePoolReturn(packet)
 	return true
+}
+
+// A complete burst crosses the fake route once and transfers every packet.
+func (self *packetBatchTestUserNat) SendPacketBatch(
+	source connect.TransferPath,
+	provideMode protocol.ProvideMode,
+	packets [][]byte,
+	timeout time.Duration,
+) int {
+	self.batchCallCount += 1
+	if self.capture {
+		self.batchSizes = append(self.batchSizes, len(packets))
+	}
+	for _, packet := range packets {
+		self.packetCount += 1
+		if self.capture {
+			self.packets = append(self.packets, bytes.Clone(packet))
+		}
+		connect.MessagePoolReturn(packet)
+	}
+	return len(packets)
 }
 
 // No resources are held by the fake.
@@ -217,6 +240,16 @@ func TestDeviceLocalSendPacketBatchValidatesBeforeSending(t *testing.T) {
 		!bytes.Equal(userNat.packets[1], packets[1]) {
 		t.Fatalf("routed packets=%q, want %q", userNat.packets, packets)
 	}
+	if userNat.batchCallCount != 1 ||
+		len(userNat.batchSizes) != 1 ||
+		userNat.batchSizes[0] != len(packets) {
+		t.Fatalf(
+			"batch calls=%d sizes=%v, want 1/%d",
+			userNat.batchCallCount,
+			userNat.batchSizes,
+			len(packets),
+		)
+	}
 	malformed := packetBatchTestEncode([][]byte{[]byte("valid")})
 	malformed = append(malformed, 0)
 	if sentPacketCount := device.SendPacketBatch(malformed); sentPacketCount != 0 {
@@ -224,6 +257,9 @@ func TestDeviceLocalSendPacketBatchValidatesBeforeSending(t *testing.T) {
 	}
 	if len(userNat.packets) != len(packets) {
 		t.Fatalf("malformed framing partially sent %d packets", len(userNat.packets)-len(packets))
+	}
+	if userNat.batchCallCount != 1 {
+		t.Fatalf("malformed framing reached route: batch calls=%d, want 1", userNat.batchCallCount)
 	}
 }
 
