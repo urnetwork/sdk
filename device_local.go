@@ -3691,6 +3691,8 @@ func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 	windowStatus := &WindowStatus{
 		TargetSize:   windowExpandEvent.TargetSize,
 		MinSatisfied: windowExpandEvent.MinSatisfied,
+		StallReason:  windowExpandEvent.Reason,
+		Failed:       windowExpandEvent.Failed,
 	}
 	for _, providerEvent := range providerEvents {
 		switch providerEvent.State {
