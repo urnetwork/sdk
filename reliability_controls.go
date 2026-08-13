@@ -241,6 +241,29 @@ type ReliabilitySettings struct {
 	// of buffer, or speed it up to spot a transition, without a reconnect. 0
 	// disables the heartbeat.
 	HeartbeatIntervalMillis int64
+
+	// Smart routing (Phase 1). These five are what RoutingTier's off/light/full
+	// dial sets (see routing_tier.go); they are included here, in the same
+	// round-trip struct as every other control, so a developer-menu
+	// GetReliabilitySettings -> flip one field -> SetReliabilitySettings cycle
+	// does not silently drop the routing tier's knobs back to zero. All
+	// zero-value-off, so an older stored override applied here keeps today's
+	// placement.
+	ScoredPlacement bool
+	// PlacementHysteresisPct is the percent a candidate must beat the current
+	// pick by before displacing it; 0 is plain greater-than.
+	PlacementHysteresisPct float64
+	// PlacementDemoteConsecutive is how many consecutive worse samples a
+	// candidate needs before it actually demotes; <=1 acts on every sample.
+	PlacementDemoteConsecutive int32
+	// RewardInstrumentation emits reward observability lines; false emits none.
+	RewardInstrumentation bool
+	// QuarantineDampening escalates a quarantine episode's hold time by prior
+	// reconvictions (60s -> 120s -> 240s) instead of the flat hold every
+	// episode gets by default. See the QUARANTINE-DAMPENING CAVEAT in
+	// routing_tier.go: the reconviction counter does not yet decay within a
+	// session.
+	QuarantineDampening bool
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -258,11 +281,11 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		SequenceIdleTimeoutMillis:     reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
 		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
-		MaxFlowsPerExit:                   int32(reliabilitySettings.MaxFlowsPerExit),
-		AffinityStickyPastCap:             reliabilitySettings.AffinityStickyPastCap,
-		QuarantineGroupFollow:             reliabilitySettings.QuarantineGroupFollow,
-		GroupFollowWindowMillis:           reliabilitySettings.GroupFollowWindow.Milliseconds(),
-		UplinkStalenessGateMillis:         reliabilitySettings.UplinkStalenessGate.Milliseconds(),
+		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
+		AffinityStickyPastCap:         reliabilitySettings.AffinityStickyPastCap,
+		QuarantineGroupFollow:         reliabilitySettings.QuarantineGroupFollow,
+		GroupFollowWindowMillis:       reliabilitySettings.GroupFollowWindow.Milliseconds(),
+		UplinkStalenessGateMillis:     reliabilitySettings.UplinkStalenessGate.Milliseconds(),
 		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
 		RemovalBudgetWindowMillis:     reliabilitySettings.RemovalBudgetWindow.Milliseconds(),
@@ -285,40 +308,46 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		SchedulerPauseRecoveryTimeoutMillis:      reliabilitySettings.SchedulerPauseRecoveryTimeout.Milliseconds(),
 		BlackholeConnectComparativeTimeoutMillis: reliabilitySettings.BlackholeConnectComparativeTimeout.Milliseconds(),
 		HeartbeatIntervalMillis:                  reliabilitySettings.HeartbeatInterval.Milliseconds(),
+
+		ScoredPlacement:            reliabilitySettings.ScoredPlacement,
+		PlacementHysteresisPct:     reliabilitySettings.PlacementHysteresisPct,
+		PlacementDemoteConsecutive: int32(reliabilitySettings.PlacementDemoteConsecutive),
+		RewardInstrumentation:      reliabilitySettings.RewardInstrumentation,
+		QuarantineDampening:        reliabilitySettings.QuarantineDampening,
 	}
 }
 
 func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 	return &connect.ReliabilitySettings{
-		UdpTeardownSignal:        self.UdpTeardownSignal,
-		QuicRebindOnExitLoss:     self.QuicRebindOnExitLoss,
-		DialFailureRerace:        self.DialFailureRerace,
-		TcpCollapseMaxHold:       millis(self.TcpCollapseMaxHoldMillis),
-		SendStallTimeout:         millis(self.SendStallTimeoutMillis),
-		ClusterAffinityFallback:  self.ClusterAffinityFallback,
-		ServerNameAffinityBridge: self.ServerNameAffinityBridge,
-		SequenceIdleTimeout:      millis(self.SequenceIdleTimeoutMillis),
-		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
-		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
-		MaxFlowsPerExit:             int(self.MaxFlowsPerExit),
-		AffinityStickyPastCap:       self.AffinityStickyPastCap,
-		QuarantineGroupFollow:       self.QuarantineGroupFollow,
-		GroupFollowWindow:           millis(self.GroupFollowWindowMillis),
-		UplinkStalenessGate:         millis(self.UplinkStalenessGateMillis),
-		SoftVerdictDemote:        self.SoftVerdictDemote,
-		RemovalBudgetCount:       int(self.RemovalBudgetCount),
-		RemovalBudgetWindow:      millis(self.RemovalBudgetWindowMillis),
-		StandingReserve:          self.StandingReserve,
-		EffectiveTierSelection:   self.EffectiveTierSelection,
+		UdpTeardownSignal:          self.UdpTeardownSignal,
+		QuicRebindOnExitLoss:       self.QuicRebindOnExitLoss,
+		DialFailureRerace:          self.DialFailureRerace,
+		TcpCollapseMaxHold:         millis(self.TcpCollapseMaxHoldMillis),
+		SendStallTimeout:           millis(self.SendStallTimeoutMillis),
+		ClusterAffinityFallback:    self.ClusterAffinityFallback,
+		ServerNameAffinityBridge:   self.ServerNameAffinityBridge,
+		SequenceIdleTimeout:        millis(self.SequenceIdleTimeoutMillis),
+		TcpSequenceIdleTimeout:     millis(self.TcpSequenceIdleTimeoutMillis),
+		BlackholeReceiveTimeout:    millis(self.BlackholeReceiveTimeoutMillis),
+		MaxFlowsPerExit:            int(self.MaxFlowsPerExit),
+		AffinityStickyPastCap:      self.AffinityStickyPastCap,
+		QuarantineGroupFollow:      self.QuarantineGroupFollow,
+		GroupFollowWindow:          millis(self.GroupFollowWindowMillis),
+		UplinkStalenessGate:        millis(self.UplinkStalenessGateMillis),
+		SoftVerdictDemote:          self.SoftVerdictDemote,
+		RemovalBudgetCount:         int(self.RemovalBudgetCount),
+		RemovalBudgetWindow:        millis(self.RemovalBudgetWindowMillis),
+		StandingReserve:            self.StandingReserve,
+		EffectiveTierSelection:     self.EffectiveTierSelection,
 		MinBlackholeDestinations:   int(self.MinBlackholeDestinations),
 		BlackholeLoadCorroboration: int(self.BlackholeLoadCorroboration),
 		ProviderProbe:              self.ProviderProbe,
-		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
-		ProbeSampleHostCount:     int(self.ProbeSampleHostCount),
-		ProbeSilenceWarnStreak:   int(self.ProbeSilenceWarnStreak),
-		SharedFateMinExits:       int(self.SharedFateMinExits),
-		SharedFateWindow:         millis(self.SharedFateWindowMillis),
-		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
+		ProbeTimeout:               millis(self.ProbeTimeoutMillis),
+		ProbeSampleHostCount:       int(self.ProbeSampleHostCount),
+		ProbeSilenceWarnStreak:     int(self.ProbeSilenceWarnStreak),
+		SharedFateMinExits:         int(self.SharedFateMinExits),
+		SharedFateWindow:           millis(self.SharedFateWindowMillis),
+		EvaluationPoolMultiple:     int(self.EvaluationPoolMultiple),
 
 		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
 		BusyProbe:                          self.BusyProbe,
@@ -327,6 +356,12 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		SchedulerPauseRecoveryTimeout:      millis(self.SchedulerPauseRecoveryTimeoutMillis),
 		BlackholeConnectComparativeTimeout: millis(self.BlackholeConnectComparativeTimeoutMillis),
 		HeartbeatInterval:                  millis(self.HeartbeatIntervalMillis),
+
+		ScoredPlacement:            self.ScoredPlacement,
+		PlacementHysteresisPct:     self.PlacementHysteresisPct,
+		PlacementDemoteConsecutive: int(self.PlacementDemoteConsecutive),
+		RewardInstrumentation:      self.RewardInstrumentation,
+		QuarantineDampening:        self.QuarantineDampening,
 	}
 }
 
@@ -725,7 +760,7 @@ type ReliabilityMetrics struct {
 	// distinct exits went silent inside one shared-fate window that the
 	// shared path is the likely cause
 	VerdictsHeldSharedFate int64
-	RemovalsDeferred          int64
+	RemovalsDeferred       int64
 
 	// ProbesSent and ProbesAnswered are the provider-qualification probes
 	// asked and answered this session; ProvidersQualified counts providers

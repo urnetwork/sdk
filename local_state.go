@@ -34,6 +34,12 @@ type LocalState struct {
 	cancel context.CancelFunc
 
 	localStorageDir string
+
+	// providerPriorsRetention is stamped into every saved provider-priors
+	// envelope (see persistedProviderPriors.Retention) and defaults to
+	// providerPriorsStaleAfter; 0 means unlimited. Unexported field, not a
+	// gomobile boundary -- there is no exported setter for it in this task.
+	providerPriorsRetention time.Duration
 }
 
 func newLocalState(ctx context.Context, localStorageHome string) *LocalState {
@@ -47,9 +53,10 @@ func newLocalState(ctx context.Context, localStorageHome string) *LocalState {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	return &LocalState{
-		ctx:             cancelCtx,
-		cancel:          cancel,
-		localStorageDir: localStorageDir,
+		ctx:                     cancelCtx,
+		cancel:                  cancel,
+		localStorageDir:         localStorageDir,
+		providerPriorsRetention: providerPriorsStaleAfter,
 	}
 }
 
@@ -354,6 +361,110 @@ func (self *LocalState) setDohServerScores(scores map[string]float64) error {
 	return os.WriteFile(path, scoresBytes, LocalStorageFilePermissions)
 }
 
+// providerPriorsStaleAfter discards a persisted provider-priors snapshot
+// (connect.ProviderPriors.Snapshot) older than this by default: provider
+// identities churn over weeks, and a stale snapshot would bias a fresh
+// session's placement toward exits that are no longer representative. The
+// owner chose a 90-day default with an "unlimited" opt-out -- see
+// persistedProviderPriors.Retention, which is what getProviderPriors
+// actually honors (a zero Retention skips the staleness check entirely),
+// so a snapshot's own saved retention survives a later change to this
+// constant.
+const providerPriorsStaleAfter = 90 * 24 * time.Hour
+
+// persistedProviderPriors is the on-disk form of the coarse per-provider
+// routing memory (connect.ProviderPriors.Snapshot), stamped with the save
+// time and the retention window in force at save time.
+type persistedProviderPriors struct {
+	SavedAt   time.Time                        `json:"saved_at"`
+	Retention time.Duration                    `json:"retention"`
+	Priors    map[string]connect.ProviderPrior `json:"priors"`
+}
+
+// getProviderPriors returns the persisted provider priors from the last
+// session (nil if none, unreadable, malformed, or stale), used to seed
+// connect.ProviderPriors so routing bias survives a restart. A zero
+// Retention on the saved envelope means unlimited: the staleness check is
+// skipped entirely.
+func (self *LocalState) getProviderPriors() map[string]connect.ProviderPrior {
+	path := filepath.Join(self.localStorageDir, ".provider_priors")
+	priorsBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var persisted persistedProviderPriors
+	if err := json.Unmarshal(priorsBytes, &persisted); err != nil {
+		return nil
+	}
+	// IsZero is a VALIDITY check on the envelope (was SavedAt even set?),
+	// separate from and evaluated before the retention/age comparison below
+	// -- it does not conflict with "Retention == 0 skips the staleness
+	// check." Without it, syntactically valid but truncated/tampered JSON
+	// missing saved_at reads as SavedAt's zero value, and with Retention
+	// also 0 (unlimited) the staleness comparison never even runs, so
+	// corrupt data would be trusted forever in exactly the configuration
+	// meant to keep real data forever. Mirrors getDohServerScores's
+	// `persisted.SavedAt.IsZero() || <stale>` guard.
+	if persisted.SavedAt.IsZero() {
+		return nil
+	}
+	if persisted.Retention != 0 && persisted.Retention < time.Since(persisted.SavedAt) {
+		return nil
+	}
+	return persisted.Priors
+}
+
+// setProviderPriors persists the coarse per-provider routing memory
+// (nil/empty removes), stamping the envelope with self.providerPriorsRetention
+// (defaults to providerPriorsStaleAfter; 0 means unlimited).
+func (self *LocalState) setProviderPriors(priors map[string]connect.ProviderPrior) error {
+	path := filepath.Join(self.localStorageDir, ".provider_priors")
+	if len(priors) == 0 {
+		os.Remove(path)
+		return nil
+	}
+	priorsBytes, err := json.Marshal(&persistedProviderPriors{
+		SavedAt:   time.Now(),
+		Retention: self.providerPriorsRetention,
+		Priors:    priors,
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, priorsBytes, LocalStorageFilePermissions)
+}
+
+// localStatePriorsStore implements connect.PriorsStore by delegating to the
+// provider-priors dot-file above, so a connect.ProviderPriors instance can
+// persist across restarts. Mirrors localStateWindowIdentityStore's shape
+// (see window_identity_store.go): a thin adapter holding just the LocalState
+// it delegates to.
+type localStatePriorsStore struct {
+	localState *LocalState
+}
+
+func newLocalStatePriorsStore(localState *LocalState) *localStatePriorsStore {
+	return &localStatePriorsStore{localState: localState}
+}
+
+func (self *localStatePriorsStore) Load() map[string]connect.ProviderPrior {
+	return self.localState.getProviderPriors()
+}
+
+func (self *localStatePriorsStore) Save(priors map[string]connect.ProviderPrior) error {
+	return self.localState.setProviderPriors(priors)
+}
+
+// var _ connect.PriorsStore = ... is a compile-time assertion that
+// localStatePriorsStore satisfies connect.PriorsStore. Nothing in shipped
+// code assigns this adapter to the interface yet (its consumer, the multi
+// client wiring, lands in a later task), so without this line the compiler
+// never checks the signatures line up -- only a manual read confirmed it
+// here. Kept even though there is no other precedent for this pattern in
+// the package, specifically because this implementation ships ahead of its
+// consumer.
+var _ connect.PriorsStore = (*localStatePriorsStore)(nil)
+
 func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettingsBytes, err := os.ReadFile(path); err == nil {
@@ -615,6 +726,33 @@ func (self *LocalState) GetPerformanceProfile() *PerformanceProfile {
 	return nil
 }
 
+// SetRoutingTier persists the RoutingTier dial (see routing_tier.go), the
+// same shape as SetPerformanceProfile: a plain JSON-encoded value in its own
+// dotfile under the local storage dir. Stored as a bare int, matching the
+// gomobile-safe type SetRoutingTier takes on DeviceLocal.
+func (self *LocalState) SetRoutingTier(tier int) error {
+	path := filepath.Join(self.localStorageDir, ".routing_tier")
+	tierBytes, err := json.Marshal(tier)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, tierBytes, LocalStorageFilePermissions)
+}
+
+// GetRoutingTier reads back the persisted tier. Unset or unreadable (fresh
+// install, corrupt file) both read as RoutingTierOff -- the fail-safe
+// default that matches RoutingTier's zero value.
+func (self *LocalState) GetRoutingTier() int {
+	path := filepath.Join(self.localStorageDir, ".routing_tier")
+	if tierBytes, err := os.ReadFile(path); err == nil {
+		var tier int
+		if err := json.Unmarshal(tierBytes, &tier); err == nil {
+			return tier
+		}
+	}
+	return int(RoutingTierOff)
+}
+
 func (self *LocalState) SetAllowForeground(allowForeground bool) error {
 	path := filepath.Join(self.localStorageDir, ".allow_foreground")
 	allowForegroundBytes, err := json.Marshal(allowForeground)
@@ -636,6 +774,10 @@ func (self *LocalState) GetAllowForeground() bool {
 }
 
 // clears all auth tokens
+//
+// This also wipes .provider_priors (RemoveAll on the whole localStorageDir
+// below), so a logout drops the persisted routing memory along with
+// everything else per-space -- no separate deletion needed here.
 func (self *LocalState) Logout() error {
 	return errors.Join(
 		os.RemoveAll(self.localStorageDir),
