@@ -831,8 +831,10 @@ void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t
 void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
+bool urnet_device_remote_drop_exit(uint64_t self, const char* exit_client_id);
 char* urnet_device_remote_get_destination_exits(uint64_t self);
 char* urnet_device_remote_get_exits(uint64_t self);
+char* urnet_device_remote_get_probe_results(uint64_t self);
 char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -857,11 +859,16 @@ uint64_t urnet_device_remote_open_referral_code_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_subscription_balance_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_wallet_view_controller(uint64_t self);
 void urnet_device_remote_probe_all_exits(uint64_t self);
+bool urnet_device_remote_probe_suite_running(uint64_t self);
 void urnet_device_remote_reset_reliability_metrics(uint64_t self);
 void urnet_device_remote_reset_reliability_settings(uint64_t self);
 void urnet_device_remote_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
 bool urnet_device_remote_set_rpc_server(uint64_t self, const char* client_pem, const char* server_cert_pem, const char* host_port, char** out_error);
+void urnet_device_remote_shuffle_exits(uint64_t self);
 void urnet_device_remote_simulate_network_change(uint64_t self);
+bool urnet_device_remote_stall_exit(uint64_t self, const char* exit_client_id, bool stalled);
+bool urnet_device_remote_start_probe_suite(uint64_t self, const char* config_json);
+void urnet_device_remote_stop_probe_suite(uint64_t self);
 void urnet_device_remote_sync(uint64_t self);
 
 /* ----- DeviceRpcKeyMaterial ----- */
