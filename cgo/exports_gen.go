@@ -7799,13 +7799,14 @@ func urnet_device_remote_get_sync_error(self C.uint64_t) *C.char {
 }
 
 //export urnet_device_remote_migrate_exit
-func urnet_device_remote_migrate_exit(self C.uint64_t, exitClientId *C.char) {
+func urnet_device_remote_migrate_exit(self C.uint64_t, exitClientId *C.char) C.int64_t {
 	defer cgoGuard("urnet_device_remote_migrate_exit")
 	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_migrate_exit")
 	if !ok {
-		return
+		return 0
 	}
-	self_.MigrateExit(goString(exitClientId))
+	r0 := self_.MigrateExit(goString(exitClientId))
+	return C.int64_t(r0)
 }
 
 //export urnet_device_remote_open_account_preferences_view_controller
@@ -8061,13 +8062,14 @@ func urnet_device_remote_open_wallet_view_controller(self C.uint64_t) C.uint64_t
 }
 
 //export urnet_device_remote_probe_all_exits
-func urnet_device_remote_probe_all_exits(self C.uint64_t) {
+func urnet_device_remote_probe_all_exits(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_device_remote_probe_all_exits")
 	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_probe_all_exits")
 	if !ok {
-		return
+		return 0
 	}
-	self_.ProbeAllExits()
+	r0 := self_.ProbeAllExits()
+	return C.int64_t(r0)
 }
 
 //export urnet_device_remote_probe_suite_running

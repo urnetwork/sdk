@@ -10764,7 +10764,7 @@ public:
 	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	bool getRemoteConnected() const;
 	std::string getSyncError() const;
-	void migrateExit(const std::string& exit_client_id) const;
+	int64_t migrateExit(const std::string& exit_client_id) const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
@@ -10783,7 +10783,7 @@ public:
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
-	void probeAllExits() const;
+	int64_t probeAllExits() const;
 	bool probeSuiteRunning() const;
 	void resetReliabilityMetrics() const;
 	void resetReliabilitySettings() const;
@@ -17942,8 +17942,9 @@ inline std::string DeviceRemote::getSyncError() const {
 	char* r_c = urnet_device_remote_get_sync_error(handle());
 	return detail::takeString(r_c);
 }
-inline void DeviceRemote::migrateExit(const std::string& exit_client_id) const {
-	urnet_device_remote_migrate_exit(handle(), exit_client_id.c_str());
+inline int64_t DeviceRemote::migrateExit(const std::string& exit_client_id) const {
+	int64_t r = urnet_device_remote_migrate_exit(handle(), exit_client_id.c_str());
+	return r;
 }
 inline AccountPreferencesViewController DeviceRemote::openAccountPreferencesViewController() const {
 	AccountPreferencesViewController r(urnet_device_remote_open_account_preferences_view_controller(handle()));
@@ -18017,8 +18018,9 @@ inline WalletViewController DeviceRemote::openWalletViewController() const {
 	WalletViewController r(urnet_device_remote_open_wallet_view_controller(handle()));
 	return r;
 }
-inline void DeviceRemote::probeAllExits() const {
-	urnet_device_remote_probe_all_exits(handle());
+inline int64_t DeviceRemote::probeAllExits() const {
+	int64_t r = urnet_device_remote_probe_all_exits(handle());
+	return r;
 }
 inline bool DeviceRemote::probeSuiteRunning() const {
 	bool r = urnet_device_remote_probe_suite_running(handle());
