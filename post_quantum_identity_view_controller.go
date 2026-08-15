@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 // view controller for the post quantum identity ui.
 // Surfaces the device's own public identity key (and its canonical display
 // hash) and the providers with an established, identity-verified e2e session,

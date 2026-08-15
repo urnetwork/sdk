@@ -71,16 +71,14 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		// timeout, so they land in the loaded measurement)
 		udpFlowsPerPeer = 32
 
-		// regression ceilings over the measured baseline (2026-07-18 after
-		// the provider memory reductions: loaded=8.0 MiB, peakTotal=31.2 MiB;
-		// before the scaled nat flow depths/windows/limits it was loaded=23.4,
-		// peakTotal=47.1). The [provider-mem] log line is the instrument for
-		// measuring further reductions; the assertions only catch a
-		// regression. loaded is held to the budget/2 goal; the peak still
-		// carries ~8 MiB of per-flow goroutine stacks (4-5 per flow), the
-		// next reduction candidate.
+		// Regression ceilings over the measured baseline. After making the
+		// receive-buffer rejection tombstones lazy (2026-08-14), 12 fresh
+		// darwin/arm64 processes measured peakTotal=26.0-27.4 MiB and
+		// loaded=7.3-7.4 MiB. Keep 256 KiB of explicit headroom below the
+		// product's 28 MiB upper target instead of allowing the old 40 MiB
+		// process regression. loaded is still held to the budget/2 goal.
 		loadedHeapCeiling = budgetByteCount / 2
-		peakTotalCeiling  = 40 << 20
+		peakTotalCeiling  = (28 << 20) - (256 << 10)
 	)
 
 	pinIosGcPacing(t)

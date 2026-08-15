@@ -110,6 +110,7 @@ build_apple:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
+	export GOFIPS140=off; \
 	export MACOSX_DEPLOYMENT_TARGET=13.5; \
 	BUILD_DIR=apple.`date +%s`; \
 	test ! -e "$$BUILD_DIR"; \
@@ -123,12 +124,31 @@ build_apple:
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
+	gomobile bind \
+		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
+		-bundleid network.ur \
+		-tags ios_extension \
+		-trimpath \
+		-gcflags "-dwarf=false" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
+		-o "$$BUILD_DIR/URnetworkExtensionSdk.xcframework" \
+		"github.com/urnetwork/sdk"; \
+	test -d "$$BUILD_DIR/URnetworkExtensionSdk.xcframework"; \
+	./check_apple_size.sh \
+		--sdk "$$BUILD_DIR/URnetworkSdk.xcframework" \
+		--extension-sdk "$$BUILD_DIR/URnetworkExtensionSdk.xcframework"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	test -s "$$BUILD_DIR/URnetworkSdk.xcframework.zip"; \
 	if [ -e "ios" ]; then mv ios ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" ios; \
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" apple;
+
+.PHONY: check_apple_size
+check_apple_size:
+	./check_apple_size.sh \
+		--sdk apple/URnetworkSdk.xcframework \
+		--extension-sdk apple/URnetworkExtensionSdk.xcframework
 
 # Build the JavaScript/WASM version of the SDK in the js dir
 build_js:

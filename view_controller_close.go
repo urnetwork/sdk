@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 package sdk
 
 // The concrete close entry points keep foreign-language bindings type-safe.

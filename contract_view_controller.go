@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 // view controller for the live throughput ui.
 // Builds time series of throughput samples from the device's cumulative
 // packet counters: one series for the client traffic and one for the
