@@ -746,13 +746,12 @@ func (self *DeviceRemote) setByJwt(byJwt string) {
 	self.GetApi().SetByJwt(byJwt)
 
 	if self.networkSpace.asyncLocalState != nil {
-		// ORDER MATTERS. LocalState.SetByJwt clears the client jwt and the instance
-		// id whenever the value changes -- which is ALWAYS true on a refresh -- so
-		// calling SetByClientJwt first meant SetByJwt immediately wiped it, leaving
-		// .by_client_jwt empty and the user logged out on the next cold launch.
-		// Write the network jwt first, then the client jwt.
-		self.networkSpace.asyncLocalState.localState.SetByJwt(byJwt)
-		self.networkSpace.asyncLocalState.localState.SetByClientJwt(byJwt)
+		if err := self.networkSpace.asyncLocalState.localState.setRefreshedByJwt(
+			byJwt,
+			newId(self.instanceId),
+		); err != nil {
+			self.log.Errorf("failed to persist refreshed JWT: %v", err)
+		}
 	}
 
 	func() {

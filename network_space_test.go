@@ -224,7 +224,7 @@ func TestNetworkSpaceManagerMigratesLegacyEnvOnlyStoragePath(t *testing.T) {
 	// simulate a pre-existing install that predates host-scoped storage:
 	// `network_spaces/<env>` with some local state file already in it.
 	legacyEnvStoragePath := filepath.Join(storagePath, "network_spaces", "main")
-	connect.AssertEqual(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageFilePermissions), nil)
+	connect.AssertEqual(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageDirectoryPermissions), nil)
 	legacyMarkerPath := filepath.Join(legacyEnvStoragePath, "legacy_marker")
 	connect.AssertEqual(t, os.WriteFile(legacyMarkerPath, []byte("legacy state"), LocalStorageFilePermissions), nil)
 

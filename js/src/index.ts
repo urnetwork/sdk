@@ -84,6 +84,7 @@ export class URNetwork {
    *   byJwt,
    *   proxyUrl: proxyConfigResult.api_base_url,
    *   signedProxyId: proxyConfigResult.auth_token,
+   *   instanceId: proxyConfigResult.instance_id,
    * });
    * device.addConnectLocationChangeListener((loc) => console.log(loc?.name));
    * device.setConnectLocation({ bestAvailable: true });
@@ -103,6 +104,7 @@ export class URNetwork {
       options.byJwt,
       options.proxyUrl,
       options.signedProxyId,
+      options.instanceId,
     );
     if (!device) {
       throw new Error("Could not create the device remote.");

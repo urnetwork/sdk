@@ -628,7 +628,7 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 	if _, err := os.Stat(envStoragePath); os.IsNotExist(err) {
 		legacyEnvStoragePath := filepath.Join(self.storagePath, "network_spaces", safeEnv)
 		if legacyInfo, err := os.Stat(legacyEnvStoragePath); err == nil && legacyInfo.IsDir() {
-			if err := os.MkdirAll(filepath.Dir(envStoragePath), LocalStorageFilePermissions); err == nil {
+			if err := os.MkdirAll(filepath.Dir(envStoragePath), LocalStorageDirectoryPermissions); err == nil {
 				// ignore errors - this is best-effort, and the normal
 				// MkdirAll below still guarantees envStoragePath exists
 				_ = os.Rename(legacyEnvStoragePath, envStoragePath)
@@ -636,7 +636,7 @@ func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
 		}
 	}
 
-	if err := os.MkdirAll(envStoragePath, LocalStorageFilePermissions); err != nil {
+	if err := os.MkdirAll(envStoragePath, LocalStorageDirectoryPermissions); err != nil {
 		panic(err)
 	}
 	return envStoragePath

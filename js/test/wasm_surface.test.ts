@@ -85,3 +85,17 @@ test("block-action declarations match WASM runtime keys", () => {
     assert.match(controllerRuntime, new RegExp(`\"${field}\"\\s*:`));
   }
 });
+
+test("hosted DeviceRemote requires the server instance and surfaces sync refusals", () => {
+  const declarations = source("../src/types.ts");
+  const publicWrapper = source("../src/index.ts");
+  const runtime = source("../device_remote.go");
+
+  assert.match(declarations, /\binstanceId\s*:\s*string/);
+  assert.match(declarations, /\bgetSyncError\s*\(/);
+  assert.match(publicWrapper, /options\.instanceId/);
+  assert.match(runtime, /len\(args\) < 6/);
+  assert.match(runtime, /sdk\.ParseId\(args\[5\]\.String\(\)\)/);
+  assert.doesNotMatch(runtime, /instanceId := sdk\.NewId\(\)/);
+  assert.match(runtime, /m\["getSyncError"\]/);
+});

@@ -157,6 +157,52 @@ func TestApiDiscardsRefreshForReplacedJwt(t *testing.T) {
 	connect.AssertEqual(t, api.GetByJwt(), newLoginJwt)
 }
 
+func TestApiRejectsRefreshThatChangesDeviceIdentity(t *testing.T) {
+	initialJwt := testingClientJwtForIdentity(
+		t,
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000002",
+	)
+	replacementJwt := testingClientJwtForIdentity(
+		t,
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000003",
+	)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"by_jwt":%q}`, replacementJwt)
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
+	defer api.Close()
+	api.SetByJwt(initialJwt)
+	refreshed := make(chan string, 1)
+	sub := api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
+		refreshed <- jwt
+	}))
+	defer sub.Close()
+
+	loggedOut, stale, err := api.tokenManager.refreshToken(initialJwt)
+	if err == nil {
+		t.Fatal("identity-changing refresh was accepted")
+	}
+	if loggedOut || stale {
+		t.Fatalf("identity-changing refresh outcome loggedOut=%t stale=%t", loggedOut, stale)
+	}
+	if got := api.GetByJwt(); got != initialJwt {
+		t.Fatalf("identity-changing refresh installed JWT %q", got)
+	}
+	select {
+	case got := <-refreshed:
+		t.Fatalf("identity-changing refresh notified listeners with %q", got)
+	default:
+	}
+}
+
 func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

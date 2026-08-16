@@ -147,6 +147,8 @@ export interface DeviceRemote {
   close(): void;
   cancel(): void;
   getRemoteConnected(): boolean;
+  /** Last explicit RPC sync refusal; empty while pending or after success. */
+  getSyncError(): string;
 
   // offline / tunnel
   getOffline(): boolean;
@@ -583,7 +585,8 @@ export interface DnsResolverSettings {
  * the sdk converts it to wss and appends /device-rpc. `signedProxyId` is the
  * device's signed proxy id — the device-rpc credential (NOT a jwt), which the
  * platform returns as `auth_token` from /network/auth-client. `byJwt` is the
- * network member jwt used for the network-space api.
+ * network member jwt used for the network-space api. `instanceId` must be the
+ * hosted DeviceLocal instance returned as `instance_id` by /network/auth-client.
  */
 export interface PlatformDeviceRemoteOptions {
   apiUrl: string;
@@ -591,4 +594,5 @@ export interface PlatformDeviceRemoteOptions {
   byJwt: string;
   proxyUrl: string;
   signedProxyId: string;
+  instanceId: string;
 }

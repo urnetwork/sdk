@@ -55,6 +55,17 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	)
 	defer networkSpace.close()
 	defer networkSpace.asyncLocalState.Close()
+	localState := networkSpace.asyncLocalState.localState
+	if err := localState.SetByJwt(initialJwt); err != nil {
+		t.Fatal(err)
+	}
+	if err := localState.SetByClientJwt(initialJwt); err != nil {
+		t.Fatal(err)
+	}
+	liveInstanceId := localState.GetInstanceId()
+	if liveInstanceId == nil {
+		t.Fatal("seeded DeviceLocal has no persisted instance_id")
+	}
 
 	settings := DefaultDeviceLocalSettings()
 	settings.AllowProvider = false
@@ -66,7 +77,7 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 		"refresh-test",
 		"test",
 		"0.0.0",
-		NewId(),
+		liveInstanceId,
 		settings,
 		connect.NewId(),
 	)
@@ -107,12 +118,14 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	if deviceJwt != refreshedJwt {
 		t.Fatalf("DeviceLocal JWT = %q, want refreshed JWT", deviceJwt)
 	}
-	localState := networkSpace.asyncLocalState.localState
 	if got := localState.GetByJwt(); got != refreshedJwt {
 		t.Fatalf("persisted network JWT = %q, want refreshed JWT", got)
 	}
 	if got := localState.GetByClientJwt(); got != refreshedJwt {
 		t.Fatalf("persisted client JWT = %q, want refreshed JWT", got)
+	}
+	if got := localState.GetInstanceId(); got == nil || got.Cmp(liveInstanceId) != 0 {
+		t.Fatalf("persisted instance_id after refresh = %v, want live %v", got, liveInstanceId)
 	}
 
 	// A confirmed logical rejection is propagated through the same Api owner,
@@ -143,6 +156,9 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	}
 	if got := localState.GetByClientJwt(); got != "" {
 		t.Fatalf("persisted client JWT after rejection = %q, want empty", got)
+	}
+	if got := localState.GetInstanceId(); got != nil {
+		t.Fatalf("persisted instance_id after rejection = %v, want nil", got)
 	}
 }
 

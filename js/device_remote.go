@@ -167,6 +167,9 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["getRemoteConnected"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(device.GetRemoteConnected())
 	})
+	m["getSyncError"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.GetSyncError())
+	})
 
 	// offline
 	m["getOffline"] = js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -580,24 +583,33 @@ func parseConnectLocationId(s string) (*sdk.ConnectLocationId, error) {
 	return &sdk.ConnectLocationId{LocationId: id}, nil
 }
 
-// NewPlatformDeviceRemote(apiUrl, platformUrl, byJwt, proxyUrl, signedProxyId)
+// NewPlatformDeviceRemote(apiUrl, platformUrl, byJwt, proxyUrl, signedProxyId, instanceId)
 // builds a DeviceRemote that controls a hosted DeviceLocal by connecting
 // directly to the proxy host at wss://<proxyUrl>/device-rpc, authenticating
 // with the device's signed proxy id (not a jwt). byJwt is the network member
-// jwt for the network space api.
+// jwt for the network space api. instanceId is the exact hosted DeviceLocal
+// instance returned by /network/auth-client; inventing one makes strict RPC
+// pairing reject every sync.
 func NewPlatformDeviceRemote(this js.Value, args []js.Value) any {
-	if len(args) < 5 {
-		return js.Null()
+	if len(args) < 6 {
+		return js.ValueOf(map[string]any{
+			"error": "hosted device instance_id is required",
+		})
 	}
 	apiUrl := args[0].String()
 	platformUrl := args[1].String()
 	byJwt := args[2].String()
 	proxyUrl := args[3].String()
 	signedProxyId := args[4].String()
+	instanceId, err := sdk.ParseId(args[5].String())
+	if err != nil {
+		return js.ValueOf(map[string]any{
+			"error": "invalid hosted device instance_id: " + err.Error(),
+		})
+	}
 
 	networkSpace := sdk.NewUrlsNetworkSpace(apiUrl, platformUrl)
 
-	instanceId := sdk.NewId()
 	device, err := sdk.NewPlatformDeviceRemote(networkSpace, byJwt, proxyUrl, signedProxyId, instanceId)
 	if err != nil {
 		return js.ValueOf(map[string]any{"error": err.Error()})
