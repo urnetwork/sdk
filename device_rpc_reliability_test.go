@@ -499,11 +499,13 @@ func (self *testingReliabilityActionLogger) V(level int32) connect.Verbose {
 // actually reached the DeviceLocal side, rather than merely returning without
 // error. No-oping any of the three DeviceLocalRpc handlers must fail this.
 //
-// The observable is the connect-side action log every dev action emits: the
-// bridge drops the DeviceLocal return values by contract, and against a stub
-// window with no admitted clients the actions change no readable state. For
-// MigrateExit the log also carries the exit id, which is what pins the
-// ARGUMENT crossing the wire (string -> connect.Id -> *Id -> connect).
+// The observable is the connect-side action log every dev action emits:
+// against a stub window with no admitted clients the actions change no
+// readable state, and the counts MigrateExit and ProbeAllExits now return
+// (see device_rpc_advanced_mode_test.go) are their "nothing to do" sentinels
+// here, which a dead rpc would also produce. For MigrateExit the log also
+// carries the exit id, which is what pins the ARGUMENT crossing the wire
+// (string -> connect.Id -> *Id -> connect).
 func TestDeviceRemoteReliabilityActionsReachTheLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -266,7 +266,20 @@ inline std::optional<std::string> takeStringOpt(char* s) {
 template <typename T>
 inline T parseJson(const char* s) {
 	try {
-		return nlohmann::json::parse(s).template get<T>();
+		nlohmann::json j = nlohmann::json::parse(s);
+		/* Go marshals a nil slice as the document null. A container asked
+		   to convert from null should be empty, not an exception:
+		   get<std::vector<T>>() throws type_error.302, out of an ordinary
+		   non-throwing-looking getter. Structs are already null-tolerant
+		   (their generated from_json returns early on a non-object), so this
+		   closes the last hole. The go side no longer emits null for an
+		   empty list, but this stays as the boundary guard: it costs one
+		   branch and it covers every future producer of a null document,
+		   not just the one that was fixed. */
+		if (j.is_null()) {
+			return T{};
+		}
+		return j.template get<T>();
 	} catch (const std::exception& e) {
 		throw Error(std::string("urnet: json: ") + e.what());
 	}

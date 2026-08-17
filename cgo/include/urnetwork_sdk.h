@@ -72,6 +72,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
+#define URNET_CONNECT_FAILED "CONNECT_FAILED"
 #define URNET_CONTRACT_STATUS_CLOSED "closed"
 #define URNET_CONTRACT_STATUS_OPEN "open"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
@@ -82,7 +83,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
 #define URNET_IP_PROTOCOL_UNKNOWN 0
-#define URNET_LOCAL_STORAGE_FILE_PERMISSIONS 448
+#define URNET_LOCAL_STORAGE_DIRECTORY_PERMISSIONS 448
+#define URNET_LOCAL_STORAGE_FILE_PERMISSIONS 384
 #define URNET_LOCATIONS_ERROR "LOCATIONS_ERROR"
 #define URNET_LOCATIONS_LOADED "LOCATIONS_LOADED"
 #define URNET_LOCATIONS_LOADING "LOCATIONS_LOADING"
@@ -1211,6 +1213,7 @@ char* urnet_get_default_dns_resolver_settings(void);
 char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
+bool urnet_get_fips140_enabled(void);
 char* urnet_get_log_dir(void);
 char* urnet_get_memory_stats(void);
 char* urnet_get_recommended_dns_resolver_settings(const char* country_code);

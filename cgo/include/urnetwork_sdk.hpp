@@ -81,7 +81,20 @@ inline std::optional<std::string> takeStringOpt(char* s) {
 template <typename T>
 inline T parseJson(const char* s) {
 	try {
-		return nlohmann::json::parse(s).template get<T>();
+		nlohmann::json j = nlohmann::json::parse(s);
+		/* Go marshals a nil slice as the document null. A container asked
+		   to convert from null should be empty, not an exception:
+		   get<std::vector<T>>() throws type_error.302, out of an ordinary
+		   non-throwing-looking getter. Structs are already null-tolerant
+		   (their generated from_json returns early on a non-object), so this
+		   closes the last hole. The go side no longer emits null for an
+		   empty list, but this stays as the boundary guard: it costs one
+		   branch and it covers every future producer of a null document,
+		   not just the one that was fixed. */
+		if (j.is_null()) {
+			return T{};
+		}
+		return j.template get<T>();
 	} catch (const std::exception& e) {
 		throw Error(std::string("urnet: json: ") + e.what());
 	}
@@ -138,6 +151,7 @@ inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
 inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
+inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* ContractStatusClosed = "closed";
@@ -150,7 +164,8 @@ inline constexpr const char* Disconnected = "DISCONNECTED";
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
 inline constexpr int64_t IpProtocolUnknown = 0;
-inline constexpr int64_t LocalStorageFilePermissions = 448;
+inline constexpr int64_t LocalStorageDirectoryPermissions = 448;
+inline constexpr int64_t LocalStorageFilePermissions = 384;
 inline constexpr const char* LocationTypeCity = "city";
 inline constexpr const char* LocationTypeCountry = "country";
 inline constexpr const char* LocationTypeRegion = "region";
@@ -19750,6 +19765,10 @@ inline std::optional<FilteredLocations> getFilteredLocationsFromResult(const std
 		return std::nullopt;
 	}
 	return detail::parseJson<FilteredLocations>(r_s->c_str());
+}
+inline bool getFips140Enabled() {
+	bool r = urnet_get_fips140_enabled();
+	return r;
 }
 inline std::string getLogDir() {
 	char* r_c = urnet_get_log_dir();
