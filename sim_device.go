@@ -169,6 +169,14 @@ func (self *SimProvider) LocalUserNat() *connect.LocalUserNat {
 	return self.localUserNat
 }
 
+// Returns a concurrent snapshot of packets relayed for remote clients. The
+// simulator uses the provider's remote-egress byte counter as an independent
+// return-path accounting source; callers cannot mutate the provider counters
+// through the returned value.
+func (self *SimProvider) PacketStats() *connect.PacketStats {
+	return self.remoteUserNat.PacketStats()
+}
+
 // IsConnected reports whether the platform transport exists and has routes
 // registered (i.e. the provider is live on the platform)
 func (self *SimProvider) IsConnected() bool {
@@ -238,7 +246,11 @@ type SimClientConfig struct {
 	DisableSecurityPolicy bool
 	// nil uses `connect.DefaultTunSettings()`
 	TunSettings *connect.TunSettings
-	Log         connect.Logger
+	// nil uses `connect.DefaultMultiClientSettings()`. A non-nil value is
+	// cloned before use so a simulator can give every warm client the same
+	// frozen window policy without introducing shared mutable state.
+	MultiClientSettings *connect.MultiClientSettings
+	Log                 connect.Logger
 }
 
 // SimClient is a headless client: a `RemoteUserNatMultiClient` over
@@ -310,7 +322,7 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 		return nil, err
 	}
 
-	multiClientSettings := connect.DefaultMultiClientSettings()
+	multiClientSettings := cloneSimMultiClientSettings(config.MultiClientSettings)
 	multiClientSettings.Log = log
 	if config.DisableSecurityPolicy {
 		multiClientSettings.SecurityPolicyGenerator = connect.DisableSecurityPolicyWithStats
@@ -364,6 +376,18 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 	})
 
 	return simClient, nil
+}
+
+func cloneSimMultiClientSettings(settings *connect.MultiClientSettings) *connect.MultiClientSettings {
+	if settings == nil {
+		return connect.DefaultMultiClientSettings()
+	}
+	cloned := *settings
+	cloned.WindowSizes = make(map[connect.WindowType]connect.WindowSizeSettings, len(settings.WindowSizes))
+	for windowType, windowSize := range settings.WindowSizes {
+		cloned.WindowSizes[windowType] = windowSize
+	}
+	return &cloned
 }
 
 // DialContext dials through the tunnel: the connection's bytes traverse
