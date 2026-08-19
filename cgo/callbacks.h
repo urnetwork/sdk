@@ -217,6 +217,8 @@ typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provid
 void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* user_data, const char* provide_secret_key_list_json);
 typedef void (*urnet_provider_identity_change_cb)(void* user_data);
 void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data);
+typedef void (*urnet_provider_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
+void urnet_invoke_provider_transport_settings_change(urnet_provider_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json);
 typedef void (*urnet_purchase_confirmation_cb)(void* user_data, const char* state);
 void urnet_invoke_purchase_confirmation(urnet_purchase_confirmation_cb cb, void* user_data, const char* state);
 typedef void (*urnet_receive_packet_cb)(void* user_data, int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len);
@@ -273,6 +275,8 @@ typedef void (*urnet_subscription_jwt_out_of_sync_cb)(void* user_data, bool serv
 void urnet_invoke_subscription_jwt_out_of_sync(urnet_subscription_jwt_out_of_sync_cb cb, void* user_data, bool server_is_pro);
 typedef void (*urnet_throughput_cb)(void* user_data);
 void urnet_invoke_throughput(urnet_throughput_cb cb, void* user_data);
+typedef void (*urnet_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
+void urnet_invoke_transport_settings_change(urnet_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json);
 typedef void (*urnet_tunnel_change_cb)(void* user_data, bool tunnel_started);
 void urnet_invoke_tunnel_change(urnet_tunnel_change_cb cb, void* user_data, bool tunnel_started);
 typedef void (*urnet_unlink_referral_network_cb)(void* user_data, const char* result_json, const char* err_param);

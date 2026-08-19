@@ -377,6 +377,41 @@ func jsThroughputPointList(list *sdk.ThroughputPointList) js.Value {
 	return js.ValueOf(out)
 }
 
+// the window's remote traffic partitioned by carrier, ready to render as a
+// stacked bar: stable order (h3, h1, dns, dnspump, p2p, unknown), every
+// transport present. see sdk.TransportShare for the field semantics
+func jsTransportDistribution(distribution *sdk.TransportDistribution) js.Value {
+	if distribution == nil {
+		return js.Null()
+	}
+	shares := []any{}
+	if distribution.Shares != nil {
+		for i := 0; i < distribution.Shares.Len(); i += 1 {
+			share := distribution.Shares.Get(i)
+			if share == nil {
+				continue
+			}
+			shares = append(shares, map[string]any{
+				"transportType":      share.TransportType,
+				"egressByteCount":    share.EgressByteCount,
+				"ingressByteCount":   share.IngressByteCount,
+				"egressPacketCount":  share.EgressPacketCount,
+				"ingressPacketCount": share.IngressPacketCount,
+				"share":              share.Share,
+				"boundary":           share.Boundary,
+				"percent":            share.Percent,
+				"used":               share.Used,
+				"enabled":            share.Enabled,
+			})
+		}
+	}
+	return js.ValueOf(map[string]any{
+		"shares":    shares,
+		"byteCount": distribution.ByteCount,
+		"active":    distribution.Active,
+	})
+}
+
 func jsPacketStats(s *sdk.PacketStats) js.Value {
 	if s == nil {
 		return js.Null()
@@ -413,6 +448,12 @@ func jsContractViewController(vc *sdk.ContractViewController, closeController fu
 	})
 	m["getProviderThroughputPoints"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsThroughputPointList(vc.GetProviderThroughputPoints())
+	})
+	m["getTransportDistribution"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportDistribution(vc.GetTransportDistribution())
+	})
+	m["getProviderTransportDistribution"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportDistribution(vc.GetProviderTransportDistribution())
 	})
 	m["getPacketStats"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsPacketStats(vc.GetPacketStats())

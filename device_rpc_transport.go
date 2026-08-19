@@ -104,6 +104,7 @@ type deviceRpcWs interface {
 	DeviceRpcWs
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 	NextReader() (messageType int, r io.Reader, err error)
+	SetReadLimit(limit int64)
 	SetReadDeadline(t time.Time) error
 	SetWriteDeadline(t time.Time) error
 	SetPongHandler(h func(appData string) error)
@@ -120,9 +121,12 @@ type deviceRpcMux struct {
 
 	ws deviceRpcWs
 
-	pingTimeout  time.Duration
-	readTimeout  time.Duration
-	writeTimeout time.Duration
+	pingTimeout   time.Duration
+	readTimeout   time.Duration
+	writeTimeout  time.Duration
+	maxFrameBytes int64
+	sendBytes     *deviceRpcByteBudget
+	receiveBytes  *deviceRpcByteBudget
 
 	// pooled, tag-prefixed frames pending write. drained and returned to the
 	// pool on teardown.
@@ -133,6 +137,82 @@ type deviceRpcMux struct {
 	closeOnce sync.Once
 }
 
+// deviceRpcByteBudget applies byte-level backpressure to one mux direction.
+// Send and receive use separate budgets: sharing one can deadlock when a server
+// must write a response before it consumes already-buffered inbound requests.
+type deviceRpcByteBudget struct {
+	mu       sync.Mutex
+	used     int64
+	max      int64
+	waiters  int
+	released chan struct{}
+}
+
+func newDeviceRpcByteBudget(maxBytes int64) *deviceRpcByteBudget {
+	return &deviceRpcByteBudget{
+		max:      max(int64(1), maxBytes),
+		released: make(chan struct{}),
+	}
+}
+
+func (self *deviceRpcByteBudget) acquire(ctx context.Context, byteCount int) bool {
+	requested := int64(byteCount)
+	if self.max < requested {
+		return false
+	}
+	for {
+		self.mu.Lock()
+		if self.used+requested <= self.max {
+			self.used += requested
+			self.mu.Unlock()
+			return true
+		}
+		released := self.released
+		self.waiters += 1
+		self.mu.Unlock()
+		acquired := false
+		select {
+		case <-ctx.Done():
+		case <-released:
+			acquired = true
+		}
+		self.mu.Lock()
+		self.waiters -= 1
+		self.mu.Unlock()
+		if !acquired {
+			return false
+		}
+	}
+}
+
+// Admits receive-owned bytes without parking the shared websocket reader. A
+// rejected reliable RPC frame cannot be skipped without corrupting its byte
+// stream, so the caller closes the complete mux generation instead.
+func (self *deviceRpcByteBudget) tryAcquire(byteCount int) bool {
+	requested := int64(byteCount)
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.max < requested || self.max-self.used < requested {
+		return false
+	}
+	self.used += requested
+	return true
+}
+
+func (self *deviceRpcByteBudget) release(byteCount int) {
+	self.mu.Lock()
+	self.used -= int64(byteCount)
+	if self.used < 0 {
+		self.mu.Unlock()
+		panic("device rpc queued byte budget released more than acquired")
+	}
+	if 0 < self.waiters {
+		close(self.released)
+		self.released = make(chan struct{})
+	}
+	self.mu.Unlock()
+}
+
 func newDeviceRpcMux(ctx context.Context, ws deviceRpcWs, settings *deviceRpcSettings) *deviceRpcMux {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -140,15 +220,25 @@ func newDeviceRpcMux(ctx context.Context, ws deviceRpcWs, settings *deviceRpcSet
 	readTimeout := settings.KeepAliveTimeout * time.Duration(settings.KeepAliveRetryCount+1)
 
 	mux := &deviceRpcMux{
-		ctx:          cancelCtx,
-		cancel:       cancel,
-		log:          settings.logger(),
-		ws:           ws,
-		pingTimeout:  pingTimeout,
-		readTimeout:  readTimeout,
-		writeTimeout: settings.MuxWriteTimeout,
-		send:         make(chan []byte, settings.MuxSendBufferSize),
+		ctx:           cancelCtx,
+		cancel:        cancel,
+		log:           settings.logger(),
+		ws:            ws,
+		pingTimeout:   pingTimeout,
+		readTimeout:   readTimeout,
+		writeTimeout:  settings.MuxWriteTimeout,
+		maxFrameBytes: settings.maxFrameBytes(),
+		sendBytes: newDeviceRpcByteBudget(max(
+			settings.maxQueuedBytes(),
+			settings.maxFrameBytes(),
+		)),
+		receiveBytes: newDeviceRpcByteBudget(max(
+			settings.maxQueuedBytes(),
+			settings.maxFrameBytes(),
+		)),
+		send: make(chan []byte, settings.MuxSendBufferSize),
 	}
+	ws.SetReadLimit(mux.maxFrameBytes)
 	for i := range mux.conns {
 		mux.conns[i] = newDeviceRpcMuxConn(mux, uint8(i), settings)
 	}
@@ -182,6 +272,7 @@ func (self *deviceRpcMux) writeLoop() {
 			select {
 			case b := <-self.send:
 				connect.MessagePoolReturn(b)
+				self.sendBytes.release(len(b))
 			default:
 				return
 			}
@@ -205,6 +296,7 @@ func (self *deviceRpcMux) writeLoop() {
 			}
 			err := self.ws.WriteMessage(DeviceRpcWsBinary, b)
 			connect.MessagePoolReturn(b)
+			self.sendBytes.release(len(b))
 			if err != nil {
 				self.log.Infof("[mux]write done = %s", err)
 				return
@@ -237,6 +329,7 @@ func (self *deviceRpcMux) readLoop() {
 		self.close()
 		for _, conn := range self.conns {
 			conn.drainReceive()
+			conn.releaseCurrentReceive()
 		}
 	}()
 
@@ -249,7 +342,7 @@ func (self *deviceRpcMux) readLoop() {
 		if messageType != DeviceRpcWsBinary {
 			continue
 		}
-		message, err := connect.MessagePoolReadAll(r)
+		message, err := connect.MessagePoolReadAllLimit(r, self.maxFrameBytes)
 		if err != nil {
 			self.log.Infof("[mux]read all done = %s", err)
 			return
@@ -266,10 +359,17 @@ func (self *deviceRpcMux) readLoop() {
 			connect.MessagePoolReturn(message)
 			continue
 		}
+		if !self.receiveBytes.tryAcquire(len(message)) {
+			self.log.Infof("[mux]receive byte budget full; closing rpc generation")
+			connect.MessagePoolReturn(message)
+			return
+		}
 		// ownership of message passes to the conn, which returns it to the pool
 		// once fully consumed by Read
 		if !self.conns[tag].pushReceive(message) {
+			self.log.Infof("[mux]receive stream queue full; closing rpc generation")
 			connect.MessagePoolReturn(message)
+			self.receiveBytes.release(len(message))
 			return
 		}
 	}
@@ -297,12 +397,17 @@ func newDeviceRpcMuxConn(mux *deviceRpcMux, tag uint8, settings *deviceRpcSettin
 	}
 }
 
+// Hands one complete reliable-stream fragment to its net/rpc reader without
+// blocking the shared websocket receive loop. Refusal is terminal for the mux:
+// dropping a fragment and continuing would silently corrupt the RPC stream.
 func (self *deviceRpcMuxConn) pushReceive(message []byte) bool {
 	select {
 	case <-self.mux.ctx.Done():
 		return false
 	case self.receive <- message:
 		return true
+	default:
+		return false
 	}
 }
 
@@ -313,10 +418,23 @@ func (self *deviceRpcMuxConn) drainReceive() {
 		select {
 		case message := <-self.receive:
 			connect.MessagePoolReturn(message)
+			self.mux.receiveBytes.release(len(message))
 		default:
 			return
 		}
 	}
+}
+
+func (self *deviceRpcMuxConn) releaseCurrentReceive() {
+	self.readMu.Lock()
+	defer self.readMu.Unlock()
+	if self.readMsg == nil {
+		return
+	}
+	self.mux.receiveBytes.release(len(self.readMsg))
+	connect.MessagePoolReturn(self.readMsg)
+	self.readMsg = nil
+	self.readOff = 0
 }
 
 func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
@@ -325,6 +443,7 @@ func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
 
 	for self.readMsg == nil || self.readOff >= len(self.readMsg) {
 		if self.readMsg != nil {
+			self.mux.receiveBytes.release(len(self.readMsg))
 			connect.MessagePoolReturn(self.readMsg)
 			self.readMsg = nil
 		}
@@ -340,6 +459,7 @@ func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
 	n := copy(p, self.readMsg[self.readOff:])
 	self.readOff += n
 	if self.readOff >= len(self.readMsg) {
+		self.mux.receiveBytes.release(len(self.readMsg))
 		connect.MessagePoolReturn(self.readMsg)
 		self.readMsg = nil
 	}
@@ -350,12 +470,21 @@ func (self *deviceRpcMuxConn) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	b := connect.MessagePoolGet(1 + len(p))
+	frameByteCount := 1 + len(p)
+	if self.mux.maxFrameBytes < int64(frameByteCount) {
+		self.mux.close()
+		return 0, fmt.Errorf("device rpc frame exceeds %d-byte limit", self.mux.maxFrameBytes)
+	}
+	if !self.mux.sendBytes.acquire(self.mux.ctx, frameByteCount) {
+		return 0, io.ErrClosedPipe
+	}
+	b := connect.MessagePoolGet(frameByteCount)
 	b[0] = self.tag
 	copy(b[1:], p)
 	select {
 	case <-self.mux.ctx.Done():
 		connect.MessagePoolReturn(b)
+		self.mux.sendBytes.release(len(b))
 		return 0, io.ErrClosedPipe
 	case self.mux.send <- b:
 		return len(p), nil

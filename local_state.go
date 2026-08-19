@@ -345,6 +345,54 @@ func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverS
 	}
 }
 
+func (self *LocalState) setTransportSettings(filename string, settings *TransportSettings, provider bool) error {
+	path := filepath.Join(self.localStorageDir, filename)
+	if settings == nil {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	settingsBytes, err := json.Marshal(normalizeTransportSettings(settings, provider))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, settingsBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) getTransportSettings(filename string, provider bool) *TransportSettings {
+	settingsBytes, err := os.ReadFile(filepath.Join(self.localStorageDir, filename))
+	if err != nil {
+		return nil
+	}
+	var settings TransportSettings
+	if err := json.Unmarshal(settingsBytes, &settings); err != nil {
+		return nil
+	}
+	return normalizeTransportSettings(&settings, provider)
+}
+
+// SetTransportSettings persists the client carrier policy for the next process.
+func (self *LocalState) SetTransportSettings(settings *TransportSettings) error {
+	return self.setTransportSettings(".transport_settings", settings, false)
+}
+
+// GetTransportSettings returns nil when no valid client policy is stored.
+func (self *LocalState) GetTransportSettings() *TransportSettings {
+	return self.getTransportSettings(".transport_settings", false)
+}
+
+// SetProviderTransportSettings persists the provider carrier policy separately
+// so changing one direction never silently changes the other.
+func (self *LocalState) SetProviderTransportSettings(settings *TransportSettings) error {
+	return self.setTransportSettings(".provider_transport_settings", settings, true)
+}
+
+// GetProviderTransportSettings returns nil when no valid provider policy is stored.
+func (self *LocalState) GetProviderTransportSettings() *TransportSettings {
+	return self.getTransportSettings(".provider_transport_settings", true)
+}
+
 // dohServerScoresStaleAfter discards a persisted DoH server score snapshot older than this:
 // server rankings are fairly stable, but a weeks-old snapshot should not bias a fresh session.
 const dohServerScoresStaleAfter = 7 * 24 * time.Hour

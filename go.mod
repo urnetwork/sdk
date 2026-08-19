@@ -36,9 +36,13 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
 	golang.org/x/image v0.44.0 // indirect
+	golang.org/x/mobile v0.0.0-20260611195102-4dd8f1dbf5d2 // indirect
+	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gvisor.dev/gvisor v0.0.0-20260805230438-8eba670122c5 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
@@ -51,3 +55,5 @@ replace github.com/urnetwork/connect => ../connect
 replace github.com/urnetwork/glog => ../glog
 
 replace github.com/urnetwork/goidenticons => ../goidenticons
+
+tool golang.org/x/mobile/cmd/gobind

@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"net/rpc"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +75,12 @@ type deviceRpcSettings struct {
 	// per-stream buffered frame counts for the rpc transport mux
 	MuxSendBufferSize    int
 	MuxReceiveBufferSize int
+	// MuxMaxFrameBytes is a hard per-websocket-message limit, including the
+	// one-byte stream tag. MuxMaxQueuedBytes applies independently to send and
+	// receive queues so either direction always retains enough progress capacity
+	// for one maximum-sized frame without cross-direction deadlock.
+	MuxMaxFrameBytes  int64
+	MuxMaxQueuedBytes int64
 	// deadline for a single mux frame write before the connection is torn down.
 	// decoupled from RpcCallTimeout so the rpc call timeout can be long (back
 	// pressure during spin-up) without letting a stuck write hang that long.
@@ -85,16 +93,20 @@ type deviceRpcSettings struct {
 	// enforces against the DeviceRpcVersion const.
 	RpcVersion int
 
-	// max concurrent http-over-rpc fetch+deliver operations. bounds in-flight
-	// request/response buffers + goroutines so a slow or suspended app cannot pile
-	// up unbounded memory in the (memory-capped) network extension.
+	// Maximum concurrent HTTP-over-RPC operations on the app side and in each
+	// extension fetch/delivery stage. This bounds in-flight request/response
+	// buffers and goroutines when the app is slow or suspended.
 	HttpMaxConcurrent int
+	// largest request or response body allowed through http-over-rpc. Values
+	// <= 0 resolve to the bounded production default.
+	HttpMaxBodyBytes int
 
 	// DisableHostedIncompatible, when true, makes the DeviceLocalRpc noop the
 	// setters that must never change on a hosted device (route local, provide
-	// settings, tunnel/vpn, identity/rpc); the corresponding getters and change
-	// listeners keep working. Set by the platform hosted rpc. This is the rpc
-	// layer of the same guard `DeviceLocalSettings.HostedIncompatible` enforces
+	// settings, transport settings, tunnel/vpn, identity/rpc); the corresponding
+	// getters and change listeners keep working. Hosted transport is pinned to
+	// H1. Set by the platform hosted rpc. This is the rpc layer of the same guard
+	// `DeviceLocalSettings.HostedIncompatible` enforces
 	// inside DeviceLocal.
 	DisableHostedIncompatible bool
 
@@ -116,6 +128,40 @@ type deviceRpcSettings struct {
 // at a per-process ephemeral port (see TestMain).
 var deviceRpcDefaultAddress = "127.0.0.1:12025"
 
+const (
+	deviceRpcDefaultMaxFrameBytes    int64 = 3 * 1024 * 1024
+	deviceRpcDefaultMaxQueuedBytes   int64 = 4 * 1024 * 1024
+	deviceRpcDefaultHttpMaxBodyBytes       = int(connect.DefaultMaxHttpResponseBodyBytes)
+)
+
+func (self *deviceRpcSettings) maxFrameBytes() int64 {
+	if self.MuxMaxFrameBytes <= 0 {
+		return deviceRpcDefaultMaxFrameBytes
+	}
+	return self.MuxMaxFrameBytes
+}
+
+func (self *deviceRpcSettings) maxQueuedBytes() int64 {
+	if self.MuxMaxQueuedBytes <= 0 {
+		return deviceRpcDefaultMaxQueuedBytes
+	}
+	return self.MuxMaxQueuedBytes
+}
+
+func (self *deviceRpcSettings) httpMaxBodyBytes() int {
+	if self.HttpMaxBodyBytes <= 0 {
+		return deviceRpcDefaultHttpMaxBodyBytes
+	}
+	return self.HttpMaxBodyBytes
+}
+
+func (self *deviceRpcSettings) httpMaxConcurrent() int {
+	if self.HttpMaxConcurrent <= 0 {
+		return 2
+	}
+	return self.HttpMaxConcurrent
+}
+
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
 		RpcCallTimeout:    60 * time.Second,
@@ -135,8 +181,11 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		CallbackBufferSize:   64,
 		MuxSendBufferSize:    32,
 		MuxReceiveBufferSize: 32,
+		MuxMaxFrameBytes:     deviceRpcDefaultMaxFrameBytes,
+		MuxMaxQueuedBytes:    deviceRpcDefaultMaxQueuedBytes,
 		MuxWriteTimeout:      15 * time.Second,
-		HttpMaxConcurrent:    16,
+		HttpMaxConcurrent:    2,
+		HttpMaxBodyBytes:     deviceRpcDefaultHttpMaxBodyBytes,
 		RpcVersion:           DeviceRpcVersion,
 
 		DeviceLocalSettings: *DefaultDeviceLocalSettings(),
@@ -199,39 +248,41 @@ type DeviceRemote struct {
 	rpcServerCertPem string
 	service          *rpcClient
 
-	canShowRatingDialogChangeListeners      map[connect.Id]CanShowRatingDialogChangeListener
-	canPromptIntroFunnelChangeListeners     map[connect.Id]CanPromptIntroFunnelChangeListener
-	allowForegroundChangeListeners          map[connect.Id]AllowForegroundChangeListener
-	canReferChangeListeners                 map[connect.Id]CanReferChangeListener
-	provideModeChangeListeners              map[connect.Id]ProvideModeChangeListener
-	provideChangeListeners                  map[connect.Id]ProvideChangeListener
-	provideControlModeChangeListeners       map[connect.Id]ProvideControlModeChangeListener
-	performanceProfileChangeListeners       map[connect.Id]PerformanceProfileChangeListener
-	providerIdentityChangeListeners         map[connect.Id]ProviderIdentityChangeListener
-	providePausedChangeListeners            map[connect.Id]ProvidePausedChangeListener
-	provideNetworkModeChangeListeners       map[connect.Id]ProvideNetworkModeChangeListener
-	offlineChangeListeners                  map[connect.Id]OfflineChangeListener
-	vpnInterfaceWhileOfflineChangeListeners map[connect.Id]VpnInterfaceWhileOfflineChangeListener
-	connectChangeListeners                  map[connect.Id]ConnectChangeListener
-	routeLocalChangeListeners               map[connect.Id]RouteLocalChangeListener
-	blockerEnabledChangeListeners           map[connect.Id]BlockerEnabledChangeListener
-	connectLocationChangeListeners          map[connect.Id]ConnectLocationChangeListener
-	defaultLocationChangeListeners          map[connect.Id]DefaultLocationChangeListener
-	provideSecretKeysListeners              map[connect.Id]ProvideSecretKeysListener
-	windowMonitors                          map[connect.Id]*deviceRemoteWindowMonitor
-	tunnelChangeListeners                   map[connect.Id]TunnelChangeListener
-	contractStatusChangeListeners           map[connect.Id]ContractStatusChangeListener
-	windowStatusChangeListeners             map[connect.Id]WindowStatusChangeListener
-	blockActionWindowChangeListeners        map[connect.Id]BlockActionWindowChangeListener
-	blockStatsChangeListeners               map[connect.Id]BlockStatsChangeListener
-	blockActionOverridesChangeListeners     map[connect.Id]BlockActionOverridesChangeListener
-	packetStatsChangeListeners              map[connect.Id]PacketStatsChangeListener
-	egressContractStatsChangeListeners      map[connect.Id]ContractStatsChangeListener
-	egressContractDetailsChangeListeners    map[connect.Id]ContractDetailsChangeListener
-	ingressContractStatsChangeListeners     map[connect.Id]ContractStatsChangeListener
-	ingressContractDetailsChangeListeners   map[connect.Id]ContractDetailsChangeListener
-	dnsResolverSettingsChangeListeners      map[connect.Id]DnsResolverSettingsChangeListener
-	networkPeersChangeListeners             map[connect.Id]NetworkPeersChangeListener
+	canShowRatingDialogChangeListeners       map[connect.Id]CanShowRatingDialogChangeListener
+	canPromptIntroFunnelChangeListeners      map[connect.Id]CanPromptIntroFunnelChangeListener
+	allowForegroundChangeListeners           map[connect.Id]AllowForegroundChangeListener
+	canReferChangeListeners                  map[connect.Id]CanReferChangeListener
+	provideModeChangeListeners               map[connect.Id]ProvideModeChangeListener
+	provideChangeListeners                   map[connect.Id]ProvideChangeListener
+	provideControlModeChangeListeners        map[connect.Id]ProvideControlModeChangeListener
+	performanceProfileChangeListeners        map[connect.Id]PerformanceProfileChangeListener
+	providerIdentityChangeListeners          map[connect.Id]ProviderIdentityChangeListener
+	providePausedChangeListeners             map[connect.Id]ProvidePausedChangeListener
+	provideNetworkModeChangeListeners        map[connect.Id]ProvideNetworkModeChangeListener
+	offlineChangeListeners                   map[connect.Id]OfflineChangeListener
+	vpnInterfaceWhileOfflineChangeListeners  map[connect.Id]VpnInterfaceWhileOfflineChangeListener
+	connectChangeListeners                   map[connect.Id]ConnectChangeListener
+	routeLocalChangeListeners                map[connect.Id]RouteLocalChangeListener
+	blockerEnabledChangeListeners            map[connect.Id]BlockerEnabledChangeListener
+	connectLocationChangeListeners           map[connect.Id]ConnectLocationChangeListener
+	defaultLocationChangeListeners           map[connect.Id]DefaultLocationChangeListener
+	provideSecretKeysListeners               map[connect.Id]ProvideSecretKeysListener
+	windowMonitors                           map[connect.Id]*deviceRemoteWindowMonitor
+	tunnelChangeListeners                    map[connect.Id]TunnelChangeListener
+	contractStatusChangeListeners            map[connect.Id]ContractStatusChangeListener
+	windowStatusChangeListeners              map[connect.Id]WindowStatusChangeListener
+	blockActionWindowChangeListeners         map[connect.Id]BlockActionWindowChangeListener
+	blockStatsChangeListeners                map[connect.Id]BlockStatsChangeListener
+	blockActionOverridesChangeListeners      map[connect.Id]BlockActionOverridesChangeListener
+	transportSettingsChangeListeners         map[connect.Id]TransportSettingsChangeListener
+	providerTransportSettingsChangeListeners map[connect.Id]ProviderTransportSettingsChangeListener
+	packetStatsChangeListeners               map[connect.Id]PacketStatsChangeListener
+	egressContractStatsChangeListeners       map[connect.Id]ContractStatsChangeListener
+	egressContractDetailsChangeListeners     map[connect.Id]ContractDetailsChangeListener
+	ingressContractStatsChangeListeners      map[connect.Id]ContractStatsChangeListener
+	ingressContractDetailsChangeListeners    map[connect.Id]ContractDetailsChangeListener
+	dnsResolverSettingsChangeListeners       map[connect.Id]DnsResolverSettingsChangeListener
+	networkPeersChangeListeners              map[connect.Id]NetworkPeersChangeListener
 
 	providerPacketStatsChangeListeners            map[connect.Id]PacketStatsChangeListener
 	providerEgressContractStatsChangeListeners    map[connect.Id]ContractStatsChangeListener
@@ -249,6 +300,11 @@ type DeviceRemote struct {
 	connectedProviderLocationChangeListeners *connect.CallbackList[ConnectedProviderLocationChangeListener]
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
+	// Admission control is taken before an HTTP request is encoded onto the RPC
+	// stream. This bounds the response-channel map and prevents the extension
+	// from decoding more requests than it can actively service.
+	httpSemOnce sync.Once
+	httpSem     chan struct{}
 
 	state DeviceRemoteState
 	// last observed values
@@ -320,6 +376,10 @@ func NewPlatformDeviceRemote(
 		clientId = connect.Id{}
 	}
 	settings := defaultDeviceRpcSettings()
+	// The platform constructor controls a server/proxy-hosted DeviceLocal. Keep
+	// hosted-incompatible mutations out of the pending client state as well as
+	// rejecting them on the server.
+	settings.DisableHostedIncompatible = true
 	dialer := NewPlatformDeviceRpcDialer(proxyUrl, signedProxyId, settings)
 	return newDeviceRemoteWithOverrides(networkSpace, byJwt, instanceId, settings, clientId, dialer)
 }
@@ -401,6 +461,8 @@ func newDeviceRemoteWithOverrides(
 		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
 		blockStatsChangeListeners:                map[connect.Id]BlockStatsChangeListener{},
 		blockActionOverridesChangeListeners:      map[connect.Id]BlockActionOverridesChangeListener{},
+		transportSettingsChangeListeners:         map[connect.Id]TransportSettingsChangeListener{},
+		providerTransportSettingsChangeListeners: map[connect.Id]ProviderTransportSettingsChangeListener{},
 		packetStatsChangeListeners:               map[connect.Id]PacketStatsChangeListener{},
 		egressContractStatsChangeListeners:       map[connect.Id]ContractStatsChangeListener{},
 		egressContractDetailsChangeListeners:     map[connect.Id]ContractDetailsChangeListener{},
@@ -543,38 +605,40 @@ func (self *DeviceRemote) run() {
 					InstanceId: self.instanceId,
 					RpcVersion: self.settings.RpcVersion,
 
-					CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
-					CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
-					AllowForegroundChangeListenerIds:          slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
-					CanReferChangeListenerIds:                 slices.Collect(maps.Keys(self.canReferChangeListeners)),
-					ProvideModeChangeListenerIds:              slices.Collect(maps.Keys(self.provideModeChangeListeners)),
-					ProvideChangeListenerIds:                  slices.Collect(maps.Keys(self.provideChangeListeners)),
-					ProvideControlModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
-					PerformanceProfileChangeListenerIds:       slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
-					ProviderIdentityChangeListenerIds:         slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
-					ProvidePausedChangeListenerIds:            slices.Collect(maps.Keys(self.providePausedChangeListeners)),
-					ProvideNetworkModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
-					OfflineChangeListenerIds:                  slices.Collect(maps.Keys(self.offlineChangeListeners)),
-					VpnInterfaceWhileOfflineChangeListenerIds: slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
-					ConnectChangeListenerIds:                  slices.Collect(maps.Keys(self.connectChangeListeners)),
-					RouteLocalChangeListenerIds:               slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
-					BlockerEnabledChangeListenerIds:           slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
-					ConnectLocationChangeListenerIds:          slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
-					DefaultLocationChangeListenerIds:          slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
-					ProvideSecretKeysListenerIds:              slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
-					TunnelChangeListenerIds:                   slices.Collect(maps.Keys(self.tunnelChangeListeners)),
-					ContractStatusChangeListenerIds:           slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
-					WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
-					BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
-					BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
-					BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
-					PacketStatsChangeListenerIds:              slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
-					EgressContractStatsChangeListenerIds:      slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
-					EgressContractDetailsChangeListenerIds:    slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
-					IngressContractStatsChangeListenerIds:     slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
-					IngressContractDetailsChangeListenerIds:   slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
-					DnsResolverSettingsChangeListenerIds:      slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
-					NetworkPeersChangeListenerIds:             slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
+					CanShowRatingDialogChangeListenerIds:       slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
+					CanPromptIntroFunnelChangeListenerIds:      slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
+					AllowForegroundChangeListenerIds:           slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
+					CanReferChangeListenerIds:                  slices.Collect(maps.Keys(self.canReferChangeListeners)),
+					ProvideModeChangeListenerIds:               slices.Collect(maps.Keys(self.provideModeChangeListeners)),
+					ProvideChangeListenerIds:                   slices.Collect(maps.Keys(self.provideChangeListeners)),
+					ProvideControlModeChangeListenerIds:        slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
+					PerformanceProfileChangeListenerIds:        slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
+					ProviderIdentityChangeListenerIds:          slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
+					ProvidePausedChangeListenerIds:             slices.Collect(maps.Keys(self.providePausedChangeListeners)),
+					ProvideNetworkModeChangeListenerIds:        slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
+					OfflineChangeListenerIds:                   slices.Collect(maps.Keys(self.offlineChangeListeners)),
+					VpnInterfaceWhileOfflineChangeListenerIds:  slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
+					ConnectChangeListenerIds:                   slices.Collect(maps.Keys(self.connectChangeListeners)),
+					RouteLocalChangeListenerIds:                slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
+					BlockerEnabledChangeListenerIds:            slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
+					ConnectLocationChangeListenerIds:           slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
+					DefaultLocationChangeListenerIds:           slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
+					ProvideSecretKeysListenerIds:               slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
+					TunnelChangeListenerIds:                    slices.Collect(maps.Keys(self.tunnelChangeListeners)),
+					ContractStatusChangeListenerIds:            slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
+					WindowStatusChangeListenerIds:              slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
+					BlockActionWindowChangeListenerIds:         slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
+					BlockStatsChangeListenerIds:                slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
+					BlockActionOverridesChangeListenerIds:      slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
+					TransportSettingsChangeListenerIds:         slices.Collect(maps.Keys(self.transportSettingsChangeListeners)),
+					ProviderTransportSettingsChangeListenerIds: slices.Collect(maps.Keys(self.providerTransportSettingsChangeListeners)),
+					PacketStatsChangeListenerIds:               slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
+					EgressContractStatsChangeListenerIds:       slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
+					EgressContractDetailsChangeListenerIds:     slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
+					IngressContractStatsChangeListenerIds:      slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
+					IngressContractDetailsChangeListenerIds:    slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
+					DnsResolverSettingsChangeListenerIds:       slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
+					NetworkPeersChangeListenerIds:              slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
 
 					ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
 					ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
@@ -1496,12 +1560,15 @@ func (self *DeviceRemote) GetBlockerEnabled() bool {
 	}
 }
 
-func addListener[T any](
+type listenerRpcCall func(*rpcClient, string, any, func()) error
+
+func addListenerWithRpcCall[T any](
 	deviceRemote *DeviceRemote,
 	listener T,
 	listeners map[connect.Id]T,
 	addServiceFunc string,
 	removeServiceFunc string,
+	rpcCall listenerRpcCall,
 ) Sub {
 	deviceRemote.stateLock.Lock()
 	defer deviceRemote.stateLock.Unlock()
@@ -1509,7 +1576,7 @@ func addListener[T any](
 	listenerId := connect.NewId()
 	listeners[listenerId] = listener
 	if deviceRemote.service != nil {
-		rpcCallVoid(deviceRemote.service, addServiceFunc, listenerId, deviceRemote.closeService)
+		rpcCall(deviceRemote.service, addServiceFunc, listenerId, deviceRemote.closeService)
 	}
 
 	return newSub(func() {
@@ -1518,9 +1585,49 @@ func addListener[T any](
 
 		delete(listeners, listenerId)
 		if deviceRemote.service != nil {
-			rpcCallVoid(deviceRemote.service, removeServiceFunc, listenerId, deviceRemote.closeService)
+			rpcCall(deviceRemote.service, removeServiceFunc, listenerId, deviceRemote.closeService)
 		}
 	})
+}
+
+func addListener[T any](
+	deviceRemote *DeviceRemote,
+	listener T,
+	listeners map[connect.Id]T,
+	addServiceFunc string,
+	removeServiceFunc string,
+) Sub {
+	return addListenerWithRpcCall(
+		deviceRemote,
+		listener,
+		listeners,
+		addServiceFunc,
+		removeServiceFunc,
+		rpcCallVoid,
+	)
+}
+
+// addCompatibleListener is for a listener added to an otherwise compatible
+// RPC version. A newly updated app can still be attached to the old extension
+// process during a rolling install; an unknown listener method must degrade to
+// getter-only state until that process restarts, not tear down a healthy RPC
+// session. Listener IDs are also carried by Sync, so a current peer retains
+// the ordinary reconnect and level-replay behavior.
+func addCompatibleListener[T any](
+	deviceRemote *DeviceRemote,
+	listener T,
+	listeners map[connect.Id]T,
+	addServiceFunc string,
+	removeServiceFunc string,
+) Sub {
+	return addListenerWithRpcCall(
+		deviceRemote,
+		listener,
+		listeners,
+		addServiceFunc,
+		removeServiceFunc,
+		rpcCallVoidAllowMissingMethod,
+	)
 }
 
 func (self *DeviceRemote) AddProvideChangeListener(listener ProvideChangeListener) Sub {
@@ -3624,6 +3731,38 @@ func (self *DeviceRemote) providerIngressContractDetailsChanged(contractDetails 
 	}
 }
 
+func (self *DeviceRemote) transportSettingsChanged(settingsRpc *TransportSettingsRpc) {
+	transportSettings := settingsRpc.toTransportSettings(false)
+	settingsRpc = newTransportSettingsRpc(transportSettings, false)
+	listenerList := func() []TransportSettingsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.TransportSettings.Set(settingsRpc)
+		return listenerList(self.transportSettingsChangeListeners)
+	}()
+	for _, listener := range listenerList {
+		connect.HandleError(func() {
+			listener.TransportSettingsChanged(cloneTransportSettings(transportSettings))
+		})
+	}
+}
+
+func (self *DeviceRemote) providerTransportSettingsChanged(settingsRpc *TransportSettingsRpc) {
+	transportSettings := settingsRpc.toTransportSettings(true)
+	settingsRpc = newTransportSettingsRpc(transportSettings, true)
+	listenerList := func() []ProviderTransportSettingsChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.lastKnownState.ProviderTransportSettings.Set(settingsRpc)
+		return listenerList(self.providerTransportSettingsChangeListeners)
+	}()
+	for _, listener := range listenerList {
+		connect.HandleError(func() {
+			listener.ProviderTransportSettingsChanged(cloneTransportSettings(transportSettings))
+		})
+	}
+}
+
 func (self *DeviceRemote) dnsResolverSettingsChanged(settingsRpc *DnsResolverSettingsRpc) {
 	listenerList := func() []DnsResolverSettingsChangeListener {
 		self.stateLock.Lock()
@@ -3680,6 +3819,15 @@ func (self *DeviceRemote) windowMonitorEvent(
 
 // safe to call on multiple goroutines
 func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+	if self.settings.httpMaxBodyBytes() < len(requestBodyBytes) {
+		return nil, fmt.Errorf("device rpc http request exceeds %d-byte limit", self.settings.httpMaxBodyBytes())
+	}
+	releaseHttp, ok := self.acquireHttp(ctx)
+	if !ok {
+		return nil, fmt.Errorf("Done")
+	}
+	defer releaseHttp()
+
 	// if server is set, use remote
 	// else use local
 
@@ -3705,6 +3853,7 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 		}
 
 		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+		defer self.removeHttpResponseChannel(httpRequestId, httpResponseChannel)
 
 		var err error
 		func() {
@@ -3719,7 +3868,11 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 				close(httpResponseChannel)
 				return
 			}
-			err = rpcCallVoid(self.service, "DeviceLocalRpc.HttpPostRaw", httpRequest, self.closeService)
+			err = rpcCallHttpVoid(self.service, "DeviceLocalRpc.HttpPostRaw", httpRequest, self.closeService)
+			// Encoding is complete once the forward RPC returns; do not retain a
+			// request body for the entire remote fetch/response lifetime.
+			httpRequest.RequestBodyBytes = nil
+			requestBodyBytes = nil
 			if err != nil {
 				close(httpResponseChannel)
 				return
@@ -3754,6 +3907,12 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 
 // safe to call on multiple goroutines
 func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
+	releaseHttp, ok := self.acquireHttp(ctx)
+	if !ok {
+		return nil, fmt.Errorf("Done")
+	}
+	defer releaseHttp()
+
 	// if server is set, use remote
 	// else use local
 
@@ -3778,6 +3937,7 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 		}
 
 		httpResponseChannel := make(chan *DeviceRemoteHttpResponse)
+		defer self.removeHttpResponseChannel(httpRequestId, httpResponseChannel)
 
 		var err error
 		func() {
@@ -3792,7 +3952,7 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 				close(httpResponseChannel)
 				return
 			}
-			err = rpcCallVoid(self.service, "DeviceLocalRpc.HttpGetRaw", httpRequest, self.closeService)
+			err = rpcCallHttpVoid(self.service, "DeviceLocalRpc.HttpGetRaw", httpRequest, self.closeService)
 			if err != nil {
 				close(httpResponseChannel)
 				return
@@ -3824,7 +3984,40 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 	}
 }
 
+func (self *DeviceRemote) acquireHttp(ctx context.Context) (release func(), ok bool) {
+	self.httpSemOnce.Do(func() {
+		self.httpSem = make(chan struct{}, self.settings.httpMaxConcurrent())
+	})
+	select {
+	case self.httpSem <- struct{}{}:
+		return func() { <-self.httpSem }, true
+	case <-ctx.Done():
+		return func() {}, false
+	case <-self.ctx.Done():
+		return func() {}, false
+	}
+}
+
+func (self *DeviceRemote) removeHttpResponseChannel(
+	requestId connect.Id,
+	responseChannel chan *DeviceRemoteHttpResponse,
+) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if current, ok := self.httpResponseChannels[requestId]; ok && current == responseChannel {
+		delete(self.httpResponseChannels, requestId)
+	}
+}
+
 func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
+	if self.settings.httpMaxBodyBytes() < len(httpResponse.BodyBytes) {
+		httpResponse = newDeviceRemoteHttpResponseWithLimit(
+			httpResponse.RequestId,
+			nil,
+			fmt.Errorf("device rpc http response exceeds %d-byte limit", self.settings.httpMaxBodyBytes()),
+			self.settings.httpMaxBodyBytes(),
+		)
+	}
 	httpRequestId := httpResponse.RequestId
 
 	var ok bool
@@ -4162,7 +4355,7 @@ func (self *DeviceRemote) GetPacketStats() *PacketStats {
 		if err != nil {
 			return nil, false
 		}
-		return stats.PacketStats, true
+		return stats.PacketStats.toPacketStats(true), true
 	}()
 	if success {
 		return packetStats
@@ -4326,7 +4519,7 @@ func (self *DeviceRemote) GetProviderPacketStats() *PacketStats {
 		if err != nil {
 			return nil, false
 		}
-		return stats.PacketStats, true
+		return stats.PacketStats.toPacketStats(true), true
 	}()
 	if success {
 		return packetStats
@@ -4554,6 +4747,141 @@ func (self *DeviceRemote) AddDnsResolverSettingsChangeListener(listener DnsResol
 		self.dnsResolverSettingsChangeListeners,
 		"DeviceLocalRpc.AddDnsResolverSettingsChangeListener",
 		"DeviceLocalRpc.RemoveDnsResolverSettingsChangeListener",
+	)
+}
+
+// transport settings
+
+func (self *DeviceRemote) setTransportSettings(transportSettings *TransportSettings, provider bool) {
+	if self.settings.DisableHostedIncompatible {
+		self.log.Infof("[dr]hosted incompatible: transport settings ignored")
+		return
+	}
+	settingsRpc := newTransportSettingsRpc(transportSettings, provider)
+	event := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		var currentRpc *TransportSettingsRpc
+		if provider {
+			currentRpc = self.state.ProviderTransportSettings.Get(
+				self.lastKnownState.ProviderTransportSettings.Get(nil),
+			)
+		} else {
+			currentRpc = self.state.TransportSettings.Get(
+				self.lastKnownState.TransportSettings.Get(nil),
+			)
+		}
+		changed := !transportSettingsEqual(
+			currentRpc.toTransportSettings(provider),
+			settingsRpc.toTransportSettings(provider),
+			provider,
+		)
+
+		method := "DeviceLocalRpc.SetTransportSettings"
+		if provider {
+			method = "DeviceLocalRpc.SetProviderTransportSettings"
+		}
+		success := false
+		if self.service != nil {
+			deviceSettings := &DeviceRemoteTransportSettingsRpc{TransportSettings: settingsRpc}
+			success = rpcCallVoid(self.service, method, deviceSettings, self.closeService) == nil
+		}
+		if provider {
+			if success {
+				self.state.ProviderTransportSettings.Unset()
+				self.lastKnownState.ProviderTransportSettings.Set(settingsRpc)
+			} else {
+				self.state.ProviderTransportSettings.Set(settingsRpc)
+				event = changed
+			}
+		} else if success {
+			self.state.TransportSettings.Unset()
+			self.lastKnownState.TransportSettings.Set(settingsRpc)
+		} else {
+			self.state.TransportSettings.Set(settingsRpc)
+			event = changed
+		}
+	}()
+	if event {
+		if provider {
+			self.providerTransportSettingsChanged(settingsRpc)
+		} else {
+			self.transportSettingsChanged(settingsRpc)
+		}
+	}
+}
+
+func (self *DeviceRemote) SetTransportSettings(transportSettings *TransportSettings) {
+	self.setTransportSettings(transportSettings, false)
+}
+
+func (self *DeviceRemote) SetProviderTransportSettings(transportSettings *TransportSettings) {
+	self.setTransportSettings(transportSettings, true)
+}
+
+func (self *DeviceRemote) getTransportSettings(provider bool) *TransportSettings {
+	if self.settings.DisableHostedIncompatible {
+		return hostedTransportSettings()
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	method := "DeviceLocalRpc.GetTransportSettings"
+	if provider {
+		method = "DeviceLocalRpc.GetProviderTransportSettings"
+	}
+	if self.service != nil {
+		deviceSettings, err := rpcCallNoArg[*DeviceRemoteTransportSettingsRpc](self.service, method, self.closeService)
+		if err == nil && deviceSettings != nil && deviceSettings.TransportSettings != nil {
+			if provider {
+				self.lastKnownState.ProviderTransportSettings.Set(deviceSettings.TransportSettings)
+			} else {
+				self.lastKnownState.TransportSettings.Set(deviceSettings.TransportSettings)
+			}
+			return deviceSettings.TransportSettings.toTransportSettings(provider)
+		}
+	}
+
+	var settingsRpc *TransportSettingsRpc
+	if provider {
+		settingsRpc = self.state.ProviderTransportSettings.Get(
+			self.lastKnownState.ProviderTransportSettings.Get(nil),
+		)
+	} else {
+		settingsRpc = self.state.TransportSettings.Get(
+			self.lastKnownState.TransportSettings.Get(nil),
+		)
+	}
+	return settingsRpc.toTransportSettings(provider)
+}
+
+func (self *DeviceRemote) GetTransportSettings() *TransportSettings {
+	return self.getTransportSettings(false)
+}
+
+func (self *DeviceRemote) AddTransportSettingsChangeListener(listener TransportSettingsChangeListener) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.transportSettingsChangeListeners,
+		"DeviceLocalRpc.AddTransportSettingsChangeListener",
+		"DeviceLocalRpc.RemoveTransportSettingsChangeListener",
+	)
+}
+
+func (self *DeviceRemote) GetProviderTransportSettings() *TransportSettings {
+	return self.getTransportSettings(true)
+}
+
+func (self *DeviceRemote) AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.providerTransportSettingsChangeListeners,
+		"DeviceLocalRpc.AddProviderTransportSettingsChangeListener",
+		"DeviceLocalRpc.RemoveProviderTransportSettingsChangeListener",
 	)
 }
 
@@ -5236,8 +5564,10 @@ type DeviceRemoteState struct {
 	TunnelStarted                   deviceRemoteValue[bool]
 	// the full overrides list is one synced value.
 	// add/remove/set on the remote all funnel through it
-	BlockActionOverrides deviceRemoteValue[[]*BlockActionOverrideRpc]
-	DnsResolverSettings  deviceRemoteValue[*DnsResolverSettingsRpc]
+	BlockActionOverrides      deviceRemoteValue[[]*BlockActionOverrideRpc]
+	DnsResolverSettings       deviceRemoteValue[*DnsResolverSettingsRpc]
+	TransportSettings         deviceRemoteValue[*TransportSettingsRpc]
+	ProviderTransportSettings deviceRemoteValue[*TransportSettingsRpc]
 	// the runtime reliability settings override. Unlike the fields above this
 	// is runtime-only state on the local (nothing persists it), so the remote
 	// keeps it queued across syncs and re-applies it on every reconnect and
@@ -5354,8 +5684,11 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 //   - a field's MEANING changes while its name and type stay the same (gob
 //     cannot see this at all)
 //
-// Adding or removing a field is tolerated by gob and does NOT require a bump.
-const DeviceRpcVersion = 1
+// Adding or removing an optional field is tolerated by gob and normally does
+// NOT require a bump. A new field that represents required settable state does:
+// otherwise a new remote can report the setting as accepted while an old local
+// silently ignores it. Version 2 establishes the transport-settings contract.
+const DeviceRpcVersion = 2
 
 //gomobile:noexport
 type DeviceRemoteSyncRequest struct {
@@ -5374,40 +5707,42 @@ type DeviceRemoteSyncRequest struct {
 	// misread state. Zero skips the check (older remote).
 	RpcVersion int
 
-	CanShowRatingDialogChangeListenerIds      []connect.Id
-	CanPromptIntroFunnelChangeListenerIds     []connect.Id
-	AllowForegroundChangeListenerIds          []connect.Id
-	CanReferChangeListenerIds                 []connect.Id
-	ProvideModeChangeListenerIds              []connect.Id
-	ProvideChangeListenerIds                  []connect.Id
-	ProvideControlModeChangeListenerIds       []connect.Id
-	PerformanceProfileChangeListenerIds       []connect.Id
-	ProviderIdentityChangeListenerIds         []connect.Id
-	ProvidePausedChangeListenerIds            []connect.Id
-	ProvideNetworkModeChangeListenerIds       []connect.Id
-	OfflineChangeListenerIds                  []connect.Id
-	VpnInterfaceWhileOfflineChangeListenerIds []connect.Id
-	ConnectChangeListenerIds                  []connect.Id
-	RouteLocalChangeListenerIds               []connect.Id
-	BlockerEnabledChangeListenerIds           []connect.Id
-	ConnectLocationChangeListenerIds          []connect.Id
-	DefaultLocationChangeListenerIds          []connect.Id
-	ProvideSecretKeysListenerIds              []connect.Id
-	TunnelChangeListenerIds                   []connect.Id
-	ContractStatusChangeListenerIds           []connect.Id
-	WindowStatusChangeListenerIds             []connect.Id
-	BlockActionWindowChangeListenerIds        []connect.Id
-	BlockStatsChangeListenerIds               []connect.Id
-	BlockActionOverridesChangeListenerIds     []connect.Id
-	PacketStatsChangeListenerIds              []connect.Id
-	EgressContractStatsChangeListenerIds      []connect.Id
-	EgressContractDetailsChangeListenerIds    []connect.Id
-	IngressContractStatsChangeListenerIds     []connect.Id
-	IngressContractDetailsChangeListenerIds   []connect.Id
-	DnsResolverSettingsChangeListenerIds      []connect.Id
-	NetworkPeersChangeListenerIds             []connect.Id
-	WindowMonitorEventListenerIds             map[connect.Id][]connect.Id
-	State                                     DeviceRemoteState
+	CanShowRatingDialogChangeListenerIds       []connect.Id
+	CanPromptIntroFunnelChangeListenerIds      []connect.Id
+	AllowForegroundChangeListenerIds           []connect.Id
+	CanReferChangeListenerIds                  []connect.Id
+	ProvideModeChangeListenerIds               []connect.Id
+	ProvideChangeListenerIds                   []connect.Id
+	ProvideControlModeChangeListenerIds        []connect.Id
+	PerformanceProfileChangeListenerIds        []connect.Id
+	ProviderIdentityChangeListenerIds          []connect.Id
+	ProvidePausedChangeListenerIds             []connect.Id
+	ProvideNetworkModeChangeListenerIds        []connect.Id
+	OfflineChangeListenerIds                   []connect.Id
+	VpnInterfaceWhileOfflineChangeListenerIds  []connect.Id
+	ConnectChangeListenerIds                   []connect.Id
+	RouteLocalChangeListenerIds                []connect.Id
+	BlockerEnabledChangeListenerIds            []connect.Id
+	ConnectLocationChangeListenerIds           []connect.Id
+	DefaultLocationChangeListenerIds           []connect.Id
+	ProvideSecretKeysListenerIds               []connect.Id
+	TunnelChangeListenerIds                    []connect.Id
+	ContractStatusChangeListenerIds            []connect.Id
+	WindowStatusChangeListenerIds              []connect.Id
+	BlockActionWindowChangeListenerIds         []connect.Id
+	BlockStatsChangeListenerIds                []connect.Id
+	BlockActionOverridesChangeListenerIds      []connect.Id
+	TransportSettingsChangeListenerIds         []connect.Id
+	ProviderTransportSettingsChangeListenerIds []connect.Id
+	PacketStatsChangeListenerIds               []connect.Id
+	EgressContractStatsChangeListenerIds       []connect.Id
+	EgressContractDetailsChangeListenerIds     []connect.Id
+	IngressContractStatsChangeListenerIds      []connect.Id
+	IngressContractDetailsChangeListenerIds    []connect.Id
+	DnsResolverSettingsChangeListenerIds       []connect.Id
+	NetworkPeersChangeListenerIds              []connect.Id
+	WindowMonitorEventListenerIds              map[connect.Id][]connect.Id
+	State                                      DeviceRemoteState
 
 	ProviderPacketStatsChangeListenerIds            []connect.Id
 	ProviderEgressContractStatsChangeListenerIds    []connect.Id
@@ -6229,7 +6564,99 @@ type DeviceRemoteLocalOverrideAppIds struct {
 
 //gomobile:noexport
 type DeviceRemotePacketStats struct {
-	PacketStats *PacketStats
+	PacketStats *PacketStatsRpc
+}
+
+//gomobile:noexport
+type TransportPacketStatsRpc struct {
+	TransportType TransportType
+	Stats         *PacketStatsRpc
+}
+
+// PacketStatsRpc is the explicit gob mirror. TransportPacketStatsList keeps
+// its gomobile-safe slice unexported, so embedding the public PacketStats
+// directly would silently erase the carrier breakdown over RPC.
+//
+//gomobile:noexport
+type PacketStatsRpc struct {
+	RemoteEgressPacketCount  int64
+	RemoteEgressByteCount    ByteCount
+	RemoteIngressPacketCount int64
+	RemoteIngressByteCount   ByteCount
+	LocalEgressPacketCount   int64
+	LocalEgressByteCount     ByteCount
+	LocalIngressPacketCount  int64
+	LocalIngressByteCount    ByteCount
+	BlockEgressPacketCount   int64
+	BlockEgressByteCount     ByteCount
+	BlockIngressPacketCount  int64
+	BlockIngressByteCount    ByteCount
+	TransportStats           []*TransportPacketStatsRpc
+}
+
+func newPacketStatsRpc(stats *PacketStats, includeTransportStats bool) *PacketStatsRpc {
+	if stats == nil {
+		return nil
+	}
+	rpc := &PacketStatsRpc{
+		RemoteEgressPacketCount:  stats.RemoteEgressPacketCount,
+		RemoteEgressByteCount:    stats.RemoteEgressByteCount,
+		RemoteIngressPacketCount: stats.RemoteIngressPacketCount,
+		RemoteIngressByteCount:   stats.RemoteIngressByteCount,
+		LocalEgressPacketCount:   stats.LocalEgressPacketCount,
+		LocalEgressByteCount:     stats.LocalEgressByteCount,
+		LocalIngressPacketCount:  stats.LocalIngressPacketCount,
+		LocalIngressByteCount:    stats.LocalIngressByteCount,
+		BlockEgressPacketCount:   stats.BlockEgressPacketCount,
+		BlockEgressByteCount:     stats.BlockEgressByteCount,
+		BlockIngressPacketCount:  stats.BlockIngressPacketCount,
+		BlockIngressByteCount:    stats.BlockIngressByteCount,
+	}
+	if includeTransportStats && stats.TransportStats != nil {
+		for _, transportStats := range stats.TransportStats.getAll() {
+			if transportStats == nil {
+				continue
+			}
+			rpc.TransportStats = append(rpc.TransportStats, &TransportPacketStatsRpc{
+				TransportType: transportStats.TransportType,
+				Stats:         newPacketStatsRpc(transportStats.Stats, false),
+			})
+		}
+	}
+	return rpc
+}
+
+func (self *PacketStatsRpc) toPacketStats(includeTransportStats bool) *PacketStats {
+	if self == nil {
+		return nil
+	}
+	stats := &PacketStats{
+		RemoteEgressPacketCount:  self.RemoteEgressPacketCount,
+		RemoteEgressByteCount:    self.RemoteEgressByteCount,
+		RemoteIngressPacketCount: self.RemoteIngressPacketCount,
+		RemoteIngressByteCount:   self.RemoteIngressByteCount,
+		LocalEgressPacketCount:   self.LocalEgressPacketCount,
+		LocalEgressByteCount:     self.LocalEgressByteCount,
+		LocalIngressPacketCount:  self.LocalIngressPacketCount,
+		LocalIngressByteCount:    self.LocalIngressByteCount,
+		BlockEgressPacketCount:   self.BlockEgressPacketCount,
+		BlockEgressByteCount:     self.BlockEgressByteCount,
+		BlockIngressPacketCount:  self.BlockIngressPacketCount,
+		BlockIngressByteCount:    self.BlockIngressByteCount,
+	}
+	if includeTransportStats {
+		stats.TransportStats = NewTransportPacketStatsList()
+		for _, transportStats := range self.TransportStats {
+			if transportStats == nil {
+				continue
+			}
+			stats.TransportStats.Add(&TransportPacketStats{
+				TransportType: transportStats.TransportType,
+				Stats:         transportStats.Stats.toPacketStats(false),
+			})
+		}
+	}
+	return stats
 }
 
 //gomobile:noexport
@@ -6253,6 +6680,59 @@ type DeviceRemoteContractDetailsList struct {
 //gomobile:noexport
 type DeviceRemoteDnsResolverSettings struct {
 	DnsResolverSettings *DnsResolverSettingsRpc
+}
+
+//gomobile:noexport
+type TransportModePriorityRpc struct {
+	Mode     TransportMode
+	Priority int
+}
+
+//gomobile:noexport
+type TransportSettingsRpc struct {
+	Mode               TransportMode
+	AutoModePriorities []*TransportModePriorityRpc
+}
+
+func newTransportSettingsRpc(settings *TransportSettings, provider bool) *TransportSettingsRpc {
+	settings = normalizeTransportSettings(settings, provider)
+	priorities := make([]*TransportModePriorityRpc, 0, settings.AutoModePriorities.Len())
+	for _, priority := range settings.AutoModePriorities.getAll() {
+		if priority != nil {
+			priorities = append(priorities, &TransportModePriorityRpc{
+				Mode:     priority.Mode,
+				Priority: priority.Priority,
+			})
+		}
+	}
+	return &TransportSettingsRpc{
+		Mode:               settings.Mode,
+		AutoModePriorities: priorities,
+	}
+}
+
+func (self *TransportSettingsRpc) toTransportSettings(provider bool) *TransportSettings {
+	if self == nil {
+		return normalizeTransportSettings(nil, provider)
+	}
+	priorities := NewTransportModePriorityList()
+	for _, priority := range self.AutoModePriorities {
+		if priority != nil {
+			priorities.Add(&TransportModePriority{
+				Mode:     priority.Mode,
+				Priority: priority.Priority,
+			})
+		}
+	}
+	return normalizeTransportSettings(&TransportSettings{
+		Mode:               self.Mode,
+		AutoModePriorities: priorities,
+	}, provider)
+}
+
+//gomobile:noexport
+type DeviceRemoteTransportSettingsRpc struct {
+	TransportSettings *TransportSettingsRpc
 }
 
 //gomobile:noexport
@@ -6582,6 +7062,56 @@ func rpcCallVoid(service *rpcClient, name string, arg any, cleanup func()) error
 	return err
 }
 
+// rpcCallVoidAllowMissingMethod preserves a live connection when an older
+// peer does not yet expose an optional method. net/rpc reports that condition
+// as an application-level ServerError; every transport error and every other
+// server error retains the ordinary teardown behavior.
+func rpcCallVoidAllowMissingMethod(service *rpcClient, name string, arg any, cleanup func()) error {
+	if arg == nil {
+		panic("rpc cannot have nil args")
+	}
+	var void RpcVoid
+	service.log.Infof("[rpc]%s", name)
+	err := service.Call(name, arg, &void)
+	if err != nil {
+		service.log.Infof("[rpc]%s err = %s", name, err)
+		if !rpcMissingMethodError(err) {
+			cleanup()
+		}
+	}
+	return err
+}
+
+func rpcMissingMethodError(err error) bool {
+	var serverError rpc.ServerError
+	return errors.As(err, &serverError) &&
+		strings.HasPrefix(string(serverError), "rpc: can't find method ")
+}
+
+// rpcCallHttpVoid keeps application-level rejections (body/concurrency limits)
+// scoped to the HTTP request. net/rpc reports those as rpc.ServerError; only a
+// transport failure should tear down the otherwise healthy tunnel RPC session.
+func rpcCallHttpVoid(service *rpcClient, name string, arg any, cleanup func()) error {
+	if arg == nil {
+		panic("rpc cannot have nil args")
+	}
+	var void RpcVoid
+	service.log.Infof("[rpc]%s", name)
+	err := service.Call(name, arg, &void)
+	if err != nil {
+		service.log.Infof("[rpc]%s err = %s", name, err)
+		if httpRpcErrorRequiresCleanup(err) {
+			cleanup()
+		}
+	}
+	return err
+}
+
+func httpRpcErrorRequiresCleanup(err error) bool {
+	var serverError rpc.ServerError
+	return !errors.As(err, &serverError)
+}
+
 func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 	var noarg RpcNoArg
 	var void RpcVoid
@@ -6636,6 +7166,24 @@ type DeviceRemoteHttpResponse struct {
 }
 
 func newDeviceRemoteHttpResponse(requestId connect.Id, bodyBytes []byte, err error) *DeviceRemoteHttpResponse {
+	return newDeviceRemoteHttpResponseWithLimit(
+		requestId,
+		bodyBytes,
+		err,
+		deviceRpcDefaultHttpMaxBodyBytes,
+	)
+}
+
+func newDeviceRemoteHttpResponseWithLimit(requestId connect.Id, bodyBytes []byte, err error, maxBodyBytes int) *DeviceRemoteHttpResponse {
+	if maxBodyBytes <= 0 {
+		maxBodyBytes = deviceRpcDefaultHttpMaxBodyBytes
+	}
+	if maxBodyBytes < len(bodyBytes) {
+		bodyBytes = nil
+		if err == nil {
+			err = fmt.Errorf("device rpc http response exceeds %d-byte limit", maxBodyBytes)
+		}
+	}
 	httpResponse := &DeviceRemoteHttpResponse{
 		RequestId: requestId,
 		BodyBytes: bodyBytes,
@@ -6773,38 +7321,40 @@ type DeviceLocalRpc struct {
 
 	stateLock sync.Mutex
 
-	canShowRatingDialogChangeListenerIds      map[connect.Id]bool
-	canPromptIntroFunnelChangeListenerIds     map[connect.Id]bool
-	allowForegroundChangeListenerIds          map[connect.Id]bool
-	canReferChangeListenerIds                 map[connect.Id]bool
-	provideModeChangeListenerIds              map[connect.Id]bool
-	provideChangeListenerIds                  map[connect.Id]bool
-	provideControlModeChangeListenerIds       map[connect.Id]bool
-	performanceProfileChangeListenerIds       map[connect.Id]bool
-	providerIdentityChangeListenerIds         map[connect.Id]bool
-	providePausedChangeListenerIds            map[connect.Id]bool
-	provideNetworkModeChangeListenerIds       map[connect.Id]bool
-	offlineChangeListenerIds                  map[connect.Id]bool
-	vpnInterfaceWhileOfflineChangeListenerIds map[connect.Id]bool
-	connectChangeListenerIds                  map[connect.Id]bool
-	routeLocalChangeListenerIds               map[connect.Id]bool
-	blockerEnabledChangeListenerIds           map[connect.Id]bool
-	connectLocationChangeListenerIds          map[connect.Id]bool
-	defaultLocationChangeListenerIds          map[connect.Id]bool
-	provideSecretKeysListenerIds              map[connect.Id]bool
-	tunnelChangeListenerIds                   map[connect.Id]bool
-	contractStatusChangeListenerIds           map[connect.Id]bool
-	windowStatusChangeListenerIds             map[connect.Id]bool
-	blockActionWindowChangeListenerIds        map[connect.Id]bool
-	blockStatsChangeListenerIds               map[connect.Id]bool
-	blockActionOverridesChangeListenerIds     map[connect.Id]bool
-	packetStatsChangeListenerIds              map[connect.Id]bool
-	egressContractStatsChangeListenerIds      map[connect.Id]bool
-	egressContractDetailsChangeListenerIds    map[connect.Id]bool
-	ingressContractStatsChangeListenerIds     map[connect.Id]bool
-	ingressContractDetailsChangeListenerIds   map[connect.Id]bool
-	dnsResolverSettingsChangeListenerIds      map[connect.Id]bool
-	networkPeersChangeListenerIds             map[connect.Id]bool
+	canShowRatingDialogChangeListenerIds       map[connect.Id]bool
+	canPromptIntroFunnelChangeListenerIds      map[connect.Id]bool
+	allowForegroundChangeListenerIds           map[connect.Id]bool
+	canReferChangeListenerIds                  map[connect.Id]bool
+	provideModeChangeListenerIds               map[connect.Id]bool
+	provideChangeListenerIds                   map[connect.Id]bool
+	provideControlModeChangeListenerIds        map[connect.Id]bool
+	performanceProfileChangeListenerIds        map[connect.Id]bool
+	providerIdentityChangeListenerIds          map[connect.Id]bool
+	providePausedChangeListenerIds             map[connect.Id]bool
+	provideNetworkModeChangeListenerIds        map[connect.Id]bool
+	offlineChangeListenerIds                   map[connect.Id]bool
+	vpnInterfaceWhileOfflineChangeListenerIds  map[connect.Id]bool
+	connectChangeListenerIds                   map[connect.Id]bool
+	routeLocalChangeListenerIds                map[connect.Id]bool
+	blockerEnabledChangeListenerIds            map[connect.Id]bool
+	connectLocationChangeListenerIds           map[connect.Id]bool
+	defaultLocationChangeListenerIds           map[connect.Id]bool
+	provideSecretKeysListenerIds               map[connect.Id]bool
+	tunnelChangeListenerIds                    map[connect.Id]bool
+	contractStatusChangeListenerIds            map[connect.Id]bool
+	windowStatusChangeListenerIds              map[connect.Id]bool
+	blockActionWindowChangeListenerIds         map[connect.Id]bool
+	blockStatsChangeListenerIds                map[connect.Id]bool
+	blockActionOverridesChangeListenerIds      map[connect.Id]bool
+	transportSettingsChangeListenerIds         map[connect.Id]bool
+	providerTransportSettingsChangeListenerIds map[connect.Id]bool
+	packetStatsChangeListenerIds               map[connect.Id]bool
+	egressContractStatsChangeListenerIds       map[connect.Id]bool
+	egressContractDetailsChangeListenerIds     map[connect.Id]bool
+	ingressContractStatsChangeListenerIds      map[connect.Id]bool
+	ingressContractDetailsChangeListenerIds    map[connect.Id]bool
+	dnsResolverSettingsChangeListenerIds       map[connect.Id]bool
+	networkPeersChangeListenerIds              map[connect.Id]bool
 
 	providerPacketStatsChangeListenerIds            map[connect.Id]bool
 	providerEgressContractStatsChangeListenerIds    map[connect.Id]bool
@@ -6819,39 +7369,41 @@ type DeviceLocalRpc struct {
 	localWindowMonitor windowMonitor
 	localWindowId      connect.Id
 
-	canShowRatingDialogChangeListenerSub      Sub
-	canPromptIntroFunnelChangeListenerSub     Sub
-	allowForegroundChangeListenerSub          Sub
-	canReferChangeListenerSub                 Sub
-	provideModeChangeListenerSub              Sub
-	provideChangeListenerSub                  Sub
-	provideControlModeChangeListenerSub       Sub
-	performanceProfileChangeListenerSub       Sub
-	providerIdentityChangeListenerSub         Sub
-	providePausedChangeListenerSub            Sub
-	offlineChangeListenerSub                  Sub
-	vpnInterfaceWhileOfflineChangeListenerSub Sub
-	connectChangeListenerSub                  Sub
-	routeLocalChangeListenerSub               Sub
-	blockerEnabledChangeListenerSub           Sub
-	connectLocationChangeListenerSub          Sub
-	defaultLocationChangeListenerSub          Sub
-	provideSecretKeysListenerSub              Sub
-	provideNetworkModeChangeListenerSub       Sub
-	windowMonitorEventListenerSub             func()
-	tunnelChangeListenerSub                   Sub
-	contractStatusChangeListenerSub           Sub
-	windowStatusChangeListenerSub             Sub
-	blockActionWindowChangeListenerSub        Sub
-	blockStatsChangeListenerSub               Sub
-	blockActionOverridesChangeListenerSub     Sub
-	packetStatsChangeListenerSub              Sub
-	egressContractStatsChangeListenerSub      Sub
-	egressContractDetailsChangeListenerSub    Sub
-	ingressContractStatsChangeListenerSub     Sub
-	ingressContractDetailsChangeListenerSub   Sub
-	dnsResolverSettingsChangeListenerSub      Sub
-	networkPeersChangeListenerSub             Sub
+	canShowRatingDialogChangeListenerSub       Sub
+	canPromptIntroFunnelChangeListenerSub      Sub
+	allowForegroundChangeListenerSub           Sub
+	canReferChangeListenerSub                  Sub
+	provideModeChangeListenerSub               Sub
+	provideChangeListenerSub                   Sub
+	provideControlModeChangeListenerSub        Sub
+	performanceProfileChangeListenerSub        Sub
+	providerIdentityChangeListenerSub          Sub
+	providePausedChangeListenerSub             Sub
+	offlineChangeListenerSub                   Sub
+	vpnInterfaceWhileOfflineChangeListenerSub  Sub
+	connectChangeListenerSub                   Sub
+	routeLocalChangeListenerSub                Sub
+	blockerEnabledChangeListenerSub            Sub
+	connectLocationChangeListenerSub           Sub
+	defaultLocationChangeListenerSub           Sub
+	provideSecretKeysListenerSub               Sub
+	provideNetworkModeChangeListenerSub        Sub
+	windowMonitorEventListenerSub              func()
+	tunnelChangeListenerSub                    Sub
+	contractStatusChangeListenerSub            Sub
+	windowStatusChangeListenerSub              Sub
+	blockActionWindowChangeListenerSub         Sub
+	blockStatsChangeListenerSub                Sub
+	blockActionOverridesChangeListenerSub      Sub
+	transportSettingsChangeListenerSub         Sub
+	providerTransportSettingsChangeListenerSub Sub
+	packetStatsChangeListenerSub               Sub
+	egressContractStatsChangeListenerSub       Sub
+	egressContractDetailsChangeListenerSub     Sub
+	ingressContractStatsChangeListenerSub      Sub
+	ingressContractDetailsChangeListenerSub    Sub
+	dnsResolverSettingsChangeListenerSub       Sub
+	networkPeersChangeListenerSub              Sub
 
 	providerPacketStatsChangeListenerSub            Sub
 	providerEgressContractStatsChangeListenerSub    Sub
@@ -6870,10 +7422,10 @@ type DeviceLocalRpc struct {
 	sendSignal             chan struct{}
 	sendWindowMonitorEvent *DeviceRemoteWindowMonitorEvent
 
-	// bounds concurrent http-over-rpc fetch+deliver so a slow/suspended app cannot
-	// pile up unbounded request/response buffers (HttpPostRaw / HttpGetRaw). nil
-	// means unbounded (HttpMaxConcurrent <= 0).
-	httpSem chan struct{}
+	// Separately bounds fetch and delivery stages so a slow/suspended app cannot
+	// pile up request/response buffers (HttpPostRaw / HttpGetRaw).
+	httpSem         chan struct{}
+	httpDeliverySem chan struct{}
 }
 
 func newDeviceLocalRpc(
@@ -6886,50 +7438,52 @@ func newDeviceLocalRpc(
 	cancelCtx, cancel := context.WithCancel(ctx)
 
 	deviceLocalRpc := &DeviceLocalRpc{
-		ctx:                                       cancelCtx,
-		cancel:                                    cancel,
-		conn:                                      conn,
-		reverseConn:                               reverseConn,
-		deviceLocal:                               deviceLocal,
-		egressSecurityPolicy:                      deviceLocal.egressSecurityPolicy(),
-		ingressSecurityPolicy:                     deviceLocal.ingressSecurityPolicy(),
-		settings:                                  settings,
-		canShowRatingDialogChangeListenerIds:      map[connect.Id]bool{},
-		canPromptIntroFunnelChangeListenerIds:     map[connect.Id]bool{},
-		allowForegroundChangeListenerIds:          map[connect.Id]bool{},
-		canReferChangeListenerIds:                 map[connect.Id]bool{},
-		provideModeChangeListenerIds:              map[connect.Id]bool{},
-		provideChangeListenerIds:                  map[connect.Id]bool{},
-		provideControlModeChangeListenerIds:       map[connect.Id]bool{},
-		performanceProfileChangeListenerIds:       map[connect.Id]bool{},
-		providerIdentityChangeListenerIds:         map[connect.Id]bool{},
-		provideNetworkModeChangeListenerIds:       map[connect.Id]bool{},
-		providePausedChangeListenerIds:            map[connect.Id]bool{},
-		offlineChangeListenerIds:                  map[connect.Id]bool{},
-		vpnInterfaceWhileOfflineChangeListenerIds: map[connect.Id]bool{},
-		connectChangeListenerIds:                  map[connect.Id]bool{},
-		routeLocalChangeListenerIds:               map[connect.Id]bool{},
-		blockerEnabledChangeListenerIds:           map[connect.Id]bool{},
-		connectLocationChangeListenerIds:          map[connect.Id]bool{},
-		defaultLocationChangeListenerIds:          map[connect.Id]bool{},
-		provideSecretKeysListenerIds:              map[connect.Id]bool{},
-		windowMonitorEventListenerIds:             map[connect.Id]map[connect.Id]bool{},
-		tunnelChangeListenerIds:                   map[connect.Id]bool{},
-		contractStatusChangeListenerIds:           map[connect.Id]bool{},
-		windowStatusChangeListenerIds:             map[connect.Id]bool{},
-		blockActionWindowChangeListenerIds:        map[connect.Id]bool{},
-		blockStatsChangeListenerIds:               map[connect.Id]bool{},
-		blockActionOverridesChangeListenerIds:     map[connect.Id]bool{},
-		packetStatsChangeListenerIds:              map[connect.Id]bool{},
-		egressContractStatsChangeListenerIds:      map[connect.Id]bool{},
-		egressContractDetailsChangeListenerIds:    map[connect.Id]bool{},
-		ingressContractStatsChangeListenerIds:     map[connect.Id]bool{},
-		ingressContractDetailsChangeListenerIds:   map[connect.Id]bool{},
-		dnsResolverSettingsChangeListenerIds:      map[connect.Id]bool{},
-		networkPeersChangeListenerIds:             map[connect.Id]bool{},
-		localWindowIds:                            map[connect.Id]connect.Id{},
-		sendPending:                               map[string]func(){},
-		sendSignal:                                make(chan struct{}, 1),
+		ctx:                                        cancelCtx,
+		cancel:                                     cancel,
+		conn:                                       conn,
+		reverseConn:                                reverseConn,
+		deviceLocal:                                deviceLocal,
+		egressSecurityPolicy:                       deviceLocal.egressSecurityPolicy(),
+		ingressSecurityPolicy:                      deviceLocal.ingressSecurityPolicy(),
+		settings:                                   settings,
+		canShowRatingDialogChangeListenerIds:       map[connect.Id]bool{},
+		canPromptIntroFunnelChangeListenerIds:      map[connect.Id]bool{},
+		allowForegroundChangeListenerIds:           map[connect.Id]bool{},
+		canReferChangeListenerIds:                  map[connect.Id]bool{},
+		provideModeChangeListenerIds:               map[connect.Id]bool{},
+		provideChangeListenerIds:                   map[connect.Id]bool{},
+		provideControlModeChangeListenerIds:        map[connect.Id]bool{},
+		performanceProfileChangeListenerIds:        map[connect.Id]bool{},
+		providerIdentityChangeListenerIds:          map[connect.Id]bool{},
+		provideNetworkModeChangeListenerIds:        map[connect.Id]bool{},
+		providePausedChangeListenerIds:             map[connect.Id]bool{},
+		offlineChangeListenerIds:                   map[connect.Id]bool{},
+		vpnInterfaceWhileOfflineChangeListenerIds:  map[connect.Id]bool{},
+		connectChangeListenerIds:                   map[connect.Id]bool{},
+		routeLocalChangeListenerIds:                map[connect.Id]bool{},
+		blockerEnabledChangeListenerIds:            map[connect.Id]bool{},
+		connectLocationChangeListenerIds:           map[connect.Id]bool{},
+		defaultLocationChangeListenerIds:           map[connect.Id]bool{},
+		provideSecretKeysListenerIds:               map[connect.Id]bool{},
+		windowMonitorEventListenerIds:              map[connect.Id]map[connect.Id]bool{},
+		tunnelChangeListenerIds:                    map[connect.Id]bool{},
+		contractStatusChangeListenerIds:            map[connect.Id]bool{},
+		windowStatusChangeListenerIds:              map[connect.Id]bool{},
+		blockActionWindowChangeListenerIds:         map[connect.Id]bool{},
+		blockStatsChangeListenerIds:                map[connect.Id]bool{},
+		blockActionOverridesChangeListenerIds:      map[connect.Id]bool{},
+		transportSettingsChangeListenerIds:         map[connect.Id]bool{},
+		providerTransportSettingsChangeListenerIds: map[connect.Id]bool{},
+		packetStatsChangeListenerIds:               map[connect.Id]bool{},
+		egressContractStatsChangeListenerIds:       map[connect.Id]bool{},
+		egressContractDetailsChangeListenerIds:     map[connect.Id]bool{},
+		ingressContractStatsChangeListenerIds:      map[connect.Id]bool{},
+		ingressContractDetailsChangeListenerIds:    map[connect.Id]bool{},
+		dnsResolverSettingsChangeListenerIds:       map[connect.Id]bool{},
+		networkPeersChangeListenerIds:              map[connect.Id]bool{},
+		localWindowIds:                             map[connect.Id]connect.Id{},
+		sendPending:                                map[string]func(){},
+		sendSignal:                                 make(chan struct{}, 1),
 
 		providerPacketStatsChangeListenerIds:            map[connect.Id]bool{},
 		providerEgressContractStatsChangeListenerIds:    map[connect.Id]bool{},
@@ -6937,9 +7491,8 @@ func newDeviceLocalRpc(
 		providerIngressContractStatsChangeListenerIds:   map[connect.Id]bool{},
 		providerIngressContractDetailsChangeListenerIds: map[connect.Id]bool{},
 	}
-	if 0 < settings.HttpMaxConcurrent {
-		deviceLocalRpc.httpSem = make(chan struct{}, settings.HttpMaxConcurrent)
-	}
+	deviceLocalRpc.httpSem = make(chan struct{}, settings.httpMaxConcurrent())
+	deviceLocalRpc.httpDeliverySem = make(chan struct{}, settings.httpMaxConcurrent())
 
 	go connect.HandleError(deviceLocalRpc.run, cancel)
 	return deviceLocalRpc
@@ -7121,6 +7674,12 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for blockActionOverridesChangeListenerId, _ := range self.blockActionOverridesChangeListenerIds {
 		self.removeBlockActionOverridesChangeListener(blockActionOverridesChangeListenerId)
+	}
+	for transportSettingsChangeListenerId := range self.transportSettingsChangeListenerIds {
+		self.removeTransportSettingsChangeListener(transportSettingsChangeListenerId)
+	}
+	for providerTransportSettingsChangeListenerId := range self.providerTransportSettingsChangeListenerIds {
+		self.removeProviderTransportSettingsChangeListener(providerTransportSettingsChangeListenerId)
 	}
 	for packetStatsChangeListenerId, _ := range self.packetStatsChangeListenerIds {
 		self.removePacketStatsChangeListener(packetStatsChangeListenerId)
@@ -7358,6 +7917,8 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.TunnelStarted.Set(self.deviceLocal.GetTunnelStarted())
 	state.BlockActionOverrides.Set(newBlockActionOverridesRpc(self.deviceLocal.GetBlockActionOverrides()))
 	state.DnsResolverSettings.Set(newDnsResolverSettingsRpc(self.deviceLocal.GetDnsResolverSettings()))
+	state.TransportSettings.Set(newTransportSettingsRpc(self.deviceLocal.GetTransportSettings(), false))
+	state.ProviderTransportSettings.Set(newTransportSettingsRpc(self.deviceLocal.GetProviderTransportSettings(), true))
 	// the effective reliability settings (the override when one is set, the
 	// shipped defaults otherwise, and nil when the local has no multi
 	// client); lands in the remote's last known state. This is RESPONSE
@@ -7451,10 +8012,11 @@ func (self *DeviceLocalRpc) Sync(
 
 	state := syncRequest.State
 
-	// the hosted-incompatible fields (route local, provide settings, tunnel/vpn)
-	// are guarded: skipped here at the rpc layer, and hard-guarded again inside
-	// DeviceLocal. The remote's getters/listeners still see the real device
-	// state, so a hosted device keeps its platform-owned values.
+	// the hosted-incompatible fields (route local, provide settings, transport
+	// settings, tunnel/vpn) are guarded: skipped here at the rpc layer, and
+	// hard-guarded again inside DeviceLocal. The remote's getters/listeners still
+	// see the real device state, so a hosted device keeps its platform-owned
+	// values.
 	hostedIncompatible := self.settings.DisableHostedIncompatible
 
 	if state.CanShowRatingDialog.IsSet {
@@ -7505,6 +8067,14 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	if state.VpnInterfaceWhileOffline.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetVpnInterfaceWhileOffline(state.VpnInterfaceWhileOffline.Value)
+	}
+	// Apply carrier policy before destination state so a newly constructed
+	// window starts on the requested modes instead of immediately migrating.
+	if state.TransportSettings.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetTransportSettings(state.TransportSettings.Value.toTransportSettings(false))
+	}
+	if state.ProviderTransportSettings.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetProviderTransportSettings(state.ProviderTransportSettings.Value.toTransportSettings(true))
 	}
 	if state.RemoveDestination.IsSet {
 		self.deviceLocal.RemoveDestination()
@@ -7639,6 +8209,12 @@ func (self *DeviceLocalRpc) Sync(
 	}
 	for _, blockActionOverridesChangeListenerId := range syncRequest.BlockActionOverridesChangeListenerIds {
 		self.addBlockActionOverridesChangeListener(blockActionOverridesChangeListenerId)
+	}
+	for _, transportSettingsChangeListenerId := range syncRequest.TransportSettingsChangeListenerIds {
+		self.addTransportSettingsChangeListener(transportSettingsChangeListenerId)
+	}
+	for _, providerTransportSettingsChangeListenerId := range syncRequest.ProviderTransportSettingsChangeListenerIds {
+		self.addProviderTransportSettingsChangeListener(providerTransportSettingsChangeListenerId)
 	}
 	for _, packetStatsChangeListenerId := range syncRequest.PacketStatsChangeListenerIds {
 		self.addPacketStatsChangeListener(packetStatsChangeListenerId)
@@ -7795,6 +8371,12 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.blockActionOverridesChangeListenerSub != nil {
 		self.blockActionOverridesChanged(self.deviceLocal.GetBlockActionOverrides())
+	}
+	if self.transportSettingsChangeListenerSub != nil {
+		self.transportSettingsChanged(self.deviceLocal.GetTransportSettings())
+	}
+	if self.providerTransportSettingsChangeListenerSub != nil {
+		self.providerTransportSettingsChanged(self.deviceLocal.GetProviderTransportSettings())
 	}
 	if self.packetStatsChangeListenerSub != nil {
 		self.packetStatsChanged(self.deviceLocal.GetPacketStats())
@@ -8225,7 +8807,7 @@ func (self *DeviceLocalRpc) blockActionOverridesChanged(blockActionOverrides *Bl
 
 func (self *DeviceLocalRpc) GetPacketStats(_ RpcNoArg, stats **DeviceRemotePacketStats) error {
 	*stats = &DeviceRemotePacketStats{
-		PacketStats: self.deviceLocal.GetPacketStats(),
+		PacketStats: newPacketStatsRpc(self.deviceLocal.GetPacketStats(), true),
 	}
 	return nil
 }
@@ -8271,7 +8853,7 @@ func (self *DeviceLocalRpc) PacketStatsChanged(packetStats *PacketStats) {
 // enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) packetStatsChanged(packetStats *PacketStats) {
 	stats := &DeviceRemotePacketStats{
-		PacketStats: packetStats,
+		PacketStats: newPacketStatsRpc(packetStats, true),
 	}
 	self.reverseNotify("DeviceRemoteRpc.PacketStatsChanged", stats)
 }
@@ -8531,7 +9113,7 @@ func (self *DeviceLocalRpc) ingressContractDetailsChanged(contractDetails *Contr
 
 func (self *DeviceLocalRpc) GetProviderPacketStats(_ RpcNoArg, stats **DeviceRemotePacketStats) error {
 	*stats = &DeviceRemotePacketStats{
-		PacketStats: self.deviceLocal.GetProviderPacketStats(),
+		PacketStats: newPacketStatsRpc(self.deviceLocal.GetProviderPacketStats(), true),
 	}
 	return nil
 }
@@ -8570,7 +9152,7 @@ func (self *DeviceLocalRpc) removeProviderPacketStatsChangeListener(listenerId c
 // enqueues an async, coalescing reverse notification (see sendLoop)
 func (self *DeviceLocalRpc) providerPacketStatsChanged(packetStats *PacketStats) {
 	stats := &DeviceRemotePacketStats{
-		PacketStats: packetStats,
+		PacketStats: newPacketStatsRpc(packetStats, true),
 	}
 	self.reverseNotify("DeviceRemoteRpc.ProviderPacketStatsChanged", stats)
 }
@@ -8898,6 +9480,138 @@ func (self *DeviceLocalRpc) networkPeersChanged(networkPeers *NetworkPeers) {
 		NetworkPeers: newNetworkPeersRpc(networkPeers),
 	}
 	self.reverseNotify("DeviceRemoteRpc.NetworkPeersChanged", event)
+}
+
+// transport settings
+
+func (self *DeviceLocalRpc) AddTransportSettingsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addTransportSettingsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addTransportSettingsChangeListener(listenerId connect.Id) {
+	self.transportSettingsChangeListenerIds[listenerId] = true
+	if self.transportSettingsChangeListenerSub == nil {
+		self.transportSettingsChangeListenerSub = self.deviceLocal.AddTransportSettingsChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveTransportSettingsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeTransportSettingsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeTransportSettingsChangeListener(listenerId connect.Id) {
+	delete(self.transportSettingsChangeListenerIds, listenerId)
+	if len(self.transportSettingsChangeListenerIds) == 0 && self.transportSettingsChangeListenerSub != nil {
+		self.transportSettingsChangeListenerSub.Close()
+		self.transportSettingsChangeListenerSub = nil
+	}
+}
+
+// TransportSettingsChangeListener
+func (self *DeviceLocalRpc) TransportSettingsChanged(transportSettings *TransportSettings) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.transportSettingsChanged(transportSettings)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) transportSettingsChanged(transportSettings *TransportSettings) {
+	event := &DeviceRemoteTransportSettingsRpc{
+		TransportSettings: newTransportSettingsRpc(transportSettings, false),
+	}
+	self.reverseNotify("DeviceRemoteRpc.TransportSettingsChanged", event)
+}
+
+func (self *DeviceLocalRpc) AddProviderTransportSettingsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addProviderTransportSettingsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addProviderTransportSettingsChangeListener(listenerId connect.Id) {
+	self.providerTransportSettingsChangeListenerIds[listenerId] = true
+	if self.providerTransportSettingsChangeListenerSub == nil {
+		self.providerTransportSettingsChangeListenerSub = self.deviceLocal.AddProviderTransportSettingsChangeListener(self)
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveProviderTransportSettingsChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeProviderTransportSettingsChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeProviderTransportSettingsChangeListener(listenerId connect.Id) {
+	delete(self.providerTransportSettingsChangeListenerIds, listenerId)
+	if len(self.providerTransportSettingsChangeListenerIds) == 0 && self.providerTransportSettingsChangeListenerSub != nil {
+		self.providerTransportSettingsChangeListenerSub.Close()
+		self.providerTransportSettingsChangeListenerSub = nil
+	}
+}
+
+// ProviderTransportSettingsChangeListener
+func (self *DeviceLocalRpc) ProviderTransportSettingsChanged(transportSettings *TransportSettings) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.providerTransportSettingsChanged(transportSettings)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop)
+func (self *DeviceLocalRpc) providerTransportSettingsChanged(transportSettings *TransportSettings) {
+	event := &DeviceRemoteTransportSettingsRpc{
+		TransportSettings: newTransportSettingsRpc(transportSettings, true),
+	}
+	self.reverseNotify("DeviceRemoteRpc.ProviderTransportSettingsChanged", event)
+}
+
+func (self *DeviceLocalRpc) GetTransportSettings(_ RpcNoArg, deviceSettings **DeviceRemoteTransportSettingsRpc) error {
+	*deviceSettings = &DeviceRemoteTransportSettingsRpc{
+		TransportSettings: newTransportSettingsRpc(self.deviceLocal.GetTransportSettings(), false),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetTransportSettings(deviceSettings *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetTransportSettings") {
+		return nil
+	}
+	var settings *TransportSettingsRpc
+	if deviceSettings != nil {
+		settings = deviceSettings.TransportSettings
+	}
+	self.deviceLocal.SetTransportSettings(settings.toTransportSettings(false))
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProviderTransportSettings(_ RpcNoArg, deviceSettings **DeviceRemoteTransportSettingsRpc) error {
+	*deviceSettings = &DeviceRemoteTransportSettingsRpc{
+		TransportSettings: newTransportSettingsRpc(self.deviceLocal.GetProviderTransportSettings(), true),
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetProviderTransportSettings(deviceSettings *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProviderTransportSettings") {
+		return nil
+	}
+	var settings *TransportSettingsRpc
+	if deviceSettings != nil {
+		settings = deviceSettings.TransportSettings
+	}
+	self.deviceLocal.SetProviderTransportSettings(settings.toTransportSettings(true))
+	return nil
 }
 
 // reliability (see reliability_controls.go for the `DeviceLocal` side)
@@ -10309,29 +11023,54 @@ func (self *DeviceLocalRpc) RemoveConnectedProvider(clientId connect.Id, _ RpcVo
 	return nil
 }
 
-// acquireHttp bounds concurrent http-over-rpc fetch+deliver (HttpMaxConcurrent)
-// so a slow or suspended app cannot pile up unbounded in-flight request/response
-// buffers. Returns a release func, or ok=false if the rpc is shutting down. A nil
-// httpSem means unbounded.
-func (self *DeviceLocalRpc) acquireHttp() (release func(), ok bool) {
-	if self.httpSem == nil {
-		return func() {}, true
-	}
+// tryAcquireHttp admits work before a handler worker is created. It rejects
+// excess calls instead of leaving decoded request bodies in an unbounded set
+// of goroutines waiting on a semaphore. A current app applies matching
+// admission control before encoding requests, so this is primarily defensive
+// backpressure for older or incompatible peers.
+func (self *DeviceLocalRpc) tryAcquireHttp() (release func(), ok bool) {
 	select {
 	case self.httpSem <- struct{}{}:
 		return func() { <-self.httpSem }, true
+	case <-self.ctx.Done():
+		return func() {}, false
+	default:
+		return func() {}, false
+	}
+}
+
+// acquireHttpDelivery transfers a completed response into a separately
+// bounded delivery stage. A worker takes this before releasing its fetch slot,
+// so an older peer cannot create an unbounded set of response goroutines while
+// the app is suspended. Fetches can still continue after a response begins its
+// blocking reverse RPC, avoiding a scheduler handoff race at the fetch limit.
+func (self *DeviceLocalRpc) acquireHttpDelivery() (release func(), ok bool) {
+	select {
+	case self.httpDeliverySem <- struct{}{}:
+		return func() { <-self.httpDeliverySem }, true
 	case <-self.ctx.Done():
 		return func() {}, false
 	}
 }
 
 func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
+	if self.settings.httpMaxBodyBytes() < len(httpRequest.RequestBodyBytes) {
+		httpRequest.RequestBodyBytes = nil
+		return fmt.Errorf("device rpc http request exceeds %d-byte limit", self.settings.httpMaxBodyBytes())
+	}
+
+	release, ok := self.tryAcquireHttp()
+	if !ok {
+		return fmt.Errorf("device rpc http concurrency limit reached")
+	}
+
 	go connect.HandleError(func() {
-		release, ok := self.acquireHttp()
-		if !ok {
-			return
-		}
-		defer release()
+		fetchReleased := false
+		defer func() {
+			if !fetchReleased {
+				release()
+			}
+		}()
 
 		bodyBytes, err := connect.HttpPostWithStrategyRaw(
 			self.ctx,
@@ -10340,8 +11079,17 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 			httpRequest.RequestBodyBytes,
 			httpRequest.ByJwt,
 		)
+		httpRequest.RequestBodyBytes = nil
 
-		httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
+		httpResponse := newDeviceRemoteHttpResponseWithLimit(httpRequest.RequestId, bodyBytes, err, self.settings.httpMaxBodyBytes())
+		bodyBytes = nil
+		releaseDelivery, ok := self.acquireHttpDelivery()
+		if !ok {
+			return
+		}
+		release()
+		fetchReleased = true
+		defer releaseDelivery()
 		// deliver directly on this per-request goroutine rather than via the
 		// state-notification queue (sendLoop): http responses must not head-of-line
 		// block — or be blocked by — coalescing state notifications, and they are
@@ -10352,12 +11100,18 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 }
 
 func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ RpcVoid) error {
+	release, ok := self.tryAcquireHttp()
+	if !ok {
+		return fmt.Errorf("device rpc http concurrency limit reached")
+	}
+
 	go connect.HandleError(func() {
-		release, ok := self.acquireHttp()
-		if !ok {
-			return
-		}
-		defer release()
+		fetchReleased := false
+		defer func() {
+			if !fetchReleased {
+				release()
+			}
+		}()
 
 		bodyBytes, err := connect.HttpGetWithStrategyRaw(
 			self.ctx,
@@ -10366,7 +11120,15 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 			httpRequest.ByJwt,
 		)
 
-		httpResponse := newDeviceRemoteHttpResponse(httpRequest.RequestId, bodyBytes, err)
+		httpResponse := newDeviceRemoteHttpResponseWithLimit(httpRequest.RequestId, bodyBytes, err, self.settings.httpMaxBodyBytes())
+		bodyBytes = nil
+		releaseDelivery, ok := self.acquireHttpDelivery()
+		if !ok {
+			return
+		}
+		release()
+		fetchReleased = true
+		defer releaseDelivery()
 		// deliver directly on this per-request goroutine rather than via the
 		// state-notification queue (sendLoop): http responses must not head-of-line
 		// block — or be blocked by — coalescing state notifications, and they are
@@ -10652,7 +11414,7 @@ func (self *DeviceRemoteRpc) BlockActionOverridesChanged(event *DeviceRemoteBloc
 func (self *DeviceRemoteRpc) PacketStatsChanged(stats *DeviceRemotePacketStats, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]PacketStatsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.packetStatsChanged(stats.PacketStats)
+		self.deviceRemote.packetStatsChanged(stats.PacketStats.toPacketStats(true))
 	})
 	return nil
 }
@@ -10692,7 +11454,7 @@ func (self *DeviceRemoteRpc) IngressContractDetailsChanged(event *DeviceRemoteCo
 func (self *DeviceRemoteRpc) ProviderPacketStatsChanged(stats *DeviceRemotePacketStats, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ProviderPacketStatsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.providerPacketStatsChanged(stats.PacketStats)
+		self.deviceRemote.providerPacketStatsChanged(stats.PacketStats.toPacketStats(true))
 	})
 	return nil
 }
@@ -10725,6 +11487,22 @@ func (self *DeviceRemoteRpc) ProviderIngressContractDetailsChanged(event *Device
 	self.deviceRemote.log.Infof("[drrpc]ProviderIngressContractDetailsChanged")
 	self.dispatch(func() {
 		self.deviceRemote.providerIngressContractDetailsChanged(event.ContractDetails.toContractDetails())
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) TransportSettingsChanged(event *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]TransportSettingsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.transportSettingsChanged(event.TransportSettings)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ProviderTransportSettingsChanged(event *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ProviderTransportSettingsChanged")
+	self.dispatch(func() {
+		self.deviceRemote.providerTransportSettingsChanged(event.TransportSettings)
 	})
 	return nil
 }

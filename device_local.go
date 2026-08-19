@@ -514,11 +514,12 @@ type DeviceLocalSettings struct {
 	DisableLogging bool
 
 	// HostedIncompatible, when true, hard-guards the setters that must never
-	// change on a hosted (platform-embedded) device: route local and the
-	// provide settings, plus the identity/rpc setters that only make sense
+	// change on a hosted (platform-embedded) device: route local, provide and
+	// transport settings, plus the identity/rpc setters that only make sense
 	// for a locally-owned device. The guarded setters become no-ops; their
-	// getters and change listeners keep working. This is defense in depth
-	// alongside `DeviceLocalRpc.DisableHostedIncompatible`, which stops the
+	// getters and change listeners keep working. Hosted transport is pinned to
+	// H1. This is defense in depth alongside
+	// `DeviceLocalRpc.DisableHostedIncompatible`, which stops the
 	// same operations at the rpc layer — either alone is sufficient, both
 	// together mean nothing reachable can flip these on a hosted device.
 	HostedIncompatible bool
@@ -579,8 +580,9 @@ type DeviceLocal struct {
 
 	clientStrategy *connect.ClientStrategy
 
-	generatorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
-	provider      *deviceLocalProvider
+	generatorFunc           func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
+	apiMultiClientGenerator *connect.ApiMultiClientGenerator
+	provider                *deviceLocalProvider
 
 	stats *DeviceStats
 
@@ -696,6 +698,11 @@ type DeviceLocal struct {
 	// the platform flow-owner resolver for per-app pinning; re-applied to
 	// every multi client the device builds
 	flowOwnerLookup FlowOwnerLookup
+	// Client and provider carrier policies are restored before either side
+	// constructs a platform transport. They survive destination rebuilds and
+	// are cloned at every public boundary.
+	transportSettings         *TransportSettings
+	providerTransportSettings *TransportSettings
 	// the runtime reliability override, nil when none is set; re-applied to
 	// every multi client the device builds. The override lives on the multi
 	// client, which is rebuilt on every connect, so without this copy a
@@ -774,16 +781,18 @@ type DeviceLocal struct {
 	jwtRefreshListeners                      *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners                      *connect.CallbackList[AuthLogoutListener]
 
-	blockActionWindowChangeListeners      *connect.CallbackList[BlockActionWindowChangeListener]
-	blockStatsChangeListeners             *connect.CallbackList[BlockStatsChangeListener]
-	blockActionOverridesChangeListeners   *connect.CallbackList[BlockActionOverridesChangeListener]
-	packetStatsChangeListeners            *connect.CallbackList[PacketStatsChangeListener]
-	egressContractStatsChangeListeners    *connect.CallbackList[ContractStatsChangeListener]
-	egressContractDetailsChangeListeners  *connect.CallbackList[ContractDetailsChangeListener]
-	ingressContractStatsChangeListeners   *connect.CallbackList[ContractStatsChangeListener]
-	ingressContractDetailsChangeListeners *connect.CallbackList[ContractDetailsChangeListener]
-	dnsResolverSettingsChangeListeners    *connect.CallbackList[DnsResolverSettingsChangeListener]
-	networkPeersChangeListeners           *connect.CallbackList[NetworkPeersChangeListener]
+	blockActionWindowChangeListeners         *connect.CallbackList[BlockActionWindowChangeListener]
+	blockStatsChangeListeners                *connect.CallbackList[BlockStatsChangeListener]
+	blockActionOverridesChangeListeners      *connect.CallbackList[BlockActionOverridesChangeListener]
+	transportSettingsChangeListeners         *connect.CallbackList[TransportSettingsChangeListener]
+	providerTransportSettingsChangeListeners *connect.CallbackList[ProviderTransportSettingsChangeListener]
+	packetStatsChangeListeners               *connect.CallbackList[PacketStatsChangeListener]
+	egressContractStatsChangeListeners       *connect.CallbackList[ContractStatsChangeListener]
+	egressContractDetailsChangeListeners     *connect.CallbackList[ContractDetailsChangeListener]
+	ingressContractStatsChangeListeners      *connect.CallbackList[ContractStatsChangeListener]
+	ingressContractDetailsChangeListeners    *connect.CallbackList[ContractDetailsChangeListener]
+	dnsResolverSettingsChangeListeners       *connect.CallbackList[DnsResolverSettingsChangeListener]
+	networkPeersChangeListeners              *connect.CallbackList[NetworkPeersChangeListener]
 
 	providerPacketStatsChangeListeners            *connect.CallbackList[PacketStatsChangeListener]
 	providerEgressContractStatsChangeListeners    *connect.CallbackList[ContractStatsChangeListener]
@@ -1031,6 +1040,25 @@ func newDeviceLocalWithOverrides(
 	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
 
+	transportSettings := DefaultTransportSettings()
+	providerTransportSettings := DefaultProviderTransportSettings()
+	var localState *LocalState
+	if asyncLocalState := networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		localState = asyncLocalState.GetLocalState()
+		if !settings.HostedIncompatible {
+			if persisted := localState.GetTransportSettings(); persisted != nil {
+				transportSettings = normalizeTransportSettings(persisted, false)
+			}
+			if persisted := localState.GetProviderTransportSettings(); persisted != nil {
+				providerTransportSettings = normalizeTransportSettings(persisted, true)
+			}
+		}
+	}
+	if settings.HostedIncompatible {
+		transportSettings = hostedTransportSettings()
+		providerTransportSettings = hostedTransportSettings()
+	}
+
 	// (re)size the device's shared transfer budget pair and p2p admission
 	// from the final per-device memory shares: the settings constructor
 	// sized them from its default, and the caller may have overridden
@@ -1050,6 +1078,7 @@ func newDeviceLocalWithOverrides(
 
 	var provider *deviceLocalProvider
 	if settings.AllowProvider {
+		providerTransportMode, providerModePreferences := toConnectTransportPolicy(providerTransportSettings, true)
 		provider = newDeviceLocalProviderWithOverrides(
 			ctx,
 			networkSpace,
@@ -1060,6 +1089,8 @@ func newDeviceLocalWithOverrides(
 			clientId,
 			// the provider share of the device memory target
 			providerShareByteCount,
+			providerTransportMode,
+			providerModePreferences,
 		)
 	}
 
@@ -1117,9 +1148,11 @@ func newDeviceLocalWithOverrides(
 		clientStrategy:     clientStrategy,
 		// the dns share of the device memory target; one live budget for the
 		// life of the device (see the field doc)
-		dnsMemoryTarget: connect.NewMemoryTarget(dnsShareByteCount),
-		generatorFunc:   settings.GeneratorFunc,
-		provider:        provider,
+		dnsMemoryTarget:           connect.NewMemoryTarget(dnsShareByteCount),
+		generatorFunc:             settings.GeneratorFunc,
+		provider:                  provider,
+		transportSettings:         cloneTransportSettings(transportSettings),
+		providerTransportSettings: cloneTransportSettings(providerTransportSettings),
 		// contractManager: contractManager,
 		// routeManager: routeManager,
 		stats:                                    newDeviceStats(),
@@ -1178,6 +1211,8 @@ func newDeviceLocalWithOverrides(
 		blockActionWindowChangeListeners:         connect.NewCallbackList[BlockActionWindowChangeListener](),
 		blockStatsChangeListeners:                connect.NewCallbackList[BlockStatsChangeListener](),
 		blockActionOverridesChangeListeners:      connect.NewCallbackList[BlockActionOverridesChangeListener](),
+		transportSettingsChangeListeners:         connect.NewCallbackList[TransportSettingsChangeListener](),
+		providerTransportSettingsChangeListeners: connect.NewCallbackList[ProviderTransportSettingsChangeListener](),
 		packetStatsChangeListeners:               connect.NewCallbackList[PacketStatsChangeListener](),
 		egressContractStatsChangeListeners:       connect.NewCallbackList[ContractStatsChangeListener](),
 		egressContractDetailsChangeListeners:     connect.NewCallbackList[ContractDetailsChangeListener](),
@@ -1193,8 +1228,7 @@ func newDeviceLocalWithOverrides(
 		providerIngressContractDetailsChangeListeners: connect.NewCallbackList[ContractDetailsChangeListener](),
 	}
 	// restore the persisted block action overrides and dns resolver settings
-	if asyncLocalState := networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		localState := asyncLocalState.GetLocalState()
+	if localState != nil {
 		if overrides := localState.GetBlockActionOverrides(); overrides != nil {
 			deviceLocal.blockActionOverrides = overrides.getAll()
 		}
@@ -2838,6 +2872,9 @@ func (self *DeviceLocal) windowStatusChanged(windowStatus *WindowStatus) {
 func (self *DeviceLocal) receive(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 	// self.assertNotLockOwner()
 	// deviceLog("GOT A PACKET %d", len(packet))
+	// These are final device-TUN adapters. They intentionally run inline so
+	// Connect acknowledges a borrowed packet only after native injection has
+	// accepted it, the narrow exception documented in connect/CODESTYLE.md.
 	packetStorage := [1][]byte{packet}
 	self.receivePacketBatch(packetStorage[:])
 	for _, receivePacketsCallback := range self.receivePacketsCallbacks.Get() {
@@ -2856,6 +2893,7 @@ func (self *DeviceLocal) receivePackets(
 	ipPath *connect.IpPath,
 	packets [][]byte,
 ) {
+	// Batched form of the synchronous final-injection boundary above.
 	self.receivePacketBatch(packets)
 	for _, receivePacketsCallback := range self.receivePacketsCallbacks.Get() {
 		receivePacketsCallback(source, provideMode, ipPath, packets)
@@ -2867,6 +2905,57 @@ func (self *DeviceLocal) receivePackets(
 	}
 }
 
+const (
+	devicePacketBatchMaxPacketCount = 64
+	devicePacketBatchMaxByteCount   = 96 * 1024
+)
+
+// withEncodedPacketBatches validates the complete burst before emitting any
+// borrowed buffers, then splits it by both packet count and encoded byte count.
+// This keeps native-bridge copies bounded without dropping a valid MTU-sized
+// packet merely because it arrived at the edge of a burst.
+func withEncodedPacketBatches(packets [][]byte, callback func([]byte)) bool {
+	for _, packet := range packets {
+		if len(packet) == 0 || 65535 < len(packet) {
+			return false
+		}
+	}
+	if len(packets) == 0 {
+		return false
+	}
+
+	for packetStart := 0; packetStart < len(packets); {
+		packetEnd := packetStart
+		packetBatchByteCount := 0
+		for packetEnd < len(packets) && packetEnd-packetStart < devicePacketBatchMaxPacketCount {
+			encodedByteCount := 2 + len(packets[packetEnd])
+			if 0 < packetBatchByteCount && devicePacketBatchMaxByteCount < packetBatchByteCount+encodedByteCount {
+				break
+			}
+			packetBatchByteCount += encodedByteCount
+			packetEnd += 1
+		}
+
+		func() {
+			packetBatchBytes := connect.MessagePoolGet(packetBatchByteCount)
+			defer connect.MessagePoolReturn(packetBatchBytes)
+			offset := 0
+			for _, packet := range packets[packetStart:packetEnd] {
+				binary.BigEndian.PutUint16(
+					packetBatchBytes[offset:offset+2],
+					uint16(len(packet)),
+				)
+				offset += 2
+				copy(packetBatchBytes[offset:offset+len(packet)], packet)
+				offset += len(packet)
+			}
+			callback(packetBatchBytes)
+		}()
+		packetStart = packetEnd
+	}
+	return true
+}
+
 // Native adapters receive one borrowed buffer rather than crossing the ABI
 // once per packet. Framing matches SendPacketBatch in the reverse direction.
 func (self *DeviceLocal) receivePacketBatch(packets [][]byte) {
@@ -2874,31 +2963,11 @@ func (self *DeviceLocal) receivePacketBatch(packets [][]byte) {
 	if len(callbacks) == 0 {
 		return
 	}
-	packetBatchByteCount := 0
-	for _, packet := range packets {
-		if len(packet) == 0 || 65535 < len(packet) {
-			return
+	withEncodedPacketBatches(packets, func(packetBatchBytes []byte) {
+		for _, callback := range callbacks {
+			callback(packetBatchBytes)
 		}
-		packetBatchByteCount += 2 + len(packet)
-	}
-	if packetBatchByteCount == 0 {
-		return
-	}
-	packetBatchBytes := connect.MessagePoolGet(packetBatchByteCount)
-	defer connect.MessagePoolReturn(packetBatchBytes)
-	offset := 0
-	for _, packet := range packets {
-		binary.BigEndian.PutUint16(
-			packetBatchBytes[offset:offset+2],
-			uint16(len(packet)),
-		)
-		offset += 2
-		copy(packetBatchBytes[offset:offset+len(packet)], packet)
-		offset += len(packet)
-	}
-	for _, callback := range callbacks {
-		callback(packetBatchBytes)
-	}
+	})
 }
 
 // return traffic on the fallback local route (no remote client)
@@ -3520,6 +3589,10 @@ func (self *DeviceLocal) setDestination(
 			if self.generatorFunc != nil {
 				generator = self.generatorFunc(connectSpecs)
 			} else {
+				apiGeneratorSettings := connect.DefaultApiMultiClientGeneratorSettings()
+				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
+				apiGeneratorSettings.PlatformTransportMode = transportMode
+				apiGeneratorSettings.PlatformTransportModePreferences = modePreferences
 				apiGenerator := connect.NewApiMultiClientGenerator(
 					self.ctx,
 					connectSpecs,
@@ -3560,7 +3633,7 @@ func (self *DeviceLocal) setDestination(
 							self.settings.WebRtcSettings.UseEgressOnlyIceInterfaces
 						return clientSettings
 					},
-					connect.DefaultApiMultiClientGeneratorSettings(),
+					apiGeneratorSettings,
 				)
 				// window identity persistence across a process restart, when the
 				// embedding host provides a store (e.g. the proxy service,
@@ -3568,6 +3641,7 @@ func (self *DeviceLocal) setDestination(
 				if self.settings.MultiClientIdentityStore != nil {
 					apiGenerator.SetIdentityStore(self.settings.MultiClientIdentityStore)
 				}
+				self.apiMultiClientGenerator = apiGenerator
 				generator = apiGenerator
 			}
 			settings := connect.DefaultMultiClientSettings()
@@ -3922,12 +3996,14 @@ func (self *DeviceLocal) SendPacketsNoCopy(packets [][]byte) int {
 // and crosses the Go/native boundary once. Invalid framing is rejected before
 // any packet is sent. The return value is the number accepted by the route.
 func (self *DeviceLocal) SendPacketBatch(packetBatchBytes []byte) int32 {
-	const maxPacketCount = 64
-	var packetRanges [maxPacketCount][2]int
+	if devicePacketBatchMaxByteCount < len(packetBatchBytes) {
+		return 0
+	}
+	var packetRanges [devicePacketBatchMaxPacketCount][2]int
 	packetCount := 0
 	offset := 0
 	for offset < len(packetBatchBytes) {
-		if len(packetBatchBytes)-offset < 2 || maxPacketCount <= packetCount {
+		if len(packetBatchBytes)-offset < 2 || devicePacketBatchMaxPacketCount <= packetCount {
 			return 0
 		}
 		packetByteCount := int(binary.BigEndian.Uint16(packetBatchBytes[offset : offset+2]))
@@ -3942,7 +4018,7 @@ func (self *DeviceLocal) SendPacketBatch(packetBatchBytes []byte) int32 {
 	if packetCount == 0 {
 		return 0
 	}
-	var packetStorage [maxPacketCount][]byte
+	var packetStorage [devicePacketBatchMaxPacketCount][]byte
 	packets := packetStorage[:packetCount]
 	for packetIndex, packetRange := range packetRanges[:packetCount] {
 		packets[packetIndex] = connect.MessagePoolCopy(
@@ -4096,6 +4172,9 @@ func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 	return sentPacketCount
 }
 
+// Registers one final native device-TUN injector. The callback is inline and
+// borrowed; it may perform the synchronous final injection but must not wait
+// on unrelated work or send back through the shared receive path.
 func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 		packetStorage := [1][]byte{packet}
@@ -4122,7 +4201,8 @@ func (self *DeviceLocal) AddReceivePacket(receivePacket ReceivePacket) Sub {
 	})
 }
 
-// A mobile callback receives one borrowed packet object per upstream burst.
+// A mobile final-injection callback receives one borrowed packet object per
+// upstream burst under the same narrow synchronous device-TUN contract.
 func (self *DeviceLocal) AddReceivePackets(receivePackets ReceivePackets) Sub {
 	receive := func(
 		source connect.TransferPath,
@@ -4138,7 +4218,8 @@ func (self *DeviceLocal) AddReceivePackets(receivePackets ReceivePackets) Sub {
 	})
 }
 
-// A native callback receives the whole borrowed burst in compact framing.
+// A native final-injection callback receives the whole borrowed burst in
+// compact framing under the same narrow synchronous device-TUN contract.
 func (self *DeviceLocal) AddReceivePacketBatch(receivePacketBatch ReceivePacketBatch) Sub {
 	callbackId := self.receivePacketBatchCallbacks.Add(receivePacketBatch.ReceivePacketBatch)
 	return newSub(func() {
@@ -4429,6 +4510,7 @@ func (self *WindowEvents) EvaluationFailedClientCount() int {
 // and folds the client's final packet counters into the device accumulators
 // before closing it. the contracts die with the client
 func (self *DeviceLocal) closeRemoteUserNatClientWithLock() {
+	self.apiMultiClientGenerator = nil
 	if self.blockActionSub != nil {
 		self.blockActionSub()
 		self.blockActionSub = nil
@@ -4455,7 +4537,134 @@ func (self *DeviceLocal) closeRemoteUserNatClientWithLock() {
 	self.contracts.clear()
 }
 
+// SetTransportSettings applies the client carrier policy to future windows and
+// make-before-break migrates every live built-in window. Custom generators do
+// not expose a transport seam, so they receive the persisted policy only when
+// their owner chooses to consume it.
+func (self *DeviceLocal) SetTransportSettings(transportSettings *TransportSettings) {
+	if self.hostedIncompatibleGuarded("SetTransportSettings") {
+		return
+	}
+	transportSettings = normalizeTransportSettings(transportSettings, false)
+	var apiGenerator *connect.ApiMultiClientGenerator
+	changed := false
+	self.stateLock.Lock()
+	if !transportSettingsEqual(self.transportSettings, transportSettings, false) {
+		self.transportSettings = cloneTransportSettings(transportSettings)
+		apiGenerator = self.apiMultiClientGenerator
+		changed = true
+	}
+	self.stateLock.Unlock()
+	if !changed {
+		return
+	}
+	if apiGenerator != nil {
+		mode, preferences := toConnectTransportPolicy(transportSettings, false)
+		apiGenerator.SetPlatformTransportPolicy(mode, preferences)
+	}
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		if err := asyncLocalState.GetLocalState().SetTransportSettings(transportSettings); err != nil {
+			self.log.Errorf("failed to persist transport settings: %v", err)
+		}
+	}
+	self.transportSettingsChanged(transportSettings)
+}
+
+func (self *DeviceLocal) GetTransportSettings() *TransportSettings {
+	if self.settings.HostedIncompatible {
+		return hostedTransportSettings()
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return cloneTransportSettings(self.transportSettings)
+}
+
+func (self *DeviceLocal) AddTransportSettingsChangeListener(listener TransportSettingsChangeListener) Sub {
+	if self.transportSettingsChangeListeners == nil {
+		self.transportSettingsChangeListeners = connect.NewCallbackList[TransportSettingsChangeListener]()
+	}
+	callbackId := self.transportSettingsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.transportSettingsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) transportSettingsChanged(transportSettings *TransportSettings) {
+	if self.transportSettingsChangeListeners == nil {
+		return
+	}
+	for _, listener := range self.transportSettingsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.TransportSettingsChanged(cloneTransportSettings(transportSettings))
+		})
+	}
+}
+
+// SetProviderTransportSettings applies the provider carrier policy through the
+// provider's make-before-break transport replacement.
+func (self *DeviceLocal) SetProviderTransportSettings(transportSettings *TransportSettings) {
+	if self.hostedIncompatibleGuarded("SetProviderTransportSettings") {
+		return
+	}
+	transportSettings = normalizeTransportSettings(transportSettings, true)
+	var provider *deviceLocalProvider
+	changed := false
+	self.stateLock.Lock()
+	if !transportSettingsEqual(self.providerTransportSettings, transportSettings, true) {
+		self.providerTransportSettings = cloneTransportSettings(transportSettings)
+		provider = self.provider
+		changed = true
+	}
+	self.stateLock.Unlock()
+	if !changed {
+		return
+	}
+	if provider != nil {
+		mode, preferences := toConnectTransportPolicy(transportSettings, true)
+		provider.SetTransportPolicy(mode, preferences)
+	}
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		if err := asyncLocalState.GetLocalState().SetProviderTransportSettings(transportSettings); err != nil {
+			self.log.Errorf("failed to persist provider transport settings: %v", err)
+		}
+	}
+	self.providerTransportSettingsChanged(transportSettings)
+}
+
+func (self *DeviceLocal) AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub {
+	if self.providerTransportSettingsChangeListeners == nil {
+		self.providerTransportSettingsChangeListeners = connect.NewCallbackList[ProviderTransportSettingsChangeListener]()
+	}
+	callbackId := self.providerTransportSettingsChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerTransportSettingsChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) providerTransportSettingsChanged(transportSettings *TransportSettings) {
+	if self.providerTransportSettingsChangeListeners == nil {
+		return
+	}
+	for _, listener := range self.providerTransportSettingsChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProviderTransportSettingsChanged(cloneTransportSettings(transportSettings))
+		})
+	}
+}
+
+func (self *DeviceLocal) GetProviderTransportSettings() *TransportSettings {
+	if self.settings.HostedIncompatible {
+		return hostedTransportSettings()
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return cloneTransportSettings(self.providerTransportSettings)
+}
+
 func addConnectPacketStats(out *connect.PacketStats, add *connect.PacketStats) {
+	if add == nil {
+		return
+	}
 	out.RemoteEgressPacketCount += add.RemoteEgressPacketCount
 	out.RemoteEgressByteCount += add.RemoteEgressByteCount
 	out.RemoteIngressPacketCount += add.RemoteIngressPacketCount
@@ -4468,6 +4677,30 @@ func addConnectPacketStats(out *connect.PacketStats, add *connect.PacketStats) {
 	out.BlockEgressByteCount += add.BlockEgressByteCount
 	out.BlockIngressPacketCount += add.BlockIngressPacketCount
 	out.BlockIngressByteCount += add.BlockIngressByteCount
+	transportStats := map[connect.TransportType]*connect.PacketStats{}
+	for transportType, stats := range out.TransportStats {
+		if stats == nil {
+			continue
+		}
+		statsCopy := *stats
+		statsCopy.TransportStats = nil
+		transportStats[transportType] = &statsCopy
+	}
+	for transportType, stats := range add.TransportStats {
+		if stats == nil {
+			continue
+		}
+		combined := transportStats[transportType]
+		if combined == nil {
+			combined = &connect.PacketStats{}
+			transportStats[transportType] = combined
+		}
+		combined.RemoteEgressPacketCount += stats.RemoteEgressPacketCount
+		combined.RemoteEgressByteCount += stats.RemoteEgressByteCount
+		combined.RemoteIngressPacketCount += stats.RemoteIngressPacketCount
+		combined.RemoteIngressByteCount += stats.RemoteIngressByteCount
+	}
+	out.TransportStats = transportStats
 }
 
 // overrides with no hosts (app id only) are applied by the platform,
@@ -4515,7 +4748,7 @@ func (self *DeviceLocal) combinedConnectPacketStatsWithLock() *connect.PacketSta
 	return &combined
 }
 
-func packetStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
+func packetStatsFlatFromConnect(packetStats *connect.PacketStats) *PacketStats {
 	return &PacketStats{
 		RemoteEgressPacketCount:  packetStats.RemoteEgressPacketCount,
 		RemoteEgressByteCount:    packetStats.RemoteEgressByteCount,
@@ -4530,6 +4763,39 @@ func packetStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
 		BlockIngressPacketCount:  packetStats.BlockIngressPacketCount,
 		BlockIngressByteCount:    packetStats.BlockIngressByteCount,
 	}
+}
+
+func transportTypeFromConnect(transportType connect.TransportType) TransportType {
+	switch transportType {
+	case connect.TransportTypeH3:
+		return TransportTypeH3
+	case connect.TransportTypeH1:
+		return TransportTypeH1
+	case connect.TransportTypeH3Dns:
+		return TransportTypeDns
+	case connect.TransportTypeH3DnsPump:
+		return TransportTypeDnsPump
+	case connect.TransportTypeP2p:
+		return TransportTypeP2p
+	default:
+		return TransportTypeUnknown
+	}
+}
+
+func packetStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
+	stats := packetStatsFlatFromConnect(packetStats)
+	stats.TransportStats = NewTransportPacketStatsList()
+	for _, connectTransportType := range connect.TransportTypes() {
+		transportStats := packetStats.TransportStats[connectTransportType]
+		if transportStats == nil {
+			transportStats = &connect.PacketStats{}
+		}
+		stats.TransportStats.Add(&TransportPacketStats{
+			TransportType: transportTypeFromConnect(connectTransportType),
+			Stats:         packetStatsFlatFromConnect(transportStats),
+		})
+	}
+	return stats
 }
 
 // the client route stats: the multi client counters plus the fallback local route

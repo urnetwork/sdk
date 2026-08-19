@@ -300,6 +300,74 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		return jsDnsResolverSettings(sdk.GetDefaultDnsResolverSettings())
 	})
 
+	// transport policy (over the device-rpc): one carrier or Auto over the
+	// enabled carriers. see sdk.TransportSettings. A hosted device (the web's
+	// cloud proxy) is pinned to h1 and ignores the setters; the getters and
+	// listeners still work, so the policy can be shown
+	m["getTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportSettings(device.GetTransportSettings())
+	})
+	m["getProviderTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportSettings(device.GetProviderTransportSettings())
+	})
+	m["setTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) {
+			device.SetTransportSettings(parseTransportSettings(args[0]))
+		}
+		return js.Null()
+	})
+	m["setProviderTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) {
+			device.SetProviderTransportSettings(parseTransportSettings(args[0]))
+		}
+		return js.Null()
+	})
+	m["addTransportSettingsChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddTransportSettingsChangeListener(&jsTransportSettingsChangeListener{cb}))
+	})
+	m["addProviderTransportSettingsChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProviderTransportSettingsChangeListener(&jsProviderTransportSettingsChangeListener{cb}))
+	})
+	m["getDefaultTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportSettings(sdk.DefaultTransportSettings())
+	})
+	m["getDefaultProviderTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportSettings(sdk.DefaultProviderTransportSettings())
+	})
+	// the selectable modes in the default preference order (h3, h1, dns,
+	// dnspump); every transport list should show this order
+	m["getSelectableTransportModes"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsStringListDR(sdk.SelectableTransportModes())
+	})
+	// the shared editing rules over a policy value: an edited copy (a refused
+	// edit -- disabling the last Auto mode -- returns an equal copy)
+	m["transportSettingsWithMode"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) < 2 || args[1].Type() != js.TypeString {
+			return js.Null()
+		}
+		return jsTransportSettings(sdk.TransportSettingsWithMode(parseTransportSettings(args[0]), args[1].String()))
+	})
+	m["transportSettingsWithAutoModeEnabled"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) < 3 || args[1].Type() != js.TypeString || args[2].Type() != js.TypeBoolean {
+			return js.Null()
+		}
+		return jsTransportSettings(sdk.TransportSettingsWithAutoModeEnabled(parseTransportSettings(args[0]), args[1].String(), args[2].Bool()))
+	})
+	m["transportSettingsEqual"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) < 2 {
+			return js.ValueOf(false)
+		}
+		return js.ValueOf(sdk.TransportSettingsEqual(parseTransportSettings(args[0]), parseTransportSettings(args[1])))
+	})
+
 	// view controllers — the same layer the native app screens are built on
 	// (viewControllerManager is embedded in the device). The caller owns the
 	// returned vc and must close() it; see view_controllers.go.
@@ -546,6 +614,79 @@ func parseDnsResolverSettings(v js.Value) *sdk.DnsResolverSettings {
 		LocalDnsIpv4:      parseStringListDR(v.Get("localDnsIpv4")),
 		LocalDnsIpv6:      parseStringListDR(v.Get("localDnsIpv6")),
 	}
+}
+
+// jsTransportSettings mirrors the transport policy: the mode ("auto" or a
+// carrier), the Auto priority rows, and the derived views every renderer needs
+// (the Auto modes in preference order and the carriers the policy enables) so
+// the app never re-implements the rules
+func jsTransportSettings(s *sdk.TransportSettings) js.Value {
+	if s == nil {
+		return js.Null()
+	}
+	priorities := []any{}
+	if s.AutoModePriorities != nil {
+		for i := 0; i < s.AutoModePriorities.Len(); i += 1 {
+			item := s.AutoModePriorities.Get(i)
+			if item == nil {
+				continue
+			}
+			priorities = append(priorities, map[string]any{
+				"mode":     item.Mode,
+				"priority": item.Priority,
+			})
+		}
+	}
+	return js.ValueOf(map[string]any{
+		"mode":                  s.Mode,
+		"autoModePriorities":    priorities,
+		"autoModes":             jsStringListDR(s.AutoModes()),
+		"enabledTransportTypes": jsStringListDR(s.EnabledTransportTypes()),
+	})
+}
+
+// parseTransportSettings reads a policy from a JS object ({mode,
+// autoModePriorities: [{mode, priority}]}); null reads as the default policy.
+// The sdk normalizes what it is given
+func parseTransportSettings(v js.Value) *sdk.TransportSettings {
+	if v.IsNull() || v.IsUndefined() {
+		return sdk.DefaultTransportSettings()
+	}
+	settings := &sdk.TransportSettings{
+		Mode:               sdk.TransportModeAuto,
+		AutoModePriorities: sdk.NewTransportModePriorityList(),
+	}
+	if x := v.Get("mode"); x.Type() == js.TypeString {
+		settings.Mode = x.String()
+	}
+	if items := v.Get("autoModePriorities"); items.Type() == js.TypeObject {
+		n := items.Length()
+		for i := 0; i < n; i += 1 {
+			item := items.Index(i)
+			mode := item.Get("mode")
+			priority := item.Get("priority")
+			if mode.Type() != js.TypeString || priority.Type() != js.TypeNumber {
+				continue
+			}
+			settings.AutoModePriorities.Add(&sdk.TransportModePriority{
+				Mode:     mode.String(),
+				Priority: priority.Int(),
+			})
+		}
+	}
+	return settings
+}
+
+type jsTransportSettingsChangeListener struct{ cb js.Value }
+
+func (self *jsTransportSettingsChangeListener) TransportSettingsChanged(s *sdk.TransportSettings) {
+	self.cb.Invoke(jsTransportSettings(s))
+}
+
+type jsProviderTransportSettingsChangeListener struct{ cb js.Value }
+
+func (self *jsProviderTransportSettingsChangeListener) ProviderTransportSettingsChanged(s *sdk.TransportSettings) {
+	self.cb.Invoke(jsTransportSettings(s))
 }
 
 type jsDnsResolverSettingsChangeListener struct{ cb js.Value }

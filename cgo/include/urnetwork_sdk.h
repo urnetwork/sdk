@@ -76,7 +76,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CONTRACT_STATUS_CLOSED "closed"
 #define URNET_CONTRACT_STATUS_OPEN "open"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
-#define URNET_DEVICE_RPC_VERSION 1
+#define URNET_DEVICE_RPC_VERSION 2
 #define URNET_DEVICE_RPC_WS_BINARY 2
 #define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
@@ -136,6 +136,17 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SUBSCRIPTION_STORE_OTHER "other"
 #define URNET_SUBSCRIPTION_STORE_STRIPE "stripe"
 #define URNET_TAO "TAO"
+#define URNET_TRANSPORT_MODE_AUTO "auto"
+#define URNET_TRANSPORT_MODE_DNS "dns"
+#define URNET_TRANSPORT_MODE_DNS_PUMP "dnspump"
+#define URNET_TRANSPORT_MODE_H1 "h1"
+#define URNET_TRANSPORT_MODE_H3 "h3"
+#define URNET_TRANSPORT_TYPE_DNS "dns"
+#define URNET_TRANSPORT_TYPE_DNS_PUMP "dnspump"
+#define URNET_TRANSPORT_TYPE_H1 "h1"
+#define URNET_TRANSPORT_TYPE_H3 "h3"
+#define URNET_TRANSPORT_TYPE_P2P "p2p"
+#define URNET_TRANSPORT_TYPE_UNKNOWN "unknown"
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -355,6 +366,8 @@ typedef void (*urnet_provide_paused_change_cb)(void* user_data, bool provide_pau
 typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provide_secret_key_list_json);
 /* ProviderIdentityChangeListener */
 typedef void (*urnet_provider_identity_change_cb)(void* user_data);
+/* ProviderTransportSettingsChangeListener */
+typedef void (*urnet_provider_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
 /* PurchaseConfirmationListener */
 typedef void (*urnet_purchase_confirmation_cb)(void* user_data, const char* state);
 /* ReceivePacket */
@@ -411,6 +424,8 @@ typedef void (*urnet_subscription_create_payment_id_cb)(void* user_data, const c
 typedef void (*urnet_subscription_jwt_out_of_sync_cb)(void* user_data, bool server_is_pro);
 /* ThroughputListener */
 typedef void (*urnet_throughput_cb)(void* user_data);
+/* TransportSettingsChangeListener */
+typedef void (*urnet_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
 /* TunnelChangeListener */
 typedef void (*urnet_tunnel_change_cb)(void* user_data, bool tunnel_started);
 /* UnlinkReferralNetworkCallback */
@@ -632,7 +647,9 @@ void urnet_contract_view_controller_close(uint64_t self);
 char* urnet_contract_view_controller_get_packet_stats(uint64_t self);
 char* urnet_contract_view_controller_get_provider_packet_stats(uint64_t self);
 char* urnet_contract_view_controller_get_provider_throughput_points(uint64_t self);
+char* urnet_contract_view_controller_get_provider_transport_distribution(uint64_t self);
 char* urnet_contract_view_controller_get_throughput_points(uint64_t self);
+char* urnet_contract_view_controller_get_transport_distribution(uint64_t self);
 int64_t urnet_contract_view_controller_get_window_duration_seconds(uint64_t self);
 void urnet_contract_view_controller_packet_stats_changed(uint64_t self, const char* packet_stats_json);
 void urnet_contract_view_controller_set_window_duration_seconds(uint64_t self, int64_t seconds);
@@ -678,7 +695,9 @@ uint64_t urnet_device_add_provider_identity_change_listener(uint64_t self, urnet
 uint64_t urnet_device_add_provider_ingress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_ingress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_provider_packet_stats_change_listener(uint64_t self, urnet_packet_stats_change_cb listener_packet_stats_changed, void* listener_user_data);
+uint64_t urnet_device_add_provider_transport_settings_change_listener(uint64_t self, urnet_provider_transport_settings_change_cb listener_provider_transport_settings_changed, void* listener_user_data);
 uint64_t urnet_device_add_route_local_change_listener(uint64_t self, urnet_route_local_change_cb listener_route_local_changed, void* listener_user_data);
+uint64_t urnet_device_add_transport_settings_change_listener(uint64_t self, urnet_transport_settings_change_cb listener_transport_settings_changed, void* listener_user_data);
 uint64_t urnet_device_add_tunnel_change_listener(uint64_t self, urnet_tunnel_change_cb listener_tunnel_changed, void* listener_user_data);
 uint64_t urnet_device_add_vpn_interface_while_offline_change_listener(uint64_t self, urnet_vpn_interface_while_offline_change_cb listener_vpn_interface_while_offline_changed, void* listener_user_data);
 uint64_t urnet_device_add_window_status_change_listener(uint64_t self, urnet_window_status_change_cb listener_window_status_changed, void* listener_user_data);
@@ -723,10 +742,12 @@ char* urnet_device_get_provider_identities(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_details(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_stats(uint64_t self);
 char* urnet_device_get_provider_packet_stats(uint64_t self);
+char* urnet_device_get_provider_transport_settings(uint64_t self);
 char* urnet_device_get_public_identity_key_hash(uint64_t self);
 bool urnet_device_get_route_local(uint64_t self);
 bool urnet_device_get_should_show_rating_dialog(uint64_t self);
 uint64_t urnet_device_get_stats(uint64_t self);
+char* urnet_device_get_transport_settings(uint64_t self);
 bool urnet_device_get_tunnel_started(uint64_t self);
 bool urnet_device_get_vpn_interface_while_offline(uint64_t self);
 char* urnet_device_get_window_status(uint64_t self);
@@ -753,7 +774,9 @@ void urnet_device_set_provide_control_mode(uint64_t self, const char* mode);
 void urnet_device_set_provide_mode(uint64_t self, int64_t provide_mode);
 void urnet_device_set_provide_network_mode(uint64_t self, const char* mode);
 void urnet_device_set_provide_paused(uint64_t self, bool provide_paused);
+void urnet_device_set_provider_transport_settings(uint64_t self, const char* transport_settings_json);
 void urnet_device_set_route_local(uint64_t self, bool route_local);
+void urnet_device_set_transport_settings(uint64_t self, const char* transport_settings_json);
 void urnet_device_set_tunnel_started(uint64_t self, bool tunnel_started);
 void urnet_device_set_vpn_interface_while_offline(uint64_t self, bool vpn_interface_while_offline);
 void urnet_device_shuffle(uint64_t self);
@@ -946,8 +969,10 @@ char* urnet_local_state_get_provide_control_mode(uint64_t self);
 int64_t urnet_local_state_get_provide_mode(uint64_t self);
 char* urnet_local_state_get_provide_network_mode(uint64_t self);
 char* urnet_local_state_get_provide_secret_keys(uint64_t self);
+char* urnet_local_state_get_provider_transport_settings(uint64_t self);
 bool urnet_local_state_get_route_local(uint64_t self);
 int64_t urnet_local_state_get_routing_tier(uint64_t self);
+char* urnet_local_state_get_transport_settings(uint64_t self);
 bool urnet_local_state_get_vpn_interface_while_offline(uint64_t self);
 bool urnet_local_state_logout(uint64_t self, char** out_error);
 char* urnet_local_state_parse_by_jwt(uint64_t self, char** out_error);
@@ -970,8 +995,10 @@ bool urnet_local_state_set_provide_control_mode(uint64_t self, const char* mode,
 bool urnet_local_state_set_provide_mode(uint64_t self, int64_t provide_mode, char** out_error);
 bool urnet_local_state_set_provide_network_mode(uint64_t self, const char* provide_network_mode, char** out_error);
 bool urnet_local_state_set_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json, char** out_error);
+bool urnet_local_state_set_provider_transport_settings(uint64_t self, const char* settings_json, char** out_error);
 bool urnet_local_state_set_route_local(uint64_t self, bool route_local, char** out_error);
 bool urnet_local_state_set_routing_tier(uint64_t self, int64_t tier, char** out_error);
+bool urnet_local_state_set_transport_settings(uint64_t self, const char* settings_json, char** out_error);
 bool urnet_local_state_set_vpn_interface_while_offline(uint64_t self, bool vpn_interface_while_offline, char** out_error);
 
 /* ----- LocationsViewController ----- */
@@ -1198,8 +1225,11 @@ char* urnet_collapse_host_names_list(const char* hosts_json);
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_create_payment_reference(void);
 char* urnet_default_device_local_settings(void);
+char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
 char* urnet_default_proxy_device_settings(void);
+int64_t urnet_default_transport_mode_priority(const char* mode);
+char* urnet_default_transport_settings(void);
 char* urnet_default_tunnel_dns_setting(void);
 char* urnet_encode_base58(const uint8_t* data, int32_t data_len);
 char* urnet_encrypt_data(const uint8_t* data, int32_t data_len, const char* nonce_base58, const char* shared_secret_base58, char** out_error);
@@ -1212,6 +1242,7 @@ char* urnet_get_color_hex(const char* code);
 char* urnet_get_default_dns_resolver_settings(void);
 char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
+int64_t urnet_get_default_tunnel_mtu(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
 bool urnet_get_fips140_enabled(void);
 char* urnet_get_log_dir(void);
@@ -1253,11 +1284,17 @@ char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
+char* urnet_selectable_transport_modes(void);
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
+char* urnet_transport_settings_auto_modes(const char* settings_json);
+char* urnet_transport_settings_enabled_transport_types(const char* settings_json);
+bool urnet_transport_settings_equal(const char* a_json, const char* b_json);
+char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json, const char* mode, bool enabled);
+char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 int64_t urnet_usd_to_nano_cents(double usd);
 
 /* ----- linux/unix only ----- */
@@ -2362,6 +2399,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   BlockEgressByteCount: number
  *   BlockIngressPacketCount: number
  *   BlockIngressByteCount: number
+ *   TransportStats: TransportPacketStatsList | null
  */
 
 /* PerformanceProfile (json):
@@ -2904,6 +2942,52 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* TransferStatsResult (json):
  *   paid_bytes_provided: number
  *   unpaid_bytes_provided: number
+ */
+
+/* TransportDistribution (json):
+ *   Shares: TransportShareList | null
+ *   ByteCount: number
+ *   Active: boolean
+ */
+
+/* TransportModePriority (json):
+ *   mode: string
+ *   priority: number
+ */
+
+/* TransportModePriorityList (json):
+ *   = TransportModePriority | null[]
+ */
+
+/* TransportPacketStats (json):
+ *   TransportType: string
+ *   Stats: PacketStats | null
+ */
+
+/* TransportPacketStatsList (json):
+ *   = TransportPacketStats | null[]
+ */
+
+/* TransportSettings (json):
+ *   mode: string
+ *   auto_mode_priorities: TransportModePriorityList | null
+ */
+
+/* TransportShare (json):
+ *   TransportType: string
+ *   EgressByteCount: number
+ *   IngressByteCount: number
+ *   EgressPacketCount: number
+ *   IngressPacketCount: number
+ *   Share: number
+ *   Boundary: number
+ *   Percent: number
+ *   Used: boolean
+ *   Enabled: boolean
+ */
+
+/* TransportShareList (json):
+ *   = TransportShare | null[]
  */
 
 /* TunnelDnsSetting (json):

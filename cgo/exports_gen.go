@@ -1655,6 +1655,20 @@ func (self *cAdapterProviderIdentityChangeListener) ProviderIdentitiesChanged() 
 	C.urnet_invoke_provider_identity_change(self.cbProviderIdentitiesChanged, self.userData)
 }
 
+type cAdapterProviderTransportSettingsChangeListener struct {
+	cbProviderTransportSettingsChanged C.urnet_provider_transport_settings_change_cb
+	userData                           unsafe.Pointer
+}
+
+func (self *cAdapterProviderTransportSettingsChangeListener) ProviderTransportSettingsChanged(transportSettings *sdk.TransportSettings) {
+	defer cgoGuard("urnet_provider_transport_settings_change_cb")
+	transportSettings_ := cJson(transportSettings, "urnet_provider_transport_settings_change_cb")
+	C.urnet_invoke_provider_transport_settings_change(self.cbProviderTransportSettingsChanged, self.userData, transportSettings_)
+	if transportSettings_ != nil {
+		cStringFree(transportSettings_)
+	}
+}
+
 type cAdapterPurchaseConfirmationListener struct {
 	cbPurchaseConfirmationStateChanged C.urnet_purchase_confirmation_cb
 	userData                           unsafe.Pointer
@@ -2121,6 +2135,20 @@ type cAdapterThroughputListener struct {
 func (self *cAdapterThroughputListener) ThroughputChanged() {
 	defer cgoGuard("urnet_throughput_cb")
 	C.urnet_invoke_throughput(self.cbThroughputChanged, self.userData)
+}
+
+type cAdapterTransportSettingsChangeListener struct {
+	cbTransportSettingsChanged C.urnet_transport_settings_change_cb
+	userData                   unsafe.Pointer
+}
+
+func (self *cAdapterTransportSettingsChangeListener) TransportSettingsChanged(transportSettings *sdk.TransportSettings) {
+	defer cgoGuard("urnet_transport_settings_change_cb")
+	transportSettings_ := cJson(transportSettings, "urnet_transport_settings_change_cb")
+	C.urnet_invoke_transport_settings_change(self.cbTransportSettingsChanged, self.userData, transportSettings_)
+	if transportSettings_ != nil {
+		cStringFree(transportSettings_)
+	}
 }
 
 type cAdapterTunnelChangeListener struct {
@@ -5039,6 +5067,20 @@ func urnet_contract_view_controller_get_provider_throughput_points(self C.uint64
 	return cJson(r0, "urnet_contract_view_controller_get_provider_throughput_points")
 }
 
+//export urnet_contract_view_controller_get_provider_transport_distribution
+func urnet_contract_view_controller_get_provider_transport_distribution(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_view_controller_get_provider_transport_distribution")
+	self_, ok := resolveHandle[*sdk.ContractViewController](uint64(self), "urnet_contract_view_controller_get_provider_transport_distribution")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderTransportDistribution()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_view_controller_get_provider_transport_distribution")
+}
+
 //export urnet_contract_view_controller_get_throughput_points
 func urnet_contract_view_controller_get_throughput_points(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_contract_view_controller_get_throughput_points")
@@ -5051,6 +5093,20 @@ func urnet_contract_view_controller_get_throughput_points(self C.uint64_t) *C.ch
 		return nil
 	}
 	return cJson(r0, "urnet_contract_view_controller_get_throughput_points")
+}
+
+//export urnet_contract_view_controller_get_transport_distribution
+func urnet_contract_view_controller_get_transport_distribution(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_view_controller_get_transport_distribution")
+	self_, ok := resolveHandle[*sdk.ContractViewController](uint64(self), "urnet_contract_view_controller_get_transport_distribution")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetTransportDistribution()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_view_controller_get_transport_distribution")
 }
 
 //export urnet_contract_view_controller_get_window_duration_seconds
@@ -5128,6 +5184,16 @@ func urnet_default_device_local_settings() *C.char {
 	return cJson(r0, "urnet_default_device_local_settings")
 }
 
+//export urnet_default_provider_transport_settings
+func urnet_default_provider_transport_settings() *C.char {
+	defer cgoGuard("urnet_default_provider_transport_settings")
+	r0 := sdk.DefaultProviderTransportSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_provider_transport_settings")
+}
+
 //export urnet_default_proxy_config
 func urnet_default_proxy_config() *C.char {
 	defer cgoGuard("urnet_default_proxy_config")
@@ -5146,6 +5212,23 @@ func urnet_default_proxy_device_settings() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_default_proxy_device_settings")
+}
+
+//export urnet_default_transport_mode_priority
+func urnet_default_transport_mode_priority(mode *C.char) C.int64_t {
+	defer cgoGuard("urnet_default_transport_mode_priority")
+	r0 := sdk.DefaultTransportModePriority(goString(mode))
+	return C.int64_t(r0)
+}
+
+//export urnet_default_transport_settings
+func urnet_default_transport_settings() *C.char {
+	defer cgoGuard("urnet_default_transport_settings")
+	r0 := sdk.DefaultTransportSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_transport_settings")
 }
 
 //export urnet_default_tunnel_dns_setting
@@ -5715,6 +5798,21 @@ func urnet_device_add_provider_packet_stats_change_listener(self C.uint64_t, lis
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_provider_transport_settings_change_listener
+func urnet_device_add_provider_transport_settings_change_listener(self C.uint64_t, listener_provider_transport_settings_changed C.urnet_provider_transport_settings_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_provider_transport_settings_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_provider_transport_settings_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ProviderTransportSettingsChangeListener
+	if listener_provider_transport_settings_changed != nil {
+		listener_ = &cAdapterProviderTransportSettingsChangeListener{cbProviderTransportSettingsChanged: listener_provider_transport_settings_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddProviderTransportSettingsChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_route_local_change_listener
 func urnet_device_add_route_local_change_listener(self C.uint64_t, listener_route_local_changed C.urnet_route_local_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_route_local_change_listener")
@@ -5727,6 +5825,21 @@ func urnet_device_add_route_local_change_listener(self C.uint64_t, listener_rout
 		listener_ = &cAdapterRouteLocalChangeListener{cbRouteLocalChanged: listener_route_local_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddRouteLocalChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_add_transport_settings_change_listener
+func urnet_device_add_transport_settings_change_listener(self C.uint64_t, listener_transport_settings_changed C.urnet_transport_settings_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_transport_settings_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_transport_settings_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.TransportSettingsChangeListener
+	if listener_transport_settings_changed != nil {
+		listener_ = &cAdapterTransportSettingsChangeListener{cbTransportSettingsChanged: listener_transport_settings_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddTransportSettingsChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -6296,6 +6409,20 @@ func urnet_device_get_provider_packet_stats(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_provider_packet_stats")
 }
 
+//export urnet_device_get_provider_transport_settings
+func urnet_device_get_provider_transport_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provider_transport_settings")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provider_transport_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderTransportSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provider_transport_settings")
+}
+
 //export urnet_device_get_public_identity_key_hash
 func urnet_device_get_public_identity_key_hash(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_public_identity_key_hash")
@@ -6341,6 +6468,20 @@ func urnet_device_get_stats(self C.uint64_t) C.uint64_t {
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_get_transport_settings
+func urnet_device_get_transport_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_transport_settings")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_transport_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetTransportSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_transport_settings")
 }
 
 //export urnet_device_get_tunnel_started
@@ -6677,6 +6818,23 @@ func urnet_device_set_provide_paused(self C.uint64_t, providePaused C.bool) {
 	self_.SetProvidePaused(bool(providePaused))
 }
 
+//export urnet_device_set_provider_transport_settings
+func urnet_device_set_provider_transport_settings(self C.uint64_t, transportSettings *C.char) {
+	defer cgoGuard("urnet_device_set_provider_transport_settings")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_provider_transport_settings")
+	if !ok {
+		return
+	}
+	var transportSettings_ *sdk.TransportSettings
+	if transportSettings != nil {
+		transportSettings_ = &sdk.TransportSettings{}
+		if !goJson(transportSettings, transportSettings_, "urnet_device_set_provider_transport_settings") {
+			return
+		}
+	}
+	self_.SetProviderTransportSettings(transportSettings_)
+}
+
 //export urnet_device_set_route_local
 func urnet_device_set_route_local(self C.uint64_t, routeLocal C.bool) {
 	defer cgoGuard("urnet_device_set_route_local")
@@ -6685,6 +6843,23 @@ func urnet_device_set_route_local(self C.uint64_t, routeLocal C.bool) {
 		return
 	}
 	self_.SetRouteLocal(bool(routeLocal))
+}
+
+//export urnet_device_set_transport_settings
+func urnet_device_set_transport_settings(self C.uint64_t, transportSettings *C.char) {
+	defer cgoGuard("urnet_device_set_transport_settings")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_transport_settings")
+	if !ok {
+		return
+	}
+	var transportSettings_ *sdk.TransportSettings
+	if transportSettings != nil {
+		transportSettings_ = &sdk.TransportSettings{}
+		if !goJson(transportSettings, transportSettings_, "urnet_device_set_transport_settings") {
+			return
+		}
+	}
+	self_.SetTransportSettings(transportSettings_)
 }
 
 //export urnet_device_set_tunnel_started
@@ -8779,6 +8954,13 @@ func urnet_get_default_tunnel_dns_address_ipv4() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_get_default_tunnel_mtu
+func urnet_get_default_tunnel_mtu() C.int64_t {
+	defer cgoGuard("urnet_get_default_tunnel_mtu")
+	r0 := sdk.GetDefaultTunnelMtu()
+	return C.int64_t(r0)
+}
+
 //export urnet_get_filtered_locations_from_result
 func urnet_get_filtered_locations_from_result(result *C.char, filter *C.char) *C.char {
 	defer cgoGuard("urnet_get_filtered_locations_from_result")
@@ -9122,6 +9304,20 @@ func urnet_local_state_get_provide_secret_keys(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_local_state_get_provide_secret_keys")
 }
 
+//export urnet_local_state_get_provider_transport_settings
+func urnet_local_state_get_provider_transport_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_local_state_get_provider_transport_settings")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_provider_transport_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderTransportSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_local_state_get_provider_transport_settings")
+}
+
 //export urnet_local_state_get_route_local
 func urnet_local_state_get_route_local(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_local_state_get_route_local")
@@ -9142,6 +9338,20 @@ func urnet_local_state_get_routing_tier(self C.uint64_t) C.int64_t {
 	}
 	r0 := self_.GetRoutingTier()
 	return C.int64_t(r0)
+}
+
+//export urnet_local_state_get_transport_settings
+func urnet_local_state_get_transport_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_local_state_get_transport_settings")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_transport_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetTransportSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_local_state_get_transport_settings")
 }
 
 //export urnet_local_state_get_vpn_interface_while_offline
@@ -9523,6 +9733,28 @@ func urnet_local_state_set_provide_secret_keys(self C.uint64_t, provideSecretKey
 	return C.bool(true)
 }
 
+//export urnet_local_state_set_provider_transport_settings
+func urnet_local_state_set_provider_transport_settings(self C.uint64_t, settings *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_provider_transport_settings")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_provider_transport_settings")
+	if !ok {
+		return C.bool(false)
+	}
+	var settings_ *sdk.TransportSettings
+	if settings != nil {
+		settings_ = &sdk.TransportSettings{}
+		if !goJson(settings, settings_, "urnet_local_state_set_provider_transport_settings") {
+			return C.bool(false)
+		}
+	}
+	err := self_.SetProviderTransportSettings(settings_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_local_state_set_route_local
 func urnet_local_state_set_route_local(self C.uint64_t, routeLocal C.bool, outError **C.char) C.bool {
 	defer cgoGuard("urnet_local_state_set_route_local")
@@ -9546,6 +9778,28 @@ func urnet_local_state_set_routing_tier(self C.uint64_t, tier C.int64_t, outErro
 		return C.bool(false)
 	}
 	err := self_.SetRoutingTier(int(int64(tier)))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_transport_settings
+func urnet_local_state_set_transport_settings(self C.uint64_t, settings *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_transport_settings")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_transport_settings")
+	if !ok {
+		return C.bool(false)
+	}
+	var settings_ *sdk.TransportSettings
+	if settings != nil {
+		settings_ = &sdk.TransportSettings{}
+		if !goJson(settings, settings_, "urnet_local_state_set_transport_settings") {
+			return C.bool(false)
+		}
+	}
+	err := self_.SetTransportSettings(settings_)
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)
@@ -11167,6 +11421,16 @@ func urnet_referral_code_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_selectable_transport_modes
+func urnet_selectable_transport_modes() *C.char {
+	defer cgoGuard("urnet_selectable_transport_modes")
+	r0 := sdk.SelectableTransportModes()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_selectable_transport_modes")
+}
+
 //export urnet_service_url
 func urnet_service_url(key *C.char, values *C.char, scheme *C.char, service *C.char) *C.char {
 	defer cgoGuard("urnet_service_url")
@@ -11551,6 +11815,95 @@ func urnet_subscription_balance_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
+}
+
+//export urnet_transport_settings_auto_modes
+func urnet_transport_settings_auto_modes(settings *C.char) *C.char {
+	defer cgoGuard("urnet_transport_settings_auto_modes")
+	var settings_ *sdk.TransportSettings
+	if settings != nil {
+		settings_ = &sdk.TransportSettings{}
+		if !goJson(settings, settings_, "urnet_transport_settings_auto_modes") {
+			return nil
+		}
+	}
+	r0 := sdk.TransportSettingsAutoModes(settings_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_transport_settings_auto_modes")
+}
+
+//export urnet_transport_settings_enabled_transport_types
+func urnet_transport_settings_enabled_transport_types(settings *C.char) *C.char {
+	defer cgoGuard("urnet_transport_settings_enabled_transport_types")
+	var settings_ *sdk.TransportSettings
+	if settings != nil {
+		settings_ = &sdk.TransportSettings{}
+		if !goJson(settings, settings_, "urnet_transport_settings_enabled_transport_types") {
+			return nil
+		}
+	}
+	r0 := sdk.TransportSettingsEnabledTransportTypes(settings_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_transport_settings_enabled_transport_types")
+}
+
+//export urnet_transport_settings_equal
+func urnet_transport_settings_equal(a *C.char, b *C.char) C.bool {
+	defer cgoGuard("urnet_transport_settings_equal")
+	var a_ *sdk.TransportSettings
+	if a != nil {
+		a_ = &sdk.TransportSettings{}
+		if !goJson(a, a_, "urnet_transport_settings_equal") {
+			return C.bool(false)
+		}
+	}
+	var b_ *sdk.TransportSettings
+	if b != nil {
+		b_ = &sdk.TransportSettings{}
+		if !goJson(b, b_, "urnet_transport_settings_equal") {
+			return C.bool(false)
+		}
+	}
+	r0 := sdk.TransportSettingsEqual(a_, b_)
+	return C.bool(r0)
+}
+
+//export urnet_transport_settings_with_auto_mode_enabled
+func urnet_transport_settings_with_auto_mode_enabled(settings *C.char, mode *C.char, enabled C.bool) *C.char {
+	defer cgoGuard("urnet_transport_settings_with_auto_mode_enabled")
+	var settings_ *sdk.TransportSettings
+	if settings != nil {
+		settings_ = &sdk.TransportSettings{}
+		if !goJson(settings, settings_, "urnet_transport_settings_with_auto_mode_enabled") {
+			return nil
+		}
+	}
+	r0 := sdk.TransportSettingsWithAutoModeEnabled(settings_, goString(mode), bool(enabled))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_transport_settings_with_auto_mode_enabled")
+}
+
+//export urnet_transport_settings_with_mode
+func urnet_transport_settings_with_mode(settings *C.char, mode *C.char) *C.char {
+	defer cgoGuard("urnet_transport_settings_with_mode")
+	var settings_ *sdk.TransportSettings
+	if settings != nil {
+		settings_ = &sdk.TransportSettings{}
+		if !goJson(settings, settings_, "urnet_transport_settings_with_mode") {
+			return nil
+		}
+	}
+	r0 := sdk.TransportSettingsWithMode(settings_, goString(mode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_transport_settings_with_mode")
 }
 
 //export urnet_tunnel_cancel

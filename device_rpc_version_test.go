@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -112,7 +113,8 @@ func TestDeviceRpcSyncRejectsVersionMismatch(t *testing.T) {
 	if !strings.HasPrefix(syncError, "device rpc version mismatch:") {
 		t.Fatalf("expected a version mismatch sync error, got %q", syncError)
 	}
-	if !strings.Contains(syncError, "remote is 2") || !strings.Contains(syncError, "local is 1") {
+	if !strings.Contains(syncError, fmt.Sprintf("remote is %d", DeviceRpcVersion+1)) ||
+		!strings.Contains(syncError, fmt.Sprintf("local is %d", DeviceRpcVersion)) {
 		t.Fatalf("expected the sync error to name both versions, got %q", syncError)
 	}
 }

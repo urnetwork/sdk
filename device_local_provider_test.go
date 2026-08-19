@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +10,40 @@ import (
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/protocol"
 )
+
+// Resident migration may wait for a future schedule and a replacement
+// transport, but its Client receive callback only admits one owned worker and
+// returns. Running the migration inline would stall every Transfer sequence.
+func TestDeviceLocalProviderMigrateReceiveCallbackDoesNotWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	provider := &deviceLocalProvider{
+		ctx:                     ctx,
+		migrateMaxScheduleDelay: time.Hour,
+	}
+	migrateFrame := connect.RequireToFrameWithDefaultProtocolVersion(&protocol.ResidentMigrate{
+		MigrateTime: uint64(time.Now().Add(24 * time.Hour).UnixMilli()),
+	})
+	defer connect.MessagePoolReturn(migrateFrame.MessageBytes)
+
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		provider.handleControlFrames(
+			connect.SourceId(connect.ControlId),
+			[]*protocol.Frame{migrateFrame},
+			connect.Peer{},
+		)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("resident migration blocked the Client receive callback")
+	}
+	if !provider.migrating.Load() {
+		t.Fatal("resident migration callback did not admit its worker")
+	}
+}
 
 // A `ResidentMigrate` control frame triggers make-before-break: the provider
 // builds a replacement platform transport and only swaps once it connects.
@@ -173,7 +208,11 @@ func TestDeviceLocalProviderMigrationReappliesRacingAuth(t *testing.T) {
 		platformTransport:       oldTransport,
 		migrateConnectTimeout:   2 * time.Second,
 		migrateMaxScheduleDelay: 50 * time.Millisecond,
-		newPlatformTransport: func(auth *connect.ClientAuth) migratablePlatformTransport {
+		newPlatformTransport: func(
+			auth *connect.ClientAuth,
+			_ connect.TransportMode,
+			_ *connect.PlatformTransportSettings,
+		) migratablePlatformTransport {
 			next := newFakeMigratablePlatformTransport(auth, false)
 			nextCreated <- next
 			return next
@@ -219,5 +258,105 @@ func TestDeviceLocalProviderMigrationReappliesRacingAuth(t *testing.T) {
 	oldTransport.mutex.Unlock()
 	if !oldClosed {
 		t.Fatal("old transport was not closed after successful replacement")
+	}
+}
+
+func TestDeviceLocalProviderTransportPolicyIsLiveAndMakeBeforeBreak(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	auth := &connect.ClientAuth{
+		ByJwt:      "test",
+		InstanceId: connect.NewId(),
+		AppVersion: "0.0.0",
+	}
+	oldTransport := newFakeMigratablePlatformTransport(auth, true)
+	type creation struct {
+		transport   *fakeMigratablePlatformTransport
+		targetMode  connect.TransportMode
+		preferences map[connect.TransportMode]int
+	}
+	created := make(chan creation, 2)
+	provider := &deviceLocalProvider{
+		ctx:                       ctx,
+		auth:                      auth,
+		platformTransport:         oldTransport,
+		targetMode:                connect.TransportModeH1,
+		transportPolicyVersion:    1,
+		migrateConnectTimeout:     2 * time.Second,
+		migrateMaxScheduleDelay:   time.Second,
+		platformTransportSettings: connect.DefaultPlatformTransportSettings(),
+		newPlatformTransport: func(
+			auth *connect.ClientAuth,
+			targetMode connect.TransportMode,
+			settings *connect.PlatformTransportSettings,
+		) migratablePlatformTransport {
+			next := newFakeMigratablePlatformTransport(auth, false)
+			created <- creation{
+				transport:   next,
+				targetMode:  targetMode,
+				preferences: maps.Clone(settings.ModePreferences),
+			}
+			return next
+		},
+	}
+
+	preferences := map[connect.TransportMode]int{
+		connect.TransportModeH3:        1,
+		connect.TransportModeH1:        1,
+		connect.TransportModeH3Dns:     2,
+		connect.TransportModeH3DnsPump: 3,
+	}
+	provider.SetTransportPolicy(connect.TransportModeAuto, preferences)
+	var next creation
+	select {
+	case next = <-created:
+	case <-time.After(2 * time.Second):
+		t.Fatal("transport policy change did not construct a replacement")
+	}
+	connect.AssertEqual(t, next.targetMode, connect.TransportModeAuto)
+	connect.AssertEqual(t, maps.Equal(next.preferences, preferences), true)
+
+	oldTransport.mutex.Lock()
+	oldClosedBeforeConnect := oldTransport.closed
+	oldTransport.mutex.Unlock()
+	if oldClosedBeforeConnect {
+		t.Fatal("old provider transport closed before replacement connected")
+	}
+
+	// The setter owns its policy copy; caller mutation cannot alter either the
+	// pending replacement or the policy used by a later migration.
+	preferences[connect.TransportModeH3] = 99
+	next.transport.connect()
+	deadline := time.Now().Add(2 * time.Second)
+	for provider.migrating.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if provider.migrating.Load() {
+		t.Fatal("provider policy migration did not finish")
+	}
+
+	provider.stateLock.Lock()
+	current := provider.platformTransport
+	storedPreferences := maps.Clone(provider.modePreferences)
+	provider.stateLock.Unlock()
+	connect.AssertEqual(t, current == next.transport, true)
+	connect.AssertEqual(t, storedPreferences[connect.TransportModeH3], 1)
+	oldTransport.mutex.Lock()
+	oldClosedAfterConnect := oldTransport.closed
+	oldTransport.mutex.Unlock()
+	if !oldClosedAfterConnect {
+		t.Fatal("old provider transport remained open after replacement connected")
+	}
+
+	// Reapplying the canonical policy is a no-op, not another connection churn.
+	provider.SetTransportPolicy(connect.TransportModeAuto, storedPreferences)
+	if provider.migrating.Load() {
+		t.Fatal("duplicate provider transport policy started a migration")
+	}
+	select {
+	case <-created:
+		t.Fatal("duplicate provider transport policy built a replacement")
+	default:
 	}
 }

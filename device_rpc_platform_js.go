@@ -3,11 +3,11 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"syscall/js"
 	"time"
@@ -25,7 +25,7 @@ func dialDeviceRpcWs(ctx context.Context, proxyUrl string, signedProxyId string,
 		return nil, err
 	}
 
-	ws, err := newBrowserWs(u)
+	ws, err := newBrowserWs(u, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -79,11 +79,16 @@ type browserWs struct {
 	msgFunc   js.Func
 	errFunc   js.Func
 	closeFunc js.Func
+
+	receiveMu       sync.Mutex
+	readLimit       int64
+	maxReceiveBytes int64
+	receiveBytes    int64
 }
 
 var _ deviceRpcWs = (*browserWs)(nil)
 
-func newBrowserWs(url string) (*browserWs, error) {
+func newBrowserWs(url string, settings *deviceRpcSettings) (*browserWs, error) {
 	wsClass := js.Global().Get("WebSocket")
 	if !wsClass.Truthy() {
 		return nil, fmt.Errorf("WebSocket is not available")
@@ -92,10 +97,12 @@ func newBrowserWs(url string) (*browserWs, error) {
 	ws.Set("binaryType", "arraybuffer")
 
 	self := &browserWs{
-		ws:      ws,
-		opened:  make(chan error, 1),
-		receive: make(chan []byte, 256),
-		done:    make(chan struct{}),
+		ws:              ws,
+		opened:          make(chan error, 1),
+		receive:         make(chan []byte, max(1, settings.MuxReceiveBufferSize)),
+		done:            make(chan struct{}),
+		readLimit:       settings.maxFrameBytes(),
+		maxReceiveBytes: max(settings.maxQueuedBytes(), settings.maxFrameBytes()),
 	}
 
 	self.openFunc = js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -107,11 +114,16 @@ func newBrowserWs(url string) (*browserWs, error) {
 		// arraybuffer -> []byte
 		uint8Array := js.Global().Get("Uint8Array").New(data)
 		n := uint8Array.Get("length").Int()
+		if !self.reserveReceive(n) {
+			self.closeInternal()
+			return nil
+		}
 		b := make([]byte, n)
 		js.CopyBytesToGo(b, uint8Array)
 		select {
 		case self.receive <- b:
 		case <-self.done:
+			self.releaseReceive(n)
 		}
 		return nil
 	})
@@ -134,10 +146,35 @@ func newBrowserWs(url string) (*browserWs, error) {
 	return self, nil
 }
 
+func (self *browserWs) reserveReceive(byteCount int) bool {
+	self.receiveMu.Lock()
+	defer self.receiveMu.Unlock()
+	if self.readLimit < int64(byteCount) || self.maxReceiveBytes < self.receiveBytes+int64(byteCount) {
+		return false
+	}
+	self.receiveBytes += int64(byteCount)
+	return true
+}
+
+func (self *browserWs) releaseReceive(byteCount int) {
+	self.receiveMu.Lock()
+	self.receiveBytes -= int64(byteCount)
+	self.receiveMu.Unlock()
+}
+
 func (self *browserWs) closeInternal() {
 	self.closeOnce.Do(func() {
 		close(self.done)
 		self.ws.Call("close")
+	drainReceive:
+		for {
+			select {
+			case b := <-self.receive:
+				self.releaseReceive(len(b))
+			default:
+				break drainReceive
+			}
+		}
 		self.openFunc.Release()
 		self.msgFunc.Release()
 		self.errFunc.Release()
@@ -172,10 +209,16 @@ func (self *browserWs) NextReader() (int, io.Reader, error) {
 	case <-self.done:
 		return 0, nil, io.EOF
 	case b := <-self.receive:
-		return DeviceRpcWsBinary, strings.NewReader(string(b)), nil
+		self.releaseReceive(len(b))
+		return DeviceRpcWsBinary, bytes.NewReader(b), nil
 	}
 }
 
+func (self *browserWs) SetReadLimit(limit int64) {
+	self.receiveMu.Lock()
+	self.readLimit = limit
+	self.receiveMu.Unlock()
+}
 func (self *browserWs) SetReadDeadline(t time.Time) error  { return nil }
 func (self *browserWs) SetWriteDeadline(t time.Time) error { return nil }
 func (self *browserWs) SetPongHandler(h func(string) error) {

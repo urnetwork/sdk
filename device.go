@@ -116,6 +116,14 @@ type DnsResolverSettingsChangeListener interface {
 	DnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings)
 }
 
+type TransportSettingsChangeListener interface {
+	TransportSettingsChanged(transportSettings *TransportSettings)
+}
+
+type ProviderTransportSettingsChangeListener interface {
+	ProviderTransportSettingsChanged(transportSettings *TransportSettings)
+}
+
 type PacketStatsChangeListener interface {
 	PacketStatsChanged(packetStats *PacketStats)
 }
@@ -260,6 +268,28 @@ type PacketStats struct {
 	BlockEgressByteCount     ByteCount
 	BlockIngressPacketCount  int64
 	BlockIngressByteCount    ByteCount
+	// TransportStats partitions the remote totals by the physical carrier.
+	// The top-level fields remain the aggregate; local and blocked traffic are
+	// intentionally absent from the carrier breakdown.
+	TransportStats *TransportPacketStatsList
+}
+
+// TransportPacketStats maps one stable transport type to its contribution to
+// the enclosing aggregate PacketStats. Stats.TransportStats is nil so the
+// value does not recursively contain another breakdown.
+type TransportPacketStats struct {
+	TransportType TransportType
+	Stats         *PacketStats
+}
+
+type TransportPacketStatsList struct {
+	exportedList[*TransportPacketStats]
+}
+
+func NewTransportPacketStatsList() *TransportPacketStatsList {
+	return &TransportPacketStatsList{
+		exportedList: *newExportedList[*TransportPacketStats](),
+	}
 }
 
 type ContractStats struct {
@@ -412,6 +442,13 @@ func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	settings := dnsResolverSettingsFromConnect(muxSettings.Dns.Resolver)
 	settings.EnableFallback = muxSettings.Dns.Fallback != nil
 	return settings
+}
+
+// GetDefaultTunnelMtu exposes the single MTU contract shared by native tunnel
+// interfaces and connect's provider-side packetizer. Native apps should apply
+// this value when constructing their IPv4 tunnel interface.
+func GetDefaultTunnelMtu() int32 {
+	return int32(connect.DefaultMtu)
 }
 
 // every device must also support the unexported `device` interface
@@ -584,6 +621,20 @@ type Device interface {
 	AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
 	// fires with the full list when the overrides change
 	AddBlockActionOverridesChangeListener(listener BlockActionOverridesChangeListener) Sub
+
+	// transport settings
+
+	SetTransportSettings(transportSettings *TransportSettings)
+
+	GetTransportSettings() *TransportSettings
+
+	AddTransportSettingsChangeListener(listener TransportSettingsChangeListener) Sub
+
+	SetProviderTransportSettings(transportSettings *TransportSettings)
+
+	GetProviderTransportSettings() *TransportSettings
+
+	AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub
 
 	// packet stats
 

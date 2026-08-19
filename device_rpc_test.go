@@ -23,6 +23,61 @@ import (
 // FIXME start remote and local
 // FIXME use a test JWT against a bogus network space, the client doesn't need to connect
 
+type testingOptionalMethodRpc struct{}
+
+func (*testingOptionalMethodRpc) Ping(_ bool, reply *bool) error {
+	*reply = true
+	return nil
+}
+
+// A new app can briefly talk to the previous extension process after an app
+// update. Missing optional listener methods must not close that otherwise
+// compatible RPC session; the current value remains available from sync/getter
+// state until the extension process restarts on the new binary.
+func TestRpcOptionalMissingMethodKeepsSessionAlive(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	server := rpc.NewServer()
+	if err := server.RegisterName("Optional", &testingOptionalMethodRpc{}); err != nil {
+		t.Fatal(err)
+	}
+	go server.ServeConn(serverConn)
+
+	settings := defaultDeviceRpcSettings()
+	service := &rpcClientWithTimeout{
+		ctx:         context.Background(),
+		log:         settings.logger(),
+		timeout:     time.Second,
+		closeClient: clientConn.Close,
+		client:      rpc.NewClient(clientConn),
+	}
+	defer service.Close()
+
+	cleanupCalled := false
+	err := rpcCallVoidAllowMissingMethod(
+		service,
+		"Optional.AddFutureListener",
+		true,
+		func() {
+			cleanupCalled = true
+			clientConn.Close()
+		},
+	)
+	if err == nil || !rpcMissingMethodError(err) {
+		t.Fatalf("missing optional method error=%v", err)
+	}
+	if cleanupCalled {
+		t.Fatal("missing optional method closed the RPC session")
+	}
+
+	var reply bool
+	if err := service.Call("Optional.Ping", true, &reply); err != nil || !reply {
+		t.Fatalf("RPC session did not survive optional method miss: reply=%t err=%v", reply, err)
+	}
+}
+
 func TestDeviceRemoteSimple(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
