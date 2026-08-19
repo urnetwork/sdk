@@ -42,9 +42,13 @@ func urnet_io_loop_close(self C.uint64_t) {
 //export urnet_new_io_loop
 func urnet_new_io_loop(deviceLocal C.uint64_t, fd C.int64_t, doneCallback_io_loop_done C.urnet_io_loop_done_cb, doneCallback_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_new_io_loop")
-	deviceLocal_, ok := resolveHandle[*sdk.DeviceLocal](uint64(deviceLocal), "urnet_new_io_loop")
-	if !ok {
-		return 0
+	var deviceLocal_ *sdk.DeviceLocal
+	if deviceLocal != 0 {
+		var ok bool
+		deviceLocal_, ok = resolveHandle[*sdk.DeviceLocal](uint64(deviceLocal), "urnet_new_io_loop")
+		if !ok {
+			return 0
+		}
 	}
 	var doneCallback_ sdk.IoLoopDoneCallback
 	if doneCallback_io_loop_done != nil {

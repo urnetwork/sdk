@@ -709,10 +709,23 @@ func (g *gen) emitCallable(cName string, symbol string, recv *typeInfo, recvName
 		case kindHandle:
 			goParams = append(goParams, pName+" C.uint64_t")
 			cParams = append(cParams, "uint64_t "+snake(pName))
+			// a zero handle at an argument position is the abi's "no object"
+			// and becomes a nil Go argument, mirroring how null json and null
+			// callback params pass through as nil. Only a nonzero id goes
+			// through resolveHandle (which now answers ok=false for zero, see
+			// handles.go), so a stale id is a clean no-op return while
+			// nil-object argument semantics keep working — e.g.
+			// SetActiveNetworkSpace(nil) clears the active space and
+			// LocalState.SetDeviceLocalKeyMaterial(nil) removes the stored
+			// key material.
 			convert = append(convert,
-				fmt.Sprintf("\t%s_, ok := resolveHandle[%s](uint64(%s), %q)", pName, g.goType(info.t), pName, cName),
-				"\tif !ok {",
-				"\t\treturn"+zeroRet,
+				fmt.Sprintf("\tvar %s_ %s", pName, g.goType(info.t)),
+				fmt.Sprintf("\tif %s != 0 {", pName),
+				"\t\tvar ok bool",
+				fmt.Sprintf("\t\t%s_, ok = resolveHandle[%s](uint64(%s), %q)", pName, g.goType(info.t), pName, cName),
+				"\t\tif !ok {",
+				"\t\t\treturn"+zeroRet,
+				"\t\t}",
 				"\t}",
 			)
 			callArgs = append(callArgs, pName+"_")

@@ -4820,8 +4820,11 @@ func (self *DeviceRemote) GetDestinationExits() *DestinationExitList {
 
 // MigrateExit hands one exit's movable flows to live replacements now (the
 // drain-style hand-off; see `DeviceLocal.MigrateExit`). The exit client id
-// is the string form (`Exit.ClientId.IdStr`); an unparseable id or a down
-// rpc is a no-op.
+// is the string form (`Exit.ClientId.IdStr`). Returns the number of flows
+// moved, and -1 when nothing could be attempted -- an unparseable id, a down
+// rpc, or no such exit in the window (the local sentinel). The count is what
+// makes this reportable in a ui: "requested" and "migrated 12 flows" are
+// different outcomes and the caller cannot otherwise tell them apart.
 func (self *DeviceRemote) MigrateExit(exitClientId string) int32 {
 	exitId, err := ParseId(exitClientId)
 	if err != nil {
@@ -4853,7 +4856,9 @@ func (self *DeviceRemote) MigrateExit(exitClientId string) int32 {
 
 // ProbeAllExits fires a qualification probe pass at every exit in the
 // windows now, instead of waiting for the background sweep. Non-blocking on
-// the local side; no-op while the rpc is down.
+// the local side. Returns how many passes were scheduled, and 0 while the rpc
+// is down -- the same "nothing was scheduled" value `DeviceLocal` reports
+// while disconnected or while provider probing is off.
 func (self *DeviceRemote) ProbeAllExits() int32 {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -9827,6 +9832,12 @@ func (self *DeviceLocalRpc) removeConnectLocationChangeListener(listenerId conne
 func (self *DeviceLocalRpc) ConnectLocationChanged(location *ConnectLocation) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	// D10: a destination change replaces the window monitor (the multi client
+	// is recreated). Re-bind the service-side subscription NOW rather than at
+	// the next listener add or reconcile pull, so remote grids receive the new
+	// window's reset snapshot instead of a gap — and so the generation tag
+	// (windowMonitorCallbackFor) has a current generation to compare against.
+	self.updateWindowMonitor()
 	self.connectLocationChanged(location)
 }
 
@@ -9904,10 +9915,37 @@ func (self *DeviceLocalRpc) updateWindowMonitor() {
 			self.localWindowIds[windowId] = self.localWindowId
 		}
 		if 0 < len(self.windowMonitorEventListenerIds) {
-			self.windowMonitorEventListenerSub = localWindowMonitor.AddMonitorEventCallback(self.WindowMonitorEventCallback)
+			self.windowMonitorEventListenerSub = localWindowMonitor.AddMonitorEventCallback(self.windowMonitorCallbackFor(self.localWindowId))
 			windowExpandEvent, providerEvents := localWindowMonitor.Events()
 			self.windowMonitorEventCallback(windowExpandEvent, providerEvents, true)
 		}
+	}
+}
+
+// windowMonitorCallbackFor tags a monitor subscription with the window
+// generation (localWindowId) it was created under — the D10 stale-monitor
+// hardening. The monitor's callback workers are asynchronous, so an event
+// from a monitor that has since been replaced (the multi client is recreated
+// on every destination change) can arrive after the replacement; without the
+// tag it would be forwarded to remote listeners stamped with the CURRENT
+// window ids, exactly the stale-generation flash the D2 gate exists for. A
+// stale event is dropped, and the subscription state is re-derived from the
+// live monitor (updateWindowMonitor re-binds and pushes a reset snapshot) so
+// remote grids resync to the new window instead of freezing.
+func (self *DeviceLocalRpc) windowMonitorCallbackFor(generation connect.Id) connect.MonitorEventFunction {
+	return func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.localWindowId != generation {
+			// an event from the outgoing monitor generation: drop it, and
+			// re-derive from the live monitor (nil deviceLocal is a bare test
+			// fixture, which has nothing to re-derive from)
+			if self.deviceLocal != nil {
+				self.updateWindowMonitor()
+			}
+			return
+		}
+		self.windowMonitorEventCallback(windowExpandEvent, providerEvents, reset)
 	}
 }
 
@@ -9946,7 +9984,7 @@ func (self *DeviceLocalRpc) addWindowMonitorEventListener(windowListenerId Devic
 		monitorEventListeners[windowListenerId.ListenerId] = true
 
 		if self.windowMonitorEventListenerSub == nil {
-			self.windowMonitorEventListenerSub = self.localWindowMonitor.AddMonitorEventCallback(self.WindowMonitorEventCallback)
+			self.windowMonitorEventListenerSub = self.localWindowMonitor.AddMonitorEventCallback(self.windowMonitorCallbackFor(self.localWindowId))
 		}
 	}
 

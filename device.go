@@ -314,7 +314,8 @@ type WindowStatus struct {
 	// Failed is the terminal outcome state: the window hit its outcome
 	// deadline twice with zero providers Added (see the connect package's
 	// window honesty layer). Cleared when a provider lands or the session is
-	// rebuilt.
+	// rebuilt. The connect view controller mirrors it as the CONNECT_FAILED
+	// connection status.
 	Failed bool
 }
 

@@ -13,14 +13,16 @@ import (
 // The advanced-mode bridge: the controls a desktop client needs to tune the
 // sdk from a DeviceRemote, whose device lives in another process.
 //
-// Two things are pinned here that the reliability bridge does not cover:
+// Three things are pinned here that the reliability bridge does not cover:
 //
 //   - the fault injection actions (drop, stall/unstall) reach the local AND
 //     report whether they found the exit, where the older action bridges
-//     returned nothing at all; and
+//     returned nothing at all;
 //   - the probe suite round trips as a suite -- start, poll, results, stop --
 //     including a results list read before any run, which is the empty-list
-//     shape the c++ wrapper unwraps into a std::vector.
+//     shape the c++ wrapper unwraps into a std::vector; and
+//   - MigrateExit and ProbeAllExits carry their counts, which the bridge used
+//     to drop on the floor.
 //
 // These are ordinary build-tag-free tests in the default compile set, and run
 // on Windows as well as in the Linux sdk CI.
@@ -110,14 +112,14 @@ func TestRpcMirrorProbeResultListEmpty(t *testing.T) {
 	connect.AssertEqual(t, resultList.Len(), 0)
 }
 
-// TestExportedListEmptyMarshalsAsArray pins the fix for a c-abi bug this
-// client has found.
+// TestExportedListEmptyMarshalsAsArray pins the fix for the fourth c-abi bug
+// this client has found.
 //
 // Go marshals a nil slice as the document `null`, and every one of these
 // lists starts with a nil backing slice. The generated c++ wrapper unwraps a
 // list getter straight into a std::vector, and nlohmann throws
-// type_error.302 converting `null` to an array -- so on a live session
-// several list getters throw within milliseconds of the session coming up,
+// type_error.302 converting `null` to an array -- so on a live session SEVEN
+// of eleven list getters threw within milliseconds of the session coming up,
 // because at that moment every list is empty.
 //
 // `[]` is the honest rendering of an empty list and the one every consumer
@@ -187,6 +189,8 @@ func TestAdvancedModeDegradedWithoutMultiClient(t *testing.T) {
 	connect.AssertEqual(t, deviceLocal.DropExit(exitClientId), false)
 	connect.AssertEqual(t, deviceLocal.StallExit(exitClientId, true), false)
 	connect.AssertEqual(t, deviceLocal.StallExit(exitClientId, false), false)
+	connect.AssertEqual(t, deviceLocal.MigrateExit(exitClientId), int32(-1))
+	connect.AssertEqual(t, deviceLocal.ProbeAllExits(), int32(0))
 	// a safe no-op rather than a panic
 	deviceLocal.ShuffleExits()
 
@@ -202,6 +206,8 @@ func TestAdvancedModeDegradedWithoutMultiClient(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.DropExit(exitClientId.IdStr), false)
 	connect.AssertEqual(t, deviceRemote.StallExit(exitClientId.IdStr, true), false)
 	connect.AssertEqual(t, deviceRemote.StallExit(exitClientId.IdStr, false), false)
+	connect.AssertEqual(t, deviceRemote.MigrateExit(exitClientId.IdStr), int32(-1))
+	connect.AssertEqual(t, deviceRemote.ProbeAllExits(), int32(0))
 	connect.AssertEqual(t, deviceRemote.StartProbeSuite(GetDefaultProbeSuiteConfig()), false)
 	connect.AssertEqual(t, deviceRemote.ProbeSuiteRunning(), false)
 	deviceRemote.StopProbeSuite()
@@ -211,6 +217,7 @@ func TestAdvancedModeDegradedWithoutMultiClient(t *testing.T) {
 	// a malformed id is rejected client side, with the same values
 	connect.AssertEqual(t, deviceRemote.DropExit("not-an-id"), false)
 	connect.AssertEqual(t, deviceRemote.StallExit("not-an-id", true), false)
+	connect.AssertEqual(t, deviceRemote.MigrateExit("not-an-id"), int32(-1))
 
 	// the readout degrades to empty, never nil -- this is the value that
 	// reaches parseJson<ProbeResultList> on the c++ side
@@ -318,6 +325,16 @@ func TestDeviceRemoteAdvancedModeActionsReachTheLocal(t *testing.T) {
 		return actionLogger.contains("stall_exit", "exit="+idTail(stallClientId), "stalled=0")
 	})
 
+	// the counts the bridge used to drop. Against a stub window these are the
+	// documented "nothing to do" values, but they are now VALUES rather than
+	// void -- see TestDeviceRemoteProbeSuiteBridge for a non-sentinel result
+	// crossing the same machinery.
+	connect.AssertEqual(t, deviceRemote.MigrateExit(dropClientId.IdStr), int32(-1))
+	connect.AssertEqual(t, deviceRemote.ProbeAllExits(), int32(0))
+	testingReliabilityWaitFor(t, "probe_all reached the local", func() bool {
+		return actionLogger.contains("probe_all")
+	})
+
 	// ShuffleExits is the whole-window action. It reaches the same connect
 	// call as Shuffle; the two differ only in what a FAILED call does, which
 	// TestDeviceRemoteAdvancedModeActionsAreNeverQueued pins.
@@ -352,8 +369,8 @@ func TestDeviceRemoteAdvancedModeActionsReachTheLocal(t *testing.T) {
 // `ShuffleExits` exists alongside it rather than redirecting to it.
 //
 // The positive property has enforcing tests; without this one, nothing stops
-// the next person adding a `self.state.X.Set(...)` to one of these fault
-// injection actions and every test still passing.
+// the next person adding a `self.state.X.Set(...)` to one of these seven and
+// every test still passing.
 func TestDeviceRemoteAdvancedModeActionsAreNeverQueued(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -380,6 +397,8 @@ func TestDeviceRemoteAdvancedModeActionsAreNeverQueued(t *testing.T) {
 	exitClientId := NewId()
 	connect.AssertEqual(t, deviceRemote.DropExit(exitClientId.IdStr), false)
 	connect.AssertEqual(t, deviceRemote.StallExit(exitClientId.IdStr, true), false)
+	connect.AssertEqual(t, deviceRemote.MigrateExit(exitClientId.IdStr), int32(-1))
+	connect.AssertEqual(t, deviceRemote.ProbeAllExits(), int32(0))
 	connect.AssertEqual(t, deviceRemote.StartProbeSuite(GetDefaultProbeSuiteConfig()), false)
 	deviceRemote.StopProbeSuite()
 	deviceRemote.ShuffleExits()
@@ -444,16 +463,25 @@ func TestDeviceRemoteAdvancedModeActionsAreNeverQueued(t *testing.T) {
 
 	// a live action here proves the log is actually wired: without it, an
 	// empty action log would "pass" this test for the wrong reason
-	deviceRemote.ShuffleExits()
+	deviceRemote.ProbeAllExits()
 	testingReliabilityWaitFor(t, "the action log is live", func() bool {
-		return actionLogger.contains("shuffle")
+		return actionLogger.contains("probe_all")
 	})
 
 	// and none of the queued-action shapes ever arrived
 	connect.AssertEqual(t, actionLogger.count("drop_exit"), 0)
 	connect.AssertEqual(t, actionLogger.count("stall_exit"), 0)
-	// exactly one shuffle -- the live one above, not a replay of the one
-	// pressed against the dead service earlier in this test
+	connect.AssertEqual(t, actionLogger.count("migrate_exit"), 0)
+	connect.AssertEqual(t, actionLogger.count("shuffle"), 0)
+
+	// ShuffleExits is the one that shares a connect call with the QUEUED
+	// Shuffle, so it gets its own live pass: it must reach the local exactly
+	// once -- the press below, and not a replay of the Shuffle pressed
+	// against the dead service earlier in this test.
+	deviceRemote.ShuffleExits()
+	testingReliabilityWaitFor(t, "shuffle_exits reached the local", func() bool {
+		return actionLogger.contains("shuffle")
+	})
 	connect.AssertEqual(t, actionLogger.count("shuffle"), 1)
 }
 
@@ -512,12 +540,26 @@ func TestDeviceRemoteProbeSuiteBridge(t *testing.T) {
 	connect.AssertEqual(t, err, nil)
 	connect.AssertEqual(t, string(encoded), "[]")
 
-	// no jobs, no network: the run exists to move the flag
+	// The run needs WORK, not just a flag flip. This config used to enable no
+	// probes at all -- "the run exists to move the flag" -- and that made the
+	// test a race it lost about one run in three in the full suite (it passes
+	// alone, where the process is idle and the poll lands inside the window).
+	// With no jobs, the run goroutine reaches its `running = false` defer as
+	// soon as `newProbeHarness` returns, and the harness normally SUCCEEDS, so
+	// it appends no result either: the flag is down within milliseconds and
+	// the results list stays empty, leaving nothing for the wait below to ever
+	// observe again.
+	//
+	// Three dns jobs give the run an outcome that outlives it. The tun the
+	// harness builds has no egress -- the device's stub multi client drops
+	// every packet and nothing leaves the machine, so this is still a
+	// no-network test -- so each probe fails at TimeoutMillis and records a
+	// result, and the suite keeps its results until the next start.
 	config := &ProbeSuiteConfig{
 		Concurrency:     1,
 		TimeoutMillis:   1000,
 		RepeatCount:     1,
-		IncludeDns:      false,
+		IncludeDns:      true,
 		IncludeHttp:     false,
 		IncludeDownload: false,
 	}
@@ -525,10 +567,17 @@ func TestDeviceRemoteProbeSuiteBridge(t *testing.T) {
 	// TRUE across the bridge -- the assertion no fallback can satisfy
 	connect.AssertEqual(t, deviceRemote.StartProbeSuite(config), true)
 
-	// the start reached the DeviceLocal side: only the local owns the suite
-	// state, so the local observing a run is proof the handler ran there
-	testingReliabilityWaitFor(t, "the suite started on the local", func() bool {
-		return deviceLocal.ProbeSuiteRunning() || 0 < deviceLocal.GetProbeResults().Len()
+	// The start reached the DeviceLocal side: only the local owns the suite
+	// state, so a result recorded THERE is proof the handler ran there.
+	//
+	// Wait on the results, not on `ProbeSuiteRunning`. The running flag is a
+	// pulse, not a level: it is up only between `StartProbeSuite` and the run
+	// goroutine's `running = false` defer, and a poll that misses that window
+	// can never see it again. Results are the monotonic signal -- the suite
+	// keeps them until the next start -- so this wait cannot be lost to
+	// scheduling.
+	testingReliabilityWaitFor(t, "the suite recorded a result on the local", func() bool {
+		return 0 < deviceLocal.GetProbeResults().Len()
 	})
 
 	// stop, and both ends settle on not-running
@@ -540,12 +589,18 @@ func TestDeviceRemoteProbeSuiteBridge(t *testing.T) {
 		return !deviceRemote.ProbeSuiteRunning()
 	})
 
-	// results after a run cross the bridge as the same list the local holds,
-	// whatever the harness made of a zero-job run
+	// results after a run cross the bridge as the same list the local holds
 	localResults := deviceLocal.GetProbeResults()
 	remoteResults := deviceRemote.GetProbeResults()
 	connect.AssertNotEqual(t, remoteResults, nil)
 	connect.AssertEqual(t, remoteResults.Len(), localResults.Len())
+	// and the run left something behind. This guards the config above: turn
+	// every probe back off and the wait for a recorded result stops being
+	// satisfiable by the run itself, which is exactly how this test became a
+	// race the first time.
+	if localResults.Len() == 0 {
+		t.Fatal("the run recorded no results -- the probe config produces no work, so the wait above has nothing monotonic to observe")
+	}
 	for i := range localResults.Len() {
 		connect.AssertEqual(t, remoteResults.Get(i), localResults.Get(i))
 	}

@@ -461,6 +461,7 @@ EXPORTS
 	urnet_get_default_probe_suite_config
 	urnet_get_default_tunnel_dns_address_ipv4
 	urnet_get_filtered_locations_from_result
+	urnet_get_fips140_enabled
 	urnet_get_log_dir
 	urnet_get_memory_stats
 	urnet_get_recommended_dns_resolver_settings
