@@ -308,7 +308,7 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 		config.AppVersion,
 		&config.ClientId,
 		connect.DefaultClientSettings,
-		connect.DefaultApiMultiClientGeneratorSettings(),
+		newSimClientGeneratorSettings(),
 	)
 
 	tunSettings := config.TunSettings
@@ -376,6 +376,15 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 	})
 
 	return simClient, nil
+}
+
+// Builds the window-client policy for the synthetic exchange. Its advertised
+// endpoints are local WebSockets, so production Auto probes to UDP ports 443
+// and 53 are outside both the exchange shards and the simulated impairment.
+func newSimClientGeneratorSettings() *connect.ApiMultiClientGeneratorSettings {
+	settings := connect.DefaultApiMultiClientGeneratorSettings()
+	settings.PlatformTransportMode = connect.TransportModeH1
+	return settings
 }
 
 func cloneSimMultiClientSettings(settings *connect.MultiClientSettings) *connect.MultiClientSettings {

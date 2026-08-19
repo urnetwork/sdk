@@ -6,6 +6,18 @@ import (
 	"github.com/urnetwork/connect"
 )
 
+func TestSimClientGeneratorSettingsPinsLocalWebSocket(t *testing.T) {
+	settings := newSimClientGeneratorSettings()
+	if settings.PlatformTransportMode != connect.TransportModeH1 {
+		t.Fatalf("simulator platform mode = %q, want %q", settings.PlatformTransportMode, connect.TransportModeH1)
+	}
+
+	settings.PlatformTransportMode = connect.TransportModeH3
+	if next := newSimClientGeneratorSettings(); next.PlatformTransportMode != connect.TransportModeH1 {
+		t.Fatalf("new simulator platform mode = %q after prior mutation, want %q", next.PlatformTransportMode, connect.TransportModeH1)
+	}
+}
+
 func TestCloneSimMultiClientSettingsOwnsWindowMap(t *testing.T) {
 	source := connect.DefaultMultiClientSettings()
 	cloned := cloneSimMultiClientSettings(source)
