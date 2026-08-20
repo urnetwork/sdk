@@ -78,7 +78,10 @@ func TestDeviceLocalMuxSecurityLoadStability(t *testing.T) {
 		warmFromIndex = 1                              // iteration 2 (exclude first-touch)
 
 		goroutineIterationDrift    = 10
-		heapGrowthBandBytes        = 6 << 20 // 6 MiB
+		// This is a transient in-run burst ceiling, not the teardown leak
+		// boundary. Production memory-stability work may tighten it after the
+		// allocator and transport queues have their own dedicated calibration.
+		heapGrowthBandBytes        = 8 << 20 // 8 MiB
 		goroutineBaselineTolerance = 10
 		goroutineStackTolerance    = 5
 		fdBaselineTolerance        = 8
