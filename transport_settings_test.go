@@ -102,37 +102,80 @@ func assertTransportSettings(
 func TestDefaultTransportSettingsContract(t *testing.T) {
 	want := testingTransportSettings(
 		TransportModeAuto,
-		&TransportModePriority{Mode: TransportModeH3, Priority: 1},
 		&TransportModePriority{Mode: TransportModeH1, Priority: 1},
-		&TransportModePriority{Mode: TransportModeDns, Priority: 2},
-		&TransportModePriority{Mode: TransportModeDnsPump, Priority: 3},
+		&TransportModePriority{Mode: TransportModeH3, Priority: 2},
+		&TransportModePriority{Mode: TransportModeDns, Priority: 3},
+		&TransportModePriority{Mode: TransportModeDnsPump, Priority: 4},
 	)
 	assertTransportSettings(t, DefaultTransportSettings(), want, false)
 	assertTransportSettings(t, DefaultProviderTransportSettings(), want, true)
 
 	mode, preferences := toConnectTransportPolicy(DefaultTransportSettings(), false)
 	connect.AssertEqual(t, mode, connect.TransportModeAuto)
-	connect.AssertEqual(t, preferences[connect.TransportModeH3], 1)
 	connect.AssertEqual(t, preferences[connect.TransportModeH1], 1)
-	connect.AssertEqual(t, preferences[connect.TransportModeH3Dns], 2)
-	connect.AssertEqual(t, preferences[connect.TransportModeH3DnsPump], 3)
+	connect.AssertEqual(t, preferences[connect.TransportModeH3], 2)
+	connect.AssertEqual(t, preferences[connect.TransportModeH3Dns], 3)
+	connect.AssertEqual(t, preferences[connect.TransportModeH3DnsPump], 4)
+
+	// Auto priorities never rewrite an explicit carrier selection.
+	explicitH3 := DefaultTransportSettings()
+	explicitH3.Mode = TransportModeH3
+	mode, preferences = toConnectTransportPolicy(explicitH3, false)
+	connect.AssertEqual(t, mode, connect.TransportModeH3)
+	if preferences != nil {
+		t.Fatalf("explicit H3 preferences = %v, want nil", preferences)
+	}
+}
+
+func TestTransportSettingsMigratesLegacyDefaultAutoPolicy(t *testing.T) {
+	legacy := testingTransportSettings(
+		TransportModeH1,
+		&TransportModePriority{Mode: TransportModeH3, Priority: 1},
+		&TransportModePriority{Mode: TransportModeH1, Priority: 1},
+		&TransportModePriority{Mode: TransportModeDns, Priority: 2},
+		&TransportModePriority{Mode: TransportModeDnsPump, Priority: 3},
+	)
+	want := DefaultTransportSettings()
+	want.Mode = TransportModeH1
+	assertTransportSettings(t, legacy, want, false)
+
+	// The migrated policy is retained under an explicit mode and becomes the
+	// effective H1-first ladder when the user later switches back to Auto.
+	legacy.Mode = TransportModeAuto
+	mode, preferences := toConnectTransportPolicy(legacy, false)
+	connect.AssertEqual(t, mode, connect.TransportModeAuto)
+	if preferences[connect.TransportModeH1] >= preferences[connect.TransportModeH3] {
+		t.Fatalf("migrated Auto preferences = %v, want H1 strictly ahead of H3", preferences)
+	}
+
+	// Partial policies were produced by disabling modes in the UI. Migrate the
+	// retained H3 priority too, or re-enabling H1 at its new default would tie it.
+	partial := normalizeTransportSettings(testingTransportSettings(
+		TransportModeAuto,
+		&TransportModePriority{Mode: TransportModeH3, Priority: 1},
+	), false)
+	partial.AutoModePriorities.Add(&TransportModePriority{Mode: TransportModeH1, Priority: 1})
+	_, preferences = toConnectTransportPolicy(partial, false)
+	if preferences[connect.TransportModeH1] >= preferences[connect.TransportModeH3] {
+		t.Fatalf("re-enabled partial Auto preferences = %v, want H1 strictly ahead of H3", preferences)
+	}
 }
 
 func TestTransportSettingsNormalizeCanonicalAndDetached(t *testing.T) {
 	input := testingTransportSettings(
 		"unknown",
-		&TransportModePriority{Mode: TransportModeH1, Priority: 1},
+		&TransportModePriority{Mode: TransportModeH1, Priority: 10},
 		&TransportModePriority{Mode: TransportModeH3, Priority: 5},
 		&TransportModePriority{Mode: TransportModeDns, Priority: 0},
 		&TransportModePriority{Mode: TransportModeAuto, Priority: 1},
-		&TransportModePriority{Mode: TransportModeH3, Priority: 1},
+		&TransportModePriority{Mode: TransportModeH3, Priority: 10},
 		nil,
 	)
 	got := normalizeTransportSettings(input, false)
 	want := testingTransportSettings(
 		TransportModeAuto,
-		&TransportModePriority{Mode: TransportModeH3, Priority: 1},
-		&TransportModePriority{Mode: TransportModeH1, Priority: 1},
+		&TransportModePriority{Mode: TransportModeH1, Priority: 10},
+		&TransportModePriority{Mode: TransportModeH3, Priority: 10},
 	)
 	assertTransportSettings(t, got, want, false)
 
@@ -314,6 +357,22 @@ func TestDeviceTransportSettingsHostedGuardsPinH1(t *testing.T) {
 	hosted.SetProviderTransportSettings(dns)
 	connect.AssertEqual(t, hosted.GetTransportSettings().Mode, TransportModeH1)
 	connect.AssertEqual(t, hosted.GetProviderTransportSettings().Mode, TransportModeH1)
+
+	// Pin the final boundary used by the built-in ApiMultiClientGenerator, not
+	// just the value exposed by the settings getters. A hosted proxy must pass
+	// an explicit H1 target to Connect with no Auto preference map.
+	for name, settings := range map[string]*TransportSettings{
+		"client":   hosted.GetTransportSettings(),
+		"provider": hosted.GetProviderTransportSettings(),
+	} {
+		mode, preferences := toConnectTransportPolicy(settings, name == "provider")
+		if mode != connect.TransportModeH1 {
+			t.Fatalf("hosted %s Connect mode = %q, expected explicit h1", name, mode)
+		}
+		if preferences != nil {
+			t.Fatalf("hosted %s Connect preferences = %v, expected nil for explicit h1", name, preferences)
+		}
+	}
 
 	// The RPC layer independently blocks the same setters, even if its local
 	// object was not constructed with the DeviceLocal guard.

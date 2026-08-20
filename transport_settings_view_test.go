@@ -13,20 +13,20 @@ import (
 // refusing to disable the last Auto mode, and clone/equals for drafts
 func TestTransportSettingsEditingHelpers(t *testing.T) {
 	modes := SelectableTransportModes()
-	if modes.Len() != 4 || modes.Get(0) != TransportModeH3 || modes.Get(1) != TransportModeH1 || modes.Get(2) != TransportModeDns || modes.Get(3) != TransportModeDnsPump {
+	if modes.Len() != 4 || modes.Get(0) != TransportModeH1 || modes.Get(1) != TransportModeH3 || modes.Get(2) != TransportModeDns || modes.Get(3) != TransportModeDnsPump {
 		t.Fatalf("unexpected selectable modes: %v", modes.getAll())
 	}
-	if DefaultTransportModePriority(TransportModeH3) != 1 || DefaultTransportModePriority(TransportModeH1) != 1 ||
-		DefaultTransportModePriority(TransportModeDns) != 2 || DefaultTransportModePriority(TransportModeDnsPump) != 3 {
+	if DefaultTransportModePriority(TransportModeH1) != 1 || DefaultTransportModePriority(TransportModeH3) != 2 ||
+		DefaultTransportModePriority(TransportModeDns) != 3 || DefaultTransportModePriority(TransportModeDnsPump) != 4 {
 		t.Fatalf("unexpected default priorities")
 	}
-	if DefaultTransportModePriority("bogus") != 4 {
+	if DefaultTransportModePriority("bogus") != 5 {
 		t.Fatalf("expected an unknown mode to sort after the defaults, got %d", DefaultTransportModePriority("bogus"))
 	}
 
 	// the default policy enables every carrier in default order
 	settings := DefaultTransportSettings()
-	if got := settings.EnabledTransportTypes().getAll(); !slices.Equal(got, []string{TransportTypeH3, TransportTypeH1, TransportTypeDns, TransportTypeDnsPump}) {
+	if got := settings.EnabledTransportTypes().getAll(); !slices.Equal(got, []string{TransportTypeH1, TransportTypeH3, TransportTypeDns, TransportTypeDnsPump}) {
 		t.Fatalf("unexpected default enabled types: %v", got)
 	}
 	// a single mode enables its carrier only, the auto policy is retained
@@ -34,7 +34,7 @@ func TestTransportSettingsEditingHelpers(t *testing.T) {
 	if got := settings.EnabledTransportTypes().getAll(); !slices.Equal(got, []string{TransportTypeDns}) {
 		t.Fatalf("unexpected single-mode enabled types: %v", got)
 	}
-	if got := settings.AutoModes().getAll(); !slices.Equal(got, []string{TransportModeH3, TransportModeH1, TransportModeDns, TransportModeDnsPump}) {
+	if got := settings.AutoModes().getAll(); !slices.Equal(got, []string{TransportModeH1, TransportModeH3, TransportModeDns, TransportModeDnsPump}) {
 		t.Fatalf("expected the auto policy retained under a single mode, got %v", got)
 	}
 	settings.Mode = TransportModeAuto
@@ -62,11 +62,11 @@ func TestTransportSettingsEditingHelpers(t *testing.T) {
 	if !settings.SetAutoModeEnabled(TransportModeDnsPump, true) || !settings.SetAutoModeEnabled(TransportModeH3, true) {
 		t.Fatalf("expected enables to apply")
 	}
-	if got := settings.AutoModes().getAll(); !slices.Equal(got, []string{TransportModeH3, TransportModeH1, TransportModeDnsPump}) {
-		t.Fatalf("expected default order h3, h1, dnspump, got %v", got)
+	if got := settings.AutoModes().getAll(); !slices.Equal(got, []string{TransportModeH1, TransportModeH3, TransportModeDnsPump}) {
+		t.Fatalf("expected default order h1, h3, dnspump, got %v", got)
 	}
 	// enabling an enabled mode keeps its (custom) priority
-	settings.AutoModePriorities.Get(1).Priority = 7
+	settings.AutoModePriorities.Get(0).Priority = 7
 	if settings.SetAutoModeEnabled(TransportModeH1, true) {
 		t.Fatalf("expected re-enable to be a no-op")
 	}

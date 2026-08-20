@@ -352,6 +352,11 @@ func TestDeviceLocalProvideMemoryRealloc(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	connect.AssertEqual(
+		t,
+		device.provider.platformTransportSettings.PlatformTransportBudgetPriority,
+		connect.PlatformTransportBudgetPriorityBackground,
+	)
 
 	target := connect.ByteCount(defaultDeviceLocalMemoryTargetByteCount)
 	clientShare := target * deviceMemoryRatioClient / deviceMemoryRatioParts

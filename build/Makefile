@@ -20,8 +20,10 @@ clean:
 build_android:
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
-	# note android/amd64 is needed for chromebook devices
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	# (still needed as of x/mobile 2026-08-19: bind gengo typeString prints alias names unqualified;
+	# gomobile/gobind must be built with go <= 1.26 -- the go 1.27 runtime fatals when this GODEBUG is set)
+	# note android/amd64 is needed for chromebook devices
 	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
 	# validate that all types could be exported
 	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*, DeviceRpcDialer/Listener, their
@@ -106,6 +108,8 @@ build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	# (still needed as of x/mobile 2026-08-19: bind gengo typeString prints alias names unqualified;
+	# gomobile/gobind must be built with go <= 1.26 -- the go 1.27 runtime fatals when this GODEBUG is set)
 	set -e; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
@@ -163,7 +167,7 @@ build_linux:
 	$(MAKE) -C ../cgo build_linux
 
 
-GOMOBILE_VERSION ?= v0.0.0-20260611195102-4dd8f1dbf5d2
+GOMOBILE_VERSION ?= v0.0.0-20260820023541-8e8303b9da6c
 CHECKSEC_VERSION ?= v3.1.0
 
 # Install only the pinned build tools. Platform setup scripts use this target

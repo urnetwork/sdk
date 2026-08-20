@@ -429,6 +429,10 @@ void urnet_invoke_provider_transport_settings_change(urnet_provider_transport_se
 	cb(user_data, transport_settings_json);
 }
 
+void urnet_invoke_provider_transport_status_change(urnet_provider_transport_status_change_cb cb, void* user_data, const char* transport_status_json) {
+	cb(user_data, transport_status_json);
+}
+
 void urnet_invoke_purchase_confirmation(urnet_purchase_confirmation_cb cb, void* user_data, const char* state) {
 	cb(user_data, state);
 }
@@ -543,6 +547,10 @@ void urnet_invoke_throughput(urnet_throughput_cb cb, void* user_data) {
 
 void urnet_invoke_transport_settings_change(urnet_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json) {
 	cb(user_data, transport_settings_json);
+}
+
+void urnet_invoke_transport_status_change(urnet_transport_status_change_cb cb, void* user_data, const char* transport_status_json) {
+	cb(user_data, transport_status_json);
 }
 
 void urnet_invoke_tunnel_change(urnet_tunnel_change_cb cb, void* user_data, bool tunnel_started) {

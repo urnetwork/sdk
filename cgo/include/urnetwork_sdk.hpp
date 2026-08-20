@@ -217,6 +217,7 @@ inline constexpr const char* SubscriptionStoreGoogle = "google";
 inline constexpr const char* SubscriptionStoreOther = "other";
 inline constexpr const char* SubscriptionStoreStripe = "stripe";
 inline constexpr const char* TAO = "TAO";
+inline constexpr const char* TransportConstraintMemory = "memory";
 inline constexpr const char* TransportModeAuto = "auto";
 inline constexpr const char* TransportModeDns = "dns";
 inline constexpr const char* TransportModeDnsPump = "dnspump";
@@ -511,6 +512,7 @@ struct TransportModePriority;
 struct TransportPacketStats;
 struct TransportSettings;
 struct TransportShare;
+struct TransportStatus;
 struct TunnelDnsSetting;
 struct UnlinkReferralNetworkResult;
 struct UpgradeGuestArgs;
@@ -2114,6 +2116,12 @@ struct TransportShare {
 	bool Enabled{};
 };
 
+struct TransportStatus {
+	bool auto_degraded{};
+	std::optional<StringList> auto_eligible_modes;
+	std::string auto_constraint{};
+};
+
 struct TunnelDnsSetting {
 	bool Doh{};
 	std::string Server{};
@@ -2750,6 +2758,8 @@ inline void to_json(nlohmann::json& j, const TransportSettings& v);
 inline void from_json(const nlohmann::json& j, TransportSettings& v);
 inline void to_json(nlohmann::json& j, const TransportShare& v);
 inline void from_json(const nlohmann::json& j, TransportShare& v);
+inline void to_json(nlohmann::json& j, const TransportStatus& v);
+inline void from_json(const nlohmann::json& j, TransportStatus& v);
 inline void to_json(nlohmann::json& j, const TunnelDnsSetting& v);
 inline void from_json(const nlohmann::json& j, TunnelDnsSetting& v);
 inline void to_json(nlohmann::json& j, const UnlinkReferralNetworkResult& v);
@@ -9622,6 +9632,31 @@ inline void from_json(const nlohmann::json& j, TransportShare& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const TransportStatus& v) {
+	j = nlohmann::json::object();
+	j["auto_degraded"] = v.auto_degraded;
+	if (v.auto_eligible_modes) {
+		j["auto_eligible_modes"] = *v.auto_eligible_modes;
+	}
+	j["auto_constraint"] = v.auto_constraint;
+}
+inline void from_json(const nlohmann::json& j, TransportStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("auto_degraded"); it != j.end() && !it->is_null()) {
+		it->get_to(v.auto_degraded);
+	}
+	if (auto it = j.find("auto_eligible_modes"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.auto_eligible_modes = std::move(tmp);
+	}
+	if (auto it = j.find("auto_constraint"); it != j.end() && !it->is_null()) {
+		it->get_to(v.auto_constraint);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const TunnelDnsSetting& v) {
 	j = nlohmann::json::object();
 	j["Doh"] = v.Doh;
@@ -10468,6 +10503,7 @@ using ProvidePausedChangeListener = std::function<void(bool provide_paused)>;
 using ProvideSecretKeysListener = std::function<void(std::optional<ProvideSecretKeyList> provide_secret_key_list)>;
 using ProviderIdentityChangeListener = std::function<void()>;
 using ProviderTransportSettingsChangeListener = std::function<void(std::optional<TransportSettings> transport_settings)>;
+using ProviderTransportStatusChangeListener = std::function<void(std::optional<TransportStatus> transport_status)>;
 using PurchaseConfirmationListener = std::function<void(std::string state)>;
 using ReceivePacket = std::function<void(int64_t ip_version, int64_t ip_protocol, const uint8_t* packet, int32_t packet_len)>;
 using ReceivePacketBatch = std::function<void(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len)>;
@@ -10497,6 +10533,7 @@ using SubscriptionCreatePaymentIdCallback = std::function<void(std::optional<Sub
 using SubscriptionJwtOutOfSyncListener = std::function<void(bool server_is_pro)>;
 using ThroughputListener = std::function<void()>;
 using TransportSettingsChangeListener = std::function<void(std::optional<TransportSettings> transport_settings)>;
+using TransportStatusChangeListener = std::function<void(std::optional<TransportStatus> transport_status)>;
 using TunnelChangeListener = std::function<void(bool tunnel_started)>;
 using UnlinkReferralNetworkCallback = std::function<void(std::optional<UnlinkReferralNetworkResult> result, std::optional<std::string> err_param)>;
 using UnpaidByteCountListener = std::function<void(int64_t p0)>;
@@ -10586,8 +10623,10 @@ public:
 	Sub addProviderIngressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addProviderPacketStatsChangeListener(PacketStatsChangeListener listener) const;
 	Sub addProviderTransportSettingsChangeListener(ProviderTransportSettingsChangeListener listener) const;
+	Sub addProviderTransportStatusChangeListener(ProviderTransportStatusChangeListener listener) const;
 	Sub addRouteLocalChangeListener(RouteLocalChangeListener listener) const;
 	Sub addTransportSettingsChangeListener(TransportSettingsChangeListener listener) const;
+	Sub addTransportStatusChangeListener(TransportStatusChangeListener listener) const;
 	Sub addTunnelChangeListener(TunnelChangeListener listener) const;
 	Sub addVpnInterfaceWhileOfflineChangeListener(VpnInterfaceWhileOfflineChangeListener listener) const;
 	Sub addWindowStatusChangeListener(WindowStatusChangeListener listener) const;
@@ -10633,11 +10672,13 @@ public:
 	std::optional<ContractStats> getProviderIngressContractStats() const;
 	std::optional<PacketStats> getProviderPacketStats() const;
 	std::optional<TransportSettings> getProviderTransportSettings() const;
+	std::optional<TransportStatus> getProviderTransportStatus() const;
 	std::string getPublicIdentityKeyHash() const;
 	bool getRouteLocal() const;
 	bool getShouldShowRatingDialog() const;
 	DeviceStats getStats() const;
 	std::optional<TransportSettings> getTransportSettings() const;
+	std::optional<TransportStatus> getTransportStatus() const;
 	bool getTunnelStarted() const;
 	bool getVpnInterfaceWhileOffline() const;
 	std::optional<WindowStatus> getWindowStatus() const;
@@ -14427,6 +14468,34 @@ inline void oneshot_provider_transport_settings_change(void* user_data, const ch
 	delete f;
 }
 
+inline void retained_provider_transport_status_change(void* user_data, const char* transport_status_json) {
+	auto* f = static_cast<ProviderTransportStatusChangeListener*>(user_data);
+	try {
+		std::optional<TransportStatus> transport_status_v;
+		if (transport_status_json) {
+			transport_status_v = parseJson<TransportStatus>(transport_status_json);
+		}
+		(*f)(std::move(transport_status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_provider_transport_status_change(void* user_data, const char* transport_status_json) {
+	auto* f = static_cast<ProviderTransportStatusChangeListener*>(user_data);
+	try {
+		std::optional<TransportStatus> transport_status_v;
+		if (transport_status_json) {
+			transport_status_v = parseJson<TransportStatus>(transport_status_json);
+		}
+		(*f)(std::move(transport_status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_purchase_confirmation(void* user_data, const char* state) {
 	auto* f = static_cast<PurchaseConfirmationListener*>(user_data);
 	try {
@@ -15272,6 +15341,34 @@ inline void oneshot_transport_settings_change(void* user_data, const char* trans
 			transport_settings_v = parseJson<TransportSettings>(transport_settings_json);
 		}
 		(*f)(std::move(transport_settings_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_transport_status_change(void* user_data, const char* transport_status_json) {
+	auto* f = static_cast<TransportStatusChangeListener*>(user_data);
+	try {
+		std::optional<TransportStatus> transport_status_v;
+		if (transport_status_json) {
+			transport_status_v = parseJson<TransportStatus>(transport_status_json);
+		}
+		(*f)(std::move(transport_status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_transport_status_change(void* user_data, const char* transport_status_json) {
+	auto* f = static_cast<TransportStatusChangeListener*>(user_data);
+	try {
+		std::optional<TransportStatus> transport_status_v;
+		if (transport_status_json) {
+			transport_status_v = parseJson<TransportStatus>(transport_status_json);
+		}
+		(*f)(std::move(transport_status_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -16276,6 +16373,17 @@ inline Sub Device::addProviderTransportSettingsChangeListener(ProviderTransportS
 	}
 	return r;
 }
+inline Sub Device::addProviderTransportStatusChangeListener(ProviderTransportStatusChangeListener listener) const {
+	std::shared_ptr<ProviderTransportStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ProviderTransportStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_provider_transport_status_change_listener(handle(), listener_fn ? &detail::retained_provider_transport_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addRouteLocalChangeListener(RouteLocalChangeListener listener) const {
 	std::shared_ptr<RouteLocalChangeListener> listener_fn;
 	if (listener) {
@@ -16293,6 +16401,17 @@ inline Sub Device::addTransportSettingsChangeListener(TransportSettingsChangeLis
 		listener_fn = std::make_shared<TransportSettingsChangeListener>(std::move(listener));
 	}
 	Sub r(urnet_device_add_transport_settings_change_listener(handle(), listener_fn ? &detail::retained_transport_settings_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline Sub Device::addTransportStatusChangeListener(TransportStatusChangeListener listener) const {
+	std::shared_ptr<TransportStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<TransportStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_transport_status_change_listener(handle(), listener_fn ? &detail::retained_transport_status_change : nullptr, listener_fn.get()));
 	if (listener_fn) {
 		r.retain(listener_fn);
 	}
@@ -16589,6 +16708,14 @@ inline std::optional<TransportSettings> Device::getProviderTransportSettings() c
 	}
 	return detail::parseJson<TransportSettings>(r_s->c_str());
 }
+inline std::optional<TransportStatus> Device::getProviderTransportStatus() const {
+	char* r_c = urnet_device_get_provider_transport_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<TransportStatus>(r_s->c_str());
+}
 inline std::string Device::getPublicIdentityKeyHash() const {
 	char* r_c = urnet_device_get_public_identity_key_hash(handle());
 	return detail::takeString(r_c);
@@ -16612,6 +16739,14 @@ inline std::optional<TransportSettings> Device::getTransportSettings() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<TransportSettings>(r_s->c_str());
+}
+inline std::optional<TransportStatus> Device::getTransportStatus() const {
+	char* r_c = urnet_device_get_transport_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<TransportStatus>(r_s->c_str());
 }
 inline bool Device::getTunnelStarted() const {
 	bool r = urnet_device_get_tunnel_started(handle());

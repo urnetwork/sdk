@@ -1669,6 +1669,20 @@ func (self *cAdapterProviderTransportSettingsChangeListener) ProviderTransportSe
 	}
 }
 
+type cAdapterProviderTransportStatusChangeListener struct {
+	cbProviderTransportStatusChanged C.urnet_provider_transport_status_change_cb
+	userData                         unsafe.Pointer
+}
+
+func (self *cAdapterProviderTransportStatusChangeListener) ProviderTransportStatusChanged(transportStatus *sdk.TransportStatus) {
+	defer cgoGuard("urnet_provider_transport_status_change_cb")
+	transportStatus_ := cJson(transportStatus, "urnet_provider_transport_status_change_cb")
+	C.urnet_invoke_provider_transport_status_change(self.cbProviderTransportStatusChanged, self.userData, transportStatus_)
+	if transportStatus_ != nil {
+		cStringFree(transportStatus_)
+	}
+}
+
 type cAdapterPurchaseConfirmationListener struct {
 	cbPurchaseConfirmationStateChanged C.urnet_purchase_confirmation_cb
 	userData                           unsafe.Pointer
@@ -2148,6 +2162,20 @@ func (self *cAdapterTransportSettingsChangeListener) TransportSettingsChanged(tr
 	C.urnet_invoke_transport_settings_change(self.cbTransportSettingsChanged, self.userData, transportSettings_)
 	if transportSettings_ != nil {
 		cStringFree(transportSettings_)
+	}
+}
+
+type cAdapterTransportStatusChangeListener struct {
+	cbTransportStatusChanged C.urnet_transport_status_change_cb
+	userData                 unsafe.Pointer
+}
+
+func (self *cAdapterTransportStatusChangeListener) TransportStatusChanged(transportStatus *sdk.TransportStatus) {
+	defer cgoGuard("urnet_transport_status_change_cb")
+	transportStatus_ := cJson(transportStatus, "urnet_transport_status_change_cb")
+	C.urnet_invoke_transport_status_change(self.cbTransportStatusChanged, self.userData, transportStatus_)
+	if transportStatus_ != nil {
+		cStringFree(transportStatus_)
 	}
 }
 
@@ -5813,6 +5841,21 @@ func urnet_device_add_provider_transport_settings_change_listener(self C.uint64_
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_provider_transport_status_change_listener
+func urnet_device_add_provider_transport_status_change_listener(self C.uint64_t, listener_provider_transport_status_changed C.urnet_provider_transport_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_provider_transport_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_provider_transport_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ProviderTransportStatusChangeListener
+	if listener_provider_transport_status_changed != nil {
+		listener_ = &cAdapterProviderTransportStatusChangeListener{cbProviderTransportStatusChanged: listener_provider_transport_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddProviderTransportStatusChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_route_local_change_listener
 func urnet_device_add_route_local_change_listener(self C.uint64_t, listener_route_local_changed C.urnet_route_local_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_route_local_change_listener")
@@ -5840,6 +5883,21 @@ func urnet_device_add_transport_settings_change_listener(self C.uint64_t, listen
 		listener_ = &cAdapterTransportSettingsChangeListener{cbTransportSettingsChanged: listener_transport_settings_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddTransportSettingsChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_add_transport_status_change_listener
+func urnet_device_add_transport_status_change_listener(self C.uint64_t, listener_transport_status_changed C.urnet_transport_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_transport_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_transport_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.TransportStatusChangeListener
+	if listener_transport_status_changed != nil {
+		listener_ = &cAdapterTransportStatusChangeListener{cbTransportStatusChanged: listener_transport_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddTransportStatusChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -6423,6 +6481,20 @@ func urnet_device_get_provider_transport_settings(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_provider_transport_settings")
 }
 
+//export urnet_device_get_provider_transport_status
+func urnet_device_get_provider_transport_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provider_transport_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provider_transport_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderTransportStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provider_transport_status")
+}
+
 //export urnet_device_get_public_identity_key_hash
 func urnet_device_get_public_identity_key_hash(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_public_identity_key_hash")
@@ -6482,6 +6554,20 @@ func urnet_device_get_transport_settings(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_get_transport_settings")
+}
+
+//export urnet_device_get_transport_status
+func urnet_device_get_transport_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_transport_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_transport_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetTransportStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_transport_status")
 }
 
 //export urnet_device_get_tunnel_started

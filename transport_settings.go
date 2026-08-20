@@ -61,14 +61,16 @@ type TransportSettings struct {
 	AutoModePriorities *TransportModePriorityList `json:"auto_mode_priorities"`
 }
 
-// DefaultTransportSettings enables direct H3 and H1 together, then DNS and
-// DNS pump as progressively lower availability fallbacks.
+// DefaultTransportSettings makes H1 the primary Auto carrier. Direct H3
+// remains available when H1 is unavailable, followed by DNS and DNS pump as
+// progressively lower availability fallbacks. Explicit H3 selection bypasses
+// this Auto ordering.
 func DefaultTransportSettings() *TransportSettings {
 	priorities := NewTransportModePriorityList()
-	priorities.Add(&TransportModePriority{Mode: TransportModeH3, Priority: 1})
 	priorities.Add(&TransportModePriority{Mode: TransportModeH1, Priority: 1})
-	priorities.Add(&TransportModePriority{Mode: TransportModeDns, Priority: 2})
-	priorities.Add(&TransportModePriority{Mode: TransportModeDnsPump, Priority: 3})
+	priorities.Add(&TransportModePriority{Mode: TransportModeH3, Priority: 2})
+	priorities.Add(&TransportModePriority{Mode: TransportModeDns, Priority: 3})
+	priorities.Add(&TransportModePriority{Mode: TransportModeDnsPump, Priority: 4})
 	return &TransportSettings{
 		Mode:               TransportModeAuto,
 		AutoModePriorities: priorities,
@@ -104,9 +106,9 @@ func validAutoTransportMode(mode TransportMode) bool {
 
 func autoTransportModeOrder(mode TransportMode) int {
 	switch mode {
-	case TransportModeH3:
-		return 0
 	case TransportModeH1:
+		return 0
+	case TransportModeH3:
 		return 1
 	case TransportModeDns:
 		return 2
@@ -117,10 +119,35 @@ func autoTransportModeOrder(mode TransportMode) int {
 	}
 }
 
+// migrateLegacyDefaultTransportPriorities recognizes complete or partial Auto
+// policies composed entirely of the defaults shipped before H1 became the
+// strict primary. TransportSettings retains this policy while an explicit mode
+// is selected, so without this migration an installed client could later switch
+// back to Auto—or re-enable H1—and silently restore the obsolete H1/H3 tie.
+// Any genuinely custom priority leaves the complete policy untouched.
+func migrateLegacyDefaultTransportPriorities(prioritiesByMode map[TransportMode]int) {
+	legacy := map[TransportMode]int{
+		TransportModeH3:      1,
+		TransportModeH1:      1,
+		TransportModeDns:     2,
+		TransportModeDnsPump: 3,
+	}
+	for mode, priority := range prioritiesByMode {
+		if legacy[mode] != priority {
+			return
+		}
+	}
+	for _, item := range DefaultTransportSettings().AutoModePriorities.getAll() {
+		if _, ok := prioritiesByMode[item.Mode]; ok {
+			prioritiesByMode[item.Mode] = item.Priority
+		}
+	}
+}
+
 // normalizeTransportSettings creates an immutable canonical copy. A nil,
 // malformed, or empty Auto policy safely resolves to the production default;
 // duplicate mode rows use the final value and output is stable by priority and
-// production mode order (H3, H1, DNS, DNS pump).
+// production mode order (H1, H3, DNS, DNS pump).
 func normalizeTransportSettings(settings *TransportSettings, provider bool) *TransportSettings {
 	defaultSettings := DefaultTransportSettings()
 	if provider {
@@ -148,6 +175,7 @@ func normalizeTransportSettings(settings *TransportSettings, provider bool) *Tra
 			AutoModePriorities: cloneTransportSettings(defaultSettings).AutoModePriorities,
 		}
 	}
+	migrateLegacyDefaultTransportPriorities(prioritiesByMode)
 
 	priorities := make([]*TransportModePriority, 0, len(prioritiesByMode))
 	for autoMode, priority := range prioritiesByMode {
@@ -226,9 +254,17 @@ func toConnectTransportPolicy(settings *TransportSettings, provider bool) (
 	if mode != connect.TransportModeAuto {
 		return mode, nil
 	}
+	return mode, toConnectAutoModePreferences(settings, provider)
+}
+
+func toConnectAutoModePreferences(
+	settings *TransportSettings,
+	provider bool,
+) map[connect.TransportMode]int {
+	settings = normalizeTransportSettings(settings, provider)
 	preferences := map[connect.TransportMode]int{}
 	for _, item := range settings.AutoModePriorities.getAll() {
 		preferences[toConnectTransportMode(item.Mode)] = item.Priority
 	}
-	return mode, preferences
+	return preferences
 }

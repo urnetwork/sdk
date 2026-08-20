@@ -310,6 +310,12 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["getProviderTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsTransportSettings(device.GetProviderTransportSettings())
 	})
+	m["getTransportStatus"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportStatus(device.GetTransportStatus())
+	})
+	m["getProviderTransportStatus"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsTransportStatus(device.GetProviderTransportStatus())
+	})
 	m["setTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
 			device.SetTransportSettings(parseTransportSettings(args[0]))
@@ -336,14 +342,27 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		}
 		return jsSub(device.AddProviderTransportSettingsChangeListener(&jsProviderTransportSettingsChangeListener{cb}))
 	})
+	m["addTransportStatusChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddTransportStatusChangeListener(&jsTransportStatusChangeListener{cb}))
+	})
+	m["addProviderTransportStatusChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProviderTransportStatusChangeListener(&jsProviderTransportStatusChangeListener{cb}))
+	})
 	m["getDefaultTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsTransportSettings(sdk.DefaultTransportSettings())
 	})
 	m["getDefaultProviderTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsTransportSettings(sdk.DefaultProviderTransportSettings())
 	})
-	// the selectable modes in the default preference order (h3, h1, dns,
-	// dnspump); every transport list should show this order
+	// the selectable modes in default preference order (h1, h3, dns, dnspump)
 	m["getSelectableTransportModes"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsStringListDR(sdk.SelectableTransportModes())
 	})
@@ -645,6 +664,17 @@ func jsTransportSettings(s *sdk.TransportSettings) js.Value {
 	})
 }
 
+func jsTransportStatus(status *sdk.TransportStatus) js.Value {
+	if status == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"autoDegraded":      status.AutoDegraded,
+		"autoEligibleModes": jsStringListDR(status.AutoEligibleModes),
+		"autoConstraint":    status.AutoConstraint,
+	})
+}
+
 // parseTransportSettings reads a policy from a JS object ({mode,
 // autoModePriorities: [{mode, priority}]}); null reads as the default policy.
 // The sdk normalizes what it is given
@@ -687,6 +717,18 @@ type jsProviderTransportSettingsChangeListener struct{ cb js.Value }
 
 func (self *jsProviderTransportSettingsChangeListener) ProviderTransportSettingsChanged(s *sdk.TransportSettings) {
 	self.cb.Invoke(jsTransportSettings(s))
+}
+
+type jsTransportStatusChangeListener struct{ cb js.Value }
+
+func (self *jsTransportStatusChangeListener) TransportStatusChanged(status *sdk.TransportStatus) {
+	self.cb.Invoke(jsTransportStatus(status))
+}
+
+type jsProviderTransportStatusChangeListener struct{ cb js.Value }
+
+func (self *jsProviderTransportStatusChangeListener) ProviderTransportStatusChanged(status *sdk.TransportStatus) {
+	self.cb.Invoke(jsTransportStatus(status))
 }
 
 type jsDnsResolverSettingsChangeListener struct{ cb js.Value }

@@ -31,8 +31,8 @@ func transportTypes() []TransportType {
 }
 
 // SelectableTransportModes returns the modes a policy can select (every mode
-// but Auto) in the default preference order: h3 and h1 tie as the direct tier,
-// then dns, then dns pump. This is the order every transport list should show.
+// but Auto) in the default H1-first preference order. AutoModes reports the
+// separately sorted order of the policy it is called on.
 func SelectableTransportModes() *StringList {
 	modes := NewStringList()
 	modes.addAll(selectableTransportModes()...)
@@ -41,8 +41,8 @@ func SelectableTransportModes() *StringList {
 
 func selectableTransportModes() []TransportMode {
 	return []TransportMode{
-		TransportModeH3,
 		TransportModeH1,
+		TransportModeH3,
 		TransportModeDns,
 		TransportModeDnsPump,
 	}

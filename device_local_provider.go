@@ -132,6 +132,12 @@ func newDeviceLocalProviderWithOverrides(
 	platformTransportSettings := connect.DefaultPlatformTransportSettings()
 	platformTransportSettings.Log = clientSettings.Log
 	platformTransportSettings.ModePreferences = maps.Clone(modePreferences)
+	// The provider exists before outbound client windows. Its optional Auto-H3
+	// lease must therefore be reclaimable by foreground client Auto/H3 demand;
+	// otherwise creation order permanently leaves every outbound window on H1.
+	// Explicit provider H3 is a required reservation and ignores this priority.
+	platformTransportSettings.PlatformTransportBudgetPriority =
+		connect.PlatformTransportBudgetPriorityBackground
 	platformTransport := connect.NewPlatformTransportWithTargetMode(
 		client.Ctx(),
 		clientStrategy,
@@ -327,6 +333,20 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			targetMode,
 			platformTransportSettings,
 		)
+	}
+	if targetMode != connect.TransportModeAuto {
+		// An explicit carrier selection must not remain on the old carrier
+		// merely because the low-memory budget cannot hold both during a
+		// make-before-break handoff. Only break early when the concrete
+		// replacement confirms that its required reservation is blocked.
+		if waiter, ok := next.(interface{ IsWaitingForBudget() bool }); ok && waiter.IsWaitingForBudget() {
+			self.stateLock.Lock()
+			previous := self.platformTransport
+			self.stateLock.Unlock()
+			if previous != nil {
+				previous.Close()
+			}
+		}
 	}
 
 	connectEndTime := time.Now().Add(self.migrateConnectTimeout)

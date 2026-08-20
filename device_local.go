@@ -793,6 +793,8 @@ type DeviceLocal struct {
 	blockActionOverridesChangeListeners      *connect.CallbackList[BlockActionOverridesChangeListener]
 	transportSettingsChangeListeners         *connect.CallbackList[TransportSettingsChangeListener]
 	providerTransportSettingsChangeListeners *connect.CallbackList[ProviderTransportSettingsChangeListener]
+	transportStatusChangeListeners           *connect.CallbackList[TransportStatusChangeListener]
+	providerTransportStatusChangeListeners   *connect.CallbackList[ProviderTransportStatusChangeListener]
 	packetStatsChangeListeners               *connect.CallbackList[PacketStatsChangeListener]
 	egressContractStatsChangeListeners       *connect.CallbackList[ContractStatsChangeListener]
 	egressContractDetailsChangeListeners     *connect.CallbackList[ContractDetailsChangeListener]
@@ -1220,6 +1222,8 @@ func newDeviceLocalWithOverrides(
 		blockActionOverridesChangeListeners:      connect.NewCallbackList[BlockActionOverridesChangeListener](),
 		transportSettingsChangeListeners:         connect.NewCallbackList[TransportSettingsChangeListener](),
 		providerTransportSettingsChangeListeners: connect.NewCallbackList[ProviderTransportSettingsChangeListener](),
+		transportStatusChangeListeners:           connect.NewCallbackList[TransportStatusChangeListener](),
+		providerTransportStatusChangeListeners:   connect.NewCallbackList[ProviderTransportStatusChangeListener](),
 		packetStatsChangeListeners:               connect.NewCallbackList[PacketStatsChangeListener](),
 		egressContractStatsChangeListeners:       connect.NewCallbackList[ContractStatsChangeListener](),
 		egressContractDetailsChangeListeners:     connect.NewCallbackList[ContractDetailsChangeListener](),
@@ -4589,6 +4593,7 @@ func (self *DeviceLocal) SetTransportSettings(transportSettings *TransportSettin
 		}
 	}
 	self.transportSettingsChanged(transportSettings)
+	self.transportStatusChanged(self.GetTransportStatus())
 }
 
 func (self *DeviceLocal) GetTransportSettings() *TransportSettings {
@@ -4617,6 +4622,31 @@ func (self *DeviceLocal) transportSettingsChanged(transportSettings *TransportSe
 	for _, listener := range self.transportSettingsChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.TransportSettingsChanged(cloneTransportSettings(transportSettings))
+		})
+	}
+}
+
+func (self *DeviceLocal) GetTransportStatus() *TransportStatus {
+	return transportStatus(self.GetTransportSettings(), false)
+}
+
+func (self *DeviceLocal) AddTransportStatusChangeListener(listener TransportStatusChangeListener) Sub {
+	if self.transportStatusChangeListeners == nil {
+		self.transportStatusChangeListeners = connect.NewCallbackList[TransportStatusChangeListener]()
+	}
+	callbackId := self.transportStatusChangeListeners.Add(listener)
+	return newSub(func() {
+		self.transportStatusChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) transportStatusChanged(status *TransportStatus) {
+	if self.transportStatusChangeListeners == nil {
+		return
+	}
+	for _, listener := range self.transportStatusChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.TransportStatusChanged(cloneTransportStatus(status))
 		})
 	}
 }
@@ -4650,6 +4680,7 @@ func (self *DeviceLocal) SetProviderTransportSettings(transportSettings *Transpo
 		}
 	}
 	self.providerTransportSettingsChanged(transportSettings)
+	self.providerTransportStatusChanged(self.GetProviderTransportStatus())
 }
 
 func (self *DeviceLocal) AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub {
@@ -4680,6 +4711,31 @@ func (self *DeviceLocal) GetProviderTransportSettings() *TransportSettings {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return cloneTransportSettings(self.providerTransportSettings)
+}
+
+func (self *DeviceLocal) GetProviderTransportStatus() *TransportStatus {
+	return transportStatus(self.GetProviderTransportSettings(), true)
+}
+
+func (self *DeviceLocal) AddProviderTransportStatusChangeListener(listener ProviderTransportStatusChangeListener) Sub {
+	if self.providerTransportStatusChangeListeners == nil {
+		self.providerTransportStatusChangeListeners = connect.NewCallbackList[ProviderTransportStatusChangeListener]()
+	}
+	callbackId := self.providerTransportStatusChangeListeners.Add(listener)
+	return newSub(func() {
+		self.providerTransportStatusChangeListeners.Remove(callbackId)
+	})
+}
+
+func (self *DeviceLocal) providerTransportStatusChanged(status *TransportStatus) {
+	if self.providerTransportStatusChangeListeners == nil {
+		return
+	}
+	for _, listener := range self.providerTransportStatusChangeListeners.Get() {
+		connect.HandleError(func() {
+			listener.ProviderTransportStatusChanged(cloneTransportStatus(status))
+		})
+	}
 }
 
 func addConnectPacketStats(out *connect.PacketStats, add *connect.PacketStats) {

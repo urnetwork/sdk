@@ -276,6 +276,8 @@ type DeviceRemote struct {
 	blockActionOverridesChangeListeners      map[connect.Id]BlockActionOverridesChangeListener
 	transportSettingsChangeListeners         map[connect.Id]TransportSettingsChangeListener
 	providerTransportSettingsChangeListeners map[connect.Id]ProviderTransportSettingsChangeListener
+	transportStatusChangeListeners           map[connect.Id]TransportStatusChangeListener
+	providerTransportStatusChangeListeners   map[connect.Id]ProviderTransportStatusChangeListener
 	packetStatsChangeListeners               map[connect.Id]PacketStatsChangeListener
 	egressContractStatsChangeListeners       map[connect.Id]ContractStatsChangeListener
 	egressContractDetailsChangeListeners     map[connect.Id]ContractDetailsChangeListener
@@ -463,6 +465,8 @@ func newDeviceRemoteWithOverrides(
 		blockActionOverridesChangeListeners:      map[connect.Id]BlockActionOverridesChangeListener{},
 		transportSettingsChangeListeners:         map[connect.Id]TransportSettingsChangeListener{},
 		providerTransportSettingsChangeListeners: map[connect.Id]ProviderTransportSettingsChangeListener{},
+		transportStatusChangeListeners:           map[connect.Id]TransportStatusChangeListener{},
+		providerTransportStatusChangeListeners:   map[connect.Id]ProviderTransportStatusChangeListener{},
 		packetStatsChangeListeners:               map[connect.Id]PacketStatsChangeListener{},
 		egressContractStatsChangeListeners:       map[connect.Id]ContractStatsChangeListener{},
 		egressContractDetailsChangeListeners:     map[connect.Id]ContractDetailsChangeListener{},
@@ -605,40 +609,46 @@ func (self *DeviceRemote) run() {
 					InstanceId: self.instanceId,
 					RpcVersion: self.settings.RpcVersion,
 
-					CanShowRatingDialogChangeListenerIds:       slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
-					CanPromptIntroFunnelChangeListenerIds:      slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
-					AllowForegroundChangeListenerIds:           slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
-					CanReferChangeListenerIds:                  slices.Collect(maps.Keys(self.canReferChangeListeners)),
-					ProvideModeChangeListenerIds:               slices.Collect(maps.Keys(self.provideModeChangeListeners)),
-					ProvideChangeListenerIds:                   slices.Collect(maps.Keys(self.provideChangeListeners)),
-					ProvideControlModeChangeListenerIds:        slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
-					PerformanceProfileChangeListenerIds:        slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
-					ProviderIdentityChangeListenerIds:          slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
-					ProvidePausedChangeListenerIds:             slices.Collect(maps.Keys(self.providePausedChangeListeners)),
-					ProvideNetworkModeChangeListenerIds:        slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
-					OfflineChangeListenerIds:                   slices.Collect(maps.Keys(self.offlineChangeListeners)),
-					VpnInterfaceWhileOfflineChangeListenerIds:  slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
-					ConnectChangeListenerIds:                   slices.Collect(maps.Keys(self.connectChangeListeners)),
-					RouteLocalChangeListenerIds:                slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
-					BlockerEnabledChangeListenerIds:            slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
-					ConnectLocationChangeListenerIds:           slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
-					DefaultLocationChangeListenerIds:           slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
-					ProvideSecretKeysListenerIds:               slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
-					TunnelChangeListenerIds:                    slices.Collect(maps.Keys(self.tunnelChangeListeners)),
-					ContractStatusChangeListenerIds:            slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
-					WindowStatusChangeListenerIds:              slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
-					BlockActionWindowChangeListenerIds:         slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
-					BlockStatsChangeListenerIds:                slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
-					BlockActionOverridesChangeListenerIds:      slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
-					TransportSettingsChangeListenerIds:         slices.Collect(maps.Keys(self.transportSettingsChangeListeners)),
-					ProviderTransportSettingsChangeListenerIds: slices.Collect(maps.Keys(self.providerTransportSettingsChangeListeners)),
-					PacketStatsChangeListenerIds:               slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
-					EgressContractStatsChangeListenerIds:       slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
-					EgressContractDetailsChangeListenerIds:     slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
-					IngressContractStatsChangeListenerIds:      slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
-					IngressContractDetailsChangeListenerIds:    slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
-					DnsResolverSettingsChangeListenerIds:       slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
-					NetworkPeersChangeListenerIds:              slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
+					CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
+					CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
+					AllowForegroundChangeListenerIds:          slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
+					CanReferChangeListenerIds:                 slices.Collect(maps.Keys(self.canReferChangeListeners)),
+					ProvideModeChangeListenerIds:              slices.Collect(maps.Keys(self.provideModeChangeListeners)),
+					ProvideChangeListenerIds:                  slices.Collect(maps.Keys(self.provideChangeListeners)),
+					ProvideControlModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
+					PerformanceProfileChangeListenerIds:       slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
+					ProviderIdentityChangeListenerIds:         slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
+					ProvidePausedChangeListenerIds:            slices.Collect(maps.Keys(self.providePausedChangeListeners)),
+					ProvideNetworkModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
+					OfflineChangeListenerIds:                  slices.Collect(maps.Keys(self.offlineChangeListeners)),
+					VpnInterfaceWhileOfflineChangeListenerIds: slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
+					ConnectChangeListenerIds:                  slices.Collect(maps.Keys(self.connectChangeListeners)),
+					RouteLocalChangeListenerIds:               slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
+					BlockerEnabledChangeListenerIds:           slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
+					ConnectLocationChangeListenerIds:          slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
+					DefaultLocationChangeListenerIds:          slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
+					ProvideSecretKeysListenerIds:              slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
+					TunnelChangeListenerIds:                   slices.Collect(maps.Keys(self.tunnelChangeListeners)),
+					ContractStatusChangeListenerIds:           slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
+					WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
+					BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
+					BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
+					BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
+					TransportSettingsChangeListenerIds: append(
+						slices.Collect(maps.Keys(self.transportSettingsChangeListeners)),
+						slices.Collect(maps.Keys(self.transportStatusChangeListeners))...,
+					),
+					ProviderTransportSettingsChangeListenerIds: append(
+						slices.Collect(maps.Keys(self.providerTransportSettingsChangeListeners)),
+						slices.Collect(maps.Keys(self.providerTransportStatusChangeListeners))...,
+					),
+					PacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
+					EgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
+					EgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
+					IngressContractStatsChangeListenerIds:   slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
+					IngressContractDetailsChangeListenerIds: slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
+					DnsResolverSettingsChangeListenerIds:    slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
+					NetworkPeersChangeListenerIds:           slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
 
 					ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
 					ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
@@ -3731,35 +3741,75 @@ func (self *DeviceRemote) providerIngressContractDetailsChanged(contractDetails 
 	}
 }
 
-func (self *DeviceRemote) transportSettingsChanged(settingsRpc *TransportSettingsRpc) {
+func (self *DeviceRemote) transportSettingsChanged(
+	settingsRpc *TransportSettingsRpc,
+	statusRpc *TransportStatusRpc,
+) {
 	transportSettings := settingsRpc.toTransportSettings(false)
 	settingsRpc = newTransportSettingsRpc(transportSettings, false)
-	listenerList := func() []TransportSettingsChangeListener {
+	settingsListeners, statusListeners, status := func() (
+		[]TransportSettingsChangeListener,
+		[]TransportStatusChangeListener,
+		*TransportStatus,
+	) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.lastKnownState.TransportSettings.Set(settingsRpc)
-		return listenerList(self.transportSettingsChangeListeners)
+		var status *TransportStatus
+		if statusRpc != nil {
+			self.lastKnownState.TransportStatus.Set(statusRpc)
+			status = statusRpc.toTransportStatus()
+		}
+		return listenerList(self.transportSettingsChangeListeners),
+			listenerList(self.transportStatusChangeListeners), status
 	}()
-	for _, listener := range listenerList {
+	for _, listener := range settingsListeners {
 		connect.HandleError(func() {
 			listener.TransportSettingsChanged(cloneTransportSettings(transportSettings))
 		})
 	}
+	if status != nil {
+		for _, listener := range statusListeners {
+			connect.HandleError(func() {
+				listener.TransportStatusChanged(cloneTransportStatus(status))
+			})
+		}
+	}
 }
 
-func (self *DeviceRemote) providerTransportSettingsChanged(settingsRpc *TransportSettingsRpc) {
+func (self *DeviceRemote) providerTransportSettingsChanged(
+	settingsRpc *TransportSettingsRpc,
+	statusRpc *TransportStatusRpc,
+) {
 	transportSettings := settingsRpc.toTransportSettings(true)
 	settingsRpc = newTransportSettingsRpc(transportSettings, true)
-	listenerList := func() []ProviderTransportSettingsChangeListener {
+	settingsListeners, statusListeners, status := func() (
+		[]ProviderTransportSettingsChangeListener,
+		[]ProviderTransportStatusChangeListener,
+		*TransportStatus,
+	) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.lastKnownState.ProviderTransportSettings.Set(settingsRpc)
-		return listenerList(self.providerTransportSettingsChangeListeners)
+		var status *TransportStatus
+		if statusRpc != nil {
+			self.lastKnownState.ProviderTransportStatus.Set(statusRpc)
+			status = statusRpc.toTransportStatus()
+		}
+		return listenerList(self.providerTransportSettingsChangeListeners),
+			listenerList(self.providerTransportStatusChangeListeners), status
 	}()
-	for _, listener := range listenerList {
+	for _, listener := range settingsListeners {
 		connect.HandleError(func() {
 			listener.ProviderTransportSettingsChanged(cloneTransportSettings(transportSettings))
 		})
+	}
+	if status != nil {
+		for _, listener := range statusListeners {
+			connect.HandleError(func() {
+				listener.ProviderTransportStatusChanged(cloneTransportStatus(status))
+			})
+		}
 	}
 }
 
@@ -4806,9 +4856,9 @@ func (self *DeviceRemote) setTransportSettings(transportSettings *TransportSetti
 	}()
 	if event {
 		if provider {
-			self.providerTransportSettingsChanged(settingsRpc)
+			self.providerTransportSettingsChanged(settingsRpc, nil)
 		} else {
-			self.transportSettingsChanged(settingsRpc)
+			self.transportSettingsChanged(settingsRpc, nil)
 		}
 	}
 }
@@ -4837,8 +4887,14 @@ func (self *DeviceRemote) getTransportSettings(provider bool) *TransportSettings
 		if err == nil && deviceSettings != nil && deviceSettings.TransportSettings != nil {
 			if provider {
 				self.lastKnownState.ProviderTransportSettings.Set(deviceSettings.TransportSettings)
+				if deviceSettings.TransportStatus != nil {
+					self.lastKnownState.ProviderTransportStatus.Set(deviceSettings.TransportStatus)
+				}
 			} else {
 				self.lastKnownState.TransportSettings.Set(deviceSettings.TransportSettings)
+				if deviceSettings.TransportStatus != nil {
+					self.lastKnownState.TransportStatus.Set(deviceSettings.TransportStatus)
+				}
 			}
 			return deviceSettings.TransportSettings.toTransportSettings(provider)
 		}
@@ -4871,6 +4927,29 @@ func (self *DeviceRemote) AddTransportSettingsChangeListener(listener TransportS
 	)
 }
 
+func (self *DeviceRemote) GetTransportStatus() *TransportStatus {
+	// The existing settings getter carries the paired runtime status on the
+	// same RPC snapshot, keeping policy and eligibility from different moments
+	// from being combined in the UI.
+	self.GetTransportSettings()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.lastKnownState.TransportStatus.Get(nil).toTransportStatus()
+}
+
+func (self *DeviceRemote) AddTransportStatusChangeListener(listener TransportStatusChangeListener) Sub {
+	// Status rides the paired transport-settings wire event. A distinct public
+	// listener keeps runtime capability separate without adding a second RPC
+	// subscription or duplicate event stream.
+	return addCompatibleListener(
+		self,
+		listener,
+		self.transportStatusChangeListeners,
+		"DeviceLocalRpc.AddTransportSettingsChangeListener",
+		"DeviceLocalRpc.RemoveTransportSettingsChangeListener",
+	)
+}
+
 func (self *DeviceRemote) GetProviderTransportSettings() *TransportSettings {
 	return self.getTransportSettings(true)
 }
@@ -4880,6 +4959,23 @@ func (self *DeviceRemote) AddProviderTransportSettingsChangeListener(listener Pr
 		self,
 		listener,
 		self.providerTransportSettingsChangeListeners,
+		"DeviceLocalRpc.AddProviderTransportSettingsChangeListener",
+		"DeviceLocalRpc.RemoveProviderTransportSettingsChangeListener",
+	)
+}
+
+func (self *DeviceRemote) GetProviderTransportStatus() *TransportStatus {
+	self.GetProviderTransportSettings()
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.lastKnownState.ProviderTransportStatus.Get(nil).toTransportStatus()
+}
+
+func (self *DeviceRemote) AddProviderTransportStatusChangeListener(listener ProviderTransportStatusChangeListener) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.providerTransportStatusChangeListeners,
 		"DeviceLocalRpc.AddProviderTransportSettingsChangeListener",
 		"DeviceLocalRpc.RemoveProviderTransportSettingsChangeListener",
 	)
@@ -5568,6 +5664,8 @@ type DeviceRemoteState struct {
 	DnsResolverSettings       deviceRemoteValue[*DnsResolverSettingsRpc]
 	TransportSettings         deviceRemoteValue[*TransportSettingsRpc]
 	ProviderTransportSettings deviceRemoteValue[*TransportSettingsRpc]
+	TransportStatus           deviceRemoteValue[*TransportStatusRpc]
+	ProviderTransportStatus   deviceRemoteValue[*TransportStatusRpc]
 	// the runtime reliability settings override. Unlike the fields above this
 	// is runtime-only state on the local (nothing persists it), so the remote
 	// keeps it queued across syncs and re-applies it on every reconnect and
@@ -6733,6 +6831,42 @@ func (self *TransportSettingsRpc) toTransportSettings(provider bool) *TransportS
 //gomobile:noexport
 type DeviceRemoteTransportSettingsRpc struct {
 	TransportSettings *TransportSettingsRpc
+	TransportStatus   *TransportStatusRpc
+}
+
+//gomobile:noexport
+type TransportStatusRpc struct {
+	AutoDegraded      bool
+	AutoEligibleModes []TransportMode
+	AutoConstraint    string
+}
+
+func newTransportStatusRpc(status *TransportStatus) *TransportStatusRpc {
+	if status == nil {
+		return nil
+	}
+	eligibleModes := []TransportMode{}
+	if status.AutoEligibleModes != nil {
+		eligibleModes = append(eligibleModes, status.AutoEligibleModes.getAll()...)
+	}
+	return &TransportStatusRpc{
+		AutoDegraded:      status.AutoDegraded,
+		AutoEligibleModes: eligibleModes,
+		AutoConstraint:    status.AutoConstraint,
+	}
+}
+
+func (self *TransportStatusRpc) toTransportStatus() *TransportStatus {
+	if self == nil {
+		return nil
+	}
+	eligibleModes := NewStringList()
+	eligibleModes.addAll(self.AutoEligibleModes...)
+	return &TransportStatus{
+		AutoDegraded:      self.AutoDegraded,
+		AutoEligibleModes: eligibleModes,
+		AutoConstraint:    self.AutoConstraint,
+	}
 }
 
 //gomobile:noexport
@@ -7919,6 +8053,8 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.DnsResolverSettings.Set(newDnsResolverSettingsRpc(self.deviceLocal.GetDnsResolverSettings()))
 	state.TransportSettings.Set(newTransportSettingsRpc(self.deviceLocal.GetTransportSettings(), false))
 	state.ProviderTransportSettings.Set(newTransportSettingsRpc(self.deviceLocal.GetProviderTransportSettings(), true))
+	state.TransportStatus.Set(newTransportStatusRpc(self.deviceLocal.GetTransportStatus()))
+	state.ProviderTransportStatus.Set(newTransportStatusRpc(self.deviceLocal.GetProviderTransportStatus()))
 	// the effective reliability settings (the override when one is set, the
 	// shipped defaults otherwise, and nil when the local has no multi
 	// client); lands in the remote's last known state. This is RESPONSE
@@ -9526,6 +9662,7 @@ func (self *DeviceLocalRpc) TransportSettingsChanged(transportSettings *Transpor
 func (self *DeviceLocalRpc) transportSettingsChanged(transportSettings *TransportSettings) {
 	event := &DeviceRemoteTransportSettingsRpc{
 		TransportSettings: newTransportSettingsRpc(transportSettings, false),
+		TransportStatus:   newTransportStatusRpc(self.deviceLocal.GetTransportStatus()),
 	}
 	self.reverseNotify("DeviceRemoteRpc.TransportSettingsChanged", event)
 }
@@ -9572,6 +9709,7 @@ func (self *DeviceLocalRpc) ProviderTransportSettingsChanged(transportSettings *
 func (self *DeviceLocalRpc) providerTransportSettingsChanged(transportSettings *TransportSettings) {
 	event := &DeviceRemoteTransportSettingsRpc{
 		TransportSettings: newTransportSettingsRpc(transportSettings, true),
+		TransportStatus:   newTransportStatusRpc(self.deviceLocal.GetProviderTransportStatus()),
 	}
 	self.reverseNotify("DeviceRemoteRpc.ProviderTransportSettingsChanged", event)
 }
@@ -9579,6 +9717,7 @@ func (self *DeviceLocalRpc) providerTransportSettingsChanged(transportSettings *
 func (self *DeviceLocalRpc) GetTransportSettings(_ RpcNoArg, deviceSettings **DeviceRemoteTransportSettingsRpc) error {
 	*deviceSettings = &DeviceRemoteTransportSettingsRpc{
 		TransportSettings: newTransportSettingsRpc(self.deviceLocal.GetTransportSettings(), false),
+		TransportStatus:   newTransportStatusRpc(self.deviceLocal.GetTransportStatus()),
 	}
 	return nil
 }
@@ -9598,6 +9737,7 @@ func (self *DeviceLocalRpc) SetTransportSettings(deviceSettings *DeviceRemoteTra
 func (self *DeviceLocalRpc) GetProviderTransportSettings(_ RpcNoArg, deviceSettings **DeviceRemoteTransportSettingsRpc) error {
 	*deviceSettings = &DeviceRemoteTransportSettingsRpc{
 		TransportSettings: newTransportSettingsRpc(self.deviceLocal.GetProviderTransportSettings(), true),
+		TransportStatus:   newTransportStatusRpc(self.deviceLocal.GetProviderTransportStatus()),
 	}
 	return nil
 }
@@ -11494,7 +11634,7 @@ func (self *DeviceRemoteRpc) ProviderIngressContractDetailsChanged(event *Device
 func (self *DeviceRemoteRpc) TransportSettingsChanged(event *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]TransportSettingsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.transportSettingsChanged(event.TransportSettings)
+		self.deviceRemote.transportSettingsChanged(event.TransportSettings, event.TransportStatus)
 	})
 	return nil
 }
@@ -11502,7 +11642,7 @@ func (self *DeviceRemoteRpc) TransportSettingsChanged(event *DeviceRemoteTranspo
 func (self *DeviceRemoteRpc) ProviderTransportSettingsChanged(event *DeviceRemoteTransportSettingsRpc, _ RpcVoid) error {
 	self.deviceRemote.log.Infof("[drrpc]ProviderTransportSettingsChanged")
 	self.dispatch(func() {
-		self.deviceRemote.providerTransportSettingsChanged(event.TransportSettings)
+		self.deviceRemote.providerTransportSettingsChanged(event.TransportSettings, event.TransportStatus)
 	})
 	return nil
 }

@@ -124,6 +124,14 @@ type ProviderTransportSettingsChangeListener interface {
 	ProviderTransportSettingsChanged(transportSettings *TransportSettings)
 }
 
+type TransportStatusChangeListener interface {
+	TransportStatusChanged(transportStatus *TransportStatus)
+}
+
+type ProviderTransportStatusChangeListener interface {
+	ProviderTransportStatusChanged(transportStatus *TransportStatus)
+}
+
 type PacketStatsChangeListener interface {
 	PacketStatsChanged(packetStats *PacketStats)
 }
@@ -630,11 +638,19 @@ type Device interface {
 
 	AddTransportSettingsChangeListener(listener TransportSettingsChangeListener) Sub
 
+	GetTransportStatus() *TransportStatus
+
+	AddTransportStatusChangeListener(listener TransportStatusChangeListener) Sub
+
 	SetProviderTransportSettings(transportSettings *TransportSettings)
 
 	GetProviderTransportSettings() *TransportSettings
 
 	AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub
+
+	GetProviderTransportStatus() *TransportStatus
+
+	AddProviderTransportStatusChangeListener(listener ProviderTransportStatusChangeListener) Sub
 
 	// packet stats
 
