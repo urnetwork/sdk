@@ -52,6 +52,30 @@ func TestSimClientGeneratorSettingsIsolatePlatformTransportBudget(t *testing.T) 
 	}
 }
 
+func TestSimProviderSettingsIsolatePlatformTransportBudget(t *testing.T) {
+	first := newSimProviderPlatformTransportSettings(connect.NewNoopLogger())
+	second := newSimProviderPlatformTransportSettings(connect.NewNoopLogger())
+	if first.PlatformTransportBudget == nil || second.PlatformTransportBudget == nil {
+		t.Fatal("simulator provider platform transport budget is nil")
+	}
+	if first.PlatformTransportBudget == second.PlatformTransportBudget {
+		t.Fatal("independent simulated providers share a transport budget")
+	}
+
+	defaultStats := connect.DefaultPlatformTransportBudget().Stats()
+	firstStats := first.PlatformTransportBudget.Stats()
+	if firstStats.TotalByteCount != defaultStats.TotalByteCount ||
+		firstStats.MaxTransportCount != defaultStats.MaxTransportCount {
+		t.Fatalf(
+			"simulator provider budget = (%d bytes, %d transports), want (%d bytes, %d transports)",
+			firstStats.TotalByteCount,
+			firstStats.MaxTransportCount,
+			defaultStats.TotalByteCount,
+			defaultStats.MaxTransportCount,
+		)
+	}
+}
+
 func TestCloneSimMultiClientSettingsOwnsWindowMap(t *testing.T) {
 	source := connect.DefaultMultiClientSettings()
 	cloned := cloneSimMultiClientSettings(source)

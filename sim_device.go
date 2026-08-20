@@ -139,8 +139,7 @@ func NewSimProvider(ctx context.Context, config *SimProviderConfig) *SimProvider
 		protocol.ProvideMode_Public:  true,
 	})
 
-	platformTransportSettings := connect.DefaultPlatformTransportSettings()
-	platformTransportSettings.Log = log
+	platformTransportSettings := newSimProviderPlatformTransportSettings(log)
 
 	provider := &SimProvider{
 		ctx:            cancelCtx,
@@ -387,12 +386,7 @@ func newSimClientGeneratorSettings() *connect.ApiMultiClientGeneratorSettings {
 	// One headless client represents one independent device. Preserve the
 	// production budget within its window set without making every simulated
 	// device in this process compete for the same global transport slots.
-	if defaultBudget := connect.DefaultPlatformTransportBudget(); defaultBudget != nil {
-		budgetStats := defaultBudget.Stats()
-		platformBudget := connect.NewPlatformTransportBudget(
-			budgetStats.TotalByteCount,
-			budgetStats.MaxTransportCount,
-		)
+	if platformBudget := newSimPlatformTransportBudget(); platformBudget != nil {
 		settings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
 			platformSettings := connect.DefaultPlatformTransportSettings()
 			platformSettings.PlatformTransportBudget = platformBudget
@@ -400,6 +394,25 @@ func newSimClientGeneratorSettings() *connect.ApiMultiClientGeneratorSettings {
 		}
 	}
 	return settings
+}
+
+func newSimProviderPlatformTransportSettings(log connect.Logger) *connect.PlatformTransportSettings {
+	settings := connect.DefaultPlatformTransportSettings()
+	settings.Log = log
+	settings.PlatformTransportBudget = newSimPlatformTransportBudget()
+	return settings
+}
+
+func newSimPlatformTransportBudget() *connect.PlatformTransportBudget {
+	defaultBudget := connect.DefaultPlatformTransportBudget()
+	if defaultBudget == nil {
+		return nil
+	}
+	budgetStats := defaultBudget.Stats()
+	return connect.NewPlatformTransportBudget(
+		budgetStats.TotalByteCount,
+		budgetStats.MaxTransportCount,
+	)
 }
 
 func cloneSimMultiClientSettings(settings *connect.MultiClientSettings) *connect.MultiClientSettings {
