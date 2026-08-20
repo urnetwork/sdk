@@ -18,6 +18,40 @@ func TestSimClientGeneratorSettingsPinsLocalWebSocket(t *testing.T) {
 	}
 }
 
+func TestSimClientGeneratorSettingsIsolatePlatformTransportBudget(t *testing.T) {
+	first := newSimClientGeneratorSettings()
+	second := newSimClientGeneratorSettings()
+	if first.PlatformTransportSettingsGenerator == nil || second.PlatformTransportSettingsGenerator == nil {
+		t.Fatal("simulator platform settings generator is nil")
+	}
+
+	firstWindow := first.PlatformTransportSettingsGenerator()
+	firstNextWindow := first.PlatformTransportSettingsGenerator()
+	secondWindow := second.PlatformTransportSettingsGenerator()
+	if firstWindow.PlatformTransportBudget == nil || secondWindow.PlatformTransportBudget == nil {
+		t.Fatal("simulator platform transport budget is nil")
+	}
+	if firstWindow.PlatformTransportBudget != firstNextWindow.PlatformTransportBudget {
+		t.Fatal("windows from one simulated device do not share a transport budget")
+	}
+	if firstWindow.PlatformTransportBudget == secondWindow.PlatformTransportBudget {
+		t.Fatal("independent simulated devices share a transport budget")
+	}
+
+	defaultStats := connect.DefaultPlatformTransportBudget().Stats()
+	firstStats := firstWindow.PlatformTransportBudget.Stats()
+	if firstStats.TotalByteCount != defaultStats.TotalByteCount ||
+		firstStats.MaxTransportCount != defaultStats.MaxTransportCount {
+		t.Fatalf(
+			"simulator budget = (%d bytes, %d transports), want (%d bytes, %d transports)",
+			firstStats.TotalByteCount,
+			firstStats.MaxTransportCount,
+			defaultStats.TotalByteCount,
+			defaultStats.MaxTransportCount,
+		)
+	}
+}
+
 func TestCloneSimMultiClientSettingsOwnsWindowMap(t *testing.T) {
 	source := connect.DefaultMultiClientSettings()
 	cloned := cloneSimMultiClientSettings(source)

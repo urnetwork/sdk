@@ -384,6 +384,21 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 func newSimClientGeneratorSettings() *connect.ApiMultiClientGeneratorSettings {
 	settings := connect.DefaultApiMultiClientGeneratorSettings()
 	settings.PlatformTransportMode = connect.TransportModeH1
+	// One headless client represents one independent device. Preserve the
+	// production budget within its window set without making every simulated
+	// device in this process compete for the same global transport slots.
+	if defaultBudget := connect.DefaultPlatformTransportBudget(); defaultBudget != nil {
+		budgetStats := defaultBudget.Stats()
+		platformBudget := connect.NewPlatformTransportBudget(
+			budgetStats.TotalByteCount,
+			budgetStats.MaxTransportCount,
+		)
+		settings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
+			platformSettings := connect.DefaultPlatformTransportSettings()
+			platformSettings.PlatformTransportBudget = platformBudget
+			return platformSettings
+		}
+	}
 	return settings
 }
 
