@@ -355,8 +355,8 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 	// only on failure, so the bridge returns it exactly when the send fails —
 	// mirroring DeviceLocal.SendPacket. Returning unconditionally double-frees
 	// the pooled buffer on every successful send, corrupting the stream. A
-	// blocking send (-1) keeps the source lossless, and unblocks when the tun
-	// closes.
+	// blocking send (-1) keeps the source lossless, and unblocks when the
+	// simulation context is canceled.
 	source := connect.SourceId(config.ClientId)
 	simClient.bridgeWg.Add(1)
 	go connect.HandleError(func() {
@@ -410,8 +410,21 @@ func (self *SimClient) MultiClient() *connect.RemoteUserNatMultiClient {
 }
 
 func (self *SimClient) Close() {
-	self.tun.Close() // unblocks ReadBatch -> bridge goroutine exits
-	self.bridgeWg.Wait()
+	closeSimClientBridge(
+		func() {
+			self.tun.Close()
+		},
+		self.cancel,
+		self.bridgeWg.Wait,
+	)
 	self.multiClient.Close()
-	self.cancel()
+}
+
+// closeSimClientBridge stops both places where the tunnel bridge can block
+// before joining it. Closing the tun releases ReadBatch, while canceling the
+// shared context releases an in-flight blocking multi-client SendPacket.
+func closeSimClientBridge(closeTun func(), cancel context.CancelFunc, waitBridge func()) {
+	closeTun()
+	cancel()
+	waitBridge()
 }

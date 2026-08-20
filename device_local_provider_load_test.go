@@ -272,6 +272,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 // routes, with a gvisor tun as its packet source (mirroring connect's
 // testingNewClient wiring).
 type providerLoadPeer struct {
+	cancel context.CancelFunc
 	client *connect.Client
 	nat    *connect.RemoteUserNatClient
 	tun    *connect.Tun
@@ -284,9 +285,10 @@ type providerLoadPeer struct {
 }
 
 func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *connect.Client) *providerLoadPeer {
+	peerCtx, peerCancel := context.WithCancel(ctx)
 	peerSettings := connect.DefaultClientSettings()
 	peerSettings.Log = connect.NewNoopLogger()
-	peerClient := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), peerSettings)
+	peerClient := connect.NewClient(peerCtx, connect.NewId(), connect.NewNoContractClientOob(), peerSettings)
 
 	// lossless in-memory routes in both directions, buffered to mirror the
 	// production transports (TransportBufferSize=32 buffered routes). an
@@ -318,8 +320,9 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	tunSettings.Log = connect.NewNoopLogger()
 	tunSettings.TcpSendBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
 	tunSettings.TcpReceiveBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
-	tun, err := connect.CreateTun(ctx, tunSettings)
+	tun, err := connect.CreateTun(peerCtx, tunSettings)
 	if err != nil {
+		peerCancel()
 		t.Fatalf("create peer tun: %v", err)
 	}
 
@@ -335,6 +338,7 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	)
 
 	peer := &providerLoadPeer{
+		cancel:            peerCancel,
 		client:            peerClient,
 		nat:               nat,
 		tun:               tun,
@@ -371,7 +375,8 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 
 func (self *providerLoadPeer) close() {
 	self.closeOnce.Do(func() {
-		self.tun.Close() // unblocks ReadBatch -> bridge goroutine exits
+		self.tun.Close()
+		self.cancel()
 		self.bridgeWg.Wait()
 		self.nat.Close()
 		self.client.Close()
