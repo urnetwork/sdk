@@ -2,7 +2,9 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"math"
+	"net"
 	"runtime/debug"
 	"testing"
 
@@ -304,6 +306,20 @@ func TestProviderLocalUserNatSettings(t *testing.T) {
 	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 0)
 	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 0)
 	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 0)
+}
+
+func TestProviderLocalUserNatSettingsAppliesExitDialerOnlyToTCPAndUDP(t *testing.T) {
+	dial := &connect.DialContextSettings{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("test dial")
+	}}
+	settings := providerLocalUserNatSettings(0, connect.NewNoopLogger(), dial)
+	if settings.TcpBufferSettings.DialContextSettings != dial || settings.UdpBufferSettings.DialContextSettings != dial {
+		t.Fatal("provider exit dialer was not applied to TCP and UDP")
+	}
+	plain := providerLocalUserNatSettings(0, connect.NewNoopLogger())
+	if plain.TcpBufferSettings.DialContextSettings != nil || plain.UdpBufferSettings.DialContextSettings != nil {
+		t.Fatal("ordinary provider settings unexpectedly install a custom dialer")
+	}
 }
 
 // TestDeviceLocalProvideMemoryRealloc verifies the provider share of the

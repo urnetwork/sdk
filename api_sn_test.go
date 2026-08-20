@@ -51,6 +51,9 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 			if args.ColdkeySs58 != "coldkey" {
 				t.Errorf("wallet coldkey = %q, want coldkey", args.ColdkeySs58)
 			}
+			if args.ClientId == nil || args.ClientId.IdStr != clientId.IdStr {
+				t.Errorf("wallet client id = %+v, want %s", args.ClientId, clientId.IdStr)
+			}
 			fmt.Fprint(w, `{}`)
 		case "/sn/pool/claim":
 			if r.Method != http.MethodGet {
@@ -60,7 +63,7 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 			if got := r.URL.Query().Get("epoch"); got != "42" {
 				t.Errorf("pool claim epoch = %q, want 42", got)
 			}
-			fmt.Fprint(w, `{"epoch":42,"no_id":"AQI=","coldkey":"AwQ=","share_bps":2500,"proof":["BQY="],"payout_root":"Bw==","contract_address":"0xabc","chain_id":9,"claim_open_block":100}`)
+			fmt.Fprint(w, `{"epoch":42,"no_id":"AQI=","coldkey":"AwQ=","share_bps":2500,"proof":["BQY="],"payout_root":"Bw==","contract_address":"0xabc","chain_id":9,"claim_open_block":100,"artifact_hash":"sha256:0123","artifact_uri":"https://no.example/sn/artifacts/sha256:0123","settlement_vault_address":"0xvault","error":{"message":"claim not open"}}`)
 		case "/sn/epoch":
 			if r.Method != http.MethodGet {
 				t.Errorf("epoch method = %s, want GET", r.Method)
@@ -95,7 +98,7 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 		t.Fatalf("verify keys result = %+v, want decoded key 7", keysResult.Keys)
 	}
 
-	walletResult, err := api.SnSetWalletSyncWithContext(ctx, &SnSetWalletArgs{ColdkeySs58: "coldkey"})
+	walletResult, err := api.SnSetWalletSyncWithContext(ctx, &SnSetWalletArgs{ColdkeySs58: "coldkey", ClientId: clientId})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +112,12 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 	}
 	if claimResult.Epoch != 42 || claimResult.ShareBps != 2500 || claimResult.ContractAddress != "0xabc" || claimResult.ChainId != 9 {
 		t.Fatalf("pool claim result = %+v", claimResult)
+	}
+	if claimResult.ArtifactHash != "sha256:0123" || claimResult.ArtifactUri != "https://no.example/sn/artifacts/sha256:0123" || claimResult.SettlementVaultAddress != "0xvault" {
+		t.Fatalf("pool claim artifact fields = %+v", claimResult)
+	}
+	if claimResult.Error == nil || claimResult.Error.Message != "claim not open" {
+		t.Fatalf("pool claim error = %+v", claimResult.Error)
 	}
 	if string(claimResult.NoId) != string([]byte{1, 2}) || len(claimResult.Proof) != 1 || string(claimResult.Proof[0]) != string([]byte{5, 6}) {
 		t.Fatalf("pool claim byte fields were not decoded: %+v", claimResult)

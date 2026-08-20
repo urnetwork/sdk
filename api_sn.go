@@ -93,6 +93,7 @@ func (self *Api) VerifyKeysSync() (*VerifyKeysResult, error) {
 
 type SnSetWalletArgs struct {
 	ColdkeySs58 string `json:"coldkey_ss58"`
+	ClientId    *Id    `json:"client_id,omitempty"`
 }
 
 type SnSetWalletError struct {
@@ -131,6 +132,10 @@ type SnPoolClaimArgs struct {
 	Epoch int64 `json:"epoch"`
 }
 
+type SnPoolClaimError struct {
+	Message string `json:"message"`
+}
+
 // SnPoolClaimResult is a merkle claim against the payout pool.
 //
 // The epoch/chain/block numbers are int64 rather than uint64 so they bind:
@@ -145,11 +150,15 @@ type SnPoolClaimResult struct {
 	// Must stay [][]byte: each element marshals to a base64 json string, so
 	// retyping would change the wire format. Bound via GetProof() below.
 	//gomobile:noexport [][]byte — bound via GetProof()
-	Proof           [][]byte `json:"proof"`
-	PayoutRoot      []byte   `json:"payout_root"`
-	ContractAddress string   `json:"contract_address"`
-	ChainId         int64    `json:"chain_id"`
-	ClaimOpenBlock  int64    `json:"claim_open_block"`
+	Proof                  [][]byte          `json:"proof"`
+	PayoutRoot             []byte            `json:"payout_root"`
+	ContractAddress        string            `json:"contract_address"`
+	ChainId                int64             `json:"chain_id"`
+	ClaimOpenBlock         int64             `json:"claim_open_block"`
+	ArtifactHash           string            `json:"artifact_hash,omitempty"`
+	ArtifactUri            string            `json:"artifact_uri,omitempty"`
+	SettlementVaultAddress string            `json:"settlement_vault_address,omitempty"`
+	Error                  *SnPoolClaimError `json:"error,omitempty"`
 }
 
 // GetProofLen and GetProofAt are the app-facing accessors for the merkle

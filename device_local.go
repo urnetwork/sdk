@@ -504,6 +504,13 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport connect.MultiClientIdentityStore is an interface from
 	// another package, which gomobile does not bind. Go/headless hosts only.
 	MultiClientIdentityStore connect.MultiClientIdentityStore
+	// ProviderDialContextSettings, when set, is applied only to the exit NAT's
+	// TCP and UDP sockets. Headless integration harnesses use it to bind each
+	// provider to a distinct loopback source address while exercising the real
+	// tunnel stack on one host. Ordinary applications leave it nil.
+	//
+	//gomobile:noexport Go-only network dial seam.
+	ProviderDialContextSettings *connect.DialContextSettings
 	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 	EnableRpc bool
 	// KeyMaterial, when set, is applied to `ClientSettings` at construction
@@ -3181,9 +3188,19 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 	}
 }
 
-func providerLocalUserNatSettings(memoryTargetByteCount ByteCount, log connect.Logger) *connect.LocalUserNatSettings {
+func providerLocalUserNatSettings(
+	memoryTargetByteCount ByteCount,
+	log connect.Logger,
+	dialContextSettings ...*connect.DialContextSettings,
+) *connect.LocalUserNatSettings {
 	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(memoryTargetByteCount)
 	localUserNatSettings.Log = log
+	if len(dialContextSettings) != 0 && dialContextSettings[0] != nil {
+		// Both protocols must expose the same address identity. ICMP uses a
+		// platform-specific packet backend and is not involved in /verify.
+		localUserNatSettings.TcpBufferSettings.DialContextSettings = dialContextSettings[0]
+		localUserNatSettings.UdpBufferSettings.DialContextSettings = dialContextSettings[0]
+	}
 	return localUserNatSettings
 }
 
@@ -3221,7 +3238,11 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 				// this avoid connection disruptions
 				if self.remoteUserNatProviderLocalUserNat == nil {
 					_, _, providerShareByteCount := deviceMemoryShares(self.settings)
-					localUserNatSettings := providerLocalUserNatSettings(providerShareByteCount, self.log)
+					localUserNatSettings := providerLocalUserNatSettings(
+						providerShareByteCount,
+						self.log,
+						self.settings.ProviderDialContextSettings,
+					)
 					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(client.Ctx(), self.clientId.String(), localUserNatSettings)
 				}
 				if self.remoteUserNatProvider == nil {
