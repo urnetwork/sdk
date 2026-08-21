@@ -73,6 +73,27 @@ func TestTransportStatusFollowsAutoPolicyAndMemoryBudget(t *testing.T) {
 	)
 }
 
+func TestTransportStatusDoesNotBuildFullTransportDefaults(t *testing.T) {
+	connect.SetMemoryBudget(32 * 1024 * 1024)
+	t.Cleanup(func() { connect.SetMemoryBudget(0) })
+	settings := DefaultTransportSettings()
+
+	var status *TransportStatus
+	allocations := testing.AllocsPerRun(20, func() {
+		status = transportStatus(settings, false)
+	})
+	if status == nil {
+		t.Fatal("transport status is nil")
+	}
+	// A full DefaultPlatformTransportSettings construction reparses the pinned
+	// certificate bundle and costs hundreds of objects per poll. Leave ample
+	// room for the intentional settings/list/map result objects while pinning
+	// the absence of that TLS construction path.
+	if allocations >= 100 {
+		t.Fatalf("transportStatus allocated %.0f objects per poll, want fewer than 100", allocations)
+	}
+}
+
 type testingTransportStatusChangeListener struct {
 	mutex          sync.Mutex
 	clientValues   []*TransportStatus

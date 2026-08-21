@@ -728,14 +728,16 @@ type DeviceLocal struct {
 	blockActions []*BlockAction
 	// packet stats accumulated from closed clients. the live client's
 	// stats are added on top
-	packetStatsBase connect.PacketStats
-	netBlockStats   BlockStats
+	packetStatsBase                    connect.PacketStats
+	mobileMemoryClientTrafficByteCount ByteCount
+	netBlockStats                      BlockStats
 	// contracts of the current client. the contracts die with the client
 	contracts *deviceContractTracker
 
 	// provider packet stats accumulated from closed provider user nats
 	// (provide disabled). the live provider user nat's stats are added on top
-	providerPacketStatsBase connect.PacketStats
+	providerPacketStatsBase              connect.PacketStats
+	mobileMemoryProviderTrafficByteCount ByteCount
 	// contracts of the provider client, which lives as long as the device
 	providerContracts *deviceContractTracker
 
@@ -4909,12 +4911,19 @@ func (self *DeviceLocal) GetPacketStats() *PacketStats {
 func (self *DeviceLocal) updatePacketStats(packetStats *connect.PacketStats) {
 	var netPacketStats *PacketStats
 	var netBlockStats *BlockStats
+	var trafficDelta ByteCount
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		combined := self.packetStatsBase
 		addConnectPacketStats(&combined, packetStats)
 		netPacketStats = self.clientPacketStatsFromConnect(&combined)
+		trafficByteCount := packetStatsTrafficByteCount(netPacketStats)
+		trafficDelta = packetStatsTrafficDelta(
+			self.mobileMemoryClientTrafficByteCount,
+			trafficByteCount,
+		)
+		self.mobileMemoryClientTrafficByteCount = trafficByteCount
 		blockStats := self.blockStatsFromConnect(&combined)
 		if *blockStats != self.netBlockStats {
 			self.netBlockStats = *blockStats
@@ -4922,6 +4931,7 @@ func (self *DeviceLocal) updatePacketStats(packetStats *connect.PacketStats) {
 		}
 	}()
 	self.packetStatsChanged(netPacketStats)
+	noteMobileMemoryActivity(trafficDelta)
 	if netBlockStats != nil {
 		self.blockStatsChanged(netBlockStats)
 	}
@@ -4951,14 +4961,22 @@ func (self *DeviceLocal) GetProviderPacketStats() *PacketStats {
 // the packet stats epoch callback from the provider user nat
 func (self *DeviceLocal) updateProviderPacketStats(packetStats *connect.PacketStats) {
 	var netPacketStats *PacketStats
+	var trafficDelta ByteCount
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		combined := self.providerPacketStatsBase
 		addConnectPacketStats(&combined, packetStats)
 		netPacketStats = packetStatsFromConnect(&combined)
+		trafficByteCount := packetStatsTrafficByteCount(netPacketStats)
+		trafficDelta = packetStatsTrafficDelta(
+			self.mobileMemoryProviderTrafficByteCount,
+			trafficByteCount,
+		)
+		self.mobileMemoryProviderTrafficByteCount = trafficByteCount
 	}()
 	self.providerPacketStatsChanged(netPacketStats)
+	noteMobileMemoryActivity(trafficDelta)
 }
 
 func (self *DeviceLocal) AddProviderPacketStatsChangeListener(listener PacketStatsChangeListener) Sub {

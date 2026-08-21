@@ -34,8 +34,16 @@ func cloneTransportStatus(status *TransportStatus) *TransportStatus {
 
 func transportStatus(settings *TransportSettings, provider bool) *TransportStatus {
 	settings = normalizeTransportSettings(settings, provider)
-	platformSettings := connect.DefaultPlatformTransportSettings()
-	platformSettings.ModePreferences = toConnectAutoModePreferences(settings, provider)
+	// Eligibility only needs the configured modes and the process transport
+	// budget. Building all platform defaults here also creates TLS settings and
+	// reparses the pinned CA bundle on every status poll, even though neither is
+	// consulted by PlatformTransportAutoEligibility. Keep this frequent UI and
+	// diagnostics path to the small structural input it actually consumes; zero
+	// H1/H3 claims deliberately select that helper's memory-scaled defaults.
+	platformSettings := &connect.PlatformTransportSettings{
+		ModePreferences:         toConnectAutoModePreferences(settings, provider),
+		PlatformTransportBudget: connect.DefaultPlatformTransportBudget(),
+	}
 	eligibility := connect.PlatformTransportAutoEligibility(platformSettings)
 
 	eligibleModes := NewStringList()

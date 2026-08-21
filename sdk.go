@@ -204,6 +204,7 @@ func SetMemoryLimit(limit int64) {
 	connect.WarmMessagePools()
 	connect.SetMemoryBudget(limit)
 	debug.SetMemoryLimit(limit)
+	startMobileIdleMemoryTrimmer()
 }
 
 // SetMessagePoolMemoryTargets bounds the global message pool free lists:
@@ -244,6 +245,54 @@ func FreeMemory() {
 		float64(runtimeTotalByteCount())/float64(1024*1024),
 		time.Since(startTime)/time.Millisecond,
 	)
+}
+
+// TrimMemory rebuilds burst-sized message-pool free lists as their warm reuse
+// set and returns the old spans to the OS. Clearing before collection and
+// warming afterward matters: retaining an arbitrary subset of burst buffers
+// can pin sparsely occupied allocator spans even when their byte sum is small.
+// Unlike FreeMemory, this preserves resolver/connection/affinity caches and
+// every pool's configured capacity. Hosts may use it after a verified
+// traffic-quiescent interval; active and in-flight buffers are never affected.
+func TrimMemory() {
+	trimMemory(true)
+}
+
+// A forced collection has a latency and battery cost. Automatic maintenance
+// therefore rebuilds allocator spans only after at least one additional MiB
+// accumulated above the warm set. Smaller idle refills are still pruned from
+// the free lists, but normal GC can reclaim them; explicit host pressure always
+// forces release.
+const automaticIdleMemoryRebuildMinDroppedByteCount ByteCount = 1024 * 1024
+
+// trimMemory returns the bytes dropped by a material pool rebuild. Automatic
+// idle maintenance skips the forced collection when the pools are already warm
+// or only trivially above it; an explicit host request still forces release so
+// it has deterministic pressure semantics.
+func trimMemory(force bool) ByteCount {
+	startTime := time.Now()
+	totalByteCountBefore := runtimeTotalByteCount()
+	// This first decay is a cheap no-op test for automatic maintenance. If an
+	// idle high-water exists, clear all remaining free-list references so the
+	// collector can release whole spans rather than leaving sparse survivors.
+	droppedByteCount := connect.TrimMessagePoolsToWarm()
+	if !force && droppedByteCount < automaticIdleMemoryRebuildMinDroppedByteCount {
+		return 0
+	}
+	retainedBefore := connect.GetMessagePoolAggregateStats().RetainedByteCount
+	connect.ClearMessagePools()
+	debug.FreeOSMemory()
+	connect.WarmMessagePools()
+	retainedAfter := connect.GetMessagePoolAggregateStats().RetainedByteCount
+	droppedByteCount += max(ByteCount(0), retainedBefore-retainedAfter)
+	glog.Infof(
+		"[mem]rebuild idle pools %.1fmib -> %.1fmib dropped=%.1fmib (%dms)",
+		float64(totalByteCountBefore)/float64(1024*1024),
+		float64(runtimeTotalByteCount())/float64(1024*1024),
+		float64(droppedByteCount)/float64(1024*1024),
+		time.Since(startTime)/time.Millisecond,
+	)
+	return droppedByteCount
 }
 
 func MessagePoolGet(n int) []byte {
