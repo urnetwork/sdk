@@ -334,19 +334,33 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			platformTransportSettings,
 		)
 	}
-	if targetMode != connect.TransportModeAuto {
-		// An explicit carrier selection must not remain on the old carrier
-		// merely because the low-memory budget cannot hold both during a
-		// make-before-break handoff. Only break early when the concrete
-		// replacement confirms that its required reservation is blocked.
-		if waiter, ok := next.(interface{ IsWaitingForBudget() bool }); ok && waiter.IsWaitingForBudget() {
-			self.stateLock.Lock()
-			previous := self.platformTransport
-			self.stateLock.Unlock()
-			if previous != nil {
-				previous.Close()
-			}
+	brokeBeforeMake := false
+	if nextPlatform, ok := next.(*connect.PlatformTransport); ok {
+		self.stateLock.Lock()
+		previous := self.platformTransport
+		self.stateLock.Unlock()
+		if previousPlatform, ok := previous.(*connect.PlatformTransport); ok &&
+			!nextPlatform.CanMakeBeforeBreakFrom(previousPlatform) {
+			// A second full H3 working set would escape the shared memory cap.
+			// H1 transitions use Connect's bounded handoff and keep the old route;
+			// only a budget-blocked H3-to-H3-family transition breaks first.
+			previous.Close()
+			brokeBeforeMake = true
 		}
+	}
+	installNext := func() migratablePlatformTransport {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		// Token refresh can race replacement construction/connection. Reapply
+		// the current immutable auth while holding the same lock used by
+		// SetByJwt and the swap; a later refresh therefore updates next, while
+		// an earlier one cannot be overwritten by the captured stale auth.
+		if authVersion != self.authVersion {
+			next.SetAuth(self.auth)
+		}
+		previous := self.platformTransport
+		self.platformTransport = next
+		return previous
 	}
 
 	connectEndTime := time.Now().Add(self.migrateConnectTimeout)
@@ -356,6 +370,13 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			break
 		}
 		if connectEndTime.Before(time.Now()) {
+			if brokeBeforeMake {
+				// The old full-H3 carrier is already closed to honor the memory
+				// cap. Keep the replacement installed so its owned reconnect loop
+				// continues instead of leaving a closed source as current.
+				installNext()
+				return policyVersion
+			}
 			// the replacement did not come up; keep the old transport
 			next.Close()
 			return policyVersion
@@ -369,21 +390,8 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		}
 	}
 
-	var previous migratablePlatformTransport
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		// Token refresh can race replacement construction/connection. Reapply
-		// the current immutable auth while holding the same lock used by
-		// SetByJwt and the swap; a later refresh therefore updates next, while
-		// an earlier one cannot be overwritten by the captured stale auth.
-		if authVersion != self.authVersion {
-			next.SetAuth(self.auth)
-		}
-		previous = self.platformTransport
-		self.platformTransport = next
-	}()
-	if previous != nil {
+	previous := installNext()
+	if previous != nil && !brokeBeforeMake {
 		previous.Close()
 	}
 	return policyVersion

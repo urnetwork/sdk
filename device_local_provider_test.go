@@ -141,17 +141,23 @@ type fakeMigratablePlatformTransport struct {
 	notify           chan struct{}
 	auth             *connect.ClientAuth
 	closed           bool
+	waitStarted      chan struct{}
+	waitStartedOnce  sync.Once
 }
 
 func newFakeMigratablePlatformTransport(auth *connect.ClientAuth, connected bool) *fakeMigratablePlatformTransport {
 	return &fakeMigratablePlatformTransport{
-		connected: connected,
-		notify:    make(chan struct{}),
-		auth:      auth,
+		connected:   connected,
+		notify:      make(chan struct{}),
+		auth:        auth,
+		waitStarted: make(chan struct{}),
 	}
 }
 
 func (self *fakeMigratablePlatformTransport) ConnectedNotify() <-chan struct{} {
+	self.waitStartedOnce.Do(func() {
+		close(self.waitStarted)
+	})
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	return self.notify
@@ -368,7 +374,125 @@ func TestDeviceLocalProviderTransportPolicyIsLiveAndMakeBeforeBreak(t *testing.T
 	}
 }
 
-func TestDeviceLocalProviderExplicitPolicyBreaksOldCarrierWhenBudgetBlocked(t *testing.T) {
+// The provider owns a separate top-level PlatformTransport, so pin the same
+// 25 policy edges as outbound API windows. A changed policy (or resident
+// migration on a diagonal entry) must construct the exact destination, keep
+// the source installed until activation, then publish the destination and
+// drain the source.
+func TestDeviceLocalProviderTransportPolicyTransitionMatrix(t *testing.T) {
+	modes := []connect.TransportMode{
+		connect.TransportModeH1,
+		connect.TransportModeH3,
+		connect.TransportModeH3Dns,
+		connect.TransportModeH3DnsPump,
+		connect.TransportModeAuto,
+	}
+	preferencesFor := func(mode connect.TransportMode) map[connect.TransportMode]int {
+		if mode == connect.TransportModeAuto {
+			return connect.DefaultTransportModePreferences()
+		}
+		return nil
+	}
+
+	for _, sourceMode := range modes {
+		for _, targetMode := range modes {
+			sourceMode := sourceMode
+			targetMode := targetMode
+			t.Run(string(sourceMode)+"_to_"+string(targetMode), func(t *testing.T) {
+				auth := &connect.ClientAuth{InstanceId: connect.NewId()}
+				source := newFakeMigratablePlatformTransport(auth, true)
+				t.Cleanup(source.Close)
+				type creation struct {
+					mode      connect.TransportMode
+					transport *fakeMigratablePlatformTransport
+				}
+				created := make(chan creation, 1)
+				provider := &deviceLocalProvider{
+					ctx:                       t.Context(),
+					auth:                      auth,
+					platformTransport:         source,
+					targetMode:                sourceMode,
+					modePreferences:           preferencesFor(sourceMode),
+					transportPolicyVersion:    1,
+					migrateConnectTimeout:     time.Second,
+					migrateMaxScheduleDelay:   time.Second,
+					platformTransportSettings: connect.DefaultPlatformTransportSettings(),
+					newPlatformTransport: func(
+						auth *connect.ClientAuth,
+						mode connect.TransportMode,
+						_ *connect.PlatformTransportSettings,
+					) migratablePlatformTransport {
+						next := newFakeMigratablePlatformTransport(auth, false)
+						created <- creation{mode: mode, transport: next}
+						return next
+					},
+				}
+
+				provider.SetTransportPolicy(targetMode, preferencesFor(targetMode))
+				if sourceMode == targetMode {
+					if provider.migrating.Load() {
+						t.Fatal("identical provider policy started a migration")
+					}
+					select {
+					case <-created:
+						t.Fatal("identical provider policy constructed a replacement")
+					default:
+					}
+					provider.requestPlatformTransportMigration(time.Now())
+				}
+
+				var replacement creation
+				select {
+				case replacement = <-created:
+				case <-time.After(time.Second):
+					t.Fatal("provider transition did not construct a replacement")
+				}
+				t.Cleanup(replacement.transport.Close)
+				if replacement.mode != targetMode {
+					t.Fatalf("constructed mode=%q want=%q", replacement.mode, targetMode)
+				}
+				select {
+				case <-replacement.transport.waitStarted:
+				case <-time.After(time.Second):
+					t.Fatal("provider transition did not wait for destination activation")
+				}
+				provider.stateLock.Lock()
+				currentBeforeActivation := provider.platformTransport
+				provider.stateLock.Unlock()
+				if currentBeforeActivation != source {
+					t.Fatal("provider installed destination before activation")
+				}
+				source.mutex.Lock()
+				sourceClosed := source.closed
+				source.mutex.Unlock()
+				if sourceClosed {
+					t.Fatal("provider drained source before destination activation")
+				}
+
+				replacement.transport.connect()
+				deadline := time.Now().Add(time.Second)
+				for provider.migrating.Load() && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				provider.stateLock.Lock()
+				current := provider.platformTransport
+				provider.stateLock.Unlock()
+				if provider.migrating.Load() || current != replacement.transport ||
+					!replacement.transport.IsConnected() {
+					t.Fatal("provider did not install the active destination")
+				}
+				source.mutex.Lock()
+				sourceClosed = source.closed
+				source.mutex.Unlock()
+				if !sourceClosed {
+					t.Fatal("provider did not drain source after destination activation")
+				}
+			})
+		}
+	}
+}
+
+func TestDeviceLocalProviderExplicitPolicyKeepsOldCarrierUntilH3ConnectsWhenBudgetBlocked(t *testing.T) {
 	auth := &connect.ClientAuth{InstanceId: connect.NewId()}
 	oldTransport := newFakeMigratablePlatformTransport(auth, true)
 	nextTransport := newFakeMigratablePlatformTransport(auth, false)
@@ -400,20 +524,16 @@ func TestDeviceLocalProviderExplicitPolicyBreaksOldCarrierWhenBudgetBlocked(t *t
 	case <-time.After(time.Second):
 		t.Fatal("explicit H3 provider policy did not construct a replacement")
 	}
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
-		oldTransport.mutex.Lock()
-		closed := oldTransport.closed
-		oldTransport.mutex.Unlock()
-		if closed {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-nextTransport.waitStarted:
+	case <-time.After(time.Second):
+		t.Fatal("explicit provider H3 migration did not start waiting for its replacement")
 	}
 	oldTransport.mutex.Lock()
 	oldClosed := oldTransport.closed
 	oldTransport.mutex.Unlock()
-	if !oldClosed {
-		t.Fatal("budget-blocked explicit H3 retained the old provider H1 carrier")
+	if oldClosed {
+		t.Fatal("budget-blocked explicit H3 closed provider H1 before H3 connected")
 	}
 
 	nextTransport.connect()
@@ -425,5 +545,11 @@ func TestDeviceLocalProviderExplicitPolicyBreaksOldCarrierWhenBudgetBlocked(t *t
 	provider.stateLock.Unlock()
 	if current != nextTransport {
 		t.Fatal("explicit provider H3 replacement was not installed")
+	}
+	oldTransport.mutex.Lock()
+	oldClosed = oldTransport.closed
+	oldTransport.mutex.Unlock()
+	if !oldClosed {
+		t.Fatal("old provider H1 carrier did not drain after explicit H3 connected")
 	}
 }
