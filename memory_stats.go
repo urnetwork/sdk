@@ -2,11 +2,9 @@ package sdk
 
 import (
 	"math"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"runtime/metrics"
-	"runtime/pprof"
 
 	"github.com/urnetwork/connect"
 )
@@ -162,29 +160,9 @@ func SetMemoryProfileRate(byteCount int) {
 	runtime.MemProfileRate = max(0, byteCount)
 }
 
-// WriteHeapProfile forces a complete collection and writes a private Go heap
-// profile. The profile contains aggregate allocation stacks, not packet
-// payloads, addresses, or destinations. Hosts should keep it in their private
-// diagnostics directory: function names and allocation sizes are still
-// implementation details. The resulting profile includes both the live
-// (in-use) and cumulative allocation sample types understood by go tool pprof.
-func WriteHeapProfile(path string) error {
-	runtime.GC()
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if err := file.Chmod(0o600); err != nil {
-		file.Close()
-		return err
-	}
-	writeErr := pprof.WriteHeapProfile(file)
-	closeErr := file.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	return closeErr
-}
+// WriteHeapProfile lives in memory_stats_pprof.go, behind `!ios`: linking
+// runtime/pprof costs compiled size in the iOS extension slice, which has
+// the tightest budget in build/check_apple_size.sh.
 
 // runtimeTotalByteCount samples the memory counted against the Go soft
 // memory limit (runtime total mapped minus released heap pages).
