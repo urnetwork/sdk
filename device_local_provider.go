@@ -479,6 +479,14 @@ func newDeviceClientSettings(
 		receiveBufferSettings := *clientSettings.ReceiveBufferSettings
 		clientSettings.ReceiveBufferSettings = &receiveBufferSettings
 	}
+	if clientSettings.ForwardBufferSettings != nil {
+		forwardBufferSettings := *clientSettings.ForwardBufferSettings
+		clientSettings.ForwardBufferSettings = &forwardBufferSettings
+	}
+	if clientSettings.ContractManagerSettings != nil {
+		contractManagerSettings := *clientSettings.ContractManagerSettings
+		clientSettings.ContractManagerSettings = &contractManagerSettings
+	}
 	if clientSettings.WebRtcSettings != nil {
 		webRtcSettings := *clientSettings.WebRtcSettings
 		clientSettings.WebRtcSettings = &webRtcSettings

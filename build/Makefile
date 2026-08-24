@@ -1,4 +1,12 @@
 
+# Mobile release libraries disable Go heap-profile sampling before runtime
+# initialization. Set MOBILE_MEMORY_PROFILE_RATE to a positive rate only for a
+# private diagnostic artifact. Preserve any compatibility defaults selected by
+# the module's Go version when adding the mobile-specific setting.
+MOBILE_MEMORY_PROFILE_RATE ?= 0
+MOBILE_RUNTIME_GODEBUG := $(shell mobile_default_godebug="$$(go list -f '{{.DefaultGODEBUG}}' .)"; if [ -n "$$mobile_default_godebug" ]; then printf '%s,memprofilerate=%s' "$$mobile_default_godebug" "$(MOBILE_MEMORY_PROFILE_RATE)"; else printf 'memprofilerate=%s' "$(MOBILE_MEMORY_PROFILE_RATE)"; fi)
+MOBILE_RUNTIME_LDFLAG := -X=runtime.godebugDefault=$(MOBILE_RUNTIME_GODEBUG)
+
 # build_windows is not in `all`: the shipped Windows SDK (amd64+arm64) builds
 # inside the Windows VM (build/all/build-windows.sh), which provisions Go +
 # llvm-mingw and copies URnetworkSdkWindows.zip back to ../cgo/build. The
@@ -53,7 +61,7 @@ build_android:
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		"github.com/urnetwork/sdk"; \
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
@@ -124,7 +132,7 @@ build_apple:
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
@@ -134,7 +142,7 @@ build_apple:
 		-tags ios_extension \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkExtensionSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
 	test -d "$$BUILD_DIR/URnetworkExtensionSdk.xcframework"; \
@@ -147,6 +155,14 @@ build_apple:
 	cp -r "$$BUILD_DIR" ios; \
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" apple;
+
+.PHONY: check_mobile_runtime_policy
+check_mobile_runtime_policy:
+	SDK_EXPECT_MEMORY_PROFILE_RATE="$(MOBILE_MEMORY_PROFILE_RATE)" \
+	go test \
+		-ldflags "$(MOBILE_RUNTIME_LDFLAG)" \
+		-run '^TestMobileBuildMemoryProfileRate$$' \
+		..
 
 .PHONY: check_apple_size
 check_apple_size:

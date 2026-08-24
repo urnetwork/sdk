@@ -45,24 +45,28 @@ import (
 func init() {
 	// gc pacing: the go soft memory limit (see SetMemoryLimit) is the
 	// footprint backstop; gogc paces how often the collector runs below it.
-	// ios keeps the historical 10 (a collection every 10% of heap growth):
+	// ios uses 10 (a collection every 10% of heap growth):
 	// the network extension carries ~16 MiB of baseline under a ~50 MiB
 	// jetsam limit, and a higher float measurably regressed throughput there
 	// — the raised heap triggers os memory-pressure events whose FreeMemory
 	// response drains the pools (cold reuse caches), and the footprint
-	// approaches the soft limit where allocation pays gc assist. Android and
-	// desktop/server hosts have real headroom and run mostly off it, with
-	// the soft limit bounding the footprint.
-	switch runtime.GOOS {
-	case "ios":
-		debug.SetGCPercent(10)
-	case "android":
-		debug.SetGCPercent(50)
-	default:
-		debug.SetGCPercent(100)
-	}
+	// approaches the soft limit where allocation pays gc assist. Android is
+	// deliberately pinned to the same value: it is the measurable surrogate
+	// for the iOS extension's 20-MiB policy, so a looser Android heap float
+	// would hide the allocator high-water that this validation is intended to
+	// expose. Desktop/server retains the runtime default.
+	debug.SetGCPercent(gcPercentForPlatform(runtime.GOOS))
 
 	initGlog()
+}
+
+func gcPercentForPlatform(goos string) int {
+	switch goos {
+	case "android", "ios":
+		return 10
+	default:
+		return 100
+	}
 }
 
 func initGlog() {
@@ -197,11 +201,16 @@ func SetMemoryLimit(limit int64) {
 		limit*memoryTargetRatioPacketPool/memoryTargetRatioParts,
 		limit*memoryTargetRatioLargeObjectPool/memoryTargetRatioParts,
 	)
-	// Pre-warm up to 1 MiB (and no more than a quarter of the packet-class
-	// cap) so the first traffic burst skips the cold allocation storm.
+	// Pre-warm a bounded part of the packet class so the first traffic burst
+	// skips the cold allocation storm. Mobile retains 256 KiB; desktop/server
+	// preserve the historical 1 MiB.
 	// Startup only — the pressure path (FreeMemory) deliberately leaves pools
 	// cold.
-	connect.WarmMessagePools()
+	if mobileRuntime() {
+		connect.WarmMessagePoolsTo(mobilePacketPoolWarmByteCount)
+	} else {
+		connect.WarmMessagePools()
+	}
 	connect.SetMemoryBudget(limit)
 	debug.SetMemoryLimit(limit)
 	startMobileIdleMemoryTrimmer()
@@ -270,19 +279,27 @@ const automaticIdleMemoryRebuildMinDroppedByteCount ByteCount = 1024 * 1024
 // or only trivially above it; an explicit host request still forces release so
 // it has deterministic pressure semantics.
 func trimMemory(force bool) ByteCount {
+	warmByteCount := ByteCount(1024 * 1024)
+	if mobileRuntime() {
+		warmByteCount = mobilePacketPoolWarmByteCount
+	}
+	return rebuildMessagePools(force, warmByteCount)
+}
+
+func rebuildMessagePools(force bool, warmByteCount ByteCount) ByteCount {
 	startTime := time.Now()
 	totalByteCountBefore := runtimeTotalByteCount()
 	// This first decay is a cheap no-op test for automatic maintenance. If an
 	// idle high-water exists, clear all remaining free-list references so the
 	// collector can release whole spans rather than leaving sparse survivors.
-	droppedByteCount := connect.TrimMessagePoolsToWarm()
+	droppedByteCount := connect.TrimMessagePoolsTo(warmByteCount)
 	if !force && droppedByteCount < automaticIdleMemoryRebuildMinDroppedByteCount {
 		return 0
 	}
 	retainedBefore := connect.GetMessagePoolAggregateStats().RetainedByteCount
 	connect.ClearMessagePools()
 	debug.FreeOSMemory()
-	connect.WarmMessagePools()
+	connect.WarmMessagePoolsTo(warmByteCount)
 	retainedAfter := connect.GetMessagePoolAggregateStats().RetainedByteCount
 	droppedByteCount += max(ByteCount(0), retainedBefore-retainedAfter)
 	glog.Infof(

@@ -30,6 +30,62 @@ func TestMemoryStatsAllocatorAccounting(t *testing.T) {
 	}
 }
 
+func TestMobileMemoryRuntimeSnapshotUsesCallerStorageWithoutAllocation(t *testing.T) {
+	var reader mobileMemoryRuntimeReader
+	var snapshot mobileMemoryRuntimeSnapshot
+	reader.read(&snapshot)
+	if allocations := testing.AllocsPerRun(25, func() {
+		reader.read(&snapshot)
+	}); allocations != 0 {
+		t.Fatalf("mobile runtime snapshot allocations/run = %.2f, want 0", allocations)
+	}
+}
+
+func TestRuntimeTotalByteCountDoesNotAllocate(t *testing.T) {
+	runtimeTotalByteCount()
+	if allocations := testing.AllocsPerRun(25, func() {
+		_ = runtimeTotalByteCount()
+	}); allocations != 0 {
+		t.Fatalf("runtimeTotalByteCount allocations/run = %.2f, want 0", allocations)
+	}
+}
+
+func TestPhysicalFootprintRecorderTracksLatestAndPeak(t *testing.T) {
+	previousCurrent := mobilePhysicalFootprintCurrent.Load()
+	previousPeak := mobilePhysicalFootprintPeak.Load()
+	previousPressureArmed := mobilePhysicalPressureArmed.Load()
+	previousPressureCount := mobilePhysicalPressureCount.Load()
+	t.Cleanup(func() {
+		mobilePhysicalFootprintCurrent.Store(previousCurrent)
+		mobilePhysicalFootprintPeak.Store(previousPeak)
+		mobilePhysicalPressureArmed.Store(previousPressureArmed)
+		mobilePhysicalPressureCount.Store(previousPressureCount)
+	})
+	mobilePhysicalFootprintCurrent.Store(0)
+	mobilePhysicalFootprintPeak.Store(0)
+
+	if peak := recordMobilePhysicalFootprint(100); peak != 100 {
+		t.Fatalf("first peak = %d, want 100", peak)
+	}
+	if peak := recordMobilePhysicalFootprint(60); peak != 100 {
+		t.Fatalf("lower-sample peak = %d, want 100", peak)
+	}
+	if current := mobilePhysicalFootprintCurrent.Load(); current != 60 {
+		t.Fatalf("latest footprint = %d, want 60", current)
+	}
+	if peak := recordMobilePhysicalFootprint(-1); peak != 100 {
+		t.Fatalf("negative-sample peak = %d, want 100", peak)
+	}
+	if current := mobilePhysicalFootprintCurrent.Load(); current != 0 {
+		t.Fatalf("negative sample was not clamped: %d", current)
+	}
+	if allocations := testing.AllocsPerRun(1000, func() {
+		recordMobilePhysicalFootprint(60)
+	}); allocations != 0 {
+		t.Fatalf("physical footprint recorder allocations/run = %.2f, want 0", allocations)
+	}
+}
+
 func TestTrimMemoryDecaysPoolsWithoutShrinkingCapacity(t *testing.T) {
 	const mib = int64(1024 * 1024)
 	connect.ResizeMessagePools(4*mib, 2*mib)

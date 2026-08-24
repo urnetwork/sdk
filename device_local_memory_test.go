@@ -199,12 +199,27 @@ func TestDeviceLocalMemorySizingDoesNotOverflowHostTarget(t *testing.T) {
 }
 
 func TestConfigureDeviceLocalProviderMemoryUsesIndependentBoundedP2pPools(t *testing.T) {
-	partial := &connect.ClientSettings{}
+	partial := &connect.ClientSettings{
+		ForwardBufferSettings:   connect.DefaultForwardBufferSettings(),
+		ContractManagerSettings: connect.DefaultContractManagerSettings(),
+	}
+	originalForward := partial.ForwardBufferSettings
+	originalContract := partial.ContractManagerSettings
 	settings := newDeviceClientSettings(partial, "", nil)
 	if partial.SendBufferSettings != nil ||
 		partial.ReceiveBufferSettings != nil ||
 		partial.WebRtcSettings != nil {
 		t.Fatal("completing partial provider settings mutated the caller")
+	}
+	if settings.ForwardBufferSettings == originalForward ||
+		settings.ContractManagerSettings == originalContract {
+		t.Fatal("nested ownership settings were not copied")
+	}
+	settings.ForwardBufferSettings.SequenceBufferSize += 1
+	settings.ContractManagerSettings.SequenceBufferSize += 1
+	if partial.ForwardBufferSettings.SequenceBufferSize != originalForward.SequenceBufferSize ||
+		partial.ContractManagerSettings.SequenceBufferSize != originalContract.SequenceBufferSize {
+		t.Fatal("derived settings mutated caller-owned nested settings")
 	}
 
 	const memoryTarget = ByteCount(8 * 1024 * 1024)

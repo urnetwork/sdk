@@ -10,8 +10,7 @@ import (
 )
 
 var (
-	extensionMemoryGoPeakByteCount       atomic.Int64
-	extensionMemoryPhysicalPeakByteCount atomic.Int64
+	extensionMemoryGoPeakByteCount atomic.Int64
 )
 
 func updateExtensionMemoryPeak(peak *atomic.Int64, value int64) int64 {
@@ -31,14 +30,11 @@ func updateExtensionMemoryPeak(peak *atomic.Int64, value int64) int64 {
 //
 // This API exists only in the reduced ios_extension binding.
 func RecordExtensionMemorySample(event string, physicalFootprintByteCount int64) string {
+	physicalPeakByteCount := recordMobilePhysicalFootprint(physicalFootprintByteCount)
 	stats := GetMemoryStats()
 	goPeakByteCount := updateExtensionMemoryPeak(
 		&extensionMemoryGoPeakByteCount,
 		stats.TotalRuntimeByteCount,
-	)
-	physicalPeakByteCount := updateExtensionMemoryPeak(
-		&extensionMemoryPhysicalPeakByteCount,
-		physicalFootprintByteCount,
 	)
 	poolHeldCount := max(int64(0), stats.PoolTakenCount-stats.PoolReturnedCount)
 
@@ -57,4 +53,24 @@ func RecordExtensionMemorySample(event string, physicalFootprintByteCount int64)
 	)
 	glog.Info(line)
 	return line
+}
+
+// RecordExtensionPhysicalFootprint is the high-frequency, allocation-free
+// counterpart to RecordExtensionMemorySample. The Network Extension may call
+// this at 20--50 Hz; the bounded Go sampler pairs the latest/peak value with
+// its next primitive snapshot. Use RecordExtensionMemorySample only for sparse
+// named events because formatting and logging every kernel sample would itself
+// create memory and I/O pressure.
+func RecordExtensionPhysicalFootprint(physicalFootprintByteCount int64) {
+	recordMobilePhysicalFootprint(physicalFootprintByteCount)
+}
+
+// SetExtensionMemoryPressureByteCount sets the phys_footprint high-water that
+// starts a bounded quiet reclaim. The release default is 40 MiB, leaving a
+// provisional 10-MiB margin below the historically documented extension
+// boundary. Set zero to disable proactive physical-footprint triggering when a
+// host has its own measured pressure controller.
+func SetExtensionMemoryPressureByteCount(byteCount int64) {
+	mobilePhysicalPressureByteCount.Store(max(int64(0), byteCount))
+	mobilePhysicalPressureArmed.Store(false)
 }

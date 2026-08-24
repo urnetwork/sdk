@@ -613,6 +613,14 @@ type DeviceLocal struct {
 	destinationSpecsFingerprint string
 
 	performanceProfile *PerformanceProfile
+	// Fixed-ring primitive telemetry for the 20-MiB mobile policy. Nil outside
+	// the mobile low-memory profile; its goroutine follows self.ctx.
+	memorySampler *mobileMemorySampler
+	// Aggregate packet ownership is the remaining active-load risk after
+	// per-flow queue bounds. This gate exists only on <=20-MiB mobile devices;
+	// server/default paths retain their original admission and hot path.
+	mobilePacketPressure          *mobilePacketPressureGate
+	mobilePacketPressureDropCount atomic.Int64
 
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
@@ -1079,6 +1087,10 @@ func newDeviceLocalWithOverrides(
 	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
 	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	applyMobileLowMemoryClientSettings(
+		&settings.ClientSettings,
+		settings.MemoryTargetByteCount,
+	)
 	// dedicated p2p admission budget + phone-sized SCTP buffer (see
 	// deviceLocalWebRtcBudget / PACKETRESEARCH1 §17). Only on a
 	// memory-targeted device; a zero share keeps the connect defaults.
@@ -1337,6 +1349,14 @@ func newDeviceLocalWithOverrides(
 	// initial allocation: providing starts off (provide mode none), so the
 	// provider share backs the client pair until SetProvideMode enables it
 	deviceLocal.applyProvideMemorySharesWithLock(false)
+	deviceLocal.mobilePacketPressure = newMobilePacketPressureGateForPlatform(
+		settings.MemoryTargetByteCount,
+		mobileRuntime(),
+	)
+	if deviceLocal.mobilePacketPressure != nil {
+		deviceLocal.memorySampler = &mobileMemorySampler{}
+		deviceLocal.memorySampler.start(deviceLocal.ctx, deviceLocal.memorySample)
+	}
 
 	return deviceLocal, nil
 }
@@ -3640,6 +3660,10 @@ func (self *DeviceLocal) setDestination(
 							self.networkSpace.apiUrl,
 							self.clientStrategy,
 						)
+						applyMobileLowMemoryClientSettings(
+							clientSettings,
+							self.settings.MemoryTargetByteCount,
+						)
 						clientSettings.Log = self.log
 						// share the device budgets so every window client's
 						// queues draw from the same pools
@@ -3672,6 +3696,10 @@ func (self *DeviceLocal) setDestination(
 				generator = apiGenerator
 			}
 			settings := connect.DefaultMultiClientSettings()
+			applyMobileLowMemoryMultiClientSettings(
+				settings,
+				self.settings.MemoryTargetByteCount,
+			)
 			settings.Log = self.log
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
 			// smart-routing tier (Phase 1): bake self.routingTier's knobs into
@@ -4075,6 +4103,10 @@ func (self *DeviceLocal) updateSendRouteWithLock() {
 }
 
 func (self *DeviceLocal) sendPacket(packet []byte) bool {
+	if self.mobilePacketPressure.shouldDrop() {
+		self.mobilePacketPressureDropCount.Add(1)
+		return false
+	}
 	source := connect.SourceId(self.clientId)
 
 	// read the routing snapshot lock-free; it is rebuilt under `stateLock`
@@ -4132,6 +4164,16 @@ func (self *DeviceLocal) sendPacket(packet []byte) bool {
 // to the route; rejected packets are returned here. One immutable route and
 // one stats update cover the whole burst.
 func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
+	if len(packets) == 0 {
+		return 0
+	}
+	if self.mobilePacketPressure.shouldDrop() {
+		for _, packet := range packets {
+			connect.MessagePoolReturn(packet)
+		}
+		self.mobilePacketPressureDropCount.Add(int64(len(packets)))
+		return 0
+	}
 	route := self.sendRoute.Load()
 	packetByteCount := 0
 	for _, packet := range packets {
