@@ -36,12 +36,18 @@ func TestMobilePacketPressureGateSamplesSparselyAndRecoversPromptly(t *testing.T
 	}
 }
 
-func TestMobilePacketPressureGateIsMobileTwentyMiBOnly(t *testing.T) {
+func TestMobilePacketPressureGateIsMobileTwentyFourMiBOnly(t *testing.T) {
+	if mobilePacketPressureMaxOutstandingCount != 512 {
+		t.Fatalf("packet pressure ceiling = %d, want H3-safe 512-root ceiling", mobilePacketPressureMaxOutstandingCount)
+	}
 	if gate := newMobilePacketPressureGateForPlatform(
 		mobileSteadyMemoryTargetByteCount,
 		true,
 	); gate == nil {
-		t.Fatal("20-MiB mobile target did not create a pressure gate")
+		t.Fatal("24-MiB mobile target did not create a pressure gate")
+	}
+	if gate := newMobilePacketPressureGateForPlatform(20*1024*1024, true); gate == nil {
+		t.Fatal("tighter mobile target did not retain the pressure gate")
 	}
 	for _, testCase := range []struct {
 		name   string
@@ -57,7 +63,7 @@ func TestMobilePacketPressureGateIsMobileTwentyMiBOnly(t *testing.T) {
 				testCase.target,
 				testCase.mobile,
 			); gate != nil {
-				t.Fatal("created a mobile pressure gate outside the 20-MiB mobile profile")
+				t.Fatal("created a mobile pressure gate outside the 24-MiB mobile profile")
 			}
 		})
 	}

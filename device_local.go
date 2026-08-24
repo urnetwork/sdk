@@ -79,11 +79,11 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 	return windowExpandEvent, providerEvents
 }
 
-// defaultDeviceLocalMemoryTargetByteCount is the default per-device memory
-// target (see DeviceLocalSettings.MemoryTargetByteCount). Hosts pass an
-// explicit value where the device is created
-// (NewDeviceLocalWithMemoryTarget); this default keeps a plain construction
-// bounded.
+// defaultDeviceLocalMemoryTargetByteCount preserves the established
+// desktop/server default. Mobile defaults are selected separately so the
+// 24-MiB app profile does not silently enlarge server queue budgets. Hosts
+// which know their process/container budget should still pass an explicit
+// value where the device is created (NewDeviceLocalWithMemoryTarget).
 const defaultDeviceLocalMemoryTargetByteCount = 20 * 1024 * 1024
 
 // device memory target split, in parts of `deviceMemoryRatioParts`:
@@ -267,7 +267,7 @@ func deviceLocalWebRtcBudget(shareByteCount ByteCount) *connect.TransferMemoryBu
 }
 
 func DefaultDeviceLocalSettings() *DeviceLocalSettings {
-	memoryTargetByteCount := ByteCount(defaultDeviceLocalMemoryTargetByteCount)
+	memoryTargetByteCount := defaultDeviceLocalMemoryTargetByteCountForPlatform(mobileRuntime())
 	// provisional sizing from the unfolded client share; device construction
 	// re-derives from the final settings (target overrides, provider fold)
 	clientShareByteCount := memoryTargetByteCount * deviceMemoryRatioClient / deviceMemoryRatioParts
@@ -613,11 +613,11 @@ type DeviceLocal struct {
 	destinationSpecsFingerprint string
 
 	performanceProfile *PerformanceProfile
-	// Fixed-ring primitive telemetry for the 20-MiB mobile policy. Nil outside
+	// Fixed-ring primitive telemetry for the 24-MiB mobile policy. Nil outside
 	// the mobile low-memory profile; its goroutine follows self.ctx.
 	memorySampler *mobileMemorySampler
 	// Aggregate packet ownership is the remaining active-load risk after
-	// per-flow queue bounds. This gate exists only on <=20-MiB mobile devices;
+	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.
 	mobilePacketPressure          *mobilePacketPressureGate
 	mobilePacketPressureDropCount atomic.Int64

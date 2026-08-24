@@ -45,16 +45,13 @@ import (
 func init() {
 	// gc pacing: the go soft memory limit (see SetMemoryLimit) is the
 	// footprint backstop; gogc paces how often the collector runs below it.
-	// ios uses 10 (a collection every 10% of heap growth):
-	// the network extension carries ~16 MiB of baseline under a ~50 MiB
-	// jetsam limit, and a higher float measurably regressed throughput there
-	// — the raised heap triggers os memory-pressure events whose FreeMemory
-	// response drains the pools (cold reuse caches), and the footprint
-	// approaches the soft limit where allocation pays gc assist. Android is
-	// deliberately pinned to the same value: it is the measurable surrogate
-	// for the iOS extension's 20-MiB policy, so a looser Android heap float
-	// would hide the allocator high-water that this validation is intended to
-	// expose. Desktop/server retains the runtime default.
+	// The 24-MiB profile uses 25: the measured 20-MiB candidate's value of 10
+	// held more than two MiB of unused headroom while collecting roughly every
+	// 2.5 seconds during a low-throughput transfer, while 50 let a stalled H3
+	// page reach 29.95 MiB. The aggregate packet gate, quiet reclaim, and
+	// 32-MiB soft limit remain the burst backstops. Android and iOS deliberately
+	// use the same value so the measurable Android surrogate does not hide iOS
+	// allocator float. Desktop/server retains the runtime default.
 	debug.SetGCPercent(gcPercentForPlatform(runtime.GOOS))
 
 	initGlog()
@@ -63,7 +60,7 @@ func init() {
 func gcPercentForPlatform(goos string) int {
 	switch goos {
 	case "android", "ios":
-		return 10
+		return 25
 	default:
 		return 100
 	}
@@ -202,7 +199,7 @@ func SetMemoryLimit(limit int64) {
 		limit*memoryTargetRatioLargeObjectPool/memoryTargetRatioParts,
 	)
 	// Pre-warm a bounded part of the packet class so the first traffic burst
-	// skips the cold allocation storm. Mobile retains 256 KiB; desktop/server
+	// skips the cold allocation storm. Mobile retains 512 KiB; desktop/server
 	// preserve the historical 1 MiB.
 	// Startup only — the pressure path (FreeMemory) deliberately leaves pools
 	// cold.

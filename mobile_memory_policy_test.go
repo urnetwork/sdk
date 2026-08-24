@@ -7,10 +7,40 @@ import (
 	"github.com/urnetwork/connect"
 )
 
+func TestMobileLowMemoryPolicyUsesTwentyFourMiBBoundary(t *testing.T) {
+	if got := defaultDeviceLocalMemoryTargetByteCountForPlatform(true); got != mobileSteadyMemoryTargetByteCount {
+		t.Fatalf("mobile default memory target = %d, want 24 MiB", got)
+	}
+	if got := defaultDeviceLocalMemoryTargetByteCountForPlatform(false); got != defaultDeviceLocalMemoryTargetByteCount {
+		t.Fatalf("server default memory target = %d, want unchanged 20 MiB", got)
+	}
+	for _, testCase := range []struct {
+		name    string
+		target  ByteCount
+		mobile  bool
+		enabled bool
+	}{
+		{name: "legacy tighter target", target: 20 * 1024 * 1024, mobile: true, enabled: true},
+		{name: "24 MiB target", target: mobileSteadyMemoryTargetByteCount, mobile: true, enabled: true},
+		{name: "one byte above", target: mobileSteadyMemoryTargetByteCount + 1, mobile: true, enabled: false},
+		{name: "desktop", target: mobileSteadyMemoryTargetByteCount, mobile: false, enabled: false},
+		{name: "disabled", target: 0, mobile: true, enabled: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := mobileLowMemoryPolicyEnabledForPlatform(testCase.target, testCase.mobile); got != testCase.enabled {
+				t.Fatalf("policy enabled = %t, want %t", got, testCase.enabled)
+			}
+		})
+	}
+}
+
 func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
+	if mobilePacketPoolWarmByteCount != 512*1024 {
+		t.Fatalf("mobile packet warm set = %d, want 512 KiB", mobilePacketPoolWarmByteCount)
+	}
 	if mobileClientSequenceBufferMaxCount != 16 {
 		t.Fatalf(
-			"mobile sequence count = %d, want measured 16-message ceiling",
+			"mobile sequence count = %d, want H3-safe 16-message ceiling",
 			mobileClientSequenceBufferMaxCount,
 		)
 	}
@@ -71,8 +101,8 @@ func TestMobileLowMemoryMultiClientProfileBoundsLiveSet(t *testing.T) {
 		true,
 	)
 	quality := settings.WindowSizes[connect.WindowTypeQuality]
-	if quality.WindowSizeMin != 3 || quality.WindowSizeMax != 3 || quality.WindowSizeHardMax != 3 {
-		t.Fatalf("quality window = %+v, want fixed 3", quality)
+	if quality.WindowSizeMin != 4 || quality.WindowSizeMax != 4 || quality.WindowSizeHardMax != 4 {
+		t.Fatalf("quality window = %+v, want fixed 4", quality)
 	}
 	speed := settings.WindowSizes[connect.WindowTypeSpeed]
 	if speed.WindowSizeMin != 1 || speed.WindowSizeMax != 1 ||
@@ -164,10 +194,10 @@ func TestMobileLowMemoryPolicyLeavesServerAndLargerTargetsUnchanged(t *testing.T
 				t.Fatalf("quality window changed from %+v to %+v", qualityBefore, got)
 			}
 			if !multi.StandingReserve {
-				t.Fatal("standing reserve changed outside 20-MiB mobile policy")
+				t.Fatal("standing reserve changed outside 24-MiB mobile policy")
 			}
 			if multi.StrictWindowSizeHardMax {
-				t.Fatal("strict hard max changed outside 20-MiB mobile policy")
+				t.Fatal("strict hard max changed outside 24-MiB mobile policy")
 			}
 			if multi.TcpSequenceIdleTimeout != tcpIdleBefore {
 				t.Fatalf("tcp idle timeout changed from %v to %v", tcpIdleBefore, multi.TcpSequenceIdleTimeout)

@@ -7,11 +7,10 @@ import (
 )
 
 const (
-	// Physical fast.com traces crossed 28 MiB at 1,343--2,488 packet roots,
-	// while ordinary browsing stayed below the ceiling at 306. The 512-root
-	// gate leaves burst room but stops an active download from multiplying
-	// packet ownership across dozens of flows until iOS jetsam kills the
-	// extension.
+	// Keep the measured 512-root aggregate gate. A 768-root experiment improved
+	// H1 bulk traffic but reached 28.41 MiB while an H3 page was stalled, so the
+	// 24-MiB profile spends its headroom on per-flow progress and GC pacing
+	// instead of weakening the process-wide safety backstop.
 	mobilePacketPressureMaxOutstandingCount uint64 = 512
 	// Snapshotting takes the four packet-class shard locks. Sample one in four
 	// ingress calls while below the ceiling, then every call while overloaded
@@ -19,7 +18,7 @@ const (
 	mobilePacketPressureSampleEvery uint64 = 4
 )
 
-// mobilePacketPressureGate is created only for the <=20-MiB mobile profile.
+// mobilePacketPressureGate is created only for the <=24-MiB mobile profile.
 // Consequently the server/connect and server/proxy packet paths pay neither
 // an atomic operation nor a pool snapshot for this mobile overload policy.
 type mobilePacketPressureGate struct {
