@@ -104,7 +104,12 @@ const (
 	// the adjacent ACK/coalescing trace recorded 2,280 Pack handoff drops while
 	// ACK handoff drops remained zero and active runtime stayed below 24 MiB.
 	// Connect enforces the H3 and H1 counts on one ordered channel, so mixed
-	// carrier sequences cannot let H3 consume this reliable-carrier spend.
+	// carrier sequences cannot let H3 consume this reliable-carrier spend. The
+	// iterative 64/128-KiB -> 128/256-KiB diagnostic stayed below 24 MiB, but it
+	// did not improve public-provider bulk or fast.com throughput and amplified
+	// timeout recovery. Keep the generic Connect mechanism available for a
+	// controlled-provider A/B, while the production mobile policy stays fixed
+	// at the measured 64/128-KiB knee.
 	mobileClientSequenceBufferMaxCount        = 16
 	mobileClientAckBufferMaxCount             = 64
 	mobileH1ReceiveSequenceBufferMaxCount     = 64
@@ -238,6 +243,12 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 			receive.H1SequenceBufferSize,
 			mobileH1ReceiveSequenceBufferMaxCount,
 		)
+		receive.H1SequenceBufferAdaptiveMaxSize = 0
+		receive.H1SequenceBufferAdaptiveStepSize = 0
+		receive.H1SequenceBufferAdaptiveSaturationThreshold = 0
+		receive.H1SequenceBufferAdaptiveSaturationWindow = 0
+		receive.H1SequenceBufferAdaptiveMaxByteCount = 0
+		receive.H1SequenceBufferAdaptiveStepByteCount = 0
 		receive.SequenceBufferByteCount = min(
 			receive.SequenceBufferByteCount,
 			mobileReceiveSequenceBufferMaxByteCount,

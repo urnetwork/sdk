@@ -134,6 +134,14 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	if got := settings.ReceiveBufferSettings.H1SequenceBufferSize; got != mobileH1ReceiveSequenceBufferMaxCount {
 		t.Fatalf("H1 receive sequence = %d, want %d", got, mobileH1ReceiveSequenceBufferMaxCount)
 	}
+	if receive := settings.ReceiveBufferSettings; receive.H1SequenceBufferAdaptiveMaxSize != 0 ||
+		receive.H1SequenceBufferAdaptiveStepSize != 0 ||
+		receive.H1SequenceBufferAdaptiveSaturationThreshold != 0 ||
+		receive.H1SequenceBufferAdaptiveSaturationWindow != 0 ||
+		receive.H1SequenceBufferAdaptiveMaxByteCount != 0 ||
+		receive.H1SequenceBufferAdaptiveStepByteCount != 0 {
+		t.Fatalf("rejected adaptive H1 policy remained enabled: %+v", receive)
+	}
 	if got := settings.ReceiveBufferSettings.ReceiveQueueMinByteCount; got != mobileReceiveQueueMinByteCount {
 		t.Fatalf("receive floor = %d, want %d", got, mobileReceiveQueueMinByteCount)
 	}
@@ -142,6 +150,9 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	}
 	if !settings.ReceiveBufferSettings.ReceiveQueueRetainedByteAccounting {
 		t.Fatal("mobile receive queue did not enable retained-allocation accounting")
+	}
+	if settings.ReceiveBufferSettings.PackQueueRetainedByteAccounting {
+		t.Fatal("fixed mobile Pack queue unexpectedly enabled adaptive retained accounting")
 	}
 	if got := settings.ForwardBufferSettings.SequenceBufferSize; got != mobileClientSequenceBufferMaxCount {
 		t.Fatalf("forward sequence = %d, want %d", got, mobileClientSequenceBufferMaxCount)
@@ -194,6 +205,34 @@ func TestMobileReceiveQueueBudgetIsAggregateAndProviderAware(t *testing.T) {
 			"per-sequence receive floor = %d, want all reorder bytes charged",
 			mobileReceiveQueueMinByteCount,
 		)
+	}
+}
+
+func TestMobileH1AdaptiveDepthIsDisabledAfterRejectedPhysicalArm(t *testing.T) {
+	settings := connect.DefaultClientSettingsWithBufferSize(64)
+	settings.ReceiveBufferSettings = connect.DefaultReceiveBufferSettingsWithBufferSize(64)
+	receive := settings.ReceiveBufferSettings
+	receive.H1SequenceBufferAdaptiveMaxSize = 128
+	receive.H1SequenceBufferAdaptiveStepSize = 16
+	receive.H1SequenceBufferAdaptiveSaturationThreshold = 2
+	receive.H1SequenceBufferAdaptiveSaturationWindow = 100 * time.Millisecond
+	receive.H1SequenceBufferAdaptiveMaxByteCount = 256 * 1024
+	receive.H1SequenceBufferAdaptiveStepByteCount = 32 * 1024
+	applyMobileLowMemoryClientSettingsForPlatform(
+		settings,
+		mobileSteadyMemoryTargetByteCount,
+		true,
+	)
+	if receive.H1SequenceBufferSize != 64 {
+		t.Fatalf("explicit H1 depth changed to %d", receive.H1SequenceBufferSize)
+	}
+	if receive.H1SequenceBufferAdaptiveMaxSize != 0 ||
+		receive.H1SequenceBufferAdaptiveStepSize != 0 ||
+		receive.H1SequenceBufferAdaptiveSaturationThreshold != 0 ||
+		receive.H1SequenceBufferAdaptiveSaturationWindow != 0 ||
+		receive.H1SequenceBufferAdaptiveMaxByteCount != 0 ||
+		receive.H1SequenceBufferAdaptiveStepByteCount != 0 {
+		t.Fatalf("rejected H1 adaptive policy was not cleared: %+v", receive)
 	}
 }
 

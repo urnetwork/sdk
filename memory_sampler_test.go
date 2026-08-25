@@ -43,13 +43,25 @@ func TestMobileMemorySamplerRecordAllocatesNothing(t *testing.T) {
 
 func TestTakeMemorySamplesJsonIsOneValidBatch(t *testing.T) {
 	device := &DeviceLocal{memorySampler: &mobileMemorySampler{}}
-	device.memorySampler.record(mobileMemorySample{GoTotalByteCount: 42})
+	device.memorySampler.record(mobileMemorySample{
+		GoTotalByteCount:            42,
+		PackHandoffSaturationCount:  7,
+		PackHandoffDepthGrowCount:   3,
+		PackHandoffDeepenedFlows:    2,
+		PackHandoffAdaptiveMaxDepth: 96,
+		PackHandoffAdaptiveMaxBytes: 192 * 1024,
+	})
 	var batch mobileMemorySampleBatch
 	if err := json.Unmarshal([]byte(device.TakeMemorySamplesJson()), &batch); err != nil {
 		t.Fatalf("decode sample batch: %v", err)
 	}
 	if batch.Schema != mobileMemorySampleSchema || len(batch.Samples) != 1 ||
-		batch.Samples[0].GoTotalByteCount != 42 {
+		batch.Samples[0].GoTotalByteCount != 42 ||
+		batch.Samples[0].PackHandoffSaturationCount != 7 ||
+		batch.Samples[0].PackHandoffDepthGrowCount != 3 ||
+		batch.Samples[0].PackHandoffDeepenedFlows != 2 ||
+		batch.Samples[0].PackHandoffAdaptiveMaxDepth != 96 ||
+		batch.Samples[0].PackHandoffAdaptiveMaxBytes != 192*1024 {
 		t.Fatalf("sample batch = %+v", batch)
 	}
 }

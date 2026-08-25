@@ -16,7 +16,7 @@ import (
 const (
 	mobileMemorySampleInterval = 15 * time.Second
 	mobileMemorySampleCapacity = 64
-	mobileMemorySampleSchema   = 9
+	mobileMemorySampleSchema   = 10
 )
 
 // mobileMemorySample contains primitives only. Recording it never constructs
@@ -57,32 +57,37 @@ type mobileMemorySample struct {
 	SpeedClientCount   int64 `json:"speed_clients"`
 	FlowCount          int64 `json:"flows"`
 
-	PackHandoffDropCount       int64 `json:"pack_handoff_drops"`
-	PackHandoffDropByteCount   int64 `json:"pack_handoff_drop_bytes"`
-	PackHandoffWaitCount       int64 `json:"pack_handoff_waits"`
-	PackHandoffWaitSuccess     int64 `json:"pack_handoff_wait_successes"`
-	PackHandoffMaxCount        int64 `json:"pack_handoff_max_count"`
-	PackHandoffMaxByteCount    int64 `json:"pack_handoff_max_bytes"`
-	AckHandoffDropCount        int64 `json:"ack_handoff_drops"`
-	AckHandoffQueueFullCount   int64 `json:"ack_handoff_queue_full_drops"`
-	AckHandoffMissCount        int64 `json:"ack_handoff_misses"`
-	AckHandoffWaitCount        int64 `json:"ack_handoff_waits"`
-	AckHandoffWaitSuccess      int64 `json:"ack_handoff_wait_successes"`
-	AckRouteWriteCount         int64 `json:"ack_route_writes"`
-	AckRoutePriorityWriteCount int64 `json:"ack_route_priority_writes"`
-	AckRouteWriteBlockedCount  int64 `json:"ack_route_write_blocks"`
-	AckRouteWriteErrorCount    int64 `json:"ack_route_write_errors"`
-	AckRouteWriteWaitNanos     int64 `json:"ack_route_write_wait_nanos"`
-	AckRouteWriteMaxWaitNanos  int64 `json:"ack_route_write_max_wait_nanos"`
-	InitialWriteCount          int64 `json:"initial_writes"`
-	InitialFrameCount          int64 `json:"initial_frames"`
-	InitialMessageByteCount    int64 `json:"initial_message_bytes"`
-	TimeoutResendWriteCount    int64 `json:"timeout_resend_writes"`
-	CarrierChangeWriteCount    int64 `json:"carrier_change_writes"`
-	SelectiveGapWriteCount     int64 `json:"selective_gap_writes"`
-	AckTailProbeWriteCount     int64 `json:"ack_tail_probe_writes"`
-	CumulativeProbeWriteCount  int64 `json:"cumulative_probe_writes"`
-	RecoveryWriteErrorCount    int64 `json:"recovery_write_errors"`
+	PackHandoffDropCount        int64 `json:"pack_handoff_drops"`
+	PackHandoffDropByteCount    int64 `json:"pack_handoff_drop_bytes"`
+	PackHandoffWaitCount        int64 `json:"pack_handoff_waits"`
+	PackHandoffWaitSuccess      int64 `json:"pack_handoff_wait_successes"`
+	PackHandoffMaxCount         int64 `json:"pack_handoff_max_count"`
+	PackHandoffMaxByteCount     int64 `json:"pack_handoff_max_bytes"`
+	PackHandoffSaturationCount  int64 `json:"pack_handoff_saturations"`
+	PackHandoffDepthGrowCount   int64 `json:"pack_handoff_depth_grows"`
+	PackHandoffDeepenedFlows    int64 `json:"pack_handoff_deepened_flows"`
+	PackHandoffAdaptiveMaxDepth int64 `json:"pack_handoff_adaptive_max_depth"`
+	PackHandoffAdaptiveMaxBytes int64 `json:"pack_handoff_adaptive_max_bytes"`
+	AckHandoffDropCount         int64 `json:"ack_handoff_drops"`
+	AckHandoffQueueFullCount    int64 `json:"ack_handoff_queue_full_drops"`
+	AckHandoffMissCount         int64 `json:"ack_handoff_misses"`
+	AckHandoffWaitCount         int64 `json:"ack_handoff_waits"`
+	AckHandoffWaitSuccess       int64 `json:"ack_handoff_wait_successes"`
+	AckRouteWriteCount          int64 `json:"ack_route_writes"`
+	AckRoutePriorityWriteCount  int64 `json:"ack_route_priority_writes"`
+	AckRouteWriteBlockedCount   int64 `json:"ack_route_write_blocks"`
+	AckRouteWriteErrorCount     int64 `json:"ack_route_write_errors"`
+	AckRouteWriteWaitNanos      int64 `json:"ack_route_write_wait_nanos"`
+	AckRouteWriteMaxWaitNanos   int64 `json:"ack_route_write_max_wait_nanos"`
+	InitialWriteCount           int64 `json:"initial_writes"`
+	InitialFrameCount           int64 `json:"initial_frames"`
+	InitialMessageByteCount     int64 `json:"initial_message_bytes"`
+	TimeoutResendWriteCount     int64 `json:"timeout_resend_writes"`
+	CarrierChangeWriteCount     int64 `json:"carrier_change_writes"`
+	SelectiveGapWriteCount      int64 `json:"selective_gap_writes"`
+	AckTailProbeWriteCount      int64 `json:"ack_tail_probe_writes"`
+	CumulativeProbeWriteCount   int64 `json:"cumulative_probe_writes"`
+	RecoveryWriteErrorCount     int64 `json:"recovery_write_errors"`
 
 	TransportBudgetUsedByteCount   int64 `json:"transport_budget_used_bytes"`
 	TransportBudgetUsedCount       int64 `json:"transport_budget_used_count"`
@@ -361,6 +366,11 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 		PackHandoffWaitSuccess:              int64(topology.PackHandoffWaitSuccess),
 		PackHandoffMaxCount:                 int64(topology.PackHandoffMaxCount),
 		PackHandoffMaxByteCount:             int64(topology.PackHandoffMaxByteCount),
+		PackHandoffSaturationCount:          int64(topology.PackHandoffSaturationCount),
+		PackHandoffDepthGrowCount:           int64(topology.PackHandoffDepthGrowCount),
+		PackHandoffDeepenedFlows:            int64(topology.PackHandoffDeepenedFlows),
+		PackHandoffAdaptiveMaxDepth:         int64(topology.PackHandoffAdaptiveMaxDepth),
+		PackHandoffAdaptiveMaxBytes:         int64(topology.PackHandoffAdaptiveMaxByteCount),
 		AckHandoffDropCount:                 int64(topology.AckHandoffDropCount),
 		AckHandoffQueueFullCount:            int64(topology.AckHandoffQueueFullCount),
 		AckHandoffMissCount:                 int64(topology.AckHandoffMissCount),
@@ -410,7 +420,7 @@ func (self *DeviceLocal) TakeMemorySamplesJson() string {
 	}
 	encoded, err := json.Marshal(batch)
 	if err != nil {
-		return `{"schema":2,"dropped":0,"samples":[]}`
+		return `{"schema":10,"dropped":0,"samples":[]}`
 	}
 	return string(encoded)
 }
