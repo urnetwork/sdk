@@ -16,7 +16,7 @@ import (
 const (
 	mobileMemorySampleInterval = 15 * time.Second
 	mobileMemorySampleCapacity = 64
-	mobileMemorySampleSchema   = 10
+	mobileMemorySampleSchema   = 11
 )
 
 // mobileMemorySample contains primitives only. Recording it never constructs
@@ -57,37 +57,41 @@ type mobileMemorySample struct {
 	SpeedClientCount   int64 `json:"speed_clients"`
 	FlowCount          int64 `json:"flows"`
 
-	PackHandoffDropCount        int64 `json:"pack_handoff_drops"`
-	PackHandoffDropByteCount    int64 `json:"pack_handoff_drop_bytes"`
-	PackHandoffWaitCount        int64 `json:"pack_handoff_waits"`
-	PackHandoffWaitSuccess      int64 `json:"pack_handoff_wait_successes"`
-	PackHandoffMaxCount         int64 `json:"pack_handoff_max_count"`
-	PackHandoffMaxByteCount     int64 `json:"pack_handoff_max_bytes"`
-	PackHandoffSaturationCount  int64 `json:"pack_handoff_saturations"`
-	PackHandoffDepthGrowCount   int64 `json:"pack_handoff_depth_grows"`
-	PackHandoffDeepenedFlows    int64 `json:"pack_handoff_deepened_flows"`
-	PackHandoffAdaptiveMaxDepth int64 `json:"pack_handoff_adaptive_max_depth"`
-	PackHandoffAdaptiveMaxBytes int64 `json:"pack_handoff_adaptive_max_bytes"`
-	AckHandoffDropCount         int64 `json:"ack_handoff_drops"`
-	AckHandoffQueueFullCount    int64 `json:"ack_handoff_queue_full_drops"`
-	AckHandoffMissCount         int64 `json:"ack_handoff_misses"`
-	AckHandoffWaitCount         int64 `json:"ack_handoff_waits"`
-	AckHandoffWaitSuccess       int64 `json:"ack_handoff_wait_successes"`
-	AckRouteWriteCount          int64 `json:"ack_route_writes"`
-	AckRoutePriorityWriteCount  int64 `json:"ack_route_priority_writes"`
-	AckRouteWriteBlockedCount   int64 `json:"ack_route_write_blocks"`
-	AckRouteWriteErrorCount     int64 `json:"ack_route_write_errors"`
-	AckRouteWriteWaitNanos      int64 `json:"ack_route_write_wait_nanos"`
-	AckRouteWriteMaxWaitNanos   int64 `json:"ack_route_write_max_wait_nanos"`
-	InitialWriteCount           int64 `json:"initial_writes"`
-	InitialFrameCount           int64 `json:"initial_frames"`
-	InitialMessageByteCount     int64 `json:"initial_message_bytes"`
-	TimeoutResendWriteCount     int64 `json:"timeout_resend_writes"`
-	CarrierChangeWriteCount     int64 `json:"carrier_change_writes"`
-	SelectiveGapWriteCount      int64 `json:"selective_gap_writes"`
-	AckTailProbeWriteCount      int64 `json:"ack_tail_probe_writes"`
-	CumulativeProbeWriteCount   int64 `json:"cumulative_probe_writes"`
-	RecoveryWriteErrorCount     int64 `json:"recovery_write_errors"`
+	PackHandoffDropCount                   int64 `json:"pack_handoff_drops"`
+	PackHandoffDropByteCount               int64 `json:"pack_handoff_drop_bytes"`
+	PackHandoffWaitCount                   int64 `json:"pack_handoff_waits"`
+	PackHandoffWaitSuccess                 int64 `json:"pack_handoff_wait_successes"`
+	PackHandoffMaxCount                    int64 `json:"pack_handoff_max_count"`
+	PackHandoffMaxByteCount                int64 `json:"pack_handoff_max_bytes"`
+	PackHandoffSaturationCount             int64 `json:"pack_handoff_saturations"`
+	PackHandoffDepthGrowCount              int64 `json:"pack_handoff_depth_grows"`
+	PackHandoffDeepenedFlows               int64 `json:"pack_handoff_deepened_flows"`
+	PackHandoffAdaptiveMaxDepth            int64 `json:"pack_handoff_adaptive_max_depth"`
+	PackHandoffAdaptiveMaxBytes            int64 `json:"pack_handoff_adaptive_max_bytes"`
+	AckHandoffDropCount                    int64 `json:"ack_handoff_drops"`
+	AckHandoffQueueFullCount               int64 `json:"ack_handoff_queue_full_drops"`
+	AckHandoffMissCount                    int64 `json:"ack_handoff_misses"`
+	AckHandoffWaitCount                    int64 `json:"ack_handoff_waits"`
+	AckHandoffWaitSuccess                  int64 `json:"ack_handoff_wait_successes"`
+	AckRouteWriteCount                     int64 `json:"ack_route_writes"`
+	AckRoutePriorityWriteCount             int64 `json:"ack_route_priority_writes"`
+	AckRouteWriteBlockedCount              int64 `json:"ack_route_write_blocks"`
+	AckRouteWriteErrorCount                int64 `json:"ack_route_write_errors"`
+	AckRouteWriteWaitNanos                 int64 `json:"ack_route_write_wait_nanos"`
+	AckRouteWriteMaxWaitNanos              int64 `json:"ack_route_write_max_wait_nanos"`
+	InitialWriteCount                      int64 `json:"initial_writes"`
+	InitialFrameCount                      int64 `json:"initial_frames"`
+	InitialMessageByteCount                int64 `json:"initial_message_bytes"`
+	TimeoutResendWriteCount                int64 `json:"timeout_resend_writes"`
+	CarrierChangeWriteCount                int64 `json:"carrier_change_writes"`
+	SelectiveGapWriteCount                 int64 `json:"selective_gap_writes"`
+	AckTailProbeWriteCount                 int64 `json:"ack_tail_probe_writes"`
+	CumulativeProbeWriteCount              int64 `json:"cumulative_probe_writes"`
+	RecoveryWriteErrorCount                int64 `json:"recovery_write_errors"`
+	PlatformH1ReceiveQueueDropCount        int64 `json:"platform_h1_receive_queue_drops"`
+	PlatformH1ReceiveQueueDropByteCount    int64 `json:"platform_h1_receive_queue_drop_bytes"`
+	PlatformH1ReceiveBackpressureCount     int64 `json:"platform_h1_receive_backpressure"`
+	PlatformH1ReceiveBackpressureByteCount int64 `json:"platform_h1_receive_backpressure_bytes"`
 
 	TransportBudgetUsedByteCount   int64 `json:"transport_budget_used_bytes"`
 	TransportBudgetUsedCount       int64 `json:"transport_budget_used_count"`
@@ -328,83 +332,91 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 	if multi, ok := remoteUserNatClient.(*connect.RemoteUserNatMultiClient); ok {
 		topology = multi.MemorySnapshot()
 	}
+	var platformReceive connect.PlatformTransportReceiveStatsSnapshot
+	if self.platformTransportReceiveStats != nil {
+		platformReceive = self.platformTransportReceiveStats.Snapshot()
+	}
 	return mobileMemorySample{
-		UnixMillis:                          time.Now().UnixMilli(),
-		GoTotalByteCount:                    runtimeSnapshot.totalByteCount,
-		GoLiveByteCount:                     runtimeSnapshot.liveByteCount,
-		GoGoalByteCount:                     runtimeSnapshot.goalByteCount,
-		GoLimitByteCount:                    runtimeSnapshot.limitByteCount,
-		PhysicalByteCount:                   runtimeSnapshot.physicalByteCount,
-		PhysicalPeakByteCount:               runtimeSnapshot.physicalPeakByteCount,
-		PhysicalPressureCount:               runtimeSnapshot.physicalPressureCount,
-		GoroutineCount:                      runtimeSnapshot.goroutineCount,
-		PoolOutstandingCount:                runtimeSnapshot.poolOutstandingCount,
-		PacketPoolOutstandingByteCount:      runtimeSnapshot.packetPoolOutstandingByteCount,
-		DeviceTunEgressOutstandingByteCount: runtimeSnapshot.deviceTunEgressOutstandingByteCount,
-		PoolRetainedByteCount:               runtimeSnapshot.poolRetainedByteCount,
-		PacketPoolRetainedByteCount:         runtimeSnapshot.packetPoolRetainedByteCount,
-		LargeObjectPoolRetainedByteCount:    runtimeSnapshot.largeObjectPoolRetainedByteCount,
-		PoolCapacityByteCount:               runtimeSnapshot.poolCapacityByteCount,
-		PacketPressureDropCount:             self.mobilePacketPressureDropCount.Load(),
-		PacketPressureDropByteCount:         self.mobilePacketPressureDropBytes.Load(),
-		PacketPressureH1AckAdmitCount:       self.mobilePacketPressureAckAdmits.Load(),
-		PacketPressureAckDropCount:          self.mobilePacketPressureAckDrops.Load(),
-		PacketPressureOtherDropCount:        self.mobilePacketPressureOtherDrops.Load(),
-		DeviceTrackedByteCount:              int64(trackedByteCount),
-		ResendQueueUsedByteCount:            int64(resendQueueUsedByteCount),
-		ResendQueueCapacityByteCount:        int64(resendQueueCapacityByteCount),
-		ReceiveQueueUsedByteCount:           int64(receiveQueueUsedByteCount),
-		ReceiveQueueCapacityByteCount:       int64(receiveQueueCapacityByteCount),
-		PackQueueUsedByteCount:              int64(packQueueUsedByteCount),
-		PackQueueCapacityByteCount:          int64(packQueueCapacityByteCount),
-		QualityClientCount:                  int64(topology.QualityClientCount),
-		SpeedClientCount:                    int64(topology.SpeedClientCount),
-		FlowCount:                           int64(topology.FlowCount),
-		PackHandoffDropCount:                int64(topology.PackHandoffDropCount),
-		PackHandoffDropByteCount:            int64(topology.PackHandoffDropByteCount),
-		PackHandoffWaitCount:                int64(topology.PackHandoffWaitCount),
-		PackHandoffWaitSuccess:              int64(topology.PackHandoffWaitSuccess),
-		PackHandoffMaxCount:                 int64(topology.PackHandoffMaxCount),
-		PackHandoffMaxByteCount:             int64(topology.PackHandoffMaxByteCount),
-		PackHandoffSaturationCount:          int64(topology.PackHandoffSaturationCount),
-		PackHandoffDepthGrowCount:           int64(topology.PackHandoffDepthGrowCount),
-		PackHandoffDeepenedFlows:            int64(topology.PackHandoffDeepenedFlows),
-		PackHandoffAdaptiveMaxDepth:         int64(topology.PackHandoffAdaptiveMaxDepth),
-		PackHandoffAdaptiveMaxBytes:         int64(topology.PackHandoffAdaptiveMaxByteCount),
-		AckHandoffDropCount:                 int64(topology.AckHandoffDropCount),
-		AckHandoffQueueFullCount:            int64(topology.AckHandoffQueueFullCount),
-		AckHandoffMissCount:                 int64(topology.AckHandoffMissCount),
-		AckHandoffWaitCount:                 int64(topology.AckHandoffWaitCount),
-		AckHandoffWaitSuccess:               int64(topology.AckHandoffWaitSuccess),
-		AckRouteWriteCount:                  int64(topology.AckRouteWriteCount),
-		AckRoutePriorityWriteCount:          int64(topology.AckRoutePriorityWriteCount),
-		AckRouteWriteBlockedCount:           int64(topology.AckRouteWriteBlockedCount),
-		AckRouteWriteErrorCount:             int64(topology.AckRouteWriteErrorCount),
-		AckRouteWriteWaitNanos:              int64(topology.AckRouteWriteWaitNanos),
-		AckRouteWriteMaxWaitNanos:           int64(topology.AckRouteWriteMaxWaitNanos),
-		InitialWriteCount:                   int64(topology.InitialWriteCount),
-		InitialFrameCount:                   int64(topology.InitialFrameCount),
-		InitialMessageByteCount:             int64(topology.InitialMessageByteCount),
-		TimeoutResendWriteCount:             int64(topology.TimeoutResendWriteCount),
-		CarrierChangeWriteCount:             int64(topology.CarrierChangeWriteCount),
-		SelectiveGapWriteCount:              int64(topology.SelectiveGapWriteCount),
-		AckTailProbeWriteCount:              int64(topology.AckTailProbeWriteCount),
-		CumulativeProbeWriteCount:           int64(topology.CumulativeProbeWriteCount),
-		RecoveryWriteErrorCount:             int64(topology.RecoveryWriteErrorCount),
-		TransportBudgetUsedByteCount:        runtimeSnapshot.transportBudgetUsedByteCount,
-		TransportBudgetUsedCount:            runtimeSnapshot.transportBudgetUsedCount,
-		TransportBudgetPendingH1Count:       runtimeSnapshot.transportBudgetPendingH1Count,
-		IdleReclaimCount:                    runtimeSnapshot.idleReclaimCount,
-		ForcedGCCount:                       runtimeSnapshot.forcedGCCount,
-		GCCycleCount:                        runtimeSnapshot.gcCycleCount,
-		TotalAllocatedByteCount:             runtimeSnapshot.totalAllocatedByteCount,
-		ProfilingBucketByteCount:            runtimeSnapshot.profilingBucketByteCount,
-		MemoryProfileRateByteCount:          runtimeSnapshot.memoryProfileRateByteCount,
-		IdleReclaimDeferredCount:            runtimeSnapshot.idleReclaimDeferredCount,
-		IdleReclaimBelowTargetCount:         runtimeSnapshot.idleReclaimBelowTargetCount,
-		IdleReclaimCooldownCount:            runtimeSnapshot.idleReclaimCooldownCount,
-		LastIdleReclaimBeforeByteCount:      runtimeSnapshot.lastIdleReclaimBeforeByteCount,
-		LastIdleReclaimAfterByteCount:       runtimeSnapshot.lastIdleReclaimAfterByteCount,
+		UnixMillis:                             time.Now().UnixMilli(),
+		GoTotalByteCount:                       runtimeSnapshot.totalByteCount,
+		GoLiveByteCount:                        runtimeSnapshot.liveByteCount,
+		GoGoalByteCount:                        runtimeSnapshot.goalByteCount,
+		GoLimitByteCount:                       runtimeSnapshot.limitByteCount,
+		PhysicalByteCount:                      runtimeSnapshot.physicalByteCount,
+		PhysicalPeakByteCount:                  runtimeSnapshot.physicalPeakByteCount,
+		PhysicalPressureCount:                  runtimeSnapshot.physicalPressureCount,
+		GoroutineCount:                         runtimeSnapshot.goroutineCount,
+		PoolOutstandingCount:                   runtimeSnapshot.poolOutstandingCount,
+		PacketPoolOutstandingByteCount:         runtimeSnapshot.packetPoolOutstandingByteCount,
+		DeviceTunEgressOutstandingByteCount:    runtimeSnapshot.deviceTunEgressOutstandingByteCount,
+		PoolRetainedByteCount:                  runtimeSnapshot.poolRetainedByteCount,
+		PacketPoolRetainedByteCount:            runtimeSnapshot.packetPoolRetainedByteCount,
+		LargeObjectPoolRetainedByteCount:       runtimeSnapshot.largeObjectPoolRetainedByteCount,
+		PoolCapacityByteCount:                  runtimeSnapshot.poolCapacityByteCount,
+		PacketPressureDropCount:                self.mobilePacketPressureDropCount.Load(),
+		PacketPressureDropByteCount:            self.mobilePacketPressureDropBytes.Load(),
+		PacketPressureH1AckAdmitCount:          self.mobilePacketPressureAckAdmits.Load(),
+		PacketPressureAckDropCount:             self.mobilePacketPressureAckDrops.Load(),
+		PacketPressureOtherDropCount:           self.mobilePacketPressureOtherDrops.Load(),
+		DeviceTrackedByteCount:                 int64(trackedByteCount),
+		ResendQueueUsedByteCount:               int64(resendQueueUsedByteCount),
+		ResendQueueCapacityByteCount:           int64(resendQueueCapacityByteCount),
+		ReceiveQueueUsedByteCount:              int64(receiveQueueUsedByteCount),
+		ReceiveQueueCapacityByteCount:          int64(receiveQueueCapacityByteCount),
+		PackQueueUsedByteCount:                 int64(packQueueUsedByteCount),
+		PackQueueCapacityByteCount:             int64(packQueueCapacityByteCount),
+		QualityClientCount:                     int64(topology.QualityClientCount),
+		SpeedClientCount:                       int64(topology.SpeedClientCount),
+		FlowCount:                              int64(topology.FlowCount),
+		PackHandoffDropCount:                   int64(topology.PackHandoffDropCount),
+		PackHandoffDropByteCount:               int64(topology.PackHandoffDropByteCount),
+		PackHandoffWaitCount:                   int64(topology.PackHandoffWaitCount),
+		PackHandoffWaitSuccess:                 int64(topology.PackHandoffWaitSuccess),
+		PackHandoffMaxCount:                    int64(topology.PackHandoffMaxCount),
+		PackHandoffMaxByteCount:                int64(topology.PackHandoffMaxByteCount),
+		PackHandoffSaturationCount:             int64(topology.PackHandoffSaturationCount),
+		PackHandoffDepthGrowCount:              int64(topology.PackHandoffDepthGrowCount),
+		PackHandoffDeepenedFlows:               int64(topology.PackHandoffDeepenedFlows),
+		PackHandoffAdaptiveMaxDepth:            int64(topology.PackHandoffAdaptiveMaxDepth),
+		PackHandoffAdaptiveMaxBytes:            int64(topology.PackHandoffAdaptiveMaxByteCount),
+		AckHandoffDropCount:                    int64(topology.AckHandoffDropCount),
+		AckHandoffQueueFullCount:               int64(topology.AckHandoffQueueFullCount),
+		AckHandoffMissCount:                    int64(topology.AckHandoffMissCount),
+		AckHandoffWaitCount:                    int64(topology.AckHandoffWaitCount),
+		AckHandoffWaitSuccess:                  int64(topology.AckHandoffWaitSuccess),
+		AckRouteWriteCount:                     int64(topology.AckRouteWriteCount),
+		AckRoutePriorityWriteCount:             int64(topology.AckRoutePriorityWriteCount),
+		AckRouteWriteBlockedCount:              int64(topology.AckRouteWriteBlockedCount),
+		AckRouteWriteErrorCount:                int64(topology.AckRouteWriteErrorCount),
+		AckRouteWriteWaitNanos:                 int64(topology.AckRouteWriteWaitNanos),
+		AckRouteWriteMaxWaitNanos:              int64(topology.AckRouteWriteMaxWaitNanos),
+		InitialWriteCount:                      int64(topology.InitialWriteCount),
+		InitialFrameCount:                      int64(topology.InitialFrameCount),
+		InitialMessageByteCount:                int64(topology.InitialMessageByteCount),
+		TimeoutResendWriteCount:                int64(topology.TimeoutResendWriteCount),
+		CarrierChangeWriteCount:                int64(topology.CarrierChangeWriteCount),
+		SelectiveGapWriteCount:                 int64(topology.SelectiveGapWriteCount),
+		AckTailProbeWriteCount:                 int64(topology.AckTailProbeWriteCount),
+		CumulativeProbeWriteCount:              int64(topology.CumulativeProbeWriteCount),
+		RecoveryWriteErrorCount:                int64(topology.RecoveryWriteErrorCount),
+		PlatformH1ReceiveQueueDropCount:        int64(platformReceive.H1.QueueDropMessageCount),
+		PlatformH1ReceiveQueueDropByteCount:    int64(platformReceive.H1.QueueDropByteCount),
+		PlatformH1ReceiveBackpressureCount:     int64(platformReceive.H1.QueueBackpressureMessageCount),
+		PlatformH1ReceiveBackpressureByteCount: int64(platformReceive.H1.QueueBackpressureByteCount),
+		TransportBudgetUsedByteCount:           runtimeSnapshot.transportBudgetUsedByteCount,
+		TransportBudgetUsedCount:               runtimeSnapshot.transportBudgetUsedCount,
+		TransportBudgetPendingH1Count:          runtimeSnapshot.transportBudgetPendingH1Count,
+		IdleReclaimCount:                       runtimeSnapshot.idleReclaimCount,
+		ForcedGCCount:                          runtimeSnapshot.forcedGCCount,
+		GCCycleCount:                           runtimeSnapshot.gcCycleCount,
+		TotalAllocatedByteCount:                runtimeSnapshot.totalAllocatedByteCount,
+		ProfilingBucketByteCount:               runtimeSnapshot.profilingBucketByteCount,
+		MemoryProfileRateByteCount:             runtimeSnapshot.memoryProfileRateByteCount,
+		IdleReclaimDeferredCount:               runtimeSnapshot.idleReclaimDeferredCount,
+		IdleReclaimBelowTargetCount:            runtimeSnapshot.idleReclaimBelowTargetCount,
+		IdleReclaimCooldownCount:               runtimeSnapshot.idleReclaimCooldownCount,
+		LastIdleReclaimBeforeByteCount:         runtimeSnapshot.lastIdleReclaimBeforeByteCount,
+		LastIdleReclaimAfterByteCount:          runtimeSnapshot.lastIdleReclaimAfterByteCount,
 	}
 }
 
@@ -420,7 +432,7 @@ func (self *DeviceLocal) TakeMemorySamplesJson() string {
 	}
 	encoded, err := json.Marshal(batch)
 	if err != nil {
-		return `{"schema":10,"dropped":0,"samples":[]}`
+		return `{"schema":11,"dropped":0,"samples":[]}`
 	}
 	return string(encoded)
 }

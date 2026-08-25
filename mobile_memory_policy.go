@@ -124,11 +124,12 @@ const (
 	mobileH1ReceiveSequenceBufferMaxCount     = 64
 	mobileReceiveSequenceBufferMaxByteCount   = 128 * 1024
 	mobileH1ReceiveSequenceBufferMaxByteCount = 128 * 1024
-	// The 1-ms arm removed nearly every H1 Pack handoff loss, but one remaining
-	// timeout delayed four Wikipedia resources by 5.4--7.4 seconds. Ten
-	// milliseconds is still bounded reader backpressure on a reliable carrier;
-	// it is far below the recovery timer and does not enlarge either queue.
-	mobileH1ReceivePackHandoffWaitTimeout = 10 * time.Millisecond
+	// A controlled H1 provider proved that a finite handoff timeout merely moves
+	// synthetic loss downstream: after the carrier route became lossless, the
+	// 10-ms boundary dropped 24 messages and pinned the 2-MiB reorder budget.
+	// Negative means wait for capacity or cancellation. The fixed per-sequence
+	// count/byte gates and shared exact Pack budget still bound ownership.
+	mobileH1ReceivePackHandoffWaitTimeout = -1 * time.Nanosecond
 	mobileH1ReceiveAckHandoffWaitTimeout  = time.Millisecond
 	// Eight compact Transfer ACKs need only channel-slot storage and cover far
 	// more than one 10-ms ACK compression interval. They bypass a full ordinary

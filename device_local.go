@@ -621,7 +621,8 @@ type DeviceLocal struct {
 	performanceProfile *PerformanceProfile
 	// Fixed-ring primitive telemetry for the 24-MiB mobile policy. Nil outside
 	// the mobile low-memory profile; its goroutine follows self.ctx.
-	memorySampler *mobileMemorySampler
+	memorySampler                 *mobileMemorySampler
+	platformTransportReceiveStats *connect.PlatformTransportReceiveStats
 	// Aggregate packet ownership is the remaining active-load risk after
 	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.
@@ -1371,6 +1372,8 @@ func newDeviceLocalWithOverrides(
 	)
 	deviceLocal.updateMobilePacketPerformanceModeWithLock()
 	if deviceLocal.mobilePacketPressure != nil {
+		deviceLocal.platformTransportReceiveStats =
+			&connect.PlatformTransportReceiveStats{}
 		deviceLocal.memorySampler = &mobileMemorySampler{}
 		deviceLocal.memorySampler.start(deviceLocal.ctx, deviceLocal.memorySample)
 	}
@@ -3696,6 +3699,7 @@ func (self *DeviceLocal) setDestination(
 							settings,
 							self.settings.MemoryTargetByteCount,
 						)
+						settings.ReceiveStats = self.platformTransportReceiveStats
 						return settings
 					}
 				}

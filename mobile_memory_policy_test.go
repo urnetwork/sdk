@@ -122,8 +122,9 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	if got := settings.ReceiveBufferSettings.H1SequenceBufferByteCount; got != mobileH1ReceiveSequenceBufferMaxByteCount {
 		t.Fatalf("H1 receive sequence bytes = %d, want %d", got, mobileH1ReceiveSequenceBufferMaxByteCount)
 	}
-	if got := settings.ReceiveBufferSettings.H1PackHandoffTimeout; got != 10*time.Millisecond {
-		t.Fatalf("H1 receive handoff wait = %v, want 10ms", got)
+	if got := settings.ReceiveBufferSettings.H1PackHandoffTimeout; got !=
+		mobileH1ReceivePackHandoffWaitTimeout {
+		t.Fatalf("H1 receive handoff wait = %v, want lossless backpressure", got)
 	}
 	if got := settings.ReceiveBufferSettings.H1AckHandoffTimeout; got != time.Millisecond {
 		t.Fatalf("H1 ACK handoff wait = %v, want 1ms", got)

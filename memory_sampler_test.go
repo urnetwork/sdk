@@ -44,12 +44,16 @@ func TestMobileMemorySamplerRecordAllocatesNothing(t *testing.T) {
 func TestTakeMemorySamplesJsonIsOneValidBatch(t *testing.T) {
 	device := &DeviceLocal{memorySampler: &mobileMemorySampler{}}
 	device.memorySampler.record(mobileMemorySample{
-		GoTotalByteCount:            42,
-		PackHandoffSaturationCount:  7,
-		PackHandoffDepthGrowCount:   3,
-		PackHandoffDeepenedFlows:    2,
-		PackHandoffAdaptiveMaxDepth: 96,
-		PackHandoffAdaptiveMaxBytes: 192 * 1024,
+		GoTotalByteCount:                       42,
+		PackHandoffSaturationCount:             7,
+		PackHandoffDepthGrowCount:              3,
+		PackHandoffDeepenedFlows:               2,
+		PackHandoffAdaptiveMaxDepth:            96,
+		PackHandoffAdaptiveMaxBytes:            192 * 1024,
+		PlatformH1ReceiveQueueDropCount:        5,
+		PlatformH1ReceiveQueueDropByteCount:    12 * 1024,
+		PlatformH1ReceiveBackpressureCount:     7,
+		PlatformH1ReceiveBackpressureByteCount: 24 * 1024,
 	})
 	var batch mobileMemorySampleBatch
 	if err := json.Unmarshal([]byte(device.TakeMemorySamplesJson()), &batch); err != nil {
@@ -61,7 +65,11 @@ func TestTakeMemorySamplesJsonIsOneValidBatch(t *testing.T) {
 		batch.Samples[0].PackHandoffDepthGrowCount != 3 ||
 		batch.Samples[0].PackHandoffDeepenedFlows != 2 ||
 		batch.Samples[0].PackHandoffAdaptiveMaxDepth != 96 ||
-		batch.Samples[0].PackHandoffAdaptiveMaxBytes != 192*1024 {
+		batch.Samples[0].PackHandoffAdaptiveMaxBytes != 192*1024 ||
+		batch.Samples[0].PlatformH1ReceiveQueueDropCount != 5 ||
+		batch.Samples[0].PlatformH1ReceiveQueueDropByteCount != 12*1024 ||
+		batch.Samples[0].PlatformH1ReceiveBackpressureCount != 7 ||
+		batch.Samples[0].PlatformH1ReceiveBackpressureByteCount != 24*1024 {
 		t.Fatalf("sample batch = %+v", batch)
 	}
 }
@@ -87,9 +95,10 @@ func TestMobileDeviceMemorySampleHotPathDoesNotAllocate(t *testing.T) {
 	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
 	settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget = packQueueBudget
 	device := &DeviceLocal{
-		settings:        settings,
-		dnsMemoryTarget: connect.NewMemoryTarget(1024),
-		memorySampler:   &mobileMemorySampler{},
+		settings:                      settings,
+		dnsMemoryTarget:               connect.NewMemoryTarget(1024),
+		memorySampler:                 &mobileMemorySampler{},
+		platformTransportReceiveStats: &connect.PlatformTransportReceiveStats{},
 	}
 	device.mobilePacketPressureDropCount.Store(17)
 	device.mobilePacketPressureDropBytes.Store(1700)
