@@ -447,6 +447,8 @@ func (self *syntheticProviderGenerator) NewClientSettings() *connect.ClientSetti
 		self.deviceSettings.ClientSettings.SendBufferSettings.ResendQueueBudget
 	settings.ReceiveBufferSettings.ReceiveQueueBudget =
 		self.deviceSettings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget
+	settings.ReceiveBufferSettings.PackQueueBudget =
+		self.deviceSettings.ClientSettings.ReceiveBufferSettings.PackQueueBudget
 	settings.WebRtcSettings.ReceiveBufferSize =
 		self.deviceSettings.ClientSettings.WebRtcSettings.ReceiveBufferSize
 	settings.WebRtcSettings.MemoryBudget =

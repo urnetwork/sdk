@@ -198,6 +198,39 @@ func TestDeviceLocalMemorySizingDoesNotOverflowHostTarget(t *testing.T) {
 	connect.AssertEqual(t, foldedProviderShare, ByteCount(0))
 }
 
+func TestProvideOffReallocatesBoundedPackHandoffHeadroom(t *testing.T) {
+	settings := DefaultDeviceLocalSettings()
+	settings.MemoryTargetByteCount = mobileSteadyMemoryTargetByteCount
+	_, clientShare, providerShare := deviceMemoryShares(settings)
+	packBudget := connect.NewTransferMemoryBudget(
+		mobilePackQueueBudgetByteCount(clientShare),
+	)
+	settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget = packBudget
+	device := &DeviceLocal{settings: settings}
+
+	device.applyProvideMemorySharesWithLock(false)
+	connect.AssertEqual(
+		t,
+		packBudget.TotalByteCount(),
+		mobilePackQueueBudgetByteCount(clientShare+providerShare),
+	)
+	connect.AssertEqual(
+		t,
+		packBudget.TotalByteCount(),
+		mobilePackQueueBudgetMaxByteCount,
+	)
+
+	device.applyProvideMemorySharesWithLock(true)
+	connect.AssertEqual(
+		t,
+		packBudget.TotalByteCount(),
+		mobilePackQueueBudgetByteCount(clientShare),
+	)
+	if packBudget.TotalByteCount() >= mobilePackQueueBudgetMaxByteCount {
+		t.Fatal("provide-on client retained the provider-off pack headroom")
+	}
+}
+
 func TestConfigureDeviceLocalProviderMemoryUsesIndependentBoundedP2pPools(t *testing.T) {
 	partial := &connect.ClientSettings{
 		ForwardBufferSettings:   connect.DefaultForwardBufferSettings(),

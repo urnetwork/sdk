@@ -92,7 +92,7 @@ func TestMobileMemoryReclaimerGatesTargetFlightAndCooldown(t *testing.T) {
 		targetByteCount:         20,
 		physicalTargetByteCount: func() int64 { return 40 },
 		maxPoolOutstanding:      2,
-		quietRetry:              15 * time.Second,
+		quietRetry:              mobileIdleMemoryTrimRetryDelay,
 		cooldown:                time.Minute,
 		now:                     func() time.Time { return now },
 		sample:                  func() mobileMemoryReclaimSnapshot { return snapshot },
@@ -104,7 +104,7 @@ func TestMobileMemoryReclaimerGatesTargetFlightAndCooldown(t *testing.T) {
 		t.Fatalf("below-target result = %+v", got)
 	}
 	snapshot = mobileMemoryReclaimSnapshot{runtimeByteCount: 21, poolOutstanding: 3}
-	if got := reclaimer.attempt(); got.outcome != mobileMemoryReclaimInFlight || got.retryAfter != 15*time.Second {
+	if got := reclaimer.attempt(); got.outcome != mobileMemoryReclaimInFlight || got.retryAfter != mobileIdleMemoryTrimRetryDelay {
 		t.Fatalf("in-flight result = %+v", got)
 	}
 	snapshot.poolOutstanding = 2

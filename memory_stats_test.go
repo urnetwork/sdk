@@ -98,10 +98,19 @@ func TestTrimMemoryDecaysPoolsWithoutShrinkingCapacity(t *testing.T) {
 		)
 	})
 
-	const packetSize = 2048
-	messages := make([][]byte, 4*mib/packetSize)
-	for i := range messages {
-		messages[i] = MessagePoolGetRaw(packetSize)
+	// Resize splits the 4-MiB packet budget into 1 MiB of 256-byte small
+	// roots and 3 MiB of 2-KiB full roots. Fill both classes so this test still
+	// exercises decay from the entire configured packet budget.
+	const (
+		smallPacketSize = 80
+		fullPacketSize  = 2048
+	)
+	messages := make([][]byte, mib/256+3*mib/fullPacketSize)
+	for i := int64(0); i < mib/256; i += 1 {
+		messages[i] = MessagePoolGetRaw(smallPacketSize)
+	}
+	for i := mib / 256; i < int64(len(messages)); i += 1 {
+		messages[i] = MessagePoolGetRaw(fullPacketSize)
 	}
 	for _, message := range messages {
 		MessagePoolReturn(message)

@@ -181,6 +181,28 @@ const (
 	memoryTargetRatioParts           = 34
 )
 
+// Derives free-list capacities from the process limit while applying the
+// tighter mobile returned-buffer ceiling. Servers retain the historical
+// proportional sizing; live/in-flight allocations are not governed here.
+func messagePoolMemoryTargetsForPlatform(
+	limit int64,
+	mobile bool,
+) (packetPoolByteCount int64, largeObjectPoolByteCount int64) {
+	packetPoolByteCount = limit * memoryTargetRatioPacketPool / memoryTargetRatioParts
+	largeObjectPoolByteCount = limit * memoryTargetRatioLargeObjectPool / memoryTargetRatioParts
+	if mobile {
+		packetPoolByteCount = min(
+			packetPoolByteCount,
+			int64(mobilePacketPoolCapacityByteCount),
+		)
+		largeObjectPoolByteCount = min(
+			largeObjectPoolByteCount,
+			int64(mobileLargeObjectPoolCapacityByteCount),
+		)
+	}
+	return
+}
+
 // SetMemoryLimit tunes the sdk to a process memory budget. the app-facing
 // process-level knob:
 //   - bounds the global message pool free lists by ratio (packet pool 12 :
@@ -194,10 +216,9 @@ const (
 // memory: each DeviceLocal's target is passed explicitly where the device
 // is created, so a multi-device process bounds every device independently.
 func SetMemoryLimit(limit int64) {
-	SetMessagePoolMemoryTargets(
-		limit*memoryTargetRatioPacketPool/memoryTargetRatioParts,
-		limit*memoryTargetRatioLargeObjectPool/memoryTargetRatioParts,
-	)
+	packetPoolByteCount, largeObjectPoolByteCount :=
+		messagePoolMemoryTargetsForPlatform(limit, mobileRuntime())
+	SetMessagePoolMemoryTargets(packetPoolByteCount, largeObjectPoolByteCount)
 	// Pre-warm a bounded part of the packet class so the first traffic burst
 	// skips the cold allocation storm. Mobile retains 512 KiB; desktop/server
 	// preserve the historical 1 MiB.
@@ -214,8 +235,9 @@ func SetMemoryLimit(limit int64) {
 }
 
 // SetMessagePoolMemoryTargets bounds the global message pool free lists:
-// packetPoolByteCount bounds the packet (2048) class, and
-// largeObjectPoolByteCount is split evenly among the larger size classes.
+// packetPoolByteCount is split between the 256-byte small/control and 2048-byte
+// full-MTU packet classes, and largeObjectPoolByteCount is split evenly among
+// the larger size classes.
 // The pools are the process-global complement to the per-device memory
 // target (DeviceLocalSettings.MemoryTargetByteCount). Applies live.
 func SetMessagePoolMemoryTargets(

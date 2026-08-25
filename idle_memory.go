@@ -15,6 +15,11 @@ import (
 // one-minute cooldown bounds forced-GC battery/latency cost across repeated
 // quiet epochs.
 const mobileIdleMemoryTrimDelay = 15 * time.Second
+
+// Once the quiet attempt has already proved that live owners remain, retry
+// promptly. Reusing the full debounce left the measured process above 28 MiB
+// for three sampler intervals after the transfer had stopped.
+const mobileIdleMemoryTrimRetryDelay = 2 * time.Second
 const mobileIdleMemoryTrimCooldown = 60 * time.Second
 
 // One or two control-frame buffers can remain borrowed at idle. Allow a small
@@ -151,7 +156,7 @@ func startMobileIdleMemoryTrimmer() {
 				targetByteCount:         int64(mobileSteadyMemoryTargetByteCount),
 				physicalTargetByteCount: mobilePhysicalPressureByteCount.Load,
 				maxPoolOutstanding:      mobileIdleMemoryMaxOutstandingPoolCount,
-				quietRetry:              mobileIdleMemoryTrimDelay,
+				quietRetry:              mobileIdleMemoryTrimRetryDelay,
 				cooldown:                mobileIdleMemoryTrimCooldown,
 				now:                     time.Now,
 				sample:                  mobileMemorySnapshot,

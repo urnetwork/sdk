@@ -13,11 +13,80 @@ import (
 // the same topology and queue profile instead of relying on app call order.
 const mobileSteadyMemoryTargetByteCount ByteCount = 24 * 1024 * 1024
 
-// A 512-KiB packet reuse set spends 256 KiB of the new headroom to avoid a cold
-// allocation wave after reclaim. Together with the two fixed 256-KiB
-// large-object floors it keeps 1 MiB of immediately reusable buffers, while
-// the unchanged capacity can absorb a later burst.
-const mobilePacketPoolWarmByteCount ByteCount = 512 * 1024
+// Keep the complete 256-KiB mobile packet free-list warm. This is enough for
+// 256 small-ACK roots plus 96 full-MTU roots under the pool's 1:3 split, while
+// avoiding both a cold allocation wave and retention of a multi-MiB burst.
+const mobilePacketPoolWarmByteCount ByteCount = 256 * 1024
+
+// The process soft limit is an emergency GC boundary, not permission for
+// returned buffers to consume the same fraction on a phone as they do in a
+// server. At the 32-MiB mobile soft limit the generic ratios otherwise permit
+// 13.2 MiB of free-list capacity; the sustained H1 trace filled 6.5 MiB and
+// crossed the 28-MiB diagnostic ceiling after live traffic drained. These caps
+// affect only returned buffers. Pool misses still allocate, and the separate
+// packet/transfer budgets continue to bound live ownership.
+const mobilePacketPoolCapacityByteCount ByteCount = 256 * 1024
+const mobileLargeObjectPoolCapacityByteCount ByteCount = 512 * 1024
+
+const (
+	// Per-flow H1 handoff queues retain decoded packet roots before the shared
+	// receive queue accounts them. Keep one device-wide bandwidth-delay window:
+	// 1.5 MiB is the provider-on floor, while folding the idle provider share
+	// into the client may raise it to 2 MiB for provider-off H1 performance.
+	mobilePackQueueBudgetMinByteCount ByteCount = 1536 * 1024
+	mobilePackQueueBudgetMaxByteCount ByteCount = 2 * 1024 * 1024
+	// ReceiveSequence reorder queues hold decoded packet roots after the Pack
+	// handoff releases its reservation. Their former 96-KiB per-sequence floor
+	// was deliberately outside the shared budget; a browser fan-out of roughly
+	// 80 flows therefore retained 6.51 MiB of packet roots while only 1.98 MiB
+	// appeared in device accounting. Charge every queued byte to one aggregate
+	// bandwidth-delay window. Provider-off can spend the same bounded 2-MiB
+	// maximum as the Pack handoff; provider-on retains the 1.5-MiB floor.
+	mobileReceiveQueueBudgetMinByteCount ByteCount = 1536 * 1024
+	mobileReceiveQueueBudgetMaxByteCount ByteCount = 2 * 1024 * 1024
+)
+
+func mobilePackQueueBudgetByteCount(clientShareByteCount ByteCount) ByteCount {
+	return min(
+		mobilePackQueueBudgetMaxByteCount,
+		max(mobilePackQueueBudgetMinByteCount, clientShareByteCount/10),
+	)
+}
+
+func mobileReceiveQueueBudgetByteCount(clientShareByteCount ByteCount) ByteCount {
+	return min(
+		mobileReceiveQueueBudgetMaxByteCount,
+		max(mobileReceiveQueueBudgetMinByteCount, clientShareByteCount/10),
+	)
+}
+
+// mobileReceiveQueueBudgetForPlatform preserves the desktop/server share
+// calculation and installs the exact aggregate mobile ceiling only for the
+// <=24-MiB profile. Keeping this pure makes the provider on/off sizing policy
+// directly testable on a non-mobile host.
+func mobileReceiveQueueBudgetForPlatform(
+	memoryTargetByteCount ByteCount,
+	clientShareByteCount ByteCount,
+	mobile bool,
+) ByteCount {
+	if mobileLowMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+		return mobileReceiveQueueBudgetByteCount(clientShareByteCount)
+	}
+	return max(byteCountFraction(clientShareByteCount, 4, 7), 1536*1024)
+}
+
+func mobilePackQueueBudgetForPlatform(
+	memoryTargetByteCount ByteCount,
+	clientShareByteCount ByteCount,
+	mobile bool,
+) *connect.TransferMemoryBudget {
+	if !mobileLowMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+		return nil
+	}
+	return connect.NewTransferMemoryBudget(
+		mobilePackQueueBudgetByteCount(clientShareByteCount),
+	)
+}
 
 func defaultDeviceLocalMemoryTargetByteCountForPlatform(mobile bool) ByteCount {
 	if mobile {
@@ -27,22 +96,44 @@ func defaultDeviceLocalMemoryTargetByteCountForPlatform(mobile bool) ByteCount {
 }
 
 const (
-	// Keep the measured H3-safe sixteen-message ceiling. A 32-message experiment
-	// improved H1 bulk traffic but a stalled H3 page reached 29.30 MiB even with
-	// the 512-root aggregate gate, because already-admitted work drains
-	// asynchronously. The 24-MiB profile spends headroom outside this multiplier.
-	mobileClientSequenceBufferMaxCount                = 16
-	mobileReceiveSequenceBufferMaxByteCount           = 128 * 1024
-	mobileResendQueueMinByteCount                     = 64 * 1024
-	mobileResendQueueMaxByteCount                     = 512 * 1024
-	mobileReceiveQueueMinByteCount                    = 96 * 1024
-	mobileReceiveQueueMaxByteCount                    = 768 * 1024
-	mobileUnreliableFlightMaxByteCount                = 128 * 1024
-	mobileUnreliableFlightMaxMessageCount             = 16
-	mobileQualityWindowSize                           = 4
-	mobileSpeedWindowSize                             = 1
-	mobilePacketGroupMaxPacketCount                   = 16
-	mobilePacketGroupMaxByteCount           ByteCount = 24 * 1024
+	// Keep send, H3, forward, and control ownership at the measured
+	// sixteen-message ceiling. ACKs use compact allocation-free values and get
+	// a separate small burst budget: logical-lane division turns 64 into eight
+	// entries per data lane instead of the former two, while retaining only a
+	// few KiB per active peer. H1 gets a larger receive-pump burst window:
+	// the adjacent ACK/coalescing trace recorded 2,280 Pack handoff drops while
+	// ACK handoff drops remained zero and active runtime stayed below 24 MiB.
+	// Connect enforces the H3 and H1 counts on one ordered channel, so mixed
+	// carrier sequences cannot let H3 consume this reliable-carrier spend.
+	mobileClientSequenceBufferMaxCount        = 16
+	mobileClientAckBufferMaxCount             = 64
+	mobileH1ReceiveSequenceBufferMaxCount     = 64
+	mobileReceiveSequenceBufferMaxByteCount   = 128 * 1024
+	mobileH1ReceiveSequenceBufferMaxByteCount = 128 * 1024
+	// The 1-ms arm removed nearly every H1 Pack handoff loss, but one remaining
+	// timeout delayed four Wikipedia resources by 5.4--7.4 seconds. Ten
+	// milliseconds is still bounded reader backpressure on a reliable carrier;
+	// it is far below the recovery timer and does not enlarge either queue.
+	mobileH1ReceivePackHandoffWaitTimeout = 10 * time.Millisecond
+	mobileH1ReceiveAckHandoffWaitTimeout  = time.Millisecond
+	// Eight compact Transfer ACKs need only channel-slot storage and cover far
+	// more than one 10-ms ACK compression interval. They bypass a full ordinary
+	// H1 route without increasing any data sequence or receive window.
+	mobileH1AckPriorityBufferSize = 8
+	mobileResendQueueMinByteCount = 64 * 1024
+	mobileResendQueueMaxByteCount = 512 * 1024
+	// An empty receive queue already admits one item even when the aggregate
+	// budget is exhausted, so a per-sequence byte floor is unnecessary for
+	// liveness. Zero makes all subsequent reorder ownership visible to and
+	// bounded by the shared device budget instead of multiplying by flow count.
+	mobileReceiveQueueMinByteCount                  = 0
+	mobileReceiveQueueMaxByteCount                  = 768 * 1024
+	mobileUnreliableFlightMaxByteCount              = 128 * 1024
+	mobileUnreliableFlightMaxMessageCount           = 16
+	mobileQualityWindowSize                         = 4
+	mobileSpeedWindowSize                           = 1
+	mobilePacketGroupMaxPacketCount                 = 16
+	mobilePacketGroupMaxByteCount         ByteCount = 24 * 1024
 	// Browser tabs leave many completed TCP flow objects behind for the
 	// desktop-oriented ten-minute default. A three-minute mobile timeout keeps
 	// active/keepalive traffic intact while retiring that stale graph inside a
@@ -64,6 +155,29 @@ func mobileLowMemoryPolicyEnabledForPlatform(
 ) bool {
 	return mobile && 0 < memoryTargetByteCount &&
 		memoryTargetByteCount <= mobileSteadyMemoryTargetByteCount
+}
+
+func applyMobileLowMemoryPlatformTransportSettings(
+	settings *connect.PlatformTransportSettings,
+	memoryTargetByteCount ByteCount,
+) {
+	applyMobileLowMemoryPlatformTransportSettingsForPlatform(
+		settings,
+		memoryTargetByteCount,
+		mobileRuntime(),
+	)
+}
+
+func applyMobileLowMemoryPlatformTransportSettingsForPlatform(
+	settings *connect.PlatformTransportSettings,
+	memoryTargetByteCount ByteCount,
+	mobile bool,
+) {
+	if settings == nil ||
+		!mobileLowMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+		return
+	}
+	settings.H1AckPriorityBufferSize = mobileH1AckPriorityBufferSize
 }
 
 // applyMobileLowMemoryClientSettings bounds the number and bytes of packets
@@ -95,7 +209,7 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 	if settings.SendBufferSettings != nil {
 		send := settings.SendBufferSettings
 		send.SequenceBufferSize = min(send.SequenceBufferSize, mobileClientSequenceBufferMaxCount)
-		send.AckBufferSize = min(send.AckBufferSize, mobileClientSequenceBufferMaxCount)
+		send.AckBufferSize = min(send.AckBufferSize, mobileClientAckBufferMaxCount)
 		send.ResendQueueMinByteCount = min(
 			send.ResendQueueMinByteCount,
 			mobileResendQueueMinByteCount,
@@ -115,14 +229,25 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 	}
 	if settings.ReceiveBufferSettings != nil {
 		receive := settings.ReceiveBufferSettings
+		receive.ReceiveQueueRetainedByteAccounting = true
 		receive.SequenceBufferSize = min(
 			receive.SequenceBufferSize,
 			mobileClientSequenceBufferMaxCount,
+		)
+		receive.H1SequenceBufferSize = min(
+			receive.H1SequenceBufferSize,
+			mobileH1ReceiveSequenceBufferMaxCount,
 		)
 		receive.SequenceBufferByteCount = min(
 			receive.SequenceBufferByteCount,
 			mobileReceiveSequenceBufferMaxByteCount,
 		)
+		receive.H1SequenceBufferByteCount = min(
+			receive.H1SequenceBufferByteCount,
+			mobileH1ReceiveSequenceBufferMaxByteCount,
+		)
+		receive.H1PackHandoffTimeout = mobileH1ReceivePackHandoffWaitTimeout
+		receive.H1AckHandoffTimeout = mobileH1ReceiveAckHandoffWaitTimeout
 		receive.ReceiveQueueMinByteCount = min(
 			receive.ReceiveQueueMinByteCount,
 			mobileReceiveQueueMinByteCount,

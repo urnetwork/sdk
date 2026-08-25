@@ -288,6 +288,12 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
 	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	clientSettings.ReceiveBufferSettings.PackQueueBudget =
+		mobilePackQueueBudgetForPlatform(
+			memoryTargetByteCount,
+			clientShareByteCount,
+			mobileRuntime(),
+		)
 	// p2p peer connections admit against a DEDICATED budget (see
 	// deviceLocalWebRtcBudget) with a phone-sized SCTP buffer, not the shared
 	// receive queue that active transfer starves. Only on a memory-targeted
@@ -619,8 +625,12 @@ type DeviceLocal struct {
 	// Aggregate packet ownership is the remaining active-load risk after
 	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.
-	mobilePacketPressure          *mobilePacketPressureGate
-	mobilePacketPressureDropCount atomic.Int64
+	mobilePacketPressure           *mobilePacketPressureGate
+	mobilePacketPressureDropCount  atomic.Int64
+	mobilePacketPressureDropBytes  atomic.Int64
+	mobilePacketPressureAckAdmits  atomic.Int64
+	mobilePacketPressureAckDrops   atomic.Int64
+	mobilePacketPressureOtherDrops atomic.Int64
 
 	// when nil, packets get routed to the local user nat
 	remoteUserNatClient connect.UserNatClient
@@ -1087,6 +1097,12 @@ func newDeviceLocalWithOverrides(
 	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
 	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget =
+		mobilePackQueueBudgetForPlatform(
+			settings.MemoryTargetByteCount,
+			clientShareByteCount,
+			mobileRuntime(),
+		)
 	applyMobileLowMemoryClientSettings(
 		&settings.ClientSettings,
 		settings.MemoryTargetByteCount,
@@ -1353,6 +1369,7 @@ func newDeviceLocalWithOverrides(
 		settings.MemoryTargetByteCount,
 		mobileRuntime(),
 	)
+	deviceLocal.updateMobilePacketPerformanceModeWithLock()
 	if deviceLocal.mobilePacketPressure != nil {
 		deviceLocal.memorySampler = &mobileMemorySampler{}
 		deviceLocal.memorySampler.start(deviceLocal.ctx, deviceLocal.memorySample)
@@ -1539,13 +1556,19 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 // caps rather than live byte accounting, so it is not included here — the
 // memory target load test measures that remainder as process heap.
 type DeviceLocalMemoryUsage struct {
-	TargetByteCount          ByteCount
-	DnsByteCount             ByteCount
-	ClientSendByteCount      ByteCount
-	ClientReceiveByteCount   ByteCount
-	ProviderSendByteCount    ByteCount
-	ProviderReceiveByteCount ByteCount
-	TotalByteCount           ByteCount
+	TargetByteCount        ByteCount
+	DnsByteCount           ByteCount
+	ClientSendByteCount    ByteCount
+	ClientReceiveByteCount ByteCount
+	// PackQueue* isolates the device-wide aggregate decoded-pack handoff
+	// budget already included in ClientReceiveByteCount. It is shared by the
+	// control client, window clients, and provider so diagnostics can distinguish
+	// active queue pressure from allocator or message-pool retention.
+	PackQueueUsedByteCount     ByteCount
+	PackQueueCapacityByteCount ByteCount
+	ProviderSendByteCount      ByteCount
+	ProviderReceiveByteCount   ByteCount
+	TotalByteCount             ByteCount
 }
 
 // MemoryUsed samples the tracked memory accounting of this device's areas
@@ -1557,8 +1580,15 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 	if sendBufferSettings := self.settings.ClientSettings.SendBufferSettings; sendBufferSettings != nil && sendBufferSettings.ResendQueueBudget != nil {
 		usage.ClientSendByteCount = sendBufferSettings.ResendQueueBudget.UsedByteCount()
 	}
-	if receiveBufferSettings := self.settings.ClientSettings.ReceiveBufferSettings; receiveBufferSettings != nil && receiveBufferSettings.ReceiveQueueBudget != nil {
-		usage.ClientReceiveByteCount = receiveBufferSettings.ReceiveQueueBudget.UsedByteCount()
+	if receiveBufferSettings := self.settings.ClientSettings.ReceiveBufferSettings; receiveBufferSettings != nil {
+		if receiveBufferSettings.ReceiveQueueBudget != nil {
+			usage.ClientReceiveByteCount = receiveBufferSettings.ReceiveQueueBudget.UsedByteCount()
+		}
+		if receiveBufferSettings.PackQueueBudget != nil {
+			usage.PackQueueUsedByteCount = receiveBufferSettings.PackQueueBudget.UsedByteCount()
+			usage.PackQueueCapacityByteCount = receiveBufferSettings.PackQueueBudget.TotalByteCount()
+			usage.ClientReceiveByteCount += usage.PackQueueUsedByteCount
+		}
 	}
 	if self.provider != nil {
 		// a nil pair means the provider shares the device client budgets
@@ -3202,7 +3232,18 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		resendQueueBudget.SetTotalByteCount(max(byteCountFraction(clientPairByteCount, 3, 7), 1024*1024))
 	}
 	if receiveQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget; receiveQueueBudget != nil {
-		receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(clientPairByteCount, 4, 7), 1536*1024))
+		receiveQueueBudget.SetTotalByteCount(
+			mobileReceiveQueueBudgetForPlatform(
+				self.settings.MemoryTargetByteCount,
+				clientPairByteCount,
+				mobileRuntime(),
+			),
+		)
+	}
+	if packQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget; packQueueBudget != nil {
+		packQueueBudget.SetTotalByteCount(
+			mobilePackQueueBudgetByteCount(clientPairByteCount),
+		)
 	}
 	if self.provider != nil {
 		if resendQueueBudget, receiveQueueBudget := self.provider.transferBudgets(); resendQueueBudget != nil {
@@ -3212,6 +3253,16 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 			receiveQueueBudget.SetTotalByteCount(max(byteCountFraction(providerPairByteCount, 4, 7), 384*1024))
 		}
 	}
+}
+
+// Must be called with stateLock, or during single-threaded construction. The
+// ACK reserve is a provider-off H1 performance spend; H3/Auto and provider-on
+// states keep the measured 1-MiB packet-root byte ceiling.
+func (self *DeviceLocal) updateMobilePacketPerformanceModeWithLock() {
+	h1ProviderOff := self.provideMode == ProvideModeNone &&
+		self.transportSettings != nil &&
+		self.transportSettings.Mode == TransportModeH1
+	self.mobilePacketPressure.setH1AckReserveEnabled(h1ProviderOff)
 }
 
 func providerLocalUserNatSettings(
@@ -3254,6 +3305,7 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 		if self.provideMode != provideMode {
 			self.provideMode = provideMode
 			changed = true
+			self.updateMobilePacketPerformanceModeWithLock()
 
 			// reallocate the provider share of the memory target between the
 			// client and provider pairs for the new provide state
@@ -3637,6 +3689,16 @@ func (self *DeviceLocal) setDestination(
 				generator = self.generatorFunc(connectSpecs)
 			} else {
 				apiGeneratorSettings := connect.DefaultApiMultiClientGeneratorSettings()
+				if mobileLowMemoryPolicyEnabled(self.settings.MemoryTargetByteCount) {
+					apiGeneratorSettings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
+						settings := connect.DefaultPlatformTransportSettings()
+						applyMobileLowMemoryPlatformTransportSettings(
+							settings,
+							self.settings.MemoryTargetByteCount,
+						)
+						return settings
+					}
+				}
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
 				apiGeneratorSettings.PlatformTransportMode = transportMode
 				apiGeneratorSettings.PlatformTransportModePreferences = modePreferences
@@ -3669,6 +3731,7 @@ func (self *DeviceLocal) setDestination(
 						// queues draw from the same pools
 						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
 						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
+						clientSettings.ReceiveBufferSettings.PackQueueBudget = self.settings.ReceiveBufferSettings.PackQueueBudget
 						// every window client's p2p admits against the ONE
 						// dedicated device webRtc budget with the phone-sized
 						// SCTP buffer — never the receive queue that active
@@ -4103,8 +4166,21 @@ func (self *DeviceLocal) updateSendRouteWithLock() {
 }
 
 func (self *DeviceLocal) sendPacket(packet []byte) bool {
-	if self.mobilePacketPressure.shouldDrop() {
+	if self.mobilePacketPressure != nil {
+		connect.MessagePoolMarkDeviceTunEgress(packet)
+	}
+	admitted, ackAdmitted := self.mobilePacketPressure.admitPacket(packet)
+	if ackAdmitted {
+		self.mobilePacketPressureAckAdmits.Add(1)
+	}
+	if !admitted {
 		self.mobilePacketPressureDropCount.Add(1)
+		self.mobilePacketPressureDropBytes.Add(int64(len(packet)))
+		if connect.IsTcpAckOnlyPacket(packet) {
+			self.mobilePacketPressureAckDrops.Add(1)
+		} else {
+			self.mobilePacketPressureOtherDrops.Add(1)
+		}
 		return false
 	}
 	source := connect.SourceId(self.clientId)
@@ -4167,11 +4243,34 @@ func (self *DeviceLocal) sendPacketsNoCopy(packets [][]byte) int {
 	if len(packets) == 0 {
 		return 0
 	}
-	if self.mobilePacketPressure.shouldDrop() {
+	if self.mobilePacketPressure != nil {
 		for _, packet := range packets {
+			connect.MessagePoolMarkDeviceTunEgress(packet)
+		}
+	}
+	admittedPacketCount, ackAdmittedPacketCount :=
+		self.mobilePacketPressure.admitOwnedPacketBatch(packets)
+	if 0 < ackAdmittedPacketCount {
+		self.mobilePacketPressureAckAdmits.Add(int64(ackAdmittedPacketCount))
+	}
+	if admittedPacketCount < len(packets) {
+		dropByteCount := int64(0)
+		ackDropCount := int64(0)
+		for _, packet := range packets[admittedPacketCount:] {
+			dropByteCount += int64(len(packet))
+			if connect.IsTcpAckOnlyPacket(packet) {
+				ackDropCount++
+			}
 			connect.MessagePoolReturn(packet)
 		}
-		self.mobilePacketPressureDropCount.Add(int64(len(packets)))
+		dropCount := int64(len(packets) - admittedPacketCount)
+		self.mobilePacketPressureDropCount.Add(dropCount)
+		self.mobilePacketPressureDropBytes.Add(dropByteCount)
+		self.mobilePacketPressureAckDrops.Add(ackDropCount)
+		self.mobilePacketPressureOtherDrops.Add(dropCount - ackDropCount)
+		packets = packets[:admittedPacketCount]
+	}
+	if len(packets) == 0 {
 		return 0
 	}
 	route := self.sendRoute.Load()
@@ -4620,6 +4719,7 @@ func (self *DeviceLocal) SetTransportSettings(transportSettings *TransportSettin
 	self.stateLock.Lock()
 	if !transportSettingsEqual(self.transportSettings, transportSettings, false) {
 		self.transportSettings = cloneTransportSettings(transportSettings)
+		self.updateMobilePacketPerformanceModeWithLock()
 		apiGenerator = self.apiMultiClientGenerator
 		changed = true
 	}

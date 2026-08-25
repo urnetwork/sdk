@@ -56,14 +56,65 @@ func TestTakeMemorySamplesJsonIsOneValidBatch(t *testing.T) {
 
 func TestMobileDeviceMemorySampleHotPathDoesNotAllocate(t *testing.T) {
 	settings := DefaultDeviceLocalSettings()
+	resendQueueBudget := connect.NewTransferMemoryBudget(2048)
+	if !resendQueueBudget.TryReserve(111) {
+		t.Fatal("reserve test resend queue budget")
+	}
+	defer resendQueueBudget.Release(111)
+	receiveQueueBudget := connect.NewTransferMemoryBudget(4096)
+	if !receiveQueueBudget.TryReserve(222) {
+		t.Fatal("reserve test receive queue budget")
+	}
+	defer receiveQueueBudget.Release(222)
+	packQueueBudget := connect.NewTransferMemoryBudget(1024)
+	if !packQueueBudget.TryReserve(321) {
+		t.Fatal("reserve test pack queue budget")
+	}
+	defer packQueueBudget.Release(321)
+	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
+	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
+	settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget = packQueueBudget
 	device := &DeviceLocal{
 		settings:        settings,
 		dnsMemoryTarget: connect.NewMemoryTarget(1024),
 		memorySampler:   &mobileMemorySampler{},
 	}
 	device.mobilePacketPressureDropCount.Store(17)
-	if got := device.memorySample().PacketPressureDropCount; got != 17 {
-		t.Fatalf("packet pressure drop count = %d, want 17", got)
+	device.mobilePacketPressureDropBytes.Store(1700)
+	device.mobilePacketPressureAckAdmits.Store(19)
+	device.mobilePacketPressureAckDrops.Store(23)
+	device.mobilePacketPressureOtherDrops.Store(29)
+	sample := device.memorySample()
+	if sample.PacketPressureDropCount != 17 ||
+		sample.PacketPressureDropByteCount != 1700 ||
+		sample.PacketPressureH1AckAdmitCount != 19 ||
+		sample.PacketPressureAckDropCount != 23 ||
+		sample.PacketPressureOtherDropCount != 29 {
+		t.Fatalf("packet pressure sample = %+v", sample)
+	}
+	if sample.DeviceTrackedByteCount != 654 {
+		t.Fatalf("tracked bytes = %d, want queue ownership 654", sample.DeviceTrackedByteCount)
+	}
+	if sample.ResendQueueUsedByteCount != 111 || sample.ResendQueueCapacityByteCount != 2048 {
+		t.Fatalf(
+			"resend queue sample = (%d/%d), want (111/2048)",
+			sample.ResendQueueUsedByteCount,
+			sample.ResendQueueCapacityByteCount,
+		)
+	}
+	if sample.ReceiveQueueUsedByteCount != 222 || sample.ReceiveQueueCapacityByteCount != 4096 {
+		t.Fatalf(
+			"receive queue sample = (%d/%d), want (222/4096)",
+			sample.ReceiveQueueUsedByteCount,
+			sample.ReceiveQueueCapacityByteCount,
+		)
+	}
+	if sample.PackQueueUsedByteCount != 321 || sample.PackQueueCapacityByteCount != 1024 {
+		t.Fatalf(
+			"pack queue sample = (%d/%d), want (321/1024)",
+			sample.PackQueueUsedByteCount,
+			sample.PackQueueCapacityByteCount,
+		)
 	}
 	if allocations := testing.AllocsPerRun(25, func() {
 		_ = device.memorySample()

@@ -47,6 +47,10 @@ type MemoryStats struct {
 	PacketPoolRetainedByteCount      ByteCount
 	LargeObjectPoolRetainedCount     int64
 	LargeObjectPoolRetainedByteCount ByteCount
+	// DeviceTunEgressOutstandingByteCount is the subset of packet-root
+	// ownership admitted from the device TUN. Mobile pressure gating uses this
+	// directional value so downloaded roots cannot crowd out TCP ACKs.
+	DeviceTunEgressOutstandingByteCount ByteCount
 	// Automatic idle trimming runs at most once per quiet traffic epoch. These
 	// counters make a footprint drop attributable without parsing host logs.
 	IdleMemoryTrimCount                int64
@@ -187,7 +191,10 @@ func readMemoryStats(stats *MemoryStats) {
 		PacketPoolRetainedByteCount:      int64(poolStats.PacketRetainedByteCount),
 		LargeObjectPoolRetainedCount:     int64(poolStats.LargeObjectRetainedCount),
 		LargeObjectPoolRetainedByteCount: int64(poolStats.LargeObjectRetainedByteCount),
-		IdleMemoryTrimCount:              mobileIdleMemoryTrimCount.Load(),
+		DeviceTunEgressOutstandingByteCount: int64(
+			poolStats.DeviceTunEgressOutstandingByteCount,
+		),
+		IdleMemoryTrimCount: mobileIdleMemoryTrimCount.Load(),
 		LastIdleMemoryTrimDroppedByteCount: ByteCount(
 			mobileIdleMemoryTrimDropped.Load(),
 		),

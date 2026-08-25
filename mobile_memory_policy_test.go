@@ -34,14 +34,57 @@ func TestMobileLowMemoryPolicyUsesTwentyFourMiBBoundary(t *testing.T) {
 	}
 }
 
+func TestMobilePackQueueBudgetUsesProviderOffHeadroomWithinHardBounds(t *testing.T) {
+	clientShare := ByteCount(168 * 1024 * 1024 / 10)
+	providerOffShare := ByteCount(216 * 1024 * 1024 / 10)
+	if got := mobilePackQueueBudgetByteCount(clientShare); got != clientShare/10 {
+		t.Fatalf("provider-on pack budget = %d, want %d", got, clientShare/10)
+	}
+	if got := mobilePackQueueBudgetByteCount(providerOffShare); got != mobilePackQueueBudgetMaxByteCount {
+		t.Fatalf("provider-off pack budget = %d, want capped %d", got, mobilePackQueueBudgetMaxByteCount)
+	}
+	if got := mobilePackQueueBudgetByteCount(1); got != mobilePackQueueBudgetMinByteCount {
+		t.Fatalf("tiny-share pack budget = %d, want floor %d", got, mobilePackQueueBudgetMinByteCount)
+	}
+
+	budget := mobilePackQueueBudgetForPlatform(
+		mobileSteadyMemoryTargetByteCount,
+		providerOffShare,
+		true,
+	)
+	if budget == nil || budget.TotalByteCount() != mobilePackQueueBudgetMaxByteCount {
+		t.Fatalf("mobile pack budget = %v, want %d bytes", budget, mobilePackQueueBudgetMaxByteCount)
+	}
+	if desktop := mobilePackQueueBudgetForPlatform(
+		mobileSteadyMemoryTargetByteCount,
+		providerOffShare,
+		false,
+	); desktop != nil {
+		t.Fatal("desktop/server settings unexpectedly gained a pack queue budget")
+	}
+	if aboveTarget := mobilePackQueueBudgetForPlatform(
+		mobileSteadyMemoryTargetByteCount+1,
+		providerOffShare,
+		true,
+	); aboveTarget != nil {
+		t.Fatal("non-low-memory mobile settings unexpectedly gained a pack queue budget")
+	}
+}
+
 func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
-	if mobilePacketPoolWarmByteCount != 512*1024 {
-		t.Fatalf("mobile packet warm set = %d, want 512 KiB", mobilePacketPoolWarmByteCount)
+	if mobilePacketPoolWarmByteCount != 256*1024 {
+		t.Fatalf("mobile packet warm set = %d, want 256 KiB", mobilePacketPoolWarmByteCount)
 	}
 	if mobileClientSequenceBufferMaxCount != 16 {
 		t.Fatalf(
 			"mobile sequence count = %d, want H3-safe 16-message ceiling",
 			mobileClientSequenceBufferMaxCount,
+		)
+	}
+	if mobileH1ReceiveSequenceBufferMaxCount != 64 {
+		t.Fatalf(
+			"mobile H1 receive sequence count = %d, want 64-message burst ceiling",
+			mobileH1ReceiveSequenceBufferMaxCount,
 		)
 	}
 	settings := connect.DefaultClientSettingsWithBufferSize(256)
@@ -61,8 +104,8 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	if got := settings.SendBufferSettings.SequenceBufferSize; got != mobileClientSequenceBufferMaxCount {
 		t.Fatalf("send sequence = %d, want %d", got, mobileClientSequenceBufferMaxCount)
 	}
-	if got := settings.SendBufferSettings.AckBufferSize; got != mobileClientSequenceBufferMaxCount {
-		t.Fatalf("ack buffer = %d, want %d", got, mobileClientSequenceBufferMaxCount)
+	if got := settings.SendBufferSettings.AckBufferSize; got != mobileClientAckBufferMaxCount {
+		t.Fatalf("ack buffer = %d, want %d", got, mobileClientAckBufferMaxCount)
 	}
 	if got := settings.SendBufferSettings.ResendQueueMinByteCount; got != mobileResendQueueMinByteCount {
 		t.Fatalf("resend floor = %d, want %d", got, mobileResendQueueMinByteCount)
@@ -76,8 +119,20 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	if got := settings.ReceiveBufferSettings.SequenceBufferByteCount; got != mobileReceiveSequenceBufferMaxByteCount {
 		t.Fatalf("receive sequence bytes = %d, want %d", got, mobileReceiveSequenceBufferMaxByteCount)
 	}
+	if got := settings.ReceiveBufferSettings.H1SequenceBufferByteCount; got != mobileH1ReceiveSequenceBufferMaxByteCount {
+		t.Fatalf("H1 receive sequence bytes = %d, want %d", got, mobileH1ReceiveSequenceBufferMaxByteCount)
+	}
+	if got := settings.ReceiveBufferSettings.H1PackHandoffTimeout; got != 10*time.Millisecond {
+		t.Fatalf("H1 receive handoff wait = %v, want 10ms", got)
+	}
+	if got := settings.ReceiveBufferSettings.H1AckHandoffTimeout; got != time.Millisecond {
+		t.Fatalf("H1 ACK handoff wait = %v, want 1ms", got)
+	}
 	if got := settings.ReceiveBufferSettings.SequenceBufferSize; got != mobileClientSequenceBufferMaxCount {
 		t.Fatalf("receive sequence = %d, want %d", got, mobileClientSequenceBufferMaxCount)
+	}
+	if got := settings.ReceiveBufferSettings.H1SequenceBufferSize; got != mobileH1ReceiveSequenceBufferMaxCount {
+		t.Fatalf("H1 receive sequence = %d, want %d", got, mobileH1ReceiveSequenceBufferMaxCount)
 	}
 	if got := settings.ReceiveBufferSettings.ReceiveQueueMinByteCount; got != mobileReceiveQueueMinByteCount {
 		t.Fatalf("receive floor = %d, want %d", got, mobileReceiveQueueMinByteCount)
@@ -85,11 +140,111 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	if got := settings.ReceiveBufferSettings.ReceiveQueueMaxByteCount; got != mobileReceiveQueueMaxByteCount {
 		t.Fatalf("receive max = %d, want %d", got, mobileReceiveQueueMaxByteCount)
 	}
+	if !settings.ReceiveBufferSettings.ReceiveQueueRetainedByteAccounting {
+		t.Fatal("mobile receive queue did not enable retained-allocation accounting")
+	}
 	if got := settings.ForwardBufferSettings.SequenceBufferSize; got != mobileClientSequenceBufferMaxCount {
 		t.Fatalf("forward sequence = %d, want %d", got, mobileClientSequenceBufferMaxCount)
 	}
 	if got := settings.ContractManagerSettings.SequenceBufferSize; got != mobileClientSequenceBufferMaxCount {
 		t.Fatalf("contract sequence = %d, want %d", got, mobileClientSequenceBufferMaxCount)
+	}
+}
+
+func TestMobileReceiveQueueBudgetIsAggregateAndProviderAware(t *testing.T) {
+	target := mobileSteadyMemoryTargetByteCount
+	clientShare := target * deviceMemoryRatioClient / deviceMemoryRatioParts
+	providerShare := target * deviceMemoryRatioProvider / deviceMemoryRatioParts
+
+	providerOn := mobileReceiveQueueBudgetForPlatform(target, clientShare, true)
+	if want := mobileReceiveQueueBudgetByteCount(clientShare); providerOn != want {
+		t.Fatalf("provider-on receive budget = %d, want %d", providerOn, want)
+	}
+	providerOff := mobileReceiveQueueBudgetForPlatform(
+		target,
+		clientShare+providerShare,
+		true,
+	)
+	if providerOff != mobileReceiveQueueBudgetMaxByteCount {
+		t.Fatalf(
+			"provider-off receive budget = %d, want bounded maximum %d",
+			providerOff,
+			mobileReceiveQueueBudgetMaxByteCount,
+		)
+	}
+	if providerOff <= providerOn {
+		t.Fatalf(
+			"provider-off receive budget = %d, want more than provider-on %d",
+			providerOff,
+			providerOn,
+		)
+	}
+
+	desktop := mobileReceiveQueueBudgetForPlatform(target, clientShare, false)
+	wantDesktop := max(byteCountFraction(clientShare, 4, 7), ByteCount(1536*1024))
+	if desktop != wantDesktop {
+		t.Fatalf("desktop receive budget = %d, want unchanged %d", desktop, wantDesktop)
+	}
+	aboveTarget := mobileReceiveQueueBudgetForPlatform(target+1, clientShare, true)
+	if aboveTarget != wantDesktop {
+		t.Fatalf("above-target receive budget = %d, want unchanged %d", aboveTarget, wantDesktop)
+	}
+	if mobileReceiveQueueMinByteCount != 0 {
+		t.Fatalf(
+			"per-sequence receive floor = %d, want all reorder bytes charged",
+			mobileReceiveQueueMinByteCount,
+		)
+	}
+}
+
+func TestMobileLowMemoryPlatformTransportAddsOnlyBoundedH1AckLane(t *testing.T) {
+	mobileSettings := connect.DefaultPlatformTransportSettings()
+	applyMobileLowMemoryPlatformTransportSettingsForPlatform(
+		mobileSettings,
+		mobileSteadyMemoryTargetByteCount,
+		true,
+	)
+	if got := mobileSettings.H1AckPriorityBufferSize; got != mobileH1AckPriorityBufferSize {
+		t.Fatalf("mobile H1 ACK priority buffer = %d, want %d", got, mobileH1AckPriorityBufferSize)
+	}
+
+	serverSettings := connect.DefaultPlatformTransportSettings()
+	applyMobileLowMemoryPlatformTransportSettingsForPlatform(
+		serverSettings,
+		mobileSteadyMemoryTargetByteCount,
+		false,
+	)
+	if got := serverSettings.H1AckPriorityBufferSize; got != 0 {
+		t.Fatalf("server H1 ACK priority buffer = %d, want disabled", got)
+	}
+
+	aboveTargetSettings := connect.DefaultPlatformTransportSettings()
+	applyMobileLowMemoryPlatformTransportSettingsForPlatform(
+		aboveTargetSettings,
+		mobileSteadyMemoryTargetByteCount+1,
+		true,
+	)
+	if got := aboveTargetSettings.H1AckPriorityBufferSize; got != 0 {
+		t.Fatalf("above-target H1 ACK priority buffer = %d, want disabled", got)
+	}
+}
+
+func TestMessagePoolMemoryTargetsCapOnlyMobileReturnedBuffers(t *testing.T) {
+	const limit = int64(32 * 1024 * 1024)
+	packetBytes, largeBytes := messagePoolMemoryTargetsForPlatform(limit, true)
+	if packetBytes != int64(mobilePacketPoolCapacityByteCount) {
+		t.Fatalf("mobile packet pool capacity = %d, want %d", packetBytes, mobilePacketPoolCapacityByteCount)
+	}
+	if largeBytes != int64(mobileLargeObjectPoolCapacityByteCount) {
+		t.Fatalf("mobile large-object pool capacity = %d, want %d", largeBytes, mobileLargeObjectPoolCapacityByteCount)
+	}
+
+	packetBytes, largeBytes = messagePoolMemoryTargetsForPlatform(limit, false)
+	if want := limit * memoryTargetRatioPacketPool / memoryTargetRatioParts; packetBytes != want {
+		t.Fatalf("server packet pool capacity = %d, want %d", packetBytes, want)
+	}
+	if want := limit * memoryTargetRatioLargeObjectPool / memoryTargetRatioParts; largeBytes != want {
+		t.Fatalf("server large-object pool capacity = %d, want %d", largeBytes, want)
 	}
 }
 
