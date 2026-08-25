@@ -98,6 +98,16 @@ func newDeviceLocalProviderWithOverrides(
 	clientOob := connect.NewApiOutOfBandControl(ctx, clientStrategy, byJwt, apiUrl)
 
 	clientSettings := newDeviceClientSettings(settings, apiUrl, clientStrategy)
+	// A controlled mobile provider pinned to explicit H1 must select the same
+	// negotiated flow lanes as its client peer; otherwise only request/TCP-ACK
+	// traffic is isolated and every download still shares provider lane zero.
+	// Auto and H3 remain unchanged until the provider-side physical A/B proves a
+	// safe default across carrier fallback.
+	applyMobileH1PerformanceClientSettings(
+		clientSettings,
+		memoryTargetByteCount,
+		targetMode == connect.TransportModeH1,
+	)
 	// the provider always enables the e2e encryption sessions: the responder
 	// serves plain and e2e peers seamlessly (a session only forms when an
 	// initiator starts a handshake), and every enabled provider grows the

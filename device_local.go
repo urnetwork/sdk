@@ -3726,6 +3726,11 @@ func (self *DeviceLocal) setDestination(
 							clientSettings,
 							self.settings.MemoryTargetByteCount,
 						)
+						applyMobileH1PerformanceClientSettings(
+							clientSettings,
+							self.settings.MemoryTargetByteCount,
+							transportMode == connect.TransportModeH1,
+						)
 						clientSettings.Log = self.log
 						// share the device budgets so every window client's
 						// queues draw from the same pools

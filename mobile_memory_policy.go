@@ -110,8 +110,17 @@ const (
 	// timeout recovery. Keep the generic Connect mechanism available for a
 	// controlled-provider A/B, while the production mobile policy stays fixed
 	// at the measured 64/128-KiB knee.
-	mobileClientSequenceBufferMaxCount        = 16
-	mobileClientAckBufferMaxCount             = 64
+	mobileClientSequenceBufferMaxCount = 16
+	mobileClientAckBufferMaxCount      = 64
+	// Fast.com and modern pages open independent TCP flows. Explicit H1 may
+	// hash their request/ACK direction across the maximum negotiated lane set so
+	// one missing Transfer Pack does not head-of-line block every flow. Connect
+	// divides the existing send/ACK slot budgets across lanes and shares the
+	// exact resend/receive byte budgets, so this spends only lazy sequence
+	// metadata rather than eight independent bandwidth-delay windows. Download
+	// data needs the same setting on the provider sender; enabling only this side
+	// is a responsiveness optimization, not a bulk-throughput claim.
+	mobileH1LogicalDataLaneCount              = 8
 	mobileH1ReceiveSequenceBufferMaxCount     = 64
 	mobileReceiveSequenceBufferMaxByteCount   = 128 * 1024
 	mobileH1ReceiveSequenceBufferMaxByteCount = 128 * 1024
@@ -280,6 +289,36 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 			mobileClientSequenceBufferMaxCount,
 		)
 	}
+}
+
+// applyMobileH1PerformanceClientSettings enables bounded flow isolation only
+// for an explicit H1 destination policy. H3 and Auto remain unchanged until
+// their own performance iteration; non-mobile and larger-memory profiles keep
+// caller-selected lane settings.
+func applyMobileH1PerformanceClientSettings(
+	settings *connect.ClientSettings,
+	memoryTargetByteCount ByteCount,
+	explicitH1 bool,
+) {
+	applyMobileH1PerformanceClientSettingsForPlatform(
+		settings,
+		memoryTargetByteCount,
+		mobileRuntime(),
+		explicitH1,
+	)
+}
+
+func applyMobileH1PerformanceClientSettingsForPlatform(
+	settings *connect.ClientSettings,
+	memoryTargetByteCount ByteCount,
+	mobile bool,
+	explicitH1 bool,
+) {
+	if settings == nil || settings.SendBufferSettings == nil || !explicitH1 ||
+		!mobileLowMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+		return
+	}
+	settings.SendBufferSettings.LogicalDataLaneCount = mobileH1LogicalDataLaneCount
 }
 
 // applyMobileLowMemoryMultiClientSettings reduces the connected control/live

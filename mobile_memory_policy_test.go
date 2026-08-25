@@ -236,6 +236,59 @@ func TestMobileH1AdaptiveDepthIsDisabledAfterRejectedPhysicalArm(t *testing.T) {
 	}
 }
 
+func TestMobileH1LogicalLanesRequireExplicitLowMemoryH1(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		target     ByteCount
+		mobile     bool
+		explicitH1 bool
+		want       int
+	}{
+		{
+			name:       "explicit H1",
+			target:     mobileSteadyMemoryTargetByteCount,
+			mobile:     true,
+			explicitH1: true,
+			want:       mobileH1LogicalDataLaneCount,
+		},
+		{
+			name:       "auto or H3",
+			target:     mobileSteadyMemoryTargetByteCount,
+			mobile:     true,
+			explicitH1: false,
+			want:       3,
+		},
+		{
+			name:       "desktop",
+			target:     mobileSteadyMemoryTargetByteCount,
+			mobile:     false,
+			explicitH1: true,
+			want:       3,
+		},
+		{
+			name:       "larger target",
+			target:     mobileSteadyMemoryTargetByteCount + 1,
+			mobile:     true,
+			explicitH1: true,
+			want:       3,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			settings := connect.DefaultClientSettings()
+			settings.SendBufferSettings.LogicalDataLaneCount = 3
+			applyMobileH1PerformanceClientSettingsForPlatform(
+				settings,
+				testCase.target,
+				testCase.mobile,
+				testCase.explicitH1,
+			)
+			if got := settings.SendBufferSettings.LogicalDataLaneCount; got != testCase.want {
+				t.Fatalf("logical H1 lanes = %d, want %d", got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestMobileLowMemoryPlatformTransportAddsOnlyBoundedH1AckLane(t *testing.T) {
 	mobileSettings := connect.DefaultPlatformTransportSettings()
 	applyMobileLowMemoryPlatformTransportSettingsForPlatform(
