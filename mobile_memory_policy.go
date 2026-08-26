@@ -268,6 +268,7 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 			mobileH1ReceiveSequenceBufferMaxByteCount,
 		)
 		receive.H1PackHandoffTimeout = mobileH1ReceivePackHandoffWaitTimeout
+		receive.ReliablePackHandoffTimeout = mobileH1ReceivePackHandoffWaitTimeout
 		receive.H1AckHandoffTimeout = mobileH1ReceiveAckHandoffWaitTimeout
 		receive.ReceiveQueueMinByteCount = min(
 			receive.ReceiveQueueMinByteCount,

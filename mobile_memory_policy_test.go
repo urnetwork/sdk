@@ -126,6 +126,10 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 		mobileH1ReceivePackHandoffWaitTimeout {
 		t.Fatalf("H1 receive handoff wait = %v, want lossless backpressure", got)
 	}
+	if got := settings.ReceiveBufferSettings.ReliablePackHandoffTimeout; got !=
+		mobileH1ReceivePackHandoffWaitTimeout {
+		t.Fatalf("reliable receive handoff wait = %v, want lossless backpressure", got)
+	}
 	if got := settings.ReceiveBufferSettings.H1AckHandoffTimeout; got != time.Millisecond {
 		t.Fatalf("H1 ACK handoff wait = %v, want 1ms", got)
 	}
