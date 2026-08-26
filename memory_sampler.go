@@ -16,7 +16,7 @@ import (
 const (
 	mobileMemorySampleInterval = 15 * time.Second
 	mobileMemorySampleCapacity = 64
-	mobileMemorySampleSchema   = 11
+	mobileMemorySampleSchema   = 12
 )
 
 // mobileMemorySample contains primitives only. Recording it never constructs
@@ -83,6 +83,7 @@ type mobileMemorySample struct {
 	InitialFrameCount                      int64 `json:"initial_frames"`
 	InitialMessageByteCount                int64 `json:"initial_message_bytes"`
 	TimeoutResendWriteCount                int64 `json:"timeout_resend_writes"`
+	AckPendingResendPreemptCount           int64 `json:"ack_pending_resend_preempts"`
 	CarrierChangeWriteCount                int64 `json:"carrier_change_writes"`
 	SelectiveGapWriteCount                 int64 `json:"selective_gap_writes"`
 	AckTailProbeWriteCount                 int64 `json:"ack_tail_probe_writes"`
@@ -92,6 +93,27 @@ type mobileMemorySample struct {
 	PlatformH1ReceiveQueueDropByteCount    int64 `json:"platform_h1_receive_queue_drop_bytes"`
 	PlatformH1ReceiveBackpressureCount     int64 `json:"platform_h1_receive_backpressure"`
 	PlatformH1ReceiveBackpressureByteCount int64 `json:"platform_h1_receive_backpressure_bytes"`
+	ProviderPackHandoffDropCount           int64 `json:"provider_pack_handoff_drops"`
+	ProviderPackHandoffDropByteCount       int64 `json:"provider_pack_handoff_drop_bytes"`
+	ProviderPackHandoffWaitCount           int64 `json:"provider_pack_handoff_waits"`
+	ProviderPackHandoffWaitSuccess         int64 `json:"provider_pack_handoff_wait_successes"`
+	ProviderPackHandoffMaxCount            int64 `json:"provider_pack_handoff_max_count"`
+	ProviderPackHandoffMaxByteCount        int64 `json:"provider_pack_handoff_max_bytes"`
+	ProviderAckRouteWriteCount             int64 `json:"provider_ack_route_writes"`
+	ProviderAckRouteWriteBlockedCount      int64 `json:"provider_ack_route_write_blocks"`
+	ProviderAckRouteWriteErrorCount        int64 `json:"provider_ack_route_write_errors"`
+	ProviderAckRouteWriteWaitNanos         int64 `json:"provider_ack_route_write_wait_nanos"`
+	ProviderAckRouteWriteMaxWaitNanos      int64 `json:"provider_ack_route_write_max_wait_nanos"`
+	ProviderInitialWriteCount              int64 `json:"provider_initial_writes"`
+	ProviderInitialFrameCount              int64 `json:"provider_initial_frames"`
+	ProviderInitialMessageByteCount        int64 `json:"provider_initial_message_bytes"`
+	ProviderTimeoutResendWriteCount        int64 `json:"provider_timeout_resend_writes"`
+	ProviderAckPendingResendPreemptCount   int64 `json:"provider_ack_pending_resend_preempts"`
+	ProviderCarrierChangeWriteCount        int64 `json:"provider_carrier_change_writes"`
+	ProviderSelectiveGapWriteCount         int64 `json:"provider_selective_gap_writes"`
+	ProviderAckTailProbeWriteCount         int64 `json:"provider_ack_tail_probe_writes"`
+	ProviderCumulativeProbeWriteCount      int64 `json:"provider_cumulative_probe_writes"`
+	ProviderRecoveryWriteErrorCount        int64 `json:"provider_recovery_write_errors"`
 
 	TransportBudgetUsedByteCount   int64 `json:"transport_budget_used_bytes"`
 	TransportBudgetUsedCount       int64 `json:"transport_budget_used_count"`
@@ -336,6 +358,14 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 	if self.platformTransportReceiveStats != nil {
 		platformReceive = self.platformTransportReceiveStats.Snapshot()
 	}
+	var providerReceive connect.ClientReceiveStatsSnapshot
+	var providerRecovery connect.ClientSendRecoveryStatsSnapshot
+	if provider != nil {
+		if providerClient := provider.Client(); providerClient != nil {
+			providerReceive = providerClient.ReceiveStats()
+			providerRecovery = providerClient.SendRecoveryStats()
+		}
+	}
 	return mobileMemorySample{
 		UnixMillis:                             time.Now().UnixMilli(),
 		GoTotalByteCount:                       runtimeSnapshot.totalByteCount,
@@ -394,6 +424,7 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 		InitialFrameCount:                      int64(topology.InitialFrameCount),
 		InitialMessageByteCount:                int64(topology.InitialMessageByteCount),
 		TimeoutResendWriteCount:                int64(topology.TimeoutResendWriteCount),
+		AckPendingResendPreemptCount:           int64(topology.AckPendingResendPreemptCount),
 		CarrierChangeWriteCount:                int64(topology.CarrierChangeWriteCount),
 		SelectiveGapWriteCount:                 int64(topology.SelectiveGapWriteCount),
 		AckTailProbeWriteCount:                 int64(topology.AckTailProbeWriteCount),
@@ -403,6 +434,27 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 		PlatformH1ReceiveQueueDropByteCount:    int64(platformReceive.H1.QueueDropByteCount),
 		PlatformH1ReceiveBackpressureCount:     int64(platformReceive.H1.QueueBackpressureMessageCount),
 		PlatformH1ReceiveBackpressureByteCount: int64(platformReceive.H1.QueueBackpressureByteCount),
+		ProviderPackHandoffDropCount:           int64(providerReceive.PackHandoffDropCount),
+		ProviderPackHandoffDropByteCount:       int64(providerReceive.PackHandoffDropByteCount),
+		ProviderPackHandoffWaitCount:           int64(providerReceive.PackHandoffWaitCount),
+		ProviderPackHandoffWaitSuccess:         int64(providerReceive.PackHandoffWaitSuccess),
+		ProviderPackHandoffMaxCount:            int64(providerReceive.PackHandoffMaxCount),
+		ProviderPackHandoffMaxByteCount:        int64(providerReceive.PackHandoffMaxByteCount),
+		ProviderAckRouteWriteCount:             int64(providerReceive.AckRouteWriteCount),
+		ProviderAckRouteWriteBlockedCount:      int64(providerReceive.AckRouteWriteBlockedCount),
+		ProviderAckRouteWriteErrorCount:        int64(providerReceive.AckRouteWriteErrorCount),
+		ProviderAckRouteWriteWaitNanos:         int64(providerReceive.AckRouteWriteWaitDuration),
+		ProviderAckRouteWriteMaxWaitNanos:      int64(providerReceive.AckRouteWriteMaxWait),
+		ProviderInitialWriteCount:              int64(providerRecovery.InitialWriteCount),
+		ProviderInitialFrameCount:              int64(providerRecovery.InitialFrameCount),
+		ProviderInitialMessageByteCount:        int64(providerRecovery.InitialMessageByteCount),
+		ProviderTimeoutResendWriteCount:        int64(providerRecovery.TimeoutResendWriteCount),
+		ProviderAckPendingResendPreemptCount:   int64(providerRecovery.AckPendingResendPreemptCount),
+		ProviderCarrierChangeWriteCount:        int64(providerRecovery.CarrierChangeWriteCount),
+		ProviderSelectiveGapWriteCount:         int64(providerRecovery.SelectiveGapWriteCount),
+		ProviderAckTailProbeWriteCount:         int64(providerRecovery.AckTailProbeWriteCount),
+		ProviderCumulativeProbeWriteCount:      int64(providerRecovery.CumulativeProbeWriteCount),
+		ProviderRecoveryWriteErrorCount:        int64(providerRecovery.RecoveryWriteErrorCount),
 		TransportBudgetUsedByteCount:           runtimeSnapshot.transportBudgetUsedByteCount,
 		TransportBudgetUsedCount:               runtimeSnapshot.transportBudgetUsedCount,
 		TransportBudgetPendingH1Count:          runtimeSnapshot.transportBudgetPendingH1Count,
@@ -432,7 +484,7 @@ func (self *DeviceLocal) TakeMemorySamplesJson() string {
 	}
 	encoded, err := json.Marshal(batch)
 	if err != nil {
-		return `{"schema":11,"dropped":0,"samples":[]}`
+		return `{"schema":12,"dropped":0,"samples":[]}`
 	}
 	return string(encoded)
 }

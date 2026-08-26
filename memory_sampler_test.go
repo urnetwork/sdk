@@ -54,6 +54,28 @@ func TestTakeMemorySamplesJsonIsOneValidBatch(t *testing.T) {
 		PlatformH1ReceiveQueueDropByteCount:    12 * 1024,
 		PlatformH1ReceiveBackpressureCount:     7,
 		PlatformH1ReceiveBackpressureByteCount: 24 * 1024,
+		AckPendingResendPreemptCount:           11,
+		ProviderPackHandoffDropCount:           13,
+		ProviderPackHandoffDropByteCount:       17,
+		ProviderPackHandoffWaitCount:           19,
+		ProviderPackHandoffWaitSuccess:         23,
+		ProviderPackHandoffMaxCount:            29,
+		ProviderPackHandoffMaxByteCount:        31,
+		ProviderAckRouteWriteCount:             37,
+		ProviderAckRouteWriteBlockedCount:      41,
+		ProviderAckRouteWriteErrorCount:        43,
+		ProviderAckRouteWriteWaitNanos:         47,
+		ProviderAckRouteWriteMaxWaitNanos:      53,
+		ProviderInitialWriteCount:              59,
+		ProviderInitialFrameCount:              61,
+		ProviderInitialMessageByteCount:        67,
+		ProviderTimeoutResendWriteCount:        71,
+		ProviderAckPendingResendPreemptCount:   73,
+		ProviderCarrierChangeWriteCount:        79,
+		ProviderSelectiveGapWriteCount:         83,
+		ProviderAckTailProbeWriteCount:         89,
+		ProviderCumulativeProbeWriteCount:      97,
+		ProviderRecoveryWriteErrorCount:        101,
 	})
 	var batch mobileMemorySampleBatch
 	if err := json.Unmarshal([]byte(device.TakeMemorySamplesJson()), &batch); err != nil {
@@ -69,7 +91,29 @@ func TestTakeMemorySamplesJsonIsOneValidBatch(t *testing.T) {
 		batch.Samples[0].PlatformH1ReceiveQueueDropCount != 5 ||
 		batch.Samples[0].PlatformH1ReceiveQueueDropByteCount != 12*1024 ||
 		batch.Samples[0].PlatformH1ReceiveBackpressureCount != 7 ||
-		batch.Samples[0].PlatformH1ReceiveBackpressureByteCount != 24*1024 {
+		batch.Samples[0].PlatformH1ReceiveBackpressureByteCount != 24*1024 ||
+		batch.Samples[0].AckPendingResendPreemptCount != 11 ||
+		batch.Samples[0].ProviderPackHandoffDropCount != 13 ||
+		batch.Samples[0].ProviderPackHandoffDropByteCount != 17 ||
+		batch.Samples[0].ProviderPackHandoffWaitCount != 19 ||
+		batch.Samples[0].ProviderPackHandoffWaitSuccess != 23 ||
+		batch.Samples[0].ProviderPackHandoffMaxCount != 29 ||
+		batch.Samples[0].ProviderPackHandoffMaxByteCount != 31 ||
+		batch.Samples[0].ProviderAckRouteWriteCount != 37 ||
+		batch.Samples[0].ProviderAckRouteWriteBlockedCount != 41 ||
+		batch.Samples[0].ProviderAckRouteWriteErrorCount != 43 ||
+		batch.Samples[0].ProviderAckRouteWriteWaitNanos != 47 ||
+		batch.Samples[0].ProviderAckRouteWriteMaxWaitNanos != 53 ||
+		batch.Samples[0].ProviderInitialWriteCount != 59 ||
+		batch.Samples[0].ProviderInitialFrameCount != 61 ||
+		batch.Samples[0].ProviderInitialMessageByteCount != 67 ||
+		batch.Samples[0].ProviderTimeoutResendWriteCount != 71 ||
+		batch.Samples[0].ProviderAckPendingResendPreemptCount != 73 ||
+		batch.Samples[0].ProviderCarrierChangeWriteCount != 79 ||
+		batch.Samples[0].ProviderSelectiveGapWriteCount != 83 ||
+		batch.Samples[0].ProviderAckTailProbeWriteCount != 89 ||
+		batch.Samples[0].ProviderCumulativeProbeWriteCount != 97 ||
+		batch.Samples[0].ProviderRecoveryWriteErrorCount != 101 {
 		t.Fatalf("sample batch = %+v", batch)
 	}
 }
