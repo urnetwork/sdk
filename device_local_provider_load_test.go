@@ -188,7 +188,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	t.Logf("idle (device + %d peers connected): goroutines=%d heap=%s",
 		peerCount, idleGoroutines, humanBytes(idleHeap))
 
-	sampler := startPeakSampler()
+	tcpSampler := startPeakSampler()
 
 	// tcp load: every peer churns connections and moves bytes concurrently
 	loadStart := time.Now()
@@ -200,14 +200,17 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	}
 	for range peers {
 		if err := <-loadErrs; err != nil {
-			sampler.stop()
+			tcpSampler.stop()
 			skipOnRaceGvisorWedge(t, "tcp load", err)
 			t.Fatalf("tcp load: %v", err)
 		}
 	}
 	tcpElapsed := time.Since(loadStart)
+	tcpPeakTotal, tcpPeakHeap, tcpPeakGoroutines := tcpSampler.stop()
 
 	// udp burst: scatter short flows into the exit nat's flow table
+	udpSampler := startPeakSampler()
+	udpStart := time.Now()
 	for _, peer := range peers {
 		go func() {
 			loadErrs <- runPeerUdpBurst(ctx, peer.tun, udpEchoAddr, udpFlowsPerPeer)
@@ -215,22 +218,32 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	}
 	for range peers {
 		if err := <-loadErrs; err != nil {
-			sampler.stop()
+			udpSampler.stop()
 			skipOnRaceGvisorWedge(t, "udp burst", err)
 			t.Fatalf("udp burst: %v", err)
 		}
 	}
-
-	peakTotal, peakHeap, peakGoroutines := sampler.stop()
+	udpElapsed := time.Since(udpStart)
+	udpPeakTotal, udpPeakHeap, udpPeakGoroutines := udpSampler.stop()
+	peakTotal := max(tcpPeakTotal, udpPeakTotal)
+	peakHeap := max(tcpPeakHeap, udpPeakHeap)
+	peakGoroutines := max(tcpPeakGoroutines, udpPeakGoroutines)
 
 	bytesMoved := int64(peerCount) * int64(rounds) * int64(flowsPerPeer) * int64(bytesPerFlow)
 	t.Logf("tcp load: %d peers x %d conns x %s = %.1f MiB in %v (%.1f MiB/s echoed)",
 		peerCount, rounds*flowsPerPeer, humanBytes(bytesPerFlow),
 		float64(bytesMoved)/(1<<20), tcpElapsed.Round(time.Millisecond),
 		float64(bytesMoved)/(1<<20)/tcpElapsed.Seconds())
+	t.Logf("udp load: %d peers x %d flows = %d round trips in %v (%.1f round trips/s)",
+		peerCount, udpFlowsPerPeer, peerCount*udpFlowsPerPeer, udpElapsed.Round(time.Millisecond),
+		float64(peerCount*udpFlowsPerPeer)/udpElapsed.Seconds())
+	t.Logf("phase peaks: tcp runtime=%s heap=%s goroutines=%d; udp runtime=%s heap=%s goroutines=%d",
+		humanBytes(uint64(tcpPeakTotal)), humanBytes(uint64(tcpPeakHeap)), tcpPeakGoroutines,
+		humanBytes(uint64(udpPeakTotal)), humanBytes(uint64(udpPeakHeap)), udpPeakGoroutines)
 
 	loadedGoroutines, loadedHeap := sampleStable()
 	stats := GetMemoryStats()
+	loadedTotal := stats.TotalRuntimeByteCount
 	t.Logf("loaded: goroutines=%d heap=%s pool taken=%d returned=%d created=%d held=%d",
 		loadedGoroutines, humanBytes(loadedHeap),
 		stats.PoolTakenCount, stats.PoolReturnedCount, stats.PoolCreatedCount,
@@ -249,14 +262,19 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	writeProviderMemProfile(t, "provider_mem_final")
 
 	// the stable measurement line for comparing provider memory changes
-	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d",
+	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s loadedTotal=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d tcpMiBps=%.1f udpRps=%.1f tcpPeakTotal=%s udpPeakTotal=%s",
 		humanBytes(budgetByteCount),
 		humanBytes(idleHeap),
 		humanBytes(uint64(peakTotal)),
 		humanBytes(uint64(peakHeap)),
 		humanBytes(loadedHeap),
+		humanBytes(uint64(loadedTotal)),
 		humanBytes(finalHeap),
-		idleGoroutines, peakGoroutines, loadedGoroutines, finalGoroutines)
+		idleGoroutines, peakGoroutines, loadedGoroutines, finalGoroutines,
+		float64(bytesMoved)/(1<<20)/tcpElapsed.Seconds(),
+		float64(peerCount*udpFlowsPerPeer)/udpElapsed.Seconds(),
+		humanBytes(uint64(tcpPeakTotal)),
+		humanBytes(uint64(udpPeakTotal)))
 
 	// regression ceilings (see the constants above). Race instrumentation
 	// inflates both numbers (shadow memory lands in the runtime total), so
