@@ -43,6 +43,11 @@ import (
 // `warp` environment expectations, which is not compatible with the client lib
 
 func init() {
+	// Version is populated by the linker before package initialization. Stamp
+	// the shared Connect core once so a device acting as an exit publishes the
+	// actual SDK/app build rather than an empty provider identity.
+	stampConnectBuildVersion()
+
 	// gc pacing: the go soft memory limit (see SetMemoryLimit) is the
 	// footprint backstop; gogc paces how often the collector runs below it.
 	// The 24-MiB profile uses 25: the measured 20-MiB candidate's value of 10
@@ -55,6 +60,10 @@ func init() {
 	debug.SetGCPercent(gcPercentForPlatform(runtime.GOOS))
 
 	initGlog()
+}
+
+func stampConnectBuildVersion() {
+	connect.SetBuildVersion(Version)
 }
 
 func gcPercentForPlatform(goos string) int {

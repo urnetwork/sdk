@@ -57,6 +57,75 @@ func TestRpcMirrorExitComplete(t *testing.T) {
 	connect.AssertEqual(t, wired.toExit(), exit)
 }
 
+func TestExitFromConnectPublishesProviderDiagnostics(t *testing.T) {
+	clientId := connect.NewId()
+	exit := exitFromConnect(&connect.ExitInfo{
+		ClientId:                     clientId,
+		ProviderDiagnosticsAvailable: true,
+		ProviderBuildVersion:         "provider-build-27",
+		ProviderSecurityPolicyHash:   "policy-hash-27",
+		ProviderBlockIngressPackets:  11,
+		ProviderBlockIngressBytes:    1100,
+		ProviderBlockEgressPackets:   7,
+		ProviderBlockEgressBytes:     700,
+		ProviderDiagnosticsSequence:  27,
+	})
+	if exit == nil || exit.ClientId == nil || exit.ClientId.toConnectId() != clientId {
+		t.Fatal("connect exit identity did not cross the SDK boundary")
+	}
+	if !exit.ProviderDiagnosticsAvailable ||
+		exit.ProviderBuildVersion != "provider-build-27" ||
+		exit.ProviderSecurityPolicyHash != "policy-hash-27" ||
+		exit.ProviderBlockIngressPacketCount != 11 ||
+		exit.ProviderBlockIngressByteCount != 1100 ||
+		exit.ProviderBlockEgressPacketCount != 7 ||
+		exit.ProviderBlockEgressByteCount != 700 ||
+		exit.ProviderDiagnosticsSequence != 27 {
+		t.Fatalf("provider diagnostics were not preserved: %+v", exit)
+	}
+}
+
+func TestSdkVersionStampsConnectProviderBuild(t *testing.T) {
+	previousSdkVersion := Version
+	previousConnectVersion := connect.BuildVersion()
+	t.Cleanup(func() {
+		Version = previousSdkVersion
+		connect.SetBuildVersion(previousConnectVersion)
+	})
+
+	Version = "mobile-provider-build-41"
+	stampConnectBuildVersion()
+	if got := connect.BuildVersion(); got != Version {
+		t.Fatalf("Connect provider build = %q, want %q", got, Version)
+	}
+}
+
+func TestSdkStickyRecoverySettingsAndMetricsComplete(t *testing.T) {
+	connectSettings := &connect.ReliabilitySettings{
+		MaxStickyFlowsPerExit: 73,
+		StickyFlowIdleTimeout: 41 * time.Second,
+	}
+	sdkSettings := reliabilitySettingsFromConnect(connectSettings)
+	if sdkSettings.MaxStickyFlowsPerExit != 73 || sdkSettings.StickyFlowIdleTimeoutMillis != 41_000 {
+		t.Fatalf("Connect -> SDK sticky settings = %+v", sdkSettings)
+	}
+	roundTripSettings := sdkSettings.toConnect()
+	if roundTripSettings.MaxStickyFlowsPerExit != 73 || roundTripSettings.StickyFlowIdleTimeout != 41*time.Second {
+		t.Fatalf("SDK -> Connect sticky settings = %+v", roundTripSettings)
+	}
+
+	sdkMetrics := reliabilityMetricsFromConnect(&connect.ReliabilityMetricsSnapshot{
+		QuarantineTcpResets:             5,
+		QuarantineAffinityInvalidations: 9,
+		StickyFlowsRetired:              3,
+	})
+	if sdkMetrics.QuarantineTcpResets != 5 ||
+		sdkMetrics.QuarantineAffinityInvalidations != 9 ||
+		sdkMetrics.StickyFlowsRetired != 3 {
+		t.Fatalf("Connect -> SDK recovery metrics = %+v", sdkMetrics)
+	}
+}
+
 func TestRpcMirrorDestinationExitComplete(t *testing.T) {
 	seed := 0
 	destinationExit := &DestinationExit{}
