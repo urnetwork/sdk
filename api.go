@@ -886,8 +886,10 @@ type FindProviders2Result struct {
 }
 
 type FindProvidersProvider struct {
-	ClientId                *Id `json:"client_id"`
-	EstimatedBytesPerSecond int `json:"estimated_bytes_per_second"`
+	ClientId                *Id    `json:"client_id"`
+	EstimatedBytesPerSecond int    `json:"estimated_bytes_per_second"`
+	NetworkOnly             bool   `json:"network_only,omitempty"`
+	ReputationFailedNames   string `json:"reputation_failed_names,omitempty"`
 }
 
 func (self *Api) FindProviders2(findProviders2 *FindProviders2Args, callback FindProviders2Callback) {

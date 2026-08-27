@@ -98,6 +98,18 @@ type ReliabilitySettings struct {
 	// and the cap veto was splitting exactly the sites that were busiest.
 	// false restores the veto, the A/B comparison point.
 	AffinityStickyPastCap bool
+	// FreshFlowAffinity directly assigns an ordinary new flow to an exit
+	// already used by its IP/domain group. It defaults off: fresh flows instead
+	// reach the health/performance-weighted provider race. Existing tuples and
+	// explicit app/host pins remain fixed. True restores legacy hard affinity
+	// for A/B measurement.
+	FreshFlowAffinity bool
+	// PerformanceAwareAffinity checks a live or recently completed TCP/443
+	// provider's peak inner-TCP ACK rate against its advertised bandwidth prior
+	// when weighting a fresh race. If legacy FreshFlowAffinity is enabled, the
+	// same evidence can veto a slow donor. Established flows and explicit pins
+	// are never moved.
+	PerformanceAwareAffinity bool
 	// MaxStickyFlowsPerExit bounds an exit that grew past MaxFlowsPerExit
 	// through affinity. Only the oldest idle TCP flows are retired, so active
 	// requests keep one egress IP. 0 disables the bound.
@@ -286,6 +298,8 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
 		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
 		AffinityStickyPastCap:         reliabilitySettings.AffinityStickyPastCap,
+		FreshFlowAffinity:             reliabilitySettings.FreshFlowAffinity,
+		PerformanceAwareAffinity:      reliabilitySettings.PerformanceAwareAffinity,
 		MaxStickyFlowsPerExit:         int32(reliabilitySettings.MaxStickyFlowsPerExit),
 		StickyFlowIdleTimeoutMillis:   reliabilitySettings.StickyFlowIdleTimeout.Milliseconds(),
 		QuarantineGroupFollow:         reliabilitySettings.QuarantineGroupFollow,
@@ -336,6 +350,8 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		BlackholeReceiveTimeout:    millis(self.BlackholeReceiveTimeoutMillis),
 		MaxFlowsPerExit:            int(self.MaxFlowsPerExit),
 		AffinityStickyPastCap:      self.AffinityStickyPastCap,
+		FreshFlowAffinity:          self.FreshFlowAffinity,
+		PerformanceAwareAffinity:   self.PerformanceAwareAffinity,
 		MaxStickyFlowsPerExit:      int(self.MaxStickyFlowsPerExit),
 		StickyFlowIdleTimeout:      millis(self.StickyFlowIdleTimeoutMillis),
 		QuarantineGroupFollow:      self.QuarantineGroupFollow,
@@ -834,6 +850,14 @@ type ReliabilityMetrics struct {
 	QuarantineTcpResets             int64
 	QuarantineAffinityInvalidations int64
 	StickyFlowsRetired              int64
+	// AffinityPerformanceSamples counts completed per-site/provider ACK-rate
+	// observations. AffinityPerformanceDonorBypasses counts fresh connections
+	// released from a low-rate live/history donor, and
+	// AffinityPerformanceCandidatesFiltered counts lower-weight exits removed
+	// from their fresh provider races.
+	AffinityPerformanceSamples            int64
+	AffinityPerformanceDonorBypasses      int64
+	AffinityPerformanceCandidatesFiltered int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
@@ -843,36 +867,39 @@ func reliabilityMetricsFromConnect(s *connect.ReliabilityMetricsSnapshot) *Relia
 		return &ReliabilityMetrics{}
 	}
 	return &ReliabilityMetrics{
-		FlowsOpened:                     int64(s.FlowsOpened),
-		ExitLossEvents:                  int64(s.ExitLossEvents),
-		FlowsLostToExit:                 int64(s.FlowsLostToExit),
-		MaxFlowsLostInOneEvent:          int64(s.MaxFlowsLostInOneEvent),
-		MeanFlowsLostPerExitLoss:        s.MeanFlowsLostPerExitLoss,
-		RecoveryCount:                   int64(s.RecoveryCount),
-		RecoveryMissed:                  int64(s.RecoveryMissed),
-		RecoveryMeanMillis:              s.RecoveryMeanNanos / int64(time.Millisecond),
-		RecoveryMaxMillis:               s.RecoveryMaxNanos / int64(time.Millisecond),
-		RecoveryPending:                 int32(s.RecoveryPending),
-		DialFailuresIntercepted:         int64(s.DialFailuresIntercepted),
-		FlowsReraced:                    int64(s.FlowsReraced),
-		FlowsRebound:                    int64(s.FlowsRebound),
-		RebindsAccepted:                 int64(s.RebindsAccepted),
-		RebindsRedialed:                 int64(s.RebindsRedialed),
-		VerdictsHeldUplinkStale:         int64(s.VerdictsHeldUplinkStale),
-		VerdictsHeldTransportDown:       int64(s.VerdictsHeldTransportDown),
-		VerdictsHeldSharedFate:          int64(s.VerdictsHeldSharedFate),
-		RemovalsDeferred:                int64(s.RemovalsDeferred),
-		ProbesSent:                      int64(s.ProbesSent),
-		ProbesAnswered:                  int64(s.ProbesAnswered),
-		ProvidersQualified:              int64(s.ProvidersQualified),
-		BusyProbesSent:                  int64(s.BusyProbesSent),
-		BusyProbesAcquitted:             int64(s.BusyProbesAcquitted),
-		SchedulerPausesDetected:         int64(s.SchedulerPausesDetected),
-		GroupsFollowed:                  int64(s.GroupsFollowed),
-		GroupsScattered:                 int64(s.GroupsScattered),
-		QuarantineTcpResets:             int64(s.QuarantineTcpResets),
-		QuarantineAffinityInvalidations: int64(s.QuarantineAffinityInvalidations),
-		StickyFlowsRetired:              int64(s.StickyFlowsRetired),
+		FlowsOpened:                           int64(s.FlowsOpened),
+		ExitLossEvents:                        int64(s.ExitLossEvents),
+		FlowsLostToExit:                       int64(s.FlowsLostToExit),
+		MaxFlowsLostInOneEvent:                int64(s.MaxFlowsLostInOneEvent),
+		MeanFlowsLostPerExitLoss:              s.MeanFlowsLostPerExitLoss,
+		RecoveryCount:                         int64(s.RecoveryCount),
+		RecoveryMissed:                        int64(s.RecoveryMissed),
+		RecoveryMeanMillis:                    s.RecoveryMeanNanos / int64(time.Millisecond),
+		RecoveryMaxMillis:                     s.RecoveryMaxNanos / int64(time.Millisecond),
+		RecoveryPending:                       int32(s.RecoveryPending),
+		DialFailuresIntercepted:               int64(s.DialFailuresIntercepted),
+		FlowsReraced:                          int64(s.FlowsReraced),
+		FlowsRebound:                          int64(s.FlowsRebound),
+		RebindsAccepted:                       int64(s.RebindsAccepted),
+		RebindsRedialed:                       int64(s.RebindsRedialed),
+		VerdictsHeldUplinkStale:               int64(s.VerdictsHeldUplinkStale),
+		VerdictsHeldTransportDown:             int64(s.VerdictsHeldTransportDown),
+		VerdictsHeldSharedFate:                int64(s.VerdictsHeldSharedFate),
+		RemovalsDeferred:                      int64(s.RemovalsDeferred),
+		ProbesSent:                            int64(s.ProbesSent),
+		ProbesAnswered:                        int64(s.ProbesAnswered),
+		ProvidersQualified:                    int64(s.ProvidersQualified),
+		BusyProbesSent:                        int64(s.BusyProbesSent),
+		BusyProbesAcquitted:                   int64(s.BusyProbesAcquitted),
+		SchedulerPausesDetected:               int64(s.SchedulerPausesDetected),
+		GroupsFollowed:                        int64(s.GroupsFollowed),
+		GroupsScattered:                       int64(s.GroupsScattered),
+		QuarantineTcpResets:                   int64(s.QuarantineTcpResets),
+		QuarantineAffinityInvalidations:       int64(s.QuarantineAffinityInvalidations),
+		StickyFlowsRetired:                    int64(s.StickyFlowsRetired),
+		AffinityPerformanceSamples:            int64(s.AffinityPerformanceSamples),
+		AffinityPerformanceDonorBypasses:      int64(s.AffinityPerformanceDonorBypasses),
+		AffinityPerformanceCandidatesFiltered: int64(s.AffinityPerformanceCandidatesFiltered),
 	}
 }
 

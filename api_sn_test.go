@@ -180,7 +180,7 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 		case "/network/auth-client":
 			fmt.Fprint(w, `{"by_client_jwt":"client-jwt"}`)
 		case "/network/find-providers2":
-			fmt.Fprint(w, `{"providers":[{"client_id":"00000000-0000-0000-0000-000000000009","estimated_bytes_per_second":1234}]}`)
+			fmt.Fprint(w, `{"providers":[{"client_id":"00000000-0000-0000-0000-000000000009","estimated_bytes_per_second":1234,"network_only":true,"reputation_failed_names":"bloomberg"}]}`)
 		default:
 			http.Error(w, "unexpected route", http.StatusNotFound)
 		}
@@ -233,8 +233,12 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if providerResult.ProviderStats == nil || providerResult.ProviderStats.Len() != 1 || providerResult.ProviderStats.Get(0).EstimatedBytesPerSecond != 1234 {
+	if providerResult.ProviderStats == nil || providerResult.ProviderStats.Len() != 1 {
 		t.Fatalf("provider result = %+v", providerResult.ProviderStats)
+	}
+	provider := providerResult.ProviderStats.Get(0)
+	if provider.EstimatedBytesPerSecond != 1234 || !provider.NetworkOnly || provider.ReputationFailedNames != "bloomberg" {
+		t.Fatalf("provider metadata = %+v", provider)
 	}
 
 	expectedPaths := []string{

@@ -102,26 +102,36 @@ func TestSdkVersionStampsConnectProviderBuild(t *testing.T) {
 
 func TestSdkStickyRecoverySettingsAndMetricsComplete(t *testing.T) {
 	connectSettings := &connect.ReliabilitySettings{
-		MaxStickyFlowsPerExit: 73,
-		StickyFlowIdleTimeout: 41 * time.Second,
+		MaxStickyFlowsPerExit:    73,
+		StickyFlowIdleTimeout:    41 * time.Second,
+		FreshFlowAffinity:        true,
+		PerformanceAwareAffinity: true,
 	}
 	sdkSettings := reliabilitySettingsFromConnect(connectSettings)
-	if sdkSettings.MaxStickyFlowsPerExit != 73 || sdkSettings.StickyFlowIdleTimeoutMillis != 41_000 {
+	if sdkSettings.MaxStickyFlowsPerExit != 73 || sdkSettings.StickyFlowIdleTimeoutMillis != 41_000 ||
+		!sdkSettings.FreshFlowAffinity || !sdkSettings.PerformanceAwareAffinity {
 		t.Fatalf("Connect -> SDK sticky settings = %+v", sdkSettings)
 	}
 	roundTripSettings := sdkSettings.toConnect()
-	if roundTripSettings.MaxStickyFlowsPerExit != 73 || roundTripSettings.StickyFlowIdleTimeout != 41*time.Second {
+	if roundTripSettings.MaxStickyFlowsPerExit != 73 || roundTripSettings.StickyFlowIdleTimeout != 41*time.Second ||
+		!roundTripSettings.FreshFlowAffinity || !roundTripSettings.PerformanceAwareAffinity {
 		t.Fatalf("SDK -> Connect sticky settings = %+v", roundTripSettings)
 	}
 
 	sdkMetrics := reliabilityMetricsFromConnect(&connect.ReliabilityMetricsSnapshot{
-		QuarantineTcpResets:             5,
-		QuarantineAffinityInvalidations: 9,
-		StickyFlowsRetired:              3,
+		QuarantineTcpResets:                   5,
+		QuarantineAffinityInvalidations:       9,
+		StickyFlowsRetired:                    3,
+		AffinityPerformanceSamples:            11,
+		AffinityPerformanceDonorBypasses:      7,
+		AffinityPerformanceCandidatesFiltered: 4,
 	})
 	if sdkMetrics.QuarantineTcpResets != 5 ||
 		sdkMetrics.QuarantineAffinityInvalidations != 9 ||
-		sdkMetrics.StickyFlowsRetired != 3 {
+		sdkMetrics.StickyFlowsRetired != 3 ||
+		sdkMetrics.AffinityPerformanceSamples != 11 ||
+		sdkMetrics.AffinityPerformanceDonorBypasses != 7 ||
+		sdkMetrics.AffinityPerformanceCandidatesFiltered != 4 {
 		t.Fatalf("Connect -> SDK recovery metrics = %+v", sdkMetrics)
 	}
 }
