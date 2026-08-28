@@ -67,6 +67,18 @@ func newApi(
 	return api
 }
 
+// newSession creates independently owned credential and refresh state while
+// reusing this API's network strategy and request seams. Hosted multi-device
+// processes use one session per device so a refresh or close cannot mutate a
+// sibling device, while every session still shares the NetworkSpace's dialer
+// and connection-selection core.
+func (self *Api) newSession(ctx context.Context) *Api {
+	session := newApi(ctx, self.clientStrategy, self.apiUrl)
+	session.setHttpPostRaw(self.getHttpPostRaw())
+	session.setHttpGetRaw(self.getHttpGetRaw())
+	return session
+}
+
 // NewApi creates a standalone SDK API using the caller-owned client strategy.
 // The API owns the current JWT and its refresh worker; callers that install a
 // renewable client JWT should register refresh/logout listeners and then call
@@ -88,6 +100,19 @@ func (self *Api) SetByJwt(byJwt string) {
 	if changed && tokenManager != nil {
 		tokenManager.TokenChanged()
 	}
+}
+
+// clearByJwt clears the credential only when it is still the value owned by
+// the closing caller. It prevents stale teardown from clearing a newer login
+// installed concurrently on the same non-session API.
+func (self *Api) clearByJwt(byJwt string) bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.byJwt != byJwt {
+		return false
+	}
+	self.byJwt = ""
+	return true
 }
 
 func (self *Api) GetByJwt() string {

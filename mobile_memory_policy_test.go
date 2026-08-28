@@ -181,12 +181,15 @@ func TestMobileReceiveQueueBudgetIsAggregateAndProviderAware(t *testing.T) {
 		clientShare+providerShare,
 		true,
 	)
-	if providerOff != mobileReceiveQueueBudgetMaxByteCount {
+	if want := mobileReceiveQueueBudgetByteCount(clientShare + providerShare); providerOff != want {
 		t.Fatalf(
-			"provider-off receive budget = %d, want bounded maximum %d",
+			"provider-off receive budget = %d, want target-derived %d",
 			providerOff,
-			mobileReceiveQueueBudgetMaxByteCount,
+			want,
 		)
+	}
+	if mobileReceiveQueueBudgetMaxByteCount < providerOff {
+		t.Fatalf("provider-off receive budget = %d, exceeds maximum", providerOff)
 	}
 	if providerOff <= providerOn {
 		t.Fatalf(

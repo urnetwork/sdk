@@ -22,6 +22,7 @@ type apiTokenManager struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	api    *Api
+	done   chan struct{}
 
 	refreshMonitor *connect.Monitor
 	active         atomic.Bool
@@ -87,10 +88,19 @@ func newApiTokenManager(ctx context.Context, api *Api) *apiTokenManager {
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		api:            api,
+		done:           make(chan struct{}),
 		refreshMonitor: connect.NewMonitor(),
 	}
-	go connect.HandleError(manager.run)
+	go func() {
+		defer close(manager.done)
+		connect.HandleError(manager.run)
+	}()
 	return manager
+}
+
+// Wait joins the API-owned refresh worker after its lifetime is canceled.
+func (self *apiTokenManager) Wait() {
+	<-self.done
 }
 
 // jwtCanRefresh is intentionally an unverified parse. It is only a local

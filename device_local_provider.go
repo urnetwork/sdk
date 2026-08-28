@@ -88,7 +88,9 @@ func newDeviceLocalProviderWithOverrides(
 	instanceId connect.Id,
 	settings *connect.ClientSettings,
 	clientId connect.Id,
-	memoryTargetByteCount ByteCount,
+	providerMemoryTargetByteCount ByteCount,
+	deviceMemoryTargetByteCount ByteCount,
+	platformTransportBudget *connect.PlatformTransportBudget,
 	targetMode connect.TransportMode,
 	modePreferences map[connect.TransportMode]int,
 ) *deviceLocalProvider {
@@ -105,7 +107,7 @@ func newDeviceLocalProviderWithOverrides(
 	// safe default across carrier fallback.
 	applyMobileH1PerformanceClientSettings(
 		clientSettings,
-		memoryTargetByteCount,
+		deviceMemoryTargetByteCount,
 		targetMode == connect.TransportModeH1,
 	)
 	// the provider always enables the e2e encryption sessions: the responder
@@ -124,7 +126,7 @@ func newDeviceLocalProviderWithOverrides(
 
 	resendQueueBudget, receiveQueueBudget := configureDeviceLocalProviderMemory(
 		clientSettings,
-		memoryTargetByteCount,
+		providerMemoryTargetByteCount,
 	)
 
 	client := connect.NewClient(
@@ -139,7 +141,10 @@ func newDeviceLocalProviderWithOverrides(
 		InstanceId: instanceId,
 		AppVersion: appVersion,
 	}
-	platformTransportSettings := connect.DefaultPlatformTransportSettings()
+	platformTransportSettings := newDeviceLocalPlatformTransportSettings(
+		deviceMemoryTargetByteCount,
+		platformTransportBudget,
+	)
 	platformTransportSettings.Log = clientSettings.Log
 	platformTransportSettings.ModePreferences = maps.Clone(modePreferences)
 	// The provider exists before outbound client windows. Its optional Auto-H3
@@ -162,7 +167,9 @@ func newDeviceLocalProviderWithOverrides(
 	// provider profile sized from the provider share, so an unbudgeted
 	// desktop/server build does not become unbounded, while generic local
 	// NAT callers do not inherit phone caps.
-	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(memoryTargetByteCount)
+	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(
+		providerMemoryTargetByteCount,
+	)
 	localUserNatSettings.Log = clientSettings.Log
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 

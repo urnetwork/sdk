@@ -349,11 +349,12 @@ type WindowStatus struct {
 	// rate-limited | auth-failing (the connect WindowStall* constants).
 	// Empty when the source predates the field; treat as evaluating.
 	StallReason string
-	// Failed is the terminal outcome state: the window hit its outcome
-	// deadline twice with zero providers Added (see the connect package's
-	// window honesty layer). Cleared when a provider lands or the session is
-	// rebuilt. The connect view controller mirrors it as the CONNECT_FAILED
-	// connection status.
+	// Failed is the terminal presentation-state latch: the window hit its
+	// outcome deadline twice with zero providers Added (see the connect
+	// package's window honesty layer). It never stops fill, resize, evaluation,
+	// or carrier retry machinery. A provider landing later clears it. The
+	// connect view controller mirrors it as the CONNECT_FAILED connection
+	// status while the retries continue underneath.
 	Failed bool
 }
 

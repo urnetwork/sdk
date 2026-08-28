@@ -87,19 +87,18 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 const defaultDeviceLocalMemoryTargetByteCount = 20 * 1024 * 1024
 
 // device memory target split, in parts of `deviceMemoryRatioParts`:
-// dns 2 : client 14 : provider 4. The client share carries the in-flight
-// (bandwidth-delay) window, so it takes the largest share — at the 20 MB
-// reference target the provide-on client pair lands on the historically
-// proven 6 MiB send / 8 MiB receive; dns needs only enough to keep parallel
-// resolution above its demand caps. The provider share follows the provide
-// state: while providing is off it backs the client pair instead of idling
-// (see applyProvideMemorySharesWithLock), and when the device can never
+// dns 2 : client 9 : platform carriers 5 : provider 4. The platform share is
+// the same quarter-target carrier policy used by Connect, but it is owned by
+// this DeviceLocal instead of a process global. The provider share follows the
+// provide state: while providing is off it backs the client pair instead of
+// idling (see applyProvideMemorySharesWithLock), and when the device can never
 // provide it folds statically (see deviceMemoryShares).
 const (
-	deviceMemoryRatioDns      = 2
-	deviceMemoryRatioClient   = 14
-	deviceMemoryRatioProvider = 4
-	deviceMemoryRatioParts    = 20
+	deviceMemoryRatioDns               = 2
+	deviceMemoryRatioClient            = 9
+	deviceMemoryRatioPlatformTransport = 5
+	deviceMemoryRatioProvider          = 4
+	deviceMemoryRatioParts             = 20
 )
 
 // byteCountFraction returns floor(byteCount*numerator/denominator) without
@@ -127,19 +126,45 @@ func byteCountFraction(
 // and provider shares, folding the provider share into the client share
 // when the device cannot provide. A zero target returns zero shares (legacy
 // process-budget scaling everywhere).
-func deviceMemoryShares(settings *DeviceLocalSettings) (dnsByteCount ByteCount, clientByteCount ByteCount, providerByteCount ByteCount) {
+func deviceMemoryShares(
+	settings *DeviceLocalSettings,
+) (
+	dnsByteCount ByteCount,
+	clientByteCount ByteCount,
+	platformTransportByteCount ByteCount,
+	providerByteCount ByteCount,
+) {
 	target := settings.MemoryTargetByteCount
 	if target <= 0 {
-		return 0, 0, 0
+		return 0, 0, 0, 0
 	}
 	dnsByteCount = byteCountFraction(target, deviceMemoryRatioDns, deviceMemoryRatioParts)
 	clientByteCount = byteCountFraction(target, deviceMemoryRatioClient, deviceMemoryRatioParts)
+	platformTransportByteCount = byteCountFraction(
+		target,
+		deviceMemoryRatioPlatformTransport,
+		deviceMemoryRatioParts,
+	)
 	providerByteCount = byteCountFraction(target, deviceMemoryRatioProvider, deviceMemoryRatioParts)
 	if settings.HostedIncompatible || !settings.AllowProvider {
 		clientByteCount += providerByteCount
 		providerByteCount = 0
 	}
 	return
+}
+
+// newDeviceLocalPlatformTransportSettings applies one DeviceLocal target to
+// every carrier-local memory setting and then installs the budget shared only
+// by that DeviceLocal's provider and window transports.
+func newDeviceLocalPlatformTransportSettings(
+	memoryTargetByteCount ByteCount,
+	platformTransportBudget *connect.PlatformTransportBudget,
+) *connect.PlatformTransportSettings {
+	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
+		memoryTargetByteCount,
+	)
+	settings.PlatformTransportBudget = platformTransportBudget
+	return settings
 }
 
 // deviceLocalSequenceBufferSize derives the sequence channel depth from the
@@ -431,12 +456,12 @@ func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
 // so an app can set them; the other three are Go-construction only.
 type DeviceLocalSettings struct {
 	// MemoryTargetByteCount is this device's memory target, split by ratio
-	// (dns 2 : client 14 : provider 4, see deviceMemoryShares) among dns
-	// resolution (a live byte budget on the device's resolvers), the client
-	// transfer buffers (the shared queue budget pair + p2p peer connection
-	// admission), and the provider path (the provider client's budget pair +
-	// the egress nat flow caps). When the device cannot provide, the
-	// provider share folds into the client share. Per device, so a
+	// (dns 2 : client 9 : platform carriers 5 : provider 4, see
+	// deviceMemoryShares) among dns resolution and IP-mux state, the client
+	// transfer buffers and p2p admission, every H1/H3 platform carrier, and the
+	// provider path (the provider client's budget pair + egress nat flow caps).
+	// When the device cannot provide, the provider share folds into the client
+	// share. Per device, so a
 	// multi-device process (the cloud proxy) gives each instance independent
 	// admission and sizing state; the message pools are the process-global complement
 	// (SetMemoryLimit / SetMessagePoolMemoryTargets). 0 disables the
@@ -558,6 +583,12 @@ var _ ViewControllerManager = (*DeviceLocal)(nil)
 
 type DeviceLocal struct {
 	networkSpace *NetworkSpace
+	// api is the credential session used by this device. Ordinary app devices
+	// use the NetworkSpace API directly. Hosted devices own a private session
+	// over the shared NetworkSpace strategy so credentials and teardown cannot
+	// cross device boundaries.
+	api     *Api
+	ownsApi bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -658,6 +689,11 @@ type DeviceLocal struct {
 	// (in-flight accounting carries over). stamped into the mux settings at
 	// mux construction.
 	dnsMemoryTarget *connect.MemoryTarget
+
+	// platformTransportBudget is shared by every provider and destination
+	// carrier owned by this DeviceLocal, and by no other DeviceLocal. Its size
+	// is derived from MemoryTargetByteCount.
+	platformTransportBudget *connect.PlatformTransportBudget
 
 	// dohServerScoresSeed is the per-DoH-server success ordering carried into
 	// each mux build: loaded from local storage at construction (the last
@@ -1069,6 +1105,15 @@ func newDeviceLocalWithOverrides(
 	// ctx, cancel := api.ctx, api.cancel
 	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
+	api := networkSpace.GetApi()
+	ownsApi := false
+	if settings.HostedIncompatible {
+		// The proxy shares one NetworkSpace across unrelated customers. Reuse
+		// its strategy/request core, but isolate mutable credentials, refresh
+		// listeners, and the refresh worker in a device-owned API session.
+		api = api.newSession(ctx)
+		ownsApi = true
+	}
 
 	transportSettings := DefaultTransportSettings()
 	providerTransportSettings := DefaultProviderTransportSettings()
@@ -1094,7 +1139,11 @@ func newDeviceLocalWithOverrides(
 	// sized them from its default, and the caller may have overridden
 	// MemoryTargetByteCount (or disabled providing, folding the provider
 	// share into the client share) since
-	dnsShareByteCount, clientShareByteCount, providerShareByteCount := deviceMemoryShares(settings)
+	dnsShareByteCount, clientShareByteCount, _, providerShareByteCount :=
+		deviceMemoryShares(settings)
+	platformTransportBudget := connect.NewPlatformTransportBudgetForMemoryTarget(
+		settings.MemoryTargetByteCount,
+	)
 	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
 	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
@@ -1129,13 +1178,12 @@ func newDeviceLocalWithOverrides(
 			clientId,
 			// the provider share of the device memory target
 			providerShareByteCount,
+			settings.MemoryTargetByteCount,
+			platformTransportBudget,
 			providerTransportMode,
 			providerModePreferences,
 		)
 	}
-
-	// api := newBringYourApiWithContext(cancelCtx, clientStrategy, apiUrl)
-	api := networkSpace.GetApi()
 
 	defaultRouteLocal := settings.DefaultRouteLocal
 	defaultProvideControlMode := settings.DefaultProvideControlMode
@@ -1166,12 +1214,17 @@ func newDeviceLocalWithOverrides(
 		tunnelLocalAddress, ok = connect.TakeLocalIpv4Address()
 		if !ok {
 			cancel()
+			if ownsApi {
+				api.Close()
+			}
 			return nil, fmt.Errorf("no local tunnel address available")
 		}
 	}
 
 	deviceLocal := &DeviceLocal{
 		networkSpace: networkSpace,
+		api:          api,
+		ownsApi:      ownsApi,
 		ctx:          ctx,
 		cancel:       cancel,
 		byJwt:        byJwt,
@@ -1189,6 +1242,7 @@ func newDeviceLocalWithOverrides(
 		// the dns share of the device memory target; one live budget for the
 		// life of the device (see the field doc)
 		dnsMemoryTarget:           connect.NewMemoryTarget(dnsShareByteCount),
+		platformTransportBudget:   platformTransportBudget,
 		generatorFunc:             settings.GeneratorFunc,
 		provider:                  provider,
 		transportSettings:         cloneTransportSettings(transportSettings),
@@ -1553,11 +1607,11 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 // DeviceLocalMemoryUsage is a point-in-time sample of the device's tracked
 // memory accounting versus its target (see
 // `DeviceLocalSettings.MemoryTargetByteCount`). Tracked usage covers the
-// live budget accounting: in-flight dns resolution, the client transfer
-// queue pair (including p2p peer connection reservations), and the provider
-// client's pair. The egress nat's per-flow memory is bounded by flow-count
-// caps rather than live byte accounting, so it is not included here — the
-// memory target load test measures that remainder as process heap.
+// live budget accounting: in-flight dns resolution, client and provider
+// transfer queues, and platform carrier reservations. The egress nat's
+// per-flow memory is bounded by flow-count caps rather than live byte
+// accounting, so it is not included here — the memory target load test
+// measures that remainder as process heap.
 type DeviceLocalMemoryUsage struct {
 	TargetByteCount        ByteCount
 	DnsByteCount           ByteCount
@@ -1567,15 +1621,24 @@ type DeviceLocalMemoryUsage struct {
 	// budget already included in ClientReceiveByteCount. It is shared by the
 	// control client, window clients, and provider so diagnostics can distinguish
 	// active queue pressure from allocator or message-pool retention.
-	PackQueueUsedByteCount     ByteCount
-	PackQueueCapacityByteCount ByteCount
-	ProviderSendByteCount      ByteCount
-	ProviderReceiveByteCount   ByteCount
-	TotalByteCount             ByteCount
+	PackQueueUsedByteCount           ByteCount
+	PackQueueCapacityByteCount       ByteCount
+	ProviderSendByteCount            ByteCount
+	ProviderReceiveByteCount         ByteCount
+	PlatformTransportBudgetByteCount ByteCount
+	PlatformTransportUsedByteCount   ByteCount
+	PlatformTransportMaxCount        int
+	PlatformTransportUsedCount       int
+	PlatformTransportPendingH1Count  int
+	PlatformTransportPendingH1Bytes  ByteCount
+	TotalByteCount                   ByteCount
 }
 
 // MemoryUsed samples the tracked memory accounting of this device's areas
 func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
 	usage := &DeviceLocalMemoryUsage{
 		TargetByteCount: self.settings.MemoryTargetByteCount,
 		DnsByteCount:    self.dnsMemoryTarget.Used(),
@@ -1601,9 +1664,17 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 			usage.ProviderReceiveByteCount = receiveQueueBudget.UsedByteCount()
 		}
 	}
+	platformTransportStats := self.platformTransportBudget.Stats()
+	usage.PlatformTransportBudgetByteCount = platformTransportStats.TotalByteCount
+	usage.PlatformTransportUsedByteCount = platformTransportStats.UsedByteCount
+	usage.PlatformTransportMaxCount = platformTransportStats.MaxTransportCount
+	usage.PlatformTransportUsedCount = platformTransportStats.UsedTransportCount
+	usage.PlatformTransportPendingH1Count = platformTransportStats.PendingH1Count
+	usage.PlatformTransportPendingH1Bytes = platformTransportStats.PendingH1ByteCount
 	usage.TotalByteCount = usage.DnsByteCount +
 		usage.ClientSendByteCount + usage.ClientReceiveByteCount +
-		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount
+		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount +
+		usage.PlatformTransportUsedByteCount
 	return usage
 }
 
@@ -2148,7 +2219,7 @@ func (self *DeviceLocal) GetInstanceId() *Id {
 }
 
 func (self *DeviceLocal) GetApi() *Api {
-	return self.networkSpace.GetApi()
+	return self.api
 }
 
 func (self *DeviceLocal) GetNetworkSpace() *NetworkSpace {
@@ -3217,7 +3288,7 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 // total until it drains). Called under stateLock (and once single-threaded
 // at construction with the initial off state).
 func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
-	_, clientShareByteCount, providerShareByteCount := deviceMemoryShares(self.settings)
+	_, clientShareByteCount, _, providerShareByteCount := deviceMemoryShares(self.settings)
 	if clientShareByteCount <= 0 {
 		// no target: legacy static sizing
 		return
@@ -3318,7 +3389,7 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 				// recreate the provider user nat only as needed
 				// this avoid connection disruptions
 				if self.remoteUserNatProviderLocalUserNat == nil {
-					_, _, providerShareByteCount := deviceMemoryShares(self.settings)
+					_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
 					localUserNatSettings := providerLocalUserNatSettings(
 						providerShareByteCount,
 						self.log,
@@ -3330,7 +3401,7 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 					// the provider egresses remote clients' traffic and runs its own security policy:
 					// the connect default is the reversed client policy
 					// (DefaultProviderSecurityPolicyWithStats), or an explicitly set provider policy
-					_, _, providerShareByteCount := deviceMemoryShares(self.settings)
+					_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
 					providerSettings := connect.DefaultRemoteUserNatProviderSettingsWithMemoryTarget(providerShareByteCount)
 					if self.providerSecurityPolicyGenerator != nil {
 						providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
@@ -3692,16 +3763,17 @@ func (self *DeviceLocal) setDestination(
 				generator = self.generatorFunc(connectSpecs)
 			} else {
 				apiGeneratorSettings := connect.DefaultApiMultiClientGeneratorSettings()
-				if mobileLowMemoryPolicyEnabled(self.settings.MemoryTargetByteCount) {
-					apiGeneratorSettings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
-						settings := connect.DefaultPlatformTransportSettings()
-						applyMobileLowMemoryPlatformTransportSettings(
-							settings,
-							self.settings.MemoryTargetByteCount,
-						)
-						settings.ReceiveStats = self.platformTransportReceiveStats
-						return settings
-					}
+				apiGeneratorSettings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
+					settings := newDeviceLocalPlatformTransportSettings(
+						self.settings.MemoryTargetByteCount,
+						self.platformTransportBudget,
+					)
+					applyMobileLowMemoryPlatformTransportSettings(
+						settings,
+						self.settings.MemoryTargetByteCount,
+					)
+					settings.ReceiveStats = self.platformTransportReceiveStats
+					return settings
 				}
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
 				apiGeneratorSettings.PlatformTransportMode = transportMode
@@ -4506,8 +4578,11 @@ func (self *DeviceLocal) close() {
 		self.apiAuthLogoutSub = nil
 	}
 
-	api := self.networkSpace.GetApi()
-	api.SetByJwt("")
+	if self.ownsApi {
+		self.api.Close()
+	} else {
+		self.api.clearByJwt(self.byJwt)
+	}
 }
 
 func (self *DeviceLocal) GetDone() bool {
