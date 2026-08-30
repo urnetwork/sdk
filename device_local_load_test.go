@@ -146,6 +146,7 @@ func TestDeviceLocalLoadStability(t *testing.T) {
 	_, tun, teardown := newEnv()
 
 	gSamples := make([]int, measureIterations)
+	gStackSamples := make([]map[string]int, measureIterations)
 	hSamples := make([]uint64, measureIterations)
 	for i := 0; i < measureIterations; i++ {
 		rounds := (i + 1) * roundsStep
@@ -159,6 +160,7 @@ func TestDeviceLocalLoadStability(t *testing.T) {
 
 		g, h := sampleStable()
 		gSamples[i] = g
+		gStackSamples[i] = captureGoroutineStacks()
 		hSamples[i] = h
 
 		conns := rounds * flowsPerIteration
@@ -175,6 +177,10 @@ func TestDeviceLocalLoadStability(t *testing.T) {
 		if gSamples[i] > refG+goroutineIterationDrift {
 			t.Errorf("iteration %d goroutines=%d drifted above iteration %d=%d (tol +%d) despite fixed concurrency",
 				i+1, gSamples[i], warmFromIndex+1, refG, goroutineIterationDrift)
+			// Attribute a transient aggregate-count failure to its concrete
+			// worker owners. Without the stack delta, a stable but phase-shifted
+			// retirement cohort is indistinguishable from an accumulating leak.
+			reportGoroutineLeaks(t, gStackSamples[warmFromIndex], gStackSamples[i], 0)
 		}
 	}
 
@@ -250,6 +256,17 @@ func newLoopbackDeviceEnv(t *testing.T, ctx context.Context, networkSpace *Netwo
 	if err != nil {
 		t.Fatalf("new device: %v", err)
 	}
+	// This fixture exercises only the provider's in-process local NAT. Its
+	// platform transport otherwise keeps reconnecting to the deliberately fake
+	// test host, and each H3-over-DNS attempt contributes a transient cohort of
+	// nine goroutines unrelated to load or teardown. Stop that external carrier
+	// while retaining the provider client and local NAT used by route-local.
+	platformTransport := func() migratablePlatformTransport {
+		device.provider.stateLock.Lock()
+		defer device.provider.stateLock.Unlock()
+		return device.provider.platformTransport
+	}()
+	platformTransport.Close()
 	tun, bridgeTeardown := newLoopbackBridgeForDevice(t, device)
 	teardown = func() {
 		// device first: canceling the device ctx releases any bridge send

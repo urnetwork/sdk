@@ -177,6 +177,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["setOffline"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.SetOffline(args[0].Bool())
+		device.Sync()
 		return js.Null()
 	})
 
@@ -186,6 +187,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["setVpnInterfaceWhileOffline"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.SetVpnInterfaceWhileOffline(args[0].Bool())
+		device.Sync()
 		return js.Null()
 	})
 
@@ -195,6 +197,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["setRouteLocal"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.SetRouteLocal(args[0].Bool())
+		device.Sync()
 		return js.Null()
 	})
 
@@ -204,6 +207,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["setBlockerEnabled"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.SetBlockerEnabled(args[0].Bool())
+		device.Sync()
 		return js.Null()
 	})
 
@@ -213,6 +217,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["setProvidePaused"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.SetProvidePaused(args[0].Bool())
+		device.Sync()
 		return js.Null()
 	})
 
@@ -222,20 +227,24 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["setConnectLocation"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.SetConnectLocation(parseConnectLocation(args[0]))
+		device.Sync()
 		return js.Null()
 	})
 	// the explicit "connect to this" action: rebuilds even when the location is
 	// already the installed destination (see Device.Reconnect)
 	m["reconnect"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.Reconnect(parseConnectLocation(args[0]))
+		device.Sync()
 		return js.Null()
 	})
 	m["removeDestination"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.RemoveDestination()
+		device.Sync()
 		return js.Null()
 	})
 	m["shuffle"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		device.Shuffle()
+		device.Sync()
 		return js.Null()
 	})
 
@@ -285,6 +294,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["setDnsResolverSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
 			device.SetDnsResolverSettings(parseDnsResolverSettings(args[0]))
+			device.Sync()
 		}
 		return js.Null()
 	})
@@ -319,12 +329,14 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["setTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
 			device.SetTransportSettings(parseTransportSettings(args[0]))
+			device.Sync()
 		}
 		return js.Null()
 	})
 	m["setProviderTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
 			device.SetProviderTransportSettings(parseTransportSettings(args[0]))
+			device.Sync()
 		}
 		return js.Null()
 	})

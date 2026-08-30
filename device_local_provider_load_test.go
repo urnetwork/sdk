@@ -164,6 +164,15 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	// The measured provider path uses only the bounded in-memory peer routes
+	// below. Retire the unrelated carrier that reconnects to the fake platform
+	// host, whose H3-over-DNS dial cohorts would phase-shift the memory samples.
+	platformTransport := func() migratablePlatformTransport {
+		device.provider.stateLock.Lock()
+		defer device.provider.stateLock.Unlock()
+		return device.provider.platformTransport
+	}()
+	platformTransport.Close()
 
 	// providing creates the RemoteUserNatProvider and its exit LocalUserNat on
 	// the provider client
@@ -296,6 +305,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 // routes, with a gvisor tun as its packet source (mirroring connect's
 // testingNewClient wiring).
 type providerLoadPeer struct {
+	t      testing.TB
 	cancel context.CancelFunc
 	client *connect.Client
 	nat    *connect.RemoteUserNatClient
@@ -303,6 +313,8 @@ type providerLoadPeer struct {
 
 	providerClient    *connect.Client
 	providerTransport [2]connect.Transport
+	peerTransport     [2]connect.Transport
+	routes            [2]connect.Route
 
 	bridgeWg  sync.WaitGroup
 	closeOnce sync.Once
@@ -362,12 +374,15 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	)
 
 	peer := &providerLoadPeer{
+		t:                 t,
 		cancel:            peerCancel,
 		client:            peerClient,
 		nat:               nat,
 		tun:               tun,
 		providerClient:    providerClient,
 		providerTransport: [2]connect.Transport{providerSend, providerReceive},
+		peerTransport:     [2]connect.Transport{peerSend, peerReceive},
+		routes:            [2]connect.Route{routeToProvider, routeToPeer},
 	}
 
 	// peer tun -> nat. SendPacket consumes the pooled packet on success and
@@ -397,17 +412,60 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	return peer
 }
 
+// close retires both route publications, joins the peer client, and returns
+// every pooled frame that remained in the synthetic buffered carrier.
 func (self *providerLoadPeer) close() {
 	self.closeOnce.Do(func() {
 		self.tun.Close()
 		self.cancel()
 		self.bridgeWg.Wait()
 		self.nat.Close()
-		self.client.Close()
+		for _, transport := range self.peerTransport {
+			self.client.RouteManager().RemoveTransport(transport)
+		}
 		for _, transport := range self.providerTransport {
 			self.providerClient.RouteManager().RemoveTransport(transport)
 		}
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer closeCancel()
+		if err := self.client.CloseAndWait(closeCtx); err != nil {
+			self.t.Errorf("close provider-load peer client: %v", err)
+		}
+		drainProviderLoadRoutes(self.routes[:]...)
 	})
+}
+
+// drainProviderLoadRoutes returns carrier ownership left after route retirement.
+func drainProviderLoadRoutes(routes ...connect.Route) int {
+	returned := 0
+	for _, route := range routes {
+		for {
+			select {
+			case message := <-route:
+				if connect.MessagePoolReturn(message) {
+					returned += 1
+				}
+			default:
+				goto nextRoute
+			}
+		}
+	nextRoute:
+	}
+	return returned
+}
+
+// Buffered synthetic carriers must return frames stranded during retirement.
+func TestDrainProviderLoadRoutesReturnsQueuedPoolOwnership(t *testing.T) {
+	routeA := make(connect.Route, 2)
+	routeB := make(connect.Route, 2)
+	routeA <- connect.MessagePoolGet(64)
+	routeB <- connect.MessagePoolGet(64)
+	if returned := drainProviderLoadRoutes(routeA, routeB); returned != 2 {
+		t.Fatalf("returned pooled route frames=%d, want 2", returned)
+	}
+	if len(routeA) != 0 || len(routeB) != 0 {
+		t.Fatalf("routes not drained: len(a)=%d len(b)=%d", len(routeA), len(routeB))
+	}
 }
 
 // runPeerUdpBurst runs `flows` short-lived udp echo flows through the tun,

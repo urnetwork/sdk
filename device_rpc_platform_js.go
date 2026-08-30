@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+// Browser callbacks must use cached reads and lifecycle-synchronized writes so
+// they never block the JavaScript event loop needed to receive rpc responses.
+const platformDeviceRpcBrowserStateOnly = true
+
 // dialDeviceRpcWs opens the proxy-host device-rpc websocket with the browser
 // WebSocket api. Auth is the signed proxy id carried in the url (the `proxy`
 // query parameter), which is exactly why the browser can authenticate: it
@@ -120,10 +124,9 @@ func newBrowserWs(url string, settings *deviceRpcSettings) (*browserWs, error) {
 		}
 		b := make([]byte, n)
 		js.CopyBytesToGo(b, uint8Array)
-		select {
-		case self.receive <- b:
-		case <-self.done:
+		if !self.offerReceive(b) {
 			self.releaseReceive(n)
+			self.closeInternal()
 		}
 		return nil
 	})
@@ -162,19 +165,29 @@ func (self *browserWs) releaseReceive(byteCount int) {
 	self.receiveMu.Unlock()
 }
 
+// Serializes queue admission with teardown so no message can enter after the
+// close path has drained the queue and released its byte reservation.
+func (self *browserWs) offerReceive(message []byte) bool {
+	self.receiveMu.Lock()
+	defer self.receiveMu.Unlock()
+	return offerDeviceRpcReceive(self.done, self.receive, message)
+}
+
 func (self *browserWs) closeInternal() {
 	self.closeOnce.Do(func() {
 		close(self.done)
 		self.ws.Call("close")
+		self.receiveMu.Lock()
 	drainReceive:
 		for {
 			select {
 			case b := <-self.receive:
-				self.releaseReceive(len(b))
+				self.receiveBytes -= int64(len(b))
 			default:
 				break drainReceive
 			}
 		}
+		self.receiveMu.Unlock()
 		self.openFunc.Release()
 		self.msgFunc.Release()
 		self.errFunc.Release()

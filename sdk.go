@@ -260,9 +260,9 @@ func SetMessagePoolMemoryTargets(
 // physical network interface indices (IPv4 and IPv6), so that when this process
 // provides a VPN tunnel its own platform and provider connections do not loop
 // back into that tunnel. Pass 0 for a family to leave it unbound. This is the
-// Windows self-exclusion mechanism (R1); it is a no-op on other platforms,
-// where the OS handles self-exclusion (macOS network extension, Android
-// VpnService). The Windows service updates these on every network change.
+// Windows self-exclusion mechanism (R1) and the macOS controlled-peer
+// acceptance mechanism; it is a no-op on other platforms, where the OS handles
+// self-exclusion. The Windows service updates these on every network change.
 func SetEgressInterfaceIndex(index4 int, index6 int) {
 	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
 }

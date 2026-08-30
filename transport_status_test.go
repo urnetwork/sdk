@@ -178,6 +178,11 @@ func TestDeviceRemoteTransportStatusGetterListenerAndRpcWire(t *testing.T) {
 	connect.AssertEqual(t, deviceRemote.waitForSync(10*time.Second), true)
 	assertTransportStatus(t, deviceRemote.GetTransportStatus(), true, []string{TransportModeH1})
 	assertTransportStatus(t, deviceRemote.GetProviderTransportStatus(), true, []string{TransportModeH1})
+	// Listeners registered before the asynchronous initial sync receive the
+	// initial snapshot. Establish that delivery as the baseline so the update
+	// assertion cannot consume a valid but stale H1 status event.
+	clientEventCount := len(listener.waitForCount(t, false, 1))
+	providerEventCount := len(listener.waitForCount(t, true, 1))
 
 	h3Only := testingTransportSettings(
 		TransportModeAuto,
@@ -185,9 +190,11 @@ func TestDeviceRemoteTransportStatusGetterListenerAndRpcWire(t *testing.T) {
 	)
 	deviceLocal.SetTransportSettings(h3Only)
 	deviceLocal.SetProviderTransportSettings(h3Only)
-	status := listener.waitForCount(t, false, 1)[0]
+	clientValues := listener.waitForCount(t, false, clientEventCount+1)
+	status := clientValues[len(clientValues)-1]
 	assertTransportStatus(t, status, false, []string{TransportModeH3})
-	assertTransportStatus(t, listener.waitForCount(t, true, 1)[0], false, []string{TransportModeH3})
+	providerValues := listener.waitForCount(t, true, providerEventCount+1)
+	assertTransportStatus(t, providerValues[len(providerValues)-1], false, []string{TransportModeH3})
 	// Listener values are detached from the remote cache.
 	status.AutoEligibleModes.Add(TransportModeH1)
 	assertTransportStatus(t, deviceRemote.GetTransportStatus(), false, []string{TransportModeH3})

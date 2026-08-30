@@ -107,18 +107,11 @@ func TestRemoveConnectedProviderIsSafeWhenDisconnected(t *testing.T) {
 	deviceRemote.RemoveConnectedProvider(newId(connect.NewId()))
 }
 
-// TestRemoveConnectedProviderIsSafeWhenDisconnected could only catch this on a
-// lucky interleaving: DeviceRemote.RemoveConnectedProvider used to release
-// stateLock before the rpc call, so when the call failed, the closeService
-// cleanup ran unlocked and raced the run goroutine's locked teardown of
-// self.service. This test pins the ordering deterministically. The service is
-// swapped for a client whose calls fail instantly (a closed pipe) while the
-// live transport stays untouched — so the run goroutine stays parked and
-// cannot steal the teardown — and a pre-spawned reader takes the locked read
-// the run goroutine's teardown would take. With the cleanup unlocked the race
-// detector fails this every run, in either access order; with the cleanup
-// under stateLock the mutex orders the pair.
-func TestRemoveConnectedProviderTeardownHoldsStateLock(t *testing.T) {
+// A failed action must clear only the generation it used, with the read and
+// write synchronized. The doctored client fails deterministically while the
+// real transport remains parked, exposing both an unlocked cleanup race and
+// accidental teardown of the wrong service under the race detector.
+func TestRemoveConnectedProviderFailedCallClosesMatchingService(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

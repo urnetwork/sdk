@@ -122,6 +122,10 @@ func TestDeviceRemoteSimple(t *testing.T) {
 		panic(err)
 	}
 	defer deviceRemote.Close()
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(10 * time.Second) {
+		t.Fatal("device remote did not complete its initial sync")
+	}
 
 	connect.AssertEqual(t, true, deviceRemote.GetOffline())
 	connect.AssertEqual(t, true, deviceLocal.GetOffline())
@@ -192,6 +196,10 @@ func TestDeviceRemotePostQuantumIdentity(t *testing.T) {
 		panic(err)
 	}
 	defer deviceRemote.Close()
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(10 * time.Second) {
+		t.Fatal("device remote did not complete its initial sync")
+	}
 
 	// the local provider client exists (`AllowProvider`), so the public
 	// identity key is available on both ends and hashes consistently
@@ -275,6 +283,10 @@ func TestDeviceRemoteFull(t *testing.T) {
 				panic(err)
 			}
 			defer deviceRemote.Close()
+			deviceRemote.Sync()
+			if !deviceRemote.waitForSync(10 * time.Second) {
+				t.Fatal("device remote did not complete its initial sync")
+			}
 
 			// add all listeners
 

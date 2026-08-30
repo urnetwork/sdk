@@ -209,7 +209,6 @@ func TestDeviceRemoteAppliesStandaloneApiRefreshAndLogout(t *testing.T) {
 	defer networkSpace.close()
 
 	settings := defaultDeviceRpcSettings()
-	settings.InitialLockTimeout = 0
 	settings.RpcReconnectTimeout = 10 * time.Millisecond
 	settings.DisableLogging = true
 	device, err := newDeviceRemoteWithOverrides(

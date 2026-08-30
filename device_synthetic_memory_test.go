@@ -178,16 +178,27 @@ func TestDeviceLocalSyntheticDeviceRemoteMemorySoak(t *testing.T) {
 	finalGoroutines, finalHeap := sampleStable()
 	finalRuntime := GetMemoryStats().TotalRuntimeByteCount
 	finalFds := openFdCount()
+	poolStats := connect.GetMessagePoolAggregateStats()
 	t.Logf(
-		"[synthetic-device-mem] post-teardown cycles=%d heap=%s runtime=%s goroutines=%d fds=%d pool=%d",
+		"[synthetic-device-mem] post-teardown cycles=%d heap=%s runtime=%s goroutines=%d fds=%d pool=%d device-tun-egress=%d/%d",
 		cycle,
 		humanBytes(finalHeap),
 		humanBytes(uint64(finalRuntime)),
 		finalGoroutines,
 		finalFds,
 		poolOutstanding(),
+		poolStats.DeviceTunEgressOutstandingCount,
+		poolStats.DeviceTunEgressOutstandingByteCount,
 	)
-
+	for _, classStats := range connect.GetMessagePoolClassStats() {
+		t.Logf(
+			"[synthetic-device-mem] pool-class size=%d taken=%d returned=%d outstanding=%d",
+			classStats.Size,
+			classStats.Taken,
+			classStats.Returned,
+			classStats.Taken-classStats.Returned,
+		)
+	}
 	const (
 		goroutineTolerance = 18
 		stackTolerance     = 6
@@ -301,6 +312,28 @@ func newSyntheticMemoryEnvironment(
 		t.Fatalf("new synthetic DeviceLocal: %v", err)
 	}
 	env.device = device
+	// The synthetic exit deliberately maps only workload endpoints so any
+	// blocked DHT flow that reaches its dialer is an unambiguous escape. The
+	// independent provider-qualification sweep also sends crafted probes to
+	// public health hosts and resolvers (for example 8.8.4.4:53), which are
+	// legitimate production traffic but violate that fixture invariant. Keep
+	// every shipped reliability default except that out-of-band sweep, and set
+	// the override before the destination window is constructed.
+	reliabilitySettings := reliabilitySettingsFromConnect(
+		connect.ReliabilitySettingsFrom(connect.DefaultMultiClientSettings()),
+	)
+	reliabilitySettings.ProviderProbe = false
+	device.SetReliabilitySettings(reliabilitySettings)
+
+	// Both measured provider paths use the bounded in-memory routes below. Stop
+	// the unrelated platform carrier from reconnecting to the fake test host;
+	// its H3-over-DNS attempts are neither workload nor provider-path traffic.
+	platformTransport := func() migratablePlatformTransport {
+		device.provider.stateLock.Lock()
+		defer device.provider.stateLock.Unlock()
+		return device.provider.platformTransport
+	}()
+	platformTransport.Close()
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil
@@ -378,6 +411,10 @@ func newSyntheticMemoryEnvironment(
 	if !device.GetProvideEnabled() {
 		env.Close()
 		t.Fatal("DeviceRemote did not enable DeviceLocal provider side")
+	}
+	if effective := device.GetReliabilitySettings(); effective == nil || effective.ProviderProbe {
+		env.Close()
+		t.Fatalf("synthetic window did not retain the provider-probe override: %+v", effective)
 	}
 
 	env.peer = newProviderLoadPeer(t, ctx, device.provider.Client())
@@ -584,7 +621,12 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 		}
 	}
 	if dials := self.exit.router.UnexpectedDials(); dials != 0 {
-		t.Errorf("blocked/unmapped traffic escaped to synthetic exit %d times", dials)
+		t.Errorf(
+			"blocked/unmapped traffic escaped to synthetic exit %d times: ports=%v unexpected=%v",
+			dials,
+			self.exit.router.DialCounts(),
+			self.exit.router.UnexpectedDialCounts(),
+		)
 	}
 	if self.endpoints.webRequests.Load() == 0 || self.endpoints.webBytes.Load() == 0 {
 		t.Error("synthetic web endpoints received no response traffic")

@@ -16,6 +16,25 @@ type testingFailingDeviceRpcDialer struct {
 	attemptTimes chan time.Time
 }
 
+type testingBlockedDeviceRpcDialer struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (self *testingBlockedDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.Conn, error) {
+	select {
+	case self.entered <- struct{}{}:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+	select {
+	case <-self.release:
+		return nil, nil, errors.New("released blocked dial")
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+}
+
 func (self *testingFailingDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.Conn, error) {
 	select {
 	case <-ctx.Done():
@@ -89,7 +108,6 @@ func testingNewFailingDeviceRemote(
 	ctx, cancel := context.WithCancel(context.Background())
 	settings := defaultDeviceRpcSettings()
 	settings.DisableLogging = true
-	settings.InitialLockTimeout = 0
 	settings.RpcReconnectTimeout = reconnectTimeout
 	dialer := &testingFailingDeviceRpcDialer{
 		attemptTimes: make(chan time.Time, 16),
@@ -101,16 +119,53 @@ func testingNewFailingDeviceRemote(
 		settings:         settings,
 		reconnectMonitor: connect.NewMonitor(),
 		syncMonitor:      connect.NewMonitor(),
-		resetMonitor:     connect.NewMonitor(),
 		dialer:           dialer,
+		dialerChanged:    make(chan struct{}),
 	}
-	deviceRemote.stateLock.Lock()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		deviceRemote.run()
 	}()
 	return deviceRemote, dialer, done
+}
+
+// A transport replacement must publish its fresh notification channel in the
+// same generation as its dialer. Otherwise a connection made with the new
+// dialer can consume the old closed edge and immediately tear itself down.
+func TestDeviceRemoteDialerReplacementPublishesOneGeneration(t *testing.T) {
+	settings := defaultDeviceRpcSettings()
+	deviceRemote := &DeviceRemote{
+		settings:      settings,
+		log:           settings.logger(),
+		dialer:        &testingFailingDeviceRpcDialer{attemptTimes: make(chan time.Time, 1)},
+		dialerChanged: make(chan struct{}),
+	}
+	oldDialerChanged := deviceRemote.dialerChanged
+
+	err := deviceRemote.SetRpcServer("", "", "127.0.0.1:12042")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-oldDialerChanged:
+	default:
+		t.Fatal("replaced dialer generation was not notified")
+	}
+	dialer, dialerChanged := func() (deviceRpcDialer, <-chan struct{}) {
+		deviceRemote.stateLock.Lock()
+		defer deviceRemote.stateLock.Unlock()
+		return deviceRemote.dialer, deviceRemote.dialerChanged
+	}()
+	if dialer == nil {
+		t.Fatal("replacement dialer is nil")
+	}
+	select {
+	case <-dialerChanged:
+		t.Fatal("replacement dialer was paired with the stale closed edge")
+	default:
+	}
 }
 
 func testingReceiveDeviceRpcAttempt(
@@ -125,6 +180,72 @@ func testingReceiveDeviceRpcAttempt(
 	case <-time.After(timeout):
 		t.Fatal("timed out waiting for device rpc attempt")
 		return time.Time{}
+	}
+}
+
+// Browser WebSocket completion is delivered by the same JavaScript event loop
+// that invokes synchronous getters. Holding stateLock across Dial makes the
+// getter wait for an event that cannot run until the getter returns, freezing
+// the page and hot-spinning the wasm runtime.
+func TestDeviceRemoteGetterDoesNotWaitBehindBlockedDial(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := defaultDeviceRpcSettings()
+	settings.DisableLogging = true
+	dialer := &testingBlockedDeviceRpcDialer{
+		entered: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		NewId(),
+		settings,
+		connect.NewId(),
+		dialer,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deviceRemote.Close()
+
+	select {
+	case <-dialer.entered:
+	case <-time.After(time.Second):
+		t.Fatal("device rpc dial did not reach the deterministic barrier")
+	}
+	getterResult := make(chan bool, 1)
+	go func() {
+		getterResult <- deviceRemote.GetRemoteConnected()
+	}()
+	select {
+	case connected := <-getterResult:
+		if connected {
+			t.Fatal("blocked dial reported a connected remote")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("state getter waited behind external device rpc dial")
+	}
+	close(dialer.release)
+}
+
+func TestDeviceRemoteFailedSyncRestoreKeepsNewerPendingState(t *testing.T) {
+	deviceRemote := &DeviceRemote{
+		settings: defaultDeviceRpcSettings(),
+		state: DeviceRemoteState{
+			BlockerEnabled: deviceRemoteValue[bool]{Value: false, IsSet: true},
+		},
+	}
+
+	request := deviceRemote.takeSyncRequest()
+	deviceRemote.state.BlockerEnabled.Set(true)
+	deviceRemote.restoreSyncState(request.State)
+	if !deviceRemote.state.BlockerEnabled.IsSet || !deviceRemote.state.BlockerEnabled.Value {
+		t.Fatal("failed sync restoration overwrote a newer pending blocker value")
 	}
 }
 

@@ -68,7 +68,12 @@ type deviceRpcSettings struct {
 	// max number of keep alive pings after first. Must be at least 1
 	KeepAliveRetryCount int
 	Address             *DeviceRemoteAddress
-	InitialLockTimeout  time.Duration
+	// BrowserStateOnly keeps the live rpc client private to the lifecycle
+	// goroutine. Browser JavaScript callbacks cannot synchronously wait for a
+	// websocket response: doing so prevents the event loop from delivering the
+	// response. Public getters therefore read the synchronized cache and public
+	// mutations queue state for the next sync.
+	BrowserStateOnly bool
 	// size of the buffered channel that serializes delivery of rpc callbacks.
 	// when full, callback delivery blocks as expected back pressure.
 	CallbackBufferSize int
@@ -101,13 +106,13 @@ type deviceRpcSettings struct {
 	// <= 0 resolve to the bounded production default.
 	HttpMaxBodyBytes int
 
-	// DisableHostedIncompatible, when true, makes the DeviceLocalRpc noop the
-	// setters that must never change on a hosted device (route local, provide
-	// settings, transport settings, tunnel/vpn, identity/rpc); the corresponding
-	// getters and change listeners keep working. Hosted transport is pinned to
-	// H1. Set by the platform hosted rpc. This is the rpc layer of the same guard
-	// `DeviceLocalSettings.HostedIncompatible` enforces
-	// inside DeviceLocal.
+	// DisableHostedIncompatible, when true, drops remote setters and makes the
+	// DeviceLocalRpc noop setters that must never change on a hosted device
+	// (route local, provide settings, transport settings, tunnel/vpn,
+	// identity/rpc); the corresponding getters and change listeners keep
+	// working. Hosted transport is pinned to H1. Set by the platform hosted rpc.
+	// This is the rpc layer of the same guard
+	// `DeviceLocalSettings.HostedIncompatible` enforces inside DeviceLocal.
 	DisableHostedIncompatible bool
 
 	// DeviceGeneration identifies the specific hosted DeviceLocal instance an
@@ -177,7 +182,6 @@ func defaultDeviceRpcSettings() *deviceRpcSettings {
 		KeepAliveTimeout:     5 * time.Second,
 		KeepAliveRetryCount:  5,
 		Address:              requireRemoteAddress(deviceRpcDefaultAddress),
-		InitialLockTimeout:   1 * time.Second,
 		CallbackBufferSize:   64,
 		MuxSendBufferSize:    32,
 		MuxReceiveBufferSize: 32,
@@ -212,9 +216,6 @@ type DeviceRemote struct {
 
 	reconnectMonitor *connect.Monitor
 	syncMonitor      *connect.Monitor
-	// notified when the rpc transport (dialer) is swapped, to drop a live
-	// connection and reconnect with the new dialer
-	resetMonitor *connect.Monitor
 
 	clientId       connect.Id
 	instanceId     connect.Id
@@ -240,13 +241,21 @@ type DeviceRemote struct {
 
 	stateLock sync.Mutex
 
-	dialer deviceRpcDialer
+	// The dialer and its change channel are one stateLock-guarded generation.
+	// Replacing the dialer closes only the channel paired with the old one.
+	dialer        deviceRpcDialer
+	dialerChanged chan struct{}
 	// current dialer config, so SetRpcServer is a no-op (no reset of a live
 	// connection) when the same transport is re-applied
 	rpcHostPort      string
 	rpcClientPem     string
 	rpcServerCertPem string
 	service          *rpcClient
+	// browserService is only used by fire-and-forget actions. Browser callers
+	// must never synchronously wait on it because websocket progress requires
+	// the same JavaScript event loop that invoked the caller.
+	browserService  *rpcClient
+	remoteConnected bool
 
 	canShowRatingDialogChangeListeners       map[connect.Id]CanShowRatingDialogChangeListener
 	canPromptIntroFunnelChangeListeners      map[connect.Id]CanPromptIntroFunnelChangeListener
@@ -317,6 +326,7 @@ type DeviceRemote struct {
 	// `DeviceRemoteState` sync. Guarded by `stateLock`
 	lastPublicIdentityKey  []byte
 	lastProviderIdentities []*ProviderIdentity
+	lastNetworkPeers       *NetworkPeers
 
 	// providerLocationsMonitor is a lazily created, internally subscribed
 	// window monitor: registration is what makes windowMonitorEvents readable,
@@ -382,6 +392,9 @@ func NewPlatformDeviceRemote(
 	// hosted-incompatible mutations out of the pending client state as well as
 	// rejecting them on the server.
 	settings.DisableHostedIncompatible = true
+	// Only the browser needs cached state: native websocket progress runs on
+	// independent goroutines and retains ordinary synchronous getter semantics.
+	settings.BrowserStateOnly = platformDeviceRpcBrowserStateOnly
 	dialer := NewPlatformDeviceRpcDialer(proxyUrl, signedProxyId, settings)
 	return newDeviceRemoteWithOverrides(networkSpace, byJwt, instanceId, settings, clientId, dialer)
 }
@@ -429,11 +442,11 @@ func newDeviceRemoteWithOverrides(
 		log:                      settings.logger(),
 		reconnectMonitor:         connect.NewMonitor(),
 		syncMonitor:              connect.NewMonitor(),
-		resetMonitor:             connect.NewMonitor(),
 		clientId:                 clientId,
 		instanceId:               instanceId.toConnectId(),
 		clientStrategy:           networkSpace.clientStrategy,
 		dialer:                   dialer,
+		dialerChanged:            make(chan struct{}),
 		remoteChangeListeners:    connect.NewCallbackList[RemoteChangeListener](),
 		deviceRecreatedListeners: connect.NewCallbackList[DeviceRecreatedListener](),
 
@@ -519,279 +532,271 @@ func newDeviceRemoteWithOverrides(
 
 	newSecurityPolicyMonitor(ctx, deviceRemote, settings.Verbose)
 
-	// remote starts locked
-	// only after the first attempt to connect to the local does it unlock
-	deviceRemote.stateLock.Lock()
+	// The lifecycle snapshots state under stateLock, but never holds it across
+	// transport or rpc I/O. In a browser, a synchronous JavaScript getter that
+	// waits for this lock would otherwise prevent the websocket event needed to
+	// finish the very I/O holding it.
 	go connect.HandleError(deviceRemote.run, cancel)
 	return deviceRemote, nil
 }
 
-func (self *DeviceRemote) run() {
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		self.log.Errorf("[dr]unrecovered = %s", r)
-	// 		debug.PrintStack()
-	// 		panic(r)
-	// 	}
-	// }()
+// Moves the current pending state into one immutable sync request. New writes
+// land in a fresh state while the external RPC is in flight, so no state lock
+// spans network I/O and a newer write can never be erased by an older reply.
+func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
 
-	initialLock := true
-	intialLockEndTime := time.Now().Add(self.settings.InitialLockTimeout)
+	syncState := self.state
+	self.state = DeviceRemoteState{}
+
+	windowMonitorListenerIds := map[connect.Id][]connect.Id{}
+	for windowId, windowMonitor := range self.windowMonitors {
+		if 0 < len(windowMonitor.listeners) {
+			windowMonitorListenerIds[windowId] = slices.Collect(maps.Keys(windowMonitor.listeners))
+		}
+	}
+
+	return &DeviceRemoteSyncRequest{
+		InstanceId: self.instanceId,
+		RpcVersion: self.settings.RpcVersion,
+
+		CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
+		CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
+		AllowForegroundChangeListenerIds:          slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
+		CanReferChangeListenerIds:                 slices.Collect(maps.Keys(self.canReferChangeListeners)),
+		ProvideModeChangeListenerIds:              slices.Collect(maps.Keys(self.provideModeChangeListeners)),
+		ProvideChangeListenerIds:                  slices.Collect(maps.Keys(self.provideChangeListeners)),
+		ProvideControlModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
+		PerformanceProfileChangeListenerIds:       slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
+		ProviderIdentityChangeListenerIds:         slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
+		ProvidePausedChangeListenerIds:            slices.Collect(maps.Keys(self.providePausedChangeListeners)),
+		ProvideNetworkModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
+		OfflineChangeListenerIds:                  slices.Collect(maps.Keys(self.offlineChangeListeners)),
+		VpnInterfaceWhileOfflineChangeListenerIds: slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
+		ConnectChangeListenerIds:                  slices.Collect(maps.Keys(self.connectChangeListeners)),
+		RouteLocalChangeListenerIds:               slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
+		BlockerEnabledChangeListenerIds:           slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
+		ConnectLocationChangeListenerIds:          slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
+		DefaultLocationChangeListenerIds:          slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
+		ProvideSecretKeysListenerIds:              slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
+		TunnelChangeListenerIds:                   slices.Collect(maps.Keys(self.tunnelChangeListeners)),
+		ContractStatusChangeListenerIds:           slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
+		WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
+		BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
+		BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
+		BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
+		TransportSettingsChangeListenerIds: append(
+			slices.Collect(maps.Keys(self.transportSettingsChangeListeners)),
+			slices.Collect(maps.Keys(self.transportStatusChangeListeners))...,
+		),
+		ProviderTransportSettingsChangeListenerIds: append(
+			slices.Collect(maps.Keys(self.providerTransportSettingsChangeListeners)),
+			slices.Collect(maps.Keys(self.providerTransportStatusChangeListeners))...,
+		),
+		PacketStatsChangeListenerIds:                    slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
+		EgressContractStatsChangeListenerIds:            slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
+		EgressContractDetailsChangeListenerIds:          slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
+		IngressContractStatsChangeListenerIds:           slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
+		IngressContractDetailsChangeListenerIds:         slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
+		DnsResolverSettingsChangeListenerIds:            slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
+		NetworkPeersChangeListenerIds:                   slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
+		ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
+		ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
+		ProviderEgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.providerEgressContractDetailsChangeListeners)),
+		ProviderIngressContractStatsChangeListenerIds:   slices.Collect(maps.Keys(self.providerIngressContractStatsChangeListeners)),
+		ProviderIngressContractDetailsChangeListenerIds: slices.Collect(maps.Keys(self.providerIngressContractDetailsChangeListeners)),
+		WindowMonitorEventListenerIds:                   windowMonitorListenerIds,
+		State:                                           syncState,
+	}
+}
+
+// Restores a request that never completed. Values queued while it was in
+// flight win over the older request values.
+func (self *DeviceRemote) restoreSyncState(syncState DeviceRemoteState) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	syncState.Merge(&self.state)
+	self.state = syncState
+}
+
+func (self *DeviceRemote) run() {
 	for {
 		// Rate-limit local reconnects: ensure at least RpcReconnectTimeout
 		// between attempt starts. Sync and transport replacement still wake the
 		// loop immediately, so explicit recovery never waits for the pace.
 		syncReconnect := connect.NewPacedReconnect(self.settings.RpcReconnectTimeout)
 		handleCtx, handleCancel := context.WithCancel(self.ctx)
-
 		notify := self.reconnectMonitor.NotifyChannel()
-		resetNotify := self.resetMonitor.NotifyChannel()
+		var resetNotify <-chan struct{}
+
 		func() {
 			defer handleCancel()
 
-			var reverseConn net.Conn
+			// Snapshot the transport and the edge that invalidates exactly that
+			// generation, then dial without holding stateLock.
+			dialer := func() deviceRpcDialer {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				resetNotify = self.dialerChanged
+				return self.dialer
+			}()
+			if dialer == nil {
+				return
+			}
+			forwardConn, reverseConn, err := dialer.Dial(handleCtx)
+			if err != nil {
+				return
+			}
+			select {
+			case <-handleCtx.Done():
+				forwardConn.Close()
+				return
+			default:
+			}
 
+			service := &rpcClientWithTimeout{
+				ctx:         self.ctx,
+				log:         self.log,
+				timeout:     self.settings.RpcCallTimeout,
+				closeClient: forwardConn.Close,
+				client:      rpc.NewClient(forwardConn),
+			}
 			synced := false
-			deviceRecreated := false
-			func() {
-				if initialLock {
-					defer func() {
-						if initialLock && intialLockEndTime.Before(time.Now()) {
-							initialLock = false
-							self.stateLock.Unlock()
-						}
-					}()
-				} else {
+			defer func() {
+				if !synced {
+					service.Close()
+				}
+			}()
 
+			syncRequest := self.takeSyncRequest()
+			// Changes notified before the snapshot are already in syncRequest.
+			// Re-arm now so only newer state forces a second generation.
+			notify = self.reconnectMonitor.NotifyChannel()
+			restoreState := true
+			defer func() {
+				if restoreState {
+					self.restoreSyncState(syncRequest.State)
+				}
+			}()
+
+			syncResponse, err := rpcCall[*DeviceRemoteSyncResponse](
+				service,
+				"DeviceLocalRpc.Sync",
+				syncRequest,
+				func() { service.Close() },
+			)
+			if err != nil {
+				return
+			}
+			if syncResponse.Error != "" {
+				self.log.Infof("Sync error: %s", syncResponse.Error)
+				func() {
 					self.stateLock.Lock()
 					defer self.stateLock.Unlock()
-
-				}
-
-				forwardConn, rev, err := self.dialer.Dial(handleCtx)
-				if err != nil {
-					// failure to connect here is normal if the local is not running
-					// self.log.Infof("[dr]sync connect err = %s", err)
-					return
-				}
-				reverseConn = rev
-
-				select {
-				case <-handleCtx.Done():
-					forwardConn.Close()
-					return
-				default:
-				}
-
-				service := &rpcClientWithTimeout{
-					ctx:         self.ctx,
-					log:         self.log,
-					timeout:     self.settings.RpcCallTimeout,
-					closeClient: forwardConn.Close,
-					client:      rpc.NewClient(forwardConn),
-				}
-				// closing the forward rpc client tears down the whole mux,
-				// including reverseConn
-				defer func() {
-					if !synced {
-						service.Close()
-					}
-				}()
-
-				windowMonitorListenerIds := map[connect.Id][]connect.Id{}
-				for windowId, windowMonitor := range self.windowMonitors {
-					if 0 < len(windowMonitor.listeners) {
-						windowMonitorListenerIds[windowId] = slices.Collect(maps.Keys(windowMonitor.listeners))
-					}
-				}
-
-				syncRequest := &DeviceRemoteSyncRequest{
-					InstanceId: self.instanceId,
-					RpcVersion: self.settings.RpcVersion,
-
-					CanShowRatingDialogChangeListenerIds:      slices.Collect(maps.Keys(self.canShowRatingDialogChangeListeners)),
-					CanPromptIntroFunnelChangeListenerIds:     slices.Collect(maps.Keys(self.canPromptIntroFunnelChangeListeners)),
-					AllowForegroundChangeListenerIds:          slices.Collect(maps.Keys(self.allowForegroundChangeListeners)),
-					CanReferChangeListenerIds:                 slices.Collect(maps.Keys(self.canReferChangeListeners)),
-					ProvideModeChangeListenerIds:              slices.Collect(maps.Keys(self.provideModeChangeListeners)),
-					ProvideChangeListenerIds:                  slices.Collect(maps.Keys(self.provideChangeListeners)),
-					ProvideControlModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideControlModeChangeListeners)),
-					PerformanceProfileChangeListenerIds:       slices.Collect(maps.Keys(self.performanceProfileChangeListeners)),
-					ProviderIdentityChangeListenerIds:         slices.Collect(maps.Keys(self.providerIdentityChangeListeners)),
-					ProvidePausedChangeListenerIds:            slices.Collect(maps.Keys(self.providePausedChangeListeners)),
-					ProvideNetworkModeChangeListenerIds:       slices.Collect(maps.Keys(self.provideNetworkModeChangeListeners)),
-					OfflineChangeListenerIds:                  slices.Collect(maps.Keys(self.offlineChangeListeners)),
-					VpnInterfaceWhileOfflineChangeListenerIds: slices.Collect(maps.Keys(self.vpnInterfaceWhileOfflineChangeListeners)),
-					ConnectChangeListenerIds:                  slices.Collect(maps.Keys(self.connectChangeListeners)),
-					RouteLocalChangeListenerIds:               slices.Collect(maps.Keys(self.routeLocalChangeListeners)),
-					BlockerEnabledChangeListenerIds:           slices.Collect(maps.Keys(self.blockerEnabledChangeListeners)),
-					ConnectLocationChangeListenerIds:          slices.Collect(maps.Keys(self.connectLocationChangeListeners)),
-					DefaultLocationChangeListenerIds:          slices.Collect(maps.Keys(self.defaultLocationChangeListeners)),
-					ProvideSecretKeysListenerIds:              slices.Collect(maps.Keys(self.provideSecretKeysListeners)),
-					TunnelChangeListenerIds:                   slices.Collect(maps.Keys(self.tunnelChangeListeners)),
-					ContractStatusChangeListenerIds:           slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
-					WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
-					BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
-					BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
-					BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
-					TransportSettingsChangeListenerIds: append(
-						slices.Collect(maps.Keys(self.transportSettingsChangeListeners)),
-						slices.Collect(maps.Keys(self.transportStatusChangeListeners))...,
-					),
-					ProviderTransportSettingsChangeListenerIds: append(
-						slices.Collect(maps.Keys(self.providerTransportSettingsChangeListeners)),
-						slices.Collect(maps.Keys(self.providerTransportStatusChangeListeners))...,
-					),
-					PacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.packetStatsChangeListeners)),
-					EgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.egressContractStatsChangeListeners)),
-					EgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.egressContractDetailsChangeListeners)),
-					IngressContractStatsChangeListenerIds:   slices.Collect(maps.Keys(self.ingressContractStatsChangeListeners)),
-					IngressContractDetailsChangeListenerIds: slices.Collect(maps.Keys(self.ingressContractDetailsChangeListeners)),
-					DnsResolverSettingsChangeListenerIds:    slices.Collect(maps.Keys(self.dnsResolverSettingsChangeListeners)),
-					NetworkPeersChangeListenerIds:           slices.Collect(maps.Keys(self.networkPeersChangeListeners)),
-
-					ProviderPacketStatsChangeListenerIds:            slices.Collect(maps.Keys(self.providerPacketStatsChangeListeners)),
-					ProviderEgressContractStatsChangeListenerIds:    slices.Collect(maps.Keys(self.providerEgressContractStatsChangeListeners)),
-					ProviderEgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.providerEgressContractDetailsChangeListeners)),
-					ProviderIngressContractStatsChangeListenerIds:   slices.Collect(maps.Keys(self.providerIngressContractStatsChangeListeners)),
-					ProviderIngressContractDetailsChangeListenerIds: slices.Collect(maps.Keys(self.providerIngressContractDetailsChangeListeners)),
-					WindowMonitorEventListenerIds:                   windowMonitorListenerIds,
-					State:                                           self.state,
-				}
-				syncResponse, err := rpcCall[*DeviceRemoteSyncResponse](service, "DeviceLocalRpc.Sync", syncRequest, self.closeService)
-				if err != nil {
-					return
-				}
-
-				// stateLock is held for the whole body (taken above, or carried
-				// in as initialLock), so syncError is assigned directly here.
-				if syncResponse.Error != "" {
-					self.log.Infof("Sync error: %s", syncResponse.Error)
-					// keep the rejection readable by the app (GetSyncError).
-					// The remote stays unsynced and reconnects paced, so
-					// without this the only trace of a hard, non-recoverable
-					// rejection (wrong device instance, incompatible rpc
-					// version) is a log line.
 					self.syncError = syncResponse.Error
-					return
-				}
-				self.syncError = ""
+				}()
+				return
+			}
 
-				// trim the windows
-				// for windowId, windowMonitor := range self.windowMonitors {
-				// 	if !syncResponse.WindowIds[windowId] {
-				// 		delete(self.windowMonitors, windowId)
-				// 		clear(windowMonitor.listeners)
-				// 	}
-				// }
-
-				self.log.Info("[dr]start device remote rpc")
-				deviceRemoteRpc := newDeviceRemoteRpc(handleCtx, self)
-				server := rpc.NewServer()
-				server.Register(deviceRemoteRpc)
-
-				go connect.HandleError(func() {
-					defer func() {
-						handleCancel()
-						deviceRemoteRpc.Close()
-					}()
-
-					// reverseConn is closed on teardown, which unblocks ServeConn
-					server.ServeConn(reverseConn)
-					self.log.Infof("[dr]sync reverse server done")
-				}, func() {
+			self.log.Info("[dr]start device remote rpc")
+			deviceRemoteRpc := newDeviceRemoteRpc(handleCtx, self)
+			server := rpc.NewServer()
+			if err := server.Register(deviceRemoteRpc); err != nil {
+				self.log.Errorf("[dr]register reverse rpc: %v", err)
+				return
+			}
+			go connect.HandleError(func() {
+				defer func() {
 					handleCancel()
 					deviceRemoteRpc.Close()
-				})
+				}()
+				server.ServeConn(reverseConn)
+				self.log.Infof("[dr]sync reverse server done")
+			}, func() {
+				handleCancel()
+				deviceRemoteRpc.Close()
+			})
 
-				err = rpcCallNoArgVoid(service, "DeviceLocalRpc.SyncReverse", self.closeService)
-				if err != nil {
-					return
-				}
+			if err := rpcCallNoArgVoid(
+				service,
+				"DeviceLocalRpc.SyncReverse",
+				func() { service.Close() },
+			); err != nil {
+				return
+			}
 
-				// because the local state changes always win,
-				// the last known state can be copied from the local state changes
-				// note if there were conflict rules, we would need to get the remote state here
-				//
-				// the reliability settings override is the exception to the
-				// post-sync state clear: it is runtime-only state on the local
-				// (nothing persists it across an extension restart), so it
-				// stays queued after every sync and is re-applied on each
-				// reconnect. Without this, an override set while connected
-				// would silently vanish on the next extension restart.
-				// See `DeviceRemote.SetReliabilitySettings`.
-				//
-				// only a real override (a non-nil value) is carried: a queued
-				// RESET was just delivered by this sync and has no values to
-				// re-apply, so it is cleared with the rest of the state. That
-				// keeps the queue's nil unambiguous -- it is always "clear the
-				// override", never "an all-zero override".
-				reliabilitySettings := self.state.ReliabilitySettings
+			deviceRecreated := false
+			pendingState := false
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+
 				self.lastKnownState = syncResponse.State
-				self.state = DeviceRemoteState{}
-				if reliabilitySettings.Value != nil {
-					self.state.ReliabilitySettings = reliabilitySettings
+				self.syncError = ""
+				self.remoteConnected = true
+				if self.settings.BrowserStateOnly {
+					self.browserService = service
+				} else {
+					self.service = service
 				}
-				// self.lastKnownState.Merge(&self.state)
-				// self.state.Unset()
-				self.syncMonitor.NotifyAll()
-
-				self.service = service
-
-				// detect a hosted device recreate: a change in the device
-				// generation across syncs means the host built a new device
-				// instance, so the client must re-run its setup. The first
-				// sync establishes the baseline (not a recreate).
 				if self.hasDeviceGeneration && self.deviceGeneration != syncResponse.DeviceGeneration {
 					deviceRecreated = true
 				}
 				self.deviceGeneration = syncResponse.DeviceGeneration
 				self.hasDeviceGeneration = true
-
-				if initialLock {
-					initialLock = false
-					self.stateLock.Unlock()
+				pendingState = self.state.hasPendingSyncState()
+				if !self.state.ReliabilitySettings.IsSet &&
+					syncRequest.State.ReliabilitySettings.Value != nil {
+					// A real runtime override survives every successful reconnect.
+					// A nil value is a one-shot reset and is deliberately cleared.
+					self.state.ReliabilitySettings = syncRequest.State.ReliabilitySettings
 				}
+				self.syncMonitor.NotifyAll()
+			}()
+			restoreState = false
+			synced = true
 
-				synced = true
+			self.remoteChanged(true)
+			if deviceRecreated {
+				self.deviceRecreated()
+			}
+			self.log.Infof("[dr]sync done")
+
+			if pendingState {
+				self.reconnectMonitor.NotifyAll()
+			}
+			select {
+			case <-handleCtx.Done():
+			case <-notify:
+				self.log.Infof("[dr]rpc state resync")
+			case <-resetNotify:
+				self.log.Infof("[dr]rpc transport reset")
+			}
+			self.log.Infof("[dr]handle done")
+
+			service.Close()
+			if reverseConn != nil {
+				reverseConn.Close()
+			}
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				if self.service == service {
+					self.service = nil
+				}
+				if self.browserService == service {
+					self.browserService = nil
+				}
+				self.remoteConnected = false
+				for _, responseChannel := range self.httpResponseChannels {
+					close(responseChannel)
+				}
+				clear(self.httpResponseChannels)
 			}()
 
-			if synced {
-				self.remoteChanged(true)
-				if deviceRecreated {
-					self.deviceRecreated()
-				}
-
-				self.log.Infof("[dr]sync done")
-				select {
-				case <-handleCtx.Done():
-				case <-resetNotify:
-					// the dialer was swapped; drop this connection and
-					// reconnect with the new transport
-					self.log.Infof("[dr]rpc transport reset")
-				}
-				self.log.Infof("[dr]handle done")
-
-				func() {
-					self.stateLock.Lock()
-					defer self.stateLock.Unlock()
-
-					self.closeService()
-					if reverseConn != nil {
-						reverseConn.Close()
-					}
-
-					// close pending http responses
-					for _, responseChannel := range self.httpResponseChannels {
-						close(responseChannel)
-					}
-					clear(self.httpResponseChannels)
-				}()
-
-				self.remoteChanged(false)
-				self.tunnelChanged(false)
-			}
-
+			self.remoteChanged(false)
+			self.tunnelChanged(false)
 		}()
 
 		select {
@@ -799,9 +804,7 @@ func (self *DeviceRemote) run() {
 			return
 		case <-syncReconnect.After():
 		case <-notify:
-			// reconnect now
 		case <-resetNotify:
-			// the dialer was swapped; reconnect now with the new transport
 		}
 	}
 }
@@ -811,6 +814,32 @@ func (self *DeviceRemote) closeService() {
 	if self.service != nil {
 		self.service.Close()
 		self.service = nil
+	}
+	if self.browserService != nil {
+		self.browserService.Close()
+		self.browserService = nil
+	}
+	self.remoteConnected = false
+}
+
+// Closes a failed generation only if it is still the published service.
+func (self *DeviceRemote) closeServiceInstance(service *rpcClient) {
+	self.stateLock.Lock()
+	matched := false
+	if self.service == service {
+		self.service = nil
+		matched = true
+	}
+	if self.browserService == service {
+		self.browserService = nil
+		matched = true
+	}
+	if matched {
+		self.remoteConnected = false
+	}
+	self.stateLock.Unlock()
+	if matched {
+		service.Close()
 	}
 }
 
@@ -1023,12 +1052,13 @@ func (self *DeviceRemote) SetRpcServer(clientPem string, serverCertPem string, h
 		self.rpcHostPort = hostPort
 		self.rpcClientPem = clientPem
 		self.rpcServerCertPem = serverCertPem
+		close(self.dialerChanged)
+		self.dialerChanged = make(chan struct{})
 		return true
 	}()
 
 	if changed {
 		self.log.Infof("[dr]set rpc server %s (mtls=%t)", address.HostPort(), len(clientPem) != 0)
-		self.resetMonitor.NotifyAll()
 	}
 	return nil
 }
@@ -1038,7 +1068,7 @@ func (self *DeviceRemote) waitForSync(timeout time.Duration) bool {
 	synced, notify := func() (bool, chan struct{}) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.service != nil {
+		if self.remoteConnected {
 			return true, nil
 		}
 		return false, self.syncMonitor.NotifyChannel()
@@ -1086,7 +1116,20 @@ func (self *DeviceRemote) GetNetworkSpace() *NetworkSpace {
 	return self.networkSpace
 }
 
+// Reports whether a platform-owned setter should be ignored before it can
+// reach either rpc or the remote's pending and last-known state.
+func (self *DeviceRemote) hostedIncompatibleGuarded(name string) bool {
+	if self.settings.DisableHostedIncompatible {
+		self.log.Infof("[dr]hosted incompatible: %s ignored", name)
+		return true
+	}
+	return false
+}
+
 func (self *DeviceRemote) SetTunnelStarted(tunnelStarted bool) {
+	if self.hostedIncompatibleGuarded("SetTunnelStarted") {
+		return
+	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -1461,6 +1504,9 @@ func (self *DeviceRemote) SetAllowForeground(allowForeground bool) {
 }
 
 func (self *DeviceRemote) SetRouteLocal(routeLocal bool) {
+	if self.hostedIncompatibleGuarded("SetRouteLocal") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -1581,21 +1627,33 @@ func addListenerWithRpcCall[T any](
 	rpcCall listenerRpcCall,
 ) Sub {
 	deviceRemote.stateLock.Lock()
-	defer deviceRemote.stateLock.Unlock()
-
 	listenerId := connect.NewId()
 	listeners[listenerId] = listener
-	if deviceRemote.service != nil {
-		rpcCall(deviceRemote.service, addServiceFunc, listenerId, deviceRemote.closeService)
+	service := deviceRemote.service
+	deviceRemote.stateLock.Unlock()
+
+	if service != nil {
+		rpcCall(service, addServiceFunc, listenerId, func() {
+			deviceRemote.closeServiceInstance(service)
+		})
+	} else {
+		// A browser remote keeps its live service private so JavaScript cannot
+		// synchronously wait on its own websocket event loop. Resync publishes
+		// the listener through the normal state snapshot instead.
+		deviceRemote.Sync()
 	}
 
 	return newSub(func() {
 		deviceRemote.stateLock.Lock()
-		defer deviceRemote.stateLock.Unlock()
-
 		delete(listeners, listenerId)
-		if deviceRemote.service != nil {
-			rpcCall(deviceRemote.service, removeServiceFunc, listenerId, deviceRemote.closeService)
+		service := deviceRemote.service
+		deviceRemote.stateLock.Unlock()
+		if service != nil {
+			rpcCall(service, removeServiceFunc, listenerId, func() {
+				deviceRemote.closeServiceInstance(service)
+			})
+		} else {
+			deviceRemote.Sync()
 		}
 	})
 }
@@ -2042,6 +2100,9 @@ func (self *DeviceRemote) GetProvideControlMode() ProvideControlMode {
 }
 
 func (self *DeviceRemote) SetProvideControlMode(mode ProvideControlMode) {
+	if self.hostedIncompatibleGuarded("SetProvideControlMode") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2162,6 +2223,9 @@ func (self *DeviceRemote) GetConnectEnabled() bool {
 }
 
 func (self *DeviceRemote) SetProvideMode(provideMode ProvideMode) {
+	if self.hostedIncompatibleGuarded("SetProvideMode") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2256,6 +2320,9 @@ func (self *DeviceRemote) GetProvideMode() ProvideMode {
 }
 
 func (self *DeviceRemote) SetProvidePaused(providePaused bool) {
+	if self.hostedIncompatibleGuarded("SetProvidePaused") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2311,6 +2378,9 @@ func (self *DeviceRemote) GetProvidePaused() bool {
 }
 
 func (self *DeviceRemote) SetProvideNetworkMode(provideNetworkMode ProvideNetworkMode) {
+	if self.hostedIncompatibleGuarded("SetProvideNetworkMode") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2422,6 +2492,9 @@ func (self *DeviceRemote) GetOffline() bool {
 }
 
 func (self *DeviceRemote) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool) {
+	if self.hostedIncompatibleGuarded("SetVpnInterfaceWhileOffline") {
+		return
+	}
 	event := false
 	func() {
 		self.stateLock.Lock()
@@ -2825,21 +2898,40 @@ func (self *DeviceRemote) Shuffle() {
 // RemoveConnectedProvider is an action on the hosted device (unlike the
 // read-only provider-locations surface, which derives from the bridged window
 // monitor), so it is a plain rpc call. It is dropped when the rpc is down —
-// the exclusion only lives as long as the connection anyway. stateLock is held
-// across the call like every other forward rpc: the closeService cleanup
-// requires the lock.
+// the exclusion only lives as long as the connection anyway. Browser websocket
+// calls must be asynchronous so the JavaScript event loop can deliver their
+// response. Snapshotting the generation also keeps external I/O outside the
+// state lock and prevents a failed old call from closing a newer service.
 func (self *DeviceRemote) RemoveConnectedProvider(clientId *Id) {
 	if clientId == nil {
 		return
 	}
 
 	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
-	if self.service == nil {
+	service := self.service
+	browserCall := false
+	if self.settings.BrowserStateOnly {
+		service = self.browserService
+		browserCall = true
+	}
+	self.stateLock.Unlock()
+	if service == nil {
 		return
 	}
-	rpcCallVoid(self.service, "DeviceLocalRpc.RemoveConnectedProvider", clientId.toConnectId(), self.closeService)
+
+	call := func() {
+		rpcCallVoid(
+			service,
+			"DeviceLocalRpc.RemoveConnectedProvider",
+			clientId.toConnectId(),
+			func() { self.closeServiceInstance(service) },
+		)
+	}
+	if browserCall {
+		go call()
+	} else {
+		call()
+	}
 }
 
 func (self *DeviceRemote) Cancel() {
@@ -2929,6 +3021,8 @@ func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(windowMonitor *de
 				}
 			}
 		}()
+	} else {
+		self.reconnectMonitor.NotifyAll()
 	}
 
 	return func() {
@@ -2951,6 +3045,8 @@ func (self *DeviceRemote) windowMonitorAddMonitorEventCallback(windowMonitor *de
 					return
 				}
 			}()
+		} else {
+			self.reconnectMonitor.NotifyAll()
 		}
 	}
 }
@@ -3832,6 +3928,7 @@ func (self *DeviceRemote) networkPeersChanged(networkPeers *NetworkPeers) {
 	listenerList := func() []NetworkPeersChangeListener {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		self.lastNetworkPeers = newNetworkPeersRpc(networkPeers).toNetworkPeers()
 		return listenerList(self.networkPeersChangeListeners)
 	}()
 	for _, networkPeersChangeListener := range listenerList {
@@ -4096,7 +4193,7 @@ func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
 func (self *DeviceRemote) GetRemoteConnected() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.service != nil
+	return self.remoteConnected
 }
 
 // GetSyncError returns the message from the last sync the local REJECTED, or
@@ -4803,8 +4900,11 @@ func (self *DeviceRemote) AddDnsResolverSettingsChangeListener(listener DnsResol
 // transport settings
 
 func (self *DeviceRemote) setTransportSettings(transportSettings *TransportSettings, provider bool) {
-	if self.settings.DisableHostedIncompatible {
-		self.log.Infof("[dr]hosted incompatible: transport settings ignored")
+	name := "SetTransportSettings"
+	if provider {
+		name = "SetProviderTransportSettings"
+	}
+	if self.hostedIncompatibleGuarded(name) {
 		return
 	}
 	settingsRpc := newTransportSettingsRpc(transportSettings, provider)
@@ -4999,9 +5099,10 @@ func (self *DeviceRemote) GetNetworkPeers() *NetworkPeers {
 		return peers.NetworkPeers.toNetworkPeers(), true
 	}()
 	if success {
+		self.lastNetworkPeers = newNetworkPeersRpc(networkPeers).toNetworkPeers()
 		return networkPeers
 	} else {
-		return nil
+		return newNetworkPeersRpc(self.lastNetworkPeers).toNetworkPeers()
 	}
 }
 
@@ -5692,6 +5793,82 @@ type DeviceRemoteState struct {
 	WindowStatus   deviceRemoteValue[*WindowStatus]
 
 	// RefreshToken deviceRemoteValue[int]
+}
+
+// Reapplies values that were queued after an older snapshot. The update wins
+// field by field, which preserves the newest user intent when an RPC attempt
+// fails while another goroutine changes state.
+func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
+	self.CanShowRatingDialog.Merge(update.CanShowRatingDialog)
+	self.CanPromptIntroFunnel.Merge(update.CanPromptIntroFunnel)
+	self.ProvideControlMode.Merge(update.ProvideControlMode)
+	self.CanRefer.Merge(update.CanRefer)
+	self.AllowForeground.Merge(update.AllowForeground)
+	self.RouteLocal.Merge(update.RouteLocal)
+	self.BlockerEnabled.Merge(update.BlockerEnabled)
+	self.InitProvideSecretKeys.Merge(update.InitProvideSecretKeys)
+	self.LoadProvideSecretKeys.Merge(update.LoadProvideSecretKeys)
+	self.ProvideMode.Merge(update.ProvideMode)
+	self.ProvideNetworkMode.Merge(update.ProvideNetworkMode)
+	self.ProvidePaused.Merge(update.ProvidePaused)
+	self.Offline.Merge(update.Offline)
+	self.VpnInterfaceWhileOffline.Merge(update.VpnInterfaceWhileOffline)
+	self.RemoveDestination.Merge(update.RemoveDestination)
+	self.Destination.Merge(update.Destination)
+	self.PerformanceProfile.Merge(update.PerformanceProfile)
+	self.Location.Merge(update.Location)
+	self.DefaultLocation.Merge(update.DefaultLocation)
+	self.Shuffle.Merge(update.Shuffle)
+	self.ResetEgressSecurityPolicyStats.Merge(update.ResetEgressSecurityPolicyStats)
+	self.ResetIngressSecurityPolicyStats.Merge(update.ResetIngressSecurityPolicyStats)
+	self.TunnelStarted.Merge(update.TunnelStarted)
+	self.BlockActionOverrides.Merge(update.BlockActionOverrides)
+	self.DnsResolverSettings.Merge(update.DnsResolverSettings)
+	self.TransportSettings.Merge(update.TransportSettings)
+	self.ProviderTransportSettings.Merge(update.ProviderTransportSettings)
+	self.TransportStatus.Merge(update.TransportStatus)
+	self.ProviderTransportStatus.Merge(update.ProviderTransportStatus)
+	self.ReliabilitySettings.Merge(update.ReliabilitySettings)
+	self.ConnectEnabled.Merge(update.ConnectEnabled)
+	self.ProvideEnabled.Merge(update.ProvideEnabled)
+	self.EgressSecurityPolicyStats.Merge(update.EgressSecurityPolicyStats)
+	self.IngressSecurityPolicyStats.Merge(update.IngressSecurityPolicyStats)
+	self.ContractStatus.Merge(update.ContractStatus)
+	self.WindowStatus.Merge(update.WindowStatus)
+}
+
+// Reports queued request state, including a reliability reset. A successfully
+// applied non-nil reliability override is preserved only after this check, so
+// it does not create an endless resync loop.
+func (self *DeviceRemoteState) hasPendingSyncState() bool {
+	return self.CanShowRatingDialog.IsSet ||
+		self.CanPromptIntroFunnel.IsSet ||
+		self.ProvideControlMode.IsSet ||
+		self.CanRefer.IsSet ||
+		self.AllowForeground.IsSet ||
+		self.RouteLocal.IsSet ||
+		self.BlockerEnabled.IsSet ||
+		self.InitProvideSecretKeys.IsSet ||
+		self.LoadProvideSecretKeys.IsSet ||
+		self.ProvideMode.IsSet ||
+		self.ProvideNetworkMode.IsSet ||
+		self.ProvidePaused.IsSet ||
+		self.Offline.IsSet ||
+		self.VpnInterfaceWhileOffline.IsSet ||
+		self.RemoveDestination.IsSet ||
+		self.Destination.IsSet ||
+		self.PerformanceProfile.IsSet ||
+		self.Location.IsSet ||
+		self.DefaultLocation.IsSet ||
+		self.Shuffle.IsSet ||
+		self.ResetEgressSecurityPolicyStats.IsSet ||
+		self.ResetIngressSecurityPolicyStats.IsSet ||
+		self.TunnelStarted.IsSet ||
+		self.BlockActionOverrides.IsSet ||
+		self.DnsResolverSettings.IsSet ||
+		self.TransportSettings.IsSet ||
+		self.ProviderTransportSettings.IsSet ||
+		self.ReliabilitySettings.IsSet
 }
 
 /*

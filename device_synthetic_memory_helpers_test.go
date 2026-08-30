@@ -534,15 +534,17 @@ func (self *syntheticProviderGenerator) Close() {
 type syntheticEndpointRouter struct {
 	targets map[int]string
 
-	mu              sync.Mutex
-	dialsByPort     map[int]int64
-	unexpectedDials int64
+	mu                  sync.Mutex
+	dialsByPort         map[int]int64
+	unexpectedByAddress map[string]int64
+	unexpectedDials     int64
 }
 
 func newSyntheticEndpointRouter(targets map[int]string) *syntheticEndpointRouter {
 	return &syntheticEndpointRouter{
-		targets:     targets,
-		dialsByPort: map[int]int64{},
+		targets:             targets,
+		dialsByPort:         map[int]int64{},
+		unexpectedByAddress: map[string]int64{},
 	}
 }
 
@@ -564,6 +566,7 @@ func (self *syntheticEndpointRouter) DialContext(
 	target, ok := self.targets[port]
 	if !ok {
 		self.unexpectedDials++
+		self.unexpectedByAddress[address]++
 	}
 	self.mu.Unlock()
 	if !ok {
@@ -582,6 +585,26 @@ func (self *syntheticEndpointRouter) UnexpectedDials() int64 {
 	self.mu.Lock()
 	defer self.mu.Unlock()
 	return self.unexpectedDials
+}
+
+func (self *syntheticEndpointRouter) DialCounts() map[int]int64 {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	counts := make(map[int]int64, len(self.dialsByPort))
+	for port, count := range self.dialsByPort {
+		counts[port] = count
+	}
+	return counts
+}
+
+func (self *syntheticEndpointRouter) UnexpectedDialCounts() map[string]int64 {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	counts := make(map[string]int64, len(self.unexpectedByAddress))
+	for address, count := range self.unexpectedByAddress {
+		counts[address] = count
+	}
+	return counts
 }
 
 type syntheticEndpointServers struct {

@@ -12,6 +12,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Native callers can safely perform synchronous rpc reads and writes; keeping
+// the live service available also preserves cross-remote state visibility.
+const platformDeviceRpcBrowserStateOnly = false
+
 // dialDeviceRpcWs opens the proxy-host device-rpc websocket with gorilla. Auth
 // is the signed proxy id carried in the url (the `proxy` query parameter);
 // there is no auth frame, so the mux starts immediately. proxyUrl may be a bare
