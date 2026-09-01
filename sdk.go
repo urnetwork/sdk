@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 
@@ -267,6 +268,142 @@ func GetLogRoot() string {
 	currentLogDirMu.Lock()
 	defer currentLogDirMu.Unlock()
 	return currentLogRoot
+}
+
+// The glog verbosity levels this sdk exposes, named for the labels the apps
+// show beside them: Default, Verbose and Trace at 0, 1 and 2.
+//
+// The names follow the ui rather than the other way round. A bug report
+// quotes the word the user read on the screen, so a constant that disagreed
+// with that label by one level would be read as the level below the one
+// actually running -- exactly the direction that makes a log look emptier
+// than it should.
+//
+// The `connect` package gates its diagnostics at V(1) and V(2) only (see its
+// log.go logging convention), so this is the whole meaningful range -- and it
+// is most of what that package has to say: close to half its log statements
+// (roughly 290 of some 700) sit behind one of the two, and at level 0 none of
+// them are written.
+const (
+	// LogVerbosityDefault is the level every process starts at: Info,
+	// Warning and Error only -- abnormal behavior, backpressure and
+	// connectivity timeouts, recoverable exits.
+	LogVerbosityDefault = 0
+	// LogVerbosityVerbose adds the V(1) key events, which is what a contract or
+	// connection report needs: contract accounting ([contract] add, close,
+	// expire, provide ping), send/receive and stream lifecycle ([s], [r],
+	// [sm], [cr]), transport dial and handshake ([tls], [p2p], [peerconn],
+	// [pt]), and multi-client window formation ([multi]).
+	LogVerbosityVerbose = 1
+	// LogVerbosityTrace adds the V(2) per-use-case detail on top: per-message
+	// transfer and routing ([tr], [mrr], [mrw], [f%d], [r%d]), network and
+	// control traffic ([net], [control]), and rtt samples ([rtt]). High volume
+	// on a busy connection -- it is for reproducing one bug, not for running
+	// on.
+	LogVerbosityTrace = 2
+)
+
+// SetLogVerbosity sets THIS process's glog verbosity, and takes effect on the
+// next log statement -- no restart.
+//
+// glog registers the -v flag as a flag.Value (glog_flags.go, flag.Var over
+// Level), and V() re-reads the value on every call, so setting the flag at
+// runtime is the supported way to change the level in a process that never
+// parses a command line. TestLogVerbosityTakesEffectAtRuntime pins that.
+//
+// The level is clamped to LogVerbosityDefault..LogVerbosityTrace rather than
+// rejected: `connect` only ever asks for V(1) and V(2), so a higher number is
+// volume with nothing to show for it and a negative one is meaningless. The
+// clamped value is what GetLogVerbosity then reports.
+//
+// This reaches only the calling process. On ios the transport runs in the
+// network extension, which has its own glog state -- use
+// Device.SetLogVerbosity, which sets both.
+//
+// Safe to call from any thread. It is exported to gomobile and to the C ABI,
+// and inside the sdk both DeviceRemote.SetLogVerbosity and the restore a
+// device runs at construction reach it off whatever goroutine the caller is
+// on, so concurrent callers are ordinary rather than exotic.
+func SetLogVerbosity(level int) error {
+	return setLogVerbosityFlag(clampLogVerbosity(level))
+}
+
+// logVerbosityMu serializes writes to the -v flag, a sibling of
+// currentLogDirMu and for the same reason: the flag package is not the
+// concurrency-safe store it looks like.
+//
+// flag.Set records the value in flag.CommandLine.actual, an unsynchronized
+// map, so two goroutines setting the level race on a map write -- which the go
+// runtime can report as an unrecoverable fatal error rather than a data race
+// it merely survives. Reads need no lock: GetLogVerbosity goes through glog's
+// Level.String, an atomic load, and flag.Lookup only reads the formal map that
+// registration froze.
+var logVerbosityMu sync.Mutex
+
+// setLogVerbosityFlag is the one write path for the -v flag, taking the level
+// exactly as given. Callers that must honor the sdk's range clamp first -- see
+// SetLogVerbosity. Restoring a level captured from GetLogVerbosity goes
+// through here unclamped, so a -v an embedder set above LogVerbosityTrace on
+// the command line comes back as what it was.
+func setLogVerbosityFlag(level int) error {
+	logVerbosityMu.Lock()
+	defer logVerbosityMu.Unlock()
+	return flag.Set("v", strconv.Itoa(level))
+}
+
+// GetLogVerbosity returns the verbosity THIS process is logging at.
+//
+// It reads the flag rather than a shadow copy, so it also reports a level an
+// embedder set some other way, including a -v on the command line above
+// LogVerbosityTrace -- what is reported is what V() will honor.
+func GetLogVerbosity() int {
+	f := flag.Lookup("v")
+	if f == nil {
+		return LogVerbosityDefault
+	}
+	level, err := strconv.Atoi(f.Value.String())
+	if err != nil {
+		return LogVerbosityDefault
+	}
+	return level
+}
+
+// applyPersistedLogVerbosity restores the level the user last chose into THIS
+// process, and is what makes the setting survive the reconnect that the bug
+// being captured usually needs. Every process that starts a device runs
+// initGlog first, which resets the level to 0.
+//
+// A nil localState (a network space with no local storage), or one with no
+// level ever written, leaves the process at whatever it is already logging at
+// -- restoring is for a level the user chose, and must not clear one an
+// embedder set another way.
+//
+// It reports the restored level and whether one was written at all. The app
+// side needs the difference: this local state is the app process's own, and a
+// level found in it still has to be replayed to the device process, which
+// keeps a separate one. See DeviceRemote.SetLogVerbosity.
+func applyPersistedLogVerbosity(localState *LocalState, log connect.Logger) (int, bool) {
+	if localState == nil {
+		return LogVerbosityDefault, false
+	}
+	level, ok := localState.logVerbosityIfSet()
+	if !ok {
+		return LogVerbosityDefault, false
+	}
+	if err := SetLogVerbosity(level); err != nil && log != nil {
+		log.Infof("[device]restore log verbosity %d err = %s\n", level, err)
+	}
+	return level, true
+}
+
+func clampLogVerbosity(level int) int {
+	if level < LogVerbosityDefault {
+		return LogVerbosityDefault
+	}
+	if LogVerbosityTrace < level {
+		return LogVerbosityTrace
+	}
+	return level
 }
 
 // memory target ratio: how SetMemoryLimit divides the process budget into

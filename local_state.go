@@ -264,6 +264,57 @@ func (self *LocalState) GetRouteLocal() bool {
 	return true
 }
 
+// SetLogVerbosity persists the glog verbosity the user chose, so a tunnel
+// restart comes back up at it.
+//
+// Without this the workflow the setting exists for does not survive itself:
+// raising the level, reproducing the bug and exporting normally means
+// reconnecting, and a restarted tunnel process re-runs initGlog and resets to
+// 0 -- silently dropping the session being captured back to writing none of
+// the V(1) contract and transport lines.
+//
+// This is PER PROCESS, and is not a channel between processes. It is stored
+// under the network space's local storage, which is the storage path the
+// embedder passed, and on ios each process passes its own Documents
+// container: the app gets Application/<uuid> and the network extension gets
+// PluginKitPlugin/<uuid>. Only the app group container is shared, and this
+// repo uses that solely for the exported logs. So the app writes its own copy
+// and reads its own copy back, and the extension does the same with its own --
+// what carries a newly chosen level ACROSS is the device rpc, not this file.
+// See DeviceRemote.SetLogVerbosity.
+func (self *LocalState) SetLogVerbosity(level int) error {
+	path := filepath.Join(self.localStorageDir, ".log_verbosity")
+	levelBytes := []byte(fmt.Sprintf("%d", clampLogVerbosity(level)))
+	return os.WriteFile(path, levelBytes, LocalStorageFilePermissions)
+}
+
+// GetLogVerbosity reads back the persisted level. Unset or unreadable (fresh
+// install, corrupt file) both read as LogVerbosityDefault, which is the level
+// a process starts at anyway -- restoring must never be what raises logging
+// nobody asked for.
+func (self *LocalState) GetLogVerbosity() int {
+	level, _ := self.logVerbosityIfSet()
+	return level
+}
+
+// logVerbosityIfSet is GetLogVerbosity plus whether a level was ever written.
+//
+// Restoring at construction needs the difference: a persisted 0 is a level the
+// user chose, while nothing persisted is no instruction at all, and applying
+// the default for the second case would silently reset an embedder that set
+// its own level another way -- a server passing -v on the command line would
+// have it cleared by the first device it constructed.
+func (self *LocalState) logVerbosityIfSet() (int, bool) {
+	path := filepath.Join(self.localStorageDir, ".log_verbosity")
+	if levelBytes, err := os.ReadFile(path); err == nil {
+		var level int
+		if _, err := fmt.Sscanf(string(levelBytes), "%d", &level); err == nil {
+			return clampLogVerbosity(level), true
+		}
+	}
+	return LogVerbosityDefault, false
+}
+
 func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
 	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
 	blockerEnabledBytes := []byte(fmt.Sprintf("%t", blockerEnabled))
