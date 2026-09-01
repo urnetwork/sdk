@@ -225,6 +225,7 @@ type probeHarness struct {
 	unsub      func()
 	cancel     context.CancelFunc
 	localAddrs []netip.Addr
+	pumpDone   chan struct{}
 }
 
 func newProbeHarness(ctx context.Context, device *DeviceLocal) (*probeHarness, error) {
@@ -240,7 +241,9 @@ func newProbeHarness(ctx context.Context, device *DeviceLocal) (*probeHarness, e
 
 	// egress: the tun's stack emits packets, the device sends them over the
 	// same exits the browser is using
+	pumpDone := make(chan struct{})
 	go func() {
+		defer close(pumpDone)
 		defer cancel()
 		for {
 			packet, err := tun.Read()
@@ -277,6 +280,7 @@ func newProbeHarness(ctx context.Context, device *DeviceLocal) (*probeHarness, e
 		unsub:      unsub,
 		cancel:     cancel,
 		localAddrs: localAddrs,
+		pumpDone:   pumpDone,
 	}
 
 	harness.httpClient = &http.Client{
@@ -317,6 +321,7 @@ func (self *probeHarness) close() {
 	self.unsub()
 	self.cancel()
 	self.tun.Close()
+	<-self.pumpDone
 }
 
 // httpProbe times one request, broken into phases so a slow result says which
@@ -568,18 +573,29 @@ func (self *DeviceLocal) StartProbeSuite(config *ProbeSuiteConfig) bool {
 	}
 	config = normalizeProbeSuiteConfig(config, self.log)
 
+	self.stateLock.Lock()
+	if self.closed {
+		self.stateLock.Unlock()
+		return false
+	}
 	suite.stateLock.Lock()
 	if suite.running {
 		suite.stateLock.Unlock()
+		self.stateLock.Unlock()
 		return false
 	}
 	runCtx, cancel := context.WithCancel(self.ctx)
 	suite.running = true
 	suite.results = []*ProbeResult{}
 	suite.cancel = cancel
+	self.lifecycleWorkers.Add(1)
 	suite.stateLock.Unlock()
+	self.stateLock.Unlock()
 
-	go suite.run(runCtx, self, config)
+	go func() {
+		defer self.lifecycleWorkers.Done()
+		suite.run(runCtx, self, config)
+	}()
 	return true
 }
 

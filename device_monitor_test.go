@@ -6,6 +6,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -14,6 +15,28 @@ import (
 // the process log.
 type testingSecurityPolicyMonitorLogger struct {
 	infoCount atomic.Int64
+}
+
+// TestSecurityPolicyMonitorCloseAndWaitJoinsRun verifies that an explicitly
+// enabled diagnostic poll has a deterministic owner-visible retirement edge.
+func TestSecurityPolicyMonitorCloseAndWaitJoinsRun(t *testing.T) {
+	monitor := newSecurityPolicyMonitor(context.Background(), nil, true)
+	select {
+	case <-monitor.started:
+	case <-time.After(time.Second):
+		t.Fatal("security-policy monitor did not start")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := monitor.CloseAndWait(ctx); err != nil {
+		t.Fatalf("close security-policy monitor: %v", err)
+	}
+	select {
+	case <-monitor.done:
+	default:
+		t.Fatal("security-policy monitor returned before its run loop exited")
+	}
 }
 
 func (self *testingSecurityPolicyMonitorLogger) Info(args ...any) {

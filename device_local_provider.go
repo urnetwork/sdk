@@ -28,7 +28,8 @@ type migratablePlatformTransport interface {
 }
 
 type deviceLocalProvider struct {
-	ctx context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
 	// this is the client for provide
 	client       *connect.Client
 	clientOob    *connect.ApiOutOfBandControl
@@ -62,9 +63,15 @@ type deviceLocalProvider struct {
 	) migratablePlatformTransport
 
 	stateLock         sync.Mutex
+	closed            bool
 	auth              *connect.ClientAuth
 	authVersion       uint64
 	platformTransport migratablePlatformTransport
+	migrationWorkers  sync.WaitGroup
+	closeOnce         sync.Once
+	joinOnce          sync.Once
+	closeDoneOnce     sync.Once
+	closeDone         chan struct{}
 
 	// the provider client's own transfer budget pair, when sized from the
 	// provider share of the device memory target (see
@@ -94,10 +101,11 @@ func newDeviceLocalProviderWithOverrides(
 	targetMode connect.TransportMode,
 	modePreferences map[connect.TransportMode]int,
 ) *deviceLocalProvider {
+	providerCtx, providerCancel := context.WithCancel(ctx)
 	apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
 
-	clientOob := connect.NewApiOutOfBandControl(ctx, clientStrategy, byJwt, apiUrl)
+	clientOob := connect.NewApiOutOfBandControl(providerCtx, clientStrategy, byJwt, apiUrl)
 
 	clientSettings := newDeviceClientSettings(settings, apiUrl, clientStrategy)
 	// A controlled mobile provider pinned to explicit H1 must select the same
@@ -130,7 +138,7 @@ func newDeviceLocalProviderWithOverrides(
 	)
 
 	client := connect.NewClient(
-		ctx,
+		providerCtx,
 		clientId,
 		clientOob,
 		clientSettings,
@@ -174,7 +182,8 @@ func newDeviceLocalProviderWithOverrides(
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	provider := &deviceLocalProvider{
-		ctx:               ctx,
+		ctx:               providerCtx,
+		cancel:            providerCancel,
 		client:            client,
 		clientOob:         clientOob,
 		platformTransport: platformTransport,
@@ -260,10 +269,15 @@ func (self *deviceLocalProvider) handleControlFrames(source connect.TransferPath
 }
 
 func (self *deviceLocalProvider) requestPlatformTransportMigration(migrateTime time.Time) {
-	if !self.migrating.CompareAndSwap(false, true) {
+	self.stateLock.Lock()
+	if self.closed || !self.migrating.CompareAndSwap(false, true) {
+		self.stateLock.Unlock()
 		return
 	}
+	self.migrationWorkers.Add(1)
+	self.stateLock.Unlock()
 	go connect.HandleError(func() {
+		defer self.migrationWorkers.Done()
 		defer self.migrating.Store(false)
 		for {
 			attemptedPolicyVersion := self.migratePlatformTransportWithPolicy(migrateTime)
@@ -361,13 +375,16 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 			// A second full H3 working set would escape the shared memory cap.
 			// H1 transitions use Connect's bounded handoff and keep the old route;
 			// only a budget-blocked H3-to-H3-family transition breaks first.
-			previous.Close()
+			closeMigratablePlatformTransportAndWait(previous)
 			brokeBeforeMake = true
 		}
 	}
-	installNext := func() migratablePlatformTransport {
+	installNext := func() (migratablePlatformTransport, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if self.closed {
+			return nil, false
+		}
 		// Token refresh can race replacement construction/connection. Reapply
 		// the current immutable auth while holding the same lock used by
 		// SetByJwt and the swap; a later refresh therefore updates next, while
@@ -377,7 +394,7 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		}
 		previous := self.platformTransport
 		self.platformTransport = next
-		return previous
+		return previous, true
 	}
 
 	connectEndTime := time.Now().Add(self.migrateConnectTimeout)
@@ -391,25 +408,31 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 				// The old full-H3 carrier is already closed to honor the memory
 				// cap. Keep the replacement installed so its owned reconnect loop
 				// continues instead of leaving a closed source as current.
-				installNext()
+				if _, installed := installNext(); !installed {
+					closeMigratablePlatformTransportAndWait(next)
+				}
 				return policyVersion
 			}
 			// the replacement did not come up; keep the old transport
-			next.Close()
+			closeMigratablePlatformTransportAndWait(next)
 			return policyVersion
 		}
 		select {
 		case <-self.ctx.Done():
-			next.Close()
+			closeMigratablePlatformTransportAndWait(next)
 			return policyVersion
 		case <-notify:
 		case <-time.After(1 * time.Second):
 		}
 	}
 
-	previous := installNext()
+	previous, installed := installNext()
+	if !installed {
+		closeMigratablePlatformTransportAndWait(next)
+		return policyVersion
+	}
 	if previous != nil && !brokeBeforeMake {
-		previous.Close()
+		closeMigratablePlatformTransportAndWait(previous)
 	}
 	return policyVersion
 }
@@ -422,6 +445,10 @@ func (self *deviceLocalProvider) SetTransportPolicy(
 	modePreferences map[connect.TransportMode]int,
 ) {
 	self.stateLock.Lock()
+	if self.closed {
+		self.stateLock.Unlock()
+		return
+	}
 	if self.targetMode == targetMode && maps.Equal(self.modePreferences, modePreferences) {
 		self.stateLock.Unlock()
 		return
@@ -449,6 +476,9 @@ func (self *deviceLocalProvider) SetByJwt(byJwt string) {
 	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	if self.closed {
+		return
+	}
 	self.auth = auth
 	self.authVersion += 1
 	if self.clientOob != nil {
@@ -457,14 +487,89 @@ func (self *deviceLocalProvider) SetByJwt(byJwt string) {
 	self.platformTransport.SetAuth(auth)
 }
 
+func closeMigratablePlatformTransportAndWait(transport migratablePlatformTransport) {
+	if transport == nil {
+		return
+	}
+	transport.Close()
+	if joiningTransport, ok := transport.(interface {
+		CloseAndWait(context.Context) error
+	}); ok {
+		_ = joiningTransport.CloseAndWait(context.Background())
+	}
+}
+
+func (self *deviceLocalProvider) closeCompletion() chan struct{} {
+	self.closeDoneOnce.Do(func() {
+		self.closeDone = make(chan struct{})
+	})
+	return self.closeDone
+}
+
+// Requests callback-safe provider shutdown. The asynchronous join owns all
+// migration, transport, client, OOB and NAT completion.
 func (self *deviceLocalProvider) Close() {
-	self.client.Close()
-	func() {
+	done := self.closeCompletion()
+	self.closeOnce.Do(func() {
 		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.platformTransport.Close()
-	}()
-	self.localUserNat.Close()
+		self.closed = true
+		platformTransport := self.platformTransport
+		self.stateLock.Unlock()
+		if self.cancel != nil {
+			self.cancel()
+		}
+		if platformTransport != nil {
+			platformTransport.Close()
+		}
+		if self.client != nil {
+			self.client.Close()
+		}
+		if self.localUserNat != nil {
+			self.localUserNat.Close()
+		}
+	})
+	self.joinOnce.Do(func() {
+		go func() {
+			self.migrationWorkers.Wait()
+			self.stateLock.Lock()
+			platformTransport := self.platformTransport
+			self.stateLock.Unlock()
+			closeMigratablePlatformTransportAndWait(platformTransport)
+			if self.client != nil {
+				_ = self.client.CloseAndWait(context.Background())
+			}
+			if self.clientOob != nil {
+				_ = self.clientOob.CloseAndWait(context.Background())
+			}
+			if self.localUserNat != nil {
+				_ = self.localUserNat.CloseAndWait(context.Background())
+			}
+			close(done)
+		}()
+	})
+}
+
+// Joins every provider-owned worker. External device owners use this after
+// callback-safe Close has detached the provider from routing.
+func (self *deviceLocalProvider) CloseAndWait(ctx context.Context) error {
+	done := self.closeCompletion()
+	self.Close()
+	select {
+	case <-done:
+		return nil
+	default:
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 func newDeviceClientSettings(

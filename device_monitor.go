@@ -7,6 +7,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -26,9 +27,12 @@ type securityPolicyMonitorDevice interface {
 // explicitly verbose device. Its output is bounded by result count rather than
 // destination cardinality.
 type securityPolicyMonitor struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	device securityPolicyMonitorDevice
+	ctx       context.Context
+	cancel    context.CancelFunc
+	device    securityPolicyMonitorDevice
+	started   chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // newSecurityPolicyMonitor starts diagnostics only when enabled. In particular,
@@ -44,17 +48,23 @@ func newSecurityPolicyMonitor(
 	}
 	cancelCtx, cancel := context.WithCancel(ctx)
 	securityPolicyMonitor := &securityPolicyMonitor{
-		ctx:    cancelCtx,
-		cancel: cancel,
-		device: device,
+		ctx:     cancelCtx,
+		cancel:  cancel,
+		device:  device,
+		started: make(chan struct{}),
+		done:    make(chan struct{}),
 	}
-	go connect.HandleError(securityPolicyMonitor.run, cancel)
+	go func() {
+		defer close(securityPolicyMonitor.done)
+		connect.HandleError(securityPolicyMonitor.run, cancel)
+	}()
 	return securityPolicyMonitor
 }
 
 // run snapshots and reports on a fixed diagnostic cadence until canceled.
 func (self *securityPolicyMonitor) run() {
 	defer self.cancel()
+	close(self.started)
 
 	for {
 		select {
@@ -73,6 +83,25 @@ func (self *securityPolicyMonitor) run() {
 			"egress",
 			self.device.egressSecurityPolicy().Stats(false),
 		)
+	}
+}
+
+func (self *securityPolicyMonitor) Close() {
+	self.closeOnce.Do(self.cancel)
+}
+
+func (self *securityPolicyMonitor) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
 	}
 }
 

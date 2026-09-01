@@ -290,9 +290,11 @@ func (self *mobileMemorySampler) take() mobileMemorySampleBatch {
 func (self *mobileMemorySampler) start(
 	ctx context.Context,
 	sample func() mobileMemorySample,
-) {
+) <-chan struct{} {
 	self.record(sample())
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(mobileMemorySampleInterval)
 		defer ticker.Stop()
 		for {
@@ -304,6 +306,7 @@ func (self *mobileMemorySampler) start(
 			}
 		}
 	}()
+	return done
 }
 
 func (self *DeviceLocal) memorySample() mobileMemorySample {

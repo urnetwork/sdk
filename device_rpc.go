@@ -212,6 +212,13 @@ type DeviceRemote struct {
 	cancel    context.CancelFunc
 	log       connect.Logger
 	closeOnce sync.Once
+	closed    bool
+
+	runDone               chan struct{}
+	backgroundWorkers     sync.WaitGroup
+	lifecycleJoinOnce     sync.Once
+	lifecycleDone         chan struct{}
+	securityPolicyMonitor *securityPolicyMonitor
 
 	networkSpace     *NetworkSpace
 	byJwt            string
@@ -446,6 +453,8 @@ func newDeviceRemoteWithOverrides(
 		byJwt:                    byJwt,
 		settings:                 settings,
 		log:                      settings.logger(),
+		runDone:                  make(chan struct{}),
+		lifecycleDone:            make(chan struct{}),
 		reconnectMonitor:         connect.NewMonitor(),
 		syncMonitor:              connect.NewMonitor(),
 		clientId:                 clientId,
@@ -564,13 +573,16 @@ func newDeviceRemoteWithOverrides(
 	api.SetByJwt(byJwt)
 	api.StartJwtRefresh()
 
-	newSecurityPolicyMonitor(ctx, deviceRemote, settings.Verbose)
+	deviceRemote.securityPolicyMonitor = newSecurityPolicyMonitor(ctx, deviceRemote, settings.Verbose)
 
 	// The lifecycle snapshots state under stateLock, but never holds it across
 	// transport or rpc I/O. In a browser, a synchronous JavaScript getter that
 	// waits for this lock would otherwise prevent the websocket event needed to
 	// finish the very I/O holding it.
-	go connect.HandleError(deviceRemote.run, cancel)
+	go func() {
+		defer close(deviceRemote.runDone)
+		connect.HandleError(deviceRemote.run, cancel)
+	}()
 	return deviceRemote, nil
 }
 
@@ -682,6 +694,16 @@ func (self *DeviceRemote) run() {
 			if err != nil {
 				return
 			}
+			if forwardConn == nil || reverseConn == nil {
+				if forwardConn != nil {
+					forwardConn.Close()
+				}
+				if reverseConn != nil {
+					reverseConn.Close()
+				}
+				return
+			}
+			defer reverseConn.Close()
 			select {
 			case <-handleCtx.Done():
 				forwardConn.Close()
@@ -740,10 +762,12 @@ func (self *DeviceRemote) run() {
 				self.log.Errorf("[dr]register reverse rpc: %v", err)
 				return
 			}
+			reverseDone := make(chan struct{})
 			go connect.HandleError(func() {
 				defer func() {
 					handleCancel()
 					deviceRemoteRpc.Close()
+					close(reverseDone)
 				}()
 				server.ServeConn(reverseConn)
 				self.log.Infof("[dr]sync reverse server done")
@@ -751,6 +775,13 @@ func (self *DeviceRemote) run() {
 				handleCancel()
 				deviceRemoteRpc.Close()
 			})
+			defer func() {
+				handleCancel()
+				deviceRemoteRpc.Close()
+				reverseConn.Close()
+				<-reverseDone
+				_ = deviceRemoteRpc.CloseAndWait(context.Background())
+			}()
 
 			if err := rpcCallNoArgVoid(
 				service,
@@ -810,9 +841,6 @@ func (self *DeviceRemote) run() {
 			self.log.Infof("[dr]handle done")
 
 			service.Close()
-			if reverseConn != nil {
-				reverseConn.Close()
-			}
 			func() {
 				self.stateLock.Lock()
 				defer self.stateLock.Unlock()
@@ -1068,9 +1096,14 @@ func (self *DeviceRemote) SetRpcServer(clientPem string, serverCertPem string, h
 		return err
 	}
 
+	closed := false
 	changed := func() bool {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if self.closed {
+			closed = true
+			return false
+		}
 
 		// idempotent: if the transport config is unchanged, do not swap the
 		// dialer or reset a live connection. re-applying the same server (e.g.
@@ -1090,6 +1123,9 @@ func (self *DeviceRemote) SetRpcServer(clientPem string, serverCertPem string, h
 		self.dialerChanged = make(chan struct{})
 		return true
 	}()
+	if closed {
+		return fmt.Errorf("device remote is closed")
+	}
 
 	if changed {
 		self.log.Infof("[dr]set rpc server %s (mtls=%t)", address.HostPort(), len(clientPem) != 0)
@@ -2959,16 +2995,24 @@ func (self *DeviceRemote) RemoveConnectedProvider(clientId *Id) {
 	}
 
 	self.stateLock.Lock()
+	if self.closed {
+		self.stateLock.Unlock()
+		return
+	}
 	service := self.service
 	browserCall := false
 	if self.settings.BrowserStateOnly {
 		service = self.browserService
 		browserCall = true
 	}
-	self.stateLock.Unlock()
 	if service == nil {
+		self.stateLock.Unlock()
 		return
 	}
+	if browserCall {
+		self.backgroundWorkers.Add(1)
+	}
+	self.stateLock.Unlock()
 
 	call := func() {
 		rpcCallVoid(
@@ -2979,7 +3023,10 @@ func (self *DeviceRemote) RemoveConnectedProvider(clientId *Id) {
 		)
 	}
 	if browserCall {
-		go call()
+		go func() {
+			defer self.backgroundWorkers.Done()
+			call()
+		}()
 	} else {
 		call()
 	}
@@ -3004,7 +3051,13 @@ func (self *DeviceRemote) Close() {
 				self.providerLocationsMonitor = nil
 			}
 		}()
+		self.stateLock.Lock()
+		self.closed = true
+		self.stateLock.Unlock()
 		self.cancel()
+		if self.securityPolicyMonitor != nil {
+			self.securityPolicyMonitor.Close()
+		}
 
 		if self.apiJwtRefreshSub != nil {
 			self.apiJwtRefreshSub.Close()
@@ -3021,6 +3074,35 @@ func (self *DeviceRemote) Close() {
 		api.setHttpGetRaw(nil)
 		api.setHttpPostStreamRaw(nil)
 	})
+}
+
+// CloseAndWait joins the remote reconnect loop, reverse-RPC callbacks,
+// diagnostic monitor, and admitted browser fire-and-forget calls.
+//
+//gomobile:noexport
+func (self *DeviceRemote) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	self.lifecycleJoinOnce.Do(func() {
+		go func() {
+			<-self.runDone
+			self.backgroundWorkers.Wait()
+			if self.securityPolicyMonitor != nil {
+				_ = self.securityPolicyMonitor.CloseAndWait(context.Background())
+			}
+			close(self.lifecycleDone)
+		}()
+	})
+	select {
+	case <-self.lifecycleDone:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.lifecycleDone:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 func (self *DeviceRemote) GetDone() bool {
@@ -7574,17 +7656,30 @@ type rpcClientWithTimeout struct {
 }
 
 func (self *rpcClientWithTimeout) Call(serviceMethod string, args any, reply any) error {
-	ctx, cancel := context.WithCancel(context.Background())
+	callCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	watchDone := make(chan struct{})
 	go connect.HandleError(func() {
+		defer close(watchDone)
 		defer cancel()
+		timer := time.NewTimer(self.timeout)
+		defer timer.Stop()
+		var ownerDone <-chan struct{}
+		if self.ctx != nil {
+			ownerDone = self.ctx.Done()
+		}
 		select {
-		case <-ctx.Done():
-		case <-time.After(self.timeout):
+		case <-callCtx.Done():
+		case <-ownerDone:
+			self.closeClient()
+		case <-timer.C:
 			self.closeClient()
 		}
 	}, cancel)
-	return self.client.Call(serviceMethod, args, reply)
+	err := self.client.Call(serviceMethod, args, reply)
+	cancel()
+	<-watchDone
+	return err
 }
 
 // notifyBlocking delivers a fire-and-forget reverse rpc and blocks until it
@@ -7787,6 +7882,12 @@ type deviceLocalRpcManager struct {
 	deviceLocal *DeviceLocal
 	settings    *deviceRpcSettings
 	listener    deviceRpcListener
+
+	closeOnce sync.Once
+	done      chan struct{}
+	sessions  sync.WaitGroup
+	joinOnce  sync.Once
+	joinDone  chan struct{}
 }
 
 func newDeviceLocalRpcManagerWithDefaults(
@@ -7815,14 +7916,19 @@ func newDeviceLocalRpcManager(
 		deviceLocal: deviceLocal,
 		settings:    settings,
 		listener:    listener,
+		done:        make(chan struct{}),
+		joinDone:    make(chan struct{}),
 	}
 
-	go connect.HandleError(deviceLocalRpcManager.run, cancel)
+	go func() {
+		defer close(deviceLocalRpcManager.done)
+		connect.HandleError(deviceLocalRpcManager.run, cancel)
+	}()
 	return deviceLocalRpcManager
 }
 
 func (self *deviceLocalRpcManager) run() {
-	defer self.listener.Close()
+	defer self.Close()
 
 	lastAcceptError := ""
 	for {
@@ -7859,21 +7965,50 @@ func (self *deviceLocalRpcManager) run() {
 
 		// each connection manages its own lifecycle; the rpc closes its
 		// connection when its context is cancelled
-		newDeviceLocalRpc(
+		deviceLocalRpc := newDeviceLocalRpc(
 			self.ctx,
 			forwardConn,
 			reverseConn,
 			self.deviceLocal,
 			self.settings,
 		)
+		self.sessions.Add(1)
+		go func() {
+			defer self.sessions.Done()
+			<-deviceLocalRpc.done
+		}()
 	}
 }
 
 func (self *deviceLocalRpcManager) Close() {
-	self.cancel()
-	// close the listener synchronously so the port is released before a
-	// replacement listener (e.g. from DeviceLocal.SetRpcServer) binds it
-	self.listener.Close()
+	self.closeOnce.Do(func() {
+		self.cancel()
+		// close the listener synchronously so the port is released before a
+		// replacement listener (e.g. from DeviceLocal.SetRpcServer) binds it
+		self.listener.Close()
+	})
+}
+
+func (self *deviceLocalRpcManager) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	self.joinOnce.Do(func() {
+		go func() {
+			<-self.done
+			self.sessions.Wait()
+			close(self.joinDone)
+		}()
+	})
+	select {
+	case <-self.joinDone:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.joinDone:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 // rpc are called on a single go routine
@@ -7999,6 +8134,8 @@ type DeviceLocalRpc struct {
 	// pile up request/response buffers (HttpPostRaw / HttpGetRaw).
 	httpSem         chan struct{}
 	httpDeliverySem chan struct{}
+	workers         sync.WaitGroup
+	done            chan struct{}
 }
 
 func newDeviceLocalRpc(
@@ -8057,6 +8194,7 @@ func newDeviceLocalRpc(
 		localWindowIds:                             map[connect.Id]connect.Id{},
 		sendPending:                                map[string]func(){},
 		sendSignal:                                 make(chan struct{}, 1),
+		done:                                       make(chan struct{}),
 
 		providerPacketStatsChangeListenerIds:            map[connect.Id]bool{},
 		providerEgressContractStatsChangeListenerIds:    map[connect.Id]bool{},
@@ -8126,15 +8264,27 @@ func (self *gobServerCodec) Close() error {
 }
 
 func (self *DeviceLocalRpc) run() {
-	defer self.cancel()
+	defer func() {
+		self.cancel()
+		self.conn.Close()
+		self.reverseConn.Close()
+		self.workers.Wait()
+		close(self.done)
+	}()
+	self.workers.Add(1)
 	go connect.HandleError(func() {
+		defer self.workers.Done()
 		defer self.conn.Close()
 		select {
 		case <-self.ctx.Done():
 		}
 	}, self.cancel)
 
-	go connect.HandleError(self.sendLoop, self.cancel)
+	self.workers.Add(1)
+	go connect.HandleError(func() {
+		defer self.workers.Done()
+		self.sendLoop()
+	}, self.cancel)
 
 	server := rpc.NewServer()
 	server.Register(self)
@@ -11676,7 +11826,9 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 		return fmt.Errorf("device rpc http concurrency limit reached")
 	}
 
+	self.workers.Add(1)
 	go connect.HandleError(func() {
+		defer self.workers.Done()
 		fetchReleased := false
 		defer func() {
 			if !fetchReleased {
@@ -11717,7 +11869,9 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 		return fmt.Errorf("device rpc http concurrency limit reached")
 	}
 
+	self.workers.Add(1)
 	go connect.HandleError(func() {
+		defer self.workers.Done()
 		fetchReleased := false
 		defer func() {
 			if !fetchReleased {
@@ -11755,10 +11909,27 @@ func (self *DeviceLocalRpc) Close() {
 	// defer self.stateLock.Unlock()
 
 	self.cancel()
+	self.conn.Close()
+	self.reverseConn.Close()
 	// if self.service != nil {
 	// 	self.service.Close()
 	// 	self.service = nil
 	// }
+}
+
+func (self *DeviceLocalRpc) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 // important all rpc functions here must dispatch on a new goroutine
@@ -11773,6 +11944,7 @@ type DeviceRemoteRpc struct {
 	deviceRemote *DeviceRemote
 	// callbacks are delivered serially by `run` to preserve event ordering
 	callbacks chan func()
+	done      chan struct{}
 }
 
 func newDeviceRemoteRpc(ctx context.Context, deviceRemote *DeviceRemote) *DeviceRemoteRpc {
@@ -11783,8 +11955,12 @@ func newDeviceRemoteRpc(ctx context.Context, deviceRemote *DeviceRemote) *Device
 		cancel:       cancel,
 		deviceRemote: deviceRemote,
 		callbacks:    make(chan func(), deviceRemote.settings.CallbackBufferSize),
+		done:         make(chan struct{}),
 	}
-	go connect.HandleError(deviceRemoteRpc.run)
+	go func() {
+		defer close(deviceRemoteRpc.done)
+		connect.HandleError(deviceRemoteRpc.run)
+	}()
 	return deviceRemoteRpc
 }
 
@@ -12145,4 +12321,19 @@ func (self *DeviceRemoteRpc) HttpResponse(httpResponse *DeviceRemoteHttpResponse
 
 func (self *DeviceRemoteRpc) Close() {
 	self.cancel()
+}
+
+func (self *DeviceRemoteRpc) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }

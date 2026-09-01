@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/rpc"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -49,6 +50,35 @@ type testingFailingDeviceRpcListener struct {
 	closeCount   atomic.Int64
 }
 
+type testingBlockedDeviceRpcListener struct {
+	entered    chan struct{}
+	acceptDone chan struct{}
+	closeCount atomic.Int64
+}
+
+type testingBlockedRpcCall struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (self *testingBlockedRpcCall) Wait(_ RpcNoArg, _ RpcVoid) error {
+	close(self.entered)
+	<-self.release
+	return nil
+}
+
+func (self *testingBlockedDeviceRpcListener) Accept(ctx context.Context) (net.Conn, net.Conn, error) {
+	close(self.entered)
+	<-ctx.Done()
+	close(self.acceptDone)
+	return nil, nil, ctx.Err()
+}
+
+func (self *testingBlockedDeviceRpcListener) Close() error {
+	self.closeCount.Add(1)
+	return nil
+}
+
 func (self *testingFailingDeviceRpcListener) Accept(ctx context.Context) (net.Conn, net.Conn, error) {
 	select {
 	case <-ctx.Done():
@@ -61,6 +91,127 @@ func (self *testingFailingDeviceRpcListener) Accept(ctx context.Context) (net.Co
 func (self *testingFailingDeviceRpcListener) Close() error {
 	self.closeCount.Add(1)
 	return nil
+}
+
+// TestDeviceLocalRpcManagerCloseAndWaitJoinsAccept verifies that manager
+// shutdown does not merely signal a listener whose accept loop is still live.
+func TestDeviceLocalRpcManagerCloseAndWaitJoinsAccept(t *testing.T) {
+	listener := &testingBlockedDeviceRpcListener{
+		entered:    make(chan struct{}),
+		acceptDone: make(chan struct{}),
+	}
+	manager := newDeviceLocalRpcManager(
+		context.Background(),
+		nil,
+		defaultDeviceRpcSettings(),
+		listener,
+	)
+	select {
+	case <-listener.entered:
+	case <-time.After(time.Second):
+		t.Fatal("device rpc manager did not enter accept")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := manager.CloseAndWait(ctx); err != nil {
+		t.Fatalf("close device rpc manager: %v", err)
+	}
+	select {
+	case <-listener.acceptDone:
+	default:
+		t.Fatal("device rpc manager returned before accept exited")
+	}
+}
+
+// TestDeviceRemoteRpcCloseAndWaitJoinsAdmittedCallback verifies that closing a
+// reverse dispatcher waits for a callback it already took ownership of.
+func TestDeviceRemoteRpcCloseAndWaitJoinsAdmittedCallback(t *testing.T) {
+	deviceRemote := &DeviceRemote{
+		settings: &deviceRpcSettings{CallbackBufferSize: 1},
+	}
+	deviceRemoteRpc := newDeviceRemoteRpc(context.Background(), deviceRemote)
+	callbackEntered := make(chan struct{})
+	callbackRelease := make(chan struct{})
+	deviceRemoteRpc.dispatch(func() {
+		close(callbackEntered)
+		<-callbackRelease
+	})
+	select {
+	case <-callbackEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reverse rpc callback did not start")
+	}
+
+	closeResult := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		closeResult <- deviceRemoteRpc.CloseAndWait(ctx)
+	}()
+	select {
+	case err := <-closeResult:
+		t.Fatalf("close returned before admitted callback exited: %v", err)
+	default:
+	}
+	close(callbackRelease)
+	if err := <-closeResult; err != nil {
+		t.Fatalf("close reverse rpc: %v", err)
+	}
+}
+
+// TestRpcClientCallParentCancellationClosesTransport verifies that an owner
+// cancellation interrupts an in-flight RPC immediately rather than retaining
+// the call and its timeout watcher until the wall-clock deadline.
+func TestRpcClientCallParentCancellationClosesTransport(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	receiver := &testingBlockedRpcCall{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	server := rpc.NewServer()
+	if err := server.RegisterName("Blocked", receiver); err != nil {
+		t.Fatal(err)
+	}
+	serverDone := make(chan struct{})
+	go func() {
+		server.ServeConn(serverConn)
+		close(serverDone)
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	service := &rpcClientWithTimeout{
+		ctx:         ctx,
+		log:         connect.NewNoopLogger(),
+		timeout:     time.Hour,
+		closeClient: clientConn.Close,
+		client:      rpc.NewClient(clientConn),
+	}
+	callResult := make(chan error, 1)
+	go func() {
+		var reply RpcVoid
+		callResult <- service.Call("Blocked.Wait", RpcNoArg(0), &reply)
+	}()
+	select {
+	case <-receiver.entered:
+	case <-time.After(time.Second):
+		t.Fatal("rpc call did not reach the deterministic barrier")
+	}
+	cancel()
+	select {
+	case err := <-callResult:
+		if err == nil {
+			t.Fatal("canceled rpc call unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("parent cancellation did not interrupt the rpc call")
+	}
+	close(receiver.release)
+	select {
+	case <-serverDone:
+	case <-time.After(time.Second):
+		t.Fatal("rpc server retained the released request")
+	}
 }
 
 type testingCountingDeviceRpcLogger struct {
@@ -231,6 +382,57 @@ func TestDeviceRemoteGetterDoesNotWaitBehindBlockedDial(t *testing.T) {
 		t.Fatal("state getter waited behind external device rpc dial")
 	}
 	close(dialer.release)
+}
+
+// TestDeviceRemoteCloseAndWaitJoinsBlockedDial verifies that closing the
+// top-level remote joins its reconnect worker while an admitted dial is live.
+func TestDeviceRemoteCloseAndWaitJoinsBlockedDial(t *testing.T) {
+	networkCtx, networkCancel := context.WithCancel(t.Context())
+	defer networkCancel()
+	networkSpace, byJwt, err := testing_newNetworkSpace(networkCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := defaultDeviceRpcSettings()
+	settings.DisableLogging = true
+	dialer := &testingBlockedDeviceRpcDialer{
+		entered: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		NewId(),
+		settings,
+		connect.NewId(),
+		dialer,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-dialer.entered:
+	case <-time.After(time.Second):
+		t.Fatal("device rpc dial did not reach the deterministic barrier")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := deviceRemote.CloseAndWait(ctx); err != nil {
+		t.Fatalf("close device remote: %v", err)
+	}
+	select {
+	case <-deviceRemote.runDone:
+	default:
+		t.Fatal("device remote returned before its reconnect worker exited")
+	}
+}
+
+func TestDeviceRemoteSetRpcServerRejectsAfterClose(t *testing.T) {
+	deviceRemote := &DeviceRemote{closed: true}
+	if err := deviceRemote.SetRpcServer("", "", "127.0.0.1:12042"); err == nil {
+		t.Fatal("closed device remote accepted a replacement rpc transport")
+	}
 }
 
 func TestDeviceRemoteFailedSyncRestoreKeepsNewerPendingState(t *testing.T) {

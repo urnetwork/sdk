@@ -12,7 +12,65 @@ import (
 	"time"
 
 	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/protocol"
 )
+
+type blockingDeviceUserNatClient struct {
+	closeOnce sync.Once
+	close     chan struct{}
+	waitOnce  sync.Once
+	wait      chan struct{}
+	release   <-chan struct{}
+}
+
+func (self *blockingDeviceUserNatClient) SendPacket(connect.TransferPath, protocol.ProvideMode, []byte, time.Duration) bool {
+	return false
+}
+
+func (self *blockingDeviceUserNatClient) Close() {
+	self.closeOnce.Do(func() {
+		close(self.close)
+	})
+}
+
+func (self *blockingDeviceUserNatClient) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	self.waitOnce.Do(func() {
+		close(self.wait)
+	})
+	select {
+	case <-self.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (self *blockingDeviceUserNatClient) Shuffle() {}
+
+func (self *blockingDeviceUserNatClient) SecurityPolicyStats(bool) connect.SecurityPolicyStats {
+	return connect.SecurityPolicyStats{}
+}
+
+func (self *blockingDeviceUserNatClient) SetLocalSecurityBypass(bool) {}
+
+type blockingDeviceGenerator struct {
+	waitOnce sync.Once
+	wait     chan struct{}
+	release  <-chan struct{}
+}
+
+func (self *blockingDeviceGenerator) CloseAndWait(ctx context.Context) error {
+	self.waitOnce.Do(func() {
+		close(self.wait)
+	})
+	select {
+	case <-self.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 // Builds a real headless provider whose platform dial has acknowledged
 // cancellation but cannot return until the test releases it.
@@ -206,6 +264,106 @@ func TestDeviceLocalCloseAndWaitJoinsOwnedApiRefresh(t *testing.T) {
 	select {
 	case <-time.After(5 * time.Second):
 		t.Fatal("device join did not finish after API request cleanup")
+	case err := <-closeResult:
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A destination generation owns both the packet client and its generator.
+// Device completion waits for them in dependency order instead of leaking one
+// discovery/client tree per reconnect or validator trail.
+func TestDeviceLocalCloseAndWaitJoinsDestinationGeneration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings.EnableNormal = true
+	strategySettings.EnableResilient = false
+	networkSpace := NewNetworkSpaceWithUrls(
+		ctx,
+		"http://unused.invalid",
+		"ws://unused.invalid",
+		strategySettings,
+	)
+	settings := DefaultDeviceLocalSettings()
+	settings.HostedIncompatible = true
+	settings.AllowProvider = false
+	settings.DisableLogging = true
+	device, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		"non-refreshable-test-token",
+		"destination-close",
+		"test",
+		"0.0.0",
+		NewId(),
+		settings,
+		connect.NewId(),
+	)
+	if err != nil {
+		networkSpace.Close()
+		cancel()
+		t.Fatal(err)
+	}
+	clientRelease := make(chan struct{})
+	generatorRelease := make(chan struct{})
+	client := &blockingDeviceUserNatClient{
+		close:   make(chan struct{}),
+		wait:    make(chan struct{}),
+		release: clientRelease,
+	}
+	generator := &blockingDeviceGenerator{
+		wait:    make(chan struct{}),
+		release: generatorRelease,
+	}
+	device.stateLock.Lock()
+	device.remoteUserNatClient = client
+	device.ownedMultiClientGenerator = generator
+	device.updateSendRouteWithLock()
+	device.stateLock.Unlock()
+	t.Cleanup(func() {
+		select {
+		case <-clientRelease:
+		default:
+			close(clientRelease)
+		}
+		select {
+		case <-generatorRelease:
+		default:
+			close(generatorRelease)
+		}
+		_ = device.CloseAndWait(context.Background())
+		networkSpace.Close()
+		cancel()
+	})
+
+	device.Close()
+	waitForSimProviderLifecycleEdge(t, client.close, "destination client cancellation")
+	waitForSimProviderLifecycleEdge(t, client.wait, "destination client join")
+	select {
+	case <-generator.wait:
+		t.Fatal("generator retirement passed a blocked destination client")
+	default:
+	}
+	closeResult := make(chan error, 1)
+	go func() {
+		closeResult <- device.CloseAndWait(context.Background())
+	}()
+	select {
+	case err := <-closeResult:
+		t.Fatalf("device close returned before destination retirement: %v", err)
+	default:
+	}
+	close(clientRelease)
+	waitForSimProviderLifecycleEdge(t, generator.wait, "destination generator join")
+	select {
+	case err := <-closeResult:
+		t.Fatalf("device close returned before generator retirement: %v", err)
+	default:
+	}
+	close(generatorRelease)
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatal("device close did not finish after destination retirement")
 	case err := <-closeResult:
 		if err != nil {
 			t.Fatal(err)
