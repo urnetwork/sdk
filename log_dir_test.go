@@ -93,9 +93,9 @@ func TestSetLogDirForProcessScopesRetentionPerProcess(t *testing.T) {
 // that does not contain the directory glog is writing to.
 //
 // A plain SetLogDir after a SetLogDirForProcess would otherwise leave the
-// previous root recorded, and anything that enumerates GetLogRoot would then
-// read per-process directories this process had abandoned while missing the
-// one it is actually writing.
+// previous root recorded, and LogInventory enumerates that root: the export
+// would list files from per-process directories this process had abandoned
+// and miss the one it was actually writing.
 func TestSetLogDirClearsTheRecordedRoot(t *testing.T) {
 	restoreTestingLogDir(t)
 
@@ -117,6 +117,19 @@ func TestSetLogDirClearsTheRecordedRoot(t *testing.T) {
 	}
 	if got := GetLogRoot(); got != "" {
 		t.Fatalf("GetLogRoot() = %q after a legacy SetLogDir, want \"\" -- it no longer contains GetLogDir()", got)
+	}
+
+	// the inventory must follow glog, not the abandoned root
+	writeTestingLogFile(t, legacy, "urnetwork.host.user.log.INFO.20260830-101112.4242")
+	inventory := LogInventory()
+	found := false
+	for i := 0; i < inventory.Len(); i += 1 {
+		if filepath.Dir(inventory.Get(i).Path) == legacy {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("LogInventory did not list the directory glog is writing to")
 	}
 }
 

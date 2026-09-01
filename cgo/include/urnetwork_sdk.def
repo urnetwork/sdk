@@ -230,6 +230,8 @@ EXPORTS
 	urnet_device_add_window_status_change_listener
 	urnet_device_cancel
 	urnet_device_close
+	urnet_device_diagnostic_manifest_json
+	urnet_device_flush_glog
 	urnet_device_get_allow_foreground
 	urnet_device_get_api
 	urnet_device_get_block_action_overrides
@@ -462,6 +464,7 @@ EXPORTS
 	urnet_devices_view_controller_stop
 	urnet_encode_base58
 	urnet_encrypt_data
+	urnet_export_diagnostic_bundle
 	urnet_feedback_view_controller_add_is_sending_feedback_listener
 	urnet_feedback_view_controller_close
 	urnet_feedback_view_controller_send_feedback
@@ -555,6 +558,7 @@ EXPORTS
 	urnet_locations_view_controller_get_filtered_locations
 	urnet_locations_view_controller_start
 	urnet_locations_view_controller_stop
+	urnet_log_inventory
 	urnet_login_view_controller_close
 	urnet_login_view_controller_start
 	urnet_login_view_controller_stop
@@ -616,6 +620,7 @@ EXPORTS
 	urnet_new_device_local_with_key_material
 	urnet_new_device_local_with_memory_target
 	urnet_new_device_remote_with_defaults
+	urnet_new_export_options
 	urnet_new_id
 	urnet_new_login_view_controller
 	urnet_new_network_name_validation_view_controller
