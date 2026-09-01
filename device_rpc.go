@@ -5623,6 +5623,52 @@ func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallb
 	return nil
 }
 
+func (self *DeviceRemote) DiagnosticManifestJson() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		// the tunnel is not running: the app still exports, with the
+		// device-side fields marked absent rather than reported as false
+		return buildDiagnosticManifestJson(diagnosticManifestInput{
+			SdkVersion:      Version,
+			DeviceAvailable: false,
+		})
+	}
+
+	manifestJson, err := rpcCallNoArg[string](self.service, "DeviceLocalRpc.DiagnosticManifestJson", self.closeService)
+	if err != nil {
+		return buildDiagnosticManifestJson(diagnosticManifestInput{
+			SdkVersion:      Version,
+			DeviceAvailable: false,
+		})
+	}
+	return manifestJson
+}
+
+// FlushGlog flushes both processes' glog: this one directly, and the device
+// process over the rpc.
+//
+// The exporting process is the app, and the log files it is about to zip up
+// are written by the extension, which is where the interesting lines are. A
+// failure here is deliberately not reported: a bundle missing its last few
+// seconds is still worth exporting, and losing the rpc must not fail the
+// export.
+func (self *DeviceRemote) FlushGlog() {
+	FlushGlog()
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		// the tunnel is not running, so the extension has nothing buffered
+		// that this export could be missing
+		return
+	}
+
+	rpcCallVoidAllowMissingMethod(self.service, "DeviceLocalRpc.FlushGlog", RpcNoArg(0), self.closeService)
+}
+
 // SetLogVerbosity sets both processes' glog verbosity: this one directly, and
 // the device process over the rpc -- or, when the rpc cannot carry it now, on
 // the next sync.
@@ -10297,6 +10343,16 @@ func (self *DeviceLocalRpc) canShowRatingDialogChanged(canShowRatingDialog bool)
 
 func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
 	self.deviceLocal.UploadLogs(feedbackId, nil)
+	return nil
+}
+
+func (self *DeviceLocalRpc) DiagnosticManifestJson(_ RpcNoArg, manifestJson *string) error {
+	*manifestJson = self.deviceLocal.DiagnosticManifestJson()
+	return nil
+}
+
+func (self *DeviceLocalRpc) FlushGlog(_ RpcNoArg, _ RpcVoid) error {
+	self.deviceLocal.FlushGlog()
 	return nil
 }
 

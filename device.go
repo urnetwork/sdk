@@ -723,6 +723,25 @@ type Device interface {
 
 	UploadLogs(feedbackId string, callback UploadLogsCallback) error
 
+	// DiagnosticManifestJson returns the device-side state an exported
+	// diagnostic bundle records in its manifest: sdk version, client and
+	// instance id, network space, and whether connect and provide are on.
+	//
+	// It is json rather than a struct because on ios it crosses the device
+	// rpc, from the network extension that holds the state to the app that
+	// writes the zip.
+	DiagnosticManifestJson() string
+
+	// FlushGlog flushes the device process's buffered glog output to disk.
+	//
+	// The exporter can only flush its own process. On ios the device runs in
+	// the network extension and the zip is assembled in the app, so without
+	// this the extension's last buffered output -- up to 256 KiB, and up to
+	// the 30 second flush interval -- is still in the extension's memory when
+	// the app reads the files, and the tail describing the failure the user is
+	// reporting is simply absent from the bundle.
+	FlushGlog()
+
 	// SetLogVerbosity sets the glog verbosity of the device process, which is
 	// where the logs worth raising it for are produced.
 	//
