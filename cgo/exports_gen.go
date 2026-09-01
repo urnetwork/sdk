@@ -5966,6 +5966,27 @@ func urnet_device_close(self C.uint64_t) {
 	self_.Close()
 }
 
+//export urnet_device_diagnostic_manifest_json
+func urnet_device_diagnostic_manifest_json(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_diagnostic_manifest_json")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_diagnostic_manifest_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.DiagnosticManifestJson()
+	return cString(string(r0))
+}
+
+//export urnet_device_flush_glog
+func urnet_device_flush_glog(self C.uint64_t) {
+	defer cgoGuard("urnet_device_flush_glog")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_flush_glog")
+	if !ok {
+		return
+	}
+	self_.FlushGlog()
+}
+
 //export urnet_device_get_allow_foreground
 func urnet_device_get_allow_foreground(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_get_allow_foreground")
@@ -8936,6 +8957,27 @@ func urnet_encrypt_data(data *C.uint8_t, data_len C.int32_t, nonceBase58 *C.char
 	return cString(string(r0))
 }
 
+//export urnet_export_diagnostic_bundle
+func urnet_export_diagnostic_bundle(destPath *C.char, opts *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_export_diagnostic_bundle")
+	var opts_ *sdk.ExportOptions
+	if opts != nil {
+		opts_ = &sdk.ExportOptions{}
+		if !goJson(opts, opts_, "urnet_export_diagnostic_bundle") {
+			return nil
+		}
+	}
+	r0, err := sdk.ExportDiagnosticBundle(goString(destPath), opts_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_export_diagnostic_bundle")
+}
+
 //export urnet_feedback_view_controller_add_is_sending_feedback_listener
 func urnet_feedback_view_controller_add_is_sending_feedback_listener(self C.uint64_t, listener_state_changed C.urnet_is_sending_feedback_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_feedback_view_controller_add_is_sending_feedback_listener")
@@ -10071,6 +10113,16 @@ func urnet_locations_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_log_inventory
+func urnet_log_inventory() *C.char {
+	defer cgoGuard("urnet_log_inventory")
+	r0 := sdk.LogInventory()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_log_inventory")
+}
+
 //export urnet_login_view_controller_close
 func urnet_login_view_controller_close(self C.uint64_t) {
 	defer cgoGuard("urnet_login_view_controller_close")
@@ -10918,6 +10970,16 @@ func urnet_new_device_remote_with_defaults(networkSpace C.uint64_t, byJwt *C.cha
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_export_options
+func urnet_new_export_options() *C.char {
+	defer cgoGuard("urnet_new_export_options")
+	r0 := sdk.NewExportOptions()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_export_options")
 }
 
 //export urnet_new_id
