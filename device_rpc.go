@@ -7914,6 +7914,17 @@ func (self *DeviceLocalRpc) run() {
 			serveErr = server.ServeRequest(codec)
 		})
 		if serveErr != nil {
+			if strings.HasPrefix(serveErr.Error(), "rpc: can't find method ") {
+				// an older peer answering a newer optional method: net/rpc has
+				// already sent the error response and the connection is healthy,
+				// so keep serving instead of tearing down the session. This must
+				// stay a string prefix check: rpcMissingMethodError matches an
+				// rpc.ServerError, which only exists on the client side of
+				// net/rpc; the server returns a plain errors.New here, so an
+				// errors.As test would never match and every miss would break
+				// through and close the connection.
+				continue
+			}
 			// connection closed or unrecoverable codec error
 			break
 		}

@@ -78,6 +78,102 @@ func TestRpcOptionalMissingMethodKeepsSessionAlive(t *testing.T) {
 	}
 }
 
+// TestRpcOptionalMissingMethodKeepsSessionAlive above serves the connection
+// with net/rpc's own ServeConn loop, which never stops on a missing method. The
+// production forward rpc does not use ServeConn: DeviceLocalRpc.run() drives
+// server.ServeRequest one request at a time so handler panics can be recovered,
+// and that loop decides for itself what to do with a serve error. This test
+// stands up the real DeviceLocal / DeviceLocalRpcManager / DeviceRemote pair
+// over the websocket transport and drives that loop: a call to a method the
+// local device does not implement must be answered as an error and leave the
+// session usable for the next call on the same connection.
+func TestDeviceRemoteMissingMethodKeepsSessionAlive(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		testDeviceLocalSettingsRpc(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(10 * time.Second) {
+		t.Fatal("device remote did not complete its initial sync")
+	}
+
+	// hold the service the sync established: the second call must go over this
+	// same connection, not over one a reconnect quietly replaced it with
+	service := deviceRemote.getService()
+	if service == nil {
+		t.Fatal("device remote has no rpc service after sync")
+	}
+
+	// a newer app calling an optional method this local device predates. The
+	// cleanup only records that it ran; a cleanup that closed the connection
+	// itself would mask what the serve loop did with the session. These two
+	// checks report without stopping so a regression run also shows the state
+	// the session was left in below.
+	cleanupCalled := false
+	err = rpcCallVoidAllowMissingMethod(
+		service,
+		"DeviceLocalRpc.AddFutureOptionalChangeListener",
+		true,
+		func() {
+			cleanupCalled = true
+		},
+	)
+	if err == nil || !rpcMissingMethodError(err) {
+		t.Errorf("missing optional method error=%v", err)
+	}
+	if cleanupCalled {
+		t.Errorf("missing optional method closed the RPC session")
+	}
+
+	// the same service must still serve a method the local device does
+	// implement; if run() broke out of its serve loop, the connection is gone
+	// and this reports "connection is shut down"
+	tunnelStarted, err := rpcCallNoArg[bool](
+		service,
+		"DeviceLocalRpc.GetTunnelStarted",
+		func() {},
+	)
+	if err != nil {
+		t.Fatalf("rpc session did not survive a missing optional method: err=%v", err)
+	}
+	connect.AssertEqual(t, tunnelStarted, deviceLocal.GetTunnelStarted())
+}
+
 func TestDeviceRemoteSimple(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
