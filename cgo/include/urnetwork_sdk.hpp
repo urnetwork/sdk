@@ -172,6 +172,9 @@ inline constexpr const char* LocationTypeRegion = "region";
 inline constexpr const char* LocationsError = "LOCATIONS_ERROR";
 inline constexpr const char* LocationsLoaded = "LOCATIONS_LOADED";
 inline constexpr const char* LocationsLoading = "LOCATIONS_LOADING";
+inline constexpr int64_t LogVerbosityDefault = 0;
+inline constexpr int64_t LogVerbosityTrace = 2;
+inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr const char* ProvideControlModeAlways = "always";
 inline constexpr const char* ProvideControlModeAuto = "auto";
@@ -11092,6 +11095,7 @@ public:
 	std::optional<ContractStats> getIngressContractStats() const;
 	std::string getInstanceId() const;
 	std::optional<OverrideLocalAppIds> getLocalOverrideAppIds() const;
+	int64_t getLogVerbosity() const;
 	std::optional<NetworkPeers> getNetworkPeers() const;
 	NetworkSpace getNetworkSpace() const;
 	bool getOffline() const;
@@ -11136,6 +11140,7 @@ public:
 	void setDefaultLocation(const std::optional<ConnectLocation>& location) const;
 	void setDestination(const std::optional<ConnectLocation>& location, const std::optional<ProviderSpecList>& specs) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
+	void setLogVerbosity(int64_t level) const;
 	void setOffline(bool offline) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& performance_profile) const;
 	void setProvideControlMode(const std::string& mode) const;
@@ -11595,6 +11600,7 @@ public:
 	DeviceLocalKeyMaterial getDeviceLocalKeyMaterial() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
 	std::string getInstanceId() const;
+	int64_t getLogVerbosity() const;
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
 	int64_t getProvideMode() const;
@@ -11621,6 +11627,7 @@ public:
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
 	void setInstanceId(const std::string& instance_id) const;
 	void setIntroFunnelLastPrompted() const;
+	void setLogVerbosity(int64_t level) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const;
 	void setProvideControlMode(const std::string& mode) const;
 	void setProvideMode(int64_t provide_mode) const;
@@ -17038,6 +17045,10 @@ inline std::optional<OverrideLocalAppIds> Device::getLocalOverrideAppIds() const
 	}
 	return detail::parseJson<OverrideLocalAppIds>(r_s->c_str());
 }
+inline int64_t Device::getLogVerbosity() const {
+	int64_t r = urnet_device_get_log_verbosity(handle());
+	return r;
+}
 inline std::optional<NetworkPeers> Device::getNetworkPeers() const {
 	char* r_c = urnet_device_get_network_peers(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -17307,6 +17318,9 @@ inline void Device::setDnsResolverSettings(const std::optional<DnsResolverSettin
 		dns_resolver_settings_c = dns_resolver_settings_json.c_str();
 	}
 	urnet_device_set_dns_resolver_settings(handle(), dns_resolver_settings_c);
+}
+inline void Device::setLogVerbosity(int64_t level) const {
+	urnet_device_set_log_verbosity(handle(), level);
 }
 inline void Device::setOffline(bool offline) const {
 	urnet_device_set_offline(handle(), offline);
@@ -19339,6 +19353,10 @@ inline std::string LocalState::getInstanceId() const {
 	char* r_c = urnet_local_state_get_instance_id(handle());
 	return detail::takeString(r_c);
 }
+inline int64_t LocalState::getLogVerbosity() const {
+	int64_t r = urnet_local_state_get_log_verbosity(handle());
+	return r;
+}
 inline std::optional<PerformanceProfile> LocalState::getPerformanceProfile() const {
 	char* r_c = urnet_local_state_get_performance_profile(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -19579,6 +19597,16 @@ inline void LocalState::setIntroFunnelLastPrompted() const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_intro_funnel_last_prompted failed");
+	}
+}
+inline void LocalState::setLogVerbosity(int64_t level) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_log_verbosity(handle(), level, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_log_verbosity failed");
 	}
 }
 inline void LocalState::setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const {
@@ -20774,6 +20802,10 @@ inline std::string getLogRoot() {
 	char* r_c = urnet_get_log_root();
 	return detail::takeString(r_c);
 }
+inline int64_t getLogVerbosity() {
+	int64_t r = urnet_get_log_verbosity();
+	return r;
+}
 inline std::optional<MemoryStats> getMemoryStats() {
 	char* r_c = urnet_get_memory_stats();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -21063,6 +21095,16 @@ inline void setLogDirForProcess(const std::string& root, const std::string& proc
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_set_log_dir_for_process failed");
+	}
+}
+inline void setLogVerbosity(int64_t level) {
+	char* err_c = nullptr;
+	bool ok = urnet_set_log_verbosity(level, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_set_log_verbosity failed");
 	}
 }
 inline void setMemoryLimit(int64_t limit) {

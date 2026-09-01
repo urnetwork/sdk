@@ -6261,6 +6261,17 @@ func urnet_device_get_local_override_app_ids(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_local_override_app_ids")
 }
 
+//export urnet_device_get_log_verbosity
+func urnet_device_get_log_verbosity(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_device_get_log_verbosity")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_log_verbosity")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetLogVerbosity()
+	return C.int64_t(r0)
+}
+
 //export urnet_device_get_network_peers
 func urnet_device_get_network_peers(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_network_peers")
@@ -6835,6 +6846,16 @@ func urnet_device_set_dns_resolver_settings(self C.uint64_t, dnsResolverSettings
 		}
 	}
 	self_.SetDnsResolverSettings(dnsResolverSettings_)
+}
+
+//export urnet_device_set_log_verbosity
+func urnet_device_set_log_verbosity(self C.uint64_t, level C.int64_t) {
+	defer cgoGuard("urnet_device_set_log_verbosity")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_log_verbosity")
+	if !ok {
+		return
+	}
+	self_.SetLogVerbosity(int(int64(level)))
 }
 
 //export urnet_device_set_offline
@@ -9096,6 +9117,13 @@ func urnet_get_log_root() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_get_log_verbosity
+func urnet_get_log_verbosity() C.int64_t {
+	defer cgoGuard("urnet_get_log_verbosity")
+	r0 := sdk.GetLogVerbosity()
+	return C.int64_t(r0)
+}
+
 //export urnet_get_memory_stats
 func urnet_get_memory_stats() *C.char {
 	defer cgoGuard("urnet_get_memory_stats")
@@ -9345,6 +9373,17 @@ func urnet_local_state_get_instance_id(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetInstanceId()
 	return cId(r0)
+}
+
+//export urnet_local_state_get_log_verbosity
+func urnet_local_state_get_log_verbosity(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_local_state_get_log_verbosity")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_log_verbosity")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetLogVerbosity()
+	return C.int64_t(r0)
 }
 
 //export urnet_local_state_get_performance_profile
@@ -9741,6 +9780,21 @@ func urnet_local_state_set_intro_funnel_last_prompted(self C.uint64_t, outError 
 		return C.bool(false)
 	}
 	err := self_.SetIntroFunnelLastPrompted()
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_log_verbosity
+func urnet_local_state_set_log_verbosity(self C.uint64_t, level C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_log_verbosity")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_log_verbosity")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetLogVerbosity(int(int64(level)))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)
@@ -11577,6 +11631,17 @@ func urnet_set_log_dir(logDir *C.char, outError **C.char) C.bool {
 func urnet_set_log_dir_for_process(root *C.char, processName *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_set_log_dir_for_process")
 	err := sdk.SetLogDirForProcess(goString(root), goString(processName))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_set_log_verbosity
+func urnet_set_log_verbosity(level C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_set_log_verbosity")
+	err := sdk.SetLogVerbosity(int(int64(level)))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

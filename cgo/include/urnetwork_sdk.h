@@ -91,6 +91,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOCATION_TYPE_CITY "city"
 #define URNET_LOCATION_TYPE_COUNTRY "country"
 #define URNET_LOCATION_TYPE_REGION "region"
+#define URNET_LOG_VERBOSITY_DEFAULT 0
+#define URNET_LOG_VERBOSITY_TRACE 2
+#define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
 #define URNET_PROVIDER_STATE_ADDED "Added"
 #define URNET_PROVIDER_STATE_EVALUATION_FAILED "EvaluationFailed"
@@ -733,6 +736,7 @@ char* urnet_device_get_ingress_contract_details(uint64_t self);
 char* urnet_device_get_ingress_contract_stats(uint64_t self);
 char* urnet_device_get_instance_id(uint64_t self);
 char* urnet_device_get_local_override_app_ids(uint64_t self);
+int64_t urnet_device_get_log_verbosity(uint64_t self);
 char* urnet_device_get_network_peers(uint64_t self);
 uint64_t urnet_device_get_network_space(uint64_t self);
 bool urnet_device_get_offline(uint64_t self);
@@ -777,6 +781,7 @@ void urnet_device_set_connect_location(uint64_t self, const char* location_json)
 void urnet_device_set_default_location(uint64_t self, const char* location_json);
 void urnet_device_set_destination(uint64_t self, const char* location_json, const char* specs_json);
 void urnet_device_set_dns_resolver_settings(uint64_t self, const char* dns_resolver_settings_json);
+void urnet_device_set_log_verbosity(uint64_t self, int64_t level);
 void urnet_device_set_offline(uint64_t self, bool offline);
 void urnet_device_set_performance_profile(uint64_t self, const char* performance_profile_json);
 void urnet_device_set_provide_control_mode(uint64_t self, const char* mode);
@@ -974,6 +979,7 @@ char* urnet_local_state_get_default_location(uint64_t self);
 uint64_t urnet_local_state_get_device_local_key_material(uint64_t self);
 char* urnet_local_state_get_dns_resolver_settings(uint64_t self);
 char* urnet_local_state_get_instance_id(uint64_t self);
+int64_t urnet_local_state_get_log_verbosity(uint64_t self);
 char* urnet_local_state_get_performance_profile(uint64_t self);
 char* urnet_local_state_get_provide_control_mode(uint64_t self);
 int64_t urnet_local_state_get_provide_mode(uint64_t self);
@@ -1000,6 +1006,7 @@ bool urnet_local_state_set_device_local_key_material(uint64_t self, uint64_t key
 bool urnet_local_state_set_dns_resolver_settings(uint64_t self, const char* dns_resolver_settings_json, char** out_error);
 bool urnet_local_state_set_instance_id(uint64_t self, const char* instance_id, char** out_error);
 bool urnet_local_state_set_intro_funnel_last_prompted(uint64_t self, char** out_error);
+bool urnet_local_state_set_log_verbosity(uint64_t self, int64_t level, char** out_error);
 bool urnet_local_state_set_performance_profile(uint64_t self, const char* profile_json, char** out_error);
 bool urnet_local_state_set_provide_control_mode(uint64_t self, const char* mode, char** out_error);
 bool urnet_local_state_set_provide_mode(uint64_t self, int64_t provide_mode, char** out_error);
@@ -1257,6 +1264,7 @@ char* urnet_get_filtered_locations_from_result(const char* result_json, const ch
 bool urnet_get_fips140_enabled(void);
 char* urnet_get_log_dir(void);
 char* urnet_get_log_root(void);
+int64_t urnet_get_log_verbosity(void);
 char* urnet_get_memory_stats(void);
 char* urnet_get_recommended_dns_resolver_settings(const char* country_code);
 char* urnet_get_regional_dns_servers(void);
@@ -1300,6 +1308,7 @@ char* urnet_service_url(const char* key_json, const char* values_json, const cha
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 bool urnet_set_log_dir_for_process(const char* root, const char* process_name, char** out_error);
+bool urnet_set_log_verbosity(int64_t level, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_memory_profile_rate(int64_t byte_count);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
