@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -6566,6 +6567,52 @@ func (self *DeviceLocal) GetLogVerbosity() int {
 	return GetLogVerbosity()
 }
 
+// zipWriteEntry writes one entry into an open zip. transform, when non-nil,
+// rewrites the content line by line -- this is how redaction is applied
+// without ever holding a whole log file in memory.
+//
+// fi, when non-nil, is the source file's os.FileInfo: the header is built
+// from it via zip.FileInfoHeader so the entry keeps the file's real
+// Modified time and permission bits, with only Name and Method overridden.
+// fi is nil for synthetic entries with no backing file (manifest.json,
+// README.txt, files under platform/), which instead get Modified set to
+// time.Now() so they carry a real date rather than zip's 1979 zero-value
+// sentinel.
+func zipWriteEntry(zipWriter *zip.Writer, name string, r io.Reader, fi os.FileInfo, transform func(string) string) error {
+	var hdr *zip.FileHeader
+	if fi != nil {
+		var err error
+		hdr, err = zip.FileInfoHeader(fi)
+		if err != nil {
+			return err
+		}
+	} else {
+		hdr = &zip.FileHeader{Modified: time.Now()}
+	}
+	hdr.Name = name
+	hdr.Method = zip.Deflate
+
+	w, err := zipWriter.CreateHeader(hdr)
+	if err != nil {
+		return err
+	}
+	if transform == nil {
+		_, err = io.Copy(w, r)
+		return err
+	}
+	scanner := bufio.NewScanner(r)
+	// glog caps a message at MaxLogMessageLen = 15000, but a line carrying a
+	// backtrace can exceed the scanner's 64KiB default, and a truncated log is
+	// a misleading one.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		if _, err := io.WriteString(w, transform(scanner.Text())+"\n"); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
 func zipLogs(
 	logFiles []string,
 	zipPath string,
@@ -6584,28 +6631,12 @@ func zipLogs(
 		if err != nil {
 			return err
 		}
-
 		fi, err := f.Stat()
 		if err != nil {
 			f.Close()
 			return err
 		}
-
-		hdr, err := zip.FileInfoHeader(fi)
-		if err != nil {
-			f.Close()
-			return err
-		}
-		hdr.Name = filepath.Base(path)
-		hdr.Method = zip.Deflate
-
-		w, err := zipWriter.CreateHeader(hdr)
-		if err != nil {
-			f.Close()
-			return err
-		}
-
-		if _, err := io.Copy(w, f); err != nil {
+		if err := zipWriteEntry(zipWriter, filepath.Base(path), f, fi, nil); err != nil {
 			f.Close()
 			return err
 		}
