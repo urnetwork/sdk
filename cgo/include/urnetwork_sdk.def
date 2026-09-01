@@ -480,6 +480,7 @@ EXPORTS
 	urnet_get_filtered_locations_from_result
 	urnet_get_fips140_enabled
 	urnet_get_log_dir
+	urnet_get_log_root
 	urnet_get_memory_stats
 	urnet_get_recommended_dns_resolver_settings
 	urnet_get_regional_dns_servers
@@ -675,6 +676,7 @@ EXPORTS
 	urnet_service_url
 	urnet_set_egress_interface_index
 	urnet_set_log_dir
+	urnet_set_log_dir_for_process
 	urnet_set_memory_limit
 	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets

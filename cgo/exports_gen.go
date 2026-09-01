@@ -9089,6 +9089,13 @@ func urnet_get_log_dir() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_get_log_root
+func urnet_get_log_root() *C.char {
+	defer cgoGuard("urnet_get_log_root")
+	r0 := sdk.GetLogRoot()
+	return cString(string(r0))
+}
+
 //export urnet_get_memory_stats
 func urnet_get_memory_stats() *C.char {
 	defer cgoGuard("urnet_get_memory_stats")
@@ -11559,6 +11566,17 @@ func urnet_set_egress_interface_index(index4 C.int64_t, index6 C.int64_t) {
 func urnet_set_log_dir(logDir *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_set_log_dir")
 	err := sdk.SetLogDir(goString(logDir))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_set_log_dir_for_process
+func urnet_set_log_dir_for_process(root *C.char, processName *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_set_log_dir_for_process")
+	err := sdk.SetLogDirForProcess(goString(root), goString(processName))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

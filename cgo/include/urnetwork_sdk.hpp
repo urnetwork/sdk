@@ -20770,6 +20770,10 @@ inline std::string getLogDir() {
 	char* r_c = urnet_get_log_dir();
 	return detail::takeString(r_c);
 }
+inline std::string getLogRoot() {
+	char* r_c = urnet_get_log_root();
+	return detail::takeString(r_c);
+}
 inline std::optional<MemoryStats> getMemoryStats() {
 	char* r_c = urnet_get_memory_stats();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -21049,6 +21053,16 @@ inline void setLogDir(const std::string& log_dir) {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_set_log_dir failed");
+	}
+}
+inline void setLogDirForProcess(const std::string& root, const std::string& process_name) {
+	char* err_c = nullptr;
+	bool ok = urnet_set_log_dir_for_process(root.c_str(), process_name.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_set_log_dir_for_process failed");
 	}
 }
 inline void setMemoryLimit(int64_t limit) {
