@@ -7897,6 +7897,17 @@ func urnet_device_local_stop_probe_suite(self C.uint64_t) {
 	self_.StopProbeSuite()
 }
 
+//export urnet_device_local_take_memory_samples_json
+func urnet_device_local_take_memory_samples_json(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_take_memory_samples_json")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_take_memory_samples_json")
+	if !ok {
+		return nil
+	}
+	r0 := self_.TakeMemorySamplesJson()
+	return cString(string(r0))
+}
+
 //export urnet_device_local_tunnel_dns_addresses_ipv4
 func urnet_device_local_tunnel_dns_addresses_ipv4(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_tunnel_dns_addresses_ipv4")
@@ -11561,6 +11572,12 @@ func urnet_set_memory_limit(limit C.int64_t) {
 	sdk.SetMemoryLimit(int64(limit))
 }
 
+//export urnet_set_memory_profile_rate
+func urnet_set_memory_profile_rate(byteCount C.int64_t) {
+	defer cgoGuard("urnet_set_memory_profile_rate")
+	sdk.SetMemoryProfileRate(int(int64(byteCount)))
+}
+
 //export urnet_set_message_pool_memory_targets
 func urnet_set_message_pool_memory_targets(packetPoolByteCount C.int64_t, largeObjectPoolByteCount C.int64_t) {
 	defer cgoGuard("urnet_set_message_pool_memory_targets")
@@ -11992,6 +12009,12 @@ func urnet_transport_settings_with_mode(settings *C.char, mode *C.char) *C.char 
 	return cJson(r0, "urnet_transport_settings_with_mode")
 }
 
+//export urnet_trim_memory
+func urnet_trim_memory() {
+	defer cgoGuard("urnet_trim_memory")
+	sdk.TrimMemory()
+}
+
 //export urnet_tunnel_cancel
 func urnet_tunnel_cancel(self C.uint64_t) {
 	defer cgoGuard("urnet_tunnel_cancel")
@@ -12342,6 +12365,17 @@ func urnet_websocket_device_rpc_listener_close(self C.uint64_t, outError **C.cha
 		return C.bool(false)
 	}
 	err := self_.Close()
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_write_heap_profile
+func urnet_write_heap_profile(path *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_write_heap_profile")
+	err := sdk.WriteHeapProfile(goString(path))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

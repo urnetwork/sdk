@@ -858,6 +858,7 @@ void urnet_device_local_simulate_network_change(uint64_t self);
 bool urnet_device_local_stall_exit(uint64_t self, const char* client_id, bool stalled);
 bool urnet_device_local_start_probe_suite(uint64_t self, const char* config_json);
 void urnet_device_local_stop_probe_suite(uint64_t self);
+char* urnet_device_local_take_memory_samples_json(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
@@ -1298,13 +1299,16 @@ char* urnet_service_url(const char* key_json, const char* values_json, const cha
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
+void urnet_set_memory_profile_rate(int64_t byte_count);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
 char* urnet_transport_settings_auto_modes(const char* settings_json);
 char* urnet_transport_settings_enabled_transport_types(const char* settings_json);
 bool urnet_transport_settings_equal(const char* a_json, const char* b_json);
 char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json, const char* mode, bool enabled);
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
+void urnet_trim_memory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
+bool urnet_write_heap_profile(const char* path, char** out_error);
 
 /* ----- linux/unix only ----- */
 
@@ -1853,8 +1857,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   DnsByteCount: number
  *   ClientSendByteCount: number
  *   ClientReceiveByteCount: number
+ *   PackQueueUsedByteCount: number
+ *   PackQueueCapacityByteCount: number
  *   ProviderSendByteCount: number
  *   ProviderReceiveByteCount: number
+ *   PlatformTransportBudgetByteCount: number
+ *   PlatformTransportUsedByteCount: number
+ *   PlatformTransportMaxCount: number
+ *   PlatformTransportUsedCount: number
+ *   PlatformTransportPendingH1Count: number
+ *   PlatformTransportPendingH1Bytes: number
  *   TotalByteCount: number
  */
 
@@ -1883,6 +1895,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Verbose: boolean
  *   GeneratorFunc: any
  *   MultiClientIdentityStore: any
+ *   ProviderDialContextSettings: any | null
  *   EnableRpc: boolean
  *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
@@ -1939,6 +1952,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   EffectiveTier: number
  *   Proven: boolean
  *   ProbeAgeSeconds: number
+ *   ProviderDiagnosticsAvailable: boolean
+ *   ProviderBuildVersion: string
+ *   ProviderSecurityPolicyHash: string
+ *   ProviderBlockIngressPacketCount: number
+ *   ProviderBlockIngressByteCount: number
+ *   ProviderBlockEgressPacketCount: number
+ *   ProviderBlockEgressByteCount: number
+ *   ProviderDiagnosticsSequence: number
  */
 
 /* ExitList (json):
@@ -2001,6 +2022,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* FindProvidersProvider (json):
  *   client_id: string (uuid) | null
  *   estimated_bytes_per_second: number
+ *   network_only?: boolean
+ *   reputation_failed_names?: string
  */
 
 /* FindProvidersProviderList (json):
@@ -2188,9 +2211,52 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TotalRuntimeByteCount: number
  *   MemoryLimitByteCount: number
  *   GoroutineCount: number
+ *   PhysicalFootprintByteCount: number
+ *   PhysicalFootprintPeakByteCount: number
+ *   PhysicalFootprintPressureCount: number
  *   PoolTakenCount: number
  *   PoolReturnedCount: number
  *   PoolCreatedCount: number
+ *   PoolRetainedCount: number
+ *   PoolRetainedByteCount: number
+ *   PoolCapacityByteCount: number
+ *   PacketPoolRetainedCount: number
+ *   PacketPoolRetainedByteCount: number
+ *   LargeObjectPoolRetainedCount: number
+ *   LargeObjectPoolRetainedByteCount: number
+ *   DeviceTunEgressOutstandingByteCount: number
+ *   IdleMemoryTrimCount: number
+ *   LastIdleMemoryTrimDroppedByteCount: number
+ *   IdleMemoryTrimDeferredCount: number
+ *   IdleMemoryTrimBelowTargetCount: number
+ *   IdleMemoryTrimCooldownCount: number
+ *   LastIdleMemoryTrimBeforeByteCount: number
+ *   LastIdleMemoryTrimAfterByteCount: number
+ *   PlatformTransportBudgetTotalByteCount: number
+ *   PlatformTransportBudgetUsedByteCount: number
+ *   PlatformTransportBudgetUsedCount: number
+ *   PlatformTransportBudgetPendingH1Count: number
+ *   PlatformTransportBudgetPendingH1ByteCount: number
+ *   HeapAllocByteCount: number
+ *   HeapSystemByteCount: number
+ *   HeapInuseByteCount: number
+ *   HeapIdleByteCount: number
+ *   HeapReleasedByteCount: number
+ *   HeapObjectCount: number
+ *   StackInuseByteCount: number
+ *   MSpanInuseByteCount: number
+ *   MCacheInuseByteCount: number
+ *   GCSystemByteCount: number
+ *   OtherSystemByteCount: number
+ *   ProfilingBucketByteCount: number
+ *   SystemByteCount: number
+ *   MemoryProfileRateByteCount: number
+ *   TotalAllocatedByteCount: number
+ *   MallocCount: number
+ *   FreeCount: number
+ *   GCCycleCount: number
+ *   ForcedGCCycleCount: number
+ *   GCPauseTotalNanoseconds: number
  */
 
 /* NetExtender (json):
@@ -2628,6 +2694,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   SchedulerPausesDetected: number
  *   GroupsFollowed: number
  *   GroupsScattered: number
+ *   QuarantineTcpResets: number
+ *   QuarantineAffinityInvalidations: number
+ *   StickyFlowsRetired: number
+ *   AffinityPerformanceSamples: number
+ *   AffinityPerformanceDonorBypasses: number
+ *   AffinityPerformanceCandidatesFiltered: number
  */
 
 /* ReliabilitySettings (json):
@@ -2643,6 +2715,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   BlackholeReceiveTimeoutMillis: number
  *   MaxFlowsPerExit: number
  *   AffinityStickyPastCap: boolean
+ *   FreshFlowAffinity: boolean
+ *   PerformanceAwareAffinity: boolean
+ *   MaxStickyFlowsPerExit: number
+ *   StickyFlowIdleTimeoutMillis: number
  *   QuarantineGroupFollow: boolean
  *   GroupFollowWindowMillis: number
  *   UplinkStalenessGateMillis: number
@@ -2765,6 +2841,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   epoch: number
  */
 
+/* SnPoolClaimError (json):
+ *   message: string
+ */
+
 /* SnPoolClaimResult (json):
  *   epoch: number
  *   no_id: string (base64)
@@ -2775,10 +2855,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   contract_address: string
  *   chain_id: number
  *   claim_open_block: number
+ *   artifact_hash?: string
+ *   artifact_uri?: string
+ *   settlement_vault_address?: string
+ *   error?: SnPoolClaimError | null
  */
 
 /* SnSetWalletArgs (json):
  *   coldkey_ss58: string
+ *   client_id?: string (uuid) | null
  */
 
 /* SnSetWalletError (json):
