@@ -355,6 +355,7 @@ EXPORTS
 	urnet_device_local_stall_exit
 	urnet_device_local_start_probe_suite
 	urnet_device_local_stop_probe_suite
+	urnet_device_local_take_memory_samples_json
 	urnet_device_local_tunnel_dns_addresses_ipv4
 	urnet_device_local_tunnel_dns_addresses_ipv6
 	urnet_device_local_tunnel_dns_setting
@@ -675,6 +676,7 @@ EXPORTS
 	urnet_set_egress_interface_index
 	urnet_set_log_dir
 	urnet_set_memory_limit
+	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets
 	urnet_sub_close
 	urnet_subscription_balance_view_controller_add_purchase_confirmation_listener
@@ -711,6 +713,7 @@ EXPORTS
 	urnet_transport_settings_equal
 	urnet_transport_settings_with_auto_mode_enabled
 	urnet_transport_settings_with_mode
+	urnet_trim_memory
 	urnet_tunnel_cancel
 	urnet_tunnel_close
 	urnet_tunnel_get_done
@@ -742,3 +745,4 @@ EXPORTS
 	urnet_wallet_view_controller_update_payout_wallet
 	urnet_wallet_view_controller_validate_address
 	urnet_websocket_device_rpc_listener_close
+	urnet_write_heap_profile

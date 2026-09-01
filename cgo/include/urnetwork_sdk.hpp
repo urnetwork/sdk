@@ -479,6 +479,7 @@ struct SetPayoutWalletArgs;
 struct SetPayoutWalletResult;
 struct SnEpochResult;
 struct SnPoolClaimArgs;
+struct SnPoolClaimError;
 struct SnPoolClaimResult;
 struct SnSetWalletArgs;
 struct SnSetWalletError;
@@ -1138,8 +1139,16 @@ struct DeviceLocalMemoryUsage {
 	int64_t DnsByteCount{};
 	int64_t ClientSendByteCount{};
 	int64_t ClientReceiveByteCount{};
+	int64_t PackQueueUsedByteCount{};
+	int64_t PackQueueCapacityByteCount{};
 	int64_t ProviderSendByteCount{};
 	int64_t ProviderReceiveByteCount{};
+	int64_t PlatformTransportBudgetByteCount{};
+	int64_t PlatformTransportUsedByteCount{};
+	int64_t PlatformTransportMaxCount{};
+	int64_t PlatformTransportUsedCount{};
+	int64_t PlatformTransportPendingH1Count{};
+	int64_t PlatformTransportPendingH1Bytes{};
 	int64_t TotalByteCount{};
 };
 
@@ -1168,6 +1177,7 @@ struct DeviceLocalSettings {
 	bool Verbose{};
 	nlohmann::json GeneratorFunc{};
 	nlohmann::json MultiClientIdentityStore{};
+	std::optional<nlohmann::json> ProviderDialContextSettings;
 	bool EnableRpc{};
 	std::optional<nlohmann::json> KeyMaterial;
 	bool DisableLogging{};
@@ -1224,6 +1234,14 @@ struct Exit {
 	int32_t EffectiveTier{};
 	bool Proven{};
 	int64_t ProbeAgeSeconds{};
+	bool ProviderDiagnosticsAvailable{};
+	std::string ProviderBuildVersion{};
+	std::string ProviderSecurityPolicyHash{};
+	int64_t ProviderBlockIngressPacketCount{};
+	int64_t ProviderBlockIngressByteCount{};
+	int64_t ProviderBlockEgressPacketCount{};
+	int64_t ProviderBlockEgressByteCount{};
+	int64_t ProviderDiagnosticsSequence{};
 };
 
 struct FeedbackSendNeeds {
@@ -1282,6 +1300,8 @@ struct FindProvidersArgs {
 struct FindProvidersProvider {
 	std::optional<std::string> client_id;
 	int64_t estimated_bytes_per_second{};
+	std::optional<bool> network_only;
+	std::optional<std::string> reputation_failed_names;
 };
 
 struct FindProvidersResult {
@@ -1474,9 +1494,52 @@ struct MemoryStats {
 	int64_t TotalRuntimeByteCount{};
 	int64_t MemoryLimitByteCount{};
 	int64_t GoroutineCount{};
+	int64_t PhysicalFootprintByteCount{};
+	int64_t PhysicalFootprintPeakByteCount{};
+	int64_t PhysicalFootprintPressureCount{};
 	int64_t PoolTakenCount{};
 	int64_t PoolReturnedCount{};
 	int64_t PoolCreatedCount{};
+	int64_t PoolRetainedCount{};
+	int64_t PoolRetainedByteCount{};
+	int64_t PoolCapacityByteCount{};
+	int64_t PacketPoolRetainedCount{};
+	int64_t PacketPoolRetainedByteCount{};
+	int64_t LargeObjectPoolRetainedCount{};
+	int64_t LargeObjectPoolRetainedByteCount{};
+	int64_t DeviceTunEgressOutstandingByteCount{};
+	int64_t IdleMemoryTrimCount{};
+	int64_t LastIdleMemoryTrimDroppedByteCount{};
+	int64_t IdleMemoryTrimDeferredCount{};
+	int64_t IdleMemoryTrimBelowTargetCount{};
+	int64_t IdleMemoryTrimCooldownCount{};
+	int64_t LastIdleMemoryTrimBeforeByteCount{};
+	int64_t LastIdleMemoryTrimAfterByteCount{};
+	int64_t PlatformTransportBudgetTotalByteCount{};
+	int64_t PlatformTransportBudgetUsedByteCount{};
+	int64_t PlatformTransportBudgetUsedCount{};
+	int64_t PlatformTransportBudgetPendingH1Count{};
+	int64_t PlatformTransportBudgetPendingH1ByteCount{};
+	int64_t HeapAllocByteCount{};
+	int64_t HeapSystemByteCount{};
+	int64_t HeapInuseByteCount{};
+	int64_t HeapIdleByteCount{};
+	int64_t HeapReleasedByteCount{};
+	int64_t HeapObjectCount{};
+	int64_t StackInuseByteCount{};
+	int64_t MSpanInuseByteCount{};
+	int64_t MCacheInuseByteCount{};
+	int64_t GCSystemByteCount{};
+	int64_t OtherSystemByteCount{};
+	int64_t ProfilingBucketByteCount{};
+	int64_t SystemByteCount{};
+	int64_t MemoryProfileRateByteCount{};
+	int64_t TotalAllocatedByteCount{};
+	int64_t MallocCount{};
+	int64_t FreeCount{};
+	int64_t GCCycleCount{};
+	int64_t ForcedGCCycleCount{};
+	int64_t GCPauseTotalNanoseconds{};
 };
 
 struct NetExtender {
@@ -1803,6 +1866,12 @@ struct ReliabilityMetrics {
 	int64_t SchedulerPausesDetected{};
 	int64_t GroupsFollowed{};
 	int64_t GroupsScattered{};
+	int64_t QuarantineTcpResets{};
+	int64_t QuarantineAffinityInvalidations{};
+	int64_t StickyFlowsRetired{};
+	int64_t AffinityPerformanceSamples{};
+	int64_t AffinityPerformanceDonorBypasses{};
+	int64_t AffinityPerformanceCandidatesFiltered{};
 };
 
 struct ReliabilitySettings {
@@ -1818,6 +1887,10 @@ struct ReliabilitySettings {
 	int64_t BlackholeReceiveTimeoutMillis{};
 	int32_t MaxFlowsPerExit{};
 	bool AffinityStickyPastCap{};
+	bool FreshFlowAffinity{};
+	bool PerformanceAwareAffinity{};
+	int32_t MaxStickyFlowsPerExit{};
+	int64_t StickyFlowIdleTimeoutMillis{};
 	bool QuarantineGroupFollow{};
 	int64_t GroupFollowWindowMillis{};
 	int64_t UplinkStalenessGateMillis{};
@@ -1920,6 +1993,10 @@ struct SnPoolClaimArgs {
 	int64_t epoch{};
 };
 
+struct SnPoolClaimError {
+	std::string message{};
+};
+
 struct SnPoolClaimResult {
 	int64_t epoch{};
 	std::string no_id{};
@@ -1930,10 +2007,15 @@ struct SnPoolClaimResult {
 	std::string contract_address{};
 	int64_t chain_id{};
 	int64_t claim_open_block{};
+	std::optional<std::string> artifact_hash;
+	std::optional<std::string> artifact_uri;
+	std::optional<std::string> settlement_vault_address;
+	std::optional<SnPoolClaimError> error;
 };
 
 struct SnSetWalletArgs {
 	std::string coldkey_ss58{};
+	std::optional<std::string> client_id;
 };
 
 struct SnSetWalletError {
@@ -2692,6 +2774,8 @@ inline void to_json(nlohmann::json& j, const SnEpochResult& v);
 inline void from_json(const nlohmann::json& j, SnEpochResult& v);
 inline void to_json(nlohmann::json& j, const SnPoolClaimArgs& v);
 inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v);
+inline void to_json(nlohmann::json& j, const SnPoolClaimError& v);
+inline void from_json(const nlohmann::json& j, SnPoolClaimError& v);
 inline void to_json(nlohmann::json& j, const SnPoolClaimResult& v);
 inline void from_json(const nlohmann::json& j, SnPoolClaimResult& v);
 inline void to_json(nlohmann::json& j, const SnSetWalletArgs& v);
@@ -5360,8 +5444,16 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["DnsByteCount"] = v.DnsByteCount;
 	j["ClientSendByteCount"] = v.ClientSendByteCount;
 	j["ClientReceiveByteCount"] = v.ClientReceiveByteCount;
+	j["PackQueueUsedByteCount"] = v.PackQueueUsedByteCount;
+	j["PackQueueCapacityByteCount"] = v.PackQueueCapacityByteCount;
 	j["ProviderSendByteCount"] = v.ProviderSendByteCount;
 	j["ProviderReceiveByteCount"] = v.ProviderReceiveByteCount;
+	j["PlatformTransportBudgetByteCount"] = v.PlatformTransportBudgetByteCount;
+	j["PlatformTransportUsedByteCount"] = v.PlatformTransportUsedByteCount;
+	j["PlatformTransportMaxCount"] = v.PlatformTransportMaxCount;
+	j["PlatformTransportUsedCount"] = v.PlatformTransportUsedCount;
+	j["PlatformTransportPendingH1Count"] = v.PlatformTransportPendingH1Count;
+	j["PlatformTransportPendingH1Bytes"] = v.PlatformTransportPendingH1Bytes;
 	j["TotalByteCount"] = v.TotalByteCount;
 }
 inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
@@ -5380,11 +5472,35 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	if (auto it = j.find("ClientReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ClientReceiveByteCount);
 	}
+	if (auto it = j.find("PackQueueUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PackQueueUsedByteCount);
+	}
+	if (auto it = j.find("PackQueueCapacityByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PackQueueCapacityByteCount);
+	}
 	if (auto it = j.find("ProviderSendByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderSendByteCount);
 	}
 	if (auto it = j.find("ProviderReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderReceiveByteCount);
+	}
+	if (auto it = j.find("PlatformTransportBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportBudgetByteCount);
+	}
+	if (auto it = j.find("PlatformTransportUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportUsedByteCount);
+	}
+	if (auto it = j.find("PlatformTransportMaxCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportMaxCount);
+	}
+	if (auto it = j.find("PlatformTransportUsedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportUsedCount);
+	}
+	if (auto it = j.find("PlatformTransportPendingH1Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportPendingH1Count);
+	}
+	if (auto it = j.find("PlatformTransportPendingH1Bytes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportPendingH1Bytes);
 	}
 	if (auto it = j.find("TotalByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TotalByteCount);
@@ -5417,6 +5533,9 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["Verbose"] = v.Verbose;
 	j["GeneratorFunc"] = v.GeneratorFunc;
 	j["MultiClientIdentityStore"] = v.MultiClientIdentityStore;
+	if (v.ProviderDialContextSettings) {
+		j["ProviderDialContextSettings"] = *v.ProviderDialContextSettings;
+	}
 	j["EnableRpc"] = v.EnableRpc;
 	if (v.KeyMaterial) {
 		j["KeyMaterial"] = *v.KeyMaterial;
@@ -5500,6 +5619,11 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("MultiClientIdentityStore"); it != j.end() && !it->is_null()) {
 		it->get_to(v.MultiClientIdentityStore);
+	}
+	if (auto it = j.find("ProviderDialContextSettings"); it != j.end() && !it->is_null()) {
+		nlohmann::json tmp{};
+		it->get_to(tmp);
+		v.ProviderDialContextSettings = std::move(tmp);
 	}
 	if (auto it = j.find("EnableRpc"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableRpc);
@@ -5702,6 +5826,14 @@ inline void to_json(nlohmann::json& j, const Exit& v) {
 	j["EffectiveTier"] = v.EffectiveTier;
 	j["Proven"] = v.Proven;
 	j["ProbeAgeSeconds"] = v.ProbeAgeSeconds;
+	j["ProviderDiagnosticsAvailable"] = v.ProviderDiagnosticsAvailable;
+	j["ProviderBuildVersion"] = v.ProviderBuildVersion;
+	j["ProviderSecurityPolicyHash"] = v.ProviderSecurityPolicyHash;
+	j["ProviderBlockIngressPacketCount"] = v.ProviderBlockIngressPacketCount;
+	j["ProviderBlockIngressByteCount"] = v.ProviderBlockIngressByteCount;
+	j["ProviderBlockEgressPacketCount"] = v.ProviderBlockEgressPacketCount;
+	j["ProviderBlockEgressByteCount"] = v.ProviderBlockEgressByteCount;
+	j["ProviderDiagnosticsSequence"] = v.ProviderDiagnosticsSequence;
 }
 inline void from_json(const nlohmann::json& j, Exit& v) {
 	if (!j.is_object()) {
@@ -5747,6 +5879,30 @@ inline void from_json(const nlohmann::json& j, Exit& v) {
 	}
 	if (auto it = j.find("ProbeAgeSeconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProbeAgeSeconds);
+	}
+	if (auto it = j.find("ProviderDiagnosticsAvailable"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderDiagnosticsAvailable);
+	}
+	if (auto it = j.find("ProviderBuildVersion"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderBuildVersion);
+	}
+	if (auto it = j.find("ProviderSecurityPolicyHash"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderSecurityPolicyHash);
+	}
+	if (auto it = j.find("ProviderBlockIngressPacketCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderBlockIngressPacketCount);
+	}
+	if (auto it = j.find("ProviderBlockIngressByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderBlockIngressByteCount);
+	}
+	if (auto it = j.find("ProviderBlockEgressPacketCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderBlockEgressPacketCount);
+	}
+	if (auto it = j.find("ProviderBlockEgressByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderBlockEgressByteCount);
+	}
+	if (auto it = j.find("ProviderDiagnosticsSequence"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderDiagnosticsSequence);
 	}
 }
 
@@ -6025,6 +6181,12 @@ inline void to_json(nlohmann::json& j, const FindProvidersProvider& v) {
 		j["client_id"] = *v.client_id;
 	}
 	j["estimated_bytes_per_second"] = v.estimated_bytes_per_second;
+	if (v.network_only) {
+		j["network_only"] = *v.network_only;
+	}
+	if (v.reputation_failed_names) {
+		j["reputation_failed_names"] = *v.reputation_failed_names;
+	}
 }
 inline void from_json(const nlohmann::json& j, FindProvidersProvider& v) {
 	if (!j.is_object()) {
@@ -6037,6 +6199,16 @@ inline void from_json(const nlohmann::json& j, FindProvidersProvider& v) {
 	}
 	if (auto it = j.find("estimated_bytes_per_second"); it != j.end() && !it->is_null()) {
 		it->get_to(v.estimated_bytes_per_second);
+	}
+	if (auto it = j.find("network_only"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.network_only = std::move(tmp);
+	}
+	if (auto it = j.find("reputation_failed_names"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reputation_failed_names = std::move(tmp);
 	}
 }
 
@@ -6872,9 +7044,52 @@ inline void to_json(nlohmann::json& j, const MemoryStats& v) {
 	j["TotalRuntimeByteCount"] = v.TotalRuntimeByteCount;
 	j["MemoryLimitByteCount"] = v.MemoryLimitByteCount;
 	j["GoroutineCount"] = v.GoroutineCount;
+	j["PhysicalFootprintByteCount"] = v.PhysicalFootprintByteCount;
+	j["PhysicalFootprintPeakByteCount"] = v.PhysicalFootprintPeakByteCount;
+	j["PhysicalFootprintPressureCount"] = v.PhysicalFootprintPressureCount;
 	j["PoolTakenCount"] = v.PoolTakenCount;
 	j["PoolReturnedCount"] = v.PoolReturnedCount;
 	j["PoolCreatedCount"] = v.PoolCreatedCount;
+	j["PoolRetainedCount"] = v.PoolRetainedCount;
+	j["PoolRetainedByteCount"] = v.PoolRetainedByteCount;
+	j["PoolCapacityByteCount"] = v.PoolCapacityByteCount;
+	j["PacketPoolRetainedCount"] = v.PacketPoolRetainedCount;
+	j["PacketPoolRetainedByteCount"] = v.PacketPoolRetainedByteCount;
+	j["LargeObjectPoolRetainedCount"] = v.LargeObjectPoolRetainedCount;
+	j["LargeObjectPoolRetainedByteCount"] = v.LargeObjectPoolRetainedByteCount;
+	j["DeviceTunEgressOutstandingByteCount"] = v.DeviceTunEgressOutstandingByteCount;
+	j["IdleMemoryTrimCount"] = v.IdleMemoryTrimCount;
+	j["LastIdleMemoryTrimDroppedByteCount"] = v.LastIdleMemoryTrimDroppedByteCount;
+	j["IdleMemoryTrimDeferredCount"] = v.IdleMemoryTrimDeferredCount;
+	j["IdleMemoryTrimBelowTargetCount"] = v.IdleMemoryTrimBelowTargetCount;
+	j["IdleMemoryTrimCooldownCount"] = v.IdleMemoryTrimCooldownCount;
+	j["LastIdleMemoryTrimBeforeByteCount"] = v.LastIdleMemoryTrimBeforeByteCount;
+	j["LastIdleMemoryTrimAfterByteCount"] = v.LastIdleMemoryTrimAfterByteCount;
+	j["PlatformTransportBudgetTotalByteCount"] = v.PlatformTransportBudgetTotalByteCount;
+	j["PlatformTransportBudgetUsedByteCount"] = v.PlatformTransportBudgetUsedByteCount;
+	j["PlatformTransportBudgetUsedCount"] = v.PlatformTransportBudgetUsedCount;
+	j["PlatformTransportBudgetPendingH1Count"] = v.PlatformTransportBudgetPendingH1Count;
+	j["PlatformTransportBudgetPendingH1ByteCount"] = v.PlatformTransportBudgetPendingH1ByteCount;
+	j["HeapAllocByteCount"] = v.HeapAllocByteCount;
+	j["HeapSystemByteCount"] = v.HeapSystemByteCount;
+	j["HeapInuseByteCount"] = v.HeapInuseByteCount;
+	j["HeapIdleByteCount"] = v.HeapIdleByteCount;
+	j["HeapReleasedByteCount"] = v.HeapReleasedByteCount;
+	j["HeapObjectCount"] = v.HeapObjectCount;
+	j["StackInuseByteCount"] = v.StackInuseByteCount;
+	j["MSpanInuseByteCount"] = v.MSpanInuseByteCount;
+	j["MCacheInuseByteCount"] = v.MCacheInuseByteCount;
+	j["GCSystemByteCount"] = v.GCSystemByteCount;
+	j["OtherSystemByteCount"] = v.OtherSystemByteCount;
+	j["ProfilingBucketByteCount"] = v.ProfilingBucketByteCount;
+	j["SystemByteCount"] = v.SystemByteCount;
+	j["MemoryProfileRateByteCount"] = v.MemoryProfileRateByteCount;
+	j["TotalAllocatedByteCount"] = v.TotalAllocatedByteCount;
+	j["MallocCount"] = v.MallocCount;
+	j["FreeCount"] = v.FreeCount;
+	j["GCCycleCount"] = v.GCCycleCount;
+	j["ForcedGCCycleCount"] = v.ForcedGCCycleCount;
+	j["GCPauseTotalNanoseconds"] = v.GCPauseTotalNanoseconds;
 }
 inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	if (!j.is_object()) {
@@ -6895,6 +7110,15 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	if (auto it = j.find("GoroutineCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GoroutineCount);
 	}
+	if (auto it = j.find("PhysicalFootprintByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PhysicalFootprintByteCount);
+	}
+	if (auto it = j.find("PhysicalFootprintPeakByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PhysicalFootprintPeakByteCount);
+	}
+	if (auto it = j.find("PhysicalFootprintPressureCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PhysicalFootprintPressureCount);
+	}
 	if (auto it = j.find("PoolTakenCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PoolTakenCount);
 	}
@@ -6903,6 +7127,126 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	}
 	if (auto it = j.find("PoolCreatedCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PoolCreatedCount);
+	}
+	if (auto it = j.find("PoolRetainedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PoolRetainedCount);
+	}
+	if (auto it = j.find("PoolRetainedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PoolRetainedByteCount);
+	}
+	if (auto it = j.find("PoolCapacityByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PoolCapacityByteCount);
+	}
+	if (auto it = j.find("PacketPoolRetainedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PacketPoolRetainedCount);
+	}
+	if (auto it = j.find("PacketPoolRetainedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PacketPoolRetainedByteCount);
+	}
+	if (auto it = j.find("LargeObjectPoolRetainedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LargeObjectPoolRetainedCount);
+	}
+	if (auto it = j.find("LargeObjectPoolRetainedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LargeObjectPoolRetainedByteCount);
+	}
+	if (auto it = j.find("DeviceTunEgressOutstandingByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DeviceTunEgressOutstandingByteCount);
+	}
+	if (auto it = j.find("IdleMemoryTrimCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IdleMemoryTrimCount);
+	}
+	if (auto it = j.find("LastIdleMemoryTrimDroppedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastIdleMemoryTrimDroppedByteCount);
+	}
+	if (auto it = j.find("IdleMemoryTrimDeferredCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IdleMemoryTrimDeferredCount);
+	}
+	if (auto it = j.find("IdleMemoryTrimBelowTargetCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IdleMemoryTrimBelowTargetCount);
+	}
+	if (auto it = j.find("IdleMemoryTrimCooldownCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IdleMemoryTrimCooldownCount);
+	}
+	if (auto it = j.find("LastIdleMemoryTrimBeforeByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastIdleMemoryTrimBeforeByteCount);
+	}
+	if (auto it = j.find("LastIdleMemoryTrimAfterByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastIdleMemoryTrimAfterByteCount);
+	}
+	if (auto it = j.find("PlatformTransportBudgetTotalByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportBudgetTotalByteCount);
+	}
+	if (auto it = j.find("PlatformTransportBudgetUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportBudgetUsedByteCount);
+	}
+	if (auto it = j.find("PlatformTransportBudgetUsedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportBudgetUsedCount);
+	}
+	if (auto it = j.find("PlatformTransportBudgetPendingH1Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportBudgetPendingH1Count);
+	}
+	if (auto it = j.find("PlatformTransportBudgetPendingH1ByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportBudgetPendingH1ByteCount);
+	}
+	if (auto it = j.find("HeapAllocByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeapAllocByteCount);
+	}
+	if (auto it = j.find("HeapSystemByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeapSystemByteCount);
+	}
+	if (auto it = j.find("HeapInuseByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeapInuseByteCount);
+	}
+	if (auto it = j.find("HeapIdleByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeapIdleByteCount);
+	}
+	if (auto it = j.find("HeapReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeapReleasedByteCount);
+	}
+	if (auto it = j.find("HeapObjectCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HeapObjectCount);
+	}
+	if (auto it = j.find("StackInuseByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StackInuseByteCount);
+	}
+	if (auto it = j.find("MSpanInuseByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MSpanInuseByteCount);
+	}
+	if (auto it = j.find("MCacheInuseByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MCacheInuseByteCount);
+	}
+	if (auto it = j.find("GCSystemByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GCSystemByteCount);
+	}
+	if (auto it = j.find("OtherSystemByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.OtherSystemByteCount);
+	}
+	if (auto it = j.find("ProfilingBucketByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProfilingBucketByteCount);
+	}
+	if (auto it = j.find("SystemByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SystemByteCount);
+	}
+	if (auto it = j.find("MemoryProfileRateByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MemoryProfileRateByteCount);
+	}
+	if (auto it = j.find("TotalAllocatedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TotalAllocatedByteCount);
+	}
+	if (auto it = j.find("MallocCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MallocCount);
+	}
+	if (auto it = j.find("FreeCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FreeCount);
+	}
+	if (auto it = j.find("GCCycleCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GCCycleCount);
+	}
+	if (auto it = j.find("ForcedGCCycleCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ForcedGCCycleCount);
+	}
+	if (auto it = j.find("GCPauseTotalNanoseconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GCPauseTotalNanoseconds);
 	}
 }
 
@@ -8294,6 +8638,12 @@ inline void to_json(nlohmann::json& j, const ReliabilityMetrics& v) {
 	j["SchedulerPausesDetected"] = v.SchedulerPausesDetected;
 	j["GroupsFollowed"] = v.GroupsFollowed;
 	j["GroupsScattered"] = v.GroupsScattered;
+	j["QuarantineTcpResets"] = v.QuarantineTcpResets;
+	j["QuarantineAffinityInvalidations"] = v.QuarantineAffinityInvalidations;
+	j["StickyFlowsRetired"] = v.StickyFlowsRetired;
+	j["AffinityPerformanceSamples"] = v.AffinityPerformanceSamples;
+	j["AffinityPerformanceDonorBypasses"] = v.AffinityPerformanceDonorBypasses;
+	j["AffinityPerformanceCandidatesFiltered"] = v.AffinityPerformanceCandidatesFiltered;
 }
 inline void from_json(const nlohmann::json& j, ReliabilityMetrics& v) {
 	if (!j.is_object()) {
@@ -8380,6 +8730,24 @@ inline void from_json(const nlohmann::json& j, ReliabilityMetrics& v) {
 	if (auto it = j.find("GroupsScattered"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GroupsScattered);
 	}
+	if (auto it = j.find("QuarantineTcpResets"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuarantineTcpResets);
+	}
+	if (auto it = j.find("QuarantineAffinityInvalidations"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QuarantineAffinityInvalidations);
+	}
+	if (auto it = j.find("StickyFlowsRetired"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StickyFlowsRetired);
+	}
+	if (auto it = j.find("AffinityPerformanceSamples"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AffinityPerformanceSamples);
+	}
+	if (auto it = j.find("AffinityPerformanceDonorBypasses"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AffinityPerformanceDonorBypasses);
+	}
+	if (auto it = j.find("AffinityPerformanceCandidatesFiltered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.AffinityPerformanceCandidatesFiltered);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
@@ -8396,6 +8764,10 @@ inline void to_json(nlohmann::json& j, const ReliabilitySettings& v) {
 	j["BlackholeReceiveTimeoutMillis"] = v.BlackholeReceiveTimeoutMillis;
 	j["MaxFlowsPerExit"] = v.MaxFlowsPerExit;
 	j["AffinityStickyPastCap"] = v.AffinityStickyPastCap;
+	j["FreshFlowAffinity"] = v.FreshFlowAffinity;
+	j["PerformanceAwareAffinity"] = v.PerformanceAwareAffinity;
+	j["MaxStickyFlowsPerExit"] = v.MaxStickyFlowsPerExit;
+	j["StickyFlowIdleTimeoutMillis"] = v.StickyFlowIdleTimeoutMillis;
 	j["QuarantineGroupFollow"] = v.QuarantineGroupFollow;
 	j["GroupFollowWindowMillis"] = v.GroupFollowWindowMillis;
 	j["UplinkStalenessGateMillis"] = v.UplinkStalenessGateMillis;
@@ -8465,6 +8837,18 @@ inline void from_json(const nlohmann::json& j, ReliabilitySettings& v) {
 	}
 	if (auto it = j.find("AffinityStickyPastCap"); it != j.end() && !it->is_null()) {
 		it->get_to(v.AffinityStickyPastCap);
+	}
+	if (auto it = j.find("FreshFlowAffinity"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FreshFlowAffinity);
+	}
+	if (auto it = j.find("PerformanceAwareAffinity"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PerformanceAwareAffinity);
+	}
+	if (auto it = j.find("MaxStickyFlowsPerExit"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MaxStickyFlowsPerExit);
+	}
+	if (auto it = j.find("StickyFlowIdleTimeoutMillis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StickyFlowIdleTimeoutMillis);
 	}
 	if (auto it = j.find("QuarantineGroupFollow"); it != j.end() && !it->is_null()) {
 		it->get_to(v.QuarantineGroupFollow);
@@ -8811,6 +9195,19 @@ inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnPoolClaimError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, SnPoolClaimError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnPoolClaimResult& v) {
 	j = nlohmann::json::object();
 	j["epoch"] = v.epoch;
@@ -8822,6 +9219,18 @@ inline void to_json(nlohmann::json& j, const SnPoolClaimResult& v) {
 	j["contract_address"] = v.contract_address;
 	j["chain_id"] = v.chain_id;
 	j["claim_open_block"] = v.claim_open_block;
+	if (v.artifact_hash) {
+		j["artifact_hash"] = *v.artifact_hash;
+	}
+	if (v.artifact_uri) {
+		j["artifact_uri"] = *v.artifact_uri;
+	}
+	if (v.settlement_vault_address) {
+		j["settlement_vault_address"] = *v.settlement_vault_address;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnPoolClaimResult& v) {
 	if (!j.is_object()) {
@@ -8854,11 +9263,34 @@ inline void from_json(const nlohmann::json& j, SnPoolClaimResult& v) {
 	if (auto it = j.find("claim_open_block"); it != j.end() && !it->is_null()) {
 		it->get_to(v.claim_open_block);
 	}
+	if (auto it = j.find("artifact_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.artifact_hash = std::move(tmp);
+	}
+	if (auto it = j.find("artifact_uri"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.artifact_uri = std::move(tmp);
+	}
+	if (auto it = j.find("settlement_vault_address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.settlement_vault_address = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnPoolClaimError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const SnSetWalletArgs& v) {
 	j = nlohmann::json::object();
 	j["coldkey_ss58"] = v.coldkey_ss58;
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnSetWalletArgs& v) {
 	if (!j.is_object()) {
@@ -8866,6 +9298,11 @@ inline void from_json(const nlohmann::json& j, SnSetWalletArgs& v) {
 	}
 	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
 		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
 	}
 }
 
@@ -11001,6 +11438,7 @@ public:
 	bool stallExit(const std::string& client_id, bool stalled) const;
 	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
 	void stopProbeSuite() const;
+	std::string takeMemorySamplesJson() const;
 	std::optional<StringList> tunnelDnsAddressesIpv4() const;
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
@@ -18443,6 +18881,10 @@ inline bool DeviceLocal::startProbeSuite(const std::optional<ProbeSuiteConfig>& 
 inline void DeviceLocal::stopProbeSuite() const {
 	urnet_device_local_stop_probe_suite(handle());
 }
+inline std::string DeviceLocal::takeMemorySamplesJson() const {
+	char* r_c = urnet_device_local_take_memory_samples_json(handle());
+	return detail::takeString(r_c);
+}
 inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv4() const {
 	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv4(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -20612,6 +21054,9 @@ inline void setLogDir(const std::string& log_dir) {
 inline void setMemoryLimit(int64_t limit) {
 	urnet_set_memory_limit(limit);
 }
+inline void setMemoryProfileRate(int64_t byte_count) {
+	urnet_set_memory_profile_rate(byte_count);
+}
 inline void setMessagePoolMemoryTargets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count) {
 	urnet_set_message_pool_memory_targets(packet_pool_byte_count, large_object_pool_byte_count);
 }
@@ -20687,9 +21132,22 @@ inline std::optional<TransportSettings> transportSettingsWithMode(const std::opt
 	}
 	return detail::parseJson<TransportSettings>(r_s->c_str());
 }
+inline void trimMemory() {
+	urnet_trim_memory();
+}
 inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);
 	return r;
+}
+inline void writeHeapProfile(const std::string& path) {
+	char* err_c = nullptr;
+	bool ok = urnet_write_heap_profile(path.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_write_heap_profile failed");
+	}
 }
 
 /* ----- hand-written wrappers (buffer-out c functions) ----- */
