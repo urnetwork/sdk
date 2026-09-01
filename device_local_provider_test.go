@@ -59,6 +59,7 @@ func TestDeviceLocalProviderMigrateKeepsOldOnTimeout(t *testing.T) {
 	defer client.Close()
 
 	clientStrategy := connect.NewClientStrategyWithDefaults(ctx)
+	defer clientStrategy.Close()
 	auth := &connect.ClientAuth{
 		ByJwt:      "test",
 		InstanceId: connect.NewId(),
@@ -209,7 +210,9 @@ func TestDeviceLocalProviderMigrationReappliesRacingAuth(t *testing.T) {
 		AppVersion: "0.0.0",
 	}
 	oldTransport := newFakeMigratablePlatformTransport(oldAuth, true)
-	oobApi := connect.NewBringYourApi(ctx, connect.NewClientStrategyWithDefaults(ctx), "http://unused.invalid")
+	clientStrategy := connect.NewClientStrategyWithDefaults(ctx)
+	defer clientStrategy.Close()
+	oobApi := connect.NewBringYourApi(ctx, clientStrategy, "http://unused.invalid")
 	oobApi.SetByJwt(oldAuth.ByJwt)
 	nextCreated := make(chan *fakeMigratablePlatformTransport, 1)
 	provider := &deviceLocalProvider{

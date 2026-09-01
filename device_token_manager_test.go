@@ -26,15 +26,20 @@ func testingNewTokenManager(
 	apiUrl string,
 	onTokenRefreshed func(string),
 	logout func() error,
-) (*apiTokenManager, *Api) {
-	clientStrategy := connect.NewClientStrategy(ctx, connect.DefaultClientStrategySettings())
+) (*apiTokenManager, *Api, func()) {
+	clientStrategy := newTestClientStrategy(ctx)
 	api := newApi(ctx, clientStrategy, apiUrl)
 	api.AddJwtRefreshListener(jwtRefreshListenerFunc(onTokenRefreshed))
 	api.AddAuthLogoutListener(authLogoutListenerFunc(func() {
 		_ = logout()
 	}))
 	api.SetByJwt("test-jwt")
-	return api.tokenManager, api
+	closeFunc := func() {
+		api.Close()
+		_ = api.CloseAndWait(context.Background())
+		clientStrategy.Close()
+	}
+	return api.tokenManager, api, closeFunc
 }
 
 func testingRefreshableJwt(t *testing.T) string {
@@ -61,7 +66,7 @@ func TestApiOwnsRefreshLifecycle(t *testing.T) {
 	secondRefreshJwt := testingRefreshableJwtWithMarker(t, "second")
 
 	var requestCount atomic.Int64
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		request := requestCount.Add(1)
 		var expectedJwt string
 		var responseJwt string
@@ -82,14 +87,8 @@ func TestApiOwnsRefreshLifecycle(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"by_jwt":%q}`, responseJwt)
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	strategy := connect.NewClientStrategyWithDefaults(ctx)
-	api := NewApi(ctx, strategy, ts.URL)
-	defer api.Close()
+	})
+	_, api := newTestApi(t, handler)
 	refreshed := make(chan string, 2)
 	api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
 		refreshed <- jwt
@@ -123,18 +122,13 @@ func TestApiDiscardsRefreshForReplacedJwt(t *testing.T) {
 	requestStarted := make(chan struct{})
 	releaseRequest := make(chan struct{})
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(requestStarted)
 		<-releaseRequest
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"by_jwt":%q}`, staleRefreshJwt)
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	_, api := newTestApi(t, handler)
 	api.SetByJwt(oldJwt)
 
 	type refreshOutcome struct {
@@ -169,16 +163,11 @@ func TestApiRejectsRefreshThatChangesDeviceIdentity(t *testing.T) {
 		"00000000-0000-0000-0000-000000000003",
 	)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"by_jwt":%q}`, replacementJwt)
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	_, api := newTestApi(t, handler)
 	api.SetByJwt(initialJwt)
 	refreshed := make(chan string, 1)
 	sub := api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
@@ -284,12 +273,12 @@ func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 
 	for _, c := range cases {
 		func() {
-			ts := httptest.NewServer(c.handler)
+			ts := httptest.NewServer(testApiHandler(c.handler))
 			defer ts.Close()
 
 			logoutCount := 0
 			refreshedJwt := ""
-			manager, api := testingNewTokenManager(
+			manager, api, closeFunc := testingNewTokenManager(
 				ctx,
 				ts.URL,
 				func(jwt string) {
@@ -300,7 +289,7 @@ func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 					return nil
 				},
 			)
-			defer manager.Close()
+			defer closeFunc()
 
 			loggedOut, stale, err := manager.refreshToken(api.GetByJwt())
 
@@ -336,7 +325,7 @@ func TestApiTokenManagerRefreshOffline(t *testing.T) {
 	ts.Close()
 
 	logoutCount := 0
-	manager, api := testingNewTokenManager(
+	manager, api, closeFunc := testingNewTokenManager(
 		ctx,
 		deadUrl,
 		func(jwt string) {},
@@ -345,7 +334,7 @@ func TestApiTokenManagerRefreshOffline(t *testing.T) {
 			return nil
 		},
 	)
-	defer manager.Close()
+	defer closeFunc()
 
 	// bound the attempt so the test does not wait out the full strategy
 	// timeouts against the dead endpoint
@@ -372,16 +361,17 @@ func TestApiTokenManagerRunLogsOutOnceAtStart(t *testing.T) {
 	defer cancel()
 
 	var requestCount atomic.Int64
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(testApiHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"error":{"message":"Client does not exist"}}`))
-	}))
+	})))
 	defer ts.Close()
 
 	cancelCtx, managerCancel := context.WithCancel(ctx)
 	defer managerCancel()
-	clientStrategy := connect.NewClientStrategy(cancelCtx, connect.DefaultClientStrategySettings())
+	clientStrategy := newTestClientStrategy(cancelCtx)
+	defer clientStrategy.Close()
 	api := newApi(cancelCtx, clientStrategy, ts.URL)
 
 	var logoutCount atomic.Int64
@@ -390,8 +380,11 @@ func TestApiTokenManagerRunLogsOutOnceAtStart(t *testing.T) {
 	}))
 	api.SetByJwt(testingRefreshableJwt(t))
 	api.StartJwtRefresh()
-	manager := api.tokenManager
-	defer manager.Close()
+	defer func() {
+		api.Close()
+		_ = api.CloseAndWait(context.Background())
+		clientStrategy.Close()
+	}()
 
 	// the startup refresh fires without waiting for the expiration window
 	endTime := time.Now().Add(5 * time.Second)

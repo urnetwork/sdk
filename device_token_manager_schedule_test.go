@@ -168,10 +168,10 @@ func TestJwtRefreshTimeoutIsHalfLife(t *testing.T) {
 // 497ms against an already-cancelled client.
 func TestTokenManagerRunStopsOnCancel(t *testing.T) {
 	// always fails, so the manager stays on the retry path where the bug lived
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testApiHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, `{"error":{"message":"nope"}}`)
-	}))
+	})))
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -179,7 +179,8 @@ func TestTokenManagerRunStopsOnCancel(t *testing.T) {
 
 	log := &countingLogger{}
 	attempts := &log.refreshes
-	_, api := testingNewTokenManager(ctx, server.URL, func(string) {}, func() error { return nil })
+	_, api, closeFunc := testingNewTokenManager(ctx, server.URL, func(string) {}, func() error { return nil })
+	defer closeFunc()
 	api.setLog(log)
 	// a real, current token: the schedule must not be what stops the loop
 	api.SetByJwt(testingRefreshableScheduleJwt(time.Now(), 24*time.Hour))
@@ -249,16 +250,17 @@ func (noopVerbose) Infof(format string, args ...any) {}
 // the refresh; with a non-positive schedule (the bug that shipped) it entered it
 // without bound.
 func TestTokenManagerClosedDeviceDoesNotRefresh(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testApiHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	})))
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	log := &countingLogger{}
-	_, api := testingNewTokenManager(ctx, server.URL, func(string) {}, func() error { return nil })
+	_, api, closeFunc := testingNewTokenManager(ctx, server.URL, func(string) {}, func() error { return nil })
+	defer closeFunc()
 	api.setLog(log)
 	api.SetByJwt(testingRefreshableScheduleJwt(time.Now(), 24*time.Hour))
 
@@ -293,20 +295,21 @@ func TestTokenManagerRunSchedulesAfterSuccess(t *testing.T) {
 	var refreshes atomic.Int64
 
 	// mints a fresh 24h token every time, exactly like the live server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testApiHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		refreshes.Add(1)
 		// a fresh 24h token every time, exactly like the live server: still
 		// refreshable, so only the SCHEDULE can stop the loop
 		jwt := testingRefreshableScheduleJwt(time.Now(), 24*time.Hour)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"by_jwt":%q}`, jwt)
-	}))
+	})))
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, api := testingNewTokenManager(ctx, server.URL, func(jwt string) {}, func() error { return nil })
+	_, api, closeFunc := testingNewTokenManager(ctx, server.URL, func(jwt string) {}, func() error { return nil })
+	defer closeFunc()
 	api.SetByJwt(testingRefreshableScheduleJwt(time.Now(), 24*time.Hour))
 
 	manager := testingRunnableTokenManager(ctx, api)

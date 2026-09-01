@@ -277,8 +277,34 @@ func (self *Api) setHttpPostStreamRaw(httpPostStreamRaw connect.HttpPostStreamRa
 	self.httpPostStreamRaw = httpPostStreamRaw
 }
 
+// Requests cancellation without joining the refresh worker. This remains safe
+// from refresh/logout callbacks, which must not join their own worker.
 func (self *Api) Close() {
 	self.cancel()
+}
+
+// Joins the API-owned refresh worker after cancellation. External owners use
+// this before releasing a shared strategy; callbacks must use Close instead.
+//
+//gomobile:noexport
+func (self *Api) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.tokenManager.done:
+		return nil
+	default:
+	}
+	select {
+	case <-self.tokenManager.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.tokenManager.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 // ApiError represents a generic error response from the API

@@ -224,7 +224,8 @@ func newTestSubscriptionBalanceVc(
 ) (*SubscriptionBalanceViewController, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), "http://127.0.0.1:0")
+	clientStrategy := connect.NewClientStrategyWithDefaults(ctx)
+	api := NewApi(ctx, clientStrategy, "http://127.0.0.1:0")
 	api.SetByJwt(byJwt)
 	vc := newSubscriptionBalanceViewController(ctx, api)
 	vc.fetchFunc = stub.fetch
@@ -235,6 +236,8 @@ func newTestSubscriptionBalanceVc(
 		vc.Close()
 		api.Close()
 		cancel()
+		_ = api.CloseAndWait(context.Background())
+		clientStrategy.Close()
 	}
 	return vc, closeFunc
 }

@@ -1,15 +1,11 @@
 package sdk
 
 import (
-	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/urnetwork/connect"
 )
 
 func receiveStringWithin(t *testing.T, values <-chan string, message string) string {
@@ -37,17 +33,12 @@ func TestApiRefreshStartsWhenClientJwtIsInstalled(t *testing.T) {
 	refreshedJwt := testingRefreshableJwtWithMarker(t, "installed-after-start-refreshed")
 	requests := make(chan string, 2)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"by_jwt":%q}`, refreshedJwt)
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	_, api := newTestApi(t, handler)
 	refreshed := make(chan string, 1)
 	sub := api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
 		refreshed <- jwt
@@ -90,7 +81,7 @@ func TestApiRefreshRequestSurvivesInFlightRefresh(t *testing.T) {
 	requests := make(chan string, 3)
 	var requestCount atomic.Int64
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestNumber := requestCount.Add(1)
 		requests <- r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
@@ -104,13 +95,8 @@ func TestApiRefreshRequestSurvivesInFlightRefresh(t *testing.T) {
 		default:
 			http.Error(w, "unexpected refresh", http.StatusInternalServerError)
 		}
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	_, api := newTestApi(t, handler)
 	refreshed := make(chan string, 3)
 	sub := api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
 		refreshed <- jwt
@@ -152,17 +138,12 @@ func TestApiDiscardsRejectionForReplacedJwt(t *testing.T) {
 	requestStarted := make(chan struct{})
 	releaseRequest := make(chan struct{})
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(requestStarted)
 		<-releaseRequest
 		http.Error(w, "not authorized", http.StatusUnauthorized)
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	_, api := newTestApi(t, handler)
 	api.SetByJwt(oldJwt)
 	var logoutCount atomic.Int64
 	sub := api.AddAuthLogoutListener(authLogoutListenerFunc(func() {
@@ -205,10 +186,7 @@ func TestApiDiscardsRejectionForReplacedJwt(t *testing.T) {
 }
 
 func TestApiRefreshAndLogoutSubscriptions(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), "http://unused.invalid")
-	defer api.Close()
+	_, api := newTestApiForURL(t, "http://unused.invalid")
 
 	api.SetByJwt("initial")
 	var refreshCount atomic.Int64

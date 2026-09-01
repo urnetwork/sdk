@@ -14,6 +14,7 @@ func TestDeviceClientSettingsInstallsPeerKeyFetcherWithoutMutatingInput(t *testi
 	defer cancel()
 
 	clientStrategy := connect.NewClientStrategy(ctx, connect.DefaultClientStrategySettings())
+	defer clientStrategy.Close()
 	settings := connect.DefaultClientSettings()
 	originalEncryptionSettings := settings.EncryptionSettings
 
@@ -31,6 +32,7 @@ func TestDeviceClientSettingsPreservesConfiguredPeerKeyFetcher(t *testing.T) {
 	defer cancel()
 
 	clientStrategy := connect.NewClientStrategy(ctx, connect.DefaultClientStrategySettings())
+	defer clientStrategy.Close()
 	settings := connect.DefaultClientSettings()
 	settings.EncryptionSettings.NewPeerClientPublicKeyFetcher = func(peerId connect.Id) func(context.Context) ([]byte, error) {
 		return func(context.Context) ([]byte, error) {

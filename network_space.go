@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -120,8 +122,9 @@ func ConnectLinkUrl(key *NetworkSpaceKey, values *NetworkSpaceValues, target str
 }
 
 type NetworkSpace struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closeOnce sync.Once
 
 	key         NetworkSpaceKey
 	values      NetworkSpaceValues
@@ -253,7 +256,7 @@ func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, b
 	// test invocation. Tie both test-only resources to the supplied lifetime.
 	context.AfterFunc(ctx, func() {
 		if networkSpace.asyncLocalState != nil {
-			networkSpace.asyncLocalState.Close()
+			_ = networkSpace.asyncLocalState.CloseAndWait(context.Background())
 		}
 		_ = os.RemoveAll(storagePath)
 	})
@@ -444,7 +447,23 @@ func (self *NetworkSpace) GetApi() *Api {
 }
 
 func (self *NetworkSpace) close() {
-	self.cancel()
+	self.closeOnce.Do(func() {
+		self.cancel()
+		_ = self.api.CloseAndWait(context.Background())
+		if self.asyncLocalState != nil {
+			_ = self.asyncLocalState.CloseAndWait(context.Background())
+		}
+		self.clientStrategy.Close()
+	})
+}
+
+// Releases the API, local-state worker, and shared client strategy owned by an
+// explicitly constructed headless network space. Manager-owned spaces are
+// closed by their manager.
+//
+//gomobile:noexport
+func (self *NetworkSpace) Close() {
+	self.close()
 }
 
 func (self *NetworkSpace) ToJson() (string, error) {
@@ -490,6 +509,7 @@ type NetworkSpaceManager struct {
 	stateLock          sync.Mutex
 	networkSpaces      map[NetworkSpaceKey]*NetworkSpace
 	activeNetworkSpace *NetworkSpace
+	closed             bool
 
 	networkSpacesChangeListeners      *connect.CallbackList[NetworkSpacesChangeListener]
 	activeNetworkSpaceChangeListeners *connect.CallbackList[ActiveNetworkSpaceChangeListener]
@@ -554,53 +574,54 @@ func (self *NetworkSpaceManager) store() error {
 	return os.WriteFile(filepath.Join(self.storagePath, ".network_spaces"), networkSpaceManagerStateBytes, LocalStorageFilePermissions)
 }
 
-func (self *NetworkSpaceManager) load() (returnErr error) {
+func (self *NetworkSpaceManager) load() error {
 	if self.storagePath == "" {
 		return nil
 	}
-	func() {
+
+	networkSpaceManagerStateBytes, err := os.ReadFile(filepath.Join(self.storagePath, ".network_spaces"))
+	if err != nil {
+		return err
+	}
+	var storedState networkSpaceManagerState
+	if err := json.Unmarshal(networkSpaceManagerStateBytes, &storedState); err != nil {
+		return err
+	}
+
+	replacementNetworkSpaces := map[NetworkSpaceKey]*NetworkSpace{}
+	replacedNetworkSpaces := []*NetworkSpace{}
+	for _, networkSpaceState := range storedState.NetworkSpaces {
+		replacement := newNetworkSpace(
+			self.ctx,
+			networkSpaceState.Key,
+			networkSpaceState.Values,
+			self.envStoragePath(&networkSpaceState.Key),
+		)
+		if replaced := replacementNetworkSpaces[networkSpaceState.Key]; replaced != nil {
+			replacedNetworkSpaces = append(replacedNetworkSpaces, replaced)
+		}
+		replacementNetworkSpaces[networkSpaceState.Key] = replacement
+	}
+	var replacementActiveNetworkSpace *NetworkSpace
+	if storedState.Active != nil {
+		replacementActiveNetworkSpace = replacementNetworkSpaces[*storedState.Active]
+	}
+
+	previousNetworkSpaces := func() []*NetworkSpace {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		networkSpaceManagerStateBytes, err := os.ReadFile(filepath.Join(self.storagePath, ".network_spaces"))
-		if err != nil {
-			returnErr = err
-			return
-		}
-
-		var networkSpaceManagerState networkSpaceManagerState
-		err = json.Unmarshal(networkSpaceManagerStateBytes, &networkSpaceManagerState)
-		if err != nil {
-			returnErr = err
-			return
-		}
-
-		for _, networkSpace := range self.networkSpaces {
-			networkSpace.close()
-		}
-		self.networkSpaces = map[NetworkSpaceKey]*NetworkSpace{}
-
-		for _, networkSpaceState := range networkSpaceManagerState.NetworkSpaces {
-			self.networkSpaces[networkSpaceState.Key] = newNetworkSpace(
-				self.ctx,
-				networkSpaceState.Key,
-				networkSpaceState.Values,
-				self.envStoragePath(&networkSpaceState.Key),
-			)
-		}
-		if networkSpaceManagerState.Active != nil {
-			if networkSpace, ok := self.networkSpaces[*networkSpaceManagerState.Active]; ok {
-				self.activeNetworkSpace = networkSpace
-			}
-			// else active key not found
-		}
+		previous := slices.Collect(maps.Values(self.networkSpaces))
+		self.networkSpaces = replacementNetworkSpaces
+		self.activeNetworkSpace = replacementActiveNetworkSpace
+		return previous
 	}()
-	if returnErr != nil {
-		return
+	for _, networkSpace := range append(previousNetworkSpaces, replacedNetworkSpaces...) {
+		networkSpace.close()
 	}
 
 	self.activeNetworkSpaceChanged(self.GetActiveNetworkSpace())
-	return
+	return nil
 }
 
 func (self *NetworkSpaceManager) envStoragePath(key *NetworkSpaceKey) string {
@@ -684,13 +705,16 @@ func (self *NetworkSpaceManager) SetActiveNetworkSpace(networkSpace *NetworkSpac
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
+		if self.closed {
+			return
+		}
 		if self.activeNetworkSpace == networkSpace {
 			return
 		}
 
 		if networkSpace != nil {
-			if _, ok := self.networkSpaces[networkSpace.key]; !ok {
-				// does not exist
+			currentNetworkSpace, ok := self.networkSpaces[networkSpace.key]
+			if !ok || currentNetworkSpace != networkSpace {
 				return
 			}
 		}
@@ -753,21 +777,34 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 
 	callback(&copyValues)
 
+	copyNetworkSpace := newNetworkSpace(self.ctx, *key, copyValues, self.envStoragePath(key))
 	activeSet := false
+	installed := false
+	var previousNetworkSpace *NetworkSpace
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		copyNetworkSpace := newNetworkSpace(self.ctx, *key, copyValues, self.envStoragePath(key))
+		if self.closed {
+			return
+		}
 		if networkSpace, ok := self.networkSpaces[*key]; ok {
+			previousNetworkSpace = networkSpace
 			if self.activeNetworkSpace == networkSpace {
 				self.activeNetworkSpace = copyNetworkSpace
 				activeSet = true
 			}
-			networkSpace.close()
 		}
 		self.networkSpaces[*key] = copyNetworkSpace
+		installed = true
 	}()
+	if !installed {
+		copyNetworkSpace.close()
+		return nil
+	}
+	if previousNetworkSpace != nil {
+		previousNetworkSpace.close()
+	}
 	self.store()
 	self.networkSpacesChanged()
 	if activeSet {
@@ -787,7 +824,8 @@ func (self *NetworkSpaceManager) RemoveNetworkSpace(networkSpace *NetworkSpace) 
 			return
 		}
 
-		if _, ok := self.networkSpaces[networkSpace.key]; !ok {
+		currentNetworkSpace, ok := self.networkSpaces[networkSpace.key]
+		if !ok || currentNetworkSpace != networkSpace {
 			return
 		}
 
@@ -796,6 +834,7 @@ func (self *NetworkSpaceManager) RemoveNetworkSpace(networkSpace *NetworkSpace) 
 	}()
 
 	if changed {
+		networkSpace.close()
 		self.store()
 		self.networkSpacesChanged()
 	}
@@ -804,6 +843,22 @@ func (self *NetworkSpaceManager) RemoveNetworkSpace(networkSpace *NetworkSpace) 
 
 func (self *NetworkSpaceManager) Close() {
 	self.cancel()
+	networkSpaces := func() []*NetworkSpace {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if self.closed {
+			return nil
+		}
+		self.closed = true
+		networkSpaces := slices.Collect(maps.Values(self.networkSpaces))
+		self.networkSpaces = map[NetworkSpaceKey]*NetworkSpace{}
+		self.activeNetworkSpace = nil
+		return networkSpaces
+	}()
+	for _, networkSpace := range networkSpaces {
+		networkSpace.close()
+	}
 }
 
 func (self *NetworkSpaceManager) ImportNetworkSpaceFromJson(networkSpaceJson string) (*NetworkSpace, error) {

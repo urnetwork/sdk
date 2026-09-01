@@ -1216,7 +1216,7 @@ func newDeviceLocalWithOverrides(
 		if !ok {
 			cancel()
 			if ownsApi {
-				api.Close()
+				_ = api.CloseAndWait(context.Background())
 			}
 			return nil, fmt.Errorf("no local tunnel address available")
 		}
@@ -4510,6 +4510,19 @@ func (self *DeviceLocal) Cancel() {
 
 func (self *DeviceLocal) Close() {
 	self.closeOnce.Do(self.close)
+}
+
+// Joins the independently owned API session after callback-safe device
+// cancellation. Hosted owners use this before replacing or releasing a device;
+// callbacks running on the API refresh worker must use Close instead.
+//
+//gomobile:noexport
+func (self *DeviceLocal) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	if self.ownsApi {
+		return self.api.CloseAndWait(ctx)
+	}
+	return nil
 }
 
 func (self *DeviceLocal) close() {

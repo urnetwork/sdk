@@ -1,26 +1,24 @@
 package sdk
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"testing"
-
-	"github.com/urnetwork/connect"
 )
 
 func TestApiSubnetHeadlessBindings(t *testing.T) {
 	clientId := NewId()
 	const bearerJwt = "subnet-bearer"
-	var requestCount int
+	var requestCount atomic.Int64
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/key/" + clientId.String():
@@ -73,13 +71,8 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 		default:
 			http.Error(w, "unexpected route", http.StatusNotFound)
 		}
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	ctx, api := newTestApi(t, handler)
 	api.SetByJwt(bearerJwt)
 
 	keyResult, err := api.GetClientKeySyncWithContext(ctx, &GetClientKeyArgs{ClientId: clientId})
@@ -130,8 +123,9 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 	if epochResult.Epoch != 43 || epochResult.FinalizeBlock != 40 || epochResult.ContractAddress != "0xdef" {
 		t.Fatalf("epoch result = %+v", epochResult)
 	}
-	if requestCount != 5 {
-		t.Fatalf("request count = %d, want 5", requestCount)
+	requestCountBeforeInvalid := requestCount.Load()
+	if requestCountBeforeInvalid < 5 {
+		t.Fatalf("wire request count = %d, want at least five logical endpoint attempts", requestCountBeforeInvalid)
 	}
 
 	if _, err := api.GetClientKeySyncWithContext(ctx, nil); err == nil {
@@ -143,8 +137,8 @@ func TestApiSubnetHeadlessBindings(t *testing.T) {
 	if _, err := api.SnPoolClaimSyncWithContext(ctx, nil); err == nil {
 		t.Fatal("nil pool claim args did not fail")
 	}
-	if requestCount != 5 {
-		t.Fatalf("invalid arguments sent %d extra requests", requestCount-5)
+	if got := requestCount.Load(); got != requestCountBeforeInvalid {
+		t.Fatalf("invalid arguments sent %d extra requests", got-requestCountBeforeInvalid)
 	}
 }
 
@@ -164,7 +158,7 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 	}
 	requests := make(chan capturedRequest, 4)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("read request body: %v", err)
@@ -184,13 +178,8 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 		default:
 			http.Error(w, "unexpected route", http.StatusNotFound)
 		}
-	}))
-	defer ts.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	ctx, api := newTestApi(t, handler)
 	api.SetByJwt(bearerJwt)
 
 	passwordResult, err := api.AuthLoginWithPasswordSyncWithContext(ctx, &AuthLoginWithPasswordArgs{
@@ -268,18 +257,17 @@ func TestApiSubnetPoolClaimEscapesNoUserInputIntoQuery(t *testing.T) {
 	// Epoch is formatted as an integer rather than interpolated from a string.
 	// Pin the exact URL shape because this binding is used with an authenticated
 	// validator credential.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	seen := make(chan *url.URL, 1)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var seenLock sync.Mutex
+	seenUrls := []*url.URL{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		copy := *r.URL
-		seen <- &copy
+		seenLock.Lock()
+		seenUrls = append(seenUrls, &copy)
+		seenLock.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"epoch":9223372036854775807}`)
-	}))
-	defer ts.Close()
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	defer api.Close()
+	})
+	ctx, api := newTestApi(t, handler)
 	// math.MaxInt64, was ^uint64(0): Epoch is int64 so the type binds to
 	// android/apple (gomobile cannot bind uint64). The extreme value is here
 	// to pin %d formatting, not because an epoch is ever this large, so the
@@ -291,8 +279,15 @@ func TestApiSubnetPoolClaimEscapesNoUserInputIntoQuery(t *testing.T) {
 	if result.Epoch != math.MaxInt64 {
 		t.Fatalf("epoch = %d, want max int64", result.Epoch)
 	}
-	requestUrl := <-seen
-	if requestUrl.Path != "/sn/pool/claim" || requestUrl.RawQuery != "epoch=9223372036854775807" {
-		t.Fatalf("pool claim URL = %s, want exact epoch query", requestUrl.String())
+	seenLock.Lock()
+	requestUrls := append([]*url.URL(nil), seenUrls...)
+	seenLock.Unlock()
+	if len(requestUrls) == 0 {
+		t.Fatal("pool claim sent no wire request")
+	}
+	for _, requestUrl := range requestUrls {
+		if requestUrl.Path != "/sn/pool/claim" || requestUrl.RawQuery != "epoch=9223372036854775807" {
+			t.Fatalf("pool claim URL = %s, want exact epoch query", requestUrl.String())
+		}
 	}
 }

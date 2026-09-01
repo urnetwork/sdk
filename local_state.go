@@ -953,6 +953,12 @@ type AsyncLocalState struct {
 	localState *LocalState
 
 	jobs chan *job
+	done chan struct{}
+
+	stateLock  sync.Mutex
+	closed     bool
+	admissions sync.WaitGroup
+	closeOnce  sync.Once
 }
 
 func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
@@ -965,6 +971,7 @@ func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
 		cancel:     cancel,
 		localState: localState,
 		jobs:       make(chan *job, AsyncQueueSize),
+		done:       make(chan struct{}),
 	}
 	go connect.HandleError(asyncLocalState.run)
 
@@ -973,22 +980,17 @@ func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
 
 func (self *AsyncLocalState) run() {
 	defer func() {
-		self.cancel()
-
-		// drain the jobs
-		func() {
-			for {
-				select {
-				case job, ok := <-self.jobs:
-					if !ok {
-						return
-					}
-					for _, callback := range job.callbacks {
-						callback.Complete(false)
-					}
-				}
+		self.stop()
+		self.admissions.Wait()
+		for {
+			select {
+			case job := <-self.jobs:
+				completeCommitCallbacks(job.callbacks, false)
+			default:
+				close(self.done)
+				return
 			}
-		}()
+		}
 	}()
 	for {
 		select {
@@ -1021,12 +1023,26 @@ func (self *AsyncLocalState) serialAsync(work func() error, callbacks ...CommitC
 		work:      work,
 		callbacks: callbacks,
 	}
+	self.stateLock.Lock()
+	if self.closed {
+		self.stateLock.Unlock()
+		completeCommitCallbacks(callbacks, false)
+		return
+	}
+	self.admissions.Add(1)
+	self.stateLock.Unlock()
+	defer self.admissions.Done()
+
 	select {
 	case <-self.ctx.Done():
-		for _, callback := range callbacks {
-			callback.Complete(false)
-		}
+		completeCommitCallbacks(callbacks, false)
 	case self.jobs <- job:
+	}
+}
+
+func completeCommitCallbacks(callbacks []CommitCallback, success bool) {
+	for _, callback := range callbacks {
+		callback.Complete(success)
 	}
 }
 
@@ -1091,8 +1107,40 @@ func (self *AsyncLocalState) Logout(callback CommitCallback) {
 }
 
 func (self *AsyncLocalState) Close() {
-	self.cancel()
-	close(self.jobs)
+	self.stop()
+}
+
+func (self *AsyncLocalState) stop() {
+	self.closeOnce.Do(func() {
+		self.stateLock.Lock()
+		self.closed = true
+		self.stateLock.Unlock()
+		self.cancel()
+	})
+}
+
+// Joins the local-state worker after rejecting new jobs. Callbacks running on
+// that worker must use Close instead so they do not wait for themselves.
+//
+//gomobile:noexport
+func (self *AsyncLocalState) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.done:
+		return nil
+	default:
+	}
+	select {
+	case <-self.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 type job struct {

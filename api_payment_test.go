@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,12 +20,7 @@ import (
 // newTestPaymentApi builds an Api against a local test server.
 func newTestPaymentApi(t *testing.T, handler http.HandlerFunc) *Api {
 	t.Helper()
-	ts := httptest.NewServer(handler)
-	t.Cleanup(ts.Close)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	api := NewApi(ctx, connect.NewClientStrategyWithDefaults(ctx), ts.URL)
-	t.Cleanup(api.Close)
+	_, api := newTestApi(t, handler)
 	api.SetByJwt("test-network-jwt")
 	return api
 }

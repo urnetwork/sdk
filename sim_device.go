@@ -68,6 +68,7 @@ type SimProvider struct {
 	cancel context.CancelFunc
 
 	client         *connect.Client
+	clientOob      *connect.ApiOutOfBandControl
 	localUserNat   *connect.LocalUserNat
 	remoteUserNat  *connect.RemoteUserNatProvider
 	clientStrategy *connect.ClientStrategy
@@ -76,8 +77,11 @@ type SimProvider struct {
 	auth                      *connect.ClientAuth
 	platformTransportSettings *connect.PlatformTransportSettings
 
-	stateLock         sync.Mutex
-	platformTransport *connect.PlatformTransport
+	stateLock              sync.Mutex
+	platformTransport      *connect.PlatformTransport
+	wantPlatformConnection bool
+	closed                 bool
+	closeOnce              sync.Once
 }
 
 // NewSimProvider builds the provider and connects its transport.
@@ -145,6 +149,7 @@ func NewSimProvider(ctx context.Context, config *SimProviderConfig) *SimProvider
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		client:         client,
+		clientOob:      clientOob,
 		localUserNat:   localUserNat,
 		remoteUserNat:  remoteUserNat,
 		clientStrategy: clientStrategy,
@@ -179,9 +184,12 @@ func (self *SimProvider) PacketStats() *connect.PacketStats {
 // IsConnected reports whether the platform transport exists and has routes
 // registered (i.e. the provider is live on the platform)
 func (self *SimProvider) IsConnected() bool {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	return self.platformTransport != nil && self.platformTransport.IsConnected()
+	platformTransport := func() *connect.PlatformTransport {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.platformTransport
+	}()
+	return platformTransport != nil && platformTransport.IsConnected()
 }
 
 // SetConnected connects or disconnects the platform transport. Disconnect
@@ -189,36 +197,81 @@ func (self *SimProvider) IsConnected() bool {
 // offline until the next `SetConnected(true)`, which dials a fresh
 // connection.
 func (self *SimProvider) SetConnected(connected bool) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
 	if connected {
-		if self.platformTransport == nil {
-			// h1 only: the sim platform is a local ws:// url
-			self.platformTransport = connect.NewPlatformTransportWithTargetMode(
-				self.client.Ctx(),
-				self.clientStrategy,
-				self.client.RouteManager(),
-				self.platformUrl,
-				self.auth,
-				connect.TransportModeH1,
-				self.platformTransportSettings,
-			)
+		create := func() bool {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			if self.closed {
+				return false
+			}
+			self.wantPlatformConnection = true
+			return self.platformTransport == nil
+		}()
+		if !create {
+			return
 		}
-	} else {
-		if self.platformTransport != nil {
-			self.platformTransport.Close()
-			self.platformTransport = nil
+
+		// The simulator platform is a local websocket, so only H1 is needed.
+		platformTransport := connect.NewPlatformTransportWithTargetMode(
+			self.client.Ctx(),
+			self.clientStrategy,
+			self.client.RouteManager(),
+			self.platformUrl,
+			self.auth,
+			connect.TransportModeH1,
+			self.platformTransportSettings,
+		)
+		installed := func() bool {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			if self.closed || !self.wantPlatformConnection || self.platformTransport != nil {
+				return false
+			}
+			self.platformTransport = platformTransport
+			return true
+		}()
+		if !installed {
+			_ = platformTransport.CloseAndWait(context.Background())
 		}
+		return
+	}
+
+	platformTransport := func() *connect.PlatformTransport {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.wantPlatformConnection = false
+		platformTransport := self.platformTransport
+		self.platformTransport = nil
+		return platformTransport
+	}()
+	if platformTransport != nil {
+		_ = platformTransport.CloseAndWait(context.Background())
 	}
 }
 
+// Releases every transport, packet worker, client worker, and OOB request
+// owned by the headless provider before returning.
 func (self *SimProvider) Close() {
-	self.SetConnected(false)
-	self.remoteUserNat.Close()
-	self.localUserNat.Close()
-	self.client.Close()
-	self.cancel()
+	self.closeOnce.Do(func() {
+		platformTransport := func() *connect.PlatformTransport {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.closed = true
+			self.wantPlatformConnection = false
+			platformTransport := self.platformTransport
+			self.platformTransport = nil
+			return platformTransport
+		}()
+		if platformTransport != nil {
+			_ = platformTransport.CloseAndWait(context.Background())
+		}
+		self.cancel()
+		self.remoteUserNat.Close()
+		_ = self.localUserNat.CloseAndWait(context.Background())
+		_ = self.client.CloseAndWait(context.Background())
+		_ = self.clientOob.CloseAndWait(context.Background())
+		self.clientStrategy.Close()
+	})
 }
 
 // SimClientConfig configures a headless client.
@@ -263,10 +316,12 @@ type SimClient struct {
 	cancel context.CancelFunc
 
 	clientStrategy *connect.ClientStrategy
+	generator      *connect.ApiMultiClientGenerator
 	multiClient    *connect.RemoteUserNatMultiClient
 	tun            *connect.Tun
 
-	bridgeWg sync.WaitGroup
+	bridgeWg  sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // NewSimClient builds the client. The multi client begins discovering
@@ -318,6 +373,8 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 	tun, err := connect.CreateTun(cancelCtx, tunSettings)
 	if err != nil {
 		cancel()
+		_ = generator.CloseAndWait(context.Background())
+		clientStrategy.Close()
 		return nil, err
 	}
 
@@ -345,6 +402,7 @@ func NewSimClient(ctx context.Context, config *SimClientConfig) (*SimClient, err
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
+		generator:      generator,
 		multiClient:    multiClient,
 		tun:            tun,
 	}
@@ -438,14 +496,18 @@ func (self *SimClient) MultiClient() *connect.RemoteUserNatMultiClient {
 }
 
 func (self *SimClient) Close() {
-	closeSimClientBridge(
-		func() {
-			self.tun.Close()
-		},
-		self.cancel,
-		self.bridgeWg.Wait,
-	)
-	self.multiClient.Close()
+	self.closeOnce.Do(func() {
+		closeSimClientBridge(
+			func() {
+				self.tun.Close()
+			},
+			self.cancel,
+			self.bridgeWg.Wait,
+		)
+		_ = self.multiClient.CloseAndWait(context.Background())
+		_ = self.generator.CloseAndWait(context.Background())
+		self.clientStrategy.Close()
+	})
 }
 
 // closeSimClientBridge stops both places where the tunnel bridge can block
