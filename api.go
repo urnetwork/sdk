@@ -24,8 +24,9 @@ type Api struct {
 	byJwt string
 	log   connect.Logger
 
-	httpPostRaw connect.HttpPostRawFunction
-	httpGetRaw  connect.HttpGetRawFunction
+	httpPostRaw       connect.HttpPostRawFunction
+	httpGetRaw        connect.HttpGetRawFunction
+	httpPostStreamRaw connect.HttpPostStreamRawFunction
 
 	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
@@ -76,6 +77,7 @@ func (self *Api) newSession(ctx context.Context) *Api {
 	session := newApi(ctx, self.clientStrategy, self.apiUrl)
 	session.setHttpPostRaw(self.getHttpPostRaw())
 	session.setHttpGetRaw(self.getHttpGetRaw())
+	session.setHttpPostStreamRaw(self.getHttpPostStreamRaw())
 	return session
 }
 
@@ -260,10 +262,19 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	if self.httpPostStreamRaw != nil {
+		return self.httpPostStreamRaw
+	}
 
 	return func(ctx context.Context, requestUrl string, body io.Reader, byJwt string) ([]byte, error) {
 		return connect.HttpPostStreamWithStrategyRaw(ctx, requestUrl, body, byJwt)
 	}
+}
+
+func (self *Api) setHttpPostStreamRaw(httpPostStreamRaw connect.HttpPostStreamRawFunction) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.httpPostStreamRaw = httpPostStreamRaw
 }
 
 func (self *Api) Close() {

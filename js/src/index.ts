@@ -6,6 +6,7 @@ import type {
   SetupDeviceCallback,
   DeviceRemote,
   PlatformDeviceRemoteOptions,
+  ExtensionDeviceRemoteOptions,
 } from "./types";
 
 export * from "./types";
@@ -108,6 +109,33 @@ export class URNetwork {
     );
     if (!device) {
       throw new Error("Could not create the device remote.");
+    }
+    if (device.error) {
+      throw new Error(String(device.error));
+    }
+    return device as DeviceRemote;
+  }
+
+  /**
+   * Create the SDK DeviceRemote with an extension-owned device-rpc socket.
+   * Endpoint and proxy credentials never enter the page-side SDK.
+   */
+  createExtensionDeviceRemote(options: ExtensionDeviceRemoteOptions): DeviceRemote {
+    const { URnetworkNewExtensionDeviceRemote } = getWasmGlobals();
+    if (typeof URnetworkNewExtensionDeviceRemote !== "function") {
+      throw new Error(
+        "URnetworkNewExtensionDeviceRemote is not exported by the loaded wasm. Rebuild the sdk wasm.",
+      );
+    }
+    const device = URnetworkNewExtensionDeviceRemote(
+      options.apiUrl,
+      options.platformUrl,
+      options.byJwt,
+      options.instanceId,
+      options.transport,
+    );
+    if (!device) {
+      throw new Error("Could not create the extension device remote.");
     }
     if (device.error) {
       throw new Error(String(device.error));

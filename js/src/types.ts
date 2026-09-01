@@ -596,3 +596,33 @@ export interface PlatformDeviceRemoteOptions {
   signedProxyId: string;
   instanceId: string;
 }
+
+/** Callbacks consumed by an SDK device-rpc byte transport. */
+export interface DeviceRpcTransportCallbacks {
+  opened(): void;
+  message(frame: Uint8Array): void;
+  closed(reason?: string): void;
+}
+
+/** One logical connection returned by a device-rpc transport. */
+export interface DeviceRpcTransportConnection {
+  send(frame: Uint8Array): void;
+  close(): void;
+}
+
+/**
+ * Opaque byte transport used by DeviceRemote. The SDK continues to own RPC
+ * framing and all Device behavior; the implementation owns the actual socket.
+ */
+export interface DeviceRpcTransport {
+  open(callbacks: DeviceRpcTransportCallbacks): DeviceRpcTransportConnection;
+}
+
+/** Options for the extension-routed DeviceRemote used by ur.io. */
+export interface ExtensionDeviceRemoteOptions {
+  apiUrl: string;
+  platformUrl: string;
+  byJwt: string;
+  instanceId: string;
+  transport: DeviceRpcTransport;
+}

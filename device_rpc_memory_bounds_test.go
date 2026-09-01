@@ -6,12 +6,43 @@ import (
 	"io"
 	"net"
 	"net/rpc"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/urnetwork/connect"
 )
+
+func TestDeviceRemoteRequiredRemoteApiNeverFallsBackLocally(t *testing.T) {
+	settings := defaultDeviceRpcSettings()
+	settings.RequireRemoteApi = true
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	remote := &DeviceRemote{ctx: ctx, settings: settings}
+
+	for name, call := range map[string]func() error{
+		"get": func() error {
+			_, err := remote.httpGetRaw(t.Context(), "http://127.0.0.1:1/must-not-dial", "")
+			return err
+		},
+		"post": func() error {
+			_, err := remote.httpPostRaw(t.Context(), "http://127.0.0.1:1/must-not-dial", []byte("body"), "")
+			return err
+		},
+		"stream post": func() error {
+			_, err := remote.httpPostStreamRaw(t.Context(), "http://127.0.0.1:1/must-not-dial", strings.NewReader("body"), "")
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := call()
+			if err == nil || !strings.Contains(err.Error(), "direct api fallback is disabled") {
+				t.Fatalf("required-remote API call error = %v", err)
+			}
+		})
+	}
+}
 
 func TestDeviceRpcMemoryDefaultsAreBounded(t *testing.T) {
 	settings := defaultDeviceRpcSettings()

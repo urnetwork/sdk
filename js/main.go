@@ -190,6 +190,7 @@ func main() {
 
 	js.Global().Set("URnetworkNewProxyDeviceWithDefaults", js.FuncOf(NewProxyDeviceWithDefaults))
 	js.Global().Set("URnetworkNewPlatformDeviceRemote", js.FuncOf(NewPlatformDeviceRemote))
+	js.Global().Set("URnetworkNewExtensionDeviceRemote", js.FuncOf(NewExtensionDeviceRemote))
 	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
 
 	select {

@@ -99,3 +99,23 @@ test("hosted DeviceRemote requires the server instance and surfaces sync refusal
   assert.doesNotMatch(runtime, /instanceId := sdk\.NewId\(\)/);
   assert.match(runtime, /m\["getSyncError"\]/);
 });
+
+test("extension DeviceRemote exposes an opaque transport without page credentials", () => {
+  const declarations = source("../src/types.ts");
+  const publicWrapper = source("../src/index.ts");
+  const loader = source("../src/loader.ts");
+  const runtime = source("../device_remote.go");
+  const main = source("../main.go");
+
+  assert.match(declarations, /interface DeviceRpcTransport\b/);
+  assert.match(declarations, /open\(callbacks: DeviceRpcTransportCallbacks\)/);
+  assert.match(declarations, /interface ExtensionDeviceRemoteOptions\b/);
+  assert.match(publicWrapper, /createExtensionDeviceRemote/);
+  assert.match(publicWrapper, /options\.transport/);
+  const extensionOptions =
+    declarations.match(/interface ExtensionDeviceRemoteOptions[\s\S]*?\n}/)?.[0] ?? "";
+  assert.doesNotMatch(extensionOptions, /(proxyUrl|signedProxyId|apiBaseUrl)/);
+  assert.match(runtime, /sdk\.NewExtensionDeviceRemote/);
+  assert.match(main, /URnetworkNewExtensionDeviceRemote/);
+  assert.match(loader, /URnetworkNewExtensionDeviceRemote/);
+});

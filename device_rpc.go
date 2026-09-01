@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"net/rpc"
@@ -105,6 +106,11 @@ type deviceRpcSettings struct {
 	// largest request or response body allowed through http-over-rpc. Values
 	// <= 0 resolve to the bounded production default.
 	HttpMaxBodyBytes int
+	// RequireRemoteApi makes the DeviceRemote fail closed while its rpc service
+	// is unavailable instead of issuing the request from the caller's process.
+	// The extension transport sets this because every SDK API request made by
+	// ur.io must remain on the extension-owned device connection boundary.
+	RequireRemoteApi bool
 
 	// DisableHostedIncompatible, when true, drops remote setters and makes the
 	// DeviceLocalRpc noop setters that must never change on a hosted device
@@ -538,6 +544,11 @@ func newDeviceRemoteWithOverrides(
 	// worker, so its immediate startup validation follows the remote path.
 	api.setHttpPostRaw(deviceRemote.httpPostRaw)
 	api.setHttpGetRaw(deviceRemote.httpGetRaw)
+	if settings.RequireRemoteApi {
+		// Preserve streaming uploads for ordinary native remotes. The
+		// extension-backed remote alone must close the last direct API seam.
+		api.setHttpPostStreamRaw(deviceRemote.httpPostStreamRaw)
+	}
 	api.setLog(deviceRemote.log)
 	deviceRemote.apiJwtRefreshSub = api.AddJwtRefreshListener(
 		jwtRefreshListenerFunc(deviceRemote.setByJwt),
@@ -1121,6 +1132,23 @@ func (self *DeviceRemote) getService() *rpcClient {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.service
+}
+
+// getHttpService returns the forward RPC client used by API-over-device-rpc.
+// BrowserStateOnly deliberately keeps synchronous Device getters away from the
+// browser websocket, but extension-backed API calls run on API goroutines and
+// must still use that private client. Ordinary browser remotes retain their
+// existing local API behavior unless RequireRemoteApi is explicitly enabled.
+func (self *DeviceRemote) getHttpService() *rpcClient {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.service != nil {
+		return self.service
+	}
+	if self.settings.RequireRemoteApi {
+		return self.browserService
+	}
+	return nil
 }
 
 func (self *DeviceRemote) GetClientId() *Id {
@@ -2991,6 +3019,7 @@ func (self *DeviceRemote) Close() {
 		api.SetByJwt("")
 		api.setHttpPostRaw(nil)
 		api.setHttpGetRaw(nil)
+		api.setHttpPostStreamRaw(nil)
 	})
 }
 
@@ -4011,7 +4040,7 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 		}
 	}, requestCancel)
 
-	service := self.getService()
+	service := self.getHttpService()
 
 	if service != nil {
 		httpRequestId := connect.NewId()
@@ -4030,15 +4059,15 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
 
-			// the capture above only chose the remote path. The run goroutine can
-			// tear down and replace the service between the capture and here, and
-			// a failed call on a stale client must not closeService the live one
-			if self.service == nil {
+			// The run goroutine can tear down and replace the selected service
+			// between the capture and here. Never issue the request through a stale
+			// native or browser-state client.
+			if self.service != service && self.browserService != service {
 				err = fmt.Errorf("rpc service is down")
 				close(httpResponseChannel)
 				return
 			}
-			err = rpcCallHttpVoid(self.service, "DeviceLocalRpc.HttpPostRaw", httpRequest, self.closeService)
+			err = rpcCallHttpVoid(service, "DeviceLocalRpc.HttpPostRaw", httpRequest, self.closeService)
 			// Encoding is complete once the forward RPC returns; do not retain a
 			// request body for the entire remote fetch/response lifetime.
 			httpRequest.RequestBodyBytes = nil
@@ -4065,6 +4094,9 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			return nil, fmt.Errorf("Done")
 		}
 	} else {
+		if self.settings.RequireRemoteApi {
+			return nil, fmt.Errorf("device rpc service is unavailable; direct api fallback is disabled")
+		}
 		return connect.HttpPostWithStrategyRaw(
 			requestCtx,
 			self.clientStrategy,
@@ -4073,6 +4105,22 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 			byJwt,
 		)
 	}
+}
+
+// Streams cannot cross net/rpc as readers. Buffer one bounded request and send
+// it through the same HttpPostRaw RPC used by every other SDK API call. In the
+// extension mode this inherits RequireRemoteApi and therefore cannot fall back
+// to a page-side upload if the device service is unavailable.
+func (self *DeviceRemote) httpPostStreamRaw(ctx context.Context, requestUrl string, body io.Reader, byJwt string) ([]byte, error) {
+	limit := self.settings.httpMaxBodyBytes()
+	bodyBytes, err := io.ReadAll(io.LimitReader(body, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if limit < len(bodyBytes) {
+		return nil, fmt.Errorf("device rpc http request exceeds %d-byte limit", limit)
+	}
+	return self.httpPostRaw(ctx, requestUrl, bodyBytes, byJwt)
 }
 
 // safe to call on multiple goroutines
@@ -4096,7 +4144,7 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 		}
 	}, requestCancel)
 
-	service := self.getService()
+	service := self.getHttpService()
 
 	if service != nil {
 		httpRequestId := connect.NewId()
@@ -4114,15 +4162,15 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
 
-			// the capture above only chose the remote path. The run goroutine can
-			// tear down and replace the service between the capture and here, and
-			// a failed call on a stale client must not closeService the live one
-			if self.service == nil {
+			// The run goroutine can tear down and replace the selected service
+			// between the capture and here. Never issue the request through a stale
+			// native or browser-state client.
+			if self.service != service && self.browserService != service {
 				err = fmt.Errorf("rpc service is down")
 				close(httpResponseChannel)
 				return
 			}
-			err = rpcCallHttpVoid(self.service, "DeviceLocalRpc.HttpGetRaw", httpRequest, self.closeService)
+			err = rpcCallHttpVoid(service, "DeviceLocalRpc.HttpGetRaw", httpRequest, self.closeService)
 			if err != nil {
 				close(httpResponseChannel)
 				return
@@ -4145,6 +4193,9 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 			return nil, fmt.Errorf("Done")
 		}
 	} else {
+		if self.settings.RequireRemoteApi {
+			return nil, fmt.Errorf("device rpc service is unavailable; direct api fallback is disabled")
+		}
 		return connect.HttpGetWithStrategyRaw(
 			requestCtx,
 			self.clientStrategy,

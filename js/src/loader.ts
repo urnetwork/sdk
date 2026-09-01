@@ -5,6 +5,7 @@ declare global {
     Go: any;
     URnetworkNewProxyDeviceWithDefaults: any;
     URnetworkNewPlatformDeviceRemote: any;
+    URnetworkNewExtensionDeviceRemote: any;
     URnetworkClose: any;
   }
 }
@@ -109,6 +110,7 @@ export function getWasmGlobals() {
     // the DeviceRemote binding (sdk/js/device_remote.go) — a client's handle on
     // a hosted DeviceLocal, reached over the proxy host's device-rpc websocket
     URnetworkNewPlatformDeviceRemote: window.URnetworkNewPlatformDeviceRemote,
+    URnetworkNewExtensionDeviceRemote: window.URnetworkNewExtensionDeviceRemote,
     URnetworkClose: window.URnetworkClose,
   };
 }

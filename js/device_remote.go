@@ -811,3 +811,31 @@ func NewPlatformDeviceRemote(this js.Value, args []js.Value) any {
 	}
 	return jsDeviceRemote(device)
 }
+
+// NewExtensionDeviceRemote(apiUrl, platformUrl, byJwt, instanceId, transport)
+// builds the ordinary SDK DeviceRemote while delegating its opaque rpc frames
+// to a JavaScript transport. Device endpoint credentials are intentionally
+// absent from this binding.
+func NewExtensionDeviceRemote(this js.Value, args []js.Value) any {
+	if len(args) < 5 {
+		return js.ValueOf(map[string]any{
+			"error": "hosted device instance_id and extension transport are required",
+		})
+	}
+	apiUrl := args[0].String()
+	platformUrl := args[1].String()
+	byJwt := args[2].String()
+	instanceId, err := sdk.ParseId(args[3].String())
+	if err != nil {
+		return js.ValueOf(map[string]any{
+			"error": "invalid hosted device instance_id: " + err.Error(),
+		})
+	}
+
+	networkSpace := sdk.NewUrlsNetworkSpace(apiUrl, platformUrl)
+	device, err := sdk.NewExtensionDeviceRemote(networkSpace, byJwt, instanceId, args[4])
+	if err != nil {
+		return js.ValueOf(map[string]any{"error": err.Error()})
+	}
+	return jsDeviceRemote(device)
+}
