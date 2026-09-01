@@ -15,6 +15,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	// "strings"
@@ -148,7 +149,27 @@ func clearOldLogs(logDir string) {
 
 }
 
+// currentLogDir is the directory glog was last pointed at, guarded by
+// currentLogDirMu because SetLogDir and GetLogDir are called from whatever
+// thread the embedder happens to be on.
+//
+// glog.SetLogDir mutates only glog's internal logDirs/dirSet, never the
+// log_dir flag, so that flag is not a readback path. Recording the directory
+// here is what makes GetLogDir answerable at all: since the flag write was
+// dropped from SetLogDir, reading the flag returned "" in every process,
+// including the one that had just called SetLogDir.
+var currentLogDirMu sync.Mutex
+var currentLogDir string
+
 func GetLogDir() string {
+	currentLogDirMu.Lock()
+	dir := currentLogDir
+	currentLogDirMu.Unlock()
+	if dir != "" {
+		return dir
+	}
+	// fall back to an explicit --log_dir, for embedders that point glog at a
+	// directory with the flag and never call SetLogDir
 	if f := flag.Lookup("log_dir"); f != nil {
 		return f.Value.String()
 	}
@@ -165,6 +186,13 @@ func SetLogDir(logDir string) error {
 	err := glog.SetLogDir(logDir)
 	if err != nil {
 		glog.Infof("SetLogDir to %q failed: %v", logDir, err)
+	} else {
+		// only record a directory glog accepted. glog returns before touching
+		// logDirs when it fails, so it keeps writing wherever it already was,
+		// and GetLogDir has to keep naming that directory rather than this one.
+		currentLogDirMu.Lock()
+		currentLogDir = logDir
+		currentLogDirMu.Unlock()
 	}
 	glog.Infof("New glog initialized")
 	clearOldLogs(logDir)
