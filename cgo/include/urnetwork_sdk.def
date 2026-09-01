@@ -253,6 +253,7 @@ EXPORTS
 	urnet_device_get_ingress_contract_stats
 	urnet_device_get_instance_id
 	urnet_device_get_local_override_app_ids
+	urnet_device_get_log_verbosity
 	urnet_device_get_network_peers
 	urnet_device_get_network_space
 	urnet_device_get_offline
@@ -431,6 +432,7 @@ EXPORTS
 	urnet_device_set_default_location
 	urnet_device_set_destination
 	urnet_device_set_dns_resolver_settings
+	urnet_device_set_log_verbosity
 	urnet_device_set_offline
 	urnet_device_set_performance_profile
 	urnet_device_set_provide_control_mode
@@ -481,6 +483,7 @@ EXPORTS
 	urnet_get_fips140_enabled
 	urnet_get_log_dir
 	urnet_get_log_root
+	urnet_get_log_verbosity
 	urnet_get_memory_stats
 	urnet_get_recommended_dns_resolver_settings
 	urnet_get_regional_dns_servers
@@ -506,6 +509,7 @@ EXPORTS
 	urnet_local_state_get_device_local_key_material
 	urnet_local_state_get_dns_resolver_settings
 	urnet_local_state_get_instance_id
+	urnet_local_state_get_log_verbosity
 	urnet_local_state_get_performance_profile
 	urnet_local_state_get_provide_control_mode
 	urnet_local_state_get_provide_mode
@@ -532,6 +536,7 @@ EXPORTS
 	urnet_local_state_set_dns_resolver_settings
 	urnet_local_state_set_instance_id
 	urnet_local_state_set_intro_funnel_last_prompted
+	urnet_local_state_set_log_verbosity
 	urnet_local_state_set_performance_profile
 	urnet_local_state_set_provide_control_mode
 	urnet_local_state_set_provide_mode
@@ -677,6 +682,7 @@ EXPORTS
 	urnet_set_egress_interface_index
 	urnet_set_log_dir
 	urnet_set_log_dir_for_process
+	urnet_set_log_verbosity
 	urnet_set_memory_limit
 	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets
