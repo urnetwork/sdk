@@ -3,7 +3,6 @@
 package sdk
 
 import (
-	"cmp"
 	"context"
 	"math"
 	"slices"
@@ -372,74 +371,19 @@ func (self *ProviderLocationsViewController) Close() {
 // are stable, so providers sharing a longitude — and every unplottable one —
 // keep the sdk's oldest-connected-first order.
 func deriveProviderWindow(locations *ConnectedProviderLocationList) providerWindow {
-	plottable := []*ConnectedProviderLocation{}
-	unplottable := []*ConnectedProviderLocation{}
-	lonLats := [][2]float64{}
-	longest := ""
-	seen := map[string]bool{}
-	// both device implementations return an empty list rather than nil, but a
-	// nil here would be a crash rather than an empty globe
-	if locations != nil {
-		for i := 0; i < locations.Len(); i += 1 {
-			location := locations.Get(i)
-			if location == nil || location.ClientId == nil {
-				continue
-			}
-			clientId := location.ClientId.String()
-			if seen[clientId] {
-				// the same provider twice would give the selection two homes
-				continue
-			}
-			seen[clientId] = true
-			if longest == "" {
-				// the sdk sorts the window oldest-connected first
-				longest = clientId
-			}
-			if lat, lon, ok := plotCoordinates(location); ok {
-				plottable = append(plottable, location)
-				lonLats = append(lonLats, [2]float64{lon, lat})
-			} else {
-				unplottable = append(unplottable, location)
-			}
-		}
-	}
-
-	centroidLon := centroidLongitude(lonLats)
-	slices.SortStableFunc(plottable, func(a, b *ConnectedProviderLocation) int {
-		_, aLon, _ := plotCoordinates(a)
-		_, bLon, _ := plotCoordinates(b)
-		return cmp.Compare(
-			signedLonDelta(aLon, centroidLon),
-			signedLonDelta(bLon, centroidLon),
-		)
-	})
-
-	order := make([]*ConnectedProviderLocation, 0, len(plottable)+len(unplottable))
-	order = append(order, plottable...)
-	order = append(order, unplottable...)
+	// the display order itself is shared with the ios_extension build (see
+	// provider_locations_order.go); this adds the selection bookkeeping
+	order, plottableCount, longest := orderConnectedProviderLocations(locations)
 	index := map[string]int{}
-	wheel := make([]string, len(plottable))
+	wheel := make([]string, plottableCount)
 	for i, location := range order {
 		clientId := location.ClientId.String()
 		index[clientId] = i
-		if i < len(plottable) {
+		if i < plottableCount {
 			wheel[i] = clientId
 		}
 	}
 	return providerWindow{order: order, index: index, wheel: wheel, longest: longest}
-}
-
-// plotCoordinates is the provider's dot position on the globe: the city
-// centroid when known, else the region centroid. ok is false when the
-// provider has neither — it is listed but never plotted.
-func plotCoordinates(location *ConnectedProviderLocation) (lat float64, lon float64, ok bool) {
-	if location.HasCityCoordinates {
-		return location.CityLat, location.CityLon, true
-	}
-	if location.HasRegionCoordinates {
-		return location.RegionLat, location.RegionLon, true
-	}
-	return 0, 0, false
 }
 
 // stepWheelSelection resolves one scroll step: the client id selected after
@@ -478,25 +422,6 @@ func clampWheelIndex(index int, steps int, count int) int {
 	return min(max(index+steps, 0), count-1)
 }
 
-// centroidLongitude is the longitude, in degrees [-180, 180], of the
-// spherical centroid of the given {lon, lat} points: unit vectors summed,
-// the horizontal direction of the sum taken. Latitude only weights — a point
-// near a pole pulls the centroid's longitude less than one near the equator,
-// matching how little its own longitude means there. An empty or perfectly
-// balanced set (a zero sum, where no direction is meaningful) resolves to 0
-// deterministically (atan2(0, 0) == 0).
-func centroidLongitude(lonLats [][2]float64) float64 {
-	x := 0.0
-	y := 0.0
-	for _, lonLat := range lonLats {
-		lambda := lonLat[0] * math.Pi / 180
-		phi := lonLat[1] * math.Pi / 180
-		x += math.Cos(phi) * math.Cos(lambda)
-		y += math.Cos(phi) * math.Sin(lambda)
-	}
-	return math.Atan2(y, x) * 180 / math.Pi
-}
-
 // angularDistance is the great-circle distance between two {lat, lon} points
 // given in degrees, as radians of arc — a pure ranking quantity here, so the
 // earth's radius never enters. Haversine rather than acos of the unit-vector
@@ -512,21 +437,4 @@ func angularDistance(latDeg1 float64, lonDeg1 float64, latDeg2 float64, lonDeg2 
 	a := sinHalfLat*sinHalfLat + math.Cos(lat1)*math.Cos(lat2)*sinHalfLon*sinHalfLon
 	// rounding can push a just past 1 for antipodal points, where Asin is NaN
 	return 2 * math.Asin(math.Sqrt(min(1, a)))
-}
-
-// signedLonDelta is the signed east-west offset of `lonDeg` from
-// `referenceDeg`, normalized to [-180, 180): negative is west of the
-// reference, positive east. Sorting providers by this offset from their
-// `centroidLongitude` is the wheel order — west to east as seen from the
-// providers' center, with the cut (the wheel's two ends) on the meridian
-// opposite the centroid, the farthest place from the data. A point exactly
-// opposite the reference lands at -180, the far-west end.
-func signedLonDelta(lonDeg float64, referenceDeg float64) float64 {
-	delta := math.Mod(lonDeg-referenceDeg, 360)
-	if delta < -180 {
-		delta += 360
-	} else if delta >= 180 {
-		delta -= 360
-	}
-	return delta
 }
