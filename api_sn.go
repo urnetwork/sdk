@@ -94,6 +94,10 @@ func (self *Api) VerifyKeysSync() (*VerifyKeysResult, error) {
 type SnSetWalletArgs struct {
 	ColdkeySs58 string `json:"coldkey_ss58"`
 	ClientId    *Id    `json:"client_id,omitempty"`
+	// sr25519 signature by the coldkey over Message (hex), from the ur.io
+	// wallet bridge challenge with purpose "connect"; required for app sets
+	Signature string `json:"signature,omitempty"`
+	Message   string `json:"message,omitempty"`
 }
 
 type SnSetWalletError struct {
@@ -101,7 +105,9 @@ type SnSetWalletError struct {
 }
 
 type SnSetWalletResult struct {
-	Error *SnSetWalletError `json:"error,omitempty"`
+	// the stored wallet (with its first effective epoch) when the server returns it
+	Wallet *SnWallet         `json:"wallet,omitempty"`
+	Error  *SnSetWalletError `json:"error,omitempty"`
 }
 
 //gomobile:noexport
@@ -219,6 +225,26 @@ type SnEpochResult struct {
 	TEpochBlocks        int64  `json:"t_epoch_blocks"`
 	ChainId             int64  `json:"chain_id"`
 	ContractAddress     string `json:"contract_address"`
+	// optional release configuration for the direct claim path
+	SettlementVaultAddress string `json:"settlement_vault_address,omitempty"`
+	NoId                   int64  `json:"no_id,omitempty"`
+	Netuid                 int64  `json:"netuid,omitempty"`
+	RpcUrl                 string `json:"rpc_url,omitempty"`
+}
+
+type SnEpochCallback connect.ApiCallback[*SnEpochResult]
+
+func (self *Api) SnEpoch(callback SnEpochCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/sn/epoch", self.apiUrl),
+			self.GetByJwt(),
+			&SnEpochResult{},
+			callback,
+		)
+	})
 }
 
 //gomobile:noexport

@@ -192,6 +192,7 @@ func main() {
 	js.Global().Set("URnetworkNewPlatformDeviceRemote", js.FuncOf(NewPlatformDeviceRemote))
 	js.Global().Set("URnetworkNewExtensionDeviceRemote", js.FuncOf(NewExtensionDeviceRemote))
 	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
+	registerSnExports()
 
 	select {
 	case <-ctx.Done():

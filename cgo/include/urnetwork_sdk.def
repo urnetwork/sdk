@@ -11,6 +11,8 @@ EXPORTS
 	urnet_account_view_controller_start
 	urnet_account_view_controller_stop
 	urnet_account_view_controller_wallet_validate_address
+	urnet_alpha_from_rao
+	urnet_api_account_epochs
 	urnet_api_account_preferences_get
 	urnet_api_account_preferences_update
 	urnet_api_add_auth
@@ -79,9 +81,14 @@ EXPORTS
 	urnet_api_set_network_leaderboard_public
 	urnet_api_set_network_referral
 	urnet_api_set_payout_wallet
+	urnet_api_sn_epoch
 	urnet_api_sn_epoch_sync
+	urnet_api_sn_get_wallet
+	urnet_api_sn_head
 	urnet_api_sn_pool_claim_sync
+	urnet_api_sn_set_wallet
 	urnet_api_sn_set_wallet_sync
+	urnet_api_sn_validate_wallet
 	urnet_api_start_jwt_refresh
 	urnet_api_stripe_create_customer_portal
 	urnet_api_subscription_balance
@@ -182,6 +189,7 @@ EXPORTS
 	urnet_default_provider_transport_settings
 	urnet_default_proxy_config
 	urnet_default_proxy_device_settings
+	urnet_default_sn_chain_settings
 	urnet_default_transport_mode_priority
 	urnet_default_transport_settings
 	urnet_default_tunnel_dns_setting
@@ -291,6 +299,8 @@ EXPORTS
 	urnet_device_local_add_receive_packet
 	urnet_device_local_add_receive_packet_batch
 	urnet_device_local_add_receive_packets
+	urnet_device_local_add_sn_wallet_change_listener
+	urnet_device_local_clear_sn_wallet_cache
 	urnet_device_local_close_block_action_view_controller
 	urnet_device_local_close_connect_view_controller
 	urnet_device_local_close_contract_details_view_controller
@@ -301,6 +311,7 @@ EXPORTS
 	urnet_device_local_close_post_quantum_identity_view_controller
 	urnet_device_local_close_provider_locations_view_controller
 	urnet_device_local_close_view_controller
+	urnet_device_local_connect_sn_wallet
 	urnet_device_local_drop_exit
 	urnet_device_local_get_client_key_seed
 	urnet_device_local_get_destination_exits
@@ -314,6 +325,10 @@ EXPORTS
 	urnet_device_local_get_provide_tls_private_key_pem
 	urnet_device_local_get_reliability_metrics
 	urnet_device_local_get_reliability_settings
+	urnet_device_local_get_sn_chain_settings
+	urnet_device_local_get_sn_client_key
+	urnet_device_local_get_sn_gas_key
+	urnet_device_local_get_sn_wallet
 	urnet_device_local_key_material_get_client_key_seed
 	urnet_device_local_key_material_get_provide_tls_certificate_pem
 	urnet_device_local_key_material_get_provide_tls_private_key_pem
@@ -354,12 +369,20 @@ EXPORTS
 	urnet_device_local_set_reliability_settings
 	urnet_device_local_set_routing_tier
 	urnet_device_local_set_rpc_server
+	urnet_device_local_set_sn_chain_settings
 	urnet_device_local_set_tunnel_dns_setting
 	urnet_device_local_shuffle_exits
+	urnet_device_local_sign_sn_fleet_binding
 	urnet_device_local_simulate_network_change
+	urnet_device_local_sn_claim
+	urnet_device_local_sn_claim_transactions
+	urnet_device_local_sn_claims
+	urnet_device_local_sn_gas_balance
 	urnet_device_local_stall_exit
 	urnet_device_local_start_probe_suite
 	urnet_device_local_stop_probe_suite
+	urnet_device_local_sync_sn_chain_settings
+	urnet_device_local_sync_sn_wallet
 	urnet_device_local_take_memory_samples_json
 	urnet_device_local_tunnel_dns_addresses_ipv4
 	urnet_device_local_tunnel_dns_addresses_ipv6
@@ -369,6 +392,8 @@ EXPORTS
 	urnet_device_refresh_token
 	urnet_device_remote_add_device_recreated_listener
 	urnet_device_remote_add_remote_change_listener
+	urnet_device_remote_add_sn_wallet_change_listener
+	urnet_device_remote_clear_sn_wallet_cache
 	urnet_device_remote_close_block_action_view_controller
 	urnet_device_remote_close_connect_view_controller
 	urnet_device_remote_close_contract_details_view_controller
@@ -379,6 +404,7 @@ EXPORTS
 	urnet_device_remote_close_post_quantum_identity_view_controller
 	urnet_device_remote_close_provider_locations_view_controller
 	urnet_device_remote_close_view_controller
+	urnet_device_remote_connect_sn_wallet
 	urnet_device_remote_drop_exit
 	urnet_device_remote_get_destination_exits
 	urnet_device_remote_get_exits
@@ -386,6 +412,10 @@ EXPORTS
 	urnet_device_remote_get_reliability_metrics
 	urnet_device_remote_get_reliability_settings
 	urnet_device_remote_get_remote_connected
+	urnet_device_remote_get_sn_chain_settings
+	urnet_device_remote_get_sn_client_key
+	urnet_device_remote_get_sn_gas_key
+	urnet_device_remote_get_sn_wallet
 	urnet_device_remote_get_sync_error
 	urnet_device_remote_migrate_exit
 	urnet_device_remote_open_account_preferences_view_controller
@@ -413,12 +443,20 @@ EXPORTS
 	urnet_device_remote_reset_reliability_settings
 	urnet_device_remote_set_reliability_settings
 	urnet_device_remote_set_rpc_server
+	urnet_device_remote_set_sn_chain_settings
 	urnet_device_remote_shuffle_exits
+	urnet_device_remote_sign_sn_fleet_binding
 	urnet_device_remote_simulate_network_change
+	urnet_device_remote_sn_claim
+	urnet_device_remote_sn_claim_transactions
+	urnet_device_remote_sn_claims
+	urnet_device_remote_sn_gas_balance
 	urnet_device_remote_stall_exit
 	urnet_device_remote_start_probe_suite
 	urnet_device_remote_stop_probe_suite
 	urnet_device_remote_sync
+	urnet_device_remote_sync_sn_chain_settings
+	urnet_device_remote_sync_sn_wallet
 	urnet_device_remove_block_action_override
 	urnet_device_remove_connected_provider
 	urnet_device_remove_destination
@@ -466,6 +504,7 @@ EXPORTS
 	urnet_devices_view_controller_stop
 	urnet_encode_base58
 	urnet_encrypt_data
+	urnet_evm_mirror_ss58
 	urnet_export_diagnostic_bundle
 	urnet_feedback_view_controller_add_is_sending_feedback_listener
 	urnet_feedback_view_controller_close
@@ -473,6 +512,9 @@ EXPORTS
 	urnet_feedback_view_controller_start
 	urnet_feedback_view_controller_stop
 	urnet_flush_glog
+	urnet_format_alpha
+	urnet_format_alpha_amount
+	urnet_format_share_bps
 	urnet_free_memory
 	urnet_free_string
 	urnet_generate_device_rpc_key_material
@@ -523,6 +565,8 @@ EXPORTS
 	urnet_local_state_get_provider_transport_settings
 	urnet_local_state_get_route_local
 	urnet_local_state_get_routing_tier
+	urnet_local_state_get_sn_chain_settings
+	urnet_local_state_get_sn_wallet
 	urnet_local_state_get_transport_settings
 	urnet_local_state_get_vpn_interface_while_offline
 	urnet_local_state_logout
@@ -550,6 +594,8 @@ EXPORTS
 	urnet_local_state_set_provider_transport_settings
 	urnet_local_state_set_route_local
 	urnet_local_state_set_routing_tier
+	urnet_local_state_set_sn_chain_settings
+	urnet_local_state_set_sn_wallet
 	urnet_local_state_set_transport_settings
 	urnet_local_state_set_vpn_interface_while_offline
 	urnet_locations_view_controller_add_filtered_locations_listener
@@ -632,6 +678,7 @@ EXPORTS
 	urnet_new_network_space_manager_no_storage
 	urnet_new_platform_device_remote
 	urnet_new_proxy_device_with_defaults
+	urnet_new_sn_chain_settings
 	urnet_new_subscription_balance_view_controller
 	urnet_new_time_unix_milli
 	urnet_new_transfer_path
@@ -695,6 +742,13 @@ EXPORTS
 	urnet_set_memory_limit
 	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets
+	urnet_short_ss58
+	urnet_sn_claim_transactions_for
+	urnet_sn_claims_for
+	urnet_sn_fleet_binding_digest
+	urnet_sn_gas_balance_for
+	urnet_sn_payout_leaf_hex
+	urnet_sn_testnet_chain_settings
 	urnet_sub_close
 	urnet_subscription_balance_view_controller_add_purchase_confirmation_listener
 	urnet_subscription_balance_view_controller_add_subscription_balance_change_listener
@@ -735,6 +789,8 @@ EXPORTS
 	urnet_tunnel_close
 	urnet_tunnel_get_done
 	urnet_usd_to_nano_cents
+	urnet_validate_ss58
+	urnet_verify_payout_proof_hex
 	urnet_version
 	urnet_wallet_view_controller_add_account_wallets_listener
 	urnet_wallet_view_controller_add_external_wallet

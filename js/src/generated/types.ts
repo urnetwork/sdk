@@ -18,6 +18,7 @@ export interface NetworkSpaceValues {
   sso_google?: boolean;
   api_url?: string;
   platform_url?: string;
+  sn_chain?: SnChainSettings | null;
   net_extender?: NetExtender | null;
   net_extender_auto_configure?: NetExtenderAutoConfigure | null;
 }
@@ -355,5 +356,159 @@ export interface DeleteApiKeyArgs {
 
 export interface DeleteApiKeyResult {
   error?: ApiError | null;
+}
+
+export interface SnChainSettings {
+  chain_id: number;
+  vault_address: string;
+  coordinator_address: string;
+  no_id: string;
+  netuid: number;
+  explorer_tx_url: string;
+  artifact_base_url: string;
+  tx_type: string;
+  lookback_epochs: number;
+  rpc_urls?: string[];
+}
+
+export interface SnError {
+  code?: string;
+  message: string;
+}
+
+export interface SnWallet {
+  coldkey_ss58: string;
+  client_id?: string;
+  set_at_millis: number;
+  from_epoch?: number;
+}
+
+export interface SnSetWalletArgs {
+  coldkey_ss58: string;
+  client_id?: string | null;
+  signature?: string;
+  message?: string;
+}
+
+export interface SnSetWalletResult {
+  wallet?: SnWallet | null;
+  error?: SnSetWalletError | null;
+}
+
+export interface SnSetWalletError {
+  message: string;
+}
+
+export interface SnGetWalletResult {
+  wallet?: SnWallet | null;
+  wallets?: SnWallet[] | null;
+  error?: SnError | null;
+}
+
+export interface SnValidateWalletArgs {
+  address: string;
+}
+
+export interface SnValidateWalletResult {
+  valid_syntax: boolean;
+  exists_on_chain: boolean;
+  banned: boolean;
+  message?: string;
+  error?: SnError | null;
+}
+
+export interface SnConnectWalletResult {
+  wallet?: SnWallet | null;
+  exists_on_chain: boolean;
+  warning?: string;
+  error?: SnError | null;
+}
+
+export interface SnGasKey {
+  address: string;
+  mirror_ss58: string;
+}
+
+export interface SnGasBalanceResult {
+  address: string;
+  wei: string;
+  tao: number;
+  error?: SnError | null;
+}
+
+export interface SnEpochClaim {
+  epoch: number;
+  share_bps: number;
+  amount_rao: number;
+  status: string;
+  claim_open_block: number;
+  expiry_block: number;
+  tx_hash?: string;
+  payout_root?: string;
+  artifact_hash?: string;
+  message?: string;
+}
+
+export interface SnClaimsResult {
+  claims: SnEpochClaim[] | null;
+  total_claimable_rao: number;
+  current_epoch: number;
+  block_number: number;
+  coldkey_ss58?: string;
+  error?: SnError | null;
+}
+
+export interface SnUnsignedTx {
+  epoch: number;
+  chain_id: number;
+  to: string;
+  data: string;
+  value: string;
+  amount_rao: number;
+}
+
+export interface SnEpochResult {
+  epoch: number;
+  start_block: number;
+  commit_deadline_block: number;
+  trails_deadline_block: number;
+  finalize_block: number;
+  t_epoch_blocks: number;
+  chain_id: number;
+  contract_address: string;
+  settlement_vault_address?: string;
+  no_id?: number;
+  netuid?: number;
+  rpc_url?: string;
+}
+
+export interface AccountEpoch {
+  epoch: number;
+  start_millis: number;
+  end_millis: number;
+  points: number;
+  share_bps: number;
+  rank?: number;
+}
+
+export interface AccountEpochsResult {
+  epochs: AccountEpoch[] | null;
+  total_points?: number;
+  error?: SnError | null;
+}
+
+export interface SnHeadResult {
+  eligible: boolean;
+  score: number;
+  floor: number;
+  rank_estimate: number;
+  cutoff: number;
+  bound: boolean;
+  hotkey?: string;
+  uid?: number;
+  rank?: number;
+  epoch: number;
+  source: string;
+  error?: SnError | null;
 }
 

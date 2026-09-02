@@ -90,6 +90,26 @@ func generateTypes() error {
 		sdk.ListApiKeysResult{},
 		sdk.DeleteApiKeyArgs{},
 		sdk.DeleteApiKeyResult{},
+		// UR protocol (subnet 25) earnings
+		sdk.SnChainSettings{},
+		sdk.SnError{},
+		sdk.SnWallet{},
+		sdk.SnSetWalletArgs{},
+		sdk.SnSetWalletResult{},
+		sdk.SnSetWalletError{},
+		sdk.SnGetWalletResult{},
+		sdk.SnValidateWalletArgs{},
+		sdk.SnValidateWalletResult{},
+		sdk.SnConnectWalletResult{},
+		sdk.SnGasKey{},
+		sdk.SnGasBalanceResult{},
+		sdk.SnEpochClaim{},
+		sdk.SnClaimsResult{},
+		sdk.SnUnsignedTx{},
+		sdk.SnEpochResult{},
+		sdk.AccountEpoch{},
+		sdk.AccountEpochsResult{},
+		sdk.SnHeadResult{},
 	}
 
 	for _, t := range types {
@@ -144,6 +164,12 @@ func generateTypeScriptInterface(v interface{}) (string, error) {
 		}
 
 		sb.WriteString(fmt.Sprintf("  %s%s: %s;\n", jsonName, optionalMarker, tsType))
+	}
+
+	// fields written by a custom MarshalJSON rather than a struct field
+	switch t.String() {
+	case "sdk.SnChainSettings":
+		sb.WriteString("  rpc_urls?: string[];\n")
 	}
 
 	sb.WriteString("}")
@@ -213,6 +239,16 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "ConnectLocation[]"
 		case "sdk.PublicAccountApiKeyList":
 			return "PublicAccountApiKey[]"
+		case "sdk.Int64List":
+			return "number[]"
+		case "sdk.SnWalletList":
+			return "SnWallet[]"
+		case "sdk.SnEpochClaimList":
+			return "SnEpochClaim[]"
+		case "sdk.SnUnsignedTxList":
+			return "SnUnsignedTx[]"
+		case "sdk.AccountEpochList":
+			return "AccountEpoch[]"
 		default:
 			return t.Name()
 		}

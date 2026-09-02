@@ -80,6 +80,9 @@ type NetworkSpaceValues struct {
 	ApiUrl      string `json:"api_url,omitempty"`
 	PlatformUrl string `json:"platform_url,omitempty"`
 
+	// UR protocol chain overrides (vault, coordinator, operator id, rpc)
+	SnChain *SnChainSettings `json:"sn_chain,omitempty"`
+
 	// custom extender
 	// this overrides any auto discovered extenders
 	NetExtender              *NetExtender              `json:"net_extender,omitempty"`

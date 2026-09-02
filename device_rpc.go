@@ -275,6 +275,7 @@ type DeviceRemote struct {
 	allowForegroundChangeListeners           map[connect.Id]AllowForegroundChangeListener
 	canReferChangeListeners                  map[connect.Id]CanReferChangeListener
 	provideModeChangeListeners               map[connect.Id]ProvideModeChangeListener
+	sn                                       *deviceSn
 	provideChangeListeners                   map[connect.Id]ProvideChangeListener
 	provideControlModeChangeListeners        map[connect.Id]ProvideControlModeChangeListener
 	performanceProfileChangeListeners        map[connect.Id]PerformanceProfileChangeListener
@@ -470,6 +471,7 @@ func newDeviceRemoteWithOverrides(
 		allowForegroundChangeListeners:           map[connect.Id]AllowForegroundChangeListener{},
 		canReferChangeListeners:                  map[connect.Id]CanReferChangeListener{},
 		provideModeChangeListeners:               map[connect.Id]ProvideModeChangeListener{},
+		sn:                                       newDeviceSn(),
 		provideChangeListeners:                   map[connect.Id]ProvideChangeListener{},
 		provideControlModeChangeListeners:        map[connect.Id]ProvideControlModeChangeListener{},
 		performanceProfileChangeListeners:        map[connect.Id]PerformanceProfileChangeListener{},

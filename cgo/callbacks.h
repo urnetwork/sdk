@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef void (*urnet_account_epochs_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_account_epochs(urnet_account_epochs_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_account_preferences_get_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_account_preferences_get(urnet_account_preferences_get_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_account_preferences_set_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -261,6 +263,32 @@ typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_j
 void urnet_invoke_set_payout_wallet(urnet_set_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);
 bool urnet_invoke_setup_new_device(urnet_setup_new_device_cb cb, void* user_data, uint64_t device, const char* proxy_config_result_json);
+typedef void (*urnet_sn_claim_confirmed_cb)(void* user_data, int64_t epoch, const char* tx_hash, int64_t amount_rao);
+void urnet_invoke_sn_claim_confirmed(urnet_sn_claim_confirmed_cb cb, void* user_data, int64_t epoch, const char* tx_hash, int64_t amount_rao);
+typedef void (*urnet_sn_claim_done_cb)(void* user_data);
+void urnet_invoke_sn_claim_done(urnet_sn_claim_done_cb cb, void* user_data);
+typedef void (*urnet_sn_claim_failed_cb)(void* user_data, int64_t epoch, const char* message);
+void urnet_invoke_sn_claim_failed(urnet_sn_claim_failed_cb cb, void* user_data, int64_t epoch, const char* message);
+typedef void (*urnet_sn_claim_sent_cb)(void* user_data, int64_t epoch, const char* tx_hash);
+void urnet_invoke_sn_claim_sent(urnet_sn_claim_sent_cb cb, void* user_data, int64_t epoch, const char* tx_hash);
+typedef void (*urnet_sn_claims_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_claims(urnet_sn_claims_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_connect_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_connect_wallet(urnet_sn_connect_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_epoch_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_epoch(urnet_sn_epoch_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_gas_balance_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_gas_balance(urnet_sn_gas_balance_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_get_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_get_wallet(urnet_sn_get_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_head_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_head(urnet_sn_head_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_set_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_validate_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_sn_validate_wallet(urnet_sn_validate_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_wallet_change_cb)(void* user_data, const char* wallet_json);
+void urnet_invoke_sn_wallet_change(urnet_sn_wallet_change_cb cb, void* user_data, const char* wallet_json);
 typedef void (*urnet_solana_payment_intent_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_solana_payment_intent(urnet_solana_payment_intent_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_stripe_create_checkout_session_cb)(void* user_data, const char* result_json, const char* err_param);

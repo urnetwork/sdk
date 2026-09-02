@@ -837,6 +837,7 @@ type DeviceLocal struct {
 
 	canShowRatingDialogChangeListeners       *connect.CallbackList[CanShowRatingDialogChangeListener]
 	canPromptIntroFunnelChangeListeners      *connect.CallbackList[CanPromptIntroFunnelChangeListener]
+	sn                                       *deviceSn
 	allowForegroundChangeListeners           *connect.CallbackList[AllowForegroundChangeListener]
 	canReferChangeListeners                  *connect.CallbackList[CanReferChangeListener]
 	provideModeChangeListeners               *connect.CallbackList[ProvideModeChangeListener]
@@ -1301,6 +1302,7 @@ func newDeviceLocalWithOverrides(
 		probeSuiteState:                          &probeSuite{},
 		canShowRatingDialogChangeListeners:       connect.NewCallbackList[CanShowRatingDialogChangeListener](),
 		canPromptIntroFunnelChangeListeners:      connect.NewCallbackList[CanPromptIntroFunnelChangeListener](),
+		sn:                                       newDeviceSn(),
 		allowForegroundChangeListeners:           connect.NewCallbackList[AllowForegroundChangeListener](),
 		canReferChangeListeners:                  connect.NewCallbackList[CanReferChangeListener](),
 		provideModeChangeListeners:               connect.NewCallbackList[ProvideModeChangeListener](),
