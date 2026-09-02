@@ -33,12 +33,12 @@ func testWindowIdentity(t *testing.T) *connect.WindowClientIdentity {
 // and never load under a different owner, fingerprint, or after the ttl.
 func TestWindowIdentityStoreRoundTrip(t *testing.T) {
 	store, localState, _ := newTestIdentityStore(t)
-	store.SetSpecsFingerprint("specs-a")
+	specsAStore := store.ForSpecsFingerprint("specs-a")
 
 	identity := testWindowIdentity(t)
-	store.StoreWindowClientIdentities([]*connect.WindowClientIdentity{identity})
+	specsAStore.StoreWindowClientIdentities([]*connect.WindowClientIdentity{identity})
 
-	loaded := store.LoadWindowClientIdentities()
+	loaded := specsAStore.LoadWindowClientIdentities()
 	if len(loaded) != 1 {
 		t.Fatalf("expected 1 identity, got %d", len(loaded))
 	}
@@ -52,23 +52,73 @@ func TestWindowIdentityStoreRoundTrip(t *testing.T) {
 	// a different destination fingerprint must not restore (restored
 	// identities are dialed first — cross-location restore would steer the
 	// connect to the wrong providers)
-	store.SetSpecsFingerprint("specs-b")
-	if identities := store.LoadWindowClientIdentities(); identities != nil {
+	if identities := store.ForSpecsFingerprint("specs-b").LoadWindowClientIdentities(); identities != nil {
 		t.Fatalf("fingerprint mismatch must not load, got %v", identities)
 	}
-	store.SetSpecsFingerprint("specs-a")
 
 	// a different owner (new login) must not restore
 	otherStore := newLocalStateWindowIdentityStore(localState, connect.NewId())
-	otherStore.SetSpecsFingerprint("specs-a")
-	if identities := otherStore.LoadWindowClientIdentities(); identities != nil {
+	if identities := otherStore.ForSpecsFingerprint("specs-a").LoadWindowClientIdentities(); identities != nil {
 		t.Fatalf("owner mismatch must not load, got %v", identities)
 	}
 
 	// an empty store call replaces the snapshot (all identities torn down)
-	store.StoreWindowClientIdentities(nil)
-	if identities := store.LoadWindowClientIdentities(); 0 < len(identities) {
+	specsAStore.StoreWindowClientIdentities(nil)
+	if identities := specsAStore.LoadWindowClientIdentities(); 0 < len(identities) {
 		t.Fatalf("emptied snapshot must not load identities, got %v", identities)
+	}
+}
+
+// A destination change retires the old multi-client asynchronously while the
+// replacement starts immediately. The old generator may therefore enter its
+// identity-store call before the change but reach the shared store after it.
+// Its snapshot must retain the OLD destination scope: relabeling that snapshot
+// with the new fingerprint lets the replacement restore the same client id,
+// after which old-generation cleanup deactivates the row underneath it and
+// both platform auth and /connect/control return 401.
+func TestWindowIdentityStoreLatePriorDestinationWriteKeepsPriorScope(t *testing.T) {
+	store, _, _ := newTestIdentityStore(t)
+	priorStore := store.ForSpecsFingerprint("prior-destination")
+	nextStore := store.ForSpecsFingerprint("next-destination")
+
+	priorIdentity := testWindowIdentity(t)
+	latePriorWrite := func() {
+		priorStore.StoreWindowClientIdentities([]*connect.WindowClientIdentity{priorIdentity})
+	}
+
+	latePriorWrite()
+
+	if identities := nextStore.LoadWindowClientIdentities(); 0 < len(identities) {
+		t.Fatalf("late prior-generation snapshot was relabeled and restored by next destination: %v", identities)
+	}
+}
+
+// Persistence bridges process restarts, not two overlapping destination
+// generations in one DeviceLocal. Reusing the old client id in-process lets
+// predecessor cleanup revoke the replacement's server row. The first
+// generation may consume the saved snapshot; every later one must start fresh
+// and must ignore late writes from its predecessor.
+func TestWindowIdentityStoreRestoresOnlyFirstDestinationGeneration(t *testing.T) {
+	store, _, _ := newTestIdentityStore(t)
+	identity := testWindowIdentity(t)
+	scopedStore := store.ForSpecsFingerprint("same-destination")
+	scopedStore.StoreWindowClientIdentities([]*connect.WindowClientIdentity{identity})
+
+	generations := newWindowIdentityStoreGenerations()
+	first := generations.Next(scopedStore)
+	if identities := first.LoadWindowClientIdentities(); len(identities) != 1 || identities[0].ClientId != identity.ClientId {
+		t.Fatalf("first destination generation did not restore prior-process identity: %v", identities)
+	}
+
+	second := generations.Next(store.ForSpecsFingerprint("same-destination"))
+	if identities := second.LoadWindowClientIdentities(); len(identities) != 0 {
+		t.Fatalf("second in-process generation restored predecessor identity: %v", identities)
+	}
+
+	lateIdentity := testWindowIdentity(t)
+	first.StoreWindowClientIdentities([]*connect.WindowClientIdentity{lateIdentity})
+	if identities := store.ForSpecsFingerprint("same-destination").LoadWindowClientIdentities(); len(identities) != 0 {
+		t.Fatalf("stale first generation rewrote the replacement snapshot: %v", identities)
 	}
 }
 

@@ -724,10 +724,11 @@ type DeviceLocal struct {
 
 	// windowIdentityStore, when the device owns its storage (not hosted, not
 	// host-provided), persists the window client identities so a relaunch
-	// that reconnects to the same destination reuses them (see
-	// window_identity_store.go). The device stamps the connect-spec
-	// fingerprint before each generator build. nil when unavailable.
-	windowIdentityStore *localStateWindowIdentityStore
+	// that reconnects to the same destination after a process restart can
+	// reuse them (see window_identity_store.go). Each generator receives an
+	// immutable connect-spec scope. nil when unavailable.
+	windowIdentityStore            *localStateWindowIdentityStore
+	windowIdentityStoreGenerations *windowIdentityStoreGenerations
 
 	// sendRoute is an immutable snapshot of the routing fields read on the
 	// per-packet send path (`remoteUserNatClient`, `routeLocal`, `provider`).
@@ -1255,6 +1256,11 @@ func newDeviceLocalWithOverrides(
 		tunnelDnsSetting:   DefaultTunnelDnsSetting(),
 		clientStrategy:     clientStrategy,
 		lifecycleDone:      make(chan struct{}),
+		// Identity persistence bridges a process restart. Destination
+		// generators overlap during asynchronous retirement, so this owner
+		// gives each one a generation-bound store view and permits restoration
+		// only for the first generation in this process.
+		windowIdentityStoreGenerations: newWindowIdentityStoreGenerations(),
 		// the dns share of the device memory target; one live budget for the
 		// life of the device (see the field doc)
 		dnsMemoryTarget:           connect.NewMemoryTarget(dnsShareByteCount),
@@ -1378,7 +1384,6 @@ func newDeviceLocalWithOverrides(
 		// embedding host).
 		if !settings.HostedIncompatible && settings.MultiClientIdentityStore == nil {
 			deviceLocal.windowIdentityStore = newLocalStateWindowIdentityStore(localState, clientId)
-			settings.MultiClientIdentityStore = deviceLocal.windowIdentityStore
 		}
 	}
 
@@ -2117,15 +2122,20 @@ func (self *DeviceLocal) SetByJwt(byJwt string) {
 	// provider.SetByJwt runs on the snapshot outside the lock (it only sets the
 	// platform transport auth, which has its own locking).
 	var provider *deviceLocalProvider
+	var apiGenerator *connect.ApiMultiClientGenerator
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		provider = self.provider
+		apiGenerator = self.apiMultiClientGenerator
 		self.byJwt = byJwt
 	}()
 
 	if provider != nil {
 		provider.SetByJwt(byJwt)
+	}
+	if apiGenerator != nil {
+		apiGenerator.SetByJwt(byJwt)
 	}
 
 	// fire listeners
@@ -3709,13 +3719,6 @@ func (self *DeviceLocal) setDestination(
 		self.closeRemoteUserNatClientWithLock()
 
 		if 0 < len(connectSpecs) {
-			// scope window identity persistence to this destination: identities
-			// recorded under one connect's specs must never steer a connect to a
-			// different destination (restored identities are dialed first)
-			if self.windowIdentityStore != nil {
-				self.windowIdentityStore.SetSpecsFingerprint(specsFingerprint)
-			}
-
 			remoteReceive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
 				// self.log.Infof("[trace]receive packet\n")
 				self.stats.UpdateRemoteReceive(ByteCount(len(packet)))
@@ -3871,8 +3874,14 @@ func (self *DeviceLocal) setDestination(
 				// window identity persistence across a process restart, when the
 				// embedding host provides a store (e.g. the proxy service,
 				// PROXYDRAIN1.md §3.5)
-				if self.settings.MultiClientIdentityStore != nil {
-					apiGenerator.SetIdentityStore(self.settings.MultiClientIdentityStore)
+				identityStore := self.settings.MultiClientIdentityStore
+				if self.windowIdentityStore != nil {
+					identityStore = self.windowIdentityStore.ForSpecsFingerprint(specsFingerprint)
+				}
+				if identityStore != nil {
+					apiGenerator.SetIdentityStore(
+						self.windowIdentityStoreGenerations.Next(identityStore),
+					)
 				}
 				self.apiMultiClientGenerator = apiGenerator
 				generator = apiGenerator

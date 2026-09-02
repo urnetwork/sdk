@@ -20,11 +20,17 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	refreshedRequestStarted := make(chan struct{})
+	windowAuth := make(chan string, 1)
 	var firstStartedOnce sync.Once
 	var refreshedStartedOnce sync.Once
 
 	ts := httptest.NewServer(testApiHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/network/auth-client" {
+			windowAuth <- r.Header.Get("Authorization")
+			fmt.Fprintf(w, `{"by_client_jwt":%q}`, refreshedJwt)
+			return
+		}
 		switch r.Header.Get("Authorization") {
 		case "Bearer " + initialJwt:
 			firstStartedOnce.Do(func() {
@@ -89,6 +95,24 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer device.Close()
+	windowGenerator := connect.NewApiMultiClientGenerator(
+		ctx,
+		nil,
+		networkSpace.clientStrategy,
+		nil,
+		ts.URL,
+		initialJwt,
+		"ws://127.0.0.1:1",
+		"refresh-test",
+		"test",
+		"0.0.0",
+		nil,
+		connect.DefaultClientSettings,
+		connect.DefaultApiMultiClientGeneratorSettings(),
+	)
+	device.stateLock.Lock()
+	device.apiMultiClientGenerator = windowGenerator
+	device.stateLock.Unlock()
 
 	select {
 	case <-firstStarted:
@@ -127,6 +151,17 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	}
 	if got := localState.GetInstanceId(); got == nil || got.Cmp(liveInstanceId) != 0 {
 		t.Fatalf("persisted instance_id after refresh = %v, want live %v", got, liveInstanceId)
+	}
+	if _, err := windowGenerator.NewClientArgsContext(ctx); err != nil {
+		t.Fatalf("mint client after device JWT refresh: %v", err)
+	}
+	select {
+	case authorization := <-windowAuth:
+		if authorization != "Bearer "+refreshedJwt {
+			t.Fatalf("window generator authorization did not rotate with device JWT")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("window generator did not authenticate a later client")
 	}
 
 	// A confirmed logical rejection is propagated through the same Api owner,

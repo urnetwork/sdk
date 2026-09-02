@@ -27,6 +27,7 @@ package sdk
 // by the server's idle client reap.
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -78,14 +79,20 @@ func providerSpecsFingerprint(specs []*connect.ProviderSpec) string {
 	return strings.Join(parts, "|")
 }
 
-// localStateWindowIdentityStore implements connect.MultiClientIdentityStore over the device's
-// local storage. The device stamps the current connect's spec fingerprint (SetSpecsFingerprint)
-// before each generator is built; load and store are scoped to it.
+// localStateWindowIdentityStore owns one device's on-disk snapshot. A scoped
+// view captures the destination fingerprint for ONE generator generation;
+// the parent deliberately has no mutable "current fingerprint". Destination
+// retirement is asynchronous, so a late old-generation Store must never be
+// relabelled with the replacement destination's fingerprint.
 type localStateWindowIdentityStore struct {
 	localState    *LocalState
 	ownerClientId connect.Id
 
-	mutex            sync.Mutex
+	mutex sync.Mutex
+}
+
+type scopedLocalStateWindowIdentityStore struct {
+	store            *localStateWindowIdentityStore
 	specsFingerprint string
 }
 
@@ -96,26 +103,28 @@ func newLocalStateWindowIdentityStore(localState *LocalState, ownerClientId conn
 	}
 }
 
-// SetSpecsFingerprint scopes subsequent loads and stores to the given connect specs. Called
-// by the device under its state lock before the generator for those specs is created.
-func (self *localStateWindowIdentityStore) SetSpecsFingerprint(specsFingerprint string) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	self.specsFingerprint = specsFingerprint
+// ForSpecsFingerprint returns an immutable store view for one destination
+// generation. Old and new views may overlap safely during make-before-break
+// replacement because every operation carries its own scope.
+func (self *localStateWindowIdentityStore) ForSpecsFingerprint(specsFingerprint string) connect.MultiClientIdentityStore {
+	return &scopedLocalStateWindowIdentityStore{
+		store:            self,
+		specsFingerprint: specsFingerprint,
+	}
 }
 
 func (self *localStateWindowIdentityStore) path() string {
 	return filepath.Join(self.localState.localStorageDir, ".window_identities")
 }
 
-// StoreWindowClientIdentities implements connect.MultiClientIdentityStore: replace the
-// snapshot with the full live set (called by the generator's async writer on every change).
-func (self *localStateWindowIdentityStore) StoreWindowClientIdentities(identities []*connect.WindowClientIdentity) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
+// StoreWindowClientIdentities implements connect.MultiClientIdentityStore on
+// the immutable scoped view.
+func (self *scopedLocalStateWindowIdentityStore) StoreWindowClientIdentities(identities []*connect.WindowClientIdentity) {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
 
 	persisted := &persistedWindowIdentities{
-		OwnerClientId:    self.ownerClientId.String(),
+		OwnerClientId:    self.store.ownerClientId.String(),
 		SpecsFingerprint: self.specsFingerprint,
 		SavedAt:          time.Now(),
 	}
@@ -136,18 +145,18 @@ func (self *localStateWindowIdentityStore) StoreWindowClientIdentities(identitie
 	}
 
 	if identitiesBytes, err := json.Marshal(persisted); err == nil {
-		os.WriteFile(self.path(), identitiesBytes, LocalStorageFilePermissions)
+		os.WriteFile(self.store.path(), identitiesBytes, LocalStorageFilePermissions)
 	}
 }
 
-// LoadWindowClientIdentities implements connect.MultiClientIdentityStore: the persisted
-// identities, or nil when the snapshot is missing, unreadable, stale, or scoped to a
-// different owner or destination specs.
-func (self *localStateWindowIdentityStore) LoadWindowClientIdentities() []*connect.WindowClientIdentity {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
+// LoadWindowClientIdentities implements connect.MultiClientIdentityStore on
+// the immutable scoped view: the persisted identities, or nil when the
+// snapshot is missing, unreadable, stale, or belongs to another scope.
+func (self *scopedLocalStateWindowIdentityStore) LoadWindowClientIdentities() []*connect.WindowClientIdentity {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
 
-	identitiesBytes, err := os.ReadFile(self.path())
+	identitiesBytes, err := os.ReadFile(self.store.path())
 	if err != nil {
 		return nil
 	}
@@ -155,7 +164,7 @@ func (self *localStateWindowIdentityStore) LoadWindowClientIdentities() []*conne
 	if err := json.Unmarshal(identitiesBytes, &persisted); err != nil {
 		return nil
 	}
-	if persisted.OwnerClientId != self.ownerClientId.String() {
+	if persisted.OwnerClientId != self.store.ownerClientId.String() {
 		return nil
 	}
 	if persisted.SpecsFingerprint != self.specsFingerprint {
@@ -198,6 +207,93 @@ func (self *localStateWindowIdentityStore) LoadWindowClientIdentities() []*conne
 			InstanceId:  instanceId,
 			Destination: destination,
 		})
+	}
+	return identities
+}
+
+// windowIdentityStoreGenerations makes persistence a process-restart
+// optimization, never an in-process handoff mechanism. Only the first
+// destination generator may restore the snapshot left by a prior process.
+// Later generators start with fresh derived clients, so an asynchronously
+// retiring predecessor cannot deactivate a client the replacement just
+// restored. Store calls are serialized and rejected once their generation is
+// stale; a later generation also clears the old snapshot before recording its
+// first live set.
+type windowIdentityStoreGenerations struct {
+	mutex          sync.Mutex
+	storeMutex     sync.Mutex
+	generation     uint64
+	restoreClaimed bool
+}
+
+type generationWindowIdentityStore struct {
+	owner        *windowIdentityStoreGenerations
+	store        connect.MultiClientIdentityStore
+	generation   uint64
+	allowRestore bool
+}
+
+func newWindowIdentityStoreGenerations() *windowIdentityStoreGenerations {
+	return &windowIdentityStoreGenerations{}
+}
+
+func (self *windowIdentityStoreGenerations) Next(store connect.MultiClientIdentityStore) connect.MultiClientIdentityStore {
+	if store == nil {
+		return nil
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.generation += 1
+	allowRestore := !self.restoreClaimed
+	self.restoreClaimed = true
+	return &generationWindowIdentityStore{
+		owner:        self,
+		store:        store,
+		generation:   self.generation,
+		allowRestore: allowRestore,
+	}
+}
+
+func (self *windowIdentityStoreGenerations) isCurrent(generation uint64) bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.generation == generation
+}
+
+func (self *generationWindowIdentityStore) StoreWindowClientIdentities(identities []*connect.WindowClientIdentity) {
+	self.owner.storeMutex.Lock()
+	defer self.owner.storeMutex.Unlock()
+	if !self.owner.isCurrent(self.generation) {
+		return
+	}
+	self.store.StoreWindowClientIdentities(identities)
+}
+
+func (self *generationWindowIdentityStore) LoadWindowClientIdentities() []*connect.WindowClientIdentity {
+	return self.LoadWindowClientIdentitiesContext(context.Background())
+}
+
+func (self *generationWindowIdentityStore) LoadWindowClientIdentitiesContext(ctx context.Context) []*connect.WindowClientIdentity {
+	if !self.owner.isCurrent(self.generation) {
+		return nil
+	}
+	if !self.allowRestore {
+		// NewClient identity loading runs before this generation can Record a
+		// live identity, so this cannot erase a newer snapshot from itself.
+		// Serialization puts the clear after any already-running predecessor
+		// write and before this generation's first Record.
+		self.StoreWindowClientIdentities(nil)
+		return nil
+	}
+
+	var identities []*connect.WindowClientIdentity
+	if store, ok := self.store.(connect.MultiClientIdentityStoreContext); ok {
+		identities = store.LoadWindowClientIdentitiesContext(ctx)
+	} else {
+		identities = self.store.LoadWindowClientIdentities()
+	}
+	if !self.owner.isCurrent(self.generation) {
+		return nil
 	}
 	return identities
 }
