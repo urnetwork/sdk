@@ -7,6 +7,8 @@ declare global {
     URnetworkNewPlatformDeviceRemote: any;
     URnetworkNewExtensionDeviceRemote: any;
     URnetworkNewLocationsViewController: any;
+    URnetworkNewAccountHost: any;
+    URnetworkColorHex: any;
     URnetworkClose: any;
   }
 }
@@ -113,6 +115,8 @@ export function getWasmGlobals() {
     URnetworkNewPlatformDeviceRemote: window.URnetworkNewPlatformDeviceRemote,
     URnetworkNewExtensionDeviceRemote: window.URnetworkNewExtensionDeviceRemote,
     URnetworkNewLocationsViewController: window.URnetworkNewLocationsViewController,
+    URnetworkNewAccountHost: window.URnetworkNewAccountHost,
+    URnetworkColorHex: window.URnetworkColorHex,
     URnetworkClose: window.URnetworkClose,
   };
 }

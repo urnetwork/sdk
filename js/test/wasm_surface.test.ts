@@ -119,3 +119,82 @@ test("extension DeviceRemote exposes an opaque transport without page credential
   assert.match(main, /URnetworkNewExtensionDeviceRemote/);
   assert.match(loader, /URnetworkNewExtensionDeviceRemote/);
 });
+
+// Same guard for the account-plane and peer controllers (view_controllers3.go)
+// and the account host (account_host.go).
+test("account host and controller declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const controllerRuntime = source("../view_controllers3.go");
+  const hostRuntime = source("../account_host.go");
+  const deviceRuntime = source("../device_remote.go");
+
+  assert.match(deviceRuntime, /m\["openPeerViewController"\]/);
+  assert.match(declarations, /\bopenPeerViewController\s*\(/);
+
+  for (const method of [
+    "getPeers",
+    "getPeerCount",
+    "getConnectedCount",
+    "addPeersListener",
+    "getAllowProductUpdates",
+    "updateAllowProductUpdates",
+    "addAllowProductUpdatesListener",
+    "fetchNetworkUser",
+    "getNetworkUser",
+    "updateNetworkUser",
+    "addNetworkUserUpdateErrorListener",
+    "addNetworkUserUpdateSuccessListener",
+    "addIsUpdatingListener",
+    "sendFeedback",
+    "addIsSendingFeedbackListener",
+    "getReferralCode",
+    "addReferralCodeListener",
+    "getIsPro",
+    "getAvailableByteCount",
+    "getCurrentSubscription",
+    "getPurchaseConfirmationState",
+    "startPurchaseConfirmation",
+    "jwtRefreshed",
+    "addSubscriptionBalanceChangeListener",
+    "addPurchaseConfirmationListener",
+  ]) {
+    assert.match(declarations, new RegExp(`\\b${method}\\s*\\(`));
+    assert.match(controllerRuntime, new RegExp(`m\\[\"${method}\"\\]`));
+  }
+
+  for (const method of [
+    "openLocationsViewController",
+    "openDevicesViewController",
+    "openAccountPreferencesViewController",
+    "openNetworkUserViewController",
+    "openFeedbackViewController",
+    "openReferralCodeViewController",
+    "openSubscriptionBalanceViewController",
+    "getNetworkClients",
+    "removeNetworkClient",
+    "getNetworkReferralCode",
+    "validateReferralCode",
+    "setNetworkReferral",
+    "getReferralNetwork",
+    "unlinkReferralNetwork",
+    "authCodeCreate",
+    "networkDelete",
+    "getLeaderboard",
+    "getNetworkLeaderboardRanking",
+    "setNetworkLeaderboardPublic",
+    "getNetworkReliability",
+    "getNetworkRedeemedBalanceCodes",
+    "redeemBalanceCode",
+    "checkBalanceCode",
+    "subscriptionBalance",
+    "getNetworkUser",
+  ]) {
+    assert.match(declarations, new RegExp(`\\b${method}\\s*\\(`));
+    assert.match(hostRuntime, new RegExp(`m\\[\"${method}\"\\]`));
+  }
+
+  for (const field of ["colorHex"]) {
+    assert.match(declarations, new RegExp(`\\b${field}\\s*:`));
+    assert.match(deviceRuntime, new RegExp(`\"${field}\"\\s*:`));
+  }
+});

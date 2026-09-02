@@ -20,10 +20,30 @@ var mobileLifecycleJoinIds = map[string]bool{
 	"DeviceLocal.CloseAndWait":     true,
 }
 
+// Api-only controllers exist for signed-in hosts before their device plane
+// attaches. Native apps open the device-owned controllers instead, so these
+// context and Api parameters are deliberately outside the gomobile surface.
+// Keep both gobind records explicit: it emits one on the return type and one
+// on the package facade for each unsupported constructor.
+var mobileApiOnlyControllerIds = map[string]bool{
+	"AccountPreferencesViewController.NewAccountPreferencesViewControllerWithApi": true,
+	"DevicesViewController.NewDevicesViewControllerWithApi":                       true,
+	"FeedbackViewController.NewFeedbackViewControllerWithApi":                     true,
+	"LocationsViewController.NewLocationsViewControllerWithApi":                   true,
+	"NetworkUserViewController.NewNetworkUserViewControllerWithApi":               true,
+	"ReferralCodeViewController.NewReferralCodeViewControllerWithApi":             true,
+	"NewAccountPreferencesViewControllerWithApi":                                  true,
+	"NewDevicesViewControllerWithApi":                                             true,
+	"NewFeedbackViewControllerWithApi":                                            true,
+	"NewLocationsViewControllerWithApi":                                           true,
+	"NewNetworkUserViewControllerWithApi":                                         true,
+	"NewReferralCodeViewControllerWithApi":                                        true,
+}
+
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile
 // callbacks retain the non-joining Close methods so they cannot self-join.
 func allowedMobileOmission(identifier string) bool {
-	if mobileLifecycleJoinIds[identifier] {
+	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] {
 		return true
 	}
 	parts := strings.SplitN(identifier, ".", 2)

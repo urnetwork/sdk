@@ -843,3 +843,12 @@ type securityPolicy interface {
 	Stats(reset bool) connect.SecurityPolicyStats
 	// ResetStats()
 }
+
+// ColorHex is the peer's dot color, the stable per-client color every
+// platform derives from the client id.
+func (self *NetworkPeer) ColorHex() string {
+	if self == nil || self.ClientId == nil {
+		return ""
+	}
+	return GetColorHex(self.ClientId.String())
+}

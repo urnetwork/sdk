@@ -20,10 +20,45 @@ type ReferralCodeViewController struct {
 	stateLock sync.Mutex
 
 	isFetching bool
+	// the last successful fetch, for hosts that render the terms (total
+	// referrals, the cap and the bonus) and not just the code
+	result *GetNetworkReferralCodeResult
 
 	device Device
+	// api-only (NewReferralCodeViewControllerWithApi): no device, the same
+	// controller over the network space api. Exactly one of device / api.
+	api *Api
 
 	referralCodeListeners *connect.CallbackList[ReferralCodeListener]
+}
+
+// NewReferralCodeViewControllerWithApi opens the referral code controller over
+// an api with no device; the caller owns Close.
+func NewReferralCodeViewControllerWithApi(ctx context.Context, api *Api) *ReferralCodeViewController {
+	vc := newReferralCodeViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (self *ReferralCodeViewController) getApi() *Api {
+	if self.api != nil {
+		return self.api
+	}
+	return self.device.GetApi()
+}
+
+// GetReferralCodeResult is the last fetched referral code result (code, total
+// referrals and the referral terms), nil until the first fetch lands.
+func (self *ReferralCodeViewController) GetReferralCodeResult() *GetNetworkReferralCodeResult {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.result
+}
+
+func (self *ReferralCodeViewController) setResult(result *GetNetworkReferralCodeResult) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.result = result
 }
 
 func newReferralCodeViewController(ctx context.Context, device Device) *ReferralCodeViewController {
@@ -87,7 +122,7 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 	if !enter {
 		return
 	}
-	self.device.GetApi().GetNetworkReferralCode(
+	self.getApi().GetNetworkReferralCode(
 		GetNetworkReferralCodeCallback(
 			connect.NewApiCallback[*GetNetworkReferralCodeResult](
 				func(result *GetNetworkReferralCodeResult, err error) {
@@ -98,6 +133,7 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 					}
 
 					if result != nil && result.ReferralCode != "" {
+						self.setResult(result)
 						self.referralCodeChanged(result.ReferralCode)
 					}
 

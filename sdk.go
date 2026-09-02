@@ -1183,3 +1183,29 @@ func GenerateWalletKeyPair() (*WalletKeyPair, error) {
 		PublicKeyBase58:  base58Encode(publicKey[:]),
 	}, nil
 }
+
+// ColorHex is the location's dot color the way every app derives it: a
+// country by its country code, anything else (a region, a city, a group, a
+// device) by its bare id, so the same location is the same color on every
+// platform. "" for best available and for a location with no id.
+func (self *ConnectLocation) ColorHex() string {
+	if self == nil {
+		return ""
+	}
+	if self.LocationType == LocationTypeCountry && self.CountryCode != "" {
+		return GetColorHex(self.CountryCode)
+	}
+	id := self.ConnectLocationId
+	if id == nil || id.BestAvailable {
+		return ""
+	}
+	switch {
+	case id.LocationId != nil:
+		return GetColorHex(id.LocationId.String())
+	case id.LocationGroupId != nil:
+		return GetColorHex(id.LocationGroupId.String())
+	case id.ClientId != nil:
+		return GetColorHex(id.ClientId.String())
+	}
+	return ""
+}

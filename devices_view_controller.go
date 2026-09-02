@@ -18,6 +18,10 @@ type DevicesViewController struct {
 	cancel context.CancelFunc
 
 	device Device
+	// an api-only controller (NewDevicesViewControllerWithApi) has no device:
+	// the list needs nothing but the network space api. Exactly one of
+	// device / api is set.
+	api *Api
 
 	networkClientsListeners *connect.CallbackList[NetworkClientsListener]
 }
@@ -34,7 +38,26 @@ func newDevicesViewController(ctx context.Context, device Device) *DevicesViewCo
 	return vc
 }
 
+// NewDevicesViewControllerWithApi opens the devices list over an api with no
+// device (a host that holds a network member jwt but no device yet). Without a
+// device there is no "this device" to float to the top: ClientId is nil.
+func NewDevicesViewControllerWithApi(ctx context.Context, api *Api) *DevicesViewController {
+	vc := newDevicesViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (self *DevicesViewController) getApi() *Api {
+	if self.api != nil {
+		return self.api
+	}
+	return self.device.GetApi()
+}
+
 func (self *DevicesViewController) ClientId() *Id {
+	if self.device == nil {
+		return nil
+	}
 	return self.device.GetClientId()
 }
 
@@ -42,7 +65,7 @@ func (self *DevicesViewController) Start() {
 	// FIXME
 
 	// request clients
-	self.device.GetApi().GetNetworkClients(GetNetworkClientsCallback(connect.NewApiCallback[*NetworkClientsResult](
+	self.getApi().GetNetworkClients(GetNetworkClientsCallback(connect.NewApiCallback[*NetworkClientsResult](
 		func(result *NetworkClientsResult, err error) {
 			if err == nil {
 				// FIXME sort
@@ -95,12 +118,15 @@ func (self *DevicesViewController) cmpNetworkClientLayout(a *NetworkClientInfo, 
 		return 0
 	}
 
-	clientId := *self.ClientId()
-	if (clientId == *a.ClientId) != (clientId == *b.ClientId) {
-		if clientId == *a.ClientId {
-			return -1
-		} else {
-			return 1
+	if clientId := self.ClientId(); clientId != nil {
+		aSelf := a.ClientId != nil && *clientId == *a.ClientId
+		bSelf := b.ClientId != nil && *clientId == *b.ClientId
+		if aSelf != bSelf {
+			if aSelf {
+				return -1
+			} else {
+				return 1
+			}
 		}
 	}
 

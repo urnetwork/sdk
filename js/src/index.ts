@@ -9,6 +9,8 @@ import type {
   ExtensionDeviceRemoteOptions,
   LocationsViewControllerOptions,
   LocationsViewController,
+  AccountHostOptions,
+  AccountHost,
 } from "./types";
 
 export * from "./types";
@@ -139,6 +141,43 @@ export class URNetwork {
       throw new Error(String(vc.error));
     }
     return vc as LocationsViewController;
+  }
+
+  /**
+   * Open the account host: the network space api plus the api-only view
+   * controllers (locations, devices, preferences, profile, feedback, referral
+   * code, subscription balance) for a signed-in page with no device, so the
+   * account screens render the same sdk controllers as the apps. close()
+   * releases it.
+   */
+  createAccountHost(options: AccountHostOptions): AccountHost {
+    const { URnetworkNewAccountHost } = getWasmGlobals();
+    if (typeof URnetworkNewAccountHost !== "function") {
+      throw new Error(
+        "URnetworkNewAccountHost is not exported by the loaded wasm. Rebuild the sdk wasm.",
+      );
+    }
+    const host = URnetworkNewAccountHost(options.apiUrl, options.platformUrl, options.byJwt);
+    if (!host) {
+      throw new Error("Could not open the account host.");
+    }
+    if (host.error) {
+      throw new Error(String(host.error));
+    }
+    return host as AccountHost;
+  }
+
+  /**
+   * The sdk palette color (hex, no "#") for a code the page already holds: a
+   * country code, or a bare location / client id. Locations the sdk hands out
+   * already carry `colorHex`; this is for ids persisted before that.
+   */
+  colorHex(code: string): string {
+    const { URnetworkColorHex } = getWasmGlobals();
+    if (typeof URnetworkColorHex !== "function") {
+      return "";
+    }
+    return String(URnetworkColorHex(code) || "");
   }
 
   /**

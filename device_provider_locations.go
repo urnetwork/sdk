@@ -130,3 +130,18 @@ func deriveConnectedProviderLocations(providerEvents map[connect.Id]*connect.Pro
 	}
 	return locations
 }
+
+// ColorHex is the provider's dot color: its country's color when its location
+// is known, else the stable per-client color, the same rule on every platform.
+func (self *ConnectedProviderLocation) ColorHex() string {
+	if self == nil {
+		return ""
+	}
+	if self.HasLocation && self.CountryCode != "" {
+		return GetColorHex(self.CountryCode)
+	}
+	if self.ClientId != nil {
+		return GetColorHex(self.ClientId.String())
+	}
+	return ""
+}

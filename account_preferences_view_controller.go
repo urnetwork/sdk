@@ -18,6 +18,9 @@ type AccountPreferencesViewController struct {
 	cancel context.CancelFunc
 
 	device Device
+	// api-only (NewAccountPreferencesViewControllerWithApi): no device, the
+	// same controller over the network space api. Exactly one of device / api.
+	api *Api
 
 	stateLock sync.Mutex
 
@@ -40,6 +43,21 @@ func newAccountPreferencesViewController(ctx context.Context, device Device) *Ac
 		allowProductUpdatesListeners: connect.NewCallbackList[AllowProductUpdatesListener](),
 	}
 	return vc
+}
+
+// NewAccountPreferencesViewControllerWithApi opens the preferences controller
+// over an api with no device; the caller owns Close.
+func NewAccountPreferencesViewControllerWithApi(ctx context.Context, api *Api) *AccountPreferencesViewController {
+	vc := newAccountPreferencesViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (self *AccountPreferencesViewController) getApi() *Api {
+	if self.api != nil {
+		return self.api
+	}
+	return self.device.GetApi()
 }
 
 func (self *AccountPreferencesViewController) Start() {
@@ -98,7 +116,7 @@ func (self *AccountPreferencesViewController) UpdateAllowProductUpdates(allow bo
 		return
 	}
 
-	self.device.GetApi().AccountPreferencesUpdate(
+	self.getApi().AccountPreferencesUpdate(
 		&AccountPreferencesSetArgs{
 			ProductUpdates: allow,
 		},
@@ -150,7 +168,7 @@ func (self *AccountPreferencesViewController) fetchAllowProductUpdates() {
 		return
 	}
 
-	self.device.GetApi().AccountPreferencesGet(AccountPreferencesGetCallback(connect.NewApiCallback[*AccountPreferencesGetResult](
+	self.getApi().AccountPreferencesGet(AccountPreferencesGetCallback(connect.NewApiCallback[*AccountPreferencesGetResult](
 		func(result *AccountPreferencesGetResult, err error) {
 
 			if err != nil {

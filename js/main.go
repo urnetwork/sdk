@@ -225,6 +225,15 @@ func main() {
 	js.Global().Set("URnetworkNewExtensionDeviceRemote", js.FuncOf(NewExtensionDeviceRemote))
 	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
 	js.Global().Set("URnetworkNewLocationsViewController", js.FuncOf(NewLocationsViewController))
+	js.Global().Set("URnetworkNewAccountHost", js.FuncOf(NewAccountHost))
+	// ColorHex(code): the sdk palette color for a code the page already holds
+	// (a country code, or a bare location / client id), no "#"
+	js.Global().Set("URnetworkColorHex", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) < 1 || args[0].Type() != js.TypeString {
+			return js.ValueOf("")
+		}
+		return js.ValueOf(sdk.GetColorHex(args[0].String()))
+	}))
 	registerSnExports()
 
 	select {

@@ -17,6 +17,9 @@ type FeedbackViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	device Device
+	// api-only (NewFeedbackViewControllerWithApi): no device, the same
+	// controller over the network space api. Exactly one of device / api.
+	api *Api
 
 	stateLock sync.Mutex
 
@@ -36,6 +39,21 @@ func newFeedbackViewController(ctx context.Context, device Device) *FeedbackView
 		isSendingFeedbackListeners: connect.NewCallbackList[IsSendingFeedbackListener](),
 	}
 	return vc
+}
+
+// NewFeedbackViewControllerWithApi opens the feedback controller over an api
+// with no device; the caller owns Close.
+func NewFeedbackViewControllerWithApi(ctx context.Context, api *Api) *FeedbackViewController {
+	vc := newFeedbackViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (vc *FeedbackViewController) getApi() *Api {
+	if vc.api != nil {
+		return vc.api
+	}
+	return vc.device.GetApi()
 }
 
 func (vc *FeedbackViewController) Start() {}
@@ -98,7 +116,7 @@ func (vc *FeedbackViewController) SendFeedback(
 		StarCount: starCount,
 	}
 
-	vc.device.GetApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
+	vc.getApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
 		func(result *FeedbackSendResult, err error) {
 
 			vc.setIsSendingFeedback(false)

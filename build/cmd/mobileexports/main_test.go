@@ -48,6 +48,41 @@ func TestMobileLifecycleJoinPolicyDoesNotPrefixMatch(t *testing.T) {
 	}
 }
 
+func TestMobileApiOnlyControllerOmissionsAreExplicit(t *testing.T) {
+	root := t.TempDir()
+	source := strings.Join([]string{
+		"// skipped constructor AccountPreferencesViewController.NewAccountPreferencesViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor DevicesViewController.NewDevicesViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor FeedbackViewController.NewFeedbackViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor LocationsViewController.NewLocationsViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor NetworkUserViewController.NewNetworkUserViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor ReferralCodeViewController.NewReferralCodeViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewAccountPreferencesViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewDevicesViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewFeedbackViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewLocationsViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewNetworkUserViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewReferralCodeViewControllerWithApi with unsupported parameter or return types",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "LocationsViewController.java"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err != nil {
+		t.Fatalf("browser-only api controllers were not accepted: %v", err)
+	}
+}
+
+func TestMobileApiOnlyControllerPolicyDoesNotPrefixMatch(t *testing.T) {
+	root := t.TempDir()
+	source := "// skipped function NewLocationsViewControllerWithApiAndLeak with unsupported parameter or return types\n"
+	if err := os.WriteFile(filepath.Join(root, "Sdk.java"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err == nil {
+		t.Fatal("a similarly named but unreviewed api omission was accepted")
+	}
+}
+
 func TestMobileExportPolicyRejectsMalformedSkippedRecord(t *testing.T) {
 	root := t.TempDir()
 	source := "// skipped unexpectedly malformed output\n"
