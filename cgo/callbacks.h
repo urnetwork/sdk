@@ -241,6 +241,8 @@ typedef void (*urnet_remote_change_cb)(void* user_data, bool remote_connected);
 void urnet_invoke_remote_change(urnet_remote_change_cb cb, void* user_data, bool remote_connected);
 typedef void (*urnet_remove_auth_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_remove_auth(urnet_remove_auth_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_remove_network_client_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_remove_network_client(urnet_remove_network_client_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_remove_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_remove_wallet(urnet_remove_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_route_local_change_cb)(void* user_data, bool route_local);

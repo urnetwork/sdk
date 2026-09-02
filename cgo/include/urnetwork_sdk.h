@@ -394,6 +394,8 @@ typedef void (*urnet_regenerate_seedphrase_cb)(void* user_data, const char* resu
 typedef void (*urnet_remote_change_cb)(void* user_data, bool remote_connected);
 /* RemoveAuthCallback */
 typedef void (*urnet_remove_auth_cb)(void* user_data, const char* result_json, const char* err_param);
+/* RemoveNetworkClientCallback */
+typedef void (*urnet_remove_network_client_cb)(void* user_data, const char* result_json, const char* err_param);
 /* RemoveWalletCallback */
 typedef void (*urnet_remove_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* RouteLocalChangeListener */
@@ -550,6 +552,8 @@ void urnet_api_refresh_jwt(uint64_t self, urnet_refresh_jwt_cb callback_result, 
 char* urnet_api_refresh_jwt_sync(uint64_t self, char** out_error);
 void urnet_api_regenerate_seedphrase(uint64_t self, const char* args_json, urnet_regenerate_seedphrase_cb callback_result, void* callback_user_data);
 void urnet_api_remove_auth(uint64_t self, const char* args_json, urnet_remove_auth_cb callback_result, void* callback_user_data);
+void urnet_api_remove_network_client(uint64_t self, const char* args_json, urnet_remove_network_client_cb callback_result, void* callback_user_data);
+char* urnet_api_remove_network_client_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_remove_wallet(uint64_t self, const char* remove_wallet_json, urnet_remove_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_request_jwt_refresh(uint64_t self);
 void urnet_api_send_feedback(uint64_t self, const char* send_feedback_json, urnet_send_feedback_cb callback_result, void* callback_user_data);
@@ -1046,6 +1050,7 @@ void urnet_network_name_validation_view_controller_stop(uint64_t self);
 
 /* ----- NetworkSpace ----- */
 
+void urnet_network_space_close(uint64_t self);
 char* urnet_network_space_connect_link_url(uint64_t self, const char* target);
 uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
@@ -1303,6 +1308,7 @@ char* urnet_new_transfer_path(const char* source_id, const char* destination_id,
 uint64_t urnet_new_tunnel(void);
 uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
 char* urnet_normal_env_name(const char* env_name);
+char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
@@ -2120,6 +2126,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* GetNetworkReferralCodeResult (json):
  *   referral_code?: string
  *   total_referrals: number
+ *   max_referrals: number
+ *   bonus_per_referral_bytes: number
+ *   referred_bonus_bytes: number
+ *   bonus_period_seconds: number
  *   error?: GetNetworkReferralCodeError | null
  */
 
@@ -2817,6 +2827,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* RemoveAuthResult (json):
  *   error?: RemoveAuthError | null
+ */
+
+/* RemoveNetworkClientArgs (json):
+ *   client_id: string (uuid) | null
+ */
+
+/* RemoveNetworkClientResult (json):
+ *   error?: ApiError | null
  */
 
 /* RemoveWalletArgs (json):

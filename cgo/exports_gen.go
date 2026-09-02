@@ -1840,6 +1840,27 @@ func (self *cAdapterRemoveAuthCallback) Result(result *sdk.RemoveAuthResult, err
 	}
 }
 
+type cAdapterRemoveNetworkClientCallback struct {
+	cbResult C.urnet_remove_network_client_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterRemoveNetworkClientCallback) Result(result *sdk.RemoveNetworkClientResult, errParam error) {
+	defer cgoGuard("urnet_remove_network_client_cb")
+	result_ := cJson(result, "urnet_remove_network_client_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_remove_network_client(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterRemoveWalletCallback struct {
 	cbResult C.urnet_remove_wallet_cb
 	userData unsafe.Pointer
@@ -3689,6 +3710,52 @@ func urnet_api_remove_auth(self C.uint64_t, args *C.char, callback_result C.urne
 		callback_ = &cAdapterRemoveAuthCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.RemoveAuth(args_, callback_)
+}
+
+//export urnet_api_remove_network_client
+func urnet_api_remove_network_client(self C.uint64_t, args *C.char, callback_result C.urnet_remove_network_client_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_remove_network_client")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_remove_network_client")
+	if !ok {
+		return
+	}
+	var args_ *sdk.RemoveNetworkClientArgs
+	if args != nil {
+		args_ = &sdk.RemoveNetworkClientArgs{}
+		if !goJson(args, args_, "urnet_api_remove_network_client") {
+			return
+		}
+	}
+	var callback_ sdk.RemoveNetworkClientCallback
+	if callback_result != nil {
+		callback_ = &cAdapterRemoveNetworkClientCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.RemoveNetworkClient(args_, callback_)
+}
+
+//export urnet_api_remove_network_client_sync
+func urnet_api_remove_network_client_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_remove_network_client_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_remove_network_client_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.RemoveNetworkClientArgs
+	if args != nil {
+		args_ = &sdk.RemoveNetworkClientArgs{}
+		if !goJson(args, args_, "urnet_api_remove_network_client_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.RemoveNetworkClientSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_remove_network_client_sync")
 }
 
 //export urnet_api_remove_wallet
@@ -10211,6 +10278,16 @@ func urnet_network_name_validation_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_network_space_close
+func urnet_network_space_close(self C.uint64_t) {
+	defer cgoGuard("urnet_network_space_close")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
 //export urnet_network_space_connect_link_url
 func urnet_network_space_connect_link_url(self C.uint64_t, target *C.char) *C.char {
 	defer cgoGuard("urnet_network_space_connect_link_url")
@@ -11158,6 +11235,23 @@ func urnet_normal_env_name(envName *C.char) *C.char {
 	defer cgoGuard("urnet_normal_env_name")
 	r0 := sdk.NormalEnvName(goString(envName))
 	return cString(string(r0))
+}
+
+//export urnet_order_connected_provider_locations
+func urnet_order_connected_provider_locations(locations *C.char) *C.char {
+	defer cgoGuard("urnet_order_connected_provider_locations")
+	var locations_ *sdk.ConnectedProviderLocationList
+	if locations != nil {
+		locations_ = &sdk.ConnectedProviderLocationList{}
+		if !goJson(locations, locations_, "urnet_order_connected_provider_locations") {
+			return nil
+		}
+	}
+	r0 := sdk.OrderConnectedProviderLocations(locations_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_order_connected_provider_locations")
 }
 
 //export urnet_packet_batch_ip_protocol

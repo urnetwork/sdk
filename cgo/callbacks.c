@@ -473,6 +473,10 @@ void urnet_invoke_remove_auth(urnet_remove_auth_cb cb, void* user_data, const ch
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_remove_network_client(urnet_remove_network_client_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_remove_wallet(urnet_remove_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

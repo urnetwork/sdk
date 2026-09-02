@@ -472,6 +472,8 @@ struct ReliabilitySettings;
 struct RemoveAuthArgs;
 struct RemoveAuthError;
 struct RemoveAuthResult;
+struct RemoveNetworkClientArgs;
+struct RemoveNetworkClientResult;
 struct RemoveWalletArgs;
 struct RemoveWalletError;
 struct RemoveWalletResult;
@@ -1387,6 +1389,10 @@ struct GetNetworkReferralCodeError {
 struct GetNetworkReferralCodeResult {
 	std::optional<std::string> referral_code;
 	int64_t total_referrals{};
+	int64_t max_referrals{};
+	int64_t bonus_per_referral_bytes{};
+	int64_t referred_bonus_bytes{};
+	int64_t bonus_period_seconds{};
 	std::optional<GetNetworkReferralCodeError> error;
 };
 
@@ -1961,6 +1967,14 @@ struct RemoveAuthError {
 
 struct RemoveAuthResult {
 	std::optional<RemoveAuthError> error;
+};
+
+struct RemoveNetworkClientArgs {
+	std::optional<std::string> client_id;
+};
+
+struct RemoveNetworkClientResult {
+	std::optional<ApiError> error;
 };
 
 struct RemoveWalletArgs {
@@ -2783,6 +2797,10 @@ inline void to_json(nlohmann::json& j, const RemoveAuthError& v);
 inline void from_json(const nlohmann::json& j, RemoveAuthError& v);
 inline void to_json(nlohmann::json& j, const RemoveAuthResult& v);
 inline void from_json(const nlohmann::json& j, RemoveAuthResult& v);
+inline void to_json(nlohmann::json& j, const RemoveNetworkClientArgs& v);
+inline void from_json(const nlohmann::json& j, RemoveNetworkClientArgs& v);
+inline void to_json(nlohmann::json& j, const RemoveNetworkClientResult& v);
+inline void from_json(const nlohmann::json& j, RemoveNetworkClientResult& v);
 inline void to_json(nlohmann::json& j, const RemoveWalletArgs& v);
 inline void from_json(const nlohmann::json& j, RemoveWalletArgs& v);
 inline void to_json(nlohmann::json& j, const RemoveWalletError& v);
@@ -6545,6 +6563,10 @@ inline void to_json(nlohmann::json& j, const GetNetworkReferralCodeResult& v) {
 		j["referral_code"] = *v.referral_code;
 	}
 	j["total_referrals"] = v.total_referrals;
+	j["max_referrals"] = v.max_referrals;
+	j["bonus_per_referral_bytes"] = v.bonus_per_referral_bytes;
+	j["referred_bonus_bytes"] = v.referred_bonus_bytes;
+	j["bonus_period_seconds"] = v.bonus_period_seconds;
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -6560,6 +6582,18 @@ inline void from_json(const nlohmann::json& j, GetNetworkReferralCodeResult& v) 
 	}
 	if (auto it = j.find("total_referrals"); it != j.end() && !it->is_null()) {
 		it->get_to(v.total_referrals);
+	}
+	if (auto it = j.find("max_referrals"); it != j.end() && !it->is_null()) {
+		it->get_to(v.max_referrals);
+	}
+	if (auto it = j.find("bonus_per_referral_bytes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.bonus_per_referral_bytes);
+	}
+	if (auto it = j.find("referred_bonus_bytes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.referred_bonus_bytes);
+	}
+	if (auto it = j.find("bonus_period_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.bonus_period_seconds);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		GetNetworkReferralCodeError tmp{};
@@ -9104,6 +9138,40 @@ inline void from_json(const nlohmann::json& j, RemoveAuthResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const RemoveNetworkClientArgs& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, RemoveNetworkClientArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RemoveNetworkClientResult& v) {
+	j = nlohmann::json::object();
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, RemoveNetworkClientResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		ApiError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const RemoveWalletArgs& v) {
 	j = nlohmann::json::object();
 	j["wallet_id"] = v.wallet_id;
@@ -11073,6 +11141,7 @@ using RefreshJwtCallback = std::function<void(std::optional<RefreshJwtResult> re
 using RegenerateSeedphraseCallback = std::function<void(std::optional<RegenerateSeedphraseResult> result, std::optional<std::string> err_param)>;
 using RemoteChangeListener = std::function<void(bool remote_connected)>;
 using RemoveAuthCallback = std::function<void(std::optional<RemoveAuthResult> result, std::optional<std::string> err_param)>;
+using RemoveNetworkClientCallback = std::function<void(std::optional<RemoveNetworkClientResult> result, std::optional<std::string> err_param)>;
 using RemoveWalletCallback = std::function<void(std::optional<RemoveWalletResult> result, std::optional<std::string> err_param)>;
 using RouteLocalChangeListener = std::function<void(bool route_local)>;
 using SelectedLocationListener = std::function<void(std::optional<ConnectLocation> location)>;
@@ -11362,6 +11431,8 @@ public:
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
 	void regenerateSeedphrase(const std::optional<RegenerateSeedphraseArgs>& args, RegenerateSeedphraseCallback callback) const;
 	void removeAuth(const std::optional<RemoveAuthArgs>& args, RemoveAuthCallback callback) const;
+	void removeNetworkClient(const std::optional<RemoveNetworkClientArgs>& args, RemoveNetworkClientCallback callback) const;
+	std::optional<RemoveNetworkClientResult> removeNetworkClientSync(const std::optional<RemoveNetworkClientArgs>& args) const;
 	void removeWallet(const std::optional<RemoveWalletArgs>& remove_wallet, RemoveWalletCallback callback) const;
 	void requestJwtRefresh() const;
 	void sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const;
@@ -11798,6 +11869,7 @@ class NetworkSpace final : public detail::Handle {
 public:
 	NetworkSpace() = default;
 	explicit NetworkSpace(uint64_t h) : detail::Handle(h) {}
+	void close() const;
 	std::string connectLinkUrl(const std::string& target) const;
 	Api getApi() const;
 	std::string getApiUrl() const;
@@ -15328,6 +15400,42 @@ inline void oneshot_remove_auth(void* user_data, const char* result_json, const 
 	delete f;
 }
 
+inline void retained_remove_network_client(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<RemoveNetworkClientCallback*>(user_data);
+	try {
+		std::optional<RemoveNetworkClientResult> result_v;
+		if (result_json) {
+			result_v = parseJson<RemoveNetworkClientResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_remove_network_client(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<RemoveNetworkClientCallback*>(user_data);
+	try {
+		std::optional<RemoveNetworkClientResult> result_v;
+		if (result_json) {
+			result_v = parseJson<RemoveNetworkClientResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_remove_wallet(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<RemoveWalletCallback*>(user_data);
 	try {
@@ -18030,6 +18138,34 @@ inline void Api::removeAuth(const std::optional<RemoveAuthArgs>& args, RemoveAut
 	auto* callback_fn = callback ? new RemoveAuthCallback(std::move(callback)) : nullptr;
 	urnet_api_remove_auth(handle(), args_c, callback_fn ? &detail::oneshot_remove_auth : nullptr, callback_fn);
 }
+inline void Api::removeNetworkClient(const std::optional<RemoveNetworkClientArgs>& args, RemoveNetworkClientCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new RemoveNetworkClientCallback(std::move(callback)) : nullptr;
+	urnet_api_remove_network_client(handle(), args_c, callback_fn ? &detail::oneshot_remove_network_client : nullptr, callback_fn);
+}
+inline std::optional<RemoveNetworkClientResult> Api::removeNetworkClientSync(const std::optional<RemoveNetworkClientArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_remove_network_client_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<RemoveNetworkClientResult>(r_s->c_str());
+}
 inline void Api::removeWallet(const std::optional<RemoveWalletArgs>& remove_wallet, RemoveWalletCallback callback) const {
 	std::string remove_wallet_json;
 	const char* remove_wallet_c = nullptr;
@@ -19922,6 +20058,9 @@ inline void NetworkNameValidationViewController::start() const {
 inline void NetworkNameValidationViewController::stop() const {
 	urnet_network_name_validation_view_controller_stop(handle());
 }
+inline void NetworkSpace::close() const {
+	urnet_network_space_close(handle());
+}
 inline std::string NetworkSpace::connectLinkUrl(const std::string& target) const {
 	char* r_c = urnet_network_space_connect_link_url(handle(), target.c_str());
 	return detail::takeString(r_c);
@@ -21179,6 +21318,20 @@ inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::s
 inline std::string normalEnvName(const std::string& env_name) {
 	char* r_c = urnet_normal_env_name(env_name.c_str());
 	return detail::takeString(r_c);
+}
+inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
+	std::string locations_json;
+	const char* locations_c = nullptr;
+	if (locations) {
+		locations_json = nlohmann::json(*locations).dump();
+		locations_c = locations_json.c_str();
+	}
+	char* r_c = urnet_order_connected_provider_locations(locations_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectedProviderLocationList>(r_s->c_str());
 }
 inline std::optional<CheckoutRedirect> parseCheckoutRedirect(const std::string& uri) {
 	char* err_c = nullptr;

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 
 	"github.com/urnetwork/connect"
@@ -1394,9 +1395,50 @@ func (self *Api) NetworkUserUpdate(updateNetworkUser *NetworkUserUpdateArgs, cal
  */
 
 type GetNetworkReferralCodeResult struct {
-	ReferralCode   string                       `json:"referral_code,omitempty"`
-	TotalReferrals int                          `json:"total_referrals"`
-	Error          *GetNetworkReferralCodeError `json:"error,omitempty"`
+	ReferralCode   string `json:"referral_code,omitempty"`
+	TotalReferrals int    `json:"total_referrals"`
+	// The referral program terms, from the server's pro.yml: the one place the
+	// cap and bonus live. All zero when the server reports none (no pro.yml: no
+	// cap, no grant); apps keep their display defaults then.
+	MaxReferrals          int                          `json:"max_referrals"`
+	BonusPerReferralBytes int64                        `json:"bonus_per_referral_bytes"`
+	ReferredBonusBytes    int64                        `json:"referred_bonus_bytes"`
+	BonusPeriodSeconds    int64                        `json:"bonus_period_seconds"`
+	Error                 *GetNetworkReferralCodeError `json:"error,omitempty"`
+}
+
+// BonusGibPerDay is the referrer's bonus per referral as whole GiB per day,
+// the number the apps print ("+3 GiB/day"). 0 when the server reports no terms.
+func (self *GetNetworkReferralCodeResult) BonusGibPerDay() int64 {
+	return referralGibPerDay(self.BonusPerReferralBytes, self.BonusPeriodSeconds)
+}
+
+// ReferredBonusGibPerDay is the referred network's bonus as whole GiB per day.
+// 0 when the server reports no terms.
+func (self *GetNetworkReferralCodeResult) ReferredBonusGibPerDay() int64 {
+	return referralGibPerDay(self.ReferredBonusBytes, self.BonusPeriodSeconds)
+}
+
+// PaidReferrals is how many of totalReferrals the network is paid for: the
+// count capped at MaxReferrals, or the whole count when there is no cap.
+func (self *GetNetworkReferralCodeResult) PaidReferrals(totalReferrals int64) int64 {
+	if totalReferrals < 0 {
+		return 0
+	}
+	if 0 < self.MaxReferrals && int64(self.MaxReferrals) < totalReferrals {
+		return int64(self.MaxReferrals)
+	}
+	return totalReferrals
+}
+
+// referralGibPerDay converts a grant of byteCount per periodSeconds to whole GiB
+// per day, rounded; 0 when either is unknown.
+func referralGibPerDay(byteCount int64, periodSeconds int64) int64 {
+	if byteCount <= 0 || periodSeconds <= 0 {
+		return 0
+	}
+	perDay := float64(byteCount) * float64(24*60*60) / float64(periodSeconds)
+	return int64(math.Round(perDay / float64(int64(1)<<30)))
 }
 
 type GetNetworkReferralCodeError struct {

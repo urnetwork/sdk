@@ -70,6 +70,8 @@ EXPORTS
 	urnet_api_refresh_jwt_sync
 	urnet_api_regenerate_seedphrase
 	urnet_api_remove_auth
+	urnet_api_remove_network_client
+	urnet_api_remove_network_client_sync
 	urnet_api_remove_wallet
 	urnet_api_request_jwt_refresh
 	urnet_api_send_feedback
@@ -568,6 +570,7 @@ EXPORTS
 	urnet_network_name_validation_view_controller_network_check
 	urnet_network_name_validation_view_controller_start
 	urnet_network_name_validation_view_controller_stop
+	urnet_network_space_close
 	urnet_network_space_connect_link_url
 	urnet_network_space_get_api
 	urnet_network_space_get_api_url
@@ -635,6 +638,7 @@ EXPORTS
 	urnet_new_tunnel
 	urnet_new_urls_network_space
 	urnet_normal_env_name
+	urnet_order_connected_provider_locations
 	urnet_packet_batch_get
 	urnet_packet_batch_ip_protocol
 	urnet_packet_batch_ip_version
