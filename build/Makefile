@@ -75,35 +75,8 @@ build_android:
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
-			jar -xf URnetworkSdk-sources.jar; \
-			: 'gobind omits anything it cannot bind and only leaves a'; \
-			: '"// skipped" comment, so this gate fails the build on an'; \
-			: 'UNEXPECTED omission. Everything below is a deliberate accept;'; \
-			: 'add an entry only with a reason, or the gate stops catching'; \
-			: 'real binding breaks.'; \
-			: '  rpc/proxy/platform/test surface: not part of the app api'; \
-			: '  *SyncWithContext, NewApi, NewNetworkSpaceWithUrls: take a'; \
-			: '    context.Context; apps use the NewPlatform*/non-ctx forms'; \
-			: '  Sn* (uint64, [][]byte) + VerifyKeysResult.Keys ([]*struct):'; \
-			: '    gomobile binds none of those. NOTE these fields are then'; \
-			: '    INVISIBLE to android/apple — if an app ever needs one it'; \
-			: '    needs an exportedList[T] wrapper or an int64/string form,'; \
-			: '    not another entry here.'; \
-			allow_skipped='DeviceLocalRpc'; \
-			allow_skipped="$$allow_skipped|DeviceRemote[A-Z]|DeviceRpcDialer|DeviceRpcListener|[A-Za-z]Rpc"; \
-			allow_skipped="$$allow_skipped|NewPlatformDeviceLocal|NewPlatformNetworkSpace|Proxy"; \
-			allow_skipped="$$allow_skipped|DeviceLocal\.AddReceivePacket(sCallback|Callback)|DeviceLocal\.SendPacketsNoCopy|DeviceLocal\.Ctx"; \
-			allow_skipped="$$allow_skipped|DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator"; \
-			allow_skipped="$$allow_skipped|SetUpgradeMuxSettings|DeviceLocalSettings"; \
-			allow_skipped="$$allow_skipped|Testing_NewNetworkSpaceWithUrls|Sim[A-Z]|CollapseHostNames"; \
-			allow_skipped="$$allow_skipped|SyncWithContext|NewApi|NewNetworkSpaceWithUrls"; \
-			allow_skipped="$$allow_skipped|SnPoolClaim(Result|Args)|SnEpochResult|VerifyKeysResult\.Keys"; \
-			bad_exports=`grep -Ri '// skipped' . | grep -Ev "$$allow_skipped" || true`; \
-			if [ "$$bad_exports" ]; then \
-				echo "Some types could not be exported:"; \
-				echo "$$bad_exports"; \
-				exit 1; \
-			fi;); \
+		jar -xf URnetworkSdk-sources.jar); \
+	go run ./cmd/mobileexports "$$BUILD_DIR/validate"; \
 	rm -rf "$$BUILD_DIR/edit"; \
 	rm -rf "$$BUILD_DIR/validate"; \
 	if [ -e "android" ]; then mv android android.old.`date +%s`; fi; \
