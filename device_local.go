@@ -161,11 +161,15 @@ func newDeviceLocalPlatformTransportSettings(
 	memoryTargetByteCount ByteCount,
 	platformTransportBudget *connect.PlatformTransportBudget,
 	dialContextSettings *connect.DialContextSettings,
+	dnsPumpHost string,
 ) *connect.PlatformTransportSettings {
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
 	)
 	settings.PlatformTransportBudget = platformTransportBudget
+	if dnsPumpHost = strings.TrimSpace(dnsPumpHost); dnsPumpHost != "" {
+		settings.DnsPumpHost = dnsPumpHost
+	}
 	if dialContextSettings != nil {
 		settings.H3PacketConnFactory = dialContextSettings.PacketConnFactory
 	}
@@ -548,6 +552,12 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport Go-only network dial seam.
 	ProviderDialContextSettings *connect.DialContextSettings
+	// DnsPumpHost overrides the public UDP/53 destination used by the DNS-pump
+	// carrier. Integration hosts with a private or loopback Connect endpoint
+	// must set this to their provisioned pump ingress; sending that endpoint's
+	// TLS SNI through the production pump cannot route back to the private
+	// server. Empty retains connect's production default.
+	DnsPumpHost string
 	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 	EnableRpc bool
 	// KeyMaterial, when set, is applied to `ClientSettings` at construction
@@ -1204,6 +1214,7 @@ func newDeviceLocalWithOverrides(
 			providerTransportMode,
 			providerModePreferences,
 			settings.ProviderDialContextSettings,
+			settings.DnsPumpHost,
 		)
 	}
 
@@ -3826,6 +3837,7 @@ func (self *DeviceLocal) setDestination(
 						self.settings.MemoryTargetByteCount,
 						self.platformTransportBudget,
 						nil,
+						self.settings.DnsPumpHost,
 					)
 					applyMobileLowMemoryPlatformTransportSettings(
 						settings,

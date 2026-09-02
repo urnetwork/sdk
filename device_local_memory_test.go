@@ -157,10 +157,10 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
 	target := ByteCount(24 * 1024 * 1024)
 	firstBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
-	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil)
-	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil)
+	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "")
+	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "")
 	secondBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
-	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget, nil)
+	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget, nil, "")
 
 	if firstWindow.PlatformTransportBudget != firstProvider.PlatformTransportBudget {
 		t.Fatal("one DeviceLocal did not share its budget across window and provider carriers")
@@ -195,6 +195,7 @@ func TestDeviceLocalPlatformTransportCopiesProviderPacketConnFactory(t *testing.
 		24*1024*1024,
 		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
 		dialContextSettings,
+		"127.0.1.7",
 	)
 	if settings.H3PacketConnFactory == nil {
 		t.Fatal("provider packet endpoint was not copied into the H3 carrier")
@@ -209,13 +210,20 @@ func TestDeviceLocalPlatformTransportCopiesProviderPacketConnFactory(t *testing.
 	if called != 1 {
 		t.Fatalf("provider packet endpoint called %d times, want one", called)
 	}
+	if settings.DnsPumpHost != "127.0.1.7" {
+		t.Fatalf("provider DNS pump host = %q, want rendered ingress", settings.DnsPumpHost)
+	}
 	ordinary := newDeviceLocalPlatformTransportSettings(
 		24*1024*1024,
 		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
 		nil,
+		"",
 	)
 	if ordinary.H3PacketConnFactory != nil {
 		t.Fatal("ordinary device unexpectedly installed a custom H3 packet endpoint")
+	}
+	if ordinary.DnsPumpHost != connect.DefaultDnsPumpHost {
+		t.Fatalf("ordinary DNS pump host = %q, want production default", ordinary.DnsPumpHost)
 	}
 }
 

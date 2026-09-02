@@ -101,6 +101,7 @@ func newDeviceLocalProviderWithOverrides(
 	targetMode connect.TransportMode,
 	modePreferences map[connect.TransportMode]int,
 	dialContextSettings *connect.DialContextSettings,
+	dnsPumpHost string,
 ) *deviceLocalProvider {
 	providerCtx, providerCancel := context.WithCancel(ctx)
 	apiUrl := networkSpace.apiUrl
@@ -154,6 +155,7 @@ func newDeviceLocalProviderWithOverrides(
 		deviceMemoryTargetByteCount,
 		platformTransportBudget,
 		dialContextSettings,
+		dnsPumpHost,
 	)
 	platformTransportSettings.Log = clientSettings.Log
 	platformTransportSettings.ModePreferences = maps.Clone(modePreferences)
