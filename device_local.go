@@ -3594,9 +3594,19 @@ func (self *DeviceLocal) SetPerformanceDegraded(degraded bool) {
 }
 
 func (self *DeviceLocal) NetworkChanged() {
-	// kick every platform transport in the process (window clients + the
-	// provider client); connections bound to the old path re-dial now
-	connect.NetworkChanged()
+	// The multi-client owns the liveness epoch as well as the process-wide
+	// transport kick. Routing through it avoids carrying stale pre-suspend
+	// uplink clocks onto the recovered path. Provider-only/disconnected devices
+	// still need the process-wide kick for their platform transports.
+	if multi, ok := self.multiClient(); ok {
+		multi.NotifyNetworkChanged()
+	} else {
+		connect.NetworkChanged()
+	}
+	self.networkChangedUpgradeMux()
+}
+
+func (self *DeviceLocal) networkChangedUpgradeMux() {
 	self.stateLock.Lock()
 	upgradeMux := self.upgradeMux
 	self.stateLock.Unlock()

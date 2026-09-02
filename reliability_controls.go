@@ -725,18 +725,17 @@ func (self *DeviceLocal) ProbeAllExits() int32 {
 func (self *DeviceLocal) SimulateNetworkChange() {
 	if multi, ok := self.multiClient(); ok {
 		multi.SimulateNetworkChange()
+		// SimulateNetworkChange owns the liveness rebase and process kick;
+		// complete the same canonical seam by invalidating pooled DoH state.
+		self.networkChangedUpgradeMux()
 	}
 }
 
-// NotifyNetworkChange is the production entry the android ConnectivityManager
-// callback calls when the OS reports the network changed: it rebases the uplink
-// staleness epoch and kicks every registered platform transport to drop its
-// connection and re-dial immediately over the new path, instead of waiting out
-// ping timeouts. No-op while disconnected.
+// NotifyNetworkChange is the backwards-compatible mobile binding for
+// NetworkChanged. Keep one canonical seam so every caller gets the liveness
+// rebase, platform transport kick, and UpgradeMux/DoH recovery together.
 func (self *DeviceLocal) NotifyNetworkChange() {
-	if multi, ok := self.multiClient(); ok {
-		multi.NotifyNetworkChanged()
-	}
+	self.NetworkChanged()
 }
 
 // ReliabilityMetrics is what the toggles above are judged against.
