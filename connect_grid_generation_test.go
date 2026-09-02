@@ -52,8 +52,7 @@ func TestConnectGridGenerationGate(t *testing.T) {
 	// the user disconnects: the generation moves on, and the same late event
 	// from the outgoing session must change NOTHING — not the status, not the
 	// dots
-	vc.setConnectionStatus(Disconnected)
-	vc.bumpGeneration()
+	vc.beginGeneration(Disconnected)
 	pointsBefore := grid.GetProviderGridPointList().Len()
 
 	b := connect.NewId()
@@ -73,9 +72,9 @@ func TestConnectGridGenerationGate(t *testing.T) {
 
 // TestSetConnectionStatusForGenerationStale closes the D2 gate's residual
 // seam: the entry gate in windowMonitorEventCallback runs BEFORE the grid
-// work, and a disconnect (bumpGeneration) can land while that work runs. The
+// work, and a disconnect (beginGeneration) can land while that work runs. The
 // status write must therefore re-check the generation atomically with the
-// write — under the same stateLock bumpGeneration takes — so the stale
+// write — under the same stateLock beginGeneration takes — so the stale
 // event's status can never land after the bump, however narrow the timing.
 func TestSetConnectionStatusForGenerationStale(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -87,13 +86,33 @@ func TestSetConnectionStatusForGenerationStale(t *testing.T) {
 
 	// the event passed the entry gate under `stamped`, then the user
 	// disconnected before it reached its status write
-	vc.bumpGeneration()
+	vc.beginGeneration(Disconnected)
 	vc.setConnectionStatusForGeneration(Connected, stamped)
 	connect.AssertEqual(t, vc.GetConnectionStatus(), Disconnected)
 
 	// a write stamped with the CURRENT generation still lands
 	vc.setConnectionStatusForGeneration(Connected, vc.generation)
 	connect.AssertEqual(t, vc.GetConnectionStatus(), Connected)
+}
+
+// A destination switch must not expose the outgoing Connected status after
+// its generation has changed. The Windows acceptance runner observed the new
+// peer location during this gap, treated the old status as peer readiness,
+// and sent traffic into a connection that had not started yet.
+func TestConnectViewControllerGestureClearsOutgoingConnectedStatus(t *testing.T) {
+	vc := newTestingConnectViewController(context.Background())
+	vc.setConnectionStatus(Connected)
+	previousGeneration := vc.generation
+
+	vc.beginGeneration(DestinationSet)
+	connect.AssertEqual(t, vc.generation, previousGeneration+1)
+	connect.AssertEqual(t, vc.GetConnectionStatus(), DestinationSet)
+
+	vc.setConnectionStatus(Connected)
+	previousGeneration = vc.generation
+	vc.beginGeneration(Disconnected)
+	connect.AssertEqual(t, vc.generation, previousGeneration+1)
+	connect.AssertEqual(t, vc.GetConnectionStatus(), Disconnected)
 }
 
 // TestConnectGridFailedStatus maps the window honesty layer's terminal

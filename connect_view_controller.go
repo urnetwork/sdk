@@ -277,12 +277,25 @@ func (self *ConnectViewController) setConnected(connected bool) {
 	self.connected = connected
 }
 
-// bumpGeneration marks a new user gesture (see the `generation` field): every
-// event from before this instant belongs to the outgoing session.
-func (self *ConnectViewController) bumpGeneration() {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.generation += 1
+// beginGeneration marks a new user gesture and publishes its non-terminal
+// status in the same critical section. Leaving Connected behind until the
+// asynchronous device callback arrives lets observers combine the outgoing
+// status with the newly selected destination and mistake a switch for a live
+// connection.
+func (self *ConnectViewController) beginGeneration(status ConnectionStatus) {
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.generation += 1
+		if self.connectionStatus != status {
+			self.connectionStatus = status
+			changed = true
+		}
+	}()
+	if changed {
+		self.connectionStatusChanged()
+	}
 }
 
 // generationCurrent reports whether a grid stamped with `generation` may still
@@ -295,7 +308,7 @@ func (self *ConnectViewController) generationCurrent(generation uint64) bool {
 
 // setConnectionStatusForGeneration is setConnectionStatus with the D2 gate
 // closed all the way: the generation check and the status write happen under
-// the SAME stateLock that bumpGeneration takes, so a Disconnect that lands
+// the SAME stateLock that beginGeneration takes, so a Disconnect that lands
 // after a monitor event passed the entry gate — but before the event finished
 // computing the grid and reached its status write — can never be overwritten
 // by that event's stale status. The entry gate alone leaves exactly that seam
@@ -323,7 +336,7 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 
 	// D2: a new gesture starts a new generation, so any event still in flight
 	// from the previous session's monitor is dropped by the grid gate
-	self.bumpGeneration()
+	self.beginGeneration(DestinationSet)
 
 	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
 		// enable provider
@@ -363,7 +376,7 @@ func (self *ConnectViewController) Disconnect() {
 	// arriving (and flipping the grid CONNECTED) hundreds of milliseconds
 	// after the click, because teardown is exactly when the stalled control
 	// plane suddenly completes.
-	self.bumpGeneration()
+	self.beginGeneration(Disconnected)
 
 	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
 		// disable provider
