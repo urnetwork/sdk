@@ -160,11 +160,15 @@ func deviceMemoryShares(
 func newDeviceLocalPlatformTransportSettings(
 	memoryTargetByteCount ByteCount,
 	platformTransportBudget *connect.PlatformTransportBudget,
+	dialContextSettings *connect.DialContextSettings,
 ) *connect.PlatformTransportSettings {
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
 	)
 	settings.PlatformTransportBudget = platformTransportBudget
+	if dialContextSettings != nil {
+		settings.H3PacketConnFactory = dialContextSettings.PacketConnFactory
+	}
 	return settings
 }
 
@@ -536,10 +540,11 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport connect.MultiClientIdentityStore is an interface from
 	// another package, which gomobile does not bind. Go/headless hosts only.
 	MultiClientIdentityStore connect.MultiClientIdentityStore
-	// ProviderDialContextSettings, when set, is applied only to the exit NAT's
-	// TCP and UDP sockets. Headless integration harnesses use it to bind each
-	// provider to a distinct loopback source address while exercising the real
-	// tunnel stack on one host. Ordinary applications leave it nil.
+	// ProviderDialContextSettings, when set, is applied to the provider carrier
+	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
+	// it to bind every path of each provider to one distinct loopback source
+	// identity while exercising the real tunnel stack on one host. Ordinary
+	// applications leave it nil.
 	//
 	//gomobile:noexport Go-only network dial seam.
 	ProviderDialContextSettings *connect.DialContextSettings
@@ -1198,6 +1203,7 @@ func newDeviceLocalWithOverrides(
 			platformTransportBudget,
 			providerTransportMode,
 			providerModePreferences,
+			settings.ProviderDialContextSettings,
 		)
 	}
 
@@ -3312,6 +3318,17 @@ func (self *DeviceLocal) GetProvideEnabled() bool {
 	return self.remoteUserNatProvider != nil
 }
 
+// Reports whether the provider's current platform carrier has a registered
+// route. This is the headless readiness signal; object construction alone does
+// not mean the provider can be discovered or carry traffic.
+func (self *DeviceLocal) GetProviderConnected() bool {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	return !closed && provider != nil && provider.IsConnected()
+}
+
 func (self *DeviceLocal) GetConnectEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -3808,6 +3825,7 @@ func (self *DeviceLocal) setDestination(
 					settings := newDeviceLocalPlatformTransportSettings(
 						self.settings.MemoryTargetByteCount,
 						self.platformTransportBudget,
+						nil,
 					)
 					applyMobileLowMemoryPlatformTransportSettings(
 						settings,
