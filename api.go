@@ -2684,6 +2684,58 @@ type RemoveNetworkClientResult struct {
 	Error *ApiError `json:"error,omitempty"`
 }
 
+type RemoveNetworkClientCallback connect.ApiCallback[*RemoveNetworkClientResult]
+
+// Removes one client through this API's configured NetworkSpace transport.
+// Keeping the operation on that transport is significant on desktop tunnel
+// transitions, where the platform resolver may need to replace stale state.
+func (self *Api) RemoveNetworkClient(args *RemoveNetworkClientArgs, callback RemoveNetworkClientCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/remove-client", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RemoveNetworkClientResult{},
+			callback,
+		)
+	})
+}
+
+// Caller-bounded headless form used by service and acceptance cleanup.
+//
+//gomobile:noexport
+func (self *Api) RemoveNetworkClientSyncWithContext(ctx context.Context, args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
+	return self.RemoveNetworkClientSyncWithContextAndJwt(ctx, args, self.GetByJwt())
+}
+
+// Removes one client with an explicit network-owner credential while still
+// using this API's configured transport. A DeviceLocal or DeviceRemote can
+// replace the API's current credential with its client JWT, which is not
+// authorized to remove clients; cleanup callers that retained the owner JWT
+// must not mutate the live API session merely to authenticate this request.
+//
+//gomobile:noexport
+func (self *Api) RemoveNetworkClientSyncWithContextAndJwt(ctx context.Context, args *RemoveNetworkClientArgs, byJwt string) (*RemoveNetworkClientResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/remove-client", self.apiUrl),
+		args,
+		byJwt,
+		&RemoveNetworkClientResult{},
+		connect.NewNoopApiCallback[*RemoveNetworkClientResult](),
+	)
+}
+
+// Uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) RemoveNetworkClientSync(args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
+	return self.RemoveNetworkClientSyncWithContext(self.ctx, args)
+}
+
 /**
  * Create API Key
  */
