@@ -619,6 +619,14 @@ export interface DeviceRpcTransport {
 }
 
 /** Options for the extension-routed DeviceRemote used by ur.io. */
+/** api-only LocationsViewController: the same browse controller a device
+ * exposes, opened over the network space api for a host with no device yet */
+export interface LocationsViewControllerOptions {
+  apiUrl: string;
+  platformUrl: string;
+  byJwt: string;
+}
+
 export interface ExtensionDeviceRemoteOptions {
   apiUrl: string;
   platformUrl: string;

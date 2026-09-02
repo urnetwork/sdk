@@ -40,6 +40,11 @@ type LocationsViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	device Device
+	// an api-only controller (NewLocationsViewControllerWithApi) has no device:
+	// the browse needs nothing but the network space api, so a host without a
+	// device plane (a browser tab before the extension attaches) runs the same
+	// grouping and ordering as every app. Exactly one of device / api is set.
+	api *Api
 
 	stateLock sync.Mutex
 
@@ -72,6 +77,23 @@ func newLocationsViewController(ctx context.Context, device Device) *LocationsVi
 	return vc
 }
 
+// NewLocationsViewControllerWithApi opens the location browse over an api with
+// no device. It is the controller every app's location chooser renders, for
+// hosts that have a network member jwt but no device yet; the caller owns it
+// and must Close it.
+func NewLocationsViewControllerWithApi(ctx context.Context, api *Api) *LocationsViewController {
+	vc := newLocationsViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (self *LocationsViewController) getApi() *Api {
+	if self.api != nil {
+		return self.api
+	}
+	return self.device.GetApi()
+}
+
 func (self *LocationsViewController) Start() {
 	go connect.HandleError(func() {
 		self.FilterLocations("")
@@ -81,7 +103,9 @@ func (self *LocationsViewController) Start() {
 func (self *LocationsViewController) Stop() {}
 
 func (self *LocationsViewController) Close() {
-	deviceLog(self.device).Info("[lcvc]close")
+	if self.device != nil {
+		deviceLog(self.device).Info("[lcvc]close")
+	}
 
 	self.cancel()
 }
@@ -187,12 +211,12 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 	))
 
 	if filter == "" {
-		self.device.GetApi().GetProviderLocations(callback)
+		self.getApi().GetProviderLocations(callback)
 	} else {
 		findLocations := &FindLocationsArgs{
 			Query: filter,
 		}
-		self.device.GetApi().FindProviderLocations(findLocations, callback)
+		self.getApi().FindProviderLocations(findLocations, callback)
 	}
 }
 

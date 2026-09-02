@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"syscall/js"
 
@@ -770,7 +771,21 @@ func parseConnectLocation(v js.Value) *sdk.ConnectLocation {
 	return location
 }
 
+// parseConnectLocationId accepts both id forms a page can hold: the bare
+// location id the settings doc and the extension carry, and the composite
+// ConnectLocationId json the sdk hands out (jsConnectLocation's
+// connectLocationId), which is the only form that names a location GROUP or a
+// device. Before this the composite form failed ParseId and the pick was
+// silently dropped.
 func parseConnectLocationId(s string) (*sdk.ConnectLocationId, error) {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "{") {
+		var id sdk.ConnectLocationId
+		if err := json.Unmarshal([]byte(s), &id); err != nil {
+			return nil, err
+		}
+		return &id, nil
+	}
 	id, err := sdk.ParseId(s)
 	if err != nil {
 		return nil, err

@@ -180,6 +180,38 @@ func FilteredLocationsFromResult(this js.Value, args []js.Value) any {
 	return jsFilteredLocations(sdk.GetFilteredLocationsFromResult(&result, filter))
 }
 
+// NewLocationsViewController(apiUrl, platformUrl, byJwt) opens the SAME
+// LocationsViewController a DeviceRemote exposes (openLocationsViewController),
+// over the network space api alone: no device, no device-rpc. It exists so a
+// browser tab that is signed in but has no device plane yet (the extension is
+// not installed or not attached) renders the location chooser from the sdk's
+// grouping and ordering, exactly like android/apple, instead of a REST list in
+// server order. The result has the LocationsViewController shape
+// (getFilteredLocations / filterLocations / addFilteredLocationsListener /
+// start / close); close() releases it.
+func NewLocationsViewController(this js.Value, args []js.Value) any {
+	if len(args) < 3 {
+		return js.ValueOf(map[string]any{
+			"error": "apiUrl, platformUrl and byJwt are required",
+		})
+	}
+	apiUrl := args[0].String()
+	platformUrl := args[1].String()
+	byJwt := args[2].String()
+
+	networkSpace := sdk.NewUrlsNetworkSpace(apiUrl, platformUrl)
+	api := networkSpace.GetApi()
+	api.SetByJwt(byJwt)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	vc := sdk.NewLocationsViewControllerWithApi(ctx, api)
+	return jsLocationsViewController(vc, func() {
+		vc.Close()
+		cancel()
+		networkSpace.Close()
+	})
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -192,6 +224,7 @@ func main() {
 	js.Global().Set("URnetworkNewPlatformDeviceRemote", js.FuncOf(NewPlatformDeviceRemote))
 	js.Global().Set("URnetworkNewExtensionDeviceRemote", js.FuncOf(NewExtensionDeviceRemote))
 	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
+	js.Global().Set("URnetworkNewLocationsViewController", js.FuncOf(NewLocationsViewController))
 	registerSnExports()
 
 	select {

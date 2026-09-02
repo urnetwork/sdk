@@ -7,6 +7,8 @@ import type {
   DeviceRemote,
   PlatformDeviceRemoteOptions,
   ExtensionDeviceRemoteOptions,
+  LocationsViewControllerOptions,
+  LocationsViewController,
 } from "./types";
 
 export * from "./types";
@@ -114,6 +116,29 @@ export class URNetwork {
       throw new Error(String(device.error));
     }
     return device as DeviceRemote;
+  }
+
+  /**
+   * Open the sdk LocationsViewController over the network space api alone —
+   * the grouped/promoted location browse every app's chooser renders — for a
+   * signed-in host that has no device plane (no extension attached). Same
+   * shape as device.openLocationsViewController(); close() releases it.
+   */
+  createLocationsViewController(options: LocationsViewControllerOptions): LocationsViewController {
+    const { URnetworkNewLocationsViewController } = getWasmGlobals();
+    if (typeof URnetworkNewLocationsViewController !== "function") {
+      throw new Error(
+        "URnetworkNewLocationsViewController is not exported by the loaded wasm. Rebuild the sdk wasm.",
+      );
+    }
+    const vc = URnetworkNewLocationsViewController(options.apiUrl, options.platformUrl, options.byJwt);
+    if (!vc) {
+      throw new Error("Could not open the locations view controller.");
+    }
+    if (vc.error) {
+      throw new Error(String(vc.error));
+    }
+    return vc as LocationsViewController;
   }
 
   /**
