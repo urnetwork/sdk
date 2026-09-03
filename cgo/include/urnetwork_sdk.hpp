@@ -184,6 +184,7 @@ inline constexpr int64_t LogVerbosityDefault = 0;
 inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
+inline constexpr int64_t PointsLeaderboardNanoPointsPerPoint = 1000000;
 inline constexpr int64_t PointsLeaderboardPageSize = 50;
 inline constexpr const char* PointsLeaderboardSortBlocks = "blocks";
 inline constexpr const char* PointsLeaderboardSortPoints = "points";
@@ -496,6 +497,7 @@ struct NetworkUserUpdateResult;
 struct OverrideLocalAppIds;
 struct PacketStats;
 struct PointsLeaderboardError;
+struct PointsLeaderboardKey;
 struct PointsLeaderboardRow;
 struct PointsLeaderboardMe;
 struct PointsLeaderboardResult;
@@ -1892,6 +1894,13 @@ struct PointsLeaderboardError {
 	std::string message{};
 };
 
+struct PointsLeaderboardKey {
+	int64_t NanoPoints{};
+	int64_t Blocks{};
+	int64_t Streak{};
+	std::string NetworkId{};
+};
+
 struct PointsLeaderboardRow {
 	std::optional<std::string> network_id;
 	std::optional<std::string> network_name;
@@ -3052,6 +3061,8 @@ inline void to_json(nlohmann::json& j, const PacketStats& v);
 inline void from_json(const nlohmann::json& j, PacketStats& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardError& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardError& v);
+inline void to_json(nlohmann::json& j, const PointsLeaderboardKey& v);
+inline void from_json(const nlohmann::json& j, PointsLeaderboardKey& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardRow& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardRow& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardMe& v);
@@ -8882,6 +8893,31 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardError& v) {
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PointsLeaderboardKey& v) {
+	j = nlohmann::json::object();
+	j["NanoPoints"] = v.NanoPoints;
+	j["Blocks"] = v.Blocks;
+	j["Streak"] = v.Streak;
+	j["NetworkId"] = v.NetworkId;
+}
+inline void from_json(const nlohmann::json& j, PointsLeaderboardKey& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("NanoPoints"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NanoPoints);
+	}
+	if (auto it = j.find("Blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Blocks);
+	}
+	if (auto it = j.find("Streak"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Streak);
+	}
+	if (auto it = j.find("NetworkId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkId);
 	}
 }
 
@@ -23368,6 +23404,54 @@ inline std::optional<StringList> collapseHostNamesList(const std::optional<Strin
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
 }
+inline int64_t comparePointsLeaderboardKeys(const std::string& sort, const std::optional<PointsLeaderboardKey>& a, const std::optional<PointsLeaderboardKey>& b) {
+	std::string a_json;
+	const char* a_c = nullptr;
+	if (a) {
+		a_json = nlohmann::json(*a).dump();
+		a_c = a_json.c_str();
+	}
+	std::string b_json;
+	const char* b_c = nullptr;
+	if (b) {
+		b_json = nlohmann::json(*b).dump();
+		b_c = b_json.c_str();
+	}
+	int64_t r = urnet_compare_points_leaderboard_keys(sort.c_str(), a_c, b_c);
+	return r;
+}
+inline int64_t comparePointsLeaderboardRows(const std::string& sort, const std::optional<PointsLeaderboardRow>& a, const std::optional<PointsLeaderboardRow>& b) {
+	std::string a_json;
+	const char* a_c = nullptr;
+	if (a) {
+		a_json = nlohmann::json(*a).dump();
+		a_c = a_json.c_str();
+	}
+	std::string b_json;
+	const char* b_c = nullptr;
+	if (b) {
+		b_json = nlohmann::json(*b).dump();
+		b_c = b_json.c_str();
+	}
+	int64_t r = urnet_compare_points_leaderboard_rows(sort.c_str(), a_c, b_c);
+	return r;
+}
+inline int64_t comparePointsLeaderboardValues(const std::string& sort, const std::optional<PointsLeaderboardKey>& a, const std::optional<PointsLeaderboardKey>& b) {
+	std::string a_json;
+	const char* a_c = nullptr;
+	if (a) {
+		a_json = nlohmann::json(*a).dump();
+		a_c = a_json.c_str();
+	}
+	std::string b_json;
+	const char* b_c = nullptr;
+	if (b) {
+		b_json = nlohmann::json(*b).dump();
+		b_c = b_json.c_str();
+	}
+	int64_t r = urnet_compare_points_leaderboard_values(sort.c_str(), a_c, b_c);
+	return r;
+}
 inline std::string connectLinkUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& target) {
 	std::string key_json;
 	const char* key_c = nullptr;
@@ -23871,6 +23955,20 @@ inline std::string parseId(const std::string& src) {
 		detail::throwError(err_c);
 	}
 	return detail::takeString(r_c);
+}
+inline std::optional<PointsLeaderboardKey> pointsLeaderboardKeyOf(const std::optional<PointsLeaderboardRow>& row) {
+	std::string row_json;
+	const char* row_c = nullptr;
+	if (row) {
+		row_json = nlohmann::json(*row).dump();
+		row_c = row_json.c_str();
+	}
+	char* r_c = urnet_points_leaderboard_key_of(row_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PointsLeaderboardKey>(r_s->c_str());
 }
 inline int64_t pointsToNanoPoints(double points) {
 	int64_t r = urnet_points_to_nano_points(points);

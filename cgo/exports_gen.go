@@ -5186,6 +5186,69 @@ func urnet_collapse_host_names_list(hosts *C.char) *C.char {
 	return cJson(r0, "urnet_collapse_host_names_list")
 }
 
+//export urnet_compare_points_leaderboard_keys
+func urnet_compare_points_leaderboard_keys(sort *C.char, a *C.char, b *C.char) C.int64_t {
+	defer cgoGuard("urnet_compare_points_leaderboard_keys")
+	var a_ *sdk.PointsLeaderboardKey
+	if a != nil {
+		a_ = &sdk.PointsLeaderboardKey{}
+		if !goJson(a, a_, "urnet_compare_points_leaderboard_keys") {
+			return 0
+		}
+	}
+	var b_ *sdk.PointsLeaderboardKey
+	if b != nil {
+		b_ = &sdk.PointsLeaderboardKey{}
+		if !goJson(b, b_, "urnet_compare_points_leaderboard_keys") {
+			return 0
+		}
+	}
+	r0 := sdk.ComparePointsLeaderboardKeys(goString(sort), a_, b_)
+	return C.int64_t(r0)
+}
+
+//export urnet_compare_points_leaderboard_rows
+func urnet_compare_points_leaderboard_rows(sort *C.char, a *C.char, b *C.char) C.int64_t {
+	defer cgoGuard("urnet_compare_points_leaderboard_rows")
+	var a_ *sdk.PointsLeaderboardRow
+	if a != nil {
+		a_ = &sdk.PointsLeaderboardRow{}
+		if !goJson(a, a_, "urnet_compare_points_leaderboard_rows") {
+			return 0
+		}
+	}
+	var b_ *sdk.PointsLeaderboardRow
+	if b != nil {
+		b_ = &sdk.PointsLeaderboardRow{}
+		if !goJson(b, b_, "urnet_compare_points_leaderboard_rows") {
+			return 0
+		}
+	}
+	r0 := sdk.ComparePointsLeaderboardRows(goString(sort), a_, b_)
+	return C.int64_t(r0)
+}
+
+//export urnet_compare_points_leaderboard_values
+func urnet_compare_points_leaderboard_values(sort *C.char, a *C.char, b *C.char) C.int64_t {
+	defer cgoGuard("urnet_compare_points_leaderboard_values")
+	var a_ *sdk.PointsLeaderboardKey
+	if a != nil {
+		a_ = &sdk.PointsLeaderboardKey{}
+		if !goJson(a, a_, "urnet_compare_points_leaderboard_values") {
+			return 0
+		}
+	}
+	var b_ *sdk.PointsLeaderboardKey
+	if b != nil {
+		b_ = &sdk.PointsLeaderboardKey{}
+		if !goJson(b, b_, "urnet_compare_points_leaderboard_values") {
+			return 0
+		}
+	}
+	r0 := sdk.ComparePointsLeaderboardValues(goString(sort), a_, b_)
+	return C.int64_t(r0)
+}
+
 //export urnet_connect_grid_get_height
 func urnet_connect_grid_get_height(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_connect_grid_get_height")
@@ -12622,6 +12685,23 @@ func urnet_peer_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
+}
+
+//export urnet_points_leaderboard_key_of
+func urnet_points_leaderboard_key_of(row *C.char) *C.char {
+	defer cgoGuard("urnet_points_leaderboard_key_of")
+	var row_ *sdk.PointsLeaderboardRow
+	if row != nil {
+		row_ = &sdk.PointsLeaderboardRow{}
+		if !goJson(row, row_, "urnet_points_leaderboard_key_of") {
+			return nil
+		}
+	}
+	r0 := sdk.PointsLeaderboardKeyOf(row_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_points_leaderboard_key_of")
 }
 
 //export urnet_points_leaderboard_view_controller_add_points_leaderboard_listener

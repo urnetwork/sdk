@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 
@@ -277,6 +278,9 @@ func (self *PointsLeaderboardViewController) handlePage(
 	} else {
 		self.rows = append(self.rows, page...)
 	}
+	// the rows are always in the sort's order (see ComparePointsLeaderboardRows),
+	// whatever order the pages arrived in
+	sortPointsLeaderboardRows(self.sort, self.rows)
 	self.nextCursor = result.NextCursor
 	self.endReached = result.NextCursor == "" || len(page) == 0
 	self.loading = false
@@ -481,4 +485,119 @@ func ValidateEmojiTag(tag string) *EmojiTagValidation {
 		validation.Message = "Only emoji are allowed."
 	}
 	return validation
+}
+
+// Ordering
+//
+// The leaderboard is sortable by any dimension, and each sort has its own
+// tie-break order (user decision, 2026-09-03):
+//
+//	points: (points, streak, blocks)
+//	blocks: (blocks, streak, points)
+//	streak: (streak, blocks, points)
+//
+// Every key is descending; when all three keys tie the network id (ascending)
+// makes the order total, so two clients and the server always agree on the
+// exact sequence. This is THE definition of the order: the view controller
+// keeps its rows in it, and the server ranks and pages with it (the ranks
+// `rank_*` are competition ranks on the same three-key tuple, so two networks
+// share a rank only when all three keys tie).
+
+// PointsLeaderboardNanoPointsPerPoint is the points unit on the wire: a row's
+// `total_points` is nano points / 1e6, and the ordering compares the exact
+// nano points.
+const PointsLeaderboardNanoPointsPerPoint = 1_000_000
+
+// PointsLeaderboardKey is the ordering key of one network.
+type PointsLeaderboardKey struct {
+	NanoPoints int64
+	Blocks     int64
+	Streak     int64
+	NetworkId  string
+}
+
+// pointsLeaderboardDimensions returns the three dimensions of a sort in
+// tie-break order: the sort's own dimension first. Unknown sorts order as
+// "points".
+func PointsLeaderboardDimensions(sort string) (first string, second string, third string) {
+	switch sort {
+	case PointsLeaderboardSortBlocks:
+		return PointsLeaderboardSortBlocks, PointsLeaderboardSortStreak, PointsLeaderboardSortPoints
+	case PointsLeaderboardSortStreak:
+		return PointsLeaderboardSortStreak, PointsLeaderboardSortBlocks, PointsLeaderboardSortPoints
+	default:
+		return PointsLeaderboardSortPoints, PointsLeaderboardSortStreak, PointsLeaderboardSortBlocks
+	}
+}
+
+func pointsLeaderboardKeyValue(key *PointsLeaderboardKey, dimension string) int64 {
+	switch dimension {
+	case PointsLeaderboardSortBlocks:
+		return key.Blocks
+	case PointsLeaderboardSortStreak:
+		return key.Streak
+	default:
+		return key.NanoPoints
+	}
+}
+
+// ComparePointsLeaderboardValues compares the three ranked values of two keys
+// in the sort's order, every value descending: negative when a ranks ahead of
+// b, positive when b ranks ahead, zero when all three values tie. Two networks
+// share a competition rank exactly when this returns zero.
+func ComparePointsLeaderboardValues(sort string, a *PointsLeaderboardKey, b *PointsLeaderboardKey) int {
+	first, second, third := PointsLeaderboardDimensions(sort)
+	for _, dimension := range []string{first, second, third} {
+		va, vb := pointsLeaderboardKeyValue(a, dimension), pointsLeaderboardKeyValue(b, dimension)
+		if va != vb {
+			if vb < va {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+// ComparePointsLeaderboardKeys is the total order: the values in the sort's
+// order, then the network id ascending. It never returns zero for two
+// different networks.
+func ComparePointsLeaderboardKeys(sort string, a *PointsLeaderboardKey, b *PointsLeaderboardKey) int {
+	if c := ComparePointsLeaderboardValues(sort, a, b); c != 0 {
+		return c
+	}
+	switch {
+	case a.NetworkId < b.NetworkId:
+		return -1
+	case b.NetworkId < a.NetworkId:
+		return 1
+	}
+	return 0
+}
+
+// PointsLeaderboardKeyOf is a row's ordering key. `total_points` is nano
+// points / 1e6 on the wire, so the exact nano points are recovered.
+func PointsLeaderboardKeyOf(row *PointsLeaderboardRow) *PointsLeaderboardKey {
+	key := &PointsLeaderboardKey{
+		NanoPoints: int64(math.Round(row.TotalPoints * PointsLeaderboardNanoPointsPerPoint)),
+		Blocks:     row.BlocksWithPoints,
+		Streak:     row.Streak,
+	}
+	if row.NetworkId != nil {
+		key.NetworkId = row.NetworkId.String()
+	}
+	return key
+}
+
+// ComparePointsLeaderboardRows orders two rows for a sort (see
+// ComparePointsLeaderboardKeys).
+func ComparePointsLeaderboardRows(sort string, a *PointsLeaderboardRow, b *PointsLeaderboardRow) int {
+	return ComparePointsLeaderboardKeys(sort, PointsLeaderboardKeyOf(a), PointsLeaderboardKeyOf(b))
+}
+
+// sortPointsLeaderboardRows puts rows in the sort's order in place.
+func sortPointsLeaderboardRows(sortBy string, rows []*PointsLeaderboardRow) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		return ComparePointsLeaderboardRows(sortBy, rows[i], rows[j]) < 0
+	})
 }

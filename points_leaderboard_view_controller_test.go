@@ -78,6 +78,9 @@ func (self *pointsLeaderboardTestServer) handler() http.Handler {
 			result["rows"] = []any{}
 		case args.Sort == PointsLeaderboardSortBlocks:
 			result["rows"] = []any{row(7, "blocks-first", false)}
+		case args.Sort == PointsLeaderboardSortStreak:
+			// deliberately out of order: the view controller must sort them
+			result["rows"] = []any{row(3, "three", false), row(1, "one", false), row(2, "two", false)}
 		default:
 			result["rows"] = []any{}
 		}
@@ -363,5 +366,84 @@ func TestSuggestEmojiTag(t *testing.T) {
 	}
 	if len(lengths) != EmojiTagSuggestMaxCount {
 		t.Fatalf("random lengths = %v", lengths)
+	}
+}
+
+// The ordering rule, key by key: each sort's own dimension first, then its
+// two tie-breaks, every key descending, then the network id ascending.
+func TestPointsLeaderboardOrder(t *testing.T) {
+	key := func(points int64, blocks int64, streak int64, id string) *PointsLeaderboardKey {
+		return &PointsLeaderboardKey{NanoPoints: points * PointsLeaderboardNanoPointsPerPoint, Blocks: blocks, Streak: streak, NetworkId: id}
+	}
+	cases := []struct {
+		name   string
+		sort   string
+		ahead  *PointsLeaderboardKey
+		behind *PointsLeaderboardKey
+	}{
+		{"points: more points first", PointsLeaderboardSortPoints, key(10, 1, 1, "b"), key(9, 9, 9, "a")},
+		{"points: tie -> streak", PointsLeaderboardSortPoints, key(10, 1, 3, "b"), key(10, 9, 2, "a")},
+		{"points: tie, tie -> blocks", PointsLeaderboardSortPoints, key(10, 4, 3, "b"), key(10, 3, 3, "a")},
+		{"points: all tie -> id asc", PointsLeaderboardSortPoints, key(10, 4, 3, "a"), key(10, 4, 3, "b")},
+		{"blocks: more blocks first", PointsLeaderboardSortBlocks, key(1, 5, 1, "b"), key(99, 4, 9, "a")},
+		{"blocks: tie -> streak", PointsLeaderboardSortBlocks, key(1, 5, 2, "b"), key(99, 5, 1, "a")},
+		{"blocks: tie, tie -> points", PointsLeaderboardSortBlocks, key(2, 5, 2, "b"), key(1, 5, 2, "a")},
+		{"streak: longer streak first", PointsLeaderboardSortStreak, key(1, 1, 7, "b"), key(99, 9, 6, "a")},
+		{"streak: tie -> blocks", PointsLeaderboardSortStreak, key(1, 3, 7, "b"), key(99, 2, 7, "a")},
+		{"streak: tie, tie -> points", PointsLeaderboardSortStreak, key(2, 3, 7, "b"), key(1, 3, 7, "a")},
+		{"unknown sort orders as points", "bogus", key(10, 1, 1, "b"), key(9, 9, 9, "a")},
+	}
+	for _, c := range cases {
+		if ComparePointsLeaderboardKeys(c.sort, c.ahead, c.behind) >= 0 {
+			t.Errorf("%s: expected ahead < behind", c.name)
+		}
+		if ComparePointsLeaderboardKeys(c.sort, c.behind, c.ahead) <= 0 {
+			t.Errorf("%s: expected behind > ahead", c.name)
+		}
+	}
+	// the values compare equal only when all three tie; the key order still separates the networks
+	a, b := key(10, 4, 3, "a"), key(10, 4, 3, "b")
+	if ComparePointsLeaderboardValues(PointsLeaderboardSortPoints, a, b) != 0 {
+		t.Error("equal values must compare 0")
+	}
+	if ComparePointsLeaderboardKeys(PointsLeaderboardSortPoints, a, a) != 0 {
+		t.Error("a key must compare 0 with itself")
+	}
+	// the dimensions per sort
+	for sortBy, want := range map[string][3]string{
+		PointsLeaderboardSortPoints: {PointsLeaderboardSortPoints, PointsLeaderboardSortStreak, PointsLeaderboardSortBlocks},
+		PointsLeaderboardSortBlocks: {PointsLeaderboardSortBlocks, PointsLeaderboardSortStreak, PointsLeaderboardSortPoints},
+		PointsLeaderboardSortStreak: {PointsLeaderboardSortStreak, PointsLeaderboardSortBlocks, PointsLeaderboardSortPoints},
+	} {
+		first, second, third := PointsLeaderboardDimensions(sortBy)
+		if [3]string{first, second, third} != want {
+			t.Errorf("%s: dimensions %v %v %v", sortBy, first, second, third)
+		}
+	}
+	// a row's key recovers the exact nano points from the wire's float
+	row := &PointsLeaderboardRow{TotalPoints: 1234.567891, BlocksWithPoints: 2, Streak: 1}
+	if k := PointsLeaderboardKeyOf(row); k.NanoPoints != 1234567891 || k.Blocks != 2 || k.Streak != 1 {
+		t.Errorf("key of row: %+v", k)
+	}
+}
+
+// A page that arrives out of the sort's order is put in order: the rows the
+// app renders are always the comparator's sequence.
+func TestPointsLeaderboardPagesAreOrdered(t *testing.T) {
+	_, vc, listener := newPointsLeaderboardTest(t)
+	vc.Start()
+	waitForPointsLeaderboard(t, listener, func() bool { return vc.GetRowCount() == 2 && !vc.IsLoading() })
+	// the streak page is served as rows 3, 1, 2 (streaks 2, 4, 3): expect 1, 2, 3
+	vc.SetSort(PointsLeaderboardSortStreak)
+	waitForPointsLeaderboard(t, listener, func() bool {
+		return vc.GetSort() == PointsLeaderboardSortStreak && vc.GetRowCount() == 3 && !vc.IsLoading()
+	})
+	rows := vc.GetRows()
+	got := []int64{}
+	for i := 0; i < rows.Len(); i++ {
+		got = append(got, rows.Get(i).Streak)
+	}
+	if fmt.Sprint(got) != "[4 3 2]" {
+		t.Fatalf("rows out of order: streaks %v", got)
 	}
 }

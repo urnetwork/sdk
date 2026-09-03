@@ -103,6 +103,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_TRACE 2
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
+#define URNET_POINTS_LEADERBOARD_NANO_POINTS_PER_POINT 1000000
 #define URNET_POINTS_LEADERBOARD_PAGE_SIZE 50
 #define URNET_POINTS_LEADERBOARD_SORT_BLOCKS "blocks"
 #define URNET_POINTS_LEADERBOARD_SORT_POINTS "points"
@@ -1394,6 +1395,9 @@ char* urnet_classify_balance_code_redeem(const char* result_json, const char* re
 char* urnet_classify_subscription_store(const char* store);
 char* urnet_collapse_host_names(const char* hosts_json);
 char* urnet_collapse_host_names_list(const char* hosts_json);
+int64_t urnet_compare_points_leaderboard_keys(const char* sort, const char* a_json, const char* b_json);
+int64_t urnet_compare_points_leaderboard_rows(const char* sort, const char* a_json, const char* b_json);
+int64_t urnet_compare_points_leaderboard_values(const char* sort, const char* a_json, const char* b_json);
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_create_payment_reference(void);
 char* urnet_default_device_local_settings(void);
@@ -1470,6 +1474,7 @@ char* urnet_normal_env_name(const char* env_name);
 char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
+char* urnet_points_leaderboard_key_of(const char* row_json);
 int64_t urnet_points_to_nano_points(double points);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
@@ -2754,6 +2759,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* PointsLeaderboardError (json):
  *   message: string
+ */
+
+/* PointsLeaderboardKey (json):
+ *   NanoPoints: number
+ *   Blocks: number
+ *   Streak: number
+ *   NetworkId: string
  */
 
 /* PointsLeaderboardMe (json):
