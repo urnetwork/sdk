@@ -113,6 +113,20 @@ func ServiceUrl(key *NetworkSpaceKey, values *NetworkSpaceValues, scheme string,
 	return serviceUrl
 }
 
+// networkSpaceDohDomains returns every service namespace owned by a network
+// space. During a hostname migration both namespaces remain protected because
+// persisted URLs and in-flight clients can legitimately use either one.
+func networkSpaceDohDomains(key *NetworkSpaceKey, values *NetworkSpaceValues) []string {
+	domains := make([]string, 0, 2)
+	if hostName := strings.TrimSpace(key.HostName); hostName != "" {
+		domains = append(domains, hostName)
+	}
+	if migrationHostName := strings.TrimSpace(values.MigrationHostName); migrationHostName != "" {
+		domains = append(domains, migrationHostName)
+	}
+	return domains
+}
+
 func ConnectLinkUrl(key *NetworkSpaceKey, values *NetworkSpaceValues, target string) string {
 	var linkHostName string
 	if values.LinkHostName != "" {
@@ -178,6 +192,7 @@ func newNetworkSpaceWithConnectSettings(
 	clientStrategySettings.Log = connectSettings.Log
 	clientStrategySettings.ExposeServerIps = values.NetExposeServerIps
 	clientStrategySettings.ExposeServerHostNames = values.NetExposeServerHostNames
+	clientStrategySettings.InternalDohDomains = networkSpaceDohDomains(&key, &values)
 
 	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
 

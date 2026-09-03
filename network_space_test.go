@@ -154,6 +154,20 @@ func TestNetworkSpaceUrlResolution(t *testing.T) {
 	overrideNetworkSpace.close()
 }
 
+func TestNetworkSpaceDohDomainsIncludePrimaryAndMigration(t *testing.T) {
+	domains := networkSpaceDohDomains(
+		&NetworkSpaceKey{HostName: "ur.network", EnvName: "main"},
+		&NetworkSpaceValues{MigrationHostName: "bringyour.com"},
+	)
+	connect.AssertEqual(t, domains, []string{"ur.network", "bringyour.com"})
+
+	primaryOnly := networkSpaceDohDomains(
+		&NetworkSpaceKey{HostName: "ur.network", EnvName: "main"},
+		&NetworkSpaceValues{},
+	)
+	connect.AssertEqual(t, primaryOnly, []string{"ur.network"})
+}
+
 func TestNewNetworkSpaceWithUrlsPreservesHeadlessConfiguration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
