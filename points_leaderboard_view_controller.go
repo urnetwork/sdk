@@ -519,7 +519,7 @@ type PointsLeaderboardKey struct {
 // pointsLeaderboardDimensions returns the three dimensions of a sort in
 // tie-break order: the sort's own dimension first. Unknown sorts order as
 // "points".
-func PointsLeaderboardDimensions(sort string) (first string, second string, third string) {
+func pointsLeaderboardDimensions(sort string) (first string, second string, third string) {
 	switch sort {
 	case PointsLeaderboardSortBlocks:
 		return PointsLeaderboardSortBlocks, PointsLeaderboardSortStreak, PointsLeaderboardSortPoints
@@ -546,7 +546,7 @@ func pointsLeaderboardKeyValue(key *PointsLeaderboardKey, dimension string) int6
 // b, positive when b ranks ahead, zero when all three values tie. Two networks
 // share a competition rank exactly when this returns zero.
 func ComparePointsLeaderboardValues(sort string, a *PointsLeaderboardKey, b *PointsLeaderboardKey) int {
-	first, second, third := PointsLeaderboardDimensions(sort)
+	first, second, third := pointsLeaderboardDimensions(sort)
 	for _, dimension := range []string{first, second, third} {
 		va, vb := pointsLeaderboardKeyValue(a, dimension), pointsLeaderboardKeyValue(b, dimension)
 		if va != vb {

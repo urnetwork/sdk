@@ -415,7 +415,7 @@ func TestPointsLeaderboardOrder(t *testing.T) {
 		PointsLeaderboardSortBlocks: {PointsLeaderboardSortBlocks, PointsLeaderboardSortStreak, PointsLeaderboardSortPoints},
 		PointsLeaderboardSortStreak: {PointsLeaderboardSortStreak, PointsLeaderboardSortBlocks, PointsLeaderboardSortPoints},
 	} {
-		first, second, third := PointsLeaderboardDimensions(sortBy)
+		first, second, third := pointsLeaderboardDimensions(sortBy)
 		if [3]string{first, second, third} != want {
 			t.Errorf("%s: dimensions %v %v %v", sortBy, first, second, third)
 		}

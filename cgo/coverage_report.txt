@@ -851,7 +851,7 @@ urnet_wallet_view_controller_validate_address <- WalletViewController.ValidateAd
 urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 
-== skipped (1002) ==
+== skipped (1001) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1591,7 +1591,6 @@ PeersListener: callback interface: crosses as c function pointer
 PerformanceProfile: data: crosses as json
 PerformanceProfileChangeListener: callback interface: crosses as c function pointer
 PlatformDeviceRpcDialer: data: crosses as json
-PointsLeaderboardDimensions: unmappable: multiple results
 PointsLeaderboardError: data: crosses as json
 PointsLeaderboardKey: data: crosses as json
 PointsLeaderboardListener: callback interface: crosses as c function pointer
