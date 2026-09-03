@@ -218,6 +218,7 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 		Count:            2,
 		ExcludeClientIds: NewIdList(),
 		RankMode:         "quality",
+		ForceMinimum:     true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -248,6 +249,9 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 			}
 			if values["rank_mode"] != "quality" {
 				t.Fatalf("find-providers rank_mode = %#v, want quality", values["rank_mode"])
+			}
+			if values["force_minimum"] != true {
+				t.Fatalf("find-providers force_minimum = %#v, want true", values["force_minimum"])
 			}
 		}
 	}

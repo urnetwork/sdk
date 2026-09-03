@@ -157,7 +157,7 @@ inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* ContractStatusClosed = "closed";
 inline constexpr const char* ContractStatusOpen = "open";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
-inline constexpr int64_t DeviceRpcVersion = 2;
+inline constexpr int64_t DeviceRpcVersion = 3;
 inline constexpr int64_t DeviceRpcWsBinary = 2;
 inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
@@ -166,6 +166,9 @@ inline constexpr const char* EmojiTagReasonEmpty = "empty";
 inline constexpr const char* EmojiTagReasonNotEmoji = "not_emoji";
 inline constexpr const char* EmojiTagReasonTooMany = "too_many";
 inline constexpr int64_t EmojiTagSuggestMaxCount = 3;
+inline constexpr int64_t IpFamilyPolicyAuto = 0;
+inline constexpr int64_t IpFamilyPolicyForce4 = 1;
+inline constexpr int64_t IpFamilyPolicyForce6 = 2;
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
 inline constexpr int64_t IpProtocolUnknown = 0;
@@ -1276,6 +1279,7 @@ struct DeviceLocalSettings {
 	nlohmann::json GeneratorFunc{};
 	nlohmann::json MultiClientIdentityStore{};
 	std::optional<nlohmann::json> ProviderDialContextSettings;
+	std::string DnsPumpHost{};
 	bool EnableRpc{};
 	std::optional<nlohmann::json> KeyMaterial;
 	bool DisableLogging{};
@@ -1403,6 +1407,7 @@ struct FindProviders2Args {
 	int64_t count{};
 	std::optional<IdList> exclude_client_ids;
 	std::optional<std::string> rank_mode;
+	std::optional<bool> force_minimum;
 };
 
 struct FindProviders2Result {
@@ -6014,6 +6019,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	if (v.ProviderDialContextSettings) {
 		j["ProviderDialContextSettings"] = *v.ProviderDialContextSettings;
 	}
+	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
 	if (v.KeyMaterial) {
 		j["KeyMaterial"] = *v.KeyMaterial;
@@ -6102,6 +6108,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 		nlohmann::json tmp{};
 		it->get_to(tmp);
 		v.ProviderDialContextSettings = std::move(tmp);
+	}
+	if (auto it = j.find("DnsPumpHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsPumpHost);
 	}
 	if (auto it = j.find("EnableRpc"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableRpc);
@@ -6657,6 +6666,9 @@ inline void to_json(nlohmann::json& j, const FindProviders2Args& v) {
 	if (v.rank_mode) {
 		j["rank_mode"] = *v.rank_mode;
 	}
+	if (v.force_minimum) {
+		j["force_minimum"] = *v.force_minimum;
+	}
 }
 inline void from_json(const nlohmann::json& j, FindProviders2Args& v) {
 	if (!j.is_object()) {
@@ -6679,6 +6691,11 @@ inline void from_json(const nlohmann::json& j, FindProviders2Args& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.rank_mode = std::move(tmp);
+	}
+	if (auto it = j.find("force_minimum"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.force_minimum = std::move(tmp);
 	}
 }
 
@@ -12640,6 +12657,8 @@ public:
 	std::optional<ConnectLocation> getConnectLocation() const;
 	std::optional<ConnectedProviderLocationList> getConnectedProviderLocations() const;
 	std::optional<ContractStatus> getContractStatus() const;
+	int64_t getControlIpFamilyPolicy() const;
+	std::string getControlIpFamilyStatus() const;
 	std::optional<ConnectLocation> getDefaultLocation() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
 	bool getDone() const;
@@ -12691,6 +12710,7 @@ public:
 	void setCanRefer(bool can_refer) const;
 	void setCanShowRatingDialog(bool can_show_rating_dialog) const;
 	void setConnectLocation(const std::optional<ConnectLocation>& location) const;
+	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setDefaultLocation(const std::optional<ConnectLocation>& location) const;
 	void setDestination(const std::optional<ConnectLocation>& location, const std::optional<ProviderSpecList>& specs) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
@@ -12968,6 +12988,7 @@ public:
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
+	bool getProviderConnected() const;
 	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
 	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	std::optional<SnChainSettings> getSnChainSettings() const;
@@ -13195,6 +13216,7 @@ public:
 	bool getCanRefer() const;
 	bool getCanShowRatingDialog() const;
 	std::optional<ConnectLocation> getConnectLocation() const;
+	int64_t getControlIpFamilyPolicy() const;
 	std::optional<ConnectLocation> getDefaultLocation() const;
 	DeviceLocalKeyMaterial getDeviceLocalKeyMaterial() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
@@ -13223,6 +13245,7 @@ public:
 	void setCanRefer(bool can_refer) const;
 	void setCanShowRatingDialog(bool can_show_rating_dialog) const;
 	void setConnectLocation(const std::optional<ConnectLocation>& connect_location) const;
+	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setDefaultLocation(const std::optional<ConnectLocation>& connect_location) const;
 	void setDeviceLocalKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
@@ -13303,6 +13326,7 @@ public:
 	std::string getStore() const;
 	std::string getWallet() const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
+	void setControlIpFamilyPolicy(int64_t policy) const;
 	std::string toJson() const;
 };
 
@@ -19177,6 +19201,14 @@ inline std::optional<ContractStatus> Device::getContractStatus() const {
 	}
 	return detail::parseJson<ContractStatus>(r_s->c_str());
 }
+inline int64_t Device::getControlIpFamilyPolicy() const {
+	int64_t r = urnet_device_get_control_ip_family_policy(handle());
+	return r;
+}
+inline std::string Device::getControlIpFamilyStatus() const {
+	char* r_c = urnet_device_get_control_ip_family_status(handle());
+	return detail::takeString(r_c);
+}
 inline std::optional<ConnectLocation> Device::getDefaultLocation() const {
 	char* r_c = urnet_device_get_default_location(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -19481,6 +19513,9 @@ inline void Device::setConnectLocation(const std::optional<ConnectLocation>& loc
 		location_c = location_json.c_str();
 	}
 	urnet_device_set_connect_location(handle(), location_c);
+}
+inline void Device::setControlIpFamilyPolicy(int64_t policy) const {
+	urnet_device_set_control_ip_family_policy(handle(), policy);
 }
 inline void Device::setDefaultLocation(const std::optional<ConnectLocation>& location) const {
 	std::string location_json;
@@ -20995,6 +21030,10 @@ inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() c
 	}
 	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
 }
+inline bool DeviceLocal::getProviderConnected() const {
+	bool r = urnet_device_local_get_provider_connected(handle());
+	return r;
+}
 inline std::optional<ReliabilityMetrics> DeviceLocal::getReliabilityMetrics() const {
 	char* r_c = urnet_device_local_get_reliability_metrics(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -21867,6 +21906,10 @@ inline std::optional<ConnectLocation> LocalState::getConnectLocation() const {
 	}
 	return detail::parseJson<ConnectLocation>(r_s->c_str());
 }
+inline int64_t LocalState::getControlIpFamilyPolicy() const {
+	int64_t r = urnet_local_state_get_control_ip_family_policy(handle());
+	return r;
+}
 inline std::optional<ConnectLocation> LocalState::getDefaultLocation() const {
 	char* r_c = urnet_local_state_get_default_location(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -22089,6 +22132,16 @@ inline void LocalState::setConnectLocation(const std::optional<ConnectLocation>&
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_connect_location failed");
+	}
+}
+inline void LocalState::setControlIpFamilyPolicy(int64_t policy) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_control_ip_family_policy(handle(), policy, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_control_ip_family_policy failed");
 	}
 }
 inline void LocalState::setDefaultLocation(const std::optional<ConnectLocation>& connect_location) const {
@@ -22482,6 +22535,9 @@ inline std::string NetworkSpace::getWallet() const {
 inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std::string& service) const {
 	char* r_c = urnet_network_space_service_url(handle(), scheme.c_str(), service.c_str());
 	return detail::takeString(r_c);
+}
+inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
+	urnet_network_space_set_control_ip_family_policy(handle(), policy);
 }
 inline std::string NetworkSpace::toJson() const {
 	char* err_c = nullptr;
@@ -23480,6 +23536,14 @@ inline std::string getColorHex(const std::string& code) {
 	char* r_c = urnet_get_color_hex(code.c_str());
 	return detail::takeString(r_c);
 }
+inline int64_t getControlIpFamilyPolicy() {
+	int64_t r = urnet_get_control_ip_family_policy();
+	return r;
+}
+inline std::string getControlIpFamilyStatus() {
+	char* r_c = urnet_get_control_ip_family_status();
+	return detail::takeString(r_c);
+}
 inline std::optional<DnsResolverSettings> getDefaultDnsResolverSettings() {
 	char* r_c = urnet_get_default_dns_resolver_settings();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -23843,6 +23907,9 @@ inline std::string serviceUrl(const std::optional<NetworkSpaceKey>& key, const s
 	}
 	char* r_c = urnet_service_url(key_c, values_c, scheme.c_str(), service.c_str());
 	return detail::takeString(r_c);
+}
+inline void setControlIpFamilyPolicy(int64_t policy) {
+	urnet_set_control_ip_family_policy(policy);
 }
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);

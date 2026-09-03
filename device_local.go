@@ -160,11 +160,19 @@ func deviceMemoryShares(
 func newDeviceLocalPlatformTransportSettings(
 	memoryTargetByteCount ByteCount,
 	platformTransportBudget *connect.PlatformTransportBudget,
+	dialContextSettings *connect.DialContextSettings,
+	dnsPumpHost string,
 ) *connect.PlatformTransportSettings {
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
 	)
 	settings.PlatformTransportBudget = platformTransportBudget
+	if dnsPumpHost = strings.TrimSpace(dnsPumpHost); dnsPumpHost != "" {
+		settings.DnsPumpHost = dnsPumpHost
+	}
+	if dialContextSettings != nil {
+		settings.H3PacketConnFactory = dialContextSettings.PacketConnFactory
+	}
 	return settings
 }
 
@@ -536,13 +544,20 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport connect.MultiClientIdentityStore is an interface from
 	// another package, which gomobile does not bind. Go/headless hosts only.
 	MultiClientIdentityStore connect.MultiClientIdentityStore
-	// ProviderDialContextSettings, when set, is applied only to the exit NAT's
-	// TCP and UDP sockets. Headless integration harnesses use it to bind each
-	// provider to a distinct loopback source address while exercising the real
-	// tunnel stack on one host. Ordinary applications leave it nil.
+	// ProviderDialContextSettings, when set, is applied to the provider carrier
+	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
+	// it to bind every path of each provider to one distinct loopback source
+	// identity while exercising the real tunnel stack on one host. Ordinary
+	// applications leave it nil.
 	//
 	//gomobile:noexport Go-only network dial seam.
 	ProviderDialContextSettings *connect.DialContextSettings
+	// DnsPumpHost overrides the public UDP/53 destination used by the DNS-pump
+	// carrier. Integration hosts with a private or loopback Connect endpoint
+	// must set this to their provisioned pump ingress; sending that endpoint's
+	// TLS SNI through the production pump cannot route back to the private
+	// server. Empty retains connect's production default.
+	DnsPumpHost string
 	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 	EnableRpc bool
 	// KeyMaterial, when set, is applied to `ClientSettings` at construction
@@ -1204,6 +1219,8 @@ func newDeviceLocalWithOverrides(
 			platformTransportBudget,
 			providerTransportMode,
 			providerModePreferences,
+			settings.ProviderDialContextSettings,
+			settings.DnsPumpHost,
 		)
 	}
 
@@ -3319,6 +3336,17 @@ func (self *DeviceLocal) GetProvideEnabled() bool {
 	return self.remoteUserNatProvider != nil
 }
 
+// Reports whether the provider's current platform carrier has a registered
+// route. This is the headless readiness signal; object construction alone does
+// not mean the provider can be discovered or carry traffic.
+func (self *DeviceLocal) GetProviderConnected() bool {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	return !closed && provider != nil && provider.IsConnected()
+}
+
 func (self *DeviceLocal) GetConnectEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -3816,6 +3844,8 @@ func (self *DeviceLocal) setDestination(
 					settings := newDeviceLocalPlatformTransportSettings(
 						self.settings.MemoryTargetByteCount,
 						self.platformTransportBudget,
+						nil,
+						self.settings.DnsPumpHost,
 					)
 					applyMobileLowMemoryPlatformTransportSettings(
 						settings,
@@ -6765,6 +6795,56 @@ func (self *DeviceLocal) persistLogVerbosity(level int) {
 // GetLogVerbosity returns the verbosity this device's process is logging at.
 func (self *DeviceLocal) GetLogVerbosity() int {
 	return GetLogVerbosity()
+}
+
+// SetControlIpFamilyPolicy sets the control-plane address family policy of the
+// process this device runs in.
+//
+// On ios that is the network extension, which is the process that dials the
+// api, the platform websocket and the h3 name path while the tunnel is up, so
+// this is the copy that decides whether a stuck family is routed around. An
+// app in another process reaches this through
+// DeviceRemote.SetControlIpFamilyPolicy, which sets both.
+func (self *DeviceLocal) SetControlIpFamilyPolicy(policy int) {
+	if self.hostedIncompatibleGuarded("SetControlIpFamilyPolicy") {
+		// a hosted device shares one process with unrelated customers'
+		// devices, and the policy is process-global: it is not one tenant's to
+		// force
+		return
+	}
+	clamped := clampIpFamilyPolicy(policy)
+	SetControlIpFamilyPolicy(clamped)
+	self.persistControlIpFamilyPolicy(clamped)
+}
+
+// persistControlIpFamilyPolicy records the policy so the next process to start
+// a device comes up under it -- and, more to the point, so this process's next
+// api call is made under it before any device exists (see
+// `applyPersistedControlIpFamilyPolicy`). The write is serialized with the rest
+// of the local state and does not block the setter.
+func (self *DeviceLocal) persistControlIpFamilyPolicy(policy int) {
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		asyncLocalState.serialAsync(func() error {
+			return asyncLocalState.GetLocalState().SetControlIpFamilyPolicy(policy)
+		})
+	}
+}
+
+// GetControlIpFamilyPolicy returns the policy this device's process is dialing
+// the control plane under.
+func (self *DeviceLocal) GetControlIpFamilyPolicy() int {
+	return GetControlIpFamilyPolicy()
+}
+
+// GetControlIpFamilyStatus describes any family this device's process has
+// demoted, and is empty when there is none.
+//
+// This process's own ledger, which is the whole point: on ios this is the
+// network extension, the process that dials the control plane while the tunnel
+// is up and therefore the only one that learns a demotion from it. The app
+// reaches this through DeviceRemote.GetControlIpFamilyStatus.
+func (self *DeviceLocal) GetControlIpFamilyStatus() string {
+	return GetControlIpFamilyStatus()
 }
 
 // zipWriteEntry writes one entry into an open zip. transform, when non-nil,

@@ -200,6 +200,41 @@ func (self *fakeMigratablePlatformTransport) connect() {
 	self.mutex.Unlock()
 }
 
+// Provider readiness follows the live carrier generation and closes with the
+// provider/device. Construction of a disconnected transport is never ready.
+func TestDeviceLocalProviderConnectedTracksLiveCarrier(t *testing.T) {
+	auth := &connect.ClientAuth{
+		ByJwt:      "test",
+		InstanceId: connect.NewId(),
+		AppVersion: "0.0.0",
+	}
+	transport := newFakeMigratablePlatformTransport(auth, false)
+	provider := &deviceLocalProvider{platformTransport: transport}
+	device := &DeviceLocal{provider: provider}
+	if provider.IsConnected() || device.GetProviderConnected() {
+		t.Fatal("disconnected provider reported ready after construction")
+	}
+	transport.connect()
+	if !provider.IsConnected() || !device.GetProviderConnected() {
+		t.Fatal("connected provider did not report ready")
+	}
+	provider.stateLock.Lock()
+	provider.closed = true
+	provider.stateLock.Unlock()
+	if provider.IsConnected() || device.GetProviderConnected() {
+		t.Fatal("closed provider retained carrier readiness")
+	}
+	provider.stateLock.Lock()
+	provider.closed = false
+	provider.stateLock.Unlock()
+	device.stateLock.Lock()
+	device.closed = true
+	device.stateLock.Unlock()
+	if device.GetProviderConnected() {
+		t.Fatal("closed device retained provider readiness")
+	}
+}
+
 // Provider shutdown closes migration admission and waits for a replacement
 // constructor already admitted by a control callback. A late replacement may
 // never become current after the owner has published completion.

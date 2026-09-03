@@ -67,7 +67,8 @@ need UI work), any non-Android mock-location analog.
   inlined. Existing vocabulary to reuse: `FindLocationsResult` (`city`, `city_location_id`,
   `region`, `region_location_id`, `country`, `country_location_id`, `country_code`) and
   `MyIPInfoResult` `coordinates {lat, lon}` — the only lat/lon in the spec today. Known
-  drift: spec lists `force_count`/`force_minimum` that the Go args lack.
+  drift: the spec's `force_count` is not exposed by the Go args; `force_minimum` is exposed
+  for validator measurement bootstrap.
 - **Single consumer**: `ip_remote_multi_client_api.go:256` collapses the response into
   `map[MultiHopId]DestinationStats` — `DestinationStats{EstimatedBytesPerSecond, Tier}`
   (`ip_remote_multi_client.go:61`) is the only surviving metadata carrier, already embedded
@@ -1333,4 +1334,3 @@ Two traps the ports had to handle, worth knowing before touching this again:
   back to the literal, so no compile break). Needs a separate store import; not touched
   here.
 - Apple/web UI ports remain; they consume the server/connect/sdk layers unchanged.
-

@@ -6710,6 +6710,28 @@ func urnet_device_get_contract_status(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_contract_status")
 }
 
+//export urnet_device_get_control_ip_family_policy
+func urnet_device_get_control_ip_family_policy(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_device_get_control_ip_family_policy")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_control_ip_family_policy")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetControlIpFamilyPolicy()
+	return C.int64_t(r0)
+}
+
+//export urnet_device_get_control_ip_family_status
+func urnet_device_get_control_ip_family_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_control_ip_family_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_control_ip_family_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlIpFamilyStatus()
+	return cString(string(r0))
+}
+
 //export urnet_device_get_default_location
 func urnet_device_get_default_location(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_default_location")
@@ -7359,6 +7381,16 @@ func urnet_device_set_connect_location(self C.uint64_t, location *C.char) {
 	self_.SetConnectLocation(location_)
 }
 
+//export urnet_device_set_control_ip_family_policy
+func urnet_device_set_control_ip_family_policy(self C.uint64_t, policy C.int64_t) {
+	defer cgoGuard("urnet_device_set_control_ip_family_policy")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_control_ip_family_policy")
+	if !ok {
+		return
+	}
+	self_.SetControlIpFamilyPolicy(int(int64(policy)))
+}
+
 //export urnet_device_set_default_location
 func urnet_device_set_default_location(self C.uint64_t, location *C.char) {
 	defer cgoGuard("urnet_device_set_default_location")
@@ -7969,6 +8001,17 @@ func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_local_get_provide_secret_keys")
+}
+
+//export urnet_device_local_get_provider_connected
+func urnet_device_local_get_provider_connected(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_get_provider_connected")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_provider_connected")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProviderConnected()
+	return C.bool(r0)
 }
 
 //export urnet_device_local_get_reliability_metrics
@@ -10203,6 +10246,20 @@ func urnet_get_color_hex(code *C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_get_control_ip_family_policy
+func urnet_get_control_ip_family_policy() C.int64_t {
+	defer cgoGuard("urnet_get_control_ip_family_policy")
+	r0 := sdk.GetControlIpFamilyPolicy()
+	return C.int64_t(r0)
+}
+
+//export urnet_get_control_ip_family_status
+func urnet_get_control_ip_family_status() *C.char {
+	defer cgoGuard("urnet_get_control_ip_family_status")
+	r0 := sdk.GetControlIpFamilyStatus()
+	return cString(string(r0))
+}
+
 //export urnet_get_default_dns_resolver_settings
 func urnet_get_default_dns_resolver_settings() *C.char {
 	defer cgoGuard("urnet_get_default_dns_resolver_settings")
@@ -10485,6 +10542,17 @@ func urnet_local_state_get_connect_location(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_local_state_get_connect_location")
+}
+
+//export urnet_local_state_get_control_ip_family_policy
+func urnet_local_state_get_control_ip_family_policy(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_local_state_get_control_ip_family_policy")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_control_ip_family_policy")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetControlIpFamilyPolicy()
+	return C.int64_t(r0)
 }
 
 //export urnet_local_state_get_default_location
@@ -10876,6 +10944,21 @@ func urnet_local_state_set_connect_location(self C.uint64_t, connectLocation *C.
 		}
 	}
 	err := self_.SetConnectLocation(connectLocation_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_control_ip_family_policy
+func urnet_local_state_set_control_ip_family_policy(self C.uint64_t, policy C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_control_ip_family_policy")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_control_ip_family_policy")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetControlIpFamilyPolicy(int(int64(policy)))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)
@@ -11671,6 +11754,16 @@ func urnet_network_space_service_url(self C.uint64_t, scheme *C.char, service *C
 	}
 	r0 := self_.ServiceUrl(goString(scheme), goString(service))
 	return cString(string(r0))
+}
+
+//export urnet_network_space_set_control_ip_family_policy
+func urnet_network_space_set_control_ip_family_policy(self C.uint64_t, policy C.int64_t) {
+	defer cgoGuard("urnet_network_space_set_control_ip_family_policy")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_control_ip_family_policy")
+	if !ok {
+		return
+	}
+	self_.SetControlIpFamilyPolicy(int(int64(policy)))
 }
 
 //export urnet_network_space_to_json
@@ -13107,6 +13200,12 @@ func urnet_service_url(key *C.char, values *C.char, scheme *C.char, service *C.c
 	}
 	r0 := sdk.ServiceUrl(key_, values_, goString(scheme), goString(service))
 	return cString(string(r0))
+}
+
+//export urnet_set_control_ip_family_policy
+func urnet_set_control_ip_family_policy(policy C.int64_t) {
+	defer cgoGuard("urnet_set_control_ip_family_policy")
+	sdk.SetControlIpFamilyPolicy(int(int64(policy)))
 }
 
 //export urnet_set_egress_interface_index

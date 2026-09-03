@@ -157,10 +157,10 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
 	target := ByteCount(24 * 1024 * 1024)
 	firstBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
-	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget)
-	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget)
+	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "")
+	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "")
 	secondBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
-	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget)
+	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget, nil, "")
 
 	if firstWindow.PlatformTransportBudget != firstProvider.PlatformTransportBudget {
 		t.Fatal("one DeviceLocal did not share its budget across window and provider carriers")
@@ -176,6 +176,54 @@ func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
 	}
 	if workingSet := firstWindow.H1BudgetByteCount + firstWindow.H3BudgetByteCount; firstBudget.Stats().TotalByteCount < workingSet {
 		t.Fatalf("platform carrier budget cannot fit Auto H1+H3 working set %d", workingSet)
+	}
+}
+
+// A headless provider's source identity must reach its QUIC packet endpoint,
+// not only the TCP/UDP exit dialers. This reproduces the carrier omission that
+// collapsed a thousand simulated miners onto one server rate-limit identity.
+func TestDeviceLocalPlatformTransportCopiesProviderPacketConnFactory(t *testing.T) {
+	called := 0
+	dialContextSettings := &connect.DialContextSettings{
+		PacketConnFactory: func(ctx context.Context) (net.PacketConn, error) {
+			called++
+			listenConfig := &net.ListenConfig{}
+			return listenConfig.ListenPacket(ctx, "udp4", "127.0.0.1:0")
+		},
+	}
+	settings := newDeviceLocalPlatformTransportSettings(
+		24*1024*1024,
+		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
+		dialContextSettings,
+		"127.0.1.7",
+	)
+	if settings.H3PacketConnFactory == nil {
+		t.Fatal("provider packet endpoint was not copied into the H3 carrier")
+	}
+	packetConn, err := settings.H3PacketConnFactory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := packetConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if called != 1 {
+		t.Fatalf("provider packet endpoint called %d times, want one", called)
+	}
+	if settings.DnsPumpHost != "127.0.1.7" {
+		t.Fatalf("provider DNS pump host = %q, want rendered ingress", settings.DnsPumpHost)
+	}
+	ordinary := newDeviceLocalPlatformTransportSettings(
+		24*1024*1024,
+		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
+		nil,
+		"",
+	)
+	if ordinary.H3PacketConnFactory != nil {
+		t.Fatal("ordinary device unexpectedly installed a custom H3 packet endpoint")
+	}
+	if ordinary.DnsPumpHost != connect.DefaultDnsPumpHost {
+		t.Fatalf("ordinary DNS pump host = %q, want production default", ordinary.DnsPumpHost)
 	}
 }
 

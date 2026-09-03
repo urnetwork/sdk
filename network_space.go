@@ -153,6 +153,9 @@ type NetworkSpace struct {
 	clientStrategy  *connect.ClientStrategy
 	asyncLocalState *AsyncLocalState
 	api             *Api
+	// the space's dial logger, carried so the manager's one-time control ip
+	// family restore lands on the same log as the dials it governs
+	log connect.Logger
 }
 
 func newNetworkSpace(
@@ -225,6 +228,7 @@ func newNetworkSpaceWithConnectSettings(
 		clientStrategy:  clientStrategy,
 		asyncLocalState: asyncLocalState,
 		api:             api,
+		log:             clientStrategySettings.ConnectSettings.Log,
 	}
 }
 
@@ -464,6 +468,44 @@ func (self *NetworkSpace) GetApi() *Api {
 	return self.api
 }
 
+// SetControlIpFamilyPolicy sets the control-plane address family policy for
+// this process and records it, so a relaunch comes back up under it.
+//
+// The entry point a developer ui uses when there is no Device -- signed out,
+// or with the tunnel down. With a Device, use Device.SetControlIpFamilyPolicy
+// instead: on ios that also carries the policy into the packet tunnel
+// extension, which is the process that dials while the tunnel is up.
+func (self *NetworkSpace) SetControlIpFamilyPolicy(policy int) {
+	clamped := clampIpFamilyPolicy(policy)
+	SetControlIpFamilyPolicy(clamped)
+	if self.asyncLocalState != nil {
+		self.asyncLocalState.serialAsync(func() error {
+			return self.asyncLocalState.GetLocalState().SetControlIpFamilyPolicy(clamped)
+		})
+	}
+}
+
+// restoreControlIpFamilyPolicy applies this space's persisted control-plane ip
+// family policy to this process, and reports whether there was one to apply.
+//
+// Only the manager calls this, and only once per manager (see
+// `NetworkSpaceManager.restoreControlIpFamilyPolicyOnce`): the policy is
+// process-global while the persisted copy is per-space, so restoring from
+// every constructed space would let whichever space happened to be built last
+// decide what the process dials under.
+//
+// The bool is what the manager's guard is spent on. A space with no local
+// storage, or one that has never had a policy written, changes nothing here --
+// and a guard spent on it would be a guard the space that DOES have a policy
+// never gets.
+func (self *NetworkSpace) restoreControlIpFamilyPolicy() bool {
+	if self.asyncLocalState == nil {
+		return false
+	}
+	_, applied := applyPersistedControlIpFamilyPolicy(self.asyncLocalState.GetLocalState(), self.log)
+	return applied
+}
+
 func (self *NetworkSpace) close() {
 	self.closeOnce.Do(func() {
 		self.cancel()
@@ -531,6 +573,63 @@ type NetworkSpaceManager struct {
 
 	networkSpacesChangeListeners      *connect.CallbackList[NetworkSpacesChangeListener]
 	activeNetworkSpaceChangeListeners *connect.CallbackList[ActiveNetworkSpaceChangeListener]
+
+	// the control ip family policy is restored from ONE space, ONCE per
+	// manager. See restoreControlIpFamilyPolicyOnce.
+	//
+	// Its own lock, not stateLock: `load` and `updateNetworkSpace` both call
+	// the restore while holding stateLock, and sync.Mutex is not reentrant.
+	controlIpFamilyPolicyRestoreLock sync.Mutex
+	controlIpFamilyPolicyRestored    bool
+}
+
+// restoreControlIpFamilyPolicyOnce applies networkSpace's persisted
+// control-plane ip family policy to this process, at most once per manager.
+//
+// Two properties this has to hold, and neither survives restoring at
+// NetworkSpace construction:
+//
+//   - the ACTIVE space wins. The runtime policy is process-global while the
+//     persisted copy lives under each space's own local storage. `load`
+//     constructs every stored space before it selects the active one, so a
+//     per-construction restore hands the process whichever space came last in
+//     the stored slice. With a second api host configured alongside the
+//     production one that is routinely the wrong space.
+//   - a runtime set is not undone. `updateNetworkSpace` rebuilds a space on
+//     every launch and on every space import, so a per-construction
+//     restore re-imposes the persisted value over one an embedder had just set
+//     through `SetControlIpFamilyPolicy`, with nothing in the logs to say why.
+//
+// Called with the space this manager is bound to: the active one wherever
+// there is a selection, and otherwise the space just created or imported. The
+// second case is the ios packet tunnel extension, which imports its space and
+// never selects an active one -- gating purely on the active space would leave
+// the extension dialing under Auto until the app's device rpc reached it.
+//
+// The guard is spent only when a policy was ACTUALLY applied. A space with
+// nothing persisted applies nothing, so letting it spend the guard would let
+// it decide the process's policy by silence: with a second api host
+// configured alongside the production one, the bundled space with no policy is
+// routinely the first one the restore sees, and it would leave the space that
+// does have one unable to restore it for the rest of the session.
+//
+// Once a policy IS applied the guard is closed for good, which is the half
+// this must not lose: `updateNetworkSpace` rebuilds a space on every launch
+// and every space import, and a second apply there would re-impose the
+// persisted value over one an embedder had just set through
+// `SetControlIpFamilyPolicy`.
+func (self *NetworkSpaceManager) restoreControlIpFamilyPolicyOnce(networkSpace *NetworkSpace) {
+	if networkSpace == nil {
+		return
+	}
+
+	self.controlIpFamilyPolicyRestoreLock.Lock()
+	defer self.controlIpFamilyPolicyRestoreLock.Unlock()
+
+	if self.controlIpFamilyPolicyRestored {
+		return
+	}
+	self.controlIpFamilyPolicyRestored = networkSpace.restoreControlIpFamilyPolicy()
 }
 
 func NewNetworkSpaceManagerNoStorage() *NetworkSpaceManager {
@@ -632,6 +731,15 @@ func (self *NetworkSpaceManager) load() error {
 		previous := slices.Collect(maps.Values(self.networkSpaces))
 		self.networkSpaces = replacementNetworkSpaces
 		self.activeNetworkSpace = replacementActiveNetworkSpace
+
+		// AFTER the selection above, and still inside the manager constructor:
+		// no listener can be registered yet and no Device exists, so nothing
+		// has been able to make an api request. That is the whole point of
+		// restoring here rather than at Device construction -- on a relaunch
+		// the login call is the first request out, and for the user this
+		// setting exists for it is the call that hangs.
+		self.restoreControlIpFamilyPolicyOnce(self.activeNetworkSpace)
+
 		return previous
 	}()
 	for _, networkSpace := range append(previousNetworkSpaces, replacedNetworkSpaces...) {
@@ -741,6 +849,14 @@ func (self *NetworkSpaceManager) SetActiveNetworkSpace(networkSpace *NetworkSpac
 		set = true
 	}()
 	if set {
+		// the first selection is a restore point too: a fresh install, or one
+		// whose `.network_spaces` was unreadable, has no active space when the
+		// manager is built and gets one here, still before any api request.
+		// It is also the point an in-session space switch reaches, so a space
+		// whose policy has never been restored still gets to restore it.
+		// The once guard is what keeps a re-selection made AFTER a policy was
+		// applied from re-imposing a persisted one over one set at runtime.
+		self.restoreControlIpFamilyPolicyOnce(self.GetActiveNetworkSpace())
 		self.store()
 		self.activeNetworkSpaceChanged(self.GetActiveNetworkSpace())
 	}
@@ -815,6 +931,17 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 		}
 		self.networkSpaces[*key] = copyNetworkSpace
 		installed = true
+
+		// only when this manager has no active space at all -- the ios packet
+		// tunnel extension, which imports its space and never selects one, and
+		// the app path where `.network_spaces` was missing or unreadable and
+		// the bundled space is created right here. With an active space
+		// selected the restore has already run against it and the once guard
+		// makes this a no-op, which is what stops every launch and every
+		// space import from re-imposing a persisted policy.
+		if self.activeNetworkSpace == nil {
+			self.restoreControlIpFamilyPolicyOnce(copyNetworkSpace)
+		}
 	}()
 	if !installed {
 		copyNetworkSpace.close()

@@ -100,6 +100,8 @@ func newDeviceLocalProviderWithOverrides(
 	platformTransportBudget *connect.PlatformTransportBudget,
 	targetMode connect.TransportMode,
 	modePreferences map[connect.TransportMode]int,
+	dialContextSettings *connect.DialContextSettings,
+	dnsPumpHost string,
 ) *deviceLocalProvider {
 	providerCtx, providerCancel := context.WithCancel(ctx)
 	apiUrl := networkSpace.apiUrl
@@ -152,6 +154,8 @@ func newDeviceLocalProviderWithOverrides(
 	platformTransportSettings := newDeviceLocalPlatformTransportSettings(
 		deviceMemoryTargetByteCount,
 		platformTransportBudget,
+		dialContextSettings,
+		dnsPumpHost,
 	)
 	platformTransportSettings.Log = clientSettings.Log
 	platformTransportSettings.ModePreferences = maps.Clone(modePreferences)
@@ -462,6 +466,20 @@ func (self *deviceLocalProvider) SetTransportPolicy(
 
 func (self *deviceLocalProvider) Client() *connect.Client {
 	return self.client
+}
+
+// Reports whether the current provider carrier has registered at least one
+// route. Migration swaps the carrier under stateLock, so the external status
+// read occurs only after the current generation has been captured.
+func (self *deviceLocalProvider) IsConnected() bool {
+	self.stateLock.Lock()
+	if self.closed {
+		self.stateLock.Unlock()
+		return false
+	}
+	platformTransport := self.platformTransport
+	self.stateLock.Unlock()
+	return platformTransport != nil && platformTransport.IsConnected()
 }
 
 func (self *deviceLocalProvider) LocalUserNat() *connect.LocalUserNat {

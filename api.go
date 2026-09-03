@@ -943,6 +943,7 @@ type FindProviders2Args struct {
 	Count            int               `json:"count"`
 	ExcludeClientIds *IdList           `json:"exclude_client_ids"`
 	RankMode         string            `json:"rank_mode,omitempty"`
+	ForceMinimum     bool              `json:"force_minimum,omitempty"`
 }
 
 type FindProviders2Result struct {

@@ -259,6 +259,8 @@ EXPORTS
 	urnet_device_get_connect_location
 	urnet_device_get_connected_provider_locations
 	urnet_device_get_contract_status
+	urnet_device_get_control_ip_family_policy
+	urnet_device_get_control_ip_family_status
 	urnet_device_get_default_location
 	urnet_device_get_dns_resolver_settings
 	urnet_device_get_done
@@ -327,6 +329,7 @@ EXPORTS
 	urnet_device_local_get_provide_secret_keys
 	urnet_device_local_get_provide_tls_certificate_pem
 	urnet_device_local_get_provide_tls_private_key_pem
+	urnet_device_local_get_provider_connected
 	urnet_device_local_get_reliability_metrics
 	urnet_device_local_get_reliability_settings
 	urnet_device_local_get_sn_chain_settings
@@ -478,6 +481,7 @@ EXPORTS
 	urnet_device_set_can_refer
 	urnet_device_set_can_show_rating_dialog
 	urnet_device_set_connect_location
+	urnet_device_set_control_ip_family_policy
 	urnet_device_set_default_location
 	urnet_device_set_destination
 	urnet_device_set_dns_resolver_settings
@@ -531,6 +535,8 @@ EXPORTS
 	urnet_generate_shared_secret
 	urnet_generate_wallet_key_pair
 	urnet_get_color_hex
+	urnet_get_control_ip_family_policy
+	urnet_get_control_ip_family_status
 	urnet_get_default_dns_resolver_settings
 	urnet_get_default_probe_suite_config
 	urnet_get_default_tunnel_dns_address_ipv4
@@ -562,6 +568,7 @@ EXPORTS
 	urnet_local_state_get_can_refer
 	urnet_local_state_get_can_show_rating_dialog
 	urnet_local_state_get_connect_location
+	urnet_local_state_get_control_ip_family_policy
 	urnet_local_state_get_default_location
 	urnet_local_state_get_device_local_key_material
 	urnet_local_state_get_dns_resolver_settings
@@ -590,6 +597,7 @@ EXPORTS
 	urnet_local_state_set_can_refer
 	urnet_local_state_set_can_show_rating_dialog
 	urnet_local_state_set_connect_location
+	urnet_local_state_set_control_ip_family_policy
 	urnet_local_state_set_default_location
 	urnet_local_state_set_device_local_key_material
 	urnet_local_state_set_dns_resolver_settings
@@ -660,6 +668,7 @@ EXPORTS
 	urnet_network_space_manager_update_network_space
 	urnet_network_space_manager_update_network_space_values
 	urnet_network_space_service_url
+	urnet_network_space_set_control_ip_family_policy
 	urnet_network_space_to_json
 	urnet_network_user_view_controller_add_is_loading_listener
 	urnet_network_user_view_controller_add_is_updating_listener
@@ -763,6 +772,7 @@ EXPORTS
 	urnet_render_identicon_png
 	urnet_selectable_transport_modes
 	urnet_service_url
+	urnet_set_control_ip_family_policy
 	urnet_set_egress_interface_index
 	urnet_set_log_dir
 	urnet_set_log_dir_for_process
