@@ -4,7 +4,7 @@ set -eu
 
 # These are artifact-size regression ceilings, not runtime-memory limits.
 # Override them only for an explicitly reviewed budget change.
-sdk_max_bytes="${URNETWORK_IOS_SDK_MAX_BYTE_COUNT:-62914560}" # 60 MiB
+sdk_max_bytes="${URNETWORK_IOS_SDK_MAX_BYTE_COUNT:-67108864}" # 64 MiB (raised from 60 on 2026-09-03: the points leaderboard view controller and the emoji validator added ~0.6 MiB)
 extension_sdk_max_bytes="${URNETWORK_IOS_EXTENSION_SDK_MAX_BYTE_COUNT:-62914560}" # 60 MiB
 extension_max_bytes="${URNETWORK_IOS_EXTENSION_MAX_BYTE_COUNT:-40894464}" # 39 MiB
 
