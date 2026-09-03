@@ -162,6 +162,8 @@ export interface DeviceRemote {
   getRemoteConnected(): boolean;
   /** Last explicit RPC sync refusal; empty while pending or after success. */
   getSyncError(): string;
+  /** A random tag of 1–3 distinct emoji to prefill the emoji-tag editor with; count 0 or omitted picks the length at random. */
+  suggestEmojiTag(count?: number): string;
 
   // offline / tunnel
   getOffline(): boolean;
@@ -916,6 +918,8 @@ export interface AccountHost {
   /** Validate with validateEmojiTag first and send `normalized`; "" clears the tag. */
   setEmojiTag(emojiTag: string): Promise<any>;
   validateEmojiTag(emojiTag: string): EmojiTagValidation;
+  /** A random tag of 1–3 distinct emoji to prefill the editor with; count 0 or omitted picks the length at random. */
+  suggestEmojiTag(count?: number): string;
   getNetworkLeaderboardRanking(): Promise<any>;
   setNetworkLeaderboardPublic(isPublic: boolean): Promise<any>;
   getNetworkReliability(): Promise<any>;

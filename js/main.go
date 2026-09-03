@@ -239,6 +239,11 @@ func main() {
 	js.Global().Set("URnetworkValidateEmojiTag", js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsJson(sdk.ValidateEmojiTag(stringArg(args, 0)))
 	}))
+	// SuggestEmojiTag(count): a random tag of 1–3 distinct emoji to prefill
+	// the editor with (count 0 or omitted picks the length at random)
+	js.Global().Set("URnetworkSuggestEmojiTag", js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(sdk.SuggestEmojiTag(int(int64Arg(args, 0))))
+	}))
 	registerSnExports()
 
 	select {

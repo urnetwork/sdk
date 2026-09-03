@@ -332,3 +332,36 @@ func TestValidateEmojiTag(t *testing.T) {
 		t.Fatal("cap")
 	}
 }
+
+func TestSuggestEmojiTag(t *testing.T) {
+	if EmojiTagSuggestMaxCount != 3 {
+		t.Fatal("suggest cap")
+	}
+	lengths := map[int]bool{}
+	for i := 0; i < 300; i++ {
+		count := i % 5 // 0..4
+		tag := SuggestEmojiTag(count)
+		v := ValidateEmojiTag(tag)
+		if !v.Ok || v.Normalized != tag {
+			t.Fatalf("SuggestEmojiTag(%d) = %q: %+v", count, tag, v)
+		}
+		switch {
+		case count == 0:
+			if v.Count < 1 || EmojiTagSuggestMaxCount < v.Count {
+				t.Fatalf("SuggestEmojiTag(0) = %q has %d emoji", tag, v.Count)
+			}
+			lengths[v.Count] = true
+		case EmojiTagSuggestMaxCount < count:
+			if v.Count != EmojiTagSuggestMaxCount {
+				t.Fatalf("SuggestEmojiTag(%d) = %q has %d emoji", count, tag, v.Count)
+			}
+		default:
+			if v.Count != count {
+				t.Fatalf("SuggestEmojiTag(%d) = %q has %d emoji", count, tag, v.Count)
+			}
+		}
+	}
+	if len(lengths) != EmojiTagSuggestMaxCount {
+		t.Fatalf("random lengths = %v", lengths)
+	}
+}

@@ -165,6 +165,7 @@ inline constexpr int64_t EmojiTagMaxCount = 6;
 inline constexpr const char* EmojiTagReasonEmpty = "empty";
 inline constexpr const char* EmojiTagReasonNotEmoji = "not_emoji";
 inline constexpr const char* EmojiTagReasonTooMany = "too_many";
+inline constexpr int64_t EmojiTagSuggestMaxCount = 3;
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
 inline constexpr int64_t IpProtocolUnknown = 0;
@@ -23952,6 +23953,10 @@ inline std::optional<SnChainSettings> snTestnetChainSettings() {
 		return std::nullopt;
 	}
 	return detail::parseJson<SnChainSettings>(r_s->c_str());
+}
+inline std::string suggestEmojiTag(int64_t count) {
+	char* r_c = urnet_suggest_emoji_tag(count);
+	return detail::takeString(r_c);
 }
 inline std::optional<StringList> transportSettingsAutoModes(const std::optional<TransportSettings>& settings) {
 	std::string settings_json;

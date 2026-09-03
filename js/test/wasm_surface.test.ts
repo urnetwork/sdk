@@ -198,3 +198,12 @@ test("account host and controller declarations match WASM runtime keys", () => {
     assert.match(deviceRuntime, new RegExp(`\"${field}\"\\s*:`));
   }
 });
+
+test("suggestEmojiTag declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const main = source("../main.go");
+  assert.match(declarations, /\bsuggestEmojiTag\s*\(/);
+  assert.match(source("../account_host.go"), /m\["suggestEmojiTag"\]/);
+  assert.match(source("../device_remote.go"), /m\["suggestEmojiTag"\]/);
+  assert.match(main, /URnetworkSuggestEmojiTag/);
+});

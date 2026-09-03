@@ -153,6 +153,12 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["getSyncError"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(device.GetSyncError())
 	})
+	// suggestEmojiTag(count): synchronous; a random tag of 1–3 distinct emoji
+	// to prefill the emoji-tag editor with (count 0 or omitted picks the
+	// length at random). Pure; no device state involved.
+	m["suggestEmojiTag"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(sdk.SuggestEmojiTag(int(int64Arg(args, 0))))
+	})
 
 	// offline
 	m["getOffline"] = js.FuncOf(func(this js.Value, args []js.Value) any {

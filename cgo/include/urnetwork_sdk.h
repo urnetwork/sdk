@@ -84,6 +84,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EMOJI_TAG_REASON_EMPTY "empty"
 #define URNET_EMOJI_TAG_REASON_NOT_EMOJI "not_emoji"
 #define URNET_EMOJI_TAG_REASON_TOO_MANY "too_many"
+#define URNET_EMOJI_TAG_SUGGEST_MAX_COUNT 3
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
 #define URNET_IP_PROTOCOL_UNKNOWN 0
@@ -1476,6 +1477,7 @@ char* urnet_sn_fleet_binding_digest(const char* binding_json, char** out_error);
 void urnet_sn_gas_balance_for(const char* settings_json, const char* address, urnet_sn_gas_balance_cb callback_result, void* callback_user_data);
 char* urnet_sn_payout_leaf_hex(const char* coldkey_ss58, int64_t share_bps);
 char* urnet_sn_testnet_chain_settings(void);
+char* urnet_suggest_emoji_tag(int64_t count);
 char* urnet_transport_settings_auto_modes(const char* settings_json);
 char* urnet_transport_settings_enabled_transport_types(const char* settings_json);
 bool urnet_transport_settings_equal(const char* a_json, const char* b_json);

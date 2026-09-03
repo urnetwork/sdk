@@ -127,6 +127,11 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 	m["validateEmojiTag"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsJson(sdk.ValidateEmojiTag(stringArg(args, 0)))
 	})
+	// suggestEmojiTag(count): synchronous; a random tag of 1–3 distinct emoji
+	// to prefill the editor with (count 0 or omitted picks the length at random)
+	m["suggestEmojiTag"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(sdk.SuggestEmojiTag(int(int64Arg(args, 0))))
+	})
 	m["getNetworkReferralCode"] = promiseMethod(func(args []js.Value) js.Value {
 		return apiPromise(func(cb connect.ApiCallback[*sdk.GetNetworkReferralCodeResult]) {
 			api.GetNetworkReferralCode(sdk.GetNetworkReferralCodeCallback(cb))

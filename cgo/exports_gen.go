@@ -13599,6 +13599,13 @@ func urnet_subscription_balance_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_suggest_emoji_tag
+func urnet_suggest_emoji_tag(count C.int64_t) *C.char {
+	defer cgoGuard("urnet_suggest_emoji_tag")
+	r0 := sdk.SuggestEmojiTag(int(int64(count)))
+	return cString(string(r0))
+}
+
 //export urnet_transport_settings_auto_modes
 func urnet_transport_settings_auto_modes(settings *C.char) *C.char {
 	defer cgoGuard("urnet_transport_settings_auto_modes")

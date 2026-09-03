@@ -427,6 +427,17 @@ func FormatRank(rank int64) string {
 // EmojiTagMaxCount is the most emoji a tag can hold.
 const EmojiTagMaxCount = emoji.MaxTagEmoji
 
+// EmojiTagSuggestMaxCount is the most emoji SuggestEmojiTag returns.
+const EmojiTagSuggestMaxCount = emoji.SuggestMaxEmoji
+
+// SuggestEmojiTag returns a random tag of count distinct emoji to prefill the
+// emoji editor with, so a network gets a usable tag without typing: count is
+// clamped to 1..EmojiTagSuggestMaxCount, and zero or less picks the length at
+// random in that range. Every suggestion passes ValidateEmojiTag unchanged.
+func SuggestEmojiTag(count int) string {
+	return emoji.Suggest(count, nil)
+}
+
 // Why ValidateEmojiTag rejected a tag; the app localizes by reason.
 const (
 	EmojiTagReasonEmpty    = "empty"
