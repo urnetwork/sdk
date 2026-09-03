@@ -582,3 +582,32 @@ func TestRedactorGivesOneAddressOneTokenAcrossRenderings(t *testing.T) {
 		tokens[want] = group.name
 	}
 }
+
+// The family token has to survive redaction, because redacted is the mode a
+// user is asked to send. Both address patterns rewrite IPv4 and IPv6 literals
+// to the SAME opaque token shape -- including the brackets that would
+// otherwise give an IPv6 address away -- so in a redacted bundle the address
+// cannot tell a support engineer which family was dialed. This token is the
+// only thing that can, and nothing else in the suite would catch it being
+// eaten.
+func TestRedactorKeepsTheFamilyToken(t *testing.T) {
+	redactor, err := newLogRedactor()
+	if err != nil {
+		t.Fatalf("newLogRedactor: %v", err)
+	}
+
+	line := "[family]dial tag=api net=tcp family=6 policy=auto demoted=none"
+	got := redactor.redactLine(line)
+	if got != line {
+		t.Fatalf("redaction changed the family line:\n got %q\nwant %q", got, line)
+	}
+
+	withAddr := "[family]dial tag=api net=tcp family=4 policy=force4 addr=192.0.2.1:443"
+	redacted := redactor.redactLine(withAddr)
+	if !strings.Contains(redacted, "family=4") {
+		t.Fatalf("the family token did not survive: %q", redacted)
+	}
+	if strings.Contains(redacted, "192.0.2.1") {
+		t.Fatalf("the address was not redacted: %q", redacted)
+	}
+}

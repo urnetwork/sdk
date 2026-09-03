@@ -315,6 +315,64 @@ func (self *LocalState) logVerbosityIfSet() (int, bool) {
 	return LogVerbosityDefault, false
 }
 
+// controlIpFamilyPolicyFileName is the persisted control-plane ip family
+// policy, named once rather than inlined at each accessor the way its
+// neighbors here are.
+//
+// The neighbors get away with it because a typo in one of them is loud: a
+// setting that never comes back is noticed. This one fails silently in the
+// worst direction. A user whose ipv6 path is broken forces IPv4, the write
+// succeeds, the menu reads it back from the process rather than the file, and
+// the next launch is stuck on the same login call -- with no error anywhere to
+// say the read went to a different name than the write.
+const controlIpFamilyPolicyFileName = ".control_ip_family_policy"
+
+// SetControlIpFamilyPolicy persists the control-plane address family policy
+// the user chose, so a relaunch comes back up under it.
+//
+// PER PROCESS, and not a channel between processes -- the same as
+// SetLogVerbosity, and for the same reason: this lives under the network
+// space's local storage, and on ios each process passes its own Documents
+// container. What carries a newly chosen policy across is the device rpc.
+//
+// Unlike the log verbosity, this one has to be restored BEFORE any device
+// exists: the login api call is made from the app process with no device, and
+// for the user this setting exists for that is the call that hangs. See
+// applyPersistedControlIpFamilyPolicy, which
+// NetworkSpaceManager.restoreControlIpFamilyPolicyOnce calls -- once, from the
+// active space, while the manager is still being built.
+func (self *LocalState) SetControlIpFamilyPolicy(policy int) error {
+	path := filepath.Join(self.localStorageDir, controlIpFamilyPolicyFileName)
+	policyBytes := []byte(fmt.Sprintf("%d", clampIpFamilyPolicy(policy)))
+	return os.WriteFile(path, policyBytes, LocalStorageFilePermissions)
+}
+
+// GetControlIpFamilyPolicy reads back the persisted policy. Unset or
+// unreadable both read as Auto, which is what a process dials under anyway --
+// restoring must never be what forces a family nobody asked for.
+func (self *LocalState) GetControlIpFamilyPolicy() int {
+	policy, _ := self.controlIpFamilyPolicyIfSet()
+	return policy
+}
+
+// controlIpFamilyPolicyIfSet is GetControlIpFamilyPolicy plus whether a policy
+// was ever written.
+//
+// Restoring at construction needs the difference: a persisted Auto is a policy
+// the user chose (they turned a force back off), while nothing persisted is no
+// instruction at all. Applying Auto for the second case would clear a policy
+// an embedder set some other way.
+func (self *LocalState) controlIpFamilyPolicyIfSet() (int, bool) {
+	path := filepath.Join(self.localStorageDir, controlIpFamilyPolicyFileName)
+	if policyBytes, err := os.ReadFile(path); err == nil {
+		var policy int
+		if _, err := fmt.Sscanf(string(policyBytes), "%d", &policy); err == nil {
+			return clampIpFamilyPolicy(policy), true
+		}
+	}
+	return IpFamilyPolicyAuto, false
+}
+
 func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
 	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
 	blockerEnabledBytes := []byte(fmt.Sprintf("%t", blockerEnabled))

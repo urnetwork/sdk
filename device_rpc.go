@@ -535,6 +535,16 @@ func newDeviceRemoteWithOverrides(
 		if ok && !settings.DisableHostedIncompatible {
 			deviceRemote.state.LogVerbosity.Set(level)
 		}
+
+		// the control ip family policy, restored and queued for the same two
+		// reasons: this process dials the api while the tunnel is down, and
+		// the device process -- the ios network extension -- dials it while
+		// the tunnel is up out of connect state this process cannot write.
+		// See `DeviceRemote.SetControlIpFamilyPolicy`.
+		policy, policyOk := applyPersistedControlIpFamilyPolicy(asyncLocalState.GetLocalState(), deviceRemote.log)
+		if policyOk && !settings.DisableHostedIncompatible {
+			deviceRemote.state.ControlIpFamilyPolicy.Set(policy)
+		}
 	}
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
@@ -5908,6 +5918,144 @@ func (self *DeviceRemote) GetLogVerbosity() int {
 	return GetLogVerbosity()
 }
 
+// SetControlIpFamilyPolicy sets both processes' control-plane address family
+// policy: this one directly, and the device process's over the rpc.
+//
+// Both, because both dial the control plane. This process makes the api calls
+// while the tunnel is down -- including the login a user with a stuck family
+// is wedged on -- and on ios the device process is the network extension,
+// which makes them while the tunnel is up, out of its own connect state that
+// this process cannot write.
+//
+// The policy is also persisted on every call, in this process's own local
+// state, so an app relaunch dials under the policy the user chose before any
+// device exists -- and the constructor re-queues it, because the extension's
+// copy is a separate file that a fresh install or a cleared extension
+// container may not have.
+//
+// The hosted guard covers the crossing only, matching SetLogVerbosity: a
+// hosted device's process is shared with unrelated tenants and its dialing is
+// not this client's to force, while this process's own policy is its own.
+//
+// The rpc tolerates a missing method so a device peer from an older build
+// refuses the call without the session being torn down; the app process is
+// still set either way.
+func (self *DeviceRemote) SetControlIpFamilyPolicy(policy int) {
+	clamped := clampIpFamilyPolicy(policy)
+
+	SetControlIpFamilyPolicy(clamped)
+
+	// this process's own record, for its own restart. Before the hosted guard,
+	// and for the same reason the set above is not guarded: this local state
+	// is THIS process's container -- on the hosted path a platform client, one
+	// per user -- and writing it changes nothing in the device's process
+	self.persistControlIpFamilyPolicy(clamped)
+
+	if self.hostedIncompatibleGuarded("SetControlIpFamilyPolicy") {
+		// the device side guards this too -- do not spend an rpc, or queue a
+		// value, on a call it is going to ignore
+		return
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	success := func() bool {
+		if self.service == nil {
+			// the tunnel is not running
+			return false
+		}
+		return rpcCallVoidAllowMissingMethod(
+			self.service,
+			"DeviceLocalRpc.SetControlIpFamilyPolicy",
+			clamped,
+			self.closeService,
+		) == nil
+	}()
+	if success {
+		// nothing is left to replay, and an older queued policy must not
+		// outlive the newer one the device just took
+		self.state.ControlIpFamilyPolicy.Unset()
+	} else {
+		// the device did not take the call (the tunnel is down, an older peer
+		// without the method, or a dead rpc). Queue it: the next sync request
+		// carries it, and the device applies and persists it in ITS process
+		self.state.ControlIpFamilyPolicy.Set(clamped)
+	}
+}
+
+// persistControlIpFamilyPolicy records the policy in THIS process's local
+// state, so an app relaunch dials under it from the first api call (see
+// `applyPersistedControlIpFamilyPolicy`).
+//
+// This is not a handoff to the device process. On ios that process reads a
+// different file in a different container, and gets the policy over the rpc --
+// see SetControlIpFamilyPolicy.
+func (self *DeviceRemote) persistControlIpFamilyPolicy(policy int) {
+	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		asyncLocalState.serialAsync(func() error {
+			return asyncLocalState.GetLocalState().SetControlIpFamilyPolicy(policy)
+		})
+	}
+}
+
+// GetControlIpFamilyPolicy returns the policy THIS process is dialing the
+// control plane under.
+//
+// Deliberately not an rpc round trip, for the same reasons as
+// GetLogVerbosity: SetControlIpFamilyPolicy sets both processes together, so
+// the local answer is the policy that was chosen, and it stays answerable
+// while the tunnel is down -- which is exactly when a user is in the developer
+// menu forcing a family. A value call over the rpc would also have to tear the
+// session down against a peer that lacks the method, since only the void call
+// has an allow-missing variant.
+func (self *DeviceRemote) GetControlIpFamilyPolicy() int {
+	return GetControlIpFamilyPolicy()
+}
+
+// GetControlIpFamilyStatus describes any family the DIALING process has
+// demoted, and is empty when there is none.
+//
+// The one member of this pair that IS an rpc round trip, and the departure is
+// the whole reason the method exists. GetControlIpFamilyPolicy can answer
+// locally because SetControlIpFamilyPolicy sets both processes together, so
+// the two agree by construction. A demotion is not set, it is LEARNED, in
+// whichever process made the dial that failed -- on ios the network extension
+// whenever the tunnel is up, which is the regime the heuristic actually fires
+// in. Answering that from this process's ledger would report an empty string
+// while a demotion was in force, which is the state the detail line exists to
+// distinguish from Auto.
+//
+// The fallback is this process's own status rather than a cached last-known
+// value. With no service the tunnel is down and THIS process is the one
+// dialing, so its ledger is the correct answer, not a stale one; and a
+// demotion expires on a timer, so a cached string would be wrong in the
+// direction that matters -- reporting a narrowing that is no longer in force.
+func (self *DeviceRemote) GetControlIpFamilyStatus() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	status, success := func() (string, bool) {
+		if self.service == nil {
+			return "", false
+		}
+
+		status, err := rpcCallNoArg[string](
+			self.service,
+			"DeviceLocalRpc.GetControlIpFamilyStatus",
+			self.closeService,
+		)
+		if err != nil {
+			return "", false
+		}
+		return status, true
+	}()
+	if success {
+		return status
+	}
+	return GetControlIpFamilyStatus()
+}
+
 // *important rpc note* gob encoding cannot encode fields that are not exported
 // so our usual gomobile types that have private fields cannot be properly sent via rpc
 // for rpc we redefine these gomobile types so that they can be gob encoded
@@ -6050,6 +6198,7 @@ type DeviceRemoteState struct {
 	AllowForeground          deviceRemoteValue[bool]
 	RouteLocal               deviceRemoteValue[bool]
 	LogVerbosity             deviceRemoteValue[int]
+	ControlIpFamilyPolicy    deviceRemoteValue[int]
 	BlockerEnabled           deviceRemoteValue[bool]
 	InitProvideSecretKeys    deviceRemoteValue[bool]
 	LoadProvideSecretKeys    deviceRemoteValue[[]*ProvideSecretKey]
@@ -6124,6 +6273,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.AllowForeground.Merge(update.AllowForeground)
 	self.RouteLocal.Merge(update.RouteLocal)
 	self.LogVerbosity.Merge(update.LogVerbosity)
+	self.ControlIpFamilyPolicy.Merge(update.ControlIpFamilyPolicy)
 	self.BlockerEnabled.Merge(update.BlockerEnabled)
 	self.InitProvideSecretKeys.Merge(update.InitProvideSecretKeys)
 	self.LoadProvideSecretKeys.Merge(update.LoadProvideSecretKeys)
@@ -6167,6 +6317,7 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.AllowForeground.IsSet ||
 		self.RouteLocal.IsSet ||
 		self.LogVerbosity.IsSet ||
+		self.ControlIpFamilyPolicy.IsSet ||
 		self.BlockerEnabled.IsSet ||
 		self.InitProvideSecretKeys.IsSet ||
 		self.LoadProvideSecretKeys.IsSet ||
@@ -6283,7 +6434,17 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 // NOT require a bump. A new field that represents required settable state does:
 // otherwise a new remote can report the setting as accepted while an old local
 // silently ignores it. Version 2 establishes the transport-settings contract.
-const DeviceRpcVersion = 2
+// Version 3 establishes the control-plane ip family contract: an old local
+// decodes `DeviceRemoteState.ControlIpFamilyPolicy` as a zero it never reads,
+// so the extension keeps dialing the family the user is stuck on while the
+// developer menu reads the force back as applied.
+//
+// Version 3 also covers `DeviceLocalRpc.GetControlIpFamilyStatus`. That one is
+// a VALUE call, and only the void call has an allow-missing variant, so a local
+// that lacks the method answers "rpc: can't find method" and the remote tears
+// the session down. Adding a value method to an ALREADY SHIPPED version is
+// therefore a bump, not the free addition an optional gob field would be.
+const DeviceRpcVersion = 3
 
 //gomobile:noexport
 type DeviceRemoteSyncRequest struct {
@@ -8777,6 +8938,13 @@ func (self *DeviceLocalRpc) Sync(
 	if state.LogVerbosity.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetLogVerbosity(state.LogVerbosity.Value)
 	}
+	// the family the app chose, applied in the process that dials the control
+	// plane while the tunnel is up -- on ios the network extension. The device
+	// persists it in its OWN local state from here, so the next tunnel this
+	// process starts comes back up under it without another sync.
+	if state.ControlIpFamilyPolicy.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetControlIpFamilyPolicy(state.ControlIpFamilyPolicy.Value)
+	}
 	if state.BlockerEnabled.IsSet {
 		self.deviceLocal.SetBlockerEnabled(state.BlockerEnabled.Value)
 	}
@@ -10559,6 +10727,16 @@ func (self *DeviceLocalRpc) FlushGlog(_ RpcNoArg, _ RpcVoid) error {
 
 func (self *DeviceLocalRpc) SetLogVerbosity(level int, _ RpcVoid) error {
 	self.deviceLocal.SetLogVerbosity(level)
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetControlIpFamilyPolicy(policy int, _ RpcVoid) error {
+	self.deviceLocal.SetControlIpFamilyPolicy(policy)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetControlIpFamilyStatus(_ RpcNoArg, status *string) error {
+	*status = self.deviceLocal.GetControlIpFamilyStatus()
 	return nil
 }
 
