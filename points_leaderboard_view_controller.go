@@ -36,6 +36,16 @@ const PointsLeaderboardPageSize = 50
 // Only networks that opted in are listed; a row's `NetworkName` is set only
 // when that network's name is public, otherwise `Anonymous` is true and the
 // app shows its localized "Anonymous". `EmojiTag` shows either way.
+//
+// Every method is safe for concurrent use. Listeners are called with the
+// state lock released, so a listener may call back into the controller
+// (LoadMore from a change callback is the expected pattern).
+//
+// One page is in flight at a time. The in-flight slot is claimed inside the
+// same locked scope that checks it (Start, SetSort, LoadMore, Refresh), never
+// after the check: a check-then-claim split let two LoadMore calls both pass
+// the "not loading" test and request the same cursor twice, appending the
+// page twice.
 type PointsLeaderboardViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -103,6 +113,7 @@ func (self *PointsLeaderboardViewController) Start() {
 		return
 	}
 	self.started = true
+	self.loading = true
 	self.stateLock.Unlock()
 
 	self.fetch("", true)
@@ -157,14 +168,17 @@ func (self *PointsLeaderboardViewController) SetSort(sort string) {
 	self.rows = nil
 	self.nextCursor = ""
 	self.endReached = false
-	self.loading = false
 	self.errorMessage = ""
 	started := self.started
+	// the new order's first page is claimed here; a stale page of the old
+	// order is dropped by the generation
+	self.loading = started
 	self.stateLock.Unlock()
 
-	self.pointsLeaderboardChanged()
 	if started {
 		self.fetch("", true)
+	} else {
+		self.pointsLeaderboardChanged()
 	}
 }
 
@@ -176,18 +190,27 @@ func (self *PointsLeaderboardViewController) LoadMore() {
 		self.stateLock.Unlock()
 		return
 	}
+	// claim the slot in the scope that checked it
+	self.loading = true
 	cursor := self.nextCursor
 	self.stateLock.Unlock()
 
+	if pointsLeaderboardTestBeforeFetch != nil {
+		pointsLeaderboardTestBeforeFetch()
+	}
 	self.fetch(cursor, cursor == "")
 }
+
+// pointsLeaderboardTestBeforeFetch is a test barrier between LoadMore's claim
+// and its request, to prove a second LoadMore in that gap is refused.
+var pointsLeaderboardTestBeforeFetch func()
 
 // Refresh re-fetches the first page of the current sort. The rows stay in
 // place until the new page lands, then it replaces them.
 func (self *PointsLeaderboardViewController) Refresh() {
 	self.stateLock.Lock()
 	self.generation += 1
-	self.loading = false
+	self.loading = true
 	self.errorMessage = ""
 	self.started = true
 	self.stateLock.Unlock()
@@ -195,9 +218,11 @@ func (self *PointsLeaderboardViewController) Refresh() {
 	self.fetch("", true)
 }
 
+// fetch requests one page. The caller has already claimed the in-flight slot
+// (`loading`) under the lock; this only snapshots what the request needs and
+// announces the loading state.
 func (self *PointsLeaderboardViewController) fetch(cursor string, replace bool) {
 	self.stateLock.Lock()
-	self.loading = true
 	self.errorMessage = ""
 	generation := self.generation
 	sort := self.sort
@@ -224,6 +249,10 @@ func (self *PointsLeaderboardViewController) handlePage(
 	result *PointsLeaderboardResult,
 	err error,
 ) {
+	if self.ctx.Err() != nil {
+		// closed while the page was in flight
+		return
+	}
 	self.stateLock.Lock()
 	if generation != self.generation {
 		// SetSort or Refresh happened while this page was in flight

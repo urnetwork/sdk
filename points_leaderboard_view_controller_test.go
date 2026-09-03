@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -445,5 +446,49 @@ func TestPointsLeaderboardPagesAreOrdered(t *testing.T) {
 	}
 	if fmt.Sprint(got) != "[4 3 2]" {
 		t.Fatalf("rows out of order: streaks %v", got)
+	}
+}
+
+// Two LoadMore calls racing for the same page: the first claims the in-flight
+// slot in the scope that checked it, so the second, arriving while the first
+// is between its claim and its request, is refused before it ever reaches
+// the request. Before the claim moved into that scope both passed and the
+// page was requested and appended twice.
+func TestPointsLeaderboardLoadMoreClaimsTheSlotOnce(t *testing.T) {
+	server, vc, listener := newPointsLeaderboardTest(t)
+	vc.Start()
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.GetRowCount() == 2 })
+	firstPageRequests := server.requestCount()
+
+	// the barrier counts every LoadMore that got past the check and parks
+	// only the first one in the gap
+	var passed int32
+	inGap := make(chan struct{})
+	release := make(chan struct{})
+	pointsLeaderboardTestBeforeFetch = func() {
+		if atomic.AddInt32(&passed, 1) == 1 {
+			close(inGap)
+			<-release
+		}
+	}
+	defer func() { pointsLeaderboardTestBeforeFetch = nil }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		vc.LoadMore()
+	}()
+	<-inGap
+	// lands while the first holds the slot but has not sent
+	vc.LoadMore()
+	if got := atomic.LoadInt32(&passed); got != 1 {
+		t.Fatalf("a second LoadMore passed the in-flight check: %d fetches", got)
+	}
+	close(release)
+	<-done
+
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.GetRowCount() == 3 })
+	if got := server.requestCount() - firstPageRequests; got != 1 {
+		t.Fatalf("expected one request for the second page, got %d", got)
 	}
 }
