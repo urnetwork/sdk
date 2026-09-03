@@ -144,6 +144,13 @@ export interface SolanaPaymentUrlArgs {
   label?: string;
   /** The human description of the purchase the wallet shows. */
   message?: string;
+  /**
+   * Text the wallet attaches as a Memo instruction. Used where a payment must be
+   * matchable by a person or a plain wallet send: the buy-data flow passes the
+   * reference itself, so a transfer made by hand ("send USDC to this address with
+   * this memo") carries the same identifier the webhook matches on.
+   */
+  memo?: string;
 }
 
 /**
@@ -181,6 +188,7 @@ export function buildSolanaPaymentUrl(args: SolanaPaymentUrlArgs): string {
   });
   if (args.label) params.set("label", args.label);
   if (args.message) params.set("message", args.message);
+  if (args.memo) params.set("memo", args.memo);
 
   return `solana:${args.recipient}?${params.toString()}`;
 }

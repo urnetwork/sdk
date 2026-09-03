@@ -181,3 +181,15 @@ test("a refused quote cannot produce a payment url", () => {
     buildSolanaPaymentUrl({ ...validArgs(), amountUsd: refused.amount_usd ?? 0 }),
   );
 });
+
+// The buy-data flow asks the wallet to attach the reference as a memo too, so a
+// transfer made by hand can carry the same identifier the webhook matches on.
+test("memo is attached as a url parameter, url-encoded, and only when given", () => {
+  const args = validArgs();
+  const withMemo = new URL(buildSolanaPaymentUrl({ ...args, memo: args.reference }));
+  assert.equal(withMemo.searchParams.get("memo"), args.reference);
+  const spaced = new URL(buildSolanaPaymentUrl({ ...args, memo: "data 1 TiB & more" }));
+  assert.equal(spaced.searchParams.get("memo"), "data 1 TiB & more");
+  const without = new URL(buildSolanaPaymentUrl(args));
+  assert.equal(without.searchParams.has("memo"), false);
+});
