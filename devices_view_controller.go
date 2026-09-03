@@ -68,28 +68,26 @@ func (self *DevicesViewController) Start() {
 	self.getApi().GetNetworkClients(GetNetworkClientsCallback(connect.NewApiCallback[*NetworkClientsResult](
 		func(result *NetworkClientsResult, err error) {
 			if err == nil {
-				// FIXME sort
-
-				networkClients := []*NetworkClientInfo{}
-
-				// Older API builds encode an empty client slice as JSON null. Treat
-				// both a null result and a null list as the empty collection promised
-				// by the devices view instead of panicking in a browser callback.
-				if result != nil && result.Clients != nil {
-					for i := 0; i < result.Clients.Len(); i += 1 {
-						networkClient := result.Clients.Get(i)
-						networkClients = append(networkClients, networkClient)
-					}
-				}
-
-				slices.SortStableFunc(networkClients, self.cmpNetworkClientLayout)
-
-				exportedNetworkClients := NewNetworkClientInfoList()
-				exportedNetworkClients.addAll(networkClients...)
-				self.networkClientsChanged(exportedNetworkClients)
+				self.networkClientsChanged(self.networkClientsFromResult(result))
 			}
 		},
 	)))
+}
+
+// Converts a successful API response into the sorted, non-nil collection the
+// devices view publishes. Older API builds encode an empty slice as JSON null.
+func (self *DevicesViewController) networkClientsFromResult(result *NetworkClientsResult) *NetworkClientInfoList {
+	networkClients := []*NetworkClientInfo{}
+	if result != nil && result.Clients != nil {
+		for i := 0; i < result.Clients.Len(); i += 1 {
+			networkClients = append(networkClients, result.Clients.Get(i))
+		}
+	}
+	slices.SortStableFunc(networkClients, self.cmpNetworkClientLayout)
+
+	exportedNetworkClients := NewNetworkClientInfoList()
+	exportedNetworkClients.addAll(networkClients...)
+	return exportedNetworkClients
 }
 
 func (self *DevicesViewController) Stop() {
