@@ -79,6 +79,7 @@ func TestMobileBuildToolsRemainPinnedAndTidy(t *testing.T) {
 	}
 	command := exec.Command("go", "mod", "tidy", "-diff")
 	command.Dir = "."
+	command.Env = append(os.Environ(), "GOWORK=off")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("mobile build module is not tidy: %v\n%s", err, output)
 	}
