@@ -43,6 +43,17 @@ func generateTypes() error {
 		 * Api types
 		 */
 		sdk.ApiError{},
+		sdk.GetPointsLeaderboardArgs{},
+		sdk.PointsLeaderboardRow{},
+		sdk.PointsLeaderboardResult{},
+		sdk.PointsLeaderboardError{},
+		sdk.SetPointsLeaderboardPublicArgs{},
+		sdk.SetPointsLeaderboardPublicResult{},
+		sdk.SetPointsLeaderboardPublicError{},
+		sdk.SetEmojiTagArgs{},
+		sdk.SetEmojiTagResult{},
+		sdk.SetEmojiTagError{},
+		sdk.EmojiTagValidation{},
 		// Auth login types
 		sdk.AuthLoginWithPasswordArgs{},
 		sdk.AuthLoginWithPasswordResult{},
@@ -249,6 +260,11 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "SnUnsignedTx[]"
 		case "sdk.AccountEpochList":
 			return "AccountEpoch[]"
+		case "sdk.PointsLeaderboardRowList":
+			return "PointsLeaderboardRow[]"
+		case "sdk.PointsLeaderboardMe":
+			// custom json: the row's fields with points_leaderboard_public beside them
+			return "PointsLeaderboardRow & { points_leaderboard_public: boolean }"
 		default:
 			return t.Name()
 		}

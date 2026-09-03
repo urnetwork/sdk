@@ -161,6 +161,10 @@ inline constexpr int64_t DeviceRpcVersion = 2;
 inline constexpr int64_t DeviceRpcWsBinary = 2;
 inline constexpr int64_t DeviceRpcWsPing = 9;
 inline constexpr const char* Disconnected = "DISCONNECTED";
+inline constexpr int64_t EmojiTagMaxCount = 6;
+inline constexpr const char* EmojiTagReasonEmpty = "empty";
+inline constexpr const char* EmojiTagReasonNotEmoji = "not_emoji";
+inline constexpr const char* EmojiTagReasonTooMany = "too_many";
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
 inline constexpr int64_t IpProtocolUnknown = 0;
@@ -176,6 +180,10 @@ inline constexpr int64_t LogVerbosityDefault = 0;
 inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
+inline constexpr int64_t PointsLeaderboardPageSize = 50;
+inline constexpr const char* PointsLeaderboardSortBlocks = "blocks";
+inline constexpr const char* PointsLeaderboardSortPoints = "points";
+inline constexpr const char* PointsLeaderboardSortStreak = "streak";
 inline constexpr const char* ProvideControlModeAlways = "always";
 inline constexpr const char* ProvideControlModeAuto = "auto";
 inline constexpr const char* ProvideControlModeManual = "manual";
@@ -295,6 +303,7 @@ class NetworkSpaceManager;
 class NetworkUserViewController;
 class PacketBatch;
 class PeerViewController;
+class PointsLeaderboardViewController;
 class PostQuantumIdentityViewController;
 class ProvideViewController;
 class ProviderLocationsViewController;
@@ -402,6 +411,7 @@ struct DeviceSetNameArgs;
 struct DeviceSetNameError;
 struct DeviceSetNameResult;
 struct DnsResolverSettings;
+struct EmojiTagValidation;
 struct Exit;
 struct ExportOptions;
 struct ExportResult;
@@ -437,6 +447,7 @@ struct GetNetworkUserError;
 struct NetworkUser;
 struct GetNetworkUserResult;
 struct GetPayoutWalletIdResult;
+struct GetPointsLeaderboardArgs;
 struct GetReferralNetworkError;
 struct ReferralNetwork;
 struct GetReferralNetworkResult;
@@ -480,6 +491,10 @@ struct NetworkUserUpdateError;
 struct NetworkUserUpdateResult;
 struct OverrideLocalAppIds;
 struct PacketStats;
+struct PointsLeaderboardError;
+struct PointsLeaderboardRow;
+struct PointsLeaderboardMe;
+struct PointsLeaderboardResult;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
@@ -508,6 +523,9 @@ struct RemoveNetworkClientResult;
 struct RemoveWalletArgs;
 struct RemoveWalletError;
 struct RemoveWalletResult;
+struct SetEmojiTagArgs;
+struct SetEmojiTagError;
+struct SetEmojiTagResult;
 struct SetNetworkRankingPublicArgs;
 struct SetNetworkRankingPublicError;
 struct SetNetworkRankingPublicResult;
@@ -516,6 +534,9 @@ struct SetNetworkReferralError;
 struct SetNetworkReferralResult;
 struct SetPayoutWalletArgs;
 struct SetPayoutWalletResult;
+struct SetPointsLeaderboardPublicArgs;
+struct SetPointsLeaderboardPublicError;
+struct SetPointsLeaderboardPublicResult;
 struct SnClaimsResult;
 struct SnWallet;
 struct SnConnectWalletResult;
@@ -628,6 +649,7 @@ using NetworkClientConnectionList = std::vector<NetworkClientConnection>;
 using NetworkClientInfoList = std::vector<NetworkClientInfo>;
 using NetworkPeerList = std::vector<NetworkPeer>;
 using NetworkSpaceList = std::vector<nlohmann::json>;
+using PointsLeaderboardRowList = std::vector<PointsLeaderboardRow>;
 using ProbeResultList = std::vector<ProbeResult>;
 using ProvideSecretKeyList = std::vector<ProvideSecretKey>;
 using ProviderGridPointList = std::vector<ProviderGridPoint>;
@@ -1295,6 +1317,14 @@ struct DnsResolverSettings {
 	std::optional<StringList> LocalDnsIpv6;
 };
 
+struct EmojiTagValidation {
+	bool ok{};
+	int64_t count{};
+	std::string normalized{};
+	std::string reason{};
+	std::string message{};
+};
+
 struct Exit {
 	std::optional<std::string> ClientId;
 	std::string WindowType{};
@@ -1432,6 +1462,11 @@ struct NetworkRanking {
 	float net_mib_count{};
 	int64_t leaderboard_rank{};
 	bool leaderboard_public{};
+	bool points_leaderboard_public{};
+	std::optional<std::string> emoji_tag;
+	int64_t rank_points{};
+	int64_t rank_blocks{};
+	int64_t rank_streak{};
 };
 
 struct GetNetworkRankingResult {
@@ -1508,6 +1543,12 @@ struct GetNetworkUserResult {
 
 struct GetPayoutWalletIdResult {
 	std::optional<std::string> wallet_id;
+};
+
+struct GetPointsLeaderboardArgs {
+	std::string sort{};
+	std::optional<std::string> cursor;
+	std::optional<int64_t> limit;
 };
 
 struct GetReferralNetworkError {
@@ -1841,6 +1882,48 @@ struct PacketStats {
 	std::optional<TransportPacketStatsList> TransportStats;
 };
 
+struct PointsLeaderboardError {
+	std::string message{};
+};
+
+struct PointsLeaderboardRow {
+	std::optional<std::string> network_id;
+	std::optional<std::string> network_name;
+	std::optional<std::string> emoji_tag;
+	bool anonymous{};
+	double total_points{};
+	int64_t blocks_with_points{};
+	int64_t streak{};
+	int64_t longest_streak{};
+	int64_t rank_points{};
+	int64_t rank_blocks{};
+	int64_t rank_streak{};
+	std::optional<std::string> display_name;
+	std::optional<std::string> total_points_text;
+	std::optional<std::string> blocks_with_points_text;
+	std::optional<std::string> streak_text;
+	std::optional<std::string> longest_streak_text;
+	std::optional<std::string> rank_points_text;
+	std::optional<std::string> rank_blocks_text;
+	std::optional<std::string> rank_streak_text;
+};
+
+struct PointsLeaderboardMe {
+	std::optional<PointsLeaderboardRow> Row;
+	bool PointsLeaderboardPublic{};
+};
+
+struct PointsLeaderboardResult {
+	std::optional<PointsLeaderboardRowList> rows;
+	std::optional<std::string> next_cursor;
+	std::optional<bool> restart;
+	int64_t total_ranked{};
+	std::optional<std::string> snapshot_time;
+	int64_t latest_epoch{};
+	std::optional<PointsLeaderboardMe> me;
+	std::optional<PointsLeaderboardError> error;
+};
+
 struct ProbeResult {
 	std::string Name{};
 	std::string Kind{};
@@ -2069,6 +2152,19 @@ struct RemoveWalletResult {
 	std::optional<RemoveWalletError> error;
 };
 
+struct SetEmojiTagArgs {
+	std::string emoji_tag{};
+};
+
+struct SetEmojiTagError {
+	std::string message{};
+};
+
+struct SetEmojiTagResult {
+	std::optional<std::string> emoji_tag;
+	std::optional<SetEmojiTagError> error;
+};
+
 struct SetNetworkRankingPublicArgs {
 	bool is_public{};
 };
@@ -2098,6 +2194,18 @@ struct SetPayoutWalletArgs {
 };
 
 struct SetPayoutWalletResult {
+};
+
+struct SetPointsLeaderboardPublicArgs {
+	bool public_{};
+};
+
+struct SetPointsLeaderboardPublicError {
+	std::string message{};
+};
+
+struct SetPointsLeaderboardPublicResult {
+	std::optional<SetPointsLeaderboardPublicError> error;
 };
 
 struct SnClaimsResult {
@@ -2776,6 +2884,8 @@ inline void to_json(nlohmann::json& j, const DeviceSetNameResult& v);
 inline void from_json(const nlohmann::json& j, DeviceSetNameResult& v);
 inline void to_json(nlohmann::json& j, const DnsResolverSettings& v);
 inline void from_json(const nlohmann::json& j, DnsResolverSettings& v);
+inline void to_json(nlohmann::json& j, const EmojiTagValidation& v);
+inline void from_json(const nlohmann::json& j, EmojiTagValidation& v);
 inline void to_json(nlohmann::json& j, const Exit& v);
 inline void from_json(const nlohmann::json& j, Exit& v);
 inline void to_json(nlohmann::json& j, const ExportOptions& v);
@@ -2846,6 +2956,8 @@ inline void to_json(nlohmann::json& j, const GetNetworkUserResult& v);
 inline void from_json(const nlohmann::json& j, GetNetworkUserResult& v);
 inline void to_json(nlohmann::json& j, const GetPayoutWalletIdResult& v);
 inline void from_json(const nlohmann::json& j, GetPayoutWalletIdResult& v);
+inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v);
+inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v);
 inline void to_json(nlohmann::json& j, const GetReferralNetworkError& v);
 inline void from_json(const nlohmann::json& j, GetReferralNetworkError& v);
 inline void to_json(nlohmann::json& j, const ReferralNetwork& v);
@@ -2932,6 +3044,14 @@ inline void to_json(nlohmann::json& j, const OverrideLocalAppIds& v);
 inline void from_json(const nlohmann::json& j, OverrideLocalAppIds& v);
 inline void to_json(nlohmann::json& j, const PacketStats& v);
 inline void from_json(const nlohmann::json& j, PacketStats& v);
+inline void to_json(nlohmann::json& j, const PointsLeaderboardError& v);
+inline void from_json(const nlohmann::json& j, PointsLeaderboardError& v);
+inline void to_json(nlohmann::json& j, const PointsLeaderboardRow& v);
+inline void from_json(const nlohmann::json& j, PointsLeaderboardRow& v);
+inline void to_json(nlohmann::json& j, const PointsLeaderboardMe& v);
+inline void from_json(const nlohmann::json& j, PointsLeaderboardMe& v);
+inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v);
+inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v);
 inline void to_json(nlohmann::json& j, const ProbeResult& v);
 inline void from_json(const nlohmann::json& j, ProbeResult& v);
 inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
@@ -2988,6 +3108,12 @@ inline void to_json(nlohmann::json& j, const RemoveWalletError& v);
 inline void from_json(const nlohmann::json& j, RemoveWalletError& v);
 inline void to_json(nlohmann::json& j, const RemoveWalletResult& v);
 inline void from_json(const nlohmann::json& j, RemoveWalletResult& v);
+inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v);
+inline void from_json(const nlohmann::json& j, SetEmojiTagArgs& v);
+inline void to_json(nlohmann::json& j, const SetEmojiTagError& v);
+inline void from_json(const nlohmann::json& j, SetEmojiTagError& v);
+inline void to_json(nlohmann::json& j, const SetEmojiTagResult& v);
+inline void from_json(const nlohmann::json& j, SetEmojiTagResult& v);
 inline void to_json(nlohmann::json& j, const SetNetworkRankingPublicArgs& v);
 inline void from_json(const nlohmann::json& j, SetNetworkRankingPublicArgs& v);
 inline void to_json(nlohmann::json& j, const SetNetworkRankingPublicError& v);
@@ -3004,6 +3130,12 @@ inline void to_json(nlohmann::json& j, const SetPayoutWalletArgs& v);
 inline void from_json(const nlohmann::json& j, SetPayoutWalletArgs& v);
 inline void to_json(nlohmann::json& j, const SetPayoutWalletResult& v);
 inline void from_json(const nlohmann::json& j, SetPayoutWalletResult& v);
+inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicArgs& v);
+inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicArgs& v);
+inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicError& v);
+inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicError& v);
+inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicResult& v);
+inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult& v);
 inline void to_json(nlohmann::json& j, const SnClaimsResult& v);
 inline void from_json(const nlohmann::json& j, SnClaimsResult& v);
 inline void to_json(nlohmann::json& j, const SnWallet& v);
@@ -6154,6 +6286,35 @@ inline void from_json(const nlohmann::json& j, DnsResolverSettings& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const EmojiTagValidation& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	j["count"] = v.count;
+	j["normalized"] = v.normalized;
+	j["reason"] = v.reason;
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, EmojiTagValidation& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.count);
+	}
+	if (auto it = j.find("normalized"); it != j.end() && !it->is_null()) {
+		it->get_to(v.normalized);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const Exit& v) {
 	j = nlohmann::json::object();
 	if (v.ClientId) {
@@ -6757,6 +6918,13 @@ inline void to_json(nlohmann::json& j, const NetworkRanking& v) {
 	j["net_mib_count"] = v.net_mib_count;
 	j["leaderboard_rank"] = v.leaderboard_rank;
 	j["leaderboard_public"] = v.leaderboard_public;
+	j["points_leaderboard_public"] = v.points_leaderboard_public;
+	if (v.emoji_tag) {
+		j["emoji_tag"] = *v.emoji_tag;
+	}
+	j["rank_points"] = v.rank_points;
+	j["rank_blocks"] = v.rank_blocks;
+	j["rank_streak"] = v.rank_streak;
 }
 inline void from_json(const nlohmann::json& j, NetworkRanking& v) {
 	if (!j.is_object()) {
@@ -6770,6 +6938,23 @@ inline void from_json(const nlohmann::json& j, NetworkRanking& v) {
 	}
 	if (auto it = j.find("leaderboard_public"); it != j.end() && !it->is_null()) {
 		it->get_to(v.leaderboard_public);
+	}
+	if (auto it = j.find("points_leaderboard_public"); it != j.end() && !it->is_null()) {
+		it->get_to(v.points_leaderboard_public);
+	}
+	if (auto it = j.find("emoji_tag"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.emoji_tag = std::move(tmp);
+	}
+	if (auto it = j.find("rank_points"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_points);
+	}
+	if (auto it = j.find("rank_blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_blocks);
+	}
+	if (auto it = j.find("rank_streak"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_streak);
 	}
 }
 
@@ -7114,6 +7299,35 @@ inline void from_json(const nlohmann::json& j, GetPayoutWalletIdResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.wallet_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v) {
+	j = nlohmann::json::object();
+	j["sort"] = v.sort;
+	if (v.cursor) {
+		j["cursor"] = *v.cursor;
+	}
+	if (v.limit) {
+		j["limit"] = *v.limit;
+	}
+}
+inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("sort"); it != j.end() && !it->is_null()) {
+		it->get_to(v.sort);
+	}
+	if (auto it = j.find("cursor"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.cursor = std::move(tmp);
+	}
+	if (auto it = j.find("limit"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.limit = std::move(tmp);
 	}
 }
 
@@ -8640,6 +8854,234 @@ inline void from_json(const nlohmann::json& j, PacketStats& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const PointsLeaderboardError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, PointsLeaderboardError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PointsLeaderboardRow& v) {
+	j = nlohmann::json::object();
+	if (v.network_id) {
+		j["network_id"] = *v.network_id;
+	}
+	if (v.network_name) {
+		j["network_name"] = *v.network_name;
+	}
+	if (v.emoji_tag) {
+		j["emoji_tag"] = *v.emoji_tag;
+	}
+	j["anonymous"] = v.anonymous;
+	j["total_points"] = v.total_points;
+	j["blocks_with_points"] = v.blocks_with_points;
+	j["streak"] = v.streak;
+	j["longest_streak"] = v.longest_streak;
+	j["rank_points"] = v.rank_points;
+	j["rank_blocks"] = v.rank_blocks;
+	j["rank_streak"] = v.rank_streak;
+	if (v.display_name) {
+		j["display_name"] = *v.display_name;
+	}
+	if (v.total_points_text) {
+		j["total_points_text"] = *v.total_points_text;
+	}
+	if (v.blocks_with_points_text) {
+		j["blocks_with_points_text"] = *v.blocks_with_points_text;
+	}
+	if (v.streak_text) {
+		j["streak_text"] = *v.streak_text;
+	}
+	if (v.longest_streak_text) {
+		j["longest_streak_text"] = *v.longest_streak_text;
+	}
+	if (v.rank_points_text) {
+		j["rank_points_text"] = *v.rank_points_text;
+	}
+	if (v.rank_blocks_text) {
+		j["rank_blocks_text"] = *v.rank_blocks_text;
+	}
+	if (v.rank_streak_text) {
+		j["rank_streak_text"] = *v.rank_streak_text;
+	}
+}
+inline void from_json(const nlohmann::json& j, PointsLeaderboardRow& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("network_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network_id = std::move(tmp);
+	}
+	if (auto it = j.find("network_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network_name = std::move(tmp);
+	}
+	if (auto it = j.find("emoji_tag"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.emoji_tag = std::move(tmp);
+	}
+	if (auto it = j.find("anonymous"); it != j.end() && !it->is_null()) {
+		it->get_to(v.anonymous);
+	}
+	if (auto it = j.find("total_points"); it != j.end() && !it->is_null()) {
+		it->get_to(v.total_points);
+	}
+	if (auto it = j.find("blocks_with_points"); it != j.end() && !it->is_null()) {
+		it->get_to(v.blocks_with_points);
+	}
+	if (auto it = j.find("streak"); it != j.end() && !it->is_null()) {
+		it->get_to(v.streak);
+	}
+	if (auto it = j.find("longest_streak"); it != j.end() && !it->is_null()) {
+		it->get_to(v.longest_streak);
+	}
+	if (auto it = j.find("rank_points"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_points);
+	}
+	if (auto it = j.find("rank_blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_blocks);
+	}
+	if (auto it = j.find("rank_streak"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_streak);
+	}
+	if (auto it = j.find("display_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.display_name = std::move(tmp);
+	}
+	if (auto it = j.find("total_points_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.total_points_text = std::move(tmp);
+	}
+	if (auto it = j.find("blocks_with_points_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.blocks_with_points_text = std::move(tmp);
+	}
+	if (auto it = j.find("streak_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.streak_text = std::move(tmp);
+	}
+	if (auto it = j.find("longest_streak_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.longest_streak_text = std::move(tmp);
+	}
+	if (auto it = j.find("rank_points_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.rank_points_text = std::move(tmp);
+	}
+	if (auto it = j.find("rank_blocks_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.rank_blocks_text = std::move(tmp);
+	}
+	if (auto it = j.find("rank_streak_text"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.rank_streak_text = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PointsLeaderboardMe& v) {
+	j = nlohmann::json::object();
+	if (v.Row) {
+		j["Row"] = *v.Row;
+	}
+	j["PointsLeaderboardPublic"] = v.PointsLeaderboardPublic;
+}
+inline void from_json(const nlohmann::json& j, PointsLeaderboardMe& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Row"); it != j.end() && !it->is_null()) {
+		PointsLeaderboardRow tmp{};
+		it->get_to(tmp);
+		v.Row = std::move(tmp);
+	}
+	if (auto it = j.find("PointsLeaderboardPublic"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PointsLeaderboardPublic);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v) {
+	j = nlohmann::json::object();
+	if (v.rows) {
+		j["rows"] = *v.rows;
+	}
+	if (v.next_cursor) {
+		j["next_cursor"] = *v.next_cursor;
+	}
+	if (v.restart) {
+		j["restart"] = *v.restart;
+	}
+	j["total_ranked"] = v.total_ranked;
+	if (v.snapshot_time) {
+		j["snapshot_time"] = *v.snapshot_time;
+	}
+	j["latest_epoch"] = v.latest_epoch;
+	if (v.me) {
+		j["me"] = *v.me;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("rows"); it != j.end() && !it->is_null()) {
+		PointsLeaderboardRowList tmp{};
+		it->get_to(tmp);
+		v.rows = std::move(tmp);
+	}
+	if (auto it = j.find("next_cursor"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.next_cursor = std::move(tmp);
+	}
+	if (auto it = j.find("restart"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.restart = std::move(tmp);
+	}
+	if (auto it = j.find("total_ranked"); it != j.end() && !it->is_null()) {
+		it->get_to(v.total_ranked);
+	}
+	if (auto it = j.find("snapshot_time"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.snapshot_time = std::move(tmp);
+	}
+	if (auto it = j.find("latest_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.latest_epoch);
+	}
+	if (auto it = j.find("me"); it != j.end() && !it->is_null()) {
+		PointsLeaderboardMe tmp{};
+		it->get_to(tmp);
+		v.me = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		PointsLeaderboardError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProbeResult& v) {
 	j = nlohmann::json::object();
 	j["Name"] = v.Name;
@@ -9564,6 +10006,57 @@ inline void from_json(const nlohmann::json& j, RemoveWalletResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v) {
+	j = nlohmann::json::object();
+	j["emoji_tag"] = v.emoji_tag;
+}
+inline void from_json(const nlohmann::json& j, SetEmojiTagArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("emoji_tag"); it != j.end() && !it->is_null()) {
+		it->get_to(v.emoji_tag);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SetEmojiTagError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, SetEmojiTagError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SetEmojiTagResult& v) {
+	j = nlohmann::json::object();
+	if (v.emoji_tag) {
+		j["emoji_tag"] = *v.emoji_tag;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SetEmojiTagResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("emoji_tag"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.emoji_tag = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SetEmojiTagError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SetNetworkRankingPublicArgs& v) {
 	j = nlohmann::json::object();
 	j["is_public"] = v.is_public;
@@ -9673,6 +10166,49 @@ inline void to_json(nlohmann::json& j, const SetPayoutWalletResult& v) {
 inline void from_json(const nlohmann::json& j, SetPayoutWalletResult& v) {
 	if (!j.is_object()) {
 		return;
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicArgs& v) {
+	j = nlohmann::json::object();
+	j["public"] = v.public_;
+}
+inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("public"); it != j.end() && !it->is_null()) {
+		it->get_to(v.public_);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicResult& v) {
+	j = nlohmann::json::object();
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SetPointsLeaderboardPublicError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -11898,6 +12434,7 @@ using GetNetworkReferralCodeCallback = std::function<void(std::optional<GetNetwo
 using GetNetworkReliabilityCallback = std::function<void(std::optional<GetNetworkReliabilityResult> result, std::optional<std::string> err_param)>;
 using GetNetworkUserCallback = std::function<void(std::optional<GetNetworkUserResult> result, std::optional<std::string> err_param)>;
 using GetPayoutWalletCallback = std::function<void(std::optional<GetPayoutWalletIdResult> result, std::optional<std::string> err_param)>;
+using GetPointsLeaderboardCallback = std::function<void(std::optional<PointsLeaderboardResult> result, std::optional<std::string> err_param)>;
 using GetReferralNetworkCallback = std::function<void(std::optional<GetReferralNetworkResult> result, std::optional<std::string> err_param)>;
 using GetTransferStatsCallback = std::function<void(std::optional<TransferStatsResult> result, std::optional<std::string> err_param)>;
 using GridListener = std::function<void()>;
@@ -11929,6 +12466,7 @@ using PaymentsListener = std::function<void()>;
 using PayoutWalletListener = std::function<void(std::string p0)>;
 using PeersListener = std::function<void(std::optional<NetworkPeerList> peers)>;
 using PerformanceProfileChangeListener = std::function<void(std::optional<PerformanceProfile> performance_profile)>;
+using PointsLeaderboardListener = std::function<void()>;
 using PostQuantumIdentityListener = std::function<void()>;
 using ProvideChangeListener = std::function<void(bool provide_enabled)>;
 using ProvideControlModeChangeListener = std::function<void(std::string provide_control_mode)>;
@@ -11955,9 +12493,11 @@ using RouteLocalChangeListener = std::function<void(bool route_local)>;
 using SelectedLocationListener = std::function<void(std::optional<ConnectLocation> location)>;
 using SelectedProviderLocationChangeListener = std::function<void()>;
 using SendFeedbackCallback = std::function<void(std::optional<FeedbackSendResult> result, std::optional<std::string> err_param)>;
+using SetEmojiTagCallback = std::function<void(std::optional<SetEmojiTagResult> result, std::optional<std::string> err_param)>;
 using SetNetworkLeaderboardPublicCallback = std::function<void(std::optional<SetNetworkRankingPublicResult> result, std::optional<std::string> err_param)>;
 using SetNetworkReferralCallback = std::function<void(std::optional<SetNetworkReferralResult> result, std::optional<std::string> err_param)>;
 using SetPayoutWalletCallback = std::function<void(std::optional<SetPayoutWalletResult> result, std::optional<std::string> err_param)>;
+using SetPointsLeaderboardPublicCallback = std::function<void(std::optional<SetPointsLeaderboardPublicResult> result, std::optional<std::string> err_param)>;
 using SetupNewDeviceCallback = std::function<bool(Device device, std::optional<ProxyConfigResult> proxy_config_result)>;
 struct SnClaimCallback {
 	std::function<void(int64_t epoch, std::string tx_hash, int64_t amount_rao)> confirmed;
@@ -12240,6 +12780,7 @@ public:
 	void getNetworkReliability(GetNetworkReliabilityCallback callback) const;
 	void getNetworkUser(GetNetworkUserCallback callback) const;
 	void getPayoutWallet(GetPayoutWalletCallback callback) const;
+	void getPointsLeaderboard(const std::optional<GetPointsLeaderboardArgs>& args, GetPointsLeaderboardCallback callback) const;
 	void getProviderLocations(FindLocationsCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
@@ -12261,9 +12802,11 @@ public:
 	void requestJwtRefresh() const;
 	void sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const;
 	void setByJwt(const std::string& by_jwt) const;
+	void setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmojiTagCallback callback) const;
 	void setNetworkLeaderboardPublic(const std::optional<SetNetworkRankingPublicArgs>& args, SetNetworkLeaderboardPublicCallback callback) const;
 	void setNetworkReferral(const std::optional<SetNetworkReferralArgs>& args, SetNetworkReferralCallback callback) const;
 	void setPayoutWallet(const std::optional<SetPayoutWalletArgs>& payout_wallet, SetPayoutWalletCallback callback) const;
+	void setPointsLeaderboardPublic(const std::optional<SetPointsLeaderboardPublicArgs>& args, SetPointsLeaderboardPublicCallback callback) const;
 	void snEpoch(SnEpochCallback callback) const;
 	std::optional<SnEpochResult> snEpochSync() const;
 	void snGetWallet(SnGetWalletCallback callback) const;
@@ -12411,6 +12954,7 @@ public:
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
+	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
 	void closeViewController(ViewController vc) const;
@@ -12445,6 +12989,7 @@ public:
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
+	PointsLeaderboardViewController openPointsLeaderboardViewController() const;
 	PostQuantumIdentityViewController openPostQuantumIdentityViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
@@ -12517,6 +13062,7 @@ public:
 	void closeDevicesViewController(const DevicesViewController& vc) const;
 	void closeLocationsViewController(const LocationsViewController& vc) const;
 	void closePeerViewController(const PeerViewController& vc) const;
+	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
 	void closeViewController(ViewController vc) const;
@@ -12546,6 +13092,7 @@ public:
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
 	PeerViewController openPeerViewController() const;
+	PointsLeaderboardViewController openPointsLeaderboardViewController() const;
 	PostQuantumIdentityViewController openPostQuantumIdentityViewController() const;
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
@@ -12812,6 +13359,29 @@ public:
 	int64_t getConnectedCount() const;
 	int64_t getPeerCount() const;
 	std::optional<NetworkPeerList> getPeers() const;
+	void start() const;
+	void stop() const;
+};
+
+class PointsLeaderboardViewController final : public detail::Handle {
+public:
+	PointsLeaderboardViewController() = default;
+	explicit PointsLeaderboardViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addPointsLeaderboardListener(PointsLeaderboardListener listener) const;
+	void close() const;
+	std::string getErrorMessage() const;
+	int64_t getLatestEpoch() const;
+	std::optional<PointsLeaderboardMe> getMe() const;
+	int64_t getRowCount() const;
+	std::optional<PointsLeaderboardRowList> getRows() const;
+	int64_t getSnapshotTime() const;
+	std::string getSort() const;
+	int64_t getTotalRanked() const;
+	bool isEndReached() const;
+	bool isLoading() const;
+	void loadMore() const;
+	void refresh() const;
+	void setSort(const std::string& sort) const;
 	void start() const;
 	void stop() const;
 };
@@ -14968,6 +15538,42 @@ inline void oneshot_get_payout_wallet(void* user_data, const char* result_json, 
 	delete f;
 }
 
+inline void retained_get_points_leaderboard(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<GetPointsLeaderboardCallback*>(user_data);
+	try {
+		std::optional<PointsLeaderboardResult> result_v;
+		if (result_json) {
+			result_v = parseJson<PointsLeaderboardResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_get_points_leaderboard(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<GetPointsLeaderboardCallback*>(user_data);
+	try {
+		std::optional<PointsLeaderboardResult> result_v;
+		if (result_json) {
+			result_v = parseJson<PointsLeaderboardResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_get_referral_network(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<GetReferralNetworkCallback*>(user_data);
 	try {
@@ -15810,6 +16416,26 @@ inline void oneshot_performance_profile_change(void* user_data, const char* perf
 	delete f;
 }
 
+inline void retained_points_leaderboard(void* user_data) {
+	auto* f = static_cast<PointsLeaderboardListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_points_leaderboard(void* user_data) {
+	auto* f = static_cast<PointsLeaderboardListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_post_quantum_identity(void* user_data) {
 	auto* f = static_cast<PostQuantumIdentityListener*>(user_data);
 	try {
@@ -16476,6 +17102,42 @@ inline void oneshot_send_feedback(void* user_data, const char* result_json, cons
 	delete f;
 }
 
+inline void retained_set_emoji_tag(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SetEmojiTagCallback*>(user_data);
+	try {
+		std::optional<SetEmojiTagResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SetEmojiTagResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_set_emoji_tag(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SetEmojiTagCallback*>(user_data);
+	try {
+		std::optional<SetEmojiTagResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SetEmojiTagResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_set_network_leaderboard_public(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SetNetworkLeaderboardPublicCallback*>(user_data);
 	try {
@@ -16571,6 +17233,42 @@ inline void oneshot_set_payout_wallet(void* user_data, const char* result_json, 
 		std::optional<SetPayoutWalletResult> result_v;
 		if (result_json) {
 			result_v = parseJson<SetPayoutWalletResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_set_points_leaderboard_public(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SetPointsLeaderboardPublicCallback*>(user_data);
+	try {
+		std::optional<SetPointsLeaderboardPublicResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SetPointsLeaderboardPublicResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_set_points_leaderboard_public(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SetPointsLeaderboardPublicCallback*>(user_data);
+	try {
+		std::optional<SetPointsLeaderboardPublicResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SetPointsLeaderboardPublicResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -19287,6 +19985,16 @@ inline void Api::getPayoutWallet(GetPayoutWalletCallback callback) const {
 	auto* callback_fn = callback ? new GetPayoutWalletCallback(std::move(callback)) : nullptr;
 	urnet_api_get_payout_wallet(handle(), callback_fn ? &detail::oneshot_get_payout_wallet : nullptr, callback_fn);
 }
+inline void Api::getPointsLeaderboard(const std::optional<GetPointsLeaderboardArgs>& args, GetPointsLeaderboardCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new GetPointsLeaderboardCallback(std::move(callback)) : nullptr;
+	urnet_api_get_points_leaderboard(handle(), args_c, callback_fn ? &detail::oneshot_get_points_leaderboard : nullptr, callback_fn);
+}
 inline void Api::getProviderLocations(FindLocationsCallback callback) const {
 	auto* callback_fn = callback ? new FindLocationsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_provider_locations(handle(), callback_fn ? &detail::oneshot_find_locations : nullptr, callback_fn);
@@ -19457,6 +20165,16 @@ inline void Api::sendFeedback(const std::optional<FeedbackSendArgs>& send_feedba
 inline void Api::setByJwt(const std::string& by_jwt) const {
 	urnet_api_set_by_jwt(handle(), by_jwt.c_str());
 }
+inline void Api::setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmojiTagCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new SetEmojiTagCallback(std::move(callback)) : nullptr;
+	urnet_api_set_emoji_tag(handle(), args_c, callback_fn ? &detail::oneshot_set_emoji_tag : nullptr, callback_fn);
+}
 inline void Api::setNetworkLeaderboardPublic(const std::optional<SetNetworkRankingPublicArgs>& args, SetNetworkLeaderboardPublicCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -19486,6 +20204,16 @@ inline void Api::setPayoutWallet(const std::optional<SetPayoutWalletArgs>& payou
 	}
 	auto* callback_fn = callback ? new SetPayoutWalletCallback(std::move(callback)) : nullptr;
 	urnet_api_set_payout_wallet(handle(), payout_wallet_c, callback_fn ? &detail::oneshot_set_payout_wallet : nullptr, callback_fn);
+}
+inline void Api::setPointsLeaderboardPublic(const std::optional<SetPointsLeaderboardPublicArgs>& args, SetPointsLeaderboardPublicCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new SetPointsLeaderboardPublicCallback(std::move(callback)) : nullptr;
+	urnet_api_set_points_leaderboard_public(handle(), args_c, callback_fn ? &detail::oneshot_set_points_leaderboard_public : nullptr, callback_fn);
 }
 inline void Api::snEpoch(SnEpochCallback callback) const {
 	auto* callback_fn = callback ? new SnEpochCallback(std::move(callback)) : nullptr;
@@ -20191,6 +20919,9 @@ inline void DeviceLocal::closeLocationsViewController(const LocationsViewControl
 inline void DeviceLocal::closePeerViewController(const PeerViewController& vc) const {
 	urnet_device_local_close_peer_view_controller(handle(), vc.handle());
 }
+inline void DeviceLocal::closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const {
+	urnet_device_local_close_points_leaderboard_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const {
 	urnet_device_local_close_post_quantum_identity_view_controller(handle(), vc.handle());
 }
@@ -20371,6 +21102,10 @@ inline NetworkUserViewController DeviceLocal::openNetworkUserViewController() co
 }
 inline PeerViewController DeviceLocal::openPeerViewController() const {
 	PeerViewController r(urnet_device_local_open_peer_view_controller(handle()));
+	return r;
+}
+inline PointsLeaderboardViewController DeviceLocal::openPointsLeaderboardViewController() const {
+	PointsLeaderboardViewController r(urnet_device_local_open_points_leaderboard_view_controller(handle()));
 	return r;
 }
 inline PostQuantumIdentityViewController DeviceLocal::openPostQuantumIdentityViewController() const {
@@ -20663,6 +21398,9 @@ inline void DeviceRemote::closeLocationsViewController(const LocationsViewContro
 inline void DeviceRemote::closePeerViewController(const PeerViewController& vc) const {
 	urnet_device_remote_close_peer_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const {
+	urnet_device_remote_close_points_leaderboard_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const {
 	urnet_device_remote_close_post_quantum_identity_view_controller(handle(), vc.handle());
 }
@@ -20813,6 +21551,10 @@ inline NetworkUserViewController DeviceRemote::openNetworkUserViewController() c
 }
 inline PeerViewController DeviceRemote::openPeerViewController() const {
 	PeerViewController r(urnet_device_remote_open_peer_view_controller(handle()));
+	return r;
+}
+inline PointsLeaderboardViewController DeviceRemote::openPointsLeaderboardViewController() const {
+	PointsLeaderboardViewController r(urnet_device_remote_open_points_leaderboard_view_controller(handle()));
 	return r;
 }
 inline PostQuantumIdentityViewController DeviceRemote::openPostQuantumIdentityViewController() const {
@@ -21969,6 +22711,83 @@ inline void PeerViewController::start() const {
 inline void PeerViewController::stop() const {
 	urnet_peer_view_controller_stop(handle());
 }
+inline Sub PointsLeaderboardViewController::addPointsLeaderboardListener(PointsLeaderboardListener listener) const {
+	std::shared_ptr<PointsLeaderboardListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<PointsLeaderboardListener>(std::move(listener));
+	}
+	Sub r(urnet_points_leaderboard_view_controller_add_points_leaderboard_listener(handle(), listener_fn ? &detail::retained_points_leaderboard : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void PointsLeaderboardViewController::close() const {
+	urnet_points_leaderboard_view_controller_close(handle());
+}
+inline std::string PointsLeaderboardViewController::getErrorMessage() const {
+	char* r_c = urnet_points_leaderboard_view_controller_get_error_message(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t PointsLeaderboardViewController::getLatestEpoch() const {
+	int64_t r = urnet_points_leaderboard_view_controller_get_latest_epoch(handle());
+	return r;
+}
+inline std::optional<PointsLeaderboardMe> PointsLeaderboardViewController::getMe() const {
+	char* r_c = urnet_points_leaderboard_view_controller_get_me(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PointsLeaderboardMe>(r_s->c_str());
+}
+inline int64_t PointsLeaderboardViewController::getRowCount() const {
+	int64_t r = urnet_points_leaderboard_view_controller_get_row_count(handle());
+	return r;
+}
+inline std::optional<PointsLeaderboardRowList> PointsLeaderboardViewController::getRows() const {
+	char* r_c = urnet_points_leaderboard_view_controller_get_rows(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PointsLeaderboardRowList>(r_s->c_str());
+}
+inline int64_t PointsLeaderboardViewController::getSnapshotTime() const {
+	int64_t r = urnet_points_leaderboard_view_controller_get_snapshot_time(handle());
+	return r;
+}
+inline std::string PointsLeaderboardViewController::getSort() const {
+	char* r_c = urnet_points_leaderboard_view_controller_get_sort(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t PointsLeaderboardViewController::getTotalRanked() const {
+	int64_t r = urnet_points_leaderboard_view_controller_get_total_ranked(handle());
+	return r;
+}
+inline bool PointsLeaderboardViewController::isEndReached() const {
+	bool r = urnet_points_leaderboard_view_controller_is_end_reached(handle());
+	return r;
+}
+inline bool PointsLeaderboardViewController::isLoading() const {
+	bool r = urnet_points_leaderboard_view_controller_is_loading(handle());
+	return r;
+}
+inline void PointsLeaderboardViewController::loadMore() const {
+	urnet_points_leaderboard_view_controller_load_more(handle());
+}
+inline void PointsLeaderboardViewController::refresh() const {
+	urnet_points_leaderboard_view_controller_refresh(handle());
+}
+inline void PointsLeaderboardViewController::setSort(const std::string& sort) const {
+	urnet_points_leaderboard_view_controller_set_sort(handle(), sort.c_str());
+}
+inline void PointsLeaderboardViewController::start() const {
+	urnet_points_leaderboard_view_controller_start(handle());
+}
+inline void PointsLeaderboardViewController::stop() const {
+	urnet_points_leaderboard_view_controller_stop(handle());
+}
 inline Sub PostQuantumIdentityViewController::addPostQuantumIdentityListener(PostQuantumIdentityListener listener) const {
 	std::shared_ptr<PostQuantumIdentityListener> listener_fn;
 	if (listener) {
@@ -22617,6 +23436,14 @@ inline std::string formatAlphaAmount(int64_t rao) {
 	char* r_c = urnet_format_alpha_amount(rao);
 	return detail::takeString(r_c);
 }
+inline std::string formatPoints(double points) {
+	char* r_c = urnet_format_points(points);
+	return detail::takeString(r_c);
+}
+inline std::string formatRank(int64_t rank) {
+	char* r_c = urnet_format_rank(rank);
+	return detail::takeString(r_c);
+}
 inline std::string formatShareBps(int64_t share_bps) {
 	char* r_c = urnet_format_share_bps(share_bps);
 	return detail::takeString(r_c);
@@ -22752,6 +23579,10 @@ inline bool isBalanceCodeFormatValid(const std::string& secret) {
 }
 inline bool isCheckoutRedirect(const std::string& uri) {
 	bool r = urnet_is_checkout_redirect(uri.c_str());
+	return r;
+}
+inline bool isPointsLeaderboardSort(const std::string& sort) {
+	bool r = urnet_is_points_leaderboard_sort(sort.c_str());
 	return r;
 }
 inline bool isPurchaseReportTerminal(const std::string& status) {
@@ -23200,6 +24031,14 @@ inline void trimMemory() {
 inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);
 	return r;
+}
+inline std::optional<EmojiTagValidation> validateEmojiTag(const std::string& tag) {
+	char* r_c = urnet_validate_emoji_tag(tag.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<EmojiTagValidation>(r_s->c_str());
 }
 inline bool validateSs58(const std::string& address) {
 	bool r = urnet_validate_ss58(address.c_str());

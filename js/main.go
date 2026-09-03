@@ -234,6 +234,11 @@ func main() {
 		}
 		return js.ValueOf(sdk.GetColorHex(args[0].String()))
 	}))
+	// ValidateEmojiTag(tag): the emoji-tag rules the server enforces, for an
+	// editor with no host or device yet
+	js.Global().Set("URnetworkValidateEmojiTag", js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(sdk.ValidateEmojiTag(stringArg(args, 0)))
+	}))
 	registerSnExports()
 
 	select {

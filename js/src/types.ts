@@ -242,6 +242,7 @@ export interface DeviceRemote {
   openBlockActionViewController(): BlockActionViewController;
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
+  openPointsLeaderboardViewController(): PointsLeaderboardViewController;
   openPeerViewController(): PeerViewController;
   openProviderLocationsViewController(): ProviderLocationsViewController;
 }
@@ -524,6 +525,86 @@ export interface DevicesViewController {
   stop(): void;
 
   addNetworkClientsListener(cb: (clients: NetworkClientInfo[]) => void): Unsubscribe;
+}
+
+/**
+ * PointsLeaderboardRow — one ranked network on the all-time points
+ * leaderboard (android/POINTSLEADERBOARD.md), in the server's snake_case with
+ * the sdk's preformatted text beside the raw values. `display_name` is the
+ * network name, or "" when `anonymous` — render your localized "Anonymous";
+ * `emoji_tag` shows either way. Ranks are competition ranks (0 = not ranked).
+ */
+export interface PointsLeaderboardRow {
+  network_id: string;
+  network_name?: string;
+  emoji_tag?: string;
+  anonymous: boolean;
+  total_points: number;
+  blocks_with_points: number;
+  streak: number;
+  longest_streak: number;
+  rank_points: number;
+  rank_blocks: number;
+  rank_streak: number;
+  display_name?: string;
+  total_points_text?: string;
+  blocks_with_points_text?: string;
+  streak_text?: string;
+  longest_streak_text?: string;
+  rank_points_text?: string;
+  rank_blocks_text?: string;
+  rank_streak_text?: string;
+}
+
+/** The caller's own row plus its opt-in state. */
+export interface PointsLeaderboardMe extends PointsLeaderboardRow {
+  points_leaderboard_public: boolean;
+}
+
+export type PointsLeaderboardSort = "points" | "blocks" | "streak";
+
+/**
+ * EmojiTagValidation — validateEmojiTag's verdict: `normalized` is the tag to
+ * send; `reason` is "" | "empty" | "too_many" | "not_emoji" (localize by it,
+ * `message` is the English fallback).
+ */
+export interface EmojiTagValidation {
+  ok: boolean;
+  count: number;
+  normalized: string;
+  reason: "" | "empty" | "too_many" | "not_emoji";
+  message: string;
+}
+
+/**
+ * PointsLeaderboardViewController — the all-time points leaderboard. It owns
+ * the sort, the pages and the paging state; render `getRows()` in order and
+ * call `loadMore()` when the list nears its end. The listener fires on every
+ * state change (a page landed, loading toggled, the sort switched, an error,
+ * `me` updated); read the state back through the getters. `refresh()` keeps
+ * the rows until the new first page lands. Never sort, rank or page yourself.
+ */
+export interface PointsLeaderboardViewController {
+  close(): void;
+  start(): void;
+  stop(): void;
+
+  getSort(): PointsLeaderboardSort;
+  setSort(sort: PointsLeaderboardSort): void;
+  loadMore(): void;
+  refresh(): void;
+
+  getRows(): PointsLeaderboardRow[];
+  getRowCount(): number;
+  isLoading(): boolean;
+  isEndReached(): boolean;
+  getMe(): PointsLeaderboardMe | null;
+  getErrorMessage(): string;
+  getTotalRanked(): number;
+  getLatestEpoch(): number;
+  getSnapshotTime(): string | null;
+
+  addPointsLeaderboardListener(cb: () => void): Unsubscribe;
 }
 
 /**
@@ -817,6 +898,7 @@ export interface AccountHost {
   openFeedbackViewController(): FeedbackViewController;
   openReferralCodeViewController(): ReferralCodeViewController;
   openSubscriptionBalanceViewController(): SubscriptionBalanceViewController;
+  openPointsLeaderboardViewController(): PointsLeaderboardViewController;
 
   getNetworkClients(): Promise<any>;
   removeNetworkClient(clientId: string): Promise<any>;
@@ -828,6 +910,12 @@ export interface AccountHost {
   authCodeCreate(uses: number, durationMinutes: number): Promise<any>;
   networkDelete(): Promise<any>;
   getLeaderboard(): Promise<any>;
+  /** One page of the all-time points leaderboard (public; the jwt only adds `me`). */
+  getPointsLeaderboard(sort: PointsLeaderboardSort, cursor?: string, limit?: number): Promise<any>;
+  setPointsLeaderboardPublic(isPublic: boolean): Promise<any>;
+  /** Validate with validateEmojiTag first and send `normalized`; "" clears the tag. */
+  setEmojiTag(emojiTag: string): Promise<any>;
+  validateEmojiTag(emojiTag: string): EmojiTagValidation;
   getNetworkLeaderboardRanking(): Promise<any>;
   setNetworkLeaderboardPublic(isPublic: boolean): Promise<any>;
   getNetworkReliability(): Promise<any>;

@@ -32,12 +32,14 @@ var mobileApiOnlyControllerIds = map[string]bool{
 	"LocationsViewController.NewLocationsViewControllerWithApi":                   true,
 	"NetworkUserViewController.NewNetworkUserViewControllerWithApi":               true,
 	"ReferralCodeViewController.NewReferralCodeViewControllerWithApi":             true,
+	"PointsLeaderboardViewController.NewPointsLeaderboardViewControllerWithApi":   true,
 	"NewAccountPreferencesViewControllerWithApi":                                  true,
 	"NewDevicesViewControllerWithApi":                                             true,
 	"NewFeedbackViewControllerWithApi":                                            true,
 	"NewLocationsViewControllerWithApi":                                           true,
 	"NewNetworkUserViewControllerWithApi":                                         true,
 	"NewReferralCodeViewControllerWithApi":                                        true,
+	"NewPointsLeaderboardViewControllerWithApi":                                   true,
 }
 
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile

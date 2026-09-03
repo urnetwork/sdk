@@ -62,6 +62,82 @@ export interface ApiError {
   message: string;
 }
 
+export interface GetPointsLeaderboardArgs {
+  sort: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PointsLeaderboardRow {
+  network_id: string | null;
+  network_name?: string;
+  emoji_tag?: string;
+  anonymous: boolean;
+  total_points: number;
+  blocks_with_points: number;
+  streak: number;
+  longest_streak: number;
+  rank_points: number;
+  rank_blocks: number;
+  rank_streak: number;
+  display_name?: string;
+  total_points_text?: string;
+  blocks_with_points_text?: string;
+  streak_text?: string;
+  longest_streak_text?: string;
+  rank_points_text?: string;
+  rank_blocks_text?: string;
+  rank_streak_text?: string;
+}
+
+export interface PointsLeaderboardResult {
+  rows: PointsLeaderboardRow[] | null;
+  next_cursor?: string;
+  restart?: boolean;
+  total_ranked: number;
+  snapshot_time?: string | null;
+  latest_epoch: number;
+  me?: PointsLeaderboardRow & { points_leaderboard_public: boolean } | null;
+  error?: PointsLeaderboardError | null;
+}
+
+export interface PointsLeaderboardError {
+  message: string;
+}
+
+export interface SetPointsLeaderboardPublicArgs {
+  public: boolean;
+}
+
+export interface SetPointsLeaderboardPublicResult {
+  error?: SetPointsLeaderboardPublicError | null;
+}
+
+export interface SetPointsLeaderboardPublicError {
+  message: string;
+}
+
+export interface SetEmojiTagArgs {
+  emoji_tag: string;
+}
+
+export interface SetEmojiTagResult {
+  emoji_tag?: string;
+  error?: SetEmojiTagError | null;
+}
+
+export interface SetEmojiTagError {
+  message: string;
+}
+
+export interface EmojiTagValidation {
+  ok: boolean;
+  count: number;
+  normalized: string;
+  reason: string;
+  message: string;
+}
+
 export interface AuthLoginWithPasswordArgs {
   user_auth: string;
   password: string;

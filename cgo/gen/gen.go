@@ -75,6 +75,7 @@ var behavioralTypes = map[string]bool{
 	"ProvideViewController":               true,
 	"ProviderLocationsViewController":     true,
 	"ReferralCodeViewController":          true,
+	"PointsLeaderboardViewController":     true,
 	"WalletViewController":                true,
 }
 

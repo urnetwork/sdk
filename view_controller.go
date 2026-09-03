@@ -39,6 +39,8 @@ type ViewControllerManager interface {
 
 	OpenReferralCodeViewController() *ReferralCodeViewController
 
+	OpenPointsLeaderboardViewController() *PointsLeaderboardViewController
+
 	OpenBlockActionViewController() *BlockActionViewController
 
 	OpenPostQuantumIdentityViewController() *PostQuantumIdentityViewController
@@ -161,6 +163,12 @@ func (self *viewControllerManager) OpenAccountPreferencesViewController() *Accou
 
 func (self *viewControllerManager) OpenReferralCodeViewController() *ReferralCodeViewController {
 	vc := newReferralCodeViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenPointsLeaderboardViewController() *PointsLeaderboardViewController {
+	vc := newPointsLeaderboardViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

@@ -454,3 +454,85 @@ type jsPurchaseConfirmationListener struct{ cb js.Value }
 func (self *jsPurchaseConfirmationListener) PurchaseConfirmationStateChanged(state string) {
 	self.cb.Invoke(state)
 }
+
+// ── PointsLeaderboardViewController ──────────────────────────────────────────
+
+// jsPointsLeaderboardViewController is the all-time points leaderboard
+// (android/POINTSLEADERBOARD.md): sort, pages, load-more and the caller's own
+// row. Rows and `me` cross as json through their tags, with the sdk's
+// preformatted text fields (display_name, total_points_text, rank_*_text).
+func jsPointsLeaderboardViewController(
+	vc *sdk.PointsLeaderboardViewController,
+	closeController func(),
+) js.Value {
+	if vc == nil {
+		return js.Null()
+	}
+	m := map[string]any{}
+	lifecycle(m, vc.Start, vc.Stop, closeController)
+
+	m["getSort"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetSort())
+	})
+	m["setSort"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.SetSort(stringArg(args, 0))
+		return js.Null()
+	})
+	m["loadMore"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.LoadMore()
+		return js.Null()
+	})
+	m["refresh"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.Refresh()
+		return js.Null()
+	})
+	m["getRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(vc.GetRows())
+	})
+	m["getRowCount"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetRowCount())
+	})
+	m["isLoading"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.IsLoading())
+	})
+	m["isEndReached"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.IsEndReached())
+	})
+	m["getMe"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		me := vc.GetMe()
+		if me == nil {
+			return js.Null()
+		}
+		return jsJson(me)
+	})
+	m["getErrorMessage"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetErrorMessage())
+	})
+	m["getTotalRanked"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(float64(vc.GetTotalRanked()))
+	})
+	m["getLatestEpoch"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(float64(vc.GetLatestEpoch()))
+	})
+	m["getSnapshotTime"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		t := vc.GetSnapshotTime()
+		if t == nil {
+			return js.Null()
+		}
+		return jsJson(t)
+	})
+	m["addPointsLeaderboardListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddPointsLeaderboardListener(&jsPointsLeaderboardListener{cb}))
+	})
+	return js.ValueOf(m)
+}
+
+type jsPointsLeaderboardListener struct{ cb js.Value }
+
+func (self *jsPointsLeaderboardListener) PointsLeaderboardChanged() {
+	self.cb.Invoke()
+}

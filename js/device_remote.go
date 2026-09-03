@@ -435,6 +435,12 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 			device.CloseDevicesViewController(vc)
 		})
 	})
+	m["openPointsLeaderboardViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc := device.OpenPointsLeaderboardViewController()
+		return jsPointsLeaderboardViewController(vc, func() {
+			device.ClosePointsLeaderboardViewController(vc)
+		})
+	})
 	m["openPeerViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc := device.OpenPeerViewController()
 		return jsPeerViewController(vc, func() {

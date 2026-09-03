@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -2000,6 +2001,13 @@ type NetworkRanking struct {
 	NetMiBCount       float32 `json:"net_mib_count"`
 	LeaderboardRank   int     `json:"leaderboard_rank"`
 	LeaderboardPublic bool    `json:"leaderboard_public"`
+	// the all-time points leaderboard (android/POINTSLEADERBOARD.md): the
+	// caller's opt-in, its emoji tag and its three ranks (0 = not ranked)
+	PointsLeaderboardPublic bool   `json:"points_leaderboard_public"`
+	EmojiTag                string `json:"emoji_tag,omitempty"`
+	RankPoints              int    `json:"rank_points"`
+	RankBlocks              int    `json:"rank_blocks"`
+	RankStreak              int    `json:"rank_streak"`
 }
 
 type GetNetworkRankingResult struct {
@@ -2052,6 +2060,199 @@ func (self *Api) SetNetworkLeaderboardPublic(args *SetNetworkRankingPublicArgs, 
 			args,
 			self.GetByJwt(),
 			&SetNetworkRankingPublicResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * Points leaderboard (all time), android/POINTSLEADERBOARD.md
+ */
+
+// The dimensions the points leaderboard can be sorted by.
+const (
+	PointsLeaderboardSortPoints = "points"
+	PointsLeaderboardSortBlocks = "blocks"
+	PointsLeaderboardSortStreak = "streak"
+)
+
+// IsPointsLeaderboardSort reports whether sort is one of the
+// PointsLeaderboardSort* values.
+func IsPointsLeaderboardSort(sort string) bool {
+	switch sort {
+	case PointsLeaderboardSortPoints, PointsLeaderboardSortBlocks, PointsLeaderboardSortStreak:
+		return true
+	}
+	return false
+}
+
+type GetPointsLeaderboardArgs struct {
+	Sort   string `json:"sort"`
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+// PointsLeaderboardRow is one ranked network. The `*Text` fields and
+// `DisplayName` are filled by the view controller (not sent by the server):
+// `DisplayName` is the network name, or empty when `Anonymous` (the app then
+// shows its localized "Anonymous"); `EmojiTag` shows either way.
+type PointsLeaderboardRow struct {
+	NetworkId        *Id     `json:"network_id"`
+	NetworkName      string  `json:"network_name,omitempty"`
+	EmojiTag         string  `json:"emoji_tag,omitempty"`
+	Anonymous        bool    `json:"anonymous"`
+	TotalPoints      float64 `json:"total_points"`
+	BlocksWithPoints int64   `json:"blocks_with_points"`
+	Streak           int64   `json:"streak"`
+	LongestStreak    int64   `json:"longest_streak"`
+	RankPoints       int64   `json:"rank_points"`
+	RankBlocks       int64   `json:"rank_blocks"`
+	RankStreak       int64   `json:"rank_streak"`
+
+	DisplayName          string `json:"display_name,omitempty"`
+	TotalPointsText      string `json:"total_points_text,omitempty"`
+	BlocksWithPointsText string `json:"blocks_with_points_text,omitempty"`
+	StreakText           string `json:"streak_text,omitempty"`
+	LongestStreakText    string `json:"longest_streak_text,omitempty"`
+	RankPointsText       string `json:"rank_points_text,omitempty"`
+	RankBlocksText       string `json:"rank_blocks_text,omitempty"`
+	RankStreakText       string `json:"rank_streak_text,omitempty"`
+}
+
+// PointsLeaderboardMe is the caller's own row plus its opt-in state. On the
+// wire it is the row's fields with `points_leaderboard_public` beside them.
+type PointsLeaderboardMe struct {
+	Row                     *PointsLeaderboardRow
+	PointsLeaderboardPublic bool
+}
+
+func (self *PointsLeaderboardMe) UnmarshalJSON(b []byte) error {
+	row := &PointsLeaderboardRow{}
+	if err := json.Unmarshal(b, row); err != nil {
+		return err
+	}
+	var flags struct {
+		PointsLeaderboardPublic bool `json:"points_leaderboard_public"`
+	}
+	if err := json.Unmarshal(b, &flags); err != nil {
+		return err
+	}
+	self.Row = row
+	self.PointsLeaderboardPublic = flags.PointsLeaderboardPublic
+	return nil
+}
+
+func (self *PointsLeaderboardMe) MarshalJSON() ([]byte, error) {
+	fields := map[string]any{}
+	if self.Row != nil {
+		rowJson, err := json.Marshal(self.Row)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(rowJson, &fields); err != nil {
+			return nil, err
+		}
+	}
+	fields["points_leaderboard_public"] = self.PointsLeaderboardPublic
+	return json.Marshal(fields)
+}
+
+type PointsLeaderboardResult struct {
+	Rows *PointsLeaderboardRowList `json:"rows"`
+	// the cursor of the next page; empty on the last page
+	NextCursor string `json:"next_cursor,omitempty"`
+	// the snapshot behind the cursor is gone: start again from the top
+	Restart     bool  `json:"restart,omitempty"`
+	TotalRanked int64 `json:"total_ranked"`
+	// when the ranks were computed
+	SnapshotTime *Time `json:"snapshot_time,omitempty"`
+	// the latest finalized epoch the snapshot counts
+	LatestEpoch int64 `json:"latest_epoch"`
+	// the caller's own row, only with a jwt
+	Me    *PointsLeaderboardMe    `json:"me,omitempty"`
+	Error *PointsLeaderboardError `json:"error,omitempty"`
+}
+
+type PointsLeaderboardError struct {
+	Message string `json:"message"`
+}
+
+type GetPointsLeaderboardCallback connect.ApiCallback[*PointsLeaderboardResult]
+
+// GetPointsLeaderboard is one page of the all-time points leaderboard. The
+// leaderboard is public; the jwt only adds `me`.
+func (self *Api) GetPointsLeaderboard(args *GetPointsLeaderboardArgs, callback GetPointsLeaderboardCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/stats/points-leaderboard", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&PointsLeaderboardResult{},
+			callback,
+		)
+	})
+}
+
+type SetPointsLeaderboardPublicArgs struct {
+	Public bool `json:"public"`
+}
+
+type SetPointsLeaderboardPublicResult struct {
+	Error *SetPointsLeaderboardPublicError `json:"error,omitempty"`
+}
+
+type SetPointsLeaderboardPublicError struct {
+	Message string `json:"message"`
+}
+
+type SetPointsLeaderboardPublicCallback connect.ApiCallback[*SetPointsLeaderboardPublicResult]
+
+// SetPointsLeaderboardPublic opts the network in to (or out of) the points
+// leaderboard. The name still shows only when the data leaderboard's
+// name-public flag is on (SetNetworkLeaderboardPublic).
+func (self *Api) SetPointsLeaderboardPublic(args *SetPointsLeaderboardPublicArgs, callback SetPointsLeaderboardPublicCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/points-ranking-visibility", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SetPointsLeaderboardPublicResult{},
+			callback,
+		)
+	})
+}
+
+type SetEmojiTagArgs struct {
+	// 1 to 6 emoji (ValidateEmojiTag), or empty to clear the tag
+	EmojiTag string `json:"emoji_tag"`
+}
+
+type SetEmojiTagResult struct {
+	EmojiTag string            `json:"emoji_tag,omitempty"`
+	Error    *SetEmojiTagError `json:"error,omitempty"`
+}
+
+type SetEmojiTagError struct {
+	Message string `json:"message"`
+}
+
+type SetEmojiTagCallback connect.ApiCallback[*SetEmojiTagResult]
+
+// SetEmojiTag sets the emoji tag shown next to the network on the points
+// leaderboard. Validate with ValidateEmojiTag first and send `Normalized`.
+func (self *Api) SetEmojiTag(args *SetEmojiTagArgs, callback SetEmojiTagCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/emoji", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SetEmojiTagResult{},
 			callback,
 		)
 	})

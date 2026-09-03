@@ -423,6 +423,16 @@ type LeaderboardEarnersList struct {
 	exportedList[*LeaderboardEarner]
 }
 
+type PointsLeaderboardRowList struct {
+	exportedList[*PointsLeaderboardRow]
+}
+
+func NewPointsLeaderboardRowList() *PointsLeaderboardRowList {
+	return &PointsLeaderboardRowList{
+		exportedList: *newExportedList[*PointsLeaderboardRow](),
+	}
+}
+
 type AccountPointsList struct {
 	exportedList[*AccountPoint]
 }

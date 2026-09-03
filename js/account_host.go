@@ -75,6 +75,10 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 		vc := sdk.NewReferralCodeViewControllerWithApi(ctx, api)
 		return jsReferralCodeViewController(vc, vc.Close)
 	})
+	m["openPointsLeaderboardViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc := sdk.NewPointsLeaderboardViewControllerWithApi(ctx, api)
+		return jsPointsLeaderboardViewController(vc, vc.Close)
+	})
 	m["openSubscriptionBalanceViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc := sdk.NewSubscriptionBalanceViewController(api)
 		return jsSubscriptionBalanceViewController(vc, vc.Close)
@@ -94,6 +98,34 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 		return apiPromise(func(cb connect.ApiCallback[*sdk.RemoveNetworkClientResult]) {
 			api.RemoveNetworkClient(&sdk.RemoveNetworkClientArgs{ClientId: clientId}, sdk.RemoveNetworkClientCallback(cb))
 		})
+	})
+	// getPointsLeaderboard(sort, cursor?, limit?): one page of the all-time
+	// points leaderboard (public; the jwt only adds `me`)
+	m["getPointsLeaderboard"] = promiseMethod(func(args []js.Value) js.Value {
+		sort := stringArg(args, 0)
+		cursor := stringArg(args, 1)
+		limit := int(int64Arg(args, 2))
+		return apiPromise(func(cb connect.ApiCallback[*sdk.PointsLeaderboardResult]) {
+			api.GetPointsLeaderboard(&sdk.GetPointsLeaderboardArgs{Sort: sort, Cursor: cursor, Limit: limit}, sdk.GetPointsLeaderboardCallback(cb))
+		})
+	})
+	m["setPointsLeaderboardPublic"] = promiseMethod(func(args []js.Value) js.Value {
+		public := boolArg(args, 0)
+		return apiPromise(func(cb connect.ApiCallback[*sdk.SetPointsLeaderboardPublicResult]) {
+			api.SetPointsLeaderboardPublic(&sdk.SetPointsLeaderboardPublicArgs{Public: public}, sdk.SetPointsLeaderboardPublicCallback(cb))
+		})
+	})
+	// setEmojiTag(tag): validate with validateEmojiTag first and send `normalized`
+	m["setEmojiTag"] = promiseMethod(func(args []js.Value) js.Value {
+		tag := stringArg(args, 0)
+		return apiPromise(func(cb connect.ApiCallback[*sdk.SetEmojiTagResult]) {
+			api.SetEmojiTag(&sdk.SetEmojiTagArgs{EmojiTag: tag}, sdk.SetEmojiTagCallback(cb))
+		})
+	})
+	// validateEmojiTag(tag): synchronous; the sdk's EmojiTagValidation through
+	// its json tags (ok, count, normalized, reason, message)
+	m["validateEmojiTag"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(sdk.ValidateEmojiTag(stringArg(args, 0)))
 	})
 	m["getNetworkReferralCode"] = promiseMethod(func(args []js.Value) js.Value {
 		return apiPromise(func(cb connect.ApiCallback[*sdk.GetNetworkReferralCodeResult]) {

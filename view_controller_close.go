@@ -64,3 +64,9 @@ func (self *viewControllerManager) ClosePostQuantumIdentityViewController(
 		self.CloseViewController(vc)
 	}
 }
+
+func (self *viewControllerManager) ClosePointsLeaderboardViewController(vc *PointsLeaderboardViewController) {
+	if vc != nil {
+		self.CloseViewController(vc)
+	}
+}

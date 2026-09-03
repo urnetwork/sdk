@@ -269,6 +269,10 @@ void urnet_invoke_get_payout_wallet(urnet_get_payout_wallet_cb cb, void* user_da
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_get_points_leaderboard(urnet_get_points_leaderboard_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_get_referral_network(urnet_get_referral_network_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
@@ -397,6 +401,10 @@ void urnet_invoke_performance_profile_change(urnet_performance_profile_change_cb
 	cb(user_data, performance_profile_json);
 }
 
+void urnet_invoke_points_leaderboard(urnet_points_leaderboard_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_post_quantum_identity(urnet_post_quantum_identity_cb cb, void* user_data) {
 	cb(user_data);
 }
@@ -501,6 +509,10 @@ void urnet_invoke_send_feedback(urnet_send_feedback_cb cb, void* user_data, cons
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_set_emoji_tag(urnet_set_emoji_tag_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_set_network_leaderboard_public(urnet_set_network_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
@@ -510,6 +522,10 @@ void urnet_invoke_set_network_referral(urnet_set_network_referral_cb cb, void* u
 }
 
 void urnet_invoke_set_payout_wallet(urnet_set_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_set_points_leaderboard_public(urnet_set_points_leaderboard_public_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
 

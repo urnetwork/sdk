@@ -80,6 +80,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_DEVICE_RPC_WS_BINARY 2
 #define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
+#define URNET_EMOJI_TAG_MAX_COUNT 6
+#define URNET_EMOJI_TAG_REASON_EMPTY "empty"
+#define URNET_EMOJI_TAG_REASON_NOT_EMOJI "not_emoji"
+#define URNET_EMOJI_TAG_REASON_TOO_MANY "too_many"
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
 #define URNET_IP_PROTOCOL_UNKNOWN 0
@@ -95,6 +99,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_TRACE 2
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
+#define URNET_POINTS_LEADERBOARD_PAGE_SIZE 50
+#define URNET_POINTS_LEADERBOARD_SORT_BLOCKS "blocks"
+#define URNET_POINTS_LEADERBOARD_SORT_POINTS "points"
+#define URNET_POINTS_LEADERBOARD_SORT_STREAK "streak"
 #define URNET_PROVIDER_STATE_ADDED "Added"
 #define URNET_PROVIDER_STATE_EVALUATION_FAILED "EvaluationFailed"
 #define URNET_PROVIDER_STATE_IN_EVALUATION "InEvaluation"
@@ -321,6 +329,8 @@ typedef void (*urnet_get_network_reliability_cb)(void* user_data, const char* re
 typedef void (*urnet_get_network_user_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetPayoutWalletCallback */
 typedef void (*urnet_get_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+/* GetPointsLeaderboardCallback */
+typedef void (*urnet_get_points_leaderboard_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetReferralNetworkCallback */
 typedef void (*urnet_get_referral_network_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetTransferStatsCallback */
@@ -383,6 +393,8 @@ typedef void (*urnet_payout_wallet_cb)(void* user_data, const char* p0);
 typedef void (*urnet_peers_cb)(void* user_data, const char* peers_json);
 /* PerformanceProfileChangeListener */
 typedef void (*urnet_performance_profile_change_cb)(void* user_data, const char* performance_profile_json);
+/* PointsLeaderboardListener */
+typedef void (*urnet_points_leaderboard_cb)(void* user_data);
 /* PostQuantumIdentityListener */
 typedef void (*urnet_post_quantum_identity_cb)(void* user_data);
 /* ProvideChangeListener */
@@ -435,12 +447,16 @@ typedef void (*urnet_selected_location_cb)(void* user_data, const char* location
 typedef void (*urnet_selected_provider_location_change_cb)(void* user_data);
 /* SendFeedbackCallback */
 typedef void (*urnet_send_feedback_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SetEmojiTagCallback */
+typedef void (*urnet_set_emoji_tag_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetNetworkLeaderboardPublicCallback */
 typedef void (*urnet_set_network_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetNetworkReferralCallback */
 typedef void (*urnet_set_network_referral_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetPayoutWalletCallback */
 typedef void (*urnet_set_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SetPointsLeaderboardPublicCallback */
+typedef void (*urnet_set_points_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetupNewDeviceCallback */
 typedef bool (*urnet_setup_new_device_cb)(void* user_data, uint64_t device, const char* proxy_config_result_json);
 /* SnClaimCallback */
@@ -590,6 +606,7 @@ void urnet_api_get_network_referral_code(uint64_t self, urnet_get_network_referr
 void urnet_api_get_network_reliability(uint64_t self, urnet_get_network_reliability_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_user(uint64_t self, urnet_get_network_user_cb callback_result, void* callback_user_data);
 void urnet_api_get_payout_wallet(uint64_t self, urnet_get_payout_wallet_cb callback_result, void* callback_user_data);
+void urnet_api_get_points_leaderboard(uint64_t self, const char* args_json, urnet_get_points_leaderboard_cb callback_result, void* callback_user_data);
 void urnet_api_get_provider_locations(uint64_t self, urnet_find_locations_cb callback_result, void* callback_user_data);
 void urnet_api_get_referral_network(uint64_t self, urnet_get_referral_network_cb callback_result, void* callback_user_data);
 void urnet_api_get_transfer_stats(uint64_t self, urnet_get_transfer_stats_cb callback_result, void* callback_user_data);
@@ -611,9 +628,11 @@ void urnet_api_remove_wallet(uint64_t self, const char* remove_wallet_json, urne
 void urnet_api_request_jwt_refresh(uint64_t self);
 void urnet_api_send_feedback(uint64_t self, const char* send_feedback_json, urnet_send_feedback_cb callback_result, void* callback_user_data);
 void urnet_api_set_by_jwt(uint64_t self, const char* by_jwt);
+void urnet_api_set_emoji_tag(uint64_t self, const char* args_json, urnet_set_emoji_tag_cb callback_result, void* callback_user_data);
 void urnet_api_set_network_leaderboard_public(uint64_t self, const char* args_json, urnet_set_network_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_set_network_referral(uint64_t self, const char* args_json, urnet_set_network_referral_cb callback_result, void* callback_user_data);
 void urnet_api_set_payout_wallet(uint64_t self, const char* payout_wallet_json, urnet_set_payout_wallet_cb callback_result, void* callback_user_data);
+void urnet_api_set_points_leaderboard_public(uint64_t self, const char* args_json, urnet_set_points_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_sn_epoch(uint64_t self, urnet_sn_epoch_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_epoch_sync(uint64_t self, char** out_error);
 void urnet_api_sn_get_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
@@ -874,6 +893,7 @@ void urnet_device_local_close_contract_view_controller(uint64_t self, uint64_t v
 void urnet_device_local_close_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_peer_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_points_leaderboard_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_provider_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
@@ -908,6 +928,7 @@ uint64_t urnet_device_local_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_peer_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_points_leaderboard_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_post_quantum_identity_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_provider_contract_details_view_controller(uint64_t self);
@@ -965,6 +986,7 @@ void urnet_device_remote_close_contract_view_controller(uint64_t self, uint64_t 
 void urnet_device_remote_close_devices_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_peer_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_points_leaderboard_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_post_quantum_identity_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_provider_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
@@ -994,6 +1016,7 @@ uint64_t urnet_device_remote_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_network_user_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_peer_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_points_leaderboard_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_post_quantum_identity_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provide_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_provider_contract_details_view_controller(uint64_t self);
@@ -1211,6 +1234,26 @@ char* urnet_peer_view_controller_get_peers(uint64_t self);
 void urnet_peer_view_controller_start(uint64_t self);
 void urnet_peer_view_controller_stop(uint64_t self);
 
+/* ----- PointsLeaderboardViewController ----- */
+
+uint64_t urnet_points_leaderboard_view_controller_add_points_leaderboard_listener(uint64_t self, urnet_points_leaderboard_cb listener_points_leaderboard_changed, void* listener_user_data);
+void urnet_points_leaderboard_view_controller_close(uint64_t self);
+char* urnet_points_leaderboard_view_controller_get_error_message(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_get_latest_epoch(uint64_t self);
+char* urnet_points_leaderboard_view_controller_get_me(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_get_row_count(uint64_t self);
+char* urnet_points_leaderboard_view_controller_get_rows(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_get_snapshot_time(uint64_t self);
+char* urnet_points_leaderboard_view_controller_get_sort(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_get_total_ranked(uint64_t self);
+bool urnet_points_leaderboard_view_controller_is_end_reached(uint64_t self);
+bool urnet_points_leaderboard_view_controller_is_loading(uint64_t self);
+void urnet_points_leaderboard_view_controller_load_more(uint64_t self);
+void urnet_points_leaderboard_view_controller_refresh(uint64_t self);
+void urnet_points_leaderboard_view_controller_set_sort(uint64_t self, const char* sort);
+void urnet_points_leaderboard_view_controller_start(uint64_t self);
+void urnet_points_leaderboard_view_controller_stop(uint64_t self);
+
 /* ----- PostQuantumIdentityViewController ----- */
 
 uint64_t urnet_post_quantum_identity_view_controller_add_post_quantum_identity_listener(uint64_t self, urnet_post_quantum_identity_cb listener_provider_identities_changed, void* listener_user_data);
@@ -1357,6 +1400,8 @@ char* urnet_export_diagnostic_bundle(const char* dest_path, const char* opts_jso
 void urnet_flush_glog(void);
 char* urnet_format_alpha(int64_t rao);
 char* urnet_format_alpha_amount(int64_t rao);
+char* urnet_format_points(double points);
+char* urnet_format_rank(int64_t rank);
 char* urnet_format_share_bps(int64_t share_bps);
 void urnet_free_memory(void);
 uint64_t urnet_generate_device_rpc_key_material(char** out_error);
@@ -1380,6 +1425,7 @@ char* urnet_host_base_name(const char* host);
 char* urnet_id_from_bytes(const uint8_t* id_bytes, int32_t id_bytes_len, char** out_error);
 bool urnet_is_balance_code_format_valid(const char* secret);
 bool urnet_is_checkout_redirect(const char* uri);
+bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_valid_payment_reference(const char* s);
 char* urnet_log_inventory(void);
@@ -1437,6 +1483,7 @@ char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json,
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 void urnet_trim_memory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
+char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
 bool urnet_verify_payout_proof_hex(const char* root_hex, const char* leaf_hex, const char* proof_hex_json);
 bool urnet_write_heap_profile(const char* path, char** out_error);
@@ -2088,6 +2135,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   LocalDnsIpv6: StringList | null
  */
 
+/* EmojiTagValidation (json):
+ *   ok: boolean
+ *   count: number
+ *   normalized: string
+ *   reason: string
+ *   message: string
+ */
+
 /* Exit (json):
  *   ClientId: string (uuid) | null
  *   WindowType: string
@@ -2281,6 +2336,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* GetPayoutWalletIdResult (json):
  *   wallet_id: string (uuid) | null
+ */
+
+/* GetPointsLeaderboardArgs (json):
+ *   sort: string
+ *   cursor?: string
+ *   limit?: number
  */
 
 /* GetReferralNetworkError (json):
@@ -2578,6 +2639,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   net_mib_count: number
  *   leaderboard_rank: number
  *   leaderboard_public: boolean
+ *   points_leaderboard_public: boolean
+ *   emoji_tag?: string
+ *   rank_points: number
+ *   rank_blocks: number
+ *   rank_streak: number
  */
 
 /* NetworkSpaceKey (json):
@@ -2667,6 +2733,52 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   window_size: WindowSizeSettings | null
  *   allow_direct: boolean
  *   post_quantum_encryption: boolean
+ */
+
+/* PointsLeaderboardError (json):
+ *   message: string
+ */
+
+/* PointsLeaderboardMe (json):
+ *   Row: PointsLeaderboardRow | null
+ *   PointsLeaderboardPublic: boolean
+ */
+
+/* PointsLeaderboardResult (json):
+ *   rows: PointsLeaderboardRowList | null
+ *   next_cursor?: string
+ *   restart?: boolean
+ *   total_ranked: number
+ *   snapshot_time?: string (rfc3339) | null
+ *   latest_epoch: number
+ *   me?: PointsLeaderboardMe | null
+ *   error?: PointsLeaderboardError | null
+ */
+
+/* PointsLeaderboardRow (json):
+ *   network_id: string (uuid) | null
+ *   network_name?: string
+ *   emoji_tag?: string
+ *   anonymous: boolean
+ *   total_points: number
+ *   blocks_with_points: number
+ *   streak: number
+ *   longest_streak: number
+ *   rank_points: number
+ *   rank_blocks: number
+ *   rank_streak: number
+ *   display_name?: string
+ *   total_points_text?: string
+ *   blocks_with_points_text?: string
+ *   streak_text?: string
+ *   longest_streak_text?: string
+ *   rank_points_text?: string
+ *   rank_blocks_text?: string
+ *   rank_streak_text?: string
+ */
+
+/* PointsLeaderboardRowList (json):
+ *   = PointsLeaderboardRow | null[]
  */
 
 /* ProbeResult (json):
@@ -2988,6 +3100,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Pin: boolean
  */
 
+/* SetEmojiTagArgs (json):
+ *   emoji_tag: string
+ */
+
+/* SetEmojiTagError (json):
+ *   message: string
+ */
+
+/* SetEmojiTagResult (json):
+ *   emoji_tag?: string
+ *   error?: SetEmojiTagError | null
+ */
+
 /* SetNetworkRankingPublicArgs (json):
  *   is_public: boolean
  */
@@ -3017,6 +3142,18 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* SetPayoutWalletResult (json):
+ */
+
+/* SetPointsLeaderboardPublicArgs (json):
+ *   public: boolean
+ */
+
+/* SetPointsLeaderboardPublicError (json):
+ *   message: string
+ */
+
+/* SetPointsLeaderboardPublicResult (json):
+ *   error?: SetPointsLeaderboardPublicError | null
  */
 
 /* SnChainSettings (json):
