@@ -2,11 +2,37 @@ package sdk
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/urnetwork/connect"
 )
+
+type destinationWindowStatusRecorder struct {
+	stateLock             sync.Mutex
+	connectionGenerations []int64
+}
+
+func (self *destinationWindowStatusRecorder) WindowStatusChanged(windowStatus *WindowStatus) {
+	if windowStatus == nil {
+		return
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.connectionGenerations = append(self.connectionGenerations, windowStatus.ConnectionGeneration)
+}
+
+func (self *destinationWindowStatusRecorder) HasConnectionGeneration(connectionGeneration int64) bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	for _, observedConnectionGeneration := range self.connectionGenerations {
+		if observedConnectionGeneration == connectionGeneration {
+			return true
+		}
+	}
+	return false
+}
 
 // TestDeviceLocalEquivalentDestinationDoesNotRebuildProviders covers app
 // resume/recreation applying persisted state to an already-connected extension.
@@ -53,8 +79,12 @@ func TestDeviceLocalEquivalentDestinationDoesNotRebuildProviders(t *testing.T) {
 	}
 	device.SetConnectLocation(location)
 	firstClient := device.remoteUserNatClient
+	firstGeneration := device.GetWindowStatus().ConnectionGeneration
 	if calls := generatorCalls.Load(); calls != 1 {
 		t.Fatalf("first destination generator calls = %d, want 1", calls)
+	}
+	if firstGeneration <= 0 {
+		t.Fatalf("first destination connection generation = %d, want positive", firstGeneration)
 	}
 
 	equivalent := cloneConnectLocation(location)
@@ -66,6 +96,9 @@ func TestDeviceLocalEquivalentDestinationDoesNotRebuildProviders(t *testing.T) {
 	}
 	if device.remoteUserNatClient != firstClient {
 		t.Fatalf("equivalent destination replaced live provider window")
+	}
+	if generation := device.GetWindowStatus().ConnectionGeneration; generation != firstGeneration {
+		t.Fatalf("equivalent destination changed connection generation: got %d, want %d", generation, firstGeneration)
 	}
 	if got := device.GetConnectLocation(); got == nil || got.Name != "refreshed label" {
 		t.Fatalf("equivalent destination did not refresh metadata: %+v", got)
@@ -108,6 +141,9 @@ func TestDeviceLocalReconnectRebuildsTheSameDestination(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	windowStatusRecorder := &destinationWindowStatusRecorder{}
+	windowStatusSub := device.AddWindowStatusChangeListener(windowStatusRecorder)
+	defer windowStatusSub.Close()
 
 	upgradeMuxSettings := connect.DefaultUpgradeMuxSettings()
 	upgradeMuxSettings.Dns = nil
@@ -119,6 +155,7 @@ func TestDeviceLocalReconnectRebuildsTheSameDestination(t *testing.T) {
 	}
 	device.SetConnectLocation(location)
 	firstClient := device.remoteUserNatClient
+	firstGeneration := device.GetWindowStatus().ConnectionGeneration
 	if calls := generatorCalls.Load(); calls != 1 {
 		t.Fatalf("first destination generator calls = %d, want 1", calls)
 	}
@@ -128,6 +165,9 @@ func TestDeviceLocalReconnectRebuildsTheSameDestination(t *testing.T) {
 	if calls := generatorCalls.Load(); calls != 1 {
 		t.Fatalf("equivalent destination rebuilt generator: calls = %d", calls)
 	}
+	if generation := device.GetWindowStatus().ConnectionGeneration; generation != firstGeneration {
+		t.Fatalf("equivalent destination changed connection generation: got %d, want %d", generation, firstGeneration)
+	}
 
 	device.Reconnect(cloneConnectLocation(location))
 	if calls := generatorCalls.Load(); calls != 2 {
@@ -135,6 +175,12 @@ func TestDeviceLocalReconnectRebuildsTheSameDestination(t *testing.T) {
 	}
 	if device.remoteUserNatClient == firstClient {
 		t.Fatalf("reconnect kept the live provider window")
+	}
+	if generation := device.GetWindowStatus().ConnectionGeneration; generation != firstGeneration+1 {
+		t.Fatalf("reconnect connection generation = %d, want %d", generation, firstGeneration+1)
+	}
+	if !windowStatusRecorder.HasConnectionGeneration(firstGeneration + 1) {
+		t.Fatalf("window status listener did not carry reconnect generation %d", firstGeneration+1)
 	}
 	if got := device.GetConnectLocation(); got == nil || !got.Equals(location) {
 		t.Fatalf("reconnect changed the destination: %+v", got)

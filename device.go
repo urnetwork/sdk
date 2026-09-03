@@ -337,6 +337,11 @@ type ContractDetails struct {
 }
 
 type WindowStatus struct {
+	// ConnectionGeneration changes only when the destination transport is
+	// replaced. It distinguishes a new window that is honestly forming from
+	// ordinary readiness churn inside the current window, and lets consumers
+	// discard late events from a retired window.
+	ConnectionGeneration          int64
 	TargetSize                    int
 	MinSatisfied                  bool
 	ProviderStateInEvaluation     int

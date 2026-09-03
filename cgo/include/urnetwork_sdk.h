@@ -1252,6 +1252,7 @@ char* urnet_proxy_device_get_proxy_config_result(uint64_t self);
 
 uint64_t urnet_referral_code_view_controller_add_referral_code_listener(uint64_t self, urnet_referral_code_cb listener_referral_code_updated, void* listener_user_data);
 void urnet_referral_code_view_controller_close(uint64_t self);
+char* urnet_referral_code_view_controller_get_referral_code_result(uint64_t self);
 void urnet_referral_code_view_controller_start(uint64_t self);
 void urnet_referral_code_view_controller_stop(uint64_t self);
 
@@ -3584,6 +3585,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* WindowStatus (json):
+ *   ConnectionGeneration: number
  *   TargetSize: number
  *   MinSatisfied: boolean
  *   ProviderStateInEvaluation: number

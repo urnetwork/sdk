@@ -12632,6 +12632,20 @@ func urnet_referral_code_view_controller_close(self C.uint64_t) {
 	self_.Close()
 }
 
+//export urnet_referral_code_view_controller_get_referral_code_result
+func urnet_referral_code_view_controller_get_referral_code_result(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_referral_code_view_controller_get_referral_code_result")
+	self_, ok := resolveHandle[*sdk.ReferralCodeViewController](uint64(self), "urnet_referral_code_view_controller_get_referral_code_result")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReferralCodeResult()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_referral_code_view_controller_get_referral_code_result")
+}
+
 //export urnet_referral_code_view_controller_start
 func urnet_referral_code_view_controller_start(self C.uint64_t) {
 	defer cgoGuard("urnet_referral_code_view_controller_start")

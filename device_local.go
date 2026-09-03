@@ -663,6 +663,11 @@ type DeviceLocal struct {
 	// close and recreate the entire mux + multi-client provider window.
 	destinationInitialized      bool
 	destinationSpecsFingerprint string
+	// Changes only when SetDestination actually replaces the destination
+	// transport. An equivalent state replay leaves it untouched; an explicit
+	// Reconnect advances it even when the location is the same. Guarded by
+	// stateLock and surfaced with every WindowStatus.
+	connectionGeneration int64
 
 	performanceProfile *PerformanceProfile
 	// Fixed-ring primitive telemetry for the 24-MiB mobile policy. Nil outside
@@ -3690,6 +3695,7 @@ func (self *DeviceLocal) setDestination(
 			return
 		}
 
+		self.connectionGeneration += 1
 		self.destinationInitialized = true
 		self.destinationSpecsFingerprint = specsFingerprint
 		self.connectLocation = location
@@ -3992,23 +3998,34 @@ func (self *DeviceLocal) setDestination(
 				upgradeMux.WarmDns()
 			}
 			monitor := multi.Monitor()
+			connectionGeneration := self.connectionGeneration
 			windowMonitorEvent := func(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
 				windowStatus := toWindowStatus(monitor)
+				windowStatus.ConnectionGeneration = connectionGeneration
 				changed := false
+				current := false
 				func() {
 					self.stateLock.Lock()
 					defer self.stateLock.Unlock()
+					// A monitor callback can already be in flight when a destination
+					// replacement unsubscribes and closes its old window. Never let
+					// that retired generation overwrite or emit the current status.
+					if self.connectionGeneration != connectionGeneration ||
+						self.remoteUserNatClient != multi {
+						return
+					}
+					current = true
 					if self.lastWindowStatus == nil || *self.lastWindowStatus != *windowStatus {
 						self.lastWindowStatus = windowStatus
 						changed = true
 					}
 				}()
-				if changed {
+				if current && changed {
 					self.windowStatusChanged(windowStatus)
 				}
 				// expand-only events (nil providerEvents) cannot change the
 				// connected provider set
-				if reset || 0 < len(providerEvents) {
+				if current && (reset || 0 < len(providerEvents)) {
 					self.connectedProviderLocationsChanged()
 				}
 			}
@@ -4102,6 +4119,7 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 		default:
 			windowStatus = &WindowStatus{}
 		}
+		windowStatus.ConnectionGeneration = self.connectionGeneration
 	}()
 	return windowStatus
 }

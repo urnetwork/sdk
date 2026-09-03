@@ -2582,6 +2582,7 @@ struct WalletValidateAddressResult {
 };
 
 struct WindowStatus {
+	int64_t ConnectionGeneration{};
 	int64_t TargetSize{};
 	bool MinSatisfied{};
 	int64_t ProviderStateInEvaluation{};
@@ -11781,6 +11782,7 @@ inline void from_json(const nlohmann::json& j, WalletValidateAddressResult& v) {
 
 inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 	j = nlohmann::json::object();
+	j["ConnectionGeneration"] = v.ConnectionGeneration;
 	j["TargetSize"] = v.TargetSize;
 	j["MinSatisfied"] = v.MinSatisfied;
 	j["ProviderStateInEvaluation"] = v.ProviderStateInEvaluation;
@@ -11794,6 +11796,9 @@ inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("ConnectionGeneration"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ConnectionGeneration);
 	}
 	if (auto it = j.find("TargetSize"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TargetSize);
@@ -12866,6 +12871,7 @@ public:
 	explicit ReferralCodeViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addReferralCodeListener(ReferralCodeListener listener) const;
 	void close() const;
+	std::optional<GetNetworkReferralCodeResult> getReferralCodeResult() const;
 	void start() const;
 	void stop() const;
 };
@@ -22086,6 +22092,14 @@ inline Sub ReferralCodeViewController::addReferralCodeListener(ReferralCodeListe
 }
 inline void ReferralCodeViewController::close() const {
 	urnet_referral_code_view_controller_close(handle());
+}
+inline std::optional<GetNetworkReferralCodeResult> ReferralCodeViewController::getReferralCodeResult() const {
+	char* r_c = urnet_referral_code_view_controller_get_referral_code_result(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<GetNetworkReferralCodeResult>(r_s->c_str());
 }
 inline void ReferralCodeViewController::start() const {
 	urnet_referral_code_view_controller_start(handle());
