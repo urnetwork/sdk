@@ -76,10 +76,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CONTRACT_STATUS_CLOSED "closed"
 #define URNET_CONTRACT_STATUS_OPEN "open"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
-#define URNET_DEVICE_RPC_VERSION 2
+#define URNET_DEVICE_RPC_VERSION 3
 #define URNET_DEVICE_RPC_WS_BINARY 2
 #define URNET_DEVICE_RPC_WS_PING 9
 #define URNET_DISCONNECTED "DISCONNECTED"
+#define URNET_IP_FAMILY_POLICY_AUTO 0
+#define URNET_IP_FAMILY_POLICY_FORCE4 1
+#define URNET_IP_FAMILY_POLICY_FORCE6 2
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
 #define URNET_IP_PROTOCOL_UNKNOWN 0
@@ -729,6 +732,8 @@ bool urnet_device_get_connect_enabled(uint64_t self);
 char* urnet_device_get_connect_location(uint64_t self);
 char* urnet_device_get_connected_provider_locations(uint64_t self);
 char* urnet_device_get_contract_status(uint64_t self);
+int64_t urnet_device_get_control_ip_family_policy(uint64_t self);
+char* urnet_device_get_control_ip_family_status(uint64_t self);
 char* urnet_device_get_default_location(uint64_t self);
 char* urnet_device_get_dns_resolver_settings(uint64_t self);
 bool urnet_device_get_done(uint64_t self);
@@ -780,6 +785,7 @@ void urnet_device_set_can_prompt_intro_funnel(uint64_t self, bool can_prompt);
 void urnet_device_set_can_refer(uint64_t self, bool can_refer);
 void urnet_device_set_can_show_rating_dialog(uint64_t self, bool can_show_rating_dialog);
 void urnet_device_set_connect_location(uint64_t self, const char* location_json);
+void urnet_device_set_control_ip_family_policy(uint64_t self, int64_t policy);
 void urnet_device_set_default_location(uint64_t self, const char* location_json);
 void urnet_device_set_destination(uint64_t self, const char* location_json, const char* specs_json);
 void urnet_device_set_dns_resolver_settings(uint64_t self, const char* dns_resolver_settings_json);
@@ -821,6 +827,7 @@ uint64_t urnet_device_local_get_key_material(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
+bool urnet_device_local_get_provider_connected(uint64_t self);
 char* urnet_device_local_get_reliability_metrics(uint64_t self);
 char* urnet_device_local_get_reliability_settings(uint64_t self);
 char* urnet_device_local_memory_used(uint64_t self);
@@ -977,6 +984,7 @@ bool urnet_local_state_get_can_prompt_intro_funnel(uint64_t self);
 bool urnet_local_state_get_can_refer(uint64_t self);
 bool urnet_local_state_get_can_show_rating_dialog(uint64_t self);
 char* urnet_local_state_get_connect_location(uint64_t self);
+int64_t urnet_local_state_get_control_ip_family_policy(uint64_t self);
 char* urnet_local_state_get_default_location(uint64_t self);
 uint64_t urnet_local_state_get_device_local_key_material(uint64_t self);
 char* urnet_local_state_get_dns_resolver_settings(uint64_t self);
@@ -1003,6 +1011,7 @@ bool urnet_local_state_set_can_prompt_intro_funnel(uint64_t self, bool can_promp
 bool urnet_local_state_set_can_refer(uint64_t self, bool can_refer, char** out_error);
 bool urnet_local_state_set_can_show_rating_dialog(uint64_t self, bool can_show_rating_dialog, char** out_error);
 bool urnet_local_state_set_connect_location(uint64_t self, const char* connect_location_json, char** out_error);
+bool urnet_local_state_set_control_ip_family_policy(uint64_t self, int64_t policy, char** out_error);
 bool urnet_local_state_set_default_location(uint64_t self, const char* connect_location_json, char** out_error);
 bool urnet_local_state_set_device_local_key_material(uint64_t self, uint64_t key_material, char** out_error);
 bool urnet_local_state_set_dns_resolver_settings(uint64_t self, const char* dns_resolver_settings_json, char** out_error);
@@ -1046,6 +1055,7 @@ void urnet_network_name_validation_view_controller_stop(uint64_t self);
 
 /* ----- NetworkSpace ----- */
 
+void urnet_network_space_close(uint64_t self);
 char* urnet_network_space_connect_link_url(uint64_t self, const char* target);
 uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
@@ -1068,6 +1078,7 @@ bool urnet_network_space_get_sso_google(uint64_t self);
 char* urnet_network_space_get_store(uint64_t self);
 char* urnet_network_space_get_wallet(uint64_t self);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
+void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
 char* urnet_network_space_to_json(uint64_t self, char** out_error);
 
 /* ----- NetworkSpaceManager ----- */
@@ -1259,6 +1270,8 @@ uint64_t urnet_generate_device_rpc_key_material(char** out_error);
 char* urnet_generate_nonce(void);
 char* urnet_generate_wallet_key_pair(char** out_error);
 char* urnet_get_color_hex(const char* code);
+int64_t urnet_get_control_ip_family_policy(void);
+char* urnet_get_control_ip_family_status(void);
 char* urnet_get_default_dns_resolver_settings(void);
 char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
@@ -1303,6 +1316,7 @@ char* urnet_new_transfer_path(const char* source_id, const char* destination_id,
 uint64_t urnet_new_tunnel(void);
 uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
 char* urnet_normal_env_name(const char* env_name);
+char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
@@ -1310,6 +1324,7 @@ char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_k
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
 char* urnet_selectable_transport_modes(void);
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);
+void urnet_set_control_ip_family_policy(int64_t policy);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 bool urnet_set_log_dir_for_process(const char* root, const char* process_name, char** out_error);
@@ -1912,6 +1927,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   GeneratorFunc: any
  *   MultiClientIdentityStore: any
  *   ProviderDialContextSettings: any | null
+ *   DnsPumpHost: string
  *   EnableRpc: boolean
  *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
@@ -2035,6 +2051,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   count: number
  *   exclude_client_ids: IdList | null
  *   rank_mode?: string
+ *   force_minimum?: boolean
  */
 
 /* FindProviders2Result (json):

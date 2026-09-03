@@ -406,6 +406,96 @@ func clampLogVerbosity(level int) int {
 	return level
 }
 
+// Control-plane address family policy.
+//
+// Plain ints rather than a named type: gomobile binds these as constants that
+// Swift and Kotlin read directly, and a named Go int type crosses the binding
+// as an opaque wrapper the ui cannot compare against a literal.
+const (
+	// Use whatever the platform's dual-stack resolution and Happy Eyeballs
+	// choose, and route around a family this process has proven fails after
+	// connecting.
+	IpFamilyPolicyAuto = 0
+	// Control-plane dials use IPv4 only.
+	IpFamilyPolicyForce4 = 1
+	// Control-plane dials use IPv6 only.
+	IpFamilyPolicyForce6 = 2
+)
+
+// SetControlIpFamilyPolicy sets the address family THIS process uses for
+// control-plane dials: the api, the platform control websocket, and the h3
+// transport's name resolution. It does not affect tunnelled user traffic,
+// which is IPv4-only by its own design.
+//
+// This process only. On ios the api dial happens in the packet tunnel
+// extension whenever the tunnel is up, so a value set here reaches that
+// process through Device.SetControlIpFamilyPolicy -- see device_rpc.go. It is
+// not persisted here either; NetworkSpace.SetControlIpFamilyPolicy is the
+// entry point that both sets and records.
+//
+// An out-of-range value is Auto rather than an error, so a value written by a
+// newer build and read by an older one degrades to the default behavior.
+func SetControlIpFamilyPolicy(policy int) {
+	connect.SetControlIpFamilyPolicy(connect.IpFamilyPolicy(clampIpFamilyPolicy(policy)))
+}
+
+// GetControlIpFamilyPolicy returns the policy THIS process is dialing under.
+//
+// The policy ALONE: a family this process demoted on its own after a proven
+// failure is reported by GetControlIpFamilyStatus and never here, so a ui row
+// round-trips exactly what was set.
+func GetControlIpFamilyPolicy() int {
+	return int(connect.ControlIpFamilyPolicy())
+}
+
+// GetControlIpFamilyStatus describes any family this process has demoted, and
+// is empty when there is none. For the developer ui's detail line: without it
+// Auto looks identical whether the heuristic has fired or not.
+func GetControlIpFamilyStatus() string {
+	return connect.ControlFamilyStatus()
+}
+
+func clampIpFamilyPolicy(policy int) int {
+	switch policy {
+	case IpFamilyPolicyForce4, IpFamilyPolicyForce6:
+		return policy
+	}
+	return IpFamilyPolicyAuto
+}
+
+// applyPersistedControlIpFamilyPolicy restores the policy the user last chose
+// into THIS process, and reports whether there was one.
+//
+// Called from NetworkSpaceManager (see restoreControlIpFamilyPolicyOnce), NOT
+// from the Device constructors where applyPersistedLogVerbosity is called. The
+// login api call is made before any Device exists, and for a user whose ipv6
+// path is broken that is the call they are stuck on -- restoring at Device
+// construction would leave the setting inert for exactly the request it was
+// set to fix.
+//
+// Once per manager, from the space the manager is bound to. The runtime policy
+// is process-global while the persisted copy is per-space, so restoring from
+// every space the manager constructs would let the last one built win over the
+// active one.
+//
+// A nil localState (a network space with no local storage), or one with no
+// policy ever written, leaves the process dialing under whatever it already
+// had.
+func applyPersistedControlIpFamilyPolicy(localState *LocalState, log connect.Logger) (int, bool) {
+	if localState == nil {
+		return IpFamilyPolicyAuto, false
+	}
+	policy, ok := localState.controlIpFamilyPolicyIfSet()
+	if !ok {
+		return IpFamilyPolicyAuto, false
+	}
+	SetControlIpFamilyPolicy(policy)
+	if log != nil {
+		log.Infof("[family]restore policy=%d\n", clampIpFamilyPolicy(policy))
+	}
+	return clampIpFamilyPolicy(policy), true
+}
+
 // memory target ratio: how SetMemoryLimit divides the process budget into
 // the global message pool bounds, in parts of `memoryTargetRatioParts`. at
 // the reference 34 MB budget this lands on 12 MB packet pool / 2 MB large
