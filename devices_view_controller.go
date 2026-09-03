@@ -72,9 +72,14 @@ func (self *DevicesViewController) Start() {
 
 				networkClients := []*NetworkClientInfo{}
 
-				for i := 0; i < result.Clients.Len(); i += 1 {
-					networkClient := result.Clients.Get(i)
-					networkClients = append(networkClients, networkClient)
+				// Older API builds encode an empty client slice as JSON null. Treat
+				// both a null result and a null list as the empty collection promised
+				// by the devices view instead of panicking in a browser callback.
+				if result != nil && result.Clients != nil {
+					for i := 0; i < result.Clients.Len(); i += 1 {
+						networkClient := result.Clients.Get(i)
+						networkClients = append(networkClients, networkClient)
+					}
 				}
 
 				slices.SortStableFunc(networkClients, self.cmpNetworkClientLayout)
