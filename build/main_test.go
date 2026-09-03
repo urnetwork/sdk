@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,35 @@ func TestAndroidBuildStopsAfterGomobileFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, "android")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("build replaced the android artifact after gomobile failure: %v", err)
+	}
+}
+
+// Keep the gomobile toolchain in the tidy module graph at the exact version
+// used by init, so preparing a release build never rewrites go.mod or go.sum.
+func TestMobileBuildToolsRemainPinnedAndTidy(t *testing.T) {
+	const gomobileVersion = "v0.0.0-20260820023541-8e8303b9da6c"
+	moduleBytes, err := os.ReadFile("go.mod")
+	testingBuildNoError(t, err)
+	module := string(moduleBytes)
+	for _, tool := range []string{"golang.org/x/mobile/cmd/gobind", "golang.org/x/mobile/cmd/gomobile"} {
+		if !strings.Contains(module, "\t"+tool+"\n") {
+			t.Errorf("mobile build module does not retain tool %s", tool)
+		}
+	}
+	if !strings.Contains(module, "golang.org/x/mobile "+gomobileVersion+" // indirect") {
+		t.Fatalf("mobile build module does not pin x/mobile %s", gomobileVersion)
+	}
+	makefileBytes, err := os.ReadFile("Makefile")
+	testingBuildNoError(t, err)
+	makefile := string(makefileBytes)
+	if !strings.Contains(makefile, "GOMOBILE_VERSION ?= "+gomobileVersion) ||
+		!strings.Contains(makefile, "go get golang.org/x/mobile/bind@$(GOMOBILE_VERSION)") {
+		t.Fatal("mobile init and module tool versions can drift apart")
+	}
+	command := exec.Command("go", "mod", "tidy", "-diff")
+	command.Dir = "."
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("mobile build module is not tidy: %v\n%s", err, output)
 	}
 }
 

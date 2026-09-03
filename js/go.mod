@@ -2,7 +2,10 @@ module github.com/urnetwork/sdk/js
 
 go 1.26.5
 
-require github.com/urnetwork/sdk v0.0.0
+require (
+	github.com/urnetwork/connect v0.0.0
+	github.com/urnetwork/sdk v0.0.0
+)
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
@@ -28,7 +31,6 @@ require (
 	github.com/pion/webrtc/v4 v4.2.18 // indirect
 	github.com/quic-go/quic-go v0.61.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/urnetwork/connect v0.0.0 // indirect
 	github.com/urnetwork/glog v0.0.0 // indirect
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect

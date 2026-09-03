@@ -55,3 +55,8 @@ replace github.com/urnetwork/connect => ../../connect
 replace github.com/urnetwork/glog => ../../glog
 
 replace github.com/urnetwork/goidenticons => ../../goidenticons
+
+tool (
+	golang.org/x/mobile/cmd/gobind
+	golang.org/x/mobile/cmd/gomobile
+)
