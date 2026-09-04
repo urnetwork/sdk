@@ -16,7 +16,7 @@ type DeviceStats struct {
 	netRemoteReceiveByteCount ByteCount
 
 	successConnectDuration time.Duration
-	successByteCount ByteCount
+	successByteCount       ByteCount
 }
 
 func newDeviceStats() *DeviceStats {
@@ -30,7 +30,7 @@ func newDeviceStats() *DeviceStats {
 		netRemoteReceiveByteCount: ByteCount(0),
 
 		successConnectDuration: 120 * time.Second,
-		successByteCount: ByteCount(64 * 1024 * 1024),
+		successByteCount:       ByteCount(64 * 1024 * 1024),
 	}
 }
 
@@ -77,7 +77,7 @@ func (self *DeviceStats) GetUserSuccess() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	connectTimeCondition := self.successConnectDuration <= self.netConnectDuration || self.connectEnabled && self.connectStartTime.Add(self.successConnectDuration - self.netConnectDuration).Before(time.Now())
+	connectTimeCondition := self.successConnectDuration <= self.netConnectDuration || self.connectEnabled && self.connectStartTime.Add(self.successConnectDuration-self.netConnectDuration).Before(time.Now())
 	receiveByteCountCondition := self.successByteCount <= self.netRemoteReceiveByteCount
 	return connectTimeCondition && receiveByteCountCondition
 }

@@ -29,4 +29,3 @@ func TestWriteHeapProfileCreatesPrivateProfile(t *testing.T) {
 		t.Fatalf("profile mode = %04o, want 0600", got)
 	}
 }
-
