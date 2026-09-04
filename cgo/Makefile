@@ -1,4 +1,8 @@
 
+.PHONY: all clean generate build build_windows build_windows_amd64 \
+	build_windows_arm64 build_linux build_linux_amd64 build_linux_arm64 \
+	build_host smoke smoke_hpp init
+
 all: clean build
 
 clean:
@@ -7,7 +11,7 @@ clean:
 # regenerate the c abi from the sdk surface
 # updates exports_gen*.go, callbacks.h/.c, include/, and coverage_report.txt
 generate:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
 	go run ./gen;
 
 build: generate build_windows build_linux
@@ -22,65 +26,70 @@ LINUX_AMD64_CC ?= zig cc -target x86_64-linux-gnu.2.35
 LINUX_ARM64_CC ?= zig cc -target aarch64-linux-gnu.2.35
 
 build_windows: build_windows_amd64 build_windows_arm64
-	rm -f build/URnetworkSdkWindows.zip; \
+	rm -f build/URnetworkSdkWindows.zip && \
 	(cd build && zip -r URnetworkSdkWindows.zip windows);
 
 build_windows_amd64:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GOEXPERIMENT=greenteagc; \
-	mkdir -p build/windows/amd64; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	export GOEXPERIMENT=greenteagc && \
+	mkdir -p build/windows/amd64 && \
+	rm -f build/windows/amd64/URnetworkSdk.dll && \
 	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC="$(WINDOWS_AMD64_CC)" \
 	go build -trimpath -buildmode=c-shared \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
-		-o build/windows/amd64/URnetworkSdk.dll .; \
-	rm -f build/windows/amd64/URnetworkSdk.h; \
+		-o build/windows/amd64/URnetworkSdk.dll . && \
+	rm -f build/windows/amd64/URnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def build/windows/amd64/;
 
 build_windows_arm64:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GOEXPERIMENT=greenteagc; \
-	mkdir -p build/windows/arm64; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	export GOEXPERIMENT=greenteagc && \
+	mkdir -p build/windows/arm64 && \
+	rm -f build/windows/arm64/URnetworkSdk.dll && \
 	CGO_ENABLED=1 GOOS=windows GOARCH=arm64 CC="$(WINDOWS_ARM64_CC)" \
 	go build -trimpath -buildmode=c-shared \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
-		-o build/windows/arm64/URnetworkSdk.dll .; \
-	rm -f build/windows/arm64/URnetworkSdk.h; \
+		-o build/windows/arm64/URnetworkSdk.dll . && \
+	rm -f build/windows/arm64/URnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def build/windows/arm64/;
 
 build_linux: build_linux_amd64 build_linux_arm64
-	rm -f build/URnetworkSdkLinux.zip; \
+	rm -f build/URnetworkSdkLinux.zip && \
 	(cd build && zip -r URnetworkSdkLinux.zip linux);
 
 build_linux_amd64:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GOEXPERIMENT=greenteagc; \
-	mkdir -p build/linux/amd64; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	export GOEXPERIMENT=greenteagc && \
+	mkdir -p build/linux/amd64 && \
+	rm -f build/linux/amd64/libURnetworkSdk.so && \
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="$(LINUX_AMD64_CC)" \
 	go build -trimpath -buildmode=c-shared \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
-		-o build/linux/amd64/libURnetworkSdk.so .; \
-	rm -f build/linux/amd64/libURnetworkSdk.h; \
+		-o build/linux/amd64/libURnetworkSdk.so . && \
+	rm -f build/linux/amd64/libURnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp build/linux/amd64/;
 
 build_linux_arm64:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GOEXPERIMENT=greenteagc; \
-	mkdir -p build/linux/arm64; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	export GOEXPERIMENT=greenteagc && \
+	mkdir -p build/linux/arm64 && \
+	rm -f build/linux/arm64/libURnetworkSdk.so && \
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(LINUX_ARM64_CC)" \
 	go build -trimpath -buildmode=c-shared \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
-		-o build/linux/arm64/libURnetworkSdk.so .; \
-	rm -f build/linux/arm64/libURnetworkSdk.h; \
+		-o build/linux/arm64/libURnetworkSdk.so . && \
+	rm -f build/linux/arm64/libURnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp build/linux/arm64/;
 
 # host (macOS) library, for local development and the smoke test
 build_host:
-	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GOEXPERIMENT=greenteagc; \
-	mkdir -p build/host; \
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	export GOEXPERIMENT=greenteagc && \
+	mkdir -p build/host && \
+	rm -f build/host/libURnetworkSdk.dylib && \
 	CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
 		-ldflags "-X github.com/urnetwork/sdk.Version=$${WARP_VERSION}" \
-		-o build/host/libURnetworkSdk.dylib .; \
+		-o build/host/libURnetworkSdk.dylib . && \
 	rm -f build/host/libURnetworkSdk.h;
 
 # nlohmann/json for the c++ wrapper (header-only): brew install nlohmann-json
