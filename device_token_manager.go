@@ -35,6 +35,7 @@ type apiTokenManager struct {
 	// level-triggered without turning every ordinary reconnect into a refresh.
 	stateLock             sync.Mutex
 	transportGeneration   uint64
+	activeRefreshAttempt  *apiTokenRefreshAttempt
 	failedRefreshPending  bool
 	transportRetryPending bool
 	// Immutable after the worker starts; tests install a deterministic barrier.
@@ -49,6 +50,25 @@ type apiTokenManager struct {
 	// and the next scheduled refresh is half a token lifetime away. The flag survives
 	// across iterations, so a request made at any moment is honored on the next pass.
 	refreshPending atomic.Bool
+}
+
+// apiTokenRefreshAttempt owns one cancellable request generation. Superseded
+// is guarded by its manager's stateLock.
+type apiTokenRefreshAttempt struct {
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	transportGeneration uint64
+	superseded          bool
+}
+
+// apiTokenRefreshOutcome keeps retryable request errors unlogged until the
+// owner knows whether a transport transition deliberately canceled them.
+type apiTokenRefreshOutcome struct {
+	loggedOut       bool
+	stale           bool
+	logRequestError bool
+	requestCanceled bool
+	err             error
 }
 
 type clientJwtIdentity struct {
@@ -250,28 +270,61 @@ func (self *apiTokenManager) TokenChanged() {
 	self.refreshMonitor.NotifyAll()
 }
 
-// transportAvailable wakes only an outstanding failed refresh. A successful
-// or scheduled refresh is unaffected by ordinary RPC reconnects.
+// transportAvailable cancels an attempt that captured an older API path, or
+// wakes an outstanding failed refresh. /auth/refresh is an idempotent GET that
+// mints a JWT without invalidating the authenticated JWT, so retrying after an
+// ambiguous cancellation cannot strand the client on a rotated credential.
 func (self *apiTokenManager) transportAvailable() {
+	var attemptCancel context.CancelFunc
 	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-
 	self.transportGeneration += 1
-	if self.failedRefreshPending {
+	if self.activeRefreshAttempt != nil {
+		self.activeRefreshAttempt.superseded = true
+		attemptCancel = self.activeRefreshAttempt.cancel
+	} else if self.failedRefreshPending {
 		self.transportRetryPending = true
 		self.refreshMonitor.NotifyAll()
 	}
+	self.stateLock.Unlock()
+
+	// Context cancellation is external work; never invoke it under stateLock.
+	if attemptCancel != nil {
+		attemptCancel()
+	}
 }
 
-// beginRefreshAttempt consumes an availability-triggered retry and snapshots
-// the transport generation used by the new attempt.
-func (self *apiTokenManager) beginRefreshAttempt() uint64 {
+// beginRefreshAttempt registers cancellation ownership before the HTTP path is
+// selected. A transport publication is therefore ordered either wholly before
+// this attempt (which uses the new path) or after it (which cancels this path).
+func (self *apiTokenManager) beginRefreshAttempt() *apiTokenRefreshAttempt {
+	attemptCtx, attemptCancel := context.WithCancel(self.ctx)
+	attempt := &apiTokenRefreshAttempt{
+		ctx:    attemptCtx,
+		cancel: attemptCancel,
+	}
+
+	self.stateLock.Lock()
+	self.failedRefreshPending = false
+	self.transportRetryPending = false
+	attempt.transportGeneration = self.transportGeneration
+	self.activeRefreshAttempt = attempt
+	self.stateLock.Unlock()
+	return attempt
+}
+
+// finishRefreshAttempt releases request ownership and reports whether a newer
+// transport canceled this exact attempt. Pointer identity prevents a late
+// completion from clearing a later attempt if the lifecycle changes.
+func (self *apiTokenManager) finishRefreshAttempt(attempt *apiTokenRefreshAttempt) bool {
+	attempt.cancel()
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	self.failedRefreshPending = false
-	self.transportRetryPending = false
-	return self.transportGeneration
+	superseded := attempt.superseded
+	if self.activeRefreshAttempt == attempt {
+		self.activeRefreshAttempt = nil
+	}
+	return superseded
 }
 
 // markRefreshFailed records the retryable failure and reports whether a newer
@@ -375,13 +428,34 @@ func (self *apiTokenManager) run() {
 		}
 
 		for {
-			transportGeneration := self.beginRefreshAttempt()
+			attempt := self.beginRefreshAttempt()
 			self.api.logger().Infof("[api-token]refreshing the jwt now")
-			loggedOut, stale, err := self.refreshToken(byJwt)
-			if loggedOut || stale || err == nil {
+			outcome := self.refreshTokenWithContext(attempt.ctx, byJwt)
+			superseded := self.finishRefreshAttempt(attempt)
+			if outcome.loggedOut || outcome.stale || outcome.err == nil {
 				break
 			}
-			transportRetryPending := self.markRefreshFailed(transportGeneration)
+			if self.ctx.Err() != nil {
+				return
+			}
+
+			if superseded && outcome.requestCanceled {
+				// An explicit refresh or token replacement retains its stronger
+				// level-triggered ownership. Let the outer loop consume it (and
+				// re-read the JWT) rather than performing a transport retry first.
+				if self.refreshPending.Load() {
+					break
+				}
+				// The obsolete-path error is expected cancellation, not an outage.
+				// Retry through the now-published path without emitting a false
+				// failure or entering randomized backoff.
+				continue
+			}
+
+			if outcome.logRequestError {
+				self.api.logger().Errorf("[api-token]failed to refresh JWT: %v", outcome.err)
+			}
+			transportRetryPending := self.markRefreshFailed(attempt.transportGeneration)
 
 			// A request arriving during the failed HTTP call must not sleep
 			// behind retry jitter. Return to the outer loop immediately.
@@ -410,7 +484,7 @@ func (self *apiTokenManager) run() {
 			self.api.logger().Infof(
 				"[api-token]jwt refresh failed. Will retry in %.2fs. err = %s",
 				float64(randomTimeout/time.Millisecond)/1000.0,
-				err,
+				outcome.err,
 			)
 
 			timer := time.NewTimer(randomTimeout)
@@ -450,26 +524,40 @@ func (self *apiTokenManager) run() {
 // a typed `connect.HttpStatusError` from the http layer, so an outage page
 // body can never be mistaken for a refresh result.
 func (self *apiTokenManager) refreshToken(byJwt string) (loggedOut bool, stale bool, returnErr error) {
-	// bound the request to the manager ctx so a closed device does not leave
-	// the refresh (and its dialer evals) running to their own timeouts
-	result, err := self.api.refreshJwtSyncWithContextAndJwt(self.ctx, byJwt)
+	outcome := self.refreshTokenWithContext(self.ctx, byJwt)
+	if outcome.logRequestError {
+		self.api.logger().Errorf("[api-token]failed to refresh JWT: %v", outcome.err)
+	}
+	return outcome.loggedOut, outcome.stale, outcome.err
+}
+
+// refreshTokenWithContext leaves retryable request-error logging to its owner,
+// which can distinguish a real failure from deliberate transport supersession.
+func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt string) apiTokenRefreshOutcome {
+	// Bound the request to the attempt ctx so a transport transition can release
+	// an obsolete path immediately and manager close still joins every dialer.
+	result, err := self.api.refreshJwtSyncWithContextAndJwt(ctx, byJwt)
 	if err != nil {
-		// a 401 over the api connection is the auth layer rejecting the jwt
+		// A 401 over the api connection is the auth layer rejecting the jwt
 		// itself (expired or unparseable): confirmed invalid
 		var statusErr *connect.HttpStatusError
 		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusUnauthorized {
 			self.api.logger().Errorf("[api-token]jwt rejected by the api (%d): logging out", statusErr.StatusCode)
 			if self.api.rejectByJwt(byJwt) {
-				loggedOut = true
+				return apiTokenRefreshOutcome{loggedOut: true}
 			} else {
-				stale = true
+				return apiTokenRefreshOutcome{stale: true}
 			}
-			return
 		}
 
-		self.api.logger().Errorf("[api-token]failed to refresh JWT: %v", err)
-		returnErr = err
-		return
+		return apiTokenRefreshOutcome{
+			logRequestError: true,
+			// Preserve every HTTP response, including retryable 5xx responses,
+			// even if transport publication raced with it. Only an untyped
+			// request failure from the canceled attempt is expected supersession.
+			requestCanceled: ctx.Err() != nil && !errors.As(err, &statusErr),
+			err:             err,
+		}
 	}
 
 	if result.Error != nil {
@@ -477,29 +565,25 @@ func (self *apiTokenManager) refreshToken(byJwt string) (loggedOut bool, stale b
 		// no longer exists
 		self.api.logger().Errorf("[api-token]failed to refresh JWT: %v", result.Error.Message)
 		if self.api.rejectByJwt(byJwt) {
-			loggedOut = true
+			return apiTokenRefreshOutcome{loggedOut: true}
 		} else {
-			stale = true
+			return apiTokenRefreshOutcome{stale: true}
 		}
-		return
 	}
 
 	// guard against api logic errors that could mess up the client state
 	if result.ByJwt == "" {
-		returnErr = fmt.Errorf("failed to refresh JWT: empty JWT returned")
-		return
+		return apiTokenRefreshOutcome{err: fmt.Errorf("failed to refresh JWT: empty JWT returned")}
 	}
 	if err := validateRefreshedClientJwt(byJwt, result.ByJwt); err != nil {
-		returnErr = fmt.Errorf("failed to refresh JWT: %w", err)
-		return
+		return apiTokenRefreshOutcome{err: fmt.Errorf("failed to refresh JWT: %w", err)}
 	}
 
 	if !self.api.setRefreshedByJwt(byJwt, result.ByJwt) {
-		stale = true
-		return
+		return apiTokenRefreshOutcome{stale: true}
 	}
 	self.api.logger().Infof("[api-token]successfully refreshed JWT")
-	return
+	return apiTokenRefreshOutcome{}
 }
 
 // RefreshToken records a level-triggered immediate refresh request.
