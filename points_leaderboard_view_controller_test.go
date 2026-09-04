@@ -492,3 +492,18 @@ func TestPointsLeaderboardLoadMoreClaimsTheSlotOnce(t *testing.T) {
 		t.Fatalf("expected one request for the second page, got %d", got)
 	}
 }
+
+// The caller's own name is shown even while the row is anonymous to others:
+// the server sends `network_name` on `me` regardless of the switch.
+func TestPointsLeaderboardOwnNameShownWhenAnonymous(t *testing.T) {
+	me := &PointsLeaderboardRow{NetworkName: "wickymicky", Anonymous: true, EmojiTag: "🦓"}
+	formatPointsLeaderboardRow(me)
+	if me.DisplayName != "wickymicky" {
+		t.Fatalf("own row display name = %q, want the name the server sent", me.DisplayName)
+	}
+	other := &PointsLeaderboardRow{Anonymous: true, EmojiTag: "🔥"}
+	formatPointsLeaderboardRow(other)
+	if other.DisplayName != "" {
+		t.Fatalf("anonymous row without a name must have no display name, got %q", other.DisplayName)
+	}
+}

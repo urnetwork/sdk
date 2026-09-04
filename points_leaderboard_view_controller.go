@@ -34,8 +34,9 @@ const PointsLeaderboardPageSize = 50
 // its own.
 //
 // Only networks that opted in are listed; a row's `NetworkName` is set only
-// when that network's name is public, otherwise `Anonymous` is true and the
-// app shows its localized "Anonymous". `EmojiTag` shows either way.
+// when the server sent one (a network that revealed its name, or the caller's
+// own `me` row); otherwise `Anonymous` is true and the app shows its localized
+// "Anonymous". `EmojiTag` shows either way.
 //
 // Every method is safe for concurrent use. Listeners are called with the
 // state lock released, so a listener may call back into the controller
@@ -403,10 +404,12 @@ func formatPointsLeaderboardRow(row *PointsLeaderboardRow) {
 	if row == nil {
 		return
 	}
-	row.DisplayName = ""
-	if !row.Anonymous {
-		row.DisplayName = row.NetworkName
-	}
+	// the server omits the name of an anonymous row and always sends the
+	// caller's own name on `me`, so the name is shown whenever it was sent:
+	// a network sees itself by name in its header even while others see it
+	// as Anonymous. Blanking the name on `Anonymous` alone hid the caller's
+	// own name.
+	row.DisplayName = row.NetworkName
 	row.TotalPointsText = FormatPoints(row.TotalPoints)
 	row.BlocksWithPointsText = fmt.Sprintf("%d", row.BlocksWithPoints)
 	row.StreakText = fmt.Sprintf("%d", row.Streak)
