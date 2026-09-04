@@ -886,6 +886,14 @@ func (self *DeviceRemote) run() {
 			restoreState = false
 			synced = true
 
+			if !self.settings.BrowserStateOnly || self.settings.RequireRemoteApi {
+				// The API switched from its pre-service direct fallback to this
+				// published RPC generation. Wake only a refresh that failed across
+				// that transition; healthy reconnects must not create auth traffic.
+				// Ordinary BrowserStateOnly remotes keep using their direct API path,
+				// so their RPC service is not an API-transport transition.
+				self.GetApi().remoteTransportAvailable()
+			}
 			self.remoteChanged(true)
 			if deviceRecreated {
 				self.deviceRecreated()

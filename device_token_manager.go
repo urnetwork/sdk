@@ -6,6 +6,7 @@ import (
 	"fmt"
 	mathrand "math/rand"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,18 @@ type apiTokenManager struct {
 
 	refreshMonitor *connect.Monitor
 	active         atomic.Bool
+
+	// A DeviceRemote can make a new API transport usable while an older direct
+	// request is still failing. The generation closes that race: a failure can
+	// tell that transport availability changed during its request and retry
+	// immediately. The pending bits keep later availability notifications
+	// level-triggered without turning every ordinary reconnect into a refresh.
+	stateLock             sync.Mutex
+	transportGeneration   uint64
+	failedRefreshPending  bool
+	transportRetryPending bool
+	// Immutable after the worker starts; tests install a deterministic barrier.
+	retryTimeout func() time.Duration
 
 	// refreshPending makes a refresh request LEVEL-triggered instead of edge-triggered.
 	//
@@ -237,6 +250,59 @@ func (self *apiTokenManager) TokenChanged() {
 	self.refreshMonitor.NotifyAll()
 }
 
+// transportAvailable wakes only an outstanding failed refresh. A successful
+// or scheduled refresh is unaffected by ordinary RPC reconnects.
+func (self *apiTokenManager) transportAvailable() {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.transportGeneration += 1
+	if self.failedRefreshPending {
+		self.transportRetryPending = true
+		self.refreshMonitor.NotifyAll()
+	}
+}
+
+// beginRefreshAttempt consumes an availability-triggered retry and snapshots
+// the transport generation used by the new attempt.
+func (self *apiTokenManager) beginRefreshAttempt() uint64 {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.failedRefreshPending = false
+	self.transportRetryPending = false
+	return self.transportGeneration
+}
+
+// markRefreshFailed records the retryable failure and reports whether a newer
+// transport became available while that request was in flight.
+func (self *apiTokenManager) markRefreshFailed(transportGeneration uint64) bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	self.failedRefreshPending = true
+	if self.transportGeneration != transportGeneration {
+		self.transportRetryPending = true
+	}
+	return self.transportRetryPending
+}
+
+// transportRetryIsPending reads the level paired with refreshMonitor.
+func (self *apiTokenManager) transportRetryIsPending() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.transportRetryPending
+}
+
+// nextRetryTimeout owns the randomized outage backoff. Tests replace it with
+// a barrier so transport/wait races are forced rather than scheduled by luck.
+func (self *apiTokenManager) nextRetryTimeout() time.Duration {
+	if self.retryTimeout != nil {
+		return self.retryTimeout()
+	}
+	return time.Duration(mathrand.Int63n(int64(15 * time.Minute)))
+}
+
 func (self *apiTokenManager) run() {
 	for {
 		// Capture the notify channel BEFORE reading the token and refreshPending,
@@ -261,7 +327,7 @@ func (self *apiTokenManager) run() {
 		}
 
 		refreshTimeout := time.Duration(0)
-		if !self.refreshPending.Load() {
+		if !self.refreshPending.Load() && !self.transportRetryIsPending() {
 			// A refresh requested while we were busy (or while computing the
 			// timeout) sent the monitor's edge to a channel we are no longer
 			// listening to. The level-triggered flag above is what honors that
@@ -309,29 +375,44 @@ func (self *apiTokenManager) run() {
 		}
 
 		for {
+			transportGeneration := self.beginRefreshAttempt()
 			self.api.logger().Infof("[api-token]refreshing the jwt now")
 			loggedOut, stale, err := self.refreshToken(byJwt)
 			if loggedOut || stale || err == nil {
 				break
 			}
+			transportRetryPending := self.markRefreshFailed(transportGeneration)
 
 			// A request arriving during the failed HTTP call must not sleep
 			// behind retry jitter. Return to the outer loop immediately.
 			if self.refreshPending.Load() {
 				break
 			}
+			// RPC transport availability is separate from an explicit refresh:
+			// it retries this same captured JWT only when the failed request
+			// overlapped the transition.
+			if transportRetryPending {
+				continue
+			}
 
-			randomTimeout := time.Duration(mathrand.Int63n(int64(15 * time.Minute)))
+			// Subscribe immediately before reading both pending levels. A wake
+			// between an earlier read and this capture would otherwise be lost
+			// behind the full retry jitter.
+			retryNotify := self.refreshMonitor.NotifyChannel()
+			if self.refreshPending.Load() {
+				break
+			}
+			if self.transportRetryIsPending() {
+				continue
+			}
+
+			randomTimeout := self.nextRetryTimeout()
 			self.api.logger().Infof(
 				"[api-token]jwt refresh failed. Will retry in %.2fs. err = %s",
 				float64(randomTimeout/time.Millisecond)/1000.0,
 				err,
 			)
 
-			// re-capture per wait: see the note at the outer capture. A NotifyAll
-			// during this iteration would otherwise leave the arm below
-			// permanently ready and defeat the backoff entirely.
-			retryNotify := self.refreshMonitor.NotifyChannel()
 			timer := time.NewTimer(randomTimeout)
 			select {
 			case <-self.ctx.Done():
@@ -344,8 +425,12 @@ func (self *apiTokenManager) run() {
 				return
 			case <-retryNotify:
 				stopApiTokenTimer(timer)
-				// The token or refresh request changed; recalculate from the
-				// API's current state rather than retrying the captured JWT.
+				if !self.refreshPending.Load() && self.transportRetryIsPending() {
+					continue
+				}
+				// The token or an explicit refresh request changed; recalculate
+				// from the API's current state rather than retrying the captured
+				// JWT.
 			case <-timer.C:
 				continue
 			}

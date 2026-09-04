@@ -221,6 +221,13 @@ func (self *Api) RequestJwtRefresh() {
 	self.tokenManager.RefreshToken()
 }
 
+// remoteTransportAvailable retries a refresh only when an earlier attempt is
+// still outstanding. DeviceRemote calls this after publishing a usable RPC
+// service, never merely after configuring or dialing one.
+func (self *Api) remoteTransportAvailable() {
+	self.tokenManager.transportAvailable()
+}
+
 func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
