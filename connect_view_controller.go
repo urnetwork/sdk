@@ -118,14 +118,43 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 
 // ConnectLocationChangeListener
 func (self *ConnectViewController) ConnectLocationChanged(location *ConnectLocation) {
-	if location == nil {
-		self.setConnected(false)
-		// keep the previous selected location
-	} else {
-		self.setConnected(true)
-		self.setSelectedLocation(location)
+	retainRemoteGrid := false
+	selectedLocationChanged := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if location == nil {
+			self.connected = false
+			// keep the previous selected location
+			return
+		}
+
+		// DeviceRemote keeps each registered logical window id across a local
+		// destination-generation replacement; DeviceLocalRpc rebinds it and sends
+		// a reset snapshot. Retain that grid when a sync merely replays the same
+		// transport location. Recreating it changes the browser-state listener set,
+		// which requests another sync and otherwise forms an endless resync loop.
+		// A direct DeviceLocal has no rebind layer, so it must still replace its
+		// grid on an explicit same-location reconnect. The generation match makes
+		// the same distinction for an explicit reconnect through DeviceRemote.
+		remote, isRemote := self.device.(*DeviceRemote)
+		browserRemote := isRemote && remote != nil &&
+			remote.settings != nil && remote.settings.BrowserStateOnly
+		if browserRemote && self.connected && self.grid != nil && self.grid.generation == self.generation {
+			retainRemoteGrid = connectLocationTransportEqual(self.selectedLocation, location)
+		}
+		self.connected = true
+		self.selectedLocation = location
+		selectedLocationChanged = true
+	}()
+
+	if selectedLocationChanged {
+		self.selectedLocationChanged(location)
 	}
-	self.setGrid()
+	if !retainRemoteGrid {
+		self.setGrid()
+	}
 }
 
 func (self *ConnectViewController) Start() {}

@@ -200,3 +200,71 @@ func TestDeviceLocalRpcWindowMonitorGenerationTag(t *testing.T) {
 	rpc.sendMu.Unlock()
 	connect.AssertEqual(t, pendingAfterCurrent, 1)
 }
+
+// A local destination generation can replace its physical window monitor while
+// the browser retains one logical DeviceRemote window for the same location.
+// DeviceLocalRpc must rebind that remote id to the new local generation and
+// enqueue a reset snapshot; otherwise idempotent CVC replay would leave the
+// retained grid permanently attached to the retired generation.
+func TestDeviceLocalRpcSameLocationGenerationResetsRetainedRemoteGrid(t *testing.T) {
+	initialMonitor := newTestingGridWindowMonitor()
+	replacementMonitor := newTestingGridWindowMonitor()
+	deviceLocal := &DeviceLocal{
+		windowMonitorCache: initialMonitor,
+	}
+	rpc := &DeviceLocalRpc{
+		ctx:                           t.Context(),
+		deviceLocal:                   deviceLocal,
+		windowMonitorEventListenerIds: map[connect.Id]map[connect.Id]bool{},
+		localWindowIds:                map[connect.Id]connect.Id{},
+		sendPending:                   map[string]func(){},
+		sendSignal:                    make(chan struct{}, 1),
+	}
+	remoteWindowId := connect.NewId()
+	remoteListenerId := connect.NewId()
+
+	rpc.stateLock.Lock()
+	rpc.addWindowMonitorEventListener(DeviceRemoteWindowListenerId{
+		WindowId:   remoteWindowId,
+		ListenerId: remoteListenerId,
+	})
+	previousLocalWindowId := rpc.localWindowId
+	rpc.stateLock.Unlock()
+
+	// Model the same logical location receiving a new local transport
+	// generation: cachedWindowMonitor now returns an explicitly distinct,
+	// non-zero-sized monitor. (Distinct pointers to Go zero-sized fixtures are
+	// permitted to compare equal, so an emptyWindowMonitor is not an identity
+	// proof.)
+	deviceLocal.windowMonitorCacheLock.Lock()
+	deviceLocal.windowMonitorCache = replacementMonitor
+	deviceLocal.windowMonitorCacheLock.Unlock()
+	rpc.ConnectLocationChanged(&ConnectLocation{
+		ConnectLocationId: &ConnectLocationId{BestAvailable: true},
+	})
+
+	rpc.stateLock.Lock()
+	currentLocalWindowId := rpc.localWindowId
+	reboundLocalWindowId := rpc.localWindowIds[remoteWindowId]
+	listenerRetained := rpc.windowMonitorEventListenerIds[remoteWindowId][remoteListenerId]
+	rpc.stateLock.Unlock()
+	if currentLocalWindowId == previousLocalWindowId {
+		t.Fatal("local window generation did not change")
+	}
+	if reboundLocalWindowId != currentLocalWindowId {
+		t.Fatal("retained remote window id was not rebound to the new local generation")
+	}
+	if !listenerRetained {
+		t.Fatal("local generation replacement dropped the retained remote listener")
+	}
+
+	rpc.sendMu.Lock()
+	resetEvent := rpc.sendWindowMonitorEvent
+	rpc.sendMu.Unlock()
+	if resetEvent == nil || !resetEvent.Reset {
+		t.Fatalf("new local generation did not enqueue a reset snapshot: %+v", resetEvent)
+	}
+	if !resetEvent.WindowIds[remoteWindowId] {
+		t.Fatal("reset snapshot did not address the retained remote grid")
+	}
+}
