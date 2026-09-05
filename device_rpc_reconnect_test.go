@@ -451,6 +451,121 @@ func TestDeviceRemoteFailedSyncRestoreKeepsNewerPendingState(t *testing.T) {
 	}
 }
 
+func TestDeviceRemoteFailedSyncRestoreKeepsNewestDestinationCommand(t *testing.T) {
+	type destinationCommand struct {
+		name  string
+		apply func(*DeviceRemote, string)
+		check func(*testing.T, *DeviceRemoteState, string)
+	}
+	commands := []destinationCommand{
+		{
+			name: "remove",
+			apply: func(device *DeviceRemote, _ string) {
+				device.RemoveDestination()
+			},
+			check: func(t *testing.T, state *DeviceRemoteState, _ string) {
+				t.Helper()
+				if !state.RemoveDestination.IsSet || !state.RemoveDestination.Value {
+					t.Fatal("newer destination removal was not restored")
+				}
+			},
+		},
+		{
+			name: "destination",
+			apply: func(device *DeviceRemote, value string) {
+				device.SetDestination(&ConnectLocation{Name: value}, nil)
+			},
+			check: func(t *testing.T, state *DeviceRemoteState, value string) {
+				t.Helper()
+				if !state.Destination.IsSet || state.Destination.Value == nil || state.Destination.Value.Location == nil {
+					t.Fatal("newer explicit destination was not restored")
+				}
+				location := state.Destination.Value.Location.toConnectLocation()
+				if location == nil || location.Name != value {
+					t.Fatalf("restored explicit destination = %+v, want name %q", location, value)
+				}
+			},
+		},
+		{
+			name: "location",
+			apply: func(device *DeviceRemote, value string) {
+				device.SetConnectLocation(&ConnectLocation{Name: value})
+			},
+			check: func(t *testing.T, state *DeviceRemoteState, value string) {
+				t.Helper()
+				if !state.Location.IsSet || state.Location.Value == nil {
+					t.Fatal("newer connect location was not restored")
+				}
+				location := state.Location.Value.toConnectLocation()
+				if location == nil || location.Name != value {
+					t.Fatalf("restored connect location = %+v, want name %q", location, value)
+				}
+			},
+		},
+		{
+			name: "nil-location",
+			apply: func(device *DeviceRemote, _ string) {
+				device.SetConnectLocation(nil)
+			},
+			check: func(t *testing.T, state *DeviceRemoteState, _ string) {
+				t.Helper()
+				if !state.Location.IsSet || state.Location.Value == nil {
+					t.Fatal("newer nil connect location was not restored")
+				}
+				if location := state.Location.Value.toConnectLocation(); location != nil {
+					t.Fatalf("restored nil connect location = %+v", location)
+				}
+			},
+		},
+	}
+
+	for _, older := range commands {
+		for _, newer := range commands {
+			caseName := older.name + "/" + newer.name
+			deviceRemote := &DeviceRemote{settings: defaultDeviceRpcSettings()}
+			older.apply(deviceRemote, "older")
+			deviceRemote.state.BlockerEnabled.Set(true)
+
+			request := deviceRemote.takeSyncRequest()
+			if got := testingDestinationCommandCount(&request.State); got != 1 {
+				t.Fatalf("%s: in-flight destination command count = %d, want 1", caseName, got)
+			}
+			newer.apply(deviceRemote, "newer")
+			if got := testingDestinationCommandCount(&deviceRemote.state); got != 1 {
+				t.Fatalf("%s: newer pending destination command count = %d, want 1", caseName, got)
+			}
+			deviceRemote.state.CanRefer.Set(true)
+			deviceRemote.restoreSyncState(request.State)
+
+			state := &deviceRemote.state
+			if got := testingDestinationCommandCount(state); got != 1 {
+				t.Fatalf("%s: restored destination command count = %d, want 1", caseName, got)
+			}
+			newer.check(t, state, "newer")
+			if !state.BlockerEnabled.IsSet || !state.BlockerEnabled.Value {
+				t.Fatalf("%s: older unrelated field was not restored", caseName)
+			}
+			if !state.CanRefer.IsSet || !state.CanRefer.Value {
+				t.Fatalf("%s: newer unrelated field was not preserved", caseName)
+			}
+		}
+	}
+}
+
+func testingDestinationCommandCount(state *DeviceRemoteState) int {
+	count := 0
+	if state.RemoveDestination.IsSet {
+		count++
+	}
+	if state.Destination.IsSet {
+		count++
+	}
+	if state.Location.IsSet {
+		count++
+	}
+	return count
+}
+
 // TestDeviceRemotePacesFailedDialAttempts verifies a missing local extension
 // cannot cause randomly clustered reconnect work.
 func TestDeviceRemotePacesFailedDialAttempts(t *testing.T) {

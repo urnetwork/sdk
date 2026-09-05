@@ -654,6 +654,7 @@ type AuthNetworkClientArgs struct {
 
 type AuthNetworkClientResult struct {
 	ByClientJwt       string                  `json:"by_client_jwt,omitempty"`
+	ClientId          *Id                     `json:"client_id,omitempty"`
 	ProxyConfigResult *ProxyConfigResult      `json:"proxy_config_result"`
 	Error             *AuthNetworkClientError `json:"error,omitempty"`
 }

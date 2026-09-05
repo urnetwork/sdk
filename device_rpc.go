@@ -6325,9 +6325,10 @@ type DeviceRemoteState struct {
 	// RefreshToken deviceRemoteValue[int]
 }
 
-// Reapplies values that were queued after an older snapshot. The update wins
-// field by field, which preserves the newest user intent when an RPC attempt
-// fails while another goroutine changes state.
+// Reapplies values that were queued after an older snapshot. Independent
+// updates win field by field. RemoveDestination, Destination, and Location
+// encode one destination command, so any newer command replaces that union as
+// a whole instead of retaining a sibling from the older request.
 func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.CanShowRatingDialog.Merge(update.CanShowRatingDialog)
 	self.CanPromptIntroFunnel.Merge(update.CanPromptIntroFunnel)
@@ -6345,10 +6346,12 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
 	self.VpnInterfaceWhileOffline.Merge(update.VpnInterfaceWhileOffline)
-	self.RemoveDestination.Merge(update.RemoveDestination)
-	self.Destination.Merge(update.Destination)
+	if update.RemoveDestination.IsSet || update.Destination.IsSet || update.Location.IsSet {
+		self.RemoveDestination = update.RemoveDestination
+		self.Destination = update.Destination
+		self.Location = update.Location
+	}
 	self.PerformanceProfile.Merge(update.PerformanceProfile)
-	self.Location.Merge(update.Location)
 	self.DefaultLocation.Merge(update.DefaultLocation)
 	self.Shuffle.Merge(update.Shuffle)
 	self.ResetEgressSecurityPolicyStats.Merge(update.ResetEgressSecurityPolicyStats)

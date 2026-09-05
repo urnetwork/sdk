@@ -172,7 +172,7 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 		case "/auth/code-login":
 			fmt.Fprint(w, `{"by_jwt":"code-jwt"}`)
 		case "/network/auth-client":
-			fmt.Fprint(w, `{"by_client_jwt":"client-jwt"}`)
+			fmt.Fprint(w, `{"by_client_jwt":"client-jwt","client_id":"00000000-0000-0000-0000-000000000008"}`)
 		case "/network/find-providers2":
 			fmt.Fprint(w, `{"providers":[{"client_id":"00000000-0000-0000-0000-000000000009","estimated_bytes_per_second":1234,"network_only":true,"reputation_failed_names":"bloomberg"}]}`)
 		default:
@@ -211,6 +211,9 @@ func TestApiHeadlessAuthAndProviderBindings(t *testing.T) {
 	}
 	if clientResult.ByClientJwt != "client-jwt" {
 		t.Fatalf("client JWT = %q, want client-jwt", clientResult.ByClientJwt)
+	}
+	if clientResult.ClientId == nil || clientResult.ClientId.String() != "00000000-0000-0000-0000-000000000008" {
+		t.Fatalf("client ID = %v, want server-returned client ID", clientResult.ClientId)
 	}
 
 	providerResult, err := api.FindProviders2SyncWithContext(ctx, &FindProviders2Args{
