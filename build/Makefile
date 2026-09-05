@@ -6,6 +6,13 @@
 MOBILE_MEMORY_PROFILE_RATE ?= 0
 MOBILE_RUNTIME_GODEBUG := $(shell mobile_default_godebug="$$(go list -f '{{.DefaultGODEBUG}}' .)"; if [ -n "$$mobile_default_godebug" ]; then printf '%s,memprofilerate=%s' "$$mobile_default_godebug" "$(MOBILE_MEMORY_PROFILE_RATE)"; else printf 'memprofilerate=%s' "$(MOBILE_MEMORY_PROFILE_RATE)"; fi)
 MOBILE_RUNTIME_LDFLAG := -X=runtime.godebugDefault=$(MOBILE_RUNTIME_GODEBUG)
+SDK_BUILD_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
+ANDROID_OUTPUT_GATE := $(dir $(SDK_BUILD_MAKEFILE))sdk-android-output-lock.sh
+
+# Android SDK staging, publication, cleanup, and input initialization share a
+# nonblocking kernel lock. Waiting would hide overlapping build ownership and
+# let an acceptance attempt claim an artifact whose provenance is ambiguous.
+# The hidden lock file is persistent metadata and is not matched by android*.
 
 # build_windows is not in `all`: the shipped Windows SDK (amd64+arm64) builds
 # inside the Windows VM (build/all/build-windows.sh), which provisions Go +
@@ -15,6 +22,12 @@ MOBILE_RUNTIME_LDFLAG := -X=runtime.godebugDefault=$(MOBILE_RUNTIME_GODEBUG)
 all: init clean build_android build_apple build_js build_linux
 
 clean:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-clean -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _clean
+
+.PHONY: _clean
+_clean:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	rm -rf android*
 	rm -rf apple*
 	rm -rf ios*
@@ -26,6 +39,12 @@ clean:
 # see https://github.com/xaionaro/documentation/blob/master/golang/reduce-binary-size.md
 
 build_android:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-build-android -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _build_android
+
+.PHONY: _build_android
+_build_android:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
@@ -48,6 +67,9 @@ build_android:
 	# see https://github.com/wlynxg/anet/pull/9
 	# see https://github.com/pion/webrtc/issues/2640
 	set -e; \
+	BUILD_OWNER="$${URNETWORK_ANDROID_SDK_BUILD_OWNER:-unattributed}"; \
+	case "$$BUILD_OWNER" in ''|*[!A-Za-z0-9._:-]*) \
+		echo "invalid Android SDK build owner" >&2; exit 64;; esac; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
@@ -79,6 +101,8 @@ build_android:
 	go run ./cmd/mobileexports "$$BUILD_DIR/validate"; \
 	rm -rf "$$BUILD_DIR/edit"; \
 	rm -rf "$$BUILD_DIR/validate"; \
+	printf '%s\n' "$$BUILD_OWNER" >"$$BUILD_DIR/.build-owner"; \
+	chmod 600 "$$BUILD_DIR/.build-owner"; \
 	if [ -e "android" ]; then mv android android.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" android;
 
@@ -162,15 +186,26 @@ CHECKSEC_VERSION ?= v3.1.0
 # Install only the pinned build tools. Platform setup scripts use this target
 # so acceptance builds do not install tools or clean shared Go caches.
 # gomobile init installs gobind@latest, so restore the matching version after it.
-.PHONY: init_tools init
+.PHONY: init_tools _init_tools init _init
 init_tools:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-init-android-tools -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init_tools
+
+_init_tools:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
 	go install golang.org/x/mobile/cmd/gomobile@$(GOMOBILE_VERSION) && \
 	gomobile init && \
 	go install golang.org/x/mobile/cmd/gobind@$(GOMOBILE_VERSION) && \
 	go install github.com/slimm609/checksec/v3@$(CHECKSEC_VERSION)
 
-init: init_tools
+init:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-init-android -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init
+
+_init:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
+	"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init_tools
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
 	go get golang.org/x/mobile/bind@$(GOMOBILE_VERSION) && \
 	go mod download "github.com/urnetwork/sdk" && \

@@ -1,5 +1,20 @@
 #!/usr/bin/env zsh
 
+sdk_dir=${0:A:h}
+workspace_root=${URNETWORK_ROOT:-${WARP_HOME:-${sdk_dir:h}}}
+network_test_gate="$workspace_root/tests/network-intensive-suite-lock.sh"
+if [[ ! -x "$network_test_gate" ]]; then
+    echo "SDK test suite gate is missing or not executable: $network_test_gate" >&2
+    exit 127
+fi
+if [[ "${URNETWORK_NETWORK_TEST_LOCK_HELD:-}" != 1 ]]; then
+    exec "$network_test_gate" run-all-sdk -- "$sdk_dir/test.sh" "$@"
+fi
+if ! "$network_test_gate" --verify-held; then
+    echo "SDK test suite inherited an invalid network-intensive lock" >&2
+    exit 70
+fi
+
 # root sdk module
 go test -timeout 0 -v -race "$@"
 if [[ $? != 0 ]]; then
