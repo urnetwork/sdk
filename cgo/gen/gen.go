@@ -39,10 +39,12 @@ const sdkPath = "github.com/urnetwork/sdk"
 var behavioralTypes = map[string]bool{
 	// These immutable observations expose private state through getters.
 	// JSON would erase both their values and their ownership identity.
-	"LocalAuthStateSnapshot": true,
-	"LocalStateResetResult":  true,
-	"DeviceLocalLoadResult":  true,
-	"DeviceLocalSaveResult":  true,
+	"LocalAuthStateSnapshot":          true,
+	"LocalStateResetResult":           true,
+	"DeviceLocalLoadResult":           true,
+	"DeviceLocalSaveResult":           true,
+	"LocalStateLocationReadResult":    true,
+	"LocalStateKeyMaterialReadResult": true,
 
 	"NetworkSpaceManager":        true,
 	"NetworkSpace":               true,

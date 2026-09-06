@@ -63,6 +63,7 @@ func TestPreferenceBindingObjectsUseOpaqueHandles(t *testing.T) {
 	for _, name := range []string{
 		"LocalAuthStateSnapshot", "LocalStateResetResult",
 		"DeviceLocalLoadResult", "DeviceLocalSaveResult",
+		"LocalStateLocationReadResult", "LocalStateKeyMaterialReadResult",
 	} {
 		object := testingPreferenceType(t, g, name)
 		info := g.classify(types.NewPointer(object.Type()))
@@ -77,6 +78,7 @@ func TestPreferenceBindingEmitsAllObservationGetters(t *testing.T) {
 	for _, name := range []string{
 		"LocalAuthStateSnapshot", "LocalStateResetResult",
 		"DeviceLocalLoadResult", "DeviceLocalSaveResult",
+		"LocalStateLocationReadResult", "LocalStateKeyMaterialReadResult",
 	} {
 		g.emitType(testingPreferenceType(t, g, name))
 	}
@@ -89,6 +91,8 @@ func TestPreferenceBindingEmitsAllObservationGetters(t *testing.T) {
 			"LoadConnectLocation", "LoadDefaultLocation", "SetConnectLocation", "SetDefaultLocation",
 		}},
 		{receiver: "LocalStateResetResult", methods: []string{"GetReset", "GetDeviceLocalKeyMaterial"}},
+		{receiver: "LocalStateLocationReadResult", methods: []string{"GetLocation"}},
+		{receiver: "LocalStateKeyMaterialReadResult", methods: []string{"GetKeyMaterial"}},
 		{receiver: "DeviceLocalLoadResult", methods: []string{
 			"GetLoaded", "GetHasConnectLocation", "GetHasDefaultLocation", "GetDefaultError",
 			"GetHasPreference", "GetPreferenceError",
@@ -115,7 +119,7 @@ func TestPreferenceBindingEmitsAllObservationGetters(t *testing.T) {
 
 func TestPreferenceBindingCheckedOperationsKeepHandleAndError(t *testing.T) {
 	g := testingPreferenceGenerator(t)
-	for _, name := range []string{"NetworkSpace", "LocalState", "DeviceLocal"} {
+	for _, name := range []string{"NetworkSpace", "LocalState", "LocalAuthStateSnapshot", "DeviceLocal"} {
 		g.emitType(testingPreferenceType(t, g, name))
 	}
 	for _, expected := range []struct {
@@ -129,6 +133,11 @@ func TestPreferenceBindingCheckedOperationsKeepHandleAndError(t *testing.T) {
 		{receiver: "NetworkSpace", method: "ResetLocalStateIfCurrent", result: "LocalStateResetResult", hasError: true},
 		{receiver: "DeviceLocal", method: "Load", result: "DeviceLocalLoadResult", hasError: true},
 		{receiver: "DeviceLocal", method: "GetLastLocalStateSaveResult", result: "DeviceLocalSaveResult"},
+		{receiver: "LocalState", method: "ReadConnectLocation", result: "LocalStateLocationReadResult", hasError: true},
+		{receiver: "LocalState", method: "ReadDefaultLocation", result: "LocalStateLocationReadResult", hasError: true},
+		{receiver: "LocalAuthStateSnapshot", method: "ReadConnectLocation", result: "LocalStateLocationReadResult", hasError: true},
+		{receiver: "LocalAuthStateSnapshot", method: "ReadDefaultLocation", result: "LocalStateLocationReadResult", hasError: true},
+		{receiver: "LocalState", method: "ReadDeviceLocalKeyMaterial", result: "LocalStateKeyMaterialReadResult", hasError: true},
 	} {
 		item := testingPreferenceExport(t, g, expected.receiver, expected.method)
 		if item.sig.result == nil || item.sig.result.kind != kindHandle ||
@@ -281,6 +290,7 @@ func TestPreferenceBindingGeneratedFilesCarryGettersAndAdditiveAbi(t *testing.T)
 	for _, name := range []string{
 		"LocalAuthStateSnapshot", "LocalStateResetResult",
 		"DeviceLocalLoadResult", "DeviceLocalSaveResult",
+		"LocalStateLocationReadResult", "LocalStateKeyMaterialReadResult",
 	} {
 		if !strings.Contains(cpp, "class "+name+" final : public detail::Handle") ||
 			strings.Contains(cpp, "struct "+name+" {") {
@@ -289,6 +299,9 @@ func TestPreferenceBindingGeneratedFilesCarryGettersAndAdditiveAbi(t *testing.T)
 	}
 	for _, declaration := range []string{
 		"DeviceLocalLoadResult load() const;",
+		"LocalStateLocationReadResult readConnectLocation() const;",
+		"LocalStateLocationReadResult readDefaultLocation() const;",
+		"LocalStateKeyMaterialReadResult readDeviceLocalKeyMaterial() const;",
 		"DeviceLocalSaveResult getLastLocalStateSaveResult() const;",
 		"LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;",
 		"using LocalStateSaveListener = std::function<void(DeviceLocalSaveResult result)>;",
