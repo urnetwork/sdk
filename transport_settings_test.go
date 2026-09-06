@@ -1,7 +1,10 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -227,11 +230,12 @@ func TestTransportSettingsLocalStateRoundTrip(t *testing.T) {
 	assertTransportSettings(t, localState.GetProviderTransportSettings(), providerSettings, true)
 }
 
+// Checked opt-ins preserve independent client/provider records and detached
+// object graphs across a real cold manager reopen, without constructor replay.
 func TestDeviceLocalTransportSettingsPersistRestoreAndClone(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	connect.AssertEqual(t, err, nil)
+	directory := t.TempDir()
+	manager, fixture := testingPreferenceSpaceAt(t, directory)
+	fixture.seedDistinctLogin(t)
 
 	clientSettings := testingTransportSettings(
 		TransportModeAuto,
@@ -242,11 +246,42 @@ func TestDeviceLocalTransportSettingsPersistRestoreAndClone(t *testing.T) {
 		TransportModeH1,
 		&TransportModePriority{Mode: TransportModeDnsPump, Priority: 7},
 	)
-	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
+	device := testingPreferenceDevice(t, fixture)
+	if device.GetAutoSave() {
+		t.Fatal("constructor implicitly enabled transport persistence")
+	}
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
 	device.SetTransportSettings(clientSettings)
+	clientSave := device.GetLastLocalStateSaveResult()
+	if clientSave == nil || clientSave.GetPreference() != "transport-settings" ||
+		!clientSave.GetAutoSaveEnabled() || !clientSave.GetSaved() || clientSave.GetError() != "" {
+		t.Fatal("client transport settings did not commit before return")
+	}
 	device.SetProviderTransportSettings(providerSettings)
+	providerSave := device.GetLastLocalStateSaveResult()
+	if providerSave == nil || providerSave.GetPreference() != "provider-transport-settings" ||
+		!providerSave.GetAutoSaveEnabled() || !providerSave.GetSaved() || providerSave.GetError() != "" {
+		t.Fatal("provider transport settings did not commit before return")
+	}
 	assertTransportSettings(t, device.GetTransportSettings(), clientSettings, false)
 	assertTransportSettings(t, device.GetProviderTransportSettings(), providerSettings, true)
+	assertTransportSettings(t, fixture.localState.GetTransportSettings(), clientSettings, false)
+	assertTransportSettings(t, fixture.localState.GetProviderTransportSettings(), providerSettings, true)
+	records := map[string][]byte{}
+	for _, name := range []string{"transport-settings", "provider-transport-settings"} {
+		file, known := localPreferenceFile(name)
+		if !known {
+			t.Fatal("transport preference is missing from the catalog")
+		}
+		path := filepath.Join(fixture.localState.localStorageDir, file)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal("saved transport record is unavailable")
+		}
+		records[path] = data
+	}
 
 	// Public setters and getters both detach their object graphs.
 	clientSettings.AutoModePriorities.Get(0).Priority = 99
@@ -258,12 +293,33 @@ func TestDeviceLocalTransportSettingsPersistRestoreAndClone(t *testing.T) {
 		&TransportModePriority{Mode: TransportModeDns, Priority: 2},
 	)
 	assertTransportSettings(t, device.GetTransportSettings(), wantClientSettings, false)
-	device.Close()
+	assertTransportSettings(t, fixture.localState.GetTransportSettings(), wantClientSettings, false)
+	testingJoinPreferenceDevice(t, device)
+	manager.Close()
 
-	restored := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer restored.Close()
+	_, fresh := testingPreferenceSpaceAt(t, directory)
+	restored := testingPreferenceDevice(t, fresh)
+	assertTransportSettings(t, restored.GetTransportSettings(), DefaultTransportSettings(), false)
+	assertTransportSettings(t, restored.GetProviderTransportSettings(), DefaultProviderTransportSettings(), true)
+	loaded, err := restored.Load()
+	if err != nil || loaded == nil || !loaded.GetLoaded() {
+		t.Fatal("checked transport settings restoration failed")
+	}
+	for _, name := range []string{"transport-settings", "provider-transport-settings"} {
+		if !loaded.GetHasPreference(name) || loaded.GetPreferenceError(name) != "" {
+			t.Fatalf("checked Load did not restore %s", name)
+		}
+	}
 	assertTransportSettings(t, restored.GetTransportSettings(), wantClientSettings, false)
 	assertTransportSettings(t, restored.GetProviderTransportSettings(), providerSettings, true)
+	if restored.GetAutoSave() || restored.GetLastLocalStateSaveResult() != nil || restored.GetConnectEnabled() {
+		t.Fatal("transport Load enabled persistence, replayed a save, or invented a consumer")
+	}
+	for path, before := range records {
+		if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, before) {
+			t.Fatal("caller mutation, close or cold Load changed a transport record")
+		}
+	}
 }
 
 func TestDeviceLocalTransportSettingsChangeListeners(t *testing.T) {

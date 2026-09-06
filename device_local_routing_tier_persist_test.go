@@ -1,48 +1,98 @@
 package sdk
 
 import (
-	"context"
+	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/urnetwork/connect"
 )
 
-// TestDeviceLocalRoutingTierPersistRestore: the tier persists to local state
-// on set, and a new device on the same network space restores it. Mirrors
-// TestDeviceLocalBlockerEnabledPersistRestore (device_local_blocker_persist_test.go)
-// in shape -- this is the device-level path (SetRoutingTier -> persistRoutingTier
-// -> LocalState -> a fresh DeviceLocal's constructor restore block), not just
-// the LocalState primitive TestRoutingTierPersistsAcrossLocalStateReload
-// already covers.
+// Autosave commits before return. A cold accepted owner remains at the
+// constructor default until explicit Load, without rewriting the saved record.
 func TestDeviceLocalRoutingTierPersistRestore(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
+	directory := t.TempDir()
+	manager, fixture := testingPreferenceSpaceAt(t, directory)
+	fixture.seedDistinctLogin(t)
+	device := testingPreferenceDevice(t, fixture)
+	connect.AssertEqual(t, RoutingTierOff, testingDeviceRoutingTier(device))
+	if device.GetAutoSave() {
+		t.Fatal("constructor implicitly enabled routing-tier persistence")
 	}
-	localState := networkSpace.GetAsyncLocalState().GetLocalState()
-
-	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	connect.AssertEqual(t, int(RoutingTierOff), localState.GetRoutingTier())
-
-	// the set persists asynchronously to local state
-	device.SetRoutingTier(int(RoutingTierFull))
-	persisted := false
-	for i := 0; i < 100; i += 1 {
-		if localState.GetRoutingTier() == int(RoutingTierFull) {
-			persisted = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
 	}
-	connect.AssertEqual(t, true, persisted)
-	device.Close()
+	device.SetRoutingTier(RoutingTierFull)
+	result := device.GetLastLocalStateSaveResult()
+	if result == nil || result.GetPreference() != "routing-tier" ||
+		!result.GetAutoSaveEnabled() || !result.GetSaved() || result.GetError() != "" {
+		t.Fatal("routing tier did not report a completed durable save")
+	}
+	connect.AssertEqual(t, RoutingTierFull, testingDeviceRoutingTier(device))
+	connect.AssertEqual(t, RoutingTierFull, fixture.localState.GetRoutingTier())
+	path := filepath.Join(fixture.localState.localStorageDir, ".routing_tier")
+	committed, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(committed, []byte("2")) {
+		t.Fatal("routing-tier setter returned before committing its JSON record")
+	}
+	testingJoinPreferenceDevice(t, device)
+	manager.Close()
 
-	// a new device on the same network space restores the persisted tier
-	restored := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer restored.Close()
-	connect.AssertEqual(t, int(RoutingTierFull), restored.routingTier)
+	_, fresh := testingPreferenceSpaceAt(t, directory)
+	restored := testingPreferenceDevice(t, fresh)
+	connect.AssertEqual(t, RoutingTierOff, testingDeviceRoutingTier(restored))
+	loaded, err := restored.Load()
+	if err != nil || loaded == nil || !loaded.GetLoaded() ||
+		!loaded.GetHasPreference("routing-tier") || loaded.GetPreferenceError("routing-tier") != "" {
+		t.Fatal("checked routing-tier restoration failed")
+	}
+	connect.AssertEqual(t, RoutingTierFull, testingDeviceRoutingTier(restored))
+	if restored.GetAutoSave() || restored.GetLastLocalStateSaveResult() != nil || restored.GetConnectEnabled() {
+		t.Fatal("Load enabled persistence, replayed a save, or invented a consumer")
+	}
+	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, committed) {
+		t.Fatal("close or cold Load changed the saved routing-tier record")
+	}
+}
+
+// Opting in is not a snapshot save. An explicit equal mutation must still
+// commit a tier that was previously only live with persistence disabled.
+func TestDeviceLocalRoutingTierDefaultOffRequiresExplicitEqualSave(t *testing.T) {
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	device := testingPreferenceDevice(t, fixture)
+	path := filepath.Join(fixture.localState.localStorageDir, ".routing_tier")
+	device.SetRoutingTier(RoutingTierFull)
+	connect.AssertEqual(t, RoutingTierFull, testingDeviceRoutingTier(device))
+	result := device.GetLastLocalStateSaveResult()
+	if result == nil || result.GetPreference() != "routing-tier" ||
+		result.GetAutoSaveEnabled() || result.GetSaved() || result.GetError() != "" {
+		t.Fatal("default-off mutation did not report live-only success")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("default-off routing-tier mutation wrote a file")
+	}
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("enabling autosave implicitly saved the routing tier")
+	}
+	device.SetRoutingTier(RoutingTierFull)
+	saved := device.GetLastLocalStateSaveResult()
+	if saved == nil || !saved.GetAutoSaveEnabled() || !saved.GetSaved() || saved.GetError() != "" ||
+		saved.GetSequence() <= result.GetSequence() {
+		t.Fatal("explicit equal routing-tier mutation did not commit")
+	}
+	connect.AssertEqual(t, RoutingTierFull, fixture.localState.GetRoutingTier())
+}
+
+// Observe the live field under its production lock; no exported tier getter
+// is needed solely for this test.
+func testingDeviceRoutingTier(device *DeviceLocal) int {
+	device.stateLock.Lock()
+	defer device.stateLock.Unlock()
+	return device.routingTier
 }
