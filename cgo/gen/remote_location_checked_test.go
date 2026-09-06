@@ -13,10 +13,12 @@ import (
 // already-established error output convention.
 func TestCheckedRemoteLocationBindingKeepsLegacyAndError(t *testing.T) {
 	g := testingPreferenceGenerator(t)
+	// The compatibility getter belongs to Device and is inherited by DeviceRemote.
+	g.emitType(testingPreferenceType(t, g, "Device"))
 	g.emitType(testingPreferenceType(t, g, "DeviceRemote"))
-	legacy := testingPreferenceExport(t, g, "DeviceRemote", "GetConnectLocation")
+	legacy := testingPreferenceExport(t, g, "Device", "GetConnectLocation")
 	checked := testingPreferenceExport(t, g, "DeviceRemote", "GetConnectLocationChecked")
-	if legacy.cDecl != "char* urnet_device_remote_get_connect_location(uint64_t self);" || legacy.sig.hasError {
+	if legacy.cDecl != "char* urnet_device_get_connect_location(uint64_t self);" || legacy.sig.hasError || !g.deviceDerived["DeviceRemote"] {
 		t.Fatal("checked location changed the legacy getter ABI")
 	}
 	if checked.cDecl != "char* urnet_device_remote_get_connect_location_checked(uint64_t self, char** out_error);" ||
@@ -57,14 +59,20 @@ func TestCheckedRemoteLocationGeneratedCppDistinguishesFailureAndNil(t *testing.
 	if errorIndex < 0 || nilIndex <= errorIndex || !strings.Contains(body, "return detail::parseJson<ConnectLocation>(r_s->c_str());") {
 		t.Fatal("generated C++ conflated a failed observation with successful nil")
 	}
-	if !strings.Contains(cpp, "inline std::optional<ConnectLocation> DeviceRemote::getConnectLocation() const {\n") {
-		t.Fatal("fresh generation removed the legacy current-location getter")
+	if !strings.Contains(cpp, "class DeviceRemote final : public Device {\n") ||
+		!strings.Contains(cpp, "inline std::optional<ConnectLocation> Device::getConnectLocation() const {\n") {
+		t.Fatal("fresh generation removed the inherited legacy current-location getter")
 	}
 	exports, err := os.ReadFile(filepath.Join(output, "include", "urnetwork_sdk.def"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains("\n"+string(exports)+"\n", "\n\turnet_device_remote_get_connect_location_checked\n") {
+	exportLines := "\n" + string(exports) + "\n"
+	if !strings.Contains(exportLines, "\n\turnet_device_get_connect_location\n") ||
+		strings.Contains(exportLines, "\n\turnet_device_remote_get_connect_location\n") {
+		t.Fatal("fresh generation changed the legacy getter export ownership")
+	}
+	if !strings.Contains(exportLines, "\n\turnet_device_remote_get_connect_location_checked\n") {
 		t.Fatal("fresh generation omitted the additive checked location export")
 	}
 }
