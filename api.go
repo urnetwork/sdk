@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"sync"
+	"sync/atomic"
 
 	"github.com/urnetwork/connect"
 )
@@ -33,6 +34,51 @@ type Api struct {
 	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
 	tokenManager        *apiTokenManager
+}
+
+// Delivers at most one terminal result. Marking delivery before entering the
+// foreign callback prevents its own panic from being mistaken for a request
+// panic and invoking application code twice.
+type terminalApiCallback[R any] struct {
+	callback connect.ApiCallback[R]
+	called   atomic.Bool
+}
+
+func (self *terminalApiCallback[R]) Result(result R, err error) {
+	if !self.called.CompareAndSwap(false, true) {
+		return
+	}
+	self.callback.Result(result, err)
+}
+
+var (
+	errApiRequestFailed                  = errors.New("api request failed")
+	errApiRequestReturnedWithoutCallback = errors.New("api request returned without a callback")
+)
+
+// Converts every synchronous exit without callback delivery into the same
+// terminal error shape as marshal, transport, and decode failures.
+func runApiRequest[R any](callback connect.ApiCallback[R], request func(connect.ApiCallback[R])) {
+	terminalCallback := &terminalApiCallback[R]{callback: callback}
+	defer func() {
+		if recover() != nil {
+			// Panic values are intentionally not logged or exposed. Authentication
+			// request arguments and foreign callback failures may contain secrets.
+			var empty R
+			func() {
+				defer func() { _ = recover() }()
+				terminalCallback.Result(empty, errApiRequestFailed)
+			}()
+		}
+	}()
+
+	request(terminalCallback)
+	var empty R
+	terminalCallback.Result(empty, errApiRequestReturnedWithoutCallback)
+}
+
+func runAsyncApiRequest[R any](callback connect.ApiCallback[R], request func(connect.ApiCallback[R])) {
+	go runApiRequest(callback, request)
 }
 
 type jwtRefreshListenerFunc func(string)
@@ -361,7 +407,7 @@ type AuthLoginResultNetwork struct {
 }
 
 func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthLoginResult](callback, func(callback connect.ApiCallback[*AuthLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -395,7 +441,7 @@ type AuthWalletChallengeResult struct {
 // The wallet signs the returned message_template and the signature is passed to
 // AuthLogin via WalletAuthArgs. Used by the apple + solana mobile wallet flow.
 func (self *Api) AuthWalletChallenge(authWalletChallenge *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthWalletChallengeResult](callback, func(callback connect.ApiCallback[*AuthWalletChallengeResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -432,7 +478,7 @@ type AuthLoginWithPasswordResultNetwork struct {
 }
 
 func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthLoginWithPasswordResult](callback, func(callback connect.ApiCallback[*AuthLoginWithPasswordResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -475,7 +521,7 @@ type AuthVerifyResultNetwork struct {
 }
 
 func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthVerifyResult](callback, func(callback connect.ApiCallback[*AuthVerifyResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -499,7 +545,7 @@ type AuthPasswordResetResult struct {
 }
 
 func (self *Api) AuthPasswordReset(authPasswordReset *AuthPasswordResetArgs, callback AuthPasswordResetCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthPasswordResetResult](callback, func(callback connect.ApiCallback[*AuthPasswordResetResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -524,7 +570,7 @@ type AuthVerifySendResult struct {
 }
 
 func (self *Api) AuthVerifySend(authVerifySend *AuthVerifySendArgs, callback AuthVerifySendCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthVerifySendResult](callback, func(callback connect.ApiCallback[*AuthVerifySendResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -548,7 +594,7 @@ type NetworkCheckResult struct {
 }
 
 func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCheckCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*NetworkCheckResult](callback, func(callback connect.ApiCallback[*NetworkCheckResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -602,7 +648,7 @@ type NetworkCreateResultError struct {
 }
 
 func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*NetworkCreateResult](callback, func(callback connect.ApiCallback[*NetworkCreateResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -624,7 +670,7 @@ type NetworkDeleteResult struct{}
 type NetworkDeleteCallback connect.ApiCallback[*NetworkDeleteResult]
 
 func (self *Api) NetworkDelete(callback NetworkDeleteCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*NetworkDeleteResult](callback, func(callback connect.ApiCallback[*NetworkDeleteResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -671,7 +717,7 @@ type AuthNetworkClientError struct {
 }
 
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthNetworkClientResult](callback, func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -1762,7 +1808,7 @@ type AuthCodeLoginResult struct {
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
 
 func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthCodeLoginResult](callback, func(callback connect.ApiCallback[*AuthCodeLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -1815,7 +1861,7 @@ func (self *Api) AuthCodeCreate(
 	codeCreateArgs *AuthCodeCreateArgs,
 	callback AuthCodeCreateCallback,
 ) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthCodeCreateResult](callback, func(callback connect.ApiCallback[*AuthCodeCreateResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -1869,7 +1915,7 @@ type UpgradeGuesteResultError struct {
 // making the doomed round-trip. It is kept only for ABI compatibility; there
 // is currently no supported guest-conversion path through the SDK.
 func (self *Api) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGuestCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*UpgradeGuestResult](callback, func(callback connect.ApiCallback[*UpgradeGuestResult]) {
 		callback.Result(nil, errGuestUpgradeRouteRemoved)
 	})
 }
@@ -1923,7 +1969,7 @@ var errGuestUpgradeRouteRemoved = errors.New(
 // making the doomed round-trip. It is kept only for ABI compatibility; there
 // is currently no supported guest-conversion path through the SDK.
 func (self *Api) UpgradeGuestExisting(upgradeGuest *UpgradeGuestExistingArgs, callback UpgradeGuestExistingCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*UpgradeGuestExistingResult](callback, func(callback connect.ApiCallback[*UpgradeGuestExistingResult]) {
 		callback.Result(nil, errGuestUpgradeRouteRemoved)
 	})
 }
@@ -2643,7 +2689,7 @@ type RefreshJwtResult struct {
 type RefreshJwtCallback connect.ApiCallback[*RefreshJwtResult]
 
 func (self *Api) RefreshJwt(callback RefreshJwtCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*RefreshJwtResult](callback, func(callback connect.ApiCallback[*RefreshJwtResult]) {
 		connect.HttpGetWithRawFunction(
 			self.ctx,
 			self.getHttpGetRaw(),
@@ -3082,7 +3128,7 @@ type GenerateSeedphraseResult struct {
 }
 
 func (self *Api) GenerateSeedphrase(args *GenerateSeedphraseArgs, callback GenerateSeedphraseCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*GenerateSeedphraseResult](callback, func(callback connect.ApiCallback[*GenerateSeedphraseResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -3107,7 +3153,7 @@ type RegenerateSeedphraseResult struct {
 }
 
 func (self *Api) RegenerateSeedphrase(args *RegenerateSeedphraseArgs, callback RegenerateSeedphraseCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*RegenerateSeedphraseResult](callback, func(callback connect.ApiCallback[*RegenerateSeedphraseResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -3141,7 +3187,7 @@ type AddAuthError struct {
 }
 
 func (self *Api) AddAuth(args *AddAuthArgs, callback AddAuthCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AddAuthResult](callback, func(callback connect.ApiCallback[*AddAuthResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -3171,7 +3217,7 @@ type RemoveAuthError struct {
 }
 
 func (self *Api) RemoveAuth(args *RemoveAuthArgs, callback RemoveAuthCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*RemoveAuthResult](callback, func(callback connect.ApiCallback[*RemoveAuthResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
