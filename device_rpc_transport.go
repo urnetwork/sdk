@@ -132,6 +132,12 @@ type deviceRpcMux struct {
 	// pool on teardown.
 	send chan []byte
 
+	// Admission closes before the writer joins producers and drains send.
+	// Only external Write calls register; the write loop never joins itself.
+	stateLock  sync.Mutex
+	sendClosed bool
+	senders    sync.WaitGroup
+
 	conns [deviceRpcStreamCount]*deviceRpcMuxConn
 
 	closeOnce sync.Once
@@ -161,6 +167,9 @@ func (self *deviceRpcByteBudget) acquire(ctx context.Context, byteCount int) boo
 		return false
 	}
 	for {
+		if ctx.Err() != nil {
+			return false
+		}
 		self.mu.Lock()
 		if self.used+requested <= self.max {
 			self.used += requested
@@ -264,20 +273,30 @@ func (self *deviceRpcMux) close() {
 	})
 }
 
-func (self *deviceRpcMux) writeLoop() {
-	defer func() {
-		self.close()
-		// drain any pooled frames still queued so they return to the pool
-		for {
-			select {
-			case b := <-self.send:
-				connect.MessagePoolReturn(b)
-				self.sendBytes.release(len(b))
-			default:
-				return
-			}
-		}
+// Cancels blocked producers, closes admission, and joins every admitted Write
+// before the final drain. A canceled select may still enqueue into a ready
+// buffer, so cancellation alone is not a producer-completion barrier.
+func (self *deviceRpcMux) finishSend() {
+	self.close()
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.sendClosed = true
 	}()
+	self.senders.Wait()
+	for {
+		select {
+		case b := <-self.send:
+			connect.MessagePoolReturn(b)
+			self.sendBytes.release(len(b))
+		default:
+			return
+		}
+	}
+}
+
+func (self *deviceRpcMux) writeLoop() {
+	defer self.finishSend()
 
 	var ping <-chan time.Time
 	if 0 < self.pingTimeout {
@@ -467,6 +486,12 @@ func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
 }
 
 func (self *deviceRpcMuxConn) Write(p []byte) (int, error) {
+	return self.write(p, nil)
+}
+
+// beforeSend is an optional private test barrier borrowing the admitted frame;
+// it runs outside locks at the actual producer-to-queue ownership transition.
+func (self *deviceRpcMuxConn) write(p []byte, beforeSend func([]byte)) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -475,12 +500,28 @@ func (self *deviceRpcMuxConn) Write(p []byte) (int, error) {
 		self.mux.close()
 		return 0, fmt.Errorf("device rpc frame exceeds %d-byte limit", self.mux.maxFrameBytes)
 	}
+	admitted := func() bool {
+		self.mux.stateLock.Lock()
+		defer self.mux.stateLock.Unlock()
+		if self.mux.sendClosed {
+			return false
+		}
+		self.mux.senders.Add(1)
+		return true
+	}()
+	if !admitted {
+		return 0, io.ErrClosedPipe
+	}
+	defer self.mux.senders.Done()
 	if !self.mux.sendBytes.acquire(self.mux.ctx, frameByteCount) {
 		return 0, io.ErrClosedPipe
 	}
 	b := connect.MessagePoolGet(frameByteCount)
 	b[0] = self.tag
 	copy(b[1:], p)
+	if beforeSend != nil {
+		beforeSend(b)
+	}
 	select {
 	case <-self.mux.ctx.Done():
 		connect.MessagePoolReturn(b)
