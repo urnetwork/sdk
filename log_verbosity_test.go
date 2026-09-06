@@ -148,27 +148,43 @@ func testing_newSyncedDeviceLocalRemoteSeparateSpaces(
 ) (deviceLocal *DeviceLocal, deviceRemote *DeviceRemote, localSpaceState *LocalState, remoteSpaceState *LocalState) {
 	t.Helper()
 
-	localSpace, localByJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
+	_, localFixture := testingPreferenceSpaceAt(t, t.TempDir())
+	localFixture.seedDistinctLogin(t)
+	_, remoteFixture := testingPreferenceSpaceAt(t, t.TempDir())
+	if err := remoteFixture.localState.SetByJwt(localFixture.adminJwt); err != nil {
 		t.Fatal(err)
 	}
-	remoteSpace, remoteByJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
+	if err := remoteFixture.localState.SetByClientJwtForInstance(localFixture.initialJwt, localFixture.instanceId); err != nil {
 		t.Fatal(err)
 	}
+	localSpace, localByJwt := localFixture.networkSpace, localFixture.initialJwt
+	remoteSpace, remoteByJwt := remoteFixture.networkSpace, localFixture.initialJwt
 	if localSpace.GetAsyncLocalState().GetLocalState().localStorageDir ==
 		remoteSpace.GetAsyncLocalState().GetLocalState().localStorageDir {
 		t.Fatal("the two spaces share a storage dir, so a crossing would be unobservable")
 	}
 
 	clientId := connect.NewId()
-	instanceId := NewId()
+	instanceId := localFixture.instanceId
 	settings := defaultDeviceRpcSettings()
+	localSettings := testDeviceLocalSettingsRpc()
+	localSettings.EnableRpc = false
 
+	var err error
 	deviceLocal, err = newDeviceLocalWithOverrides(
-		localSpace, localByJwt, "", "", "", instanceId, testDeviceLocalSettingsRpc(), clientId,
+		localSpace, localByJwt, "", "", "", instanceId, localSettings, clientId,
 	)
 	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(deviceLocal.Close)
+	if result, err := deviceLocal.Load(); err != nil || result == nil {
+		t.Fatal("checked local preference load failed before RPC exposure")
+	}
+	if err := deviceLocal.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := deviceLocal.SetRpcServer("", "", settings.Address.HostPort()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,9 +211,8 @@ func testing_newSyncedDeviceLocalRemoteSeparateSpaces(
 		remoteSpace.GetAsyncLocalState().GetLocalState()
 }
 
-// testing_awaitPersistedLogVerbosity waits for a level to land in one local
-// state. The device persists asynchronously (serialAsync), so the write
-// trails the call that caused it.
+// The remote app's independent mirror still uses asynchronous persistence.
+// Enabled DeviceLocal/RPC commit checks below do not use this polling helper.
 func testing_awaitPersistedLogVerbosity(t *testing.T, localState *LocalState, want int) bool {
 	t.Helper()
 	for i := 0; i < 500; i += 1 {
@@ -250,7 +265,7 @@ func TestDeviceRemoteSetLogVerbosityCrossesToTheDeviceProcess(t *testing.T) {
 	connect.AssertEqual(t, deviceLocal.GetLogVerbosity(), LogVerbosityTrace)
 	// the device recorded it in ITS OWN storage, which only the device side
 	// writes -- the crossing, observed from the far end
-	if !testing_awaitPersistedLogVerbosity(t, localSpaceState, LogVerbosityTrace) {
+	if localSpaceState.GetLogVerbosity() != LogVerbosityTrace {
 		t.Fatal("the device process never recorded the level, so nothing crossed the rpc")
 	}
 }
@@ -269,21 +284,21 @@ func TestDeviceRemoteSetLogVerbosityCrossesToTheDeviceProcess(t *testing.T) {
 func TestDeviceRemoteLogVerbosityQueuedWhileDownCrossesOnConnect(t *testing.T) {
 	restoreTestingLogVerbosity(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	localSpace, localByJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
+	_, localFixture := testingPreferenceSpaceAt(t, t.TempDir())
+	localFixture.seedDistinctLogin(t)
+	_, remoteFixture := testingPreferenceSpaceAt(t, t.TempDir())
+	if err := remoteFixture.localState.SetByJwt(localFixture.adminJwt); err != nil {
+		t.Fatal(err)
 	}
-	remoteSpace, remoteByJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
+	if err := remoteFixture.localState.SetByClientJwtForInstance(localFixture.initialJwt, localFixture.instanceId); err != nil {
+		t.Fatal(err)
 	}
+	localSpace, localByJwt := localFixture.networkSpace, localFixture.initialJwt
+	remoteSpace, remoteByJwt := remoteFixture.networkSpace, localFixture.initialJwt
 	localSpaceState := localSpace.GetAsyncLocalState().GetLocalState()
 
 	clientId := connect.NewId()
-	instanceId := NewId()
+	instanceId := localFixture.instanceId
 	settings := defaultDeviceRpcSettings()
 
 	// the tunnel is down: nothing is listening on the rpc address yet
@@ -311,21 +326,32 @@ func TestDeviceRemoteLogVerbosityQueuedWhileDownCrossesOnConnect(t *testing.T) {
 	if err := setLogVerbosityFlag(LogVerbosityDefault); err != nil {
 		t.Fatalf("setLogVerbosityFlag: %v", err)
 	}
+	localSettings := testDeviceLocalSettingsRpc()
+	localSettings.EnableRpc = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		localSpace, localByJwt, "", "", "", instanceId, testDeviceLocalSettingsRpc(), clientId,
+		localSpace, localByJwt, "", "", "", instanceId, localSettings, clientId,
 	)
 	if err != nil {
 		t.Fatalf("device local: %v", err)
 	}
 	defer deviceLocal.Close()
 	connect.AssertEqual(t, deviceLocal.GetLogVerbosity(), LogVerbosityDefault)
+	if result, err := deviceLocal.Load(); err != nil || result == nil {
+		t.Fatal("checked local preference load failed before queued RPC")
+	}
+	if err := deviceLocal.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := deviceLocal.SetRpcServer("", "", settings.Address.HostPort()); err != nil {
+		t.Fatal(err)
+	}
 
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(15 * time.Second) {
 		t.Fatal("device remote did not sync after the device came up")
 	}
 
-	if !testing_awaitPersistedLogVerbosity(t, localSpaceState, LogVerbosityVerbose) {
+	if localSpaceState.GetLogVerbosity() != LogVerbosityVerbose {
 		t.Fatal("the tunnel came up at the default level, so the session being reproduced captures nothing")
 	}
 	connect.AssertEqual(t, deviceLocal.GetLogVerbosity(), LogVerbosityVerbose)
@@ -458,30 +484,19 @@ func TestLocalStateLogVerbosityRoundTrip(t *testing.T) {
 func TestDeviceLocalLogVerbosityPersistRestore(t *testing.T) {
 	restoreTestingLogVerbosity(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
-	}
-	localState := networkSpace.GetAsyncLocalState().GetLocalState()
-
-	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	localState := fixture.localState
+	device := testingPreferenceDevice(t, fixture)
 	connect.AssertEqual(t, localState.GetLogVerbosity(), LogVerbosityDefault)
-
-	// the set persists asynchronously to local state
-	device.SetLogVerbosity(LogVerbosityTrace)
-	persisted := false
-	for i := 0; i < 100; i += 1 {
-		if localState.GetLogVerbosity() == LogVerbosityTrace {
-			persisted = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
 	}
-	connect.AssertEqual(t, persisted, true)
-	device.Close()
+
+	// An opted-in mutation commits before returning.
+	device.SetLogVerbosity(LogVerbosityTrace)
+	connect.AssertEqual(t, localState.GetLogVerbosity(), LogVerbosityTrace)
+	testingJoinPreferenceDevice(t, device)
 
 	// stand in for the tunnel restart: a new process runs initGlog, which sets
 	// the level back to 0 before any device exists
@@ -489,8 +504,11 @@ func TestDeviceLocalLogVerbosityPersistRestore(t *testing.T) {
 		t.Fatalf("setLogVerbosityFlag: %v", err)
 	}
 
-	restored := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer restored.Close()
+	restored := testingPreferenceDevice(t, fixture)
+	connect.AssertEqual(t, restored.GetLogVerbosity(), LogVerbosityDefault)
+	if result, err := restored.Load(); err != nil || result == nil || result.GetPreferenceError("log-verbosity") != "" {
+		t.Fatal("checked verbosity restoration failed")
+	}
 	connect.AssertEqual(t, restored.GetLogVerbosity(), LogVerbosityTrace)
 }
 
@@ -647,21 +665,19 @@ func TestDeviceRemoteHostedSetLogVerbosityStopsAtThisProcess(t *testing.T) {
 func TestDeviceLocalRestoreLeavesAnUnsetVerbosityAlone(t *testing.T) {
 	restoreTestingLogVerbosity(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
-	}
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
 
 	// the embedder's own choice, made before any device exists
 	if err := SetLogVerbosity(LogVerbosityTrace); err != nil {
 		t.Fatalf("SetLogVerbosity: %v", err)
 	}
 
-	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer device.Close()
+	device := testingPreferenceDevice(t, fixture)
 
+	connect.AssertEqual(t, device.GetLogVerbosity(), LogVerbosityTrace)
+	if result, err := device.Load(); err != nil || result == nil {
+		t.Fatal("checked load of absent verbosity failed")
+	}
 	connect.AssertEqual(t, device.GetLogVerbosity(), LogVerbosityTrace)
 }

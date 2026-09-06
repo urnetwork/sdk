@@ -23,13 +23,23 @@ type Api struct {
 
 	apiUrl string
 
-	mutex sync.Mutex
-	byJwt string
-	log   connect.Logger
+	// Serializes credential mutations through a durable startup commit without
+	// holding mutex across I/O. Never held during callback delivery or joins.
+	// Lock order: authMutationLock -> LocalState.authStateLock -> mutex.
+	authMutationLock     sync.Mutex
+	mutex                sync.Mutex
+	byJwt                string
+	rejectedByJwt        string
+	deviceAuthGeneration uint64
+	log                  connect.Logger
 
-	httpPostRaw       connect.HttpPostRawFunction
-	httpGetRaw        connect.HttpGetRawFunction
-	httpPostStreamRaw connect.HttpPostStreamRawFunction
+	httpPostRaw            connect.HttpPostRawFunction
+	httpGetRaw             connect.HttpGetRawFunction
+	httpPostStreamRaw      connect.HttpPostStreamRawFunction
+	deviceAuthOwner        *deviceAuthPublicationGate
+	httpPostRawOwner       *deviceAuthPublicationGate
+	httpGetRawOwner        *deviceAuthPublicationGate
+	httpPostStreamRawOwner *deviceAuthPublicationGate
 
 	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
@@ -141,11 +151,16 @@ func NewApi(ctx context.Context, clientStrategy *connect.ClientStrategy, apiUrl 
 
 // this gets attached to api calls that need it
 func (self *Api) SetByJwt(byJwt string) {
+	self.authMutationLock.Lock()
 	self.mutex.Lock()
+	self.deviceAuthGeneration += 1
 	changed := self.byJwt != byJwt
 	self.byJwt = byJwt
+	self.deviceAuthOwner = nil
+	self.rejectedByJwt = ""
 	tokenManager := self.tokenManager
 	self.mutex.Unlock()
+	self.authMutationLock.Unlock()
 
 	if changed && tokenManager != nil {
 		tokenManager.TokenChanged()
@@ -156,12 +171,17 @@ func (self *Api) SetByJwt(byJwt string) {
 // the closing caller. It prevents stale teardown from clearing a newer login
 // installed concurrently on the same non-session API.
 func (self *Api) clearByJwt(byJwt string) bool {
+	self.authMutationLock.Lock()
+	defer self.authMutationLock.Unlock()
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.byJwt != byJwt {
 		return false
 	}
 	self.byJwt = ""
+	self.rejectedByJwt = ""
+	self.deviceAuthOwner = nil
+	self.deviceAuthGeneration += 1
 	return true
 }
 
@@ -187,17 +207,23 @@ func (self *Api) logger() connect.Logger {
 	return self.log
 }
 
-// setRefreshedByJwt installs a refresh result only if the token used for the
-// request is still current. This prevents an in-flight refresh from replacing
-// a newer login/session installed concurrently.
-func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string) bool {
+// A real refresh request supplies its captured auth generation as well as the
+// token. Equal-byte explicit login is still a newer owner. The token-only form
+// is retained for synchronous package-internal commit discriminators.
+func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string, expectedGeneration ...uint64) bool {
+	self.authMutationLock.Lock()
 	self.mutex.Lock()
-	if self.byJwt != previousByJwt {
+	if self.byJwt != previousByJwt ||
+		(0 < len(expectedGeneration) && self.deviceAuthGeneration != expectedGeneration[0]) {
 		self.mutex.Unlock()
+		self.authMutationLock.Unlock()
 		return false
 	}
 	self.byJwt = byJwt
+	self.rejectedByJwt = ""
+	self.deviceAuthGeneration += 1
 	self.mutex.Unlock()
+	self.authMutationLock.Unlock()
 
 	for _, listener := range self.jwtRefreshListeners.Get() {
 		listener := listener
@@ -208,16 +234,22 @@ func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string) bool {
 	return true
 }
 
-// rejectByJwt clears a token only if it is still the one rejected by the API.
-// Authentication-rejection listeners own persistence/UI/process policy.
-func (self *Api) rejectByJwt(rejectedByJwt string) bool {
+// Clears only the request's current token/generation. Rejection listeners own
+// persistence/UI/process policy and run after every auth lock is released.
+func (self *Api) rejectByJwt(rejectedByJwt string, expectedGeneration ...uint64) bool {
+	self.authMutationLock.Lock()
 	self.mutex.Lock()
-	if self.byJwt != rejectedByJwt {
+	if self.byJwt != rejectedByJwt ||
+		(0 < len(expectedGeneration) && self.deviceAuthGeneration != expectedGeneration[0]) {
 		self.mutex.Unlock()
+		self.authMutationLock.Unlock()
 		return false
 	}
 	self.byJwt = ""
+	self.rejectedByJwt = rejectedByJwt
+	self.deviceAuthGeneration += 1
 	self.mutex.Unlock()
+	self.authMutationLock.Unlock()
 
 	for _, listener := range self.authLogoutListeners.Get() {
 		listener := listener
@@ -279,6 +311,7 @@ func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
 	defer self.mutex.Unlock()
 
 	self.httpPostRaw = httpPostRaw
+	self.httpPostRawOwner = nil
 }
 
 func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
@@ -299,6 +332,7 @@ func (self *Api) setHttpGetRaw(httpGetRaw connect.HttpGetRawFunction) {
 	defer self.mutex.Unlock()
 
 	self.httpGetRaw = httpGetRaw
+	self.httpGetRawOwner = nil
 }
 
 func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
@@ -330,6 +364,7 @@ func (self *Api) setHttpPostStreamRaw(httpPostStreamRaw connect.HttpPostStreamRa
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	self.httpPostStreamRaw = httpPostStreamRaw
+	self.httpPostStreamRawOwner = nil
 }
 
 // Requests cancellation without joining the refresh worker. This remains safe

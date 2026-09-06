@@ -143,8 +143,8 @@ func TestDeviceLocalAppliesApiRefreshAndLogout(t *testing.T) {
 	if deviceJwt != refreshedJwt {
 		t.Fatalf("DeviceLocal JWT = %q, want refreshed JWT", deviceJwt)
 	}
-	if got := localState.GetByJwt(); got != refreshedJwt {
-		t.Fatalf("persisted network JWT = %q, want refreshed JWT", got)
+	if got := localState.GetByJwt(); got != initialJwt {
+		t.Fatal("client refresh changed the separately stored login credential")
 	}
 	if got := localState.GetByClientJwt(); got != refreshedJwt {
 		t.Fatalf("persisted client JWT = %q, want refreshed JWT", got)

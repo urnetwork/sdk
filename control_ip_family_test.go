@@ -431,7 +431,7 @@ func TestDeviceRemoteControlIpFamilyPolicyCrossesToTheDeviceProcess(t *testing.T
 		t.Fatal("the policy is queued for a later sync, so the connected device never took the call")
 	}
 
-	if !awaitPersistedControlIpFamilyPolicy(t, localSpaceState, IpFamilyPolicyForce6) {
+	if got, present := localSpaceState.controlIpFamilyPolicyIfSet(); !present || got != IpFamilyPolicyForce6 {
 		t.Fatal("the device process never recorded the policy, so nothing crossed the rpc")
 	}
 }
@@ -445,21 +445,21 @@ func TestDeviceRemoteControlIpFamilyPolicyCrossesToTheDeviceProcess(t *testing.T
 func TestDeviceRemoteQueuedPolicyCrossesWhenTheTunnelComesUp(t *testing.T) {
 	defer SetControlIpFamilyPolicy(IpFamilyPolicyAuto)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	localSpace, localByJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
+	_, localFixture := testingPreferenceSpaceAt(t, t.TempDir())
+	localFixture.seedDistinctLogin(t)
+	_, remoteFixture := testingPreferenceSpaceAt(t, t.TempDir())
+	if err := remoteFixture.localState.SetByJwt(localFixture.adminJwt); err != nil {
+		t.Fatal(err)
 	}
-	remoteSpace, remoteByJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
+	if err := remoteFixture.localState.SetByClientJwtForInstance(localFixture.initialJwt, localFixture.instanceId); err != nil {
+		t.Fatal(err)
 	}
+	localSpace, localByJwt := localFixture.networkSpace, localFixture.initialJwt
+	remoteSpace, remoteByJwt := remoteFixture.networkSpace, localFixture.initialJwt
 	localSpaceState := localSpace.GetAsyncLocalState().GetLocalState()
 
 	clientId := connect.NewId()
-	instanceId := NewId()
+	instanceId := localFixture.instanceId
 	settings := defaultDeviceRpcSettings()
 
 	// the tunnel is down: nothing is listening on the rpc address yet
@@ -476,8 +476,10 @@ func TestDeviceRemoteQueuedPolicyCrossesWhenTheTunnelComesUp(t *testing.T) {
 
 	// stand in for the tunnel process starting: a fresh device whose own
 	// storage has never held a policy
+	localSettings := testDeviceLocalSettingsRpc()
+	localSettings.EnableRpc = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		localSpace, localByJwt, "", "", "", instanceId, testDeviceLocalSettingsRpc(), clientId,
+		localSpace, localByJwt, "", "", "", instanceId, localSettings, clientId,
 	)
 	if err != nil {
 		t.Fatalf("device local: %v", err)
@@ -486,13 +488,22 @@ func TestDeviceRemoteQueuedPolicyCrossesWhenTheTunnelComesUp(t *testing.T) {
 	if _, ok := localSpaceState.controlIpFamilyPolicyIfSet(); ok {
 		t.Fatal("the device storage already holds a policy, so a crossing would be unobservable")
 	}
+	if result, err := deviceLocal.Load(); err != nil || result == nil {
+		t.Fatal("checked policy load failed before exposing RPC")
+	}
+	if err := deviceLocal.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := deviceLocal.SetRpcServer("", "", settings.Address.HostPort()); err != nil {
+		t.Fatal(err)
+	}
 
 	deviceRemote.Sync()
 	if !deviceRemote.waitForSync(15 * time.Second) {
 		t.Fatal("device remote did not sync after the device came up")
 	}
 
-	if !awaitPersistedControlIpFamilyPolicy(t, localSpaceState, IpFamilyPolicyForce6) {
+	if got, present := localSpaceState.controlIpFamilyPolicyIfSet(); !present || got != IpFamilyPolicyForce6 {
 		t.Fatal("the tunnel came up under the old policy, so the extension keeps dialing the stuck family")
 	}
 }
@@ -530,20 +541,6 @@ func TestDeviceRemoteRestoredPolicyIsQueuedForTheDevice(t *testing.T) {
 	if !queued.IsSet || queued.Value != IpFamilyPolicyForce4 {
 		t.Fatalf("queued %+v, want force4 set -- the extension comes up on auto", queued)
 	}
-}
-
-// awaitPersistedControlIpFamilyPolicy waits for a policy to land in one local
-// state. The device persists asynchronously (serialAsync), so the write trails
-// the call that caused it.
-func awaitPersistedControlIpFamilyPolicy(t *testing.T, localState *LocalState, want int) bool {
-	t.Helper()
-	for i := 0; i < 500; i += 1 {
-		if got, ok := localState.controlIpFamilyPolicyIfSet(); ok && got == want {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
 }
 
 // A space with nothing persisted must not spend the manager's one restore.

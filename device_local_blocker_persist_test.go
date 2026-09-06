@@ -1,44 +1,32 @@
 package sdk
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/urnetwork/connect"
 )
 
-// TestDeviceLocalBlockerEnabledPersistRestore: the toggle persists to local
-// state on set, and a new device on the same network space restores it.
+// Explicit autosave commits the toggle before returning; constructor replay
+// remains off and the replacement restores only through checked Load.
 func TestDeviceLocalBlockerEnabledPersistRestore(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
-	if err != nil {
-		t.Fatalf("network space: %v", err)
-	}
-	localState := networkSpace.GetAsyncLocalState().GetLocalState()
-
-	device := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	localState := fixture.localState
+	device := testingPreferenceDevice(t, fixture)
 	connect.AssertEqual(t, false, device.GetBlockerEnabled())
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
 
-	// the set persists asynchronously to local state
 	device.SetBlockerEnabled(true)
 	connect.AssertEqual(t, true, device.GetBlockerEnabled())
-	persisted := false
-	for i := 0; i < 100; i += 1 {
-		if localState.GetBlockerEnabled() {
-			persisted = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	connect.AssertEqual(t, true, persisted)
-	device.Close()
+	connect.AssertEqual(t, true, localState.GetBlockerEnabled())
+	testingJoinPreferenceDevice(t, device)
 
-	// a new device on the same network space restores the persisted toggle
-	restored := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, byJwt, false)
-	defer restored.Close()
+	restored := testingPreferenceDevice(t, fixture)
+	connect.AssertEqual(t, false, restored.GetBlockerEnabled())
+	if result, err := restored.Load(); err != nil || result == nil || result.GetPreferenceError("blocker-enabled") != "" {
+		t.Fatal("checked blocker restoration failed")
+	}
 	connect.AssertEqual(t, true, restored.GetBlockerEnabled())
 }

@@ -62,6 +62,9 @@ type ConnectViewController struct {
 	connectionStatus ConnectionStatus
 	selectedLocation *ConnectLocation
 	grid             *ConnectGrid
+	// Immutable test producer installed before any connected grid exists.
+	// Production always observes the actual device window monitor.
+	testingWindowMonitor windowMonitor
 	// generation is the D2 gesture-generation gate. Bumped on every explicit
 	// Connect and Disconnect BEFORE the device call, and stamped onto each
 	// grid at creation: window-monitor events reaching a grid whose generation
@@ -361,6 +364,25 @@ func (self *ConnectViewController) setConnectionStatusForGeneration(status Conne
 }
 
 func (self *ConnectViewController) Connect(location *ConnectLocation) {
+	if local, ok := self.device.(*DeviceLocal); ok && local.GetAutoSave() {
+		generation, accepted := self.beginLocalPreferenceGesture()
+		if !accepted {
+			return
+		}
+		// The local owner commits current before a consumer is changed. Its
+		// existing destination path derives Auto providing without persisting
+		// a transient derived provide mode as an explicit user preference.
+		if err := local.ReconnectChecked(location); err != nil {
+			self.setGridForGeneration(&generation)
+			return
+		}
+		if self.generationCurrent(generation) {
+			// Default failure is explicit partial success: current is already
+			// durably selected. Never roll it back or retry destructively.
+			_ = local.SetDefaultLocationChecked(location)
+		}
+		return
+	}
 	// self.setConnected(true)
 
 	// D2: a new gesture starts a new generation, so any event still in flight
@@ -398,6 +420,18 @@ func (self *ConnectViewController) ConnectBestAvailable() {
 }
 
 func (self *ConnectViewController) Disconnect() {
+	if local, ok := self.device.(*DeviceLocal); ok && local.GetAutoSave() {
+		generation, accepted := self.beginLocalPreferenceGesture()
+		if !accepted {
+			return
+		}
+		if err := local.SetConnectLocationChecked(nil); err != nil {
+			self.setGridForGeneration(&generation)
+		} else {
+			self.setConnectionStatusForGeneration(Disconnected, generation)
+		}
+		return
+	}
 
 	// D2: the disconnect gesture ends the current generation FIRST, before
 	// any device call. From this instant the outgoing session's window-monitor
@@ -418,19 +452,40 @@ func (self *ConnectViewController) Disconnect() {
 	self.device.SetConnectLocation(nil)
 }
 
+// Retire outgoing gesture events without claiming a successful write. A failed
+// mutation rebinds the retained live consumer to a new grid for this generation;
+// it never changes an exposed grid's immutable generation or freezes its truth.
+func (self *ConnectViewController) beginLocalPreferenceGesture() (uint64, bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed {
+		return 0, false
+	}
+	self.generation += 1
+	return self.generation, true
+}
+
 func (self *ConnectViewController) setGrid() {
+	self.setGridForGeneration(nil)
+}
+
+// An expected generation keeps an old failed command from rebinding a newer
+// gesture. All external notifications and monitor calls remain outside locks.
+func (self *ConnectViewController) setGridForGeneration(expected *uint64) {
 	var grid *ConnectGrid
 	var previousGrid *ConnectGrid
+	var generation uint64
 	changed := false
 	closed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		if self.closed {
+		if self.closed || (expected != nil && self.generation != *expected) {
 			closed = true
 			return
 		}
+		generation = self.generation
 
 		if self.connected {
 			previousGrid = self.grid
@@ -457,14 +512,18 @@ func (self *ConnectViewController) setGrid() {
 	}
 
 	if grid != nil {
-		self.setConnectionStatus(DestinationSet)
+		self.setConnectionStatusForGeneration(DestinationSet, generation)
 	} else {
-		self.setConnectionStatus(Disconnected)
+		self.setConnectionStatusForGeneration(Disconnected, generation)
 	}
 
 	if changed {
 		if grid != nil {
-			if windowMonitor := self.device.(device).windowMonitor(); windowMonitor != nil {
+			windowMonitor := self.testingWindowMonitor
+			if windowMonitor == nil {
+				windowMonitor = self.device.(device).windowMonitor()
+			}
+			if windowMonitor != nil {
 				grid.listenToWindow(windowMonitor)
 			}
 		}

@@ -37,6 +37,13 @@ const sdkPath = "github.com/urnetwork/sdk"
 
 // behavioral types cross the abi as opaque handles
 var behavioralTypes = map[string]bool{
+	// These immutable observations expose private state through getters.
+	// JSON would erase both their values and their ownership identity.
+	"LocalAuthStateSnapshot": true,
+	"LocalStateResetResult":  true,
+	"DeviceLocalLoadResult":  true,
+	"DeviceLocalSaveResult":  true,
+
 	"NetworkSpaceManager":        true,
 	"NetworkSpace":               true,
 	"Api":                        true,
@@ -1253,6 +1260,16 @@ func (g *gen) dataDoc(name string, named *types.Named) string {
 	st, ok := named.Underlying().(*types.Struct)
 	if !ok {
 		return ""
+	}
+	if name == "ProvideSecretKey" {
+		return `/* ProvideSecretKey (json):
+ *   provide_mode: number (integer)
+ *   provide_secret_key?: string (legacy literal UTF-8, never prefix-decoded)
+ *   provide_secret_key_base64?: string (strict standard padded base64 of raw bytes)
+ * Valid UTF-8 emits only the legacy key field; binary emits only the base64 key field.
+ * Base64 rejects whitespace and noncanonical padding. A nonempty legacy key
+ * conflicts with a present base64 key; malformed binary never falls back.
+ */`
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "/* %s (json):\n", name)

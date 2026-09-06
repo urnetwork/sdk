@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -464,6 +465,8 @@ func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
 // are reachable through the *Millis accessor pairs at the end of this file,
 // so an app can set them; the other three are Go-construction only.
 type DeviceLocalSettings struct {
+	// Diagnostic-only injection of the existing allocator-error return path.
+	testingTakeLocalAddress func() (netip.Addr, bool)
 	// MemoryTargetByteCount is this device's memory target, split by ratio
 	// (dns 2 : client 9 : platform carriers 5 : provider 4, see
 	// deviceMemoryShares) among dns resolution and IP-mux state, the client
@@ -616,6 +619,25 @@ type DeviceLocal struct {
 	byJwt            string
 	apiJwtRefreshSub Sub
 	apiAuthLogoutSub Sub
+	authPublication  *deviceAuthPublicationGate
+	// Explicit key saves are separate from preference autosave. Capture and
+	// commit one current value at a time without holding callback/native locks.
+	providerKeySaveLock sync.Mutex
+	// Test-only barriers surround the final owner admission and real commit.
+	// The former is outside auth locks; the latter runs under paired locks.
+	testingBeforeProviderKeySaveAdmission func(string)
+	testingAfterProviderKeySaveCommit     func(string)
+	// Explicit preference operations serialize storage and live application.
+	// Observers run after this lock is released and may reenter the device.
+	preferenceMutationLock  sync.Mutex
+	autoSave                bool
+	preferenceSaveSequence  int64
+	lastLocalStateSave      *DeviceLocalSaveResult
+	localStateSaveListeners *connect.CallbackList[LocalStateSaveListener]
+	// Tests pause checked observations before the final owner admission.
+	testingBeforePreferenceApply func()
+	// Holds only the shared scalar publication before its final owner check.
+	testingBeforeGlobalPreferenceApply func(string)
 	// platformUrl string
 	// apiUrl      string
 
@@ -718,6 +740,9 @@ type DeviceLocal struct {
 	// receive callback is the mux's `Receive`. nil => no interposition.
 	upgradeMux         *connect.UpgradeMux
 	upgradeMuxSettings *connect.UpgradeMuxSettings
+	// The settings actually applied to the selected mux. A nil future setting
+	// disables the mux only on rebuild, not the still-live packet interceptor.
+	upgradeMuxLiveSettings *connect.UpgradeMuxSettings
 
 	// dnsMemoryTarget is the dns share of the device memory target: one live
 	// byte budget shared by the device's resolver caches across mux rebuilds
@@ -1138,11 +1163,24 @@ func newDeviceLocalWithOverrides(
 	log := settings.logger()
 	settings.ClientSettings.Log = log
 
+	// Prepare client auth without changing the serving device or durable store.
+	// Daemons commit their empty store only when construction can succeed; a
+	// hosted tenant must never claim the shared host's auth storage.
+	var localState *LocalState
+	var authLocalState *LocalState
+	api := networkSpace.GetApi()
+	authPublication := newDeviceAuthPublicationGate()
+	if asyncLocalState := networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
+		localState = asyncLocalState.GetLocalState()
+		if !settings.HostedIncompatible && byJwt != "" {
+			authLocalState = localState
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	// ctx, cancel := api.ctx, api.cancel
 	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
-	api := networkSpace.GetApi()
 	ownsApi := false
 	if settings.HostedIncompatible {
 		// The proxy shares one NetworkSpace across unrelated customers. Reuse
@@ -1152,20 +1190,24 @@ func newDeviceLocalWithOverrides(
 		ownsApi = true
 	}
 
+	preparedAuth, err := api.prepareDeviceAuth(authLocalState, byJwt, instanceId, time.Now(), authPublication)
+	if err != nil {
+		cancel()
+		if ownsApi {
+			_ = api.CloseAndWait(context.Background())
+		}
+		return nil, fmt.Errorf("prepare device client auth: %w", err)
+	}
+	byJwt = preparedAuth.byJwt
+	if authLocalState != nil {
+		// Preparation already checked every identity claim. Providers and
+		// generators must use the selected credential's client identity.
+		selectedIdentity, _ := parseStartupClientJwt(byJwt)
+		clientId = selectedIdentity.clientId
+	}
+
 	transportSettings := DefaultTransportSettings()
 	providerTransportSettings := DefaultProviderTransportSettings()
-	var localState *LocalState
-	if asyncLocalState := networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		localState = asyncLocalState.GetLocalState()
-		if !settings.HostedIncompatible {
-			if persisted := localState.GetTransportSettings(); persisted != nil {
-				transportSettings = normalizeTransportSettings(persisted, false)
-			}
-			if persisted := localState.GetProviderTransportSettings(); persisted != nil {
-				providerTransportSettings = normalizeTransportSettings(persisted, true)
-			}
-		}
-	}
 	if settings.HostedIncompatible {
 		transportSettings = hostedTransportSettings()
 		providerTransportSettings = hostedTransportSettings()
@@ -1231,9 +1273,8 @@ func newDeviceLocalWithOverrides(
 		defaultProvideControlMode = ProvideControlModeNever
 	}
 
-	// the blocker outlives the mux/multi client rebuilds; seed the initial
-	// enabled state from the settings. the persisted toggle is restored below,
-	// and the device persists on set (see SetBlockerEnabled)
+	// The blocker outlives mux/client rebuilds. Construction uses the caller's
+	// defaults; explicit Load owns checked restoration of user preferences.
 	blocker := connect.NewBlockerWithDefaults()
 	blocker.SetEnabled(settings.DefaultBlockerEnabled)
 
@@ -1250,7 +1291,11 @@ func newDeviceLocalWithOverrides(
 		tunnelLocalAddress = connect.RandomLocalIpv4(connect.LocalIpv4Networks())
 	} else {
 		var ok bool
-		tunnelLocalAddress, ok = connect.TakeLocalIpv4Address()
+		takeLocalAddress := connect.TakeLocalIpv4Address
+		if settings.testingTakeLocalAddress != nil {
+			takeLocalAddress = settings.testingTakeLocalAddress
+		}
+		tunnelLocalAddress, ok = takeLocalAddress()
 		if !ok {
 			cancel()
 			if ownsApi {
@@ -1348,6 +1393,7 @@ func newDeviceLocalWithOverrides(
 		windowStatusChangeListeners:              connect.NewCallbackList[WindowStatusChangeListener](),
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
+		authPublication:                          authPublication,
 		blockActionWindowChangeListeners:         connect.NewCallbackList[BlockActionWindowChangeListener](),
 		blockStatsChangeListeners:                connect.NewCallbackList[BlockStatsChangeListener](),
 		blockActionOverridesChangeListeners:      connect.NewCallbackList[BlockActionOverridesChangeListener](),
@@ -1369,34 +1415,8 @@ func newDeviceLocalWithOverrides(
 		providerIngressContractStatsChangeListeners:   connect.NewCallbackList[ContractStatsChangeListener](),
 		providerIngressContractDetailsChangeListeners: connect.NewCallbackList[ContractDetailsChangeListener](),
 	}
-	// restore the persisted block action overrides and dns resolver settings
+	// Learned caches have an independent lifecycle, not user preference intent.
 	if localState != nil {
-		if overrides := localState.GetBlockActionOverrides(); overrides != nil {
-			deviceLocal.blockActionOverrides = overrides.getAll()
-		}
-		if dnsResolverSettings := localState.GetDnsResolverSettings(); dnsResolverSettings != nil {
-			if upgradeMuxSettings := upgradeMuxSettingsWithDnsResolverSettings(deviceLocal.upgradeMuxSettings, dnsResolverSettings); upgradeMuxSettings != nil {
-				deviceLocal.upgradeMuxSettings = upgradeMuxSettings
-			}
-		}
-		// the blocker toggle persists on set (see SetBlockerEnabled); unset
-		// reads false, matching the opt-in default
-		blocker.SetEnabled(localState.GetBlockerEnabled())
-		// the routing tier persists on set (see SetRoutingTier); unset reads
-		// RoutingTierOff, matching its zero value. Restoring here (rather than
-		// leaving the zero-initialized field) is what makes a tier chosen in a
-		// PRIOR process survive into the very first window this process
-		// builds, before SetRoutingTier is ever called again
-		deviceLocal.routingTier = localState.GetRoutingTier()
-		// the log verbosity persists on set (see SetLogVerbosity) and is
-		// applied here rather than only on the next set, because the reason
-		// it is persisted is that reproducing a bug means restarting this
-		// process: a tunnel that came back up at 0 would drop exactly the
-		// session the user raised the level to capture. A hosted device never
-		// touches the shared host process's verbosity.
-		if !settings.HostedIncompatible {
-			applyPersistedLogVerbosity(localState, log)
-		}
 		// seed the DoH fan-out order from the last session's per-server scores,
 		// so the first lookups after launch pick the known-fastest server
 		deviceLocal.dohServerScoresSeed = localState.getDohServerScores()
@@ -1416,32 +1436,54 @@ func newDeviceLocalWithOverrides(
 	deviceLocal.updateSendRouteWithLock()
 	deviceLocal.viewControllerManager = *newViewControllerManager(ctx, deviceLocal)
 
-	var logout func() error
-	if networkSpace.asyncLocalState != nil {
-		logout = networkSpace.asyncLocalState.localState.Logout
+	var logout func(string) (bool, error)
+	if networkSpace.asyncLocalState != nil && !settings.HostedIncompatible {
+		logout = func(rejectedJwt string) (bool, error) {
+			return networkSpace.asyncLocalState.localState.logoutRejectedClient(
+				rejectedJwt, instanceId, authPublication,
+			)
+		}
 	} else {
 		// do nothing
-		logout = func() error {
-			return nil
+		logout = func(string) (bool, error) {
+			return true, nil
 		}
 	}
 
 	// Api is the credential owner. DeviceLocal subscribes to apply rotations
 	// to persistence and connect transports, while keeping its established
 	// device-level listener contract for the applications.
-	api.setLog(log)
 	deviceLocal.apiJwtRefreshSub = api.AddJwtRefreshListener(
-		jwtRefreshListenerFunc(deviceLocal.SetByJwt),
+		jwtRefreshListenerFunc(deviceLocal.applyApiRefreshedByJwt),
 	)
 	deviceLocal.apiAuthLogoutSub = api.AddAuthLogoutListener(
 		authLogoutListenerFunc(func() {
-			if err := logout(); err != nil {
+			release := deviceLocal.authPublication.Begin()
+			if release == nil {
+				return
+			}
+			defer release()
+			rejectedJwt, current := api.deviceRejectedJwt(authPublication)
+			if !current {
+				return
+			}
+			if authPublication.testingBeforePersistence != nil {
+				authPublication.testingBeforePersistence()
+			}
+			accepted, err := logout(rejectedJwt)
+			if err != nil {
 				log.Errorf("failed to clear local auth state: %v", err)
+			}
+			if !accepted {
+				return
 			}
 			deviceLocal.handleApiAuthLogout()
 		}),
 	)
-	api.SetByJwt(byJwt)
+	if err := api.setDeviceByJwt(preparedAuth, deviceLocal.authPublication, log); err != nil {
+		_ = deviceLocal.CloseAndWait(context.Background())
+		return nil, fmt.Errorf("publish device client auth: %w", err)
+	}
 	api.StartJwtRefresh()
 
 	// set up with nil destination
@@ -1666,7 +1708,25 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 	// effect on the next client recreation, which then creates no mux
 	if self.upgradeMux != nil && settings != nil {
 		self.upgradeMux.SetSettings(settings)
+		self.upgradeMuxLiveSettings = settings
 	}
+}
+
+// Reports current ownership of the tunnel DNS interceptor, not successful
+// upstream resolution or provider health. The selected packet route must own
+// a live mux with DNS interception enabled. Native owners must still serialize
+// adoption of this observation with their own destination lifecycle.
+func (self *DeviceLocal) GetTunnelDnsInterceptorActive() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed || self.ctx.Err() != nil || self.upgradeMux == nil {
+		return false
+	}
+	route := self.sendRoute.Load()
+	settings := self.upgradeMuxLiveSettings
+	return route != nil && route.upgradeMux == self.upgradeMux &&
+		route.remoteUserNatClient != nil && settings != nil &&
+		settings.Dns != nil && settings.Dns.Resolver != nil
 }
 
 // DeviceLocalMemoryUsage is a point-in-time sample of the device's tracked
@@ -1787,6 +1847,11 @@ func (self *DeviceLocal) hostedSafePerformanceProfile(performanceProfile *Perfor
 }
 
 func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
+	_ = self.setLocalCatalogPreference("performance-profile", performanceProfile)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *PerformanceProfile) (func(), error) {
 	if limited := self.hostedSafePerformanceProfile(performanceProfile); limited != performanceProfile {
 		self.log.Infof("[device]hosted incompatible: AllowDirect forced off\n")
 		performanceProfile = limited
@@ -1815,7 +1880,7 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 	if !storedChanged {
 		// Presentation layers reconstruct value objects when they resume.
 		// An exactly equal value changes neither public state nor behavior.
-		return
+		return nil, nil
 	}
 	if remoteUserNatClient != nil {
 		switch v := remoteUserNatClient.(type) {
@@ -1835,7 +1900,7 @@ func (self *DeviceLocal) SetPerformanceProfile(performanceProfile *PerformancePr
 	// representation change (for example nil -> explicit auto). Listeners and
 	// getters see what was set, while the live transport above remains
 	// untouched unless installed behavior changed.
-	self.performanceProfileChanged(performanceProfile)
+	return func() { self.performanceProfileChanged(performanceProfile) }, nil
 }
 
 func (self *DeviceLocal) GetPerformanceProfile() *PerformanceProfile {
@@ -2130,15 +2195,33 @@ func (self *DeviceLocal) providerClientSnapshot() *connect.Client {
 }
 
 func (self *DeviceLocal) SetByJwt(byJwt string) {
-	self.GetApi().SetByJwt(byJwt)
+	release := self.authPublication.Begin()
+	if release == nil {
+		return
+	}
+	defer release()
 
-	if self.networkSpace.asyncLocalState != nil {
-		if err := self.networkSpace.asyncLocalState.localState.setRefreshedByJwt(
+	api := self.GetApi()
+	if !api.deviceOwnsAuth(self.authPublication) {
+		return
+	}
+
+	if self.networkSpace.asyncLocalState != nil && !self.ownsApi {
+		accepted, err := self.networkSpace.asyncLocalState.localState.setOwnedClientJwt(
 			byJwt,
 			newId(self.instanceId),
-		); err != nil {
+			self.authPublication,
+		)
+		if err != nil {
 			self.log.Errorf("failed to persist refreshed JWT: %v", err)
+			return
 		}
+		if !accepted {
+			return
+		}
+	}
+	if !api.replaceDeviceByJwt(self.authPublication, byJwt) {
+		return
 	}
 
 	// snapshot self.provider under stateLock, synchronizing with Close()'s
@@ -2163,6 +2246,61 @@ func (self *DeviceLocal) SetByJwt(byJwt string) {
 	}
 
 	// fire listeners
+	self.jwtRefreshed(byJwt)
+}
+
+// Applies only the refresh generation still owned by this live device. API
+// refresh has already installed byJwt before invoking the callback; persisted
+// compare-and-swap and the callback lease reject logout, replacement, and late
+// callbacks captured before Close.
+func (self *DeviceLocal) applyApiRefreshedByJwt(byJwt string) {
+	release := self.authPublication.Begin()
+	if release == nil {
+		return
+	}
+	defer release()
+
+	api := self.GetApi()
+	if !api.deviceOwnsByJwt(self.authPublication, byJwt) {
+		return
+	}
+	self.stateLock.Lock()
+	previousByJwt := self.byJwt
+	self.stateLock.Unlock()
+	if self.networkSpace.asyncLocalState != nil && !self.ownsApi {
+		accepted, err := self.networkSpace.asyncLocalState.localState.replaceOwnedClientJwt(
+			previousByJwt,
+			byJwt,
+			newId(self.instanceId),
+			self.authPublication,
+		)
+		if err != nil {
+			self.log.Errorf("failed to persist refreshed JWT: %v", err)
+			return
+		}
+		if !accepted {
+			return
+		}
+	}
+	if !api.deviceOwnsByJwt(self.authPublication, byJwt) {
+		return
+	}
+
+	var provider *deviceLocalProvider
+	var apiGenerator *connect.ApiMultiClientGenerator
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		provider = self.provider
+		apiGenerator = self.apiMultiClientGenerator
+		self.byJwt = byJwt
+	}()
+	if provider != nil {
+		provider.SetByJwt(byJwt)
+	}
+	if apiGenerator != nil {
+		apiGenerator.SetByJwt(byJwt)
+	}
 	self.jwtRefreshed(byJwt)
 }
 
@@ -2292,6 +2430,15 @@ func (self *DeviceLocal) GetApi() *Api {
 	return self.api
 }
 
+// Returns this provider device's published client credential, not the shared
+// API slot that a concurrent admin login may temporarily own. Startup callers
+// must use this value rather than republishing their stale constructor input.
+func (self *DeviceLocal) GetClientJwt() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.byJwt
+}
+
 func (self *DeviceLocal) GetNetworkSpace() *NetworkSpace {
 	return self.networkSpace
 }
@@ -2316,6 +2463,11 @@ func (self *DeviceLocal) GetCanShowRatingDialog() bool {
 }
 
 func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
+	_ = self.setLocalCatalogPreference("can-show-rating-dialog", canShowRatingDialog)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyCanShowRatingDialogWithLock(canShowRatingDialog bool) (func(), error) {
 	changed := false
 	func() {
 		self.stateLock.Lock()
@@ -2325,9 +2477,11 @@ func (self *DeviceLocal) SetCanShowRatingDialog(canShowRatingDialog bool) {
 			changed = true
 		}
 	}()
-	if changed {
-		self.canShowRatingDialogChanged(canShowRatingDialog)
-	}
+	return func() {
+		if changed {
+			self.canShowRatingDialogChanged(canShowRatingDialog)
+		}
+	}, nil
 }
 
 /**
@@ -2340,6 +2494,11 @@ func (self *DeviceLocal) GetCanPromptIntroFunnel() bool {
 }
 
 func (self *DeviceLocal) SetCanPromptIntroFunnel(canPrompt bool) {
+	_ = self.setLocalCatalogPreference("can-prompt-intro-funnel", canPrompt)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyCanPromptIntroFunnelWithLock(canPrompt bool) (func(), error) {
 	changed := false
 	func() {
 		self.stateLock.Lock()
@@ -2349,9 +2508,11 @@ func (self *DeviceLocal) SetCanPromptIntroFunnel(canPrompt bool) {
 			changed = true
 		}
 	}()
-	if changed {
-		self.canPromptIntroFunnelChanged(canPrompt)
-	}
+	return func() {
+		if changed {
+			self.canPromptIntroFunnelChanged(canPrompt)
+		}
+	}, nil
 }
 
 /**
@@ -2369,8 +2530,13 @@ func (self *DeviceLocal) GetProvideControlMode() ProvideControlMode {
  * auto, always, never
  */
 func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControlMode) {
+	_ = self.setLocalCatalogPreference("provide-control-mode", provideControlMode)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyProvideControlModeWithLock(provideControlMode ProvideControlMode) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetProvideControlMode") {
-		return
+		return nil, nil
 	}
 	provideChanged := false
 	provideControlModeChanged := false
@@ -2411,13 +2577,15 @@ func (self *DeviceLocal) SetProvideControlMode(provideControlMode ProvideControl
 		}
 	}()
 
-	if provideControlModeChanged {
-		self.provideControlModeChanged(provideControlMode)
-	}
-	if provideChanged {
-		self.provideModeChanged(self.GetProvideMode())
-		self.provideChanged(self.GetProvideEnabled())
-	}
+	return func() {
+		if provideControlModeChanged {
+			self.provideControlModeChanged(provideControlMode)
+		}
+		if provideChanged {
+			self.provideModeChanged(self.GetProvideMode())
+			self.provideChanged(self.GetProvideEnabled())
+		}
+	}, nil
 }
 
 /**
@@ -2431,8 +2599,13 @@ func (self *DeviceLocal) GetProvideNetworkMode() ProvideNetworkMode {
 }
 
 func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
+	_ = self.setLocalCatalogPreference("provide-network-mode", mode)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyProvideNetworkModeWithLock(mode ProvideNetworkMode) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetProvideNetworkMode") {
-		return
+		return nil, nil
 	}
 	set := false
 	func() {
@@ -2444,10 +2617,12 @@ func (self *DeviceLocal) SetProvideNetworkMode(mode ProvideNetworkMode) {
 			set = true
 		}
 	}()
-	if set {
-		self.log.Infof("Set provide network mode: %s", mode)
-		self.provideNetworkModeChanged(mode)
-	}
+	return func() {
+		if set {
+			self.log.Infof("Set provide network mode: %s", mode)
+			self.provideNetworkModeChanged(mode)
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) GetCanRefer() bool {
@@ -2457,6 +2632,11 @@ func (self *DeviceLocal) GetCanRefer() bool {
 }
 
 func (self *DeviceLocal) SetCanRefer(canRefer bool) {
+	_ = self.setLocalCatalogPreference("can-refer", canRefer)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyCanReferWithLock(canRefer bool) (func(), error) {
 	changed := false
 	func() {
 		self.stateLock.Lock()
@@ -2466,9 +2646,11 @@ func (self *DeviceLocal) SetCanRefer(canRefer bool) {
 			changed = true
 		}
 	}()
-	if changed {
-		self.canReferChanged(canRefer)
-	}
+	return func() {
+		if changed {
+			self.canReferChanged(canRefer)
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) GetAllowForeground() bool {
@@ -2478,6 +2660,11 @@ func (self *DeviceLocal) GetAllowForeground() bool {
 }
 
 func (self *DeviceLocal) SetAllowForeground(allowForeground bool) {
+	_ = self.setLocalCatalogPreference("allow-foreground", allowForeground)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyAllowForegroundWithLock(allowForeground bool) (func(), error) {
 	changed := false
 	func() {
 		self.stateLock.Lock()
@@ -2487,9 +2674,11 @@ func (self *DeviceLocal) SetAllowForeground(allowForeground bool) {
 			changed = true
 		}
 	}()
-	if changed {
-		self.allowForegroundChanged(allowForeground)
-	}
+	return func() {
+		if changed {
+			self.allowForegroundChanged(allowForeground)
+		}
+	}, nil
 }
 
 // hostedIncompatibleGuarded reports whether a setter that must not run on a
@@ -2503,8 +2692,13 @@ func (self *DeviceLocal) hostedIncompatibleGuarded(name string) bool {
 }
 
 func (self *DeviceLocal) SetRouteLocal(routeLocal bool) {
+	_ = self.setLocalCatalogPreference("route-local", routeLocal)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyRouteLocalWithLock(routeLocal bool) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetRouteLocal") {
-		return
+		return nil, nil
 	}
 	set := false
 	func() {
@@ -2521,9 +2715,11 @@ func (self *DeviceLocal) SetRouteLocal(routeLocal bool) {
 			self.updateSendRouteWithLock()
 		}
 	}()
-	if set {
-		self.routeLocalChanged(routeLocal)
-	}
+	return func() {
+		if set {
+			self.routeLocalChanged(routeLocal)
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) GetRouteLocal() bool {
@@ -2534,6 +2730,11 @@ func (self *DeviceLocal) GetRouteLocal() bool {
 }
 
 func (self *DeviceLocal) SetBlockerEnabled(blockerEnabled bool) {
+	_ = self.setLocalCatalogPreference("blocker-enabled", blockerEnabled)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyBlockerEnabledWithLock(blockerEnabled bool) (func(), error) {
 	set := false
 	func() {
 		self.stateLock.Lock()
@@ -2546,20 +2747,11 @@ func (self *DeviceLocal) SetBlockerEnabled(blockerEnabled bool) {
 			set = true
 		}
 	}()
-	if set {
-		self.persistBlockerEnabled(blockerEnabled)
-		self.blockerEnabledChanged(blockerEnabled)
-	}
-}
-
-// persists the blocker toggle to local state, asynchronously.
-// restored at device creation (see the constructor restore block)
-func (self *DeviceLocal) persistBlockerEnabled(blockerEnabled bool) {
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		asyncLocalState.serialAsync(func() error {
-			return asyncLocalState.GetLocalState().SetBlockerEnabled(blockerEnabled)
-		})
-	}
+	return func() {
+		if set {
+			self.blockerEnabledChanged(blockerEnabled)
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) GetBlockerEnabled() bool {
@@ -3437,8 +3629,13 @@ func providerLocalUserNatSettings(
 }
 
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
+	_ = self.setLocalCatalogPreference("provide-mode", provideMode)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyProvideModeWithLock(provideMode ProvideMode) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetProvideMode") {
-		return
+		return nil, nil
 	}
 	self.log.Infof("[device]provide = %d\n", provideMode)
 
@@ -3452,10 +3649,12 @@ func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 
 		changed = self.setProvideModeWithLock(provideMode)
 	}()
-	if changed {
-		self.provideModeChanged(provideMode)
-		self.provideChanged(self.GetProvideEnabled())
-	}
+	return func() {
+		if changed {
+			self.provideModeChanged(provideMode)
+			self.provideChanged(self.GetProvideEnabled())
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (changed bool) {
@@ -3564,8 +3763,13 @@ func (self *DeviceLocal) GetOffline() bool {
 }
 
 func (self *DeviceLocal) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bool) {
+	_ = self.setLocalCatalogPreference("vpn-interface-while-offline", vpnInterfaceWhileOffline)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyVpnInterfaceWhileOfflineWithLock(vpnInterfaceWhileOffline bool) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetVpnInterfaceWhileOffline") {
-		return
+		return nil, nil
 	}
 	changed := false
 	func() {
@@ -3576,10 +3780,12 @@ func (self *DeviceLocal) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline bo
 			changed = true
 		}
 	}()
-	if changed {
-		self.vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline)
-		self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
-	}
+	return func() {
+		if changed {
+			self.vpnInterfaceWhileOfflineChanged(vpnInterfaceWhileOffline)
+			self.offlineChanged(self.GetOffline(), self.GetVpnInterfaceWhileOffline())
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) GetVpnInterfaceWhileOffline() bool {
@@ -3692,6 +3898,16 @@ func (self *DeviceLocal) setDestination(
 	specs *ProviderSpecList,
 	rebuild bool,
 ) {
+	_ = self.setDestinationChecked(location, specs, rebuild)
+}
+
+// Returns notification work so preference serialization never encloses an
+// external listener. The actual transport lifecycle remains unchanged.
+func (self *DeviceLocal) applyDestination(
+	location *ConnectLocation,
+	specs *ProviderSpecList,
+	rebuild bool,
+) (func(), error) {
 	location = cloneConnectLocation(location)
 	connectSpecs := []*connect.ProviderSpec{}
 	if specs != nil {
@@ -3706,10 +3922,12 @@ func (self *DeviceLocal) setDestination(
 	provideChanged := false
 	sameTransport := false
 	locationChanged := false
+	closed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		if self.closed {
+		if self.closed || (self.ctx != nil && self.ctx.Err() != nil) {
+			closed = true
 			return
 		}
 
@@ -3751,6 +3969,7 @@ func (self *DeviceLocal) setDestination(
 			self.saveDohServerScoresWithLock(priorUpgradeMux)
 			self.upgradeMux.Close()
 			self.upgradeMux = nil
+			self.upgradeMuxLiveSettings = nil
 		}
 		self.closeRemoteUserNatClientWithLock()
 
@@ -4022,6 +4241,7 @@ func (self *DeviceLocal) setDestination(
 				// the mux blocks ad/tracker hostnames at the dns layer
 				upgradeMux.SetBlocker(self.blocker)
 				self.upgradeMux = upgradeMux
+				self.upgradeMuxLiveSettings = self.upgradeMuxSettings
 				// pre-warm the DoH connections in the background: the tunnel dials park
 				// until the window can carry traffic and complete at tunnel-up, so the
 				// first lookup rides an already-open connection (see UpgradeMux.WarmDns)
@@ -4103,31 +4323,29 @@ func (self *DeviceLocal) setDestination(
 		}
 		self.updateSendRouteWithLock()
 	}()
+	if closed {
+		return nil, errors.New(localPreferencesClosedMessage)
+	}
 
-	if sameTransport {
-		if locationChanged {
-			self.connectLocationChanged(location)
+	return func() {
+		if sameTransport {
+			if locationChanged {
+				self.connectLocationChanged(location)
+			}
+			return
 		}
-		return
-	}
-
-	self.connectLocationChanged(self.GetConnectLocation())
-	connectEnabled := self.GetConnectEnabled()
-	self.stats.UpdateConnect(connectEnabled)
-	self.connectChanged(connectEnabled)
-	self.windowStatusChanged(self.GetWindowStatus())
-	// the destination change replaced (or tore down) the multi client, so the
-	// established provider identity set was reset. Fire once so consumers
-	// re-read (and observe the empty set on disconnect)
-	self.providerIdentitiesChanged()
-	// same for the connected provider locations, which derive from the
-	// replaced window monitor
-	self.connectedProviderLocationsChanged()
-
-	if provideChanged {
-		self.provideModeChanged(self.GetProvideMode())
-		self.provideChanged(self.GetProvideEnabled())
-	}
+		self.connectLocationChanged(self.GetConnectLocation())
+		connectEnabled := self.GetConnectEnabled()
+		self.stats.UpdateConnect(connectEnabled)
+		self.connectChanged(connectEnabled)
+		self.windowStatusChanged(self.GetWindowStatus())
+		self.providerIdentitiesChanged()
+		self.connectedProviderLocationsChanged()
+		if provideChanged {
+			self.provideModeChanged(self.GetProvideMode())
+			self.provideChanged(self.GetProvideEnabled())
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
@@ -4180,29 +4398,18 @@ func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 }
 
 func (self *DeviceLocal) SetConnectLocation(location *ConnectLocation) {
-	self.setConnectLocation(location, false)
+	_ = self.SetConnectLocationChecked(location)
 }
 
 // Reconnect is `SetConnectLocation` for an explicit user action: it rebuilds
 // the connection even when `location` is already the installed destination.
 // See the `Device` interface.
 func (self *DeviceLocal) Reconnect(location *ConnectLocation) {
-	self.setConnectLocation(location, true)
+	_ = self.ReconnectChecked(location)
 }
 
 func (self *DeviceLocal) setConnectLocation(location *ConnectLocation, rebuild bool) {
-	if location == nil {
-		self.RemoveDestination()
-	} else {
-		specs := NewProviderSpecList()
-		specs.Add(&ProviderSpec{
-			LocationId:      location.ConnectLocationId.LocationId,
-			LocationGroupId: location.ConnectLocationId.LocationGroupId,
-			ClientId:        location.ConnectLocationId.ClientId,
-			BestAvailable:   location.ConnectLocationId.BestAvailable,
-		})
-		self.setDestination(location, specs, rebuild)
-	}
+	_ = self.setConnectLocationChecked(location, rebuild)
 }
 
 func (self *DeviceLocal) GetConnectLocation() *ConnectLocation {
@@ -4218,19 +4425,35 @@ func (self *DeviceLocal) GetDefaultLocation() *ConnectLocation {
 }
 
 func (self *DeviceLocal) SetDefaultLocation(location *ConnectLocation) {
+	_ = self.SetDefaultLocationChecked(location)
+}
+
+// Applies one value without persistence; Load and checked mutations own the
+// storage decision. The returned callback is invoked without preference locks.
+func (self *DeviceLocal) applyDefaultLocation(location *ConnectLocation) (func(), error) {
 	location = cloneConnectLocation(location)
 	changed := false
+	closed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if self.closed || (self.ctx != nil && self.ctx.Err() != nil) {
+			closed = true
+			return
+		}
 		if !connectLocationValuesEqual(self.defaultLocation, location) {
 			self.defaultLocation = location
 			changed = true
 		}
 	}()
-	if changed {
-		self.defaultLocationChanged(location)
+	if closed {
+		return nil, errors.New(localPreferencesClosedMessage)
 	}
+	return func() {
+		if changed {
+			self.defaultLocationChanged(location)
+		}
+	}, nil
 }
 
 func (self *DeviceLocal) Shuffle() {
@@ -4602,6 +4825,9 @@ func (self *DeviceLocal) Close() {
 	self.closeOnce.Do(self.close)
 	self.lifecycleJoinOnce.Do(func() {
 		go func() {
+			if self.authPublication != nil {
+				<-self.authPublication.Done()
+			}
 			self.lifecycleWorkers.Wait()
 			if self.ownsApi {
 				_ = self.api.CloseAndWait(context.Background())
@@ -4609,6 +4835,21 @@ func (self *DeviceLocal) Close() {
 			close(self.lifecycleDone)
 		}()
 	})
+}
+
+// WaitForClose gives mobile owners a bounded join after Close. A timeout is a
+// failed lifecycle boundary: callers must not treat it as proof that delayed
+// persistence or callbacks have stopped.
+func (self *DeviceLocal) WaitForClose(timeoutMilliseconds int64) bool {
+	if timeoutMilliseconds <= 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		time.Duration(timeoutMilliseconds)*time.Millisecond,
+	)
+	defer cancel()
+	return self.CloseAndWait(ctx) == nil
 }
 
 // Joins the independently owned API session after callback-safe device
@@ -4637,6 +4878,15 @@ func (self *DeviceLocal) CloseAndWait(ctx context.Context) error {
 }
 
 func (self *DeviceLocal) close() {
+	if self.authPublication != nil {
+		self.authPublication.Close()
+	}
+	if !self.ownsApi && self.authPublication != nil {
+		if self.networkSpace.asyncLocalState != nil {
+			self.networkSpace.asyncLocalState.localState.closeDeviceAuthOwner(self.authPublication)
+		}
+		self.api.closeDeviceOwner(self.authPublication)
+	}
 	// Controllers can hold device listeners and window monitor callbacks.
 	// Release them before taking the device state lock so their transitive
 	// Close methods can safely call back into the device.
@@ -4681,6 +4931,7 @@ func (self *DeviceLocal) close() {
 		self.saveDohServerScoresWithLock(self.upgradeMux)
 		self.upgradeMux.Close()
 		self.upgradeMux = nil
+		self.upgradeMuxLiveSettings = nil
 	}
 	self.closeRemoteUserNatClientWithLock()
 	self.updateSendRouteWithLock()
@@ -4721,7 +4972,7 @@ func (self *DeviceLocal) close() {
 
 	if self.ownsApi {
 		self.api.Close()
-	} else {
+	} else if self.authPublication == nil {
 		self.api.clearByJwt(self.byJwt)
 	}
 }
@@ -5001,8 +5252,13 @@ func (self *DeviceLocal) closeRemoteUserNatClientWithLock() {
 // not expose a transport seam, so they receive the persisted policy only when
 // their owner chooses to consume it.
 func (self *DeviceLocal) SetTransportSettings(transportSettings *TransportSettings) {
+	_ = self.setLocalCatalogPreference("transport-settings", transportSettings)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyTransportSettingsWithLock(transportSettings *TransportSettings) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetTransportSettings") {
-		return
+		return nil, nil
 	}
 	transportSettings = normalizeTransportSettings(transportSettings, false)
 	var apiGenerator *connect.ApiMultiClientGenerator
@@ -5016,19 +5272,16 @@ func (self *DeviceLocal) SetTransportSettings(transportSettings *TransportSettin
 	}
 	self.stateLock.Unlock()
 	if !changed {
-		return
+		return nil, nil
 	}
 	if apiGenerator != nil {
 		mode, preferences := toConnectTransportPolicy(transportSettings, false)
 		apiGenerator.SetPlatformTransportPolicy(mode, preferences)
 	}
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		if err := asyncLocalState.GetLocalState().SetTransportSettings(transportSettings); err != nil {
-			self.log.Errorf("failed to persist transport settings: %v", err)
-		}
-	}
-	self.transportSettingsChanged(transportSettings)
-	self.transportStatusChanged(self.GetTransportStatus())
+	return func() {
+		self.transportSettingsChanged(transportSettings)
+		self.transportStatusChanged(self.GetTransportStatus())
+	}, nil
 }
 
 func (self *DeviceLocal) GetTransportSettings() *TransportSettings {
@@ -5089,8 +5342,13 @@ func (self *DeviceLocal) transportStatusChanged(status *TransportStatus) {
 // SetProviderTransportSettings applies the provider carrier policy through the
 // provider's make-before-break transport replacement.
 func (self *DeviceLocal) SetProviderTransportSettings(transportSettings *TransportSettings) {
+	_ = self.setLocalCatalogPreference("provider-transport-settings", transportSettings)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyProviderTransportSettingsWithLock(transportSettings *TransportSettings) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetProviderTransportSettings") {
-		return
+		return nil, nil
 	}
 	transportSettings = normalizeTransportSettings(transportSettings, true)
 	var provider *deviceLocalProvider
@@ -5103,19 +5361,16 @@ func (self *DeviceLocal) SetProviderTransportSettings(transportSettings *Transpo
 	}
 	self.stateLock.Unlock()
 	if !changed {
-		return
+		return nil, nil
 	}
 	if provider != nil {
 		mode, preferences := toConnectTransportPolicy(transportSettings, true)
 		provider.SetTransportPolicy(mode, preferences)
 	}
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		if err := asyncLocalState.GetLocalState().SetProviderTransportSettings(transportSettings); err != nil {
-			self.log.Errorf("failed to persist provider transport settings: %v", err)
-		}
-	}
-	self.providerTransportSettingsChanged(transportSettings)
-	self.providerTransportStatusChanged(self.GetProviderTransportStatus())
+	return func() {
+		self.providerTransportSettingsChanged(transportSettings)
+		self.providerTransportStatusChanged(self.GetProviderTransportStatus())
+	}, nil
 }
 
 func (self *DeviceLocal) AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub {
@@ -5550,15 +5805,6 @@ func (self *DeviceLocal) blockActionOverridesWithLock() *BlockActionOverrideList
 	return overrides
 }
 
-// persists the overrides to local state, asynchronously
-func (self *DeviceLocal) persistBlockActionOverrides(overrides *BlockActionOverrideList) {
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		asyncLocalState.serialAsync(func() error {
-			return asyncLocalState.GetLocalState().SetBlockActionOverrides(overrides)
-		})
-	}
-}
-
 // hostedSafeBlockActionOverride returns the override to store on this device. On a
 // hosted (cloud proxy) device a local route override is neutralized to remote
 // routing (Local=false), so neither the stored nor the applied state can ever
@@ -5581,22 +5827,7 @@ func (self *DeviceLocal) hostedSafeBlockActionOverride(override *BlockActionOver
 }
 
 func (self *DeviceLocal) AddBlockActionOverride(override *BlockActionOverride) {
-	if override == nil || override.OverrideId == nil {
-		return
-	}
-	override = self.hostedSafeBlockActionOverride(override)
-	var overrides *BlockActionOverrideList
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		// replace an existing override with the same id
-		self.removeBlockActionOverrideWithLock(override.OverrideId)
-		self.blockActionOverrides = append(self.blockActionOverrides, override)
-		self.updateBlockActionOverridesWithLock()
-		overrides = self.blockActionOverridesWithLock()
-	}()
-	self.persistBlockActionOverrides(overrides)
-	self.blockActionOverridesChanged(overrides)
+	_ = self.changeBlockActionOverride(override, nil)
 }
 
 // must be called with `stateLock`
@@ -5614,47 +5845,24 @@ func (self *DeviceLocal) removeBlockActionOverrideWithLock(overrideId *Id) bool 
 }
 
 func (self *DeviceLocal) RemoveBlockActionOverride(overrideId *Id) {
-	if overrideId == nil {
-		return
-	}
-	var overrides *BlockActionOverrideList
-	removed := false
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		removed = self.removeBlockActionOverrideWithLock(overrideId)
-		if removed {
-			self.updateBlockActionOverridesWithLock()
-			overrides = self.blockActionOverridesWithLock()
-		}
-	}()
-	if removed {
-		self.persistBlockActionOverrides(overrides)
-		self.blockActionOverridesChanged(overrides)
-	}
+	_ = self.changeBlockActionOverride(nil, overrideId)
 }
 
 func (self *DeviceLocal) SetBlockActionOverrides(overrides *BlockActionOverrideList) {
+	_ = self.setLocalCatalogPreference("block-action-overrides", overrides)
+}
+
+// Applies an owned, canonical list without an asynchronous storage writer.
+func (self *DeviceLocal) applyBlockActionOverridesWithLock(overrides *BlockActionOverrideList) (func(), error) {
 	var netOverrides *BlockActionOverrideList
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
-		self.blockActionOverrides = []*BlockActionOverride{}
-		if overrides != nil {
-			for _, override := range overrides.getAll() {
-				if override.OverrideId == nil {
-					continue
-				}
-				override = self.hostedSafeBlockActionOverride(override)
-				self.removeBlockActionOverrideWithLock(override.OverrideId)
-				self.blockActionOverrides = append(self.blockActionOverrides, override)
-			}
-		}
+		self.blockActionOverrides = self.ownBlockActionOverrides(overrides).getAll()
 		self.updateBlockActionOverridesWithLock()
 		netOverrides = self.blockActionOverridesWithLock()
 	}()
-	self.persistBlockActionOverrides(netOverrides)
-	self.blockActionOverridesChanged(netOverrides)
+	return func() { self.blockActionOverridesChanged(netOverrides) }, nil
 }
 
 func (self *DeviceLocal) GetBlockActionOverrides() *BlockActionOverrideList {
@@ -6452,13 +6660,17 @@ func hostFallbackDnsResolverSettings(resolver *connect.DnsResolverSettings) *con
 // host-side fallback (used to bridge tunnel startup), persisted to local state.
 // TLS/cert pinning is applied internally and is not part of this surface
 func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
+	_ = self.setLocalCatalogPreference("dns-resolver-settings", dnsResolverSettings)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyDnsResolverSettingsWithLock(dnsResolverSettings *DnsResolverSettings) (func(), error) {
 	if dnsResolverSettings == nil {
-		return
+		return nil, nil
 	}
 	// The caller owns this mutable gomobile settings object and may reuse it as
-	// soon as this method returns. Snapshot it before handing it to the async
-	// local-state writer; otherwise a UI edit immediately following Set can race
-	// JSON serialization (and persist a torn combination of toggles/addresses).
+	// soon as this method returns. Retain an owned snapshot so later UI edits
+	// cannot silently alter the installed resolver.
 	dnsResolverSettings = cloneDnsResolverSettings(dnsResolverSettings)
 	var upgradeMuxSettings *connect.UpgradeMuxSettings
 	func() {
@@ -6470,12 +6682,11 @@ func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolver
 	}()
 	if upgradeMuxSettings == nil {
 		// the mux is disabled. there is no resolver to configure
-		return
+		return nil, nil
 	}
 	// applies to the live mux, if any
 	self.SetUpgradeMuxSettings(upgradeMuxSettings)
-	self.persistDnsResolverSettings(dnsResolverSettings)
-	self.dnsResolverSettingsChanged(self.GetDnsResolverSettings())
+	return func() { self.dnsResolverSettingsChanged(self.GetDnsResolverSettings()) }, nil
 }
 
 func cloneDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) *DnsResolverSettings {
@@ -6485,15 +6696,6 @@ func cloneDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) *DnsReso
 	cloned := dnsResolverSettingsFromConnect(dnsResolverSettings.toConnect())
 	cloned.EnableFallback = dnsResolverSettings.EnableFallback
 	return cloned
-}
-
-// persists the dns resolver settings to local state, asynchronously
-func (self *DeviceLocal) persistDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		asyncLocalState.serialAsync(func() error {
-			return asyncLocalState.GetLocalState().SetDnsResolverSettings(dnsResolverSettings)
-		})
-	}
 }
 
 func (self *DeviceLocal) GetDnsResolverSettings() *DnsResolverSettings {
@@ -6768,28 +6970,18 @@ func (self *DeviceLocal) FlushGlog() {
 // for. An app in another process reaches this through
 // DeviceRemote.SetLogVerbosity, which sets both.
 func (self *DeviceLocal) SetLogVerbosity(level int) {
+	_ = self.setLocalCatalogPreference("log-verbosity", level)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyLogVerbosityWithLock(level int) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetLogVerbosity") {
 		// a hosted device shares one process with unrelated customers'
 		// devices, and the verbosity flag is process-global: it is not one
 		// tenant's to raise
-		return
+		return nil, nil
 	}
-	if err := SetLogVerbosity(level); err != nil {
-		self.log.Infof("[device]set log verbosity %d err = %s\n", level, err)
-		return
-	}
-	self.persistLogVerbosity(level)
-}
-
-// persistLogVerbosity records the level so the next process to start a device
-// comes up at it (see `applyPersistedLogVerbosity`). The write is serialized
-// with the rest of the local state and does not block the setter.
-func (self *DeviceLocal) persistLogVerbosity(level int) {
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		asyncLocalState.serialAsync(func() error {
-			return asyncLocalState.GetLocalState().SetLogVerbosity(level)
-		})
-	}
+	return nil, SetLogVerbosity(level)
 }
 
 // GetLogVerbosity returns the verbosity this device's process is logging at.
@@ -6806,28 +6998,20 @@ func (self *DeviceLocal) GetLogVerbosity() int {
 // app in another process reaches this through
 // DeviceRemote.SetControlIpFamilyPolicy, which sets both.
 func (self *DeviceLocal) SetControlIpFamilyPolicy(policy int) {
+	_ = self.setLocalCatalogPreference("control-ip-family-policy", policy)
+}
+
+// Applies without saving; its owning operation publishes notifications after unlock.
+func (self *DeviceLocal) applyControlIpFamilyPolicyWithLock(policy int) (func(), error) {
 	if self.hostedIncompatibleGuarded("SetControlIpFamilyPolicy") {
 		// a hosted device shares one process with unrelated customers'
 		// devices, and the policy is process-global: it is not one tenant's to
 		// force
-		return
+		return nil, nil
 	}
 	clamped := clampIpFamilyPolicy(policy)
 	SetControlIpFamilyPolicy(clamped)
-	self.persistControlIpFamilyPolicy(clamped)
-}
-
-// persistControlIpFamilyPolicy records the policy so the next process to start
-// a device comes up under it -- and, more to the point, so this process's next
-// api call is made under it before any device exists (see
-// `applyPersistedControlIpFamilyPolicy`). The write is serialized with the rest
-// of the local state and does not block the setter.
-func (self *DeviceLocal) persistControlIpFamilyPolicy(policy int) {
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		asyncLocalState.serialAsync(func() error {
-			return asyncLocalState.GetLocalState().SetControlIpFamilyPolicy(policy)
-		})
-	}
+	return nil, nil
 }
 
 // GetControlIpFamilyPolicy returns the policy this device's process is dialing

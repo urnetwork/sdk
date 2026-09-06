@@ -26,8 +26,10 @@ const (
 // monotonic metadata: readers do not infer freshness from file mtimes, and a
 // future cross-process store can compare records without changing this shape.
 type persistedLocalAuthState struct {
-	Version     int    `json:"version"`
-	Generation  uint64 `json:"generation"`
+	Version    int    `json:"version"`
+	Generation uint64 `json:"generation"`
+	// ByJwt is the admin/login credential; ByClientJwt is the separately
+	// derived provider client credential. Client refresh must never merge them.
 	ByJwt       string `json:"by_jwt"`
 	ByClientJwt string `json:"by_client_jwt"`
 	InstanceId  string `json:"instance_id"`
@@ -157,6 +159,7 @@ func (self *LocalState) loadLegacyAuthStateLocked() (persistedLocalAuthState, bo
 
 func (self *LocalState) updateAuthState(
 	mutate func(state *persistedLocalAuthState) (bool, error),
+	commitOwnership ...func(),
 ) error {
 	self.authStateLock.Lock()
 	defer self.authStateLock.Unlock()
@@ -166,12 +169,25 @@ func (self *LocalState) updateAuthState(
 		return err
 	}
 	changed, err := mutate(&state)
-	if err != nil || !changed {
+	if err != nil {
 		return err
 	}
-	state.Version = localAuthStateVersion
-	state.Generation += 1
-	return self.writeAuthStateLocked(state)
+	if changed {
+		state.Version = localAuthStateVersion
+		state.Generation += 1
+		if err := self.writeAuthStateLocked(state); err != nil {
+			return err
+		}
+	}
+	if changed || 0 < len(commitOwnership) {
+		self.deviceAuthGeneration += 1
+	}
+	// In-memory ownership is committed only after durable state succeeds.
+	// These closures mutate this LocalState only; they must not call out.
+	for _, commit := range commitOwnership {
+		commit()
+	}
+	return nil
 }
 
 // writeAuthStateLocked performs the complete durable transaction: create in

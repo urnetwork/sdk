@@ -135,13 +135,8 @@ func applyRoutingTierToReliabilitySettings(settings *ReliabilitySettings, tier i
 // only admits basic types (int/string/bool/int64), and an out-of-range
 // value fails safe to Off via routingTierKnobs, never panics.
 //
-// Persisted the same way the performance profile is (see
-// LocalState.SetPerformanceProfile / SetRoutingTier in local_state.go):
-// JSON to its own dotfile under LocalState, via the device's
-// AsyncLocalState so the write does not block the caller. Restored into
-// self.routingTier when the device is constructed (see the LocalState
-// restore block in NewDeviceLocal), so the choice survives a process
-// restart even before this is called again in the new process.
+// Explicit Load restores this preference. Independently enabled autosave
+// commits its existing JSON record before applying the live change.
 //
 // Applied to the live multi client immediately, through the SAME override
 // path the developer-menu reliability controls use
@@ -155,27 +150,20 @@ func applyRoutingTierToReliabilitySettings(settings *ReliabilitySettings, tier i
 // in SetDestination) -- the change is not lost, only deferred until
 // connect.
 func (self *DeviceLocal) SetRoutingTier(tier int) {
+	_ = self.setLocalCatalogPreference("routing-tier", tier)
+}
+
+// Applies without writing storage; both Load and explicit mutation use it.
+func (self *DeviceLocal) applyRoutingTierWithLock(tier int) (func(), error) {
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.routingTier = tier
 	}()
-	self.persistRoutingTier(tier)
-
 	if effective := self.GetReliabilitySettings(); effective != nil {
 		merged := *effective
 		applyRoutingTierToReliabilitySettings(&merged, tier)
 		self.SetReliabilitySettings(&merged)
 	}
-}
-
-// persistRoutingTier writes the tier to LocalState asynchronously, mirroring
-// persistBlockerEnabled's pattern: a no-op when the device has no
-// AsyncLocalState (e.g. a hosted/embedded device with no local storage).
-func (self *DeviceLocal) persistRoutingTier(tier int) {
-	if asyncLocalState := self.networkSpace.GetAsyncLocalState(); asyncLocalState != nil {
-		asyncLocalState.serialAsync(func() error {
-			return asyncLocalState.GetLocalState().SetRoutingTier(tier)
-		})
-	}
+	return nil, nil
 }

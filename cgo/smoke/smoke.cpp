@@ -87,6 +87,20 @@ int main() {
 	CHECK(jwt != nullptr);
 	urnet_free_string(jwt);
 
+	// A real checked snapshot crosses as an owned handle, not an empty JSON
+	// object. Read its immutable getters and release it before closing the store.
+	uint64_t authSnapshot = urnet_local_state_get_auth_state_snapshot(localState, &error);
+	CHECK(authSnapshot != 0 && error == nullptr);
+	CHECK(urnet_local_auth_state_snapshot_get_empty(authSnapshot));
+	char* snapshotClient = urnet_local_auth_state_snapshot_get_by_client_jwt(authSnapshot);
+	CHECK(snapshotClient != nullptr && snapshotClient[0] == '\0');
+	urnet_free_string(snapshotClient);
+	char* snapshotInstance = urnet_local_auth_state_snapshot_get_instance_id(authSnapshot);
+	CHECK(snapshotInstance == nullptr || snapshotInstance[0] == '\0');
+	if (snapshotInstance != nullptr) urnet_free_string(snapshotInstance);
+	CHECK(urnet_release(authSnapshot));
+	CHECK(!urnet_release(authSnapshot));
+
 	std::atomic<int> callbackCount{0};
 	urnet_async_local_state_get_by_jwt(asyncLocalState, onGetByJwt, &callbackCount);
 	for (int i = 0; i < 500 && callbackCount.load() == 0; i += 1) {

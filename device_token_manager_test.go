@@ -49,10 +49,11 @@ func testingRefreshableJwt(t *testing.T) string {
 func testingRefreshableJwtWithMarker(t *testing.T, marker string) string {
 	t.Helper()
 	token, err := gojwt.NewWithClaims(gojwt.SigningMethodNone, gojwt.MapClaims{
-		"client_id": "00000000-0000-0000-0000-000000000001",
-		"device_id": "00000000-0000-0000-0000-000000000002",
-		"exp":       time.Now().Add(30 * 24 * time.Hour).Unix(),
-		"marker":    marker,
+		"client_id":  "00000000-0000-0000-0000-000000000001",
+		"device_id":  "00000000-0000-0000-0000-000000000002",
+		"network_id": "00000000-0000-0000-0000-000000000004",
+		"exp":        time.Now().Add(30 * 24 * time.Hour).Unix(),
+		"marker":     marker,
 	}).SignedString(gojwt.UnsafeAllowNoneSignatureType)
 	if err != nil {
 		t.Fatal(err)

@@ -1103,9 +1103,13 @@ func (self *ConnectLocationId) String() string {
 	return string(jsonBytes)
 }
 
+// One provider-mode secret. JSON preserves binary bytes without changing the
+// existing Go fields or gob representation.
 type ProvideSecretKey struct {
-	ProvideMode      ProvideMode `json:"provide_mode"`
-	ProvideSecretKey string      `json:"provide_secret_key"`
+	ProvideMode ProvideMode `json:"provide_mode"`
+	// Raw bytes, not UTF-8 text. Forward opaque native lists or use the device's
+	// SaveProvideSecretKeys; NSString/jstring extraction can lose these bytes.
+	ProvideSecretKey string `json:"provide_secret_key"`
 }
 
 type WindowType = string

@@ -32,6 +32,31 @@ func testing_newBlockDeviceWithNetworkSpace(t *testing.T, networkSpace *NetworkS
 	return device
 }
 
+// Reopens an accepted provider identity after the old device has joined. This
+// helper is used only by the explicit preference persistence adopters below.
+func testing_loadedBlockDevice(t *testing.T, networkSpace *NetworkSpace) *DeviceLocal {
+	t.Helper()
+	auth, err := networkSpace.GetAuthStateSnapshot()
+	if err != nil || auth.GetByClientJwt() == "" || auth.GetInstanceId() == nil {
+		t.Fatal("accepted identity is unavailable for preference reopen")
+	}
+	settings := DefaultDeviceLocalSettings()
+	settings.AllowProvider = false
+	settings.DisableLogging = true
+	device, err := newDeviceLocalWithOverrides(networkSpace, auth.GetByClientJwt(), "", "", "", auth.GetInstanceId(), settings, connect.NewId())
+	if err != nil {
+		t.Fatal("accepted preference device reopen failed")
+	}
+	t.Cleanup(func() { testingJoinPreferenceDevice(t, device) })
+	if result, err := device.Load(); err != nil || result == nil {
+		t.Fatal("checked preference replay failed")
+	}
+	if err := device.SetAutoSave(true); err != nil {
+		t.Fatal(err)
+	}
+	return device
+}
+
 type testing_blockListener struct {
 	stateLock sync.Mutex
 	count     int
@@ -136,11 +161,10 @@ func testing_stringList(values ...string) *StringList {
 }
 
 func TestDeviceLocalBlockActionOverrides(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	device, networkSpace := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	networkSpace := fixture.networkSpace
+	device := testing_loadedBlockDevice(t, networkSpace)
 
 	overridesListener := &testing_overridesListener{}
 	sub := device.AddBlockActionOverridesChangeListener(overridesListener)
@@ -191,35 +215,28 @@ func TestDeviceLocalBlockActionOverrides(t *testing.T) {
 		t.Fatalf("expected com.app.remote excluded")
 	}
 
-	// persisted to local state (async)
+	// Enabled mutations commit synchronously before live application.
 	localState := networkSpace.GetAsyncLocalState().GetLocalState()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if persisted := localState.GetBlockActionOverrides(); persisted != nil && persisted.Len() == 2 {
-			break
-		}
-		if deadline.Before(time.Now()) {
-			t.Fatalf("overrides were not persisted")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if persisted := localState.GetBlockActionOverrides(); persisted == nil || persisted.Len() != 2 {
+		t.Fatal("overrides were not durably committed")
 	}
 
-	// a new device on the same network space restores the persisted overrides
-	device2 := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, "", false)
-	defer device2.Close()
+	// The replacement explicitly loads after the previous owner has joined.
+	testingJoinPreferenceDevice(t, device)
+	device2 := testing_loadedBlockDevice(t, networkSpace)
 	if count := device2.GetBlockActionOverrides().Len(); count != 2 {
 		t.Fatalf("expected 2 restored overrides, got %d", count)
 	}
 
 	// remove
-	device.RemoveBlockActionOverride(remoteOverride.OverrideId)
-	if count := device.GetBlockActionOverrides().Len(); count != 1 {
+	device2.RemoveBlockActionOverride(remoteOverride.OverrideId)
+	if count := device2.GetBlockActionOverrides().Len(); count != 1 {
 		t.Fatalf("expected 1 override after remove, got %d", count)
 	}
 
 	// set replaces everything
-	device.SetBlockActionOverrides(NewBlockActionOverrideList())
-	if count := device.GetBlockActionOverrides().Len(); count != 0 {
+	device2.SetBlockActionOverrides(NewBlockActionOverrideList())
+	if count := device2.GetBlockActionOverrides().Len(); count != 0 {
 		t.Fatalf("expected 0 overrides after set, got %d", count)
 	}
 }
@@ -535,11 +552,10 @@ func TestDeviceLocalContractStats(t *testing.T) {
 }
 
 func TestDeviceLocalDnsResolverSettings(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	device, networkSpace := testing_newBlockDevice(ctx, t, false)
-	defer device.Close()
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	networkSpace := fixture.networkSpace
+	device := testing_loadedBlockDevice(t, networkSpace)
 
 	dnsListener := &testing_dnsListener{}
 	sub := device.AddDnsResolverSettingsChangeListener(dnsListener)
@@ -600,22 +616,14 @@ func TestDeviceLocalDnsResolverSettings(t *testing.T) {
 		}
 	}()
 
-	// persisted to local state (async)
+	// Enabled mutations commit synchronously before live application.
 	localState := networkSpace.GetAsyncLocalState().GetLocalState()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if persisted := localState.GetDnsResolverSettings(); persisted != nil && persisted.EnableLocalDns {
-			break
-		}
-		if deadline.Before(time.Now()) {
-			t.Fatalf("dns resolver settings were not persisted")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if persisted := localState.GetDnsResolverSettings(); persisted == nil || !persisted.EnableLocalDns {
+		t.Fatal("dns resolver settings were not durably committed")
 	}
 
-	// a new device on the same network space restores the persisted settings
-	device2 := testing_newBlockDeviceWithNetworkSpace(t, networkSpace, "", false)
-	defer device2.Close()
+	testingJoinPreferenceDevice(t, device)
+	device2 := testing_loadedBlockDevice(t, networkSpace)
 	restored := device2.GetDnsResolverSettings()
 	if !restored.EnableLocalDns || !restored.LocalDnsIpv4.Contains("9.9.9.9") {
 		t.Fatalf("unexpected restored dns resolver settings %+v", restored)
@@ -629,15 +637,15 @@ func TestDeviceLocalDnsResolverSettings(t *testing.T) {
 
 	// disabling the fallback clears it from the mux settings
 	next.EnableFallback = false
-	device.SetDnsResolverSettings(next)
-	if dnsResolverSettings := device.GetDnsResolverSettings(); dnsResolverSettings.EnableFallback {
+	device2.SetDnsResolverSettings(next)
+	if dnsResolverSettings := device2.GetDnsResolverSettings(); dnsResolverSettings.EnableFallback {
 		t.Fatalf("expected the fallback disabled %+v", dnsResolverSettings)
 	}
 	func() {
-		device.stateLock.Lock()
-		defer device.stateLock.Unlock()
-		if device.upgradeMuxSettings.Dns.Fallback != nil {
-			t.Fatalf("expected no fallback resolver %+v", device.upgradeMuxSettings.Dns.Fallback)
+		device2.stateLock.Lock()
+		defer device2.stateLock.Unlock()
+		if device2.upgradeMuxSettings.Dns.Fallback != nil {
+			t.Fatalf("expected no fallback resolver %+v", device2.upgradeMuxSettings.Dns.Fallback)
 		}
 	}()
 }

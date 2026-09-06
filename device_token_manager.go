@@ -534,6 +534,10 @@ func (self *apiTokenManager) refreshToken(byJwt string) (loggedOut bool, stale b
 // refreshTokenWithContext leaves retryable request-error logging to its owner,
 // which can distinguish a real failure from deliberate transport supersession.
 func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt string) apiTokenRefreshOutcome {
+	currentJwt, authGeneration := self.api.authCredentialSnapshot()
+	if currentJwt != byJwt {
+		return apiTokenRefreshOutcome{stale: true}
+	}
 	// Bound the request to the attempt ctx so a transport transition can release
 	// an obsolete path immediately and manager close still joins every dialer.
 	result, err := self.api.refreshJwtSyncWithContextAndJwt(ctx, byJwt)
@@ -543,7 +547,7 @@ func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt 
 		var statusErr *connect.HttpStatusError
 		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusUnauthorized {
 			self.api.logger().Errorf("[api-token]jwt rejected by the api (%d): logging out", statusErr.StatusCode)
-			if self.api.rejectByJwt(byJwt) {
+			if self.api.rejectByJwt(byJwt, authGeneration) {
 				return apiTokenRefreshOutcome{loggedOut: true}
 			} else {
 				return apiTokenRefreshOutcome{stale: true}
@@ -564,7 +568,7 @@ func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt 
 		// not an api error, but a token refresh error -- for example, the client
 		// no longer exists
 		self.api.logger().Errorf("[api-token]failed to refresh JWT: %v", result.Error.Message)
-		if self.api.rejectByJwt(byJwt) {
+		if self.api.rejectByJwt(byJwt, authGeneration) {
 			return apiTokenRefreshOutcome{loggedOut: true}
 		} else {
 			return apiTokenRefreshOutcome{stale: true}
@@ -579,7 +583,7 @@ func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt 
 		return apiTokenRefreshOutcome{err: fmt.Errorf("failed to refresh JWT: %w", err)}
 	}
 
-	if !self.api.setRefreshedByJwt(byJwt, result.ByJwt) {
+	if !self.api.setRefreshedByJwt(byJwt, result.ByJwt, authGeneration) {
 		return apiTokenRefreshOutcome{stale: true}
 	}
 	self.api.logger().Infof("[api-token]successfully refreshed JWT")

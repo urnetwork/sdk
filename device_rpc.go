@@ -224,6 +224,7 @@ type DeviceRemote struct {
 	byJwt            string
 	apiJwtRefreshSub Sub
 	apiAuthLogoutSub Sub
+	authPublication  *deviceAuthPublicationGate
 
 	settings *deviceRpcSettings
 
@@ -443,9 +444,25 @@ func newDeviceRemoteWithOverrides(
 	clientId connect.Id,
 	dialer deviceRpcDialer,
 ) (*DeviceRemote, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-
+	// Native remotes are constructed with the derived client credential.
+	// The platform remote uses a separate member-token control contract and
+	// must not mislabel that member token as a provider client credential.
+	authPublication := newDeviceAuthPublicationGate()
 	api := networkSpace.GetApi()
+	var authLocalState *LocalState
+	if networkSpace.asyncLocalState != nil && !settings.DisableHostedIncompatible && byJwt != "" {
+		authLocalState = networkSpace.asyncLocalState.localState
+	}
+	preparedAuth, err := api.prepareDeviceAuth(authLocalState, byJwt, instanceId, time.Now(), authPublication)
+	if err != nil {
+		return nil, fmt.Errorf("prepare remote client auth: %w", err)
+	}
+	byJwt = preparedAuth.byJwt
+	if authLocalState != nil {
+		selectedIdentity, _ := parseStartupClientJwt(byJwt)
+		clientId = selectedIdentity.clientId
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 
 	deviceRemote := &DeviceRemote{
 		ctx:                      ctx,
@@ -507,6 +524,7 @@ func newDeviceRemoteWithOverrides(
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		connectedProviderLocationChangeListeners: connect.NewCallbackList[ConnectedProviderLocationChangeListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
+		authPublication:                          authPublication,
 		httpResponseChannels:                     map[connect.Id]chan *DeviceRemoteHttpResponse{},
 
 		providerPacketStatsChangeListeners:            map[connect.Id]PacketStatsChangeListener{},
@@ -551,38 +569,67 @@ func newDeviceRemoteWithOverrides(
 
 	deviceRemote.viewControllerManager = *newViewControllerManager(ctx, deviceRemote)
 
-	var logout func() error
-	if networkSpace.asyncLocalState != nil {
-		logout = networkSpace.asyncLocalState.localState.Logout
+	var logout func(string) (bool, error)
+	if networkSpace.asyncLocalState != nil && !settings.DisableHostedIncompatible {
+		logout = func(rejectedJwt string) (bool, error) {
+			return networkSpace.asyncLocalState.localState.logoutRejectedClient(
+				rejectedJwt, instanceId, authPublication,
+			)
+		}
 	} else {
-		// do nothing
-		logout = func() error {
-			return nil
+		logout = func(string) (bool, error) {
+			if networkSpace.asyncLocalState != nil {
+				return true, networkSpace.asyncLocalState.localState.Logout()
+			}
+			return true, nil
 		}
 	}
 
-	// Install the RPC HTTP functions before enabling the API-owned refresh
-	// worker, so its immediate startup validation follows the remote path.
-	api.setHttpPostRaw(deviceRemote.httpPostRaw)
-	api.setHttpGetRaw(deviceRemote.httpGetRaw)
+	var httpPostStreamRaw connect.HttpPostStreamRawFunction
 	if settings.RequireRemoteApi {
 		// Preserve streaming uploads for ordinary native remotes. The
 		// extension-backed remote alone must close the last direct API seam.
-		api.setHttpPostStreamRaw(deviceRemote.httpPostStreamRaw)
+		httpPostStreamRaw = deviceRemote.httpPostStreamRaw
 	}
-	api.setLog(deviceRemote.log)
 	deviceRemote.apiJwtRefreshSub = api.AddJwtRefreshListener(
 		jwtRefreshListenerFunc(deviceRemote.setByJwt),
 	)
 	deviceRemote.apiAuthLogoutSub = api.AddAuthLogoutListener(
 		authLogoutListenerFunc(func() {
-			if err := logout(); err != nil {
+			release := deviceRemote.authPublication.Begin()
+			if release == nil {
+				return
+			}
+			defer release()
+			rejectedJwt, current := api.deviceRejectedJwt(authPublication)
+			if !current {
+				return
+			}
+			if authPublication.testingBeforePersistence != nil {
+				authPublication.testingBeforePersistence()
+			}
+			accepted, err := logout(rejectedJwt)
+			if err != nil {
 				deviceRemote.log.Errorf("failed to clear local auth state: %v", err)
+			}
+			if !accepted {
+				return
 			}
 			deviceRemote.handleApiAuthLogout()
 		}),
 	)
-	api.SetByJwt(byJwt)
+	// Publish the credential and transport owner together before enabling
+	// refresh, so retiring a previous remote cannot clear these bindings.
+	if err := api.installDeviceRemote(
+		preparedAuth, deviceRemote.authPublication, deviceRemote.httpPostRaw,
+		deviceRemote.httpGetRaw, httpPostStreamRaw, deviceRemote.log,
+	); err != nil {
+		// The run loop is not started yet, so its completion belongs to this
+		// failure path. Cleanup must not clear the replacement owner's API.
+		close(deviceRemote.runDone)
+		_ = deviceRemote.CloseAndWait(context.Background())
+		return nil, fmt.Errorf("publish remote client auth: %w", err)
+	}
 	api.StartJwtRefresh()
 
 	deviceRemote.securityPolicyMonitor = newSecurityPolicyMonitor(ctx, deviceRemote, settings.Verbose)
@@ -979,17 +1026,38 @@ func (self *DeviceRemote) closeServiceInstance(service *rpcClient) {
 }
 
 func (self *DeviceRemote) setByJwt(byJwt string) {
-	self.log.Infof("DeviceLocal JWT refreshed")
+	release := self.authPublication.Begin()
+	if release == nil {
+		return
+	}
+	defer release()
 
-	self.GetApi().SetByJwt(byJwt)
+	self.log.Infof("DeviceLocal JWT refreshed")
+	api := self.GetApi()
+	if !api.deviceOwnsByJwt(self.authPublication, byJwt) {
+		return
+	}
+	self.stateLock.Lock()
+	previousByJwt := self.byJwt
+	self.stateLock.Unlock()
 
 	if self.networkSpace.asyncLocalState != nil {
-		if err := self.networkSpace.asyncLocalState.localState.setRefreshedByJwt(
+		accepted, err := self.networkSpace.asyncLocalState.localState.replaceOwnedClientJwt(
+			previousByJwt,
 			byJwt,
 			newId(self.instanceId),
-		); err != nil {
+			self.authPublication,
+		)
+		if err != nil {
 			self.log.Errorf("failed to persist refreshed JWT: %v", err)
+			return
 		}
+		if !accepted {
+			return
+		}
+	}
+	if !api.deviceOwnsByJwt(self.authPublication, byJwt) {
+		return
 	}
 
 	func() {
@@ -1270,6 +1338,18 @@ func (self *DeviceRemote) GetInstanceId() *Id {
 
 func (self *DeviceRemote) GetApi() *Api {
 	return self.networkSpace.GetApi()
+}
+
+// Returns this native remote's published provider client, never an admin
+// installed on the shared API during relogin. Platform remotes use a member
+// credential for control, not a provider client, so this getter is empty there.
+func (self *DeviceRemote) GetClientJwt() string {
+	if self.settings.DisableHostedIncompatible {
+		return ""
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.byJwt
 }
 
 func (self *DeviceRemote) GetNetworkSpace() *NetworkSpace {
@@ -3111,6 +3191,12 @@ func (self *DeviceRemote) Cancel() {
 
 func (self *DeviceRemote) Close() {
 	self.closeOnce.Do(func() {
+		if self.authPublication != nil {
+			self.authPublication.Close()
+			if self.networkSpace.asyncLocalState != nil && !self.settings.DisableHostedIncompatible {
+				self.networkSpace.asyncLocalState.localState.closeDeviceAuthOwner(self.authPublication)
+			}
+		}
 		// Close child controllers while the RPC service is still available so
 		// their listener removals reach the hosted device. In particular,
 		// ConnectViewController.Close now detaches its current window monitor.
@@ -3142,10 +3228,7 @@ func (self *DeviceRemote) Close() {
 		}
 
 		api := self.networkSpace.GetApi()
-		api.SetByJwt("")
-		api.setHttpPostRaw(nil)
-		api.setHttpGetRaw(nil)
-		api.setHttpPostStreamRaw(nil)
+		api.closeDeviceOwner(self.authPublication)
 	})
 }
 
@@ -3157,6 +3240,9 @@ func (self *DeviceRemote) CloseAndWait(ctx context.Context) error {
 	self.Close()
 	self.lifecycleJoinOnce.Do(func() {
 		go func() {
+			if self.authPublication != nil {
+				<-self.authPublication.Done()
+			}
 			<-self.runDone
 			self.backgroundWorkers.Wait()
 			if self.securityPolicyMonitor != nil {
@@ -3176,6 +3262,21 @@ func (self *DeviceRemote) CloseAndWait(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// WaitForClose gives mobile owners a bounded join after Close. A timeout is a
+// failed lifecycle boundary: callers must not treat it as proof that delayed
+// persistence or callbacks have stopped.
+func (self *DeviceRemote) WaitForClose(timeoutMilliseconds int64) bool {
+	if timeoutMilliseconds <= 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		time.Duration(timeoutMilliseconds)*time.Millisecond,
+	)
+	defer cancel()
+	return self.CloseAndWait(ctx) == nil
 }
 
 func (self *DeviceRemote) GetDone() bool {
@@ -8966,6 +9067,21 @@ func (self *DeviceLocalRpc) Sync(
 		return nil
 	}
 
+	// Preference notifications may reenter Sync or other service-locked methods.
+	// Defer their publication before the unlock defer, so both success and
+	// error paths release the service lock before transferring control.
+	var preferenceNotifications []func()
+	defer func() {
+		for _, notify := range preferenceNotifications {
+			notify()
+		}
+	}()
+	applyPreference := func(notify func(), err error) error {
+		if notify != nil {
+			preferenceNotifications = append(preferenceNotifications, notify)
+		}
+		return err
+	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
@@ -8983,36 +9099,52 @@ func (self *DeviceLocalRpc) Sync(
 	hostedIncompatible := self.settings.DisableHostedIncompatible
 
 	if state.CanShowRatingDialog.IsSet {
-		self.deviceLocal.SetCanShowRatingDialog(state.CanShowRatingDialog.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("can-show-rating-dialog", state.CanShowRatingDialog.Value)); err != nil {
+			return err
+		}
 	}
 	if state.CanPromptIntroFunnel.IsSet {
-		self.deviceLocal.SetCanPromptIntroFunnel(state.CanPromptIntroFunnel.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("can-prompt-intro-funnel", state.CanPromptIntroFunnel.Value)); err != nil {
+			return err
+		}
 	}
 	if state.AllowForeground.IsSet {
-		self.deviceLocal.SetAllowForeground(state.AllowForeground.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("allow-foreground", state.AllowForeground.Value)); err != nil {
+			return err
+		}
 	}
 	if state.CanRefer.IsSet {
-		self.deviceLocal.SetCanRefer(state.CanRefer.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("can-refer", state.CanRefer.Value)); err != nil {
+			return err
+		}
 	}
 	if state.RouteLocal.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetRouteLocal(state.RouteLocal.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("route-local", state.RouteLocal.Value)); err != nil {
+			return err
+		}
 	}
 	// the level the app chose, applied in the process that writes the logs
 	// worth raising it for -- on ios the network extension. The device
-	// persists it in its OWN local state from here, so the next tunnel this
-	// process starts comes back up at it without another sync.
+	// commits it in its own local state when autosave is enabled, so a later
+	// explicit Load can restore it without another app sync.
 	if state.LogVerbosity.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetLogVerbosity(state.LogVerbosity.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("log-verbosity", state.LogVerbosity.Value)); err != nil {
+			return err
+		}
 	}
 	// the family the app chose, applied in the process that dials the control
 	// plane while the tunnel is up -- on ios the network extension. The device
-	// persists it in its OWN local state from here, so the next tunnel this
-	// process starts comes back up under it without another sync.
+	// commits it in its own local state when autosave is enabled. The manager's
+	// separate pre-login family-policy restore remains unchanged.
 	if state.ControlIpFamilyPolicy.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetControlIpFamilyPolicy(state.ControlIpFamilyPolicy.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("control-ip-family-policy", state.ControlIpFamilyPolicy.Value)); err != nil {
+			return err
+		}
 	}
 	if state.BlockerEnabled.IsSet {
-		self.deviceLocal.SetBlockerEnabled(state.BlockerEnabled.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("blocker-enabled", state.BlockerEnabled.Value)); err != nil {
+			return err
+		}
 	}
 	if state.InitProvideSecretKeys.IsSet {
 		self.deviceLocal.InitProvideSecretKeys()
@@ -9023,7 +9155,9 @@ func (self *DeviceLocalRpc) Sync(
 		self.deviceLocal.LoadProvideSecretKeys(provideSecretKeyList)
 	}
 	if state.ProvideMode.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetProvideMode(state.ProvideMode.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provide-mode", state.ProvideMode.Value)); err != nil {
+			return err
+		}
 	}
 	// ORDER MATTERS: the control mode applies AFTER the raw provide mode —
 	// SetProvideControlMode enforces the control mode's provide mapping, so
@@ -9031,10 +9165,14 @@ func (self *DeviceLocalRpc) Sync(
 	// persisted) raw mode after it silently overrode the mapping on every rpc
 	// connect (the ios red-light / not-discoverable-at-startup bug).
 	if state.ProvideControlMode.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetProvideControlMode(state.ProvideControlMode.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provide-control-mode", state.ProvideControlMode.Value)); err != nil {
+			return err
+		}
 	}
 	if state.ProvideNetworkMode.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetProvideNetworkMode(state.ProvideNetworkMode.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provide-network-mode", state.ProvideNetworkMode.Value)); err != nil {
+			return err
+		}
 	}
 	if state.ProvidePaused.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvidePaused(state.ProvidePaused.Value)
@@ -9043,36 +9181,53 @@ func (self *DeviceLocalRpc) Sync(
 		self.deviceLocal.SetOffline(state.Offline.Value)
 	}
 	if state.VpnInterfaceWhileOffline.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetVpnInterfaceWhileOffline(state.VpnInterfaceWhileOffline.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("vpn-interface-while-offline", state.VpnInterfaceWhileOffline.Value)); err != nil {
+			return err
+		}
 	}
 	// Apply carrier policy before destination state so a newly constructed
 	// window starts on the requested modes instead of immediately migrating.
 	if state.TransportSettings.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetTransportSettings(state.TransportSettings.Value.toTransportSettings(false))
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("transport-settings", state.TransportSettings.Value.toTransportSettings(false))); err != nil {
+			return err
+		}
 	}
 	if state.ProviderTransportSettings.IsSet && !hostedIncompatible {
-		self.deviceLocal.SetProviderTransportSettings(state.ProviderTransportSettings.Value.toTransportSettings(true))
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provider-transport-settings", state.ProviderTransportSettings.Value.toTransportSettings(true))); err != nil {
+			return err
+		}
 	}
 	if state.RemoveDestination.IsSet {
-		self.deviceLocal.RemoveDestination()
+		if err := applyPreference(self.deviceLocal.setConnectLocationCheckedDeferred(nil, false)); err != nil {
+			return err
+		}
 	}
 	if state.Destination.IsSet {
 		destination := state.Destination.Value
 		providerSpecList := NewProviderSpecList()
 		providerSpecList.addAll(destination.Specs...)
-		self.deviceLocal.SetDestination(
+		if err := applyPreference(self.deviceLocal.setDestinationCheckedDeferred(
 			destination.Location.toConnectLocation(),
 			providerSpecList,
-		)
+			false,
+		)); err != nil {
+			return err
+		}
 	}
 	if state.PerformanceProfile.IsSet {
-		self.deviceLocal.SetPerformanceProfile(state.PerformanceProfile.Value)
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("performance-profile", state.PerformanceProfile.Value)); err != nil {
+			return err
+		}
 	}
 	if state.Location.IsSet {
-		self.deviceLocal.SetConnectLocation(state.Location.Value.toConnectLocation())
+		if err := applyPreference(self.deviceLocal.setConnectLocationCheckedDeferred(state.Location.Value.toConnectLocation(), false)); err != nil {
+			return err
+		}
 	}
 	if state.DefaultLocation.IsSet {
-		self.deviceLocal.SetDefaultLocation(state.DefaultLocation.Value.toConnectLocation())
+		if err := applyPreference(self.deviceLocal.setDefaultLocationCheckedDeferred(state.DefaultLocation.Value.toConnectLocation())); err != nil {
+			return err
+		}
 	}
 	if state.Shuffle.IsSet {
 		self.deviceLocal.Shuffle()
@@ -9090,10 +9245,14 @@ func (self *DeviceLocalRpc) Sync(
 	}
 
 	if state.BlockActionOverrides.IsSet {
-		self.deviceLocal.SetBlockActionOverrides(toBlockActionOverrideList(state.BlockActionOverrides.Value))
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("block-action-overrides", toBlockActionOverrideList(state.BlockActionOverrides.Value))); err != nil {
+			return err
+		}
 	}
 	if state.DnsResolverSettings.IsSet {
-		self.deviceLocal.SetDnsResolverSettings(state.DnsResolverSettings.Value.toDnsResolverSettings())
+		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("dns-resolver-settings", state.DnsResolverSettings.Value.toDnsResolverSettings())); err != nil {
+			return err
+		}
 	}
 	if state.ReliabilitySettings.IsSet {
 		// the runtime reliability override; a nil value queues a reset. The
@@ -9612,18 +9771,15 @@ func (self *DeviceLocalRpc) GetBlockActions(_ RpcNoArg, window **DeviceRemoteBlo
 }
 
 func (self *DeviceLocalRpc) AddBlockActionOverride(overrideRpc *BlockActionOverrideRpc, _ RpcVoid) error {
-	self.deviceLocal.AddBlockActionOverride(overrideRpc.toBlockActionOverride())
-	return nil
+	return self.deviceLocal.changeBlockActionOverride(overrideRpc.toBlockActionOverride(), nil)
 }
 
 func (self *DeviceLocalRpc) RemoveBlockActionOverride(overrideId connect.Id, _ RpcVoid) error {
-	self.deviceLocal.RemoveBlockActionOverride(newId(overrideId))
-	return nil
+	return self.deviceLocal.changeBlockActionOverride(nil, newId(overrideId))
 }
 
 func (self *DeviceLocalRpc) SetBlockActionOverrides(deviceOverrides *DeviceRemoteBlockActionOverrides, _ RpcVoid) error {
-	self.deviceLocal.SetBlockActionOverrides(toBlockActionOverrideList(deviceOverrides.BlockActionOverrides))
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("block-action-overrides", toBlockActionOverrideList(deviceOverrides.BlockActionOverrides))
 }
 
 func (self *DeviceLocalRpc) GetBlockActionOverrides(_ RpcNoArg, deviceOverrides **DeviceRemoteBlockActionOverrides) error {
@@ -10347,8 +10503,7 @@ func (self *DeviceLocalRpc) providerIngressContractDetailsChanged(contractDetail
 // dns
 
 func (self *DeviceLocalRpc) SetDnsResolverSettings(deviceSettings *DeviceRemoteDnsResolverSettings, _ RpcVoid) error {
-	self.deviceLocal.SetDnsResolverSettings(deviceSettings.DnsResolverSettings.toDnsResolverSettings())
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("dns-resolver-settings", deviceSettings.DnsResolverSettings.toDnsResolverSettings())
 }
 
 func (self *DeviceLocalRpc) GetDnsResolverSettings(_ RpcNoArg, deviceSettings **DeviceRemoteDnsResolverSettings) error {
@@ -10571,8 +10726,7 @@ func (self *DeviceLocalRpc) SetTransportSettings(deviceSettings *DeviceRemoteTra
 	if deviceSettings != nil {
 		settings = deviceSettings.TransportSettings
 	}
-	self.deviceLocal.SetTransportSettings(settings.toTransportSettings(false))
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("transport-settings", settings.toTransportSettings(false))
 }
 
 func (self *DeviceLocalRpc) GetProviderTransportSettings(_ RpcNoArg, deviceSettings **DeviceRemoteTransportSettingsRpc) error {
@@ -10591,8 +10745,7 @@ func (self *DeviceLocalRpc) SetProviderTransportSettings(deviceSettings *DeviceR
 	if deviceSettings != nil {
 		settings = deviceSettings.TransportSettings
 	}
-	self.deviceLocal.SetProviderTransportSettings(settings.toTransportSettings(true))
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("provider-transport-settings", settings.toTransportSettings(true))
 }
 
 // reliability (see reliability_controls.go for the `DeviceLocal` side)
@@ -10729,8 +10882,7 @@ func (self *DeviceLocalRpc) GetCanShowRatingDialog(_ RpcNoArg, canShowRatingDial
 }
 
 func (self *DeviceLocalRpc) SetCanShowRatingDialog(canShowRatingDialog bool, _ RpcVoid) error {
-	self.deviceLocal.SetCanShowRatingDialog(canShowRatingDialog)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("can-show-rating-dialog", canShowRatingDialog)
 }
 
 func (self *DeviceLocalRpc) AddCanShowRatingDialogChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -10792,13 +10944,11 @@ func (self *DeviceLocalRpc) FlushGlog(_ RpcNoArg, _ RpcVoid) error {
 }
 
 func (self *DeviceLocalRpc) SetLogVerbosity(level int, _ RpcVoid) error {
-	self.deviceLocal.SetLogVerbosity(level)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("log-verbosity", level)
 }
 
 func (self *DeviceLocalRpc) SetControlIpFamilyPolicy(policy int, _ RpcVoid) error {
-	self.deviceLocal.SetControlIpFamilyPolicy(policy)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("control-ip-family-policy", policy)
 }
 
 func (self *DeviceLocalRpc) GetControlIpFamilyStatus(_ RpcNoArg, status *string) error {
@@ -10816,8 +10966,7 @@ func (self *DeviceLocalRpc) GetCanPromptIntroFunnel(_ RpcNoArg, canPromptIntroFu
 }
 
 func (self *DeviceLocalRpc) SetCanPromptIntroFunnel(canPromptIntroFunnel bool, _ RpcVoid) error {
-	self.deviceLocal.SetCanPromptIntroFunnel(canPromptIntroFunnel)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("can-prompt-intro-funnel", canPromptIntroFunnel)
 }
 
 func (self *DeviceLocalRpc) AddCanPromptIntroFunnelChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -10876,8 +11025,7 @@ func (self *DeviceLocalRpc) SetProvideControlMode(mode ProvideControlMode, _ Rpc
 	if self.hostedIncompatibleRpcGuarded("SetProvideControlMode") {
 		return nil
 	}
-	self.deviceLocal.SetProvideControlMode(mode)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("provide-control-mode", mode)
 }
 
 func (self *DeviceLocalRpc) GetAllowForeground(_ RpcNoArg, allowForeground *bool) error {
@@ -10886,8 +11034,7 @@ func (self *DeviceLocalRpc) GetAllowForeground(_ RpcNoArg, allowForeground *bool
 }
 
 func (self *DeviceLocalRpc) SetAllowForeground(allowForeground bool, _ RpcVoid) error {
-	self.deviceLocal.SetAllowForeground(allowForeground)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("allow-foreground", allowForeground)
 }
 
 func (self *DeviceLocalRpc) AddAllowForegroundChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -10939,8 +11086,7 @@ func (self *DeviceLocalRpc) GetCanRefer(_ RpcNoArg, canRefer *bool) error {
 }
 
 func (self *DeviceLocalRpc) SetCanRefer(canRefer bool, _ RpcVoid) error {
-	self.deviceLocal.SetCanRefer(canRefer)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("can-refer", canRefer)
 }
 
 func (self *DeviceLocalRpc) AddCanReferChangeListener(listenerId connect.Id, _ RpcVoid) error {
@@ -10990,8 +11136,7 @@ func (self *DeviceLocalRpc) SetRouteLocal(routeLocal bool, _ RpcVoid) error {
 	if self.hostedIncompatibleRpcGuarded("SetRouteLocal") {
 		return nil
 	}
-	self.deviceLocal.SetRouteLocal(routeLocal)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("route-local", routeLocal)
 }
 
 func (self *DeviceLocalRpc) GetRouteLocal(_ RpcNoArg, routeLocal *bool) error {
@@ -11000,8 +11145,7 @@ func (self *DeviceLocalRpc) GetRouteLocal(_ RpcNoArg, routeLocal *bool) error {
 }
 
 func (self *DeviceLocalRpc) SetBlockerEnabled(blockerEnabled bool, _ RpcVoid) error {
-	self.deviceLocal.SetBlockerEnabled(blockerEnabled)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("blocker-enabled", blockerEnabled)
 }
 
 func (self *DeviceLocalRpc) GetBlockerEnabled(_ RpcNoArg, blockerEnabled *bool) error {
@@ -11010,8 +11154,7 @@ func (self *DeviceLocalRpc) GetBlockerEnabled(_ RpcNoArg, blockerEnabled *bool) 
 }
 
 func (self *DeviceLocalRpc) SetPerformanceProfile(devicePerformanceProfile *DevicePerformanceProfile, _ RpcVoid) error {
-	self.deviceLocal.SetPerformanceProfile(devicePerformanceProfile.PerformanceProfile)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("performance-profile", devicePerformanceProfile.PerformanceProfile)
 }
 
 func (self *DeviceLocalRpc) GetPublicIdentityKey(_ RpcNoArg, devicePublicIdentityKey **DevicePublicIdentityKey) error {
@@ -11833,8 +11976,7 @@ func (self *DeviceLocalRpc) SetProvideMode(provideMode ProvideMode, _ RpcVoid) e
 	if self.hostedIncompatibleRpcGuarded("SetProvideMode") {
 		return nil
 	}
-	self.deviceLocal.SetProvideMode(provideMode)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("provide-mode", provideMode)
 }
 
 func (self *DeviceLocalRpc) GetProvideMode(_ RpcNoArg, provideMode *ProvideMode) error {
@@ -11858,8 +12000,7 @@ func (self *DeviceLocalRpc) SetProvideNetworkMode(provideNetworkMode ProvideNetw
 	if self.hostedIncompatibleRpcGuarded("SetProvideNetworkMode") {
 		return nil
 	}
-	self.deviceLocal.SetProvideNetworkMode(provideNetworkMode)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("provide-network-mode", provideNetworkMode)
 }
 
 func (self *DeviceLocalRpc) GetProvideNetworkMode(_ RpcNoArg, provideNetworkMode *ProvideNetworkMode) error {
@@ -11926,8 +12067,7 @@ func (self *DeviceLocalRpc) SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline
 	if self.hostedIncompatibleRpcGuarded("SetVpnInterfaceWhileOffline") {
 		return nil
 	}
-	self.deviceLocal.SetVpnInterfaceWhileOffline(vpnInterfaceWhileOffline)
-	return nil
+	return self.deviceLocal.setLocalCatalogPreference("vpn-interface-while-offline", vpnInterfaceWhileOffline)
 }
 
 func (self *DeviceLocalRpc) GetVpnInterfaceWhileOffline(_ RpcNoArg, vpnInterfaceWhileOffline *bool) error {
@@ -11936,28 +12076,25 @@ func (self *DeviceLocalRpc) GetVpnInterfaceWhileOffline(_ RpcNoArg, vpnInterface
 }
 
 func (self *DeviceLocalRpc) RemoveDestination(_ RpcNoArg, _ RpcVoid) error {
-	self.deviceLocal.RemoveDestination()
-	return nil
+	return self.deviceLocal.SetConnectLocationChecked(nil)
 }
 
 func (self *DeviceLocalRpc) SetDestination(destination *DeviceRemoteDestination, _ RpcVoid) error {
 	providerSpecList := NewProviderSpecList()
 	providerSpecList.addAll(destination.Specs...)
-	self.deviceLocal.SetDestination(
+	return self.deviceLocal.setDestinationChecked(
 		destination.Location.toConnectLocation(),
 		providerSpecList,
+		false,
 	)
-	return nil
 }
 
 func (self *DeviceLocalRpc) SetConnectLocation(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
-	self.deviceLocal.SetConnectLocation(location.toConnectLocation())
-	return nil
+	return self.deviceLocal.SetConnectLocationChecked(location.toConnectLocation())
 }
 
 func (self *DeviceLocalRpc) Reconnect(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
-	self.deviceLocal.Reconnect(location.toConnectLocation())
-	return nil
+	return self.deviceLocal.ReconnectChecked(location.toConnectLocation())
 }
 
 func (self *DeviceLocalRpc) GetConnectLocation(_ RpcNoArg, location **DeviceRemoteConnectLocation) error {
@@ -11966,8 +12103,7 @@ func (self *DeviceLocalRpc) GetConnectLocation(_ RpcNoArg, location **DeviceRemo
 }
 
 func (self *DeviceLocalRpc) SetDefaultLocation(location *DeviceRemoteConnectLocation, _ RpcVoid) error {
-	self.deviceLocal.SetDefaultLocation(location.toConnectLocation())
-	return nil
+	return self.deviceLocal.SetDefaultLocationChecked(location.toConnectLocation())
 }
 
 func (self *DeviceLocalRpc) GetDefaultLocation(_ RpcNoArg, location **DeviceRemoteConnectLocation) error {
