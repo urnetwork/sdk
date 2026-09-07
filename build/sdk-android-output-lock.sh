@@ -1,42 +1,75 @@
 #!/usr/bin/env bash
 # Serialize tracked writers and consumers of the current working directory's
 # Android SDK output. The file contains diagnostics only; live ownership is the
-# kernel lock retained on descriptor 8 across child processes.
+# kernel lock retained on a dynamically selected descriptor across child
+# processes.
 
 sdk_android_output_lock_error() {
   printf 'Android SDK output gate: %s\n' "$1" >&2
 }
 
-sdk_android_output_lock_try_fd8() {
+sdk_android_output_lock_fd_is_valid() {
+  case "${1:-}" in
+    [1-9][0-9]|[1-9][0-9][0-9])
+      [ "$1" -ge 10 ] && [ "$1" -le 255 ]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+sdk_android_output_lock_fd_is_open() {
+  local lock_fd="$1"
+  eval ": >&${lock_fd}" 2>/dev/null ||
+    eval ": <&${lock_fd}" 2>/dev/null
+}
+
+sdk_android_output_lock_find_free_fd() {
+  local lock_fd
+  for ((lock_fd = 10; lock_fd <= 255; lock_fd++)); do
+    if ! sdk_android_output_lock_fd_is_open "$lock_fd"; then
+      printf '%s\n' "$lock_fd"
+      return 0
+    fi
+  done
+  return 1
+}
+
+sdk_android_output_lock_close_fd() {
+  local lock_fd="$1"
+  eval "exec ${lock_fd}>&-"
+}
+
+sdk_android_output_lock_try_fd() {
+  local lock_fd="$1"
   case "$(uname -s)" in
     Darwin)
       [ -x /usr/bin/lockf ] || return 69
-      /usr/bin/lockf -s -t 0 8
+      /usr/bin/lockf -s -t 0 "$lock_fd"
       ;;
     Linux)
       command -v flock >/dev/null 2>&1 || return 69
-      flock -n 8
+      flock -n "$lock_fd"
       ;;
     *) return 69 ;;
   esac
 }
 
-sdk_android_output_lock_fd8_matches_path() {
-  local lock_path="$1"
+sdk_android_output_lock_fd_matches_path() {
+  local lock_path="$1" lock_fd="$2"
   case "$(uname -s)" in
     Darwin)
       # Bash 3 compares /dev/fd's devfs inode rather than the open file's
-      # inode. Compare fstat(8) with stat(path) through macOS's system Perl.
+      # inode. Compare fstat(fd) with stat(path) through macOS's system Perl.
       [ -x /usr/bin/perl ] || return 69
       /usr/bin/perl -e '
-        open(my $lock, ">&=8") or exit 1;
+        open(my $lock, ">&=".$ARGV[1]) or exit 1;
         my @descriptor = stat($lock);
         my @path = stat($ARGV[0]);
         exit(!(@descriptor && @path &&
           $descriptor[0] == $path[0] && $descriptor[1] == $path[1]));
-      ' "$lock_path"
+      ' "$lock_path" "$lock_fd"
       ;;
-    Linux) [ "/proc/$$/fd/8" -ef "$lock_path" ] ;;
+    Linux) [ "/proc/$$/fd/$lock_fd" -ef "$lock_path" ] ;;
     *) return 69 ;;
   esac
 }
@@ -95,13 +128,15 @@ sdk_android_output_lock_metadata_matches() {
 }
 
 sdk_android_output_lock_verify_held() {
-  local output_dir lock_path lock_status
+  local output_dir lock_path lock_fd lock_status
   output_dir="$(pwd -P)" || return 70
   lock_path="$output_dir/.android-output.lock"
+  lock_fd="${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD:-}"
 
   if [ "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_HELD:-}" != 1 ] ||
      [ "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_DIR:-}" != "$output_dir" ] ||
      [ "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_PATH:-}" != "$lock_path" ] ||
+     ! sdk_android_output_lock_fd_is_valid "$lock_fd" ||
      [ -z "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_TOKEN:-}" ] ||
      [ -z "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_ROLE:-}" ] ||
      [ -L "$lock_path" ] || [ ! -f "$lock_path" ]; then
@@ -109,15 +144,15 @@ sdk_android_output_lock_verify_held() {
       "inherited ownership does not match this output"
     return 70
   fi
-  if ! { : >&8; } 2>/dev/null ||
-     ! sdk_android_output_lock_fd8_matches_path "$lock_path"; then
+  if ! sdk_android_output_lock_fd_is_open "$lock_fd" ||
+     ! sdk_android_output_lock_fd_matches_path "$lock_path" "$lock_fd"; then
     sdk_android_output_lock_error \
       "inherited ownership does not match this output"
     return 70
   fi
 
   lock_status=0
-  sdk_android_output_lock_try_fd8 || lock_status=$?
+  sdk_android_output_lock_try_fd "$lock_fd" || lock_status=$?
   if [ "$lock_status" -ne 0 ]; then
     if [ "$lock_status" -eq 69 ]; then
       sdk_android_output_lock_error "kernel locking primitive is unavailable"
@@ -134,10 +169,10 @@ sdk_android_output_lock_verify_held() {
 }
 
 # Acquire and retain output ownership in the current shell. Callers that source
-# this file keep descriptor 8 until they explicitly close it or exit.
+# this file keep the selected descriptor until they explicitly close it or exit.
 sdk_android_output_lock_acquire() {
   local role="${1:-}" output_dir lock_path lock_status owner_role owner_pid
-  local token started_utc key value
+  local lock_fd token started_utc key value
 
   case "$role" in
     ''|*[!A-Za-z0-9._/-]*)
@@ -155,15 +190,16 @@ sdk_android_output_lock_acquire() {
   if [ -n "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_HELD:-}" ] ||
      [ -n "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_DIR:-}" ] ||
      [ -n "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_PATH:-}" ] ||
+     [ -n "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD:-}" ] ||
      [ -n "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_TOKEN:-}" ] ||
      [ -n "${URNETWORK_ANDROID_SDK_OUTPUT_LOCK_ROLE:-}" ]; then
     sdk_android_output_lock_error "invalid inherited ownership marker"
     return 70
   fi
-  if { : >&8; } 2>/dev/null; then
-    sdk_android_output_lock_error "descriptor 8 is already in use"
+  lock_fd="$(sdk_android_output_lock_find_free_fd)" || {
+    sdk_android_output_lock_error "no free lock descriptor"
     return 70
-  fi
+  }
   if [ -L "$lock_path" ] || { [ -e "$lock_path" ] && [ ! -f "$lock_path" ]; }; then
     sdk_android_output_lock_error "lock path is not a regular file"
     return 73
@@ -172,21 +208,21 @@ sdk_android_output_lock_acquire() {
     sdk_android_output_lock_error "cannot open lock"
     return 73
   }
-  exec 8>>"$lock_path" || {
+  eval "exec ${lock_fd}>>\"\$lock_path\"" || {
     sdk_android_output_lock_error "cannot retain lock descriptor"
     return 73
   }
-  if ! sdk_android_output_lock_fd8_matches_path "$lock_path"; then
-    exec 8>&-
+  if ! sdk_android_output_lock_fd_matches_path "$lock_path" "$lock_fd"; then
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "lock descriptor inode does not match lock path"
     return 73
   fi
 
   lock_status=0
-  sdk_android_output_lock_try_fd8 || lock_status=$?
+  sdk_android_output_lock_try_fd "$lock_fd" || lock_status=$?
   if [ "$lock_status" -ne 0 ]; then
     if [ "$lock_status" -eq 69 ]; then
-      exec 8>&-
+      sdk_android_output_lock_close_fd "$lock_fd"
       sdk_android_output_lock_error "kernel locking primitive is unavailable"
       return 69
     fi
@@ -202,42 +238,42 @@ sdk_android_output_lock_acquire() {
           ;;
       esac
     done <"$lock_path"
-    exec 8>&-
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "busy (role=$owner_role pid=$owner_pid)"
     return 75
   fi
 
   token="$(LC_ALL=C od -An -N16 -tx1 /dev/urandom)" || {
-    exec 8>&-
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "cannot create ownership token"
     return 70
   }
   token="${token//[[:space:]]/}"
   case "$token" in
     *[!0-9a-f]*|'')
-      exec 8>&-
+      sdk_android_output_lock_close_fd "$lock_fd"
       sdk_android_output_lock_error "cannot create ownership token"
       return 70
       ;;
   esac
   if [ "${#token}" -ne 32 ]; then
-    exec 8>&-
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "cannot create ownership token"
     return 70
   fi
   started_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || {
-    exec 8>&-
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "cannot record ownership time"
     return 70
   }
   if ! printf 'version=1\nrole=%s\npid=%s\ntoken=%s\nstarted_utc=%s\n' \
       "$role" "$$" "$token" "$started_utc" >"$lock_path"; then
-    exec 8>&-
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "cannot record ownership metadata"
     return 73
   fi
   chmod 600 "$lock_path" || {
-    exec 8>&-
+    sdk_android_output_lock_close_fd "$lock_fd"
     sdk_android_output_lock_error "cannot protect ownership metadata"
     return 73
   }
@@ -245,6 +281,7 @@ sdk_android_output_lock_acquire() {
   export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_HELD=1
   export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_DIR="$output_dir"
   export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_PATH="$lock_path"
+  export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD="$lock_fd"
   export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_TOKEN="$token"
   export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_ROLE="$role"
   sdk_android_output_lock_verify_held

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -205,8 +206,8 @@ func TestAndroidBuildOutputLockReleasesOnOwnerDeath(t *testing.T) {
 }
 
 // TestAndroidBuildOutputLockSourceRetainsConsumerOwnership covers the API used
-// by Android acceptance: sourcing the gate keeps descriptor 8 locked in the
-// runner shell while later Gradle consumers execute.
+// by Android acceptance: sourcing the gate keeps its selected descriptor locked
+// in the runner shell while later Gradle consumers execute.
 func TestAndroidBuildOutputLockSourceRetainsConsumerOwnership(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("Android SDK output locking supports Darwin and Linux build hosts")
@@ -264,6 +265,80 @@ IFS= read -r _ <"$4"`,
 	ownerDone = true
 }
 
+// TestAndroidBuildOutputLockSkipsInheritedDescriptors reproduces the Gradle
+// execution environment that exposed this bug: descriptor 8 is already open.
+// Descriptors 10 and 12 are occupied write-only and read-only to prove selection
+// is dynamic rather than a new hard-coded collision. Every foreign descriptor
+// must survive unchanged while the selected lock reaches and verifies in a
+// grandchild.
+func TestAndroidBuildOutputLockSkipsInheritedDescriptors(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Android SDK output locking supports Darwin and Linux build hosts")
+	}
+	tempDir := t.TempDir()
+	gatePath, err := filepath.Abs("sdk-android-output-lock.sh")
+	testingBuildNoError(t, err)
+	foreignEight := filepath.Join(tempDir, "foreign-eight")
+	foreignTen := filepath.Join(tempDir, "foreign-ten")
+	foreignTwelve := filepath.Join(tempDir, "foreign-twelve")
+	selectedPath := filepath.Join(tempDir, "selected-fd")
+	testingBuildNoError(t, os.WriteFile(foreignTwelve, []byte("read-twelve\n"), 0o600))
+
+	command := exec.Command(
+		"/bin/bash",
+		"-c",
+		`set -euo pipefail
+exec 8>>"$1"
+exec 10>>"$2"
+exec 12<"$3"
+printf 'before-eight\n' >&8
+printf 'before-ten\n' >&10
+exec "$4" gradle-sdk-build -- /bin/bash -c '
+  set -euo pipefail
+  : >&8
+  : >&10
+  IFS= read -r inherited <&12
+  [ "$inherited" = read-twelve ]
+  "$1" --verify-held
+  [ "$URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD" != 8 ]
+  [ "$URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD" != 10 ]
+  [ "$URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD" != 12 ]
+  printf "%s\n" "$URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD" >"$2"
+  printf "after-eight\n" >&8
+  printf "after-ten\n" >&10
+' bash "$4" "$5"`,
+		"bash",
+		foreignEight,
+		foreignTen,
+		foreignTwelve,
+		gatePath,
+		selectedPath,
+	)
+	command.Dir = tempDir
+	command.Env = testingBuildEnvironmentWithoutAndroidLock()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("gate did not tolerate inherited descriptors: %v\n%s", err, output)
+	}
+
+	selected, err := os.ReadFile(selectedPath)
+	testingBuildNoError(t, err)
+	selectedFD, err := strconv.Atoi(strings.TrimSpace(string(selected)))
+	testingBuildNoError(t, err)
+	if selectedFD < 10 || selectedFD > 255 || selectedFD == 10 || selectedFD == 12 {
+		t.Fatalf("selected lock descriptor = %d, want an unoccupied candidate", selectedFD)
+	}
+	for path, want := range map[string]string{
+		foreignEight: "before-eight\nafter-eight\n",
+		foreignTen:   "before-ten\nafter-ten\n",
+	} {
+		contents, err := os.ReadFile(path)
+		testingBuildNoError(t, err)
+		if string(contents) != want {
+			t.Errorf("foreign descriptor file %s = %q, want %q", path, contents, want)
+		}
+	}
+}
+
 // TestAndroidBuildOutputLockRejectsForgedInheritance proves that a generic
 // environment marker cannot bypass descriptor-inode and random-token checks.
 func TestAndroidBuildOutputLockRejectsForgedInheritance(t *testing.T) {
@@ -293,10 +368,11 @@ func TestAndroidBuildOutputLockRejectsForgedInheritance(t *testing.T) {
 				"/bin/bash",
 				"-c",
 				`set -euo pipefail
-exec 8>>"$1"
+exec 18>>"$1"
 export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_HELD=1
 export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_DIR="$2"
 export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_PATH="$3"
+export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD=18
 export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_TOKEN="$4"
 export URNETWORK_ANDROID_SDK_OUTPUT_LOCK_ROLE=forged
 exec "$5" --verify-held`,
@@ -322,7 +398,7 @@ exec "$5" --verify-held`,
 }
 
 // TestAndroidBuildOutputLockPreservesOuterDescriptorNine guards integration
-// with the canonical suite lock: acquiring and retaining SDK descriptor 8 may
+// with the canonical suite lock: acquiring and retaining the SDK descriptor may
 // neither close nor replace the independently kernel-locked descriptor 9.
 func TestAndroidBuildOutputLockPreservesOuterDescriptorNine(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
@@ -394,7 +470,7 @@ IFS= read -r _ <"$6"`,
 	sdkContender.Dir = tempDir
 	sdkContender.Env = testingBuildEnvironmentWithoutAndroidLock()
 	if output, err := sdkContender.CombinedOutput(); err == nil {
-		t.Fatalf("SDK contender acquired descriptor 8 while both locks were held:\n%s", output)
+		t.Fatalf("SDK contender acquired output ownership while both locks were held:\n%s", output)
 	}
 	outerContender := exec.Command(
 		"/bin/bash",
@@ -576,6 +652,7 @@ func testingBuildEnvironmentWithoutAndroidLock() []string {
 		if strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_OUTPUT_LOCK_HELD=") ||
 			strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_OUTPUT_LOCK_DIR=") ||
 			strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_OUTPUT_LOCK_PATH=") ||
+			strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_OUTPUT_LOCK_FD=") ||
 			strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_OUTPUT_LOCK_TOKEN=") ||
 			strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_OUTPUT_LOCK_ROLE=") ||
 			strings.HasPrefix(item, "URNETWORK_ANDROID_SDK_BUILD_OWNER=") {
