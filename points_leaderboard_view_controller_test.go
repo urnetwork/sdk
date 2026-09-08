@@ -493,8 +493,10 @@ func TestPointsLeaderboardLoadMoreClaimsTheSlotOnce(t *testing.T) {
 	}
 }
 
-// The caller's own name is shown even while the row is anonymous to others:
-// the server sends `network_name` on `me` regardless of the switch.
+// The caller's own name is shown on `me` (the own-stats card) even while the
+// network is anonymous: the server sends `network_name` on `me` regardless of
+// the switch. A list row without a name stays anonymous, the caller's own
+// list row included.
 func TestPointsLeaderboardOwnNameShownWhenAnonymous(t *testing.T) {
 	me := &PointsLeaderboardRow{NetworkName: "wickymicky", Anonymous: true, EmojiTag: "🦓"}
 	formatPointsLeaderboardRow(me)

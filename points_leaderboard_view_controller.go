@@ -33,10 +33,12 @@ const PointsLeaderboardPageSize = 50
 // `LoadMore` when the list nears its end. It never sorts, ranks or pages on
 // its own.
 //
-// Only networks that opted in are listed; a row's `NetworkName` is set only
-// when the server sent one (a network that revealed its name, or the caller's
-// own `me` row); otherwise `Anonymous` is true and the app shows its localized
-// "Anonymous". `EmojiTag` shows either way.
+// Every ranked network is listed; a row's `NetworkName` is set only when the
+// server sent one (a network that revealed its name); otherwise `Anonymous` is
+// true and the app shows its localized "Anonymous". The caller's own list row
+// is no exception: it is anonymous until the network opts in, and the app only
+// highlights it. The caller's own name travels on the `me` row, for the
+// own-stats card above the list. `EmojiTag` shows either way.
 //
 // Every method is safe for concurrent use. Listeners are called with the
 // state lock released, so a listener may call back into the controller
@@ -404,11 +406,11 @@ func formatPointsLeaderboardRow(row *PointsLeaderboardRow) {
 	if row == nil {
 		return
 	}
-	// the server omits the name of an anonymous row and always sends the
-	// caller's own name on `me`, so the name is shown whenever it was sent:
-	// a network sees itself by name in its header even while others see it
-	// as Anonymous. Blanking the name on `Anonymous` alone hid the caller's
-	// own name.
+	// the server omits the name of an anonymous list row (the caller's own
+	// row included) and sends the caller's own name only on `me`, so the name
+	// is shown whenever it was sent: the own-stats card names the network while
+	// its list row reads Anonymous like everyone else's. Blanking the name on
+	// `Anonymous` alone hid the name on `me`.
 	row.DisplayName = row.NetworkName
 	row.TotalPointsText = FormatPoints(row.TotalPoints)
 	row.BlocksWithPointsText = fmt.Sprintf("%d", row.BlocksWithPoints)
