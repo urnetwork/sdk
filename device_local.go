@@ -785,6 +785,23 @@ type DeviceLocal struct {
 
 	remoteUserNatProviderLocalUserNat *connect.LocalUserNat
 	remoteUserNatProvider             *connect.RemoteUserNatProvider
+	// A saturation rotation detaches its provider before joining it. Keep the
+	// retiring pointer in packet-stat snapshots until its final cumulative
+	// value is folded into the base, and block replacement until both old NAT
+	// layers have joined.
+	retiringRemoteUserNatProvider           *connect.RemoteUserNatProvider
+	remoteUserNatProviderGeneration         uint64
+	remoteUserNatProviderRotationPending    bool
+	remoteUserNatProviderRotationGeneration uint64
+	// Test-only rotation barriers and final counter seam. Nil is a production
+	// no-op; hooks always run outside stateLock.
+	beforeRemoteUserNatProviderRotationJoinForTest func()
+	remoteUserNatProviderFinalPacketStatsForTest   func(*connect.RemoteUserNatProvider) *connect.PacketStats
+	newRemoteUserNatProviderForTest                func(
+		*connect.Client,
+		*connect.LocalUserNat,
+		*connect.RemoteUserNatProviderSettings,
+	) *connect.RemoteUserNatProvider
 
 	// the ad/tracker blocker, shared by the upgrade mux (dns hostnames) and
 	// the multi client (ips and reverse-index hostnames). a stable field:
@@ -3669,29 +3686,7 @@ func (self *DeviceLocal) setProvideModeWithLock(provideMode ProvideMode) (change
 			self.applyProvideMemorySharesWithLock(provideMode != ProvideModeNone)
 
 			if provideMode != ProvideModeNone {
-				// recreate the provider user nat only as needed
-				// this avoid connection disruptions
-				if self.remoteUserNatProviderLocalUserNat == nil {
-					_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
-					localUserNatSettings := providerLocalUserNatSettings(
-						providerShareByteCount,
-						self.log,
-						self.settings.ProviderDialContextSettings,
-					)
-					self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(client.Ctx(), self.clientId.String(), localUserNatSettings)
-				}
-				if self.remoteUserNatProvider == nil {
-					// the provider egresses remote clients' traffic and runs its own security policy:
-					// the connect default is the reversed client policy
-					// (DefaultProviderSecurityPolicyWithStats), or an explicitly set provider policy
-					_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
-					providerSettings := connect.DefaultRemoteUserNatProviderSettingsWithMemoryTarget(providerShareByteCount)
-					if self.providerSecurityPolicyGenerator != nil {
-						providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
-					}
-					self.remoteUserNatProvider = connect.NewRemoteUserNatProvider(client, self.remoteUserNatProviderLocalUserNat, providerSettings)
-					self.providerPacketStatsSub = self.remoteUserNatProvider.AddPacketStatsCallback(self.updateProviderPacketStats)
-				}
+				self.ensureRemoteUserNatProviderWithLock()
 			} else {
 				self.closeRemoteUserNatProviderWithLock()
 			}
@@ -5175,9 +5170,135 @@ func (self *DeviceLocal) startLifecycleWorkerWithLock(work func()) {
 	})
 }
 
+// Advances the provider-generation token without allowing zero, which is the
+// uninitialized value in delayed callback fixtures.
+func (self *DeviceLocal) nextRemoteUserNatProviderGenerationWithLock() uint64 {
+	for {
+		self.remoteUserNatProviderGeneration += 1
+		if self.remoteUserNatProviderGeneration != 0 {
+			return self.remoteUserNatProviderGeneration
+		}
+	}
+}
+
+// Builds the provider egress path for the current Client and current explicit
+// provide intent. A saturation join owns the nil interval and must finish
+// before this helper creates a replacement generation.
+func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() {
+	if self.closed || self.provideMode == ProvideModeNone ||
+		self.remoteUserNatProviderRotationPending ||
+		self.remoteUserNatProvider != nil {
+		return
+	}
+	client := self.providerClient()
+	if client == nil {
+		return
+	}
+	_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
+	if self.remoteUserNatProviderLocalUserNat == nil {
+		localUserNatSettings := providerLocalUserNatSettings(
+			providerShareByteCount,
+			self.log,
+			self.settings.ProviderDialContextSettings,
+		)
+		self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(
+			client.Ctx(),
+			self.clientId.String(),
+			localUserNatSettings,
+		)
+	}
+	providerSettings := connect.DefaultRemoteUserNatProviderSettingsWithMemoryTarget(
+		providerShareByteCount,
+	)
+	if self.providerSecurityPolicyGenerator != nil {
+		providerSettings.SecurityPolicyGenerator = self.providerSecurityPolicyGenerator
+	}
+	generation := self.nextRemoteUserNatProviderGenerationWithLock()
+	providerSettings.SourceLifecycleSaturated = func() {
+		self.remoteUserNatProviderSourceLifecycleSaturated(generation)
+	}
+	newProvider := connect.NewRemoteUserNatProvider
+	if self.newRemoteUserNatProviderForTest != nil {
+		newProvider = self.newRemoteUserNatProviderForTest
+	}
+	provider := newProvider(client, self.remoteUserNatProviderLocalUserNat, providerSettings)
+	self.remoteUserNatProvider = provider
+	self.providerPacketStatsSub = provider.AddPacketStatsCallback(func(
+		packetStats *connect.PacketStats,
+	) {
+		self.updateProviderPacketStatsForGeneration(
+			provider,
+			generation,
+			packetStats,
+		)
+	})
+}
+
+// Schedules a generation-wide reset after the exact Connect source bound is
+// exhausted. The callback performs only a token check, atomic detach, and one
+// lifecycle-worker admission; it never joins the provider's status worker.
+func (self *DeviceLocal) remoteUserNatProviderSourceLifecycleSaturated(
+	generation uint64,
+) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed || self.provideMode == ProvideModeNone ||
+		self.remoteUserNatProviderRotationPending ||
+		self.remoteUserNatProvider == nil ||
+		self.remoteUserNatProviderGeneration != generation {
+		return
+	}
+
+	provider := self.remoteUserNatProvider
+	localUserNat := self.remoteUserNatProviderLocalUserNat
+	self.remoteUserNatProvider = nil
+	self.remoteUserNatProviderLocalUserNat = nil
+	if self.providerPacketStatsSub != nil {
+		self.providerPacketStatsSub()
+		self.providerPacketStatsSub = nil
+	}
+	self.retiringRemoteUserNatProvider = provider
+	self.remoteUserNatProviderRotationPending = true
+	self.remoteUserNatProviderRotationGeneration = generation
+
+	self.startLifecycleWorkerWithLock(func() {
+		if self.beforeRemoteUserNatProviderRotationJoinForTest != nil {
+			self.beforeRemoteUserNatProviderRotationJoinForTest()
+		}
+		provider.Close()
+		if localUserNat != nil {
+			localUserNat.Close()
+			_ = localUserNat.CloseAndWait(context.Background())
+		}
+		finalPacketStats := provider.PacketStats()
+		if self.remoteUserNatProviderFinalPacketStatsForTest != nil {
+			finalPacketStats = self.remoteUserNatProviderFinalPacketStatsForTest(provider)
+		}
+
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.retiringRemoteUserNatProvider == provider {
+			addConnectPacketStats(&self.providerPacketStatsBase, finalPacketStats)
+			self.retiringRemoteUserNatProvider = nil
+		}
+		if !self.remoteUserNatProviderRotationPending ||
+			self.remoteUserNatProviderRotationGeneration != generation {
+			return
+		}
+		self.remoteUserNatProviderRotationPending = false
+		self.remoteUserNatProviderRotationGeneration = 0
+		// Resolve the Client only now. A legitimate owner replacement during
+		// the join must recover against current state, not the retired Client.
+		self.ensureRemoteUserNatProviderWithLock()
+	})
+}
+
 // Detaches the provider egress path before asynchronously joining both NAT
 // layers. The caller holds stateLock, so Close cannot start its Wait first.
 func (self *DeviceLocal) closeRemoteUserNatProviderWithLock() {
+	if self.remoteUserNatProvider != nil {
+		self.nextRemoteUserNatProviderGenerationWithLock()
+	}
 	localUserNat := self.remoteUserNatProviderLocalUserNat
 	self.remoteUserNatProviderLocalUserNat = nil
 	provider := self.remoteUserNatProvider
@@ -5633,6 +5754,9 @@ func (self *DeviceLocal) combinedProviderConnectPacketStatsWithLock() *connect.P
 	if self.remoteUserNatProvider != nil {
 		addConnectPacketStats(&combined, self.remoteUserNatProvider.PacketStats())
 	}
+	if self.retiringRemoteUserNatProvider != nil {
+		addConnectPacketStats(&combined, self.retiringRemoteUserNatProvider.PacketStats())
+	}
 	return &combined
 }
 
@@ -5646,13 +5770,24 @@ func (self *DeviceLocal) GetProviderPacketStats() *PacketStats {
 	return packetStatsFromConnect(self.combinedProviderConnectPacketStatsWithLock())
 }
 
-// the packet stats epoch callback from the provider user nat
-func (self *DeviceLocal) updateProviderPacketStats(packetStats *connect.PacketStats) {
+// Applies a current provider epoch. A nonnil provider/generation pair makes
+// delayed callbacks from detached generations observationally inert.
+func (self *DeviceLocal) updateProviderPacketStatsForGeneration(
+	provider *connect.RemoteUserNatProvider,
+	generation uint64,
+	packetStats *connect.PacketStats,
+) {
 	var netPacketStats *PacketStats
 	var trafficDelta ByteCount
+	accepted := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
+		if provider != nil && (self.closed ||
+			self.remoteUserNatProvider != provider ||
+			self.remoteUserNatProviderGeneration != generation) {
+			return
+		}
 		combined := self.providerPacketStatsBase
 		addConnectPacketStats(&combined, packetStats)
 		netPacketStats = packetStatsFromConnect(&combined)
@@ -5662,9 +5797,19 @@ func (self *DeviceLocal) updateProviderPacketStats(packetStats *connect.PacketSt
 			trafficByteCount,
 		)
 		self.mobileMemoryProviderTrafficByteCount = trafficByteCount
+		accepted = true
 	}()
+	if !accepted {
+		return
+	}
 	self.providerPacketStatsChanged(netPacketStats)
 	noteMobileMemoryActivity(trafficDelta)
+}
+
+// Test and internal synthetic updates without a live generation retain the
+// historical direct aggregation path.
+func (self *DeviceLocal) updateProviderPacketStats(packetStats *connect.PacketStats) {
+	self.updateProviderPacketStatsForGeneration(nil, 0, packetStats)
 }
 
 func (self *DeviceLocal) AddProviderPacketStatsChangeListener(listener PacketStatsChangeListener) Sub {
