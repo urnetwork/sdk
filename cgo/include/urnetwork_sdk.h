@@ -70,7 +70,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
 #define URNET_CHECKOUT_BRIDGE_URL "https://ur.io/checkout"
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
-#define URNET_CLIENT_EVENT_FLUSH_INTERVAL 30000000000
+#define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
 #define URNET_CLIENT_EVENT_MAX_ATTEMPTS 3
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
