@@ -16,10 +16,11 @@ import (
 // and a one-page leaderboard for "blocks", remembers every request and can
 // answer a cursor with `restart`.
 type pointsLeaderboardTestServer struct {
-	lock     sync.Mutex
-	requests []GetPointsLeaderboardArgs
-	restart  map[string]bool
-	fail     bool
+	lock                  sync.Mutex
+	requests              []GetPointsLeaderboardArgs
+	restart               map[string]bool
+	fail                  bool
+	epochMetricsAvailable bool
 }
 
 func (self *pointsLeaderboardTestServer) handler() http.Handler {
@@ -37,6 +38,7 @@ func (self *pointsLeaderboardTestServer) handler() http.Handler {
 		self.requests = append(self.requests, args)
 		fail := self.fail
 		restart := self.restart[args.Cursor]
+		epochMetricsAvailable := self.epochMetricsAvailable
 		self.lock.Unlock()
 
 		if fail {
@@ -63,7 +65,12 @@ func (self *pointsLeaderboardTestServer) handler() http.Handler {
 				"rank_streak":        i + 2,
 			}
 		}
-		result := map[string]any{"total_ranked": 3, "latest_epoch": 57, "snapshot_time": "2026-09-03T00:00:00Z"}
+		result := map[string]any{
+			"total_ranked":            3,
+			"latest_epoch":            57,
+			"snapshot_time":           "2026-09-03T00:00:00Z",
+			"epoch_metrics_available": epochMetricsAvailable,
+		}
 		switch {
 		case args.Sort == PointsLeaderboardSortPoints && args.Cursor == "":
 			result["rows"] = []any{row(1, "alpha", false), row(2, "", true)}
@@ -122,7 +129,7 @@ func waitForPointsLeaderboard(t *testing.T, listener *pointsLeaderboardTestListe
 
 func newPointsLeaderboardTest(t *testing.T) (*pointsLeaderboardTestServer, *PointsLeaderboardViewController, *pointsLeaderboardTestListener) {
 	t.Helper()
-	server := &pointsLeaderboardTestServer{restart: map[string]bool{}}
+	server := &pointsLeaderboardTestServer{restart: map[string]bool{}, epochMetricsAvailable: true}
 	ctx, api := newTestApi(t, server.handler())
 	vc := NewPointsLeaderboardViewControllerWithApi(ctx, api)
 	t.Cleanup(vc.Close)
@@ -499,13 +506,55 @@ func TestPointsLeaderboardLoadMoreClaimsTheSlotOnce(t *testing.T) {
 // list row included.
 func TestPointsLeaderboardOwnNameShownWhenAnonymous(t *testing.T) {
 	me := &PointsLeaderboardRow{NetworkName: "wickymicky", Anonymous: true, EmojiTag: "🦓"}
-	formatPointsLeaderboardRow(me)
+	formatPointsLeaderboardRow(me, true)
 	if me.DisplayName != "wickymicky" {
 		t.Fatalf("own row display name = %q, want the name the server sent", me.DisplayName)
 	}
 	other := &PointsLeaderboardRow{Anonymous: true, EmojiTag: "🔥"}
-	formatPointsLeaderboardRow(other)
+	formatPointsLeaderboardRow(other, true)
 	if other.DisplayName != "" {
 		t.Fatalf("anonymous row without a name must have no display name, got %q", other.DisplayName)
+	}
+}
+
+// Missing finalized epoch history must not look like a legitimate zero. The
+// controller preserves total points/rank, masks every epoch-derived display,
+// and refuses block/streak sort changes until a later available snapshot.
+func TestPointsLeaderboardUnavailableEpochMetrics(t *testing.T) {
+	server, vc, listener := newPointsLeaderboardTest(t)
+	server.lock.Lock()
+	server.epochMetricsAvailable = false
+	server.lock.Unlock()
+
+	vc.Start()
+	waitForPointsLeaderboard(t, listener, func() bool { return vc.GetRowCount() == 2 && !vc.IsLoading() })
+	if vc.GetEpochMetricsAvailable() {
+		t.Fatal("missing finalized epochs reported as available")
+	}
+	row := vc.GetRows().Get(0)
+	if row.TotalPointsText == "-" || row.RankPointsText == "-" {
+		t.Fatalf("total points were masked: %+v", row)
+	}
+	if row.BlocksWithPointsText != "-" || row.StreakText != "-" || row.LongestStreakText != "-" || row.RankBlocksText != "-" || row.RankStreakText != "-" {
+		t.Fatalf("epoch-derived values were presented as measured: %+v", row)
+	}
+	before := server.requestCount()
+	vc.SetSort(PointsLeaderboardSortBlocks)
+	vc.SetSort(PointsLeaderboardSortStreak)
+	if vc.GetSort() != PointsLeaderboardSortPoints || server.requestCount() != before {
+		t.Fatal("unavailable epoch sort changed state or issued a request")
+	}
+
+	server.lock.Lock()
+	server.epochMetricsAvailable = true
+	server.lock.Unlock()
+	vc.Refresh()
+	waitForPointsLeaderboard(t, listener, func() bool { return vc.GetEpochMetricsAvailable() && !vc.IsLoading() })
+	vc.SetSort(PointsLeaderboardSortBlocks)
+	waitForPointsLeaderboard(t, listener, func() bool {
+		return vc.GetSort() == PointsLeaderboardSortBlocks && !vc.IsLoading()
+	})
+	if vc.GetRows().Get(0).BlocksWithPointsText == "-" {
+		t.Fatal("legitimate epoch values stayed masked after recovery")
 	}
 }

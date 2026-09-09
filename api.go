@@ -2304,6 +2304,10 @@ type PointsLeaderboardResult struct {
 	SnapshotTime *Time `json:"snapshot_time,omitempty"`
 	// the latest finalized epoch the snapshot counts
 	LatestEpoch int64 `json:"latest_epoch"`
+	// false means the server had no legitimate finalized epoch windows. Total
+	// points and their ranking remain valid, but block/streak values and ranks
+	// must be presented as unavailable rather than as measured zeroes.
+	EpochMetricsAvailable bool `json:"epoch_metrics_available"`
 	// the caller's own row, only with a jwt
 	Me    *PointsLeaderboardMe    `json:"me,omitempty"`
 	Error *PointsLeaderboardError `json:"error,omitempty"`

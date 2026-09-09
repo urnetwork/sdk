@@ -71,11 +71,13 @@ type PointsLeaderboardViewController struct {
 	generation int
 	started    bool
 
-	me           *PointsLeaderboardMe
-	totalRanked  int64
-	latestEpoch  int64
-	snapshotTime *Time
-	errorMessage string
+	me                    *PointsLeaderboardMe
+	totalRanked           int64
+	latestEpoch           int64
+	epochMetricsKnown     bool
+	epochMetricsAvailable bool
+	snapshotTime          *Time
+	errorMessage          string
 
 	listeners *connect.CallbackList[PointsLeaderboardListener]
 }
@@ -162,6 +164,14 @@ func (self *PointsLeaderboardViewController) SetSort(sort string) {
 	}
 
 	self.stateLock.Lock()
+	if sort != PointsLeaderboardSortPoints && self.epochMetricsKnown && !self.epochMetricsAvailable {
+		self.stateLock.Unlock()
+		// Some native adapters optimistically mirror a tapped sort before they
+		// call us. Re-emit the authoritative state so they immediately return to
+		// points instead of displaying an unavailable sort as selected.
+		self.pointsLeaderboardChanged()
+		return
+	}
 	if sort == self.sort {
 		self.stateLock.Unlock()
 		return
@@ -301,7 +311,7 @@ func (self *PointsLeaderboardViewController) handlePage(
 			if row == nil {
 				continue
 			}
-			formatPointsLeaderboardRow(row)
+			formatPointsLeaderboardRow(row, result.EpochMetricsAvailable)
 			page = append(page, row)
 		}
 	}
@@ -318,13 +328,15 @@ func (self *PointsLeaderboardViewController) handlePage(
 	self.loading = false
 	self.errorMessage = ""
 	if result.Me != nil {
-		formatPointsLeaderboardRow(result.Me.Row)
+		formatPointsLeaderboardRow(result.Me.Row, result.EpochMetricsAvailable)
 	}
 	if replace || result.Me != nil {
 		self.me = result.Me
 	}
 	self.totalRanked = result.TotalRanked
 	self.latestEpoch = result.LatestEpoch
+	self.epochMetricsKnown = true
+	self.epochMetricsAvailable = result.EpochMetricsAvailable
 	if result.SnapshotTime != nil {
 		self.snapshotTime = result.SnapshotTime
 	}
@@ -394,6 +406,15 @@ func (self *PointsLeaderboardViewController) GetLatestEpoch() int64 {
 	return self.latestEpoch
 }
 
+// GetEpochMetricsAvailable reports whether blocks and streaks came from at
+// least one legitimate finalized epoch. Total points remain available when
+// this is false.
+func (self *PointsLeaderboardViewController) GetEpochMetricsAvailable() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.epochMetricsAvailable
+}
+
 // GetSnapshotTime is when the ranks were computed, nil before the first page.
 func (self *PointsLeaderboardViewController) GetSnapshotTime() *Time {
 	self.stateLock.Lock()
@@ -402,7 +423,7 @@ func (self *PointsLeaderboardViewController) GetSnapshotTime() *Time {
 }
 
 // formatPointsLeaderboardRow fills the preformatted text fields of a row.
-func formatPointsLeaderboardRow(row *PointsLeaderboardRow) {
+func formatPointsLeaderboardRow(row *PointsLeaderboardRow, epochMetricsAvailable bool) {
 	if row == nil {
 		return
 	}
@@ -413,12 +434,20 @@ func formatPointsLeaderboardRow(row *PointsLeaderboardRow) {
 	// `Anonymous` alone hid the name on `me`.
 	row.DisplayName = row.NetworkName
 	row.TotalPointsText = FormatPoints(row.TotalPoints)
-	row.BlocksWithPointsText = fmt.Sprintf("%d", row.BlocksWithPoints)
-	row.StreakText = fmt.Sprintf("%d", row.Streak)
-	row.LongestStreakText = fmt.Sprintf("%d", row.LongestStreak)
 	row.RankPointsText = FormatRank(row.RankPoints)
-	row.RankBlocksText = FormatRank(row.RankBlocks)
-	row.RankStreakText = FormatRank(row.RankStreak)
+	if epochMetricsAvailable {
+		row.BlocksWithPointsText = fmt.Sprintf("%d", row.BlocksWithPoints)
+		row.StreakText = fmt.Sprintf("%d", row.Streak)
+		row.LongestStreakText = fmt.Sprintf("%d", row.LongestStreak)
+		row.RankBlocksText = FormatRank(row.RankBlocks)
+		row.RankStreakText = FormatRank(row.RankStreak)
+	} else {
+		row.BlocksWithPointsText = "-"
+		row.StreakText = "-"
+		row.LongestStreakText = "-"
+		row.RankBlocksText = "-"
+		row.RankStreakText = "-"
+	}
 }
 
 // FormatPoints renders points as a whole number with thousands separators
