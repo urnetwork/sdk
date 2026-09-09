@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -151,6 +152,8 @@ inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
 inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
+inline constexpr int64_t ClientEventFlushInterval = 30000000000;
+inline constexpr int64_t ClientEventMaxAttempts = 3;
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
@@ -166,6 +169,38 @@ inline constexpr const char* EmojiTagReasonEmpty = "empty";
 inline constexpr const char* EmojiTagReasonNotEmoji = "not_emoji";
 inline constexpr const char* EmojiTagReasonTooMany = "too_many";
 inline constexpr int64_t EmojiTagSuggestMaxCount = 3;
+inline constexpr const char* EventConnectFirst = "connect.first";
+inline constexpr const char* EventFeedbackSubmitted = "feedback.submitted";
+inline constexpr const char* EventOfferCardTapped = "offer.card.tapped";
+inline constexpr const char* EventOfferCtaTapped = "offer.cta.tapped";
+inline constexpr const char* EventOfferDeclined = "offer.declined";
+inline constexpr const char* EventOfferScreenShown = "offer.screen.shown";
+inline constexpr const char* EventOnboardingStepCompleted = "onboarding.step.completed";
+inline constexpr const char* EventOnboardingStepShown = "onboarding.step.shown";
+inline constexpr const char* EventOnboardingStepSkipped = "onboarding.step.skipped";
+inline constexpr const char* EventPlatformAndroid = "android";
+inline constexpr const char* EventPlatformIos = "ios";
+inline constexpr const char* EventPlatformLinux = "linux";
+inline constexpr const char* EventPlatformMacos = "macos";
+inline constexpr const char* EventPlatformWeb = "web";
+inline constexpr const char* EventPlatformWindows = "windows";
+inline constexpr const char* EventPurchaseCancelled = "purchase.cancelled";
+inline constexpr const char* EventPurchaseCompleted = "purchase.completed";
+inline constexpr const char* EventPurchaseFailed = "purchase.failed";
+inline constexpr const char* EventPurchaseStarted = "purchase.started";
+inline constexpr const char* EventSignupOptoutChanged = "signup.optout_changed";
+inline constexpr const char* EventStoreApple = "apple";
+inline constexpr const char* EventStorePlay = "play";
+inline constexpr const char* EventStoreSolana = "solana";
+inline constexpr const char* EventStoreStripe = "stripe";
+inline constexpr const char* EventWidgetAdded = "widget.added";
+inline constexpr const char* ExperimentSurfaceEmailSequence = "email.sequence";
+inline constexpr const char* ExperimentSurfaceOfferAccount = "offer.account";
+inline constexpr const char* ExperimentSurfaceOfferEmail = "offer.email";
+inline constexpr const char* ExperimentSurfaceOfferFinalScreen = "offer.final_screen";
+inline constexpr const char* ExperimentSurfaceOfferInApp = "offer.in_app";
+inline constexpr const char* ExperimentSurfaceOfferIntroStep = "offer.intro_step";
+inline constexpr const char* ExperimentVariantHoldout = "holdout";
 inline constexpr int64_t IpFamilyPolicyAuto = 0;
 inline constexpr int64_t IpFamilyPolicyForce4 = 1;
 inline constexpr int64_t IpFamilyPolicyForce6 = 2;
@@ -184,11 +219,35 @@ inline constexpr int64_t LogVerbosityDefault = 0;
 inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
+inline constexpr int64_t MaxClientEventsPerCall = 200;
+inline constexpr const char* OfferDeclineControlBack = "back";
+inline constexpr const char* OfferDeclineControlFreePlanLink = "free_plan_link";
+inline constexpr const char* OfferDeclineControlSystemDismiss = "system_dismiss";
+inline constexpr const char* OfferSurfaceAccount = "account";
+inline constexpr const char* OfferSurfaceEmailLink = "email_link";
+inline constexpr const char* OfferSurfaceFinalScreen = "final_screen";
+inline constexpr const char* OfferSurfaceIntroStep = "intro_step";
+inline constexpr const char* OnboardingDestinationConnect = "onboarding/connect";
+inline constexpr const char* OnboardingDestinationFeedback = "onboarding/feedback";
+inline constexpr const char* OnboardingDestinationOffer = "onboarding/offer";
+inline constexpr const char* OnboardingDestinationWidgets = "onboarding/widgets";
+inline constexpr const char* OnboardingOfferStateActive = "active";
+inline constexpr const char* OnboardingOfferStateExpired = "expired";
+inline constexpr const char* OnboardingOfferStateRedeemed = "redeemed";
+inline constexpr const char* PlanMonthly = "monthly";
+inline constexpr const char* PlanYearly = "yearly";
+inline constexpr const char* PlanYearlyOnboarding = "yearly_onboarding";
 inline constexpr int64_t PointsLeaderboardNanoPointsPerPoint = 1000000;
 inline constexpr int64_t PointsLeaderboardPageSize = 50;
 inline constexpr const char* PointsLeaderboardSortBlocks = "blocks";
 inline constexpr const char* PointsLeaderboardSortPoints = "points";
 inline constexpr const char* PointsLeaderboardSortStreak = "streak";
+inline constexpr const char* PriceTierRegional = "regional";
+inline constexpr const char* PriceTierSourceBilling = "billing";
+inline constexpr const char* PriceTierSourceDefault = "default";
+inline constexpr const char* PriceTierSourceIp = "ip";
+inline constexpr const char* PriceTierSourceStorefront = "storefront";
+inline constexpr const char* PriceTierStandard = "standard";
 inline constexpr const char* ProvideControlModeAlways = "always";
 inline constexpr const char* ProvideControlModeAuto = "auto";
 inline constexpr const char* ProvideControlModeManual = "manual";
@@ -247,6 +306,8 @@ inline constexpr int64_t SnSs58Prefix = 42;
 inline constexpr const char* SnTxTypeEip1559 = "eip1559";
 inline constexpr const char* SnTxTypeLegacy = "legacy";
 inline constexpr int64_t SolanaPayReferenceBytes = 32;
+inline constexpr const char* StripeIntentTypePayment = "payment";
+inline constexpr const char* StripeIntentTypeSetup = "setup";
 inline constexpr const char* StripeItemData10Tib = "data_10tib";
 inline constexpr const char* StripeItemData1Tib = "data_1tib";
 inline constexpr const char* StripeItemProMonthly = "pro_monthly";
@@ -294,12 +355,18 @@ class ContractDetailsViewController;
 class ContractViewController;
 class DeviceLocal;
 class DeviceLocalKeyMaterial;
+class DeviceLocalLoadResult;
+class DeviceLocalSaveResult;
 class DeviceRemote;
 class DeviceRpcKeyMaterial;
 class DeviceStats;
 class DevicesViewController;
 class FeedbackViewController;
+class LocalAuthStateSnapshot;
 class LocalState;
+class LocalStateKeyMaterialReadResult;
+class LocalStateLocationReadResult;
+class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
 class NetworkNameValidationViewController;
@@ -394,6 +461,11 @@ struct CircleWalletInfo;
 struct ClaimNetworkNameArgs;
 struct ClaimNetworkNameError;
 struct ClaimNetworkNameResult;
+struct ClientEvent;
+struct ClientEventQueue;
+struct ClientEventRejection;
+struct ClientEventsSendArgs;
+struct ClientEventsSendResult;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
 struct TransferPath;
@@ -418,6 +490,7 @@ struct DeviceSetNameResult;
 struct DnsResolverSettings;
 struct EmojiTagValidation;
 struct Exit;
+struct ExperimentAssignment;
 struct ExportOptions;
 struct ExportResult;
 struct FeedbackSendNeeds;
@@ -494,6 +567,13 @@ struct NetworkUnblockLocationResult;
 struct NetworkUserUpdateArgs;
 struct NetworkUserUpdateError;
 struct NetworkUserUpdateResult;
+struct OnboardingClickArgs;
+struct OnboardingClickResult;
+struct OnboardingError;
+struct OnboardingFeedbackTokenResult;
+struct OnboardingOffer;
+struct OnboardingOfferIssueArgs;
+struct OnboardingOfferIssueResult;
 struct OverrideLocalAppIds;
 struct PacketStats;
 struct PointsLeaderboardError;
@@ -501,6 +581,8 @@ struct PointsLeaderboardKey;
 struct PointsLeaderboardRow;
 struct PointsLeaderboardMe;
 struct PointsLeaderboardResult;
+struct PriceEquivalent;
+struct PriceTier;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
@@ -574,6 +656,9 @@ struct StripeCreatePaymentIntentArgs;
 struct StripeCreatePaymentIntentErr;
 struct StripeCreatePaymentIntentResult;
 struct StripePaymentIntent;
+struct StripePaymentSheetArgs;
+struct StripePaymentSheetResult;
+struct StripePricesResult;
 struct Subscription;
 struct SubscriptionBalanceResult;
 struct SubscriptionCreatePaymentIdArgs;
@@ -632,6 +717,8 @@ using AccountWalletsList = std::vector<AccountWallet>;
 using BlockActionList = std::vector<BlockAction>;
 using BlockActionOverrideList = std::vector<BlockActionOverride>;
 using BlockedLocationsList = std::vector<BlockedLocation>;
+using ClientEventList = std::vector<ClientEvent>;
+using ClientEventRejectionList = std::vector<ClientEventRejection>;
 using ConnectLocationList = std::vector<ConnectLocation>;
 using ConnectedProviderLocationList = std::vector<ConnectedProviderLocation>;
 using ContractClientRowList = std::vector<ContractClientRow>;
@@ -641,6 +728,7 @@ using ContractPeerRowList = std::vector<ContractPeerRow>;
 using CountryMultiplierList = std::vector<CountryMultiplier>;
 using DestinationExitList = std::vector<DestinationExit>;
 using ExitList = std::vector<Exit>;
+using ExperimentAssignmentList = std::vector<ExperimentAssignment>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
 using Float64List = std::vector<double>;
 using IdList = std::vector<std::string>;
@@ -950,6 +1038,7 @@ struct ProxyConfigResult {
 
 struct AuthNetworkClientResult {
 	std::optional<std::string> by_client_jwt;
+	std::optional<std::string> client_id;
 	std::optional<ProxyConfigResult> proxy_config_result;
 	std::optional<AuthNetworkClientError> error;
 };
@@ -1119,6 +1208,32 @@ struct ClaimNetworkNameError {
 struct ClaimNetworkNameResult {
 	std::string network_name{};
 	std::optional<ClaimNetworkNameError> error;
+};
+
+struct ClientEvent {
+	std::string name{};
+	std::optional<std::string> at;
+	std::optional<std::string> platform;
+	std::optional<std::string> app_version;
+	std::optional<std::string> locale;
+	std::optional<std::string> session;
+};
+
+struct ClientEventQueue {
+};
+
+struct ClientEventRejection {
+	int64_t index{};
+	std::string message{};
+};
+
+struct ClientEventsSendArgs {
+	std::optional<ClientEventList> events;
+};
+
+struct ClientEventsSendResult {
+	int64_t accepted{};
+	std::optional<ClientEventRejectionList> rejected;
 };
 
 struct ConnectedProviderLocation {
@@ -1354,6 +1469,12 @@ struct Exit {
 	int64_t ProviderBlockEgressPacketCount{};
 	int64_t ProviderBlockEgressByteCount{};
 	int64_t ProviderDiagnosticsSequence{};
+};
+
+struct ExperimentAssignment {
+	std::string surface{};
+	std::string experiment_id{};
+	std::string variant{};
 };
 
 struct ExportOptions {
@@ -1869,6 +1990,57 @@ struct NetworkUserUpdateResult {
 	std::optional<NetworkUserUpdateError> error;
 };
 
+struct OnboardingClickArgs {
+	std::string token{};
+};
+
+struct OnboardingClickResult {
+	bool ok{};
+	std::optional<std::string> step;
+	std::optional<std::string> destination;
+	std::optional<std::string> error;
+};
+
+struct OnboardingError {
+	std::string message{};
+};
+
+struct OnboardingFeedbackTokenResult {
+	bool ok{};
+	std::optional<std::string> step;
+	std::optional<int64_t> rating;
+	std::optional<std::string> reason;
+	std::optional<std::string> error;
+};
+
+struct OnboardingOffer {
+	std::string issued_at{};
+	std::string expires_at{};
+	int64_t percent_off{};
+	int64_t months_free{};
+	double first_year_usd{};
+	double regular_year_usd{};
+	std::string tier{};
+	std::string currency{};
+	std::string state{};
+	std::optional<std::string> apple_offer_code;
+	std::optional<std::string> play_offer_tag;
+	std::optional<std::string> stripe_coupon_id;
+	std::optional<std::string> redeemed_at;
+	std::optional<std::string> store;
+};
+
+struct OnboardingOfferIssueArgs {
+	std::optional<std::string> surface;
+	std::optional<std::string> storefront_country;
+};
+
+struct OnboardingOfferIssueResult {
+	std::optional<OnboardingOffer> offer;
+	bool created{};
+	std::optional<OnboardingError> error;
+};
+
 struct OverrideLocalAppIds {
 	std::optional<StringList> Included;
 	std::optional<StringList> Excluded;
@@ -1937,6 +2109,24 @@ struct PointsLeaderboardResult {
 	int64_t latest_epoch{};
 	std::optional<PointsLeaderboardMe> me;
 	std::optional<PointsLeaderboardError> error;
+};
+
+struct PriceEquivalent {
+	double monthly_equivalent{};
+	int64_t monthly_equivalent_minor{};
+	bool show_equivalent{};
+	int64_t saving_percent{};
+	int64_t yearly_minor{};
+	int64_t monthly_minor{};
+};
+
+struct PriceTier {
+	std::string name{};
+	double yearly_usd{};
+	double monthly_usd{};
+	std::string currency{};
+	std::string source{};
+	bool estimate{};
 };
 
 struct ProbeResult {
@@ -2367,6 +2557,7 @@ struct SnValidateWalletResult {
 struct SolanaPaymentIntentArgs {
 	std::string reference{};
 	std::string plan{};
+	std::optional<std::string> storefront_country;
 };
 
 struct SolanaPaymentIntentError {
@@ -2376,6 +2567,11 @@ struct SolanaPaymentIntentError {
 struct SolanaPaymentIntentResult {
 	std::optional<double> amount_usd;
 	std::optional<SolanaPaymentIntentError> error;
+	std::optional<std::string> tier;
+	std::optional<std::string> plan;
+	std::optional<double> regular_amount_usd;
+	std::optional<bool> offer_applied;
+	std::optional<std::string> currency;
 };
 
 struct SolanaPaymentUrlArgs {
@@ -2391,6 +2587,7 @@ struct StripeCreateCheckoutSessionArgs {
 	std::string item_id{};
 	std::optional<std::string> ui_mode;
 	std::optional<std::string> redirect_on_completion;
+	std::optional<std::string> storefront_country;
 };
 
 struct StripeCreateCheckoutSessionError {
@@ -2438,6 +2635,44 @@ struct StripePaymentIntent {
 	std::string client_secret{};
 };
 
+struct StripePaymentSheetArgs {
+	std::string plan{};
+	std::optional<std::string> storefront_country;
+	std::optional<std::string> stripe_version;
+};
+
+struct StripePaymentSheetResult {
+	std::optional<std::string> customer_id;
+	std::optional<std::string> ephemeral_key_secret;
+	std::optional<std::string> setup_intent_client_secret;
+	std::optional<std::string> payment_intent_client_secret;
+	std::optional<std::string> intent_type;
+	std::optional<std::string> subscription_id;
+	std::optional<std::string> publishable_key;
+	std::optional<std::string> tier;
+	std::optional<std::string> currency;
+	std::optional<std::string> plan;
+	double amount_first_period_usd{};
+	double regular_period_usd{};
+	int64_t trial_days{};
+	std::optional<std::string> trial_end_at;
+	bool offer_applied{};
+	std::optional<OnboardingError> error;
+};
+
+struct StripePricesResult {
+	std::string tier{};
+	std::string currency{};
+	std::string yearly_price_id{};
+	std::string monthly_price_id{};
+	double yearly_usd{};
+	double monthly_usd{};
+	std::string publishable_key{};
+	std::optional<std::string> onboarding_coupon_id;
+	bool offer_eligible{};
+	std::optional<OnboardingError> error;
+};
+
 struct Subscription {
 	std::optional<std::string> subscription_id;
 	std::string store{};
@@ -2453,6 +2688,9 @@ struct SubscriptionBalanceResult {
 	std::optional<TransferBalanceList> active_transfer_balances;
 	int64_t pending_payout_usd_nano_cents{};
 	std::string update_time{};
+	std::optional<PriceTier> price_tier;
+	std::optional<OnboardingOffer> onboarding_offer;
+	std::optional<ExperimentAssignmentList> experiments;
 };
 
 struct SubscriptionCreatePaymentIdArgs {
@@ -2855,6 +3093,16 @@ inline void to_json(nlohmann::json& j, const ClaimNetworkNameError& v);
 inline void from_json(const nlohmann::json& j, ClaimNetworkNameError& v);
 inline void to_json(nlohmann::json& j, const ClaimNetworkNameResult& v);
 inline void from_json(const nlohmann::json& j, ClaimNetworkNameResult& v);
+inline void to_json(nlohmann::json& j, const ClientEvent& v);
+inline void from_json(const nlohmann::json& j, ClientEvent& v);
+inline void to_json(nlohmann::json& j, const ClientEventQueue& v);
+inline void from_json(const nlohmann::json& j, ClientEventQueue& v);
+inline void to_json(nlohmann::json& j, const ClientEventRejection& v);
+inline void from_json(const nlohmann::json& j, ClientEventRejection& v);
+inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v);
+inline void from_json(const nlohmann::json& j, ClientEventsSendArgs& v);
+inline void to_json(nlohmann::json& j, const ClientEventsSendResult& v);
+inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v);
 inline void to_json(nlohmann::json& j, const ContractClientRow& v);
@@ -2903,6 +3151,8 @@ inline void to_json(nlohmann::json& j, const EmojiTagValidation& v);
 inline void from_json(const nlohmann::json& j, EmojiTagValidation& v);
 inline void to_json(nlohmann::json& j, const Exit& v);
 inline void from_json(const nlohmann::json& j, Exit& v);
+inline void to_json(nlohmann::json& j, const ExperimentAssignment& v);
+inline void from_json(const nlohmann::json& j, ExperimentAssignment& v);
 inline void to_json(nlohmann::json& j, const ExportOptions& v);
 inline void from_json(const nlohmann::json& j, ExportOptions& v);
 inline void to_json(nlohmann::json& j, const ExportResult& v);
@@ -3055,6 +3305,20 @@ inline void to_json(nlohmann::json& j, const NetworkUserUpdateError& v);
 inline void from_json(const nlohmann::json& j, NetworkUserUpdateError& v);
 inline void to_json(nlohmann::json& j, const NetworkUserUpdateResult& v);
 inline void from_json(const nlohmann::json& j, NetworkUserUpdateResult& v);
+inline void to_json(nlohmann::json& j, const OnboardingClickArgs& v);
+inline void from_json(const nlohmann::json& j, OnboardingClickArgs& v);
+inline void to_json(nlohmann::json& j, const OnboardingClickResult& v);
+inline void from_json(const nlohmann::json& j, OnboardingClickResult& v);
+inline void to_json(nlohmann::json& j, const OnboardingError& v);
+inline void from_json(const nlohmann::json& j, OnboardingError& v);
+inline void to_json(nlohmann::json& j, const OnboardingFeedbackTokenResult& v);
+inline void from_json(const nlohmann::json& j, OnboardingFeedbackTokenResult& v);
+inline void to_json(nlohmann::json& j, const OnboardingOffer& v);
+inline void from_json(const nlohmann::json& j, OnboardingOffer& v);
+inline void to_json(nlohmann::json& j, const OnboardingOfferIssueArgs& v);
+inline void from_json(const nlohmann::json& j, OnboardingOfferIssueArgs& v);
+inline void to_json(nlohmann::json& j, const OnboardingOfferIssueResult& v);
+inline void from_json(const nlohmann::json& j, OnboardingOfferIssueResult& v);
 inline void to_json(nlohmann::json& j, const OverrideLocalAppIds& v);
 inline void from_json(const nlohmann::json& j, OverrideLocalAppIds& v);
 inline void to_json(nlohmann::json& j, const PacketStats& v);
@@ -3069,6 +3333,10 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardMe& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardMe& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v);
+inline void to_json(nlohmann::json& j, const PriceEquivalent& v);
+inline void from_json(const nlohmann::json& j, PriceEquivalent& v);
+inline void to_json(nlohmann::json& j, const PriceTier& v);
+inline void from_json(const nlohmann::json& j, PriceTier& v);
 inline void to_json(nlohmann::json& j, const ProbeResult& v);
 inline void from_json(const nlohmann::json& j, ProbeResult& v);
 inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
@@ -3215,6 +3483,12 @@ inline void to_json(nlohmann::json& j, const StripeCreatePaymentIntentResult& v)
 inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const StripePaymentIntent& v);
 inline void from_json(const nlohmann::json& j, StripePaymentIntent& v);
+inline void to_json(nlohmann::json& j, const StripePaymentSheetArgs& v);
+inline void from_json(const nlohmann::json& j, StripePaymentSheetArgs& v);
+inline void to_json(nlohmann::json& j, const StripePaymentSheetResult& v);
+inline void from_json(const nlohmann::json& j, StripePaymentSheetResult& v);
+inline void to_json(nlohmann::json& j, const StripePricesResult& v);
+inline void from_json(const nlohmann::json& j, StripePricesResult& v);
 inline void to_json(nlohmann::json& j, const Subscription& v);
 inline void from_json(const nlohmann::json& j, Subscription& v);
 inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v);
@@ -4711,6 +4985,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientResult& v) {
 	if (v.by_client_jwt) {
 		j["by_client_jwt"] = *v.by_client_jwt;
 	}
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
 	if (v.proxy_config_result) {
 		j["proxy_config_result"] = *v.proxy_config_result;
 	}
@@ -4726,6 +5003,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.by_client_jwt = std::move(tmp);
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
 	}
 	if (auto it = j.find("proxy_config_result"); it != j.end() && !it->is_null()) {
 		ProxyConfigResult tmp{};
@@ -5446,6 +5728,123 @@ inline void from_json(const nlohmann::json& j, ClaimNetworkNameResult& v) {
 		ClaimNetworkNameError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientEvent& v) {
+	j = nlohmann::json::object();
+	j["name"] = v.name;
+	if (v.at) {
+		j["at"] = *v.at;
+	}
+	if (v.platform) {
+		j["platform"] = *v.platform;
+	}
+	if (v.app_version) {
+		j["app_version"] = *v.app_version;
+	}
+	if (v.locale) {
+		j["locale"] = *v.locale;
+	}
+	if (v.session) {
+		j["session"] = *v.session;
+	}
+}
+inline void from_json(const nlohmann::json& j, ClientEvent& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.name);
+	}
+	if (auto it = j.find("at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.at = std::move(tmp);
+	}
+	if (auto it = j.find("platform"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.platform = std::move(tmp);
+	}
+	if (auto it = j.find("app_version"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.app_version = std::move(tmp);
+	}
+	if (auto it = j.find("locale"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.locale = std::move(tmp);
+	}
+	if (auto it = j.find("session"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.session = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientEventQueue& v) {
+	j = nlohmann::json::object();
+}
+inline void from_json(const nlohmann::json& j, ClientEventQueue& v) {
+	if (!j.is_object()) {
+		return;
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientEventRejection& v) {
+	j = nlohmann::json::object();
+	j["index"] = v.index;
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, ClientEventRejection& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v) {
+	j = nlohmann::json::object();
+	if (v.events) {
+		j["events"] = *v.events;
+	}
+}
+inline void from_json(const nlohmann::json& j, ClientEventsSendArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("events"); it != j.end() && !it->is_null()) {
+		ClientEventList tmp{};
+		it->get_to(tmp);
+		v.events = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientEventsSendResult& v) {
+	j = nlohmann::json::object();
+	j["accepted"] = v.accepted;
+	if (v.rejected) {
+		j["rejected"] = *v.rejected;
+	}
+}
+inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("accepted"); it != j.end() && !it->is_null()) {
+		it->get_to(v.accepted);
+	}
+	if (auto it = j.find("rejected"); it != j.end() && !it->is_null()) {
+		ClientEventRejectionList tmp{};
+		it->get_to(tmp);
+		v.rejected = std::move(tmp);
 	}
 }
 
@@ -6430,6 +6829,27 @@ inline void from_json(const nlohmann::json& j, Exit& v) {
 	}
 	if (auto it = j.find("ProviderDiagnosticsSequence"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderDiagnosticsSequence);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExperimentAssignment& v) {
+	j = nlohmann::json::object();
+	j["surface"] = v.surface;
+	j["experiment_id"] = v.experiment_id;
+	j["variant"] = v.variant;
+}
+inline void from_json(const nlohmann::json& j, ExperimentAssignment& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("surface"); it != j.end() && !it->is_null()) {
+		it->get_to(v.surface);
+	}
+	if (auto it = j.find("experiment_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.experiment_id);
+	}
+	if (auto it = j.find("variant"); it != j.end() && !it->is_null()) {
+		it->get_to(v.variant);
 	}
 }
 
@@ -8793,6 +9213,253 @@ inline void from_json(const nlohmann::json& j, NetworkUserUpdateResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const OnboardingClickArgs& v) {
+	j = nlohmann::json::object();
+	j["token"] = v.token;
+}
+inline void from_json(const nlohmann::json& j, OnboardingClickArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("token"); it != j.end() && !it->is_null()) {
+		it->get_to(v.token);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const OnboardingClickResult& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.step) {
+		j["step"] = *v.step;
+	}
+	if (v.destination) {
+		j["destination"] = *v.destination;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, OnboardingClickResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("step"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.step = std::move(tmp);
+	}
+	if (auto it = j.find("destination"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.destination = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const OnboardingError& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, OnboardingError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const OnboardingFeedbackTokenResult& v) {
+	j = nlohmann::json::object();
+	j["ok"] = v.ok;
+	if (v.step) {
+		j["step"] = *v.step;
+	}
+	if (v.rating) {
+		j["rating"] = *v.rating;
+	}
+	if (v.reason) {
+		j["reason"] = *v.reason;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, OnboardingFeedbackTokenResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ok);
+	}
+	if (auto it = j.find("step"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.step = std::move(tmp);
+	}
+	if (auto it = j.find("rating"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.rating = std::move(tmp);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.reason = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const OnboardingOffer& v) {
+	j = nlohmann::json::object();
+	j["issued_at"] = v.issued_at;
+	j["expires_at"] = v.expires_at;
+	j["percent_off"] = v.percent_off;
+	j["months_free"] = v.months_free;
+	j["first_year_usd"] = v.first_year_usd;
+	j["regular_year_usd"] = v.regular_year_usd;
+	j["tier"] = v.tier;
+	j["currency"] = v.currency;
+	j["state"] = v.state;
+	if (v.apple_offer_code) {
+		j["apple_offer_code"] = *v.apple_offer_code;
+	}
+	if (v.play_offer_tag) {
+		j["play_offer_tag"] = *v.play_offer_tag;
+	}
+	if (v.stripe_coupon_id) {
+		j["stripe_coupon_id"] = *v.stripe_coupon_id;
+	}
+	if (v.redeemed_at) {
+		j["redeemed_at"] = *v.redeemed_at;
+	}
+	if (v.store) {
+		j["store"] = *v.store;
+	}
+}
+inline void from_json(const nlohmann::json& j, OnboardingOffer& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("issued_at"); it != j.end() && !it->is_null()) {
+		it->get_to(v.issued_at);
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expires_at);
+	}
+	if (auto it = j.find("percent_off"); it != j.end() && !it->is_null()) {
+		it->get_to(v.percent_off);
+	}
+	if (auto it = j.find("months_free"); it != j.end() && !it->is_null()) {
+		it->get_to(v.months_free);
+	}
+	if (auto it = j.find("first_year_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.first_year_usd);
+	}
+	if (auto it = j.find("regular_year_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.regular_year_usd);
+	}
+	if (auto it = j.find("tier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.tier);
+	}
+	if (auto it = j.find("currency"); it != j.end() && !it->is_null()) {
+		it->get_to(v.currency);
+	}
+	if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+		it->get_to(v.state);
+	}
+	if (auto it = j.find("apple_offer_code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.apple_offer_code = std::move(tmp);
+	}
+	if (auto it = j.find("play_offer_tag"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.play_offer_tag = std::move(tmp);
+	}
+	if (auto it = j.find("stripe_coupon_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.stripe_coupon_id = std::move(tmp);
+	}
+	if (auto it = j.find("redeemed_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.redeemed_at = std::move(tmp);
+	}
+	if (auto it = j.find("store"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.store = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const OnboardingOfferIssueArgs& v) {
+	j = nlohmann::json::object();
+	if (v.surface) {
+		j["surface"] = *v.surface;
+	}
+	if (v.storefront_country) {
+		j["storefront_country"] = *v.storefront_country;
+	}
+}
+inline void from_json(const nlohmann::json& j, OnboardingOfferIssueArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("surface"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.surface = std::move(tmp);
+	}
+	if (auto it = j.find("storefront_country"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.storefront_country = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const OnboardingOfferIssueResult& v) {
+	j = nlohmann::json::object();
+	if (v.offer) {
+		j["offer"] = *v.offer;
+	}
+	j["created"] = v.created;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, OnboardingOfferIssueResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("offer"); it != j.end() && !it->is_null()) {
+		OnboardingOffer tmp{};
+		it->get_to(tmp);
+		v.offer = std::move(tmp);
+	}
+	if (auto it = j.find("created"); it != j.end() && !it->is_null()) {
+		it->get_to(v.created);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		OnboardingError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const OverrideLocalAppIds& v) {
 	j = nlohmann::json::object();
 	if (v.Included) {
@@ -9136,6 +9803,72 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const PriceEquivalent& v) {
+	j = nlohmann::json::object();
+	j["monthly_equivalent"] = v.monthly_equivalent;
+	j["monthly_equivalent_minor"] = v.monthly_equivalent_minor;
+	j["show_equivalent"] = v.show_equivalent;
+	j["saving_percent"] = v.saving_percent;
+	j["yearly_minor"] = v.yearly_minor;
+	j["monthly_minor"] = v.monthly_minor;
+}
+inline void from_json(const nlohmann::json& j, PriceEquivalent& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("monthly_equivalent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_equivalent);
+	}
+	if (auto it = j.find("monthly_equivalent_minor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_equivalent_minor);
+	}
+	if (auto it = j.find("show_equivalent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.show_equivalent);
+	}
+	if (auto it = j.find("saving_percent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.saving_percent);
+	}
+	if (auto it = j.find("yearly_minor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.yearly_minor);
+	}
+	if (auto it = j.find("monthly_minor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_minor);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PriceTier& v) {
+	j = nlohmann::json::object();
+	j["name"] = v.name;
+	j["yearly_usd"] = v.yearly_usd;
+	j["monthly_usd"] = v.monthly_usd;
+	j["currency"] = v.currency;
+	j["source"] = v.source;
+	j["estimate"] = v.estimate;
+}
+inline void from_json(const nlohmann::json& j, PriceTier& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.name);
+	}
+	if (auto it = j.find("yearly_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.yearly_usd);
+	}
+	if (auto it = j.find("monthly_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_usd);
+	}
+	if (auto it = j.find("currency"); it != j.end() && !it->is_null()) {
+		it->get_to(v.currency);
+	}
+	if (auto it = j.find("source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.source);
+	}
+	if (auto it = j.find("estimate"); it != j.end() && !it->is_null()) {
+		it->get_to(v.estimate);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProbeResult& v) {
 	j = nlohmann::json::object();
 	j["Name"] = v.Name;
@@ -9222,20 +9955,140 @@ inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v) {
 	}
 }
 
+namespace detail {
+
+inline bool provideSecretKeyIsUtf8(const std::string& value) {
+	std::size_t index = 0;
+	while (index < value.size()) {
+		const auto first = static_cast<unsigned char>(value[index++]);
+		if (first <= 0x7f) { continue; }
+		std::size_t continuation = 0;
+		unsigned char low = 0x80;
+		unsigned char high = 0xbf;
+		if (0xc2 <= first && first <= 0xdf) {
+			continuation = 1;
+		} else if (0xe0 <= first && first <= 0xef) {
+			continuation = 2;
+			if (first == 0xe0) { low = 0xa0; }
+			if (first == 0xed) { high = 0x9f; }
+		} else if (0xf0 <= first && first <= 0xf4) {
+			continuation = 3;
+			if (first == 0xf0) { low = 0x90; }
+			if (first == 0xf4) { high = 0x8f; }
+		} else {
+			return false;
+		}
+		if (value.size() - index < continuation) { return false; }
+		const auto second = static_cast<unsigned char>(value[index++]);
+		if (second < low || high < second) { return false; }
+		for (std::size_t remaining = 1; remaining < continuation; remaining += 1) {
+			const auto next = static_cast<unsigned char>(value[index++]);
+			if (next < 0x80 || 0xbf < next) { return false; }
+		}
+	}
+	return true;
+}
+
+inline std::string encodeProvideSecretKeyBase64(const std::string& value) {
+	static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	std::string encoded;
+	std::size_t index = 0;
+	while (index < value.size()) {
+		uint32_t bits = static_cast<unsigned char>(value[index++]) << 16;
+		const bool hasSecond = index < value.size();
+		if (hasSecond) { bits |= static_cast<unsigned char>(value[index++]) << 8; }
+		const bool hasThird = index < value.size();
+		if (hasThird) { bits |= static_cast<unsigned char>(value[index++]); }
+		encoded.push_back(alphabet[(bits >> 18) & 63]);
+		encoded.push_back(alphabet[(bits >> 12) & 63]);
+		encoded.push_back(hasSecond ? alphabet[(bits >> 6) & 63] : '=');
+		encoded.push_back(hasThird ? alphabet[bits & 63] : '=');
+	}
+	return encoded;
+}
+
+inline int provideSecretKeyBase64Digit(char value) {
+	if ('A' <= value && value <= 'Z') { return value - 'A'; }
+	if ('a' <= value && value <= 'z') { return value - 'a' + 26; }
+	if ('0' <= value && value <= '9') { return value - '0' + 52; }
+	if (value == '+') { return 62; }
+	if (value == '/') { return 63; }
+	return -1;
+}
+
+inline std::string decodeProvideSecretKeyBase64(const std::string& value) {
+	if (value.size() % 4 != 0) { throw Error("decode provide secret key"); }
+	std::string decoded;
+	for (std::size_t index = 0; index < value.size(); index += 4) {
+		const int first = provideSecretKeyBase64Digit(value[index]);
+		const int second = provideSecretKeyBase64Digit(value[index + 1]);
+		if (first < 0 || second < 0) { throw Error("decode provide secret key"); }
+		const bool final = index + 4 == value.size();
+		if (value[index + 2] == '=') {
+			if (!final || value[index + 3] != '=' || (second & 15) != 0) {
+				throw Error("decode provide secret key");
+			}
+			decoded.push_back(static_cast<char>((first << 2) | (second >> 4)));
+			continue;
+		}
+		const int third = provideSecretKeyBase64Digit(value[index + 2]);
+		if (third < 0) { throw Error("decode provide secret key"); }
+		decoded.push_back(static_cast<char>((first << 2) | (second >> 4)));
+		decoded.push_back(static_cast<char>(((second << 4) | (third >> 2)) & 0xff));
+		if (value[index + 3] == '=') {
+			if (!final || (third & 3) != 0) { throw Error("decode provide secret key"); }
+			continue;
+		}
+		const int fourth = provideSecretKeyBase64Digit(value[index + 3]);
+		if (fourth < 0) { throw Error("decode provide secret key"); }
+		decoded.push_back(static_cast<char>(((third << 6) | fourth) & 0xff));
+	}
+	return decoded;
+}
+
+} // namespace detail
+
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v) {
 	j = nlohmann::json::object();
 	j["provide_mode"] = v.provide_mode;
-	j["provide_secret_key"] = v.provide_secret_key;
+	if (detail::provideSecretKeyIsUtf8(v.provide_secret_key)) {
+		j["provide_secret_key"] = v.provide_secret_key;
+	} else {
+		j["provide_secret_key_base64"] = detail::encodeProvideSecretKeyBase64(v.provide_secret_key);
+	}
 }
+
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("provide_mode"); it != j.end() && !it->is_null()) {
-		it->get_to(v.provide_mode);
-	}
-	if (auto it = j.find("provide_secret_key"); it != j.end() && !it->is_null()) {
-		it->get_to(v.provide_secret_key);
+	if (j.is_null()) { return; }
+	if (!j.is_object()) { throw Error("decode provide secret key"); }
+	try {
+		ProvideSecretKey next = v;
+		if (auto it = j.find("provide_mode"); it != j.end() && !it->is_null()) {
+			if (it->is_number_unsigned()) {
+				const auto mode = it->get<uint64_t>();
+				if (static_cast<uint64_t>((std::numeric_limits<int64_t>::max)()) < mode) {
+					throw Error("decode provide secret key");
+				}
+				next.provide_mode = static_cast<int64_t>(mode);
+			} else if (it->is_number_integer()) {
+				next.provide_mode = it->get<int64_t>();
+			} else {
+				throw Error("decode provide secret key");
+			}
+		}
+		std::string plain;
+		if (auto it = j.find("provide_secret_key"); it != j.end() && !it->is_null()) {
+			if (!it->is_string()) { throw Error("decode provide secret key"); }
+			plain = it->get<std::string>();
+			next.provide_secret_key = plain;
+		}
+		if (auto it = j.find("provide_secret_key_base64"); it != j.end()) {
+			if (!it->is_string() || !plain.empty()) { throw Error("decode provide secret key"); }
+			next.provide_secret_key = detail::decodeProvideSecretKeyBase64(it->get<std::string>());
+		}
+		v = std::move(next);
+	} catch (const std::exception&) {
+		throw Error("decode provide secret key");
 	}
 }
 
@@ -10923,6 +11776,9 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentArgs& v) {
 	j = nlohmann::json::object();
 	j["reference"] = v.reference;
 	j["plan"] = v.plan;
+	if (v.storefront_country) {
+		j["storefront_country"] = *v.storefront_country;
+	}
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentArgs& v) {
 	if (!j.is_object()) {
@@ -10933,6 +11789,11 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentArgs& v) {
 	}
 	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
 		it->get_to(v.plan);
+	}
+	if (auto it = j.find("storefront_country"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.storefront_country = std::move(tmp);
 	}
 }
 
@@ -10957,6 +11818,21 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v) {
 	if (v.error) {
 		j["error"] = *v.error;
 	}
+	if (v.tier) {
+		j["tier"] = *v.tier;
+	}
+	if (v.plan) {
+		j["plan"] = *v.plan;
+	}
+	if (v.regular_amount_usd) {
+		j["regular_amount_usd"] = *v.regular_amount_usd;
+	}
+	if (v.offer_applied) {
+		j["offer_applied"] = *v.offer_applied;
+	}
+	if (v.currency) {
+		j["currency"] = *v.currency;
+	}
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 	if (!j.is_object()) {
@@ -10971,6 +11847,31 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 		SolanaPaymentIntentError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+	if (auto it = j.find("tier"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.tier = std::move(tmp);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.plan = std::move(tmp);
+	}
+	if (auto it = j.find("regular_amount_usd"); it != j.end() && !it->is_null()) {
+		double tmp{};
+		it->get_to(tmp);
+		v.regular_amount_usd = std::move(tmp);
+	}
+	if (auto it = j.find("offer_applied"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.offer_applied = std::move(tmp);
+	}
+	if (auto it = j.find("currency"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.currency = std::move(tmp);
 	}
 }
 
@@ -11024,6 +11925,9 @@ inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionArgs& v)
 	if (v.redirect_on_completion) {
 		j["redirect_on_completion"] = *v.redirect_on_completion;
 	}
+	if (v.storefront_country) {
+		j["storefront_country"] = *v.storefront_country;
+	}
 }
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& v) {
 	if (!j.is_object()) {
@@ -11041,6 +11945,11 @@ inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& 
 		std::string tmp{};
 		it->get_to(tmp);
 		v.redirect_on_completion = std::move(tmp);
+	}
+	if (auto it = j.find("storefront_country"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.storefront_country = std::move(tmp);
 	}
 }
 
@@ -11249,6 +12158,213 @@ inline void from_json(const nlohmann::json& j, StripePaymentIntent& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const StripePaymentSheetArgs& v) {
+	j = nlohmann::json::object();
+	j["plan"] = v.plan;
+	if (v.storefront_country) {
+		j["storefront_country"] = *v.storefront_country;
+	}
+	if (v.stripe_version) {
+		j["stripe_version"] = *v.stripe_version;
+	}
+}
+inline void from_json(const nlohmann::json& j, StripePaymentSheetArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		it->get_to(v.plan);
+	}
+	if (auto it = j.find("storefront_country"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.storefront_country = std::move(tmp);
+	}
+	if (auto it = j.find("stripe_version"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.stripe_version = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const StripePaymentSheetResult& v) {
+	j = nlohmann::json::object();
+	if (v.customer_id) {
+		j["customer_id"] = *v.customer_id;
+	}
+	if (v.ephemeral_key_secret) {
+		j["ephemeral_key_secret"] = *v.ephemeral_key_secret;
+	}
+	if (v.setup_intent_client_secret) {
+		j["setup_intent_client_secret"] = *v.setup_intent_client_secret;
+	}
+	if (v.payment_intent_client_secret) {
+		j["payment_intent_client_secret"] = *v.payment_intent_client_secret;
+	}
+	if (v.intent_type) {
+		j["intent_type"] = *v.intent_type;
+	}
+	if (v.subscription_id) {
+		j["subscription_id"] = *v.subscription_id;
+	}
+	if (v.publishable_key) {
+		j["publishable_key"] = *v.publishable_key;
+	}
+	if (v.tier) {
+		j["tier"] = *v.tier;
+	}
+	if (v.currency) {
+		j["currency"] = *v.currency;
+	}
+	if (v.plan) {
+		j["plan"] = *v.plan;
+	}
+	j["amount_first_period_usd"] = v.amount_first_period_usd;
+	j["regular_period_usd"] = v.regular_period_usd;
+	j["trial_days"] = v.trial_days;
+	if (v.trial_end_at) {
+		j["trial_end_at"] = *v.trial_end_at;
+	}
+	j["offer_applied"] = v.offer_applied;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, StripePaymentSheetResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("customer_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.customer_id = std::move(tmp);
+	}
+	if (auto it = j.find("ephemeral_key_secret"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.ephemeral_key_secret = std::move(tmp);
+	}
+	if (auto it = j.find("setup_intent_client_secret"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.setup_intent_client_secret = std::move(tmp);
+	}
+	if (auto it = j.find("payment_intent_client_secret"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.payment_intent_client_secret = std::move(tmp);
+	}
+	if (auto it = j.find("intent_type"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.intent_type = std::move(tmp);
+	}
+	if (auto it = j.find("subscription_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.subscription_id = std::move(tmp);
+	}
+	if (auto it = j.find("publishable_key"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.publishable_key = std::move(tmp);
+	}
+	if (auto it = j.find("tier"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.tier = std::move(tmp);
+	}
+	if (auto it = j.find("currency"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.currency = std::move(tmp);
+	}
+	if (auto it = j.find("plan"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.plan = std::move(tmp);
+	}
+	if (auto it = j.find("amount_first_period_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_first_period_usd);
+	}
+	if (auto it = j.find("regular_period_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.regular_period_usd);
+	}
+	if (auto it = j.find("trial_days"); it != j.end() && !it->is_null()) {
+		it->get_to(v.trial_days);
+	}
+	if (auto it = j.find("trial_end_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.trial_end_at = std::move(tmp);
+	}
+	if (auto it = j.find("offer_applied"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offer_applied);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		OnboardingError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const StripePricesResult& v) {
+	j = nlohmann::json::object();
+	j["tier"] = v.tier;
+	j["currency"] = v.currency;
+	j["yearly_price_id"] = v.yearly_price_id;
+	j["monthly_price_id"] = v.monthly_price_id;
+	j["yearly_usd"] = v.yearly_usd;
+	j["monthly_usd"] = v.monthly_usd;
+	j["publishable_key"] = v.publishable_key;
+	if (v.onboarding_coupon_id) {
+		j["onboarding_coupon_id"] = *v.onboarding_coupon_id;
+	}
+	j["offer_eligible"] = v.offer_eligible;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, StripePricesResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("tier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.tier);
+	}
+	if (auto it = j.find("currency"); it != j.end() && !it->is_null()) {
+		it->get_to(v.currency);
+	}
+	if (auto it = j.find("yearly_price_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.yearly_price_id);
+	}
+	if (auto it = j.find("monthly_price_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_price_id);
+	}
+	if (auto it = j.find("yearly_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.yearly_usd);
+	}
+	if (auto it = j.find("monthly_usd"); it != j.end() && !it->is_null()) {
+		it->get_to(v.monthly_usd);
+	}
+	if (auto it = j.find("publishable_key"); it != j.end() && !it->is_null()) {
+		it->get_to(v.publishable_key);
+	}
+	if (auto it = j.find("onboarding_coupon_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.onboarding_coupon_id = std::move(tmp);
+	}
+	if (auto it = j.find("offer_eligible"); it != j.end() && !it->is_null()) {
+		it->get_to(v.offer_eligible);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		OnboardingError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const Subscription& v) {
 	j = nlohmann::json::object();
 	if (v.subscription_id) {
@@ -11290,6 +12406,15 @@ inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	}
 	j["pending_payout_usd_nano_cents"] = v.pending_payout_usd_nano_cents;
 	j["update_time"] = v.update_time;
+	if (v.price_tier) {
+		j["price_tier"] = *v.price_tier;
+	}
+	if (v.onboarding_offer) {
+		j["onboarding_offer"] = *v.onboarding_offer;
+	}
+	if (v.experiments) {
+		j["experiments"] = *v.experiments;
+	}
 }
 inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 	if (!j.is_object()) {
@@ -11324,6 +12449,21 @@ inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 	}
 	if (auto it = j.find("update_time"); it != j.end() && !it->is_null()) {
 		it->get_to(v.update_time);
+	}
+	if (auto it = j.find("price_tier"); it != j.end() && !it->is_null()) {
+		PriceTier tmp{};
+		it->get_to(tmp);
+		v.price_tier = std::move(tmp);
+	}
+	if (auto it = j.find("onboarding_offer"); it != j.end() && !it->is_null()) {
+		OnboardingOffer tmp{};
+		it->get_to(tmp);
+		v.onboarding_offer = std::move(tmp);
+	}
+	if (auto it = j.find("experiments"); it != j.end() && !it->is_null()) {
+		ExperimentAssignmentList tmp{};
+		it->get_to(tmp);
+		v.experiments = std::move(tmp);
 	}
 }
 
@@ -12451,6 +13591,7 @@ using CanShowRatingDialogChangeListener = std::function<void(bool can_show_ratin
 using ChangeNetworkNameCallback = std::function<void(std::optional<ChangeNetworkNameResult> result, std::optional<std::string> err_param)>;
 using CheckBalanceCodeCallback = std::function<void(std::optional<CheckBalanceCodeResult> result, std::optional<std::string> err_param)>;
 using ClaimNetworkNameCallback = std::function<void(std::optional<ClaimNetworkNameResult> result, std::optional<std::string> err_param)>;
+using ClientEventsSendCallback = std::function<void(std::optional<ClientEventsSendResult> result, std::optional<std::string> err_param)>;
 using CommitCallback = std::function<void(bool success)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
@@ -12500,6 +13641,7 @@ using IsSendingFeedbackListener = std::function<void(bool p0)>;
 using JwtRefreshListener = std::function<void(std::string jwt)>;
 using ListApiKeysCallback = std::function<void(std::optional<ListApiKeysResult> result, std::optional<std::string> err_param)>;
 using LocalOverrideAppIdsListener = std::function<void()>;
+using LocalStateSaveListener = std::function<void(DeviceLocalSaveResult result)>;
 using NetworkBlockLocationCallback = std::function<void(std::optional<NetworkBlockLocationResult> result, std::optional<std::string> err_param)>;
 using NetworkCheckCallback = std::function<void(std::optional<NetworkCheckResult> result, std::optional<std::string> err_param)>;
 using NetworkClientsListener = std::function<void(std::optional<NetworkClientInfoList> network_clients)>;
@@ -12514,6 +13656,9 @@ using NetworkUserUpdateCallback = std::function<void(std::optional<NetworkUserUp
 using NetworkUserUpdateErrorListener = std::function<void(std::string p0)>;
 using NetworkUserUpdateSuccessListener = std::function<void()>;
 using OfflineChangeListener = std::function<void(bool offline, bool vpn_interface_while_offline)>;
+using OnboardingClickCallback = std::function<void(std::optional<OnboardingClickResult> result, std::optional<std::string> err_param)>;
+using OnboardingFeedbackTokenCallback = std::function<void(std::optional<OnboardingFeedbackTokenResult> result, std::optional<std::string> err_param)>;
+using OnboardingOfferIssueCallback = std::function<void(std::optional<OnboardingOfferIssueResult> result, std::optional<std::string> err_param)>;
 using PacketStatsChangeListener = std::function<void(std::optional<PacketStats> packet_stats)>;
 using ParseByJwtCallback = std::function<void(std::optional<ByJwt> result, bool ok_param)>;
 using PaymentsListener = std::function<void()>;
@@ -12572,6 +13717,8 @@ using SolanaPaymentIntentCallback = std::function<void(std::optional<SolanaPayme
 using StripeCreateCheckoutSessionCallback = std::function<void(std::optional<StripeCreateCheckoutSessionResult> result, std::optional<std::string> err_param)>;
 using StripeCreateCustomerPortalCallback = std::function<void(std::optional<StripeCreateCustomerPortalResult> result, std::optional<std::string> err_param)>;
 using StripePaymentIntentCallback = std::function<void(std::optional<StripeCreatePaymentIntentResult> result, std::optional<std::string> err_param)>;
+using StripePaymentSheetCallback = std::function<void(std::optional<StripePaymentSheetResult> result, std::optional<std::string> err_param)>;
+using StripePricesCallback = std::function<void(std::optional<StripePricesResult> result, std::optional<std::string> err_param)>;
 using SubscriptionBalanceCallback = std::function<void(std::optional<SubscriptionBalanceResult> result, std::optional<std::string> err_param)>;
 using SubscriptionBalanceChangeListener = std::function<void()>;
 using SubscriptionCreatePaymentIdCallback = std::function<void(std::optional<SubscriptionCreatePaymentIdResult> result, std::optional<std::string> err_param)>;
@@ -12811,6 +13958,7 @@ public:
 	void changeNetworkName(const std::optional<ChangeNetworkNameArgs>& args, ChangeNetworkNameCallback callback) const;
 	void checkBalanceCode(const std::optional<CheckBalanceCodeArgs>& args, CheckBalanceCodeCallback callback) const;
 	void claimNetworkName(const std::optional<ClaimNetworkNameArgs>& args, ClaimNetworkNameCallback callback) const;
+	void clientEventsSend(const std::optional<ClientEventsSendArgs>& args, ClientEventsSendCallback callback) const;
 	void close() const;
 	void createAccountWallet(const std::optional<CreateAccountWalletArgs>& create_account_wallet, CreateAccountWalletCallback callback) const;
 	void createApiKey(const std::optional<CreateApiKeyArgs>& args, CreateApiKeyCallback callback) const;
@@ -12848,6 +13996,9 @@ public:
 	void networkDelete(NetworkDeleteCallback callback) const;
 	void networkUnblockLocation(const std::optional<NetworkUnblockLocationArgs>& args, NetworkUnblockLocationCallback callback) const;
 	void networkUserUpdate(const std::optional<NetworkUserUpdateArgs>& update_network_user, NetworkUserUpdateCallback callback) const;
+	void onboardingClick(const std::optional<OnboardingClickArgs>& args, OnboardingClickCallback callback) const;
+	void onboardingFeedbackToken(const std::string& token, int64_t rating, const std::string& reason, OnboardingFeedbackTokenCallback callback) const;
+	void onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const;
 	void redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const;
 	void refreshJwt(RefreshJwtCallback callback) const;
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
@@ -12874,7 +14025,10 @@ public:
 	void snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const;
 	void startJwtRefresh() const;
 	void stripeCreateCustomerPortal(const std::optional<StripeCreateCustomerPortalArgs>& args, StripeCreateCustomerPortalCallback callback) const;
+	void stripePaymentSheet(const std::optional<StripePaymentSheetArgs>& args, StripePaymentSheetCallback callback) const;
+	void stripePrices(const std::string& storefront_country, StripePricesCallback callback) const;
 	void subscriptionBalance(SubscriptionBalanceCallback callback) const;
+	void subscriptionBalanceForStorefront(const std::string& storefront_country, SubscriptionBalanceCallback callback) const;
 	void subscriptionCreatePaymentId(const std::optional<SubscriptionCreatePaymentIdArgs>& create_payment_id, SubscriptionCreatePaymentIdCallback callback) const;
 	void unlinkReferralNetwork(UnlinkReferralNetworkCallback callback) const;
 	void upgradeGuest(const std::optional<UpgradeGuestArgs>& upgrade_guest, UpgradeGuestCallback callback) const;
@@ -12999,6 +14153,7 @@ class DeviceLocal final : public Device {
 public:
 	DeviceLocal() = default;
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
+	Sub addLocalStateSaveListener(LocalStateSaveListener listener) const;
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
 	Sub addReceivePackets(ReceivePackets receive_packets) const;
@@ -13017,10 +14172,13 @@ public:
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	bool dropExit(const std::string& client_id) const;
+	bool getAutoSave() const;
+	std::string getClientJwt() const;
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
+	DeviceLocalSaveResult getLastLocalStateSaveResult() const;
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
@@ -13031,6 +14189,8 @@ public:
 	std::string getSnClientKey() const;
 	std::optional<SnGasKey> getSnGasKey() const;
 	std::optional<SnWallet> getSnWallet() const;
+	bool getTunnelDnsInterceptorActive() const;
+	DeviceLocalLoadResult load() const;
 	std::optional<DeviceLocalMemoryUsage> memoryUsed() const;
 	int64_t migrateExit(const std::string& client_id) const;
 	void networkChanged() const;
@@ -13057,11 +14217,17 @@ public:
 	WalletViewController openWalletViewController() const;
 	int64_t probeAllExits() const;
 	bool probeSuiteRunning() const;
+	void reconnectChecked(const std::optional<ConnectLocation>& location) const;
 	void resetReliabilityMetrics() const;
 	void resetReliabilitySettings() const;
+	void saveKeyMaterial() const;
+	void saveProvideSecretKeys() const;
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
 	int64_t sendPacketBatch(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) const;
+	void setAutoSave(bool enabled) const;
 	void setByJwt(const std::string& by_jwt) const;
+	void setConnectLocationChecked(const std::optional<ConnectLocation>& location) const;
+	void setDefaultLocationChecked(const std::optional<ConnectLocation>& location) const;
 	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setPerformanceDegraded(bool degraded) const;
@@ -13087,6 +14253,7 @@ public:
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
 	std::string tunnelLocalAddress() const;
+	bool waitForClose(int64_t timeout_milliseconds) const;
 	/* stable provider identity across process starts */
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
@@ -13103,6 +14270,29 @@ public:
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+};
+
+class DeviceLocalLoadResult final : public detail::Handle {
+public:
+	DeviceLocalLoadResult() = default;
+	explicit DeviceLocalLoadResult(uint64_t h) : detail::Handle(h) {}
+	std::string getDefaultError() const;
+	bool getHasConnectLocation() const;
+	bool getHasDefaultLocation() const;
+	bool getHasPreference(const std::string& name) const;
+	bool getLoaded() const;
+	std::string getPreferenceError(const std::string& name) const;
+};
+
+class DeviceLocalSaveResult final : public detail::Handle {
+public:
+	DeviceLocalSaveResult() = default;
+	explicit DeviceLocalSaveResult(uint64_t h) : detail::Handle(h) {}
+	bool getAutoSaveEnabled() const;
+	std::string getError() const;
+	std::string getPreference() const;
+	bool getSaved() const;
+	int64_t getSequence() const;
 };
 
 class DeviceRemote final : public Device {
@@ -13126,6 +14316,8 @@ public:
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	bool dropExit(const std::string& exit_client_id) const;
+	std::string getClientJwt() const;
+	std::optional<ConnectLocation> getConnectLocationChecked() const;
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
 	std::optional<ProbeResultList> getProbeResults() const;
@@ -13178,6 +14370,7 @@ public:
 	void sync() const;
 	void syncSnChainSettings(SnEpochCallback callback) const;
 	void syncSnWallet(SnGetWalletCallback callback) const;
+	bool waitForClose(int64_t timeout_milliseconds) const;
 	/* the raw public identity key (post quantum identity) */
 	std::vector<uint8_t> getPublicIdentityKey() const;
 };
@@ -13238,12 +14431,30 @@ public:
 };
 #endif
 
+class LocalAuthStateSnapshot final : public detail::Handle {
+public:
+	LocalAuthStateSnapshot() = default;
+	explicit LocalAuthStateSnapshot(uint64_t h) : detail::Handle(h) {}
+	std::string getByClientJwt() const;
+	std::string getByJwt() const;
+	bool getEmpty() const;
+	std::string getInstanceId() const;
+	std::optional<ConnectLocation> loadConnectLocation() const;
+	std::optional<ConnectLocation> loadDefaultLocation() const;
+	std::optional<ByJwt> parseByJwt() const;
+	LocalStateLocationReadResult readConnectLocation() const;
+	LocalStateLocationReadResult readDefaultLocation() const;
+	void setConnectLocation(const std::optional<ConnectLocation>& location) const;
+	void setDefaultLocation(const std::optional<ConnectLocation>& location) const;
+};
+
 class LocalState final : public detail::Handle {
 public:
 	LocalState() = default;
 	explicit LocalState(uint64_t h) : detail::Handle(h) {}
 	void close() const;
 	bool getAllowForeground() const;
+	LocalAuthStateSnapshot getAuthStateSnapshot() const;
 	std::optional<BlockActionOverrideList> getBlockActionOverrides() const;
 	bool getBlockerEnabled() const;
 	std::string getByClientJwt() const;
@@ -13270,12 +14481,21 @@ public:
 	std::optional<SnWallet> getSnWallet() const;
 	std::optional<TransportSettings> getTransportSettings() const;
 	bool getVpnInterfaceWhileOffline() const;
+	std::optional<ConnectLocation> loadConnectLocation() const;
+	std::optional<ConnectLocation> loadDefaultLocation() const;
+	DeviceLocalKeyMaterial loadDeviceLocalKeyMaterial() const;
+	std::optional<ProvideSecretKeyList> loadProvideSecretKeys() const;
 	void logout() const;
 	std::optional<ByJwt> parseByJwt() const;
+	LocalStateLocationReadResult readConnectLocation() const;
+	LocalStateLocationReadResult readDefaultLocation() const;
+	LocalStateKeyMaterialReadResult readDeviceLocalKeyMaterial() const;
+	std::string selectClientJwtForInstance(const std::string& by_client_jwt, const std::string& instance_id) const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& block_action_overrides) const;
 	void setBlockerEnabled(bool blocker_enabled) const;
 	void setByClientJwt(const std::string& by_client_jwt) const;
+	void setByClientJwtForInstance(const std::string& by_jwt, const std::string& instance_id) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setCanPromptIntroFunnel(bool can_prompt) const;
 	void setCanRefer(bool can_refer) const;
@@ -13300,6 +14520,28 @@ public:
 	void setSnWallet(const std::optional<SnWallet>& wallet) const;
 	void setTransportSettings(const std::optional<TransportSettings>& settings) const;
 	void setVpnInterfaceWhileOffline(bool vpn_interface_while_offline) const;
+};
+
+class LocalStateKeyMaterialReadResult final : public detail::Handle {
+public:
+	LocalStateKeyMaterialReadResult() = default;
+	explicit LocalStateKeyMaterialReadResult(uint64_t h) : detail::Handle(h) {}
+	DeviceLocalKeyMaterial getKeyMaterial() const;
+};
+
+class LocalStateLocationReadResult final : public detail::Handle {
+public:
+	LocalStateLocationReadResult() = default;
+	explicit LocalStateLocationReadResult(uint64_t h) : detail::Handle(h) {}
+	std::optional<ConnectLocation> getLocation() const;
+};
+
+class LocalStateResetResult final : public detail::Handle {
+public:
+	LocalStateResetResult() = default;
+	explicit LocalStateResetResult(uint64_t h) : detail::Handle(h) {}
+	DeviceLocalKeyMaterial getDeviceLocalKeyMaterial() const;
+	bool getReset() const;
 };
 
 class LocationsViewController final : public detail::Handle {
@@ -13344,6 +14586,7 @@ public:
 	Api getApi() const;
 	std::string getApiUrl() const;
 	AsyncLocalState getAsyncLocalState() const;
+	LocalAuthStateSnapshot getAuthStateSnapshot() const;
 	bool getBundled() const;
 	std::string getConfiguredApiUrl() const;
 	std::string getConfiguredPlatformUrl() const;
@@ -13361,6 +14604,7 @@ public:
 	bool getSsoGoogle() const;
 	std::string getStore() const;
 	std::string getWallet() const;
+	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	std::string toJson() const;
@@ -14466,6 +15710,42 @@ inline void oneshot_claim_network_name(void* user_data, const char* result_json,
 		std::optional<ClaimNetworkNameResult> result_v;
 		if (result_json) {
 			result_v = parseJson<ClaimNetworkNameResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_client_events_send(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<ClientEventsSendCallback*>(user_data);
+	try {
+		std::optional<ClientEventsSendResult> result_v;
+		if (result_json) {
+			result_v = parseJson<ClientEventsSendResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_client_events_send(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<ClientEventsSendCallback*>(user_data);
+	try {
+		std::optional<ClientEventsSendResult> result_v;
+		if (result_json) {
+			result_v = parseJson<ClientEventsSendResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -15925,6 +17205,28 @@ inline void oneshot_local_override_app_ids(void* user_data) {
 	delete f;
 }
 
+inline void retained_local_state_save(void* user_data, uint64_t result) {
+	auto* f = static_cast<LocalStateSaveListener*>(user_data);
+	try {
+		DeviceLocalSaveResult result_v(result);
+		(*f)(std::move(result_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_local_state_save(void* user_data, uint64_t result) {
+	auto* f = static_cast<LocalStateSaveListener*>(user_data);
+	try {
+		DeviceLocalSaveResult result_v(result);
+		(*f)(std::move(result_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_network_block_location(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<NetworkBlockLocationCallback*>(user_data);
 	try {
@@ -16318,6 +17620,114 @@ inline void oneshot_offline_change(void* user_data, bool offline, bool vpn_inter
 	auto* f = static_cast<OfflineChangeListener*>(user_data);
 	try {
 		(*f)(offline, vpn_interface_while_offline);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_onboarding_click(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<OnboardingClickCallback*>(user_data);
+	try {
+		std::optional<OnboardingClickResult> result_v;
+		if (result_json) {
+			result_v = parseJson<OnboardingClickResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_onboarding_click(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<OnboardingClickCallback*>(user_data);
+	try {
+		std::optional<OnboardingClickResult> result_v;
+		if (result_json) {
+			result_v = parseJson<OnboardingClickResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_onboarding_feedback_token(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<OnboardingFeedbackTokenCallback*>(user_data);
+	try {
+		std::optional<OnboardingFeedbackTokenResult> result_v;
+		if (result_json) {
+			result_v = parseJson<OnboardingFeedbackTokenResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_onboarding_feedback_token(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<OnboardingFeedbackTokenCallback*>(user_data);
+	try {
+		std::optional<OnboardingFeedbackTokenResult> result_v;
+		if (result_json) {
+			result_v = parseJson<OnboardingFeedbackTokenResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_onboarding_offer_issue(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<OnboardingOfferIssueCallback*>(user_data);
+	try {
+		std::optional<OnboardingOfferIssueResult> result_v;
+		if (result_json) {
+			result_v = parseJson<OnboardingOfferIssueResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_onboarding_offer_issue(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<OnboardingOfferIssueCallback*>(user_data);
+	try {
+		std::optional<OnboardingOfferIssueResult> result_v;
+		if (result_json) {
+			result_v = parseJson<OnboardingOfferIssueResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -17869,6 +19279,78 @@ inline void oneshot_stripe_payment_intent(void* user_data, const char* result_js
 		std::optional<StripeCreatePaymentIntentResult> result_v;
 		if (result_json) {
 			result_v = parseJson<StripeCreatePaymentIntentResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_stripe_payment_sheet(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<StripePaymentSheetCallback*>(user_data);
+	try {
+		std::optional<StripePaymentSheetResult> result_v;
+		if (result_json) {
+			result_v = parseJson<StripePaymentSheetResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_stripe_payment_sheet(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<StripePaymentSheetCallback*>(user_data);
+	try {
+		std::optional<StripePaymentSheetResult> result_v;
+		if (result_json) {
+			result_v = parseJson<StripePaymentSheetResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_stripe_prices(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<StripePricesCallback*>(user_data);
+	try {
+		std::optional<StripePricesResult> result_v;
+		if (result_json) {
+			result_v = parseJson<StripePricesResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_stripe_prices(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<StripePricesCallback*>(user_data);
+	try {
+		std::optional<StripePricesResult> result_v;
+		if (result_json) {
+			result_v = parseJson<StripePricesResult>(result_json);
 		}
 		std::optional<std::string> err_param_v;
 		if (err_param) {
@@ -19882,6 +21364,16 @@ inline void Api::claimNetworkName(const std::optional<ClaimNetworkNameArgs>& arg
 	auto* callback_fn = callback ? new ClaimNetworkNameCallback(std::move(callback)) : nullptr;
 	urnet_api_claim_network_name(handle(), args_c, callback_fn ? &detail::oneshot_claim_network_name : nullptr, callback_fn);
 }
+inline void Api::clientEventsSend(const std::optional<ClientEventsSendArgs>& args, ClientEventsSendCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new ClientEventsSendCallback(std::move(callback)) : nullptr;
+	urnet_api_client_events_send(handle(), args_c, callback_fn ? &detail::oneshot_client_events_send : nullptr, callback_fn);
+}
 inline void Api::close() const {
 	urnet_api_close(handle());
 }
@@ -20137,6 +21629,30 @@ inline void Api::networkUserUpdate(const std::optional<NetworkUserUpdateArgs>& u
 	auto* callback_fn = callback ? new NetworkUserUpdateCallback(std::move(callback)) : nullptr;
 	urnet_api_network_user_update(handle(), update_network_user_c, callback_fn ? &detail::oneshot_network_user_update : nullptr, callback_fn);
 }
+inline void Api::onboardingClick(const std::optional<OnboardingClickArgs>& args, OnboardingClickCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new OnboardingClickCallback(std::move(callback)) : nullptr;
+	urnet_api_onboarding_click(handle(), args_c, callback_fn ? &detail::oneshot_onboarding_click : nullptr, callback_fn);
+}
+inline void Api::onboardingFeedbackToken(const std::string& token, int64_t rating, const std::string& reason, OnboardingFeedbackTokenCallback callback) const {
+	auto* callback_fn = callback ? new OnboardingFeedbackTokenCallback(std::move(callback)) : nullptr;
+	urnet_api_onboarding_feedback_token(handle(), token.c_str(), rating, reason.c_str(), callback_fn ? &detail::oneshot_onboarding_feedback_token : nullptr, callback_fn);
+}
+inline void Api::onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new OnboardingOfferIssueCallback(std::move(callback)) : nullptr;
+	urnet_api_onboarding_offer_issue(handle(), args_c, callback_fn ? &detail::oneshot_onboarding_offer_issue : nullptr, callback_fn);
+}
 inline void Api::redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -20374,9 +21890,27 @@ inline void Api::stripeCreateCustomerPortal(const std::optional<StripeCreateCust
 	auto* callback_fn = callback ? new StripeCreateCustomerPortalCallback(std::move(callback)) : nullptr;
 	urnet_api_stripe_create_customer_portal(handle(), args_c, callback_fn ? &detail::oneshot_stripe_create_customer_portal : nullptr, callback_fn);
 }
+inline void Api::stripePaymentSheet(const std::optional<StripePaymentSheetArgs>& args, StripePaymentSheetCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new StripePaymentSheetCallback(std::move(callback)) : nullptr;
+	urnet_api_stripe_payment_sheet(handle(), args_c, callback_fn ? &detail::oneshot_stripe_payment_sheet : nullptr, callback_fn);
+}
+inline void Api::stripePrices(const std::string& storefront_country, StripePricesCallback callback) const {
+	auto* callback_fn = callback ? new StripePricesCallback(std::move(callback)) : nullptr;
+	urnet_api_stripe_prices(handle(), storefront_country.c_str(), callback_fn ? &detail::oneshot_stripe_prices : nullptr, callback_fn);
+}
 inline void Api::subscriptionBalance(SubscriptionBalanceCallback callback) const {
 	auto* callback_fn = callback ? new SubscriptionBalanceCallback(std::move(callback)) : nullptr;
 	urnet_api_subscription_balance(handle(), callback_fn ? &detail::oneshot_subscription_balance : nullptr, callback_fn);
+}
+inline void Api::subscriptionBalanceForStorefront(const std::string& storefront_country, SubscriptionBalanceCallback callback) const {
+	auto* callback_fn = callback ? new SubscriptionBalanceCallback(std::move(callback)) : nullptr;
+	urnet_api_subscription_balance_for_storefront(handle(), storefront_country.c_str(), callback_fn ? &detail::oneshot_subscription_balance : nullptr, callback_fn);
 }
 inline void Api::subscriptionCreatePaymentId(const std::optional<SubscriptionCreatePaymentIdArgs>& create_payment_id, SubscriptionCreatePaymentIdCallback callback) const {
 	std::string create_payment_id_json;
@@ -20923,6 +22457,17 @@ inline void ContractViewController::start() const {
 inline void ContractViewController::stop() const {
 	urnet_contract_view_controller_stop(handle());
 }
+inline Sub DeviceLocal::addLocalStateSaveListener(LocalStateSaveListener listener) const {
+	std::shared_ptr<LocalStateSaveListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<LocalStateSaveListener>(std::move(listener));
+	}
+	Sub r(urnet_device_local_add_local_state_save_listener(handle(), listener_fn ? &detail::retained_local_state_save : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub DeviceLocal::addReceivePacket(ReceivePacket receive_packet) const {
 	std::shared_ptr<ReceivePacket> receive_packet_fn;
 	if (receive_packet) {
@@ -21018,6 +22563,14 @@ inline bool DeviceLocal::dropExit(const std::string& client_id) const {
 	bool r = urnet_device_local_drop_exit(handle(), client_id.c_str());
 	return r;
 }
+inline bool DeviceLocal::getAutoSave() const {
+	bool r = urnet_device_local_get_auto_save(handle());
+	return r;
+}
+inline std::string DeviceLocal::getClientJwt() const {
+	char* r_c = urnet_device_local_get_client_jwt(handle());
+	return detail::takeString(r_c);
+}
 inline std::optional<DestinationExitList> DeviceLocal::getDestinationExits() const {
 	char* r_c = urnet_device_local_get_destination_exits(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -21040,6 +22593,10 @@ inline std::string DeviceLocal::getFirstLoadTimelineJson() const {
 }
 inline DeviceLocalKeyMaterial DeviceLocal::getKeyMaterial() const {
 	DeviceLocalKeyMaterial r(urnet_device_local_get_key_material(handle()));
+	return r;
+}
+inline DeviceLocalSaveResult DeviceLocal::getLastLocalStateSaveResult() const {
+	DeviceLocalSaveResult r(urnet_device_local_get_last_local_state_save_result(handle()));
 	return r;
 }
 inline std::optional<StringList> DeviceLocal::getPinnedAppIds() const {
@@ -21113,6 +22670,18 @@ inline std::optional<SnWallet> DeviceLocal::getSnWallet() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<SnWallet>(r_s->c_str());
+}
+inline bool DeviceLocal::getTunnelDnsInterceptorActive() const {
+	bool r = urnet_device_local_get_tunnel_dns_interceptor_active(handle());
+	return r;
+}
+inline DeviceLocalLoadResult DeviceLocal::load() const {
+	char* err_c = nullptr;
+	DeviceLocalLoadResult r(urnet_device_local_load(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
 }
 inline std::optional<DeviceLocalMemoryUsage> DeviceLocal::memoryUsed() const {
 	char* r_c = urnet_device_local_memory_used(handle());
@@ -21220,11 +22789,47 @@ inline bool DeviceLocal::probeSuiteRunning() const {
 	bool r = urnet_device_local_probe_suite_running(handle());
 	return r;
 }
+inline void DeviceLocal::reconnectChecked(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_reconnect_checked(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_reconnect_checked failed");
+	}
+}
 inline void DeviceLocal::resetReliabilityMetrics() const {
 	urnet_device_local_reset_reliability_metrics(handle());
 }
 inline void DeviceLocal::resetReliabilitySettings() const {
 	urnet_device_local_reset_reliability_settings(handle());
+}
+inline void DeviceLocal::saveKeyMaterial() const {
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_save_key_material(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_save_key_material failed");
+	}
+}
+inline void DeviceLocal::saveProvideSecretKeys() const {
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_save_provide_secret_keys(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_save_provide_secret_keys failed");
+	}
 }
 inline bool DeviceLocal::sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const {
 	bool r = urnet_device_local_send_packet(handle(), packet, packet_len, n);
@@ -21234,8 +22839,50 @@ inline int64_t DeviceLocal::sendPacketBatch(const uint8_t* packet_batch_bytes, i
 	int64_t r = urnet_device_local_send_packet_batch(handle(), packet_batch_bytes, packet_batch_bytes_len);
 	return r;
 }
+inline void DeviceLocal::setAutoSave(bool enabled) const {
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_set_auto_save(handle(), enabled, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_set_auto_save failed");
+	}
+}
 inline void DeviceLocal::setByJwt(const std::string& by_jwt) const {
 	urnet_device_local_set_by_jwt(handle(), by_jwt.c_str());
+}
+inline void DeviceLocal::setConnectLocationChecked(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_set_connect_location_checked(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_set_connect_location_checked failed");
+	}
+}
+inline void DeviceLocal::setDefaultLocationChecked(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_set_default_location_checked(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_set_default_location_checked failed");
+	}
 }
 inline void DeviceLocal::setFlowOwnerLookup(FlowOwnerLookup lookup) const {
 	std::shared_ptr<FlowOwnerLookup> lookup_fn;
@@ -21413,8 +23060,56 @@ inline std::string DeviceLocal::tunnelLocalAddress() const {
 	char* r_c = urnet_device_local_tunnel_local_address(handle());
 	return detail::takeString(r_c);
 }
+inline bool DeviceLocal::waitForClose(int64_t timeout_milliseconds) const {
+	bool r = urnet_device_local_wait_for_close(handle(), timeout_milliseconds);
+	return r;
+}
 inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
+	return r;
+}
+inline std::string DeviceLocalLoadResult::getDefaultError() const {
+	char* r_c = urnet_device_local_load_result_get_default_error(handle());
+	return detail::takeString(r_c);
+}
+inline bool DeviceLocalLoadResult::getHasConnectLocation() const {
+	bool r = urnet_device_local_load_result_get_has_connect_location(handle());
+	return r;
+}
+inline bool DeviceLocalLoadResult::getHasDefaultLocation() const {
+	bool r = urnet_device_local_load_result_get_has_default_location(handle());
+	return r;
+}
+inline bool DeviceLocalLoadResult::getHasPreference(const std::string& name) const {
+	bool r = urnet_device_local_load_result_get_has_preference(handle(), name.c_str());
+	return r;
+}
+inline bool DeviceLocalLoadResult::getLoaded() const {
+	bool r = urnet_device_local_load_result_get_loaded(handle());
+	return r;
+}
+inline std::string DeviceLocalLoadResult::getPreferenceError(const std::string& name) const {
+	char* r_c = urnet_device_local_load_result_get_preference_error(handle(), name.c_str());
+	return detail::takeString(r_c);
+}
+inline bool DeviceLocalSaveResult::getAutoSaveEnabled() const {
+	bool r = urnet_device_local_save_result_get_auto_save_enabled(handle());
+	return r;
+}
+inline std::string DeviceLocalSaveResult::getError() const {
+	char* r_c = urnet_device_local_save_result_get_error(handle());
+	return detail::takeString(r_c);
+}
+inline std::string DeviceLocalSaveResult::getPreference() const {
+	char* r_c = urnet_device_local_save_result_get_preference(handle());
+	return detail::takeString(r_c);
+}
+inline bool DeviceLocalSaveResult::getSaved() const {
+	bool r = urnet_device_local_save_result_get_saved(handle());
+	return r;
+}
+inline int64_t DeviceLocalSaveResult::getSequence() const {
+	int64_t r = urnet_device_local_save_result_get_sequence(handle());
 	return r;
 }
 inline Sub DeviceRemote::addDeviceRecreatedListener(DeviceRecreatedListener listener) const {
@@ -21500,6 +23195,22 @@ inline void DeviceRemote::connectSnWallet(const std::string& coldkey_ss58, const
 inline bool DeviceRemote::dropExit(const std::string& exit_client_id) const {
 	bool r = urnet_device_remote_drop_exit(handle(), exit_client_id.c_str());
 	return r;
+}
+inline std::string DeviceRemote::getClientJwt() const {
+	char* r_c = urnet_device_remote_get_client_jwt(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<ConnectLocation> DeviceRemote::getConnectLocationChecked() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_remote_get_connect_location_checked(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocation>(r_s->c_str());
 }
 inline std::optional<DestinationExitList> DeviceRemote::getDestinationExits() const {
 	char* r_c = urnet_device_remote_get_destination_exits(handle());
@@ -21794,6 +23505,10 @@ inline void DeviceRemote::syncSnWallet(SnGetWalletCallback callback) const {
 	auto* callback_fn = callback ? new SnGetWalletCallback(std::move(callback)) : nullptr;
 	urnet_device_remote_sync_sn_wallet(handle(), callback_fn ? &detail::oneshot_sn_get_wallet : nullptr, callback_fn);
 }
+inline bool DeviceRemote::waitForClose(int64_t timeout_milliseconds) const {
+	bool r = urnet_device_remote_wait_for_close(handle(), timeout_milliseconds);
+	return r;
+}
 inline std::string DeviceRpcKeyMaterial::getClientCertPem() const {
 	char* r_c = urnet_device_rpc_key_material_get_client_cert_pem(handle());
 	return detail::takeString(r_c);
@@ -21895,11 +23610,119 @@ inline void IoLoop::close() const {
 	urnet_io_loop_close(handle());
 }
 #endif
+inline std::string LocalAuthStateSnapshot::getByClientJwt() const {
+	char* r_c = urnet_local_auth_state_snapshot_get_by_client_jwt(handle());
+	return detail::takeString(r_c);
+}
+inline std::string LocalAuthStateSnapshot::getByJwt() const {
+	char* r_c = urnet_local_auth_state_snapshot_get_by_jwt(handle());
+	return detail::takeString(r_c);
+}
+inline bool LocalAuthStateSnapshot::getEmpty() const {
+	bool r = urnet_local_auth_state_snapshot_get_empty(handle());
+	return r;
+}
+inline std::string LocalAuthStateSnapshot::getInstanceId() const {
+	char* r_c = urnet_local_auth_state_snapshot_get_instance_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<ConnectLocation> LocalAuthStateSnapshot::loadConnectLocation() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_auth_state_snapshot_load_connect_location(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocation>(r_s->c_str());
+}
+inline std::optional<ConnectLocation> LocalAuthStateSnapshot::loadDefaultLocation() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_auth_state_snapshot_load_default_location(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocation>(r_s->c_str());
+}
+inline std::optional<ByJwt> LocalAuthStateSnapshot::parseByJwt() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_auth_state_snapshot_parse_by_jwt(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ByJwt>(r_s->c_str());
+}
+inline LocalStateLocationReadResult LocalAuthStateSnapshot::readConnectLocation() const {
+	char* err_c = nullptr;
+	LocalStateLocationReadResult r(urnet_local_auth_state_snapshot_read_connect_location(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline LocalStateLocationReadResult LocalAuthStateSnapshot::readDefaultLocation() const {
+	char* err_c = nullptr;
+	LocalStateLocationReadResult r(urnet_local_auth_state_snapshot_read_default_location(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline void LocalAuthStateSnapshot::setConnectLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_auth_state_snapshot_set_connect_location(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_auth_state_snapshot_set_connect_location failed");
+	}
+}
+inline void LocalAuthStateSnapshot::setDefaultLocation(const std::optional<ConnectLocation>& location) const {
+	std::string location_json;
+	const char* location_c = nullptr;
+	if (location) {
+		location_json = nlohmann::json(*location).dump();
+		location_c = location_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_local_auth_state_snapshot_set_default_location(handle(), location_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_auth_state_snapshot_set_default_location failed");
+	}
+}
 inline void LocalState::close() const {
 	urnet_local_state_close(handle());
 }
 inline bool LocalState::getAllowForeground() const {
 	bool r = urnet_local_state_get_allow_foreground(handle());
+	return r;
+}
+inline LocalAuthStateSnapshot LocalState::getAuthStateSnapshot() const {
+	char* err_c = nullptr;
+	LocalAuthStateSnapshot r(urnet_local_state_get_auth_state_snapshot(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
 	return r;
 }
 inline std::optional<BlockActionOverrideList> LocalState::getBlockActionOverrides() const {
@@ -22046,6 +23869,50 @@ inline bool LocalState::getVpnInterfaceWhileOffline() const {
 	bool r = urnet_local_state_get_vpn_interface_while_offline(handle());
 	return r;
 }
+inline std::optional<ConnectLocation> LocalState::loadConnectLocation() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_state_load_connect_location(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocation>(r_s->c_str());
+}
+inline std::optional<ConnectLocation> LocalState::loadDefaultLocation() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_state_load_default_location(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocation>(r_s->c_str());
+}
+inline DeviceLocalKeyMaterial LocalState::loadDeviceLocalKeyMaterial() const {
+	char* err_c = nullptr;
+	DeviceLocalKeyMaterial r(urnet_local_state_load_device_local_key_material(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline std::optional<ProvideSecretKeyList> LocalState::loadProvideSecretKeys() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_state_load_provide_secret_keys(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
+}
 inline void LocalState::logout() const {
 	char* err_c = nullptr;
 	bool ok = urnet_local_state_logout(handle(), &err_c);
@@ -22067,6 +23934,38 @@ inline std::optional<ByJwt> LocalState::parseByJwt() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ByJwt>(r_s->c_str());
+}
+inline LocalStateLocationReadResult LocalState::readConnectLocation() const {
+	char* err_c = nullptr;
+	LocalStateLocationReadResult r(urnet_local_state_read_connect_location(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline LocalStateLocationReadResult LocalState::readDefaultLocation() const {
+	char* err_c = nullptr;
+	LocalStateLocationReadResult r(urnet_local_state_read_default_location(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline LocalStateKeyMaterialReadResult LocalState::readDeviceLocalKeyMaterial() const {
+	char* err_c = nullptr;
+	LocalStateKeyMaterialReadResult r(urnet_local_state_read_device_local_key_material(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline std::string LocalState::selectClientJwtForInstance(const std::string& by_client_jwt, const std::string& instance_id) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_local_state_select_client_jwt_for_instance(handle(), by_client_jwt.c_str(), instance_id.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline void LocalState::setAllowForeground(bool allow_foreground) const {
 	char* err_c = nullptr;
@@ -22112,6 +24011,16 @@ inline void LocalState::setByClientJwt(const std::string& by_client_jwt) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_by_client_jwt failed");
+	}
+}
+inline void LocalState::setByClientJwtForInstance(const std::string& by_jwt, const std::string& instance_id) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_by_client_jwt_for_instance(handle(), by_jwt.c_str(), instance_id.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_by_client_jwt_for_instance failed");
 	}
 }
 inline void LocalState::setByJwt(const std::string& by_jwt) const {
@@ -22408,6 +24317,26 @@ inline void LocalState::setVpnInterfaceWhileOffline(bool vpn_interface_while_off
 		throw Error("urnet: urnet_local_state_set_vpn_interface_while_offline failed");
 	}
 }
+inline DeviceLocalKeyMaterial LocalStateKeyMaterialReadResult::getKeyMaterial() const {
+	DeviceLocalKeyMaterial r(urnet_local_state_key_material_read_result_get_key_material(handle()));
+	return r;
+}
+inline std::optional<ConnectLocation> LocalStateLocationReadResult::getLocation() const {
+	char* r_c = urnet_local_state_location_read_result_get_location(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ConnectLocation>(r_s->c_str());
+}
+inline DeviceLocalKeyMaterial LocalStateResetResult::getDeviceLocalKeyMaterial() const {
+	DeviceLocalKeyMaterial r(urnet_local_state_reset_result_get_device_local_key_material(handle()));
+	return r;
+}
+inline bool LocalStateResetResult::getReset() const {
+	bool r = urnet_local_state_reset_result_get_reset(handle());
+	return r;
+}
 inline Sub LocationsViewController::addFilteredLocationsListener(FilteredLocationsListener listener) const {
 	std::shared_ptr<FilteredLocationsListener> listener_fn;
 	if (listener) {
@@ -22486,6 +24415,14 @@ inline std::string NetworkSpace::getApiUrl() const {
 }
 inline AsyncLocalState NetworkSpace::getAsyncLocalState() const {
 	AsyncLocalState r(urnet_network_space_get_async_local_state(handle()));
+	return r;
+}
+inline LocalAuthStateSnapshot NetworkSpace::getAuthStateSnapshot() const {
+	char* err_c = nullptr;
+	LocalAuthStateSnapshot r(urnet_network_space_get_auth_state_snapshot(handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
 	return r;
 }
 inline bool NetworkSpace::getBundled() const {
@@ -22567,6 +24504,14 @@ inline std::string NetworkSpace::getStore() const {
 inline std::string NetworkSpace::getWallet() const {
 	char* r_c = urnet_network_space_get_wallet(handle());
 	return detail::takeString(r_c);
+}
+inline LocalStateResetResult NetworkSpace::resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const {
+	char* err_c = nullptr;
+	LocalStateResetResult r(urnet_network_space_reset_local_state_if_current(handle(), snapshot.handle(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
 }
 inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std::string& service) const {
 	char* r_c = urnet_network_space_service_url(handle(), scheme.c_str(), service.c_str());
@@ -23381,6 +25326,14 @@ inline std::string classifySubscriptionStore(const std::string& store) {
 	char* r_c = urnet_classify_subscription_store(store.c_str());
 	return detail::takeString(r_c);
 }
+inline std::optional<StringList> clientEventNames() {
+	char* r_c = urnet_client_event_names();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline std::vector<std::string> collapseHostNames(const std::vector<std::string>& hosts) {
 	std::string hosts_json = nlohmann::json(hosts).dump();
 	char* r_c = urnet_collapse_host_names(hosts_json.c_str());
@@ -23451,6 +25404,14 @@ inline int64_t comparePointsLeaderboardValues(const std::string& sort, const std
 	}
 	int64_t r = urnet_compare_points_leaderboard_values(sort.c_str(), a_c, b_c);
 	return r;
+}
+inline std::optional<PriceEquivalent> computePriceEquivalent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits) {
+	char* r_c = urnet_compute_price_equivalent(yearly_amount, monthly_amount, minor_unit_digits);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PriceEquivalent>(r_s->c_str());
 }
 inline std::string connectLinkUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& target) {
 	std::string key_json;
@@ -23750,6 +25711,10 @@ inline std::optional<LogFileInfoList> logInventory() {
 	}
 	return detail::parseJson<LogFileInfoList>(r_s->c_str());
 }
+inline double monthlyEquivalentAmount(double yearly_amount, int64_t minor_unit_digits) {
+	double r = urnet_monthly_equivalent_amount(yearly_amount, minor_unit_digits);
+	return r;
+}
 inline double nanoCentsToUsd(int64_t nano_cents) {
 	double r = urnet_nano_cents_to_usd(nano_cents);
 	return r;
@@ -23761,6 +25726,22 @@ inline double nanoPointsToPoints(int64_t nano_points) {
 inline AsyncLocalState newAsyncLocalState(const std::string& local_storage_home) {
 	AsyncLocalState r(urnet_new_async_local_state(local_storage_home.c_str()));
 	return r;
+}
+inline std::optional<ClientEventQueue> newClientEventQueue(const NetworkSpace& network_space, const std::string& platform, const std::string& app_version, const std::string& locale) {
+	char* r_c = urnet_new_client_event_queue(network_space.handle(), platform.c_str(), app_version.c_str(), locale.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEventQueue>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newConnectFirstEvent() {
+	char* r_c = urnet_new_connect_first_event();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
 }
 inline DeviceLocal newDeviceLocal(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& device_description, const std::string& device_spec, const std::string& app_version, const std::string& instance_id, const std::optional<DeviceLocalSettings>& settings) {
 	std::string settings_json;
@@ -23820,6 +25801,14 @@ inline std::optional<ExportOptions> newExportOptions() {
 	}
 	return detail::parseJson<ExportOptions>(r_s->c_str());
 }
+inline std::optional<ClientEvent> newFeedbackSubmittedEvent(int64_t rating, const std::string& reason, const std::string& text) {
+	char* r_c = urnet_new_feedback_submitted_event(rating, reason.c_str(), text.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
 inline std::string newId() {
 	char* r_c = urnet_new_id();
 	return detail::takeString(r_c);
@@ -23861,6 +25850,62 @@ inline NetworkSpaceManager newNetworkSpaceManagerNoStorage() {
 	NetworkSpaceManager r(urnet_new_network_space_manager_no_storage());
 	return r;
 }
+inline std::optional<ClientEvent> newOfferCardTappedEvent(const std::string& plan) {
+	char* r_c = urnet_new_offer_card_tapped_event(plan.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newOfferCtaTappedEvent(const std::string& plan, const std::string& store) {
+	char* r_c = urnet_new_offer_cta_tapped_event(plan.c_str(), store.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newOfferDeclinedEvent(const std::string& control, int64_t elapsed_ms) {
+	char* r_c = urnet_new_offer_declined_event(control.c_str(), elapsed_ms);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newOfferScreenShownEvent(const std::string& surface, const std::string& experiment, const std::string& variant, const std::string& tier, double price_shown, const std::string& currency, int64_t expires_in_s) {
+	char* r_c = urnet_new_offer_screen_shown_event(surface.c_str(), experiment.c_str(), variant.c_str(), tier.c_str(), price_shown, currency.c_str(), expires_in_s);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newOnboardingStepCompletedEvent(const std::string& step, int64_t index, int64_t elapsed_ms) {
+	char* r_c = urnet_new_onboarding_step_completed_event(step.c_str(), index, elapsed_ms);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newOnboardingStepShownEvent(const std::string& step, int64_t index, int64_t elapsed_ms) {
+	char* r_c = urnet_new_onboarding_step_shown_event(step.c_str(), index, elapsed_ms);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newOnboardingStepSkippedEvent(const std::string& step, int64_t index, int64_t elapsed_ms) {
+	char* r_c = urnet_new_onboarding_step_skipped_event(step.c_str(), index, elapsed_ms);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
 inline DeviceRemote newPlatformDeviceRemote(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& proxy_url, const std::string& signed_proxy_id, const std::string& instance_id) {
 	char* err_c = nullptr;
 	DeviceRemote r(urnet_new_platform_device_remote(network_space.handle(), by_jwt.c_str(), proxy_url.c_str(), signed_proxy_id.c_str(), instance_id.c_str(), &err_c));
@@ -23885,6 +25930,46 @@ inline ProxyDevice newProxyDeviceWithDefaults(const std::optional<ProxyConfig>& 
 		r.retain(setup_new_device_callback_fn);
 	}
 	return r;
+}
+inline std::optional<ClientEvent> newPurchaseCancelledEvent(const std::string& store, const std::string& product, const std::string& plan, bool trial, double price, const std::string& currency) {
+	char* r_c = urnet_new_purchase_cancelled_event(store.c_str(), product.c_str(), plan.c_str(), trial, price, currency.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newPurchaseCompletedEvent(const std::string& store, const std::string& product, const std::string& plan, bool trial, double price, const std::string& currency) {
+	char* r_c = urnet_new_purchase_completed_event(store.c_str(), product.c_str(), plan.c_str(), trial, price, currency.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newPurchaseFailedEvent(const std::string& store, const std::string& product, const std::string& plan, bool trial, double price, const std::string& currency, const std::string& error_class) {
+	char* r_c = urnet_new_purchase_failed_event(store.c_str(), product.c_str(), plan.c_str(), trial, price, currency.c_str(), error_class.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newPurchaseStartedEvent(const std::string& store, const std::string& product, const std::string& plan, bool trial, double price, const std::string& currency) {
+	char* r_c = urnet_new_purchase_started_event(store.c_str(), product.c_str(), plan.c_str(), trial, price, currency.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
+inline std::optional<ClientEvent> newSignupOptoutChangedEvent(bool product_updates) {
+	char* r_c = urnet_new_signup_optout_changed_event(product_updates);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
 }
 inline std::optional<SnChainSettings> newSnChainSettings() {
 	char* r_c = urnet_new_sn_chain_settings();
@@ -23918,6 +26003,14 @@ inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::s
 	NetworkSpace r(urnet_new_urls_network_space(api_url.c_str(), platform_url.c_str()));
 	return r;
 }
+inline std::optional<ClientEvent> newWidgetAddedEvent(const std::string& kind) {
+	char* r_c = urnet_new_widget_added_event(kind.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEvent>(r_s->c_str());
+}
 inline std::string normalEnvName(const std::string& env_name) {
 	char* r_c = urnet_normal_env_name(env_name.c_str());
 	return detail::takeString(r_c);
@@ -23947,6 +26040,18 @@ inline std::optional<CheckoutRedirect> parseCheckoutRedirect(const std::string& 
 		return std::nullopt;
 	}
 	return detail::parseJson<CheckoutRedirect>(r_s->c_str());
+}
+inline std::optional<ClientEventList> parseClientEventsJson(const std::string& events_json) {
+	char* err_c = nullptr;
+	char* r_c = urnet_parse_client_events_json(events_json.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientEventList>(r_s->c_str());
 }
 inline std::string parseId(const std::string& src) {
 	char* err_c = nullptr;
@@ -23980,6 +26085,14 @@ inline std::string publicIdentityKeyHash(const uint8_t* public_key, int32_t publ
 }
 inline int64_t purchaseReportBackoffMillis(int64_t attempt) {
 	int64_t r = urnet_purchase_report_backoff_millis(attempt);
+	return r;
+}
+inline std::string recordTunnelRecoveryStage(const std::string& stage, const std::string& result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation) {
+	char* r_c = urnet_record_tunnel_recovery_stage(stage.c_str(), result.c_str(), intended, consumer_present, has_location, provider_count, generation);
+	return detail::takeString(r_c);
+}
+inline int64_t savingPercent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits) {
+	int64_t r = urnet_saving_percent(yearly_amount, monthly_amount, minor_unit_digits);
 	return r;
 }
 inline std::optional<StringList> selectableTransportModes() {

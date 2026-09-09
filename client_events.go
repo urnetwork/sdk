@@ -434,8 +434,9 @@ func (self *Api) ClientEventsSend(args *ClientEventsSendArgs, callback ClientEve
 // ----- the queue -----
 
 const (
-	// ClientEventFlushInterval is how often the queue sends on its own.
-	ClientEventFlushInterval = 30 * time.Second
+	// ClientEventFlushIntervalMillis is how often the queue sends on its own.
+	ClientEventFlushIntervalMillis = 30000
+	clientEventFlushInterval       = ClientEventFlushIntervalMillis * time.Millisecond
 	// ClientEventMaxAttempts is how many failed calls an event survives.
 	ClientEventMaxAttempts = 3
 	// clientEventQueueCapacity bounds the pending events; the oldest are dropped
@@ -498,7 +499,7 @@ func NewClientEventQueue(networkSpace *NetworkSpace, platform string, appVersion
 		platform,
 		appVersion,
 		locale,
-		ClientEventFlushInterval,
+		clientEventFlushInterval,
 	)
 }
 
