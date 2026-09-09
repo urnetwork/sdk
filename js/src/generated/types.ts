@@ -422,6 +422,8 @@ export interface AuthNetworkClientArgs {
   description: string;
   device_spec: string;
   proxy_config?: ProxyConfig | null;
+  time_zone?: string;
+  locale?: string;
 }
 
 export interface ProxyConfig {

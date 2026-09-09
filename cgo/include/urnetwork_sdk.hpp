@@ -1008,6 +1008,8 @@ struct AuthNetworkClientArgs {
 	std::string description{};
 	std::string device_spec{};
 	std::optional<ProxyConfig> proxy_config;
+	std::optional<std::string> time_zone;
+	std::optional<std::string> locale;
 };
 
 struct AuthNetworkClientError {
@@ -4809,6 +4811,12 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientArgs& v) {
 	if (v.proxy_config) {
 		j["proxy_config"] = *v.proxy_config;
 	}
+	if (v.time_zone) {
+		j["time_zone"] = *v.time_zone;
+	}
+	if (v.locale) {
+		j["locale"] = *v.locale;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 	if (!j.is_object()) {
@@ -4834,6 +4842,16 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 		ProxyConfig tmp{};
 		it->get_to(tmp);
 		v.proxy_config = std::move(tmp);
+	}
+	if (auto it = j.find("time_zone"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.time_zone = std::move(tmp);
+	}
+	if (auto it = j.find("locale"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.locale = std::move(tmp);
 	}
 }
 
