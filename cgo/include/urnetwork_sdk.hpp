@@ -349,6 +349,7 @@ class AccountViewController;
 class Api;
 class AsyncLocalState;
 class BlockActionViewController;
+class ClientEventQueue;
 class ConnectGrid;
 class ConnectViewController;
 class ContractDetailsViewController;
@@ -462,7 +463,6 @@ struct ClaimNetworkNameArgs;
 struct ClaimNetworkNameError;
 struct ClaimNetworkNameResult;
 struct ClientEvent;
-struct ClientEventQueue;
 struct ClientEventRejection;
 struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
@@ -1219,9 +1219,6 @@ struct ClientEvent {
 	std::optional<std::string> session;
 };
 
-struct ClientEventQueue {
-};
-
 struct ClientEventRejection {
 	int64_t index{};
 	std::string message{};
@@ -1893,6 +1890,7 @@ struct NetworkCreateArgs {
 	std::optional<bool> verify_use_numeric;
 	std::optional<std::string> referral_code;
 	std::optional<WalletAuthArgs> wallet_auth;
+	std::optional<bool> product_updates;
 };
 
 struct NetworkCreateResultError {
@@ -3095,8 +3093,6 @@ inline void to_json(nlohmann::json& j, const ClaimNetworkNameResult& v);
 inline void from_json(const nlohmann::json& j, ClaimNetworkNameResult& v);
 inline void to_json(nlohmann::json& j, const ClientEvent& v);
 inline void from_json(const nlohmann::json& j, ClientEvent& v);
-inline void to_json(nlohmann::json& j, const ClientEventQueue& v);
-inline void from_json(const nlohmann::json& j, ClientEventQueue& v);
 inline void to_json(nlohmann::json& j, const ClientEventRejection& v);
 inline void from_json(const nlohmann::json& j, ClientEventRejection& v);
 inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v);
@@ -5781,15 +5777,6 @@ inline void from_json(const nlohmann::json& j, ClientEvent& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.session = std::move(tmp);
-	}
-}
-
-inline void to_json(nlohmann::json& j, const ClientEventQueue& v) {
-	j = nlohmann::json::object();
-}
-inline void from_json(const nlohmann::json& j, ClientEventQueue& v) {
-	if (!j.is_object()) {
-		return;
 	}
 }
 
@@ -8711,6 +8698,9 @@ inline void to_json(nlohmann::json& j, const NetworkCreateArgs& v) {
 	if (v.wallet_auth) {
 		j["wallet_auth"] = *v.wallet_auth;
 	}
+	if (v.product_updates) {
+		j["product_updates"] = *v.product_updates;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkCreateArgs& v) {
 	if (!j.is_object()) {
@@ -8766,6 +8756,11 @@ inline void from_json(const nlohmann::json& j, NetworkCreateArgs& v) {
 		WalletAuthArgs tmp{};
 		it->get_to(tmp);
 		v.wallet_auth = std::move(tmp);
+	}
+	if (auto it = j.find("product_updates"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.product_updates = std::move(tmp);
 	}
 }
 
@@ -14081,6 +14076,22 @@ public:
 	void setWindowDurationSeconds(int64_t seconds) const;
 	void start() const;
 	void stop() const;
+};
+
+class ClientEventQueue final : public detail::Handle {
+public:
+	ClientEventQueue() = default;
+	explicit ClientEventQueue(uint64_t h) : detail::Handle(h) {}
+	void add(const std::optional<ClientEvent>& event) const;
+	void addAll(const std::optional<ClientEventList>& events) const;
+	void close() const;
+	void flush() const;
+	void flushAndWait(int64_t timeout_millis) const;
+	std::string getSession() const;
+	void newSession() const;
+	int64_t pendingCount() const;
+	void setAppVersion(const std::string& app_version) const;
+	void setLocale(const std::string& locale) const;
 };
 
 class ConnectGrid final : public detail::Handle {
@@ -22204,6 +22215,50 @@ inline void BlockActionViewController::start() const {
 inline void BlockActionViewController::stop() const {
 	urnet_block_action_view_controller_stop(handle());
 }
+inline void ClientEventQueue::add(const std::optional<ClientEvent>& event) const {
+	std::string event_json;
+	const char* event_c = nullptr;
+	if (event) {
+		event_json = nlohmann::json(*event).dump();
+		event_c = event_json.c_str();
+	}
+	urnet_client_event_queue_add(handle(), event_c);
+}
+inline void ClientEventQueue::addAll(const std::optional<ClientEventList>& events) const {
+	std::string events_json;
+	const char* events_c = nullptr;
+	if (events) {
+		events_json = nlohmann::json(*events).dump();
+		events_c = events_json.c_str();
+	}
+	urnet_client_event_queue_add_all(handle(), events_c);
+}
+inline void ClientEventQueue::close() const {
+	urnet_client_event_queue_close(handle());
+}
+inline void ClientEventQueue::flush() const {
+	urnet_client_event_queue_flush(handle());
+}
+inline void ClientEventQueue::flushAndWait(int64_t timeout_millis) const {
+	urnet_client_event_queue_flush_and_wait(handle(), timeout_millis);
+}
+inline std::string ClientEventQueue::getSession() const {
+	char* r_c = urnet_client_event_queue_get_session(handle());
+	return detail::takeString(r_c);
+}
+inline void ClientEventQueue::newSession() const {
+	urnet_client_event_queue_new_session(handle());
+}
+inline int64_t ClientEventQueue::pendingCount() const {
+	int64_t r = urnet_client_event_queue_pending_count(handle());
+	return r;
+}
+inline void ClientEventQueue::setAppVersion(const std::string& app_version) const {
+	urnet_client_event_queue_set_app_version(handle(), app_version.c_str());
+}
+inline void ClientEventQueue::setLocale(const std::string& locale) const {
+	urnet_client_event_queue_set_locale(handle(), locale.c_str());
+}
 inline int64_t ConnectGrid::getHeight() const {
 	int64_t r = urnet_connect_grid_get_height(handle());
 	return r;
@@ -25727,13 +25782,9 @@ inline AsyncLocalState newAsyncLocalState(const std::string& local_storage_home)
 	AsyncLocalState r(urnet_new_async_local_state(local_storage_home.c_str()));
 	return r;
 }
-inline std::optional<ClientEventQueue> newClientEventQueue(const NetworkSpace& network_space, const std::string& platform, const std::string& app_version, const std::string& locale) {
-	char* r_c = urnet_new_client_event_queue(network_space.handle(), platform.c_str(), app_version.c_str(), locale.c_str());
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<ClientEventQueue>(r_s->c_str());
+inline ClientEventQueue newClientEventQueue(const NetworkSpace& network_space, const std::string& platform, const std::string& app_version, const std::string& locale) {
+	ClientEventQueue r(urnet_new_client_event_queue(network_space.handle(), platform.c_str(), app_version.c_str(), locale.c_str()));
+	return r;
 }
 inline std::optional<ClientEvent> newConnectFirstEvent() {
 	char* r_c = urnet_new_connect_first_event();

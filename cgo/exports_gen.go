@@ -5431,6 +5431,122 @@ func urnet_client_event_names() *C.char {
 	return cJson(r0, "urnet_client_event_names")
 }
 
+//export urnet_client_event_queue_add
+func urnet_client_event_queue_add(self C.uint64_t, event *C.char) {
+	defer cgoGuard("urnet_client_event_queue_add")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_add")
+	if !ok {
+		return
+	}
+	var event_ *sdk.ClientEvent
+	if event != nil {
+		event_ = &sdk.ClientEvent{}
+		if !goJson(event, event_, "urnet_client_event_queue_add") {
+			return
+		}
+	}
+	self_.Add(event_)
+}
+
+//export urnet_client_event_queue_add_all
+func urnet_client_event_queue_add_all(self C.uint64_t, events *C.char) {
+	defer cgoGuard("urnet_client_event_queue_add_all")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_add_all")
+	if !ok {
+		return
+	}
+	var events_ *sdk.ClientEventList
+	if events != nil {
+		events_ = &sdk.ClientEventList{}
+		if !goJson(events, events_, "urnet_client_event_queue_add_all") {
+			return
+		}
+	}
+	self_.AddAll(events_)
+}
+
+//export urnet_client_event_queue_close
+func urnet_client_event_queue_close(self C.uint64_t) {
+	defer cgoGuard("urnet_client_event_queue_close")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_client_event_queue_flush
+func urnet_client_event_queue_flush(self C.uint64_t) {
+	defer cgoGuard("urnet_client_event_queue_flush")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_flush")
+	if !ok {
+		return
+	}
+	self_.Flush()
+}
+
+//export urnet_client_event_queue_flush_and_wait
+func urnet_client_event_queue_flush_and_wait(self C.uint64_t, timeoutMillis C.int64_t) {
+	defer cgoGuard("urnet_client_event_queue_flush_and_wait")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_flush_and_wait")
+	if !ok {
+		return
+	}
+	self_.FlushAndWait(int64(timeoutMillis))
+}
+
+//export urnet_client_event_queue_get_session
+func urnet_client_event_queue_get_session(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_client_event_queue_get_session")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_get_session")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSession()
+	return cString(string(r0))
+}
+
+//export urnet_client_event_queue_new_session
+func urnet_client_event_queue_new_session(self C.uint64_t) {
+	defer cgoGuard("urnet_client_event_queue_new_session")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_new_session")
+	if !ok {
+		return
+	}
+	self_.NewSession()
+}
+
+//export urnet_client_event_queue_pending_count
+func urnet_client_event_queue_pending_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_client_event_queue_pending_count")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_pending_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.PendingCount()
+	return C.int64_t(r0)
+}
+
+//export urnet_client_event_queue_set_app_version
+func urnet_client_event_queue_set_app_version(self C.uint64_t, appVersion *C.char) {
+	defer cgoGuard("urnet_client_event_queue_set_app_version")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_set_app_version")
+	if !ok {
+		return
+	}
+	self_.SetAppVersion(goString(appVersion))
+}
+
+//export urnet_client_event_queue_set_locale
+func urnet_client_event_queue_set_locale(self C.uint64_t, locale *C.char) {
+	defer cgoGuard("urnet_client_event_queue_set_locale")
+	self_, ok := resolveHandle[*sdk.ClientEventQueue](uint64(self), "urnet_client_event_queue_set_locale")
+	if !ok {
+		return
+	}
+	self_.SetLocale(goString(locale))
+}
+
 //export urnet_collapse_host_names
 func urnet_collapse_host_names(hosts *C.char) *C.char {
 	defer cgoGuard("urnet_collapse_host_names")
@@ -13293,21 +13409,21 @@ func urnet_new_async_local_state(localStorageHome *C.char) C.uint64_t {
 }
 
 //export urnet_new_client_event_queue
-func urnet_new_client_event_queue(networkSpace C.uint64_t, platform *C.char, appVersion *C.char, locale *C.char) *C.char {
+func urnet_new_client_event_queue(networkSpace C.uint64_t, platform *C.char, appVersion *C.char, locale *C.char) C.uint64_t {
 	defer cgoGuard("urnet_new_client_event_queue")
 	var networkSpace_ *sdk.NetworkSpace
 	if networkSpace != 0 {
 		var ok bool
 		networkSpace_, ok = resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_client_event_queue")
 		if !ok {
-			return nil
+			return 0
 		}
 	}
 	r0 := sdk.NewClientEventQueue(networkSpace_, goString(platform), goString(appVersion), goString(locale))
 	if r0 == nil {
-		return nil
+		return 0
 	}
-	return cJson(r0, "urnet_new_client_event_queue")
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_new_connect_first_event

@@ -534,8 +534,12 @@ func newClientEventQueue(
 	return q
 }
 
+// newEventSessionId is a short random session id. Ids are time-prefixed
+// (the leading hex is the millisecond clock), so the tail is what varies:
+// two sessions rotated within the same millisecond must not collide.
 func newEventSessionId() string {
-	return "s_" + strings.ReplaceAll(NewId().String(), "-", "")[:16]
+	hex := strings.ReplaceAll(NewId().String(), "-", "")
+	return "s_" + hex[len(hex)-16:]
 }
 
 // SetLocale updates the locale stamped on new events.

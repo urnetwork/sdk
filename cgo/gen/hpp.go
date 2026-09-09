@@ -753,10 +753,25 @@ type hppField struct {
 	optional bool
 }
 
+// marshaledWireFields declares json fields that a type's custom MarshalJSON
+// adds on the wire beyond its tagged fields (which is all the struct model can
+// see). Each entry is emitted as an optional member so a caller can leave it
+// out and get the go zero-value semantics.
+var marshaledWireFields = map[string][]hppField{
+	// product_updates is the sign-up "Periodic product updates" line; absent
+	// means opted in (see NetworkCreateArgs.MarshalJSON / UnmarshalJSON)
+	"NetworkCreateArgs": {{cppName: "product_updates", jsonName: "product_updates", cppType: "bool", optional: true}},
+}
+
 // hppStructModel returns the fields of a data struct, or listElem set for
 // list wrapper types (which become vector aliases)
 func (g *gen) hppStructModel(named *types.Named) (fields []hppField, listElem string) {
 	st := named.Underlying().(*types.Struct)
+	defer func() {
+		if listElem == "" {
+			fields = append(fields, marshaledWireFields[named.Obj().Name()]...)
+		}
+	}()
 	for i := 0; i < st.NumFields(); i += 1 {
 		f := st.Field(i)
 		if f.Embedded() {

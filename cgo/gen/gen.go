@@ -65,6 +65,9 @@ var behavioralTypes = map[string]bool{
 	"DeviceRpcKeyMaterial":       true,
 	"WebsocketDeviceRpcDialer":   true,
 	"WebsocketDeviceRpcListener": true,
+	// the app-wide client event batcher: a background goroutine and persisted
+	// state, so it must cross as a handle with its methods, not as json
+	"ClientEventQueue": true,
 
 	"AccountPreferencesViewController":    true,
 	"AccountViewController":               true,

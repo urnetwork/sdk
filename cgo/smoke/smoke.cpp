@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <unistd.h>
 
@@ -114,6 +115,45 @@ int main() {
 	// a double release reports false
 	CHECK(!urnet_release(asyncLocalState));
 	CHECK(urnet_live_handle_count() == 0);
+
+	// client event queue: a behavioral handle with methods, not a json value.
+	// With no jwt in the space the queue holds events without sending, so the
+	// pending count and the session are observable offline.
+	{
+		uint64_t manager = urnet_new_network_space_manager_no_storage();
+		CHECK(manager != 0);
+		uint64_t space = urnet_network_space_manager_update_network_space_values(
+			manager, "{\"host_name\":\"smoke.test\",\"env_name\":\"test\"}", "{}");
+		CHECK(space != 0);
+		uint64_t queue = urnet_new_client_event_queue(space, "linux", "2026.9.9", "en-US");
+		CHECK(queue != 0);
+		CHECK(urnet_client_event_queue_pending_count(queue) == 0);
+		char* session = urnet_client_event_queue_get_session(queue);
+		CHECK(session != nullptr && session[0] != '\0');
+		std::string firstSession = session;
+		urnet_free_string(session);
+		char* event = urnet_new_connect_first_event();
+		CHECK(event != nullptr);
+		urnet_client_event_queue_add(queue, event);
+		urnet_free_string(event);
+		CHECK(urnet_client_event_queue_pending_count(queue) == 1);
+		urnet_client_event_queue_set_locale(queue, "de");
+		urnet_client_event_queue_set_app_version(queue, "2026.9.10");
+		urnet_client_event_queue_new_session(queue);
+		session = urnet_client_event_queue_get_session(queue);
+		CHECK(session != nullptr);
+		std::string secondSession = session;
+		urnet_free_string(session);
+		CHECK(secondSession != firstSession);
+		urnet_client_event_queue_flush(queue);
+		urnet_client_event_queue_flush_and_wait(queue, 100);
+		urnet_client_event_queue_close(queue);
+		CHECK(urnet_release(queue));
+		CHECK(!urnet_release(queue));
+		CHECK(urnet_release(space));
+		CHECK(urnet_release(manager));
+		CHECK(urnet_live_handle_count() == 0);
+	}
 
 	// payment catalog + checkout envelope (the pure surface the windows and
 	// linux apps replace their hand-rolled copies with)

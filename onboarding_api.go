@@ -505,3 +505,21 @@ func (self NetworkCreateArgs) MarshalJSON() ([]byte, error) {
 		ProductUpdates: !self.ProductUpdatesOptOut,
 	})
 }
+
+// UnmarshalJSON is the inverse: the wire field product_updates sets
+// ProductUpdatesOptOut, and an absent field keeps the preference on, so args
+// that cross a json boundary (the C ABI marshals every args value) round trip
+// exactly. The C wrapper's struct exposes the field as an optional bool.
+func (self *NetworkCreateArgs) UnmarshalJSON(data []byte) error {
+	type plain NetworkCreateArgs
+	var wire struct {
+		plain
+		ProductUpdates *bool `json:"product_updates"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*self = NetworkCreateArgs(wire.plain)
+	self.ProductUpdatesOptOut = wire.ProductUpdates != nil && !*wire.ProductUpdates
+	return nil
+}

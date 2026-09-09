@@ -97,3 +97,30 @@ func TestNetworkCreateArgsProductUpdates(t *testing.T) {
 	_, hasOptOut := wire["ProductUpdatesOptOut"]
 	connect.AssertEqual(t, false, hasOptOut)
 }
+
+// TestNetworkCreateArgsProductUpdatesRoundTrip pins the json boundary the C
+// ABI uses: marshal then unmarshal preserves the opt-out both ways, and an
+// absent product_updates field means opted in.
+func TestNetworkCreateArgsProductUpdatesRoundTrip(t *testing.T) {
+	for _, optOut := range []bool{false, true} {
+		out, err := json.Marshal(&NetworkCreateArgs{UserName: "a", NetworkName: "n", Terms: true, ProductUpdatesOptOut: optOut})
+		connect.AssertEqual(t, nil, err)
+		var back NetworkCreateArgs
+		connect.AssertEqual(t, nil, json.Unmarshal(out, &back))
+		connect.AssertEqual(t, optOut, back.ProductUpdatesOptOut)
+		connect.AssertEqual(t, "n", back.NetworkName)
+		connect.AssertEqual(t, true, back.Terms)
+	}
+
+	var absent NetworkCreateArgs
+	connect.AssertEqual(t, nil, json.Unmarshal([]byte(`{"user_name":"a","terms":true}`), &absent))
+	connect.AssertEqual(t, false, absent.ProductUpdatesOptOut)
+
+	var explicitTrue NetworkCreateArgs
+	connect.AssertEqual(t, nil, json.Unmarshal([]byte(`{"user_name":"a","product_updates":true}`), &explicitTrue))
+	connect.AssertEqual(t, false, explicitTrue.ProductUpdatesOptOut)
+
+	var explicitFalse NetworkCreateArgs
+	connect.AssertEqual(t, nil, json.Unmarshal([]byte(`{"user_name":"a","product_updates":false}`), &explicitFalse))
+	connect.AssertEqual(t, true, explicitFalse.ProductUpdatesOptOut)
+}

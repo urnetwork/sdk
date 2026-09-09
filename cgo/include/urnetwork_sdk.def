@@ -148,6 +148,16 @@ EXPORTS
 	urnet_classify_balance_code_redeem
 	urnet_classify_subscription_store
 	urnet_client_event_names
+	urnet_client_event_queue_add
+	urnet_client_event_queue_add_all
+	urnet_client_event_queue_close
+	urnet_client_event_queue_flush
+	urnet_client_event_queue_flush_and_wait
+	urnet_client_event_queue_get_session
+	urnet_client_event_queue_new_session
+	urnet_client_event_queue_pending_count
+	urnet_client_event_queue_set_app_version
+	urnet_client_event_queue_set_locale
 	urnet_collapse_host_names
 	urnet_collapse_host_names_list
 	urnet_compare_points_leaderboard_keys

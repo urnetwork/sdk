@@ -223,3 +223,20 @@ func TestClientEventQueue(t *testing.T) {
 	connect.AssertEqual(t, 0, q.PendingCount())
 	q.Close()
 }
+
+// TestEventSessionIdRotatesWithinAMillisecond pins that NewSession changes the
+// id even when called back to back: ids are time-prefixed, so the session id
+// must come from the random tail, not the clock prefix.
+func TestEventSessionIdRotatesWithinAMillisecond(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 64; i += 1 {
+		id := newEventSessionId()
+		if len(id) != 2+16 || id[:2] != "s_" {
+			t.Fatalf("unexpected session id shape: %q", id)
+		}
+		if seen[id] {
+			t.Fatalf("session id repeated: %q", id)
+		}
+		seen[id] = true
+	}
+}

@@ -777,6 +777,19 @@ void urnet_block_action_view_controller_set_window_duration_seconds(uint64_t sel
 void urnet_block_action_view_controller_start(uint64_t self);
 void urnet_block_action_view_controller_stop(uint64_t self);
 
+/* ----- ClientEventQueue ----- */
+
+void urnet_client_event_queue_add(uint64_t self, const char* event_json);
+void urnet_client_event_queue_add_all(uint64_t self, const char* events_json);
+void urnet_client_event_queue_close(uint64_t self);
+void urnet_client_event_queue_flush(uint64_t self);
+void urnet_client_event_queue_flush_and_wait(uint64_t self, int64_t timeout_millis);
+char* urnet_client_event_queue_get_session(uint64_t self);
+void urnet_client_event_queue_new_session(uint64_t self);
+int64_t urnet_client_event_queue_pending_count(uint64_t self);
+void urnet_client_event_queue_set_app_version(uint64_t self, const char* app_version);
+void urnet_client_event_queue_set_locale(uint64_t self, const char* locale);
+
 /* ----- ConnectGrid ----- */
 
 int64_t urnet_connect_grid_get_height(uint64_t self);
@@ -1605,7 +1618,7 @@ double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_
 double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
 uint64_t urnet_new_async_local_state(const char* local_storage_home);
-char* urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
+uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
 char* urnet_new_connect_first_event(void);
 uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, char** out_error);
 uint64_t urnet_new_device_local_key_material(const uint8_t* client_key_seed, int32_t client_key_seed_len, const uint8_t* provide_tls_certificate_pem, int32_t provide_tls_certificate_pem_len, const uint8_t* provide_tls_private_key_pem, int32_t provide_tls_private_key_pem_len);
@@ -2088,9 +2101,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ClientEventList (json):
  *   = ClientEvent | null[]
- */
-
-/* ClientEventQueue (json):
  */
 
 /* ClientEventRejection (json):
