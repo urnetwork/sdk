@@ -736,6 +736,13 @@ type AuthNetworkClientArgs struct {
 	DeviceSpec        string `json:"device_spec"`
 
 	ProxyConfig *ProxyConfig `json:"proxy_config,omitempty"`
+
+	// TimeZone is the device's IANA zone ("America/Chicago") and Locale its
+	// BCP 47 tag ("pt-BR"): the onboarding campaign sends in the user's local
+	// morning and picks the email template's language from them
+	// (mmm/onboarding/PLAN.md). Optional; the apps set both on every call.
+	TimeZone string `json:"time_zone,omitempty"`
+	Locale   string `json:"locale,omitempty"`
 }
 
 type AuthNetworkClientResult struct {
