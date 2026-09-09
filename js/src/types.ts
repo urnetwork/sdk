@@ -928,6 +928,35 @@ export interface AccountHost {
   checkBalanceCode(secret: string): Promise<any>;
   subscriptionBalance(): Promise<any>;
   getNetworkUser(): Promise<any>;
+
+  // ----- onboarding program (mmm/onboarding/PLAN.md) -----
+  /** The plan response (SubscriptionBalanceResult) with price_tier, onboarding_offer and experiments; storefontCountry "" when the page has no store. */
+  subscriptionBalanceForStorefront(storefrontCountry?: string): Promise<any>;
+  /** Issue the welcome offer once (idempotent); surface intro_step | final_screen | account. */
+  onboardingOfferIssue(surface?: string, storefrontCountry?: string): Promise<any>;
+  /** Send a batch (<= 200) of product events: a json array of {name, at?, props?} checked against the closed schema (rejects on an unknown name/prop). Stamped platform "web" plus the given app version, locale and session. */
+  clientEventsSend(eventsJson: string, appVersion?: string, locale?: string, session?: string): Promise<any>;
+  /** The closed list of event names a page may send. */
+  clientEventNames(): string[];
+  /** Prepare an inline Stripe PaymentSheet purchase (plan yearly | monthly). */
+  stripePaymentSheet(plan: string, storefrontCountry?: string, stripeVersion?: string): Promise<any>;
+  /** The caller's tier's Stripe price ids and the welcome coupon when redeemable. */
+  stripePrices(storefrontCountry?: string): Promise<any>;
+  /** The landing page's attribution call for a campaign token (no auth). */
+  onboardingClick(token: string): Promise<any>;
+  /** A feedback link token's pre-filled rating/reason (no auth). */
+  onboardingFeedbackToken(token: string, rating?: number, reason?: string): Promise<any>;
+  /** The per-month sub-line math: yearly / 12 rounded up to the minor unit, saving rounded down, suppressed under one major unit. */
+  computePriceEquivalent(yearly: number, monthly: number, minorUnitDigits: number): PriceEquivalent;
+}
+
+export interface PriceEquivalent {
+  monthly_equivalent: number;
+  monthly_equivalent_minor: number;
+  show_equivalent: boolean;
+  saving_percent: number;
+  yearly_minor: number;
+  monthly_minor: number;
 }
 
 export interface ExtensionDeviceRemoteOptions {

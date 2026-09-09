@@ -660,6 +660,11 @@ type NetworkCreateArgs struct {
 	VerifyOtpNumeric bool            `json:"verify_use_numeric,omitempty"`
 	ReferralCode     string          `json:"referral_code,omitempty"`
 	WalletAuth       *WalletAuthArgs `json:"wallet_auth,omitempty"`
+	// ProductUpdatesOptOut is the sign-up form's "Periodic product updates"
+	// line UNTICKED. The wire field is product_updates (see MarshalJSON in
+	// onboarding_api.go): false here sends product_updates true, so the zero
+	// value keeps the preference on, as the form ships.
+	ProductUpdatesOptOut bool `json:"-"`
 }
 
 type NetworkCreateResult struct {
@@ -1374,6 +1379,40 @@ type SubscriptionBalanceResult struct {
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
 	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
 	UpdateTime                string               `json:"update_time"`
+
+	// ----- the onboarding plan fields (onboarding_api.go) -----
+	// PriceTier is the caller's regional price tier (an estimate unless the
+	// source is a storefront or a billing country); nil from an older server.
+	PriceTier *PriceTier `json:"price_tier,omitempty"`
+	// OnboardingOffer is the caller's welcome offer; nil when none was issued.
+	OnboardingOffer *OnboardingOffer `json:"onboarding_offer,omitempty"`
+	// Experiments is the caller's variant per experiment surface; nil when no
+	// experiment runs.
+	Experiments *ExperimentAssignmentList `json:"experiments,omitempty"`
+}
+
+// ExperimentVariant is the caller's variant on a surface, "" when no
+// experiment runs on it (see ExperimentAssignmentList.IsHoldout for the
+// in-app offer's surfaces).
+func (self *SubscriptionBalanceResult) ExperimentVariant(surface string) string {
+	if self.Experiments == nil {
+		return ""
+	}
+	return self.Experiments.VariantForSurface(surface)
+}
+
+// IsHoldout reports whether the caller is held out on a surface (the regular
+// plan picker, no offer screen, for the in-app offer surfaces).
+func (self *SubscriptionBalanceResult) IsHoldout(surface string) bool {
+	if self.Experiments == nil {
+		return false
+	}
+	return self.Experiments.IsHoldout(surface)
+}
+
+// OfferActive reports whether the welcome offer can be redeemed now.
+func (self *SubscriptionBalanceResult) OfferActive() bool {
+	return self.OnboardingOffer != nil && self.OnboardingOffer.IsActive()
 }
 
 func (self *Api) SubscriptionBalance(callback SubscriptionBalanceCallback) {
@@ -2526,8 +2565,12 @@ type SolanaPaymentIntentArgs struct {
 	// looks the price up from pro.yml by plan and rejects the intent with
 	// "Unknown plan." when this is empty, so an app that omits it cannot sell at
 	// all. The price is deliberately not a field here -- a client-supplied amount
-	// would let anyone quote themselves a year for a cent.
+	// would let anyone quote themselves a year for a cent. PlanYearlyOnboarding
+	// is the welcome offer (refused unless the caller's offer is redeemable).
 	Plan string `json:"plan"`
+	// the store's storefront country, when the app knows it; else the server
+	// resolves the regional tier from the Stripe billing country or the ip
+	StorefrontCountry string `json:"storefront_country,omitempty"`
 }
 
 type SolanaPaymentIntentResult struct {
@@ -2536,6 +2579,14 @@ type SolanaPaymentIntentResult struct {
 	// constant is how a customer pays and gets nothing.
 	AmountUsd float64                   `json:"amount_usd,omitempty"`
 	Error     *SolanaPaymentIntentError `json:"error,omitempty"`
+	// the regional tier the quote came from, the plan, the plan's regular price
+	// (the full-year price for PlanYearlyOnboarding) and whether the welcome
+	// offer was applied
+	Tier             string  `json:"tier,omitempty"`
+	Plan             string  `json:"plan,omitempty"`
+	RegularAmountUsd float64 `json:"regular_amount_usd,omitempty"`
+	OfferApplied     bool    `json:"offer_applied,omitempty"`
+	Currency         string  `json:"currency,omitempty"`
 }
 
 type SolanaPaymentIntentError struct {
@@ -2641,6 +2692,10 @@ type StripeCreateCheckoutSessionArgs struct {
 	// Only valid with ui_mode "embedded". Empty means the embedded flow
 	// redirects to the configured return_url, and hosted behaves as always.
 	RedirectOnCompletion string `json:"redirect_on_completion,omitempty"`
+	// the store's storefront country, when the caller knows it: the Pro items
+	// are priced at the caller's regional tier and the welcome-offer coupon is
+	// applied server-side when redeemable (yearly only)
+	StorefrontCountry string `json:"storefront_country,omitempty"`
 }
 
 type StripeCreateCheckoutSessionError struct {

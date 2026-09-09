@@ -536,3 +536,10 @@ type jsPointsLeaderboardListener struct{ cb js.Value }
 func (self *jsPointsLeaderboardListener) PointsLeaderboardChanged() {
 	self.cb.Invoke()
 }
+
+func float64Arg(args []js.Value, i int) float64 {
+	if i < len(args) && args[i].Type() == js.TypeNumber {
+		return args[i].Float()
+	}
+	return 0
+}
