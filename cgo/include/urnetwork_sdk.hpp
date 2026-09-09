@@ -242,6 +242,13 @@ inline constexpr int64_t PointsLeaderboardPageSize = 50;
 inline constexpr const char* PointsLeaderboardSortBlocks = "blocks";
 inline constexpr const char* PointsLeaderboardSortPoints = "points";
 inline constexpr const char* PointsLeaderboardSortStreak = "streak";
+inline constexpr int64_t PointsLeaderboardTierRest = 6;
+inline constexpr int64_t PointsLeaderboardTierTop1 = 1;
+inline constexpr int64_t PointsLeaderboardTierTop10 = 3;
+inline constexpr int64_t PointsLeaderboardTierTop25 = 4;
+inline constexpr int64_t PointsLeaderboardTierTop5 = 2;
+inline constexpr int64_t PointsLeaderboardTierTop50 = 5;
+inline constexpr int64_t PointsLeaderboardTierUnknown = 0;
 inline constexpr const char* PriceTierRegional = "regional";
 inline constexpr const char* PriceTierSourceBilling = "billing";
 inline constexpr const char* PriceTierSourceDefault = "default";
@@ -581,6 +588,7 @@ struct PointsLeaderboardKey;
 struct PointsLeaderboardRow;
 struct PointsLeaderboardMe;
 struct PointsLeaderboardResult;
+struct PointsLeaderboardScrollLabelParts;
 struct PriceEquivalent;
 struct PriceTier;
 struct ProbeResult;
@@ -1676,6 +1684,7 @@ struct GetPayoutWalletIdResult {
 struct GetPointsLeaderboardArgs {
 	std::string sort{};
 	std::optional<std::string> cursor;
+	std::optional<int64_t> seek_rank;
 	std::optional<int64_t> limit;
 };
 
@@ -2085,6 +2094,7 @@ struct PointsLeaderboardRow {
 	int64_t rank_points{};
 	int64_t rank_blocks{};
 	int64_t rank_streak{};
+	int64_t position{};
 	std::optional<std::string> display_name;
 	std::optional<std::string> total_points_text;
 	std::optional<std::string> blocks_with_points_text;
@@ -2103,12 +2113,22 @@ struct PointsLeaderboardMe {
 struct PointsLeaderboardResult {
 	std::optional<PointsLeaderboardRowList> rows;
 	std::optional<std::string> next_cursor;
+	std::optional<std::string> prev_cursor;
 	std::optional<bool> restart;
 	int64_t total_ranked{};
 	std::optional<std::string> snapshot_time;
 	int64_t latest_epoch{};
+	bool epoch_metrics_available{};
 	std::optional<PointsLeaderboardMe> me;
 	std::optional<PointsLeaderboardError> error;
+};
+
+struct PointsLeaderboardScrollLabelParts {
+	int64_t rank{};
+	int64_t total{};
+	std::string rank_text{};
+	int64_t tier{};
+	int64_t tier_percent{};
 };
 
 struct PriceEquivalent {
@@ -3331,6 +3351,8 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardMe& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardMe& v);
 inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v);
 inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v);
+inline void to_json(nlohmann::json& j, const PointsLeaderboardScrollLabelParts& v);
+inline void from_json(const nlohmann::json& j, PointsLeaderboardScrollLabelParts& v);
 inline void to_json(nlohmann::json& j, const PriceEquivalent& v);
 inline void from_json(const nlohmann::json& j, PriceEquivalent& v);
 inline void to_json(nlohmann::json& j, const PriceTier& v);
@@ -7762,6 +7784,9 @@ inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v) {
 	if (v.cursor) {
 		j["cursor"] = *v.cursor;
 	}
+	if (v.seek_rank) {
+		j["seek_rank"] = *v.seek_rank;
+	}
 	if (v.limit) {
 		j["limit"] = *v.limit;
 	}
@@ -7777,6 +7802,11 @@ inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.cursor = std::move(tmp);
+	}
+	if (auto it = j.find("seek_rank"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.seek_rank = std::move(tmp);
 	}
 	if (auto it = j.find("limit"); it != j.end() && !it->is_null()) {
 		int64_t tmp{};
@@ -9620,6 +9650,7 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardRow& v) {
 	j["rank_points"] = v.rank_points;
 	j["rank_blocks"] = v.rank_blocks;
 	j["rank_streak"] = v.rank_streak;
+	j["position"] = v.position;
 	if (v.display_name) {
 		j["display_name"] = *v.display_name;
 	}
@@ -9687,6 +9718,9 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardRow& v) {
 	}
 	if (auto it = j.find("rank_streak"); it != j.end() && !it->is_null()) {
 		it->get_to(v.rank_streak);
+	}
+	if (auto it = j.find("position"); it != j.end() && !it->is_null()) {
+		it->get_to(v.position);
 	}
 	if (auto it = j.find("display_name"); it != j.end() && !it->is_null()) {
 		std::string tmp{};
@@ -9759,6 +9793,9 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v) {
 	if (v.next_cursor) {
 		j["next_cursor"] = *v.next_cursor;
 	}
+	if (v.prev_cursor) {
+		j["prev_cursor"] = *v.prev_cursor;
+	}
 	if (v.restart) {
 		j["restart"] = *v.restart;
 	}
@@ -9767,6 +9804,7 @@ inline void to_json(nlohmann::json& j, const PointsLeaderboardResult& v) {
 		j["snapshot_time"] = *v.snapshot_time;
 	}
 	j["latest_epoch"] = v.latest_epoch;
+	j["epoch_metrics_available"] = v.epoch_metrics_available;
 	if (v.me) {
 		j["me"] = *v.me;
 	}
@@ -9788,6 +9826,11 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v) {
 		it->get_to(tmp);
 		v.next_cursor = std::move(tmp);
 	}
+	if (auto it = j.find("prev_cursor"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.prev_cursor = std::move(tmp);
+	}
 	if (auto it = j.find("restart"); it != j.end() && !it->is_null()) {
 		bool tmp{};
 		it->get_to(tmp);
@@ -9804,6 +9847,9 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v) {
 	if (auto it = j.find("latest_epoch"); it != j.end() && !it->is_null()) {
 		it->get_to(v.latest_epoch);
 	}
+	if (auto it = j.find("epoch_metrics_available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch_metrics_available);
+	}
 	if (auto it = j.find("me"); it != j.end() && !it->is_null()) {
 		PointsLeaderboardMe tmp{};
 		it->get_to(tmp);
@@ -9813,6 +9859,35 @@ inline void from_json(const nlohmann::json& j, PointsLeaderboardResult& v) {
 		PointsLeaderboardError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const PointsLeaderboardScrollLabelParts& v) {
+	j = nlohmann::json::object();
+	j["rank"] = v.rank;
+	j["total"] = v.total;
+	j["rank_text"] = v.rank_text;
+	j["tier"] = v.tier;
+	j["tier_percent"] = v.tier_percent;
+}
+inline void from_json(const nlohmann::json& j, PointsLeaderboardScrollLabelParts& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("rank"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank);
+	}
+	if (auto it = j.find("total"); it != j.end() && !it->is_null()) {
+		it->get_to(v.total);
+	}
+	if (auto it = j.find("rank_text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.rank_text);
+	}
+	if (auto it = j.find("tier"); it != j.end() && !it->is_null()) {
+		it->get_to(v.tier);
+	}
+	if (auto it = j.find("tier_percent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.tier_percent);
 	}
 }
 
@@ -14211,7 +14286,9 @@ public:
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
+	bool getProviderClientKeyRegistered() const;
 	bool getProviderConnected() const;
+	bool getProviderReady() const;
 	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
 	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	std::optional<SnChainSettings> getSnChainSettings() const;
@@ -14703,21 +14780,31 @@ public:
 	explicit PointsLeaderboardViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addPointsLeaderboardListener(PointsLeaderboardListener listener) const;
 	void close() const;
+	int64_t firstLoadedPosition() const;
+	bool getEpochMetricsAvailable() const;
 	std::string getErrorMessage() const;
 	int64_t getLatestEpoch() const;
 	std::optional<PointsLeaderboardMe> getMe() const;
 	int64_t getRowCount() const;
 	std::optional<PointsLeaderboardRowList> getRows() const;
+	std::optional<PointsLeaderboardScrollLabelParts> getScrollLabel(int64_t rank) const;
 	int64_t getSnapshotTime() const;
 	std::string getSort() const;
 	int64_t getTotalRanked() const;
+	bool hasMoreAfter() const;
+	bool hasMoreBefore() const;
 	bool isEndReached() const;
 	bool isLoading() const;
+	int64_t lastLoadedPosition() const;
 	void loadMore() const;
+	void loadMoreBefore() const;
 	void refresh() const;
+	void reloadFromTop() const;
+	void seekToRank(int64_t rank) const;
 	void setSort(const std::string& sort) const;
 	void start() const;
 	void stop() const;
+	int64_t totalRanked() const;
 };
 
 class PostQuantumIdentityViewController final : public detail::Handle {
@@ -22696,8 +22783,16 @@ inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() c
 	}
 	return detail::parseJson<ProvideSecretKeyList>(r_s->c_str());
 }
+inline bool DeviceLocal::getProviderClientKeyRegistered() const {
+	bool r = urnet_device_local_get_provider_client_key_registered(handle());
+	return r;
+}
 inline bool DeviceLocal::getProviderConnected() const {
 	bool r = urnet_device_local_get_provider_connected(handle());
+	return r;
+}
+inline bool DeviceLocal::getProviderReady() const {
+	bool r = urnet_device_local_get_provider_ready(handle());
 	return r;
 }
 inline std::optional<ReliabilityMetrics> DeviceLocal::getReliabilityMetrics() const {
@@ -24836,6 +24931,14 @@ inline Sub PointsLeaderboardViewController::addPointsLeaderboardListener(PointsL
 inline void PointsLeaderboardViewController::close() const {
 	urnet_points_leaderboard_view_controller_close(handle());
 }
+inline int64_t PointsLeaderboardViewController::firstLoadedPosition() const {
+	int64_t r = urnet_points_leaderboard_view_controller_first_loaded_position(handle());
+	return r;
+}
+inline bool PointsLeaderboardViewController::getEpochMetricsAvailable() const {
+	bool r = urnet_points_leaderboard_view_controller_get_epoch_metrics_available(handle());
+	return r;
+}
 inline std::string PointsLeaderboardViewController::getErrorMessage() const {
 	char* r_c = urnet_points_leaderboard_view_controller_get_error_message(handle());
 	return detail::takeString(r_c);
@@ -24864,6 +24967,14 @@ inline std::optional<PointsLeaderboardRowList> PointsLeaderboardViewController::
 	}
 	return detail::parseJson<PointsLeaderboardRowList>(r_s->c_str());
 }
+inline std::optional<PointsLeaderboardScrollLabelParts> PointsLeaderboardViewController::getScrollLabel(int64_t rank) const {
+	char* r_c = urnet_points_leaderboard_view_controller_get_scroll_label(handle(), rank);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PointsLeaderboardScrollLabelParts>(r_s->c_str());
+}
 inline int64_t PointsLeaderboardViewController::getSnapshotTime() const {
 	int64_t r = urnet_points_leaderboard_view_controller_get_snapshot_time(handle());
 	return r;
@@ -24876,6 +24987,14 @@ inline int64_t PointsLeaderboardViewController::getTotalRanked() const {
 	int64_t r = urnet_points_leaderboard_view_controller_get_total_ranked(handle());
 	return r;
 }
+inline bool PointsLeaderboardViewController::hasMoreAfter() const {
+	bool r = urnet_points_leaderboard_view_controller_has_more_after(handle());
+	return r;
+}
+inline bool PointsLeaderboardViewController::hasMoreBefore() const {
+	bool r = urnet_points_leaderboard_view_controller_has_more_before(handle());
+	return r;
+}
 inline bool PointsLeaderboardViewController::isEndReached() const {
 	bool r = urnet_points_leaderboard_view_controller_is_end_reached(handle());
 	return r;
@@ -24884,11 +25003,24 @@ inline bool PointsLeaderboardViewController::isLoading() const {
 	bool r = urnet_points_leaderboard_view_controller_is_loading(handle());
 	return r;
 }
+inline int64_t PointsLeaderboardViewController::lastLoadedPosition() const {
+	int64_t r = urnet_points_leaderboard_view_controller_last_loaded_position(handle());
+	return r;
+}
 inline void PointsLeaderboardViewController::loadMore() const {
 	urnet_points_leaderboard_view_controller_load_more(handle());
 }
+inline void PointsLeaderboardViewController::loadMoreBefore() const {
+	urnet_points_leaderboard_view_controller_load_more_before(handle());
+}
 inline void PointsLeaderboardViewController::refresh() const {
 	urnet_points_leaderboard_view_controller_refresh(handle());
+}
+inline void PointsLeaderboardViewController::reloadFromTop() const {
+	urnet_points_leaderboard_view_controller_reload_from_top(handle());
+}
+inline void PointsLeaderboardViewController::seekToRank(int64_t rank) const {
+	urnet_points_leaderboard_view_controller_seek_to_rank(handle(), rank);
 }
 inline void PointsLeaderboardViewController::setSort(const std::string& sort) const {
 	urnet_points_leaderboard_view_controller_set_sort(handle(), sort.c_str());
@@ -24898,6 +25030,10 @@ inline void PointsLeaderboardViewController::start() const {
 }
 inline void PointsLeaderboardViewController::stop() const {
 	urnet_points_leaderboard_view_controller_stop(handle());
+}
+inline int64_t PointsLeaderboardViewController::totalRanked() const {
+	int64_t r = urnet_points_leaderboard_view_controller_total_ranked(handle());
+	return r;
 }
 inline Sub PostQuantumIdentityViewController::addPostQuantumIdentityListener(PostQuantumIdentityListener listener) const {
 	std::shared_ptr<PostQuantumIdentityListener> listener_fn;
@@ -26143,6 +26279,14 @@ inline std::optional<PointsLeaderboardKey> pointsLeaderboardKeyOf(const std::opt
 		return std::nullopt;
 	}
 	return detail::parseJson<PointsLeaderboardKey>(r_s->c_str());
+}
+inline std::optional<PointsLeaderboardScrollLabelParts> pointsLeaderboardScrollLabel(int64_t rank, int64_t total) {
+	char* r_c = urnet_points_leaderboard_scroll_label(rank, total);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<PointsLeaderboardScrollLabelParts>(r_s->c_str());
 }
 inline int64_t pointsToNanoPoints(double points) {
 	int64_t r = urnet_points_to_nano_points(points);

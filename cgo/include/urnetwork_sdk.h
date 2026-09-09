@@ -160,6 +160,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_POINTS_LEADERBOARD_SORT_BLOCKS "blocks"
 #define URNET_POINTS_LEADERBOARD_SORT_POINTS "points"
 #define URNET_POINTS_LEADERBOARD_SORT_STREAK "streak"
+#define URNET_POINTS_LEADERBOARD_TIER_REST 6
+#define URNET_POINTS_LEADERBOARD_TIER_TOP1 1
+#define URNET_POINTS_LEADERBOARD_TIER_TOP10 3
+#define URNET_POINTS_LEADERBOARD_TIER_TOP25 4
+#define URNET_POINTS_LEADERBOARD_TIER_TOP5 2
+#define URNET_POINTS_LEADERBOARD_TIER_TOP50 5
+#define URNET_POINTS_LEADERBOARD_TIER_UNKNOWN 0
 #define URNET_PRICE_TIER_REGIONAL "regional"
 #define URNET_PRICE_TIER_SOURCE_BILLING "billing"
 #define URNET_PRICE_TIER_SOURCE_DEFAULT "default"
@@ -1012,7 +1019,9 @@ uint64_t urnet_device_local_get_last_local_state_save_result(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
+bool urnet_device_local_get_provider_client_key_registered(uint64_t self);
 bool urnet_device_local_get_provider_connected(uint64_t self);
+bool urnet_device_local_get_provider_ready(uint64_t self);
 char* urnet_device_local_get_reliability_metrics(uint64_t self);
 char* urnet_device_local_get_reliability_settings(uint64_t self);
 char* urnet_device_local_get_sn_chain_settings(uint64_t self);
@@ -1416,21 +1425,31 @@ void urnet_peer_view_controller_stop(uint64_t self);
 
 uint64_t urnet_points_leaderboard_view_controller_add_points_leaderboard_listener(uint64_t self, urnet_points_leaderboard_cb listener_points_leaderboard_changed, void* listener_user_data);
 void urnet_points_leaderboard_view_controller_close(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_first_loaded_position(uint64_t self);
+bool urnet_points_leaderboard_view_controller_get_epoch_metrics_available(uint64_t self);
 char* urnet_points_leaderboard_view_controller_get_error_message(uint64_t self);
 int64_t urnet_points_leaderboard_view_controller_get_latest_epoch(uint64_t self);
 char* urnet_points_leaderboard_view_controller_get_me(uint64_t self);
 int64_t urnet_points_leaderboard_view_controller_get_row_count(uint64_t self);
 char* urnet_points_leaderboard_view_controller_get_rows(uint64_t self);
+char* urnet_points_leaderboard_view_controller_get_scroll_label(uint64_t self, int64_t rank);
 int64_t urnet_points_leaderboard_view_controller_get_snapshot_time(uint64_t self);
 char* urnet_points_leaderboard_view_controller_get_sort(uint64_t self);
 int64_t urnet_points_leaderboard_view_controller_get_total_ranked(uint64_t self);
+bool urnet_points_leaderboard_view_controller_has_more_after(uint64_t self);
+bool urnet_points_leaderboard_view_controller_has_more_before(uint64_t self);
 bool urnet_points_leaderboard_view_controller_is_end_reached(uint64_t self);
 bool urnet_points_leaderboard_view_controller_is_loading(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_last_loaded_position(uint64_t self);
 void urnet_points_leaderboard_view_controller_load_more(uint64_t self);
+void urnet_points_leaderboard_view_controller_load_more_before(uint64_t self);
 void urnet_points_leaderboard_view_controller_refresh(uint64_t self);
+void urnet_points_leaderboard_view_controller_reload_from_top(uint64_t self);
+void urnet_points_leaderboard_view_controller_seek_to_rank(uint64_t self, int64_t rank);
 void urnet_points_leaderboard_view_controller_set_sort(uint64_t self, const char* sort);
 void urnet_points_leaderboard_view_controller_start(uint64_t self);
 void urnet_points_leaderboard_view_controller_stop(uint64_t self);
+int64_t urnet_points_leaderboard_view_controller_total_ranked(uint64_t self);
 
 /* ----- PostQuantumIdentityViewController ----- */
 
@@ -1661,6 +1680,7 @@ char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
 char* urnet_points_leaderboard_key_of(const char* row_json);
+char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
 int64_t urnet_points_to_nano_points(double points);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
@@ -2595,6 +2615,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* GetPointsLeaderboardArgs (json):
  *   sort: string
  *   cursor?: string
+ *   seek_rank?: number
  *   limit?: number
  */
 
@@ -3059,10 +3080,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* PointsLeaderboardResult (json):
  *   rows: PointsLeaderboardRowList | null
  *   next_cursor?: string
+ *   prev_cursor?: string
  *   restart?: boolean
  *   total_ranked: number
  *   snapshot_time?: string (rfc3339) | null
  *   latest_epoch: number
+ *   epoch_metrics_available: boolean
  *   me?: PointsLeaderboardMe | null
  *   error?: PointsLeaderboardError | null
  */
@@ -3079,6 +3102,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   rank_points: number
  *   rank_blocks: number
  *   rank_streak: number
+ *   position: number
  *   display_name?: string
  *   total_points_text?: string
  *   blocks_with_points_text?: string
@@ -3091,6 +3115,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* PointsLeaderboardRowList (json):
  *   = PointsLeaderboardRow | null[]
+ */
+
+/* PointsLeaderboardScrollLabelParts (json):
+ *   rank: number
+ *   total: number
+ *   rank_text: string
+ *   tier: number
+ *   tier_percent: number
  */
 
 /* PriceEquivalent (json):

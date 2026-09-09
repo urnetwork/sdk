@@ -593,13 +593,34 @@ export interface PointsLeaderboardViewController {
 
   getSort(): PointsLeaderboardSort;
   setSort(sort: PointsLeaderboardSort): void;
+  /** the page after the loaded window (a no-op while loading or at the end) */
   loadMore(): void;
+  /** the page before the loaded window (a no-op while loading or at the top) */
+  loadMoreBefore(): void;
   refresh(): void;
+  /**
+   * Jump the loaded window to the page holding this 1-based position of the
+   * sort's total order (the scroll indicator's rank): cancels an in-flight
+   * page, clears the rows, lands the page as the window; then page backward
+   * with loadMoreBefore and forward with loadMore. The server clamps the rank.
+   */
+  seekToRank(rank: number): void;
+  /** drop the window and load the first page again (rows cleared at once) */
+  reloadFromTop(): void;
 
   getRows(): PointsLeaderboardRow[];
   getRowCount(): number;
   isLoading(): boolean;
   isEndReached(): boolean;
+  /** ranks above the window remain (the window does not start at 1) */
+  hasMoreBefore(): boolean;
+  /** ranks below the window remain (the negation of isEndReached) */
+  hasMoreAfter(): boolean;
+  /** 1-based position of the first / last loaded row, 0 while empty */
+  firstLoadedPosition(): number;
+  lastLoadedPosition(): number;
+  /** the indicator's label parts at a rank among getTotalRanked() */
+  getScrollLabel(rank: number): PointsLeaderboardScrollLabelParts;
   getMe(): PointsLeaderboardMe | null;
   getErrorMessage(): string;
   getTotalRanked(): number;
@@ -607,6 +628,34 @@ export interface PointsLeaderboardViewController {
   getSnapshotTime(): string | null;
 
   addPointsLeaderboardListener(cb: () => void): Unsubscribe;
+}
+
+/**
+ * The tier of a rank among the ranked networks (the scroll indicator's
+ * "#1,240 · Top 5%"): a rank is in a tier when it is within the tier's percent
+ * of the total, rounded up. The app maps the tier to its localized string.
+ */
+export const PointsLeaderboardTier = {
+  Unknown: 0,
+  Top1: 1,
+  Top5: 2,
+  Top10: 3,
+  Top25: 4,
+  Top50: 5,
+  Rest: 6,
+} as const;
+export type PointsLeaderboardTier = (typeof PointsLeaderboardTier)[keyof typeof PointsLeaderboardTier];
+
+/** PointsLeaderboardScrollLabel / getScrollLabel: the indicator label parts. */
+export interface PointsLeaderboardScrollLabelParts {
+  /** the rank, clamped to [1, total] */
+  rank: number;
+  total: number;
+  /** the rank preformatted, "#1240" */
+  rank_text: string;
+  tier: PointsLeaderboardTier;
+  /** 1, 5, 10, 25 or 50; 0 for the rest and the unknown tier */
+  tier_percent: number;
 }
 
 /**
@@ -913,7 +962,10 @@ export interface AccountHost {
   networkDelete(): Promise<any>;
   getLeaderboard(): Promise<any>;
   /** One page of the all-time points leaderboard (public; the jwt only adds `me`). */
-  getPointsLeaderboard(sort: PointsLeaderboardSort, cursor?: string, limit?: number): Promise<any>;
+  /** cursor pages either direction (next_cursor / prev_cursor); seekRank (no cursor) opens the page at that position */
+  getPointsLeaderboard(sort: PointsLeaderboardSort, cursor?: string, limit?: number, seekRank?: number): Promise<any>;
+  /** synchronous: the scroll indicator's label parts at a rank among total ranked */
+  pointsLeaderboardScrollLabel(rank: number, total: number): PointsLeaderboardScrollLabelParts;
   setPointsLeaderboardPublic(isPublic: boolean): Promise<any>;
   /** Validate with validateEmojiTag first and send `normalized`; "" clears the tag. */
   setEmojiTag(emojiTag: string): Promise<any>;

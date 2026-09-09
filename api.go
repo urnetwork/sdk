@@ -2225,7 +2225,10 @@ func IsPointsLeaderboardSort(sort string) bool {
 type GetPointsLeaderboardArgs struct {
 	Sort   string `json:"sort"`
 	Cursor string `json:"cursor,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
+	// SeekRank opens the page at this 1-based position of the sort's total
+	// order (clamped by the server); used without a cursor.
+	SeekRank int64 `json:"seek_rank,omitempty"`
+	Limit    int   `json:"limit,omitempty"`
 }
 
 // PointsLeaderboardRow is one ranked network. The `*Text` fields and
@@ -2244,6 +2247,10 @@ type PointsLeaderboardRow struct {
 	RankPoints       int64   `json:"rank_points"`
 	RankBlocks       int64   `json:"rank_blocks"`
 	RankStreak       int64   `json:"rank_streak"`
+	// Position is the row's 1-based place in the requested sort's total order
+	// (ranks tie, positions never do): the seek coordinate and the key the
+	// view controller keeps its loaded window by.
+	Position int64 `json:"position"`
 
 	DisplayName          string `json:"display_name,omitempty"`
 	TotalPointsText      string `json:"total_points_text,omitempty"`
@@ -2297,6 +2304,9 @@ type PointsLeaderboardResult struct {
 	Rows *PointsLeaderboardRowList `json:"rows"`
 	// the cursor of the next page; empty on the last page
 	NextCursor string `json:"next_cursor,omitempty"`
+	// the cursor of the page before this one; empty when this page starts at
+	// the top
+	PrevCursor string `json:"prev_cursor,omitempty"`
 	// the snapshot behind the cursor is gone: start again from the top
 	Restart     bool  `json:"restart,omitempty"`
 	TotalRanked int64 `json:"total_ranked"`

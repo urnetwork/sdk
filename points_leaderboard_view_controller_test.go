@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -556,5 +557,349 @@ func TestPointsLeaderboardUnavailableEpochMetrics(t *testing.T) {
 	})
 	if vc.GetRows().Get(0).BlocksWithPointsText == "-" {
 		t.Fatal("legitimate epoch values stayed masked after recovery")
+	}
+}
+
+// pointsLeaderboardWindowServer serves a leaderboard of `total` networks at
+// positions 1..total with the server's seek and two-way cursor rules
+// (server/controller/points_leaderboard_controller.go pointsLeaderboardPager):
+// cursors are "f:<position>" (the page after) and "b:<position>" (the page
+// before). It remembers every request.
+type pointsLeaderboardWindowServer struct {
+	lock     sync.Mutex
+	total    int64
+	requests []GetPointsLeaderboardArgs
+	// answer this cursor with `restart` once
+	restartOnce string
+}
+
+func (self *pointsLeaderboardWindowServer) handler() http.Handler {
+	row := func(pos int64) map[string]any {
+		return map[string]any{
+			"network_id":         fmt.Sprintf("00000000-0000-0000-0000-%012d", pos),
+			"network_name":       fmt.Sprintf("net-%d", pos),
+			"emoji_tag":          "🐬",
+			"anonymous":          false,
+			"total_points":       float64(self.total-pos+1) * 100,
+			"blocks_with_points": 1,
+			"streak":             1,
+			"longest_streak":     1,
+			"rank_points":        pos,
+			"rank_blocks":        pos,
+			"rank_streak":        pos,
+			"position":           pos,
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var args GetPointsLeaderboardArgs
+		if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		self.lock.Lock()
+		self.requests = append(self.requests, args)
+		restart := self.restartOnce != "" && self.restartOnce == args.Cursor
+		if restart {
+			self.restartOnce = ""
+		}
+		total := self.total
+		self.lock.Unlock()
+
+		result := map[string]any{"total_ranked": total, "latest_epoch": 3, "epoch_metrics_available": true}
+		if restart {
+			result["rows"] = []any{}
+			result["restart"] = true
+			json.NewEncoder(w).Encode(result)
+			return
+		}
+		limit := int64(args.Limit)
+		rows := []any{}
+		var first, last int64
+		switch {
+		case strings.HasPrefix(args.Cursor, "b:"):
+			var before int64
+			fmt.Sscanf(args.Cursor, "b:%d", &before)
+			first = before - limit
+			if first < 1 {
+				first = 1
+			}
+			last = before - 1
+		default:
+			var after int64
+			if strings.HasPrefix(args.Cursor, "f:") {
+				fmt.Sscanf(args.Cursor, "f:%d", &after)
+			} else if args.SeekRank > 0 {
+				seek := args.SeekRank
+				if seek > total {
+					seek = total
+				}
+				after = seek - 1
+			}
+			first = after + 1
+			last = after + limit
+			if last > total {
+				last = total
+			}
+		}
+		for pos := first; pos <= last; pos++ {
+			rows = append(rows, row(pos))
+		}
+		result["rows"] = rows
+		if len(rows) > 0 {
+			if first > 1 {
+				result["prev_cursor"] = fmt.Sprintf("b:%d", first)
+			}
+			if last < total {
+				result["next_cursor"] = fmt.Sprintf("f:%d", last)
+			}
+		}
+		json.NewEncoder(w).Encode(result)
+	})
+}
+
+func newPointsLeaderboardWindowTest(t *testing.T, total int64) (*pointsLeaderboardWindowServer, *PointsLeaderboardViewController, *pointsLeaderboardTestListener) {
+	t.Helper()
+	server := &pointsLeaderboardWindowServer{total: total}
+	ctx, api := newTestApi(t, server.handler())
+	vc := NewPointsLeaderboardViewControllerWithApi(ctx, api)
+	t.Cleanup(vc.Close)
+	listener := &pointsLeaderboardTestListener{changed: make(chan struct{}, 1)}
+	sub := vc.AddPointsLeaderboardListener(listener)
+	t.Cleanup(sub.Close)
+	return server, vc, listener
+}
+
+func pointsLeaderboardPositions(vc *PointsLeaderboardViewController) []int64 {
+	out := []int64{}
+	for _, row := range vc.GetRows().getAll() {
+		out = append(out, row.Position)
+	}
+	return out
+}
+
+func assertPointsLeaderboardWindow(t *testing.T, vc *PointsLeaderboardViewController, first int64, last int64) {
+	t.Helper()
+	positions := pointsLeaderboardPositions(vc)
+	want := []int64{}
+	for pos := first; pos <= last; pos++ {
+		want = append(want, pos)
+	}
+	if len(positions) != len(want) {
+		t.Fatalf("window %v, want %d..%d", positions, first, last)
+	}
+	for i := range want {
+		if positions[i] != want[i] {
+			t.Fatalf("window %v, want %d..%d", positions, first, last)
+		}
+	}
+	if vc.FirstLoadedPosition() != first || vc.LastLoadedPosition() != last {
+		t.Fatalf("loaded positions %d..%d, want %d..%d", vc.FirstLoadedPosition(), vc.LastLoadedPosition(), first, last)
+	}
+}
+
+func waitForPointsLeaderboardIdle(t *testing.T, vc *PointsLeaderboardViewController, listener *pointsLeaderboardTestListener) {
+	t.Helper()
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.GetRowCount() > 0 })
+}
+
+func TestPointsLeaderboardSeekThenPageBothWays(t *testing.T) {
+	_, vc, listener := newPointsLeaderboardWindowTest(t, 137)
+
+	vc.SeekToRank(80)
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	assertPointsLeaderboardWindow(t, vc, 80, 129)
+	if !vc.HasMoreBefore() || !vc.HasMoreAfter() || vc.IsEndReached() {
+		t.Fatal("a mid-list window has ranks on both sides")
+	}
+	if vc.TotalRanked() != 137 {
+		t.Fatalf("total ranked %d", vc.TotalRanked())
+	}
+
+	vc.LoadMoreBefore()
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.GetRowCount() > 50 })
+	assertPointsLeaderboardWindow(t, vc, 30, 129)
+	if !vc.HasMoreBefore() {
+		t.Fatal("ranks 1..29 are still above the window")
+	}
+
+	vc.LoadMoreBefore()
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.GetRowCount() > 100 })
+	assertPointsLeaderboardWindow(t, vc, 1, 129)
+	if vc.HasMoreBefore() {
+		t.Fatal("the window starts at the top")
+	}
+	// a no-op at the top
+	vc.LoadMoreBefore()
+	if vc.IsLoading() {
+		t.Fatal("LoadMoreBefore at the top must not load")
+	}
+
+	vc.LoadMore()
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.GetRowCount() > 129 })
+	assertPointsLeaderboardWindow(t, vc, 1, 137)
+	if vc.HasMoreAfter() || !vc.IsEndReached() {
+		t.Fatal("the window ends at the bottom")
+	}
+}
+
+func TestPointsLeaderboardSeekClampsToTheEnd(t *testing.T) {
+	server, vc, listener := newPointsLeaderboardWindowTest(t, 137)
+
+	vc.SeekToRank(100000)
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	assertPointsLeaderboardWindow(t, vc, 137, 137)
+	if vc.HasMoreAfter() || !vc.HasMoreBefore() {
+		t.Fatal("the last rank has ranks above and none below")
+	}
+	server.lock.Lock()
+	seek := server.requests[0].SeekRank
+	server.lock.Unlock()
+	if seek != 100000 {
+		t.Fatalf("seek_rank %d sent, want the app's rank (the server clamps)", seek)
+	}
+
+	// a rank below 1 is the top
+	vc.SeekToRank(0)
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.FirstLoadedPosition() == 1 })
+	assertPointsLeaderboardWindow(t, vc, 1, 50)
+	if vc.HasMoreBefore() {
+		t.Fatal("the top has nothing before it")
+	}
+}
+
+func TestPointsLeaderboardSeekReplacesTheWindow(t *testing.T) {
+	_, vc, listener := newPointsLeaderboardWindowTest(t, 137)
+
+	vc.Start()
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	assertPointsLeaderboardWindow(t, vc, 1, 50)
+
+	vc.SeekToRank(120)
+	if vc.GetRowCount() != 0 {
+		t.Fatal("a seek clears the rows at once")
+	}
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	assertPointsLeaderboardWindow(t, vc, 120, 137)
+	if vc.HasMoreAfter() {
+		t.Fatal("the window reaches the end")
+	}
+
+	vc.ReloadFromTop()
+	if vc.GetRowCount() != 0 {
+		t.Fatal("a reload from the top clears the rows at once")
+	}
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	assertPointsLeaderboardWindow(t, vc, 1, 50)
+	if vc.HasMoreBefore() || !vc.HasMoreAfter() {
+		t.Fatal("the first page")
+	}
+}
+
+func TestPointsLeaderboardSeekRestartReloadsFromTheTop(t *testing.T) {
+	server, vc, listener := newPointsLeaderboardWindowTest(t, 137)
+
+	vc.SeekToRank(80)
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	server.lock.Lock()
+	server.restartOnce = "b:80"
+	server.lock.Unlock()
+
+	vc.LoadMoreBefore()
+	waitForPointsLeaderboard(t, listener, func() bool { return !vc.IsLoading() && vc.FirstLoadedPosition() == 1 })
+	assertPointsLeaderboardWindow(t, vc, 1, 50)
+	if vc.HasMoreBefore() {
+		t.Fatal("after a restart the window starts at the top")
+	}
+}
+
+func TestPointsLeaderboardStaleSeekPageIsDropped(t *testing.T) {
+	_, vc, listener := newPointsLeaderboardWindowTest(t, 137)
+
+	vc.SeekToRank(20)
+	// a second seek before the first lands: the first page must never show
+	vc.SeekToRank(100)
+	waitForPointsLeaderboardIdle(t, vc, listener)
+	assertPointsLeaderboardWindow(t, vc, 100, 137)
+	// let any straggler land
+	time.Sleep(100 * time.Millisecond)
+	assertPointsLeaderboardWindow(t, vc, 100, 137)
+}
+
+func TestMergePointsLeaderboardRows(t *testing.T) {
+	rows := func(positions ...int64) []*PointsLeaderboardRow {
+		out := []*PointsLeaderboardRow{}
+		for _, pos := range positions {
+			out = append(out, &PointsLeaderboardRow{Position: pos, RankPoints: pos})
+		}
+		return out
+	}
+	positions := func(rows []*PointsLeaderboardRow) []int64 {
+		out := []int64{}
+		for _, row := range rows {
+			out = append(out, row.Position)
+		}
+		return out
+	}
+	// an overlapping append keeps one of each
+	merged := mergePointsLeaderboardRows(rows(1, 2, 3), rows(3, 4))
+	if fmt.Sprint(positions(merged)) != "[1 2 3 4]" {
+		t.Fatalf("append overlap: %v", positions(merged))
+	}
+	// an overlapping prepend too
+	merged = mergePointsLeaderboardRows(rows(28, 29, 30, 31), rows(30, 31, 32))
+	if fmt.Sprint(positions(merged)) != "[28 29 30 31 32]" {
+		t.Fatalf("prepend overlap: %v", positions(merged))
+	}
+	// the same page twice adds nothing
+	merged = mergePointsLeaderboardRows(rows(1, 2), rows(1, 2))
+	if fmt.Sprint(positions(merged)) != "[1 2]" {
+		t.Fatalf("repeat: %v", positions(merged))
+	}
+	// rows without positions (an older server) are keyed by network id
+	a := &PointsLeaderboardRow{NetworkId: NewId()}
+	b := &PointsLeaderboardRow{NetworkId: NewId()}
+	merged = mergePointsLeaderboardRows([]*PointsLeaderboardRow{a}, []*PointsLeaderboardRow{a, b})
+	if len(merged) != 2 {
+		t.Fatalf("id keyed: %d rows", len(merged))
+	}
+}
+
+func TestPointsLeaderboardScrollLabel(t *testing.T) {
+	cases := []struct {
+		rank, total int64
+		wantRank    int64
+		text        string
+		tier        int
+		percent     int
+	}{
+		{1, 0, 1, "#1", PointsLeaderboardTierUnknown, 0},
+		{1, 1, 1, "#1", PointsLeaderboardTierTop1, 1},
+		{1, 3, 1, "#1", PointsLeaderboardTierTop1, 1},
+		{2, 3, 2, "#2", PointsLeaderboardTierTop50, 50},
+		{3, 3, 3, "#3", PointsLeaderboardTierRest, 0},
+		{1, 1000, 1, "#1", PointsLeaderboardTierTop1, 1},
+		{10, 1000, 10, "#10", PointsLeaderboardTierTop1, 1},
+		{11, 1000, 11, "#11", PointsLeaderboardTierTop5, 5},
+		{50, 1000, 50, "#50", PointsLeaderboardTierTop5, 5},
+		{51, 1000, 51, "#51", PointsLeaderboardTierTop10, 10},
+		{100, 1000, 100, "#100", PointsLeaderboardTierTop10, 10},
+		{101, 1000, 101, "#101", PointsLeaderboardTierTop25, 25},
+		{250, 1000, 250, "#250", PointsLeaderboardTierTop25, 25},
+		{251, 1000, 251, "#251", PointsLeaderboardTierTop50, 50},
+		{500, 1000, 500, "#500", PointsLeaderboardTierTop50, 50},
+		{501, 1000, 501, "#501", PointsLeaderboardTierRest, 0},
+		{1000, 1000, 1000, "#1000", PointsLeaderboardTierRest, 0},
+		// rounding up: 1% of 137 holds 2 ranks
+		{2, 137, 2, "#2", PointsLeaderboardTierTop1, 1},
+		{3, 137, 3, "#3", PointsLeaderboardTierTop5, 5},
+		// clamped
+		{0, 137, 1, "#1", PointsLeaderboardTierTop1, 1},
+		{5000, 137, 137, "#137", PointsLeaderboardTierRest, 0},
+	}
+	for _, c := range cases {
+		parts := PointsLeaderboardScrollLabel(c.rank, c.total)
+		if parts.Rank != c.wantRank || parts.RankText != c.text || parts.Tier != c.tier || parts.TierPercent != c.percent || parts.Total != c.total {
+			t.Fatalf("label(%d, %d) = %+v, want rank %d %q tier %d percent %d", c.rank, c.total, parts, c.wantRank, c.text, c.tier, c.percent)
+		}
 	}
 }

@@ -61,9 +61,15 @@ type PointsLeaderboardViewController struct {
 	stateLock sync.Mutex
 
 	sort string
+	// the loaded window of the sort's total order, contiguous and in order,
+	// keyed by row position so a prepended or appended page never repeats a
+	// row (see mergePointsLeaderboardRows)
 	rows []*PointsLeaderboardRow
 	// the cursor of the next page; empty once the end is reached
 	nextCursor string
+	// the cursor of the page before the window; empty when the window starts
+	// at the top
+	prevCursor string
 	endReached bool
 	loading    bool
 	// bumped by SetSort and Refresh so a response to a request from before
@@ -180,6 +186,7 @@ func (self *PointsLeaderboardViewController) SetSort(sort string) {
 	self.generation += 1
 	self.rows = nil
 	self.nextCursor = ""
+	self.prevCursor = ""
 	self.endReached = false
 	self.errorMessage = ""
 	started := self.started
@@ -193,6 +200,42 @@ func (self *PointsLeaderboardViewController) SetSort(sort string) {
 	} else {
 		self.pointsLeaderboardChanged()
 	}
+}
+
+// ReloadFromTop drops the loaded window and loads the first page of the
+// current sort again: the way back from a seek (or a tab tap that scrolls to
+// the top). Unlike Refresh the rows are cleared at once, so the list never
+// shows a window that starts mid-list next to a top-of-list scroll position.
+func (self *PointsLeaderboardViewController) ReloadFromTop() {
+	self.seek(0)
+}
+
+// SeekToRank jumps the loaded window to the page holding the given 1-based
+// position of the current sort's total order (the scroll indicator's rank).
+// An in-flight page is cancelled, the rows are cleared, and the page at the
+// rank lands as the new window; the app then pages backward with
+// LoadMoreBefore and forward with LoadMore from there. The server clamps the
+// rank to [1, total ranked]; a rank below 1 reloads from the top.
+func (self *PointsLeaderboardViewController) SeekToRank(rank int) {
+	if rank < 1 {
+		rank = 0
+	}
+	self.seek(int64(rank))
+}
+
+func (self *PointsLeaderboardViewController) seek(rank int64) {
+	self.stateLock.Lock()
+	self.generation += 1
+	self.rows = nil
+	self.nextCursor = ""
+	self.prevCursor = ""
+	self.endReached = false
+	self.errorMessage = ""
+	self.started = true
+	self.loading = true
+	self.stateLock.Unlock()
+
+	self.fetchPage(pointsLeaderboardRequest{seekRank: rank, mode: pointsLeaderboardReplace})
 }
 
 // LoadMore fetches the next page. It is a no-op while a page is loading and
@@ -214,6 +257,69 @@ func (self *PointsLeaderboardViewController) LoadMore() {
 	self.fetch(cursor, cursor == "")
 }
 
+// LoadMoreBefore fetches the page before the loaded window and prepends it.
+// It is a no-op while a page is loading and when the window already starts
+// at the top (HasMoreBefore is false); after an error it retries the same
+// page.
+func (self *PointsLeaderboardViewController) LoadMoreBefore() {
+	self.stateLock.Lock()
+	if !self.started || self.loading || self.prevCursor == "" {
+		self.stateLock.Unlock()
+		return
+	}
+	self.loading = true
+	cursor := self.prevCursor
+	self.stateLock.Unlock()
+
+	if pointsLeaderboardTestBeforeFetch != nil {
+		pointsLeaderboardTestBeforeFetch()
+	}
+	self.fetchPage(pointsLeaderboardRequest{cursor: cursor, mode: pointsLeaderboardPrepend})
+}
+
+// HasMoreBefore is true while there are ranks above the loaded window (the
+// window does not start at rank 1), so LoadMoreBefore has a page to fetch.
+func (self *PointsLeaderboardViewController) HasMoreBefore() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.prevCursor != ""
+}
+
+// HasMoreAfter is true while there are ranks below the loaded window, so
+// LoadMore has a page to fetch. It is the negation of IsEndReached.
+func (self *PointsLeaderboardViewController) HasMoreAfter() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return !self.endReached
+}
+
+// FirstLoadedPosition is the 1-based position (in the current sort's total
+// order) of the first loaded row, 0 while no row is loaded.
+func (self *PointsLeaderboardViewController) FirstLoadedPosition() int64 {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if len(self.rows) == 0 {
+		return 0
+	}
+	return self.rows[0].Position
+}
+
+// LastLoadedPosition is the 1-based position of the last loaded row, 0 while
+// no row is loaded.
+func (self *PointsLeaderboardViewController) LastLoadedPosition() int64 {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if len(self.rows) == 0 {
+		return 0
+	}
+	return self.rows[len(self.rows)-1].Position
+}
+
+// TotalRanked is GetTotalRanked under the name the indicator math reads.
+func (self *PointsLeaderboardViewController) TotalRanked() int64 {
+	return self.GetTotalRanked()
+}
+
 // pointsLeaderboardTestBeforeFetch is a test barrier between LoadMore's claim
 // and its request, to prove a second LoadMore in that gap is refused.
 var pointsLeaderboardTestBeforeFetch func()
@@ -231,10 +337,40 @@ func (self *PointsLeaderboardViewController) Refresh() {
 	self.fetch("", true)
 }
 
-// fetch requests one page. The caller has already claimed the in-flight slot
-// (`loading`) under the lock; this only snapshots what the request needs and
-// announces the loading state.
+// pointsLeaderboardMode is what a landed page does to the loaded window.
+type pointsLeaderboardMode int
+
+const (
+	// the page becomes the window
+	pointsLeaderboardReplace pointsLeaderboardMode = iota
+	// the page follows the window
+	pointsLeaderboardAppend
+	// the page precedes the window
+	pointsLeaderboardPrepend
+)
+
+// pointsLeaderboardRequest is one page request: a cursor (either direction),
+// or a seek rank, or neither for the first page.
+type pointsLeaderboardRequest struct {
+	cursor   string
+	seekRank int64
+	mode     pointsLeaderboardMode
+}
+
+// fetch requests one forward page: the first page (`replace`) or the page
+// after `cursor`. The caller has already claimed the in-flight slot.
 func (self *PointsLeaderboardViewController) fetch(cursor string, replace bool) {
+	mode := pointsLeaderboardAppend
+	if replace {
+		mode = pointsLeaderboardReplace
+	}
+	self.fetchPage(pointsLeaderboardRequest{cursor: cursor, mode: mode})
+}
+
+// fetchPage requests one page. The caller has already claimed the in-flight
+// slot (`loading`) under the lock; this only snapshots what the request needs
+// and announces the loading state.
+func (self *PointsLeaderboardViewController) fetchPage(request pointsLeaderboardRequest) {
 	self.stateLock.Lock()
 	self.errorMessage = ""
 	generation := self.generation
@@ -244,24 +380,25 @@ func (self *PointsLeaderboardViewController) fetch(cursor string, replace bool) 
 	self.pointsLeaderboardChanged()
 
 	args := &GetPointsLeaderboardArgs{
-		Sort:   sort,
-		Cursor: cursor,
-		Limit:  PointsLeaderboardPageSize,
+		Sort:     sort,
+		Cursor:   request.cursor,
+		SeekRank: request.seekRank,
+		Limit:    PointsLeaderboardPageSize,
 	}
 	self.getApi().GetPointsLeaderboard(args, GetPointsLeaderboardCallback(connect.NewApiCallback[*PointsLeaderboardResult](
 		func(result *PointsLeaderboardResult, err error) {
-			self.handlePage(generation, cursor, replace, result, err)
+			self.handlePage(generation, request, result, err)
 		},
 	)))
 }
 
 func (self *PointsLeaderboardViewController) handlePage(
 	generation int,
-	cursor string,
-	replace bool,
+	request pointsLeaderboardRequest,
 	result *PointsLeaderboardResult,
 	err error,
 ) {
+	cursor := request.cursor
 	if self.ctx.Err() != nil {
 		// closed while the page was in flight
 		return
@@ -289,7 +426,7 @@ func (self *PointsLeaderboardViewController) handlePage(
 	}
 
 	if result.Restart {
-		if cursor == "" {
+		if cursor == "" && request.seekRank == 0 {
 			// a restart on a fresh page: the server has nothing to page
 			self.loading = false
 			self.endReached = true
@@ -298,7 +435,11 @@ func (self *PointsLeaderboardViewController) handlePage(
 			self.pointsLeaderboardChanged()
 			return
 		}
-		// the snapshot behind the cursor is gone: reload from the top
+		// the snapshot behind the cursor is gone: reload from the top (a
+		// seek too: its positions belonged to the old snapshot)
+		self.rows = nil
+		self.nextCursor = ""
+		self.prevCursor = ""
 		self.stateLock.Unlock()
 
 		self.fetch("", true)
@@ -315,22 +456,29 @@ func (self *PointsLeaderboardViewController) handlePage(
 			page = append(page, row)
 		}
 	}
-	if replace {
+	switch request.mode {
+	case pointsLeaderboardReplace:
 		self.rows = page
-	} else {
-		self.rows = append(self.rows, page...)
+		self.nextCursor = result.NextCursor
+		self.prevCursor = result.PrevCursor
+		self.endReached = result.NextCursor == "" || len(page) == 0
+	case pointsLeaderboardAppend:
+		self.rows = mergePointsLeaderboardRows(self.rows, page)
+		self.nextCursor = result.NextCursor
+		self.endReached = result.NextCursor == "" || len(page) == 0
+	case pointsLeaderboardPrepend:
+		self.rows = mergePointsLeaderboardRows(page, self.rows)
+		self.prevCursor = result.PrevCursor
 	}
 	// the rows are always in the sort's order (see ComparePointsLeaderboardRows),
 	// whatever order the pages arrived in
 	sortPointsLeaderboardRows(self.sort, self.rows)
-	self.nextCursor = result.NextCursor
-	self.endReached = result.NextCursor == "" || len(page) == 0
 	self.loading = false
 	self.errorMessage = ""
 	if result.Me != nil {
 		formatPointsLeaderboardRow(result.Me.Row, result.EpochMetricsAvailable)
 	}
-	if replace || result.Me != nil {
+	if request.mode == pointsLeaderboardReplace || result.Me != nil {
 		self.me = result.Me
 	}
 	self.totalRanked = result.TotalRanked
@@ -663,4 +811,135 @@ func sortPointsLeaderboardRows(sortBy string, rows []*PointsLeaderboardRow) {
 	sort.SliceStable(rows, func(i, j int) bool {
 		return ComparePointsLeaderboardRows(sortBy, rows[i], rows[j]) < 0
 	})
+}
+
+/**
+ * Loaded window
+ */
+
+// mergePointsLeaderboardRows joins two runs of rows, `before` then `after`,
+// dropping from `after` every row `before` already holds. Rows are keyed by
+// their position in the sort's total order; a row without a position (an
+// older server) falls back to its network id. The result is the loaded
+// window: a page prepended or appended twice (a retried request, a page
+// that overlaps the window's edge) never repeats a row.
+func mergePointsLeaderboardRows(before []*PointsLeaderboardRow, after []*PointsLeaderboardRow) []*PointsLeaderboardRow {
+	if len(before) == 0 {
+		return after
+	}
+	if len(after) == 0 {
+		return before
+	}
+	seen := map[string]bool{}
+	for _, row := range before {
+		seen[pointsLeaderboardRowKey(row)] = true
+	}
+	out := make([]*PointsLeaderboardRow, 0, len(before)+len(after))
+	out = append(out, before...)
+	for _, row := range after {
+		key := pointsLeaderboardRowKey(row)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, row)
+	}
+	return out
+}
+
+func pointsLeaderboardRowKey(row *PointsLeaderboardRow) string {
+	if row.Position > 0 {
+		return fmt.Sprintf("p:%d", row.Position)
+	}
+	if row.NetworkId != nil {
+		return "n:" + row.NetworkId.String()
+	}
+	return "n:"
+}
+
+/**
+ * Scroll indicator label
+ */
+
+// The tier of a rank among the ranked networks, for the scroll indicator's
+// "#1,240 · Top 5%" label. The app maps the tier to its localized string;
+// the sdk never renders the words.
+const (
+	// no ranking to place the rank in (nothing ranked yet)
+	PointsLeaderboardTierUnknown = 0
+	PointsLeaderboardTierTop1    = 1
+	PointsLeaderboardTierTop5    = 2
+	PointsLeaderboardTierTop10   = 3
+	PointsLeaderboardTierTop25   = 4
+	PointsLeaderboardTierTop50   = 5
+	// the lower half
+	PointsLeaderboardTierRest = 6
+)
+
+// pointsLeaderboardTierPercents are the tier thresholds, top-first: a rank is
+// in a tier when it is within the tier's percent of the total, rounded up,
+// so the leader is always in the top 1% and a list of two has a top half.
+var pointsLeaderboardTierPercents = []struct {
+	tier    int
+	percent int
+}{
+	{PointsLeaderboardTierTop1, 1},
+	{PointsLeaderboardTierTop5, 5},
+	{PointsLeaderboardTierTop10, 10},
+	{PointsLeaderboardTierTop25, 25},
+	{PointsLeaderboardTierTop50, 50},
+}
+
+// PointsLeaderboardScrollLabelParts is the scroll indicator's label while it
+// is dragged: the rank it points at (clamped to the ranking) and the tier
+// the rank is in. `RankText` is the rank preformatted ("#1,240"); `Tier` is
+// one of the PointsLeaderboardTier* values and `TierPercent` its percent
+// (1, 5, 10, 25, 50; 0 for the rest and the unknown tier).
+type PointsLeaderboardScrollLabelParts struct {
+	Rank        int64  `json:"rank"`
+	Total       int64  `json:"total"`
+	RankText    string `json:"rank_text"`
+	Tier        int    `json:"tier"`
+	TierPercent int    `json:"tier_percent"`
+}
+
+// PointsLeaderboardScrollLabel is the label of the scroll indicator at a
+// rank among `total` ranked networks. It is pure: the app calls it on every
+// drag move with the rank the indicator's position maps to. The rank is
+// clamped to [1, total]; with nothing ranked the tier is unknown.
+func PointsLeaderboardScrollLabel(rank int64, total int64) *PointsLeaderboardScrollLabelParts {
+	if total < 0 {
+		total = 0
+	}
+	if rank < 1 {
+		rank = 1
+	}
+	if 0 < total && total < rank {
+		rank = total
+	}
+	parts := &PointsLeaderboardScrollLabelParts{
+		Rank:     rank,
+		Total:    total,
+		RankText: FormatRank(rank),
+		Tier:     PointsLeaderboardTierUnknown,
+	}
+	if total == 0 {
+		return parts
+	}
+	parts.Tier = PointsLeaderboardTierRest
+	for _, tier := range pointsLeaderboardTierPercents {
+		// the tier holds ceil(total * percent / 100) ranks
+		if rank <= (total*int64(tier.percent)+99)/100 {
+			parts.Tier = tier.tier
+			parts.TierPercent = tier.percent
+			break
+		}
+	}
+	return parts
+}
+
+// GetScrollLabel is PointsLeaderboardScrollLabel over the controller's total
+// ranked count, for bindings without free functions.
+func (self *PointsLeaderboardViewController) GetScrollLabel(rank int64) *PointsLeaderboardScrollLabelParts {
+	return PointsLeaderboardScrollLabel(rank, self.GetTotalRanked())
 }

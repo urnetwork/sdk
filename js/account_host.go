@@ -99,15 +99,24 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 			api.RemoveNetworkClient(&sdk.RemoveNetworkClientArgs{ClientId: clientId}, sdk.RemoveNetworkClientCallback(cb))
 		})
 	})
-	// getPointsLeaderboard(sort, cursor?, limit?): one page of the all-time
-	// points leaderboard (public; the jwt only adds `me`)
+	// getPointsLeaderboard(sort, cursor?, limit?, seekRank?): one page of the
+	// all-time points leaderboard (public; the jwt only adds `me`). The cursor
+	// pages in either direction (`next_cursor` / `prev_cursor`); `seekRank`
+	// (without a cursor) opens the page at that 1-based position of the sort.
 	m["getPointsLeaderboard"] = promiseMethod(func(args []js.Value) js.Value {
 		sort := stringArg(args, 0)
 		cursor := stringArg(args, 1)
 		limit := int(int64Arg(args, 2))
+		seekRank := int64Arg(args, 3)
 		return apiPromise(func(cb connect.ApiCallback[*sdk.PointsLeaderboardResult]) {
-			api.GetPointsLeaderboard(&sdk.GetPointsLeaderboardArgs{Sort: sort, Cursor: cursor, Limit: limit}, sdk.GetPointsLeaderboardCallback(cb))
+			api.GetPointsLeaderboard(&sdk.GetPointsLeaderboardArgs{Sort: sort, Cursor: cursor, Limit: limit, SeekRank: seekRank}, sdk.GetPointsLeaderboardCallback(cb))
 		})
+	})
+	// pointsLeaderboardScrollLabel(rank, total): synchronous; the scroll
+	// indicator's label parts (PointsLeaderboardScrollLabelParts) at a rank
+	// among `total` ranked networks
+	m["pointsLeaderboardScrollLabel"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(sdk.PointsLeaderboardScrollLabel(int64Arg(args, 0), int64Arg(args, 1)))
 	})
 	m["setPointsLeaderboardPublic"] = promiseMethod(func(args []js.Value) js.Value {
 		public := boolArg(args, 0)

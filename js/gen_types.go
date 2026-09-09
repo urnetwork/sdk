@@ -47,6 +47,7 @@ func generateTypes() error {
 		sdk.PointsLeaderboardRow{},
 		sdk.PointsLeaderboardResult{},
 		sdk.PointsLeaderboardError{},
+		sdk.PointsLeaderboardScrollLabelParts{},
 		sdk.SetPointsLeaderboardPublicArgs{},
 		sdk.SetPointsLeaderboardPublicResult{},
 		sdk.SetPointsLeaderboardPublicError{},

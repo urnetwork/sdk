@@ -8516,6 +8516,17 @@ func urnet_device_local_get_provide_secret_keys(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_local_get_provide_secret_keys")
 }
 
+//export urnet_device_local_get_provider_client_key_registered
+func urnet_device_local_get_provider_client_key_registered(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_get_provider_client_key_registered")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_provider_client_key_registered")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProviderClientKeyRegistered()
+	return C.bool(r0)
+}
+
 //export urnet_device_local_get_provider_connected
 func urnet_device_local_get_provider_connected(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_local_get_provider_connected")
@@ -8524,6 +8535,17 @@ func urnet_device_local_get_provider_connected(self C.uint64_t) C.bool {
 		return C.bool(false)
 	}
 	r0 := self_.GetProviderConnected()
+	return C.bool(r0)
+}
+
+//export urnet_device_local_get_provider_ready
+func urnet_device_local_get_provider_ready(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_get_provider_ready")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_provider_ready")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProviderReady()
 	return C.bool(r0)
 }
 
@@ -14104,6 +14126,16 @@ func urnet_points_leaderboard_key_of(row *C.char) *C.char {
 	return cJson(r0, "urnet_points_leaderboard_key_of")
 }
 
+//export urnet_points_leaderboard_scroll_label
+func urnet_points_leaderboard_scroll_label(rank C.int64_t, total C.int64_t) *C.char {
+	defer cgoGuard("urnet_points_leaderboard_scroll_label")
+	r0 := sdk.PointsLeaderboardScrollLabel(int64(rank), int64(total))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_points_leaderboard_scroll_label")
+}
+
 //export urnet_points_leaderboard_view_controller_add_points_leaderboard_listener
 func urnet_points_leaderboard_view_controller_add_points_leaderboard_listener(self C.uint64_t, listener_points_leaderboard_changed C.urnet_points_leaderboard_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_points_leaderboard_view_controller_add_points_leaderboard_listener")
@@ -14127,6 +14159,28 @@ func urnet_points_leaderboard_view_controller_close(self C.uint64_t) {
 		return
 	}
 	self_.Close()
+}
+
+//export urnet_points_leaderboard_view_controller_first_loaded_position
+func urnet_points_leaderboard_view_controller_first_loaded_position(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_first_loaded_position")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_first_loaded_position")
+	if !ok {
+		return 0
+	}
+	r0 := self_.FirstLoadedPosition()
+	return C.int64_t(r0)
+}
+
+//export urnet_points_leaderboard_view_controller_get_epoch_metrics_available
+func urnet_points_leaderboard_view_controller_get_epoch_metrics_available(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_get_epoch_metrics_available")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_get_epoch_metrics_available")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetEpochMetricsAvailable()
+	return C.bool(r0)
 }
 
 //export urnet_points_leaderboard_view_controller_get_error_message
@@ -14190,6 +14244,20 @@ func urnet_points_leaderboard_view_controller_get_rows(self C.uint64_t) *C.char 
 	return cJson(r0, "urnet_points_leaderboard_view_controller_get_rows")
 }
 
+//export urnet_points_leaderboard_view_controller_get_scroll_label
+func urnet_points_leaderboard_view_controller_get_scroll_label(self C.uint64_t, rank C.int64_t) *C.char {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_get_scroll_label")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_get_scroll_label")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetScrollLabel(int64(rank))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_points_leaderboard_view_controller_get_scroll_label")
+}
+
 //export urnet_points_leaderboard_view_controller_get_snapshot_time
 func urnet_points_leaderboard_view_controller_get_snapshot_time(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_points_leaderboard_view_controller_get_snapshot_time")
@@ -14223,6 +14291,28 @@ func urnet_points_leaderboard_view_controller_get_total_ranked(self C.uint64_t) 
 	return C.int64_t(r0)
 }
 
+//export urnet_points_leaderboard_view_controller_has_more_after
+func urnet_points_leaderboard_view_controller_has_more_after(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_has_more_after")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_has_more_after")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.HasMoreAfter()
+	return C.bool(r0)
+}
+
+//export urnet_points_leaderboard_view_controller_has_more_before
+func urnet_points_leaderboard_view_controller_has_more_before(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_has_more_before")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_has_more_before")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.HasMoreBefore()
+	return C.bool(r0)
+}
+
 //export urnet_points_leaderboard_view_controller_is_end_reached
 func urnet_points_leaderboard_view_controller_is_end_reached(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_points_leaderboard_view_controller_is_end_reached")
@@ -14245,6 +14335,17 @@ func urnet_points_leaderboard_view_controller_is_loading(self C.uint64_t) C.bool
 	return C.bool(r0)
 }
 
+//export urnet_points_leaderboard_view_controller_last_loaded_position
+func urnet_points_leaderboard_view_controller_last_loaded_position(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_last_loaded_position")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_last_loaded_position")
+	if !ok {
+		return 0
+	}
+	r0 := self_.LastLoadedPosition()
+	return C.int64_t(r0)
+}
+
 //export urnet_points_leaderboard_view_controller_load_more
 func urnet_points_leaderboard_view_controller_load_more(self C.uint64_t) {
 	defer cgoGuard("urnet_points_leaderboard_view_controller_load_more")
@@ -14255,6 +14356,16 @@ func urnet_points_leaderboard_view_controller_load_more(self C.uint64_t) {
 	self_.LoadMore()
 }
 
+//export urnet_points_leaderboard_view_controller_load_more_before
+func urnet_points_leaderboard_view_controller_load_more_before(self C.uint64_t) {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_load_more_before")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_load_more_before")
+	if !ok {
+		return
+	}
+	self_.LoadMoreBefore()
+}
+
 //export urnet_points_leaderboard_view_controller_refresh
 func urnet_points_leaderboard_view_controller_refresh(self C.uint64_t) {
 	defer cgoGuard("urnet_points_leaderboard_view_controller_refresh")
@@ -14263,6 +14374,26 @@ func urnet_points_leaderboard_view_controller_refresh(self C.uint64_t) {
 		return
 	}
 	self_.Refresh()
+}
+
+//export urnet_points_leaderboard_view_controller_reload_from_top
+func urnet_points_leaderboard_view_controller_reload_from_top(self C.uint64_t) {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_reload_from_top")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_reload_from_top")
+	if !ok {
+		return
+	}
+	self_.ReloadFromTop()
+}
+
+//export urnet_points_leaderboard_view_controller_seek_to_rank
+func urnet_points_leaderboard_view_controller_seek_to_rank(self C.uint64_t, rank C.int64_t) {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_seek_to_rank")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_seek_to_rank")
+	if !ok {
+		return
+	}
+	self_.SeekToRank(int(int64(rank)))
 }
 
 //export urnet_points_leaderboard_view_controller_set_sort
@@ -14293,6 +14424,17 @@ func urnet_points_leaderboard_view_controller_stop(self C.uint64_t) {
 		return
 	}
 	self_.Stop()
+}
+
+//export urnet_points_leaderboard_view_controller_total_ranked
+func urnet_points_leaderboard_view_controller_total_ranked(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_points_leaderboard_view_controller_total_ranked")
+	self_, ok := resolveHandle[*sdk.PointsLeaderboardViewController](uint64(self), "urnet_points_leaderboard_view_controller_total_ranked")
+	if !ok {
+		return 0
+	}
+	r0 := self_.TotalRanked()
+	return C.int64_t(r0)
 }
 
 //export urnet_points_to_nano_points

@@ -486,6 +486,37 @@ func jsPointsLeaderboardViewController(
 		vc.Refresh()
 		return js.Null()
 	})
+	// seekToRank(rank): jump the loaded window to the page holding this
+	// 1-based position of the sort's total order (the scroll indicator)
+	m["seekToRank"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.SeekToRank(int(int64Arg(args, 0)))
+		return js.Null()
+	})
+	m["reloadFromTop"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.ReloadFromTop()
+		return js.Null()
+	})
+	m["loadMoreBefore"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.LoadMoreBefore()
+		return js.Null()
+	})
+	m["hasMoreBefore"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.HasMoreBefore())
+	})
+	m["hasMoreAfter"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.HasMoreAfter())
+	})
+	m["firstLoadedPosition"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(float64(vc.FirstLoadedPosition()))
+	})
+	m["lastLoadedPosition"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(float64(vc.LastLoadedPosition()))
+	})
+	// getScrollLabel(rank): the indicator's label parts at a rank among the
+	// controller's total ranked (PointsLeaderboardScrollLabelParts)
+	m["getScrollLabel"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(vc.GetScrollLabel(int64Arg(args, 0)))
+	})
 	m["getRows"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsJson(vc.GetRows())
 	})

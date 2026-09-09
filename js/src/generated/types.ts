@@ -65,6 +65,7 @@ export interface ApiError {
 export interface GetPointsLeaderboardArgs {
   sort: string;
   cursor?: string;
+  seek_rank?: number;
   limit?: number;
 }
 
@@ -80,6 +81,7 @@ export interface PointsLeaderboardRow {
   rank_points: number;
   rank_blocks: number;
   rank_streak: number;
+  position: number;
   display_name?: string;
   total_points_text?: string;
   blocks_with_points_text?: string;
@@ -93,16 +95,26 @@ export interface PointsLeaderboardRow {
 export interface PointsLeaderboardResult {
   rows: PointsLeaderboardRow[] | null;
   next_cursor?: string;
+  prev_cursor?: string;
   restart?: boolean;
   total_ranked: number;
   snapshot_time?: string | null;
   latest_epoch: number;
+  epoch_metrics_available: boolean;
   me?: PointsLeaderboardRow & { points_leaderboard_public: boolean } | null;
   error?: PointsLeaderboardError | null;
 }
 
 export interface PointsLeaderboardError {
   message: string;
+}
+
+export interface PointsLeaderboardScrollLabelParts {
+  rank: number;
+  total: number;
+  rank_text: string;
+  tier: number;
+  tier_percent: number;
 }
 
 export interface SetPointsLeaderboardPublicArgs {
