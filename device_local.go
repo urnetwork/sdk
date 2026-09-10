@@ -670,6 +670,8 @@ type DeviceLocal struct {
 	apiMultiClientGenerator   *connect.ApiMultiClientGenerator
 	ownedMultiClientGenerator deviceMultiClientGenerator
 	provider                  *deviceLocalProvider
+	// the enabled subprotocols and their listeners (device_local_subprotocol.go)
+	subprotocols *deviceLocalSubprotocols
 
 	stats *DeviceStats
 
@@ -1329,6 +1331,7 @@ func newDeviceLocalWithOverrides(
 		ctx:          ctx,
 		cancel:       cancel,
 		byJwt:        byJwt,
+		subprotocols: newDeviceLocalSubprotocols(ctx, log),
 		// apiUrl:            apiUrl,
 		deviceDescription:  deviceDescription,
 		deviceSpec:         deviceSpec,
@@ -1431,6 +1434,10 @@ func newDeviceLocalWithOverrides(
 		providerEgressContractDetailsChangeListeners:  connect.NewCallbackList[ContractDetailsChangeListener](),
 		providerIngressContractStatsChangeListeners:   connect.NewCallbackList[ContractStatsChangeListener](),
 		providerIngressContractDetailsChangeListeners: connect.NewCallbackList[ContractDetailsChangeListener](),
+	}
+	// the enabled subprotocols follow the device's own client
+	if provider != nil {
+		deviceLocal.attachSubprotocolsToClient(provider.Client())
 	}
 	// Learned caches have an independent lifecycle, not user preference intent.
 	if localState != nil {
@@ -4906,6 +4913,7 @@ func (self *DeviceLocal) close() {
 	}
 	if self.provider != nil {
 		provider := self.provider
+		self.subprotocols.attach(nil)
 		provider.Close()
 		self.provider = nil
 		self.startLifecycleWorkerWithLock(func() {
