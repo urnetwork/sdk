@@ -745,6 +745,9 @@ type DeviceLocal struct {
 	// the mobile low-memory profile; its goroutine follows self.ctx.
 	memorySampler                 *mobileMemorySampler
 	platformTransportReceiveStats *connect.PlatformTransportReceiveStats
+	// transferDiagStats is the shared p2p data-plane counter set of the
+	// build-time transfer diagnostic seam (transfer_diag.go); nil unless on.
+	transferDiagStats *connect.P2pDataPlaneStats
 	// Aggregate packet ownership is the remaining active-load risk after
 	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.
@@ -1605,6 +1608,7 @@ func newDeviceLocalWithOverrides(
 		mobileRuntime(),
 	)
 	deviceLocal.updateMobilePacketPerformanceModeWithLock()
+	deviceLocal.startTransferDiag()
 	if deviceLocal.mobilePacketPressure != nil {
 		deviceLocal.platformTransportReceiveStats =
 			&connect.PlatformTransportReceiveStats{}
@@ -4252,6 +4256,7 @@ func (self *DeviceLocal) applyDestination(
 							transportMode == connect.TransportModeH1,
 						)
 						clientSettings.Log = self.log
+						self.attachTransferDiag(clientSettings)
 						// share the device budgets so every window client's
 						// queues draw from the same pools
 						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
