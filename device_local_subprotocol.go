@@ -46,7 +46,11 @@ type SubprotocolStats struct {
 	DroppedUnregistered int64
 	DroppedDecode       int64
 	MarshalOverrun      int64
-	QueriesAnswered     int64
+	// queries this device sent, queries it answered, and answers it could
+	// not enqueue on the companion reply path
+	QueriesSent     int64
+	QueriesAnswered int64
+	QueryReplyDrops int64
 }
 
 // Ids below this are the network's (connect.SubprotocolReservedLimit).
@@ -292,8 +296,21 @@ func (self *deviceLocalSubprotocols) stats() *SubprotocolStats {
 		DroppedUnregistered: int64(snapshot.DroppedUnregistered),
 		DroppedDecode:       int64(snapshot.DroppedDecode),
 		MarshalOverrun:      int64(snapshot.MarshalOverrun),
+		QueriesSent:         int64(snapshot.QueriesSent),
 		QueriesAnswered:     int64(snapshot.QueriesAnswered),
+		QueryReplyDrops:     int64(snapshot.QueryReplyDrops),
 	}
+}
+
+// Messages delivered to the listeners of one id on this device's client, 0
+// when the id is not enabled or no client is attached (the per-id map of the
+// client snapshot, one entry at a time, since a map cannot cross the binding).
+func (self *deviceLocalSubprotocols) receivedCount(subprotocolId int32) int64 {
+	client := self.attachedClient()
+	if client == nil {
+		return 0
+	}
+	return int64(client.SubprotocolStats().ReceivedById[connect.SubprotocolId(subprotocolId)])
 }
 
 // --- DeviceLocal surface ---
@@ -327,6 +344,11 @@ func (self *DeviceLocal) SendSubprotocolBytes(subprotocolId int32, destinationCl
 // from a worker.
 func (self *DeviceLocal) QuerySubprotocols(destinationClientId *Id, timeoutMillis int64, callback SubprotocolsQueryCallback) {
 	self.subprotocols.query(destinationClientId, timeoutMillis, callback)
+}
+
+// Messages delivered to the listeners of one enabled id.
+func (self *DeviceLocal) SubprotocolReceivedCount(subprotocolId int32) int64 {
+	return self.subprotocols.receivedCount(subprotocolId)
 }
 
 func (self *DeviceLocal) SubprotocolStats() *SubprotocolStats {
