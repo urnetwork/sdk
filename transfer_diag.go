@@ -163,3 +163,19 @@ func (self *DeviceLocal) logTransferDiag() {
 		glog.Infof("[flightgate] %s\n", string(encoded))
 	}
 }
+
+// SetTransferDiagAllowDirect is the rig's relay-only control: while enabled,
+// the next window (connect after a disconnect) is built with direct mode
+// forced to allowDirect, superseding the performance profile and the
+// same-network force; disabled restores the normal decision. Never used by
+// an app; the debug receiver of the Android rig build calls it.
+func (self *DeviceLocal) SetTransferDiagAllowDirect(enabled bool, allowDirect bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if !enabled {
+		self.transferDiagAllowDirect = nil
+		return
+	}
+	value := allowDirect
+	self.transferDiagAllowDirect = &value
+}

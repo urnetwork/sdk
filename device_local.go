@@ -748,6 +748,10 @@ type DeviceLocal struct {
 	// transferDiagStats is the shared p2p data-plane counter set of the
 	// build-time transfer diagnostic seam (transfer_diag.go); nil unless on.
 	transferDiagStats *connect.P2pDataPlaneStats
+	// transferDiagAllowDirect, when set, overrides direct (p2p) mode for the
+	// next window (a relay-only control for the rig); nil leaves the
+	// performance profile and the same-network force in charge.
+	transferDiagAllowDirect *bool
 	// Aggregate packet ownership is the remaining active-load risk after
 	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.
@@ -4319,6 +4323,10 @@ func (self *DeviceLocal) applyDestination(
 			// hosted hard limit: the hosted multi client must never allow
 			// direct mode, superseding any performance profile and the
 			// same-network force inside the multi client
+			if override := self.transferDiagAllowDirect; override != nil {
+				overrideAllowDirect := *override
+				settings.OverrideAllowDirect = &overrideAllowDirect
+			}
 			if self.settings.HostedIncompatible {
 				overrideAllowDirect := false
 				settings.OverrideAllowDirect = &overrideAllowDirect
