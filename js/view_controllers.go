@@ -6,7 +6,7 @@ import (
 	"sync"
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 func jsViewControllerClose(closeController func()) js.Func {
