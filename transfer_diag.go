@@ -212,6 +212,41 @@ func (self *DeviceLocal) logTransferDiag() {
 	}
 }
 
+// SetTransferDiagDeferTimeoutResend turns FLIGHTGATEFIX §13.5's deferred
+// whole-window timeout resend on or off for clients built after this call
+// (the provider client at its next rotation, a window client at the next
+// connect), so the rig can A/B the setting without a rebuild per arm.
+func (self *DeviceLocal) SetTransferDiagDeferTimeoutResend(enabled bool) {
+	self.stateLock.Lock()
+	self.transferDiagDeferTimeoutResend = &enabled
+	send := self.settings.ClientSettings.SendBufferSettings
+	self.stateLock.Unlock()
+	// the device's own settings feed the provider client
+	if send != nil {
+		send.DeferTimeoutResendWhileCumulativeProgress = enabled
+	}
+}
+
+// applyTransferDiagSettings stamps the rig's setting overrides onto one
+// client's settings. A no-op unless an override is set.
+func (self *DeviceLocal) applyTransferDiagSettings(clientSettings *connect.ClientSettings) {
+	self.stateLock.Lock()
+	defer_ := self.transferDiagDeferTimeoutResend
+	self.stateLock.Unlock()
+	if defer_ == nil || clientSettings == nil || clientSettings.SendBufferSettings == nil {
+		return
+	}
+	clientSettings.SendBufferSettings.DeferTimeoutResendWhileCumulativeProgress = *defer_
+}
+
+// TransferDiagDeferTimeoutResend reports the current override (false when
+// unset), for the rig's status line.
+func (self *DeviceLocal) TransferDiagDeferTimeoutResend() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.transferDiagDeferTimeoutResend != nil && *self.transferDiagDeferTimeoutResend
+}
+
 // SetTransferDiagAllowDirect is the rig's relay-only control: while enabled,
 // the next window (connect after a disconnect) is built with direct mode
 // forced to allowDirect, superseding the performance profile and the

@@ -752,6 +752,9 @@ type DeviceLocal struct {
 	// next window (a relay-only control for the rig); nil leaves the
 	// performance profile and the same-network force in charge.
 	transferDiagAllowDirect *bool
+	// transferDiagDeferTimeoutResend overrides FLIGHTGATEFIX §13.5's setting
+	// for clients built after it is set; nil leaves the build's default.
+	transferDiagDeferTimeoutResend *bool
 	// Aggregate packet ownership is the remaining active-load risk after
 	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.
@@ -4261,6 +4264,7 @@ func (self *DeviceLocal) applyDestination(
 						)
 						clientSettings.Log = self.log
 						self.attachTransferDiag(clientSettings)
+						self.applyTransferDiagSettings(clientSettings)
 						// share the device budgets so every window client's
 						// queues draw from the same pools
 						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
