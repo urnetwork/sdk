@@ -53,6 +53,30 @@ type transferDiagState struct {
 	P2p                 connect.P2pDataPlaneStatsSnapshot `json:"p2p"`
 }
 
+// transferDiagMemory is the Go runtime view the MEMSTEADY gate judges
+// (goRuntimeBytes is go_total_bytes), read from the mobile sampler's reader
+// at the diagnostic interval instead of the sampler's own 15 s.
+type transferDiagMemory struct {
+	Part                           string `json:"part"`
+	UnixMillis                     int64  `json:"unix_millis"`
+	GoTotalByteCount               int64  `json:"go_total_bytes"`
+	GoLiveByteCount                int64  `json:"go_live_bytes"`
+	GoGoalByteCount                int64  `json:"go_goal_bytes"`
+	GoLimitByteCount               int64  `json:"go_limit_bytes"`
+	PhysicalByteCount              int64  `json:"physical_bytes"`
+	GoroutineCount                 int64  `json:"goroutines"`
+	PoolOutstandingCount           int64  `json:"pool_outstanding"`
+	PacketPoolOutstandingByteCount int64  `json:"packet_pool_outstanding_bytes"`
+	PoolRetainedByteCount          int64  `json:"pool_retained_bytes"`
+	PacketPoolRetainedByteCount    int64  `json:"packet_pool_retained_bytes"`
+	PoolCapacityByteCount          int64  `json:"pool_capacity_bytes"`
+	TransportBudgetUsedByteCount   int64  `json:"transport_budget_used_bytes"`
+	IdleReclaimCount               int64  `json:"idle_reclaim_count"`
+	ForcedGCCount                  int64  `json:"forced_gc_count"`
+	GCCycleCount                   int64  `json:"gc_cycles"`
+	WindowClientCount              int    `json:"window_client_count"`
+}
+
 type transferDiagSend struct {
 	Part         string                                  `json:"part"`
 	UnixMillis   int64                                   `json:"unix_millis"`
@@ -153,6 +177,30 @@ func (self *DeviceLocal) logTransferDiag() {
 				transferDiagReceive{Part: "window_receive", UnixMillis: millis, Window: window, Destination: destination, Receive: stats.Receive},
 			)
 		}
+	}
+	if self.memorySampler != nil {
+		var runtimeSnapshot mobileMemoryRuntimeSnapshot
+		self.memorySampler.runtimeReader.read(&runtimeSnapshot)
+		lines = append(lines, transferDiagMemory{
+			Part:                           "memory",
+			UnixMillis:                     millis,
+			GoTotalByteCount:               runtimeSnapshot.totalByteCount,
+			GoLiveByteCount:                runtimeSnapshot.liveByteCount,
+			GoGoalByteCount:                runtimeSnapshot.goalByteCount,
+			GoLimitByteCount:               runtimeSnapshot.limitByteCount,
+			PhysicalByteCount:              runtimeSnapshot.physicalByteCount,
+			GoroutineCount:                 runtimeSnapshot.goroutineCount,
+			PoolOutstandingCount:           runtimeSnapshot.poolOutstandingCount,
+			PacketPoolOutstandingByteCount: runtimeSnapshot.packetPoolOutstandingByteCount,
+			PoolRetainedByteCount:          runtimeSnapshot.poolRetainedByteCount,
+			PacketPoolRetainedByteCount:    runtimeSnapshot.packetPoolRetainedByteCount,
+			PoolCapacityByteCount:          runtimeSnapshot.poolCapacityByteCount,
+			TransportBudgetUsedByteCount:   runtimeSnapshot.transportBudgetUsedByteCount,
+			IdleReclaimCount:               runtimeSnapshot.idleReclaimCount,
+			ForcedGCCount:                  runtimeSnapshot.forcedGCCount,
+			GCCycleCount:                   runtimeSnapshot.gcCycleCount,
+			WindowClientCount:              state.WindowClientCount,
+		})
 	}
 	lines = append([]any{state}, lines...)
 	for _, line := range lines {
