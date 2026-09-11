@@ -7507,6 +7507,20 @@ func urnet_device_get_provider_egress_contract_stats(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_provider_egress_contract_stats")
 }
 
+//export urnet_device_get_provider_family_transport_status
+func urnet_device_get_provider_family_transport_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provider_family_transport_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provider_family_transport_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderFamilyTransportStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provider_family_transport_status")
+}
+
 //export urnet_device_get_provider_identities
 func urnet_device_get_provider_identities(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_provider_identities")

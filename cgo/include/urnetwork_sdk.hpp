@@ -274,6 +274,7 @@ inline constexpr int64_t ProvideModePublic = 3;
 inline constexpr int64_t ProvideModeStream = 4;
 inline constexpr const char* ProvideNetworkModeAll = "all";
 inline constexpr const char* ProvideNetworkModeWiFi = "wifi";
+inline constexpr const char* ProviderFamilyTransportStateUnknown = "unknown";
 inline constexpr const char* ProviderStateAdded = "Added";
 inline constexpr const char* ProviderStateEvaluationFailed = "EvaluationFailed";
 inline constexpr const char* ProviderStateInEvaluation = "InEvaluation";
@@ -603,6 +604,7 @@ struct PriceTier;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
+struct ProviderFamilyTransportStatus;
 struct ProviderGridPoint;
 struct ProviderIdentity;
 struct ProviderSpec;
@@ -2189,6 +2191,15 @@ struct ProvideSecretKey {
 	std::string provide_secret_key{};
 };
 
+struct ProviderFamilyTransportStatus {
+	bool HasIpv4{};
+	std::string Ipv4State{};
+	bool HasIpv6{};
+	std::string Ipv6State{};
+	std::string StandbyState{};
+	bool StandbyActive{};
+};
+
 struct ProviderGridPoint {
 	int32_t X{};
 	int32_t Y{};
@@ -3393,6 +3404,8 @@ inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
 inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v);
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v);
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v);
+inline void to_json(nlohmann::json& j, const ProviderFamilyTransportStatus& v);
+inline void from_json(const nlohmann::json& j, ProviderFamilyTransportStatus& v);
 inline void to_json(nlohmann::json& j, const ProviderGridPoint& v);
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v);
 inline void to_json(nlohmann::json& j, const ProviderIdentity& v);
@@ -10220,6 +10233,39 @@ inline void from_json(const nlohmann::json& j, ProvideSecretKey& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderFamilyTransportStatus& v) {
+	j = nlohmann::json::object();
+	j["HasIpv4"] = v.HasIpv4;
+	j["Ipv4State"] = v.Ipv4State;
+	j["HasIpv6"] = v.HasIpv6;
+	j["Ipv6State"] = v.Ipv6State;
+	j["StandbyState"] = v.StandbyState;
+	j["StandbyActive"] = v.StandbyActive;
+}
+inline void from_json(const nlohmann::json& j, ProviderFamilyTransportStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("HasIpv4"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasIpv4);
+	}
+	if (auto it = j.find("Ipv4State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ipv4State);
+	}
+	if (auto it = j.find("HasIpv6"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasIpv6);
+	}
+	if (auto it = j.find("Ipv6State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ipv6State);
+	}
+	if (auto it = j.find("StandbyState"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StandbyState);
+	}
+	if (auto it = j.find("StandbyActive"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StandbyActive);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderGridPoint& v) {
 	j = nlohmann::json::object();
 	j["X"] = v.X;
@@ -14063,6 +14109,7 @@ public:
 	bool getProvidePaused() const;
 	std::optional<ContractDetailsList> getProviderEgressContractDetails() const;
 	std::optional<ContractStats> getProviderEgressContractStats() const;
+	std::optional<ProviderFamilyTransportStatus> getProviderFamilyTransportStatus() const;
 	std::optional<ProviderIdentityList> getProviderIdentities() const;
 	std::optional<ContractDetailsList> getProviderIngressContractDetails() const;
 	std::optional<ContractStats> getProviderIngressContractStats() const;
@@ -21150,6 +21197,14 @@ inline std::optional<ContractStats> Device::getProviderEgressContractStats() con
 		return std::nullopt;
 	}
 	return detail::parseJson<ContractStats>(r_s->c_str());
+}
+inline std::optional<ProviderFamilyTransportStatus> Device::getProviderFamilyTransportStatus() const {
+	char* r_c = urnet_device_get_provider_family_transport_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderFamilyTransportStatus>(r_s->c_str());
 }
 inline std::optional<ProviderIdentityList> Device::getProviderIdentities() const {
 	char* r_c = urnet_device_get_provider_identities(handle());

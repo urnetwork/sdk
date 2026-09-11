@@ -663,6 +663,13 @@ type Device interface {
 
 	AddProviderTransportStatusChangeListener(listener ProviderTransportStatusChangeListener) Sub
 
+	// GetProviderFamilyTransportStatus is the per-family readout of the
+	// provider's platform transports (connect/IPV6.md A4): whether the v4 and
+	// v6 pinned transports exist and their states, and the standby. Never
+	// nil; every state is "unknown" when there is no provider or the device
+	// cannot be reached.
+	GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus
+
 	// packet stats
 
 	GetPacketStats() *PacketStats

@@ -152,9 +152,15 @@ type NetworkSpace struct {
 	apiUrl      string
 	platformUrl string
 
-	clientStrategy  *connect.ClientStrategy
-	asyncLocalState *AsyncLocalState
-	api             *Api
+	clientStrategy *connect.ClientStrategy
+	// clientStrategySettings is what clientStrategy was built from. The
+	// provider's family-pinned transports seed their direct-only strategies
+	// from it (connect.NewDirectClientStrategy), so a pinned dial carries the
+	// same tls, resolver and logging configuration as the shared strategy
+	// minus the extenders and proxy.
+	clientStrategySettings *connect.ClientStrategySettings
+	asyncLocalState        *AsyncLocalState
+	api                    *Api
 	// the space's dial logger, carried so the manager's one-time control ip
 	// family restore lands on the same log as the dials it governs
 	log connect.Logger
@@ -227,10 +233,11 @@ func newNetworkSpaceWithConnectSettings(
 		apiUrl:      apiUrl,
 		platformUrl: platformUrl,
 
-		clientStrategy:  clientStrategy,
-		asyncLocalState: asyncLocalState,
-		api:             api,
-		log:             clientStrategySettings.ConnectSettings.Log,
+		clientStrategy:         clientStrategy,
+		clientStrategySettings: clientStrategySettings,
+		asyncLocalState:        asyncLocalState,
+		api:                    api,
+		log:                    clientStrategySettings.ConnectSettings.Log,
 	}
 }
 
@@ -360,9 +367,10 @@ func NewNetworkSpaceWithUrls(
 		apiUrl:      values.ApiUrl,
 		platformUrl: values.PlatformUrl,
 
-		clientStrategy:  clientStrategy,
-		asyncLocalState: nil,
-		api:             api,
+		clientStrategy:         clientStrategy,
+		clientStrategySettings: clientStrategySettings,
+		asyncLocalState:        nil,
+		api:                    api,
 	}
 }
 

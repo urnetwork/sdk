@@ -123,6 +123,29 @@ export interface NetworkPeersInfo {
  * hosting the connection (0 when unknown); derive the duration locally rather
  * than expecting it to tick.
  */
+/** the state of one provider platform transport: connecting | connected |
+ * disabled | sleeping (no path of that family) | idle-policy (the control
+ * family policy forbids that family) | unknown */
+export type ProviderFamilyTransportState =
+  | "connecting"
+  | "connected"
+  | "disabled"
+  | "sleeping"
+  | "idle-policy"
+  | "unknown";
+
+/** the per-family readout of the provider's v4-pinned, v6-pinned and
+ * family-agnostic standby platform transports (connect/IPV6.md A4) */
+export interface ProviderFamilyTransportStatus {
+  hasIpv4: boolean;
+  ipv4State: ProviderFamilyTransportState;
+  hasIpv6: boolean;
+  ipv6State: ProviderFamilyTransportState;
+  standbyState: ProviderFamilyTransportState;
+  /** true while the standby is released to dial */
+  standbyActive: boolean;
+}
+
 /** a provider's proven address-family category (connect/IPV6.md) */
 export type IpFamily = "dualstack" | "v4-only" | "v6-only";
 /** the short display form of IpFamily */
@@ -191,6 +214,9 @@ export interface DeviceRemote {
   getProvidePaused(): boolean;
   setProvidePaused(v: boolean): void;
   getProvideEnabled(): boolean;
+  /** the per-family readout of the provider's platform transports
+   * (connect/IPV6.md A4); every state is "unknown" without a provider */
+  getProviderFamilyTransportStatus(): ProviderFamilyTransportStatus | null;
 
   // connect location / destination
   getConnectLocation(): ConnectLocationInfo | null;

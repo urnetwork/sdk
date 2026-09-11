@@ -3568,6 +3568,20 @@ func (self *DeviceLocal) GetProviderConnected() bool {
 	return !closed && provider != nil && provider.IsConnected()
 }
 
+// GetProviderFamilyTransportStatus reads the current provider generation's
+// transport group. Snapshots the provider under stateLock like
+// GetProviderConnected so a concurrent Close cannot hand back a stale one.
+func (self *DeviceLocal) GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	if closed || provider == nil {
+		return unknownProviderFamilyTransportStatus()
+	}
+	return provider.familyTransportStatus()
+}
+
 func (self *DeviceLocal) GetConnectEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

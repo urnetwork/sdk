@@ -180,6 +180,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PRICE_TIER_SOURCE_IP "ip"
 #define URNET_PRICE_TIER_SOURCE_STOREFRONT "storefront"
 #define URNET_PRICE_TIER_STANDARD "standard"
+#define URNET_PROVIDER_FAMILY_TRANSPORT_STATE_UNKNOWN "unknown"
 #define URNET_PROVIDER_STATE_ADDED "Added"
 #define URNET_PROVIDER_STATE_EVALUATION_FAILED "EvaluationFailed"
 #define URNET_PROVIDER_STATE_IN_EVALUATION "InEvaluation"
@@ -953,6 +954,7 @@ char* urnet_device_get_provide_network_mode(uint64_t self);
 bool urnet_device_get_provide_paused(uint64_t self);
 char* urnet_device_get_provider_egress_contract_details(uint64_t self);
 char* urnet_device_get_provider_egress_contract_stats(uint64_t self);
+char* urnet_device_get_provider_family_transport_status(uint64_t self);
 char* urnet_device_get_provider_identities(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_details(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_stats(uint64_t self);
@@ -3211,6 +3213,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* ProvideSecretKeyList (json):
  *   = ProvideSecretKey | null[]
+ */
+
+/* ProviderFamilyTransportStatus (json):
+ *   HasIpv4: boolean
+ *   Ipv4State: string
+ *   HasIpv6: boolean
+ *   Ipv6State: string
+ *   StandbyState: string
+ *   StandbyActive: boolean
  */
 
 /* ProviderGridPoint (json):
