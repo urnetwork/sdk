@@ -319,6 +319,10 @@ typedef void (*urnet_stripe_payment_sheet_cb)(void* user_data, const char* resul
 void urnet_invoke_stripe_payment_sheet(urnet_stripe_payment_sheet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_stripe_prices_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_stripe_prices(urnet_stripe_prices_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_subprotocol_cb)(void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len);
+void urnet_invoke_subprotocol(urnet_subprotocol_cb cb, void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len);
+typedef void (*urnet_subprotocols_query_cb)(void* user_data, const char* subprotocol_ids_json, bool ok_param);
+void urnet_invoke_subprotocols_query(urnet_subprotocols_query_cb cb, void* user_data, const char* subprotocol_ids_json, bool ok_param);
 typedef void (*urnet_subscription_balance_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_subscription_balance(urnet_subscription_balance_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_subscription_balance_change_cb)(void* user_data);

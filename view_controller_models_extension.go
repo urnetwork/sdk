@@ -72,6 +72,9 @@ type ProviderGridPoint struct {
 	State    ProviderState
 	EndTime  *Time
 	Active   bool
+	// IpFamily and IpFamilyLabel mirror the main build; see ip_family.go.
+	IpFamily      string
+	IpFamilyLabel string
 }
 
 type ThroughputSample struct {

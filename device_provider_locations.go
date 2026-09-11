@@ -43,6 +43,13 @@ type ConnectedProviderLocation struct {
 	// routing-eligible in the window. 0 when unknown (an older device peer).
 	// The ui derives the connected duration from this and ticks it locally.
 	ConnectedSinceMillis int64
+	// IpFamily is the provider's address-family category: IpFamilyDualstack,
+	// IpFamilyV4Only or IpFamilyV6Only. A legacy provider (an older server or
+	// device peer, a fixed peer) reads as v4-only.
+	IpFamily string
+	// IpFamilyLabel is the short display form of IpFamily: IpFamilyLabelBoth,
+	// IpFamilyLabelV4 or IpFamilyLabelV6, for the provider rows.
+	IpFamilyLabel string
 }
 
 type ConnectedProviderLocationList struct {
@@ -108,6 +115,8 @@ func deriveConnectedProviderLocations(providerEvents map[connect.Id]*connect.Pro
 		location := &ConnectedProviderLocation{
 			ClientId:             newId(providerId(providerEvent)),
 			ConnectedSinceMillis: connectedSinceMillis(providerEvent),
+			IpFamily:             ipFamilyValue(providerEvent.IpFamily),
+			IpFamilyLabel:        ipFamilyLabel(providerEvent.IpFamily),
 		}
 		if l := providerEvent.Location; l != nil {
 			location.HasLocation = true

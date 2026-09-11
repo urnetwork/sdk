@@ -1616,9 +1616,10 @@ func (self *DeviceLocal) TunnelDnsAddressesIpv4() *StringList {
 	return self.tunnelDnsAddressList(false)
 }
 
-// TunnelDnsAddressesIpv6 is TunnelDnsAddressesIpv4 for IPv6. There is no default
-// IPv6 tunnel dns, so this is empty unless the dns resolver settings set
-// unencrypted local IPv6 servers.
+// TunnelDnsAddressesIpv6 is TunnelDnsAddressesIpv4 for IPv6: the resolver
+// settings' unencrypted local IPv6 servers when set, otherwise the IPv6
+// upgrade-mask stand-in (DefaultTunnelDnsAddressIpv6), which the UpgradeMux
+// claims on :53 exactly like the IPv4 mask.
 func (self *DeviceLocal) TunnelDnsAddressesIpv6() *StringList {
 	return self.tunnelDnsAddressList(true)
 }
@@ -4363,6 +4364,9 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 				TargetSize:         n,
 				ProviderStateAdded: n,
 				MinSatisfied:       true,
+				// fixed destinations bypass discovery, so their category is
+				// legacy, which reads as v4-only
+				ProviderV4OnlyCount: n,
 			}
 		case *connect.RemoteUserNatMultiClient:
 			windowStatus = toWindowStatus(v.Monitor())
@@ -4392,6 +4396,14 @@ func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 			windowStatus.ProviderStateNotAdded += 1
 		case connect.ProviderStateAdded:
 			windowStatus.ProviderStateAdded += 1
+			switch ipFamilyValue(providerEvent.IpFamily) {
+			case IpFamilyDualstack:
+				windowStatus.ProviderDualstackCount += 1
+			case IpFamilyV6Only:
+				windowStatus.ProviderV6OnlyCount += 1
+			default:
+				windowStatus.ProviderV4OnlyCount += 1
+			}
 		case connect.ProviderStateRemoved:
 			windowStatus.ProviderStateRemoved += 1
 		}

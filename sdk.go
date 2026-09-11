@@ -425,7 +425,9 @@ const (
 // SetControlIpFamilyPolicy sets the address family THIS process uses for
 // control-plane dials: the api, the platform control websocket, and the h3
 // transport's name resolution. It does not affect tunnelled user traffic,
-// which is IPv4-only by its own design.
+// which is dual-stack: each flow carries the family of its own packets, and
+// which families a provider can egress is discovered per provider (see
+// IPV6.md in the connect repo and ip_family.go here).
 //
 // This process only. On ios the api dial happens in the packet tunnel
 // extension whenever the tunnel is up, so a value set here reaches that

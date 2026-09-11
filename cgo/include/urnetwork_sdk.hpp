@@ -159,6 +159,7 @@ inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* ContractStatusClosed = "closed";
 inline constexpr const char* ContractStatusOpen = "open";
+inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcVersion = 3;
 inline constexpr int64_t DeviceRpcWsBinary = 2;
@@ -201,9 +202,15 @@ inline constexpr const char* ExperimentSurfaceOfferFinalScreen = "offer.final_sc
 inline constexpr const char* ExperimentSurfaceOfferInApp = "offer.in_app";
 inline constexpr const char* ExperimentSurfaceOfferIntroStep = "offer.intro_step";
 inline constexpr const char* ExperimentVariantHoldout = "holdout";
+inline constexpr const char* IpFamilyDualstack = "dualstack";
+inline constexpr const char* IpFamilyLabelBoth = "both";
+inline constexpr const char* IpFamilyLabelV4 = "v4";
+inline constexpr const char* IpFamilyLabelV6 = "v6";
 inline constexpr int64_t IpFamilyPolicyAuto = 0;
 inline constexpr int64_t IpFamilyPolicyForce4 = 1;
 inline constexpr int64_t IpFamilyPolicyForce6 = 2;
+inline constexpr const char* IpFamilyV4Only = "v4-only";
+inline constexpr const char* IpFamilyV6Only = "v6-only";
 inline constexpr int64_t IpProtocolTcp = 2;
 inline constexpr int64_t IpProtocolUdp = 1;
 inline constexpr int64_t IpProtocolUnknown = 0;
@@ -322,6 +329,7 @@ inline constexpr const char* StripeItemProYearly = "pro_yearly";
 inline constexpr const char* StripeRedirectOnCompletionNever = "never";
 inline constexpr const char* StripeUiModeEmbedded = "embedded";
 inline constexpr const char* StripeUiModeHosted = "hosted";
+inline constexpr int64_t SubprotocolReservedLimit = 1024;
 inline constexpr const char* SubscriptionPlanSupporter = "supporter";
 inline constexpr const char* SubscriptionStoreApple = "apple";
 inline constexpr const char* SubscriptionStoreGoogle = "google";
@@ -667,6 +675,7 @@ struct StripePaymentIntent;
 struct StripePaymentSheetArgs;
 struct StripePaymentSheetResult;
 struct StripePricesResult;
+struct SubprotocolStats;
 struct Subscription;
 struct SubscriptionBalanceResult;
 struct SubscriptionCreatePaymentIdArgs;
@@ -1257,6 +1266,8 @@ struct ConnectedProviderLocation {
 	bool HasRegionCoordinates{};
 	bool HasCityCoordinates{};
 	int64_t ConnectedSinceMillis{};
+	std::string IpFamily{};
+	std::string IpFamilyLabel{};
 };
 
 struct ContractClientRow {
@@ -2184,6 +2195,8 @@ struct ProviderGridPoint {
 	std::string State{};
 	std::optional<std::string> EndTime;
 	bool Active{};
+	std::string IpFamily{};
+	std::string IpFamilyLabel{};
 };
 
 struct ProviderIdentity {
@@ -2693,6 +2706,19 @@ struct StripePricesResult {
 	std::optional<OnboardingError> error;
 };
 
+struct SubprotocolStats {
+	int64_t Sent{};
+	int64_t SentByteCount{};
+	int64_t Received{};
+	int64_t ReceivedByteCount{};
+	int64_t DroppedUnregistered{};
+	int64_t DroppedDecode{};
+	int64_t MarshalOverrun{};
+	int64_t QueriesSent{};
+	int64_t QueriesAnswered{};
+	int64_t QueryReplyDrops{};
+};
+
 struct Subscription {
 	std::optional<std::string> subscription_id;
 	std::string store{};
@@ -2971,6 +2997,9 @@ struct WindowStatus {
 	int64_t ProviderStateNotAdded{};
 	int64_t ProviderStateAdded{};
 	int64_t ProviderStateRemoved{};
+	int64_t ProviderDualstackCount{};
+	int64_t ProviderV4OnlyCount{};
+	int64_t ProviderV6OnlyCount{};
 	std::string StallReason{};
 	bool Failed{};
 };
@@ -3509,6 +3538,8 @@ inline void to_json(nlohmann::json& j, const StripePaymentSheetResult& v);
 inline void from_json(const nlohmann::json& j, StripePaymentSheetResult& v);
 inline void to_json(nlohmann::json& j, const StripePricesResult& v);
 inline void from_json(const nlohmann::json& j, StripePricesResult& v);
+inline void to_json(nlohmann::json& j, const SubprotocolStats& v);
+inline void from_json(const nlohmann::json& j, SubprotocolStats& v);
 inline void to_json(nlohmann::json& j, const Subscription& v);
 inline void from_json(const nlohmann::json& j, Subscription& v);
 inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v);
@@ -5892,6 +5923,8 @@ inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v) {
 	j["HasRegionCoordinates"] = v.HasRegionCoordinates;
 	j["HasCityCoordinates"] = v.HasCityCoordinates;
 	j["ConnectedSinceMillis"] = v.ConnectedSinceMillis;
+	j["IpFamily"] = v.IpFamily;
+	j["IpFamilyLabel"] = v.IpFamilyLabel;
 }
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
 	if (!j.is_object()) {
@@ -5937,6 +5970,12 @@ inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v) {
 	}
 	if (auto it = j.find("ConnectedSinceMillis"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ConnectedSinceMillis);
+	}
+	if (auto it = j.find("IpFamily"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IpFamily);
+	}
+	if (auto it = j.find("IpFamilyLabel"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IpFamilyLabel);
 	}
 }
 
@@ -10192,6 +10231,8 @@ inline void to_json(nlohmann::json& j, const ProviderGridPoint& v) {
 		j["EndTime"] = *v.EndTime;
 	}
 	j["Active"] = v.Active;
+	j["IpFamily"] = v.IpFamily;
+	j["IpFamilyLabel"] = v.IpFamilyLabel;
 }
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	if (!j.is_object()) {
@@ -10218,6 +10259,12 @@ inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	}
 	if (auto it = j.find("Active"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Active);
+	}
+	if (auto it = j.find("IpFamily"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IpFamily);
+	}
+	if (auto it = j.find("IpFamilyLabel"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IpFamilyLabel);
 	}
 }
 
@@ -12453,6 +12500,55 @@ inline void from_json(const nlohmann::json& j, StripePricesResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SubprotocolStats& v) {
+	j = nlohmann::json::object();
+	j["Sent"] = v.Sent;
+	j["SentByteCount"] = v.SentByteCount;
+	j["Received"] = v.Received;
+	j["ReceivedByteCount"] = v.ReceivedByteCount;
+	j["DroppedUnregistered"] = v.DroppedUnregistered;
+	j["DroppedDecode"] = v.DroppedDecode;
+	j["MarshalOverrun"] = v.MarshalOverrun;
+	j["QueriesSent"] = v.QueriesSent;
+	j["QueriesAnswered"] = v.QueriesAnswered;
+	j["QueryReplyDrops"] = v.QueryReplyDrops;
+}
+inline void from_json(const nlohmann::json& j, SubprotocolStats& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Sent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Sent);
+	}
+	if (auto it = j.find("SentByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SentByteCount);
+	}
+	if (auto it = j.find("Received"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Received);
+	}
+	if (auto it = j.find("ReceivedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ReceivedByteCount);
+	}
+	if (auto it = j.find("DroppedUnregistered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedUnregistered);
+	}
+	if (auto it = j.find("DroppedDecode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DroppedDecode);
+	}
+	if (auto it = j.find("MarshalOverrun"); it != j.end() && !it->is_null()) {
+		it->get_to(v.MarshalOverrun);
+	}
+	if (auto it = j.find("QueriesSent"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QueriesSent);
+	}
+	if (auto it = j.find("QueriesAnswered"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QueriesAnswered);
+	}
+	if (auto it = j.find("QueryReplyDrops"); it != j.end() && !it->is_null()) {
+		it->get_to(v.QueryReplyDrops);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const Subscription& v) {
 	j = nlohmann::json::object();
 	if (v.subscription_id) {
@@ -13608,6 +13704,9 @@ inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 	j["ProviderStateNotAdded"] = v.ProviderStateNotAdded;
 	j["ProviderStateAdded"] = v.ProviderStateAdded;
 	j["ProviderStateRemoved"] = v.ProviderStateRemoved;
+	j["ProviderDualstackCount"] = v.ProviderDualstackCount;
+	j["ProviderV4OnlyCount"] = v.ProviderV4OnlyCount;
+	j["ProviderV6OnlyCount"] = v.ProviderV6OnlyCount;
 	j["StallReason"] = v.StallReason;
 	j["Failed"] = v.Failed;
 }
@@ -13638,6 +13737,15 @@ inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	}
 	if (auto it = j.find("ProviderStateRemoved"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderStateRemoved);
+	}
+	if (auto it = j.find("ProviderDualstackCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderDualstackCount);
+	}
+	if (auto it = j.find("ProviderV4OnlyCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderV4OnlyCount);
+	}
+	if (auto it = j.find("ProviderV6OnlyCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderV6OnlyCount);
 	}
 	if (auto it = j.find("StallReason"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StallReason);
@@ -13807,6 +13915,8 @@ using StripeCreateCustomerPortalCallback = std::function<void(std::optional<Stri
 using StripePaymentIntentCallback = std::function<void(std::optional<StripeCreatePaymentIntentResult> result, std::optional<std::string> err_param)>;
 using StripePaymentSheetCallback = std::function<void(std::optional<StripePaymentSheetResult> result, std::optional<std::string> err_param)>;
 using StripePricesCallback = std::function<void(std::optional<StripePricesResult> result, std::optional<std::string> err_param)>;
+using SubprotocolListener = std::function<void(int64_t subprotocol_id, std::string source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len)>;
+using SubprotocolsQueryCallback = std::function<void(std::optional<IntList> subprotocol_ids, bool ok_param)>;
 using SubscriptionBalanceCallback = std::function<void(std::optional<SubscriptionBalanceResult> result, std::optional<std::string> err_param)>;
 using SubscriptionBalanceChangeListener = std::function<void()>;
 using SubscriptionCreatePaymentIdCallback = std::function<void(std::optional<SubscriptionCreatePaymentIdResult> result, std::optional<std::string> err_param)>;
@@ -14275,7 +14385,10 @@ public:
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
+	void disableSubprotocol(int64_t subprotocol_id) const;
 	bool dropExit(const std::string& client_id) const;
+	Sub enableSubprotocol(int64_t subprotocol_id, SubprotocolListener listener) const;
+	std::optional<IntList> enabledSubprotocols() const;
 	bool getAutoSave() const;
 	std::string getClientJwt() const;
 	std::optional<DestinationExitList> getDestinationExits() const;
@@ -14323,6 +14436,7 @@ public:
 	WalletViewController openWalletViewController() const;
 	int64_t probeAllExits() const;
 	bool probeSuiteRunning() const;
+	void querySubprotocols(const std::string& destination_client_id, int64_t timeout_millis, SubprotocolsQueryCallback callback) const;
 	void reconnectChecked(const std::optional<ConnectLocation>& location) const;
 	void resetReliabilityMetrics() const;
 	void resetReliabilitySettings() const;
@@ -14330,6 +14444,7 @@ public:
 	void saveProvideSecretKeys() const;
 	bool sendPacket(const uint8_t* packet, int32_t packet_len, int64_t n) const;
 	int64_t sendPacketBatch(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) const;
+	bool sendSubprotocolBytes(int64_t subprotocol_id, const std::string& destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) const;
 	void setAutoSave(bool enabled) const;
 	void setByJwt(const std::string& by_jwt) const;
 	void setConnectLocationChecked(const std::optional<ConnectLocation>& location) const;
@@ -14352,6 +14467,8 @@ public:
 	bool stallExit(const std::string& client_id, bool stalled) const;
 	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
 	void stopProbeSuite() const;
+	int64_t subprotocolReceivedCount(int64_t subprotocol_id) const;
+	std::optional<SubprotocolStats> subprotocolStats() const;
 	void syncSnChainSettings(SnEpochCallback callback) const;
 	void syncSnWallet(SnGetWalletCallback callback) const;
 	std::string takeMemorySamplesJson() const;
@@ -14691,6 +14808,8 @@ public:
 	std::string connectLinkUrl(const std::string& target) const;
 	Api getApi() const;
 	std::string getApiUrl() const;
+	std::string getApiUrlV4() const;
+	std::string getApiUrlV6() const;
 	AsyncLocalState getAsyncLocalState() const;
 	LocalAuthStateSnapshot getAuthStateSnapshot() const;
 	bool getBundled() const;
@@ -14707,9 +14826,12 @@ public:
 	std::optional<NetExtender> getNetExtender() const;
 	std::optional<NetExtenderAutoConfigure> getNetExtenderAutoConfigure() const;
 	std::string getPlatformUrl() const;
+	std::string getPlatformUrlV4() const;
+	std::string getPlatformUrlV6() const;
 	bool getSsoGoogle() const;
 	std::string getStore() const;
 	std::string getWallet() const;
+	bool hasPlatformFamilyUrls() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
@@ -19480,6 +19602,54 @@ inline void oneshot_stripe_prices(void* user_data, const char* result_json, cons
 	delete f;
 }
 
+inline void retained_subprotocol(void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) {
+	auto* f = static_cast<SubprotocolListener*>(user_data);
+	try {
+		(*f)(subprotocol_id, std::string(source_client_id ? source_client_id : ""), message_bytes, message_bytes_len);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_subprotocol(void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) {
+	auto* f = static_cast<SubprotocolListener*>(user_data);
+	try {
+		(*f)(subprotocol_id, std::string(source_client_id ? source_client_id : ""), message_bytes, message_bytes_len);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_subprotocols_query(void* user_data, const char* subprotocol_ids_json, bool ok_param) {
+	auto* f = static_cast<SubprotocolsQueryCallback*>(user_data);
+	try {
+		std::optional<IntList> subprotocol_ids_v;
+		if (subprotocol_ids_json) {
+			subprotocol_ids_v = parseJson<IntList>(subprotocol_ids_json);
+		}
+		(*f)(std::move(subprotocol_ids_v), ok_param);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_subprotocols_query(void* user_data, const char* subprotocol_ids_json, bool ok_param) {
+	auto* f = static_cast<SubprotocolsQueryCallback*>(user_data);
+	try {
+		std::optional<IntList> subprotocol_ids_v;
+		if (subprotocol_ids_json) {
+			subprotocol_ids_v = parseJson<IntList>(subprotocol_ids_json);
+		}
+		(*f)(std::move(subprotocol_ids_v), ok_param);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_subscription_balance(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SubscriptionBalanceCallback*>(user_data);
 	try {
@@ -22719,9 +22889,35 @@ inline void DeviceLocal::connectSnWallet(const std::string& coldkey_ss58, const 
 	auto* callback_fn = callback ? new SnConnectWalletCallback(std::move(callback)) : nullptr;
 	urnet_device_local_connect_sn_wallet(handle(), coldkey_ss58.c_str(), signature.c_str(), message.c_str(), callback_fn ? &detail::oneshot_sn_connect_wallet : nullptr, callback_fn);
 }
+inline void DeviceLocal::disableSubprotocol(int64_t subprotocol_id) const {
+	urnet_device_local_disable_subprotocol(handle(), subprotocol_id);
+}
 inline bool DeviceLocal::dropExit(const std::string& client_id) const {
 	bool r = urnet_device_local_drop_exit(handle(), client_id.c_str());
 	return r;
+}
+inline Sub DeviceLocal::enableSubprotocol(int64_t subprotocol_id, SubprotocolListener listener) const {
+	std::shared_ptr<SubprotocolListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SubprotocolListener>(std::move(listener));
+	}
+	char* err_c = nullptr;
+	Sub r(urnet_device_local_enable_subprotocol(handle(), subprotocol_id, listener_fn ? &detail::retained_subprotocol : nullptr, listener_fn.get(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::optional<IntList> DeviceLocal::enabledSubprotocols() const {
+	char* r_c = urnet_device_local_enabled_subprotocols(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<IntList>(r_s->c_str());
 }
 inline bool DeviceLocal::getAutoSave() const {
 	bool r = urnet_device_local_get_auto_save(handle());
@@ -22957,6 +23153,10 @@ inline bool DeviceLocal::probeSuiteRunning() const {
 	bool r = urnet_device_local_probe_suite_running(handle());
 	return r;
 }
+inline void DeviceLocal::querySubprotocols(const std::string& destination_client_id, int64_t timeout_millis, SubprotocolsQueryCallback callback) const {
+	auto* callback_fn = callback ? new SubprotocolsQueryCallback(std::move(callback)) : nullptr;
+	urnet_device_local_query_subprotocols(handle(), destination_client_id.c_str(), timeout_millis, callback_fn ? &detail::oneshot_subprotocols_query : nullptr, callback_fn);
+}
 inline void DeviceLocal::reconnectChecked(const std::optional<ConnectLocation>& location) const {
 	std::string location_json;
 	const char* location_c = nullptr;
@@ -23005,6 +23205,10 @@ inline bool DeviceLocal::sendPacket(const uint8_t* packet, int32_t packet_len, i
 }
 inline int64_t DeviceLocal::sendPacketBatch(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len) const {
 	int64_t r = urnet_device_local_send_packet_batch(handle(), packet_batch_bytes, packet_batch_bytes_len);
+	return r;
+}
+inline bool DeviceLocal::sendSubprotocolBytes(int64_t subprotocol_id, const std::string& destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) const {
+	bool r = urnet_device_local_send_subprotocol_bytes(handle(), subprotocol_id, destination_client_id.c_str(), message_bytes, message_bytes_len);
 	return r;
 }
 inline void DeviceLocal::setAutoSave(bool enabled) const {
@@ -23187,6 +23391,18 @@ inline bool DeviceLocal::startProbeSuite(const std::optional<ProbeSuiteConfig>& 
 }
 inline void DeviceLocal::stopProbeSuite() const {
 	urnet_device_local_stop_probe_suite(handle());
+}
+inline int64_t DeviceLocal::subprotocolReceivedCount(int64_t subprotocol_id) const {
+	int64_t r = urnet_device_local_subprotocol_received_count(handle(), subprotocol_id);
+	return r;
+}
+inline std::optional<SubprotocolStats> DeviceLocal::subprotocolStats() const {
+	char* r_c = urnet_device_local_subprotocol_stats(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SubprotocolStats>(r_s->c_str());
 }
 inline void DeviceLocal::syncSnChainSettings(SnEpochCallback callback) const {
 	auto* callback_fn = callback ? new SnEpochCallback(std::move(callback)) : nullptr;
@@ -24581,6 +24797,14 @@ inline std::string NetworkSpace::getApiUrl() const {
 	char* r_c = urnet_network_space_get_api_url(handle());
 	return detail::takeString(r_c);
 }
+inline std::string NetworkSpace::getApiUrlV4() const {
+	char* r_c = urnet_network_space_get_api_url_v4(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getApiUrlV6() const {
+	char* r_c = urnet_network_space_get_api_url_v6(handle());
+	return detail::takeString(r_c);
+}
 inline AsyncLocalState NetworkSpace::getAsyncLocalState() const {
 	AsyncLocalState r(urnet_network_space_get_async_local_state(handle()));
 	return r;
@@ -24661,6 +24885,14 @@ inline std::string NetworkSpace::getPlatformUrl() const {
 	char* r_c = urnet_network_space_get_platform_url(handle());
 	return detail::takeString(r_c);
 }
+inline std::string NetworkSpace::getPlatformUrlV4() const {
+	char* r_c = urnet_network_space_get_platform_url_v4(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getPlatformUrlV6() const {
+	char* r_c = urnet_network_space_get_platform_url_v6(handle());
+	return detail::takeString(r_c);
+}
 inline bool NetworkSpace::getSsoGoogle() const {
 	bool r = urnet_network_space_get_sso_google(handle());
 	return r;
@@ -24672,6 +24904,10 @@ inline std::string NetworkSpace::getStore() const {
 inline std::string NetworkSpace::getWallet() const {
 	char* r_c = urnet_network_space_get_wallet(handle());
 	return detail::takeString(r_c);
+}
+inline bool NetworkSpace::hasPlatformFamilyUrls() const {
+	bool r = urnet_network_space_has_platform_family_urls(handle());
+	return r;
 }
 inline LocalStateResetResult NetworkSpace::resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const {
 	char* err_c = nullptr;
@@ -25816,6 +26052,10 @@ inline std::optional<ProbeSuiteConfig> getDefaultProbeSuiteConfig() {
 }
 inline std::string getDefaultTunnelDnsAddressIpv4() {
 	char* r_c = urnet_get_default_tunnel_dns_address_ipv4();
+	return detail::takeString(r_c);
+}
+inline std::string getDefaultTunnelDnsAddressIpv6() {
+	char* r_c = urnet_get_default_tunnel_dns_address_ipv6();
 	return detail::takeString(r_c);
 }
 inline int64_t getDefaultTunnelMtu() {

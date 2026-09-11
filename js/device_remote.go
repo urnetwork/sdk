@@ -106,6 +106,10 @@ func jsConnectedProviderLocation(location *sdk.ConnectedProviderLocation) js.Val
 		"hasRegionCoordinates": location.HasRegionCoordinates,
 		"hasCityCoordinates":   location.HasCityCoordinates,
 		"connectedSinceMillis": location.ConnectedSinceMillis,
+		// the address-family category ("dualstack" | "v4-only" | "v6-only")
+		// and its display label ("both" | "v4" | "v6") for the provider rows
+		"ipFamily":      location.IpFamily,
+		"ipFamilyLabel": location.IpFamilyLabel,
 		// the dot color from the sdk palette: the country's when the location
 		// is known, else the stable per-client color
 		"colorHex": location.ColorHex(),

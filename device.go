@@ -349,6 +349,11 @@ type WindowStatus struct {
 	ProviderStateNotAdded         int
 	ProviderStateAdded            int
 	ProviderStateRemoved          int
+	// The Added providers split by address-family category (see ip_family.go).
+	// They sum to ProviderStateAdded. A legacy provider counts as v4-only.
+	ProviderDualstackCount int
+	ProviderV4OnlyCount    int
+	ProviderV6OnlyCount    int
 	// StallReason is the machine-readable diagnosis while the window is still
 	// forming: evaluating | platform-unreachable | providers-unresponsive |
 	// rate-limited | auth-failing (the connect WindowStall* constants).

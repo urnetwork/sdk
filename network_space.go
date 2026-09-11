@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -462,6 +464,75 @@ func (self *NetworkSpace) GetApiUrl() string {
 
 func (self *NetworkSpace) GetPlatformUrl() string {
 	return self.platformUrl
+}
+
+// The family-pinned service urls (IPV6.md A9). The platform runs the
+// provider's two family-pinned transports against connect-v4 and connect-v6
+// (see connect.HeaderIpFamily); the api forms exist for diagnostics. Derived
+// from the resolved urls by inserting the suffix on the service label, so
+// `wss://connect.bringyour.com/secret` becomes
+// `wss://connect-v4.bringyour.com/secret` and `g2-connect` becomes
+// `g2-connect-v4`. Empty when the url has no dotted hostname to suffix — an
+// ip literal, `localhost`, or a label that already carries a family suffix —
+// in which case the pinned transports are disabled (HasPlatformFamilyUrls).
+
+func (self *NetworkSpace) GetPlatformUrlV4() string {
+	return familyServiceUrl(self.platformUrl, 4)
+}
+
+func (self *NetworkSpace) GetPlatformUrlV6() string {
+	return familyServiceUrl(self.platformUrl, 6)
+}
+
+func (self *NetworkSpace) GetApiUrlV4() string {
+	return familyServiceUrl(self.apiUrl, 4)
+}
+
+func (self *NetworkSpace) GetApiUrlV6() string {
+	return familyServiceUrl(self.apiUrl, 6)
+}
+
+// HasPlatformFamilyUrls reports whether both family-pinned platform urls
+// derive, which is the precondition for running the pinned transports.
+func (self *NetworkSpace) HasPlatformFamilyUrls() bool {
+	return self.GetPlatformUrlV4() != "" && self.GetPlatformUrlV6() != ""
+}
+
+// familyServiceUrl derives the family-pinned form of a resolved service url
+// for ip version 4 or 6, or "" when there is no service label to suffix. The
+// scheme, port and path (the env secret) are preserved verbatim.
+func familyServiceUrl(serviceUrl string, ipVersion int) string {
+	if ipVersion != 4 && ipVersion != 6 {
+		return ""
+	}
+	serviceUrl = strings.TrimSpace(serviceUrl)
+	if serviceUrl == "" {
+		return ""
+	}
+	parsedUrl, err := url.Parse(serviceUrl)
+	if err != nil || parsedUrl.Host == "" {
+		return ""
+	}
+	hostName := parsedUrl.Hostname()
+	if net.ParseIP(hostName) != nil {
+		// an ip literal has no label to suffix
+		return ""
+	}
+	label, domain, ok := strings.Cut(hostName, ".")
+	if !ok || label == "" || domain == "" {
+		return ""
+	}
+	if strings.HasSuffix(label, "-v4") || strings.HasSuffix(label, "-v6") {
+		// already family-pinned by the operator: not a dual-stack space
+		return ""
+	}
+	familyHostName := fmt.Sprintf("%s-v%d.%s", label, ipVersion, domain)
+	if port := parsedUrl.Port(); port != "" {
+		parsedUrl.Host = net.JoinHostPort(familyHostName, port)
+	} else {
+		parsedUrl.Host = familyHostName
+	}
+	return parsedUrl.String()
 }
 
 func (self *NetworkSpace) GetApi() *Api {

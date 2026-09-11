@@ -301,12 +301,14 @@ func TestDeriveConnectedProviderLocations(t *testing.T) {
 			State:          connect.ProviderStateAdded,
 			EgressClientId: egressA,
 			Location:       location,
+			IpFamily:       connect.IpFamilyDualstack,
 		},
 		windowB: {
 			EventTime:      newer,
 			ClientId:       windowB,
 			State:          connect.ProviderStateAdded,
 			EgressClientId: egressB,
+			IpFamily:       connect.IpFamilyV6Only,
 		},
 		// not routing-eligible: excluded
 		windowC: {
@@ -346,6 +348,9 @@ func TestDeriveConnectedProviderLocations(t *testing.T) {
 		first.CityLat != 37.7749 || first.CityLon != -122.4194 {
 		t.Fatalf("coordinates lost: %+v", first)
 	}
+	if first.IpFamily != IpFamilyDualstack || first.IpFamilyLabel != IpFamilyLabelBoth {
+		t.Fatalf("dualstack category lost: %+v", first)
+	}
 
 	second := locations.Get(1)
 	if second.ClientId.String() != newId(egressB).String() {
@@ -354,6 +359,9 @@ func TestDeriveConnectedProviderLocations(t *testing.T) {
 	if second.HasLocation || second.HasRegionCoordinates || second.HasCityCoordinates {
 		t.Fatalf("nil location must clear the flags: %+v", second)
 	}
+	if second.IpFamily != IpFamilyV6Only || second.IpFamilyLabel != IpFamilyLabelV6 {
+		t.Fatalf("v6-only category lost: %+v", second)
+	}
 
 	third := locations.Get(2)
 	if third.ClientId.String() != newId(windowD).String() {
@@ -361,6 +369,10 @@ func TestDeriveConnectedProviderLocations(t *testing.T) {
 	}
 	if third.ConnectedSinceMillis != 0 {
 		t.Fatal("zero event time must surface as 0 connected-since")
+	}
+	// a legacy event (no category) reads as v4-only, never as empty
+	if third.IpFamily != IpFamilyV4Only || third.IpFamilyLabel != IpFamilyLabelV4 {
+		t.Fatalf("legacy category must read as v4-only: %+v", third)
 	}
 }
 
@@ -430,6 +442,7 @@ func TestWindowMonitorEventGobCarriesProviderDetails(t *testing.T) {
 					City:            "Reykjavik",
 					CityCoordinates: &connect.LocationCoordinates{Lat: 64.1466, Lon: -21.9426},
 				},
+				IpFamily: connect.IpFamilyDualstack,
 			},
 		},
 		Reset: true,
@@ -463,5 +476,39 @@ func TestWindowMonitorEventGobCarriesProviderDetails(t *testing.T) {
 	}
 	if location.RegionCoordinates != nil {
 		t.Fatal("absent region coordinates must stay nil through gob")
+	}
+	if decodedEvent.IpFamily != connect.IpFamilyDualstack {
+		t.Fatalf("ip family lost in gob round trip: %q", decodedEvent.IpFamily)
+	}
+}
+
+// the window status crosses the same gob bridge (DeviceLocalRpc.GetWindowStatus);
+// the category counts must survive it
+func TestWindowStatusGobCarriesIpFamilyCounts(t *testing.T) {
+	status := &DeviceRemoteWindowStatus{
+		WindowStatus: &WindowStatus{
+			TargetSize:             6,
+			MinSatisfied:           true,
+			ProviderStateAdded:     6,
+			ProviderDualstackCount: 4,
+			ProviderV4OnlyCount:    1,
+			ProviderV6OnlyCount:    1,
+		},
+	}
+	var buffer bytes.Buffer
+	if err := gob.NewEncoder(&buffer).Encode(status); err != nil {
+		t.Fatal(err)
+	}
+	var decoded DeviceRemoteWindowStatus
+	if err := gob.NewDecoder(&buffer).Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.WindowStatus == nil {
+		t.Fatal("window status lost in gob round trip")
+	}
+	if decoded.WindowStatus.ProviderDualstackCount != 4 ||
+		decoded.WindowStatus.ProviderV4OnlyCount != 1 ||
+		decoded.WindowStatus.ProviderV6OnlyCount != 1 {
+		t.Fatalf("ip family counts lost in gob round trip: %+v", decoded.WindowStatus)
 	}
 }

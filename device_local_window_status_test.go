@@ -25,3 +25,31 @@ func TestToWindowStatusCarriesStallDiagnosis(t *testing.T) {
 	connect.AssertEqual(t, windowStatus.StallReason, connect.WindowStallPlatformUnreachable)
 	connect.AssertEqual(t, windowStatus.Failed, true)
 }
+
+// the Added providers split by category and sum to ProviderStateAdded; a legacy
+// event counts as v4-only and non-added states are not counted (IPV6.md D1)
+func TestToWindowStatusCountsIpFamilies(t *testing.T) {
+	monitor := connect.NewRemoteUserNatMultiClientMonitorWithDefaults()
+
+	add := func(state connect.ProviderState, ipFamily connect.IpFamily) {
+		clientId := connect.NewId()
+		monitor.AddProviderEvent(clientId, state, clientId, nil, ipFamily)
+	}
+	add(connect.ProviderStateAdded, connect.IpFamilyDualstack)
+	add(connect.ProviderStateAdded, connect.IpFamilyDualstack)
+	add(connect.ProviderStateAdded, connect.IpFamilyV4Only)
+	add(connect.ProviderStateAdded, connect.IpFamilyV6Only)
+	add(connect.ProviderStateAdded, connect.IpFamilyLegacy)
+	add(connect.ProviderStateInEvaluation, connect.IpFamilyDualstack)
+
+	windowStatus := toWindowStatus(monitor)
+	connect.AssertEqual(t, windowStatus.ProviderStateAdded, 5)
+	connect.AssertEqual(t, windowStatus.ProviderStateInEvaluation, 1)
+	connect.AssertEqual(t, windowStatus.ProviderDualstackCount, 2)
+	connect.AssertEqual(t, windowStatus.ProviderV4OnlyCount, 2)
+	connect.AssertEqual(t, windowStatus.ProviderV6OnlyCount, 1)
+	connect.AssertEqual(t,
+		windowStatus.ProviderDualstackCount+windowStatus.ProviderV4OnlyCount+windowStatus.ProviderV6OnlyCount,
+		windowStatus.ProviderStateAdded,
+	)
+}
