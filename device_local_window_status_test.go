@@ -53,3 +53,14 @@ func TestToWindowStatusCountsIpFamilies(t *testing.T) {
 		windowStatus.ProviderStateAdded,
 	)
 }
+
+// Ipv6Available mirrors the merged window expand event exactly: false before
+// any expand event, and whatever the event says afterwards.
+func TestToWindowStatusIpv6Available(t *testing.T) {
+	monitor := connect.NewRemoteUserNatMultiClientMonitorWithDefaults()
+	connect.AssertEqual(t, toWindowStatus(monitor).Ipv6Available, false)
+	for _, ipv6Available := range []bool{true, false, true} {
+		monitor.AddWindowExpandEvent(true, 1, ipv6Available)
+		connect.AssertEqual(t, toWindowStatus(monitor).Ipv6Available, ipv6Available)
+	}
+}

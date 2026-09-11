@@ -3012,6 +3012,7 @@ struct WindowStatus {
 	int64_t ProviderDualstackCount{};
 	int64_t ProviderV4OnlyCount{};
 	int64_t ProviderV6OnlyCount{};
+	bool Ipv6Available{};
 	std::string StallReason{};
 	bool Failed{};
 };
@@ -13754,6 +13755,7 @@ inline void to_json(nlohmann::json& j, const WindowStatus& v) {
 	j["ProviderDualstackCount"] = v.ProviderDualstackCount;
 	j["ProviderV4OnlyCount"] = v.ProviderV4OnlyCount;
 	j["ProviderV6OnlyCount"] = v.ProviderV6OnlyCount;
+	j["Ipv6Available"] = v.Ipv6Available;
 	j["StallReason"] = v.StallReason;
 	j["Failed"] = v.Failed;
 }
@@ -13793,6 +13795,9 @@ inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 	}
 	if (auto it = j.find("ProviderV6OnlyCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderV6OnlyCount);
+	}
+	if (auto it = j.find("Ipv6Available"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ipv6Available);
 	}
 	if (auto it = j.find("StallReason"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StallReason);

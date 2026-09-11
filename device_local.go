@@ -4261,6 +4261,9 @@ func (self *DeviceLocal) applyDestination(
 				multi.SetServerNameLookup(upgradeMux)
 				// the mux blocks ad/tracker hostnames at the dns layer
 				upgradeMux.SetBlocker(self.blocker)
+				// while no exit can carry v6, AAAA answers empty so apps do not
+				// blackhole on a v6 address the tunnel cannot route (IPV6.md B6)
+				upgradeMux.SetIpv6Unroutable(multi.Ipv6Unroutable)
 				self.upgradeMux = upgradeMux
 				self.upgradeMuxLiveSettings = self.upgradeMuxSettings
 				// pre-warm the DoH connections in the background: the tunnel dials park
@@ -4399,10 +4402,11 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 	windowExpandEvent, providerEvents := monitor.Events()
 	windowStatus := &WindowStatus{
-		TargetSize:   windowExpandEvent.TargetSize,
-		MinSatisfied: windowExpandEvent.MinSatisfied,
-		StallReason:  windowExpandEvent.Reason,
-		Failed:       windowExpandEvent.Failed,
+		TargetSize:    windowExpandEvent.TargetSize,
+		MinSatisfied:  windowExpandEvent.MinSatisfied,
+		StallReason:   windowExpandEvent.Reason,
+		Failed:        windowExpandEvent.Failed,
+		Ipv6Available: windowExpandEvent.Ipv6Available,
 	}
 	for _, providerEvent := range providerEvents {
 		switch providerEvent.State {

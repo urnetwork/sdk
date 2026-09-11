@@ -4203,6 +4203,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProviderDualstackCount: number
  *   ProviderV4OnlyCount: number
  *   ProviderV6OnlyCount: number
+ *   Ipv6Available: boolean
  *   StallReason: string
  *   Failed: boolean
  */

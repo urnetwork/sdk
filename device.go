@@ -354,6 +354,11 @@ type WindowStatus struct {
 	ProviderDualstackCount int
 	ProviderV4OnlyCount    int
 	ProviderV6OnlyCount    int
+	// Ipv6Available is true while at least one Added provider can carry IPv6
+	// (dualstack or v6-only). While false after the window has formed, the
+	// tunnel answers AAAA queries empty and refuses v6 flows with an ICMPv6
+	// no-route reply, so apps connect over v4 at once (connect/IPV6.md B6).
+	Ipv6Available bool
 	// StallReason is the machine-readable diagnosis while the window is still
 	// forming: evaluating | platform-unreachable | providers-unresponsive |
 	// rate-limited | auth-failing (the connect WindowStall* constants).
