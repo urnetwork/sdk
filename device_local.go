@@ -657,6 +657,9 @@ type DeviceLocal struct {
 	// local-address pool at construction (released in Close) so it never collides
 	// with an IpMux-reserved address.
 	tunnelLocalAddress netip.Addr
+	// tunnelLocalAddressIpv6 is the IPv6 counterpart: a random address in the
+	// fixed ULA /48 (see tunnel_address_ipv6.go). Not pooled, nothing to release.
+	tunnelLocalAddressIpv6 netip.Addr
 
 	// tunnelDnsSetting is the DNS config the platform applies to the TUN. It
 	// defaults to the URnetwork-owned plain-DNS identity: UpgradeMux claims :53
@@ -1333,17 +1336,18 @@ func newDeviceLocalWithOverrides(
 		byJwt:        byJwt,
 		subprotocols: newDeviceLocalSubprotocols(ctx, log),
 		// apiUrl:            apiUrl,
-		deviceDescription:  deviceDescription,
-		deviceSpec:         deviceSpec,
-		appVersion:         appVersion,
-		settings:           settings,
-		log:                log,
-		clientId:           clientId,
-		instanceId:         instanceId.toConnectId(),
-		tunnelLocalAddress: tunnelLocalAddress,
-		tunnelDnsSetting:   DefaultTunnelDnsSetting(),
-		clientStrategy:     clientStrategy,
-		lifecycleDone:      make(chan struct{}),
+		deviceDescription:      deviceDescription,
+		deviceSpec:             deviceSpec,
+		appVersion:             appVersion,
+		settings:               settings,
+		log:                    log,
+		clientId:               clientId,
+		instanceId:             instanceId.toConnectId(),
+		tunnelLocalAddress:     tunnelLocalAddress,
+		tunnelLocalAddressIpv6: randomTunnelLocalIpv6(),
+		tunnelDnsSetting:       DefaultTunnelDnsSetting(),
+		clientStrategy:         clientStrategy,
+		lifecycleDone:          make(chan struct{}),
 		// Identity persistence bridges a process restart. Destination
 		// generators overlap during asynchronous retirement, so this owner
 		// gives each one a generation-bound store view and permits restoration

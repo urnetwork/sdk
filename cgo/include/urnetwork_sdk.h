@@ -266,6 +266,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_TRANSPORT_TYPE_H3 "h3"
 #define URNET_TRANSPORT_TYPE_P2P "p2p"
 #define URNET_TRANSPORT_TYPE_UNKNOWN "unknown"
+#define URNET_TUNNEL_LOCAL_PREFIX_LENGTH_IPV6 64
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -1111,6 +1112,7 @@ char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
 char* urnet_device_local_tunnel_local_address(uint64_t self);
+char* urnet_device_local_tunnel_local_address_ipv6(uint64_t self);
 bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_milliseconds);
 
 /* ----- DeviceLocalKeyMaterial ----- */
@@ -1649,6 +1651,7 @@ int64_t urnet_get_log_verbosity(void);
 char* urnet_get_memory_stats(void);
 char* urnet_get_recommended_dns_resolver_settings(const char* country_code);
 char* urnet_get_regional_dns_servers(void);
+int64_t urnet_get_tunnel_local_prefix_length_ipv6(void);
 bool urnet_has_regional_dns_recommendation(const char* country_code);
 char* urnet_host_base_name(const char* host);
 char* urnet_id_from_bytes(const uint8_t* id_bytes, int32_t id_bytes_len, char** out_error);

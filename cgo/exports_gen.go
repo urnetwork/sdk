@@ -9657,6 +9657,17 @@ func urnet_device_local_tunnel_local_address(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_device_local_tunnel_local_address_ipv6
+func urnet_device_local_tunnel_local_address_ipv6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_tunnel_local_address_ipv6")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_tunnel_local_address_ipv6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.TunnelLocalAddressIpv6()
+	return cString(string(r0))
+}
+
 //export urnet_device_local_wait_for_close
 func urnet_device_local_wait_for_close(self C.uint64_t, timeoutMilliseconds C.int64_t) C.bool {
 	defer cgoGuard("urnet_device_local_wait_for_close")
@@ -11346,6 +11357,13 @@ func urnet_get_regional_dns_servers() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_get_regional_dns_servers")
+}
+
+//export urnet_get_tunnel_local_prefix_length_ipv6
+func urnet_get_tunnel_local_prefix_length_ipv6() C.int64_t {
+	defer cgoGuard("urnet_get_tunnel_local_prefix_length_ipv6")
+	r0 := sdk.GetTunnelLocalPrefixLengthIpv6()
+	return C.int64_t(r0)
 }
 
 //export urnet_has_regional_dns_recommendation

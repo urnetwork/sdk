@@ -348,6 +348,7 @@ inline constexpr const char* TransportTypeH1 = "h1";
 inline constexpr const char* TransportTypeH3 = "h3";
 inline constexpr const char* TransportTypeP2p = "p2p";
 inline constexpr const char* TransportTypeUnknown = "unknown";
+inline constexpr int64_t TunnelLocalPrefixLengthIpv6 = 64;
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
@@ -14476,6 +14477,7 @@ public:
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
 	std::string tunnelLocalAddress() const;
+	std::string tunnelLocalAddressIpv6() const;
 	bool waitForClose(int64_t timeout_milliseconds) const;
 	/* stable provider identity across process starts */
 	std::vector<uint8_t> getClientKeySeed() const;
@@ -23444,6 +23446,10 @@ inline std::string DeviceLocal::tunnelLocalAddress() const {
 	char* r_c = urnet_device_local_tunnel_local_address(handle());
 	return detail::takeString(r_c);
 }
+inline std::string DeviceLocal::tunnelLocalAddressIpv6() const {
+	char* r_c = urnet_device_local_tunnel_local_address_ipv6(handle());
+	return detail::takeString(r_c);
+}
 inline bool DeviceLocal::waitForClose(int64_t timeout_milliseconds) const {
 	bool r = urnet_device_local_wait_for_close(handle(), timeout_milliseconds);
 	return r;
@@ -26115,6 +26121,10 @@ inline std::optional<RegionalDnsServerList> getRegionalDnsServers() {
 		return std::nullopt;
 	}
 	return detail::parseJson<RegionalDnsServerList>(r_s->c_str());
+}
+inline int64_t getTunnelLocalPrefixLengthIpv6() {
+	int64_t r = urnet_get_tunnel_local_prefix_length_ipv6();
+	return r;
 }
 inline bool hasRegionalDnsRecommendation(const std::string& country_code) {
 	bool r = urnet_has_regional_dns_recommendation(country_code.c_str());
