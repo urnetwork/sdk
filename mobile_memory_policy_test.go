@@ -460,3 +460,98 @@ func TestMobileLowMemoryPolicyLeavesServerAndLargerTargetsUnchanged(t *testing.T
 		})
 	}
 }
+
+// FLIGHTGATEFIX §15 sizing invariants for the mobile ceilings. The 24 MiB
+// figure is a crash boundary on iOS, not a target, and the numbers that
+// decide throughput and footprint sit in this file while the code that
+// spends them sits in connect. These tests pin the relationships so a
+// change to either side cannot quietly trickle the tunnel or blow the
+// envelope.
+
+// mobileTunnelTypicalMessageByteCount is one Transfer message carrying one
+// tunnel IP packet at the product's advertised 1,100-byte MTU; the device
+// rig measured about 930 bytes across a download.
+const mobileTunnelTypicalMessageByteCount = 930
+
+// The two unreliable ceilings are not the same budget. The byte ceiling is
+// the memory the flight may retain and it binds on its own, so the message
+// ceiling decides only what share of that memory real messages may use. At
+// sixteen messages the direct lane may use about a tenth of the bytes it
+// has already been granted, which is why overflow reaches the relay on a
+// link that could carry far more. That is a deliberate trade recorded in
+// FLIGHTGATEFIX §15.3, which proposes raising the message ceiling because
+// doing so retains no additional bytes; this test holds the trade where it
+// is and fails if a change makes the lane trickle harder.
+func TestMobileUnreliableFlightCeilingsKeepTheirStatedTrade(t *testing.T) {
+	admitted := mobileUnreliableFlightMaxMessageCount * mobileTunnelTypicalMessageByteCount
+	share := float64(admitted) / float64(mobileUnreliableFlightMaxByteCount)
+	t.Logf(
+		"mobileUnreliableFlightMaxMessageCount %d at %d bytes admits %d bytes, %.0f%% of the %d-byte mobileUnreliableFlightMaxByteCount",
+		mobileUnreliableFlightMaxMessageCount, mobileTunnelTypicalMessageByteCount,
+		admitted, 100*share, mobileUnreliableFlightMaxByteCount,
+	)
+	if share < 0.10 {
+		t.Fatalf(
+			"mobileUnreliableFlightMaxMessageCount %d admits %.1f%% of the %d bytes "+
+				"mobileUnreliableFlightMaxByteCount already grants: at %d bytes a message that is "+
+				"%d bytes per round trip, so the direct lane trickles and the relay carries the "+
+				"bulk. Raising the message ceiling costs no retained bytes, the byte ceiling still "+
+				"binds; see FLIGHTGATEFIX §15.3",
+			mobileUnreliableFlightMaxMessageCount, 100*share,
+			mobileUnreliableFlightMaxByteCount, mobileTunnelTypicalMessageByteCount, admitted,
+		)
+	}
+	if mobileUnreliableFlightMaxByteCount < mobileTunnelTypicalMessageByteCount {
+		t.Fatalf(
+			"mobileUnreliableFlightMaxByteCount %d cannot hold one %d-byte message",
+			mobileUnreliableFlightMaxByteCount, mobileTunnelTypicalMessageByteCount,
+		)
+	}
+}
+
+// Every mobile budget that retains bytes, summed, against the 24 MiB
+// steady-state target. The remainder of the target is the Go runtime,
+// goroutine stacks, the gVisor stack and live packet ownership, which this
+// file does not size; the device block measured the whole figure at 23.7 to
+// 24.4 MiB, so the configured share must stay well inside the envelope. A
+// change that pushes these budgets past a third of the target fails here
+// rather than on a phone.
+func TestMobileRetainedByteBudgetsFitTheSteadyMemoryTarget(t *testing.T) {
+	type budget struct {
+		name  string
+		bytes ByteCount
+	}
+	budgets := []budget{
+		{"mobilePackQueueBudgetMaxByteCount", mobilePackQueueBudgetMaxByteCount},
+		{"mobileReceiveQueueBudgetMaxByteCount", mobileReceiveQueueBudgetMaxByteCount},
+		{"mobileResendQueueMaxByteCount", mobileResendQueueMaxByteCount},
+		{"mobileReceiveQueueMaxByteCount", mobileReceiveQueueMaxByteCount},
+		{"mobileUnreliableFlightMaxByteCount", mobileUnreliableFlightMaxByteCount},
+		{"mobilePacketPoolCapacityByteCount", mobilePacketPoolCapacityByteCount},
+		{"mobileLargeObjectPoolCapacityByteCount", mobileLargeObjectPoolCapacityByteCount},
+		{"mobilePacketPoolWarmByteCount", mobilePacketPoolWarmByteCount},
+		{
+			"removal receive queue (mobileClientSequenceBufferMaxCount at one MTU)",
+			ByteCount(mobileClientSequenceBufferMaxCount) * 1500,
+		},
+	}
+	total := ByteCount(0)
+	for _, b := range budgets {
+		total += b.bytes
+		t.Logf("%-72s %8d bytes", b.name, b.bytes)
+	}
+	ceiling := mobileSteadyMemoryTargetByteCount / 3
+	t.Logf("configured retaining budgets total %d bytes, %.1f%% of the %d-byte target",
+		total, 100*float64(total)/float64(mobileSteadyMemoryTargetByteCount),
+		mobileSteadyMemoryTargetByteCount)
+	if ceiling < total {
+		t.Fatalf(
+			"the mobile budgets that retain bytes total %d, past %d, a third of the %d-byte "+
+				"mobileSteadyMemoryTargetByteCount. The rest of that target is the Go runtime, "+
+				"goroutine stacks, gVisor and live packet ownership, and the device block already "+
+				"measures the whole figure at 23.7 to 24.4 MiB, so there is no headroom to spend. "+
+				"Exceeding the target crashes iOS; lower one of the budgets above",
+			total, ceiling, mobileSteadyMemoryTargetByteCount,
+		)
+	}
+}
