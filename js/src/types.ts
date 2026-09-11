@@ -123,6 +123,11 @@ export interface NetworkPeersInfo {
  * hosting the connection (0 when unknown); derive the duration locally rather
  * than expecting it to tick.
  */
+/** a provider's proven address-family category (connect/IPV6.md) */
+export type IpFamily = "dualstack" | "v4-only" | "v6-only";
+/** the short display form of IpFamily */
+export type IpFamilyLabel = "both" | "v4" | "v6";
+
 export interface ConnectedProviderLocationInfo {
   clientId?: string;
   country: string;
@@ -137,6 +142,10 @@ export interface ConnectedProviderLocationInfo {
   hasRegionCoordinates: boolean;
   hasCityCoordinates: boolean;
   connectedSinceMillis: number;
+  /** the provider's proven address-family category, as on ProviderGridPoint */
+  ipFamily: IpFamily;
+  /** the short display form of ipFamily: "both", "v4" or "v6" */
+  ipFamilyLabel: IpFamilyLabel;
   /** the dot color from the sdk palette (hex, no "#"): the country's when the
    * location is known, else the stable per-client color */
   colorHex: string;
@@ -279,6 +288,11 @@ export interface ProviderGridPoint {
   endTimeUnixMillis?: number;
   /** relative time until removal — what an exit animation wants */
   endTimeMillisUntil?: number;
+  /** the provider's proven address-family category: "dualstack", "v4-only"
+   * or "v6-only" (legacy providers read as v4-only) */
+  ipFamily: IpFamily;
+  /** the short display form of ipFamily: "both", "v4" or "v6" */
+  ipFamilyLabel: IpFamilyLabel;
 }
 
 export interface ConnectGrid {
