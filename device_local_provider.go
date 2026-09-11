@@ -14,6 +14,10 @@ import (
 	"github.com/urnetwork/connect/protocol"
 )
 
+// deviceLocalP2pUdpSocketBufferByteCount is the per-socket kernel send and
+// receive buffer requested for ICE UDP sockets on a device.
+const deviceLocalP2pUdpSocketBufferByteCount = 512 * 1024
+
 // bound on waiting for a migration replacement transport to connect before
 // keeping the old transport (the draining server then evicts, and the
 // reconnect falls back to the drain excuse path)
@@ -439,6 +443,11 @@ func configureDeviceLocalProviderMemory(
 	// when P2P is needed).
 	clientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
 	clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(memoryTargetByteCount)
+	// ICE UDP socket buffers: 4 MiB is the server default; a phone keeps the
+	// provider's ACK drops away at 512 KiB per socket without the footprint
+	// of a gathered candidate set at server size (FLIGHTGATEFIX §13.7,
+	// finding 5; MEMSTEADY gates it).
+	clientSettings.WebRtcSettings.UdpSocketBufferByteCount = deviceLocalP2pUdpSocketBufferByteCount
 
 	// A trusted ProvideMode_Network peer gets the symmetric selected-peer
 	// window from its own bounded two-connection pool. It cannot enlarge or
