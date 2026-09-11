@@ -534,6 +534,10 @@ func TestMobileRetainedByteBudgetsFitTheSteadyMemoryTarget(t *testing.T) {
 			"removal receive queue (mobileClientSequenceBufferMaxCount at one MTU)",
 			ByteCount(mobileClientSequenceBufferMaxCount) * 1500,
 		},
+		{
+			"per-sequence round-trip windows (relay and direct lane, FLIGHTGATEFIX §15.2)",
+			mobileRttWindowRetainedByteCount(),
+		},
 	}
 	total := ByteCount(0)
 	for _, b := range budgets {
@@ -552,6 +556,38 @@ func TestMobileRetainedByteBudgetsFitTheSteadyMemoryTarget(t *testing.T) {
 				"measures the whole figure at 23.7 to 24.4 MiB, so there is no headroom to spend. "+
 				"Exceeding the target crashes iOS; lower one of the budgets above",
 			total, ceiling, mobileSteadyMemoryTargetByteCount,
+		)
+	}
+}
+
+// mobileRttWindowRetainedByteCount is what the send sequences' round-trip
+// windows retain: each sample slot is one ring entry and one minimum-deque
+// entry, and every sequence holds the relay window plus the direct lane's
+// own short window (FLIGHTGATEFIX §15.2).
+func mobileRttWindowRetainedByteCount() ByteCount {
+	const rttWindowSlotByteCount = 40
+	send := connect.DefaultSendBufferSettings()
+	unreliableWindowSize := send.UnreliableRttWindowSize
+	if unreliableWindowSize <= 0 {
+		unreliableWindowSize = send.RttWindowSize
+	}
+	slots := send.RttWindowSize + unreliableWindowSize
+	return ByteCount(mobileClientSequenceBufferMaxCount) *
+		ByteCount(slots) * rttWindowSlotByteCount
+}
+
+// The direct lane's own window is deliberately short: a second full window
+// per sequence would cost kilobytes where the envelope has none.
+func TestMobileDirectLaneRttWindowStaysSmall(t *testing.T) {
+	send := connect.DefaultSendBufferSettings()
+	if send.UnreliableRttWindowSize <= 0 {
+		t.Fatal("UnreliableRttWindowSize is nonpositive, so the direct lane inherits the full relay window")
+	}
+	if send.RttWindowSize/4 < send.UnreliableRttWindowSize {
+		t.Fatalf(
+			"UnreliableRttWindowSize %d is not far under RttWindowSize %d: a second full window per "+
+				"sequence costs kilobytes the 24 MiB envelope has no room for (FLIGHTGATEFIX §15.2)",
+			send.UnreliableRttWindowSize, send.RttWindowSize,
 		)
 	}
 }
