@@ -463,11 +463,12 @@ func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	return settings
 }
 
-// GetDefaultTunnelMtu exposes the single MTU contract shared by native tunnel
-// interfaces and connect's provider-side packetizer. Native apps should apply
-// this value when constructing their IPv4 tunnel interface.
+// GetDefaultTunnelMtu exposes the tunnel interface mtu every native tunnel
+// configures (connect.DefaultTunnelMtu, 1280 so the interface can carry IPv6).
+// Packets written into the tunnel are at most connect.DefaultMtu, which is
+// below this by design (connect/IPV6.md C1).
 func GetDefaultTunnelMtu() int32 {
-	return int32(connect.DefaultMtu)
+	return int32(connect.DefaultTunnelMtu)
 }
 
 // every device must also support the unexported `device` interface
