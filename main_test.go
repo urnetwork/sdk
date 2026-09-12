@@ -15,13 +15,15 @@ import (
 // default (127.0.0.1:12025). A genuinely shared port is separately rejected by
 // the sync instance check, so a collision fails loud instead of pairing a
 // remote with the wrong device.
-// It also turns off the extender network client for the whole suite: a space
-// built with a production host name would otherwise resolve its extender dns
-// name and reach the operator's hello on every construction. The extender
-// tests that need a client turn it back on for their own space.
+// It also turns off the extender network client and the member role's gossip
+// node for the whole suite: a space built with a production host name would
+// otherwise resolve its extender dns name and reach the operator's hello on
+// every construction, and every such space would stand up a libp2p host. The
+// extender tests that need either turn it back on for their own space.
 func TestMain(m *testing.M) {
 	deviceRpcDefaultAddress = testing_freeHostPort()
 	extenderNetworkClientEnabled = false
+	extenderNodeEnabled = false
 	os.Exit(m.Run())
 }
 

@@ -113,7 +113,7 @@ type ExtenderStatus struct {
 	Role          string
 	FeedConnected bool
 	FeedIp        string
-	// The gossip mesh is phase 5a; until then these report no mesh.
+	// The mesh of the member role's node (D1, F2). A feed app reports no mesh.
 	GossipConnected bool
 	GossipPeerCount int
 	KnownCount      int
@@ -147,6 +147,8 @@ func (self *NetworkSpace) GetExtenderStatus() *ExtenderStatus {
 		status.LastSampleTime = extenderStatusTimeMs(networkStatus.LastSampleTime)
 		status.LastError = networkStatus.LastError
 	}
+	status.GossipConnected = self.extenderNode.gossipConnected()
+	status.GossipPeerCount = self.extenderNode.gossipPeerCount()
 	if self.extenderDirectory == nil {
 		return status
 	}
@@ -188,10 +190,16 @@ func extenderStatusTimeMs(t time.Time) int64 {
 // The persisted gossip mode of this space (D5). A space with no storage always
 // reads auto.
 func (self *NetworkSpace) GetExtenderGossipMode() string {
-	if self.asyncLocalState == nil {
+	return extenderGossipMode(self.asyncLocalState)
+}
+
+// The persisted mode of one local state, which the space construction reads
+// before there is a space to ask.
+func extenderGossipMode(asyncLocalState *AsyncLocalState) string {
+	if asyncLocalState == nil {
 		return ExtenderGossipModeAuto
 	}
-	return self.asyncLocalState.GetLocalState().GetExtenderGossipMode()
+	return asyncLocalState.GetLocalState().GetExtenderGossipMode()
 }
 
 // Persists the gossip mode and publishes the new status, so a ui that changed
@@ -246,12 +254,14 @@ func (self *NetworkSpace) watchExtenderStatus() {
 	if self.extenderNetworkClient != nil {
 		_, networkUpdate = self.extenderNetworkClient.StatusMonitor().Get()
 	}
+	nodeUpdate := self.extenderNode.statusUpdate()
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-directoryUpdate:
 		case <-networkUpdate:
+		case <-nodeUpdate:
 		}
 		select {
 		case <-self.ctx.Done():
@@ -262,6 +272,7 @@ func (self *NetworkSpace) watchExtenderStatus() {
 		if self.extenderNetworkClient != nil {
 			_, networkUpdate = self.extenderNetworkClient.StatusMonitor().Get()
 		}
+		nodeUpdate = self.extenderNode.statusUpdate()
 		// contain a panic to the tick: a failed emit must never end the watch,
 		// which would silently stop every extender update for the session
 		connect.HandleError(self.extenderStatusChanged)

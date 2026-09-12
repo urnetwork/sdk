@@ -1,9 +1,12 @@
 package sdk
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/urnetwork/connect"
 )
 
 // local_state_extender.go — the persisted extender state (EXTENDER.md E1, D5).
@@ -98,4 +101,44 @@ func (self *localStateExtenderStore) Load() ([]byte, error) {
 
 func (self *localStateExtenderStore) Save(stateBytes []byte) error {
 	return self.localState.setExtenders(stateBytes)
+}
+
+// The persisted extender identity key (B1). Phase 6 reuses the same file as
+// the provider's extender identity, so a provider that becomes an extender
+// keeps the mesh peer id it already had.
+const extenderKeyFileName = ".extender_key"
+
+// The stored key document.
+type extenderKeyState struct {
+	SeedHex string `json:"seed_hex"`
+}
+
+// GetOrCreateExtenderKeySeed returns the persisted ed25519 seed, creating it on
+// first use (B1). A file that is missing, unreadable or not a seed is replaced
+// rather than failing: the identity is a convenience, and an install that
+// cannot read its own key is better off with a new one than with none.
+func (self *LocalState) GetOrCreateExtenderKeySeed() ([]byte, error) {
+	path := filepath.Join(self.localStorageDir, extenderKeyFileName)
+	if stateBytes, err := os.ReadFile(path); err == nil {
+		keyState := &extenderKeyState{}
+		if err := json.Unmarshal(stateBytes, keyState); err == nil {
+			if seed, err := connect.ParseExtenderKeySeedHex(keyState.SeedHex); err == nil {
+				return seed, nil
+			}
+		}
+	}
+	seed, err := connect.NewExtenderKeySeed()
+	if err != nil {
+		return nil, err
+	}
+	stateBytes, err := json.Marshal(&extenderKeyState{
+		SeedHex: connect.ExtenderKeySeedHex(seed),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, stateBytes, LocalStorageFilePermissions); err != nil {
+		return nil, err
+	}
+	return seed, nil
 }

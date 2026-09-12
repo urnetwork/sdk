@@ -185,7 +185,10 @@ type NetworkSpace struct {
 	extenderDirectory *connect.ExtenderDirectory
 	// The refresh loop that fills the directory (E3). Nil for a space whose
 	// host is not a real dns name, which has nothing to resolve or sample.
-	extenderNetworkClient         *connect.ExtenderNetworkClient
+	extenderNetworkClient *connect.ExtenderNetworkClient
+	// The gossip node of the member role (D1, D5). Nil in the feed role, on
+	// the js build, and for a space with nothing to join.
+	extenderNode                  *spaceExtenderNode
 	extenderStatusChangeListeners *connect.CallbackList[ExtenderStatusChangeListener]
 }
 
@@ -269,13 +272,28 @@ func newNetworkSpaceWithConnectSettings(
 		extenderDirectory:             extenderDirectory,
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
+	// the role decides what fills the directory: the feed role holds the
+	// subscribe stream, the member role runs the node instead (D5)
+	role := extenderRole(extenderGossipMode(asyncLocalState))
 	networkSpace.extenderNetworkClient = newSpaceExtenderNetworkClient(
 		cancelCtx,
 		&key,
 		&values,
+		role,
 		clientStrategy,
 		extenderDirectory,
 		apiUrl,
+		clientStrategySettings.Log,
+	)
+	networkSpace.extenderNode = newSpaceExtenderNode(
+		cancelCtx,
+		&key,
+		&values,
+		role,
+		extenderDirectory,
+		networkSpace.extenderNetworkClient,
+		asyncLocalState,
+		clientStrategySettings,
 		clientStrategySettings.Log,
 	)
 	// no rescue handler: the watch already contains a panic to one tick, and a
@@ -325,6 +343,7 @@ func newSpaceExtenderNetworkClient(
 	ctx context.Context,
 	key *NetworkSpaceKey,
 	values *NetworkSpaceValues,
+	role string,
 	clientStrategy *connect.ClientStrategy,
 	directory *connect.ExtenderDirectory,
 	apiUrl string,
@@ -333,15 +352,31 @@ func newSpaceExtenderNetworkClient(
 	if !extenderNetworkClientEnabled || !extenderNetworkClientRuns(key, values) {
 		return nil
 	}
-	extenderDnsName := ExtenderDnsName(key, values)
+	return connect.NewExtenderNetworkClient(
+		ctx,
+		clientStrategy,
+		directory,
+		spaceExtenderNetworkClientSettings(key, values, role, apiUrl, log),
+	)
+}
+
+// The settings of one space's network client (E3, D5).
+func spaceExtenderNetworkClientSettings(
+	key *NetworkSpaceKey,
+	values *NetworkSpaceValues,
+	role string,
+	apiUrl string,
+	log connect.Logger,
+) *connect.ExtenderNetworkClientSettings {
 	settings := connect.DefaultExtenderNetworkClientSettings()
 	settings.Log = log
-	settings.ExtenderDnsName = extenderDnsName
+	settings.ExtenderDnsName = ExtenderDnsName(key, values)
 	settings.ApiUrl = apiUrl
-	// both roles take the feed in this phase; phase 5a gives the member role
-	// the gossip node instead (D5)
-	settings.Subscribe = true
-	return connect.NewExtenderNetworkClient(ctx, clientStrategy, directory, settings)
+	// every app takes the one-shot sample at start; only the feed role keeps
+	// the subscribe stream open, because the member role hears the same
+	// records from the mesh instead (D5)
+	settings.Subscribe = role == ExtenderRoleFeed
+	return settings
 }
 
 // Reports whether a space has an extender dns name worth resolving (F1): both
@@ -782,6 +817,8 @@ func (self *NetworkSpace) close() {
 		if self.extenderNetworkClient != nil {
 			self.extenderNetworkClient.Close()
 		}
+		// the node writes into the directory too, so it is joined before it
+		self.extenderNode.Close()
 		if self.extenderDirectory != nil {
 			self.extenderDirectory.Close()
 		}
