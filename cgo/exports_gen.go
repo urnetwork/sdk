@@ -755,6 +755,20 @@ func (self *cAdapterDnsResolverSettingsChangeListener) DnsResolverSettingsChange
 	}
 }
 
+type cAdapterExtenderStatusChangeListener struct {
+	cbExtenderStatusChanged C.urnet_extender_status_change_cb
+	userData                unsafe.Pointer
+}
+
+func (self *cAdapterExtenderStatusChangeListener) ExtenderStatusChanged(status *sdk.ExtenderStatus) {
+	defer cgoGuard("urnet_extender_status_change_cb")
+	status_ := cJson(status, "urnet_extender_status_change_cb")
+	C.urnet_invoke_extender_status_change(self.cbExtenderStatusChanged, self.userData, status_)
+	if status_ != nil {
+		cStringFree(status_)
+	}
+}
+
 type cAdapterFilteredLocationsListener struct {
 	cbFilteredLocationsChanged C.urnet_filtered_locations_cb
 	userData                   unsafe.Pointer
@@ -11099,6 +11113,48 @@ func urnet_export_diagnostic_bundle(destPath *C.char, opts *C.char, outError **C
 	return cJson(r0, "urnet_export_diagnostic_bundle")
 }
 
+//export urnet_extender_dns_name
+func urnet_extender_dns_name(key *C.char, values *C.char) *C.char {
+	defer cgoGuard("urnet_extender_dns_name")
+	var key_ *sdk.NetworkSpaceKey
+	if key != nil {
+		key_ = &sdk.NetworkSpaceKey{}
+		if !goJson(key, key_, "urnet_extender_dns_name") {
+			return nil
+		}
+	}
+	var values_ *sdk.NetworkSpaceValues
+	if values != nil {
+		values_ = &sdk.NetworkSpaceValues{}
+		if !goJson(values, values_, "urnet_extender_dns_name") {
+			return nil
+		}
+	}
+	r0 := sdk.ExtenderDnsName(key_, values_)
+	return cString(string(r0))
+}
+
+//export urnet_extender_root_public_keys
+func urnet_extender_root_public_keys(key *C.char, values *C.char) *C.char {
+	defer cgoGuard("urnet_extender_root_public_keys")
+	var key_ *sdk.NetworkSpaceKey
+	if key != nil {
+		key_ = &sdk.NetworkSpaceKey{}
+		if !goJson(key, key_, "urnet_extender_root_public_keys") {
+			return nil
+		}
+	}
+	var values_ *sdk.NetworkSpaceValues
+	if values != nil {
+		values_ = &sdk.NetworkSpaceValues{}
+		if !goJson(values, values_, "urnet_extender_root_public_keys") {
+			return nil
+		}
+	}
+	r0 := sdk.ExtenderRootPublicKeys(key_, values_)
+	return cJson(r0, "urnet_extender_root_public_keys")
+}
+
 //export urnet_feedback_view_controller_add_is_sending_feedback_listener
 func urnet_feedback_view_controller_add_is_sending_feedback_listener(self C.uint64_t, listener_state_changed C.urnet_is_sending_feedback_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_feedback_view_controller_add_is_sending_feedback_listener")
@@ -11378,6 +11434,27 @@ func urnet_get_tunnel_local_prefix_length_ipv6() C.int64_t {
 	defer cgoGuard("urnet_get_tunnel_local_prefix_length_ipv6")
 	r0 := sdk.GetTunnelLocalPrefixLengthIpv6()
 	return C.int64_t(r0)
+}
+
+//export urnet_gossip_url
+func urnet_gossip_url(key *C.char, values *C.char) *C.char {
+	defer cgoGuard("urnet_gossip_url")
+	var key_ *sdk.NetworkSpaceKey
+	if key != nil {
+		key_ = &sdk.NetworkSpaceKey{}
+		if !goJson(key, key_, "urnet_gossip_url") {
+			return nil
+		}
+	}
+	var values_ *sdk.NetworkSpaceValues
+	if values != nil {
+		values_ = &sdk.NetworkSpaceValues{}
+		if !goJson(values, values_, "urnet_gossip_url") {
+			return nil
+		}
+	}
+	r0 := sdk.GossipUrl(key_, values_)
+	return cString(string(r0))
 }
 
 //export urnet_has_regional_dns_recommendation
@@ -11802,6 +11879,17 @@ func urnet_local_state_get_dns_resolver_settings(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_local_state_get_dns_resolver_settings")
+}
+
+//export urnet_local_state_get_extender_gossip_mode
+func urnet_local_state_get_extender_gossip_mode(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_local_state_get_extender_gossip_mode")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_extender_gossip_mode")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderGossipMode()
+	return cString(string(r0))
 }
 
 //export urnet_local_state_get_instance_id
@@ -12396,6 +12484,21 @@ func urnet_local_state_set_dns_resolver_settings(self C.uint64_t, dnsResolverSet
 	return C.bool(true)
 }
 
+//export urnet_local_state_set_extender_gossip_mode
+func urnet_local_state_set_extender_gossip_mode(self C.uint64_t, mode *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_extender_gossip_mode")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_extender_gossip_mode")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetExtenderGossipMode(goString(mode))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_local_state_set_instance_id
 func urnet_local_state_set_instance_id(self C.uint64_t, instanceId *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_local_state_set_instance_id")
@@ -12912,6 +13015,21 @@ func urnet_network_name_validation_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_network_space_add_extender_status_change_listener
+func urnet_network_space_add_extender_status_change_listener(self C.uint64_t, listener_extender_status_changed C.urnet_extender_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_network_space_add_extender_status_change_listener")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_add_extender_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ExtenderStatusChangeListener
+	if listener_extender_status_changed != nil {
+		listener_ = &cAdapterExtenderStatusChangeListener{cbExtenderStatusChanged: listener_extender_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddExtenderStatusChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_network_space_close
 func urnet_network_space_close(self C.uint64_t) {
 	defer cgoGuard("urnet_network_space_close")
@@ -13067,6 +13185,67 @@ func urnet_network_space_get_env_secret(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_extender_dns_name
+func urnet_network_space_get_extender_dns_name(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_dns_name")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_dns_name")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderDnsName()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_extender_gossip_mode
+func urnet_network_space_get_extender_gossip_mode(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_gossip_mode")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_gossip_mode")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderGossipMode()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_extender_root_public_keys
+func urnet_network_space_get_extender_root_public_keys(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_root_public_keys")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_root_public_keys")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderRootPublicKeys()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_extender_root_public_keys")
+}
+
+//export urnet_network_space_get_extender_status
+func urnet_network_space_get_extender_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_status")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_extender_status")
+}
+
+//export urnet_network_space_get_gossip_url
+func urnet_network_space_get_gossip_url(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_gossip_url")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_gossip_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetGossipUrl()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_host_name
 func urnet_network_space_get_host_name(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_host_name")
@@ -13148,20 +13327,6 @@ func urnet_network_space_get_net_extender(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_network_space_get_net_extender")
-}
-
-//export urnet_network_space_get_net_extender_auto_configure
-func urnet_network_space_get_net_extender_auto_configure(self C.uint64_t) *C.char {
-	defer cgoGuard("urnet_network_space_get_net_extender_auto_configure")
-	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_net_extender_auto_configure")
-	if !ok {
-		return nil
-	}
-	r0 := self_.GetNetExtenderAutoConfigure()
-	if r0 == nil {
-		return nil
-	}
-	return cJson(r0, "urnet_network_space_get_net_extender_auto_configure")
 }
 
 //export urnet_network_space_get_platform_url
@@ -13286,6 +13451,16 @@ func urnet_network_space_set_control_ip_family_policy(self C.uint64_t, policy C.
 		return
 	}
 	self_.SetControlIpFamilyPolicy(int(int64(policy)))
+}
+
+//export urnet_network_space_set_extender_gossip_mode
+func urnet_network_space_set_extender_gossip_mode(self C.uint64_t, mode *C.char) {
+	defer cgoGuard("urnet_network_space_set_extender_gossip_mode")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_extender_gossip_mode")
+	if !ok {
+		return
+	}
+	self_.SetExtenderGossipMode(goString(mode))
 }
 
 //export urnet_network_space_to_json
@@ -14155,6 +14330,13 @@ func urnet_new_widget_added_event(kind *C.char) *C.char {
 func urnet_normal_env_name(envName *C.char) *C.char {
 	defer cgoGuard("urnet_normal_env_name")
 	r0 := sdk.NormalEnvName(goString(envName))
+	return cString(string(r0))
+}
+
+//export urnet_normal_extender_gossip_mode
+func urnet_normal_extender_gossip_mode(mode *C.char) *C.char {
+	defer cgoGuard("urnet_normal_extender_gossip_mode")
+	r0 := sdk.NormalExtenderGossipMode(goString(mode))
 	return cString(string(r0))
 }
 
@@ -15034,6 +15216,27 @@ func urnet_selectable_transport_modes() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_selectable_transport_modes")
+}
+
+//export urnet_service_host_name
+func urnet_service_host_name(key *C.char, values *C.char, service *C.char) *C.char {
+	defer cgoGuard("urnet_service_host_name")
+	var key_ *sdk.NetworkSpaceKey
+	if key != nil {
+		key_ = &sdk.NetworkSpaceKey{}
+		if !goJson(key, key_, "urnet_service_host_name") {
+			return nil
+		}
+	}
+	var values_ *sdk.NetworkSpaceValues
+	if values != nil {
+		values_ = &sdk.NetworkSpaceValues{}
+		if !goJson(values, values_, "urnet_service_host_name") {
+			return nil
+		}
+	}
+	r0 := sdk.ServiceHostName(key_, values_, goString(service))
+	return cString(string(r0))
 }
 
 //export urnet_service_url

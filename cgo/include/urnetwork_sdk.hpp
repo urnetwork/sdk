@@ -202,6 +202,11 @@ inline constexpr const char* ExperimentSurfaceOfferFinalScreen = "offer.final_sc
 inline constexpr const char* ExperimentSurfaceOfferInApp = "offer.in_app";
 inline constexpr const char* ExperimentSurfaceOfferIntroStep = "offer.intro_step";
 inline constexpr const char* ExperimentVariantHoldout = "holdout";
+inline constexpr const char* ExtenderGossipModeAuto = "auto";
+inline constexpr const char* ExtenderGossipModeFeed = "feed";
+inline constexpr const char* ExtenderGossipModeMember = "member";
+inline constexpr const char* ExtenderRoleFeed = "feed";
+inline constexpr const char* ExtenderRoleMember = "member";
 inline constexpr const char* IpFamilyDualstack = "dualstack";
 inline constexpr const char* IpFamilyLabelBoth = "both";
 inline constexpr const char* IpFamilyLabelV4 = "v4";
@@ -510,6 +515,8 @@ struct Exit;
 struct ExperimentAssignment;
 struct ExportOptions;
 struct ExportResult;
+struct ExtenderInfo;
+struct ExtenderStatus;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
 struct FeedbackSendResult;
@@ -557,7 +564,6 @@ struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
 struct NetExtender;
-struct NetExtenderAutoConfigure;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
 struct NetworkBlockLocationResult;
@@ -749,6 +755,7 @@ using CountryMultiplierList = std::vector<CountryMultiplier>;
 using DestinationExitList = std::vector<DestinationExit>;
 using ExitList = std::vector<Exit>;
 using ExperimentAssignmentList = std::vector<ExperimentAssignment>;
+using ExtenderInfoList = std::vector<ExtenderInfo>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
 using Float64List = std::vector<double>;
 using IdList = std::vector<std::string>;
@@ -1511,6 +1518,37 @@ struct ExportResult {
 	std::optional<StringList> MissingSources;
 };
 
+struct ExtenderInfo {
+	std::string Id{};
+	std::string Ip{};
+	int64_t IpVersion{};
+	std::string Carriers{};
+	std::string CountryCode{};
+	std::string State{};
+	std::string Source{};
+	int64_t LastSuccessTime{};
+	int64_t LastFailureTime{};
+	int64_t SuccessCount{};
+	int64_t FailureCount{};
+	int64_t InUse{};
+	int64_t ExpireTime{};
+};
+
+struct ExtenderStatus {
+	std::string Role{};
+	bool FeedConnected{};
+	std::string FeedIp{};
+	bool GossipConnected{};
+	int64_t GossipPeerCount{};
+	int64_t KnownCount{};
+	int64_t ActiveCount{};
+	int64_t WarningCount{};
+	int64_t HoldCount{};
+	int64_t LastSampleTime{};
+	std::string LastError{};
+	std::optional<ExtenderInfoList> Extenders;
+};
+
 struct FeedbackSendNeeds {
 	std::string other{};
 };
@@ -1840,11 +1878,6 @@ struct NetExtender {
 	std::string secret{};
 };
 
-struct NetExtenderAutoConfigure {
-	std::optional<std::string> dns_ip;
-	std::optional<std::string> extender_hostname;
-};
-
 struct NetworkBlockLocationArgs {
 	std::optional<std::string> location_id;
 };
@@ -1986,7 +2019,9 @@ struct NetworkSpaceValues {
 	std::optional<std::string> platform_url;
 	std::optional<SnChainSettings> sn_chain;
 	std::optional<NetExtender> net_extender;
-	std::optional<NetExtenderAutoConfigure> net_extender_auto_configure;
+	std::optional<std::string> extender_dns_name;
+	std::optional<std::string> gossip_url;
+	std::optional<std::vector<std::string>> extender_root_public_keys;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -3217,6 +3252,10 @@ inline void to_json(nlohmann::json& j, const ExportOptions& v);
 inline void from_json(const nlohmann::json& j, ExportOptions& v);
 inline void to_json(nlohmann::json& j, const ExportResult& v);
 inline void from_json(const nlohmann::json& j, ExportResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderInfo& v);
+inline void from_json(const nlohmann::json& j, ExtenderInfo& v);
+inline void to_json(nlohmann::json& j, const ExtenderStatus& v);
+inline void from_json(const nlohmann::json& j, ExtenderStatus& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
 inline void from_json(const nlohmann::json& j, FeedbackSendNeeds& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendArgs& v);
@@ -3311,8 +3350,6 @@ inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
-inline void to_json(nlohmann::json& j, const NetExtenderAutoConfigure& v);
-inline void from_json(const nlohmann::json& j, NetExtenderAutoConfigure& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
 inline void from_json(const nlohmann::json& j, NetworkBlockLocationArgs& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationError& v);
@@ -6988,6 +7025,128 @@ inline void from_json(const nlohmann::json& j, ExportResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ExtenderInfo& v) {
+	j = nlohmann::json::object();
+	j["Id"] = v.Id;
+	j["Ip"] = v.Ip;
+	j["IpVersion"] = v.IpVersion;
+	j["Carriers"] = v.Carriers;
+	j["CountryCode"] = v.CountryCode;
+	j["State"] = v.State;
+	j["Source"] = v.Source;
+	j["LastSuccessTime"] = v.LastSuccessTime;
+	j["LastFailureTime"] = v.LastFailureTime;
+	j["SuccessCount"] = v.SuccessCount;
+	j["FailureCount"] = v.FailureCount;
+	j["InUse"] = v.InUse;
+	j["ExpireTime"] = v.ExpireTime;
+}
+inline void from_json(const nlohmann::json& j, ExtenderInfo& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Id);
+	}
+	if (auto it = j.find("Ip"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ip);
+	}
+	if (auto it = j.find("IpVersion"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IpVersion);
+	}
+	if (auto it = j.find("Carriers"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Carriers);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.State);
+	}
+	if (auto it = j.find("Source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Source);
+	}
+	if (auto it = j.find("LastSuccessTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastSuccessTime);
+	}
+	if (auto it = j.find("LastFailureTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastFailureTime);
+	}
+	if (auto it = j.find("SuccessCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SuccessCount);
+	}
+	if (auto it = j.find("FailureCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FailureCount);
+	}
+	if (auto it = j.find("InUse"); it != j.end() && !it->is_null()) {
+		it->get_to(v.InUse);
+	}
+	if (auto it = j.find("ExpireTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExpireTime);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderStatus& v) {
+	j = nlohmann::json::object();
+	j["Role"] = v.Role;
+	j["FeedConnected"] = v.FeedConnected;
+	j["FeedIp"] = v.FeedIp;
+	j["GossipConnected"] = v.GossipConnected;
+	j["GossipPeerCount"] = v.GossipPeerCount;
+	j["KnownCount"] = v.KnownCount;
+	j["ActiveCount"] = v.ActiveCount;
+	j["WarningCount"] = v.WarningCount;
+	j["HoldCount"] = v.HoldCount;
+	j["LastSampleTime"] = v.LastSampleTime;
+	j["LastError"] = v.LastError;
+	if (v.Extenders) {
+		j["Extenders"] = *v.Extenders;
+	}
+}
+inline void from_json(const nlohmann::json& j, ExtenderStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Role"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Role);
+	}
+	if (auto it = j.find("FeedConnected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FeedConnected);
+	}
+	if (auto it = j.find("FeedIp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FeedIp);
+	}
+	if (auto it = j.find("GossipConnected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipConnected);
+	}
+	if (auto it = j.find("GossipPeerCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipPeerCount);
+	}
+	if (auto it = j.find("KnownCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.KnownCount);
+	}
+	if (auto it = j.find("ActiveCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ActiveCount);
+	}
+	if (auto it = j.find("WarningCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WarningCount);
+	}
+	if (auto it = j.find("HoldCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HoldCount);
+	}
+	if (auto it = j.find("LastSampleTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastSampleTime);
+	}
+	if (auto it = j.find("LastError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastError);
+	}
+	if (auto it = j.find("Extenders"); it != j.end() && !it->is_null()) {
+		ExtenderInfoList tmp{};
+		it->get_to(tmp);
+		v.Extenders = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v) {
 	j = nlohmann::json::object();
 	j["other"] = v.other;
@@ -8467,31 +8626,6 @@ inline void from_json(const nlohmann::json& j, NetExtender& v) {
 	}
 }
 
-inline void to_json(nlohmann::json& j, const NetExtenderAutoConfigure& v) {
-	j = nlohmann::json::object();
-	if (v.dns_ip) {
-		j["dns_ip"] = *v.dns_ip;
-	}
-	if (v.extender_hostname) {
-		j["extender_hostname"] = *v.extender_hostname;
-	}
-}
-inline void from_json(const nlohmann::json& j, NetExtenderAutoConfigure& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("dns_ip"); it != j.end() && !it->is_null()) {
-		std::string tmp{};
-		it->get_to(tmp);
-		v.dns_ip = std::move(tmp);
-	}
-	if (auto it = j.find("extender_hostname"); it != j.end() && !it->is_null()) {
-		std::string tmp{};
-		it->get_to(tmp);
-		v.extender_hostname = std::move(tmp);
-	}
-}
-
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v) {
 	j = nlohmann::json::object();
 	if (v.location_id) {
@@ -9140,8 +9274,14 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.net_extender) {
 		j["net_extender"] = *v.net_extender;
 	}
-	if (v.net_extender_auto_configure) {
-		j["net_extender_auto_configure"] = *v.net_extender_auto_configure;
+	if (v.extender_dns_name) {
+		j["extender_dns_name"] = *v.extender_dns_name;
+	}
+	if (v.gossip_url) {
+		j["gossip_url"] = *v.gossip_url;
+	}
+	if (v.extender_root_public_keys) {
+		j["extender_root_public_keys"] = *v.extender_root_public_keys;
 	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
@@ -9213,10 +9353,20 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		it->get_to(tmp);
 		v.net_extender = std::move(tmp);
 	}
-	if (auto it = j.find("net_extender_auto_configure"); it != j.end() && !it->is_null()) {
-		NetExtenderAutoConfigure tmp{};
+	if (auto it = j.find("extender_dns_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
 		it->get_to(tmp);
-		v.net_extender_auto_configure = std::move(tmp);
+		v.extender_dns_name = std::move(tmp);
+	}
+	if (auto it = j.find("gossip_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.gossip_url = std::move(tmp);
+	}
+	if (auto it = j.find("extender_root_public_keys"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.extender_root_public_keys = std::move(tmp);
 	}
 }
 
@@ -13856,6 +14006,7 @@ using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult
 using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
+using ExtenderStatusChangeListener = std::function<void(std::optional<ExtenderStatus> status)>;
 using FilteredLocationsListener = std::function<void(std::optional<FilteredLocations> locations, std::string state)>;
 using FindLocationsCallback = std::function<void(std::optional<FindLocationsResult> result, std::optional<std::string> err_param)>;
 using FindProviders2Callback = std::function<void(std::optional<FindProviders2Result> result, std::optional<std::string> err_param)>;
@@ -14744,6 +14895,7 @@ public:
 	std::optional<ConnectLocation> getDefaultLocation() const;
 	DeviceLocalKeyMaterial getDeviceLocalKeyMaterial() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
+	std::string getExtenderGossipMode() const;
 	std::string getInstanceId() const;
 	int64_t getLogVerbosity() const;
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
@@ -14782,6 +14934,7 @@ public:
 	void setDefaultLocation(const std::optional<ConnectLocation>& connect_location) const;
 	void setDeviceLocalKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
+	void setExtenderGossipMode(const std::string& mode) const;
 	void setInstanceId(const std::string& instance_id) const;
 	void setIntroFunnelLastPrompted() const;
 	void setLogVerbosity(int64_t level) const;
@@ -14858,6 +15011,7 @@ class NetworkSpace final : public detail::Handle {
 public:
 	NetworkSpace() = default;
 	explicit NetworkSpace(uint64_t h) : detail::Handle(h) {}
+	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
 	void close() const;
 	std::string connectLinkUrl(const std::string& target) const;
 	Api getApi() const;
@@ -14871,6 +15025,11 @@ public:
 	std::string getConfiguredPlatformUrl() const;
 	std::string getEnvName() const;
 	std::string getEnvSecret() const;
+	std::string getExtenderDnsName() const;
+	std::string getExtenderGossipMode() const;
+	std::optional<StringList> getExtenderRootPublicKeys() const;
+	std::optional<ExtenderStatus> getExtenderStatus() const;
+	std::string getGossipUrl() const;
 	std::string getHostName() const;
 	std::optional<NetworkSpaceKey> getKey() const;
 	std::string getLinkHostName() const;
@@ -14878,7 +15037,6 @@ public:
 	bool getNetExposeServerHostNames() const;
 	bool getNetExposeServerIps() const;
 	std::optional<NetExtender> getNetExtender() const;
-	std::optional<NetExtenderAutoConfigure> getNetExtenderAutoConfigure() const;
 	std::string getPlatformUrl() const;
 	std::string getPlatformUrlV4() const;
 	std::string getPlatformUrlV6() const;
@@ -14889,6 +15047,7 @@ public:
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
+	void setExtenderGossipMode(const std::string& mode) const;
 	std::string toJson() const;
 };
 
@@ -16476,6 +16635,34 @@ inline void oneshot_dns_resolver_settings_change(void* user_data, const char* dn
 			dns_resolver_settings_v = parseJson<DnsResolverSettings>(dns_resolver_settings_json);
 		}
 		(*f)(std::move(dns_resolver_settings_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_extender_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_extender_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -24239,6 +24426,10 @@ inline std::optional<DnsResolverSettings> LocalState::getDnsResolverSettings() c
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
 }
+inline std::string LocalState::getExtenderGossipMode() const {
+	char* r_c = urnet_local_state_get_extender_gossip_mode(handle());
+	return detail::takeString(r_c);
+}
 inline std::string LocalState::getInstanceId() const {
 	char* r_c = urnet_local_state_get_instance_id(handle());
 	return detail::takeString(r_c);
@@ -24581,6 +24772,16 @@ inline void LocalState::setDnsResolverSettings(const std::optional<DnsResolverSe
 		throw Error("urnet: urnet_local_state_set_dns_resolver_settings failed");
 	}
 }
+inline void LocalState::setExtenderGossipMode(const std::string& mode) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_extender_gossip_mode(handle(), mode.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_extender_gossip_mode failed");
+	}
+}
 inline void LocalState::setInstanceId(const std::string& instance_id) const {
 	char* err_c = nullptr;
 	bool ok = urnet_local_state_set_instance_id(handle(), instance_id.c_str(), &err_c);
@@ -24848,6 +25049,17 @@ inline void NetworkNameValidationViewController::start() const {
 inline void NetworkNameValidationViewController::stop() const {
 	urnet_network_name_validation_view_controller_stop(handle());
 }
+inline Sub NetworkSpace::addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const {
+	std::shared_ptr<ExtenderStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_network_space_add_extender_status_change_listener(handle(), listener_fn ? &detail::retained_extender_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline void NetworkSpace::close() const {
 	urnet_network_space_close(handle());
 }
@@ -24903,6 +25115,34 @@ inline std::string NetworkSpace::getEnvSecret() const {
 	char* r_c = urnet_network_space_get_env_secret(handle());
 	return detail::takeString(r_c);
 }
+inline std::string NetworkSpace::getExtenderDnsName() const {
+	char* r_c = urnet_network_space_get_extender_dns_name(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getExtenderGossipMode() const {
+	char* r_c = urnet_network_space_get_extender_gossip_mode(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<StringList> NetworkSpace::getExtenderRootPublicKeys() const {
+	char* r_c = urnet_network_space_get_extender_root_public_keys(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<ExtenderStatus> NetworkSpace::getExtenderStatus() const {
+	char* r_c = urnet_network_space_get_extender_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStatus>(r_s->c_str());
+}
+inline std::string NetworkSpace::getGossipUrl() const {
+	char* r_c = urnet_network_space_get_gossip_url(handle());
+	return detail::takeString(r_c);
+}
 inline std::string NetworkSpace::getHostName() const {
 	char* r_c = urnet_network_space_get_host_name(handle());
 	return detail::takeString(r_c);
@@ -24938,14 +25178,6 @@ inline std::optional<NetExtender> NetworkSpace::getNetExtender() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<NetExtender>(r_s->c_str());
-}
-inline std::optional<NetExtenderAutoConfigure> NetworkSpace::getNetExtenderAutoConfigure() const {
-	char* r_c = urnet_network_space_get_net_extender_auto_configure(handle());
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<NetExtenderAutoConfigure>(r_s->c_str());
 }
 inline std::string NetworkSpace::getPlatformUrl() const {
 	char* r_c = urnet_network_space_get_platform_url(handle());
@@ -24989,6 +25221,9 @@ inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std
 }
 inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
 	urnet_network_space_set_control_ip_family_policy(handle(), policy);
+}
+inline void NetworkSpace::setExtenderGossipMode(const std::string& mode) const {
+	urnet_network_space_set_extender_gossip_mode(handle(), mode.c_str());
 }
 inline std::string NetworkSpace::toJson() const {
 	char* err_c = nullptr;
@@ -26038,6 +26273,42 @@ inline std::optional<ExportResult> exportDiagnosticBundle(const std::string& des
 	}
 	return detail::parseJson<ExportResult>(r_s->c_str());
 }
+inline std::string extenderDnsName(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_extender_dns_name(key_c, values_c);
+	return detail::takeString(r_c);
+}
+inline std::vector<std::string> extenderRootPublicKeys(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_extender_root_public_keys(key_c, values_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::vector<std::string>{};
+	}
+	return detail::parseJson<std::vector<std::string>>(r_s->c_str());
+}
 inline void flushGlog() {
 	urnet_flush_glog();
 }
@@ -26185,6 +26456,22 @@ inline std::optional<RegionalDnsServerList> getRegionalDnsServers() {
 inline int64_t getTunnelLocalPrefixLengthIpv6() {
 	int64_t r = urnet_get_tunnel_local_prefix_length_ipv6();
 	return r;
+}
+inline std::string gossipUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_gossip_url(key_c, values_c);
+	return detail::takeString(r_c);
 }
 inline bool hasRegionalDnsRecommendation(const std::string& country_code) {
 	bool r = urnet_has_regional_dns_recommendation(country_code.c_str());
@@ -26530,6 +26817,10 @@ inline std::string normalEnvName(const std::string& env_name) {
 	char* r_c = urnet_normal_env_name(env_name.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string normalExtenderGossipMode(const std::string& mode) {
+	char* r_c = urnet_normal_extender_gossip_mode(mode.c_str());
+	return detail::takeString(r_c);
+}
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
 	std::string locations_json;
 	const char* locations_c = nullptr;
@@ -26625,6 +26916,22 @@ inline std::optional<StringList> selectableTransportModes() {
 		return std::nullopt;
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::string serviceHostName(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& service) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_service_host_name(key_c, values_c, service.c_str());
+	return detail::takeString(r_c);
 }
 inline std::string serviceUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& scheme, const std::string& service) {
 	std::string key_json;

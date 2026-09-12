@@ -577,6 +577,8 @@ EXPORTS
 	urnet_encrypt_data
 	urnet_evm_mirror_ss58
 	urnet_export_diagnostic_bundle
+	urnet_extender_dns_name
+	urnet_extender_root_public_keys
 	urnet_feedback_view_controller_add_is_sending_feedback_listener
 	urnet_feedback_view_controller_close
 	urnet_feedback_view_controller_send_feedback
@@ -611,6 +613,7 @@ EXPORTS
 	urnet_get_recommended_dns_resolver_settings
 	urnet_get_regional_dns_servers
 	urnet_get_tunnel_local_prefix_length_ipv6
+	urnet_gossip_url
 	urnet_has_regional_dns_recommendation
 	urnet_host_base_name
 	urnet_id_from_bytes
@@ -646,6 +649,7 @@ EXPORTS
 	urnet_local_state_get_default_location
 	urnet_local_state_get_device_local_key_material
 	urnet_local_state_get_dns_resolver_settings
+	urnet_local_state_get_extender_gossip_mode
 	urnet_local_state_get_instance_id
 	urnet_local_state_get_log_verbosity
 	urnet_local_state_get_performance_profile
@@ -688,6 +692,7 @@ EXPORTS
 	urnet_local_state_set_default_location
 	urnet_local_state_set_device_local_key_material
 	urnet_local_state_set_dns_resolver_settings
+	urnet_local_state_set_extender_gossip_mode
 	urnet_local_state_set_instance_id
 	urnet_local_state_set_intro_funnel_last_prompted
 	urnet_local_state_set_log_verbosity
@@ -722,6 +727,7 @@ EXPORTS
 	urnet_network_name_validation_view_controller_network_check
 	urnet_network_name_validation_view_controller_start
 	urnet_network_name_validation_view_controller_stop
+	urnet_network_space_add_extender_status_change_listener
 	urnet_network_space_close
 	urnet_network_space_connect_link_url
 	urnet_network_space_get_api
@@ -735,6 +741,11 @@ EXPORTS
 	urnet_network_space_get_configured_platform_url
 	urnet_network_space_get_env_name
 	urnet_network_space_get_env_secret
+	urnet_network_space_get_extender_dns_name
+	urnet_network_space_get_extender_gossip_mode
+	urnet_network_space_get_extender_root_public_keys
+	urnet_network_space_get_extender_status
+	urnet_network_space_get_gossip_url
 	urnet_network_space_get_host_name
 	urnet_network_space_get_key
 	urnet_network_space_get_link_host_name
@@ -742,7 +753,6 @@ EXPORTS
 	urnet_network_space_get_net_expose_server_host_names
 	urnet_network_space_get_net_expose_server_ips
 	urnet_network_space_get_net_extender
-	urnet_network_space_get_net_extender_auto_configure
 	urnet_network_space_get_platform_url
 	urnet_network_space_get_platform_url_v4
 	urnet_network_space_get_platform_url_v6
@@ -764,6 +774,7 @@ EXPORTS
 	urnet_network_space_reset_local_state_if_current
 	urnet_network_space_service_url
 	urnet_network_space_set_control_ip_family_policy
+	urnet_network_space_set_extender_gossip_mode
 	urnet_network_space_to_json
 	urnet_network_user_view_controller_add_is_loading_listener
 	urnet_network_user_view_controller_add_is_updating_listener
@@ -815,6 +826,7 @@ EXPORTS
 	urnet_new_urls_network_space
 	urnet_new_widget_added_event
 	urnet_normal_env_name
+	urnet_normal_extender_gossip_mode
 	urnet_order_connected_provider_locations
 	urnet_packet_batch_get
 	urnet_packet_batch_ip_protocol
@@ -897,6 +909,7 @@ EXPORTS
 	urnet_render_identicon_png
 	urnet_saving_percent
 	urnet_selectable_transport_modes
+	urnet_service_host_name
 	urnet_service_url
 	urnet_set_control_ip_family_policy
 	urnet_set_egress_interface_index
