@@ -562,32 +562,12 @@ func TestMobileRetainedByteBudgetsFitTheSteadyMemoryTarget(t *testing.T) {
 
 // mobileRttWindowRetainedByteCount is what the send sequences' round-trip
 // windows retain: each sample slot is one ring entry and one minimum-deque
-// entry, and every sequence holds the relay window plus the direct lane's
-// own short window (FLIGHTGATEFIX §15.2).
+// entry. Every sequence holds one window over every acknowledgement,
+// whichever lane carried it; FLIGHTGATEFIX §19 D3 deleted the direct
+// lane's own second window, which returned sixteen slots per sequence.
 func mobileRttWindowRetainedByteCount() ByteCount {
 	const rttWindowSlotByteCount = 40
 	send := connect.DefaultSendBufferSettings()
-	unreliableWindowSize := send.UnreliableRttWindowSize
-	if unreliableWindowSize <= 0 {
-		unreliableWindowSize = send.RttWindowSize
-	}
-	slots := send.RttWindowSize + unreliableWindowSize
 	return ByteCount(mobileClientSequenceBufferMaxCount) *
-		ByteCount(slots) * rttWindowSlotByteCount
-}
-
-// The direct lane's own window is deliberately short: a second full window
-// per sequence would cost kilobytes where the envelope has none.
-func TestMobileDirectLaneRttWindowStaysSmall(t *testing.T) {
-	send := connect.DefaultSendBufferSettings()
-	if send.UnreliableRttWindowSize <= 0 {
-		t.Fatal("UnreliableRttWindowSize is nonpositive, so the direct lane inherits the full relay window")
-	}
-	if send.RttWindowSize/4 < send.UnreliableRttWindowSize {
-		t.Fatalf(
-			"UnreliableRttWindowSize %d is not far under RttWindowSize %d: a second full window per "+
-				"sequence costs kilobytes the 24 MiB envelope has no room for (FLIGHTGATEFIX §15.2)",
-			send.UnreliableRttWindowSize, send.RttWindowSize,
-		)
-	}
+		ByteCount(send.RttWindowSize) * rttWindowSlotByteCount
 }
