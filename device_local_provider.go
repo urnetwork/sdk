@@ -38,8 +38,16 @@ type deviceLocalProvider struct {
 	appVersion string
 	instanceId connect.Id
 
-	clientStrategy            *connect.ClientStrategy
-	platformUrl               string
+	clientStrategy *connect.ClientStrategy
+	// clientStrategySettings seeds the direct-only strategies of the
+	// family-pinned transports; nil falls back to the connect defaults
+	clientStrategySettings *connect.ClientStrategySettings
+	platformUrl            string
+	// platformUrlV4 and platformUrlV6 are the family-pinned urls (IPV6.md
+	// A2, A9). Empty disables that pinned transport, and with both empty the
+	// group is the legacy single transport.
+	platformUrlV4             string
+	platformUrlV6             string
 	platformTransportSettings *connect.PlatformTransportSettings
 	targetMode                connect.TransportMode
 	modePreferences           map[connect.TransportMode]int
@@ -165,15 +173,6 @@ func newDeviceLocalProviderWithOverrides(
 	// Explicit provider H3 is a required reservation and ignores this priority.
 	platformTransportSettings.PlatformTransportBudgetPriority =
 		connect.PlatformTransportBudgetPriorityBackground
-	platformTransport := connect.NewPlatformTransportWithTargetMode(
-		client.Ctx(),
-		clientStrategy,
-		client.RouteManager(),
-		networkSpace.platformUrl,
-		auth,
-		targetMode,
-		platformTransportSettings,
-	)
 
 	// This NAT is the local-fallback egress surface: use the explicit
 	// provider profile sized from the provider share, so an unbudgeted
@@ -186,18 +185,20 @@ func newDeviceLocalProviderWithOverrides(
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	provider := &deviceLocalProvider{
-		ctx:               providerCtx,
-		cancel:            providerCancel,
-		client:            client,
-		clientOob:         clientOob,
-		platformTransport: platformTransport,
-		localUserNat:      localUserNat,
+		ctx:          providerCtx,
+		cancel:       providerCancel,
+		client:       client,
+		clientOob:    clientOob,
+		localUserNat: localUserNat,
 
 		appVersion: appVersion,
 		instanceId: instanceId,
 
 		clientStrategy:            clientStrategy,
+		clientStrategySettings:    networkSpace.clientStrategySettings,
 		platformUrl:               networkSpace.platformUrl,
+		platformUrlV4:             networkSpace.GetPlatformUrlV4(),
+		platformUrlV6:             networkSpace.GetPlatformUrlV6(),
 		platformTransportSettings: platformTransportSettings,
 		targetMode:                targetMode,
 		modePreferences:           maps.Clone(modePreferences),
@@ -208,10 +209,88 @@ func newDeviceLocalProviderWithOverrides(
 		resendQueueBudget:         resendQueueBudget,
 		receiveQueueBudget:        receiveQueueBudget,
 	}
+	// the provider proves both address families through its family-pinned
+	// transports (IPV6.md A1, A4); nothing else runs on the provider yet, so
+	// the transport is installed without the lock
+	provider.platformTransport = provider.newProviderPlatformTransport(
+		auth,
+		targetMode,
+		platformTransportSettings,
+	)
 	// the platform asks the client to migrate its transport when the resident
 	// is draining (make-before-break, CONNECTDRAIN2.md §3.3)
 	client.AddReceiveCallback(provider.handleControlFrames)
 	return provider
+}
+
+// newProviderPlatformTransport builds the provider's transport group: the
+// v4 and v6 pinned transports when the network space derives family urls,
+// plus the family-agnostic standby. Both construction and migration build
+// through here so a replacement carries the same pins as the original.
+func (self *deviceLocalProvider) newProviderPlatformTransport(
+	auth *connect.ClientAuth,
+	targetMode connect.TransportMode,
+	settings *connect.PlatformTransportSettings,
+) migratablePlatformTransport {
+	clientStrategySettings := self.clientStrategySettings
+	if clientStrategySettings == nil {
+		clientStrategySettings = connect.DefaultClientStrategySettings()
+	}
+	return connect.NewFamilyPlatformTransportGroup(
+		self.client.Ctx(),
+		clientStrategySettings,
+		self.clientStrategy,
+		self.client.RouteManager(),
+		self.platformUrl,
+		self.platformUrlV4,
+		self.platformUrlV6,
+		auth,
+		targetMode,
+		settings,
+		nil,
+	)
+}
+
+// canMakeBeforeBreak reports whether `next` may be brought up while
+// `previous` keeps carrying traffic. A group pairs each transport with its
+// counterpart; across a group and a single transport the standby, which is
+// the family-agnostic carrier a policy replacement is bounded by, stands in
+// for the group. Unknown (test) transports never force break-before-make.
+func canMakeBeforeBreak(next migratablePlatformTransport, previous migratablePlatformTransport) bool {
+	switch nextTransport := next.(type) {
+	case *connect.FamilyPlatformTransportGroup:
+		switch previousTransport := previous.(type) {
+		case *connect.FamilyPlatformTransportGroup:
+			return nextTransport.CanMakeBeforeBreakFrom(previousTransport)
+		case *connect.PlatformTransport:
+			return nextTransport.StandbyTransport().CanMakeBeforeBreakFrom(previousTransport)
+		}
+	case *connect.PlatformTransport:
+		switch previousTransport := previous.(type) {
+		case *connect.PlatformTransport:
+			return nextTransport.CanMakeBeforeBreakFrom(previousTransport)
+		case *connect.FamilyPlatformTransportGroup:
+			return nextTransport.CanMakeBeforeBreakFrom(previousTransport.StandbyTransport())
+		}
+	}
+	return true
+}
+
+// familyTransportStatus is the per-family readout of the current transport
+// generation. A legacy single transport (a test seam, or a space without
+// family urls handled by an older build) reports through its connected bit.
+func (self *deviceLocalProvider) familyTransportStatus() *ProviderFamilyTransportStatus {
+	self.stateLock.Lock()
+	closed := self.closed
+	platformTransport := self.platformTransport
+	self.stateLock.Unlock()
+	if closed || platformTransport == nil {
+		return unknownProviderFamilyTransportStatus()
+	}
+	if group, ok := platformTransport.(*connect.FamilyPlatformTransportGroup); ok {
+		return newProviderFamilyTransportStatus(group.Status())
+	}
+	return legacyProviderFamilyTransportStatus(platformTransport.IsConnected())
 }
 
 // configureDeviceLocalProviderMemory applies all provider-owned queue and P2P
@@ -359,30 +438,21 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 	if self.newPlatformTransport != nil {
 		next = self.newPlatformTransport(auth, targetMode, platformTransportSettings)
 	} else {
-		next = connect.NewPlatformTransportWithTargetMode(
-			self.client.Ctx(),
-			self.clientStrategy,
-			self.client.RouteManager(),
-			self.platformUrl,
-			auth,
-			targetMode,
-			platformTransportSettings,
-		)
+		next = self.newProviderPlatformTransport(auth, targetMode, platformTransportSettings)
 	}
 	brokeBeforeMake := false
-	if nextPlatform, ok := next.(*connect.PlatformTransport); ok {
+	func() {
 		self.stateLock.Lock()
 		previous := self.platformTransport
 		self.stateLock.Unlock()
-		if previousPlatform, ok := previous.(*connect.PlatformTransport); ok &&
-			!nextPlatform.CanMakeBeforeBreakFrom(previousPlatform) {
+		if previous != nil && !canMakeBeforeBreak(next, previous) {
 			// A second full H3 working set would escape the shared memory cap.
 			// H1 transitions use Connect's bounded handoff and keep the old route;
 			// only a budget-blocked H3-to-H3-family transition breaks first.
 			closeMigratablePlatformTransportAndWait(previous)
 			brokeBeforeMake = true
 		}
-	}
+	}()
 	installNext := func() (migratablePlatformTransport, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()

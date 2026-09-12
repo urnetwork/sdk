@@ -595,6 +595,13 @@ type ProviderGridPoint struct {
 	EndTime *Time
 	// wether the point is active for routing
 	Active bool
+	// IpFamily is the provider's address-family category: IpFamilyDualstack,
+	// IpFamilyV4Only or IpFamilyV6Only. A legacy provider reads as v4-only.
+	IpFamily string
+	// IpFamilyLabel is the short display form of IpFamily: IpFamilyLabelBoth,
+	// IpFamilyLabelV4 or IpFamilyLabelV6. The drawer histogram stacks the dots
+	// under these.
+	IpFamilyLabel string
 }
 
 type gridPointCoord struct {
@@ -1075,6 +1082,13 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					point.Active = providerEvent.State.IsActive()
 					providerGridPointChanged = true
 				}
+				// the category can change on a live point: a dualstack exit
+				// whose v6 dials keep failing is downgraded locally (IPV6.md B5)
+				if ipFamily := ipFamilyValue(providerEvent.IpFamily); point.IpFamily != ipFamily {
+					point.IpFamily = ipFamily
+					point.IpFamilyLabel = ipFamilyLabel(providerEvent.IpFamily)
+					providerGridPointChanged = true
+				}
 				// point.EventTime = newTime(eventTime)
 			} else {
 				// insert a new provider point
@@ -1131,8 +1145,10 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					ClientId: newId(clientId),
 					State:    providerState,
 					// EventTime: newTime(eventTime),
-					EndTime: endTime,
-					Active:  providerEvent.State.IsActive(),
+					EndTime:       endTime,
+					Active:        providerEvent.State.IsActive(),
+					IpFamily:      ipFamilyValue(providerEvent.IpFamily),
+					IpFamilyLabel: ipFamilyLabel(providerEvent.IpFamily),
 				}
 				self.providerGridPoints[clientId] = point
 				providerGridPointChanged = true

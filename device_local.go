@@ -657,6 +657,9 @@ type DeviceLocal struct {
 	// local-address pool at construction (released in Close) so it never collides
 	// with an IpMux-reserved address.
 	tunnelLocalAddress netip.Addr
+	// tunnelLocalAddressIpv6 is the IPv6 counterpart: a random address in the
+	// fixed ULA /48 (see tunnel_address_ipv6.go). Not pooled, nothing to release.
+	tunnelLocalAddressIpv6 netip.Addr
 
 	// tunnelDnsSetting is the DNS config the platform applies to the TUN. It
 	// defaults to the URnetwork-owned plain-DNS identity: UpgradeMux claims :53
@@ -1333,17 +1336,18 @@ func newDeviceLocalWithOverrides(
 		byJwt:        byJwt,
 		subprotocols: newDeviceLocalSubprotocols(ctx, log),
 		// apiUrl:            apiUrl,
-		deviceDescription:  deviceDescription,
-		deviceSpec:         deviceSpec,
-		appVersion:         appVersion,
-		settings:           settings,
-		log:                log,
-		clientId:           clientId,
-		instanceId:         instanceId.toConnectId(),
-		tunnelLocalAddress: tunnelLocalAddress,
-		tunnelDnsSetting:   DefaultTunnelDnsSetting(),
-		clientStrategy:     clientStrategy,
-		lifecycleDone:      make(chan struct{}),
+		deviceDescription:      deviceDescription,
+		deviceSpec:             deviceSpec,
+		appVersion:             appVersion,
+		settings:               settings,
+		log:                    log,
+		clientId:               clientId,
+		instanceId:             instanceId.toConnectId(),
+		tunnelLocalAddress:     tunnelLocalAddress,
+		tunnelLocalAddressIpv6: randomTunnelLocalIpv6(),
+		tunnelDnsSetting:       DefaultTunnelDnsSetting(),
+		clientStrategy:         clientStrategy,
+		lifecycleDone:          make(chan struct{}),
 		// Identity persistence bridges a process restart. Destination
 		// generators overlap during asynchronous retirement, so this owner
 		// gives each one a generation-bound store view and permits restoration
@@ -1616,9 +1620,10 @@ func (self *DeviceLocal) TunnelDnsAddressesIpv4() *StringList {
 	return self.tunnelDnsAddressList(false)
 }
 
-// TunnelDnsAddressesIpv6 is TunnelDnsAddressesIpv4 for IPv6. There is no default
-// IPv6 tunnel dns, so this is empty unless the dns resolver settings set
-// unencrypted local IPv6 servers.
+// TunnelDnsAddressesIpv6 is TunnelDnsAddressesIpv4 for IPv6: the resolver
+// settings' unencrypted local IPv6 servers when set, otherwise the IPv6
+// upgrade-mask stand-in (DefaultTunnelDnsAddressIpv6), which the UpgradeMux
+// claims on :53 exactly like the IPv4 mask.
 func (self *DeviceLocal) TunnelDnsAddressesIpv6() *StringList {
 	return self.tunnelDnsAddressList(true)
 }
@@ -3563,6 +3568,20 @@ func (self *DeviceLocal) GetProviderConnected() bool {
 	return !closed && provider != nil && provider.IsConnected()
 }
 
+// GetProviderFamilyTransportStatus reads the current provider generation's
+// transport group. Snapshots the provider under stateLock like
+// GetProviderConnected so a concurrent Close cannot hand back a stale one.
+func (self *DeviceLocal) GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	if closed || provider == nil {
+		return unknownProviderFamilyTransportStatus()
+	}
+	return provider.familyTransportStatus()
+}
+
 func (self *DeviceLocal) GetConnectEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -4242,6 +4261,9 @@ func (self *DeviceLocal) applyDestination(
 				multi.SetServerNameLookup(upgradeMux)
 				// the mux blocks ad/tracker hostnames at the dns layer
 				upgradeMux.SetBlocker(self.blocker)
+				// while no exit can carry v6, AAAA answers empty so apps do not
+				// blackhole on a v6 address the tunnel cannot route (IPV6.md B6)
+				upgradeMux.SetIpv6Unroutable(multi.Ipv6Unroutable)
 				self.upgradeMux = upgradeMux
 				self.upgradeMuxLiveSettings = self.upgradeMuxSettings
 				// pre-warm the DoH connections in the background: the tunnel dials park
@@ -4363,6 +4385,9 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 				TargetSize:         n,
 				ProviderStateAdded: n,
 				MinSatisfied:       true,
+				// fixed destinations bypass discovery, so their category is
+				// legacy, which reads as v4-only
+				ProviderV4OnlyCount: n,
 			}
 		case *connect.RemoteUserNatMultiClient:
 			windowStatus = toWindowStatus(v.Monitor())
@@ -4377,10 +4402,11 @@ func (self *DeviceLocal) GetWindowStatus() *WindowStatus {
 func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 	windowExpandEvent, providerEvents := monitor.Events()
 	windowStatus := &WindowStatus{
-		TargetSize:   windowExpandEvent.TargetSize,
-		MinSatisfied: windowExpandEvent.MinSatisfied,
-		StallReason:  windowExpandEvent.Reason,
-		Failed:       windowExpandEvent.Failed,
+		TargetSize:    windowExpandEvent.TargetSize,
+		MinSatisfied:  windowExpandEvent.MinSatisfied,
+		StallReason:   windowExpandEvent.Reason,
+		Failed:        windowExpandEvent.Failed,
+		Ipv6Available: windowExpandEvent.Ipv6Available,
 	}
 	for _, providerEvent := range providerEvents {
 		switch providerEvent.State {
@@ -4392,6 +4418,14 @@ func toWindowStatus(monitor connect.MultiClientMonitor) *WindowStatus {
 			windowStatus.ProviderStateNotAdded += 1
 		case connect.ProviderStateAdded:
 			windowStatus.ProviderStateAdded += 1
+			switch ipFamilyValue(providerEvent.IpFamily) {
+			case IpFamilyDualstack:
+				windowStatus.ProviderDualstackCount += 1
+			case IpFamilyV6Only:
+				windowStatus.ProviderV6OnlyCount += 1
+			default:
+				windowStatus.ProviderV4OnlyCount += 1
+			}
 		case connect.ProviderStateRemoved:
 			windowStatus.ProviderStateRemoved += 1
 		}

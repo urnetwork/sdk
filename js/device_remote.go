@@ -106,6 +106,10 @@ func jsConnectedProviderLocation(location *sdk.ConnectedProviderLocation) js.Val
 		"hasRegionCoordinates": location.HasRegionCoordinates,
 		"hasCityCoordinates":   location.HasCityCoordinates,
 		"connectedSinceMillis": location.ConnectedSinceMillis,
+		// the address-family category ("dualstack" | "v4-only" | "v6-only")
+		// and its display label ("both" | "v4" | "v6") for the provider rows
+		"ipFamily":      location.IpFamily,
+		"ipFamilyLabel": location.IpFamilyLabel,
 		// the dot color from the sdk palette: the country's when the location
 		// is known, else the stable per-client color
 		"colorHex": location.ColorHex(),
@@ -314,6 +318,9 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	})
 	m["getProviderTransportStatus"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsTransportStatus(device.GetProviderTransportStatus())
+	})
+	m["getProviderFamilyTransportStatus"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsProviderFamilyTransportStatus(device.GetProviderFamilyTransportStatus())
 	})
 	m["setTransportSettings"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		if 0 < len(args) {
@@ -685,6 +692,23 @@ func jsTransportStatus(status *sdk.TransportStatus) js.Value {
 		"autoDegraded":      status.AutoDegraded,
 		"autoEligibleModes": jsStringListDR(status.AutoEligibleModes),
 		"autoConstraint":    status.AutoConstraint,
+	})
+}
+
+// jsProviderFamilyTransportStatus is the per-family provider transport
+// readout ({hasIpv4, ipv4State, hasIpv6, ipv6State, standbyState,
+// standbyActive}); states are the connect transport state strings.
+func jsProviderFamilyTransportStatus(status *sdk.ProviderFamilyTransportStatus) js.Value {
+	if status == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"hasIpv4":       status.HasIpv4,
+		"ipv4State":     status.Ipv4State,
+		"hasIpv6":       status.HasIpv6,
+		"ipv6State":     status.Ipv6State,
+		"standbyState":  status.StandbyState,
+		"standbyActive": status.StandbyActive,
 	})
 }
 

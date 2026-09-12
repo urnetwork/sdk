@@ -77,6 +77,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CONNECT_FAILED "CONNECT_FAILED"
 #define URNET_CONTRACT_STATUS_CLOSED "closed"
 #define URNET_CONTRACT_STATUS_OPEN "open"
+#define URNET_DEFAULT_TUNNEL_DNS_ADDRESS_IPV6 "2001:db8::65:49:70:65"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
 #define URNET_DEVICE_RPC_VERSION 3
 #define URNET_DEVICE_RPC_WS_BINARY 2
@@ -119,9 +120,15 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXPERIMENT_SURFACE_OFFER_INTRO_STEP "offer.intro_step"
 #define URNET_EXPERIMENT_SURFACE_OFFER_IN_APP "offer.in_app"
 #define URNET_EXPERIMENT_VARIANT_HOLDOUT "holdout"
+#define URNET_IP_FAMILY_DUALSTACK "dualstack"
+#define URNET_IP_FAMILY_LABEL_BOTH "both"
+#define URNET_IP_FAMILY_LABEL_V4 "v4"
+#define URNET_IP_FAMILY_LABEL_V6 "v6"
 #define URNET_IP_FAMILY_POLICY_AUTO 0
 #define URNET_IP_FAMILY_POLICY_FORCE4 1
 #define URNET_IP_FAMILY_POLICY_FORCE6 2
+#define URNET_IP_FAMILY_V4_ONLY "v4-only"
+#define URNET_IP_FAMILY_V6_ONLY "v6-only"
 #define URNET_IP_PROTOCOL_TCP 2
 #define URNET_IP_PROTOCOL_UDP 1
 #define URNET_IP_PROTOCOL_UNKNOWN 0
@@ -173,6 +180,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PRICE_TIER_SOURCE_IP "ip"
 #define URNET_PRICE_TIER_SOURCE_STOREFRONT "storefront"
 #define URNET_PRICE_TIER_STANDARD "standard"
+#define URNET_PROVIDER_FAMILY_TRANSPORT_STATE_UNKNOWN "unknown"
 #define URNET_PROVIDER_STATE_ADDED "Added"
 #define URNET_PROVIDER_STATE_EVALUATION_FAILED "EvaluationFailed"
 #define URNET_PROVIDER_STATE_IN_EVALUATION "InEvaluation"
@@ -240,6 +248,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_STRIPE_REDIRECT_ON_COMPLETION_NEVER "never"
 #define URNET_STRIPE_UI_MODE_EMBEDDED "embedded"
 #define URNET_STRIPE_UI_MODE_HOSTED "hosted"
+#define URNET_SUBPROTOCOL_RESERVED_LIMIT 1024
 #define URNET_SUBSCRIPTION_PLAN_SUPPORTER "supporter"
 #define URNET_SUBSCRIPTION_STORE_APPLE "apple"
 #define URNET_SUBSCRIPTION_STORE_GOOGLE "google"
@@ -258,6 +267,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_TRANSPORT_TYPE_H3 "h3"
 #define URNET_TRANSPORT_TYPE_P2P "p2p"
 #define URNET_TRANSPORT_TYPE_UNKNOWN "unknown"
+#define URNET_TUNNEL_LOCAL_PREFIX_LENGTH_IPV6 64
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -576,6 +586,10 @@ typedef void (*urnet_stripe_payment_intent_cb)(void* user_data, const char* resu
 typedef void (*urnet_stripe_payment_sheet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* StripePricesCallback */
 typedef void (*urnet_stripe_prices_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SubprotocolListener */
+typedef void (*urnet_subprotocol_cb)(void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len);
+/* SubprotocolsQueryCallback */
+typedef void (*urnet_subprotocols_query_cb)(void* user_data, const char* subprotocol_ids_json, bool ok_param);
 /* SubscriptionBalanceCallback */
 typedef void (*urnet_subscription_balance_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SubscriptionBalanceChangeListener */
@@ -940,6 +954,7 @@ char* urnet_device_get_provide_network_mode(uint64_t self);
 bool urnet_device_get_provide_paused(uint64_t self);
 char* urnet_device_get_provider_egress_contract_details(uint64_t self);
 char* urnet_device_get_provider_egress_contract_stats(uint64_t self);
+char* urnet_device_get_provider_family_transport_status(uint64_t self);
 char* urnet_device_get_provider_identities(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_details(uint64_t self);
 char* urnet_device_get_provider_ingress_contract_stats(uint64_t self);
@@ -1008,7 +1023,10 @@ void urnet_device_local_close_post_quantum_identity_view_controller(uint64_t sel
 void urnet_device_local_close_provider_locations_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_view_controller(uint64_t self, urnet_view_controller_close_cb vc_close, urnet_view_controller_start_cb vc_start, urnet_view_controller_stop_cb vc_stop, void* vc_user_data);
 void urnet_device_local_connect_sn_wallet(uint64_t self, const char* coldkey_ss58, const char* signature, const char* message, urnet_sn_connect_wallet_cb callback_result, void* callback_user_data);
+void urnet_device_local_disable_subprotocol(uint64_t self, int64_t subprotocol_id);
 bool urnet_device_local_drop_exit(uint64_t self, const char* client_id);
+uint64_t urnet_device_local_enable_subprotocol(uint64_t self, int64_t subprotocol_id, urnet_subprotocol_cb listener_subprotocol_message, void* listener_user_data, char** out_error);
+char* urnet_device_local_enabled_subprotocols(uint64_t self);
 bool urnet_device_local_get_auto_save(uint64_t self);
 char* urnet_device_local_get_client_jwt(uint64_t self);
 char* urnet_device_local_get_destination_exits(uint64_t self);
@@ -1056,6 +1074,7 @@ uint64_t urnet_device_local_open_subscription_balance_view_controller(uint64_t s
 uint64_t urnet_device_local_open_wallet_view_controller(uint64_t self);
 int64_t urnet_device_local_probe_all_exits(uint64_t self);
 bool urnet_device_local_probe_suite_running(uint64_t self);
+void urnet_device_local_query_subprotocols(uint64_t self, const char* destination_client_id, int64_t timeout_millis, urnet_subprotocols_query_cb callback_result, void* callback_user_data);
 bool urnet_device_local_reconnect_checked(uint64_t self, const char* location_json, char** out_error);
 void urnet_device_local_reset_reliability_metrics(uint64_t self);
 void urnet_device_local_reset_reliability_settings(uint64_t self);
@@ -1063,6 +1082,7 @@ bool urnet_device_local_save_key_material(uint64_t self, char** out_error);
 bool urnet_device_local_save_provide_secret_keys(uint64_t self, char** out_error);
 bool urnet_device_local_send_packet(uint64_t self, const uint8_t* packet, int32_t packet_len, int64_t n);
 int64_t urnet_device_local_send_packet_batch(uint64_t self, const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len);
+bool urnet_device_local_send_subprotocol_bytes(uint64_t self, int64_t subprotocol_id, const char* destination_client_id, const uint8_t* message_bytes, int32_t message_bytes_len);
 bool urnet_device_local_set_auto_save(uint64_t self, bool enabled, char** out_error);
 void urnet_device_local_set_by_jwt(uint64_t self, const char* by_jwt);
 bool urnet_device_local_set_connect_location_checked(uint64_t self, const char* location_json, char** out_error);
@@ -1085,6 +1105,8 @@ void urnet_device_local_sn_gas_balance(uint64_t self, urnet_sn_gas_balance_cb ca
 bool urnet_device_local_stall_exit(uint64_t self, const char* client_id, bool stalled);
 bool urnet_device_local_start_probe_suite(uint64_t self, const char* config_json);
 void urnet_device_local_stop_probe_suite(uint64_t self);
+int64_t urnet_device_local_subprotocol_received_count(uint64_t self, int64_t subprotocol_id);
+char* urnet_device_local_subprotocol_stats(uint64_t self);
 void urnet_device_local_sync_sn_chain_settings(uint64_t self, urnet_sn_epoch_cb callback_result, void* callback_user_data);
 void urnet_device_local_sync_sn_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
 char* urnet_device_local_take_memory_samples_json(uint64_t self);
@@ -1092,6 +1114,7 @@ char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
 char* urnet_device_local_tunnel_local_address(uint64_t self);
+char* urnet_device_local_tunnel_local_address_ipv6(uint64_t self);
 bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_milliseconds);
 
 /* ----- DeviceLocalKeyMaterial ----- */
@@ -1353,6 +1376,8 @@ void urnet_network_space_close(uint64_t self);
 char* urnet_network_space_connect_link_url(uint64_t self, const char* target);
 uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
+char* urnet_network_space_get_api_url_v4(uint64_t self);
+char* urnet_network_space_get_api_url_v6(uint64_t self);
 uint64_t urnet_network_space_get_async_local_state(uint64_t self);
 uint64_t urnet_network_space_get_auth_state_snapshot(uint64_t self, char** out_error);
 bool urnet_network_space_get_bundled(uint64_t self);
@@ -1369,9 +1394,12 @@ bool urnet_network_space_get_net_expose_server_ips(uint64_t self);
 char* urnet_network_space_get_net_extender(uint64_t self);
 char* urnet_network_space_get_net_extender_auto_configure(uint64_t self);
 char* urnet_network_space_get_platform_url(uint64_t self);
+char* urnet_network_space_get_platform_url_v4(uint64_t self);
+char* urnet_network_space_get_platform_url_v6(uint64_t self);
 bool urnet_network_space_get_sso_google(uint64_t self);
 char* urnet_network_space_get_store(uint64_t self);
 char* urnet_network_space_get_wallet(uint64_t self);
+bool urnet_network_space_has_platform_family_urls(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
@@ -1615,6 +1643,7 @@ char* urnet_get_control_ip_family_status(void);
 char* urnet_get_default_dns_resolver_settings(void);
 char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
+char* urnet_get_default_tunnel_dns_address_ipv6(void);
 int64_t urnet_get_default_tunnel_mtu(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
 bool urnet_get_fips140_enabled(void);
@@ -1624,6 +1653,7 @@ int64_t urnet_get_log_verbosity(void);
 char* urnet_get_memory_stats(void);
 char* urnet_get_recommended_dns_resolver_settings(const char* country_code);
 char* urnet_get_regional_dns_servers(void);
+int64_t urnet_get_tunnel_local_prefix_length_ipv6(void);
 bool urnet_has_regional_dns_recommendation(const char* country_code);
 char* urnet_host_base_name(const char* host);
 char* urnet_id_from_bytes(const uint8_t* id_bytes, int32_t id_bytes_len, char** out_error);
@@ -2187,6 +2217,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   HasRegionCoordinates: boolean
  *   HasCityCoordinates: boolean
  *   ConnectedSinceMillis: number
+ *   IpFamily: string
+ *   IpFamilyLabel: string
  */
 
 /* ConnectedProviderLocationList (json):
@@ -3183,6 +3215,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   = ProvideSecretKey | null[]
  */
 
+/* ProviderFamilyTransportStatus (json):
+ *   HasIpv4: boolean
+ *   Ipv4State: string
+ *   HasIpv6: boolean
+ *   Ipv6State: string
+ *   StandbyState: string
+ *   StandbyActive: boolean
+ */
+
 /* ProviderGridPoint (json):
  *   X: number
  *   Y: number
@@ -3190,6 +3231,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   State: string
  *   EndTime: string (rfc3339) | null
  *   Active: boolean
+ *   IpFamily: string
+ *   IpFamilyLabel: string
  */
 
 /* ProviderGridPointList (json):
@@ -3819,6 +3862,19 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: OnboardingError | null
  */
 
+/* SubprotocolStats (json):
+ *   Sent: number
+ *   SentByteCount: number
+ *   Received: number
+ *   ReceivedByteCount: number
+ *   DroppedUnregistered: number
+ *   DroppedDecode: number
+ *   MarshalOverrun: number
+ *   QueriesSent: number
+ *   QueriesAnswered: number
+ *   QueryReplyDrops: number
+ */
+
 /* Subscription (json):
  *   subscription_id: string (uuid) | null
  *   store: string
@@ -4144,6 +4200,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProviderStateNotAdded: number
  *   ProviderStateAdded: number
  *   ProviderStateRemoved: number
+ *   ProviderDualstackCount: number
+ *   ProviderV4OnlyCount: number
+ *   ProviderV6OnlyCount: number
+ *   Ipv6Available: boolean
  *   StallReason: string
  *   Failed: boolean
  */

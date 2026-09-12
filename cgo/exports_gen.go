@@ -2547,6 +2547,38 @@ func (self *cAdapterStripePricesCallback) Result(result *sdk.StripePricesResult,
 	}
 }
 
+type cAdapterSubprotocolListener struct {
+	cbSubprotocolMessage C.urnet_subprotocol_cb
+	userData             unsafe.Pointer
+}
+
+func (self *cAdapterSubprotocolListener) SubprotocolMessage(subprotocolId int32, sourceClientId *sdk.Id, messageBytes []byte) {
+	defer cgoGuard("urnet_subprotocol_cb")
+	sourceClientId_ := cId(sourceClientId)
+	var messageBytes_ *C.uint8_t
+	if 0 < len(messageBytes) {
+		messageBytes_ = (*C.uint8_t)(unsafe.Pointer(&messageBytes[0]))
+	}
+	C.urnet_invoke_subprotocol(self.cbSubprotocolMessage, self.userData, C.int64_t(int64(subprotocolId)), sourceClientId_, messageBytes_, C.int32_t(len(messageBytes)))
+	if sourceClientId_ != nil {
+		cStringFree(sourceClientId_)
+	}
+}
+
+type cAdapterSubprotocolsQueryCallback struct {
+	cbResult C.urnet_subprotocols_query_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSubprotocolsQueryCallback) Result(subprotocolIds *sdk.IntList, okParam bool) {
+	defer cgoGuard("urnet_subprotocols_query_cb")
+	subprotocolIds_ := cJson(subprotocolIds, "urnet_subprotocols_query_cb")
+	C.urnet_invoke_subprotocols_query(self.cbResult, self.userData, subprotocolIds_, C.bool(bool(okParam)))
+	if subprotocolIds_ != nil {
+		cStringFree(subprotocolIds_)
+	}
+}
+
 type cAdapterSubscriptionBalanceCallback struct {
 	cbResult C.urnet_subscription_balance_cb
 	userData unsafe.Pointer
@@ -7475,6 +7507,20 @@ func urnet_device_get_provider_egress_contract_stats(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_provider_egress_contract_stats")
 }
 
+//export urnet_device_get_provider_family_transport_status
+func urnet_device_get_provider_family_transport_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_provider_family_transport_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provider_family_transport_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderFamilyTransportStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_provider_family_transport_status")
+}
+
 //export urnet_device_get_provider_identities
 func urnet_device_get_provider_identities(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_provider_identities")
@@ -8374,6 +8420,16 @@ func urnet_device_local_connect_sn_wallet(self C.uint64_t, coldkeySs58 *C.char, 
 	self_.ConnectSnWallet(goString(coldkeySs58), goString(signature), goString(message), callback_)
 }
 
+//export urnet_device_local_disable_subprotocol
+func urnet_device_local_disable_subprotocol(self C.uint64_t, subprotocolId C.int64_t) {
+	defer cgoGuard("urnet_device_local_disable_subprotocol")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_disable_subprotocol")
+	if !ok {
+		return
+	}
+	self_.DisableSubprotocol(int32(int64(subprotocolId)))
+}
+
 //export urnet_device_local_drop_exit
 func urnet_device_local_drop_exit(self C.uint64_t, clientId *C.char) C.bool {
 	defer cgoGuard("urnet_device_local_drop_exit")
@@ -8383,6 +8439,39 @@ func urnet_device_local_drop_exit(self C.uint64_t, clientId *C.char) C.bool {
 	}
 	r0 := self_.DropExit(goId(clientId, "urnet_device_local_drop_exit"))
 	return C.bool(r0)
+}
+
+//export urnet_device_local_enable_subprotocol
+func urnet_device_local_enable_subprotocol(self C.uint64_t, subprotocolId C.int64_t, listener_subprotocol_message C.urnet_subprotocol_cb, listener_user_data unsafe.Pointer, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_device_local_enable_subprotocol")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_enable_subprotocol")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SubprotocolListener
+	if listener_subprotocol_message != nil {
+		listener_ = &cAdapterSubprotocolListener{cbSubprotocolMessage: listener_subprotocol_message, userData: listener_user_data}
+	}
+	r0, err := self_.EnableSubprotocol(int32(int64(subprotocolId)), listener_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_enabled_subprotocols
+func urnet_device_local_enabled_subprotocols(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_enabled_subprotocols")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_enabled_subprotocols")
+	if !ok {
+		return nil
+	}
+	r0 := self_.EnabledSubprotocols()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_enabled_subprotocols")
 }
 
 //export urnet_device_local_get_auto_save
@@ -9006,6 +9095,20 @@ func urnet_device_local_probe_suite_running(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_local_query_subprotocols
+func urnet_device_local_query_subprotocols(self C.uint64_t, destinationClientId *C.char, timeoutMillis C.int64_t, callback_result C.urnet_subprotocols_query_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_query_subprotocols")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_query_subprotocols")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SubprotocolsQueryCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSubprotocolsQueryCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.QuerySubprotocols(goId(destinationClientId, "urnet_device_local_query_subprotocols"), int64(timeoutMillis), callback_)
+}
+
 //export urnet_device_local_reconnect_checked
 func urnet_device_local_reconnect_checked(self C.uint64_t, location *C.char, outError **C.char) C.bool {
 	defer cgoGuard("urnet_device_local_reconnect_checked")
@@ -9098,6 +9201,17 @@ func urnet_device_local_send_packet_batch(self C.uint64_t, packetBatchBytes *C.u
 	}
 	r0 := self_.SendPacketBatch(goBytes(packetBatchBytes, packetBatchBytes_len))
 	return C.int64_t(r0)
+}
+
+//export urnet_device_local_send_subprotocol_bytes
+func urnet_device_local_send_subprotocol_bytes(self C.uint64_t, subprotocolId C.int64_t, destinationClientId *C.char, messageBytes *C.uint8_t, messageBytes_len C.int32_t) C.bool {
+	defer cgoGuard("urnet_device_local_send_subprotocol_bytes")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_send_subprotocol_bytes")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.SendSubprotocolBytes(int32(int64(subprotocolId)), goId(destinationClientId, "urnet_device_local_send_subprotocol_bytes"), goBytes(messageBytes, messageBytes_len))
+	return C.bool(r0)
 }
 
 //export urnet_device_local_set_auto_save
@@ -9440,6 +9554,31 @@ func urnet_device_local_stop_probe_suite(self C.uint64_t) {
 	self_.StopProbeSuite()
 }
 
+//export urnet_device_local_subprotocol_received_count
+func urnet_device_local_subprotocol_received_count(self C.uint64_t, subprotocolId C.int64_t) C.int64_t {
+	defer cgoGuard("urnet_device_local_subprotocol_received_count")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_subprotocol_received_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.SubprotocolReceivedCount(int32(int64(subprotocolId)))
+	return C.int64_t(r0)
+}
+
+//export urnet_device_local_subprotocol_stats
+func urnet_device_local_subprotocol_stats(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_subprotocol_stats")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_subprotocol_stats")
+	if !ok {
+		return nil
+	}
+	r0 := self_.SubprotocolStats()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_subprotocol_stats")
+}
+
 //export urnet_device_local_sync_sn_chain_settings
 func urnet_device_local_sync_sn_chain_settings(self C.uint64_t, callback_result C.urnet_sn_epoch_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_local_sync_sn_chain_settings")
@@ -9529,6 +9668,17 @@ func urnet_device_local_tunnel_local_address(self C.uint64_t) *C.char {
 		return nil
 	}
 	r0 := self_.TunnelLocalAddress()
+	return cString(string(r0))
+}
+
+//export urnet_device_local_tunnel_local_address_ipv6
+func urnet_device_local_tunnel_local_address_ipv6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_tunnel_local_address_ipv6")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_tunnel_local_address_ipv6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.TunnelLocalAddressIpv6()
 	return cString(string(r0))
 }
 
@@ -11134,6 +11284,13 @@ func urnet_get_default_tunnel_dns_address_ipv4() *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_get_default_tunnel_dns_address_ipv6
+func urnet_get_default_tunnel_dns_address_ipv6() *C.char {
+	defer cgoGuard("urnet_get_default_tunnel_dns_address_ipv6")
+	r0 := sdk.GetDefaultTunnelDnsAddressIpv6()
+	return cString(string(r0))
+}
+
 //export urnet_get_default_tunnel_mtu
 func urnet_get_default_tunnel_mtu() C.int64_t {
 	defer cgoGuard("urnet_get_default_tunnel_mtu")
@@ -11214,6 +11371,13 @@ func urnet_get_regional_dns_servers() *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_get_regional_dns_servers")
+}
+
+//export urnet_get_tunnel_local_prefix_length_ipv6
+func urnet_get_tunnel_local_prefix_length_ipv6() C.int64_t {
+	defer cgoGuard("urnet_get_tunnel_local_prefix_length_ipv6")
+	r0 := sdk.GetTunnelLocalPrefixLengthIpv6()
+	return C.int64_t(r0)
 }
 
 //export urnet_has_regional_dns_recommendation
@@ -12794,6 +12958,28 @@ func urnet_network_space_get_api_url(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_api_url_v4
+func urnet_network_space_get_api_url_v4(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_api_url_v4")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_api_url_v4")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetApiUrlV4()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_api_url_v6
+func urnet_network_space_get_api_url_v6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_api_url_v6")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_api_url_v6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetApiUrlV6()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_async_local_state
 func urnet_network_space_get_async_local_state(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_network_space_get_async_local_state")
@@ -12989,6 +13175,28 @@ func urnet_network_space_get_platform_url(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_platform_url_v4
+func urnet_network_space_get_platform_url_v4(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_platform_url_v4")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_platform_url_v4")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPlatformUrlV4()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_platform_url_v6
+func urnet_network_space_get_platform_url_v6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_platform_url_v6")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_platform_url_v6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPlatformUrlV6()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_sso_google
 func urnet_network_space_get_sso_google(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_network_space_get_sso_google")
@@ -13020,6 +13228,17 @@ func urnet_network_space_get_wallet(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetWallet()
 	return cString(string(r0))
+}
+
+//export urnet_network_space_has_platform_family_urls
+func urnet_network_space_has_platform_family_urls(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_network_space_has_platform_family_urls")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_has_platform_family_urls")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.HasPlatformFamilyUrls()
+	return C.bool(r0)
 }
 
 //export urnet_network_space_reset_local_state_if_current

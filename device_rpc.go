@@ -341,7 +341,10 @@ type DeviceRemote struct {
 	// `DeviceRemoteState` sync. Guarded by `stateLock`
 	lastPublicIdentityKey  []byte
 	lastProviderIdentities []*ProviderIdentity
-	lastNetworkPeers       *NetworkPeers
+	// retained like lastProviderIdentities: the last readout the local device
+	// answered, so a disconnect shows the last known states not a blank
+	lastProviderFamilyTransportStatus *ProviderFamilyTransportStatus
+	lastNetworkPeers                  *NetworkPeers
 
 	// providerLocationsMonitor is a lazily created, internally subscribed
 	// window monitor: registration is what makes windowMonitorEvents readable,
@@ -1189,6 +1192,33 @@ func (self *DeviceRemote) GetPublicIdentityKeyHash() string {
 		return ""
 	}
 	return PublicIdentityKeyHash(publicIdentityKey)
+}
+
+// GetProviderFamilyTransportStatus reads through to the local device (the
+// provider runs there; on ios that is the packet tunnel extension). On a
+// missing service it degrades to the last known readout, else all unknown.
+func (self *DeviceRemote) GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	status, success := func() (*ProviderFamilyTransportStatus, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+		status, err := rpcCallNoArg[*ProviderFamilyTransportStatus](self.service, "DeviceLocalRpc.GetProviderFamilyTransportStatus", self.closeService)
+		if err != nil || status == nil {
+			return nil, false
+		}
+		self.lastProviderFamilyTransportStatus = cloneProviderFamilyTransportStatus(status)
+		return status, true
+	}()
+	if success {
+		return status
+	}
+	if self.lastProviderFamilyTransportStatus != nil {
+		return cloneProviderFamilyTransportStatus(self.lastProviderFamilyTransportStatus)
+	}
+	return unknownProviderFamilyTransportStatus()
 }
 
 func (self *DeviceRemote) GetProviderIdentities() *ProviderIdentityList {
@@ -11161,6 +11191,11 @@ func (self *DeviceLocalRpc) GetPublicIdentityKey(_ RpcNoArg, devicePublicIdentit
 	*devicePublicIdentityKey = &DevicePublicIdentityKey{
 		PublicKey: self.deviceLocal.GetPublicIdentityKey(),
 	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProviderFamilyTransportStatus(_ RpcNoArg, status **ProviderFamilyTransportStatus) error {
+	*status = self.deviceLocal.GetProviderFamilyTransportStatus()
 	return nil
 }
 

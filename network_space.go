@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -150,9 +152,15 @@ type NetworkSpace struct {
 	apiUrl      string
 	platformUrl string
 
-	clientStrategy  *connect.ClientStrategy
-	asyncLocalState *AsyncLocalState
-	api             *Api
+	clientStrategy *connect.ClientStrategy
+	// clientStrategySettings is what clientStrategy was built from. The
+	// provider's family-pinned transports seed their direct-only strategies
+	// from it (connect.NewDirectClientStrategy), so a pinned dial carries the
+	// same tls, resolver and logging configuration as the shared strategy
+	// minus the extenders and proxy.
+	clientStrategySettings *connect.ClientStrategySettings
+	asyncLocalState        *AsyncLocalState
+	api                    *Api
 	// the space's dial logger, carried so the manager's one-time control ip
 	// family restore lands on the same log as the dials it governs
 	log connect.Logger
@@ -225,10 +233,11 @@ func newNetworkSpaceWithConnectSettings(
 		apiUrl:      apiUrl,
 		platformUrl: platformUrl,
 
-		clientStrategy:  clientStrategy,
-		asyncLocalState: asyncLocalState,
-		api:             api,
-		log:             clientStrategySettings.ConnectSettings.Log,
+		clientStrategy:         clientStrategy,
+		clientStrategySettings: clientStrategySettings,
+		asyncLocalState:        asyncLocalState,
+		api:                    api,
+		log:                    clientStrategySettings.ConnectSettings.Log,
 	}
 }
 
@@ -358,9 +367,10 @@ func NewNetworkSpaceWithUrls(
 		apiUrl:      values.ApiUrl,
 		platformUrl: values.PlatformUrl,
 
-		clientStrategy:  clientStrategy,
-		asyncLocalState: nil,
-		api:             api,
+		clientStrategy:         clientStrategy,
+		clientStrategySettings: clientStrategySettings,
+		asyncLocalState:        nil,
+		api:                    api,
 	}
 }
 
@@ -462,6 +472,75 @@ func (self *NetworkSpace) GetApiUrl() string {
 
 func (self *NetworkSpace) GetPlatformUrl() string {
 	return self.platformUrl
+}
+
+// The family-pinned service urls (IPV6.md A9). The platform runs the
+// provider's two family-pinned transports against connect-v4 and connect-v6
+// (see connect.HeaderIpFamily); the api forms exist for diagnostics. Derived
+// from the resolved urls by inserting the suffix on the service label, so
+// `wss://connect.bringyour.com/secret` becomes
+// `wss://connect-v4.bringyour.com/secret` and `g2-connect` becomes
+// `g2-connect-v4`. Empty when the url has no dotted hostname to suffix — an
+// ip literal, `localhost`, or a label that already carries a family suffix —
+// in which case the pinned transports are disabled (HasPlatformFamilyUrls).
+
+func (self *NetworkSpace) GetPlatformUrlV4() string {
+	return familyServiceUrl(self.platformUrl, 4)
+}
+
+func (self *NetworkSpace) GetPlatformUrlV6() string {
+	return familyServiceUrl(self.platformUrl, 6)
+}
+
+func (self *NetworkSpace) GetApiUrlV4() string {
+	return familyServiceUrl(self.apiUrl, 4)
+}
+
+func (self *NetworkSpace) GetApiUrlV6() string {
+	return familyServiceUrl(self.apiUrl, 6)
+}
+
+// HasPlatformFamilyUrls reports whether both family-pinned platform urls
+// derive, which is the precondition for running the pinned transports.
+func (self *NetworkSpace) HasPlatformFamilyUrls() bool {
+	return self.GetPlatformUrlV4() != "" && self.GetPlatformUrlV6() != ""
+}
+
+// familyServiceUrl derives the family-pinned form of a resolved service url
+// for ip version 4 or 6, or "" when there is no service label to suffix. The
+// scheme, port and path (the env secret) are preserved verbatim.
+func familyServiceUrl(serviceUrl string, ipVersion int) string {
+	if ipVersion != 4 && ipVersion != 6 {
+		return ""
+	}
+	serviceUrl = strings.TrimSpace(serviceUrl)
+	if serviceUrl == "" {
+		return ""
+	}
+	parsedUrl, err := url.Parse(serviceUrl)
+	if err != nil || parsedUrl.Host == "" {
+		return ""
+	}
+	hostName := parsedUrl.Hostname()
+	if net.ParseIP(hostName) != nil {
+		// an ip literal has no label to suffix
+		return ""
+	}
+	label, domain, ok := strings.Cut(hostName, ".")
+	if !ok || label == "" || domain == "" {
+		return ""
+	}
+	if strings.HasSuffix(label, "-v4") || strings.HasSuffix(label, "-v6") {
+		// already family-pinned by the operator: not a dual-stack space
+		return ""
+	}
+	familyHostName := fmt.Sprintf("%s-v%d.%s", label, ipVersion, domain)
+	if port := parsedUrl.Port(); port != "" {
+		parsedUrl.Host = net.JoinHostPort(familyHostName, port)
+	} else {
+		parsedUrl.Host = familyHostName
+	}
+	return parsedUrl.String()
 }
 
 func (self *NetworkSpace) GetApi() *Api {

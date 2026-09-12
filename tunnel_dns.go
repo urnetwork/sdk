@@ -34,14 +34,30 @@ type TunnelDnsSetting struct {
 // resolution over DoH.
 var defaultTunnelDnsServersIpv4 = []string{connect.DefaultDnsUpgradeMaskAddress}
 
-// defaultTunnelDnsServersIpv6 is the IPv6 counterpart. There is no default IPv6
-// tunnel resolver, so the platform applies none unless one is configured.
-var defaultTunnelDnsServersIpv6 = []string{}
+// DefaultTunnelDnsAddressIpv6 is the IPv6 counterpart of the IPv4 upgrade
+// mask: the plain-DNS destination the platform advertises for the tunnel's
+// IPv6 DNS. Like the IPv4 mask it is a stand-in, not an upstream resolver —
+// the UpgradeMux claims every UDP/53 packet on both families before the
+// destination is reached, so the only requirements are that it is a global
+// unicast literal the tunnel's ::/0 route captures and that it is not the
+// tunnel's own address. The documentation prefix (RFC 3849) satisfies both
+// and can never reach a real host if a query ever escapes the tunnel; the
+// host part mirrors the IPv4 mask digits so the two are recognizable together.
+const DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65"
+
+// defaultTunnelDnsServersIpv6 is the IPv6 counterpart of the IPv4 default: the
+// IPv6 upgrade-mask stand-in.
+var defaultTunnelDnsServersIpv6 = []string{DefaultTunnelDnsAddressIpv6}
 
 // GetDefaultTunnelDnsAddressIpv4 exposes the context-free fallback to native
 // platform bindings.
 func GetDefaultTunnelDnsAddressIpv4() string {
 	return connect.DefaultDnsUpgradeMaskAddress
+}
+
+// GetDefaultTunnelDnsAddressIpv6 is GetDefaultTunnelDnsAddressIpv4 for IPv6.
+func GetDefaultTunnelDnsAddressIpv6() string {
+	return DefaultTunnelDnsAddressIpv6
 }
 
 // defaultTunnelDnsServers returns the default plain-DNS resolver IPs for one

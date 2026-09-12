@@ -629,6 +629,14 @@ void urnet_invoke_stripe_prices(urnet_stripe_prices_cb cb, void* user_data, cons
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_subprotocol(urnet_subprotocol_cb cb, void* user_data, int64_t subprotocol_id, const char* source_client_id, const uint8_t* message_bytes, int32_t message_bytes_len) {
+	cb(user_data, subprotocol_id, source_client_id, message_bytes, message_bytes_len);
+}
+
+void urnet_invoke_subprotocols_query(urnet_subprotocols_query_cb cb, void* user_data, const char* subprotocol_ids_json, bool ok_param) {
+	cb(user_data, subprotocol_ids_json, ok_param);
+}
+
 void urnet_invoke_subscription_balance(urnet_subscription_balance_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

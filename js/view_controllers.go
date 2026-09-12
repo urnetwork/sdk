@@ -51,6 +51,10 @@ func jsProviderGridPoint(p *sdk.ProviderGridPoint) js.Value {
 		"y":      int(p.Y),
 		"state":  string(p.State),
 		"active": p.Active,
+		// the address-family category ("dualstack" | "v4-only" | "v6-only")
+		// and its display label ("both" | "v4" | "v6") for the drawer histogram
+		"ipFamily":      p.IpFamily,
+		"ipFamilyLabel": p.IpFamilyLabel,
 	}
 	if p.ClientId != nil {
 		m["clientId"] = p.ClientId.String()
