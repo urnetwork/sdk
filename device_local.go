@@ -755,6 +755,9 @@ type DeviceLocal struct {
 	// transferDiagDeferTimeoutResend overrides FLIGHTGATEFIX §13.5's setting
 	// for clients built after it is set; nil leaves the build's default.
 	transferDiagDeferTimeoutResend *bool
+	// transferDiagLaneRule overrides the reliable-lane proven-recovery rule
+	// for clients built after it is set; nil leaves the build's default.
+	transferDiagLaneRule *bool
 	// Aggregate packet ownership is the remaining active-load risk after
 	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
 	// server/default paths retain their original admission and hot path.

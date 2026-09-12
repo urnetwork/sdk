@@ -232,11 +232,17 @@ func (self *DeviceLocal) SetTransferDiagDeferTimeoutResend(enabled bool) {
 func (self *DeviceLocal) applyTransferDiagSettings(clientSettings *connect.ClientSettings) {
 	self.stateLock.Lock()
 	defer_ := self.transferDiagDeferTimeoutResend
+	lane := self.transferDiagLaneRule
 	self.stateLock.Unlock()
-	if defer_ == nil || clientSettings == nil || clientSettings.SendBufferSettings == nil {
+	if clientSettings == nil || clientSettings.SendBufferSettings == nil {
 		return
 	}
-	clientSettings.SendBufferSettings.DeferTimeoutResendWhileCumulativeProgress = *defer_
+	if defer_ != nil {
+		clientSettings.SendBufferSettings.DeferTimeoutResendWhileCumulativeProgress = *defer_
+	}
+	if lane != nil {
+		clientSettings.SendBufferSettings.ReliableLaneProvenRecovery = *lane
+	}
 }
 
 // TransferDiagDeferTimeoutResend reports the current override (false when
@@ -245,6 +251,26 @@ func (self *DeviceLocal) TransferDiagDeferTimeoutResend() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.transferDiagDeferTimeoutResend != nil && *self.transferDiagDeferTimeoutResend
+}
+
+// SetTransferDiagLaneRule turns FLIGHTGATEFIX's reliable-lane proven-recovery
+// rule on or off for clients built after this call, so the rig can measure the
+// rule as an arm of one build rather than a separate build.
+func (self *DeviceLocal) SetTransferDiagLaneRule(enabled bool) {
+	self.stateLock.Lock()
+	self.transferDiagLaneRule = &enabled
+	send := self.settings.ClientSettings.SendBufferSettings
+	self.stateLock.Unlock()
+	if send != nil {
+		send.ReliableLaneProvenRecovery = enabled
+	}
+}
+
+// TransferDiagLaneRule reports the current override (false when unset).
+func (self *DeviceLocal) TransferDiagLaneRule() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.transferDiagLaneRule != nil && *self.transferDiagLaneRule
 }
 
 // SetTransferDiagAllowDirect is the rig's relay-only control: while enabled,
