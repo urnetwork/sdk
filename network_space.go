@@ -270,6 +270,10 @@ func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceVa
 		return false
 	}
 	if networkSpaceManager := self.getNetworkSpaceManager(); networkSpaceManager != nil {
+		// `apply` runs a second time there, against the manager's own copy of
+		// the values, which is what makes the persisted document and this
+		// space agree. Every caller passes a plain setter, so running it twice
+		// is the same change twice.
 		key := self.key
 		return networkSpaceManager.updateNetworkSpace(&key, apply) != nil
 	}
@@ -608,14 +612,11 @@ func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
 	}
 	current := self.valuesCopy()
 
-	// the anchor is replaced only by a set that resolves to something: an
-	// empty one is a space whose keys came from a hello, and clearing them
-	// would refuse every record until the next one
+	// The anchor is replaced only by a set that resolves to a key. An empty or
+	// unparseable one is not an anchor: installing it would refuse every
+	// record until the next hello, so what is in force is left alone.
 	if self.extenderDirectory != nil {
 		if rootPublicKeyHexes := ExtenderRootPublicKeys(&self.key, &current); 0 < len(rootPublicKeyHexes) {
-			// a set that resolves to no key is not an anchor: installing it
-			// would refuse every record until the next hello, so a value that
-			// parses to nothing leaves what is in force alone
 			if keySet, err := connect.NewExtenderRootKeySetFromHex(rootPublicKeyHexes...); err == nil &&
 				0 < keySet.Len() {
 				self.extenderDirectory.SetRootKeys(keySet)
