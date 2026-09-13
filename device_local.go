@@ -158,16 +158,30 @@ func deviceMemoryShares(
 // newDeviceLocalPlatformTransportSettings applies one DeviceLocal target to
 // every carrier-local memory setting and then installs the budget shared only
 // by that DeviceLocal's provider and window transports.
+//
+// The space's alt url goes with it (EXTENDER.md L4): the H3, dns and pump
+// carriers then send their packets to alt while the sni, the quic
+// authentication and the H1 websocket stay on the platform url. A space with
+// no alt url leaves every carrier on the platform host, which is where they
+// have always been.
 func newDeviceLocalPlatformTransportSettings(
 	memoryTargetByteCount ByteCount,
 	platformTransportBudget *connect.PlatformTransportBudget,
 	dialContextSettings *connect.DialContextSettings,
+	altUrl string,
 	dnsPumpHost string,
 ) *connect.PlatformTransportSettings {
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
 	)
 	settings.PlatformTransportBudget = platformTransportBudget
+	if altUrl = strings.TrimSpace(altUrl); altUrl != "" {
+		settings.AltUrl = altUrl
+		// the pump destination is only where this device's own packets go, so
+		// it derives from the alt url rather than from the fixed `whodis` name
+		// (L3). An embedder that named one still wins, below.
+		settings.DnsPumpHost = ""
+	}
 	if dnsPumpHost = strings.TrimSpace(dnsPumpHost); dnsPumpHost != "" {
 		settings.DnsPumpHost = dnsPumpHost
 	}
@@ -4195,6 +4209,7 @@ func (self *DeviceLocal) applyDestination(
 						self.settings.MemoryTargetByteCount,
 						self.platformTransportBudget,
 						nil,
+						self.networkSpace.GetAltUrl(),
 						self.settings.DnsPumpHost,
 					)
 					applyMobileLowMemoryPlatformTransportSettings(

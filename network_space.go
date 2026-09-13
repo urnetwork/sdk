@@ -79,6 +79,13 @@ type NetworkSpaceValues struct {
 	ApiUrl      string `json:"api_url,omitempty"`
 	PlatformUrl string `json:"platform_url,omitempty"`
 
+	// AltUrl overrides where the alt carriers send their packets (EXTENDER.md
+	// L3). Empty derives it from the platform url by the label rule, which is
+	// what every deployed space uses; only the host and an explicit port are
+	// ever read, since a client presents the api or connect name as sni and
+	// never an alt name.
+	AltUrl string `json:"alt_url,omitempty"`
+
 	// UR protocol chain overrides (vault, coordinator, operator id, rpc)
 	SnChain *SnChainSettings `json:"sn_chain,omitempty"`
 
@@ -151,6 +158,18 @@ func ServiceUrl(key *NetworkSpaceKey, values *NetworkSpaceValues, scheme string,
 	return serviceUrl
 }
 
+// The alt url of one space (EXTENDER.md L3): the configured override, else the
+// label rule applied to the platform url (`connect.x` gives `alt.x`). "" when
+// there is no `connect` label to replace -- an ip literal, a single label --
+// which leaves every alt carrier on the platform host, the behavior of a space
+// with no alt deployment.
+func spaceAltUrl(values *NetworkSpaceValues, platformUrl string) string {
+	if altUrl := strings.TrimSpace(values.AltUrl); altUrl != "" {
+		return strings.TrimRight(altUrl, "/")
+	}
+	return connect.AltUrlFromPlatformUrl(platformUrl)
+}
+
 // networkSpaceDohDomains returns every service namespace owned by a network
 // space. During a hostname migration both namespaces remain protected because
 // persisted URLs and in-flight clients can legitimately use either one.
@@ -187,6 +206,9 @@ type NetworkSpace struct {
 
 	apiUrl      string
 	platformUrl string
+	// where the alt carriers dial (L3), derived from the platform url unless
+	// the values override it. Empty keeps every carrier on the platform host.
+	altUrl string
 
 	clientStrategy *connect.ClientStrategy
 	// clientStrategySettings is what clientStrategy was built from. The
@@ -405,6 +427,7 @@ func newNetworkSpaceWithConnectSettings(
 	if platformUrl == "" {
 		platformUrl = ServiceUrl(&key, &values, "wss", "connect")
 	}
+	altUrl := spaceAltUrl(&values, platformUrl)
 
 	clientStrategySettings := connect.DefaultClientStrategySettings()
 	clientStrategySettings.ConnectSettings = *connectSettings
@@ -414,6 +437,9 @@ func newNetworkSpaceWithConnectSettings(
 	clientStrategySettings.ExposeServerIps = values.NetExposeServerIps
 	clientStrategySettings.ExposeServerHostNames = values.NetExposeServerHostNames
 	clientStrategySettings.InternalDohDomains = networkSpaceDohDomains(&key, &values)
+	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
+	// with its tcp and extender dialers alone
+	clientStrategySettings.AltUrl = altUrl
 
 	var asyncLocalState *AsyncLocalState
 	if storagePath != "" {
@@ -447,6 +473,7 @@ func newNetworkSpaceWithConnectSettings(
 
 		apiUrl:      apiUrl,
 		platformUrl: platformUrl,
+		altUrl:      altUrl,
 
 		clientStrategy:                clientStrategy,
 		clientStrategySettings:        clientStrategySettings,
@@ -891,18 +918,27 @@ func NewNetworkSpaceWithUrls(
 	// the api url rather than from a host name, and the root keys come from
 	// the bundled table for the host so derived. An api url that names an ip
 	// literal or a single label derives none of them and keeps nothing, which
-	// is what a loopback test server is.
+	// is what a loopback test server is. The alt url follows the same rule off
+	// the platform url (L3), so such a space reaches alt like a stored one.
 	//
 	// The directory is built before the strategy so the strategy's extender
-	// dialers come from it (E2). The settings are copied first: installing it
-	// into the caller's own settings would reach every other space built from
-	// the same value.
+	// dialers come from it (E2). The settings are copied first: installing
+	// anything into the caller's own settings would reach every other space
+	// built from the same value.
+	altUrl := spaceAltUrl(&values, values.PlatformUrl)
 	var extenderDirectory *connect.ExtenderDirectory
 	if extenderNetworkHostName(&key, &values) != "" {
 		extenderDirectory = newSpaceExtenderDirectory(cancelCtx, &key, &values, nil, log)
-		settingsWithDirectory := *clientStrategySettings
-		settingsWithDirectory.ExtenderDirectory = extenderDirectory
-		clientStrategySettings = &settingsWithDirectory
+	}
+	if extenderDirectory != nil || altUrl != "" {
+		copiedSettings := *clientStrategySettings
+		if extenderDirectory != nil {
+			copiedSettings.ExtenderDirectory = extenderDirectory
+		}
+		if altUrl != "" {
+			copiedSettings.AltUrl = altUrl
+		}
+		clientStrategySettings = &copiedSettings
 	}
 
 	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
@@ -918,6 +954,7 @@ func NewNetworkSpaceWithUrls(
 
 		apiUrl:      values.ApiUrl,
 		platformUrl: values.PlatformUrl,
+		altUrl:      altUrl,
 
 		clientStrategy:                clientStrategy,
 		clientStrategySettings:        clientStrategySettings,
@@ -1161,6 +1198,14 @@ func (self *NetworkSpace) GetPlatformUrl() string {
 	return self.platformUrl
 }
 
+// The alt url of this space (L3): where the H3, whodis and pump carriers send
+// their packets, while the sni, the certificate and the H1 websocket stay on
+// the api and connect names. Empty for a space with no alt deployment, which
+// keeps every carrier on the platform host.
+func (self *NetworkSpace) GetAltUrl() string {
+	return self.altUrl
+}
+
 // The family-pinned service urls (IPV6.md A9). The platform runs the
 // provider's two family-pinned transports against connect-v4 and connect-v6
 // (see connect.HeaderIpFamily); the api forms exist for diagnostics. Derived
@@ -1185,6 +1230,18 @@ func (self *NetworkSpace) GetApiUrlV4() string {
 
 func (self *NetworkSpace) GetApiUrlV6() string {
 	return familyServiceUrl(self.apiUrl, 6)
+}
+
+// The family-pinned alt urls, which pair with the family platform urls: the
+// v4-pinned provider transport sends its packets to alt-v4 (L3). Empty when
+// the alt url has no label to suffix, in which case every pinned transport
+// takes the family-agnostic alt url unchanged.
+func (self *NetworkSpace) GetAltUrlV4() string {
+	return familyServiceUrl(self.altUrl, 4)
+}
+
+func (self *NetworkSpace) GetAltUrlV6() string {
+	return familyServiceUrl(self.altUrl, 6)
 }
 
 // HasPlatformFamilyUrls reports whether both family-pinned platform urls

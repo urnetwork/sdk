@@ -203,6 +203,7 @@ func newDeviceLocalProviderWithOverrides(
 		deviceMemoryTargetByteCount,
 		platformTransportBudget,
 		dialContextSettings,
+		networkSpace.GetAltUrl(),
 		dnsPumpHost,
 	)
 	platformTransportSettings.Log = clientSettings.Log
