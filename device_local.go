@@ -375,6 +375,8 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		UseExperimentalTunnelAddress: true,
 
 		AllowProvider: true,
+		// the provider extender role follows providing by default (G1)
+		ProvideExtenderEnabled: true,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
@@ -529,6 +531,14 @@ type DeviceLocalSettings struct {
 	// The app constructors default this to true; the platform constructors
 	// set false (the device is embedded inside the platform).
 	AllowProvider bool
+	// ProvideExtenderEnabled allows this device to run the provider extender
+	// role while it provides (EXTENDER.md G1, G2). Default on, which is what
+	// DefaultDeviceLocalSettings sets; an embedder that runs many providers in
+	// one process turns it off, since one host can hold only one extender
+	// identity and bind the carrier ports once. It is the embedder's switch,
+	// independent of the user's persisted `.provide_extender` setting of F3:
+	// the role runs only when both allow it.
+	ProvideExtenderEnabled bool
 	// providerExtenderSettings, when set, adjusts the provider extender role's
 	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
 	// carrier ports and point the activation at an in-process operator through
@@ -1189,6 +1199,10 @@ func newDeviceLocalWithOverrides(
 ) (*DeviceLocal, error) {
 	if settings.KeyMaterial != nil {
 		applyDeviceLocalKeyMaterial(&settings.ClientSettings, settings.KeyMaterial)
+		// the extender identity belongs to the space, not to the client
+		// settings: the space's member node and the provider extender role
+		// both present it (B1, G2)
+		networkSpace.setExtenderKeySeed(settings.KeyMaterial.GetExtenderKeySeed())
 	}
 
 	// resolve the device logger. all nested components and clients follow it.
@@ -3520,15 +3534,33 @@ func (self *DeviceLocal) GetProvideTlsPrivateKeyPem() []byte {
 	return bytes.Clone(manager.ProvideTlsPrivateKeyPem())
 }
 
+// GetExtenderKeySeed returns the extender identity seed of this device's
+// space (EXTENDER.md B1, G2), creating it on first use. It is what the space's
+// mesh peer id is derived from and what the operator signs this host's
+// extender records for, so an embedder that persists it and passes it back
+// keeps one extender identity across restarts.
+//
+// Nil when the space persists its own: a space with local state keeps
+// `.extender_key` and that always wins, so there is nothing for the caller to
+// save.
+func (self *DeviceLocal) GetExtenderKeySeed() []byte {
+	if self.networkSpace == nil || self.networkSpace.asyncLocalState != nil {
+		return nil
+	}
+	return self.networkSpace.extenderIdentityKeySeed()
+}
+
 // GetKeyMaterial returns the provider client's persisted identity
 // material. Persist it in caller-owned local storage and pass it back to
 // NewDeviceLocalWithKeyMaterial on the next process start.
 func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
-	return NewDeviceLocalKeyMaterial(
+	keyMaterial := NewDeviceLocalKeyMaterial(
 		self.GetClientKeySeed(),
 		self.GetProvideTlsCertificatePem(),
 		self.GetProvideTlsPrivateKeyPem(),
 	)
+	keyMaterial.SetExtenderKeySeed(self.GetExtenderKeySeed())
+	return keyMaterial
 }
 
 // SetKeyMaterial applies provider-client identity material to this device and
@@ -3549,6 +3581,11 @@ func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
 		applyDeviceLocalKeyMaterial(&self.settings.ClientSettings, keyMaterial)
 		return self.providerClient()
 	}()
+	if self.networkSpace != nil {
+		// the extender identity lives on the space; a role already running
+		// keeps the identity it activated with until it restarts (G2)
+		self.networkSpace.setExtenderKeySeed(keyMaterial.GetExtenderKeySeed())
+	}
 
 	if client != nil {
 		if seed := keyMaterial.GetClientKeySeed(); 0 < len(seed) {

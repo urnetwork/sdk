@@ -832,17 +832,18 @@ func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 }
 
 // The role's settings for this space and this device (G2, G3), or nil when
-// there is nothing to run: a space with no storage has nowhere to keep the
-// identity key, and an extender whose key changed on every launch would be
-// revoked as fast as it activates.
+// there is nothing to run: a space with no identity to activate under, since
+// an extender whose key changed on every launch would be revoked as fast as it
+// activates. The identity is the space's (B1): its persisted `.extender_key`,
+// the seed an embedder supplied through the device's key material, or one the
+// space generated, which the embedder can read back and keep.
 func (self *deviceLocalProvider) extenderSettings() *deviceLocalExtenderSettings {
 	networkSpace := self.networkSpace
-	if networkSpace == nil || networkSpace.asyncLocalState == nil {
+	if networkSpace == nil {
 		return nil
 	}
-	identityKeySeed, err := networkSpace.asyncLocalState.GetLocalState().GetOrCreateExtenderKeySeed()
-	if err != nil {
-		networkSpace.log.Infof("[extender]provide identity key err = %s\n", err)
+	identityKeySeed := networkSpace.extenderIdentityKeySeed()
+	if len(identityKeySeed) == 0 {
 		return nil
 	}
 
@@ -857,7 +858,7 @@ func (self *deviceLocalProvider) extenderSettings() *deviceLocalExtenderSettings
 	}
 
 	settings := &deviceLocalExtenderSettings{
-		Log:                    networkSpace.log,
+		Log:                    networkSpace.logger(),
 		NetworkSpace:           networkSpace,
 		AllowedHosts:           networkSpace.extenderAllowedHosts(),
 		IdentityKeySeed:        identityKeySeed,

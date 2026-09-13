@@ -369,6 +369,19 @@ func newTestProvideExtenderFixtureWithDevice(
 	configure func(settings *deviceLocalExtenderSettings),
 ) *testProvideExtenderFixture {
 	t.Helper()
+	return newTestProvideExtenderFixtureWithSpace(t, nil, configureDevice, configure)
+}
+
+// The same fixture over a space `newSpace` built, which is how a test runs the
+// role on a url-only space (F1). Nil builds the manager-backed space these
+// tests otherwise use, which is what an app has.
+func newTestProvideExtenderFixtureWithSpace(
+	t *testing.T,
+	newSpace func(ctx context.Context) *NetworkSpace,
+	configureDevice func(settings *DeviceLocalSettings),
+	configure func(settings *deviceLocalExtenderSettings),
+) *testProvideExtenderFixture {
+	t.Helper()
 	testEnableExtenderNode(t)
 	testEnableExtenderProvideRole(t)
 
@@ -398,14 +411,29 @@ func newTestProvideExtenderFixtureWithDevice(
 	}
 
 	rootPublicKey := rootPrivateKey.Public().(ed25519.PublicKey)
-	fixture.networkSpaceManager = NewNetworkSpaceManager(storagePath)
-	fixture.networkSpace = fixture.networkSpaceManager.updateNetworkSpace(
-		NewNetworkSpaceKey(testProvideExtenderHost, "main"),
-		func(values *NetworkSpaceValues) {
-			values.ExtenderRootPublicKeys = []string{hex.EncodeToString(rootPublicKey)}
-		},
-	)
-	t.Cleanup(fixture.networkSpaceManager.Close)
+	if newSpace != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		fixture.networkSpace = newSpace(ctx)
+		t.Cleanup(fixture.networkSpace.Close)
+		// a url-only space takes its anchor from the bundled table, which
+		// names no synthetic host, so the fixture root key is installed the
+		// way a hello answer installs one (B4)
+		keySet, err := connect.NewExtenderRootKeySetFromHex(hex.EncodeToString(rootPublicKey))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.networkSpace.extenderDirectory.SetRootKeys(keySet)
+	} else {
+		fixture.networkSpaceManager = NewNetworkSpaceManager(storagePath)
+		fixture.networkSpace = fixture.networkSpaceManager.updateNetworkSpace(
+			NewNetworkSpaceKey(testProvideExtenderHost, "main"),
+			func(values *NetworkSpaceValues) {
+				values.ExtenderRootPublicKeys = []string{hex.EncodeToString(rootPublicKey)}
+			},
+		)
+		t.Cleanup(fixture.networkSpaceManager.Close)
+	}
 
 	settings := DefaultDeviceLocalSettings()
 	settings.AllowProvider = true
@@ -1104,4 +1132,137 @@ func TestExtenderProvideSupportedOnThisBuild(t *testing.T) {
 		status.RevokedTime != 0 || status.ConnectionCount != 0 {
 		t.Fatalf("the disabled status is %+v, expected every field zero", status)
 	}
+}
+
+// A url-only space runs the role exactly as a stored one does (F1, G2): the
+// space is built from an api url alone, with no local state to keep an
+// identity in, so the identity comes from the key material the embedder passed
+// in and the activation runs under it.
+func TestDeviceLocalProviderExtenderActivatesOnAUrlOnlySpace(t *testing.T) {
+	keySeed, err := connect.NewExtenderKeySeed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := connect.ExtenderPublicKeyFromSeed(keySeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyMaterial := NewDeviceLocalKeyMaterial(nil, nil, nil)
+	keyMaterial.SetExtenderKeySeed(keySeed)
+
+	fixture := newTestProvideExtenderFixtureWithSpace(
+		t,
+		newTestProvideExtenderUrlSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.KeyMaterial = keyMaterial
+		},
+		nil,
+	)
+	if fixture.networkSpace.asyncLocalState != nil {
+		t.Fatal("the url-only space kept local state")
+	}
+
+	fixture.waitPass()
+	post := fixture.waitPost()
+	if post.args.PublicKeyHex != hex.EncodeToString(publicKey) {
+		t.Fatalf("the activation named %q, expected the key material identity", post.args.PublicKeyHex)
+	}
+	status := fixture.waitStatus("a family activated", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4 || status.ActivatedV6
+	})
+	if !status.Enabled || !status.Listening {
+		t.Fatalf("status = %+v, expected an enabled listening extender", status)
+	}
+	if !slices.Equal(fixture.extender().publicKey, publicKey) {
+		t.Fatal("the role did not take the key material identity")
+	}
+	// the embedder reads the same seed back, so saving it after start keeps
+	// this identity across restarts (B1)
+	if !slices.Equal(fixture.device.GetKeyMaterial().GetExtenderKeySeed(), keySeed) {
+		t.Fatal("the key material did not carry the identity back")
+	}
+}
+
+// With no seed anywhere the role generates one, and the embedder reads it back
+// through the key material, which is the only place a url-only space can keep
+// it (B1, G2).
+func TestDeviceLocalProviderExtenderExposesAGeneratedKeySeed(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithSpace(t, newTestProvideExtenderUrlSpace, nil, nil)
+
+	fixture.waitPass()
+	post := fixture.waitPost()
+
+	keySeed := fixture.device.GetKeyMaterial().GetExtenderKeySeed()
+	if len(keySeed) == 0 {
+		t.Fatal("the key material carried no generated identity")
+	}
+	publicKey, err := connect.ExtenderPublicKeyFromSeed(keySeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if post.args.PublicKeyHex != hex.EncodeToString(publicKey) {
+		t.Fatalf("the activation named %q, expected the generated identity", post.args.PublicKeyHex)
+	}
+	if !slices.Equal(fixture.extender().publicKey, publicKey) {
+		t.Fatal("the role ran under an identity the key material does not carry")
+	}
+	// the same seed every time it is read, so an embedder that saves it after
+	// start saves the identity that activated
+	if !slices.Equal(fixture.device.GetKeyMaterial().GetExtenderKeySeed(), keySeed) {
+		t.Fatal("the key material carried a second identity")
+	}
+}
+
+// An embedder that runs many providers in one process turns the role off, and
+// nothing then binds a carrier or activates (G1).
+func TestDeviceLocalProviderExtenderDisabledBySettings(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithSpace(
+		t,
+		newTestProvideExtenderUrlSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.ProvideExtenderEnabled = false
+		},
+		nil,
+	)
+
+	// providing is on, which is what the role follows when it is allowed to
+	deadline := time.Now().Add(60 * time.Second)
+	for !fixture.device.GetProvideEnabled() {
+		if deadline.Before(time.Now()) {
+			t.Fatal("the device never started providing")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// the user's own setting is untouched: only the embedder's switch is off
+	if !fixture.device.GetProvideExtender() {
+		t.Fatal("the persisted setting was turned off, expected only the embedder switch")
+	}
+	if fixture.extender() != nil {
+		t.Fatal("the role ran with the embedder switch off")
+	}
+	if status := fixture.device.GetExtenderProvideStatus(); status.Enabled || status.Listening {
+		t.Fatalf("status = %+v, expected a disabled role", status)
+	}
+	// nothing reaches the operator, which is the observable half of the role
+	// not running
+	select {
+	case post := <-fixture.operator.posts:
+		t.Fatalf("the role activated v%d with the embedder switch off", post.ipVersion)
+	case <-fixture.operator.hellos:
+		t.Fatal("the role ran an activation pass with the embedder switch off")
+	case <-time.After(5 * time.Second):
+	}
+}
+
+// The url-only space of these tests: an api url and nothing else, which is
+// what a headless embedder builds (F1).
+func newTestProvideExtenderUrlSpace(ctx context.Context) *NetworkSpace {
+	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings.Log = connect.NewNoopLogger()
+	return NewNetworkSpaceWithUrls(
+		ctx,
+		"https://api."+testProvideExtenderHost,
+		"wss://connect."+testProvideExtenderHost,
+		strategySettings,
+	)
 }

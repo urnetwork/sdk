@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -187,9 +188,15 @@ type NetworkSpace struct {
 	// host is not a real dns name, which has nothing to resolve or sample.
 	extenderNetworkClient *connect.ExtenderNetworkClient
 	// stateLock guards the node, which the provider extender role replaces
-	// while the space is running (G2). Everything else here is immutable.
+	// while the space is running (G2), and the extender identity seed of a
+	// space that keeps no local state. Everything else here is immutable.
 	stateLock sync.Mutex
 	closed    bool
+	// The extender identity of a space with no local state (B1): the seed an
+	// embedder supplied through the device's key material, else one generated
+	// at first use. A space with local state keeps `.extender_key` instead,
+	// which always wins, and leaves this empty.
+	extenderKeySeed []byte
 	// The gossip node of the member role (D1, D5). Nil in the feed role, on
 	// the js build, and for a space with nothing to join. The provider
 	// extender role swaps it for a listening extender node and back (G2).
@@ -205,6 +212,75 @@ func (self *NetworkSpace) getExtenderNode() *spaceExtenderNode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.extenderNode
+}
+
+// The extender identity key seed of this space (B1), created on first use.
+// The member node and the provider extender role must present the same
+// identity -- the mesh peer id is derived from it and the operator signs
+// records for it -- so both take it from here.
+//
+// A space with local state keeps the identity in `.extender_key` and that
+// always wins. A space without keeps it in memory, seeded by whatever an
+// embedder supplied through the device's key material, so a headless host that
+// saves the seed back keeps one identity across restarts.
+func (self *NetworkSpace) getOrCreateExtenderKeySeed() ([]byte, error) {
+	if self.asyncLocalState != nil {
+		return self.asyncLocalState.GetLocalState().GetOrCreateExtenderKeySeed()
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if 0 < len(self.extenderKeySeed) {
+		return bytes.Clone(self.extenderKeySeed), nil
+	}
+	extenderKeySeed, err := connect.NewExtenderKeySeed()
+	if err != nil {
+		return nil, err
+	}
+	self.extenderKeySeed = extenderKeySeed
+	return bytes.Clone(extenderKeySeed), nil
+}
+
+// The extender identity key seed, nil when there is none to be had. An install
+// that cannot keep an identity still joins the mesh, with an ephemeral one.
+func (self *NetworkSpace) extenderIdentityKeySeed() []byte {
+	extenderKeySeed, err := self.getOrCreateExtenderKeySeed()
+	if err != nil {
+		self.logger().Infof("[extender]identity key err = %s\n", err)
+		return nil
+	}
+	return extenderKeySeed
+}
+
+// Installs the extender identity an embedder supplied through the device's key
+// material (G2, B1). A space that keeps local state has its own `.extender_key`
+// and ignores this, so an embedder never overwrites a persisted identity.
+//
+// A member node the space built before this arrives is rebuilt on the new
+// identity, so the space never runs two identities at once.
+func (self *NetworkSpace) setExtenderKeySeed(extenderKeySeed []byte) {
+	if self.asyncLocalState != nil || len(extenderKeySeed) == 0 {
+		return
+	}
+	changed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if bytes.Equal(self.extenderKeySeed, extenderKeySeed) {
+			return false
+		}
+		self.extenderKeySeed = bytes.Clone(extenderKeySeed)
+		return true
+	}()
+	if changed {
+		self.rebuildExtenderMemberNode()
+	}
+}
+
+// The space's logger, which a url-only space may have been built without.
+func (self *NetworkSpace) logger() connect.Logger {
+	if self.log != nil {
+		return self.log
+	}
+	return connect.DefaultLogger()
 }
 
 func newNetworkSpace(
@@ -308,7 +384,7 @@ func newNetworkSpaceWithConnectSettings(
 		role,
 		extenderDirectory,
 		networkSpace.extenderNetworkClient,
-		asyncLocalState,
+		networkSpace.extenderIdentityKeySeed,
 		clientStrategySettings,
 		clientStrategySettings.Log,
 	)
@@ -330,7 +406,7 @@ func newSpaceExtenderDirectory(
 ) *connect.ExtenderDirectory {
 	settings := connect.DefaultExtenderDirectorySettings()
 	settings.Log = log
-	settings.NetworkHosts = networkSpaceDohDomains(key, values)
+	settings.NetworkHosts = extenderNetworkHosts(key, values)
 	if asyncLocalState != nil {
 		settings.Store = newLocalStateExtenderStore(asyncLocalState.GetLocalState())
 	}
@@ -349,6 +425,12 @@ func newSpaceExtenderDirectory(
 // not resolve or dial anything, and the extender tests that need a client
 // build one explicitly.
 var extenderNetworkClientEnabled = true
+
+// extenderNetworkClientConfigure, when set, adjusts a space's network client
+// settings before the client is built. Production never sets it; the extender
+// tests install an in-process resolver and hello through it, so a test that
+// needs a live client never resolves or dials anything.
+var extenderNetworkClientConfigure func(settings *connect.ExtenderNetworkClientSettings)
 
 // The space's extender network client (E3), or nil when there is nothing for
 // it to do. It runs only for a space whose extender dns name is a real dns
@@ -392,14 +474,51 @@ func spaceExtenderNetworkClientSettings(
 	// the subscribe stream open, because the member role hears the same
 	// records from the mesh instead (D5)
 	settings.Subscribe = role == ExtenderRoleFeed
+	if extenderNetworkClientConfigure != nil {
+		extenderNetworkClientConfigure(settings)
+	}
 	return settings
 }
 
 // Reports whether a space has an extender dns name worth resolving (F1): both
-// the derived name and the space host it came from must be real dns names.
+// the derived name and the host its network is keyed by must be real dns
+// names.
 func extenderNetworkClientRuns(key *NetworkSpaceKey, values *NetworkSpaceValues) bool {
 	return isDottedHostName(ExtenderDnsName(key, values)) &&
-		isDottedHostName(spaceHostName(key, values))
+		extenderNetworkHostName(key, values) != ""
+}
+
+// The host one space's extender network is keyed by (B2, F1): the space host
+// when it is a real dns name, else the network host under the configured api
+// url, which is what a url-only space has in place of a host name. It names
+// the gossip topic, gates which records the directory accepts, and selects the
+// bundled root keys. Empty when neither is a real dns name -- a `test` or
+// `custom` space with no url, or a url that names an ip literal -- and the
+// space then runs no extender network at all.
+func extenderNetworkHostName(key *NetworkSpaceKey, values *NetworkSpaceValues) string {
+	hostName := spaceHostName(key, values)
+	if !isDottedHostName(hostName) {
+		hostName = ""
+		if apiHostName, err := connect.ExtenderApiHostName(values.ApiUrl); err == nil {
+			hostName = connect.ExtenderNetworkHostName(apiHostName)
+		}
+	}
+	if !isDottedHostName(hostName) {
+		return ""
+	}
+	return hostName
+}
+
+// The hosts whose records one space's directory accepts (B2): its own
+// namespaces, plus the host its extender network is keyed by, which is the
+// derived one for a url-only space and already among them otherwise.
+func extenderNetworkHosts(key *NetworkSpaceKey, values *NetworkSpaceValues) []string {
+	networkHosts := networkSpaceDohDomains(key, values)
+	networkHostName := extenderNetworkHostName(key, values)
+	if networkHostName != "" && !slices.Contains(networkHosts, networkHostName) {
+		networkHosts = append(networkHosts, networkHostName)
+	}
+	return networkHosts
 }
 
 // Reports whether a name is a dns name with at least two labels, which is what
@@ -541,13 +660,34 @@ func NewNetworkSpaceWithUrls(
 		NetExposeServerIps:       clientStrategySettings.ExposeServerIps,
 		NetExposeServerHostNames: clientStrategySettings.ExposeServerHostNames,
 	}
+	log := clientStrategySettings.Log
+	if log == nil {
+		log = connect.DefaultLogger()
+	}
+
+	// A url-only space whose api url names a real host discovers like any
+	// other space (F1): the names its extender network is keyed by come from
+	// the api url rather than from a host name, and the root keys come from
+	// the bundled table for the host so derived. An api url that names an ip
+	// literal or a single label derives none of them and keeps nothing, which
+	// is what a loopback test server is.
+	//
+	// The directory is built before the strategy so the strategy's extender
+	// dialers come from it (E2). The settings are copied first: installing it
+	// into the caller's own settings would reach every other space built from
+	// the same value.
+	var extenderDirectory *connect.ExtenderDirectory
+	if extenderNetworkHostName(&key, &values) != "" {
+		extenderDirectory = newSpaceExtenderDirectory(cancelCtx, &key, &values, nil, log)
+		settingsWithDirectory := *clientStrategySettings
+		settingsWithDirectory.ExtenderDirectory = extenderDirectory
+		clientStrategySettings = &settingsWithDirectory
+	}
+
 	clientStrategy := connect.NewClientStrategy(cancelCtx, clientStrategySettings)
 	api := newApi(cancelCtx, clientStrategy, values.ApiUrl)
 
-	// no extender directory and no network client: a url-only space names its
-	// endpoints outright, so there is no space host to derive an extender dns
-	// name from and nothing to discover (F1)
-	return &NetworkSpace{
+	networkSpace := &NetworkSpace{
 		ctx:    cancelCtx,
 		cancel: cancel,
 
@@ -562,9 +702,37 @@ func NewNetworkSpaceWithUrls(
 		clientStrategySettings:        clientStrategySettings,
 		asyncLocalState:               nil,
 		api:                           api,
+		log:                           log,
+		extenderDirectory:             extenderDirectory,
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
+	if extenderDirectory != nil {
+		role := extenderRole(extenderGossipMode(nil))
+		networkSpace.extenderNetworkClient = newSpaceExtenderNetworkClient(
+			cancelCtx,
+			&key,
+			&values,
+			role,
+			clientStrategy,
+			extenderDirectory,
+			values.ApiUrl,
+			log,
+		)
+		networkSpace.extenderNode = newSpaceExtenderNode(
+			cancelCtx,
+			&key,
+			&values,
+			role,
+			extenderDirectory,
+			networkSpace.extenderNetworkClient,
+			networkSpace.extenderIdentityKeySeed,
+			clientStrategySettings,
+			log,
+		)
+		go connect.HandleError(networkSpace.watchExtenderStatus)
+	}
+	return networkSpace
 }
 
 // NewUrlsNetworkSpace builds a storage-less NetworkSpace targeting explicit api
@@ -659,12 +827,19 @@ func (self *NetworkSpace) GetExtenderRootPublicKeys() *StringList {
 	return rootPublicKeys
 }
 
-// The resolved extender dns name of a space.
+// The resolved extender dns name of a space. A url-only space has no host name
+// to derive a service label under, so its names come from the configured api
+// url by connect's shared label rule instead (F1) -- the same rule connectctl's
+// standalone extender derives its names with, so both key one network the same
+// way. Empty when neither derives a name, and the space then resolves nothing.
 func ExtenderDnsName(key *NetworkSpaceKey, values *NetworkSpaceValues) string {
 	if extenderDnsName := strings.TrimSpace(values.ExtenderDnsName); extenderDnsName != "" {
 		return extenderDnsName
 	}
-	return ServiceHostName(key, values, "extender")
+	if isDottedHostName(spaceHostName(key, values)) {
+		return ServiceHostName(key, values, "extender")
+	}
+	return connect.ExtenderServiceHostName(values.ApiUrl, "extender")
 }
 
 // The resolved gossip url of a space (F1). The env prefix rule applies, but
@@ -674,16 +849,33 @@ func GossipUrl(key *NetworkSpaceKey, values *NetworkSpaceValues) string {
 	if gossipUrl := strings.TrimSpace(values.GossipUrl); gossipUrl != "" {
 		return strings.TrimRight(gossipUrl, "/")
 	}
-	return fmt.Sprintf("wss://%s", ServiceHostName(key, values, "gossip"))
+	if isDottedHostName(spaceHostName(key, values)) {
+		return fmt.Sprintf("wss://%s", ServiceHostName(key, values, "gossip"))
+	}
+	// a url-only space names its gossip service under the api url, exactly as
+	// it names its extender dns (F1)
+	gossipHostName := connect.ExtenderServiceHostName(values.ApiUrl, "gossip")
+	if gossipHostName == "" {
+		return ""
+	}
+	return fmt.Sprintf("wss://%s", gossipHostName)
 }
 
 // The operator patterns this space's extender may forward to (A5, G2): the
-// space host and one wildcard level under it, for the key host and the
-// migration host, so a space mid migration forwards to both namespaces exactly
-// as its own clients reach both.
+// space host and one wildcard level under it, for the key host, the migration
+// host and the host the extender network is keyed by, so a space mid migration
+// forwards to both namespaces exactly as its own clients reach both, and a
+// url-only space forwards to the space under its api url.
 func (self *NetworkSpace) extenderAllowedHosts() []string {
 	allowedHosts := []string{}
-	for _, hostName := range []string{self.key.HostName, self.values.MigrationHostName} {
+	// the derived host is the api host's space for a url-only space, and one
+	// of the two namespaces otherwise, where it dedupes away
+	hostNames := []string{
+		self.key.HostName,
+		self.values.MigrationHostName,
+		extenderNetworkHostName(&self.key, &self.values),
+	}
+	for _, hostName := range hostNames {
 		hostName = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(hostName), "."))
 		if hostName == "" {
 			continue
@@ -708,7 +900,7 @@ func ExtenderRootPublicKeys(key *NetworkSpaceKey, values *NetworkSpaceValues) []
 	if 0 < len(rootPublicKeys) {
 		return rootPublicKeys
 	}
-	return bundledExtenderRootPublicKeys(spaceHostName(key, values))
+	return bundledExtenderRootPublicKeys(extenderNetworkHostName(key, values))
 }
 
 func (self *NetworkSpace) GetSsoGoogle() bool {

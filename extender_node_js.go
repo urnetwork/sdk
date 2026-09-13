@@ -27,11 +27,16 @@ func newSpaceExtenderNode(
 	role string,
 	directory *connect.ExtenderDirectory,
 	networkClient *connect.ExtenderNetworkClient,
-	asyncLocalState *AsyncLocalState,
+	identityKeySeed func() []byte,
 	clientStrategySettings *connect.ClientStrategySettings,
 	log connect.Logger,
 ) *spaceExtenderNode {
 	return nil
+}
+
+// The js build runs no node, so there is none to rebuild on a changed
+// identity.
+func (self *NetworkSpace) rebuildExtenderMemberNode() {
 }
 
 func (self *spaceExtenderNode) role() string {

@@ -1421,6 +1421,7 @@ struct DeviceLocalSettings {
 	bool DefaultVpnInterfaceWhileOffline{};
 	bool DefaultTunnelStarted{};
 	bool AllowProvider{};
+	bool ProvideExtenderEnabled{};
 	bool Verbose{};
 	nlohmann::json GeneratorFunc{};
 	nlohmann::json MultiClientIdentityStore{};
@@ -6558,6 +6559,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["DefaultVpnInterfaceWhileOffline"] = v.DefaultVpnInterfaceWhileOffline;
 	j["DefaultTunnelStarted"] = v.DefaultTunnelStarted;
 	j["AllowProvider"] = v.AllowProvider;
+	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["Verbose"] = v.Verbose;
 	j["GeneratorFunc"] = v.GeneratorFunc;
 	j["MultiClientIdentityStore"] = v.MultiClientIdentityStore;
@@ -6639,6 +6641,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("AllowProvider"); it != j.end() && !it->is_null()) {
 		it->get_to(v.AllowProvider);
+	}
+	if (auto it = j.find("ProvideExtenderEnabled"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideExtenderEnabled);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -14761,6 +14766,7 @@ public:
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	std::vector<uint8_t> getExtenderKeySeed() const;
 	/* the raw public identity key (post quantum identity) */
 	std::vector<uint8_t> getPublicIdentityKey() const;
 };
@@ -14770,9 +14776,11 @@ public:
 	DeviceLocalKeyMaterial() = default;
 	explicit DeviceLocalKeyMaterial(uint64_t h) : detail::Handle(h) {}
 	bool isEmpty() const;
+	void setExtenderKeySeed(const uint8_t* extender_key_seed, int32_t extender_key_seed_len) const;
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	std::vector<uint8_t> getExtenderKeySeed() const;
 };
 
 class DeviceLocalLoadResult final : public detail::Handle {
@@ -23836,6 +23844,9 @@ inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
 	return r;
 }
+inline void DeviceLocalKeyMaterial::setExtenderKeySeed(const uint8_t* extender_key_seed, int32_t extender_key_seed_len) const {
+	urnet_device_local_key_material_set_extender_key_seed(handle(), extender_key_seed, extender_key_seed_len);
+}
 inline std::string DeviceLocalLoadResult::getDefaultError() const {
 	char* r_c = urnet_device_local_load_result_get_default_error(handle());
 	return detail::takeString(r_c);
@@ -27351,6 +27362,9 @@ inline std::vector<uint8_t> DeviceLocal::getProvideTlsCertificatePem() const {
 inline std::vector<uint8_t> DeviceLocal::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_get_provide_tls_private_key_pem(h, out, len); });
 }
+inline std::vector<uint8_t> DeviceLocal::getExtenderKeySeed() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_get_extender_key_seed(h, out, len); });
+}
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getClientKeySeed() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_client_key_seed(h, out, len); });
 }
@@ -27359,6 +27373,9 @@ inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsCertificatePem(
 }
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_provide_tls_private_key_pem(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceLocalKeyMaterial::getExtenderKeySeed() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_extender_key_seed(h, out, len); });
 }
 inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });

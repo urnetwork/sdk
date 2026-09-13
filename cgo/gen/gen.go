@@ -142,9 +142,11 @@ var skipMethods = map[string]string{
 	"DeviceLocal.GetClientKeySeed":                           "manual export urnet_device_local_get_client_key_seed",
 	"DeviceLocal.GetProvideTlsCertificatePem":                "manual export urnet_device_local_get_provide_tls_certificate_pem",
 	"DeviceLocal.GetProvideTlsPrivateKeyPem":                 "manual export urnet_device_local_get_provide_tls_private_key_pem",
+	"DeviceLocal.GetExtenderKeySeed":                         "manual export urnet_device_local_get_extender_key_seed",
 	"DeviceLocalKeyMaterial.GetClientKeySeed":                "manual export urnet_device_local_key_material_get_client_key_seed",
 	"DeviceLocalKeyMaterial.GetProvideTlsCertificatePem":     "manual export urnet_device_local_key_material_get_provide_tls_certificate_pem",
 	"DeviceLocalKeyMaterial.GetProvideTlsPrivateKeyPem":      "manual export urnet_device_local_key_material_get_provide_tls_private_key_pem",
+	"DeviceLocalKeyMaterial.GetExtenderKeySeed":              "manual export urnet_device_local_key_material_get_extender_key_seed",
 	"RenderIdenticonPng":                                     "manual export urnet_render_identicon_png",
 	"Device.GetPublicIdentityKey":                            "manual export urnet_device_get_public_identity_key",
 	"PostQuantumIdentityViewController.GetPublicIdentityKey": "device-level key; manual export urnet_device_get_public_identity_key",
@@ -1729,9 +1731,11 @@ bool urnet_generate_shared_secret(const uint8_t* private_key, int32_t private_ke
 bool urnet_device_local_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_key_material_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 
 /* post quantum identity (canonical identicon raster + raw identity key) */
 bool urnet_render_identicon_png(const uint8_t* input, int32_t input_len, int32_t size, uint8_t* out, int32_t* inout_len, char** out_error);

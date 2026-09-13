@@ -9782,6 +9782,16 @@ func urnet_device_local_key_material_is_empty(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_local_key_material_set_extender_key_seed
+func urnet_device_local_key_material_set_extender_key_seed(self C.uint64_t, extenderKeySeed *C.uint8_t, extenderKeySeed_len C.int32_t) {
+	defer cgoGuard("urnet_device_local_key_material_set_extender_key_seed")
+	self_, ok := resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(self), "urnet_device_local_key_material_set_extender_key_seed")
+	if !ok {
+		return
+	}
+	self_.SetExtenderKeySeed(goBytes(extenderKeySeed, extenderKeySeed_len))
+}
+
 //export urnet_device_local_load_result_get_default_error
 func urnet_device_local_load_result_get_default_error(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_load_result_get_default_error")

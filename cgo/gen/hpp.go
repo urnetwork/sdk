@@ -51,6 +51,7 @@ var hppExtraClassDecls = map[string]string{
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	std::vector<uint8_t> getExtenderKeySeed() const;
 	/* the raw public identity key (post quantum identity) */
 	std::vector<uint8_t> getPublicIdentityKey() const;
 `,
@@ -60,6 +61,7 @@ var hppExtraClassDecls = map[string]string{
 	"DeviceLocalKeyMaterial": `	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	std::vector<uint8_t> getExtenderKeySeed() const;
 `,
 	"PacketBatch": `	/* one borrowed packet copied into c++-owned storage */
 	std::vector<uint8_t> get(int64_t index) const;
@@ -94,6 +96,9 @@ inline std::vector<uint8_t> DeviceLocal::getProvideTlsCertificatePem() const {
 inline std::vector<uint8_t> DeviceLocal::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_get_provide_tls_private_key_pem(h, out, len); });
 }
+inline std::vector<uint8_t> DeviceLocal::getExtenderKeySeed() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_get_extender_key_seed(h, out, len); });
+}
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getClientKeySeed() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_client_key_seed(h, out, len); });
 }
@@ -102,6 +107,9 @@ inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsCertificatePem(
 }
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_provide_tls_private_key_pem(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceLocalKeyMaterial::getExtenderKeySeed() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_extender_key_seed(h, out, len); });
 }
 inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });

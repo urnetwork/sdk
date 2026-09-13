@@ -260,7 +260,12 @@ func (self *DeviceLocal) updateExtenderProvide() {
 	if provider == nil {
 		return
 	}
-	provider.setExtenderEnabled(!closed && self.GetProvideEnabled() && self.GetProvideExtender())
+	// the embedder's switch and the user's setting must both allow it (G1, F3)
+	provider.setExtenderEnabled(
+		!closed &&
+			self.settings.ProvideExtenderEnabled &&
+			self.GetProvideEnabled() &&
+			self.GetProvideExtender())
 	self.extenderProvideMonitor.NotifyAll()
 }
 

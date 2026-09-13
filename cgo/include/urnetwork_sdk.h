@@ -49,9 +49,11 @@ bool urnet_generate_shared_secret(const uint8_t* private_key, int32_t private_ke
 bool urnet_device_local_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_key_material_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 
 /* post quantum identity (canonical identicon raster + raw identity key) */
 bool urnet_render_identicon_png(const uint8_t* input, int32_t input_len, int32_t size, uint8_t* out, int32_t* inout_len, char** out_error);
@@ -1133,6 +1135,7 @@ bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_millisecon
 /* ----- DeviceLocalKeyMaterial ----- */
 
 bool urnet_device_local_key_material_is_empty(uint64_t self);
+void urnet_device_local_key_material_set_extender_key_seed(uint64_t self, const uint8_t* extender_key_seed, int32_t extender_key_seed_len);
 
 /* ----- DeviceLocalLoadResult ----- */
 
@@ -2411,6 +2414,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   DefaultVpnInterfaceWhileOffline: boolean
  *   DefaultTunnelStarted: boolean
  *   AllowProvider: boolean
+ *   ProvideExtenderEnabled: boolean
  *   Verbose: boolean
  *   GeneratorFunc: any
  *   MultiClientIdentityStore: any

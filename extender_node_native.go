@@ -25,9 +25,10 @@ import (
 // Until then the node has no operator to dial and peers only with extenders its
 // directory already names.
 //
-// The identity is the persisted `.extender_key` seed (B1). It is also the
-// provider's extender identity, so a provider that activates keeps the mesh
-// peer id its records name.
+// The identity is the space's (B1): the persisted `.extender_key` seed, or
+// what an embedder with no local state supplied through the device's key
+// material. It is also the provider's extender identity, so a provider that
+// activates keeps the mesh peer id its records name.
 //
 // The provider extender role replaces this node with a listening one in the
 // extender role and restores it when the role stops (G2). A libp2p host can
@@ -54,8 +55,8 @@ type spaceExtenderNode struct {
 }
 
 // Builds the node of a member-role space, or nil when this space runs none:
-// the feed role, a space with no directory, a space whose host is not a real
-// dns name, or a space with no storage to keep an identity in.
+// the feed role, a space with no directory, or a space whose extender network
+// host is not a real dns name.
 func newSpaceExtenderNode(
 	ctx context.Context,
 	key *NetworkSpaceKey,
@@ -63,7 +64,7 @@ func newSpaceExtenderNode(
 	role string,
 	directory *connect.ExtenderDirectory,
 	networkClient *connect.ExtenderNetworkClient,
-	asyncLocalState *AsyncLocalState,
+	identityKeySeed func() []byte,
 	clientStrategySettings *connect.ClientStrategySettings,
 	log connect.Logger,
 ) *spaceExtenderNode {
@@ -79,7 +80,7 @@ func newSpaceExtenderNode(
 		nil,
 		directory,
 		networkClient,
-		asyncLocalState,
+		identityKeySeed,
 		clientStrategySettings,
 		log,
 	)
@@ -98,7 +99,7 @@ func newSpaceExtenderNodeWithRole(
 	listenAddrs []ma.Multiaddr,
 	directory *connect.ExtenderDirectory,
 	networkClient *connect.ExtenderNetworkClient,
-	asyncLocalState *AsyncLocalState,
+	identityKeySeed func() []byte,
 	clientStrategySettings *connect.ClientStrategySettings,
 	log connect.Logger,
 ) *spaceExtenderNode {
@@ -108,23 +109,18 @@ func newSpaceExtenderNodeWithRole(
 	if directory == nil || !extenderNetworkClientRuns(key, values) {
 		return nil
 	}
-	var identityKeySeed []byte
-	if asyncLocalState != nil {
-		seed, err := asyncLocalState.GetLocalState().GetOrCreateExtenderKeySeed()
-		if err != nil {
-			// an install that cannot persist an identity still joins the mesh,
-			// with an ephemeral one
-			log.Infof("[extender]identity key err = %s\n", err)
-		} else {
-			identityKeySeed = seed
-		}
+	// read only here, so a space that runs no node never creates an identity
+	// it will not use
+	var seed []byte
+	if identityKeySeed != nil {
+		seed = identityKeySeed()
 	}
 
 	settings := gossip.DefaultNodeSettings(nodeRole)
 	settings.Log = log
-	settings.NetworkHost = spaceHostName(key, values)
+	settings.NetworkHost = extenderNetworkHostName(key, values)
 	settings.Directory = directory
-	settings.IdentityKeySeed = identityKeySeed
+	settings.IdentityKeySeed = seed
 	settings.ExtenderListener = listener
 	settings.ListenAddrs = listenAddrs
 	if clientStrategySettings != nil {
@@ -239,9 +235,9 @@ func (self *NetworkSpace) setExtenderNodeRole(
 			listenAddrs,
 			self.extenderDirectory,
 			self.extenderNetworkClient,
-			self.asyncLocalState,
+			self.extenderIdentityKeySeed,
 			self.clientStrategySettings,
-			self.log,
+			self.logger(),
 		)
 	})
 }
@@ -259,11 +255,25 @@ func (self *NetworkSpace) restoreExtenderNodeRole() {
 			role,
 			self.extenderDirectory,
 			self.extenderNetworkClient,
-			self.asyncLocalState,
+			self.extenderIdentityKeySeed,
 			self.clientStrategySettings,
-			self.log,
+			self.logger(),
 		)
 	})
+}
+
+// rebuildExtenderMemberNode rebuilds a member node on the identity the space
+// now carries (B1). An embedder that supplies the extender identity through
+// the device's key material arrives after the space is built, and the mesh
+// peer id is derived from that identity, so a member node built on a generated
+// one is replaced here rather than presenting an identity nothing else uses. A
+// node in the extender role is left alone: its identity is the one the
+// provider extender role activated with, which is already the space's.
+func (self *NetworkSpace) rebuildExtenderMemberNode() {
+	if self.getExtenderNode().role() != gossip.NodeRoleMember {
+		return
+	}
+	self.restoreExtenderNodeRole()
 }
 
 // Swaps in a node built by `build`, closing the one it replaces first: both
