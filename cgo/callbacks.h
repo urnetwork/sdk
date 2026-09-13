@@ -103,6 +103,8 @@ typedef void (*urnet_extender_provide_status_change_cb)(void* user_data, const c
 void urnet_invoke_extender_provide_status_change(urnet_extender_provide_status_change_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_extender_status_change_cb)(void* user_data, const char* status_json);
 void urnet_invoke_extender_status_change(urnet_extender_status_change_cb cb, void* user_data, const char* status_json);
+typedef void (*urnet_extender_view_controller_cb)(void* user_data, const char* status_json);
+void urnet_invoke_extender_view_controller(urnet_extender_view_controller_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_filtered_locations_cb)(void* user_data, const char* locations_json, const char* state);
 void urnet_invoke_filtered_locations(urnet_filtered_locations_cb cb, void* user_data, const char* locations_json, const char* state);
 typedef void (*urnet_find_locations_cb)(void* user_data, const char* result_json, const char* err_param);

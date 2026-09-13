@@ -197,6 +197,10 @@ void urnet_invoke_extender_status_change(urnet_extender_status_change_cb cb, voi
 	cb(user_data, status_json);
 }
 
+void urnet_invoke_extender_view_controller(urnet_extender_view_controller_cb cb, void* user_data, const char* status_json) {
+	cb(user_data, status_json);
+}
+
 void urnet_invoke_filtered_locations(urnet_filtered_locations_cb cb, void* user_data, const char* locations_json, const char* state) {
 	cb(user_data, locations_json, state);
 }

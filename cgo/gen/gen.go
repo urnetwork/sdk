@@ -77,6 +77,7 @@ var behavioralTypes = map[string]bool{
 	"SubscriptionBalanceViewController":   true,
 	"ContractDetailsViewController":       true,
 	"DevicesViewController":               true,
+	"ExtenderViewController":              true,
 	"FeedbackViewController":              true,
 	"LocationsViewController":             true,
 	"LoginViewController":                 true,

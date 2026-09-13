@@ -23,6 +23,7 @@ export interface NetworkSpaceValues {
   extender_dns_name?: string;
   gossip_url?: string;
   extender_root_public_keys?: string[];
+  extender_hosts?: string[];
 }
 
 export interface ExportNetworkSpace {

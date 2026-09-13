@@ -783,6 +783,20 @@ func (self *cAdapterExtenderStatusChangeListener) ExtenderStatusChanged(status *
 	}
 }
 
+type cAdapterExtenderViewControllerListener struct {
+	cbExtenderStatusChanged C.urnet_extender_view_controller_cb
+	userData                unsafe.Pointer
+}
+
+func (self *cAdapterExtenderViewControllerListener) ExtenderStatusChanged(status *sdk.ExtenderStatus) {
+	defer cgoGuard("urnet_extender_view_controller_cb")
+	status_ := cJson(status, "urnet_extender_view_controller_cb")
+	C.urnet_invoke_extender_view_controller(self.cbExtenderStatusChanged, self.userData, status_)
+	if status_ != nil {
+		cStringFree(status_)
+	}
+}
+
 type cAdapterFilteredLocationsListener struct {
 	cbFilteredLocationsChanged C.urnet_filtered_locations_cb
 	userData                   unsafe.Pointer
@@ -6611,6 +6625,21 @@ func urnet_device_add_egress_contract_stats_change_listener(self C.uint64_t, lis
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_extender_status_change_listener
+func urnet_device_add_extender_status_change_listener(self C.uint64_t, listener_extender_status_changed C.urnet_extender_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_extender_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_extender_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ExtenderStatusChangeListener
+	if listener_extender_status_changed != nil {
+		listener_ = &cAdapterExtenderStatusChangeListener{cbExtenderStatusChanged: listener_extender_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddExtenderStatusChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_ingress_contract_details_change_listener
 func urnet_device_add_ingress_contract_details_change_listener(self C.uint64_t, listener_contract_details_changed C.urnet_contract_details_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_ingress_contract_details_change_listener")
@@ -7319,6 +7348,20 @@ func urnet_device_get_egress_contract_stats(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_get_egress_contract_stats")
+}
+
+//export urnet_device_get_extender_status
+func urnet_device_get_extender_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_extender_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_extender_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_extender_status")
 }
 
 //export urnet_device_get_ingress_contract_details
@@ -8973,6 +9016,20 @@ func urnet_device_local_open_devices_view_controller(self C.uint64_t) C.uint64_t
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_open_extender_view_controller
+func urnet_device_local_open_extender_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_extender_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_extender_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenExtenderViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_local_open_feedback_view_controller
 func urnet_device_local_open_feedback_view_controller(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_local_open_feedback_view_controller")
@@ -10484,6 +10541,20 @@ func urnet_device_remote_open_devices_view_controller(self C.uint64_t) C.uint64_
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_remote_open_extender_view_controller
+func urnet_device_remote_open_extender_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_extender_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_extender_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenExtenderViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_remote_open_feedback_view_controller
 func urnet_device_remote_open_feedback_view_controller(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_device_remote_open_feedback_view_controller")
@@ -11208,6 +11279,20 @@ func urnet_extender_dns_name(key *C.char, values *C.char) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_extender_hosts
+func urnet_extender_hosts(values *C.char) *C.char {
+	defer cgoGuard("urnet_extender_hosts")
+	var values_ *sdk.NetworkSpaceValues
+	if values != nil {
+		values_ = &sdk.NetworkSpaceValues{}
+		if !goJson(values, values_, "urnet_extender_hosts") {
+			return nil
+		}
+	}
+	r0 := sdk.ExtenderHosts(values_)
+	return cJson(r0, "urnet_extender_hosts")
+}
+
 //export urnet_extender_root_public_keys
 func urnet_extender_root_public_keys(key *C.char, values *C.char) *C.char {
 	defer cgoGuard("urnet_extender_root_public_keys")
@@ -11227,6 +11312,159 @@ func urnet_extender_root_public_keys(key *C.char, values *C.char) *C.char {
 	}
 	r0 := sdk.ExtenderRootPublicKeys(key_, values_)
 	return cJson(r0, "urnet_extender_root_public_keys")
+}
+
+//export urnet_extender_view_controller_add_status_listener
+func urnet_extender_view_controller_add_status_listener(self C.uint64_t, listener_extender_status_changed C.urnet_extender_view_controller_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_extender_view_controller_add_status_listener")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_add_status_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ExtenderViewControllerListener
+	if listener_extender_status_changed != nil {
+		listener_ = &cAdapterExtenderViewControllerListener{cbExtenderStatusChanged: listener_extender_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddStatusListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_extender_view_controller_build_share
+func urnet_extender_view_controller_build_share(self C.uint64_t, includeSettings C.bool) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_build_share")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_build_share")
+	if !ok {
+		return nil
+	}
+	r0 := self_.BuildShare(bool(includeSettings))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_build_share")
+}
+
+//export urnet_extender_view_controller_close
+func urnet_extender_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_extender_view_controller_close")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_extender_view_controller_decode_share
+func urnet_extender_view_controller_decode_share(self C.uint64_t, text *C.char) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_decode_share")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_decode_share")
+	if !ok {
+		return nil
+	}
+	r0 := self_.DecodeShare(goString(text))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_decode_share")
+}
+
+//export urnet_extender_view_controller_extender_status_changed
+func urnet_extender_view_controller_extender_status_changed(self C.uint64_t, status *C.char) {
+	defer cgoGuard("urnet_extender_view_controller_extender_status_changed")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_extender_status_changed")
+	if !ok {
+		return
+	}
+	var status_ *sdk.ExtenderStatus
+	if status != nil {
+		status_ = &sdk.ExtenderStatus{}
+		if !goJson(status, status_, "urnet_extender_view_controller_extender_status_changed") {
+			return
+		}
+	}
+	self_.ExtenderStatusChanged(status_)
+}
+
+//export urnet_extender_view_controller_get_settings
+func urnet_extender_view_controller_get_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_get_settings")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_get_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_get_settings")
+}
+
+//export urnet_extender_view_controller_get_status
+func urnet_extender_view_controller_get_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_get_status")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_get_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_get_status")
+}
+
+//export urnet_extender_view_controller_import_share
+func urnet_extender_view_controller_import_share(self C.uint64_t, text *C.char, useSettings C.bool) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_import_share")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_import_share")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ImportShare(goString(text), bool(useSettings))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_import_share")
+}
+
+//export urnet_extender_view_controller_set_settings
+func urnet_extender_view_controller_set_settings(self C.uint64_t, dnsName *C.char, gossipUrl *C.char, hosts *C.char) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_set_settings")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_set_settings")
+	if !ok {
+		return nil
+	}
+	var hosts_ *sdk.StringList
+	if hosts != nil {
+		hosts_ = &sdk.StringList{}
+		if !goJson(hosts, hosts_, "urnet_extender_view_controller_set_settings") {
+			return nil
+		}
+	}
+	r0 := self_.SetSettings(goString(dnsName), goString(gossipUrl), hosts_)
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_set_settings")
+}
+
+//export urnet_extender_view_controller_start
+func urnet_extender_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_extender_view_controller_start")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_extender_view_controller_stop
+func urnet_extender_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_extender_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
 }
 
 //export urnet_feedback_view_controller_add_is_sending_feedback_listener
@@ -11426,6 +11664,20 @@ func urnet_get_default_tunnel_mtu() C.int64_t {
 	defer cgoGuard("urnet_get_default_tunnel_mtu")
 	r0 := sdk.GetDefaultTunnelMtu()
 	return C.int64_t(r0)
+}
+
+//export urnet_get_extender_color_hex
+func urnet_get_extender_color_hex(ip *C.char) *C.char {
+	defer cgoGuard("urnet_get_extender_color_hex")
+	r0 := sdk.GetExtenderColorHex(goString(ip))
+	return cString(string(r0))
+}
+
+//export urnet_get_extender_store_read_only
+func urnet_get_extender_store_read_only() C.bool {
+	defer cgoGuard("urnet_get_extender_store_read_only")
+	r0 := sdk.GetExtenderStoreReadOnly()
+	return C.bool(r0)
 }
 
 //export urnet_get_filtered_locations_from_result
@@ -13305,6 +13557,20 @@ func urnet_network_space_get_extender_gossip_mode(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetExtenderGossipMode()
 	return cString(string(r0))
+}
+
+//export urnet_network_space_get_extender_hosts
+func urnet_network_space_get_extender_hosts(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_hosts")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_hosts")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderHosts()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_extender_hosts")
 }
 
 //export urnet_network_space_get_extender_root_public_keys
@@ -15370,6 +15636,12 @@ func urnet_set_control_ip_family_policy(policy C.int64_t) {
 func urnet_set_egress_interface_index(index4 C.int64_t, index6 C.int64_t) {
 	defer cgoGuard("urnet_set_egress_interface_index")
 	sdk.SetEgressInterfaceIndex(int(int64(index4)), int(int64(index6)))
+}
+
+//export urnet_set_extender_store_read_only
+func urnet_set_extender_store_read_only(readOnly C.bool) {
+	defer cgoGuard("urnet_set_extender_store_read_only")
+	sdk.SetExtenderStoreReadOnly(bool(readOnly))
 }
 
 //export urnet_set_log_dir

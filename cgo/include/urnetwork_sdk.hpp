@@ -205,6 +205,8 @@ inline constexpr const char* ExperimentVariantHoldout = "holdout";
 inline constexpr const char* ExtenderGossipModeAuto = "auto";
 inline constexpr const char* ExtenderGossipModeFeed = "feed";
 inline constexpr const char* ExtenderGossipModeMember = "member";
+inline constexpr const char* ExtenderImportErrorForeignHost = "import_extenders_foreign_host";
+inline constexpr const char* ExtenderImportErrorInvalid = "import_extenders_invalid";
 inline constexpr const char* ExtenderRoleFeed = "feed";
 inline constexpr const char* ExtenderRoleMember = "member";
 inline constexpr const char* IpFamilyDualstack = "dualstack";
@@ -384,6 +386,7 @@ class DeviceRemote;
 class DeviceRpcKeyMaterial;
 class DeviceStats;
 class DevicesViewController;
+class ExtenderViewController;
 class FeedbackViewController;
 class LocalAuthStateSnapshot;
 class LocalState;
@@ -515,8 +518,12 @@ struct Exit;
 struct ExperimentAssignment;
 struct ExportOptions;
 struct ExportResult;
+struct ExtenderImportResult;
 struct ExtenderInfo;
 struct ExtenderProvideStatus;
+struct ExtenderSettings;
+struct ExtenderShareDecodeResult;
+struct ExtenderShareResult;
 struct ExtenderStatus;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
@@ -1520,10 +1527,17 @@ struct ExportResult {
 	std::optional<StringList> MissingSources;
 };
 
+struct ExtenderImportResult {
+	bool Ok{};
+	std::string Error{};
+	int64_t ImportedCount{};
+};
+
 struct ExtenderInfo {
 	std::string Id{};
 	std::string Ip{};
 	int64_t IpVersion{};
+	std::string ColorHex{};
 	std::string Carriers{};
 	std::string CountryCode{};
 	std::string State{};
@@ -1550,14 +1564,44 @@ struct ExtenderProvideStatus {
 	int64_t ConnectionCount{};
 };
 
+struct ExtenderSettings {
+	std::string DnsName{};
+	bool DnsNameDefault{};
+	std::string GossipUrl{};
+	bool GossipUrlDefault{};
+	std::optional<StringList> Hosts;
+	std::string NetworkHost{};
+	std::optional<StringList> RootPublicKeys;
+	bool RootPublicKeysDefault{};
+};
+
+struct ExtenderShareDecodeResult {
+	bool Ok{};
+	std::string Error{};
+	std::string NetworkHost{};
+	bool ForeignHost{};
+	int64_t Count{};
+	bool HasSettings{};
+	std::string SettingsHost{};
+};
+
+struct ExtenderShareResult {
+	std::string Text{};
+	int64_t Count{};
+	bool IncludesSettings{};
+};
+
 struct ExtenderStatus {
 	std::string Role{};
 	bool FeedConnected{};
 	std::string FeedIp{};
 	bool GossipConnected{};
 	int64_t GossipPeerCount{};
+	std::string GossipState{};
+	int64_t EventCountLastMinute{};
 	int64_t KnownCount{};
 	int64_t ActiveCount{};
+	int64_t ReserveCount{};
 	int64_t WarningCount{};
 	int64_t HoldCount{};
 	int64_t LastSampleTime{};
@@ -2038,6 +2082,7 @@ struct NetworkSpaceValues {
 	std::optional<std::string> extender_dns_name;
 	std::optional<std::string> gossip_url;
 	std::optional<std::vector<std::string>> extender_root_public_keys;
+	std::optional<std::vector<std::string>> extender_hosts;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -2260,6 +2305,8 @@ struct ProviderGridPoint {
 	bool Active{};
 	std::string IpFamily{};
 	std::string IpFamilyLabel{};
+	std::string ExtenderIps{};
+	std::string ExtenderColorHexes{};
 };
 
 struct ProviderIdentity {
@@ -3268,10 +3315,18 @@ inline void to_json(nlohmann::json& j, const ExportOptions& v);
 inline void from_json(const nlohmann::json& j, ExportOptions& v);
 inline void to_json(nlohmann::json& j, const ExportResult& v);
 inline void from_json(const nlohmann::json& j, ExportResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderImportResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderImportResult& v);
 inline void to_json(nlohmann::json& j, const ExtenderInfo& v);
 inline void from_json(const nlohmann::json& j, ExtenderInfo& v);
 inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v);
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v);
+inline void to_json(nlohmann::json& j, const ExtenderSettings& v);
+inline void from_json(const nlohmann::json& j, ExtenderSettings& v);
+inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderShareResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderShareResult& v);
 inline void to_json(nlohmann::json& j, const ExtenderStatus& v);
 inline void from_json(const nlohmann::json& j, ExtenderStatus& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
@@ -7047,11 +7102,33 @@ inline void from_json(const nlohmann::json& j, ExportResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ExtenderImportResult& v) {
+	j = nlohmann::json::object();
+	j["Ok"] = v.Ok;
+	j["Error"] = v.Error;
+	j["ImportedCount"] = v.ImportedCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderImportResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ok);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+	if (auto it = j.find("ImportedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ImportedCount);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ExtenderInfo& v) {
 	j = nlohmann::json::object();
 	j["Id"] = v.Id;
 	j["Ip"] = v.Ip;
 	j["IpVersion"] = v.IpVersion;
+	j["ColorHex"] = v.ColorHex;
 	j["Carriers"] = v.Carriers;
 	j["CountryCode"] = v.CountryCode;
 	j["State"] = v.State;
@@ -7075,6 +7152,9 @@ inline void from_json(const nlohmann::json& j, ExtenderInfo& v) {
 	}
 	if (auto it = j.find("IpVersion"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IpVersion);
+	}
+	if (auto it = j.find("ColorHex"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ColorHex);
 	}
 	if (auto it = j.find("Carriers"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Carriers);
@@ -7161,6 +7241,113 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ExtenderSettings& v) {
+	j = nlohmann::json::object();
+	j["DnsName"] = v.DnsName;
+	j["DnsNameDefault"] = v.DnsNameDefault;
+	j["GossipUrl"] = v.GossipUrl;
+	j["GossipUrlDefault"] = v.GossipUrlDefault;
+	if (v.Hosts) {
+		j["Hosts"] = *v.Hosts;
+	}
+	j["NetworkHost"] = v.NetworkHost;
+	if (v.RootPublicKeys) {
+		j["RootPublicKeys"] = *v.RootPublicKeys;
+	}
+	j["RootPublicKeysDefault"] = v.RootPublicKeysDefault;
+}
+inline void from_json(const nlohmann::json& j, ExtenderSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("DnsName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsName);
+	}
+	if (auto it = j.find("DnsNameDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsNameDefault);
+	}
+	if (auto it = j.find("GossipUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipUrl);
+	}
+	if (auto it = j.find("GossipUrlDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipUrlDefault);
+	}
+	if (auto it = j.find("Hosts"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.Hosts = std::move(tmp);
+	}
+	if (auto it = j.find("NetworkHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkHost);
+	}
+	if (auto it = j.find("RootPublicKeys"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.RootPublicKeys = std::move(tmp);
+	}
+	if (auto it = j.find("RootPublicKeysDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RootPublicKeysDefault);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v) {
+	j = nlohmann::json::object();
+	j["Ok"] = v.Ok;
+	j["Error"] = v.Error;
+	j["NetworkHost"] = v.NetworkHost;
+	j["ForeignHost"] = v.ForeignHost;
+	j["Count"] = v.Count;
+	j["HasSettings"] = v.HasSettings;
+	j["SettingsHost"] = v.SettingsHost;
+}
+inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ok);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+	if (auto it = j.find("NetworkHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkHost);
+	}
+	if (auto it = j.find("ForeignHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ForeignHost);
+	}
+	if (auto it = j.find("Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Count);
+	}
+	if (auto it = j.find("HasSettings"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasSettings);
+	}
+	if (auto it = j.find("SettingsHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SettingsHost);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderShareResult& v) {
+	j = nlohmann::json::object();
+	j["Text"] = v.Text;
+	j["Count"] = v.Count;
+	j["IncludesSettings"] = v.IncludesSettings;
+}
+inline void from_json(const nlohmann::json& j, ExtenderShareResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Text);
+	}
+	if (auto it = j.find("Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Count);
+	}
+	if (auto it = j.find("IncludesSettings"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IncludesSettings);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ExtenderStatus& v) {
 	j = nlohmann::json::object();
 	j["Role"] = v.Role;
@@ -7168,8 +7355,11 @@ inline void to_json(nlohmann::json& j, const ExtenderStatus& v) {
 	j["FeedIp"] = v.FeedIp;
 	j["GossipConnected"] = v.GossipConnected;
 	j["GossipPeerCount"] = v.GossipPeerCount;
+	j["GossipState"] = v.GossipState;
+	j["EventCountLastMinute"] = v.EventCountLastMinute;
 	j["KnownCount"] = v.KnownCount;
 	j["ActiveCount"] = v.ActiveCount;
+	j["ReserveCount"] = v.ReserveCount;
 	j["WarningCount"] = v.WarningCount;
 	j["HoldCount"] = v.HoldCount;
 	j["LastSampleTime"] = v.LastSampleTime;
@@ -7197,11 +7387,20 @@ inline void from_json(const nlohmann::json& j, ExtenderStatus& v) {
 	if (auto it = j.find("GossipPeerCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GossipPeerCount);
 	}
+	if (auto it = j.find("GossipState"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipState);
+	}
+	if (auto it = j.find("EventCountLastMinute"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EventCountLastMinute);
+	}
 	if (auto it = j.find("KnownCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.KnownCount);
 	}
 	if (auto it = j.find("ActiveCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ActiveCount);
+	}
+	if (auto it = j.find("ReserveCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ReserveCount);
 	}
 	if (auto it = j.find("WarningCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.WarningCount);
@@ -9358,6 +9557,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.extender_root_public_keys) {
 		j["extender_root_public_keys"] = *v.extender_root_public_keys;
 	}
+	if (v.extender_hosts) {
+		j["extender_hosts"] = *v.extender_hosts;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 	if (!j.is_object()) {
@@ -9442,6 +9644,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::vector<std::string> tmp{};
 		it->get_to(tmp);
 		v.extender_root_public_keys = std::move(tmp);
+	}
+	if (auto it = j.find("extender_hosts"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.extender_hosts = std::move(tmp);
 	}
 }
 
@@ -10506,6 +10713,8 @@ inline void to_json(nlohmann::json& j, const ProviderGridPoint& v) {
 	j["Active"] = v.Active;
 	j["IpFamily"] = v.IpFamily;
 	j["IpFamilyLabel"] = v.IpFamilyLabel;
+	j["ExtenderIps"] = v.ExtenderIps;
+	j["ExtenderColorHexes"] = v.ExtenderColorHexes;
 }
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	if (!j.is_object()) {
@@ -10538,6 +10747,12 @@ inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	}
 	if (auto it = j.find("IpFamilyLabel"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IpFamilyLabel);
+	}
+	if (auto it = j.find("ExtenderIps"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderIps);
+	}
+	if (auto it = j.find("ExtenderColorHexes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderColorHexes);
 	}
 }
 
@@ -14083,6 +14298,7 @@ using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResu
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
 using ExtenderProvideStatusChangeListener = std::function<void(std::optional<ExtenderProvideStatus> status)>;
 using ExtenderStatusChangeListener = std::function<void(std::optional<ExtenderStatus> status)>;
+using ExtenderViewControllerListener = std::function<void(std::optional<ExtenderStatus> status)>;
 using FilteredLocationsListener = std::function<void(std::optional<FilteredLocations> locations, std::string state)>;
 using FindLocationsCallback = std::function<void(std::optional<FindLocationsResult> result, std::optional<std::string> err_param)>;
 using FindProviders2Callback = std::function<void(std::optional<FindProviders2Result> result, std::optional<std::string> err_param)>;
@@ -14272,6 +14488,7 @@ public:
 	Sub addDnsResolverSettingsChangeListener(DnsResolverSettingsChangeListener listener) const;
 	Sub addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
+	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
 	Sub addIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addIngressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addJwtRefreshListener(JwtRefreshListener listener) const;
@@ -14324,6 +14541,7 @@ public:
 	bool getDone() const;
 	std::optional<ContractDetailsList> getEgressContractDetails() const;
 	std::optional<ContractStats> getEgressContractStats() const;
+	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::optional<ContractDetailsList> getIngressContractDetails() const;
 	std::optional<ContractStats> getIngressContractStats() const;
 	std::string getInstanceId() const;
@@ -14705,6 +14923,7 @@ public:
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
+	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
@@ -14849,6 +15068,7 @@ public:
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
+	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
@@ -14918,6 +15138,23 @@ public:
 	Sub addNetworkClientsListener(NetworkClientsListener listener) const;
 	std::string clientId() const;
 	void close() const;
+	void start() const;
+	void stop() const;
+};
+
+class ExtenderViewController final : public detail::Handle {
+public:
+	ExtenderViewController() = default;
+	explicit ExtenderViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addStatusListener(ExtenderViewControllerListener listener) const;
+	std::optional<ExtenderShareResult> buildShare(bool include_settings) const;
+	void close() const;
+	std::optional<ExtenderShareDecodeResult> decodeShare(const std::string& text) const;
+	void extenderStatusChanged(const std::optional<ExtenderStatus>& status) const;
+	std::optional<ExtenderSettings> getSettings() const;
+	std::optional<ExtenderStatus> getStatus() const;
+	std::optional<ExtenderImportResult> importShare(const std::string& text, bool use_settings) const;
+	std::optional<ExtenderSettings> setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const;
 	void start() const;
 	void stop() const;
 };
@@ -15112,6 +15349,7 @@ public:
 	std::string getEnvSecret() const;
 	std::string getExtenderDnsName() const;
 	std::string getExtenderGossipMode() const;
+	std::optional<StringList> getExtenderHosts() const;
 	std::optional<StringList> getExtenderRootPublicKeys() const;
 	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::string getGossipUrl() const;
@@ -16770,6 +17008,34 @@ inline void retained_extender_status_change(void* user_data, const char* status_
 }
 inline void oneshot_extender_status_change(void* user_data, const char* status_json) {
 	auto* f = static_cast<ExtenderStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_extender_view_controller(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderViewControllerListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_extender_view_controller(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderViewControllerListener*>(user_data);
 	try {
 		std::optional<ExtenderStatus> status_v;
 		if (status_json) {
@@ -20969,6 +21235,17 @@ inline Sub Device::addEgressContractStatsChangeListener(ContractStatsChangeListe
 	}
 	return r;
 }
+inline Sub Device::addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const {
+	std::shared_ptr<ExtenderStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_extender_status_change_listener(handle(), listener_fn ? &detail::retained_extender_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const {
 	std::shared_ptr<ContractDetailsChangeListener> listener_fn;
 	if (listener) {
@@ -21402,6 +21679,14 @@ inline std::optional<ContractStats> Device::getEgressContractStats() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ContractStats>(r_s->c_str());
+}
+inline std::optional<ExtenderStatus> Device::getExtenderStatus() const {
+	char* r_c = urnet_device_get_extender_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStatus>(r_s->c_str());
 }
 inline std::optional<ContractDetailsList> Device::getIngressContractDetails() const {
 	char* r_c = urnet_device_get_ingress_contract_details(handle());
@@ -23482,6 +23767,10 @@ inline DevicesViewController DeviceLocal::openDevicesViewController() const {
 	DevicesViewController r(urnet_device_local_open_devices_view_controller(handle()));
 	return r;
 }
+inline ExtenderViewController DeviceLocal::openExtenderViewController() const {
+	ExtenderViewController r(urnet_device_local_open_extender_view_controller(handle()));
+	return r;
+}
 inline FeedbackViewController DeviceLocal::openFeedbackViewController() const {
 	FeedbackViewController r(urnet_device_local_open_feedback_view_controller(handle()));
 	return r;
@@ -24103,6 +24392,10 @@ inline DevicesViewController DeviceRemote::openDevicesViewController() const {
 	DevicesViewController r(urnet_device_remote_open_devices_view_controller(handle()));
 	return r;
 }
+inline ExtenderViewController DeviceRemote::openExtenderViewController() const {
+	ExtenderViewController r(urnet_device_remote_open_extender_view_controller(handle()));
+	return r;
+}
 inline FeedbackViewController DeviceRemote::openFeedbackViewController() const {
 	FeedbackViewController r(urnet_device_remote_open_feedback_view_controller(handle()));
 	return r;
@@ -24360,6 +24653,89 @@ inline void DevicesViewController::start() const {
 }
 inline void DevicesViewController::stop() const {
 	urnet_devices_view_controller_stop(handle());
+}
+inline Sub ExtenderViewController::addStatusListener(ExtenderViewControllerListener listener) const {
+	std::shared_ptr<ExtenderViewControllerListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderViewControllerListener>(std::move(listener));
+	}
+	Sub r(urnet_extender_view_controller_add_status_listener(handle(), listener_fn ? &detail::retained_extender_view_controller : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::optional<ExtenderShareResult> ExtenderViewController::buildShare(bool include_settings) const {
+	char* r_c = urnet_extender_view_controller_build_share(handle(), include_settings);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderShareResult>(r_s->c_str());
+}
+inline void ExtenderViewController::close() const {
+	urnet_extender_view_controller_close(handle());
+}
+inline std::optional<ExtenderShareDecodeResult> ExtenderViewController::decodeShare(const std::string& text) const {
+	char* r_c = urnet_extender_view_controller_decode_share(handle(), text.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderShareDecodeResult>(r_s->c_str());
+}
+inline void ExtenderViewController::extenderStatusChanged(const std::optional<ExtenderStatus>& status) const {
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	urnet_extender_view_controller_extender_status_changed(handle(), status_c);
+}
+inline std::optional<ExtenderSettings> ExtenderViewController::getSettings() const {
+	char* r_c = urnet_extender_view_controller_get_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSettings>(r_s->c_str());
+}
+inline std::optional<ExtenderStatus> ExtenderViewController::getStatus() const {
+	char* r_c = urnet_extender_view_controller_get_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStatus>(r_s->c_str());
+}
+inline std::optional<ExtenderImportResult> ExtenderViewController::importShare(const std::string& text, bool use_settings) const {
+	char* r_c = urnet_extender_view_controller_import_share(handle(), text.c_str(), use_settings);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderImportResult>(r_s->c_str());
+}
+inline std::optional<ExtenderSettings> ExtenderViewController::setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const {
+	std::string hosts_json;
+	const char* hosts_c = nullptr;
+	if (hosts) {
+		hosts_json = nlohmann::json(*hosts).dump();
+		hosts_c = hosts_json.c_str();
+	}
+	char* r_c = urnet_extender_view_controller_set_settings(handle(), dns_name.c_str(), gossip_url.c_str(), hosts_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSettings>(r_s->c_str());
+}
+inline void ExtenderViewController::start() const {
+	urnet_extender_view_controller_start(handle());
+}
+inline void ExtenderViewController::stop() const {
+	urnet_extender_view_controller_stop(handle());
 }
 inline Sub FeedbackViewController::addIsSendingFeedbackListener(IsSendingFeedbackListener listener) const {
 	std::shared_ptr<IsSendingFeedbackListener> listener_fn;
@@ -25278,6 +25654,14 @@ inline std::string NetworkSpace::getExtenderDnsName() const {
 inline std::string NetworkSpace::getExtenderGossipMode() const {
 	char* r_c = urnet_network_space_get_extender_gossip_mode(handle());
 	return detail::takeString(r_c);
+}
+inline std::optional<StringList> NetworkSpace::getExtenderHosts() const {
+	char* r_c = urnet_network_space_get_extender_hosts(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
 }
 inline std::optional<StringList> NetworkSpace::getExtenderRootPublicKeys() const {
 	char* r_c = urnet_network_space_get_extender_root_public_keys(handle());
@@ -26445,6 +26829,20 @@ inline std::string extenderDnsName(const std::optional<NetworkSpaceKey>& key, co
 	char* r_c = urnet_extender_dns_name(key_c, values_c);
 	return detail::takeString(r_c);
 }
+inline std::vector<std::string> extenderHosts(const std::optional<NetworkSpaceValues>& values) {
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_extender_hosts(values_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::vector<std::string>{};
+	}
+	return detail::parseJson<std::vector<std::string>>(r_s->c_str());
+}
 inline std::vector<std::string> extenderRootPublicKeys(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
 	std::string key_json;
 	const char* key_c = nullptr;
@@ -26553,6 +26951,14 @@ inline std::string getDefaultTunnelDnsAddressIpv6() {
 }
 inline int64_t getDefaultTunnelMtu() {
 	int64_t r = urnet_get_default_tunnel_mtu();
+	return r;
+}
+inline std::string getExtenderColorHex(const std::string& ip) {
+	char* r_c = urnet_get_extender_color_hex(ip.c_str());
+	return detail::takeString(r_c);
+}
+inline bool getExtenderStoreReadOnly() {
+	bool r = urnet_get_extender_store_read_only();
 	return r;
 }
 inline std::optional<FilteredLocations> getFilteredLocationsFromResult(const std::optional<FindLocationsResult>& result, const std::string& filter) {
@@ -27110,6 +27516,9 @@ inline void setControlIpFamilyPolicy(int64_t policy) {
 }
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);
+}
+inline void setExtenderStoreReadOnly(bool read_only) {
+	urnet_set_extender_store_read_only(read_only);
 }
 inline void setLogDir(const std::string& log_dir) {
 	char* err_c = nullptr;
