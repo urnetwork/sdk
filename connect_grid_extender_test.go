@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -146,6 +147,61 @@ func TestConnectGridPointsCarryExtenderIps(t *testing.T) {
 	connect.AssertEqual(t, point(migrating).ExtenderColorHexes, "")
 }
 
+// Over a local device: DeviceLocal.windowMonitor hands the grid connect's own
+// multi client monitor, so a provider event raised there carries the addresses
+// onto the dot with no translation in between (K1).
+func TestConnectGridExtenderIpsOverALocalDeviceMonitor(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vc := newTestingConnectViewController(ctx)
+	grid := newConnectGridWithDefaults(ctx, vc)
+	defer grid.close()
+	grid.generation = vc.generation
+
+	// the exact monitor DeviceLocal.windowMonitor returns for a multi client
+	monitor := connect.NewRemoteUserNatMultiClientMonitorWithDefaults()
+	grid.listenToWindow(monitor)
+
+	clientId := connect.NewId()
+	// subscribe before the event, so the wait below cannot miss the dispatch
+	changed := grid.providerGridPointsMonitor.NotifyChannel()
+	monitor.AddProviderEventWithExtenderIps(
+		clientId,
+		connect.ProviderStateAdded,
+		connect.NewId(),
+		nil,
+		connect.IpFamilyV4Only,
+		[]netip.Addr{netip.MustParseAddr("192.0.2.1")},
+	)
+	select {
+	case <-changed:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the provider event never reached the grid")
+	}
+
+	point := grid.GetProviderGridPointByClientId(newId(clientId))
+	if point == nil {
+		t.Fatal("missing grid point")
+	}
+	connect.AssertEqual(t, point.ExtenderIps, "192.0.2.1")
+	connect.AssertEqual(t, point.ExtenderColorHexes, testExtenderColorHexes["192.0.2.1"])
+
+	// a transport that moves to another extender rewrites the live dot
+	changed = grid.providerGridPointsMonitor.NotifyChannel()
+	if !monitor.SetProviderExtenderIps(clientId, []netip.Addr{netip.MustParseAddr("2001:db8::1")}) {
+		t.Fatal("the extender change was not published")
+	}
+	select {
+	case <-changed:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the extender change never reached the grid")
+	}
+	point = grid.GetProviderGridPointByClientId(newId(clientId))
+	connect.AssertEqual(t, point.ExtenderIps, "2001:db8::1")
+	connect.AssertEqual(t, point.ExtenderColorHexes, testExtenderColorHexes["2001:db8::1"])
+}
+
 // The same fields over a DeviceRemote. Provider events cross the device rpc
 // as `connect.ProviderEvent` itself, so the guard that matters is that the gob
 // wire carries `ExtenderIps` (netip.Addr has no exported fields) and that the
@@ -180,16 +236,27 @@ func TestConnectGridExtenderIpsCrossTheDeviceRpc(t *testing.T) {
 		t.Fatalf("extender ips = %v, expected two", wired.ExtenderIps)
 	}
 
-	// the remote's grid is the same grid; feeding it the decoded events is
-	// what the device rpc's window monitor bridge does
+	// the decoded event is delivered the way the reverse rpc delivers it: to
+	// the window monitors this remote holds, and out to the grid listening on
+	// one of them
+	deviceRemote := newTestDeviceRemoteWithNoService(t)
 	vc := newTestingConnectViewController(ctx)
 	grid := newConnectGridWithDefaults(ctx, vc)
 	defer grid.close()
 	grid.generation = vc.generation
 
-	monitor := newTestingGridWindowMonitor()
-	grid.listenToWindow(monitor)
-	monitor.emit(received.ProviderEvents)
+	windowMonitor := deviceRemote.windowMonitor()
+	remoteWindowMonitor, ok := windowMonitor.(*deviceRemoteWindowMonitor)
+	if !ok {
+		t.Fatalf("window monitor = %T, expected the remote one", windowMonitor)
+	}
+	grid.listenToWindow(windowMonitor)
+	deviceRemote.windowMonitorEvent(
+		map[connect.Id]bool{remoteWindowMonitor.windowId: true},
+		received.WindowExpandEvent,
+		received.ProviderEvents,
+		received.Reset,
+	)
 
 	point := grid.GetProviderGridPointByClientId(newId(clientId))
 	if point == nil {

@@ -259,12 +259,20 @@ func (self *NetworkSpace) getNetworkSpaceManager() *NetworkSpaceManager {
 //
 // Returns whether anything changed.
 func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceValues)) bool {
+	// A change that resolves to nothing stops here. `updateNetworkSpace`
+	// produces a new space generation whatever it is handed -- the manager's
+	// stale-generation rules depend on it -- and a settings screen saving an
+	// unchanged form must not be what tears this space down.
+	previousValues := self.valuesCopy()
+	values := previousValues
+	apply(&values)
+	if !extenderValuesChanged(&self.key, &previousValues, &values) {
+		return false
+	}
 	if networkSpaceManager := self.getNetworkSpaceManager(); networkSpaceManager != nil {
 		key := self.key
 		return networkSpaceManager.updateNetworkSpace(&key, apply) != nil
 	}
-	values := self.valuesCopy()
-	apply(&values)
 	return self.applyExtenderValues(&values)
 }
 
@@ -1689,16 +1697,22 @@ func (self *NetworkSpaceManager) UpdateNetworkSpaceValues(key *NetworkSpaceKey, 
 	})
 }
 
-// Reports whether a value change touches nothing outside the extender values,
+// Reports whether a value change is an extender value change and nothing else,
 // which is the change a running space can take in place (K6). Everything
-// outside them is compared as a whole, so a value added to
+// outside the extender values is compared as a whole, so a value added to
 // `NetworkSpaceValues` later is covered by the rebuild until it is
 // deliberately named here.
 //
-// A change that alters nothing at all counts, deliberately: saving an
-// unchanged settings form, which is one tap away on every account screen, must
-// not tear down the space a device and a view controller are bound to.
-func onlyExtenderValuesChanged(previous *NetworkSpaceValues, next *NetworkSpaceValues) bool {
+// A change that alters nothing at all is NOT this case: `updateNetworkSpace`
+// produces a new space generation whatever it is handed, and the manager's
+// stale-generation rules are pinned on that. The one caller that must never
+// see a rebuild -- the settings screen saving an unchanged form -- does not
+// reach the manager at all (see `updateExtenderValues`).
+func onlyExtenderValuesChanged(
+	key *NetworkSpaceKey,
+	previous *NetworkSpaceValues,
+	next *NetworkSpaceValues,
+) bool {
 	withoutExtenderValues := func(values *NetworkSpaceValues) NetworkSpaceValues {
 		other := *values
 		other.NetExtender = nil
@@ -1708,7 +1722,10 @@ func onlyExtenderValuesChanged(previous *NetworkSpaceValues, next *NetworkSpaceV
 		other.ExtenderHosts = nil
 		return other
 	}
-	return reflect.DeepEqual(withoutExtenderValues(previous), withoutExtenderValues(next))
+	if !reflect.DeepEqual(withoutExtenderValues(previous), withoutExtenderValues(next)) {
+		return false
+	}
+	return extenderValuesChanged(key, previous, next)
 }
 
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {
@@ -1734,7 +1751,7 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 	// while the view controller that saved holds it, and a rebuild would hand
 	// both a closed space. Every other change keeps the rebuild below, which
 	// is what a changed api host or env secret needs.
-	if existingNetworkSpace != nil && onlyExtenderValuesChanged(&previousValues, &copyValues) {
+	if existingNetworkSpace != nil && onlyExtenderValuesChanged(key, &previousValues, &copyValues) {
 		existingNetworkSpace.applyExtenderValues(&copyValues)
 		func() {
 			self.stateLock.Lock()

@@ -155,18 +155,39 @@ func TestExtenderHostsReachTheNetworkClientAndRestartIt(t *testing.T) {
 		t.Fatalf("hosts = %v, expected %v", hosts.getAll(), expected)
 	}
 
-	// an edit that changes nothing effective restarts nothing
+	// The one write path a settings screen uses stops at an edit that resolves
+	// to nothing. `updateNetworkSpace` produces a new space generation
+	// whatever it is handed -- the manager's stale-generation rules depend on
+	// that -- so saving an unchanged form has to stop before it, not inside it.
 	previousNetworkClient = networkSpace.getExtenderNetworkClient()
 	previousCount = recorder.count()
-	networkSpaceManager.updateNetworkSpace(key, func(values *NetworkSpaceValues) {
+	if networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{" 192.0.2.1 ", "bootstrap.example", ""}
-	})
+	}) {
+		t.Fatal("a whitespace-only edit reported a change")
+	}
 	if networkSpace.getExtenderNetworkClient() != previousNetworkClient {
 		t.Fatal("a whitespace-only edit restarted the network client")
 	}
 	if recorder.count() != previousCount {
 		t.Fatalf("client builds = %d, expected none", recorder.count())
 	}
+	if networkSpaceManager.GetNetworkSpace(key) != networkSpace {
+		t.Fatal("a whitespace-only edit replaced the space")
+	}
+	// a real change through the same path does restart it
+	if !networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+		values.ExtenderHosts = []string{"192.0.2.1", "bootstrap.example", "198.51.100.7"}
+	}) {
+		t.Fatal("a real change reported none")
+	}
+	if networkSpace.getExtenderNetworkClient() == previousNetworkClient {
+		t.Fatal("a real change did not restart the network client")
+	}
+	if networkSpaceManager.GetNetworkSpace(key) != networkSpace {
+		t.Fatal("a real change replaced the space")
+	}
+	expected = append(expected, "198.51.100.7")
 
 	// and the value survives a restart of the whole manager
 	networkSpaceManager.Close()
@@ -183,7 +204,7 @@ func TestExtenderHostsReachTheNetworkClientAndRestartIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(spaceJson, `"extender_hosts":["192.0.2.1","bootstrap.example"]`) {
+	if !strings.Contains(spaceJson, `"extender_hosts":["192.0.2.1","bootstrap.example","198.51.100.7"]`) {
 		t.Fatalf("exported json = %s", spaceJson)
 	}
 }
