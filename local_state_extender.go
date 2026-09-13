@@ -9,11 +9,13 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// local_state_extender.go — the persisted extender state (EXTENDER.md E1, D5).
+// local_state_extender.go — the persisted extender state (EXTENDER.md E1, D5,
+// F3).
 //
-// Two dot files, both following the shape of the other local-state files: the
-// directory envelope, written by connect through the store adapter below, and
-// the gossip mode the user chose.
+// Four dot files, all following the shape of the other local-state files: the
+// directory envelope, written by connect through the store adapter below, the
+// gossip mode the user chose, the identity key, and the provider extender
+// opt-out.
 //
 // The directory is a cache. Every read failure -- missing, unreadable, corrupt
 // -- reads as no directory at all, and the client rediscovers, so nothing here
@@ -70,6 +72,31 @@ func (self *LocalState) SetExtenderGossipMode(mode string) error {
 		[]byte(NormalExtenderGossipMode(mode)),
 		LocalStorageFilePermissions,
 	)
+}
+
+// The provider extender opt-out (F3, G1). Default on: a file that is not there
+// is a provider that has never been asked, and the role is on by default.
+const provideExtenderFileName = ".provide_extender"
+
+// The persisted provider extender setting. Unset or unreadable reads as on,
+// which is the default of F3; only an explicit off is stored as off.
+func (self *LocalState) GetProvideExtender() bool {
+	path := filepath.Join(self.localStorageDir, provideExtenderFileName)
+	stateBytes, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	return strings.TrimSpace(string(stateBytes)) != "false"
+}
+
+// Persists the provider extender setting.
+func (self *LocalState) SetProvideExtender(provideExtender bool) error {
+	path := filepath.Join(self.localStorageDir, provideExtenderFileName)
+	value := "false"
+	if provideExtender {
+		value = "true"
+	}
+	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
 }
 
 // NormalExtenderGossipMode maps any input to one of the three modes (D5).

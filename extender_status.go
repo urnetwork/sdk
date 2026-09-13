@@ -147,8 +147,9 @@ func (self *NetworkSpace) GetExtenderStatus() *ExtenderStatus {
 		status.LastSampleTime = extenderStatusTimeMs(networkStatus.LastSampleTime)
 		status.LastError = networkStatus.LastError
 	}
-	status.GossipConnected = self.extenderNode.gossipConnected()
-	status.GossipPeerCount = self.extenderNode.gossipPeerCount()
+	extenderNode := self.getExtenderNode()
+	status.GossipConnected = extenderNode.gossipConnected()
+	status.GossipPeerCount = extenderNode.gossipPeerCount()
 	if self.extenderDirectory == nil {
 		return status
 	}
@@ -254,13 +255,15 @@ func (self *NetworkSpace) watchExtenderStatus() {
 	if self.extenderNetworkClient != nil {
 		_, networkUpdate = self.extenderNetworkClient.StatusMonitor().Get()
 	}
-	nodeUpdate := self.extenderNode.statusUpdate()
+	nodeChange := self.extenderNodeMonitor.NotifyChannel()
+	nodeUpdate := self.getExtenderNode().statusUpdate()
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-directoryUpdate:
 		case <-networkUpdate:
+		case <-nodeChange:
 		case <-nodeUpdate:
 		}
 		select {
@@ -272,7 +275,11 @@ func (self *NetworkSpace) watchExtenderStatus() {
 		if self.extenderNetworkClient != nil {
 			_, networkUpdate = self.extenderNetworkClient.StatusMonitor().Get()
 		}
-		nodeUpdate = self.extenderNode.statusUpdate()
+		// the node itself is replaced when the provider extender role starts
+		// and stops, so the swap is a change and the new node is what the next
+		// round waits on (G2)
+		nodeChange = self.extenderNodeMonitor.NotifyChannel()
+		nodeUpdate = self.getExtenderNode().statusUpdate()
 		// contain a panic to the tick: a failed emit must never end the watch,
 		// which would silently stop every extender update for the session
 		connect.HandleError(self.extenderStatusChanged)

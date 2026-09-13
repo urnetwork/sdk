@@ -529,6 +529,11 @@ type DeviceLocalSettings struct {
 	// The app constructors default this to true; the platform constructors
 	// set false (the device is embedded inside the platform).
 	AllowProvider bool
+	// providerExtenderSettings, when set, adjusts the provider extender role's
+	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
+	// carrier ports and point the activation at an in-process operator through
+	// it; production takes the fixed carrier ports and the space's own urls.
+	providerExtenderSettings func(settings *deviceLocalExtenderSettings)
 	// Verbose opts into periodic, summarized security-policy diagnostics. It
 	// is disabled by default because a DeviceRemote poll performs RPC and app
 	// foreground/background polling belongs to view controllers.
@@ -926,8 +931,13 @@ type DeviceLocal struct {
 	tunnelChangeListeners                    *connect.CallbackList[TunnelChangeListener]
 	contractStatusChangeListeners            *connect.CallbackList[ContractStatusChangeListener]
 	windowStatusChangeListeners              *connect.CallbackList[WindowStatusChangeListener]
-	jwtRefreshListeners                      *connect.CallbackList[JwtRefreshListener]
-	authLogoutListeners                      *connect.CallbackList[AuthLogoutListener]
+	extenderProvideStatusChangeListeners     *connect.CallbackList[ExtenderProvideStatusChangeListener]
+	// closed and replaced when the provider extender role starts, stops or its
+	// setting changes, which is what the status watch waits on beside the
+	// role's own monitor (F3)
+	extenderProvideMonitor *connect.Monitor
+	jwtRefreshListeners    *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners    *connect.CallbackList[AuthLogoutListener]
 
 	blockActionWindowChangeListeners         *connect.CallbackList[BlockActionWindowChangeListener]
 	blockStatsChangeListeners                *connect.CallbackList[BlockStatsChangeListener]
@@ -1415,6 +1425,8 @@ func newDeviceLocalWithOverrides(
 		contractStatusChangeListeners:            connect.NewCallbackList[ContractStatusChangeListener](),
 		tunnelChangeListeners:                    connect.NewCallbackList[TunnelChangeListener](),
 		windowStatusChangeListeners:              connect.NewCallbackList[WindowStatusChangeListener](),
+		extenderProvideStatusChangeListeners:     connect.NewCallbackList[ExtenderProvideStatusChangeListener](),
+		extenderProvideMonitor:                   connect.NewMonitor(),
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
 		authPublication:                          authPublication,
@@ -1516,6 +1528,9 @@ func newDeviceLocalWithOverrides(
 
 	// set up with nil destination
 	if provider != nil {
+		// the extender role is built on the first provide change, which is
+		// after this device exists, so the test seam is installed here (G2)
+		provider.extenderSettingsConfigure = settings.providerExtenderSettings
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
 		// the provider client lives as long as the device, so its contract
@@ -1531,6 +1546,13 @@ func newDeviceLocalWithOverrides(
 			deviceLocal.watchNetworkPeers(networkPeersNotify)
 		})
 	}
+
+	// the provider extender status, coalesced to one callback per second (F3)
+	deviceLocal.lifecycleWorkers.Add(1)
+	go connect.HandleError(func() {
+		defer deviceLocal.lifecycleWorkers.Done()
+		deviceLocal.watchExtenderProvideStatus()
+	})
 
 	// the trailing edge of the contract stats epoch gate: carries out the last
 	// batch of a transfer, which lands inside the gate and would otherwise never
@@ -3139,6 +3161,9 @@ func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
 
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
 	// self.assertNotLockOwner()
+	// the extender role is the provider's spare capacity, so it follows
+	// provide exactly (G2)
+	self.updateExtenderProvide()
 	for _, listener := range self.provideChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideChanged(provideEnabled)

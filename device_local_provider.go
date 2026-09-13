@@ -38,6 +38,17 @@ type deviceLocalProvider struct {
 	appVersion string
 	instanceId connect.Id
 
+	// the space this provider belongs to, which the extender role takes its
+	// identity, directory, node and operator urls from (G2)
+	networkSpace *NetworkSpace
+	// the device's egress-aware dial, which is also the extender relay's
+	// forward dial so the relay never enters the device's own tunnel (G2)
+	dialContextSettings *connect.DialContextSettings
+	// extenderSettingsConfigure, when set, adjusts the extender role's
+	// settings before it is built. Tests bind ephemeral carrier ports and
+	// point the activation at an in-process operator through it.
+	extenderSettingsConfigure func(settings *deviceLocalExtenderSettings)
+
 	clientStrategy *connect.ClientStrategy
 	// clientStrategySettings seeds the direct-only strategies of the
 	// family-pinned transports; nil falls back to the connect defaults
@@ -70,7 +81,15 @@ type deviceLocalProvider struct {
 		settings *connect.PlatformTransportSettings,
 	) migratablePlatformTransport
 
-	stateLock         sync.Mutex
+	// extenderLock serializes the extender role's start and stop, which both
+	// build and join external objects. It is always taken before stateLock,
+	// which guards only the pointer a status read sees.
+	extenderLock sync.Mutex
+
+	stateLock sync.Mutex
+	// the extender role while it runs (G2), nil while provide or the setting
+	// is off and on every build that does not carry it (G1)
+	extender          *deviceLocalExtender
 	closed            bool
 	auth              *connect.ClientAuth
 	authVersion       uint64
@@ -194,6 +213,8 @@ func newDeviceLocalProviderWithOverrides(
 		appVersion: appVersion,
 		instanceId: instanceId,
 
+		networkSpace:              networkSpace,
+		dialContextSettings:       dialContextSettings,
 		clientStrategy:            clientStrategy,
 		clientStrategySettings:    networkSpace.clientStrategySettings,
 		platformUrl:               networkSpace.platformUrl,
@@ -602,7 +623,18 @@ func (self *deviceLocalProvider) Close() {
 		self.stateLock.Lock()
 		self.closed = true
 		platformTransport := self.platformTransport
+		// the role is joined by the asynchronous close below, since it closes
+		// a libp2p host and a listening server
+		extender := self.extender
+		self.extender = nil
 		self.stateLock.Unlock()
+		if extender != nil {
+			self.migrationWorkers.Add(1)
+			go connect.HandleError(func() {
+				defer self.migrationWorkers.Done()
+				extender.Close()
+			})
+		}
 		if self.cancel != nil {
 			self.cancel()
 		}
@@ -744,4 +776,134 @@ func newDeviceClientSettings(
 	}
 
 	return &clientSettings
+}
+
+// setExtenderEnabled starts or stops the provider extender role (G2). It is
+// called after every provide change and after the setting of F3 changes, and
+// is a no-op when the role is already in the requested state or when this
+// build carries none (G1).
+func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
+	self.extenderLock.Lock()
+	defer self.extenderLock.Unlock()
+
+	current, closed := func() (*deviceLocalExtender, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.extender, self.closed
+	}()
+	if closed || !extenderProvideSupported || !extenderProvideRoleEnabled {
+		// ios, android and js carry no role at all (G1)
+		enabled = false
+	}
+	if enabled == (current != nil) {
+		return
+	}
+	if !enabled {
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.extender = nil
+		}()
+		current.Close()
+		return
+	}
+
+	settings := self.extenderSettings()
+	if settings == nil {
+		return
+	}
+	extender := newDeviceLocalExtender(self.ctx, settings)
+	if extender == nil {
+		return
+	}
+	installed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.closed {
+			return false
+		}
+		self.extender = extender
+		return true
+	}()
+	if !installed {
+		// the provider closed while the role was being built
+		extender.Close()
+	}
+}
+
+// The role's settings for this space and this device (G2, G3), or nil when
+// there is nothing to run: a space with no storage has nowhere to keep the
+// identity key, and an extender whose key changed on every launch would be
+// revoked as fast as it activates.
+func (self *deviceLocalProvider) extenderSettings() *deviceLocalExtenderSettings {
+	networkSpace := self.networkSpace
+	if networkSpace == nil || networkSpace.asyncLocalState == nil {
+		return nil
+	}
+	identityKeySeed, err := networkSpace.asyncLocalState.GetLocalState().GetOrCreateExtenderKeySeed()
+	if err != nil {
+		networkSpace.log.Infof("[extender]provide identity key err = %s\n", err)
+		return nil
+	}
+
+	// the relay's forward dial is the device's own egress: the extender
+	// narrows it by the client's family itself (A7, G2)
+	connectSettings := *connect.DefaultConnectSettings()
+	if self.clientStrategySettings != nil {
+		connectSettings = self.clientStrategySettings.ConnectSettings
+	}
+	if self.dialContextSettings != nil {
+		connectSettings.DialContextSettings = self.dialContextSettings
+	}
+
+	settings := &deviceLocalExtenderSettings{
+		Log:                    networkSpace.log,
+		NetworkSpace:           networkSpace,
+		AllowedHosts:           networkSpace.extenderAllowedHosts(),
+		IdentityKeySeed:        identityKeySeed,
+		TcpPort:                connect.ExtenderTcpPort,
+		UdpPort:                connect.ExtenderQuicPort,
+		DnsPort:                connect.ExtenderDnsPort,
+		DnsTld:                 connect.DefaultExtenderDnsTld,
+		ApiUrlV4:               networkSpace.GetApiUrlV4(),
+		ApiUrlV6:               networkSpace.GetApiUrlV6(),
+		ApiUrl:                 networkSpace.apiUrl,
+		HelloUrl:               networkSpace.apiUrl,
+		ByJwt:                  self.byJwt,
+		ClientStrategySettings: self.clientStrategySettings,
+		DialContext:            connectSettings.DialContext,
+	}
+	if self.extenderSettingsConfigure != nil {
+		self.extenderSettingsConfigure(settings)
+	}
+	return settings
+}
+
+// The client jwt of this provider, read at each activation so a refresh is
+// picked up by the next one (G3).
+func (self *deviceLocalProvider) byJwt() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.auth == nil {
+		return ""
+	}
+	return self.auth.ByJwt
+}
+
+// The provider extender status (F3). A provider with no role reports a
+// disabled status.
+func (self *deviceLocalProvider) extenderProvideStatus() *ExtenderProvideStatus {
+	self.stateLock.Lock()
+	extender := self.extender
+	self.stateLock.Unlock()
+	return extender.status()
+}
+
+// A channel armed at the instant of the read, so a consumer is woken when the
+// running role's status changes.
+func (self *deviceLocalProvider) extenderStatusUpdate() chan struct{} {
+	self.stateLock.Lock()
+	extender := self.extender
+	self.stateLock.Unlock()
+	return extender.statusUpdate()
 }

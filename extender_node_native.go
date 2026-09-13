@@ -6,6 +6,8 @@ import (
 	"context"
 	"sync"
 
+	ma "github.com/multiformats/go-multiaddr"
+
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/connect/gossip"
 )
@@ -23,9 +25,15 @@ import (
 // Until then the node has no operator to dial and peers only with extenders its
 // directory already names.
 //
-// The identity is the persisted `.extender_key` seed (B1). Phase 6 makes the
-// same key the provider's extender identity, so a provider that activates keeps
-// the mesh peer id its records will name.
+// The identity is the persisted `.extender_key` seed (B1). It is also the
+// provider's extender identity, so a provider that activates keeps the mesh
+// peer id its records name.
+//
+// The provider extender role replaces this node with a listening one in the
+// extender role and restores it when the role stops (G2). A libp2p host can
+// add a listen address but not drop one, so a changed set of activated
+// addresses is a rebuild rather than an addition: otherwise a deactivated
+// family would keep advertising an address this host no longer has.
 
 // A process-wide switch for the member role's node, off in the sdk test suite
 // exactly as the network client's is: a unit test that builds a production-host
@@ -59,7 +67,42 @@ func newSpaceExtenderNode(
 	clientStrategySettings *connect.ClientStrategySettings,
 	log connect.Logger,
 ) *spaceExtenderNode {
-	if !extenderNodeEnabled || role != ExtenderRoleMember {
+	if role != ExtenderRoleMember {
+		return nil
+	}
+	return newSpaceExtenderNodeWithRole(
+		ctx,
+		key,
+		values,
+		gossip.NodeRoleMember,
+		nil,
+		nil,
+		directory,
+		networkClient,
+		asyncLocalState,
+		clientStrategySettings,
+		log,
+	)
+}
+
+// Builds the node of one space in one gossip role. The extender role carries
+// the extender's in-process listener and the mesh address of every activated
+// family, which is what makes it reachable (D2, G2); the member role carries
+// neither and is outbound only.
+func newSpaceExtenderNodeWithRole(
+	ctx context.Context,
+	key *NetworkSpaceKey,
+	values *NetworkSpaceValues,
+	nodeRole string,
+	listener *gossip.InProcessListener,
+	listenAddrs []ma.Multiaddr,
+	directory *connect.ExtenderDirectory,
+	networkClient *connect.ExtenderNetworkClient,
+	asyncLocalState *AsyncLocalState,
+	clientStrategySettings *connect.ClientStrategySettings,
+	log connect.Logger,
+) *spaceExtenderNode {
+	if !extenderNodeEnabled {
 		return nil
 	}
 	if directory == nil || !extenderNetworkClientRuns(key, values) {
@@ -77,11 +120,13 @@ func newSpaceExtenderNode(
 		}
 	}
 
-	settings := gossip.DefaultNodeSettings(gossip.NodeRoleMember)
+	settings := gossip.DefaultNodeSettings(nodeRole)
 	settings.Log = log
 	settings.NetworkHost = spaceHostName(key, values)
 	settings.Directory = directory
 	settings.IdentityKeySeed = identityKeySeed
+	settings.ExtenderListener = listener
+	settings.ListenAddrs = listenAddrs
 	if clientStrategySettings != nil {
 		settings.ConnectSettings = &clientStrategySettings.ConnectSettings
 	}
@@ -160,6 +205,102 @@ func (self *spaceExtenderNode) statusUpdate() chan struct{} {
 	}
 	_, update := self.node.StatusMonitor().Get()
 	return update
+}
+
+// The gossip role of the node this space runs, empty when it runs none.
+func (self *spaceExtenderNode) role() string {
+	if self == nil {
+		return ""
+	}
+	return self.node.Role()
+}
+
+// setExtenderNodeRole replaces this space's node with a listening one in the
+// extender role, advertising one mesh address per activated family (G2, D2).
+// The listener is stable for the life of the role, so only the node is rebuilt
+// when the addresses change. Returns the node, nil when this space runs none:
+// the js build, a space with nothing to join, or an app the user put in the
+// feed role, whose extender then refuses the gossip service (A8).
+func (self *NetworkSpace) setExtenderNodeRole(
+	listener *gossip.InProcessListener,
+	listenAddrs []ma.Multiaddr,
+) *spaceExtenderNode {
+	if extenderRole(extenderGossipMode(self.asyncLocalState)) != ExtenderRoleMember {
+		self.swapExtenderNode(func() *spaceExtenderNode { return nil })
+		return nil
+	}
+	return self.swapExtenderNode(func() *spaceExtenderNode {
+		return newSpaceExtenderNodeWithRole(
+			self.ctx,
+			&self.key,
+			&self.values,
+			gossip.NodeRoleExtender,
+			listener,
+			listenAddrs,
+			self.extenderDirectory,
+			self.extenderNetworkClient,
+			self.asyncLocalState,
+			self.clientStrategySettings,
+			self.log,
+		)
+	})
+}
+
+// restoreExtenderNodeRole puts the member node back when the extender role
+// stops (G2). A space whose app role is feed ends up with no node, which is
+// what it had before the role started.
+func (self *NetworkSpace) restoreExtenderNodeRole() {
+	role := extenderRole(extenderGossipMode(self.asyncLocalState))
+	self.swapExtenderNode(func() *spaceExtenderNode {
+		return newSpaceExtenderNode(
+			self.ctx,
+			&self.key,
+			&self.values,
+			role,
+			self.extenderDirectory,
+			self.extenderNetworkClient,
+			self.asyncLocalState,
+			self.clientStrategySettings,
+			self.log,
+		)
+	})
+}
+
+// Swaps in a node built by `build`, closing the one it replaces first: both
+// carry the same identity key, and two hosts on one key would present the same
+// peer id to the mesh. A closed space installs nothing.
+func (self *NetworkSpace) swapExtenderNode(
+	build func() *spaceExtenderNode,
+) *spaceExtenderNode {
+	previous, closed := func() (*spaceExtenderNode, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		previous := self.extenderNode
+		self.extenderNode = nil
+		return previous, self.closed
+	}()
+	previous.Close()
+	if closed {
+		self.extenderNodeMonitor.NotifyAll()
+		return nil
+	}
+
+	node := build()
+	installed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.closed {
+			return false
+		}
+		self.extenderNode = node
+		return true
+	}()
+	if !installed {
+		node.Close()
+		node = nil
+	}
+	self.extenderNodeMonitor.NotifyAll()
+	return node
 }
 
 // Joins the watch and the node.

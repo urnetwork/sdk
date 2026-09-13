@@ -186,10 +186,25 @@ type NetworkSpace struct {
 	// The refresh loop that fills the directory (E3). Nil for a space whose
 	// host is not a real dns name, which has nothing to resolve or sample.
 	extenderNetworkClient *connect.ExtenderNetworkClient
+	// stateLock guards the node, which the provider extender role replaces
+	// while the space is running (G2). Everything else here is immutable.
+	stateLock sync.Mutex
+	closed    bool
 	// The gossip node of the member role (D1, D5). Nil in the feed role, on
-	// the js build, and for a space with nothing to join.
-	extenderNode                  *spaceExtenderNode
+	// the js build, and for a space with nothing to join. The provider
+	// extender role swaps it for a listening extender node and back (G2).
+	extenderNode *spaceExtenderNode
+	// closed and replaced whenever the node is swapped, so the status watch
+	// re-subscribes to the node it now has
+	extenderNodeMonitor           *connect.Monitor
 	extenderStatusChangeListeners *connect.CallbackList[ExtenderStatusChangeListener]
+}
+
+// The node this space runs right now, nil when it runs none (D5, G2).
+func (self *NetworkSpace) getExtenderNode() *spaceExtenderNode {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.extenderNode
 }
 
 func newNetworkSpace(
@@ -270,6 +285,7 @@ func newNetworkSpaceWithConnectSettings(
 		api:                           api,
 		log:                           clientStrategySettings.ConnectSettings.Log,
 		extenderDirectory:             extenderDirectory,
+		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
 	// the role decides what fills the directory: the feed role holds the
@@ -546,6 +562,7 @@ func NewNetworkSpaceWithUrls(
 		clientStrategySettings:        clientStrategySettings,
 		asyncLocalState:               nil,
 		api:                           api,
+		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
 }
@@ -650,13 +667,34 @@ func ExtenderDnsName(key *NetworkSpaceKey, values *NetworkSpaceValues) string {
 	return ServiceHostName(key, values, "extender")
 }
 
-// The resolved gossip url of a space. The env secret rides it exactly as it
-// rides the api and platform urls.
+// The resolved gossip url of a space (F1). The env prefix rule applies, but
+// never the env secret path: the url becomes a multiaddr, which carries no
+// path, and the gossip service has none.
 func GossipUrl(key *NetworkSpaceKey, values *NetworkSpaceValues) string {
 	if gossipUrl := strings.TrimSpace(values.GossipUrl); gossipUrl != "" {
 		return strings.TrimRight(gossipUrl, "/")
 	}
-	return ServiceUrl(key, values, "wss", "gossip")
+	return fmt.Sprintf("wss://%s", ServiceHostName(key, values, "gossip"))
+}
+
+// The operator patterns this space's extender may forward to (A5, G2): the
+// space host and one wildcard level under it, for the key host and the
+// migration host, so a space mid migration forwards to both namespaces exactly
+// as its own clients reach both.
+func (self *NetworkSpace) extenderAllowedHosts() []string {
+	allowedHosts := []string{}
+	for _, hostName := range []string{self.key.HostName, self.values.MigrationHostName} {
+		hostName = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(hostName), "."))
+		if hostName == "" {
+			continue
+		}
+		for _, allowedHost := range []string{hostName, "*." + hostName} {
+			if !slices.Contains(allowedHosts, allowedHost) {
+				allowedHosts = append(allowedHosts, allowedHost)
+			}
+		}
+	}
+	return allowedHosts
 }
 
 // The resolved extender root public keys of a space.
@@ -817,8 +855,18 @@ func (self *NetworkSpace) close() {
 		if self.extenderNetworkClient != nil {
 			self.extenderNetworkClient.Close()
 		}
-		// the node writes into the directory too, so it is joined before it
-		self.extenderNode.Close()
+		// the node writes into the directory too, so it is joined before it.
+		// Taking it out under the lock keeps a concurrent role swap from
+		// installing a node after this one is closed.
+		extenderNode := func() *spaceExtenderNode {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.closed = true
+			extenderNode := self.extenderNode
+			self.extenderNode = nil
+			return extenderNode
+		}()
+		extenderNode.Close()
 		if self.extenderDirectory != nil {
 			self.extenderDirectory.Close()
 		}

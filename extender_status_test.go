@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,11 +54,13 @@ func TestExtenderNetworkSpaceValueDefaults(t *testing.T) {
 			expectGossipUrl:   "wss://gossip.new.example",
 		},
 		{
+			// the env secret rides the api and platform urls but never the
+			// gossip url: it becomes a multiaddr, which carries no path (F1)
 			hostName:        "space.example",
 			envName:         "g2",
 			envSecret:       "sekret",
 			expectDnsName:   "g2-extender.space.example",
-			expectGossipUrl: "wss://g2-gossip.space.example/sekret",
+			expectGossipUrl: "wss://g2-gossip.space.example",
 		},
 		{
 			hostName:        "space.example",
@@ -78,6 +81,57 @@ func TestExtenderNetworkSpaceValueDefaults(t *testing.T) {
 		if gossipUrl := GossipUrl(key, &values); gossipUrl != c.expectGossipUrl {
 			t.Errorf("gossip url = %q, expected %q", gossipUrl, c.expectGossipUrl)
 		}
+	}
+}
+
+// The gossip url never carries the env secret path, whatever the api url does
+// (F1): the url becomes a multiaddr, which has no path, and the gossip service
+// serves none.
+func TestGossipUrlNeverCarriesTheEnvSecret(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	key := NewNetworkSpaceKey("space.example", "g2")
+	values := NetworkSpaceValues{EnvSecret: "sekret"}
+	networkSpace := newNetworkSpace(ctx, *key, values, "")
+	t.Cleanup(networkSpace.close)
+
+	if gossipUrl := networkSpace.GetGossipUrl(); gossipUrl != "wss://g2-gossip.space.example" {
+		t.Fatalf("gossip url = %q, expected no env secret path", gossipUrl)
+	}
+	// the api url of the same space still carries it, so this is the gossip
+	// url's own rule rather than a space without a secret
+	if apiUrl := networkSpace.GetApiUrl(); apiUrl != "https://g2-api.space.example/sekret" {
+		t.Fatalf("api url = %q, expected the env secret path", apiUrl)
+	}
+}
+
+// The operator patterns a space's extender forwards to are the space host and
+// one wildcard level under it, for the key host and the migration host (A5,
+// G2). A spoof domain is never among them: it is on the whitelist for the
+// reverse proxy, never as a destination.
+func TestExtenderAllowedHostsCoverTheMigrationHost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	key := NewNetworkSpaceKey("old.example", "main")
+	values := NetworkSpaceValues{MigrationHostName: "new.example"}
+	networkSpace := newNetworkSpace(ctx, *key, values, "")
+	t.Cleanup(networkSpace.close)
+
+	expected := []string{"old.example", "*.old.example", "new.example", "*.new.example"}
+	if allowedHosts := networkSpace.extenderAllowedHosts(); !slices.Equal(allowedHosts, expected) {
+		t.Fatalf("allowed hosts = %v, expected %v", allowedHosts, expected)
+	}
+
+	plainKey := NewNetworkSpaceKey("space.example", "g2")
+	plainSpace := newNetworkSpace(ctx, *plainKey, NetworkSpaceValues{}, "")
+	t.Cleanup(plainSpace.close)
+	// the env prefix names services, not the space host, so the patterns do
+	// not carry it
+	plainExpected := []string{"space.example", "*.space.example"}
+	if allowedHosts := plainSpace.extenderAllowedHosts(); !slices.Equal(allowedHosts, plainExpected) {
+		t.Fatalf("allowed hosts = %v, expected %v", allowedHosts, plainExpected)
 	}
 }
 

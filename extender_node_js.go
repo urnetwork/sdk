@@ -34,6 +34,10 @@ func newSpaceExtenderNode(
 	return nil
 }
 
+func (self *spaceExtenderNode) role() string {
+	return ""
+}
+
 func (self *spaceExtenderNode) gossipConnected() bool {
 	return false
 }
