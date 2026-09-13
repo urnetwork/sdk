@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -295,11 +296,17 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 // The provider extender status is coalesced to at most one callback per epoch,
 // carrying the complete state, so a burst of bind and activation changes is one
 // ui update rather than a dozen (F3).
+//
+// The property is a rate, so it is measured as one: changes are published
+// continuously across several epochs and the callbacks are counted. A single
+// burst would instead race the watch's own first subscribe -- a change
+// published before the watch is armed is not an edge it ever sees -- and that
+// test passes or hangs on how the goroutine happened to be scheduled.
 func TestExtenderProvideStatusListenerCoalesces(t *testing.T) {
 	_, networkSpace := testExtenderStatusSpace(t)
 	settings := testExtenderStatusDeviceSettings()
 	// no provider, so the device monitor below is the only thing that wakes
-	// the watch and the burst is exactly what the test made it
+	// the watch and the published changes are exactly what the test made them
 	settings.AllowProvider = false
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace, "", "", "", "", NewId(), settings, connect.NewId(),
@@ -309,40 +316,44 @@ func TestExtenderProvideStatusListenerCoalesces(t *testing.T) {
 	}
 	t.Cleanup(deviceLocal.Close)
 
-	statuses := make(chan *ExtenderProvideStatus, 16)
+	var callbackCount atomic.Int64
+	var statusCount atomic.Int64
 	sub := deviceLocal.AddExtenderProvideStatusChangeListener(
 		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
-			select {
-			case statuses <- status:
-			default:
+			callbackCount.Add(1)
+			if status != nil {
+				statusCount.Add(1)
 			}
 		}),
 	)
-	t.Cleanup(sub.Close)
 
-	for range 8 {
+	const epochs = 3
+	publishCount := 0
+	deadline := time.Now().Add(epochs * extenderProvideStatusEpoch)
+	for time.Now().Before(deadline) {
 		deviceLocal.extenderProvideMonitor.NotifyAll()
+		publishCount += 1
+		time.Sleep(50 * time.Millisecond)
 	}
-	select {
-	case status := <-statuses:
-		if status == nil {
-			t.Fatal("the listener was called with no status")
-		}
-	case <-time.After(30 * time.Second):
+	// the round the last change woke is still sleeping out its epoch
+	time.Sleep(extenderProvideStatusEpoch + 500*time.Millisecond)
+	sub.Close()
+
+	callbacks := callbackCount.Load()
+	if callbacks == 0 {
 		t.Fatal("the provider extender status listener was never called")
 	}
-	select {
-	case <-statuses:
-		t.Fatal("the burst produced a second callback")
-	case <-time.After(300 * time.Millisecond):
+	if statusCount.Load() != callbacks {
+		t.Fatalf("%d of %d callbacks carried no status", callbacks-statusCount.Load(), callbacks)
 	}
-
-	// a change after the epoch is a new callback, so the coalescing above is
-	// one emit per burst and not one emit ever
-	deviceLocal.extenderProvideMonitor.NotifyAll()
-	select {
-	case <-statuses:
-	case <-time.After(30 * time.Second):
-		t.Fatal("a later change did not reach the listener")
+	// one per epoch, plus the trailing round; a watch that emitted per change
+	// would be near publishCount, which is an order of magnitude away
+	if int64(2*epochs) < callbacks {
+		t.Fatalf(
+			"callbacks = %d for %d changes over %d epochs, expected about one per epoch",
+			callbacks,
+			publishCount,
+			epochs,
+		)
 	}
 }
