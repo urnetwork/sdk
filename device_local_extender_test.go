@@ -588,8 +588,12 @@ func (self *testProvideExtenderFixture) waitStatus(
 func (self *testProvideExtenderFixture) waitNodeListenAddrs(expectedAddrs []string) {
 	self.t.Helper()
 	slices.Sort(expectedAddrs)
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.After(60 * time.Second)
 	for {
+		// every swap notifies this monitor, so the subscribe belongs before
+		// the read: a rebuild in between wakes the next wait rather than
+		// being lost
+		update := self.networkSpace.extenderNodeMonitor.NotifyChannel()
 		extenderNode := self.networkSpace.getExtenderNode()
 		listenAddrs := []string{}
 		if extenderNode.role() == gossip.NodeRoleExtender {
@@ -601,14 +605,13 @@ func (self *testProvideExtenderFixture) waitNodeListenAddrs(expectedAddrs []stri
 				return
 			}
 		}
-		if deadline.Before(time.Now()) {
+		select {
+		case <-update:
+		case <-deadline:
 			self.t.Fatalf(
 				"node role = %q with addrs %v, expected an extender node at %v",
 				extenderNode.role(), listenAddrs, expectedAddrs)
 		}
-		// the rebuild is driven by the activation, which has its own barriers
-		// above; this only samples the node it produced
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
