@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"testing"
 	"time"
@@ -162,20 +163,34 @@ func TestExtenderStatusListenerSurvivesASettingsRestart(t *testing.T) {
 	)
 	t.Cleanup(sub.Close)
 
-	waitKnownCount := func(expected int) {
+	// The watch subscribes to the directory on its own goroutine, so a change
+	// published before it is armed is not an edge it ever sees. The change is
+	// therefore re-published -- a fresh address each time, since a repeat of
+	// one the directory already holds is no change at all -- until a callback
+	// arrives, rather than waiting out a deadline on one edge that may have
+	// predated the watch.
+	serial := 0
+	waitKnownCount := func(minimum int) {
 		t.Helper()
-		deadline := time.After(60 * time.Second)
+		deadline := time.Now().Add(60 * time.Second)
 		for {
 			select {
 			case status := <-statuses:
-				if status.KnownCount == expected {
+				if minimum <= status.KnownCount {
 					return
 				}
-			case <-deadline:
-				t.Fatalf(
-					"the status never reported %d known addresses, last = %+v",
-					expected,
-					networkSpace.GetExtenderStatus(),
+			case <-time.After(1 * time.Second):
+				if deadline.Before(time.Now()) {
+					t.Fatalf(
+						"the status never reported %d known addresses, last = %+v",
+						minimum,
+						networkSpace.GetExtenderStatus(),
+					)
+				}
+				serial += 1
+				networkSpace.extenderDirectory.AddBootstrap(
+					netip.MustParseAddr(fmt.Sprintf("203.0.113.%d", serial)),
+					connect.ExtenderSourceDns,
 				)
 			}
 		}
@@ -201,11 +216,12 @@ func TestExtenderStatusListenerSurvivesASettingsRestart(t *testing.T) {
 
 	// the same listener, on the same space, still carries what the directory
 	// does after the swap
+	known := networkSpace.GetExtenderStatus().KnownCount
 	networkSpace.extenderDirectory.AddBootstrap(
 		netip.MustParseAddr("198.51.100.11"),
 		connect.ExtenderSourceDns,
 	)
-	waitKnownCount(2)
+	waitKnownCount(known + 1)
 }
 
 // The controller subscribes on Start, releases on Stop, and Close leaves
@@ -255,17 +271,27 @@ func TestExtenderViewControllerStartStopAndClose(t *testing.T) {
 		t.Fatal("a second Start replaced the subscription")
 	}
 
+	// re-published until a callback arrives, for the reason above: the space's
+	// watch is armed on its own goroutine
+	serial := 0
 	networkSpace.extenderDirectory.AddBootstrap(
 		netip.MustParseAddr("198.51.100.11"),
 		connect.ExtenderSourceDns,
 	)
-	deadline := time.After(60 * time.Second)
-	for known := 0; known != 2; {
+	deadline := time.Now().Add(60 * time.Second)
+	for reported := 0; reported < 2; {
 		select {
 		case status := <-statuses:
-			known = status.KnownCount
-		case <-deadline:
-			t.Fatal("a directory change did not reach the controller's listeners")
+			reported = status.KnownCount
+		case <-time.After(1 * time.Second):
+			if deadline.Before(time.Now()) {
+				t.Fatal("a directory change did not reach the controller's listeners")
+			}
+			serial += 1
+			networkSpace.extenderDirectory.AddBootstrap(
+				netip.MustParseAddr(fmt.Sprintf("203.0.113.%d", serial)),
+				connect.ExtenderSourceDns,
+			)
 		}
 	}
 
