@@ -1849,7 +1849,12 @@ type DeviceLocalMemoryUsage struct {
 	PlatformTransportUsedCount       int
 	PlatformTransportPendingH1Count  int
 	PlatformTransportPendingH1Bytes  ByteCount
-	TotalByteCount                   ByteCount
+	// PlatformTransportPreemptedH3Count is the lifetime count for this
+	// DeviceLocal's private carrier budget. Embedders aggregate it without
+	// exporting device identity so a repeated H1/H3 handoff loop remains
+	// observable without customer labels.
+	PlatformTransportPreemptedH3Count int64
+	TotalByteCount                    ByteCount
 }
 
 // MemoryUsed samples the tracked memory accounting of this device's areas
@@ -1883,17 +1888,29 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 		}
 	}
 	platformTransportStats := self.platformTransportBudget.Stats()
+	applyPlatformTransportMemoryUsage(usage, platformTransportStats)
+	usage.TotalByteCount = usage.DnsByteCount +
+		usage.ClientSendByteCount + usage.ClientReceiveByteCount +
+		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount +
+		usage.PlatformTransportUsedByteCount
+	return usage
+}
+
+func applyPlatformTransportMemoryUsage(
+	usage *DeviceLocalMemoryUsage,
+	platformTransportStats connect.PlatformTransportBudgetStats,
+) {
 	usage.PlatformTransportBudgetByteCount = platformTransportStats.TotalByteCount
 	usage.PlatformTransportUsedByteCount = platformTransportStats.UsedByteCount
 	usage.PlatformTransportMaxCount = platformTransportStats.MaxTransportCount
 	usage.PlatformTransportUsedCount = platformTransportStats.UsedTransportCount
 	usage.PlatformTransportPendingH1Count = platformTransportStats.PendingH1Count
 	usage.PlatformTransportPendingH1Bytes = platformTransportStats.PendingH1ByteCount
-	usage.TotalByteCount = usage.DnsByteCount +
-		usage.ClientSendByteCount + usage.ClientReceiveByteCount +
-		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount +
-		usage.PlatformTransportUsedByteCount
-	return usage
+	if platformTransportStats.PreemptedH3Count > uint64(1<<63-1) {
+		usage.PlatformTransportPreemptedH3Count = 1<<63 - 1
+	} else {
+		usage.PlatformTransportPreemptedH3Count = int64(platformTransportStats.PreemptedH3Count)
+	}
 }
 
 // SetClientSecurityPolicyGenerator sets the multi-client (the device's own traffic) security policy.

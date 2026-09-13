@@ -179,6 +179,28 @@ func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
 	}
 }
 
+func TestDeviceLocalMemoryUsageIncludesCarrierPreemptionTelemetry(t *testing.T) {
+	usage := &DeviceLocalMemoryUsage{}
+	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{
+		TotalByteCount:     6 * 1024 * 1024,
+		UsedByteCount:      4 * 1024 * 1024,
+		MaxTransportCount:  16,
+		UsedTransportCount: 16,
+		PendingH1ByteCount: 512 * 1024,
+		PendingH1Count:     1,
+		PreemptedH3Count:   23,
+	})
+	if usage.PlatformTransportBudgetByteCount != 6*1024*1024 ||
+		usage.PlatformTransportUsedByteCount != 4*1024*1024 ||
+		usage.PlatformTransportMaxCount != 16 ||
+		usage.PlatformTransportUsedCount != 16 ||
+		usage.PlatformTransportPendingH1Bytes != 512*1024 ||
+		usage.PlatformTransportPendingH1Count != 1 ||
+		usage.PlatformTransportPreemptedH3Count != 23 {
+		t.Fatalf("platform carrier memory telemetry = %+v", usage)
+	}
+}
+
 // A headless provider's source identity must reach its QUIC packet endpoint,
 // not only the TCP/UDP exit dialers. This reproduces the carrier omission that
 // collapsed a thousand simulated miners onto one server rate-limit identity.
