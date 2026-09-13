@@ -973,6 +973,7 @@ func (self *deviceLocalProvider) extenderSettings() *deviceLocalExtenderSettings
 		TcpPort:                connect.ExtenderTcpPort,
 		UdpPort:                connect.ExtenderQuicPort,
 		DnsPort:                connect.ExtenderDnsPort,
+		DnsPrivilegedPort:      extenderDnsPrivilegedPort(),
 		DnsTld:                 connect.DefaultExtenderDnsTld,
 		ApiUrlV4:               networkSpace.GetApiUrlV4(),
 		ApiUrlV6:               networkSpace.GetApiUrlV6(),

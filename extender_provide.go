@@ -2,6 +2,8 @@ package sdk
 
 import (
 	"net"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +58,11 @@ type ExtenderProvideStatus struct {
 	// Unix milliseconds of when this extender's key was first seen revoked in
 	// the directory, 0 while it is not revoked.
 	RevokedTime int64
+	// The dns carrier ports that bound, ascending and comma separated, which
+	// is also the order a client dials them in (L2): "4053" on a host that
+	// cannot take 53, "53,4053" on one that can. Empty when the dns carrier is
+	// not listening.
+	DnsPorts string
 	// Connections open over every carrier right now.
 	ConnectionCount int
 }
@@ -80,6 +87,7 @@ type extenderProvideState struct {
 	LastActivationTime  int64
 	LastActivationError string
 	RevokedTime         int64
+	DnsPorts            string
 }
 
 func (self extenderProvideState) status(connectionCount int) *ExtenderProvideStatus {
@@ -94,6 +102,7 @@ func (self extenderProvideState) status(connectionCount int) *ExtenderProvideSta
 		LastActivationTime:  self.LastActivationTime,
 		LastActivationError: self.LastActivationError,
 		RevokedTime:         self.RevokedTime,
+		DnsPorts:            self.DnsPorts,
 		ConnectionCount:     connectionCount,
 	}
 }
@@ -132,6 +141,10 @@ type deviceLocalExtenderSettings struct {
 	UdpPort int
 	DnsPort int
 	DnsTld  string
+	// DnsPrivilegedPort also binds the dns carrier on 53 beside DnsPort (L2).
+	// The provider fills it from the platform rule; a test pins it off so its
+	// ephemeral carrier is the only dns port on any host.
+	DnsPrivilegedPort bool
 
 	// The family api urls the activation is posted to, and the plain api url
 	// for an operator that has neither (C2, G3).
@@ -169,6 +182,37 @@ type deviceLocalExtenderSettings struct {
 	// family probe of the activation loop. Tests pin both.
 	Now                func() time.Time
 	IpVersionSupported func(ipVersion int) bool
+}
+
+// Whether the dns carrier also binds 53 beside its unprivileged port (L2).
+// Only the platforms that can take 53 without privilege do: the linux daemon
+// runs as root and the windows service as LocalSystem, while macOS and every
+// other host binds 4053 alone. The bind is never required -- a failure
+// disables that one port and the carrier keeps serving.
+func extenderDnsPrivilegedPort() bool {
+	return extenderDnsPrivilegedPortForPlatform(runtime.GOOS)
+}
+
+// The rule itself, parameterized by the platform so it is pinned by a test on
+// any host.
+func extenderDnsPrivilegedPortForPlatform(goos string) bool {
+	switch goos {
+	case "linux", "windows":
+		return true
+	default:
+		return false
+	}
+}
+
+// The bound dns ports of one extender as one string (F3, L2), ascending, which
+// is the order a client dials them in. Empty when the dns carrier is not
+// listening.
+func extenderDnsPortsText(dnsPorts []int) string {
+	parts := []string{}
+	for _, dnsPort := range dnsPorts {
+		parts = append(parts, strconv.Itoa(dnsPort))
+	}
+	return strings.Join(parts, ",")
 }
 
 // The bind failures of one extender as one string (F3), in carrier order so

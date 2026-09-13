@@ -203,6 +203,9 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings := extender.DefaultExtenderSettings()
 	settings.IdentityKeySeed = self.settings.IdentityKeySeed
 	settings.SpoofDomains = self.settings.SpoofDomains
+	// 53 beside the configured unprivileged port where the platform allows it
+	// (L2); a failure of that bind disables the one port, not the carrier
+	settings.DnsPrivilegedPort = self.settings.DnsPrivilegedPort
 	settings.DialContext = self.settings.DialContext
 	settings.Listen = self.settings.Listen
 	settings.ListenPacket = self.settings.ListenPacket
@@ -292,6 +295,9 @@ func (self *deviceLocalExtender) startActivator() {
 		settings.DnsTld = self.settings.DnsTld
 	}
 	settings.Carriers = self.server.Carriers
+	// the operator probes each port that actually bound and the record lists
+	// them, so a privileged bind that failed is never advertised (L2)
+	settings.DnsPorts = self.server.DnsPorts
 	settings.Directory = self.directory()
 	// the mesh addresses follow the activated families, which the loop reads
 	// from the activator's own status; this only wakes it (D2, G2)
@@ -414,6 +420,7 @@ func (self *deviceLocalExtender) state() extenderProvideState {
 		Enabled:     true,
 		Listening:   0 < len(self.server.Carriers()),
 		ListenError: extenderListenErrorText(self.server.ListenErrors()),
+		DnsPorts:    extenderDnsPortsText(self.server.DnsPorts()),
 	}
 
 	var lastActivationTime time.Time

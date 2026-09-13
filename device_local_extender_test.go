@@ -15,7 +15,9 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -472,6 +474,9 @@ func (self *testProvideExtenderFixture) configureExtender(settings *deviceLocalE
 	settings.TcpPort = self.tcpPort
 	settings.UdpPort = self.udpPort
 	settings.DnsPort = self.dnsPort
+	// the ephemeral carrier is the only dns port here, on every host: a linux
+	// build would otherwise also try 53 through the loopback listen seam (L2)
+	settings.DnsPrivilegedPort = false
 	settings.DnsTld = testProvideExtenderDnsTld
 	settings.Listen = func(network string, address string) (net.Listener, error) {
 		return net.Listen(network, testLoopbackAddress(address))
@@ -701,6 +706,12 @@ func TestDeviceLocalProviderExtenderActivatesEveryFamily(t *testing.T) {
 		if post.args.DnsTld != testProvideExtenderDnsTld {
 			t.Fatalf("v%d dns tld = %q", ipVersion, post.args.DnsTld)
 		}
+		// the dns ports that actually bound, which the operator probes one by
+		// one (L2). Only the unprivileged carrier is bound here
+		if !slices.Equal(post.args.DnsPorts, []int{fixture.dnsPort}) {
+			t.Fatalf("v%d dns ports = %v, expected the bound carrier %d",
+				ipVersion, post.args.DnsPorts, fixture.dnsPort)
+		}
 	}
 
 	status := fixture.waitStatus("both families activated", func(status *ExtenderProvideStatus) bool {
@@ -720,6 +731,10 @@ func TestDeviceLocalProviderExtenderActivatesEveryFamily(t *testing.T) {
 	}
 	if status.RevokedTime != 0 {
 		t.Fatalf("revoked time = %d, expected none", status.RevokedTime)
+	}
+	if status.DnsPorts != strconv.Itoa(fixture.dnsPort) {
+		t.Fatalf("status dns ports = %q, expected the bound carrier %d",
+			status.DnsPorts, fixture.dnsPort)
 	}
 
 	// the operator's record for this extender's own key is in the directory,
@@ -1291,4 +1306,87 @@ func newTestProvideExtenderUrlSpace(ctx context.Context) *NetworkSpace {
 		"wss://connect."+testProvideExtenderHost,
 		strategySettings,
 	)
+}
+
+// The dns carrier also binds 53 where the platform takes it without privilege
+// (L2): the linux daemon runs as root and the windows service as LocalSystem.
+// Everything else, macOS included, binds its unprivileged port alone. The rule
+// is parameterized so it is pinned on whatever host runs this.
+func TestExtenderDnsPrivilegedPortForPlatform(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		if !extenderDnsPrivilegedPortForPlatform(goos) {
+			t.Errorf("%s does not take the privileged dns port", goos)
+		}
+	}
+	for _, goos := range []string{"darwin", "ios", "android", "js", "freebsd", "openbsd"} {
+		if extenderDnsPrivilegedPortForPlatform(goos) {
+			t.Errorf("%s takes the privileged dns port", goos)
+		}
+	}
+	connect.AssertEqual(t,
+		extenderDnsPrivilegedPort(), extenderDnsPrivilegedPortForPlatform(runtime.GOOS))
+}
+
+// The role's dns carrier is the extender's unprivileged 4053 and the
+// privileged bind follows the platform rule (L2). The ports are what an
+// activation advertises, so a production default that drifted would publish a
+// port no client dials.
+func TestDeviceLocalProviderExtenderSettingsDnsPorts(t *testing.T) {
+	networkSpace := newNetworkSpace(
+		context.Background(),
+		*NewNetworkSpaceKey(testProvideExtenderHost, "main"),
+		NetworkSpaceValues{},
+		"",
+	)
+	defer networkSpace.close()
+
+	provider := &deviceLocalProvider{networkSpace: networkSpace}
+	settings := provider.extenderSettings()
+	if settings == nil {
+		t.Fatal("the space has no identity to activate under")
+	}
+	connect.AssertEqual(t, settings.DnsPort, connect.ExtenderDnsPort)
+	connect.AssertEqual(t, settings.DnsPort, connect.DefaultWhodisPort)
+	connect.AssertEqual(t, settings.DnsPrivilegedPort, extenderDnsPrivilegedPort())
+}
+
+// A host that can take 53 activates on both dns ports, and the activation
+// advertises them in dial order, 53 first (L2). The privileged bind is served
+// by an ephemeral socket here, so nothing on this machine needs privilege.
+func TestDeviceLocalProviderExtenderActivatesEveryDnsPort(t *testing.T) {
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.DnsPrivilegedPort = true
+		settings.ListenPacket = func(network string, address string) (net.PacketConn, error) {
+			if _, port, err := net.SplitHostPort(address); err == nil &&
+				port == strconv.Itoa(connect.DefaultDnsPort) {
+				// the privileged bind without the privilege: the advertised
+				// port is the configured one, not the socket's
+				return net.ListenPacket(network, "127.0.0.1:0")
+			}
+			return net.ListenPacket(network, testLoopbackAddress(address))
+		}
+	})
+
+	fixture.waitPass()
+	expectedDnsPorts := []int{connect.DefaultDnsPort, fixture.dnsPort}
+	for range 2 {
+		post := fixture.waitPost()
+		if !slices.Equal(post.args.DnsPorts, expectedDnsPorts) {
+			t.Fatalf("v%d dns ports = %v, expected %v",
+				post.ipVersion, post.args.DnsPorts, expectedDnsPorts)
+		}
+		// the single port stays for an operator that predates the list
+		if post.args.DnsPort != fixture.dnsPort {
+			t.Fatalf("v%d dns port = %d, expected the configured carrier %d",
+				post.ipVersion, post.args.DnsPort, fixture.dnsPort)
+		}
+	}
+
+	expectedDnsPortsText := fmt.Sprintf("%d,%d", connect.DefaultDnsPort, fixture.dnsPort)
+	status := fixture.waitStatus("both dns ports", func(status *ExtenderProvideStatus) bool {
+		return status.DnsPorts == expectedDnsPortsText
+	})
+	if status.ListenError != "" {
+		t.Fatalf("listen error = %q, expected every carrier to bind", status.ListenError)
+	}
 }
