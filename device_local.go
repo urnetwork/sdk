@@ -158,16 +158,30 @@ func deviceMemoryShares(
 // newDeviceLocalPlatformTransportSettings applies one DeviceLocal target to
 // every carrier-local memory setting and then installs the budget shared only
 // by that DeviceLocal's provider and window transports.
+//
+// The space's alt url goes with it (EXTENDER.md L4): the H3, dns and pump
+// carriers then send their packets to alt while the sni, the quic
+// authentication and the H1 websocket stay on the platform url. A space with
+// no alt url leaves every carrier on the platform host, which is where they
+// have always been.
 func newDeviceLocalPlatformTransportSettings(
 	memoryTargetByteCount ByteCount,
 	platformTransportBudget *connect.PlatformTransportBudget,
 	dialContextSettings *connect.DialContextSettings,
+	altUrl string,
 	dnsPumpHost string,
 ) *connect.PlatformTransportSettings {
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
 	)
 	settings.PlatformTransportBudget = platformTransportBudget
+	if altUrl = strings.TrimSpace(altUrl); altUrl != "" {
+		settings.AltUrl = altUrl
+		// the pump destination is only where this device's own packets go, so
+		// it derives from the alt url rather than from the fixed `whodis` name
+		// (L3). An embedder that named one still wins, below.
+		settings.DnsPumpHost = ""
+	}
 	if dnsPumpHost = strings.TrimSpace(dnsPumpHost); dnsPumpHost != "" {
 		settings.DnsPumpHost = dnsPumpHost
 	}
@@ -375,6 +389,8 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		UseExperimentalTunnelAddress: true,
 
 		AllowProvider: true,
+		// the provider extender role follows providing by default (G1)
+		ProvideExtenderEnabled: true,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
@@ -529,6 +545,19 @@ type DeviceLocalSettings struct {
 	// The app constructors default this to true; the platform constructors
 	// set false (the device is embedded inside the platform).
 	AllowProvider bool
+	// ProvideExtenderEnabled allows this device to run the provider extender
+	// role while it provides (EXTENDER.md G1, G2). Default on, which is what
+	// DefaultDeviceLocalSettings sets; an embedder that runs many providers in
+	// one process turns it off, since one host can hold only one extender
+	// identity and bind the carrier ports once. It is the embedder's switch,
+	// independent of the user's persisted `.provide_extender` setting of F3:
+	// the role runs only when both allow it.
+	ProvideExtenderEnabled bool
+	// providerExtenderSettings, when set, adjusts the provider extender role's
+	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
+	// carrier ports and point the activation at an in-process operator through
+	// it; production takes the fixed carrier ports and the space's own urls.
+	providerExtenderSettings func(settings *deviceLocalExtenderSettings)
 	// Verbose opts into periodic, summarized security-policy diagnostics. It
 	// is disabled by default because a DeviceRemote poll performs RPC and app
 	// foreground/background polling belongs to view controllers.
@@ -926,8 +955,13 @@ type DeviceLocal struct {
 	tunnelChangeListeners                    *connect.CallbackList[TunnelChangeListener]
 	contractStatusChangeListeners            *connect.CallbackList[ContractStatusChangeListener]
 	windowStatusChangeListeners              *connect.CallbackList[WindowStatusChangeListener]
-	jwtRefreshListeners                      *connect.CallbackList[JwtRefreshListener]
-	authLogoutListeners                      *connect.CallbackList[AuthLogoutListener]
+	extenderProvideStatusChangeListeners     *connect.CallbackList[ExtenderProvideStatusChangeListener]
+	// closed and replaced when the provider extender role starts, stops or its
+	// setting changes, which is what the status watch waits on beside the
+	// role's own monitor (F3)
+	extenderProvideMonitor *connect.Monitor
+	jwtRefreshListeners    *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners    *connect.CallbackList[AuthLogoutListener]
 
 	blockActionWindowChangeListeners         *connect.CallbackList[BlockActionWindowChangeListener]
 	blockStatsChangeListeners                *connect.CallbackList[BlockStatsChangeListener]
@@ -1179,6 +1213,10 @@ func newDeviceLocalWithOverrides(
 ) (*DeviceLocal, error) {
 	if settings.KeyMaterial != nil {
 		applyDeviceLocalKeyMaterial(&settings.ClientSettings, settings.KeyMaterial)
+		// the extender identity belongs to the space, not to the client
+		// settings: the space's member node and the provider extender role
+		// both present it (B1, G2)
+		networkSpace.setExtenderKeySeed(settings.KeyMaterial.GetExtenderKeySeed())
 	}
 
 	// resolve the device logger. all nested components and clients follow it.
@@ -1415,6 +1453,8 @@ func newDeviceLocalWithOverrides(
 		contractStatusChangeListeners:            connect.NewCallbackList[ContractStatusChangeListener](),
 		tunnelChangeListeners:                    connect.NewCallbackList[TunnelChangeListener](),
 		windowStatusChangeListeners:              connect.NewCallbackList[WindowStatusChangeListener](),
+		extenderProvideStatusChangeListeners:     connect.NewCallbackList[ExtenderProvideStatusChangeListener](),
+		extenderProvideMonitor:                   connect.NewMonitor(),
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
 		authPublication:                          authPublication,
@@ -1516,6 +1556,9 @@ func newDeviceLocalWithOverrides(
 
 	// set up with nil destination
 	if provider != nil {
+		// the extender role is built on the first provide change, which is
+		// after this device exists, so the test seam is installed here (G2)
+		provider.extenderSettingsConfigure = settings.providerExtenderSettings
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
 		// the provider client lives as long as the device, so its contract
@@ -1531,6 +1574,13 @@ func newDeviceLocalWithOverrides(
 			deviceLocal.watchNetworkPeers(networkPeersNotify)
 		})
 	}
+
+	// the provider extender status, coalesced to one callback per second (F3)
+	deviceLocal.lifecycleWorkers.Add(1)
+	go connect.HandleError(func() {
+		defer deviceLocal.lifecycleWorkers.Done()
+		deviceLocal.watchExtenderProvideStatus()
+	})
 
 	// the trailing edge of the contract stats epoch gate: carries out the last
 	// batch of a transfer, which lands inside the gate and would otherwise never
@@ -3130,6 +3180,10 @@ func (self *DeviceLocal) canReferChanged(canRefer bool) {
 }
 
 func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
+	// self.assertNotLockOwner()
+	// the provider's transports follow the mode: a public provider dials the
+	// platform directly (EXTENDER.md J4)
+	self.updateProviderProvideMode(provideMode)
 	for _, listener := range self.provideModeChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideModeChanged(provideMode)
@@ -3137,8 +3191,25 @@ func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
 	}
 }
 
+// Hands the current provide mode to the provider, which rebuilds its
+// transports when the public flag flips (J4). Never called with the device
+// lock held.
+func (self *DeviceLocal) updateProviderProvideMode(provideMode ProvideMode) {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	if closed || provider == nil {
+		return
+	}
+	provider.setProvideMode(provideMode)
+}
+
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
 	// self.assertNotLockOwner()
+	// the extender role is the provider's spare capacity, so it follows
+	// provide exactly (G2)
+	self.updateExtenderProvide()
 	for _, listener := range self.provideChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideChanged(provideEnabled)
@@ -3495,15 +3566,33 @@ func (self *DeviceLocal) GetProvideTlsPrivateKeyPem() []byte {
 	return bytes.Clone(manager.ProvideTlsPrivateKeyPem())
 }
 
+// GetExtenderKeySeed returns the extender identity seed of this device's
+// space (EXTENDER.md B1, G2), creating it on first use. It is what the space's
+// mesh peer id is derived from and what the operator signs this host's
+// extender records for, so an embedder that persists it and passes it back
+// keeps one extender identity across restarts.
+//
+// Nil when the space persists its own: a space with local state keeps
+// `.extender_key` and that always wins, so there is nothing for the caller to
+// save.
+func (self *DeviceLocal) GetExtenderKeySeed() []byte {
+	if self.networkSpace == nil || self.networkSpace.asyncLocalState != nil {
+		return nil
+	}
+	return self.networkSpace.extenderIdentityKeySeed()
+}
+
 // GetKeyMaterial returns the provider client's persisted identity
 // material. Persist it in caller-owned local storage and pass it back to
 // NewDeviceLocalWithKeyMaterial on the next process start.
 func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
-	return NewDeviceLocalKeyMaterial(
+	keyMaterial := NewDeviceLocalKeyMaterial(
 		self.GetClientKeySeed(),
 		self.GetProvideTlsCertificatePem(),
 		self.GetProvideTlsPrivateKeyPem(),
 	)
+	keyMaterial.SetExtenderKeySeed(self.GetExtenderKeySeed())
+	return keyMaterial
 }
 
 // SetKeyMaterial applies provider-client identity material to this device and
@@ -3524,6 +3613,11 @@ func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
 		applyDeviceLocalKeyMaterial(&self.settings.ClientSettings, keyMaterial)
 		return self.providerClient()
 	}()
+	if self.networkSpace != nil {
+		// the extender identity lives on the space; a role already running
+		// keeps the identity it activated with until it restarts (G2)
+		self.networkSpace.setExtenderKeySeed(keyMaterial.GetExtenderKeySeed())
+	}
 
 	if client != nil {
 		if seed := keyMaterial.GetClientKeySeed(); 0 < len(seed) {
@@ -3580,6 +3674,29 @@ func (self *DeviceLocal) GetProviderFamilyTransportStatus() *ProviderFamilyTrans
 		return unknownProviderFamilyTransportStatus()
 	}
 	return provider.familyTransportStatus()
+}
+
+// GetExtenderStatus reads this device's network space (K5). A hosted device
+// reports the empty status: its space is shared across unrelated customers, so
+// its directory -- the proxy host's own extenders and their live connection
+// counts -- is not this tenant's to see.
+func (self *DeviceLocal) GetExtenderStatus() *ExtenderStatus {
+	if self.settings.HostedIncompatible {
+		return emptyExtenderStatus()
+	}
+	return self.networkSpace.GetExtenderStatus()
+}
+
+// AddExtenderStatusChangeListener subscribes to the space's coalesced extender
+// status (F2, K5). A hosted device reports nothing to listen to, and returns a
+// sub that is already inert rather than nil.
+func (self *DeviceLocal) AddExtenderStatusChangeListener(
+	listener ExtenderStatusChangeListener,
+) Sub {
+	if self.settings.HostedIncompatible {
+		return newSub(func() {})
+	}
+	return self.networkSpace.AddExtenderStatusChangeListener(listener)
 }
 
 func (self *DeviceLocal) GetConnectEnabled() bool {
@@ -3671,6 +3788,13 @@ func providerLocalUserNatSettings(
 	return localUserNatSettings
 }
 
+// A mode that includes public also decides how the provider reaches the
+// platform: a public provider dials directly on every transport, the standby
+// included, so the platform observes the provider's own address and location
+// (EXTENDER.md J4). A network or friends-and-family provider keeps the shared
+// strategy and its extender dialers, since network peers carry no location
+// metadata. A change that flips that rebuilds the provider transports
+// make-before-break.
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 	_ = self.setLocalCatalogPreference("provide-mode", provideMode)
 }
@@ -4085,6 +4209,7 @@ func (self *DeviceLocal) applyDestination(
 						self.settings.MemoryTargetByteCount,
 						self.platformTransportBudget,
 						nil,
+						self.networkSpace.GetAltUrl(),
 						self.settings.DnsPumpHost,
 					)
 					applyMobileLowMemoryPlatformTransportSettings(

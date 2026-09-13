@@ -202,6 +202,16 @@ inline constexpr const char* ExperimentSurfaceOfferFinalScreen = "offer.final_sc
 inline constexpr const char* ExperimentSurfaceOfferInApp = "offer.in_app";
 inline constexpr const char* ExperimentSurfaceOfferIntroStep = "offer.intro_step";
 inline constexpr const char* ExperimentVariantHoldout = "holdout";
+inline constexpr const char* ExtenderGossipModeAuto = "auto";
+inline constexpr const char* ExtenderGossipModeFeed = "feed";
+inline constexpr const char* ExtenderGossipModeMember = "member";
+inline constexpr const char* ExtenderGossipStateConnected = "connected";
+inline constexpr const char* ExtenderGossipStateConnecting = "connecting";
+inline constexpr const char* ExtenderGossipStateDisconnected = "disconnected";
+inline constexpr const char* ExtenderImportErrorForeignHost = "import_extenders_foreign_host";
+inline constexpr const char* ExtenderImportErrorInvalid = "import_extenders_invalid";
+inline constexpr const char* ExtenderRoleFeed = "feed";
+inline constexpr const char* ExtenderRoleMember = "member";
 inline constexpr const char* IpFamilyDualstack = "dualstack";
 inline constexpr const char* IpFamilyLabelBoth = "both";
 inline constexpr const char* IpFamilyLabelV4 = "v4";
@@ -379,6 +389,7 @@ class DeviceRemote;
 class DeviceRpcKeyMaterial;
 class DeviceStats;
 class DevicesViewController;
+class ExtenderViewController;
 class FeedbackViewController;
 class LocalAuthStateSnapshot;
 class LocalState;
@@ -510,6 +521,13 @@ struct Exit;
 struct ExperimentAssignment;
 struct ExportOptions;
 struct ExportResult;
+struct ExtenderImportResult;
+struct ExtenderInfo;
+struct ExtenderProvideStatus;
+struct ExtenderSettings;
+struct ExtenderShareDecodeResult;
+struct ExtenderShareResult;
+struct ExtenderStatus;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
 struct FeedbackSendResult;
@@ -557,7 +575,6 @@ struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
 struct NetExtender;
-struct NetExtenderAutoConfigure;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
 struct NetworkBlockLocationResult;
@@ -749,6 +766,7 @@ using CountryMultiplierList = std::vector<CountryMultiplier>;
 using DestinationExitList = std::vector<DestinationExit>;
 using ExitList = std::vector<Exit>;
 using ExperimentAssignmentList = std::vector<ExperimentAssignment>;
+using ExtenderInfoList = std::vector<ExtenderInfo>;
 using FindProvidersProviderList = std::vector<FindProvidersProvider>;
 using Float64List = std::vector<double>;
 using IdList = std::vector<std::string>;
@@ -1413,6 +1431,7 @@ struct DeviceLocalSettings {
 	bool DefaultVpnInterfaceWhileOffline{};
 	bool DefaultTunnelStarted{};
 	bool AllowProvider{};
+	bool ProvideExtenderEnabled{};
 	bool Verbose{};
 	nlohmann::json GeneratorFunc{};
 	nlohmann::json MultiClientIdentityStore{};
@@ -1509,6 +1528,89 @@ struct ExportResult {
 	int64_t ByteCount{};
 	int64_t FileCount{};
 	std::optional<StringList> MissingSources;
+};
+
+struct ExtenderImportResult {
+	bool Ok{};
+	std::string Error{};
+	int64_t ImportedCount{};
+};
+
+struct ExtenderInfo {
+	std::string Id{};
+	std::string Ip{};
+	int64_t IpVersion{};
+	std::string ColorHex{};
+	std::string Carriers{};
+	std::string CountryCode{};
+	std::string State{};
+	std::string Source{};
+	int64_t LastSuccessTime{};
+	int64_t LastFailureTime{};
+	int64_t SuccessCount{};
+	int64_t FailureCount{};
+	int64_t InUse{};
+	int64_t ExpireTime{};
+};
+
+struct ExtenderProvideStatus {
+	bool Enabled{};
+	bool Listening{};
+	std::string ListenError{};
+	bool ActivatedV4{};
+	bool ActivatedV6{};
+	std::string Ipv4{};
+	std::string Ipv6{};
+	int64_t LastActivationTime{};
+	std::string LastActivationError{};
+	int64_t RevokedTime{};
+	std::string DnsPorts{};
+	int64_t ConnectionCount{};
+};
+
+struct ExtenderSettings {
+	std::string DnsName{};
+	bool DnsNameDefault{};
+	std::string GossipUrl{};
+	bool GossipUrlDefault{};
+	std::optional<StringList> Hosts;
+	std::string NetworkHost{};
+	std::optional<StringList> RootPublicKeys;
+	bool RootPublicKeysDefault{};
+};
+
+struct ExtenderShareDecodeResult {
+	bool Ok{};
+	std::string Error{};
+	std::string NetworkHost{};
+	bool ForeignHost{};
+	int64_t Count{};
+	bool HasSettings{};
+	std::string SettingsHost{};
+};
+
+struct ExtenderShareResult {
+	std::string Text{};
+	int64_t Count{};
+	bool IncludesSettings{};
+};
+
+struct ExtenderStatus {
+	std::string Role{};
+	bool FeedConnected{};
+	std::string FeedIp{};
+	bool GossipConnected{};
+	int64_t GossipPeerCount{};
+	std::string GossipState{};
+	int64_t EventCountLastMinute{};
+	int64_t KnownCount{};
+	int64_t ActiveCount{};
+	int64_t ReserveCount{};
+	int64_t WarningCount{};
+	int64_t HoldCount{};
+	int64_t LastSampleTime{};
+	std::string LastError{};
+	std::optional<ExtenderInfoList> Extenders;
 };
 
 struct FeedbackSendNeeds {
@@ -1840,11 +1942,6 @@ struct NetExtender {
 	std::string secret{};
 };
 
-struct NetExtenderAutoConfigure {
-	std::optional<std::string> dns_ip;
-	std::optional<std::string> extender_hostname;
-};
-
 struct NetworkBlockLocationArgs {
 	std::optional<std::string> location_id;
 };
@@ -1984,9 +2081,13 @@ struct NetworkSpaceValues {
 	std::optional<bool> sso_google;
 	std::optional<std::string> api_url;
 	std::optional<std::string> platform_url;
+	std::optional<std::string> alt_url;
 	std::optional<SnChainSettings> sn_chain;
 	std::optional<NetExtender> net_extender;
-	std::optional<NetExtenderAutoConfigure> net_extender_auto_configure;
+	std::optional<std::string> extender_dns_name;
+	std::optional<std::string> gossip_url;
+	std::optional<std::vector<std::string>> extender_root_public_keys;
+	std::optional<std::vector<std::string>> extender_hosts;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -2209,6 +2310,8 @@ struct ProviderGridPoint {
 	bool Active{};
 	std::string IpFamily{};
 	std::string IpFamilyLabel{};
+	std::string ExtenderIps{};
+	std::string ExtenderColorHexes{};
 };
 
 struct ProviderIdentity {
@@ -3217,6 +3320,20 @@ inline void to_json(nlohmann::json& j, const ExportOptions& v);
 inline void from_json(const nlohmann::json& j, ExportOptions& v);
 inline void to_json(nlohmann::json& j, const ExportResult& v);
 inline void from_json(const nlohmann::json& j, ExportResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderImportResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderImportResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderInfo& v);
+inline void from_json(const nlohmann::json& j, ExtenderInfo& v);
+inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v);
+inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v);
+inline void to_json(nlohmann::json& j, const ExtenderSettings& v);
+inline void from_json(const nlohmann::json& j, ExtenderSettings& v);
+inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderShareResult& v);
+inline void from_json(const nlohmann::json& j, ExtenderShareResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderStatus& v);
+inline void from_json(const nlohmann::json& j, ExtenderStatus& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
 inline void from_json(const nlohmann::json& j, FeedbackSendNeeds& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendArgs& v);
@@ -3311,8 +3428,6 @@ inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
-inline void to_json(nlohmann::json& j, const NetExtenderAutoConfigure& v);
-inline void from_json(const nlohmann::json& j, NetExtenderAutoConfigure& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
 inline void from_json(const nlohmann::json& j, NetworkBlockLocationArgs& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationError& v);
@@ -6504,6 +6619,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["DefaultVpnInterfaceWhileOffline"] = v.DefaultVpnInterfaceWhileOffline;
 	j["DefaultTunnelStarted"] = v.DefaultTunnelStarted;
 	j["AllowProvider"] = v.AllowProvider;
+	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["Verbose"] = v.Verbose;
 	j["GeneratorFunc"] = v.GeneratorFunc;
 	j["MultiClientIdentityStore"] = v.MultiClientIdentityStore;
@@ -6585,6 +6701,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("AllowProvider"); it != j.end() && !it->is_null()) {
 		it->get_to(v.AllowProvider);
+	}
+	if (auto it = j.find("ProvideExtenderEnabled"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideExtenderEnabled);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -6985,6 +7104,329 @@ inline void from_json(const nlohmann::json& j, ExportResult& v) {
 		StringList tmp{};
 		it->get_to(tmp);
 		v.MissingSources = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderImportResult& v) {
+	j = nlohmann::json::object();
+	j["Ok"] = v.Ok;
+	j["Error"] = v.Error;
+	j["ImportedCount"] = v.ImportedCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderImportResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ok);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+	if (auto it = j.find("ImportedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ImportedCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderInfo& v) {
+	j = nlohmann::json::object();
+	j["Id"] = v.Id;
+	j["Ip"] = v.Ip;
+	j["IpVersion"] = v.IpVersion;
+	j["ColorHex"] = v.ColorHex;
+	j["Carriers"] = v.Carriers;
+	j["CountryCode"] = v.CountryCode;
+	j["State"] = v.State;
+	j["Source"] = v.Source;
+	j["LastSuccessTime"] = v.LastSuccessTime;
+	j["LastFailureTime"] = v.LastFailureTime;
+	j["SuccessCount"] = v.SuccessCount;
+	j["FailureCount"] = v.FailureCount;
+	j["InUse"] = v.InUse;
+	j["ExpireTime"] = v.ExpireTime;
+}
+inline void from_json(const nlohmann::json& j, ExtenderInfo& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Id);
+	}
+	if (auto it = j.find("Ip"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ip);
+	}
+	if (auto it = j.find("IpVersion"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IpVersion);
+	}
+	if (auto it = j.find("ColorHex"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ColorHex);
+	}
+	if (auto it = j.find("Carriers"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Carriers);
+	}
+	if (auto it = j.find("CountryCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.CountryCode);
+	}
+	if (auto it = j.find("State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.State);
+	}
+	if (auto it = j.find("Source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Source);
+	}
+	if (auto it = j.find("LastSuccessTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastSuccessTime);
+	}
+	if (auto it = j.find("LastFailureTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastFailureTime);
+	}
+	if (auto it = j.find("SuccessCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SuccessCount);
+	}
+	if (auto it = j.find("FailureCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FailureCount);
+	}
+	if (auto it = j.find("InUse"); it != j.end() && !it->is_null()) {
+		it->get_to(v.InUse);
+	}
+	if (auto it = j.find("ExpireTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExpireTime);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
+	j = nlohmann::json::object();
+	j["Enabled"] = v.Enabled;
+	j["Listening"] = v.Listening;
+	j["ListenError"] = v.ListenError;
+	j["ActivatedV4"] = v.ActivatedV4;
+	j["ActivatedV6"] = v.ActivatedV6;
+	j["Ipv4"] = v.Ipv4;
+	j["Ipv6"] = v.Ipv6;
+	j["LastActivationTime"] = v.LastActivationTime;
+	j["LastActivationError"] = v.LastActivationError;
+	j["RevokedTime"] = v.RevokedTime;
+	j["DnsPorts"] = v.DnsPorts;
+	j["ConnectionCount"] = v.ConnectionCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Enabled"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Enabled);
+	}
+	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Listening);
+	}
+	if (auto it = j.find("ListenError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ListenError);
+	}
+	if (auto it = j.find("ActivatedV4"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ActivatedV4);
+	}
+	if (auto it = j.find("ActivatedV6"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ActivatedV6);
+	}
+	if (auto it = j.find("Ipv4"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ipv4);
+	}
+	if (auto it = j.find("Ipv6"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ipv6);
+	}
+	if (auto it = j.find("LastActivationTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastActivationTime);
+	}
+	if (auto it = j.find("LastActivationError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastActivationError);
+	}
+	if (auto it = j.find("RevokedTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RevokedTime);
+	}
+	if (auto it = j.find("DnsPorts"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsPorts);
+	}
+	if (auto it = j.find("ConnectionCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ConnectionCount);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderSettings& v) {
+	j = nlohmann::json::object();
+	j["DnsName"] = v.DnsName;
+	j["DnsNameDefault"] = v.DnsNameDefault;
+	j["GossipUrl"] = v.GossipUrl;
+	j["GossipUrlDefault"] = v.GossipUrlDefault;
+	if (v.Hosts) {
+		j["Hosts"] = *v.Hosts;
+	}
+	j["NetworkHost"] = v.NetworkHost;
+	if (v.RootPublicKeys) {
+		j["RootPublicKeys"] = *v.RootPublicKeys;
+	}
+	j["RootPublicKeysDefault"] = v.RootPublicKeysDefault;
+}
+inline void from_json(const nlohmann::json& j, ExtenderSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("DnsName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsName);
+	}
+	if (auto it = j.find("DnsNameDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsNameDefault);
+	}
+	if (auto it = j.find("GossipUrl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipUrl);
+	}
+	if (auto it = j.find("GossipUrlDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipUrlDefault);
+	}
+	if (auto it = j.find("Hosts"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.Hosts = std::move(tmp);
+	}
+	if (auto it = j.find("NetworkHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkHost);
+	}
+	if (auto it = j.find("RootPublicKeys"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.RootPublicKeys = std::move(tmp);
+	}
+	if (auto it = j.find("RootPublicKeysDefault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RootPublicKeysDefault);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v) {
+	j = nlohmann::json::object();
+	j["Ok"] = v.Ok;
+	j["Error"] = v.Error;
+	j["NetworkHost"] = v.NetworkHost;
+	j["ForeignHost"] = v.ForeignHost;
+	j["Count"] = v.Count;
+	j["HasSettings"] = v.HasSettings;
+	j["SettingsHost"] = v.SettingsHost;
+}
+inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Ok);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+	if (auto it = j.find("NetworkHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NetworkHost);
+	}
+	if (auto it = j.find("ForeignHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ForeignHost);
+	}
+	if (auto it = j.find("Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Count);
+	}
+	if (auto it = j.find("HasSettings"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HasSettings);
+	}
+	if (auto it = j.find("SettingsHost"); it != j.end() && !it->is_null()) {
+		it->get_to(v.SettingsHost);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderShareResult& v) {
+	j = nlohmann::json::object();
+	j["Text"] = v.Text;
+	j["Count"] = v.Count;
+	j["IncludesSettings"] = v.IncludesSettings;
+}
+inline void from_json(const nlohmann::json& j, ExtenderShareResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Text);
+	}
+	if (auto it = j.find("Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Count);
+	}
+	if (auto it = j.find("IncludesSettings"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IncludesSettings);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderStatus& v) {
+	j = nlohmann::json::object();
+	j["Role"] = v.Role;
+	j["FeedConnected"] = v.FeedConnected;
+	j["FeedIp"] = v.FeedIp;
+	j["GossipConnected"] = v.GossipConnected;
+	j["GossipPeerCount"] = v.GossipPeerCount;
+	j["GossipState"] = v.GossipState;
+	j["EventCountLastMinute"] = v.EventCountLastMinute;
+	j["KnownCount"] = v.KnownCount;
+	j["ActiveCount"] = v.ActiveCount;
+	j["ReserveCount"] = v.ReserveCount;
+	j["WarningCount"] = v.WarningCount;
+	j["HoldCount"] = v.HoldCount;
+	j["LastSampleTime"] = v.LastSampleTime;
+	j["LastError"] = v.LastError;
+	if (v.Extenders) {
+		j["Extenders"] = *v.Extenders;
+	}
+}
+inline void from_json(const nlohmann::json& j, ExtenderStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Role"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Role);
+	}
+	if (auto it = j.find("FeedConnected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FeedConnected);
+	}
+	if (auto it = j.find("FeedIp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FeedIp);
+	}
+	if (auto it = j.find("GossipConnected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipConnected);
+	}
+	if (auto it = j.find("GossipPeerCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipPeerCount);
+	}
+	if (auto it = j.find("GossipState"); it != j.end() && !it->is_null()) {
+		it->get_to(v.GossipState);
+	}
+	if (auto it = j.find("EventCountLastMinute"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EventCountLastMinute);
+	}
+	if (auto it = j.find("KnownCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.KnownCount);
+	}
+	if (auto it = j.find("ActiveCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ActiveCount);
+	}
+	if (auto it = j.find("ReserveCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ReserveCount);
+	}
+	if (auto it = j.find("WarningCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WarningCount);
+	}
+	if (auto it = j.find("HoldCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.HoldCount);
+	}
+	if (auto it = j.find("LastSampleTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastSampleTime);
+	}
+	if (auto it = j.find("LastError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastError);
+	}
+	if (auto it = j.find("Extenders"); it != j.end() && !it->is_null()) {
+		ExtenderInfoList tmp{};
+		it->get_to(tmp);
+		v.Extenders = std::move(tmp);
 	}
 }
 
@@ -8467,31 +8909,6 @@ inline void from_json(const nlohmann::json& j, NetExtender& v) {
 	}
 }
 
-inline void to_json(nlohmann::json& j, const NetExtenderAutoConfigure& v) {
-	j = nlohmann::json::object();
-	if (v.dns_ip) {
-		j["dns_ip"] = *v.dns_ip;
-	}
-	if (v.extender_hostname) {
-		j["extender_hostname"] = *v.extender_hostname;
-	}
-}
-inline void from_json(const nlohmann::json& j, NetExtenderAutoConfigure& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("dns_ip"); it != j.end() && !it->is_null()) {
-		std::string tmp{};
-		it->get_to(tmp);
-		v.dns_ip = std::move(tmp);
-	}
-	if (auto it = j.find("extender_hostname"); it != j.end() && !it->is_null()) {
-		std::string tmp{};
-		it->get_to(tmp);
-		v.extender_hostname = std::move(tmp);
-	}
-}
-
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v) {
 	j = nlohmann::json::object();
 	if (v.location_id) {
@@ -9134,14 +9551,26 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.platform_url) {
 		j["platform_url"] = *v.platform_url;
 	}
+	if (v.alt_url) {
+		j["alt_url"] = *v.alt_url;
+	}
 	if (v.sn_chain) {
 		j["sn_chain"] = *v.sn_chain;
 	}
 	if (v.net_extender) {
 		j["net_extender"] = *v.net_extender;
 	}
-	if (v.net_extender_auto_configure) {
-		j["net_extender_auto_configure"] = *v.net_extender_auto_configure;
+	if (v.extender_dns_name) {
+		j["extender_dns_name"] = *v.extender_dns_name;
+	}
+	if (v.gossip_url) {
+		j["gossip_url"] = *v.gossip_url;
+	}
+	if (v.extender_root_public_keys) {
+		j["extender_root_public_keys"] = *v.extender_root_public_keys;
+	}
+	if (v.extender_hosts) {
+		j["extender_hosts"] = *v.extender_hosts;
 	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
@@ -9203,6 +9632,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		it->get_to(tmp);
 		v.platform_url = std::move(tmp);
 	}
+	if (auto it = j.find("alt_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.alt_url = std::move(tmp);
+	}
 	if (auto it = j.find("sn_chain"); it != j.end() && !it->is_null()) {
 		SnChainSettings tmp{};
 		it->get_to(tmp);
@@ -9213,10 +9647,25 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		it->get_to(tmp);
 		v.net_extender = std::move(tmp);
 	}
-	if (auto it = j.find("net_extender_auto_configure"); it != j.end() && !it->is_null()) {
-		NetExtenderAutoConfigure tmp{};
+	if (auto it = j.find("extender_dns_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
 		it->get_to(tmp);
-		v.net_extender_auto_configure = std::move(tmp);
+		v.extender_dns_name = std::move(tmp);
+	}
+	if (auto it = j.find("gossip_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.gossip_url = std::move(tmp);
+	}
+	if (auto it = j.find("extender_root_public_keys"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.extender_root_public_keys = std::move(tmp);
+	}
+	if (auto it = j.find("extender_hosts"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.extender_hosts = std::move(tmp);
 	}
 }
 
@@ -10281,6 +10730,8 @@ inline void to_json(nlohmann::json& j, const ProviderGridPoint& v) {
 	j["Active"] = v.Active;
 	j["IpFamily"] = v.IpFamily;
 	j["IpFamilyLabel"] = v.IpFamilyLabel;
+	j["ExtenderIps"] = v.ExtenderIps;
+	j["ExtenderColorHexes"] = v.ExtenderColorHexes;
 }
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	if (!j.is_object()) {
@@ -10313,6 +10764,12 @@ inline void from_json(const nlohmann::json& j, ProviderGridPoint& v) {
 	}
 	if (auto it = j.find("IpFamilyLabel"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IpFamilyLabel);
+	}
+	if (auto it = j.find("ExtenderIps"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderIps);
+	}
+	if (auto it = j.find("ExtenderColorHexes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ExtenderColorHexes);
 	}
 }
 
@@ -13856,6 +14313,9 @@ using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult
 using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
+using ExtenderProvideStatusChangeListener = std::function<void(std::optional<ExtenderProvideStatus> status)>;
+using ExtenderStatusChangeListener = std::function<void(std::optional<ExtenderStatus> status)>;
+using ExtenderViewControllerListener = std::function<void(std::optional<ExtenderStatus> status)>;
 using FilteredLocationsListener = std::function<void(std::optional<FilteredLocations> locations, std::string state)>;
 using FindLocationsCallback = std::function<void(std::optional<FindLocationsResult> result, std::optional<std::string> err_param)>;
 using FindProviders2Callback = std::function<void(std::optional<FindProviders2Result> result, std::optional<std::string> err_param)>;
@@ -14045,6 +14505,7 @@ public:
 	Sub addDnsResolverSettingsChangeListener(DnsResolverSettingsChangeListener listener) const;
 	Sub addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
+	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
 	Sub addIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addIngressContractStatsChangeListener(ContractStatsChangeListener listener) const;
 	Sub addJwtRefreshListener(JwtRefreshListener listener) const;
@@ -14097,6 +14558,7 @@ public:
 	bool getDone() const;
 	std::optional<ContractDetailsList> getEgressContractDetails() const;
 	std::optional<ContractStats> getEgressContractStats() const;
+	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::optional<ContractDetailsList> getIngressContractDetails() const;
 	std::optional<ContractStats> getIngressContractStats() const;
 	std::string getInstanceId() const;
@@ -14420,6 +14882,7 @@ class DeviceLocal final : public Device {
 public:
 	DeviceLocal() = default;
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
+	Sub addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const;
 	Sub addLocalStateSaveListener(LocalStateSaveListener listener) const;
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
@@ -14446,11 +14909,13 @@ public:
 	std::string getClientJwt() const;
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
+	std::optional<ExtenderProvideStatus> getExtenderProvideStatus() const;
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
 	DeviceLocalSaveResult getLastLocalStateSaveResult() const;
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
+	bool getProvideExtender() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
 	bool getProviderClientKeyRegistered() const;
 	bool getProviderConnected() const;
@@ -14475,6 +14940,7 @@ public:
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
+	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
@@ -14505,6 +14971,7 @@ public:
 	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setPerformanceDegraded(bool degraded) const;
+	void setProvideExtender(bool provide_extender) const;
 	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
 	void setRoutingTier(int64_t tier) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
@@ -14535,6 +15002,7 @@ public:
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	std::vector<uint8_t> getExtenderKeySeed() const;
 	/* the raw public identity key (post quantum identity) */
 	std::vector<uint8_t> getPublicIdentityKey() const;
 };
@@ -14544,9 +15012,11 @@ public:
 	DeviceLocalKeyMaterial() = default;
 	explicit DeviceLocalKeyMaterial(uint64_t h) : detail::Handle(h) {}
 	bool isEmpty() const;
+	void setExtenderKeySeed(const uint8_t* extender_key_seed, int32_t extender_key_seed_len) const;
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
 	std::vector<uint8_t> getProvideTlsPrivateKeyPem() const;
+	std::vector<uint8_t> getExtenderKeySeed() const;
 };
 
 class DeviceLocalLoadResult final : public detail::Handle {
@@ -14615,6 +15085,7 @@ public:
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
 	DevicesViewController openDevicesViewController() const;
+	ExtenderViewController openExtenderViewController() const;
 	FeedbackViewController openFeedbackViewController() const;
 	LocationsViewController openLocationsViewController() const;
 	NetworkUserViewController openNetworkUserViewController() const;
@@ -14688,6 +15159,23 @@ public:
 	void stop() const;
 };
 
+class ExtenderViewController final : public detail::Handle {
+public:
+	ExtenderViewController() = default;
+	explicit ExtenderViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addStatusListener(ExtenderViewControllerListener listener) const;
+	std::optional<ExtenderShareResult> buildShare(bool include_settings) const;
+	void close() const;
+	std::optional<ExtenderShareDecodeResult> decodeShare(const std::string& text) const;
+	void extenderStatusChanged(const std::optional<ExtenderStatus>& status) const;
+	std::optional<ExtenderSettings> getSettings() const;
+	std::optional<ExtenderStatus> getStatus() const;
+	std::optional<ExtenderImportResult> importShare(const std::string& text, bool use_settings) const;
+	std::optional<ExtenderSettings> setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const;
+	void start() const;
+	void stop() const;
+};
+
 class FeedbackViewController final : public detail::Handle {
 public:
 	FeedbackViewController() = default;
@@ -14744,10 +15232,12 @@ public:
 	std::optional<ConnectLocation> getDefaultLocation() const;
 	DeviceLocalKeyMaterial getDeviceLocalKeyMaterial() const;
 	std::optional<DnsResolverSettings> getDnsResolverSettings() const;
+	std::string getExtenderGossipMode() const;
 	std::string getInstanceId() const;
 	int64_t getLogVerbosity() const;
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
+	bool getProvideExtender() const;
 	int64_t getProvideMode() const;
 	std::string getProvideNetworkMode() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
@@ -14782,11 +15272,13 @@ public:
 	void setDefaultLocation(const std::optional<ConnectLocation>& connect_location) const;
 	void setDeviceLocalKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
+	void setExtenderGossipMode(const std::string& mode) const;
 	void setInstanceId(const std::string& instance_id) const;
 	void setIntroFunnelLastPrompted() const;
 	void setLogVerbosity(int64_t level) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const;
 	void setProvideControlMode(const std::string& mode) const;
+	void setProvideExtender(bool provide_extender) const;
 	void setProvideMode(int64_t provide_mode) const;
 	void setProvideNetworkMode(const std::string& provide_network_mode) const;
 	void setProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
@@ -14858,8 +15350,12 @@ class NetworkSpace final : public detail::Handle {
 public:
 	NetworkSpace() = default;
 	explicit NetworkSpace(uint64_t h) : detail::Handle(h) {}
+	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
 	void close() const;
 	std::string connectLinkUrl(const std::string& target) const;
+	std::string getAltUrl() const;
+	std::string getAltUrlV4() const;
+	std::string getAltUrlV6() const;
 	Api getApi() const;
 	std::string getApiUrl() const;
 	std::string getApiUrlV4() const;
@@ -14871,6 +15367,12 @@ public:
 	std::string getConfiguredPlatformUrl() const;
 	std::string getEnvName() const;
 	std::string getEnvSecret() const;
+	std::string getExtenderDnsName() const;
+	std::string getExtenderGossipMode() const;
+	std::optional<StringList> getExtenderHosts() const;
+	std::optional<StringList> getExtenderRootPublicKeys() const;
+	std::optional<ExtenderStatus> getExtenderStatus() const;
+	std::string getGossipUrl() const;
 	std::string getHostName() const;
 	std::optional<NetworkSpaceKey> getKey() const;
 	std::string getLinkHostName() const;
@@ -14878,7 +15380,6 @@ public:
 	bool getNetExposeServerHostNames() const;
 	bool getNetExposeServerIps() const;
 	std::optional<NetExtender> getNetExtender() const;
-	std::optional<NetExtenderAutoConfigure> getNetExtenderAutoConfigure() const;
 	std::string getPlatformUrl() const;
 	std::string getPlatformUrlV4() const;
 	std::string getPlatformUrlV6() const;
@@ -14889,6 +15390,7 @@ public:
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
+	void setExtenderGossipMode(const std::string& mode) const;
 	std::string toJson() const;
 };
 
@@ -16476,6 +16978,90 @@ inline void oneshot_dns_resolver_settings_change(void* user_data, const char* dn
 			dns_resolver_settings_v = parseJson<DnsResolverSettings>(dns_resolver_settings_json);
 		}
 		(*f)(std::move(dns_resolver_settings_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_extender_provide_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderProvideStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderProvideStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderProvideStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_extender_provide_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderProvideStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderProvideStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderProvideStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_extender_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_extender_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderStatusChangeListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_extender_view_controller(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderViewControllerListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_extender_view_controller(void* user_data, const char* status_json) {
+	auto* f = static_cast<ExtenderViewControllerListener*>(user_data);
+	try {
+		std::optional<ExtenderStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ExtenderStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -20669,6 +21255,17 @@ inline Sub Device::addEgressContractStatsChangeListener(ContractStatsChangeListe
 	}
 	return r;
 }
+inline Sub Device::addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const {
+	std::shared_ptr<ExtenderStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_extender_status_change_listener(handle(), listener_fn ? &detail::retained_extender_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const {
 	std::shared_ptr<ContractDetailsChangeListener> listener_fn;
 	if (listener) {
@@ -21102,6 +21699,14 @@ inline std::optional<ContractStats> Device::getEgressContractStats() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ContractStats>(r_s->c_str());
+}
+inline std::optional<ExtenderStatus> Device::getExtenderStatus() const {
+	char* r_c = urnet_device_get_extender_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStatus>(r_s->c_str());
 }
 inline std::optional<ContractDetailsList> Device::getIngressContractDetails() const {
 	char* r_c = urnet_device_get_ingress_contract_details(handle());
@@ -22849,6 +23454,17 @@ inline void ContractViewController::start() const {
 inline void ContractViewController::stop() const {
 	urnet_contract_view_controller_stop(handle());
 }
+inline Sub DeviceLocal::addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const {
+	std::shared_ptr<ExtenderProvideStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderProvideStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_local_add_extender_provide_status_change_listener(handle(), listener_fn ? &detail::retained_extender_provide_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub DeviceLocal::addLocalStateSaveListener(LocalStateSaveListener listener) const {
 	std::shared_ptr<LocalStateSaveListener> listener_fn;
 	if (listener) {
@@ -23005,6 +23621,14 @@ inline std::optional<ExitList> DeviceLocal::getExits() const {
 	}
 	return detail::parseJson<ExitList>(r_s->c_str());
 }
+inline std::optional<ExtenderProvideStatus> DeviceLocal::getExtenderProvideStatus() const {
+	char* r_c = urnet_device_local_get_extender_provide_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderProvideStatus>(r_s->c_str());
+}
 inline std::string DeviceLocal::getFirstLoadTimelineJson() const {
 	char* r_c = urnet_device_local_get_first_load_timeline_json(handle());
 	return detail::takeString(r_c);
@@ -23032,6 +23656,10 @@ inline std::optional<ProbeResultList> DeviceLocal::getProbeResults() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ProbeResultList>(r_s->c_str());
+}
+inline bool DeviceLocal::getProvideExtender() const {
+	bool r = urnet_device_local_get_provide_extender(handle());
+	return r;
 }
 inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() const {
 	char* r_c = urnet_device_local_get_provide_secret_keys(handle());
@@ -23157,6 +23785,10 @@ inline ContractViewController DeviceLocal::openContractViewController() const {
 }
 inline DevicesViewController DeviceLocal::openDevicesViewController() const {
 	DevicesViewController r(urnet_device_local_open_devices_view_controller(handle()));
+	return r;
+}
+inline ExtenderViewController DeviceLocal::openExtenderViewController() const {
+	ExtenderViewController r(urnet_device_local_open_extender_view_controller(handle()));
 	return r;
 }
 inline FeedbackViewController DeviceLocal::openFeedbackViewController() const {
@@ -23333,6 +23965,9 @@ inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_materi
 }
 inline void DeviceLocal::setPerformanceDegraded(bool degraded) const {
 	urnet_device_local_set_performance_degraded(handle(), degraded);
+}
+inline void DeviceLocal::setProvideExtender(bool provide_extender) const {
+	urnet_device_local_set_provide_extender(handle(), provide_extender);
 }
 inline void DeviceLocal::setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const {
 	std::string reliability_settings_json;
@@ -23517,6 +24152,9 @@ inline bool DeviceLocal::waitForClose(int64_t timeout_milliseconds) const {
 inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
 	return r;
+}
+inline void DeviceLocalKeyMaterial::setExtenderKeySeed(const uint8_t* extender_key_seed, int32_t extender_key_seed_len) const {
+	urnet_device_local_key_material_set_extender_key_seed(handle(), extender_key_seed, extender_key_seed_len);
 }
 inline std::string DeviceLocalLoadResult::getDefaultError() const {
 	char* r_c = urnet_device_local_load_result_get_default_error(handle());
@@ -23772,6 +24410,10 @@ inline ContractViewController DeviceRemote::openContractViewController() const {
 }
 inline DevicesViewController DeviceRemote::openDevicesViewController() const {
 	DevicesViewController r(urnet_device_remote_open_devices_view_controller(handle()));
+	return r;
+}
+inline ExtenderViewController DeviceRemote::openExtenderViewController() const {
+	ExtenderViewController r(urnet_device_remote_open_extender_view_controller(handle()));
 	return r;
 }
 inline FeedbackViewController DeviceRemote::openFeedbackViewController() const {
@@ -24032,6 +24674,89 @@ inline void DevicesViewController::start() const {
 inline void DevicesViewController::stop() const {
 	urnet_devices_view_controller_stop(handle());
 }
+inline Sub ExtenderViewController::addStatusListener(ExtenderViewControllerListener listener) const {
+	std::shared_ptr<ExtenderViewControllerListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderViewControllerListener>(std::move(listener));
+	}
+	Sub r(urnet_extender_view_controller_add_status_listener(handle(), listener_fn ? &detail::retained_extender_view_controller : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline std::optional<ExtenderShareResult> ExtenderViewController::buildShare(bool include_settings) const {
+	char* r_c = urnet_extender_view_controller_build_share(handle(), include_settings);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderShareResult>(r_s->c_str());
+}
+inline void ExtenderViewController::close() const {
+	urnet_extender_view_controller_close(handle());
+}
+inline std::optional<ExtenderShareDecodeResult> ExtenderViewController::decodeShare(const std::string& text) const {
+	char* r_c = urnet_extender_view_controller_decode_share(handle(), text.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderShareDecodeResult>(r_s->c_str());
+}
+inline void ExtenderViewController::extenderStatusChanged(const std::optional<ExtenderStatus>& status) const {
+	std::string status_json;
+	const char* status_c = nullptr;
+	if (status) {
+		status_json = nlohmann::json(*status).dump();
+		status_c = status_json.c_str();
+	}
+	urnet_extender_view_controller_extender_status_changed(handle(), status_c);
+}
+inline std::optional<ExtenderSettings> ExtenderViewController::getSettings() const {
+	char* r_c = urnet_extender_view_controller_get_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSettings>(r_s->c_str());
+}
+inline std::optional<ExtenderStatus> ExtenderViewController::getStatus() const {
+	char* r_c = urnet_extender_view_controller_get_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStatus>(r_s->c_str());
+}
+inline std::optional<ExtenderImportResult> ExtenderViewController::importShare(const std::string& text, bool use_settings) const {
+	char* r_c = urnet_extender_view_controller_import_share(handle(), text.c_str(), use_settings);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderImportResult>(r_s->c_str());
+}
+inline std::optional<ExtenderSettings> ExtenderViewController::setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const {
+	std::string hosts_json;
+	const char* hosts_c = nullptr;
+	if (hosts) {
+		hosts_json = nlohmann::json(*hosts).dump();
+		hosts_c = hosts_json.c_str();
+	}
+	char* r_c = urnet_extender_view_controller_set_settings(handle(), dns_name.c_str(), gossip_url.c_str(), hosts_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSettings>(r_s->c_str());
+}
+inline void ExtenderViewController::start() const {
+	urnet_extender_view_controller_start(handle());
+}
+inline void ExtenderViewController::stop() const {
+	urnet_extender_view_controller_stop(handle());
+}
 inline Sub FeedbackViewController::addIsSendingFeedbackListener(IsSendingFeedbackListener listener) const {
 	std::shared_ptr<IsSendingFeedbackListener> listener_fn;
 	if (listener) {
@@ -24239,6 +24964,10 @@ inline std::optional<DnsResolverSettings> LocalState::getDnsResolverSettings() c
 	}
 	return detail::parseJson<DnsResolverSettings>(r_s->c_str());
 }
+inline std::string LocalState::getExtenderGossipMode() const {
+	char* r_c = urnet_local_state_get_extender_gossip_mode(handle());
+	return detail::takeString(r_c);
+}
 inline std::string LocalState::getInstanceId() const {
 	char* r_c = urnet_local_state_get_instance_id(handle());
 	return detail::takeString(r_c);
@@ -24258,6 +24987,10 @@ inline std::optional<PerformanceProfile> LocalState::getPerformanceProfile() con
 inline std::string LocalState::getProvideControlMode() const {
 	char* r_c = urnet_local_state_get_provide_control_mode(handle());
 	return detail::takeString(r_c);
+}
+inline bool LocalState::getProvideExtender() const {
+	bool r = urnet_local_state_get_provide_extender(handle());
+	return r;
 }
 inline int64_t LocalState::getProvideMode() const {
 	int64_t r = urnet_local_state_get_provide_mode(handle());
@@ -24581,6 +25314,16 @@ inline void LocalState::setDnsResolverSettings(const std::optional<DnsResolverSe
 		throw Error("urnet: urnet_local_state_set_dns_resolver_settings failed");
 	}
 }
+inline void LocalState::setExtenderGossipMode(const std::string& mode) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_extender_gossip_mode(handle(), mode.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_extender_gossip_mode failed");
+	}
+}
 inline void LocalState::setInstanceId(const std::string& instance_id) const {
 	char* err_c = nullptr;
 	bool ok = urnet_local_state_set_instance_id(handle(), instance_id.c_str(), &err_c);
@@ -24635,6 +25378,16 @@ inline void LocalState::setProvideControlMode(const std::string& mode) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_provide_control_mode failed");
+	}
+}
+inline void LocalState::setProvideExtender(bool provide_extender) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_provide_extender(handle(), provide_extender, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_provide_extender failed");
 	}
 }
 inline void LocalState::setProvideMode(int64_t provide_mode) const {
@@ -24848,11 +25601,34 @@ inline void NetworkNameValidationViewController::start() const {
 inline void NetworkNameValidationViewController::stop() const {
 	urnet_network_name_validation_view_controller_stop(handle());
 }
+inline Sub NetworkSpace::addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const {
+	std::shared_ptr<ExtenderStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_network_space_add_extender_status_change_listener(handle(), listener_fn ? &detail::retained_extender_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline void NetworkSpace::close() const {
 	urnet_network_space_close(handle());
 }
 inline std::string NetworkSpace::connectLinkUrl(const std::string& target) const {
 	char* r_c = urnet_network_space_connect_link_url(handle(), target.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getAltUrl() const {
+	char* r_c = urnet_network_space_get_alt_url(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getAltUrlV4() const {
+	char* r_c = urnet_network_space_get_alt_url_v4(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getAltUrlV6() const {
+	char* r_c = urnet_network_space_get_alt_url_v6(handle());
 	return detail::takeString(r_c);
 }
 inline Api NetworkSpace::getApi() const {
@@ -24903,6 +25679,42 @@ inline std::string NetworkSpace::getEnvSecret() const {
 	char* r_c = urnet_network_space_get_env_secret(handle());
 	return detail::takeString(r_c);
 }
+inline std::string NetworkSpace::getExtenderDnsName() const {
+	char* r_c = urnet_network_space_get_extender_dns_name(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getExtenderGossipMode() const {
+	char* r_c = urnet_network_space_get_extender_gossip_mode(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<StringList> NetworkSpace::getExtenderHosts() const {
+	char* r_c = urnet_network_space_get_extender_hosts(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> NetworkSpace::getExtenderRootPublicKeys() const {
+	char* r_c = urnet_network_space_get_extender_root_public_keys(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<ExtenderStatus> NetworkSpace::getExtenderStatus() const {
+	char* r_c = urnet_network_space_get_extender_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStatus>(r_s->c_str());
+}
+inline std::string NetworkSpace::getGossipUrl() const {
+	char* r_c = urnet_network_space_get_gossip_url(handle());
+	return detail::takeString(r_c);
+}
 inline std::string NetworkSpace::getHostName() const {
 	char* r_c = urnet_network_space_get_host_name(handle());
 	return detail::takeString(r_c);
@@ -24938,14 +25750,6 @@ inline std::optional<NetExtender> NetworkSpace::getNetExtender() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<NetExtender>(r_s->c_str());
-}
-inline std::optional<NetExtenderAutoConfigure> NetworkSpace::getNetExtenderAutoConfigure() const {
-	char* r_c = urnet_network_space_get_net_extender_auto_configure(handle());
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<NetExtenderAutoConfigure>(r_s->c_str());
 }
 inline std::string NetworkSpace::getPlatformUrl() const {
 	char* r_c = urnet_network_space_get_platform_url(handle());
@@ -24989,6 +25793,9 @@ inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std
 }
 inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
 	urnet_network_space_set_control_ip_family_policy(handle(), policy);
+}
+inline void NetworkSpace::setExtenderGossipMode(const std::string& mode) const {
+	urnet_network_space_set_extender_gossip_mode(handle(), mode.c_str());
 }
 inline std::string NetworkSpace::toJson() const {
 	char* err_c = nullptr;
@@ -26038,6 +26845,56 @@ inline std::optional<ExportResult> exportDiagnosticBundle(const std::string& des
 	}
 	return detail::parseJson<ExportResult>(r_s->c_str());
 }
+inline std::string extenderDnsName(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_extender_dns_name(key_c, values_c);
+	return detail::takeString(r_c);
+}
+inline std::vector<std::string> extenderHosts(const std::optional<NetworkSpaceValues>& values) {
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_extender_hosts(values_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::vector<std::string>{};
+	}
+	return detail::parseJson<std::vector<std::string>>(r_s->c_str());
+}
+inline std::vector<std::string> extenderRootPublicKeys(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_extender_root_public_keys(key_c, values_c);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::vector<std::string>{};
+	}
+	return detail::parseJson<std::vector<std::string>>(r_s->c_str());
+}
 inline void flushGlog() {
 	urnet_flush_glog();
 }
@@ -26128,6 +26985,14 @@ inline int64_t getDefaultTunnelMtu() {
 	int64_t r = urnet_get_default_tunnel_mtu();
 	return r;
 }
+inline std::string getExtenderColorHex(const std::string& ip) {
+	char* r_c = urnet_get_extender_color_hex(ip.c_str());
+	return detail::takeString(r_c);
+}
+inline bool getExtenderStoreReadOnly() {
+	bool r = urnet_get_extender_store_read_only();
+	return r;
+}
 inline std::optional<FilteredLocations> getFilteredLocationsFromResult(const std::optional<FindLocationsResult>& result, const std::string& filter) {
 	std::string result_json;
 	const char* result_c = nullptr;
@@ -26185,6 +27050,22 @@ inline std::optional<RegionalDnsServerList> getRegionalDnsServers() {
 inline int64_t getTunnelLocalPrefixLengthIpv6() {
 	int64_t r = urnet_get_tunnel_local_prefix_length_ipv6();
 	return r;
+}
+inline std::string gossipUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_gossip_url(key_c, values_c);
+	return detail::takeString(r_c);
 }
 inline bool hasRegionalDnsRecommendation(const std::string& country_code) {
 	bool r = urnet_has_regional_dns_recommendation(country_code.c_str());
@@ -26530,6 +27411,10 @@ inline std::string normalEnvName(const std::string& env_name) {
 	char* r_c = urnet_normal_env_name(env_name.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string normalExtenderGossipMode(const std::string& mode) {
+	char* r_c = urnet_normal_extender_gossip_mode(mode.c_str());
+	return detail::takeString(r_c);
+}
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
 	std::string locations_json;
 	const char* locations_c = nullptr;
@@ -26626,6 +27511,22 @@ inline std::optional<StringList> selectableTransportModes() {
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
 }
+inline std::string serviceHostName(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& service) {
+	std::string key_json;
+	const char* key_c = nullptr;
+	if (key) {
+		key_json = nlohmann::json(*key).dump();
+		key_c = key_json.c_str();
+	}
+	std::string values_json;
+	const char* values_c = nullptr;
+	if (values) {
+		values_json = nlohmann::json(*values).dump();
+		values_c = values_json.c_str();
+	}
+	char* r_c = urnet_service_host_name(key_c, values_c, service.c_str());
+	return detail::takeString(r_c);
+}
 inline std::string serviceUrl(const std::optional<NetworkSpaceKey>& key, const std::optional<NetworkSpaceValues>& values, const std::string& scheme, const std::string& service) {
 	std::string key_json;
 	const char* key_c = nullptr;
@@ -26647,6 +27548,9 @@ inline void setControlIpFamilyPolicy(int64_t policy) {
 }
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);
+}
+inline void setExtenderStoreReadOnly(bool read_only) {
+	urnet_set_extender_store_read_only(read_only);
 }
 inline void setLogDir(const std::string& log_dir) {
 	char* err_c = nullptr;
@@ -26899,6 +27803,9 @@ inline std::vector<uint8_t> DeviceLocal::getProvideTlsCertificatePem() const {
 inline std::vector<uint8_t> DeviceLocal::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_get_provide_tls_private_key_pem(h, out, len); });
 }
+inline std::vector<uint8_t> DeviceLocal::getExtenderKeySeed() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_get_extender_key_seed(h, out, len); });
+}
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getClientKeySeed() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_client_key_seed(h, out, len); });
 }
@@ -26907,6 +27814,9 @@ inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsCertificatePem(
 }
 inline std::vector<uint8_t> DeviceLocalKeyMaterial::getProvideTlsPrivateKeyPem() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_provide_tls_private_key_pem(h, out, len); });
+}
+inline std::vector<uint8_t> DeviceLocalKeyMaterial::getExtenderKeySeed() const {
+	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_local_key_material_get_extender_key_seed(h, out, len); });
 }
 inline std::vector<uint8_t> DeviceLocal::getPublicIdentityKey() const {
 	return detail::bufferOut([h = handle()](uint8_t* out, int32_t* len) { return urnet_device_get_public_identity_key(h, out, len); });

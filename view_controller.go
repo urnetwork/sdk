@@ -45,6 +45,8 @@ type ViewControllerManager interface {
 
 	OpenPostQuantumIdentityViewController() *PostQuantumIdentityViewController
 
+	OpenExtenderViewController() *ExtenderViewController
+
 	OpenContractViewController() *ContractViewController
 
 	OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController
@@ -181,6 +183,12 @@ func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionV
 
 func (self *viewControllerManager) OpenPostQuantumIdentityViewController() *PostQuantumIdentityViewController {
 	vc := newPostQuantumIdentityViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenExtenderViewController() *ExtenderViewController {
+	vc := newExtenderViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

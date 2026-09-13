@@ -61,6 +61,9 @@ _build_android:
 	# the Sim* simulation scaffolding (sim_device.go) is a go-embedder surface whose configs
 	# deliberately carry connect types, and CollapseHostNames is the go-side ([]string) variant
 	# of CollapseHostNamesList — both are expected skips, not part of the mobile surface
+	# the extender network's []string surface is the same case: the ExtenderHosts and
+	# ExtenderRootPublicKeys package helpers and the NetworkSpaceValues fields they read are
+	# the go-side variants of the StringList form the mobile ExtenderSettings carries
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib

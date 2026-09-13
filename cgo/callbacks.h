@@ -99,6 +99,12 @@ typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_jso
 void urnet_invoke_device_set_name(urnet_device_set_name_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_dns_resolver_settings_change_cb)(void* user_data, const char* dns_resolver_settings_json);
 void urnet_invoke_dns_resolver_settings_change(urnet_dns_resolver_settings_change_cb cb, void* user_data, const char* dns_resolver_settings_json);
+typedef void (*urnet_extender_provide_status_change_cb)(void* user_data, const char* status_json);
+void urnet_invoke_extender_provide_status_change(urnet_extender_provide_status_change_cb cb, void* user_data, const char* status_json);
+typedef void (*urnet_extender_status_change_cb)(void* user_data, const char* status_json);
+void urnet_invoke_extender_status_change(urnet_extender_status_change_cb cb, void* user_data, const char* status_json);
+typedef void (*urnet_extender_view_controller_cb)(void* user_data, const char* status_json);
+void urnet_invoke_extender_view_controller(urnet_extender_view_controller_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_filtered_locations_cb)(void* user_data, const char* locations_json, const char* state);
 void urnet_invoke_filtered_locations(urnet_filtered_locations_cb cb, void* user_data, const char* locations_json, const char* state);
 typedef void (*urnet_find_locations_cb)(void* user_data, const char* result_json, const char* err_param);

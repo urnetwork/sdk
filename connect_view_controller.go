@@ -9,6 +9,8 @@ import (
 	// "fmt"
 	"math"
 	mathrand "math/rand"
+	"net/netip"
+	"strings"
 	"sync"
 	"time"
 
@@ -602,6 +604,38 @@ type ProviderGridPoint struct {
 	// IpFamilyLabelV4 or IpFamilyLabelV6. The drawer histogram stacks the dots
 	// under these.
 	IpFamilyLabel string
+	// ExtenderIps are the extender addresses carrying this client's live
+	// platform transports to the exit right now (EXTENDER.md K1), comma
+	// separated in canonical form, because gomobile binds no string slice.
+	// Empty over a direct or p2p route, which is the common case; one address
+	// through an extender, and briefly two across a transport migration. They
+	// are this client's extenders and never the provider's own.
+	ExtenderIps string
+	// ExtenderColorHexes are the colors of those addresses (K3), comma
+	// separated in the SAME order, so an app pairs the two lists by index and
+	// never recomputes a color itself. Six hex digits each, no leading `#`.
+	ExtenderColorHexes string
+}
+
+// The extender addresses of one provider event as a grid point carries them
+// (K1, K3): the canonical addresses and their colors, comma separated in the
+// same order, because gomobile binds no string slice. An invalid address is
+// dropped from both, so the two lists always pair by index.
+func extenderIpsAndColorHexes(extenderIps []netip.Addr) (string, string) {
+	if len(extenderIps) == 0 {
+		return "", ""
+	}
+	ips := make([]string, 0, len(extenderIps))
+	colorHexes := make([]string, 0, len(extenderIps))
+	for _, extenderIp := range extenderIps {
+		if !extenderIp.IsValid() {
+			continue
+		}
+		ip := extenderIp.Unmap().String()
+		ips = append(ips, ip)
+		colorHexes = append(colorHexes, GetExtenderColorHex(ip))
+	}
+	return strings.Join(ips, ","), strings.Join(colorHexes, ",")
 }
 
 type gridPointCoord struct {
@@ -1089,6 +1123,16 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					point.IpFamilyLabel = ipFamilyLabel(providerEvent.IpFamily)
 					providerGridPointChanged = true
 				}
+				// the extenders of a live point change whenever a transport
+				// migrates, connects or drops, which is the whole point of the
+				// in-place update (K1)
+				if extenderIps, extenderColorHexes := extenderIpsAndColorHexes(
+					providerEvent.ExtenderIps,
+				); point.ExtenderIps != extenderIps {
+					point.ExtenderIps = extenderIps
+					point.ExtenderColorHexes = extenderColorHexes
+					providerGridPointChanged = true
+				}
 				// point.EventTime = newTime(eventTime)
 			} else {
 				// insert a new provider point
@@ -1139,16 +1183,19 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					// schedule the point to be removed
 					endTime = newTime(time.Now().Add(self.settings.RemoveTimeout))
 				}
+				extenderIps, extenderColorHexes := extenderIpsAndColorHexes(providerEvent.ExtenderIps)
 				point = &ProviderGridPoint{
 					X:        int32(unoccupiedGridPoint.X),
 					Y:        int32(unoccupiedGridPoint.Y),
 					ClientId: newId(clientId),
 					State:    providerState,
 					// EventTime: newTime(eventTime),
-					EndTime:       endTime,
-					Active:        providerEvent.State.IsActive(),
-					IpFamily:      ipFamilyValue(providerEvent.IpFamily),
-					IpFamilyLabel: ipFamilyLabel(providerEvent.IpFamily),
+					EndTime:            endTime,
+					Active:             providerEvent.State.IsActive(),
+					IpFamily:           ipFamilyValue(providerEvent.IpFamily),
+					IpFamilyLabel:      ipFamilyLabel(providerEvent.IpFamily),
+					ExtenderIps:        extenderIps,
+					ExtenderColorHexes: extenderColorHexes,
 				}
 				self.providerGridPoints[clientId] = point
 				providerGridPointChanged = true

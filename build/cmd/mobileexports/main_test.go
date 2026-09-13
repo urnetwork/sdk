@@ -93,3 +93,30 @@ func TestMobileExportPolicyRejectsMalformedSkippedRecord(t *testing.T) {
 		t.Fatal("a malformed skipped record was ignored")
 	}
 }
+
+func TestMobileExtenderStringSliceOmissionsAreExplicit(t *testing.T) {
+	root := t.TempDir()
+	source := strings.Join([]string{
+		"// skipped function ExtenderHosts with unsupported parameter or return types",
+		"// skipped function ExtenderRootPublicKeys with unsupported parameter or return types",
+		"// skipped field NetworkSpaceValues.ExtenderHosts with unsupported type",
+		"// skipped field NetworkSpaceValues.ExtenderRootPublicKeys with unsupported type",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "NetworkSpaceValues.java"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err != nil {
+		t.Fatalf("the go-side extender string slices were not accepted: %v", err)
+	}
+}
+
+func TestMobileExtenderStringSlicePolicyDoesNotPrefixMatch(t *testing.T) {
+	root := t.TempDir()
+	source := "// skipped field NetworkSpaceValues.ExtenderHostsAndMore with unsupported type\n"
+	if err := os.WriteFile(filepath.Join(root, "NetworkSpaceValues.java"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err == nil {
+		t.Fatal("a similarly named but unreviewed extender omission was accepted")
+	}
+}

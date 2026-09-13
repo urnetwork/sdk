@@ -157,10 +157,10 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
 	target := ByteCount(24 * 1024 * 1024)
 	firstBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
-	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "")
-	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "")
+	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "", "")
+	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "", "")
 	secondBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
-	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget, nil, "")
+	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget, nil, "", "")
 
 	if firstWindow.PlatformTransportBudget != firstProvider.PlatformTransportBudget {
 		t.Fatal("one DeviceLocal did not share its budget across window and provider carriers")
@@ -195,6 +195,7 @@ func TestDeviceLocalPlatformTransportCopiesProviderPacketConnFactory(t *testing.
 		24*1024*1024,
 		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
 		dialContextSettings,
+		"",
 		"127.0.1.7",
 	)
 	if settings.H3PacketConnFactory == nil {
@@ -217,6 +218,7 @@ func TestDeviceLocalPlatformTransportCopiesProviderPacketConnFactory(t *testing.
 		24*1024*1024,
 		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
 		nil,
+		"",
 		"",
 	)
 	if ordinary.H3PacketConnFactory != nil {

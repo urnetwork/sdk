@@ -49,9 +49,11 @@ bool urnet_generate_shared_secret(const uint8_t* private_key, int32_t private_ke
 bool urnet_device_local_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_key_material_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 
 /* post quantum identity (canonical identicon raster + raw identity key) */
 bool urnet_render_identicon_png(const uint8_t* input, int32_t input_len, int32_t size, uint8_t* out, int32_t* inout_len, char** out_error);
@@ -120,6 +122,16 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXPERIMENT_SURFACE_OFFER_INTRO_STEP "offer.intro_step"
 #define URNET_EXPERIMENT_SURFACE_OFFER_IN_APP "offer.in_app"
 #define URNET_EXPERIMENT_VARIANT_HOLDOUT "holdout"
+#define URNET_EXTENDER_GOSSIP_MODE_AUTO "auto"
+#define URNET_EXTENDER_GOSSIP_MODE_FEED "feed"
+#define URNET_EXTENDER_GOSSIP_MODE_MEMBER "member"
+#define URNET_EXTENDER_GOSSIP_STATE_CONNECTED "connected"
+#define URNET_EXTENDER_GOSSIP_STATE_CONNECTING "connecting"
+#define URNET_EXTENDER_GOSSIP_STATE_DISCONNECTED "disconnected"
+#define URNET_EXTENDER_IMPORT_ERROR_FOREIGN_HOST "import_extenders_foreign_host"
+#define URNET_EXTENDER_IMPORT_ERROR_INVALID "import_extenders_invalid"
+#define URNET_EXTENDER_ROLE_FEED "feed"
+#define URNET_EXTENDER_ROLE_MEMBER "member"
 #define URNET_IP_FAMILY_DUALSTACK "dualstack"
 #define URNET_IP_FAMILY_LABEL_BOTH "both"
 #define URNET_IP_FAMILY_LABEL_V4 "v4"
@@ -371,6 +383,12 @@ typedef void (*urnet_device_recreated_cb)(void* user_data);
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* DnsResolverSettingsChangeListener */
 typedef void (*urnet_dns_resolver_settings_change_cb)(void* user_data, const char* dns_resolver_settings_json);
+/* ExtenderProvideStatusChangeListener */
+typedef void (*urnet_extender_provide_status_change_cb)(void* user_data, const char* status_json);
+/* ExtenderStatusChangeListener */
+typedef void (*urnet_extender_status_change_cb)(void* user_data, const char* status_json);
+/* ExtenderViewControllerListener */
+typedef void (*urnet_extender_view_controller_cb)(void* user_data, const char* status_json);
 /* FilteredLocationsListener */
 typedef void (*urnet_filtered_locations_cb)(void* user_data, const char* locations_json, const char* state);
 /* FindLocationsCallback */
@@ -885,6 +903,7 @@ uint64_t urnet_device_add_default_location_change_listener(uint64_t self, urnet_
 uint64_t urnet_device_add_dns_resolver_settings_change_listener(uint64_t self, urnet_dns_resolver_settings_change_cb listener_dns_resolver_settings_changed, void* listener_user_data);
 uint64_t urnet_device_add_egress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_egress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
+uint64_t urnet_device_add_extender_status_change_listener(uint64_t self, urnet_extender_status_change_cb listener_extender_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_ingress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_ingress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
 uint64_t urnet_device_add_jwt_refresh_listener(uint64_t self, urnet_jwt_refresh_cb listener_jwt_refreshed, void* listener_user_data);
@@ -937,6 +956,7 @@ char* urnet_device_get_dns_resolver_settings(uint64_t self);
 bool urnet_device_get_done(uint64_t self);
 char* urnet_device_get_egress_contract_details(uint64_t self);
 char* urnet_device_get_egress_contract_stats(uint64_t self);
+char* urnet_device_get_extender_status(uint64_t self);
 char* urnet_device_get_ingress_contract_details(uint64_t self);
 char* urnet_device_get_ingress_contract_stats(uint64_t self);
 char* urnet_device_get_instance_id(uint64_t self);
@@ -1005,6 +1025,7 @@ bool urnet_device_upload_logs(uint64_t self, const char* feedback_id, urnet_uplo
 
 /* ----- DeviceLocal ----- */
 
+uint64_t urnet_device_local_add_extender_provide_status_change_listener(uint64_t self, urnet_extender_provide_status_change_cb listener_extender_provide_status_changed, void* listener_user_data);
 uint64_t urnet_device_local_add_local_state_save_listener(uint64_t self, urnet_local_state_save_cb listener_local_state_saved, void* listener_user_data);
 uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_packet_cb receive_packet_receive_packet, void* receive_packet_user_data);
 uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receive_packet_batch_cb receive_packet_batch_receive_packet_batch, void* receive_packet_batch_user_data);
@@ -1031,11 +1052,13 @@ bool urnet_device_local_get_auto_save(uint64_t self);
 char* urnet_device_local_get_client_jwt(uint64_t self);
 char* urnet_device_local_get_destination_exits(uint64_t self);
 char* urnet_device_local_get_exits(uint64_t self);
+char* urnet_device_local_get_extender_provide_status(uint64_t self);
 char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
 uint64_t urnet_device_local_get_last_local_state_save_result(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
+bool urnet_device_local_get_provide_extender(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
 bool urnet_device_local_get_provider_client_key_registered(uint64_t self);
 bool urnet_device_local_get_provider_connected(uint64_t self);
@@ -1060,6 +1083,7 @@ uint64_t urnet_device_local_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_devices_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_extender_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_network_user_view_controller(uint64_t self);
@@ -1090,6 +1114,7 @@ bool urnet_device_local_set_default_location_checked(uint64_t self, const char* 
 void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lookup_cb lookup_pinned_flow_app_id, void* lookup_user_data);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
 void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
+void urnet_device_local_set_provide_extender(uint64_t self, bool provide_extender);
 void urnet_device_local_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
 void urnet_device_local_set_routing_tier(uint64_t self, int64_t tier);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
@@ -1120,6 +1145,7 @@ bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_millisecon
 /* ----- DeviceLocalKeyMaterial ----- */
 
 bool urnet_device_local_key_material_is_empty(uint64_t self);
+void urnet_device_local_key_material_set_extender_key_seed(uint64_t self, const uint8_t* extender_key_seed, int32_t extender_key_seed_len);
 
 /* ----- DeviceLocalLoadResult ----- */
 
@@ -1179,6 +1205,7 @@ uint64_t urnet_device_remote_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_devices_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_extender_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_feedback_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_locations_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_network_user_view_controller(uint64_t self);
@@ -1240,6 +1267,20 @@ void urnet_devices_view_controller_close(uint64_t self);
 void urnet_devices_view_controller_start(uint64_t self);
 void urnet_devices_view_controller_stop(uint64_t self);
 
+/* ----- ExtenderViewController ----- */
+
+uint64_t urnet_extender_view_controller_add_status_listener(uint64_t self, urnet_extender_view_controller_cb listener_extender_status_changed, void* listener_user_data);
+char* urnet_extender_view_controller_build_share(uint64_t self, bool include_settings);
+void urnet_extender_view_controller_close(uint64_t self);
+char* urnet_extender_view_controller_decode_share(uint64_t self, const char* text);
+void urnet_extender_view_controller_extender_status_changed(uint64_t self, const char* status_json);
+char* urnet_extender_view_controller_get_settings(uint64_t self);
+char* urnet_extender_view_controller_get_status(uint64_t self);
+char* urnet_extender_view_controller_import_share(uint64_t self, const char* text, bool use_settings);
+char* urnet_extender_view_controller_set_settings(uint64_t self, const char* dns_name, const char* gossip_url, const char* hosts_json);
+void urnet_extender_view_controller_start(uint64_t self);
+void urnet_extender_view_controller_stop(uint64_t self);
+
 /* ----- FeedbackViewController ----- */
 
 uint64_t urnet_feedback_view_controller_add_is_sending_feedback_listener(uint64_t self, urnet_is_sending_feedback_cb listener_state_changed, void* listener_user_data);
@@ -1279,10 +1320,12 @@ int64_t urnet_local_state_get_control_ip_family_policy(uint64_t self);
 char* urnet_local_state_get_default_location(uint64_t self);
 uint64_t urnet_local_state_get_device_local_key_material(uint64_t self);
 char* urnet_local_state_get_dns_resolver_settings(uint64_t self);
+char* urnet_local_state_get_extender_gossip_mode(uint64_t self);
 char* urnet_local_state_get_instance_id(uint64_t self);
 int64_t urnet_local_state_get_log_verbosity(uint64_t self);
 char* urnet_local_state_get_performance_profile(uint64_t self);
 char* urnet_local_state_get_provide_control_mode(uint64_t self);
+bool urnet_local_state_get_provide_extender(uint64_t self);
 int64_t urnet_local_state_get_provide_mode(uint64_t self);
 char* urnet_local_state_get_provide_network_mode(uint64_t self);
 char* urnet_local_state_get_provide_secret_keys(uint64_t self);
@@ -1317,11 +1360,13 @@ bool urnet_local_state_set_control_ip_family_policy(uint64_t self, int64_t polic
 bool urnet_local_state_set_default_location(uint64_t self, const char* connect_location_json, char** out_error);
 bool urnet_local_state_set_device_local_key_material(uint64_t self, uint64_t key_material, char** out_error);
 bool urnet_local_state_set_dns_resolver_settings(uint64_t self, const char* dns_resolver_settings_json, char** out_error);
+bool urnet_local_state_set_extender_gossip_mode(uint64_t self, const char* mode, char** out_error);
 bool urnet_local_state_set_instance_id(uint64_t self, const char* instance_id, char** out_error);
 bool urnet_local_state_set_intro_funnel_last_prompted(uint64_t self, char** out_error);
 bool urnet_local_state_set_log_verbosity(uint64_t self, int64_t level, char** out_error);
 bool urnet_local_state_set_performance_profile(uint64_t self, const char* profile_json, char** out_error);
 bool urnet_local_state_set_provide_control_mode(uint64_t self, const char* mode, char** out_error);
+bool urnet_local_state_set_provide_extender(uint64_t self, bool provide_extender, char** out_error);
 bool urnet_local_state_set_provide_mode(uint64_t self, int64_t provide_mode, char** out_error);
 bool urnet_local_state_set_provide_network_mode(uint64_t self, const char* provide_network_mode, char** out_error);
 bool urnet_local_state_set_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json, char** out_error);
@@ -1372,8 +1417,12 @@ void urnet_network_name_validation_view_controller_stop(uint64_t self);
 
 /* ----- NetworkSpace ----- */
 
+uint64_t urnet_network_space_add_extender_status_change_listener(uint64_t self, urnet_extender_status_change_cb listener_extender_status_changed, void* listener_user_data);
 void urnet_network_space_close(uint64_t self);
 char* urnet_network_space_connect_link_url(uint64_t self, const char* target);
+char* urnet_network_space_get_alt_url(uint64_t self);
+char* urnet_network_space_get_alt_url_v4(uint64_t self);
+char* urnet_network_space_get_alt_url_v6(uint64_t self);
 uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
 char* urnet_network_space_get_api_url_v4(uint64_t self);
@@ -1385,6 +1434,12 @@ char* urnet_network_space_get_configured_api_url(uint64_t self);
 char* urnet_network_space_get_configured_platform_url(uint64_t self);
 char* urnet_network_space_get_env_name(uint64_t self);
 char* urnet_network_space_get_env_secret(uint64_t self);
+char* urnet_network_space_get_extender_dns_name(uint64_t self);
+char* urnet_network_space_get_extender_gossip_mode(uint64_t self);
+char* urnet_network_space_get_extender_hosts(uint64_t self);
+char* urnet_network_space_get_extender_root_public_keys(uint64_t self);
+char* urnet_network_space_get_extender_status(uint64_t self);
+char* urnet_network_space_get_gossip_url(uint64_t self);
 char* urnet_network_space_get_host_name(uint64_t self);
 char* urnet_network_space_get_key(uint64_t self);
 char* urnet_network_space_get_link_host_name(uint64_t self);
@@ -1392,7 +1447,6 @@ char* urnet_network_space_get_migration_host_name(uint64_t self);
 bool urnet_network_space_get_net_expose_server_host_names(uint64_t self);
 bool urnet_network_space_get_net_expose_server_ips(uint64_t self);
 char* urnet_network_space_get_net_extender(uint64_t self);
-char* urnet_network_space_get_net_extender_auto_configure(uint64_t self);
 char* urnet_network_space_get_platform_url(uint64_t self);
 char* urnet_network_space_get_platform_url_v4(uint64_t self);
 char* urnet_network_space_get_platform_url_v6(uint64_t self);
@@ -1403,6 +1457,7 @@ bool urnet_network_space_has_platform_family_urls(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
+void urnet_network_space_set_extender_gossip_mode(uint64_t self, const char* mode);
 char* urnet_network_space_to_json(uint64_t self, char** out_error);
 
 /* ----- NetworkSpaceManager ----- */
@@ -1627,6 +1682,9 @@ char* urnet_encode_base58(const uint8_t* data, int32_t data_len);
 char* urnet_encrypt_data(const uint8_t* data, int32_t data_len, const char* nonce_base58, const char* shared_secret_base58, char** out_error);
 char* urnet_evm_mirror_ss58(const char* address);
 char* urnet_export_diagnostic_bundle(const char* dest_path, const char* opts_json, char** out_error);
+char* urnet_extender_dns_name(const char* key_json, const char* values_json);
+char* urnet_extender_hosts(const char* values_json);
+char* urnet_extender_root_public_keys(const char* key_json, const char* values_json);
 void urnet_flush_glog(void);
 char* urnet_format_alpha(int64_t rao);
 char* urnet_format_alpha_amount(int64_t rao);
@@ -1645,6 +1703,8 @@ char* urnet_get_default_probe_suite_config(void);
 char* urnet_get_default_tunnel_dns_address_ipv4(void);
 char* urnet_get_default_tunnel_dns_address_ipv6(void);
 int64_t urnet_get_default_tunnel_mtu(void);
+char* urnet_get_extender_color_hex(const char* ip);
+bool urnet_get_extender_store_read_only(void);
 char* urnet_get_filtered_locations_from_result(const char* result_json, const char* filter);
 bool urnet_get_fips140_enabled(void);
 char* urnet_get_log_dir(void);
@@ -1654,6 +1714,7 @@ char* urnet_get_memory_stats(void);
 char* urnet_get_recommended_dns_resolver_settings(const char* country_code);
 char* urnet_get_regional_dns_servers(void);
 int64_t urnet_get_tunnel_local_prefix_length_ipv6(void);
+char* urnet_gossip_url(const char* key_json, const char* values_json);
 bool urnet_has_regional_dns_recommendation(const char* country_code);
 char* urnet_host_base_name(const char* host);
 char* urnet_id_from_bytes(const uint8_t* id_bytes, int32_t id_bytes_len, char** out_error);
@@ -1705,6 +1766,7 @@ uint64_t urnet_new_tunnel(void);
 uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
 char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
+char* urnet_normal_extender_gossip_mode(const char* mode);
 char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
@@ -1717,9 +1779,11 @@ int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
 char* urnet_record_tunnel_recovery_stage(const char* stage, const char* result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation);
 int64_t urnet_saving_percent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits);
 char* urnet_selectable_transport_modes(void);
+char* urnet_service_host_name(const char* key_json, const char* values_json, const char* service);
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);
 void urnet_set_control_ip_family_policy(int64_t policy);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
+void urnet_set_extender_store_read_only(bool read_only);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 bool urnet_set_log_dir_for_process(const char* root, const char* process_name, char** out_error);
 bool urnet_set_log_verbosity(int64_t level, char** out_error);
@@ -2383,6 +2447,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   DefaultVpnInterfaceWhileOffline: boolean
  *   DefaultTunnelStarted: boolean
  *   AllowProvider: boolean
+ *   ProvideExtenderEnabled: boolean
  *   Verbose: boolean
  *   GeneratorFunc: any
  *   MultiClientIdentityStore: any
@@ -2487,6 +2552,93 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ByteCount: number
  *   FileCount: number
  *   MissingSources: StringList | null
+ */
+
+/* ExtenderImportResult (json):
+ *   Ok: boolean
+ *   Error: string
+ *   ImportedCount: number
+ */
+
+/* ExtenderInfo (json):
+ *   Id: string
+ *   Ip: string
+ *   IpVersion: number
+ *   ColorHex: string
+ *   Carriers: string
+ *   CountryCode: string
+ *   State: string
+ *   Source: string
+ *   LastSuccessTime: number
+ *   LastFailureTime: number
+ *   SuccessCount: number
+ *   FailureCount: number
+ *   InUse: number
+ *   ExpireTime: number
+ */
+
+/* ExtenderInfoList (json):
+ *   = ExtenderInfo | null[]
+ */
+
+/* ExtenderProvideStatus (json):
+ *   Enabled: boolean
+ *   Listening: boolean
+ *   ListenError: string
+ *   ActivatedV4: boolean
+ *   ActivatedV6: boolean
+ *   Ipv4: string
+ *   Ipv6: string
+ *   LastActivationTime: number
+ *   LastActivationError: string
+ *   RevokedTime: number
+ *   DnsPorts: string
+ *   ConnectionCount: number
+ */
+
+/* ExtenderSettings (json):
+ *   DnsName: string
+ *   DnsNameDefault: boolean
+ *   GossipUrl: string
+ *   GossipUrlDefault: boolean
+ *   Hosts: StringList | null
+ *   NetworkHost: string
+ *   RootPublicKeys: StringList | null
+ *   RootPublicKeysDefault: boolean
+ */
+
+/* ExtenderShareDecodeResult (json):
+ *   Ok: boolean
+ *   Error: string
+ *   NetworkHost: string
+ *   ForeignHost: boolean
+ *   Count: number
+ *   HasSettings: boolean
+ *   SettingsHost: string
+ */
+
+/* ExtenderShareResult (json):
+ *   Text: string
+ *   Count: number
+ *   IncludesSettings: boolean
+ */
+
+/* ExtenderStatus (json):
+ *   Role: string
+ *   FeedConnected: boolean
+ *   FeedIp: string
+ *   GossipConnected: boolean
+ *   GossipPeerCount: number
+ *   GossipState: string
+ *   EventCountLastMinute: number
+ *   KnownCount: number
+ *   ActiveCount: number
+ *   ReserveCount: number
+ *   WarningCount: number
+ *   HoldCount: number
+ *   LastSampleTime: number
+ *   LastError: string
+ *   Extenders: ExtenderInfoList | null
  */
 
 /* FeedbackSendArgs (json):
@@ -2816,11 +2968,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   secret: string
  */
 
-/* NetExtenderAutoConfigure (json):
- *   dns_ip?: string
- *   extender_hostname?: string
- */
-
 /* NetworkBlockLocationArgs (json):
  *   location_id: string (uuid) | null
  */
@@ -2974,9 +3121,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   sso_google?: boolean
  *   api_url?: string
  *   platform_url?: string
+ *   alt_url?: string
  *   sn_chain?: SnChainSettings | null
  *   net_extender?: NetExtender | null
- *   net_extender_auto_configure?: NetExtenderAutoConfigure | null
+ *   extender_dns_name?: string
+ *   gossip_url?: string
+ *   extender_root_public_keys?: string[]
+ *   extender_hosts?: string[]
  */
 
 /* NetworkUnblockLocationArgs (json):
@@ -3233,6 +3384,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Active: boolean
  *   IpFamily: string
  *   IpFamilyLabel: string
+ *   ExtenderIps: string
+ *   ExtenderColorHexes: string
  */
 
 /* ProviderGridPointList (json):

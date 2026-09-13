@@ -42,10 +42,23 @@ var mobileApiOnlyControllerIds = map[string]bool{
 	"NewPointsLeaderboardViewControllerWithApi":                                   true,
 }
 
+// The extender network's go-side []string surface (EXTENDER.md F1, K6).
+// gomobile binds no string slice, so an app reaches these through the
+// StringList form on ExtenderSettings and the []string forms stay for go
+// embedders: the two package helpers that resolve a space's values, and the
+// two value fields they read. This is the CollapseHostNames case below.
+var mobileExtenderStringSliceIds = map[string]bool{
+	"ExtenderHosts":                             true,
+	"ExtenderRootPublicKeys":                    true,
+	"NetworkSpaceValues.ExtenderHosts":          true,
+	"NetworkSpaceValues.ExtenderRootPublicKeys": true,
+}
+
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile
 // callbacks retain the non-joining Close methods so they cannot self-join.
 func allowedMobileOmission(identifier string) bool {
-	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] {
+	if mobileLifecycleJoinIds[identifier] || mobileApiOnlyControllerIds[identifier] ||
+		mobileExtenderStringSliceIds[identifier] {
 		return true
 	}
 	parts := strings.SplitN(identifier, ".", 2)

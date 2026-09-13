@@ -18,9 +18,13 @@ export interface NetworkSpaceValues {
   sso_google?: boolean;
   api_url?: string;
   platform_url?: string;
+  alt_url?: string;
   sn_chain?: SnChainSettings | null;
   net_extender?: NetExtender | null;
-  net_extender_auto_configure?: NetExtenderAutoConfigure | null;
+  extender_dns_name?: string;
+  gossip_url?: string;
+  extender_root_public_keys?: string[];
+  extender_hosts?: string[];
 }
 
 export interface ExportNetworkSpace {
@@ -31,11 +35,6 @@ export interface ExportNetworkSpace {
 export interface NetExtender {
   ip: string;
   secret: string;
-}
-
-export interface NetExtenderAutoConfigure {
-  dns_ip?: string;
-  extender_hostname?: string;
 }
 
 export interface ProxyAuthResult {

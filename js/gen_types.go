@@ -35,7 +35,6 @@ func generateTypes() error {
 		sdk.NetworkSpaceValues{},
 		sdk.ExportNetworkSpace{},
 		sdk.NetExtender{},
-		sdk.NetExtenderAutoConfigure{},
 		sdk.ProxyAuthResult{},
 		sdk.ProxyConfigResult{},
 
