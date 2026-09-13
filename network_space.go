@@ -1272,9 +1272,13 @@ func (self *NetworkSpace) close() {
 		// taken under the lock because a settings change replaces it in place
 		// (K6); `closed` below then keeps a racing change from installing a
 		// replacement after this one is joined.
+		// `closed` is set in the SAME scope the client is taken from: a
+		// settings change that read it as open would otherwise install a
+		// replacement into a space nothing will ever close again
 		extenderNetworkClient := func() *connect.ExtenderNetworkClient {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
+			self.closed = true
 			extenderNetworkClient := self.extenderNetworkClient
 			self.extenderNetworkClient = nil
 			return extenderNetworkClient
@@ -1288,7 +1292,6 @@ func (self *NetworkSpace) close() {
 		extenderNode := func() *spaceExtenderNode {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
-			self.closed = true
 			extenderNode := self.extenderNode
 			self.extenderNode = nil
 			return extenderNode
