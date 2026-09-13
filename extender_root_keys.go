@@ -15,14 +15,23 @@ import "strings"
 // over the platform's pinned TLS even when it travelled through an extender,
 // so the bundled table only has to cover the very first contact.
 //
-// The table ships EMPTY. Filling it is an operations decision: the keys are
-// generated with the vault's `extender.yml` (`root_public_keys_hex`), and one
-// entry per shipped host is added here when they are. Until then a space with
-// no configured `ExtenderRootPublicKeys` accepts no record until its first
-// hello, which is the intended fail-closed behavior.
+// The table carries the operator key of every host this binary ships with. The
+// keys are the `root_public_keys_hex` of the operator's vault `extender.yml`,
+// and an entry is added or replaced here when a host is added or a key rotated
+// -- a rotation ships both keys until the old one is dropped, which is why the
+// value is a list. A host the table does not name -- a development operator, or
+// someone else's space -- accepts no record until its first hello, which is the
+// intended fail-closed behavior.
 
-// Hex ed25519 public keys, by space host. Operations fills this in.
-var bundledExtenderRootPublicKeyHexes = map[string][]string{}
+// The urnetwork operator's root key. Both of its hosts are the one operator
+// signing with the one key, so the key is named once rather than repeated.
+const urnetworkExtenderRootPublicKeyHex = "ee6519b0df7618cea222631c4fff0c5cafe9bd594d63424162db3bb7a1cb544a"
+
+// Hex ed25519 public keys, by space host.
+var bundledExtenderRootPublicKeyHexes = map[string][]string{
+	"bringyour.com": {urnetworkExtenderRootPublicKeyHex},
+	"ur.network":    {urnetworkExtenderRootPublicKeyHex},
+}
 
 // The bundled keys of one host, or none. The lookup is case insensitive and
 // ignores a trailing dot, so a host written either way finds its entry.
