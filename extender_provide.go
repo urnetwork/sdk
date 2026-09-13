@@ -260,9 +260,14 @@ func (self *DeviceLocal) updateExtenderProvide() {
 	if provider == nil {
 		return
 	}
-	// the embedder's switch and the user's setting must both allow it (G1, F3)
+	// the embedder's switch and the user's setting must both allow it (G1,
+	// F3). A hosted device never runs it: its space is shared across unrelated
+	// customers, and an extender published for this host would name the proxy
+	// host's own address. That device cannot provide either, so this is
+	// defense in depth beside the hosted provide guard.
 	provider.setExtenderEnabled(
 		!closed &&
+			!self.settings.HostedIncompatible &&
 			self.settings.ProvideExtenderEnabled &&
 			self.GetProvideEnabled() &&
 			self.GetProvideExtender())

@@ -1254,6 +1254,32 @@ func TestDeviceLocalProviderExtenderDisabledBySettings(t *testing.T) {
 	}
 }
 
+// A hosted device never runs the role: its space is shared across unrelated
+// customers and an extender published for it would name the proxy host (G1).
+func TestDeviceLocalProviderExtenderDisabledWhenHosted(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithSpace(
+		t,
+		newTestProvideExtenderUrlSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.HostedIncompatible = true
+		},
+		nil,
+	)
+	if fixture.extender() != nil {
+		t.Fatal("a hosted device ran the provider extender role")
+	}
+	if status := fixture.device.GetExtenderProvideStatus(); status.Enabled {
+		t.Fatalf("status = %+v, expected a disabled role", status)
+	}
+	select {
+	case post := <-fixture.operator.posts:
+		t.Fatalf("a hosted device activated v%d", post.ipVersion)
+	case <-fixture.operator.hellos:
+		t.Fatal("a hosted device ran an activation pass")
+	case <-time.After(5 * time.Second):
+	}
+}
+
 // The url-only space of these tests: an api url and nothing else, which is
 // what a headless embedder builds (F1).
 func newTestProvideExtenderUrlSpace(ctx context.Context) *NetworkSpace {
