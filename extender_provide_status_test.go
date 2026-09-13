@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -288,5 +289,60 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 	}
 	if !localState.GetProvideExtender() {
 		t.Fatal("a file that is not an explicit off read as off")
+	}
+}
+
+// The provider extender status is coalesced to at most one callback per epoch,
+// carrying the complete state, so a burst of bind and activation changes is one
+// ui update rather than a dozen (F3).
+func TestExtenderProvideStatusListenerCoalesces(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	settings := testExtenderStatusDeviceSettings()
+	// no provider, so the device monitor below is the only thing that wakes
+	// the watch and the burst is exactly what the test made it
+	settings.AllowProvider = false
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, "", "", "", "", NewId(), settings, connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(deviceLocal.Close)
+
+	statuses := make(chan *ExtenderProvideStatus, 16)
+	sub := deviceLocal.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	t.Cleanup(sub.Close)
+
+	for range 8 {
+		deviceLocal.extenderProvideMonitor.NotifyAll()
+	}
+	select {
+	case status := <-statuses:
+		if status == nil {
+			t.Fatal("the listener was called with no status")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the provider extender status listener was never called")
+	}
+	select {
+	case <-statuses:
+		t.Fatal("the burst produced a second callback")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// a change after the epoch is a new callback, so the coalescing above is
+	// one emit per burst and not one emit ever
+	deviceLocal.extenderProvideMonitor.NotifyAll()
+	select {
+	case <-statuses:
+	case <-time.After(30 * time.Second):
+		t.Fatal("a later change did not reach the listener")
 	}
 }
