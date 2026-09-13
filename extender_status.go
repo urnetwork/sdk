@@ -35,6 +35,15 @@ const (
 	ExtenderRoleMember = "member"
 )
 
+// The gossip status dot of the extender panel (K4), re-exported from connect
+// so every app switches on a bound constant. The derivation is connect's, once
+// for both roles; these are only the values it produces.
+const (
+	ExtenderGossipStateConnected    = connect.ExtenderGossipStateConnected
+	ExtenderGossipStateConnecting   = connect.ExtenderGossipStateConnecting
+	ExtenderGossipStateDisconnected = connect.ExtenderGossipStateDisconnected
+)
+
 // extenderRoleForPlatform is the D5 rule with every platform input explicit.
 // A configured mode wins outright. Otherwise the feed role is taken by the
 // hosts that cannot afford a mesh: the js build, which has no node at all, and
