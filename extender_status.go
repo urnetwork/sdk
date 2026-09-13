@@ -132,8 +132,10 @@ type ExtenderStatus struct {
 	// Addresses carrying at least one live connection right now (K4). This is
 	// the "N" of the panel's "N of M" and the number of rings it draws.
 	ActiveCount int
-	// Every usable directory entry: known, key active, not on hold (K4). The
-	// "M" of "N of M", and always at least ActiveCount.
+	// Every usable directory entry: known, key active, not on hold (K4) --
+	// what the strategy would actually dial. The "M" of "N of M". It is
+	// normally the larger of the two, but an address that just went on hold
+	// while a connection is still live counts in ActiveCount and not here.
 	ReserveCount int
 	WarningCount int
 	HoldCount    int
@@ -183,8 +185,8 @@ func (self *NetworkSpace) GetExtenderStatus() *ExtenderStatus {
 	snapshot := self.extenderDirectory.Snapshot()
 	status.KnownCount = snapshot.KnownCount
 	// K4 redefines the panel's count: N is the addresses carrying a live
-	// connection, M every usable entry. The directory's own active count --
-	// the entries whose key is active, hold excluded -- is the reserve.
+	// connection, M every usable entry -- known, key active and not on hold,
+	// which is what the strategy would dial.
 	status.ActiveCount = snapshot.InUseCount
 	status.ReserveCount = self.extenderDirectory.UsableCount(0)
 	status.WarningCount = snapshot.WarningCount
