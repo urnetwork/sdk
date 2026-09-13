@@ -1,9 +1,12 @@
 package sdk
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"net"
 	"net/netip"
+	"net/rpc"
 	"os"
 	"reflect"
 	"testing"
@@ -414,6 +417,58 @@ func TestDeviceRemoteExtenderStatusCachesTheLastValue(t *testing.T) {
 	// not rewrite what the next reader sees
 	cached.Extenders.Get(0).Ip = "203.0.113.1"
 	connect.AssertEqual(t, deviceRemote.GetExtenderStatus().Extenders.Get(0).Ip, "192.0.2.1")
+}
+
+// A new app can briefly talk to the previous extension process after an app
+// update. The extender status is a read-only panel, so a device process that
+// does not answer it yet leaves the session alive and the app reads the cached
+// or empty status -- losing rpc control of the tunnel over a panel would be a
+// much worse trade (K5).
+func TestExtenderStatusMissingMethodKeepsTheRpcSessionAlive(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	// a device process that has the rest of the surface but not this method
+	server := rpc.NewServer()
+	if err := server.RegisterName("DeviceLocalRpc", &testingOptionalMethodRpc{}); err != nil {
+		t.Fatal(err)
+	}
+	go server.ServeConn(serverConn)
+
+	settings := defaultDeviceRpcSettings()
+	service := &rpcClientWithTimeout{
+		ctx:         context.Background(),
+		log:         settings.logger(),
+		timeout:     time.Second,
+		closeClient: clientConn.Close,
+		client:      rpc.NewClient(clientConn),
+	}
+	defer service.Close()
+
+	cleanupCalled := false
+	status, err := rpcCallNoArgAllowMissingMethod[*DeviceRemoteExtenderStatus](
+		service,
+		"DeviceLocalRpc.GetExtenderStatus",
+		func() {
+			cleanupCalled = true
+			clientConn.Close()
+		},
+	)
+	if err == nil || !rpcMissingMethodError(err) {
+		t.Fatalf("missing method error = %v", err)
+	}
+	if cleanupCalled {
+		t.Fatal("the missing extender status method closed the rpc session")
+	}
+	if status != nil {
+		t.Fatalf("status = %+v, expected none", status)
+	}
+
+	var reply bool
+	if err := service.Call("DeviceLocalRpc.Ping", true, &reply); err != nil || !reply {
+		t.Fatalf("the rpc session did not survive: reply = %t err = %v", reply, err)
+	}
 }
 
 // The rpc mirror carries every field of the status. A mirror that forgets one

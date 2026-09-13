@@ -1241,7 +1241,9 @@ func (self *DeviceRemote) GetExtenderStatus() *ExtenderStatus {
 		if self.service == nil {
 			return nil, false
 		}
-		status, err := rpcCallNoArg[*DeviceRemoteExtenderStatus](self.service, "DeviceLocalRpc.GetExtenderStatus", self.closeService)
+		// a device process from before this method degrades to the cached or
+		// empty status rather than losing its rpc session over a panel
+		status, err := rpcCallNoArgAllowMissingMethod[*DeviceRemoteExtenderStatus](self.service, "DeviceLocalRpc.GetExtenderStatus", self.closeService)
 		if err != nil || status == nil || status.ExtenderStatus == nil {
 			return nil, false
 		}
@@ -6802,10 +6804,14 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 // developer menu reads the force back as applied.
 //
 // Version 3 also covers `DeviceLocalRpc.GetControlIpFamilyStatus`. That one is
-// a VALUE call, and only the void call has an allow-missing variant, so a local
-// that lacks the method answers "rpc: can't find method" and the remote tears
-// the session down. Adding a value method to an ALREADY SHIPPED version is
-// therefore a bump, not the free addition an optional gob field would be.
+// a VALUE call carrying state the caller acts on, and a local that lacks the
+// method answers "rpc: can't find method", which the ordinary call turns into
+// a torn down session. Adding a value method to an ALREADY SHIPPED version is
+// therefore a bump, not the free addition an optional gob field would be --
+// UNLESS the value is read-only and its absence degrades to a sensible default
+// on its own, in which case `rpcCallNoArgAllowMissingMethod` keeps the session
+// and the caller reads the default. `DeviceLocalRpc.GetExtenderStatus` is that
+// case: an empty extender panel, not a misread setting.
 const DeviceRpcVersion = 3
 
 //gomobile:noexport
@@ -8314,6 +8320,34 @@ func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 		cleanup()
 	}
 	return err
+}
+
+// rpcCallNoArgAllowMissingMethod is rpcCallNoArg for a READ-ONLY value an
+// older peer may not expose yet. net/rpc reports that as an application-level
+// ServerError, and the ordinary call tears the session down for it; here the
+// caller gets the zero value and a live connection instead. Every transport
+// error and every other server error keeps the ordinary teardown.
+//
+// Only for a value whose absence degrades to a sensible default on its own. A
+// value that carries settable state must NOT use this: the caller would read
+// the default as truth and never learn the peer cannot answer. That case is a
+// DeviceRpcVersion bump.
+func rpcCallNoArgAllowMissingMethod[T any](
+	service *rpcClient,
+	name string,
+	cleanup func(),
+) (T, error) {
+	var noarg RpcNoArg
+	var r T
+	service.log.Infof("[rpc]%s", name)
+	err := service.Call(name, noarg, &r)
+	if err != nil {
+		service.log.Infof("[rpc]%s err = %s", name, err)
+		if !rpcMissingMethodError(err) {
+			cleanup()
+		}
+	}
+	return r, err
 }
 
 func rpcCallNoArg[T any](service *rpcClient, name string, cleanup func()) (T, error) {
