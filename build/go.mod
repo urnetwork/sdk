@@ -85,7 +85,7 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gvisor.dev/gvisor v0.0.0-20260805230438-8eba670122c5 // indirect
+	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
 )
