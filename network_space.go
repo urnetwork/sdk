@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -95,6 +96,26 @@ type NetworkSpaceValues struct {
 	ExtenderDnsName        string   `json:"extender_dns_name,omitempty"`
 	GossipUrl              string   `json:"gossip_url,omitempty"`
 	ExtenderRootPublicKeys []string `json:"extender_root_public_keys,omitempty"`
+	// ExtenderHosts are manual bootstrap addresses (K6): hostnames or ip
+	// literals, each resolved over DoH at start and re-resolved every 6 hours,
+	// never removed by policy. They supplement discovery rather than replacing
+	// it -- they union with the dns bootstrap and with everything the feed and
+	// the mesh deliver -- which is what separates them from the legacy
+	// `NetExtender`, whose single address overrides everything.
+	ExtenderHosts []string `json:"extender_hosts,omitempty"`
+}
+
+// The configured manual hosts of a space, trimmed and without the blanks a ui
+// text field leaves behind (K6). There is no derived default: empty is a space
+// that bootstraps from dns and the network alone.
+func ExtenderHosts(values *NetworkSpaceValues) []string {
+	extenderHosts := []string{}
+	for _, extenderHost := range values.ExtenderHosts {
+		if extenderHost = strings.TrimSpace(extenderHost); extenderHost != "" {
+			extenderHosts = append(extenderHosts, extenderHost)
+		}
+	}
+	return extenderHosts
 }
 
 // The space host a service name is derived under: the migration host while one
@@ -188,8 +209,11 @@ type NetworkSpace struct {
 	// host is not a real dns name, which has nothing to resolve or sample.
 	extenderNetworkClient *connect.ExtenderNetworkClient
 	// stateLock guards the node, which the provider extender role replaces
-	// while the space is running (G2), and the extender identity seed of a
-	// space that keeps no local state. Everything else here is immutable.
+	// while the space is running (G2), the extender identity seed of a space
+	// that keeps no local state, the extender network client, which a settings
+	// change restarts in place (K6), and the extender fields of `values`,
+	// which that change rewrites. Every other field of `values` is written
+	// once at construction.
 	stateLock sync.Mutex
 	closed    bool
 	// The extender identity of a space with no local state (B1): the seed an
@@ -205,6 +229,43 @@ type NetworkSpace struct {
 	// re-subscribes to the node it now has
 	extenderNodeMonitor           *connect.Monitor
 	extenderStatusChangeListeners *connect.CallbackList[ExtenderStatusChangeListener]
+	// The manager that owns this space, nil for one built directly (a url-only
+	// or headless space). It is the only way an extender settings change made
+	// from inside the space -- the settings screen and a share import (K6, K7)
+	// -- reaches the persisted value set, and it is a back reference only: the
+	// space never closes the manager.
+	networkSpaceManager *NetworkSpaceManager
+}
+
+// Called by the manager on the space it just built, before the space is
+// published, so a settings change from a view controller is persisted.
+func (self *NetworkSpace) setNetworkSpaceManager(networkSpaceManager *NetworkSpaceManager) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.networkSpaceManager = networkSpaceManager
+}
+
+func (self *NetworkSpace) getNetworkSpaceManager() *NetworkSpaceManager {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.networkSpaceManager
+}
+
+// updateExtenderValues is the one write path for the extender settings (K6,
+// K7). It runs the change through the owning manager, which persists the whole
+// value set and routes it back here in place, so the space -- and every device
+// and view controller bound to it -- survives the save. A space with no
+// manager applies the change to itself; there is nothing to persist it to.
+//
+// Returns whether anything changed.
+func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceValues)) bool {
+	if networkSpaceManager := self.getNetworkSpaceManager(); networkSpaceManager != nil {
+		key := self.key
+		return networkSpaceManager.updateNetworkSpace(&key, apply) != nil
+	}
+	values := self.valuesCopy()
+	apply(&values)
+	return self.applyExtenderValues(&values)
 }
 
 // The node this space runs right now, nil when it runs none (D5, G2).
@@ -212,6 +273,26 @@ func (self *NetworkSpace) getExtenderNode() *spaceExtenderNode {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.extenderNode
+}
+
+// The refresh loop this space runs right now, nil when it runs none (E3). A
+// settings change replaces it (K6), so every reader takes it under the lock
+// rather than holding the field.
+func (self *NetworkSpace) getExtenderNetworkClient() *connect.ExtenderNetworkClient {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.extenderNetworkClient
+}
+
+// A copy of this space's values. The extender fields are replaced in place by
+// a settings change (K6), so anything that reads them -- and anything that
+// exports or persists the whole value -- takes the copy rather than the field.
+// The slices are only ever replaced whole, never written through, so sharing
+// their backing arrays with the copy is safe.
+func (self *NetworkSpace) valuesCopy() NetworkSpaceValues {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.values
 }
 
 // The extender identity key seed of this space (B1), created on first use.
@@ -474,6 +555,7 @@ func spaceExtenderNetworkClientSettings(
 	// the subscribe stream open, because the member role hears the same
 	// records from the mesh instead (D5)
 	settings.Subscribe = role == ExtenderRoleFeed
+	settings.ManualHosts = ExtenderHosts(values)
 	if extenderNetworkClientConfigure != nil {
 		extenderNetworkClientConfigure(settings)
 	}
@@ -486,6 +568,136 @@ func spaceExtenderNetworkClientSettings(
 func extenderNetworkClientRuns(key *NetworkSpaceKey, values *NetworkSpaceValues) bool {
 	return isDottedHostName(ExtenderDnsName(key, values)) &&
 		extenderNetworkHostName(key, values) != ""
+}
+
+// applyExtenderValues replaces this space's extender values in place and
+// restarts what they configure (K6): the directory's trust anchor, the legacy
+// custom extender, the refresh loop and the gossip node. Everything else the
+// space owns -- its api, its client strategy, its local state and the
+// directory itself -- keeps running, so a device bound to this space and the
+// view controller that saved from it are still valid afterwards. That is the
+// whole reason the extender settings are applied here rather than by rebuilding
+// the space the way every other value change is.
+//
+// Returns whether anything changed. Values outside the extender set are
+// ignored: only a rebuilt space may change those.
+func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
+	changed, closed := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !extenderValuesChanged(&self.key, &self.values, values) {
+			return false, self.closed
+		}
+		self.values.NetExtender = values.NetExtender
+		self.values.ExtenderDnsName = values.ExtenderDnsName
+		self.values.GossipUrl = values.GossipUrl
+		self.values.ExtenderRootPublicKeys = slices.Clone(values.ExtenderRootPublicKeys)
+		self.values.ExtenderHosts = slices.Clone(values.ExtenderHosts)
+		return true, self.closed
+	}()
+	if !changed || closed {
+		return changed
+	}
+	current := self.valuesCopy()
+
+	// the anchor is replaced only by a set that resolves to something: an
+	// empty one is a space whose keys came from a hello, and clearing them
+	// would refuse every record until the next one
+	if self.extenderDirectory != nil {
+		if rootPublicKeyHexes := ExtenderRootPublicKeys(&self.key, &current); 0 < len(rootPublicKeyHexes) {
+			// a set that resolves to no key is not an anchor: installing it
+			// would refuse every record until the next hello, so a value that
+			// parses to nothing leaves what is in force alone
+			if keySet, err := connect.NewExtenderRootKeySetFromHex(rootPublicKeyHexes...); err == nil &&
+				0 < keySet.Len() {
+				self.extenderDirectory.SetRootKeys(keySet)
+			}
+		}
+	}
+	// the legacy single extender overrides discovery outright, so a cleared
+	// one has to clear the strategy rather than leave the last address in force
+	extenderIpSecrets := map[netip.Addr]string{}
+	if current.NetExtender != nil {
+		if ip, err := netip.ParseAddr(current.NetExtender.Ip); err == nil {
+			extenderIpSecrets[ip] = current.NetExtender.Secret
+		}
+	}
+	self.clientStrategy.SetCustomExtenders(extenderIpSecrets)
+
+	if self.extenderDirectory != nil {
+		role := extenderRole(extenderGossipMode(self.asyncLocalState))
+		previousNetworkClient := func() *connect.ExtenderNetworkClient {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			previousNetworkClient := self.extenderNetworkClient
+			self.extenderNetworkClient = nil
+			return previousNetworkClient
+		}()
+		if previousNetworkClient != nil {
+			previousNetworkClient.Close()
+		}
+		networkClient := newSpaceExtenderNetworkClient(
+			self.ctx,
+			&self.key,
+			&current,
+			role,
+			self.clientStrategy,
+			self.extenderDirectory,
+			self.apiUrl,
+			self.logger(),
+		)
+		installed := func() bool {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			if self.closed {
+				return false
+			}
+			self.extenderNetworkClient = networkClient
+			return true
+		}()
+		if !installed && networkClient != nil {
+			networkClient.Close()
+		}
+	}
+	// the node watches the client for the operator address, so it is rebuilt
+	// on the replacement rather than left watching a closed one
+	self.rebuildExtenderNode()
+	// the status watch waits on this monitor for the node swap; the client
+	// swap is the same kind of edge and the js build rebuilds no node at all,
+	// so it is published here too
+	self.extenderNodeMonitor.NotifyAll()
+	self.extenderStatusChanged()
+	return true
+}
+
+// Reports whether two value sets differ in anything the extender network is
+// built from (K6): the dns name, the gossip url, the root keys, the manual
+// hosts and the legacy custom extender. The comparison is of the EFFECTIVE
+// values, so an edit that only adds whitespace, or that spells out the derived
+// default a blank field already means, restarts nothing.
+func extenderValuesChanged(
+	key *NetworkSpaceKey,
+	previous *NetworkSpaceValues,
+	next *NetworkSpaceValues,
+) bool {
+	switch {
+	case ExtenderDnsName(key, previous) != ExtenderDnsName(key, next):
+		return true
+	case GossipUrl(key, previous) != GossipUrl(key, next):
+		return true
+	case !slices.Equal(ExtenderRootPublicKeys(key, previous), ExtenderRootPublicKeys(key, next)):
+		return true
+	case !slices.Equal(ExtenderHosts(previous), ExtenderHosts(next)):
+		return true
+	}
+	return !netExtenderEqual(previous.NetExtender, next.NetExtender)
+}
+
+func netExtenderEqual(previous *NetExtender, next *NetExtender) bool {
+	if previous == nil || next == nil {
+		return previous == next
+	}
+	return *previous == *next
 }
 
 // The host one space's extender network is keyed by (B2, F1): the space host
@@ -804,27 +1016,40 @@ func (self *NetworkSpace) GetWallet() string {
 }
 
 func (self *NetworkSpace) GetNetExtender() *NetExtender {
-	return self.values.NetExtender
+	values := self.valuesCopy()
+	return values.NetExtender
 }
 
 // The resolved extender dns name (F1): the configured override, else
 // `extender.<host>` under the env prefix rule.
 func (self *NetworkSpace) GetExtenderDnsName() string {
-	return ExtenderDnsName(&self.key, &self.values)
+	values := self.valuesCopy()
+	return ExtenderDnsName(&self.key, &values)
 }
 
 // The resolved gossip url (F1): the configured override, else
 // `wss://gossip.<host>` under the env prefix rule.
 func (self *NetworkSpace) GetGossipUrl() string {
-	return GossipUrl(&self.key, &self.values)
+	values := self.valuesCopy()
+	return GossipUrl(&self.key, &values)
 }
 
 // The resolved extender root public keys (F1, B4): the configured override,
 // else the bundled table for this host.
 func (self *NetworkSpace) GetExtenderRootPublicKeys() *StringList {
+	values := self.valuesCopy()
 	rootPublicKeys := NewStringList()
-	rootPublicKeys.addAll(ExtenderRootPublicKeys(&self.key, &self.values)...)
+	rootPublicKeys.addAll(ExtenderRootPublicKeys(&self.key, &values)...)
 	return rootPublicKeys
+}
+
+// The manually configured bootstrap hosts of this space (K6), empty when the
+// space bootstraps from dns and the network alone.
+func (self *NetworkSpace) GetExtenderHosts() *StringList {
+	values := self.valuesCopy()
+	extenderHosts := NewStringList()
+	extenderHosts.addAll(ExtenderHosts(&values)...)
+	return extenderHosts
 }
 
 // The resolved extender dns name of a space. A url-only space has no host name
@@ -1043,9 +1268,19 @@ func (self *NetworkSpace) close() {
 		self.cancel()
 		_ = self.api.CloseAndWait(context.Background())
 		// the network client is joined before the directory it writes into,
-		// and both before the local state the directory saves through
-		if self.extenderNetworkClient != nil {
-			self.extenderNetworkClient.Close()
+		// and both before the local state the directory saves through. It is
+		// taken under the lock because a settings change replaces it in place
+		// (K6); `closed` below then keeps a racing change from installing a
+		// replacement after this one is joined.
+		extenderNetworkClient := func() *connect.ExtenderNetworkClient {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			extenderNetworkClient := self.extenderNetworkClient
+			self.extenderNetworkClient = nil
+			return extenderNetworkClient
+		}()
+		if extenderNetworkClient != nil {
+			extenderNetworkClient.Close()
 		}
 		// the node writes into the directory too, so it is joined before it.
 		// Taking it out under the lock keeps a concurrent role swap from
@@ -1079,9 +1314,10 @@ func (self *NetworkSpace) Close() {
 }
 
 func (self *NetworkSpace) ToJson() (string, error) {
+	values := self.valuesCopy()
 	exportNetworkSpace := &ExportNetworkSpace{
 		Key:    &self.key,
-		Values: &self.values,
+		Values: &values,
 	}
 	networkSpaceJsonBytes, err := json.Marshal(exportNetworkSpace)
 	if err != nil {
@@ -1221,7 +1457,7 @@ func (self *NetworkSpaceManager) store() error {
 	for key, networkSpace := range self.networkSpaces {
 		networkSpaceState := &networkSpaceState{
 			Key:    key,
-			Values: networkSpace.values,
+			Values: networkSpace.valuesCopy(),
 		}
 		networkSpaceStates = append(networkSpaceStates, networkSpaceState)
 	}
@@ -1266,6 +1502,7 @@ func (self *NetworkSpaceManager) load() error {
 			networkSpaceState.Values,
 			self.envStoragePath(&networkSpaceState.Key),
 		)
+		replacement.setNetworkSpaceManager(self)
 		if replaced := replacementNetworkSpaces[networkSpaceState.Key]; replaced != nil {
 			replacedNetworkSpaces = append(replacedNetworkSpaces, replaced)
 		}
@@ -1449,7 +1686,30 @@ func (self *NetworkSpaceManager) UpdateNetworkSpaceValues(key *NetworkSpaceKey, 
 	})
 }
 
+// Reports whether a value change touches nothing outside the extender values,
+// which is the change a running space can take in place (K6). Everything
+// outside them is compared as a whole, so a value added to
+// `NetworkSpaceValues` later is covered by the rebuild until it is
+// deliberately named here.
+//
+// A change that alters nothing at all counts, deliberately: saving an
+// unchanged settings form, which is one tap away on every account screen, must
+// not tear down the space a device and a view controller are bound to.
+func onlyExtenderValuesChanged(previous *NetworkSpaceValues, next *NetworkSpaceValues) bool {
+	withoutExtenderValues := func(values *NetworkSpaceValues) NetworkSpaceValues {
+		other := *values
+		other.NetExtender = nil
+		other.ExtenderDnsName = ""
+		other.GossipUrl = ""
+		other.ExtenderRootPublicKeys = nil
+		other.ExtenderHosts = nil
+		return other
+	}
+	return reflect.DeepEqual(withoutExtenderValues(previous), withoutExtenderValues(next))
+}
+
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {
+	var existingNetworkSpace *NetworkSpace
 	var copyValues NetworkSpaceValues
 
 	func() {
@@ -1457,13 +1717,39 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 		defer self.stateLock.Unlock()
 
 		if networkSpace, ok := self.networkSpaces[*key]; ok {
-			copyValues = networkSpace.values
+			existingNetworkSpace = networkSpace
+			copyValues = networkSpace.valuesCopy()
 		}
 	}()
 
+	previousValues := copyValues
 	callback(&copyValues)
 
+	// A change confined to the extender values restarts the space's network
+	// client and node in place rather than rebuilding the space (K6). The
+	// extender settings screen saves while a device is bound to the space and
+	// while the view controller that saved holds it, and a rebuild would hand
+	// both a closed space. Every other change keeps the rebuild below, which
+	// is what a changed api host or env secret needs.
+	if existingNetworkSpace != nil && onlyExtenderValuesChanged(&previousValues, &copyValues) {
+		existingNetworkSpace.applyExtenderValues(&copyValues)
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			// the same guard the rebuild below spends, for the same reason:
+			// a manager with no active space -- the ios packet tunnel
+			// extension -- restores its policy from the space it is given
+			if self.activeNetworkSpace == nil {
+				self.restoreControlIpFamilyPolicyOnce(existingNetworkSpace)
+			}
+		}()
+		self.store()
+		self.networkSpacesChanged()
+		return self.GetNetworkSpace(key)
+	}
+
 	copyNetworkSpace := newNetworkSpace(self.ctx, *key, copyValues, self.envStoragePath(key))
+	copyNetworkSpace.setNetworkSpaceManager(self)
 	activeSet := false
 	installed := false
 	var previousNetworkSpace *NetworkSpace

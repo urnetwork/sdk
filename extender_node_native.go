@@ -52,6 +52,11 @@ type spaceExtenderNode struct {
 	networkClient *connect.ExtenderNetworkClient
 	gossipUrl     string
 	log           connect.Logger
+	// What the node was built with, retained so a settings change can rebuild
+	// it in the role it is in (K6). An extender-role node that lost these
+	// would come back as a member and silently stop listening.
+	listener    *gossip.InProcessListener
+	listenAddrs []ma.Multiaddr
 }
 
 // Builds the node of a member-role space, or nil when this space runs none:
@@ -141,6 +146,8 @@ func newSpaceExtenderNodeWithRole(
 		networkClient: networkClient,
 		gossipUrl:     GossipUrl(key, values),
 		log:           log,
+		listener:      listener,
+		listenAddrs:   listenAddrs,
 	}
 	go connect.HandleError(func() {
 		defer close(self.done)
@@ -192,6 +199,16 @@ func (self *spaceExtenderNode) gossipPeerCount() int {
 	return self.node.Status().MeshPeerCount
 }
 
+// True while a peering round has dials in flight and no mesh peer is held yet,
+// which is the member role's yellow dot (K4). A space with no node is never
+// connecting: it is not trying.
+func (self *spaceExtenderNode) gossipConnecting() bool {
+	if self == nil {
+		return false
+	}
+	return self.node.Status().Connecting
+}
+
 // A channel armed at the instant of the read, so the space's status watch is
 // woken when the mesh changes. A space with no node waits on nil, which never
 // fires.
@@ -225,16 +242,17 @@ func (self *NetworkSpace) setExtenderNodeRole(
 		self.swapExtenderNode(func() *spaceExtenderNode { return nil })
 		return nil
 	}
+	values := self.valuesCopy()
 	return self.swapExtenderNode(func() *spaceExtenderNode {
 		return newSpaceExtenderNodeWithRole(
 			self.ctx,
 			&self.key,
-			&self.values,
+			&values,
 			gossip.NodeRoleExtender,
 			listener,
 			listenAddrs,
 			self.extenderDirectory,
-			self.extenderNetworkClient,
+			self.getExtenderNetworkClient(),
 			self.extenderIdentityKeySeed,
 			self.clientStrategySettings,
 			self.logger(),
@@ -247,19 +265,34 @@ func (self *NetworkSpace) setExtenderNodeRole(
 // what it had before the role started.
 func (self *NetworkSpace) restoreExtenderNodeRole() {
 	role := extenderRole(extenderGossipMode(self.asyncLocalState))
+	values := self.valuesCopy()
 	self.swapExtenderNode(func() *spaceExtenderNode {
 		return newSpaceExtenderNode(
 			self.ctx,
 			&self.key,
-			&self.values,
+			&values,
 			role,
 			self.extenderDirectory,
-			self.extenderNetworkClient,
+			self.getExtenderNetworkClient(),
 			self.extenderIdentityKeySeed,
 			self.clientStrategySettings,
 			self.logger(),
 		)
 	})
+}
+
+// rebuildExtenderNode rebuilds this space's node on the values and the network
+// client it now carries (K6). The role is preserved: a node the provider
+// extender role installed keeps its in-process listener and its advertised
+// addresses, so a settings change never takes an activated extender off the
+// mesh. A space that runs no node gets one only if its role calls for one.
+func (self *NetworkSpace) rebuildExtenderNode() {
+	previous := self.getExtenderNode()
+	if previous.role() == gossip.NodeRoleExtender {
+		self.setExtenderNodeRole(previous.listener, previous.listenAddrs)
+		return
+	}
+	self.restoreExtenderNodeRole()
 }
 
 // rebuildExtenderMemberNode rebuilds a member node on the identity the space

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/urnetwork/connect"
 )
@@ -111,6 +112,32 @@ func NormalExtenderGossipMode(mode string) string {
 	}
 }
 
+// extenderStoreReadOnly is the process-wide read-only switch of K5. Two
+// processes on ios share one app group directory and therefore one
+// `.extenders` file: the packet tunnel extension, whose directory carries the
+// dials that matter, and the app, which keeps its own directory for api dials.
+// Both loading it is right -- the app starts warm -- but both writing it means
+// two coalescing save loops overwriting each other's state, so the app process
+// sets this and only the extension writes.
+//
+// Process-wide rather than per space or per manager because it is a property
+// of the process, not of a space: the app builds its manager from the shared
+// path and every space under it is the same read-only case. The default is
+// read-write, so every other platform, and the extension itself, is unchanged.
+var extenderStoreReadOnly atomic.Bool
+
+// SetExtenderStoreReadOnly makes this process load the shared extender
+// directory file but never write it (K5). The ios app process sets it before
+// building its NetworkSpaceManager; nothing else should.
+func SetExtenderStoreReadOnly(readOnly bool) {
+	extenderStoreReadOnly.Store(readOnly)
+}
+
+// GetExtenderStoreReadOnly reports the switch above.
+func GetExtenderStoreReadOnly() bool {
+	return extenderStoreReadOnly.Load()
+}
+
 // localStateExtenderStore implements connect.ExtenderDirectoryStore over the
 // dot file above, so a connect.ExtenderDirectory persists across restarts.
 // Mirrors localStatePriorsStore's shape.
@@ -126,7 +153,13 @@ func (self *localStateExtenderStore) Load() ([]byte, error) {
 	return self.localState.getExtenders()
 }
 
+// The switch is read at each save rather than captured at construction, so a
+// process that sets it after building a space still never writes -- and so a
+// test can put it back without rebuilding anything.
 func (self *localStateExtenderStore) Save(stateBytes []byte) error {
+	if GetExtenderStoreReadOnly() {
+		return nil
+	}
 	return self.localState.setExtenders(stateBytes)
 }
 

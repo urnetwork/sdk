@@ -3662,6 +3662,29 @@ func (self *DeviceLocal) GetProviderFamilyTransportStatus() *ProviderFamilyTrans
 	return provider.familyTransportStatus()
 }
 
+// GetExtenderStatus reads this device's network space (K5). A hosted device
+// reports the empty status: its space is shared across unrelated customers, so
+// its directory -- the proxy host's own extenders and their live connection
+// counts -- is not this tenant's to see.
+func (self *DeviceLocal) GetExtenderStatus() *ExtenderStatus {
+	if self.settings.HostedIncompatible {
+		return emptyExtenderStatus()
+	}
+	return self.networkSpace.GetExtenderStatus()
+}
+
+// AddExtenderStatusChangeListener subscribes to the space's coalesced extender
+// status (F2, K5). A hosted device reports nothing to listen to, and returns a
+// sub that is already inert rather than nil.
+func (self *DeviceLocal) AddExtenderStatusChangeListener(
+	listener ExtenderStatusChangeListener,
+) Sub {
+	if self.settings.HostedIncompatible {
+		return newSub(func() {})
+	}
+	return self.networkSpace.AddExtenderStatusChangeListener(listener)
+}
+
 func (self *DeviceLocal) GetConnectEnabled() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

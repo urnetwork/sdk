@@ -676,6 +676,18 @@ type Device interface {
 	// cannot be reached.
 	GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus
 
+	// GetExtenderStatus is the extender network of the device's network space
+	// (EXTENDER.md K5): the role, the gossip state, the counts, the event rate
+	// and every known address. It reads the space the DEVICE runs in -- on ios
+	// the packet tunnel extension, whose directory carries the dials that
+	// matter -- so a remote device reads it through the rpc rather than from
+	// its own process. Never nil; empty when there is no extender network to
+	// describe.
+	GetExtenderStatus() *ExtenderStatus
+
+	// rate limited to one callback per second
+	AddExtenderStatusChangeListener(listener ExtenderStatusChangeListener) Sub
+
 	// packet stats
 
 	GetPacketStats() *PacketStats

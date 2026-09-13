@@ -35,8 +35,11 @@ func newSpaceExtenderNode(
 }
 
 // The js build runs no node, so there is none to rebuild on a changed
-// identity.
+// identity, and none to restart on a changed setting.
 func (self *NetworkSpace) rebuildExtenderMemberNode() {
+}
+
+func (self *NetworkSpace) rebuildExtenderNode() {
 }
 
 func (self *spaceExtenderNode) role() string {
@@ -49,6 +52,10 @@ func (self *spaceExtenderNode) gossipConnected() bool {
 
 func (self *spaceExtenderNode) gossipPeerCount() int {
 	return 0
+}
+
+func (self *spaceExtenderNode) gossipConnecting() bool {
+	return false
 }
 
 func (self *spaceExtenderNode) statusUpdate() chan struct{} {

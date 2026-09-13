@@ -79,6 +79,10 @@ type ExtenderInfo struct {
 	Id        string
 	Ip        string
 	IpVersion int
+	// The address's own color (K3), six hex digits with no leading `#`. The
+	// same value `GetExtenderColorHex` returns, carried here so a row and a
+	// provider dot's ring are drawn from one source.
+	ColorHex string
 	// Comma separated, in the record's order: "tcp,quic,dns".
 	Carriers    string
 	CountryCode string
@@ -116,10 +120,23 @@ type ExtenderStatus struct {
 	// The mesh of the member role's node (D1, F2). A feed app reports no mesh.
 	GossipConnected bool
 	GossipPeerCount int
-	KnownCount      int
-	ActiveCount     int
-	WarningCount    int
-	HoldCount       int
+	// The status dot of the gossip panel (K4, K5): connected, connecting or
+	// disconnected. The two roles read different evidence -- the feed role its
+	// stream, the member role its mesh -- and connect derives both, so every
+	// app draws one value.
+	GossipState string
+	// Records and revocations applied from the feed or the mesh in the
+	// trailing 60 s, which is the rate the panel prints (K4).
+	EventCountLastMinute int
+	KnownCount           int
+	// Addresses carrying at least one live connection right now (K4). This is
+	// the "N" of the panel's "N of M" and the number of rings it draws.
+	ActiveCount int
+	// Every usable directory entry: known, key active, not on hold (K4). The
+	// "M" of "N of M", and always at least ActiveCount.
+	ReserveCount int
+	WarningCount int
+	HoldCount    int
 	// Unix milliseconds, 0 when there has been no sample.
 	LastSampleTime int64
 	LastError      string
@@ -134,34 +151,50 @@ type ExtenderStatusChangeListener interface {
 // or one built without storage by a host that disabled discovery -- reports an
 // empty status rather than nil, so a caller never has to branch.
 func (self *NetworkSpace) GetExtenderStatus() *ExtenderStatus {
+	role := extenderRole(self.GetExtenderGossipMode())
 	status := &ExtenderStatus{
-		Role:      extenderRole(self.GetExtenderGossipMode()),
+		Role:      role,
 		Extenders: NewExtenderInfoList(),
 	}
-	if self.extenderNetworkClient != nil {
-		networkStatus := self.extenderNetworkClient.Status()
-		status.FeedConnected = networkStatus.FeedConnected
-		if networkStatus.FeedIp.IsValid() {
-			status.FeedIp = networkStatus.FeedIp.String()
+	var networkStatus *connect.ExtenderNetworkClientStatus
+	if networkClient := self.getExtenderNetworkClient(); networkClient != nil {
+		clientStatus := networkClient.Status()
+		networkStatus = &clientStatus
+		status.FeedConnected = clientStatus.FeedConnected
+		if clientStatus.FeedIp.IsValid() {
+			status.FeedIp = clientStatus.FeedIp.String()
 		}
-		status.LastSampleTime = extenderStatusTimeMs(networkStatus.LastSampleTime)
-		status.LastError = networkStatus.LastError
+		status.LastSampleTime = extenderStatusTimeMs(clientStatus.LastSampleTime)
+		status.LastError = clientStatus.LastError
 	}
 	extenderNode := self.getExtenderNode()
 	status.GossipConnected = extenderNode.gossipConnected()
 	status.GossipPeerCount = extenderNode.gossipPeerCount()
+	status.GossipState = extenderGossipState(
+		role,
+		networkStatus,
+		extenderNode.gossipPeerCount(),
+		extenderNode.gossipConnecting(),
+	)
 	if self.extenderDirectory == nil {
 		return status
 	}
+	status.EventCountLastMinute = self.extenderDirectory.EventCountLastMinute()
 	snapshot := self.extenderDirectory.Snapshot()
 	status.KnownCount = snapshot.KnownCount
-	status.ActiveCount = snapshot.ActiveCount
+	// K4 redefines the panel's count: N is the addresses carrying a live
+	// connection, M every usable entry. The directory's own active count --
+	// the entries whose key is active, hold excluded -- is the reserve.
+	status.ActiveCount = snapshot.InUseCount
+	status.ReserveCount = self.extenderDirectory.UsableCount(0)
 	status.WarningCount = snapshot.WarningCount
 	status.HoldCount = snapshot.HoldCount
 	for _, entry := range snapshot.Entries {
+		ip := entry.Ip.String()
 		extenderInfo := &ExtenderInfo{
-			Ip:              entry.Ip.String(),
+			Ip:              ip,
 			IpVersion:       entry.IpVersion,
+			ColorHex:        GetExtenderColorHex(ip),
 			Carriers:        strings.Join(entry.Carriers, ","),
 			CountryCode:     entry.CountryCode,
 			State:           entry.State,
@@ -179,6 +212,40 @@ func (self *NetworkSpace) GetExtenderStatus() *ExtenderStatus {
 		status.Extenders.Add(extenderInfo)
 	}
 	return status
+}
+
+// The gossip state one space reports (K4, K5). The role decides which evidence
+// is read: a feed app has a stream, a member has a mesh. Reading the wrong one
+// is the failure this exists to prevent -- a member holds no subscription, so
+// its feed fields are false and would draw a red dot over a healthy mesh.
+//
+// A feed app with no refresh loop -- a space with nothing to resolve -- has no
+// stream to be up and reads disconnected, which is what "disabled" looks like.
+func extenderGossipState(
+	role string,
+	networkStatus *connect.ExtenderNetworkClientStatus,
+	meshPeerCount int,
+	connecting bool,
+) string {
+	if role == ExtenderRoleMember {
+		return connect.ExtenderGossipStateForMember(meshPeerCount, connecting)
+	}
+	if networkStatus == nil {
+		return connect.ExtenderGossipStateDisconnected
+	}
+	return connect.ExtenderGossipStateForFeed(*networkStatus)
+}
+
+// The empty status a caller that cannot describe an extender network reports:
+// a hosted device, whose space is shared across unrelated customers, and a
+// remote device that has never reached its local. Never nil, so no app has to
+// branch (K5).
+func emptyExtenderStatus() *ExtenderStatus {
+	return &ExtenderStatus{
+		Role:        ExtenderRoleFeed,
+		GossipState: connect.ExtenderGossipStateDisconnected,
+		Extenders:   NewExtenderInfoList(),
+	}
 }
 
 func extenderStatusTimeMs(t time.Time) int64 {
@@ -252,8 +319,8 @@ func (self *NetworkSpace) watchExtenderStatus() {
 	directoryMonitor := self.extenderDirectory.ChangeMonitor()
 	_, directoryUpdate := directoryMonitor.Get()
 	var networkUpdate chan struct{}
-	if self.extenderNetworkClient != nil {
-		_, networkUpdate = self.extenderNetworkClient.StatusMonitor().Get()
+	if networkClient := self.getExtenderNetworkClient(); networkClient != nil {
+		_, networkUpdate = networkClient.StatusMonitor().Get()
 	}
 	nodeChange := self.extenderNodeMonitor.NotifyChannel()
 	nodeUpdate := self.getExtenderNode().statusUpdate()
@@ -272,8 +339,11 @@ func (self *NetworkSpace) watchExtenderStatus() {
 		case <-time.After(extenderStatusEpoch):
 		}
 		_, directoryUpdate = directoryMonitor.Get()
-		if self.extenderNetworkClient != nil {
-			_, networkUpdate = self.extenderNetworkClient.StatusMonitor().Get()
+		// the client is replaced by a settings change (K6), so the round that
+		// wakes on the swap re-subscribes to the client the space now runs
+		networkUpdate = nil
+		if networkClient := self.getExtenderNetworkClient(); networkClient != nil {
+			_, networkUpdate = networkClient.StatusMonitor().Get()
 		}
 		// the node itself is replaced when the provider extender role starts
 		// and stops, so the swap is a change and the new node is what the next
