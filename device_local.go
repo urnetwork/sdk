@@ -3166,11 +3166,29 @@ func (self *DeviceLocal) canReferChanged(canRefer bool) {
 }
 
 func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
+	// self.assertNotLockOwner()
+	// the provider's transports follow the mode: a public provider dials the
+	// platform directly (EXTENDER.md J4)
+	self.updateProviderProvideMode(provideMode)
 	for _, listener := range self.provideModeChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideModeChanged(provideMode)
 		})
 	}
+}
+
+// Hands the current provide mode to the provider, which rebuilds its
+// transports when the public flag flips (J4). Never called with the device
+// lock held.
+func (self *DeviceLocal) updateProviderProvideMode(provideMode ProvideMode) {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	if closed || provider == nil {
+		return
+	}
+	provider.setProvideMode(provideMode)
 }
 
 func (self *DeviceLocal) provideChanged(provideEnabled bool) {
@@ -3733,6 +3751,13 @@ func providerLocalUserNatSettings(
 	return localUserNatSettings
 }
 
+// A mode that includes public also decides how the provider reaches the
+// platform: a public provider dials directly on every transport, the standby
+// included, so the platform observes the provider's own address and location
+// (EXTENDER.md J4). A network or friends-and-family provider keeps the shared
+// strategy and its extender dialers, since network peers carry no location
+// metadata. A change that flips that rebuilds the provider transports
+// make-before-break.
 func (self *DeviceLocal) SetProvideMode(provideMode ProvideMode) {
 	_ = self.setLocalCatalogPreference("provide-mode", provideMode)
 }

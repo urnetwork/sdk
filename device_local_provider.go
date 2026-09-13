@@ -27,6 +27,18 @@ type migratablePlatformTransport interface {
 	Close()
 }
 
+// The provider half of the device: its own client, its platform transport
+// group and the extender role that runs beside it.
+//
+// A provider whose provide mode includes public never dials the platform
+// through an extender or a proxy on any transport, the standby included, so
+// the platform observes the provider's own address and location
+// (EXTENDER.md J4). The pinned transports of the group are direct by
+// construction (IPV6.md A4); the standby takes the provider's own direct-only
+// strategy while the mode includes public and the device's shared strategy
+// otherwise, since a network or friends-and-family provider carries no
+// location metadata and may keep using extenders. A mode change that flips
+// that rebuilds the transports through the migration path.
 type deviceLocalProvider struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -89,16 +101,25 @@ type deviceLocalProvider struct {
 	stateLock sync.Mutex
 	// the extender role while it runs (G2), nil while provide or the setting
 	// is off and on every build that does not carry it (G1)
-	extender          *deviceLocalExtender
-	closed            bool
-	auth              *connect.ClientAuth
-	authVersion       uint64
-	platformTransport migratablePlatformTransport
-	migrationWorkers  sync.WaitGroup
-	closeOnce         sync.Once
-	joinOnce          sync.Once
-	closeDoneOnce     sync.Once
-	closeDone         chan struct{}
+	extender *deviceLocalExtender
+	// the device's effective provide mode, which decides whether the standby
+	// dials direct (J4). The device hands it over on every change.
+	provideMode ProvideMode
+	// the direct-only standby strategy of a public provider (J4), built on
+	// the first public transport generation, reused by every later one, and
+	// closed with the provider. It outlives a flip back to a non-public mode
+	// so a flip forward keeps its connect pacing and costs no rebuild of the
+	// strategy itself.
+	directStandbyStrategy *connect.ClientStrategy
+	closed                bool
+	auth                  *connect.ClientAuth
+	authVersion           uint64
+	platformTransport     migratablePlatformTransport
+	migrationWorkers      sync.WaitGroup
+	closeOnce             sync.Once
+	joinOnce              sync.Once
+	closeDoneOnce         sync.Once
+	closeDone             chan struct{}
 
 	// the provider client's own transfer budget pair, when sized from the
 	// provider share of the device memory target (see
@@ -244,6 +265,85 @@ func newDeviceLocalProviderWithOverrides(
 	return provider
 }
 
+// Whether a provide mode serves public peers (J4). The modes are ordered by
+// openness, so the test is public and above, which also covers the stream
+// modes. It errs toward public on purpose: dialing direct where it was not
+// needed costs nothing, while a public provider tagged with an extender's
+// address is the failure this rule exists to prevent.
+func provideModeIncludesPublic(provideMode ProvideMode) bool {
+	return ProvideModePublic <= provideMode
+}
+
+// The strategy the standby transport of a new generation dials with (J4).
+// While the provide mode includes public it is the provider's own direct-only
+// strategy -- no extender dialers, no proxy -- so the platform observes the
+// provider's own address and location on every transport; every other mode
+// keeps the device's shared strategy and its extender dialers.
+//
+// The direct strategy is built once and reused by every later generation, and
+// is closed with the provider. It is built with no lock held, because the
+// strategy constructor subscribes to network changes; a loser of the race
+// closes its own build.
+func (self *deviceLocalProvider) standbyClientStrategy(
+	clientStrategySettings *connect.ClientStrategySettings,
+) *connect.ClientStrategy {
+	directStandbyStrategy, public := func() (*connect.ClientStrategy, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.directStandbyStrategy, provideModeIncludesPublic(self.provideMode)
+	}()
+	if !public {
+		return self.clientStrategy
+	}
+	if directStandbyStrategy != nil {
+		return directStandbyStrategy
+	}
+	directStandbyStrategy = connect.NewDirectClientStrategy(
+		self.client.Ctx(),
+		clientStrategySettings,
+		0,
+	)
+	installed := func() *connect.ClientStrategy {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.directStandbyStrategy == nil {
+			self.directStandbyStrategy = directStandbyStrategy
+		}
+		return self.directStandbyStrategy
+	}()
+	if installed != directStandbyStrategy {
+		directStandbyStrategy.Close()
+	}
+	return installed
+}
+
+// Records the device's effective provide mode. When the public flag flips, the
+// transports are rebuilt make-before-break so the new generation's standby
+// carries the right strategy (J4); a change that leaves the flag alone only
+// records the mode. The policy version is bumped for the
+// same reason SetTransportPolicy bumps it: a migration already in flight then
+// sees the change and repeats with the new mode instead of installing a
+// generation built for the old one.
+func (self *deviceLocalProvider) setProvideMode(provideMode ProvideMode) {
+	flipped := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.closed || self.provideMode == provideMode {
+			return false
+		}
+		flipped := provideModeIncludesPublic(self.provideMode) !=
+			provideModeIncludesPublic(provideMode)
+		self.provideMode = provideMode
+		if flipped {
+			self.transportPolicyVersion += 1
+		}
+		return flipped
+	}()
+	if flipped {
+		self.requestPlatformTransportMigration(time.Now())
+	}
+}
+
 // newProviderPlatformTransport builds the provider's transport group: the
 // v4 and v6 pinned transports when the network space derives family urls,
 // plus the family-agnostic standby. Both construction and migration build
@@ -260,7 +360,7 @@ func (self *deviceLocalProvider) newProviderPlatformTransport(
 	return connect.NewFamilyPlatformTransportGroup(
 		self.client.Ctx(),
 		clientStrategySettings,
-		self.clientStrategy,
+		self.standbyClientStrategy(clientStrategySettings),
 		self.client.RouteManager(),
 		self.platformUrl,
 		self.platformUrlV4,
@@ -653,8 +753,15 @@ func (self *deviceLocalProvider) Close() {
 			self.migrationWorkers.Wait()
 			self.stateLock.Lock()
 			platformTransport := self.platformTransport
+			// read after the migration workers have drained, so a generation
+			// built by the last migration is covered too
+			directStandbyStrategy := self.directStandbyStrategy
 			self.stateLock.Unlock()
 			closeMigratablePlatformTransportAndWait(platformTransport)
+			if directStandbyStrategy != nil {
+				// after the transports that dial with it are joined (J4)
+				directStandbyStrategy.Close()
+			}
 			if self.client != nil {
 				_ = self.client.CloseAndWait(context.Background())
 			}
