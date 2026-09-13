@@ -1564,6 +1564,7 @@ struct ExtenderProvideStatus {
 	int64_t LastActivationTime{};
 	std::string LastActivationError{};
 	int64_t RevokedTime{};
+	std::string DnsPorts{};
 	int64_t ConnectionCount{};
 };
 
@@ -2080,6 +2081,7 @@ struct NetworkSpaceValues {
 	std::optional<bool> sso_google;
 	std::optional<std::string> api_url;
 	std::optional<std::string> platform_url;
+	std::optional<std::string> alt_url;
 	std::optional<SnChainSettings> sn_chain;
 	std::optional<NetExtender> net_extender;
 	std::optional<std::string> extender_dns_name;
@@ -7203,6 +7205,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["LastActivationTime"] = v.LastActivationTime;
 	j["LastActivationError"] = v.LastActivationError;
 	j["RevokedTime"] = v.RevokedTime;
+	j["DnsPorts"] = v.DnsPorts;
 	j["ConnectionCount"] = v.ConnectionCount;
 }
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
@@ -7238,6 +7241,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("RevokedTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RevokedTime);
+	}
+	if (auto it = j.find("DnsPorts"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DnsPorts);
 	}
 	if (auto it = j.find("ConnectionCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ConnectionCount);
@@ -9545,6 +9551,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.platform_url) {
 		j["platform_url"] = *v.platform_url;
 	}
+	if (v.alt_url) {
+		j["alt_url"] = *v.alt_url;
+	}
 	if (v.sn_chain) {
 		j["sn_chain"] = *v.sn_chain;
 	}
@@ -9622,6 +9631,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.platform_url = std::move(tmp);
+	}
+	if (auto it = j.find("alt_url"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.alt_url = std::move(tmp);
 	}
 	if (auto it = j.find("sn_chain"); it != j.end() && !it->is_null()) {
 		SnChainSettings tmp{};
@@ -15339,6 +15353,9 @@ public:
 	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
 	void close() const;
 	std::string connectLinkUrl(const std::string& target) const;
+	std::string getAltUrl() const;
+	std::string getAltUrlV4() const;
+	std::string getAltUrlV6() const;
 	Api getApi() const;
 	std::string getApiUrl() const;
 	std::string getApiUrlV4() const;
@@ -25600,6 +25617,18 @@ inline void NetworkSpace::close() const {
 }
 inline std::string NetworkSpace::connectLinkUrl(const std::string& target) const {
 	char* r_c = urnet_network_space_connect_link_url(handle(), target.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getAltUrl() const {
+	char* r_c = urnet_network_space_get_alt_url(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getAltUrlV4() const {
+	char* r_c = urnet_network_space_get_alt_url_v4(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::getAltUrlV6() const {
+	char* r_c = urnet_network_space_get_alt_url_v6(handle());
 	return detail::takeString(r_c);
 }
 inline Api NetworkSpace::getApi() const {

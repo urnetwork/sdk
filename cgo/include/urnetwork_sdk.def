@@ -757,6 +757,9 @@ EXPORTS
 	urnet_network_space_add_extender_status_change_listener
 	urnet_network_space_close
 	urnet_network_space_connect_link_url
+	urnet_network_space_get_alt_url
+	urnet_network_space_get_alt_url_v4
+	urnet_network_space_get_alt_url_v6
 	urnet_network_space_get_api
 	urnet_network_space_get_api_url
 	urnet_network_space_get_api_url_v4

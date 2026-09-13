@@ -13403,6 +13403,39 @@ func urnet_network_space_connect_link_url(self C.uint64_t, target *C.char) *C.ch
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_alt_url
+func urnet_network_space_get_alt_url(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_alt_url")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_alt_url")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAltUrl()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_alt_url_v4
+func urnet_network_space_get_alt_url_v4(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_alt_url_v4")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_alt_url_v4")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAltUrlV4()
+	return cString(string(r0))
+}
+
+//export urnet_network_space_get_alt_url_v6
+func urnet_network_space_get_alt_url_v6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_alt_url_v6")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_alt_url_v6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAltUrlV6()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_api
 func urnet_network_space_get_api(self C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_network_space_get_api")

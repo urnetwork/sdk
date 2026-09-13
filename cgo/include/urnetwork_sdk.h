@@ -1420,6 +1420,9 @@ void urnet_network_name_validation_view_controller_stop(uint64_t self);
 uint64_t urnet_network_space_add_extender_status_change_listener(uint64_t self, urnet_extender_status_change_cb listener_extender_status_changed, void* listener_user_data);
 void urnet_network_space_close(uint64_t self);
 char* urnet_network_space_connect_link_url(uint64_t self, const char* target);
+char* urnet_network_space_get_alt_url(uint64_t self);
+char* urnet_network_space_get_alt_url_v4(uint64_t self);
+char* urnet_network_space_get_alt_url_v6(uint64_t self);
 uint64_t urnet_network_space_get_api(uint64_t self);
 char* urnet_network_space_get_api_url(uint64_t self);
 char* urnet_network_space_get_api_url_v4(uint64_t self);
@@ -2589,6 +2592,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   LastActivationTime: number
  *   LastActivationError: string
  *   RevokedTime: number
+ *   DnsPorts: string
  *   ConnectionCount: number
  */
 
@@ -3117,6 +3121,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   sso_google?: boolean
  *   api_url?: string
  *   platform_url?: string
+ *   alt_url?: string
  *   sn_chain?: SnChainSettings | null
  *   net_extender?: NetExtender | null
  *   extender_dns_name?: string

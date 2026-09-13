@@ -18,6 +18,7 @@ export interface NetworkSpaceValues {
   sso_google?: boolean;
   api_url?: string;
   platform_url?: string;
+  alt_url?: string;
   sn_chain?: SnChainSettings | null;
   net_extender?: NetExtender | null;
   extender_dns_name?: string;
