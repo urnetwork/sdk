@@ -18,9 +18,10 @@ import (
 // a loop writing into a directory whose local state is gone, and a watch that
 // does not re-subscribe stops publishing without ever saying so.
 
-// Turns the member role's node on for one test, the way the node tests do,
-// without depending on a build-tagged helper.
-func testEnableExtenderNodeForLifecycle(t *testing.T) {
+// Turns the member role's node on for one test. It lives here, untagged,
+// because the tests that need it are not all on one build: the js build runs
+// no node at all but still reads the switch.
+func testEnableExtenderNode(t *testing.T) {
 	t.Helper()
 	extenderNodeEnabled = true
 	t.Cleanup(func() {
@@ -32,7 +33,7 @@ func testEnableExtenderNodeForLifecycle(t *testing.T) {
 // nothing behind that a later settings change could restart (F1, K6).
 func TestNetworkSpaceCloseJoinsTheExtenderNetwork(t *testing.T) {
 	testEnableExtenderManualHostsNetwork(t)
-	testEnableExtenderNodeForLifecycle(t)
+	testEnableExtenderNode(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -86,7 +87,7 @@ func TestNetworkSpaceCloseJoinsTheExtenderNetwork(t *testing.T) {
 // cycle (F1, F2, F3).
 func TestExtenderSpaceAndDeviceChurnLeaksNoGoroutines(t *testing.T) {
 	testEnableExtenderManualHostsNetwork(t)
-	testEnableExtenderNodeForLifecycle(t)
+	testEnableExtenderNode(t)
 
 	const cycles = 4
 	// per goroutine-stack signature; a per-cycle leak shows as ~cycles

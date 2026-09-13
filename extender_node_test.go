@@ -21,15 +21,6 @@ import (
 // these tests turn it on for their own spaces. Everything they wait on is a
 // monitor, not a clock.
 
-// Turns the node on for one test.
-func testEnableExtenderNode(t *testing.T) {
-	t.Helper()
-	extenderNodeEnabled = true
-	t.Cleanup(func() {
-		extenderNodeEnabled = false
-	})
-}
-
 // One space under a fresh storage path.
 func newTestExtenderSpace(t *testing.T, storagePath string) (*NetworkSpaceManager, *NetworkSpace) {
 	t.Helper()
