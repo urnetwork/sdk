@@ -71,7 +71,15 @@ func TestExtenderViewControllerSettings(t *testing.T) {
 	connect.AssertEqual(t, networkSpace.GetExtenderDnsName(), "x.example")
 	connect.AssertEqual(t, networkSpace.GetGossipUrl(), "wss://g.example")
 
+	// a field holding only whitespace is a blank field, not an override
+	blank := vc.SetSettings("   ", "  ", NewStringList())
+	connect.AssertEqual(t, blank.DnsName, "extender.space.example")
+	connect.AssertEqual(t, blank.DnsNameDefault, true)
+	connect.AssertEqual(t, blank.GossipUrl, "wss://gossip.space.example")
+	connect.AssertEqual(t, blank.GossipUrlDefault, true)
+
 	// clearing a field goes back to the derived default
+	vc.SetSettings("x.example", "wss://g.example", hosts)
 	cleared := vc.SetSettings("", "", NewStringList())
 	connect.AssertEqual(t, cleared.DnsName, "extender.space.example")
 	connect.AssertEqual(t, cleared.DnsNameDefault, true)

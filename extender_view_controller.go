@@ -24,6 +24,7 @@ package sdk
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/urnetwork/connect"
@@ -183,9 +184,12 @@ func (self *ExtenderViewController) SetSettings(
 	if hosts != nil {
 		extenderHosts = hosts.getAll()
 	}
+	// trimmed here rather than only where they are read, so a field a user
+	// blanked out is stored as empty -- which is what "the default" is -- and
+	// the persisted document never carries whitespace
 	networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
-		values.ExtenderDnsName = dnsName
-		values.GossipUrl = gossipUrl
+		values.ExtenderDnsName = strings.TrimSpace(dnsName)
+		values.GossipUrl = strings.TrimSpace(gossipUrl)
 		values.ExtenderHosts = extenderHosts
 	})
 	return extenderSettings(self.device.GetNetworkSpace())
@@ -325,14 +329,25 @@ func extenderSettings(networkSpace *NetworkSpace) *ExtenderSettings {
 		return settings
 	}
 	values := networkSpace.valuesCopy()
+	// the default flags read the CONFIGURED value, trimmed: a field holding
+	// only whitespace is a blank field, and a ui told otherwise would print
+	// the derived default while claiming it was overridden
+	configured := func(value string) bool {
+		return strings.TrimSpace(value) != ""
+	}
 	settings.DnsName = ExtenderDnsName(&networkSpace.key, &values)
-	settings.DnsNameDefault = values.ExtenderDnsName == ""
+	settings.DnsNameDefault = !configured(values.ExtenderDnsName)
 	settings.GossipUrl = GossipUrl(&networkSpace.key, &values)
-	settings.GossipUrlDefault = values.GossipUrl == ""
+	settings.GossipUrlDefault = !configured(values.GossipUrl)
 	settings.Hosts.addAll(ExtenderHosts(&values)...)
 	settings.NetworkHost = extenderNetworkHostName(&networkSpace.key, &values)
 	settings.RootPublicKeys.addAll(ExtenderRootPublicKeys(&networkSpace.key, &values)...)
-	settings.RootPublicKeysDefault = len(values.ExtenderRootPublicKeys) == 0
+	settings.RootPublicKeysDefault = true
+	for _, rootPublicKey := range values.ExtenderRootPublicKeys {
+		if configured(rootPublicKey) {
+			settings.RootPublicKeysDefault = false
+		}
+	}
 	return settings
 }
 
