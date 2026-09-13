@@ -10,7 +10,11 @@ package sdk
 import (
 	"crypto/md5"
 	"fmt"
+	"hash/fnv"
+	"math"
+	"net/netip"
 	"sort"
+	"strings"
 )
 
 func GetColorHex(code string) string {
@@ -35,6 +39,58 @@ func GetColorHex(code string) string {
 	color2 := countryCodeColorHexes[keys[index2]]
 
 	return mixColors(color1, color2)
+}
+
+// GetExtenderColorHex is the one color of one extender address (EXTENDER.md
+// K3), computed here so every app draws the same ring for the same extender:
+// FNV-1a 32 over the canonical ip string, hue the hash modulo 360, saturation
+// 70 percent, lightness 55 percent, as six hex digits with no leading `#`.
+//
+// The canonical form is what netip prints -- lower case, the shortest v6 form,
+// a v4-mapped v6 address unmapped to its v4 form -- so the same address
+// written two ways is one color. An input that does not parse is hashed as the
+// trimmed text it is, which keeps the answer stable rather than empty.
+//
+// Fixed saturation and lightness are what make every hue legible on both the
+// light and the dark background and keep two adjacent rings distinguishable by
+// hue alone.
+func GetExtenderColorHex(ip string) string {
+	name := strings.TrimSpace(ip)
+	if parsedIp, err := netip.ParseAddr(name); err == nil {
+		name = parsedIp.Unmap().String()
+	}
+	hash := fnv.New32a()
+	hash.Write([]byte(name))
+	return hslColorHex(float64(hash.Sum32()%360), 0.70, 0.55)
+}
+
+// The standard hsl to rgb conversion, with hue in degrees and saturation and
+// lightness in [0, 1]. Half-up rounding on each channel, so the value is a
+// pure function of the three inputs on every platform.
+func hslColorHex(hue float64, saturation float64, lightness float64) string {
+	c := (1 - math.Abs(2*lightness-1)) * saturation
+	h := hue / 60
+	x := c * (1 - math.Abs(math.Mod(h, 2)-1))
+	m := lightness - c/2
+	var r, g, b float64
+	switch {
+	case h < 1:
+		r, g, b = c, x, 0
+	case h < 2:
+		r, g, b = x, c, 0
+	case h < 3:
+		r, g, b = 0, c, x
+	case h < 4:
+		r, g, b = 0, x, c
+	case h < 5:
+		r, g, b = x, 0, c
+	default:
+		r, g, b = c, 0, x
+	}
+	channel := func(v float64) int {
+		return int(math.Round((v + m) * 255))
+	}
+	return rgbToHex(channel(r), channel(g), channel(b))
 }
 
 // to get a consistent index from the id
