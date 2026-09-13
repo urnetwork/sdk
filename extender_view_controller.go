@@ -273,7 +273,12 @@ func (self *ExtenderViewController) ImportShare(
 	if err != nil {
 		return &ExtenderImportResult{Error: ExtenderImportErrorInvalid}
 	}
-	if !useSettings && !self.networkHostAllowed(share.NetworkHost) {
+	// A foreign payload is taken only together with its settings, and only
+	// when it has some: `useSettings` is the user confirming a replacement of
+	// the dns name, gossip url and anchor, and a payload with no settings
+	// block has none to replace. Its addresses would then be unverifiable
+	// forever -- this space accepts records for its own network host only.
+	if !self.networkHostAllowed(share.NetworkHost) && (!useSettings || share.Settings == nil) {
 		return &ExtenderImportResult{Error: ExtenderImportErrorForeignHost}
 	}
 	networkSpace := self.device.GetNetworkSpace()

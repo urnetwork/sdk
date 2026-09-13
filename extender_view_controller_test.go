@@ -236,6 +236,14 @@ func TestExtenderViewControllerImportsAForeignHostOnlyWithSettings(t *testing.T)
 	// nothing of the settings was taken either
 	connect.AssertEqual(t, networkSpace.GetExtenderDnsName(), "extender.space.example")
 
+	// a foreign payload with no settings block is refused even when the
+	// settings are asked for: there are none to replace, and its addresses
+	// could never verify against this space's network host
+	noSettings := vc.ImportShare(testForeignExtenderShareWithoutSettings(t), true)
+	connect.AssertEqual(t, noSettings.Ok, false)
+	connect.AssertEqual(t, noSettings.Error, ExtenderImportErrorForeignHost)
+	connect.AssertEqual(t, len(networkSpace.extenderDirectory.Snapshot().Entries), 0)
+
 	applied := vc.ImportShare(text, true)
 	connect.AssertEqual(t, applied.Ok, true)
 	connect.AssertEqual(t, applied.Error, "")
@@ -287,6 +295,21 @@ func testForeignExtenderShare(t *testing.T) string {
 			GossipUrl:      "wss://gossip.other.example",
 			RootPublicKeys: [][]byte{publicKey},
 		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
+
+// The same operator's payload with no settings block, which an importer has
+// nothing to confirm for.
+func testForeignExtenderShareWithoutSettings(t *testing.T) string {
+	t.Helper()
+	text, err := connect.EncodeExtenderShare(&protocol.ExtenderShare{
+		Version:     connect.ExtenderShareVersion,
+		NetworkHost: "other.example",
+		Addresses:   [][]byte{{192, 0, 2, 51}},
 	})
 	if err != nil {
 		t.Fatal(err)
