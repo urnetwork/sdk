@@ -211,6 +211,13 @@ func TestExtenderStatusListenerSurvivesASettingsRestart(t *testing.T) {
 // nothing subscribed however the app got there (K5).
 func TestExtenderViewControllerStartStopAndClose(t *testing.T) {
 	vc, networkSpace, _ := testExtenderViewController(t)
+	// the subscription is lock-guarded state of the controller, so it is read
+	// the way the controller reads it
+	subscription := func() Sub {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		return vc.extenderStatusChangedSub
+	}
 
 	statuses := make(chan *ExtenderStatus, 16)
 	vc.AddStatusListener(extenderViewControllerListenerFunc(func(status *ExtenderStatus) {
@@ -237,13 +244,13 @@ func TestExtenderViewControllerStartStopAndClose(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("Start did not seed the ui with the current status")
 	}
-	if vc.extenderStatusChangedSub == nil {
+	if subscription() == nil {
 		t.Fatal("Start did not subscribe to the device")
 	}
 	// Start twice keeps the one subscription rather than stacking a second
-	subscription := vc.extenderStatusChangedSub
+	started := subscription()
 	vc.Start()
-	if vc.extenderStatusChangedSub != subscription {
+	if subscription() != started {
 		t.Fatal("a second Start replaced the subscription")
 	}
 
@@ -262,7 +269,7 @@ func TestExtenderViewControllerStartStopAndClose(t *testing.T) {
 	}
 
 	vc.Stop()
-	if vc.extenderStatusChangedSub != nil {
+	if subscription() != nil {
 		t.Fatal("Stop left the device subscription in place")
 	}
 	// Stop twice is the app closing a screen it already closed
@@ -270,11 +277,11 @@ func TestExtenderViewControllerStartStopAndClose(t *testing.T) {
 
 	// and Close after a Start releases it too
 	vc.Start()
-	if vc.extenderStatusChangedSub == nil {
+	if subscription() == nil {
 		t.Fatal("Start after Stop did not subscribe again")
 	}
 	vc.Close()
-	if vc.extenderStatusChangedSub != nil {
+	if subscription() != nil {
 		t.Fatal("Close left the device subscription in place")
 	}
 }
