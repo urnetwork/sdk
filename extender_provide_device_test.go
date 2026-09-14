@@ -183,6 +183,37 @@ func testExtenderProvideRemoteBeforeLocal(
 	return deviceRemote, bringUp
 }
 
+// Waits until the remote has noticed the device process is gone. A closed
+// device's rpc session dies asynchronously, and a session still open would
+// answer for the closed device, so a read before this is not the unreachable
+// path.
+func testWaitRemoteDisconnected(t *testing.T, deviceRemote *DeviceRemote) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for deviceRemote.GetRemoteConnected() {
+		if !time.Now().Before(deadline) {
+			t.Fatal("the remote never noticed the device process was gone")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Waits until the local device reports the state.
+func testWaitExtenderProvideState(t *testing.T, deviceLocal *DeviceLocal, state string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for deviceLocal.GetExtenderProvideStatus().State != state {
+		if !time.Now().Before(deadline) {
+			t.Fatalf(
+				"the device never reported %s, last = %+v",
+				state,
+				deviceLocal.GetExtenderProvideStatus(),
+			)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func testQueuedProvideExtender(deviceRemote *DeviceRemote) deviceRemoteValue[bool] {
 	deviceRemote.stateLock.Lock()
 	defer deviceRemote.stateLock.Unlock()
@@ -276,8 +307,31 @@ func TestDeviceRemoteProvideExtenderLastKnownWhileUnreachable(t *testing.T) {
 	}
 
 	deviceLocal.Close()
+	testWaitRemoteDisconnected(t, deviceRemote)
 
 	// the default is on, so reading off here is the last known value
+	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), false)
+}
+
+// The last known value the sync seeds is what a remote that never read or wrote
+// the setting answers once the device process is gone (N2): with no read and no
+// write, the sync response is its only writer.
+func TestDeviceRemoteProvideExtenderSeededBySync(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	// off on the device before the remote first syncs
+	if err := networkSpace.asyncLocalState.GetLocalState().SetProvideExtender(false); err != nil {
+		t.Fatal(err)
+	}
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
+	connect.AssertEqual(t, deviceLocal.GetProvideExtender(), false)
+
+	deviceLocal.Close()
+	testWaitRemoteDisconnected(t, deviceRemote)
+
+	// the default is on and nothing was queued, so off can only be the seed
+	if queued := testQueuedProvideExtender(deviceRemote); queued.IsSet {
+		t.Fatalf("queued = %+v, expected nothing queued", queued)
+	}
 	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), false)
 }
 
@@ -355,17 +409,31 @@ func TestDeviceRemoteExtenderProvideStatusListenerReplaysAtSync(t *testing.T) {
 // The last status the remote read, not only the last one pushed, stands while
 // the device process is gone (N2, K5).
 func TestDeviceRemoteExtenderProvideStatusReadCacheSurvivesServiceLoss(t *testing.T) {
+	if !extenderProvideSupported {
+		t.Skip("a build with no role answers off in every state")
+	}
 	_, networkSpace := testExtenderStatusSpace(t)
-	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+		},
+	)
+
+	// providing with no role (the suite runs none) is setting_up, which a
+	// closed device cannot answer: a session still open after the close would
+	// answer not_providing, so the cache and a live read differ
+	deviceLocal.SetProvideMode(ProvideModePublic)
+	testWaitExtenderProvideState(t, deviceLocal, ExtenderProvideStateSettingUp)
 
 	// no listener is registered, so nothing is pushed: the read is the only
 	// writer of the cache here
 	read := deviceRemote.GetExtenderProvideStatus()
-	if read.State == "" {
-		t.Fatalf("status = %+v, expected the device's derived status", read)
-	}
+	connect.AssertEqual(t, read.State, ExtenderProvideStateSettingUp)
 
 	deviceLocal.Close()
+	testWaitRemoteDisconnected(t, deviceRemote)
 
 	connect.AssertEqual(t, deviceRemote.GetExtenderProvideStatus(), read)
 }

@@ -238,7 +238,7 @@ func TestContractViewControllerExtenderSeries(t *testing.T) {
 	}
 
 	// 6. counters below the previous (a restart within one interval) clamp
-	sample(stats(10, 1, 10, 1), t0.Add(6*interval))
+	sample(stats(10, 0, 10, 0), t0.Add(6*interval))
 	if n := len(series.points); n != 6 {
 		t.Fatalf("expected 6 points, got %d", n)
 	}

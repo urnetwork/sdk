@@ -1386,6 +1386,10 @@ func TestDeviceLocalProviderExtenderReportsAStartError(t *testing.T) {
 	if fixture.extender() != nil {
 		t.Fatal("a role that could not start was installed")
 	}
+	// no role, so no series: the stats agree with Enabled (O2, O4)
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v for a role that could not start, expected nil", stats)
+	}
 
 	// turning the setting off is not a start error
 	fixture.device.SetProvideExtender(false)
@@ -1428,6 +1432,9 @@ func TestDeviceLocalProviderExtenderReportsASpaceWithNoDirectory(t *testing.T) {
 	}
 	if !strings.Contains(status.StartError, "extender directory") {
 		t.Fatalf("start error = %q, expected the missing directory", status.StartError)
+	}
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v for a role that could not start, expected nil", stats)
 	}
 
 	fixture.device.SetProvideMode(ProvideModeNone)
@@ -1524,6 +1531,129 @@ func TestDeviceLocalProviderExtenderReportsARefusal(t *testing.T) {
 	if !strings.Contains(status.Reason, "the tcp carrier did not answer") ||
 		status.Reason != status.LastActivationError {
 		t.Fatalf("reason = %q, expected the operator's refusal", status.Reason)
+	}
+}
+
+// In the fallback mode one api url activates whichever family its answer names,
+// and a refusal marks every family it has activated, with the operator's reason
+// (N6, G3): the plain url answers v4 on the first pass and v6 on the next, and
+// refuses the one after.
+func TestDeviceLocalProviderExtenderFallbackRefusalMarksEveryFamily(t *testing.T) {
+	const refusal = "the udp carrier did not answer"
+
+	var handlerLock sync.Mutex
+	refused := false
+	postCount := 0
+	posts := make(chan int, 16)
+	var operator *testProvideExtenderOperator
+	operatorReady := make(chan struct{})
+
+	server := newTestProvideExtenderServer(t, "127.0.0.1", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != connect.ExtenderActivatePath {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			select {
+			case <-operatorReady:
+			case <-time.After(30 * time.Second):
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			args := &connect.ExtenderActivateArgs{}
+			if err := json.NewDecoder(r.Body).Decode(args); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerLock.Lock()
+			postCount += 1
+			post := postCount
+			refuse := refused
+			handlerLock.Unlock()
+			select {
+			case posts <- post:
+			default:
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if refuse {
+				json.NewEncoder(w).Encode(&connect.ExtenderActivateResult{
+					Activated: false,
+					Error:     refusal,
+				})
+				return
+			}
+			// the one url names v4 on odd passes and v6 on even ones
+			ipVersion := 4
+			if post%2 == 0 {
+				ipVersion = 6
+			}
+			result, err := operator.activateResult(ipVersion, args)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(result)
+		}))
+	t.Cleanup(server.Close)
+
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.ApiUrl = server.URL
+		settings.ApiUrlV4 = ""
+		settings.ApiUrlV6 = ""
+	})
+	operator = fixture.operator
+	close(operatorReady)
+
+	waitPost := func(expected int) {
+		t.Helper()
+		select {
+		case post := <-posts:
+			if post != expected {
+				t.Fatalf("post %d, expected post %d", post, expected)
+			}
+		case <-time.After(60 * time.Second):
+			t.Fatalf("the activation loop did not post activation %d", expected)
+		}
+	}
+
+	fixture.waitPass()
+	waitPost(1)
+	fixture.waitStatus("v4 through the one url", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4
+	})
+
+	// the daily activation (G3) names the other family
+	fixture.step(25 * time.Hour)
+	waitPost(2)
+	fixture.waitStatus("both families through the one url", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4 && status.ActivatedV6
+	})
+
+	func() {
+		handlerLock.Lock()
+		defer handlerLock.Unlock()
+		refused = true
+	}()
+	fixture.step(25 * time.Hour)
+	waitPost(3)
+
+	status := fixture.waitStatus("refused", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorActivationRefused
+	})
+	if status.ActivatedV4 || status.ActivatedV6 || !status.LastActivationRefused || status.Reason != refusal {
+		t.Fatalf("status = %+v, expected every family refused with the operator's reason", status)
+	}
+
+	ipVersions := []int{}
+	for _, family := range fixture.extender().activatorStatus().Families {
+		ipVersions = append(ipVersions, family.IpVersion)
+		if family.Activated || !family.LastRefused || family.LastError != refusal {
+			t.Fatalf("v%d = %+v, expected refused with the operator's reason", family.IpVersion, family)
+		}
+	}
+	if !slices.Equal(ipVersions, []int{4, 6}) {
+		t.Fatalf("families = %v, expected both families the one url activated", ipVersions)
 	}
 }
 
