@@ -574,7 +574,8 @@ func TestNormalExtenderGossipMode(t *testing.T) {
 // tolerance: the directory is a cache, the mode degrades to auto, and the
 // opt-out is on unless it was explicitly turned off (E1, D5, F3).
 func TestExtenderLocalStateFiles(t *testing.T) {
-	localState := newLocalState(context.Background(), t.TempDir())
+	localStorageHome := t.TempDir()
+	localState := newLocalState(context.Background(), localStorageHome)
 	t.Cleanup(localState.Close)
 	path := func(name string) string {
 		return filepath.Join(localState.localStorageDir, name)
@@ -642,16 +643,36 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if localState.GetProvideExtender() {
-		t.Fatal("the opt-out was not persisted")
+		t.Fatal("the opt-out did not apply")
 	}
-	if err := localState.SetProvideExtender(true); err != nil {
+	// read once and cached: with the file gone, a read answers the cached
+	// value rather than going back to the disk for the default (N4)
+	if err := os.Remove(path(provideExtenderFileName)); err != nil {
 		t.Fatal(err)
 	}
-	if !localState.GetProvideExtender() {
+	if localState.GetProvideExtender() {
+		t.Fatal("a read went back to the disk instead of answering the cached opt-out")
+	}
+
+	// every write goes to the file as well as the cache, so a restart reads
+	// what the last write left
+	if err := localState.SetProvideExtender(false); err != nil {
+		t.Fatal(err)
+	}
+	restarted := newLocalState(context.Background(), localStorageHome)
+	t.Cleanup(restarted.Close)
+	if restarted.GetProvideExtender() {
+		t.Fatal("the opt-out was not persisted")
+	}
+	if err := restarted.SetProvideExtender(true); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.GetProvideExtender() {
 		t.Fatal("the setting did not go back on")
 	}
+
 	// anything that is not an explicit off is on, so a corrupt file does not
-	// silently opt a provider out
+	// silently opt a provider out. The file is read once, at the next start.
 	if err := os.WriteFile(
 		path(provideExtenderFileName),
 		[]byte("nonsense"),
@@ -659,7 +680,9 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !localState.GetProvideExtender() {
+	reread := newLocalState(context.Background(), localStorageHome)
+	t.Cleanup(reread.Close)
+	if !reread.GetProvideExtender() {
 		t.Fatal("a file that is not an explicit off read as off")
 	}
 }

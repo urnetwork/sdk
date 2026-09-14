@@ -81,7 +81,25 @@ const provideExtenderFileName = ".provide_extender"
 
 // The persisted provider extender setting. Unset or unreadable reads as on,
 // which is the default of F3; only an explicit off is stored as off.
+//
+// Read from its file once and cached after. There is one LocalState per space
+// and every writer goes through SetProvideExtender, so the cache is the setting
+// for the life of the process, shared by every device on the space (the miner
+// swarm runs many), and the status, which reads it on every derivation, never
+// touches the disk (N4).
 func (self *LocalState) GetProvideExtender() bool {
+	self.provideExtenderLock.Lock()
+	defer self.provideExtenderLock.Unlock()
+	if !self.provideExtenderLoaded {
+		self.provideExtender = self.readProvideExtender()
+		self.provideExtenderLoaded = true
+	}
+	return self.provideExtender
+}
+
+// Anything that is not an explicit off is on, so a missing, unreadable or
+// corrupt file never silently opts a provider out.
+func (self *LocalState) readProvideExtender() bool {
 	path := filepath.Join(self.localStorageDir, provideExtenderFileName)
 	stateBytes, err := os.ReadFile(path)
 	if err != nil {
@@ -90,8 +108,15 @@ func (self *LocalState) GetProvideExtender() bool {
 	return strings.TrimSpace(string(stateBytes)) != "false"
 }
 
-// Persists the provider extender setting.
+// Persists the provider extender setting. The cache takes the value whether or
+// not the write succeeds, so the setting applies for the session either way,
+// and the write error is returned for the caller to log, as the device does.
 func (self *LocalState) SetProvideExtender(provideExtender bool) error {
+	self.provideExtenderLock.Lock()
+	defer self.provideExtenderLock.Unlock()
+	self.provideExtender = provideExtender
+	self.provideExtenderLoaded = true
+
 	path := filepath.Join(self.localStorageDir, provideExtenderFileName)
 	value := "false"
 	if provideExtender {
