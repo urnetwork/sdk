@@ -1268,11 +1268,11 @@ func (self *DeviceRemote) GetExtenderStatus() *ExtenderStatus {
 
 // GetExtenderProvideStatus reads through to the local device, which is where
 // the role runs (N2, F3). The state and reason of N3 are already derived
-// there, so every app behind the rpc renders the rule the device decided. On a
-// missing service it degrades to the last known readout, and to the
-// unsupported status when there has never been one -- which is also what a
-// device process too old to answer the method reports, so the row is hidden
-// rather than dead (N1).
+// there, so every app behind the rpc renders the rule the device decided. With
+// no service it degrades to the last known readout, and to the unsupported
+// status when there has never been one. A device process too old to answer the
+// method always reports unsupported, so the row is hidden rather than dead
+// (N1).
 func (self *DeviceRemote) GetExtenderProvideStatus() *ExtenderProvideStatus {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1281,13 +1281,19 @@ func (self *DeviceRemote) GetExtenderProvideStatus() *ExtenderProvideStatus {
 		if self.service == nil {
 			return nil, false
 		}
-		// a device process from before this method keeps its rpc session and
-		// answers nothing, which reads as unsupported below
+		// a device process from before this method keeps its rpc session
 		status, err := rpcCallNoArgAllowMissingMethod[*ExtenderProvideStatus](
 			self.service,
 			"DeviceLocalRpc.GetExtenderProvideStatus",
 			self.closeService,
 		)
+		if err != nil && rpcMissingMethodError(err) {
+			// the role is unsupported there even when a newer process answered
+			// before a downgrade, so the last value goes with it: a kept one
+			// would leave the row visible with a toggle that reaches nothing
+			self.lastExtenderProvideStatus = nil
+			return nil, false
+		}
 		if err != nil || status == nil {
 			return nil, false
 		}

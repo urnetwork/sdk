@@ -366,6 +366,41 @@ func TestDeviceRemoteExtenderProvideWithoutTheMethods(t *testing.T) {
 	}
 }
 
+// A daemon downgraded under a running app answers the missing method, and the
+// remote reports the role unsupported even though it holds a status from the
+// newer process, so the row is hidden rather than left with a toggle that
+// reaches nothing (N1, N2).
+func TestDeviceRemoteExtenderProvideStatusMissingMethodDropsTheCache(t *testing.T) {
+	deviceRemote := newTestDeviceRemoteWithNoService(t)
+	deviceRemote.extenderProvideStatusChanged(&ExtenderProvideStatus{
+		Supported:   true,
+		State:       ExtenderProvideStateActive,
+		Enabled:     true,
+		Listening:   true,
+		ActivatedV4: true,
+		Ipv4:        "192.0.2.10",
+	})
+	// with no service the cached status stands
+	connect.AssertEqual(
+		t,
+		deviceRemote.GetExtenderProvideStatus().State,
+		ExtenderProvideStateActive,
+	)
+
+	testExtenderProvideDeviceProcess(t, deviceRemote, &testingOptionalMethodRpc{})
+
+	connect.AssertEqual(t, deviceRemote.GetExtenderProvideStatus(), unsupportedExtenderProvideStatus())
+	deviceRemote.stateLock.Lock()
+	cached := deviceRemote.lastExtenderProvideStatus
+	deviceRemote.stateLock.Unlock()
+	if cached != nil {
+		t.Fatalf("cached = %+v, expected the newer process's status to be dropped", cached)
+	}
+	if !deviceRemote.GetRemoteConnected() {
+		t.Fatal("the missing method tore the rpc session down")
+	}
+}
+
 // The status crosses whole, with the state the device derived (N2). A device
 // process that reports a state the app cannot compute for itself -- an
 // activated family, a bind failure -- must arrive with it intact.
