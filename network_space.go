@@ -508,9 +508,7 @@ func newNetworkSpaceWithConnectSettings(
 		clientStrategySettings,
 		clientStrategySettings.Log,
 	)
-	// no rescue handler: the watch already contains a panic to one tick, and a
-	// failure to render status must never tear the space down
-	go connect.HandleError(networkSpace.watchExtenderStatus)
+	networkSpace.startExtenderStatusWatch()
 	return networkSpace
 }
 
@@ -988,7 +986,7 @@ func NewNetworkSpaceWithUrls(
 			clientStrategySettings,
 			log,
 		)
-		go connect.HandleError(networkSpace.watchExtenderStatus)
+		networkSpace.startExtenderStatusWatch()
 	}
 	return networkSpace
 }

@@ -544,8 +544,12 @@ func (self *DeviceLocal) updateExtenderProvide() {
 // re-arms and reads. Arming before the epoch would leave the next round
 // already triggered by the same burst the snapshot already carries. See
 // NetworkSpace.watchExtenderStatus for the same shape.
-func (self *DeviceLocal) watchExtenderProvideStatus() {
-	deviceUpdate := self.extenderProvideMonitor.NotifyChannel()
+//
+// deviceUpdate is the device's wake, armed by the constructor before this
+// goroutine starts. Armed here instead, a change landing before the goroutine's
+// first statement would close a channel nobody held yet, and a device with no
+// role, which nothing else wakes, would never push it (N2).
+func (self *DeviceLocal) watchExtenderProvideStatus(deviceUpdate chan struct{}) {
 	roleUpdate := self.extenderProvideStatusUpdate()
 	for {
 		select {

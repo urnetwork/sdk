@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -767,6 +768,69 @@ func TestDeviceLocalExtenderStatsNilWhileTheRoleIsNotRunning(t *testing.T) {
 	hostedDevice.SetProvideMode(ProvideModePublic)
 	if stats := hostedDevice.GetExtenderStats(); stats != nil {
 		t.Fatalf("stats = %+v on a hosted device, expected nil", stats)
+	}
+}
+
+// A change that lands before the provider extender status watch runs is still
+// pushed (N2): the wake the watch waits on first is armed before its goroutine
+// starts. The barrier holds the watch goroutine until the change has landed,
+// which is the order a daemon that applies its persisted provide mode right
+// after constructing the device produces.
+func TestExtenderProvideStatusWatchKeepsAChangeBeforeItRuns(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWatch := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+
+	_, networkSpace := testExtenderStatusSpace(t)
+	settings := testExtenderStatusDeviceSettings()
+	// no provider, so the device's own wake is the only thing that can wake
+	// the watch
+	settings.AllowProvider = false
+	settings.testingBeforeExtenderProvideWatch = func() {
+		close(entered)
+		<-release
+	}
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, "", "", "", "", NewId(), settings, connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(deviceLocal.Close)
+	// released before the device closes
+	t.Cleanup(releaseWatch)
+
+	statuses := make(chan *ExtenderProvideStatus, 4)
+	sub := deviceLocal.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the provider extender status watch never started")
+	}
+	// the change lands while the watch goroutine exists and has not waited on
+	// anything yet
+	deviceLocal.SetProvideExtender(false)
+	releaseWatch()
+
+	select {
+	case status := <-statuses:
+		if status.State != ExtenderProvideStateOff {
+			t.Fatalf("state = %q, expected the change to off", status.State)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a change that landed before the watch ran was never pushed")
 	}
 }
 
