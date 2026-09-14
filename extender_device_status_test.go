@@ -60,6 +60,17 @@ func testExtenderStatusSyncedDeviceLocalRemote(
 	networkSpace *NetworkSpace,
 ) (*DeviceLocal, *DeviceRemote) {
 	t.Helper()
+	return testExtenderStatusSyncedDeviceLocalRemoteWithSettings(t, networkSpace, nil)
+}
+
+// The same pair with the local device's settings adjusted first, which is how
+// a test runs a provider behind the rpc.
+func testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+	t *testing.T,
+	networkSpace *NetworkSpace,
+	configureLocal func(settings *DeviceLocalSettings),
+) (*DeviceLocal, *DeviceRemote) {
+	t.Helper()
 
 	clientId := connect.NewId()
 	instanceId := NewId()
@@ -67,6 +78,9 @@ func testExtenderStatusSyncedDeviceLocalRemote(
 
 	localSettings := testExtenderStatusDeviceSettings()
 	localSettings.EnableRpc = true
+	if configureLocal != nil {
+		configureLocal(localSettings)
+	}
 	deviceLocal, err := newDeviceLocalWithOverrides(
 		networkSpace, "", "", "", "", instanceId, localSettings, clientId,
 	)

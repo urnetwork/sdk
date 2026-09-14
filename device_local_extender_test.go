@@ -3,6 +3,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -10,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -425,7 +427,11 @@ func newTestProvideExtenderFixtureWithSpace(
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixture.networkSpace.extenderDirectory.SetRootKeys(keySet)
+		// a space that derives no extender network keeps no directory, which
+		// is the space a start error is tested on
+		if fixture.networkSpace.extenderDirectory != nil {
+			fixture.networkSpace.extenderDirectory.SetRootKeys(keySet)
+		}
 	} else {
 		fixture.networkSpaceManager = NewNetworkSpaceManager(storagePath)
 		fixture.networkSpace = fixture.networkSpaceManager.updateNetworkSpace(
@@ -736,6 +742,14 @@ func TestDeviceLocalProviderExtenderActivatesEveryFamily(t *testing.T) {
 		t.Fatalf("status dns ports = %q, expected the bound carrier %d",
 			status.DnsPorts, fixture.dnsPort)
 	}
+	// and the state an app renders, derived from exactly these fields (N3)
+	if !status.Supported {
+		t.Fatalf("status = %+v, expected a build that carries the role", status)
+	}
+	if status.State != ExtenderProvideStateActive || status.ErrorCase != "" || status.Reason != "" {
+		t.Fatalf("state = %q, %q, %q, expected active with nothing to say",
+			status.State, status.ErrorCase, status.Reason)
+	}
 
 	// the operator's record for this extender's own key is in the directory,
 	// with the carriers the activation proved (C2, E1)
@@ -838,6 +852,14 @@ func TestDeviceLocalProviderExtenderReportsARevokedKey(t *testing.T) {
 	}
 	if !strings.Contains(status.LastActivationError, "the tcp carrier did not answer") {
 		t.Fatalf("last activation error = %q, expected the operator's refusal", status.LastActivationError)
+	}
+	// a revocation is the state whatever else the role reports, and the case
+	// is the whole message (N3)
+	if status.State != ExtenderProvideStateError ||
+		status.ErrorCase != ExtenderProvideErrorRevoked ||
+		status.Reason != "" {
+		t.Fatalf("state = %q, %q, %q, expected the revoked error",
+			status.State, status.ErrorCase, status.Reason)
 	}
 
 	// the operator accepts again on the next attempt, which the backoff holds
@@ -946,6 +968,143 @@ func TestDeviceLocalProviderExtenderRelaysThroughTheDeviceEgress(t *testing.T) {
 	}
 }
 
+// The relayed traffic the device reports is the role's own server counters
+// (O1, O2): one session over the tcp carrier moves known chunks in each
+// direction and the stats carry exactly those bytes and reads. The role that
+// is turned off reports nil at once, and the one started again reports a
+// fresh server's zero.
+func TestDeviceLocalProviderExtenderStatsFollowTheRelay(t *testing.T) {
+	const ingressChunkByteCount = 64
+	const egressChunkByteCount = 96
+	const chunkCount = 3
+
+	// one raw destination: for every chunk it reads it answers a chunk of the
+	// other size, so every relayed byte is the test's own
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				ingressChunk := make([]byte, ingressChunkByteCount)
+				egressChunk := bytes.Repeat([]byte("e"), egressChunkByteCount)
+				for {
+					if _, err := io.ReadFull(conn, ingressChunk); err != nil {
+						return
+					}
+					if _, err := conn.Write(egressChunk); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	endpointAddress := listener.Addr().String()
+
+	fixture := newTestProvideExtenderFixtureWithDevice(
+		t,
+		func(settings *DeviceLocalSettings) {
+			// the role's forward dial is the device egress, which sends every
+			// destination to the raw endpoint
+			settings.ProviderDialContextSettings = &connect.DialContextSettings{
+				DialContext: func(
+					ctx context.Context,
+					network string,
+					address string,
+				) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, "tcp", endpointAddress)
+				},
+			}
+		},
+		nil,
+	)
+	fixture.waitStatus("listening", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening
+	})
+
+	stats := fixture.device.GetExtenderStats()
+	if stats == nil || *stats != (ExtenderStats{}) {
+		t.Fatalf("stats = %+v while the role runs idle, expected zero", stats)
+	}
+
+	// one relayed session: each chunk is answered before the next is sent, so
+	// a chunk is one read on each side, and the answer is written by the
+	// endpoint only after the relay counted the chunk, so every count has
+	// landed when the read returns
+	connectSettings := connect.DefaultConnectSettings()
+	connectSettings.ConnectTimeout = 10 * time.Second
+	connectSettings.TlsTimeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	conn, _, err := connect.DialExtender(
+		ctx,
+		connectSettings,
+		&connect.ExtenderConfig{
+			Profile: connect.ExtenderProfile{
+				ConnectMode: connect.ExtenderConnectModeTcpTls,
+				ServerName:  "front.example",
+				Port:        fixture.tcpPort,
+			},
+			Ip:        netip.MustParseAddr("127.0.0.1"),
+			PublicKey: fixture.extender().publicKey,
+		},
+		&connect.ExtenderDial{
+			DestinationHost: testProvideExtenderHost,
+			DestinationPort: 443,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	ingressChunk := bytes.Repeat([]byte("i"), ingressChunkByteCount)
+	egressChunk := make([]byte, egressChunkByteCount)
+	for i := range chunkCount {
+		if _, err := conn.Write(ingressChunk); err != nil {
+			t.Fatalf("chunk %d write: %s", i, err)
+		}
+		if _, err := io.ReadFull(conn, egressChunk); err != nil {
+			t.Fatalf("chunk %d read: %s", i, err)
+		}
+	}
+
+	expected := &ExtenderStats{
+		IngressByteCount: chunkCount * ingressChunkByteCount,
+		IngressReadCount: chunkCount,
+		EgressByteCount:  chunkCount * egressChunkByteCount,
+		EgressReadCount:  chunkCount,
+	}
+	connect.AssertEqual(t, fixture.device.GetExtenderStats(), expected)
+	serverStats := fixture.extender().server.Stats()
+	connect.AssertEqual(t, serverStats.IngressByteCount, expected.IngressByteCount)
+	connect.AssertEqual(t, serverStats.IngressReadCount, expected.IngressReadCount)
+	connect.AssertEqual(t, serverStats.EgressByteCount, expected.EgressByteCount)
+	connect.AssertEqual(t, serverStats.EgressReadCount, expected.EgressReadCount)
+	conn.Close()
+
+	// the role stops synchronously, so there is no series at once
+	fixture.device.SetProvideExtender(false)
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v with the role off, expected nil", stats)
+	}
+	// and a restarted role is a fresh server, counting from zero
+	fixture.device.SetProvideExtender(true)
+	stats = fixture.device.GetExtenderStats()
+	if stats == nil || *stats != (ExtenderStats{}) {
+		t.Fatalf("stats = %+v after a restart, expected a fresh zero", stats)
+	}
+}
+
 // The opt-out stops the extender server, the activation loop and the extender
 // node together, and turning it back on starts them again (F3, G2).
 func TestDeviceLocalProviderExtenderOptOut(t *testing.T) {
@@ -1026,6 +1185,10 @@ func TestDeviceLocalProviderExtenderSkipsAFailedCarrier(t *testing.T) {
 	}
 	if !strings.HasPrefix(status.ListenError, connect.ExtenderCarrierTcp+": ") {
 		t.Fatalf("listen error = %q, expected the tcp carrier", status.ListenError)
+	}
+	// one carrier down while another is activated is still active (N3)
+	if status.State != ExtenderProvideStateActive {
+		t.Fatalf("state = %q, expected active", status.State)
 	}
 
 	// only the tcp carrier carries the mesh, so nothing is advertised (D2)
@@ -1198,6 +1361,375 @@ func TestDeviceLocalProviderExtenderActivatesOnAUrlOnlySpace(t *testing.T) {
 	}
 }
 
+// A role asked for that cannot be built reports why, in red, rather than
+// setting up forever (N3): here an identity the space cannot activate under.
+// The error stands until the role is no longer asked for, and comes back when
+// it is asked for again.
+func TestDeviceLocalProviderExtenderReportsAStartError(t *testing.T) {
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.IdentityKeySeed = []byte("not an extender key seed")
+	})
+
+	status := fixture.waitStatus("the start error", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorStart
+	})
+	if status.Enabled || status.Listening {
+		t.Fatalf("status = %+v, expected a role that never started", status)
+	}
+	if status.State != ExtenderProvideStateError {
+		t.Fatalf("state = %q, expected error", status.State)
+	}
+	if !strings.Contains(status.StartError, "identity") || status.Reason != status.StartError {
+		t.Fatalf("start error = %q, reason = %q, expected the identity error as the reason",
+			status.StartError, status.Reason)
+	}
+	if fixture.extender() != nil {
+		t.Fatal("a role that could not start was installed")
+	}
+	// no role, so no series: the stats agree with Enabled (O2, O4)
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v for a role that could not start, expected nil", stats)
+	}
+
+	// turning the setting off is not a start error
+	fixture.device.SetProvideExtender(false)
+	status = fixture.device.GetExtenderProvideStatus()
+	if status.State != ExtenderProvideStateOff || status.ErrorCase != "" || status.StartError != "" {
+		t.Fatalf("status = %+v, expected off with nothing standing", status)
+	}
+
+	// and asking again fails again, for the same reason
+	fixture.device.SetProvideExtender(true)
+	status = fixture.device.GetExtenderProvideStatus()
+	if status.ErrorCase != ExtenderProvideErrorStart || !strings.Contains(status.StartError, "identity") {
+		t.Fatalf("status = %+v, expected the start error again", status)
+	}
+}
+
+// A space whose api url derives no extender network keeps no directory, and a
+// provider asked to run the role there reports that rather than setting up
+// forever (N3, F1). Providing off is not a start error either.
+func TestDeviceLocalProviderExtenderReportsASpaceWithNoDirectory(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithSpace(
+		t,
+		func(ctx context.Context) *NetworkSpace {
+			strategySettings := connect.DefaultClientStrategySettings()
+			strategySettings.Log = connect.NewNoopLogger()
+			return NewNetworkSpaceWithUrls(ctx, "https://192.0.2.1", "wss://192.0.2.1", strategySettings)
+		},
+		nil,
+		nil,
+	)
+	if fixture.networkSpace.extenderDirectory != nil {
+		t.Fatal("the ip literal space kept an extender directory, so the role would start")
+	}
+
+	status := fixture.waitStatus("the start error", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorStart
+	})
+	if status.Enabled || status.State != ExtenderProvideStateError {
+		t.Fatalf("status = %+v, expected the start error", status)
+	}
+	if !strings.Contains(status.StartError, "extender directory") {
+		t.Fatalf("start error = %q, expected the missing directory", status.StartError)
+	}
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v for a role that could not start, expected nil", stats)
+	}
+
+	fixture.device.SetProvideMode(ProvideModeNone)
+	fixture.waitStatus("not providing", func(status *ExtenderProvideStatus) bool {
+		return status.State == ExtenderProvideStateNotProviding
+	})
+	if status := fixture.device.GetExtenderProvideStatus(); status.StartError != "" || status.ErrorCase != "" {
+		t.Fatalf("status = %+v, expected nothing standing while not providing", status)
+	}
+}
+
+// A pushed status carries its error case and reason intact over the real
+// transport (N2, N3). The device provides with the role on and an identity it
+// cannot activate under, so it reports the start error without running a role;
+// only a build that carries the role can report one.
+func TestDeviceRemoteExtenderProvideStatusPushCarriesTheErrorCase(t *testing.T) {
+	testEnableExtenderProvideRole(t)
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.providerExtenderSettings = func(extenderSettings *deviceLocalExtenderSettings) {
+				extenderSettings.IdentityKeySeed = []byte("not an extender key seed")
+			}
+		},
+	)
+
+	statuses := make(chan *ExtenderProvideStatus, 16)
+	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	// providing is what asks for the role
+	deviceLocal.SetProvideMode(ProvideModePublic)
+
+	deadline := time.After(60 * time.Second)
+	for {
+		select {
+		case status := <-statuses:
+			if status.ErrorCase != ExtenderProvideErrorStart {
+				continue
+			}
+			local := deviceLocal.GetExtenderProvideStatus()
+			if status.State != ExtenderProvideStateError ||
+				local.StartError == "" ||
+				status.StartError != local.StartError ||
+				status.Reason != local.StartError {
+				t.Fatalf("pushed = %+v, local = %+v, expected the start error intact", status, local)
+			}
+			return
+		case <-deadline:
+			t.Fatalf(
+				"the start error never crossed the rpc, local = %+v",
+				deviceLocal.GetExtenderProvideStatus(),
+			)
+		}
+	}
+}
+
+// The operator's refusal is the refused case, not a failed request (N2, N3):
+// after a first activation the operator refuses the daily one, no family stays
+// active, and the status carries the operator's text with the refusal flag.
+func TestDeviceLocalProviderExtenderReportsARefusal(t *testing.T) {
+	fixture := newTestProvideExtenderFixture(t, nil)
+	fixture.waitPass()
+	fixture.waitPost()
+	fixture.waitPost()
+	fixture.waitStatus("activated", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4 && status.ActivatedV6
+	})
+
+	fixture.operator.setRefusal("the tcp carrier did not answer")
+	// the daily activation (G3)
+	fixture.step(25 * time.Hour)
+	fixture.waitPost()
+
+	status := fixture.waitStatus("refused", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorActivationRefused
+	})
+	if status.State != ExtenderProvideStateError || status.ActivatedV4 || status.ActivatedV6 {
+		t.Fatalf("status = %+v, expected an inactive refused extender", status)
+	}
+	if !status.LastActivationRefused {
+		t.Fatalf("status = %+v, expected the refusal flag", status)
+	}
+	if !strings.Contains(status.Reason, "the tcp carrier did not answer") ||
+		status.Reason != status.LastActivationError {
+		t.Fatalf("reason = %q, expected the operator's refusal", status.Reason)
+	}
+}
+
+// In the fallback mode one api url activates whichever family its answer names,
+// and a refusal marks every family it has activated, with the operator's reason
+// (N6, G3): the plain url answers v4 on the first pass and v6 on the next, and
+// refuses the one after.
+func TestDeviceLocalProviderExtenderFallbackRefusalMarksEveryFamily(t *testing.T) {
+	const refusal = "the udp carrier did not answer"
+
+	var handlerLock sync.Mutex
+	refused := false
+	postCount := 0
+	posts := make(chan int, 16)
+	var operator *testProvideExtenderOperator
+	operatorReady := make(chan struct{})
+
+	server := newTestProvideExtenderServer(t, "127.0.0.1", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != connect.ExtenderActivatePath {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			select {
+			case <-operatorReady:
+			case <-time.After(30 * time.Second):
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			args := &connect.ExtenderActivateArgs{}
+			if err := json.NewDecoder(r.Body).Decode(args); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			handlerLock.Lock()
+			postCount += 1
+			post := postCount
+			refuse := refused
+			handlerLock.Unlock()
+			select {
+			case posts <- post:
+			default:
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if refuse {
+				json.NewEncoder(w).Encode(&connect.ExtenderActivateResult{
+					Activated: false,
+					Error:     refusal,
+				})
+				return
+			}
+			// the one url names v4 on odd passes and v6 on even ones
+			ipVersion := 4
+			if post%2 == 0 {
+				ipVersion = 6
+			}
+			result, err := operator.activateResult(ipVersion, args)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(result)
+		}))
+	t.Cleanup(server.Close)
+
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.ApiUrl = server.URL
+		settings.ApiUrlV4 = ""
+		settings.ApiUrlV6 = ""
+	})
+	operator = fixture.operator
+	close(operatorReady)
+
+	waitPost := func(expected int) {
+		t.Helper()
+		select {
+		case post := <-posts:
+			if post != expected {
+				t.Fatalf("post %d, expected post %d", post, expected)
+			}
+		case <-time.After(60 * time.Second):
+			t.Fatalf("the activation loop did not post activation %d", expected)
+		}
+	}
+
+	fixture.waitPass()
+	waitPost(1)
+	fixture.waitStatus("v4 through the one url", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4
+	})
+
+	// the daily activation (G3) names the other family
+	fixture.step(25 * time.Hour)
+	waitPost(2)
+	fixture.waitStatus("both families through the one url", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4 && status.ActivatedV6
+	})
+
+	func() {
+		handlerLock.Lock()
+		defer handlerLock.Unlock()
+		refused = true
+	}()
+	fixture.step(25 * time.Hour)
+	waitPost(3)
+
+	status := fixture.waitStatus("refused", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorActivationRefused
+	})
+	if status.ActivatedV4 || status.ActivatedV6 || !status.LastActivationRefused || status.Reason != refusal {
+		t.Fatalf("status = %+v, expected every family refused with the operator's reason", status)
+	}
+
+	ipVersions := []int{}
+	for _, family := range fixture.extender().activatorStatus().Families {
+		ipVersions = append(ipVersions, family.IpVersion)
+		if family.Activated || !family.LastRefused || family.LastError != refusal {
+			t.Fatalf("v%d = %+v, expected refused with the operator's reason", family.IpVersion, family)
+		}
+	}
+	if !slices.Equal(ipVersions, []int{4, 6}) {
+		t.Fatalf("families = %v, expected both families the one url activated", ipVersions)
+	}
+}
+
+// A refused status crosses the real transport with its case, flag and reason
+// intact (N2, N3): a role activating against a refusing operator, pushed to a
+// remote listener.
+func TestDeviceRemoteExtenderProvideStatusPushCarriesARefusal(t *testing.T) {
+	testEnableExtenderProvideRole(t)
+
+	_, rootPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := newTestExtenderClock()
+	operator := newTestProvideExtenderOperator(t, clock, rootPrivateKey)
+	operator.setRefusal("the dns carrier did not answer")
+	// the role's settings as the provider extender fixture builds them, over
+	// ephemeral loopback carriers and the refusing operator
+	role := &testProvideExtenderFixture{
+		t:        t,
+		clock:    clock,
+		operator: operator,
+		tcpPort:  testFreeTcpPort(t),
+		udpPort:  testFreeUdpPort(t),
+		dnsPort:  testFreeUdpPort(t),
+	}
+
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.providerExtenderSettings = role.configureExtender
+		},
+	)
+
+	statuses := make(chan *ExtenderProvideStatus, 16)
+	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	// providing is what starts the role, which activates at start (G3)
+	deviceLocal.SetProvideMode(ProvideModePublic)
+
+	deadline := time.After(60 * time.Second)
+	for {
+		select {
+		case status := <-statuses:
+			if status.ErrorCase != ExtenderProvideErrorActivationRefused {
+				continue
+			}
+			local := deviceLocal.GetExtenderProvideStatus()
+			if status.State != ExtenderProvideStateError ||
+				!status.LastActivationRefused ||
+				!strings.Contains(status.Reason, "the dns carrier did not answer") ||
+				status.Reason != local.Reason ||
+				status.LastActivationRefused != local.LastActivationRefused {
+				t.Fatalf("pushed = %+v, local = %+v, expected the refusal intact", status, local)
+			}
+			return
+		case <-deadline:
+			t.Fatalf(
+				"the refusal never crossed the rpc, local = %+v",
+				deviceLocal.GetExtenderProvideStatus(),
+			)
+		}
+	}
+}
+
 // With no seed anywhere the role generates one, and the embedder reads it back
 // through the key material, which is the only place a url-only space can keep
 // it (B1, G2).
@@ -1341,9 +1873,9 @@ func TestDeviceLocalProviderExtenderSettingsDnsPorts(t *testing.T) {
 	defer networkSpace.close()
 
 	provider := &deviceLocalProvider{networkSpace: networkSpace}
-	settings := provider.extenderSettings()
-	if settings == nil {
-		t.Fatal("the space has no identity to activate under")
+	settings, err := provider.extenderSettings()
+	if err != nil {
+		t.Fatalf("the space has no identity to activate under: %s", err)
 	}
 	connect.AssertEqual(t, settings.DnsPort, connect.ExtenderDnsPort)
 	connect.AssertEqual(t, settings.DnsPort, connect.DefaultWhodisPort)

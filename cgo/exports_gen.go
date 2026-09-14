@@ -6127,6 +6127,34 @@ func urnet_contract_view_controller_close(self C.uint64_t) {
 	self_.Close()
 }
 
+//export urnet_contract_view_controller_get_extender_stats
+func urnet_contract_view_controller_get_extender_stats(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_view_controller_get_extender_stats")
+	self_, ok := resolveHandle[*sdk.ContractViewController](uint64(self), "urnet_contract_view_controller_get_extender_stats")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderStats()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_view_controller_get_extender_stats")
+}
+
+//export urnet_contract_view_controller_get_extender_throughput_points
+func urnet_contract_view_controller_get_extender_throughput_points(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_view_controller_get_extender_throughput_points")
+	self_, ok := resolveHandle[*sdk.ContractViewController](uint64(self), "urnet_contract_view_controller_get_extender_throughput_points")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderThroughputPoints()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_view_controller_get_extender_throughput_points")
+}
+
 //export urnet_contract_view_controller_get_packet_stats
 func urnet_contract_view_controller_get_packet_stats(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_contract_view_controller_get_packet_stats")
@@ -6622,6 +6650,21 @@ func urnet_device_add_egress_contract_stats_change_listener(self C.uint64_t, lis
 		listener_ = &cAdapterContractStatsChangeListener{cbContractStatsChanged: listener_contract_stats_changed, userData: listener_user_data}
 	}
 	r0 := self_.AddEgressContractStatsChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_add_extender_provide_status_change_listener
+func urnet_device_add_extender_provide_status_change_listener(self C.uint64_t, listener_extender_provide_status_changed C.urnet_extender_provide_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_extender_provide_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_extender_provide_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ExtenderProvideStatusChangeListener
+	if listener_extender_provide_status_changed != nil {
+		listener_ = &cAdapterExtenderProvideStatusChangeListener{cbExtenderProvideStatusChanged: listener_extender_provide_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddExtenderProvideStatusChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
 }
 
@@ -7350,6 +7393,34 @@ func urnet_device_get_egress_contract_stats(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_get_egress_contract_stats")
 }
 
+//export urnet_device_get_extender_provide_status
+func urnet_device_get_extender_provide_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_extender_provide_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_extender_provide_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderProvideStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_extender_provide_status")
+}
+
+//export urnet_device_get_extender_stats
+func urnet_device_get_extender_stats(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_extender_stats")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_extender_stats")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderStats()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_extender_stats")
+}
+
 //export urnet_device_get_extender_status
 func urnet_device_get_extender_status(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_extender_status")
@@ -7514,6 +7585,17 @@ func urnet_device_get_provide_enabled(self C.uint64_t) C.bool {
 		return C.bool(false)
 	}
 	r0 := self_.GetProvideEnabled()
+	return C.bool(r0)
+}
+
+//export urnet_device_get_provide_extender
+func urnet_device_get_provide_extender(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_get_provide_extender")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_provide_extender")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProvideExtender()
 	return C.bool(r0)
 }
 
@@ -8075,6 +8157,16 @@ func urnet_device_set_provide_control_mode(self C.uint64_t, mode *C.char) {
 	self_.SetProvideControlMode(goString(mode))
 }
 
+//export urnet_device_set_provide_extender
+func urnet_device_set_provide_extender(self C.uint64_t, provideExtender C.bool) {
+	defer cgoGuard("urnet_device_set_provide_extender")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_provide_extender")
+	if !ok {
+		return
+	}
+	self_.SetProvideExtender(bool(provideExtender))
+}
+
 //export urnet_device_set_provide_mode
 func urnet_device_set_provide_mode(self C.uint64_t, provideMode C.int64_t) {
 	defer cgoGuard("urnet_device_set_provide_mode")
@@ -8196,21 +8288,6 @@ func urnet_device_upload_logs(self C.uint64_t, feedbackId *C.char, callback_resu
 		return C.bool(false)
 	}
 	return C.bool(true)
-}
-
-//export urnet_device_local_add_extender_provide_status_change_listener
-func urnet_device_local_add_extender_provide_status_change_listener(self C.uint64_t, listener_extender_provide_status_changed C.urnet_extender_provide_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
-	defer cgoGuard("urnet_device_local_add_extender_provide_status_change_listener")
-	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_add_extender_provide_status_change_listener")
-	if !ok {
-		return 0
-	}
-	var listener_ sdk.ExtenderProvideStatusChangeListener
-	if listener_extender_provide_status_changed != nil {
-		listener_ = &cAdapterExtenderProvideStatusChangeListener{cbExtenderProvideStatusChanged: listener_extender_provide_status_changed, userData: listener_user_data}
-	}
-	r0 := self_.AddExtenderProvideStatusChangeListener(listener_)
-	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_device_local_add_local_state_save_listener
@@ -8610,20 +8687,6 @@ func urnet_device_local_get_exits(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_local_get_exits")
 }
 
-//export urnet_device_local_get_extender_provide_status
-func urnet_device_local_get_extender_provide_status(self C.uint64_t) *C.char {
-	defer cgoGuard("urnet_device_local_get_extender_provide_status")
-	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_extender_provide_status")
-	if !ok {
-		return nil
-	}
-	r0 := self_.GetExtenderProvideStatus()
-	if r0 == nil {
-		return nil
-	}
-	return cJson(r0, "urnet_device_local_get_extender_provide_status")
-}
-
 //export urnet_device_local_get_first_load_timeline_json
 func urnet_device_local_get_first_load_timeline_json(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_get_first_load_timeline_json")
@@ -8689,17 +8752,6 @@ func urnet_device_local_get_probe_results(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_local_get_probe_results")
-}
-
-//export urnet_device_local_get_provide_extender
-func urnet_device_local_get_provide_extender(self C.uint64_t) C.bool {
-	defer cgoGuard("urnet_device_local_get_provide_extender")
-	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_provide_extender")
-	if !ok {
-		return C.bool(false)
-	}
-	r0 := self_.GetProvideExtender()
-	return C.bool(r0)
 }
 
 //export urnet_device_local_get_provide_secret_keys
@@ -9450,16 +9502,6 @@ func urnet_device_local_set_performance_degraded(self C.uint64_t, degraded C.boo
 	self_.SetPerformanceDegraded(bool(degraded))
 }
 
-//export urnet_device_local_set_provide_extender
-func urnet_device_local_set_provide_extender(self C.uint64_t, provideExtender C.bool) {
-	defer cgoGuard("urnet_device_local_set_provide_extender")
-	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_provide_extender")
-	if !ok {
-		return
-	}
-	self_.SetProvideExtender(bool(provideExtender))
-}
-
 //export urnet_device_local_set_reliability_settings
 func urnet_device_local_set_reliability_settings(self C.uint64_t, reliabilitySettings *C.char) {
 	defer cgoGuard("urnet_device_local_set_reliability_settings")
@@ -9522,6 +9564,36 @@ func urnet_device_local_set_sn_chain_settings(self C.uint64_t, settings *C.char,
 		return C.bool(false)
 	}
 	return C.bool(true)
+}
+
+//export urnet_device_local_set_transfer_diag_allow_direct
+func urnet_device_local_set_transfer_diag_allow_direct(self C.uint64_t, enabled C.bool, allowDirect C.bool) {
+	defer cgoGuard("urnet_device_local_set_transfer_diag_allow_direct")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_transfer_diag_allow_direct")
+	if !ok {
+		return
+	}
+	self_.SetTransferDiagAllowDirect(bool(enabled), bool(allowDirect))
+}
+
+//export urnet_device_local_set_transfer_diag_defer_timeout_resend
+func urnet_device_local_set_transfer_diag_defer_timeout_resend(self C.uint64_t, enabled C.bool) {
+	defer cgoGuard("urnet_device_local_set_transfer_diag_defer_timeout_resend")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_transfer_diag_defer_timeout_resend")
+	if !ok {
+		return
+	}
+	self_.SetTransferDiagDeferTimeoutResend(bool(enabled))
+}
+
+//export urnet_device_local_set_transfer_diag_lane_rule
+func urnet_device_local_set_transfer_diag_lane_rule(self C.uint64_t, enabled C.bool) {
+	defer cgoGuard("urnet_device_local_set_transfer_diag_lane_rule")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_transfer_diag_lane_rule")
+	if !ok {
+		return
+	}
+	self_.SetTransferDiagLaneRule(bool(enabled))
 }
 
 //export urnet_device_local_set_tunnel_dns_setting
@@ -9751,6 +9823,28 @@ func urnet_device_local_take_memory_samples_json(self C.uint64_t) *C.char {
 	}
 	r0 := self_.TakeMemorySamplesJson()
 	return cString(string(r0))
+}
+
+//export urnet_device_local_transfer_diag_defer_timeout_resend
+func urnet_device_local_transfer_diag_defer_timeout_resend(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_transfer_diag_defer_timeout_resend")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_transfer_diag_defer_timeout_resend")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.TransferDiagDeferTimeoutResend()
+	return C.bool(r0)
+}
+
+//export urnet_device_local_transfer_diag_lane_rule
+func urnet_device_local_transfer_diag_lane_rule(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_transfer_diag_lane_rule")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_transfer_diag_lane_rule")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.TransferDiagLaneRule()
+	return C.bool(r0)
 }
 
 //export urnet_device_local_tunnel_dns_addresses_ipv4
@@ -13302,6 +13396,13 @@ func urnet_login_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_memory_classes_json_for_diag
+func urnet_memory_classes_json_for_diag() *C.char {
+	defer cgoGuard("urnet_memory_classes_json_for_diag")
+	r0 := sdk.MemoryClassesJsonForDiag()
+	return cString(string(r0))
+}
+
 //export urnet_monthly_equivalent_amount
 func urnet_monthly_equivalent_amount(yearlyAmount C.double, minorUnitDigits C.int64_t) C.double {
 	defer cgoGuard("urnet_monthly_equivalent_amount")
@@ -16660,4 +16761,15 @@ func urnet_write_heap_profile(path *C.char, outError **C.char) C.bool {
 		return C.bool(false)
 	}
 	return C.bool(true)
+}
+
+//export urnet_write_heap_profile_for_diag
+func urnet_write_heap_profile_for_diag(path *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_write_heap_profile_for_diag")
+	r0, err := sdk.WriteHeapProfileForDiag(goString(path))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
 }

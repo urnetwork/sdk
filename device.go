@@ -688,6 +688,38 @@ type Device interface {
 	// rate limited to one callback per second
 	AddExtenderStatusChangeListener(listener ExtenderStatusChangeListener) Sub
 
+	// GetExtenderProvideStatus is the provider extender role of the process
+	// the DEVICE runs in (EXTENDER.md N2, F3): whether this build carries the
+	// role at all, the state and reason an app renders (N3), and the
+	// underlying listen and activation readout. A remote device reads it
+	// through the rpc with the last value cached; a build with no role, a
+	// device process out of contact and one too old to answer all report
+	// `Supported` false, which is what hides the row. Never nil.
+	GetExtenderProvideStatus() *ExtenderProvideStatus
+
+	// rate limited to one callback per second
+	AddExtenderProvideStatusChangeListener(listener ExtenderProvideStatusChangeListener) Sub
+
+	// GetProvideExtender is the user's provider extender setting, stored per
+	// network space and independent of the provide mode (N4). Default on; a
+	// device that cannot be reached reads the value queued for it, else the
+	// last value read, else the default.
+	GetProvideExtender() bool
+
+	// queued while the device cannot be reached and replayed at the next sync,
+	// as the provide mode is
+	SetProvideExtender(provideExtender bool)
+
+	// GetExtenderStats is the traffic the provider extender role of the
+	// process the DEVICE runs in has relayed (EXTENDER.md O2): bytes and
+	// reads in each direction, operator-centric, cumulative for the life of
+	// the role's server. Nil whenever the role is not running -- unsupported,
+	// off, not providing, unable to start -- which is what tells an app there
+	// is no series to show. A remote device reads it through the rpc with no
+	// cache: nil when the device process is out of contact or too old to
+	// answer.
+	GetExtenderStats() *ExtenderStats
+
 	// packet stats
 
 	GetPacketStats() *PacketStats

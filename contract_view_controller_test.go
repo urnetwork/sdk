@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/urnetwork/connect"
 )
 
 type testing_throughputListener struct {
@@ -118,6 +120,260 @@ func TestContractViewController(t *testing.T) {
 	}
 	if vc.GetProviderPacketStats() == nil {
 		t.Fatalf("expected provider packet stats after sampling")
+	}
+
+	// the test device runs no extender role, so the extender series never
+	// starts, and the poll tolerates the nil answer every tick
+	if n := vc.GetExtenderThroughputPoints().Len(); n != 0 {
+		t.Fatalf("expected no extender throughput points, got %d", n)
+	}
+	if stats := vc.GetExtenderStats(); stats != nil {
+		t.Fatalf("expected no extender stats, got %+v", stats)
+	}
+}
+
+// The extender series, driven directly with synthetic times (O3): the Remote
+// route carries the relay's bytes and reads with no mirror, a stopped role
+// zero-holds rather than emptying, a restarted role is a gap and resumes, and
+// counters below the previous clamp to zero.
+func TestContractViewControllerExtenderSeries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	device, err := testing_newViewControllerDevice(ctx)
+	if err != nil {
+		t.Fatalf("new device: %v", err)
+	}
+	defer device.Close()
+
+	vc := device.OpenContractViewController()
+	defer device.CloseViewController(vc)
+
+	series := &throughputSeries{}
+	interval := defaultThroughputSampleInterval
+
+	stats := func(
+		ingressByteCount ByteCount,
+		ingressReadCount int64,
+		egressByteCount ByteCount,
+		egressReadCount int64,
+	) *ExtenderStats {
+		return &ExtenderStats{
+			IngressByteCount: ingressByteCount,
+			IngressReadCount: ingressReadCount,
+			EgressByteCount:  egressByteCount,
+			EgressReadCount:  egressReadCount,
+		}
+	}
+	sample := func(extenderStats *ExtenderStats, at time.Time) {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		vc.sampleExtenderSeriesWithLock(series, extenderStats, at)
+	}
+	remote := func(i int) *ThroughputSample {
+		return series.points[i].Remote
+	}
+
+	t0 := time.Now()
+
+	// 1. the first stats set the base without a point
+	sample(stats(1000, 10, 500, 5), t0)
+	if n := len(series.points); n != 0 {
+		t.Fatalf("expected no points after the first sample, got %d", n)
+	}
+
+	// 2. a delta point in the remote route only
+	sample(stats(4000, 40, 2500, 25), t0.Add(interval))
+	if n := len(series.points); n != 1 {
+		t.Fatalf("expected 1 point, got %d", n)
+	}
+	if sample := remote(0); sample.IngressByteCount != 3000 ||
+		sample.IngressPacketCount != 30 ||
+		sample.EgressByteCount != 2000 ||
+		sample.EgressPacketCount != 20 {
+		t.Fatalf("remote sample = %+v, expected the relay deltas", sample)
+	}
+	if sample := remote(0); sample.EgressBitRate != 16000 || sample.IngressBitRate != 24000 {
+		t.Fatalf("remote bit rates = %d / %d, expected 16000 / 24000",
+			sample.EgressBitRate, sample.IngressBitRate)
+	}
+	point := series.points[0]
+	if point.Local == nil || *point.Local != (ThroughputSample{}) ||
+		point.Block == nil || *point.Block != (ThroughputSample{}) {
+		t.Fatalf("local %+v and block %+v, expected both empty and present", point.Local, point.Block)
+	}
+	if point.transportDeltas != nil {
+		t.Fatalf("expected no carrier breakdown, got %+v", point.transportDeltas)
+	}
+
+	// 3. the role stops: zero holds, and the series is held, not emptied
+	sample(nil, t0.Add(2*interval))
+	sample(nil, t0.Add(3*interval))
+	if n := len(series.points); n != 3 {
+		t.Fatalf("expected 3 held points, got %d", n)
+	}
+	for i := 1; i < 3; i += 1 {
+		if *remote(i) != (ThroughputSample{}) {
+			t.Fatalf("expected a zero hold at %d, got %+v", i, remote(i))
+		}
+	}
+
+	// 4. the role restarts on a fresh server: a gap, a zero point and a rebase
+	sample(stats(0, 0, 0, 0), t0.Add(4*interval))
+	if n := len(series.points); n != 4 {
+		t.Fatalf("expected 4 points, got %d", n)
+	}
+	if *remote(3) != (ThroughputSample{}) {
+		t.Fatalf("expected a zero rebase after the restart, got %+v", remote(3))
+	}
+
+	// 5. deltas resume the tick after
+	sample(stats(64, 1, 96, 1), t0.Add(5*interval))
+	if n := len(series.points); n != 5 {
+		t.Fatalf("expected 5 points, got %d", n)
+	}
+	if sample := remote(4); sample.IngressByteCount != 64 ||
+		sample.IngressPacketCount != 1 ||
+		sample.EgressByteCount != 96 ||
+		sample.EgressPacketCount != 1 {
+		t.Fatalf("remote sample = %+v, expected the resumed deltas", sample)
+	}
+
+	// 6. counters below the previous (a restart within one interval) clamp
+	sample(stats(10, 0, 10, 0), t0.Add(6*interval))
+	if n := len(series.points); n != 6 {
+		t.Fatalf("expected 6 points, got %d", n)
+	}
+	if sample := remote(5); sample.IngressByteCount != 0 ||
+		sample.IngressPacketCount != 0 ||
+		sample.EgressByteCount != 0 ||
+		sample.EgressPacketCount != 0 {
+		t.Fatalf("remote sample = %+v, expected every delta clamped to zero", sample)
+	}
+
+	// 7. one point per interval
+	for i := 1; i < len(series.points); i += 1 {
+		if dt := series.points[i].Time - series.points[i-1].Time; dt != interval.Milliseconds() {
+			t.Fatalf("expected %dms between points %d and %d, got %d", interval.Milliseconds(), i-1, i, dt)
+		}
+	}
+}
+
+// A device whose extender stats a test turns on and off. While on, every read
+// advances the counters by 100 bytes and one read in each direction.
+type testing_extenderStatsDevice struct {
+	Device
+	mutex   sync.Mutex
+	enabled bool
+	stats   ExtenderStats
+}
+
+func (self *testing_extenderStatsDevice) GetExtenderStats() *ExtenderStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if !self.enabled {
+		return nil
+	}
+	self.stats.IngressByteCount += 100
+	self.stats.IngressReadCount += 1
+	self.stats.EgressByteCount += 100
+	self.stats.EgressReadCount += 1
+	stats := self.stats
+	return &stats
+}
+
+func (self *testing_extenderStatsDevice) setEnabled(enabled bool) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.enabled = enabled
+}
+
+// The extender series follows the device through the poll loop and notifies
+// the throughput listener (O3): no points while the device reports no stats,
+// traffic while it does, and a held zero tail once it stops.
+func TestContractViewControllerExtenderSeriesFollowsTheDevice(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	device, err := testing_newViewControllerDevice(ctx)
+	if err != nil {
+		t.Fatalf("new device: %v", err)
+	}
+	defer device.Close()
+
+	wrapped := &testing_extenderStatsDevice{Device: device}
+	vc := newContractViewController(ctx, wrapped)
+	defer vc.Close()
+
+	listener := &testing_throughputListener{}
+	sub := vc.AddThroughputListener(listener)
+	defer sub.Close()
+
+	sampleInterval := 10 * time.Millisecond
+	windowDuration := 100 * time.Millisecond
+	func() {
+		vc.stateLock.Lock()
+		defer vc.stateLock.Unlock()
+		vc.sampleInterval = sampleInterval
+		vc.windowDuration = windowDuration
+	}()
+	vc.settingsMonitor.NotifyAll()
+
+	waitFor := func(name string, condition func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !condition() {
+			if !time.Now().Before(deadline) {
+				t.Fatalf("timeout waiting for %s", name)
+			}
+			time.Sleep(sampleInterval)
+		}
+	}
+
+	// 1. no stats: the other series tick, the extender series has nothing
+	waitFor("the provider series", func() bool {
+		return 2 <= vc.GetProviderThroughputPoints().Len()
+	})
+	if n := vc.GetExtenderThroughputPoints().Len(); n != 0 {
+		t.Fatalf("expected no extender points before any stats, got %d", n)
+	}
+	if stats := vc.GetExtenderStats(); stats != nil {
+		t.Fatalf("expected no extender stats, got %+v", stats)
+	}
+	notifyCount := listener.getCount()
+
+	// 2. stats on: points with traffic, the latest stats, a notification
+	wrapped.setEnabled(true)
+	waitFor("extender traffic", func() bool {
+		points := vc.GetExtenderThroughputPoints()
+		if points.Len() < 2 {
+			return false
+		}
+		for i := range points.Len() {
+			if 0 < points.Get(i).Remote.IngressByteCount {
+				return true
+			}
+		}
+		return false
+	})
+	if vc.GetExtenderStats() == nil {
+		t.Fatal("expected the latest extender stats while the device reports them")
+	}
+	if listener.getCount() <= notifyCount {
+		t.Fatal("the extender traffic did not notify the throughput listener")
+	}
+
+	// 3. stats off: the stats go nil and the series holds a zero tail
+	wrapped.setEnabled(false)
+	waitFor("the extender stats to stop", func() bool {
+		return vc.GetExtenderStats() == nil
+	})
+	points := vc.GetExtenderThroughputPoints()
+	if points.Len() == 0 {
+		t.Fatal("the extender series emptied when the stats stopped, expected it held")
+	}
+	if last := points.Get(points.Len() - 1).Remote; *last != (ThroughputSample{}) {
+		t.Fatalf("the last point after the stats stopped is %+v, expected a zero hold", last)
 	}
 }
 
@@ -284,6 +540,134 @@ func TestThroughputSeriesNotifyDeliversOneIdleSnapshot(t *testing.T) {
 	}
 	if throughputSeriesNotifyWithLock(series) {
 		t.Fatal("idle series notified after its final snapshot")
+	}
+}
+
+// A device whose three polled stats a test sets directly.
+type testing_throughputPresenceDevice struct {
+	Device
+	mutex               sync.Mutex
+	packetStats         *PacketStats
+	providerPacketStats *PacketStats
+	extenderStats       *ExtenderStats
+}
+
+func (self *testing_throughputPresenceDevice) GetPacketStats() *PacketStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.packetStats
+}
+
+func (self *testing_throughputPresenceDevice) GetProviderPacketStats() *PacketStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.providerPacketStats
+}
+
+func (self *testing_throughputPresenceDevice) GetExtenderStats() *ExtenderStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.extenderStats
+}
+
+// A series whose stats appear or vanish inside an idle window notifies once,
+// even after another series has spent the idle notification, and idle ticks
+// after it stay silent. That notification is how an app resolves the series'
+// presence on the throughput tick (O4, O8). The controller is built without its
+// run loop and sampled directly, so every notification is one this test made:
+// consecutive samples are far less than an interval apart, so each appends one
+// point per series with a base and never backfills.
+func TestContractViewControllerSeriesPresenceChangeNotifiesWhileIdle(t *testing.T) {
+	type presence struct {
+		name    string
+		set     func(device *testing_throughputPresenceDevice, present bool)
+		present func(vc *ContractViewController) bool
+	}
+	provider := presence{
+		name: "provider",
+		set: func(device *testing_throughputPresenceDevice, present bool) {
+			device.mutex.Lock()
+			defer device.mutex.Unlock()
+			device.providerPacketStats = nil
+			if present {
+				device.providerPacketStats = &PacketStats{}
+			}
+		},
+		present: func(vc *ContractViewController) bool {
+			return vc.GetProviderPacketStats() != nil
+		},
+	}
+	extender := presence{
+		name: "extender",
+		set: func(device *testing_throughputPresenceDevice, present bool) {
+			device.mutex.Lock()
+			defer device.mutex.Unlock()
+			device.extenderStats = nil
+			if present {
+				device.extenderStats = &ExtenderStats{}
+			}
+		},
+		present: func(vc *ContractViewController) bool {
+			return vc.GetExtenderStats() != nil
+		},
+	}
+
+	for _, series := range []presence{provider, extender} {
+		for _, appear := range []bool{true, false} {
+			direction := "vanishes"
+			if appear {
+				direction = "appears"
+			}
+			t.Run(series.name+" "+direction, func(t *testing.T) {
+				// the client series always has stats, so it is the series that
+				// spends every series' idle notification on its first point
+				device := &testing_throughputPresenceDevice{packetStats: &PacketStats{}}
+				series.set(device, !appear)
+				vc := &ContractViewController{
+					device:              device,
+					sampleInterval:      defaultThroughputSampleInterval,
+					windowDuration:      defaultThroughputWindowDuration,
+					clientSeries:        &throughputSeries{},
+					providerSeries:      &throughputSeries{},
+					extenderSeries:      &throughputSeries{},
+					throughputListeners: connect.NewCallbackList[ThroughputListener](),
+				}
+				listener := &testing_throughputListener{}
+				sub := vc.AddThroughputListener(listener)
+				defer sub.Close()
+
+				// the first sample sets the bases, the second appends and
+				// spends the idle notification of all three series, the third
+				// is idle
+				for range 3 {
+					vc.sample()
+				}
+				if count := listener.getCount(); count != 1 {
+					t.Fatalf("notifications = %d before the change, expected the one idle snapshot", count)
+				}
+				if series.present(vc) == appear {
+					t.Fatalf("the %s series is already in its final presence", series.name)
+				}
+
+				series.set(device, appear)
+				vc.sample()
+				if series.present(vc) != appear {
+					t.Fatalf("the %s series' presence did not follow the device", series.name)
+				}
+				if count := listener.getCount(); count != 2 {
+					t.Fatalf("notifications = %d after the %s series %s inside an idle window, expected one more",
+						count, series.name, direction)
+				}
+
+				// one notification per change, not one per idle tick
+				for range 3 {
+					vc.sample()
+				}
+				if count := listener.getCount(); count != 2 {
+					t.Fatalf("notifications = %d over the idle ticks after the change, expected none", count)
+				}
+			})
+		}
 	}
 }
 

@@ -130,6 +130,16 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_GOSSIP_STATE_DISCONNECTED "disconnected"
 #define URNET_EXTENDER_IMPORT_ERROR_FOREIGN_HOST "import_extenders_foreign_host"
 #define URNET_EXTENDER_IMPORT_ERROR_INVALID "import_extenders_invalid"
+#define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_FAILED "activation_failed"
+#define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_REFUSED "activation_refused"
+#define URNET_EXTENDER_PROVIDE_ERROR_LISTEN "listen"
+#define URNET_EXTENDER_PROVIDE_ERROR_REVOKED "revoked"
+#define URNET_EXTENDER_PROVIDE_ERROR_START "start"
+#define URNET_EXTENDER_PROVIDE_STATE_ACTIVE "active"
+#define URNET_EXTENDER_PROVIDE_STATE_ERROR "error"
+#define URNET_EXTENDER_PROVIDE_STATE_NOT_PROVIDING "not_providing"
+#define URNET_EXTENDER_PROVIDE_STATE_OFF "off"
+#define URNET_EXTENDER_PROVIDE_STATE_SETTING_UP "setting_up"
 #define URNET_EXTENDER_ROLE_FEED "feed"
 #define URNET_EXTENDER_ROLE_MEMBER "member"
 #define URNET_IP_FAMILY_DUALSTACK "dualstack"
@@ -871,6 +881,8 @@ void urnet_contract_details_view_controller_stop(uint64_t self);
 
 uint64_t urnet_contract_view_controller_add_throughput_listener(uint64_t self, urnet_throughput_cb listener_throughput_changed, void* listener_user_data);
 void urnet_contract_view_controller_close(uint64_t self);
+char* urnet_contract_view_controller_get_extender_stats(uint64_t self);
+char* urnet_contract_view_controller_get_extender_throughput_points(uint64_t self);
 char* urnet_contract_view_controller_get_packet_stats(uint64_t self);
 char* urnet_contract_view_controller_get_provider_packet_stats(uint64_t self);
 char* urnet_contract_view_controller_get_provider_throughput_points(uint64_t self);
@@ -903,6 +915,7 @@ uint64_t urnet_device_add_default_location_change_listener(uint64_t self, urnet_
 uint64_t urnet_device_add_dns_resolver_settings_change_listener(uint64_t self, urnet_dns_resolver_settings_change_cb listener_dns_resolver_settings_changed, void* listener_user_data);
 uint64_t urnet_device_add_egress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_egress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
+uint64_t urnet_device_add_extender_provide_status_change_listener(uint64_t self, urnet_extender_provide_status_change_cb listener_extender_provide_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_extender_status_change_listener(uint64_t self, urnet_extender_status_change_cb listener_extender_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_ingress_contract_details_change_listener(uint64_t self, urnet_contract_details_change_cb listener_contract_details_changed, void* listener_user_data);
 uint64_t urnet_device_add_ingress_contract_stats_change_listener(uint64_t self, urnet_contract_stats_change_cb listener_contract_stats_changed, void* listener_user_data);
@@ -956,6 +969,8 @@ char* urnet_device_get_dns_resolver_settings(uint64_t self);
 bool urnet_device_get_done(uint64_t self);
 char* urnet_device_get_egress_contract_details(uint64_t self);
 char* urnet_device_get_egress_contract_stats(uint64_t self);
+char* urnet_device_get_extender_provide_status(uint64_t self);
+char* urnet_device_get_extender_stats(uint64_t self);
 char* urnet_device_get_extender_status(uint64_t self);
 char* urnet_device_get_ingress_contract_details(uint64_t self);
 char* urnet_device_get_ingress_contract_stats(uint64_t self);
@@ -969,6 +984,7 @@ char* urnet_device_get_packet_stats(uint64_t self);
 char* urnet_device_get_performance_profile(uint64_t self);
 char* urnet_device_get_provide_control_mode(uint64_t self);
 bool urnet_device_get_provide_enabled(uint64_t self);
+bool urnet_device_get_provide_extender(uint64_t self);
 int64_t urnet_device_get_provide_mode(uint64_t self);
 char* urnet_device_get_provide_network_mode(uint64_t self);
 bool urnet_device_get_provide_paused(uint64_t self);
@@ -1012,6 +1028,7 @@ void urnet_device_set_log_verbosity(uint64_t self, int64_t level);
 void urnet_device_set_offline(uint64_t self, bool offline);
 void urnet_device_set_performance_profile(uint64_t self, const char* performance_profile_json);
 void urnet_device_set_provide_control_mode(uint64_t self, const char* mode);
+void urnet_device_set_provide_extender(uint64_t self, bool provide_extender);
 void urnet_device_set_provide_mode(uint64_t self, int64_t provide_mode);
 void urnet_device_set_provide_network_mode(uint64_t self, const char* mode);
 void urnet_device_set_provide_paused(uint64_t self, bool provide_paused);
@@ -1025,7 +1042,6 @@ bool urnet_device_upload_logs(uint64_t self, const char* feedback_id, urnet_uplo
 
 /* ----- DeviceLocal ----- */
 
-uint64_t urnet_device_local_add_extender_provide_status_change_listener(uint64_t self, urnet_extender_provide_status_change_cb listener_extender_provide_status_changed, void* listener_user_data);
 uint64_t urnet_device_local_add_local_state_save_listener(uint64_t self, urnet_local_state_save_cb listener_local_state_saved, void* listener_user_data);
 uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_packet_cb receive_packet_receive_packet, void* receive_packet_user_data);
 uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receive_packet_batch_cb receive_packet_batch_receive_packet_batch, void* receive_packet_batch_user_data);
@@ -1052,13 +1068,11 @@ bool urnet_device_local_get_auto_save(uint64_t self);
 char* urnet_device_local_get_client_jwt(uint64_t self);
 char* urnet_device_local_get_destination_exits(uint64_t self);
 char* urnet_device_local_get_exits(uint64_t self);
-char* urnet_device_local_get_extender_provide_status(uint64_t self);
 char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
 uint64_t urnet_device_local_get_last_local_state_save_result(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
-bool urnet_device_local_get_provide_extender(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);
 bool urnet_device_local_get_provider_client_key_registered(uint64_t self);
 bool urnet_device_local_get_provider_connected(uint64_t self);
@@ -1114,11 +1128,13 @@ bool urnet_device_local_set_default_location_checked(uint64_t self, const char* 
 void urnet_device_local_set_flow_owner_lookup(uint64_t self, urnet_flow_owner_lookup_cb lookup_pinned_flow_app_id, void* lookup_user_data);
 void urnet_device_local_set_key_material(uint64_t self, uint64_t key_material);
 void urnet_device_local_set_performance_degraded(uint64_t self, bool degraded);
-void urnet_device_local_set_provide_extender(uint64_t self, bool provide_extender);
 void urnet_device_local_set_reliability_settings(uint64_t self, const char* reliability_settings_json);
 void urnet_device_local_set_routing_tier(uint64_t self, int64_t tier);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
 bool urnet_device_local_set_sn_chain_settings(uint64_t self, const char* settings_json, char** out_error);
+void urnet_device_local_set_transfer_diag_allow_direct(uint64_t self, bool enabled, bool allow_direct);
+void urnet_device_local_set_transfer_diag_defer_timeout_resend(uint64_t self, bool enabled);
+void urnet_device_local_set_transfer_diag_lane_rule(uint64_t self, bool enabled);
 void urnet_device_local_set_tunnel_dns_setting(uint64_t self, const char* setting_json);
 void urnet_device_local_shuffle_exits(uint64_t self);
 char* urnet_device_local_sign_sn_fleet_binding(uint64_t self, const char* binding_json, char** out_error);
@@ -1135,6 +1151,8 @@ char* urnet_device_local_subprotocol_stats(uint64_t self);
 void urnet_device_local_sync_sn_chain_settings(uint64_t self, urnet_sn_epoch_cb callback_result, void* callback_user_data);
 void urnet_device_local_sync_sn_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
 char* urnet_device_local_take_memory_samples_json(uint64_t self);
+bool urnet_device_local_transfer_diag_defer_timeout_resend(uint64_t self);
+bool urnet_device_local_transfer_diag_lane_rule(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
@@ -1724,6 +1742,7 @@ bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_valid_payment_reference(const char* s);
 char* urnet_log_inventory(void);
+char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
 double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
@@ -1809,6 +1828,7 @@ char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
 bool urnet_verify_payout_proof_hex(const char* root_hex, const char* leaf_hex, const char* proof_hex_json);
 bool urnet_write_heap_profile(const char* path, char** out_error);
+char* urnet_write_heap_profile_for_diag(const char* path, char** out_error);
 
 /* ----- linux/unix only ----- */
 
@@ -2422,6 +2442,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PlatformTransportUsedCount: number
  *   PlatformTransportPendingH1Count: number
  *   PlatformTransportPendingH1Bytes: number
+ *   PlatformTransportPreemptedH3Count: number
  *   TotalByteCount: number
  */
 
@@ -2582,7 +2603,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* ExtenderProvideStatus (json):
+ *   Supported: boolean
+ *   State: string
+ *   ErrorCase: string
+ *   Reason: string
  *   Enabled: boolean
+ *   StartError: string
  *   Listening: boolean
  *   ListenError: string
  *   ActivatedV4: boolean
@@ -2591,6 +2617,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Ipv6: string
  *   LastActivationTime: number
  *   LastActivationError: string
+ *   LastActivationRefused: boolean
  *   RevokedTime: number
  *   DnsPorts: string
  *   ConnectionCount: number
@@ -2621,6 +2648,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Text: string
  *   Count: number
  *   IncludesSettings: boolean
+ */
+
+/* ExtenderStats (json):
+ *   IngressByteCount: number
+ *   IngressReadCount: number
+ *   EgressByteCount: number
+ *   EgressReadCount: number
  */
 
 /* ExtenderStatus (json):

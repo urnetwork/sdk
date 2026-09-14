@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,6 +83,414 @@ func TestExtenderDnsPortsText(t *testing.T) {
 		if dnsPorts := extenderDnsPortsText(c.dnsPorts); dnsPorts != c.expect {
 			t.Errorf("%s: dns ports = %q, expected %q", c.name, dnsPorts, c.expect)
 		}
+	}
+}
+
+// The one state rule every app renders (N3), case by case and in order. The
+// order is the rule: the same status reads as a different state depending on
+// which earlier case it matches, so every pair the design orders is pinned
+// here with a status that matches both. Every case also pins the error case,
+// which is empty in every state but error.
+func TestExtenderProvideStateRule(t *testing.T) {
+	// the fields of a role that is up and activated on both families, which
+	// the precedence cases below start from
+	active := func() *ExtenderProvideStatus {
+		return &ExtenderProvideStatus{
+			Supported:   true,
+			Enabled:     true,
+			Listening:   true,
+			ActivatedV4: true,
+			ActivatedV6: true,
+			Ipv4:        "192.0.2.10",
+			Ipv6:        "2001:db8::a",
+		}
+	}
+
+	cases := []struct {
+		name            string
+		status          *ExtenderProvideStatus
+		provideExtender bool
+		providing       bool
+		expectState     string
+		expectErrorCase string
+		expectReason    string
+	}{
+		// off
+		{
+			name:            "the setting is off",
+			status:          &ExtenderProvideStatus{Supported: true},
+			provideExtender: false,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
+		{
+			name:            "the setting is off while the role still runs",
+			status:          active(),
+			provideExtender: false,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
+		{
+			name:            "a build with no role, whatever the setting says",
+			status:          &ExtenderProvideStatus{},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
+		{
+			name:            "the setting off beats not providing",
+			status:          &ExtenderProvideStatus{Supported: true},
+			provideExtender: false,
+			providing:       false,
+			expectState:     ExtenderProvideStateOff,
+		},
+		// not_providing
+		{
+			name:            "the setting is on and the device is not providing",
+			status:          &ExtenderProvideStatus{Supported: true},
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		{
+			name: "not providing beats everything the role last reported",
+			status: func() *ExtenderProvideStatus {
+				status := active()
+				status.RevokedTime = 1
+				status.ListenError = "tcp: bind refused"
+				return status
+			}(),
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		// error, start
+		{
+			name: "the role was asked for and could not start",
+			status: &ExtenderProvideStatus{
+				Supported:  true,
+				StartError: "the network space has no extender directory",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorStart,
+			expectReason:    "the network space has no extender directory",
+		},
+		{
+			name: "a start error beats a stale revocation",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				StartError:  "the extender identity is not usable: bad seed",
+				RevokedTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorStart,
+			expectReason:    "the extender identity is not usable: bad seed",
+		},
+		{
+			name: "not providing beats a start error",
+			status: &ExtenderProvideStatus{
+				Supported:  true,
+				StartError: "the network space has no extender directory",
+			},
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		{
+			name: "a role that runs has no start error to report",
+			status: &ExtenderProvideStatus{
+				Supported:  true,
+				Enabled:    true,
+				Listening:  true,
+				StartError: "the network space has no extender directory",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		// error, revoked
+		{
+			name: "the operator revoked the key",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				Listening:   true,
+				RevokedTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
+			// the case is the whole message; the app names it (N5)
+			expectReason: "",
+		},
+		{
+			name: "revoked beats an activated family",
+			status: func() *ExtenderProvideStatus {
+				status := active()
+				status.RevokedTime = 1757000000000
+				return status
+			}(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
+		},
+		{
+			name: "revoked beats a carrier bind failure",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				ListenError: "tcp: bind refused; quic: bind refused; dns: bind refused",
+				RevokedTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
+		},
+		{
+			name: "revoked beats a standing activation error",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				Listening:           true,
+				LastActivationTime:  1757000000000,
+				LastActivationError: "post activate: connection refused",
+				RevokedTime:         1757000001000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
+		},
+		// active
+		{
+			name:            "both families",
+			status:          active(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+		},
+		{
+			name: "one family",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				Listening:   true,
+				ActivatedV4: true,
+				Ipv4:        "192.0.2.10",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+		},
+		{
+			// active is not an error state, so the other family's refusal is
+			// the reason alone, with no case
+			name: "one family, with the other family's refusal beside it",
+			status: &ExtenderProvideStatus{
+				Supported:             true,
+				Enabled:               true,
+				Listening:             true,
+				ActivatedV6:           true,
+				Ipv6:                  "2001:db8::a",
+				LastActivationTime:    1757000000000,
+				LastActivationError:   "the operator refused the activation",
+				LastActivationRefused: true,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+			expectReason:    "the operator refused the activation",
+		},
+		{
+			name: "an activated family beats a carrier that did not bind",
+			status: func() *ExtenderProvideStatus {
+				status := active()
+				status.Listening = false
+				status.ListenError = "tcp: bind refused"
+				return status
+			}(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+		},
+		// error, listen
+		{
+			name: "no carrier bound",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				ListenError: "tcp: bind refused; quic: bind refused; dns: bind refused",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorListen,
+			expectReason:    "tcp: bind refused; quic: bind refused; dns: bind refused",
+		},
+		{
+			name: "the bind failure is reported before an activation that never ran",
+			status: &ExtenderProvideStatus{
+				Supported:             true,
+				Enabled:               true,
+				ListenError:           "tcp: bind refused",
+				LastActivationTime:    1757000000000,
+				LastActivationError:   "the operator refused the activation",
+				LastActivationRefused: true,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorListen,
+			expectReason:    "tcp: bind refused",
+		},
+		// error, activation
+		{
+			name: "the last activation failed",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				Listening:           true,
+				LastActivationTime:  1757000000000,
+				LastActivationError: "post activate: connection refused",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorActivationFailed,
+			expectReason:    "post activate: connection refused",
+		},
+		{
+			// the operator's refusal is its own case, and it stands through the
+			// activator's backoff, since an outcome exists
+			name: "still an error through the backoff after a refusal",
+			status: &ExtenderProvideStatus{
+				Supported:             true,
+				Enabled:               true,
+				Listening:             true,
+				LastActivationTime:    1757000000000,
+				LastActivationError:   "the operator refused the activation",
+				LastActivationRefused: true,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorActivationRefused,
+			expectReason:    "the operator refused the activation",
+		},
+		// setting_up
+		{
+			name: "the carriers are still binding",
+			status: &ExtenderProvideStatus{
+				Supported: true,
+				Enabled:   true,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		{
+			name: "bound, and the first activation is in flight",
+			status: &ExtenderProvideStatus{
+				Supported: true,
+				Enabled:   true,
+				Listening: true,
+				DnsPorts:  "53,4053",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		{
+			name: "a carrier that failed while another bound is not a listen error",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				Listening:   true,
+				ListenError: "dns: bind refused",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		{
+			name: "an attempt that recorded no error is not an error",
+			status: &ExtenderProvideStatus{
+				Supported:          true,
+				Enabled:            true,
+				Listening:          true,
+				LastActivationTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+	}
+	for _, c := range cases {
+		state, errorCase, reason := extenderProvideStateRule(
+			c.status,
+			c.provideExtender,
+			c.providing,
+		)
+		if state != c.expectState {
+			t.Errorf("%s: state = %q, expected %q", c.name, state, c.expectState)
+		}
+		if errorCase != c.expectErrorCase {
+			t.Errorf("%s: error case = %q, expected %q", c.name, errorCase, c.expectErrorCase)
+		}
+		if reason != c.expectReason {
+			t.Errorf("%s: reason = %q, expected %q", c.name, reason, c.expectReason)
+		}
+		// the case names an error and nothing else
+		if (state == ExtenderProvideStateError) != (errorCase != "") {
+			t.Errorf("%s: state %q carries error case %q", c.name, state, errorCase)
+		}
+	}
+
+	// the rule is pure: reading it does not rewrite the status it read
+	status := active()
+	before := *status
+	extenderProvideStateRule(status, true, true)
+	if *status != before {
+		t.Fatalf("the state rule mutated the status it read: %+v", status)
+	}
+	// and a status a caller never filled in is off rather than a panic
+	if state, errorCase, reason := extenderProvideStateRule(nil, true, true); state !=
+		ExtenderProvideStateOff || errorCase != "" || reason != "" {
+		t.Fatalf("no status = %q, %q, %q, expected off", state, errorCase, reason)
+	}
+}
+
+// What a build that carries no role answers (G1, N2): an ios, android or js
+// device runs the stub, whose disabled status carries `Supported` false
+// through the same derivation, and that is exactly the unsupported status the
+// rpc reader falls back to. The two must not drift, or an app hides the row on
+// one platform and draws a dead one on another.
+func TestExtenderProvideStubAnswersTheUnsupportedStatus(t *testing.T) {
+	stub := disabledExtenderProvideStatus()
+	// the stub's build sets this false; here it is set explicitly, so the
+	// derivation under test is the one that runs on a phone
+	stub.Supported = false
+	stub.State, stub.ErrorCase, stub.Reason = extenderProvideStateRule(stub, true, true)
+
+	if stub.Supported {
+		t.Fatal("the status of a build with no role reported the role supported")
+	}
+	if stub.State != ExtenderProvideStateOff {
+		t.Fatalf("state = %q, expected off", stub.State)
+	}
+	if !reflect.DeepEqual(stub, unsupportedExtenderProvideStatus()) {
+		t.Fatalf(
+			"the stub's status is %+v and the rpc reader's unsupported status is %+v",
+			stub,
+			unsupportedExtenderProvideStatus(),
+		)
 	}
 }
 
@@ -203,7 +612,8 @@ func TestNormalExtenderGossipMode(t *testing.T) {
 // tolerance: the directory is a cache, the mode degrades to auto, and the
 // opt-out is on unless it was explicitly turned off (E1, D5, F3).
 func TestExtenderLocalStateFiles(t *testing.T) {
-	localState := newLocalState(context.Background(), t.TempDir())
+	localStorageHome := t.TempDir()
+	localState := newLocalState(context.Background(), localStorageHome)
 	t.Cleanup(localState.Close)
 	path := func(name string) string {
 		return filepath.Join(localState.localStorageDir, name)
@@ -271,16 +681,36 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if localState.GetProvideExtender() {
-		t.Fatal("the opt-out was not persisted")
+		t.Fatal("the opt-out did not apply")
 	}
-	if err := localState.SetProvideExtender(true); err != nil {
+	// read once and cached: with the file gone, a read answers the cached
+	// value rather than going back to the disk for the default (N4)
+	if err := os.Remove(path(provideExtenderFileName)); err != nil {
 		t.Fatal(err)
 	}
-	if !localState.GetProvideExtender() {
+	if localState.GetProvideExtender() {
+		t.Fatal("a read went back to the disk instead of answering the cached opt-out")
+	}
+
+	// every write goes to the file as well as the cache, so a restart reads
+	// what the last write left
+	if err := localState.SetProvideExtender(false); err != nil {
+		t.Fatal(err)
+	}
+	restarted := newLocalState(context.Background(), localStorageHome)
+	t.Cleanup(restarted.Close)
+	if restarted.GetProvideExtender() {
+		t.Fatal("the opt-out was not persisted")
+	}
+	if err := restarted.SetProvideExtender(true); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.GetProvideExtender() {
 		t.Fatal("the setting did not go back on")
 	}
+
 	// anything that is not an explicit off is on, so a corrupt file does not
-	// silently opt a provider out
+	// silently opt a provider out. The file is read once, at the next start.
 	if err := os.WriteFile(
 		path(provideExtenderFileName),
 		[]byte("nonsense"),
@@ -288,8 +718,119 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !localState.GetProvideExtender() {
+	reread := newLocalState(context.Background(), localStorageHome)
+	t.Cleanup(reread.Close)
+	if !reread.GetProvideExtender() {
 		t.Fatal("a file that is not an explicit off read as off")
+	}
+}
+
+// The relayed traffic is nil whenever the role is not running, which is what
+// tells an app there is no series to show (O2): not providing, providing with
+// no role (the suite keeps the role disabled), the setting off, a closed
+// device, and a hosted device that is asked to provide.
+func TestDeviceLocalExtenderStatsNilWhileTheRoleIsNotRunning(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, "", "", "", "", NewId(), testExtenderStatusDeviceSettings(), connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deviceLocal.Close()
+
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v while not providing, expected nil", stats)
+	}
+	deviceLocal.SetProvideMode(ProvideModePublic)
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v while providing with no role, expected nil", stats)
+	}
+	deviceLocal.SetProvideExtender(false)
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v with the setting off, expected nil", stats)
+	}
+	deviceLocal.Close()
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v after close, expected nil", stats)
+	}
+
+	_, hostedSpace := testExtenderStatusSpace(t)
+	hostedSettings := testExtenderStatusDeviceSettings()
+	hostedSettings.HostedIncompatible = true
+	hostedDevice, err := newDeviceLocalWithOverrides(
+		hostedSpace, "", "", "", "", NewId(), hostedSettings, connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hostedDevice.Close()
+	hostedDevice.SetProvideMode(ProvideModePublic)
+	if stats := hostedDevice.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v on a hosted device, expected nil", stats)
+	}
+}
+
+// A change that lands before the provider extender status watch runs is still
+// pushed (N2): the wake the watch waits on first is armed before its goroutine
+// starts. The barrier holds the watch goroutine until the change has landed,
+// which is the order a daemon that applies its persisted provide mode right
+// after constructing the device produces.
+func TestExtenderProvideStatusWatchKeepsAChangeBeforeItRuns(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWatch := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+
+	_, networkSpace := testExtenderStatusSpace(t)
+	settings := testExtenderStatusDeviceSettings()
+	// no provider, so the device's own wake is the only thing that can wake
+	// the watch
+	settings.AllowProvider = false
+	settings.testingBeforeExtenderProvideWatch = func() {
+		close(entered)
+		<-release
+	}
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, "", "", "", "", NewId(), settings, connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(deviceLocal.Close)
+	// released before the device closes
+	t.Cleanup(releaseWatch)
+
+	statuses := make(chan *ExtenderProvideStatus, 4)
+	sub := deviceLocal.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the provider extender status watch never started")
+	}
+	// the change lands while the watch goroutine exists and has not waited on
+	// anything yet
+	deviceLocal.SetProvideExtender(false)
+	releaseWatch()
+
+	select {
+	case status := <-statuses:
+		if status.State != ExtenderProvideStateOff {
+			t.Fatalf("state = %q, expected the change to off", status.State)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a change that landed before the watch ran was never pushed")
 	}
 }
 

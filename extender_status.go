@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -315,6 +316,58 @@ func (self *NetworkSpace) extenderStatusChanged() {
 	}
 }
 
+// testingBeforeExtenderStatusWatch, when set, runs in a space's extender
+// status watch goroutine, with that space, before the watch waits on anything.
+// A test holds it to land a change before the watch runs; production never
+// sets it.
+var testingBeforeExtenderStatusWatch atomic.Pointer[func(networkSpace *NetworkSpace)]
+
+// Starts the extender status watch of a space that keeps a directory. Every
+// channel the watch waits on first is armed here, before the goroutine exists,
+// so a change that lands the instant the constructor returns wakes the watch
+// instead of closing a channel it has not armed yet (F2, K5). No rescue handler:
+// the watch contains a panic to one tick, and a failure to render status must
+// never tear the space down.
+func (self *NetworkSpace) startExtenderStatusWatch() {
+	if self.extenderDirectory == nil {
+		return
+	}
+	wake := self.armExtenderStatusWake()
+	go connect.HandleError(func() {
+		if hook := testingBeforeExtenderStatusWatch.Load(); hook != nil {
+			(*hook)(self)
+		}
+		self.watchExtenderStatus(wake)
+	})
+}
+
+// The channels one round of the extender status watch waits on, each armed at
+// the instant of its read, so a change after the read wakes the round.
+type extenderStatusWake struct {
+	directoryUpdate chan struct{}
+	networkUpdate   chan struct{}
+	nodeChange      chan struct{}
+	nodeUpdate      chan struct{}
+}
+
+// Arms one round of the watch, the first before its goroutine starts and every
+// later one after the epoch.
+func (self *NetworkSpace) armExtenderStatusWake() extenderStatusWake {
+	wake := extenderStatusWake{}
+	_, wake.directoryUpdate = self.extenderDirectory.ChangeMonitor().Get()
+	// the client is replaced by a settings change (K6), so the round that
+	// wakes on the swap re-subscribes to the client the space now runs
+	if networkClient := self.getExtenderNetworkClient(); networkClient != nil {
+		_, wake.networkUpdate = networkClient.StatusMonitor().Get()
+	}
+	// the node itself is replaced when the provider extender role starts and
+	// stops, so the swap is a change and the new node is what the next round
+	// waits on (G2)
+	wake.nodeChange = self.extenderNodeMonitor.NotifyChannel()
+	wake.nodeUpdate = self.getExtenderNode().statusUpdate()
+	return wake
+}
+
 // watchExtenderStatus emits at most one status per epoch, carrying the
 // complete state (F2).
 //
@@ -323,44 +376,25 @@ func (self *NetworkSpace) extenderStatusChanged() {
 // already triggered by the same burst the snapshot already carries, and would
 // emit an identical status one epoch later. See DeviceLocal.watchNetworkPeers
 // for the same shape.
-func (self *NetworkSpace) watchExtenderStatus() {
-	if self.extenderDirectory == nil {
-		return
-	}
-	directoryMonitor := self.extenderDirectory.ChangeMonitor()
-	_, directoryUpdate := directoryMonitor.Get()
-	var networkUpdate chan struct{}
-	if networkClient := self.getExtenderNetworkClient(); networkClient != nil {
-		_, networkUpdate = networkClient.StatusMonitor().Get()
-	}
-	nodeChange := self.extenderNodeMonitor.NotifyChannel()
-	nodeUpdate := self.getExtenderNode().statusUpdate()
+//
+// wake is the first round, armed by startExtenderStatusWatch before this
+// goroutine started.
+func (self *NetworkSpace) watchExtenderStatus(wake extenderStatusWake) {
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
-		case <-directoryUpdate:
-		case <-networkUpdate:
-		case <-nodeChange:
-		case <-nodeUpdate:
+		case <-wake.directoryUpdate:
+		case <-wake.networkUpdate:
+		case <-wake.nodeChange:
+		case <-wake.nodeUpdate:
 		}
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-time.After(extenderStatusEpoch):
 		}
-		_, directoryUpdate = directoryMonitor.Get()
-		// the client is replaced by a settings change (K6), so the round that
-		// wakes on the swap re-subscribes to the client the space now runs
-		networkUpdate = nil
-		if networkClient := self.getExtenderNetworkClient(); networkClient != nil {
-			_, networkUpdate = networkClient.StatusMonitor().Get()
-		}
-		// the node itself is replaced when the provider extender role starts
-		// and stops, so the swap is a change and the new node is what the next
-		// round waits on (G2)
-		nodeChange = self.extenderNodeMonitor.NotifyChannel()
-		nodeUpdate = self.getExtenderNode().statusUpdate()
+		wake = self.armExtenderStatusWake()
 		// contain a panic to the tick: a failed emit must never end the watch,
 		// which would silently stop every extender update for the session
 		connect.HandleError(self.extenderStatusChanged)
