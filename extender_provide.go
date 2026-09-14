@@ -46,8 +46,25 @@ const (
 	// At least one family is activated.
 	ExtenderProvideStateActive = "active"
 	// Revoked, no carrier bound, or the last activation failed or was refused
-	// with no family active. `Reason` carries the raw text.
+	// with no family active. `ErrorCase` names which, and `Reason` carries the
+	// raw text.
 	ExtenderProvideStateError = "error"
+)
+
+// The cases of the error state, so an app picks its label without re-deriving
+// the rule (N3, N5). Set only while the state is error, empty in every other
+// state.
+const (
+	// The operator revoked this extender's key. There is no reason text.
+	ExtenderProvideErrorRevoked = "revoked"
+	// The role was asked to run and could not start in this space.
+	ExtenderProvideErrorStart = "start"
+	// No carrier bound. The reason is the bind failures.
+	ExtenderProvideErrorListen = "listen"
+	// The last activation failed and no family is active.
+	ExtenderProvideErrorActivationFailed = "activation_failed"
+	// The operator refused the last activation and no family is active.
+	ExtenderProvideErrorActivationRefused = "activation_refused"
 )
 
 // The provider extender state as the apps render it (F3). Every field is a
@@ -63,6 +80,10 @@ type ExtenderProvideStatus struct {
 	// derived once from the fields below plus the setting and whether the
 	// device is providing (N3).
 	State string
+	// Which error the state is, one of the ExtenderProvideError values above.
+	// Empty in every state but error; in active, `Reason` alone carries the
+	// other family's failure.
+	ErrorCase string
 	// The raw error text behind the state, empty when it has none. The app
 	// prefixes the localized case label (N3, N5).
 	Reason string
@@ -181,36 +202,48 @@ func cloneExtenderProvideStatus(status *ExtenderProvideStatus) *ExtenderProvideS
 //   - setting_up: anything else, which is the role running with no outcome
 //     yet -- the carriers binding, or the first activation in flight.
 //
-// Pure: everything it reads is an argument, so the table test of N6 is the
-// whole rule.
-func extenderProvideStateAndReason(
+// It answers the state, the error case (empty outside the error state) and
+// the reason. Pure: everything it reads is an argument, so the table test of
+// N6 is the whole rule.
+func extenderProvideStateRule(
 	status *ExtenderProvideStatus,
 	provideExtender bool,
 	providing bool,
-) (string, string) {
+) (state string, errorCase string, reason string) {
 	switch {
 	case status == nil || !status.Supported:
 		// this process carries no role, so there is nothing to be setting up
-		return ExtenderProvideStateOff, ""
+		return ExtenderProvideStateOff, "", ""
 	case !provideExtender:
-		return ExtenderProvideStateOff, ""
+		return ExtenderProvideStateOff, "", ""
 	case !providing:
-		return ExtenderProvideStateNotProviding, ""
+		return ExtenderProvideStateNotProviding, "", ""
 	case status.RevokedTime != 0:
-		return ExtenderProvideStateError, ""
+		return ExtenderProvideStateError, ExtenderProvideErrorRevoked, ""
 	case status.ActivatedV4 || status.ActivatedV6:
 		// a family that succeeds clears its own error, so an error that still
 		// stands here belongs to the family that did not activate (F3)
-		return ExtenderProvideStateActive, status.LastActivationError
+		return ExtenderProvideStateActive, "", status.LastActivationError
 	case !status.Listening && status.ListenError != "":
 		// a role whose carriers are still binding is not listening either, but
 		// has no failure yet, and falls through to setting_up
-		return ExtenderProvideStateError, status.ListenError
+		return ExtenderProvideStateError, ExtenderProvideErrorListen, status.ListenError
 	case status.LastActivationTime != 0 && status.LastActivationError != "":
-		return ExtenderProvideStateError, status.LastActivationError
+		return ExtenderProvideStateError,
+			extenderProvideActivationErrorCase(status),
+			status.LastActivationError
 	default:
-		return ExtenderProvideStateSettingUp, ""
+		return ExtenderProvideStateSettingUp, "", ""
 	}
+}
+
+// Whether a standing activation error is the operator's refusal or a failed
+// request (N3, N5). The activator does not report the difference yet: every
+// failure is one string in connect's family status, so every activation error
+// is a failure here. When the family status records a refusal, the status
+// carries it and this is the one place that reads it.
+func extenderProvideActivationErrorCase(status *ExtenderProvideStatus) string {
+	return ExtenderProvideErrorActivationFailed
 }
 
 // The status as an app reads it: this build's Supported, and the state of N3
@@ -221,7 +254,11 @@ func (self *ExtenderProvideStatus) withState(
 	providing bool,
 ) *ExtenderProvideStatus {
 	self.Supported = extenderProvideSupported
-	self.State, self.Reason = extenderProvideStateAndReason(self, provideExtender, providing)
+	self.State, self.ErrorCase, self.Reason = extenderProvideStateRule(
+		self,
+		provideExtender,
+		providing,
+	)
 	return self
 }
 

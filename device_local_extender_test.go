@@ -740,9 +740,9 @@ func TestDeviceLocalProviderExtenderActivatesEveryFamily(t *testing.T) {
 	if !status.Supported {
 		t.Fatalf("status = %+v, expected a build that carries the role", status)
 	}
-	if status.State != ExtenderProvideStateActive || status.Reason != "" {
-		t.Fatalf("state = %q, %q, expected active with nothing to say",
-			status.State, status.Reason)
+	if status.State != ExtenderProvideStateActive || status.ErrorCase != "" || status.Reason != "" {
+		t.Fatalf("state = %q, %q, %q, expected active with nothing to say",
+			status.State, status.ErrorCase, status.Reason)
 	}
 
 	// the operator's record for this extender's own key is in the directory,
@@ -849,8 +849,11 @@ func TestDeviceLocalProviderExtenderReportsARevokedKey(t *testing.T) {
 	}
 	// a revocation is the state whatever else the role reports, and the case
 	// is the whole message (N3)
-	if status.State != ExtenderProvideStateError || status.Reason != "" {
-		t.Fatalf("state = %q, %q, expected the revoked error", status.State, status.Reason)
+	if status.State != ExtenderProvideStateError ||
+		status.ErrorCase != ExtenderProvideErrorRevoked ||
+		status.Reason != "" {
+		t.Fatalf("state = %q, %q, %q, expected the revoked error",
+			status.State, status.ErrorCase, status.Reason)
 	}
 
 	// the operator accepts again on the next attempt, which the backoff holds

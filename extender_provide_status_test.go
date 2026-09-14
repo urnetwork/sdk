@@ -88,7 +88,8 @@ func TestExtenderDnsPortsText(t *testing.T) {
 // The one state rule every app renders (N3), case by case and in order. The
 // order is the rule: the same status reads as a different state depending on
 // which earlier case it matches, so every pair the design orders is pinned
-// here with a status that matches both.
+// here with a status that matches both. Every case also pins the error case,
+// which is empty in every state but error.
 func TestExtenderProvideStateRule(t *testing.T) {
 	// the fields of a role that is up and activated on both families, which
 	// the precedence cases below start from
@@ -110,6 +111,7 @@ func TestExtenderProvideStateRule(t *testing.T) {
 		provideExtender bool
 		providing       bool
 		expectState     string
+		expectErrorCase string
 		expectReason    string
 	}{
 		// off
@@ -166,6 +168,7 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
 			// the case is the whole message; the app names it (N5)
 			expectReason: "",
 		},
@@ -179,6 +182,7 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
 		},
 		// active
 		{
@@ -202,7 +206,9 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			expectState:     ExtenderProvideStateActive,
 		},
 		{
-			name: "one family, with the other family's failure beside it",
+			// active is not an error state, so the other family's refusal is
+			// the reason alone, with no case
+			name: "one family, with the other family's refusal beside it",
 			status: &ExtenderProvideStatus{
 				Supported:           true,
 				Enabled:             true,
@@ -240,6 +246,7 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorListen,
 			expectReason:    "tcp: bind refused; quic: bind refused; dns: bind refused",
 		},
 		{
@@ -254,6 +261,7 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorListen,
 			expectReason:    "tcp: bind refused",
 		},
 		// error, activation
@@ -269,9 +277,13 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorActivationFailed,
 			expectReason:    "post activate: connection refused",
 		},
 		{
+			// the activator does not yet report a refusal apart from a failed
+			// request, so a refusal is a failure until it does; this case
+			// becomes activation_refused when the status carries the refusal
 			name: "still an error through the backoff after a refusal",
 			status: &ExtenderProvideStatus{
 				Supported:           true,
@@ -283,6 +295,7 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorActivationFailed,
 			expectReason:    "the operator refused the activation",
 		},
 		// setting_up
@@ -334,26 +347,37 @@ func TestExtenderProvideStateRule(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		state, reason := extenderProvideStateAndReason(c.status, c.provideExtender, c.providing)
+		state, errorCase, reason := extenderProvideStateRule(
+			c.status,
+			c.provideExtender,
+			c.providing,
+		)
 		if state != c.expectState {
 			t.Errorf("%s: state = %q, expected %q", c.name, state, c.expectState)
 		}
+		if errorCase != c.expectErrorCase {
+			t.Errorf("%s: error case = %q, expected %q", c.name, errorCase, c.expectErrorCase)
+		}
 		if reason != c.expectReason {
 			t.Errorf("%s: reason = %q, expected %q", c.name, reason, c.expectReason)
+		}
+		// the case names an error and nothing else
+		if (state == ExtenderProvideStateError) != (errorCase != "") {
+			t.Errorf("%s: state %q carries error case %q", c.name, state, errorCase)
 		}
 	}
 
 	// the rule is pure: reading it does not rewrite the status it read
 	status := active()
 	before := *status
-	extenderProvideStateAndReason(status, true, true)
+	extenderProvideStateRule(status, true, true)
 	if *status != before {
 		t.Fatalf("the state rule mutated the status it read: %+v", status)
 	}
 	// and a status a caller never filled in is off rather than a panic
-	if state, reason := extenderProvideStateAndReason(nil, true, true); state !=
-		ExtenderProvideStateOff || reason != "" {
-		t.Fatalf("no status = %q, %q, expected off", state, reason)
+	if state, errorCase, reason := extenderProvideStateRule(nil, true, true); state !=
+		ExtenderProvideStateOff || errorCase != "" || reason != "" {
+		t.Fatalf("no status = %q, %q, %q, expected off", state, errorCase, reason)
 	}
 }
 
@@ -367,7 +391,7 @@ func TestExtenderProvideStubAnswersTheUnsupportedStatus(t *testing.T) {
 	// the stub's build sets this false; here it is set explicitly, so the
 	// derivation under test is the one that runs on a phone
 	stub.Supported = false
-	stub.State, stub.Reason = extenderProvideStateAndReason(stub, true, true)
+	stub.State, stub.ErrorCase, stub.Reason = extenderProvideStateRule(stub, true, true)
 
 	if stub.Supported {
 		t.Fatal("the status of a build with no role reported the role supported")

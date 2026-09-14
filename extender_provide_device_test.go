@@ -279,6 +279,7 @@ func TestDeviceRemoteExtenderProvideStatusReadsThroughUnchanged(t *testing.T) {
 		status: &ExtenderProvideStatus{
 			Supported:          true,
 			State:              ExtenderProvideStateError,
+			ErrorCase:          ExtenderProvideErrorListen,
 			Reason:             "tcp: bind refused; quic: bind refused; dns: bind refused",
 			Enabled:            true,
 			ListenError:        "tcp: bind refused; quic: bind refused; dns: bind refused",

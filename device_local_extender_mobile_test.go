@@ -35,8 +35,8 @@ func TestExtenderProvideMobileStubIsUnsupported(t *testing.T) {
 	if status.Supported {
 		t.Fatal("the stub reported the role supported")
 	}
-	if status.State != ExtenderProvideStateOff {
-		t.Fatalf("state = %q, expected off", status.State)
+	if status.State != ExtenderProvideStateOff || status.ErrorCase != "" {
+		t.Fatalf("state = %q, %q, expected off", status.State, status.ErrorCase)
 	}
 	if !reflect.DeepEqual(status, unsupportedExtenderProvideStatus()) {
 		t.Fatalf("the stub's status is %+v", status)
