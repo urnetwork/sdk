@@ -1580,6 +1580,7 @@ struct ExtenderProvideStatus {
 	std::string Ipv6{};
 	int64_t LastActivationTime{};
 	std::string LastActivationError{};
+	bool LastActivationRefused{};
 	int64_t RevokedTime{};
 	std::string DnsPorts{};
 	int64_t ConnectionCount{};
@@ -7239,6 +7240,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["Ipv6"] = v.Ipv6;
 	j["LastActivationTime"] = v.LastActivationTime;
 	j["LastActivationError"] = v.LastActivationError;
+	j["LastActivationRefused"] = v.LastActivationRefused;
 	j["RevokedTime"] = v.RevokedTime;
 	j["DnsPorts"] = v.DnsPorts;
 	j["ConnectionCount"] = v.ConnectionCount;
@@ -7288,6 +7290,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("LastActivationError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LastActivationError);
+	}
+	if (auto it = j.find("LastActivationRefused"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastActivationRefused);
 	}
 	if (auto it = j.find("RevokedTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RevokedTime);
