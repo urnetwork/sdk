@@ -537,6 +537,7 @@ struct ExtenderProvideStatus;
 struct ExtenderSettings;
 struct ExtenderShareDecodeResult;
 struct ExtenderShareResult;
+struct ExtenderStats;
 struct ExtenderStatus;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
@@ -1609,6 +1610,13 @@ struct ExtenderShareResult {
 	std::string Text{};
 	int64_t Count{};
 	bool IncludesSettings{};
+};
+
+struct ExtenderStats {
+	int64_t IngressByteCount{};
+	int64_t IngressReadCount{};
+	int64_t EgressByteCount{};
+	int64_t EgressReadCount{};
 };
 
 struct ExtenderStatus {
@@ -3348,6 +3356,8 @@ inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v);
 inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v);
 inline void to_json(nlohmann::json& j, const ExtenderShareResult& v);
 inline void from_json(const nlohmann::json& j, ExtenderShareResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderStats& v);
+inline void from_json(const nlohmann::json& j, ExtenderStats& v);
 inline void to_json(nlohmann::json& j, const ExtenderStatus& v);
 inline void from_json(const nlohmann::json& j, ExtenderStatus& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
@@ -7394,6 +7404,31 @@ inline void from_json(const nlohmann::json& j, ExtenderShareResult& v) {
 	}
 	if (auto it = j.find("IncludesSettings"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IncludesSettings);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderStats& v) {
+	j = nlohmann::json::object();
+	j["IngressByteCount"] = v.IngressByteCount;
+	j["IngressReadCount"] = v.IngressReadCount;
+	j["EgressByteCount"] = v.EgressByteCount;
+	j["EgressReadCount"] = v.EgressReadCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderStats& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("IngressByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IngressByteCount);
+	}
+	if (auto it = j.find("IngressReadCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IngressReadCount);
+	}
+	if (auto it = j.find("EgressByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EgressByteCount);
+	}
+	if (auto it = j.find("EgressReadCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EgressReadCount);
 	}
 }
 
@@ -14600,6 +14635,7 @@ public:
 	std::optional<ContractDetailsList> getEgressContractDetails() const;
 	std::optional<ContractStats> getEgressContractStats() const;
 	std::optional<ExtenderProvideStatus> getExtenderProvideStatus() const;
+	std::optional<ExtenderStats> getExtenderStats() const;
 	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::optional<ContractDetailsList> getIngressContractDetails() const;
 	std::optional<ContractStats> getIngressContractStats() const;
@@ -14909,6 +14945,8 @@ public:
 	explicit ContractViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addThroughputListener(ThroughputListener listener) const;
 	void close() const;
+	std::optional<ExtenderStats> getExtenderStats() const;
+	std::optional<ThroughputPointList> getExtenderThroughputPoints() const;
 	std::optional<PacketStats> getPacketStats() const;
 	std::optional<PacketStats> getProviderPacketStats() const;
 	std::optional<ThroughputPointList> getProviderThroughputPoints() const;
@@ -21764,6 +21802,14 @@ inline std::optional<ExtenderProvideStatus> Device::getExtenderProvideStatus() c
 	}
 	return detail::parseJson<ExtenderProvideStatus>(r_s->c_str());
 }
+inline std::optional<ExtenderStats> Device::getExtenderStats() const {
+	char* r_c = urnet_device_get_extender_stats(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStats>(r_s->c_str());
+}
 inline std::optional<ExtenderStatus> Device::getExtenderStatus() const {
 	char* r_c = urnet_device_get_extender_status(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -23454,6 +23500,22 @@ inline Sub ContractViewController::addThroughputListener(ThroughputListener list
 }
 inline void ContractViewController::close() const {
 	urnet_contract_view_controller_close(handle());
+}
+inline std::optional<ExtenderStats> ContractViewController::getExtenderStats() const {
+	char* r_c = urnet_contract_view_controller_get_extender_stats(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStats>(r_s->c_str());
+}
+inline std::optional<ThroughputPointList> ContractViewController::getExtenderThroughputPoints() const {
+	char* r_c = urnet_contract_view_controller_get_extender_throughput_points(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ThroughputPointList>(r_s->c_str());
 }
 inline std::optional<PacketStats> ContractViewController::getPacketStats() const {
 	char* r_c = urnet_contract_view_controller_get_packet_stats(handle());

@@ -6127,6 +6127,34 @@ func urnet_contract_view_controller_close(self C.uint64_t) {
 	self_.Close()
 }
 
+//export urnet_contract_view_controller_get_extender_stats
+func urnet_contract_view_controller_get_extender_stats(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_view_controller_get_extender_stats")
+	self_, ok := resolveHandle[*sdk.ContractViewController](uint64(self), "urnet_contract_view_controller_get_extender_stats")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderStats()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_view_controller_get_extender_stats")
+}
+
+//export urnet_contract_view_controller_get_extender_throughput_points
+func urnet_contract_view_controller_get_extender_throughput_points(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_contract_view_controller_get_extender_throughput_points")
+	self_, ok := resolveHandle[*sdk.ContractViewController](uint64(self), "urnet_contract_view_controller_get_extender_throughput_points")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderThroughputPoints()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_contract_view_controller_get_extender_throughput_points")
+}
+
 //export urnet_contract_view_controller_get_packet_stats
 func urnet_contract_view_controller_get_packet_stats(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_contract_view_controller_get_packet_stats")
@@ -7377,6 +7405,20 @@ func urnet_device_get_extender_provide_status(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_get_extender_provide_status")
+}
+
+//export urnet_device_get_extender_stats
+func urnet_device_get_extender_stats(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_extender_stats")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_extender_stats")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderStats()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_extender_stats")
 }
 
 //export urnet_device_get_extender_status

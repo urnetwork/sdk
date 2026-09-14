@@ -881,6 +881,8 @@ void urnet_contract_details_view_controller_stop(uint64_t self);
 
 uint64_t urnet_contract_view_controller_add_throughput_listener(uint64_t self, urnet_throughput_cb listener_throughput_changed, void* listener_user_data);
 void urnet_contract_view_controller_close(uint64_t self);
+char* urnet_contract_view_controller_get_extender_stats(uint64_t self);
+char* urnet_contract_view_controller_get_extender_throughput_points(uint64_t self);
 char* urnet_contract_view_controller_get_packet_stats(uint64_t self);
 char* urnet_contract_view_controller_get_provider_packet_stats(uint64_t self);
 char* urnet_contract_view_controller_get_provider_throughput_points(uint64_t self);
@@ -968,6 +970,7 @@ bool urnet_device_get_done(uint64_t self);
 char* urnet_device_get_egress_contract_details(uint64_t self);
 char* urnet_device_get_egress_contract_stats(uint64_t self);
 char* urnet_device_get_extender_provide_status(uint64_t self);
+char* urnet_device_get_extender_stats(uint64_t self);
 char* urnet_device_get_extender_status(uint64_t self);
 char* urnet_device_get_ingress_contract_details(uint64_t self);
 char* urnet_device_get_ingress_contract_stats(uint64_t self);
@@ -2644,6 +2647,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Text: string
  *   Count: number
  *   IncludesSettings: boolean
+ */
+
+/* ExtenderStats (json):
+ *   IngressByteCount: number
+ *   IngressReadCount: number
+ *   EgressByteCount: number
+ *   EgressReadCount: number
  */
 
 /* ExtenderStatus (json):
