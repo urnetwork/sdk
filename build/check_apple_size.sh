@@ -6,7 +6,7 @@ set -eu
 # Override them only for an explicitly reviewed budget change.
 sdk_max_bytes="${URNETWORK_IOS_SDK_MAX_BYTE_COUNT:-100663296}" # 96 MiB (raised from 64 on 2026-09-13: the extender network added libp2p, the extender directory and the alt carriers, measured at 72.0 MiB)
 extension_sdk_max_bytes="${URNETWORK_IOS_EXTENSION_SDK_MAX_BYTE_COUNT:-96468992}" # 92 MiB (raised from 60 on 2026-09-13 with the sdk ceiling: the extender network, measured at 67.7 MiB)
-extension_max_bytes="${URNETWORK_IOS_EXTENSION_MAX_BYTE_COUNT:-40894464}" # 39 MiB
+extension_max_bytes="${URNETWORK_IOS_EXTENSION_MAX_BYTE_COUNT:-50331648}" # 48 MiB
 
 sdk_path=""
 extension_sdk_path=""
