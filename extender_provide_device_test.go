@@ -68,6 +68,39 @@ func (self *testingExtenderProvideRpc) sets() int {
 	return self.setCount
 }
 
+// A device process that answers the extender stats, for the read-through
+// cases the real device cannot produce without a running role.
+type testingExtenderStatsRpc struct {
+	stateLock sync.Mutex
+	stats     *ExtenderStats
+}
+
+func (self *testingExtenderStatsRpc) Ping(_ bool, reply *bool) error {
+	*reply = true
+	return nil
+}
+
+func (self *testingExtenderStatsRpc) GetExtenderStats(
+	_ RpcNoArg,
+	stats **DeviceRemoteExtenderStats,
+) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	var copied *ExtenderStats
+	if self.stats != nil {
+		statsCopy := *self.stats
+		copied = &statsCopy
+	}
+	*stats = &DeviceRemoteExtenderStats{ExtenderStats: copied}
+	return nil
+}
+
+func (self *testingExtenderStatsRpc) setStats(stats *ExtenderStats) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.stats = stats
+}
+
 // Points a device remote at an in-process rpc server serving deviceProcess as
 // DeviceLocalRpc, the way the ios app process reaches the tunnel extension.
 // Mirrors TestDeviceRemoteControlIpFamilyStatusIsTheDeviceProcessAnswer.
@@ -535,6 +568,113 @@ func TestProvideExtenderHostedGuard(t *testing.T) {
 		hostedDevice.GetExtenderProvideStatus().State,
 		ExtenderProvideStateNotProviding,
 	)
+}
+
+// The stats read through to the device process, where the role runs (O2): nil
+// with no role over the real transport, and whatever the process answers,
+// value or nil, when it has one.
+func TestDeviceRemoteExtenderStats(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
+
+	// the suite runs no role
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("local stats = %+v, expected nil", stats)
+	}
+	if stats := deviceRemote.GetExtenderStats(); stats != nil {
+		t.Fatalf("remote stats = %+v, expected nil", stats)
+	}
+	if !deviceRemote.GetRemoteConnected() {
+		t.Fatal("a nil answer tore the rpc session down")
+	}
+
+	remote := newTestDeviceRemoteWithNoService(t)
+	deviceProcess := &testingExtenderStatsRpc{
+		stats: &ExtenderStats{
+			IngressByteCount: 1,
+			IngressReadCount: 2,
+			EgressByteCount:  3,
+			EgressReadCount:  4,
+		},
+	}
+	testExtenderProvideDeviceProcess(t, remote, deviceProcess)
+	connect.AssertEqual(t, remote.GetExtenderStats(), &ExtenderStats{
+		IngressByteCount: 1,
+		IngressReadCount: 2,
+		EgressByteCount:  3,
+		EgressReadCount:  4,
+	})
+	deviceProcess.setStats(nil)
+	if stats := remote.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v after the role stopped, expected nil", stats)
+	}
+}
+
+// A device process from before the method answers nil and keeps its rpc
+// session: the section is hidden for it anyway (N1), and losing rpc control of
+// the tunnel over a chart would be the wrong trade.
+func TestDeviceRemoteExtenderStatsWithoutTheMethod(t *testing.T) {
+	deviceRemote := newTestDeviceRemoteWithNoService(t)
+	service := testExtenderProvideDeviceProcess(t, deviceRemote, &testingOptionalMethodRpc{})
+
+	if stats := deviceRemote.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v, expected nil", stats)
+	}
+	if !deviceRemote.GetRemoteConnected() {
+		t.Fatal("the missing stats method tore the rpc session down")
+	}
+	var reply bool
+	if err := service.Call("DeviceLocalRpc.Ping", true, &reply); err != nil || !reply {
+		t.Fatalf("the rpc session did not survive: reply = %t err = %v", reply, err)
+	}
+}
+
+// Unlike the status, the stats keep no last value: a device process out of
+// contact answers nil, whatever it answered before (O2).
+func TestDeviceRemoteExtenderStatsIsNilWhenUnreachable(t *testing.T) {
+	deviceRemote := newTestDeviceRemoteWithNoService(t)
+	if stats := deviceRemote.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v with no service, expected nil", stats)
+	}
+
+	testExtenderProvideDeviceProcess(t, deviceRemote, &testingExtenderStatsRpc{
+		stats: &ExtenderStats{
+			IngressByteCount: 64,
+			IngressReadCount: 1,
+			EgressByteCount:  96,
+			EgressReadCount:  1,
+		},
+	})
+	if stats := deviceRemote.GetExtenderStats(); stats == nil {
+		t.Fatal("the device process's stats did not cross")
+	}
+
+	// the device process goes away
+	func() {
+		deviceRemote.stateLock.Lock()
+		defer deviceRemote.stateLock.Unlock()
+		deviceRemote.service = nil
+		deviceRemote.remoteConnected = false
+	}()
+	if stats := deviceRemote.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v with the device process gone, expected nil", stats)
+	}
+}
+
+// Every field of the stats survives the rpc wire inside its wrapper, and no
+// running role crosses as nil.
+func TestRpcGobExtenderStatsComplete(t *testing.T) {
+	seed := 0
+	stats := &ExtenderStats{}
+	fillNonZero(t, reflect.ValueOf(stats), &seed)
+
+	wired := gobRoundTrip(t, &DeviceRemoteExtenderStats{ExtenderStats: stats})
+	connect.AssertEqual(t, wired.ExtenderStats, stats)
+
+	empty := gobRoundTrip(t, &DeviceRemoteExtenderStats{})
+	if empty.ExtenderStats != nil {
+		t.Fatalf("no stats crossed as %+v, expected nil", empty.ExtenderStats)
+	}
 }
 
 // Every field of the status survives the rpc wire. It crosses as it stands

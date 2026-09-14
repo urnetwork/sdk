@@ -34,6 +34,11 @@ func (self *deviceLocalExtender) status() *ExtenderProvideStatus {
 	return disabledExtenderProvideStatus()
 }
 
+// No role, so nothing is relayed and there is no series to show (O2).
+func (self *deviceLocalExtender) stats() *ExtenderStats {
+	return nil
+}
+
 func (self *deviceLocalExtender) statusUpdate() chan struct{} {
 	return nil
 }

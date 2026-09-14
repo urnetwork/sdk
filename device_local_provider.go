@@ -1049,6 +1049,14 @@ func (self *deviceLocalProvider) extenderProvideStatus() *ExtenderProvideStatus 
 	return extender.status()
 }
 
+// The relayed traffic of the running role (O2), nil while there is none.
+func (self *deviceLocalProvider) extenderStats() *ExtenderStats {
+	self.stateLock.Lock()
+	extender := self.extender
+	self.stateLock.Unlock()
+	return extender.stats()
+}
+
 // A channel armed at the instant of the read, so a consumer is woken when the
 // running role's status changes.
 func (self *deviceLocalProvider) extenderStatusUpdate() chan struct{} {

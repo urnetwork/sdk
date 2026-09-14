@@ -498,6 +498,21 @@ func (self *deviceLocalExtender) status() *ExtenderProvideStatus {
 	return self.statusMonitor.Value().status(self.server.ConnectionCount())
 }
 
+// The relayed traffic of this role's server (O2): read off the server's
+// atomics, so no lock is taken and a server that has closed still answers.
+func (self *deviceLocalExtender) stats() *ExtenderStats {
+	if self == nil {
+		return nil
+	}
+	stats := self.server.Stats()
+	return &ExtenderStats{
+		IngressByteCount: stats.IngressByteCount,
+		IngressReadCount: stats.IngressReadCount,
+		EgressByteCount:  stats.EgressByteCount,
+		EgressReadCount:  stats.EgressReadCount,
+	}
+}
+
 // A channel armed at the instant of the read, so a consumer is woken when the
 // status changes. A device with no role waits on nil, which never fires.
 func (self *deviceLocalExtender) statusUpdate() chan struct{} {

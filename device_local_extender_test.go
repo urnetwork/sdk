@@ -3,6 +3,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -10,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -963,6 +965,143 @@ func TestDeviceLocalProviderExtenderRelaysThroughTheDeviceEgress(t *testing.T) {
 	expectedHosts := []string{testProvideExtenderHost, "*." + testProvideExtenderHost}
 	if allowedHosts := fixture.extender().settings.AllowedHosts; !slices.Equal(allowedHosts, expectedHosts) {
 		t.Fatalf("allowed hosts = %v, expected %v", allowedHosts, expectedHosts)
+	}
+}
+
+// The relayed traffic the device reports is the role's own server counters
+// (O1, O2): one session over the tcp carrier moves known chunks in each
+// direction and the stats carry exactly those bytes and reads. The role that
+// is turned off reports nil at once, and the one started again reports a
+// fresh server's zero.
+func TestDeviceLocalProviderExtenderStatsFollowTheRelay(t *testing.T) {
+	const ingressChunkByteCount = 64
+	const egressChunkByteCount = 96
+	const chunkCount = 3
+
+	// one raw destination: for every chunk it reads it answers a chunk of the
+	// other size, so every relayed byte is the test's own
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				ingressChunk := make([]byte, ingressChunkByteCount)
+				egressChunk := bytes.Repeat([]byte("e"), egressChunkByteCount)
+				for {
+					if _, err := io.ReadFull(conn, ingressChunk); err != nil {
+						return
+					}
+					if _, err := conn.Write(egressChunk); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	endpointAddress := listener.Addr().String()
+
+	fixture := newTestProvideExtenderFixtureWithDevice(
+		t,
+		func(settings *DeviceLocalSettings) {
+			// the role's forward dial is the device egress, which sends every
+			// destination to the raw endpoint
+			settings.ProviderDialContextSettings = &connect.DialContextSettings{
+				DialContext: func(
+					ctx context.Context,
+					network string,
+					address string,
+				) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, "tcp", endpointAddress)
+				},
+			}
+		},
+		nil,
+	)
+	fixture.waitStatus("listening", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening
+	})
+
+	stats := fixture.device.GetExtenderStats()
+	if stats == nil || *stats != (ExtenderStats{}) {
+		t.Fatalf("stats = %+v while the role runs idle, expected zero", stats)
+	}
+
+	// one relayed session: each chunk is answered before the next is sent, so
+	// a chunk is one read on each side, and the answer is written by the
+	// endpoint only after the relay counted the chunk, so every count has
+	// landed when the read returns
+	connectSettings := connect.DefaultConnectSettings()
+	connectSettings.ConnectTimeout = 10 * time.Second
+	connectSettings.TlsTimeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	conn, _, err := connect.DialExtender(
+		ctx,
+		connectSettings,
+		&connect.ExtenderConfig{
+			Profile: connect.ExtenderProfile{
+				ConnectMode: connect.ExtenderConnectModeTcpTls,
+				ServerName:  "front.example",
+				Port:        fixture.tcpPort,
+			},
+			Ip:        netip.MustParseAddr("127.0.0.1"),
+			PublicKey: fixture.extender().publicKey,
+		},
+		&connect.ExtenderDial{
+			DestinationHost: testProvideExtenderHost,
+			DestinationPort: 443,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	ingressChunk := bytes.Repeat([]byte("i"), ingressChunkByteCount)
+	egressChunk := make([]byte, egressChunkByteCount)
+	for i := range chunkCount {
+		if _, err := conn.Write(ingressChunk); err != nil {
+			t.Fatalf("chunk %d write: %s", i, err)
+		}
+		if _, err := io.ReadFull(conn, egressChunk); err != nil {
+			t.Fatalf("chunk %d read: %s", i, err)
+		}
+	}
+
+	expected := &ExtenderStats{
+		IngressByteCount: chunkCount * ingressChunkByteCount,
+		IngressReadCount: chunkCount,
+		EgressByteCount:  chunkCount * egressChunkByteCount,
+		EgressReadCount:  chunkCount,
+	}
+	connect.AssertEqual(t, fixture.device.GetExtenderStats(), expected)
+	serverStats := fixture.extender().server.Stats()
+	connect.AssertEqual(t, serverStats.IngressByteCount, expected.IngressByteCount)
+	connect.AssertEqual(t, serverStats.IngressReadCount, expected.IngressReadCount)
+	connect.AssertEqual(t, serverStats.EgressByteCount, expected.EgressByteCount)
+	connect.AssertEqual(t, serverStats.EgressReadCount, expected.EgressReadCount)
+	conn.Close()
+
+	// the role stops synchronously, so there is no series at once
+	fixture.device.SetProvideExtender(false)
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v with the role off, expected nil", stats)
+	}
+	// and a restarted role is a fresh server, counting from zero
+	fixture.device.SetProvideExtender(true)
+	stats = fixture.device.GetExtenderStats()
+	if stats == nil || *stats != (ExtenderStats{}) {
+		t.Fatalf("stats = %+v after a restart, expected a fresh zero", stats)
 	}
 }
 

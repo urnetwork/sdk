@@ -126,6 +126,22 @@ type ExtenderProvideStatusChangeListener interface {
 	ExtenderProvideStatusChanged(status *ExtenderProvideStatus)
 }
 
+// ExtenderStats is the traffic the provider extender role has relayed, summed
+// over every carrier and cumulative for the life of the role's server (O1,
+// O2), the extender counterpart of a device's PacketStats. Operator-centric:
+// ingress is what moved from a client toward the operator (into the network)
+// and egress what moved back toward the client. A read is one chunk the relay
+// moved on one side; a byte stream has no packet boundary in userspace, so the
+// extender chart says reads where the provider chart says packets. The role
+// that stops and starts again reports a fresh server's counters from zero.
+// Every field is a gomobile-bindable value.
+type ExtenderStats struct {
+	IngressByteCount ByteCount
+	IngressReadCount int64
+	EgressByteCount  ByteCount
+	EgressReadCount  int64
+}
+
 // The part of the status that changes on an event rather than continuously.
 // Comparable, so it rides a MonitorValue and a watcher is woken only on an
 // actual change; the connection count is deliberately outside it, since it
@@ -434,6 +450,23 @@ func (self *DeviceLocal) GetExtenderProvideStatus() *ExtenderProvideStatus {
 		status = provider.extenderProvideStatus()
 	}
 	return status.withState(self.GetProvideExtender(), self.extenderProvideProviding())
+}
+
+// The relayed traffic of the provider extender role (O2), nil whenever the
+// role is not running: this build carries none, the setting is off, the device
+// is not providing (or is hosted, or the embedder's switch is off), the role
+// could not start in this space (the status carries why), or the device is
+// closed. Nil is what tells an app there is no series to show; the role's
+// status reports the same fact as Enabled.
+func (self *DeviceLocal) GetExtenderStats() *ExtenderStats {
+	self.stateLock.Lock()
+	provider := self.provider
+	closed := self.closed
+	self.stateLock.Unlock()
+	if closed || provider == nil {
+		return nil
+	}
+	return provider.extenderStats()
 }
 
 // Whether this device would run the role if the setting allowed it (G1, G2):

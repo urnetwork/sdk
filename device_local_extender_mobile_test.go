@@ -42,3 +42,14 @@ func TestExtenderProvideMobileStubIsUnsupported(t *testing.T) {
 		t.Fatalf("the stub's status is %+v", status)
 	}
 }
+
+// No role, so nothing is relayed and there is no series to show (O2).
+func TestExtenderProvideMobileStubReportsNoStats(t *testing.T) {
+	extender, err := newDeviceLocalExtender(context.Background(), &deviceLocalExtenderSettings{})
+	if extender != nil || err == nil {
+		t.Fatal("a build with no extender role built one")
+	}
+	if stats := extender.stats(); stats != nil {
+		t.Fatalf("the stub reported stats %+v", stats)
+	}
+}

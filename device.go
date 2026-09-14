@@ -710,6 +710,16 @@ type Device interface {
 	// as the provide mode is
 	SetProvideExtender(provideExtender bool)
 
+	// GetExtenderStats is the traffic the provider extender role of the
+	// process the DEVICE runs in has relayed (EXTENDER.md O2): bytes and
+	// reads in each direction, operator-centric, cumulative for the life of
+	// the role's server. Nil whenever the role is not running -- unsupported,
+	// off, not providing, unable to start -- which is what tells an app there
+	// is no series to show. A remote device reads it through the rpc with no
+	// cache: nil when the device process is out of contact or too old to
+	// answer.
+	GetExtenderStats() *ExtenderStats
+
 	// packet stats
 
 	GetPacketStats() *PacketStats

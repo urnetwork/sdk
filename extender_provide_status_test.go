@@ -722,6 +722,52 @@ func TestExtenderLocalStateFiles(t *testing.T) {
 	}
 }
 
+// The relayed traffic is nil whenever the role is not running, which is what
+// tells an app there is no series to show (O2): not providing, providing with
+// no role (the suite keeps the role disabled), the setting off, a closed
+// device, and a hosted device that is asked to provide.
+func TestDeviceLocalExtenderStatsNilWhileTheRoleIsNotRunning(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, "", "", "", "", NewId(), testExtenderStatusDeviceSettings(), connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deviceLocal.Close()
+
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v while not providing, expected nil", stats)
+	}
+	deviceLocal.SetProvideMode(ProvideModePublic)
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v while providing with no role, expected nil", stats)
+	}
+	deviceLocal.SetProvideExtender(false)
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v with the setting off, expected nil", stats)
+	}
+	deviceLocal.Close()
+	if stats := deviceLocal.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v after close, expected nil", stats)
+	}
+
+	_, hostedSpace := testExtenderStatusSpace(t)
+	hostedSettings := testExtenderStatusDeviceSettings()
+	hostedSettings.HostedIncompatible = true
+	hostedDevice, err := newDeviceLocalWithOverrides(
+		hostedSpace, "", "", "", "", NewId(), hostedSettings, connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hostedDevice.Close()
+	hostedDevice.SetProvideMode(ProvideModePublic)
+	if stats := hostedDevice.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v on a hosted device, expected nil", stats)
+	}
+}
+
 // The provider extender status is coalesced to at most one callback per epoch,
 // carrying the complete state, so a burst of bind and activation changes is one
 // ui update rather than a dozen (F3).

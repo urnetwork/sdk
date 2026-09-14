@@ -1372,6 +1372,30 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	}
 }
 
+// GetExtenderStats reads through to the local device, where the role runs
+// (O2), with the semantics of GetProviderPacketStats: no cache, nil when there
+// is no service or the call fails. Unlike that read, a device process from
+// before this method keeps its rpc session and answers nil -- the row and the
+// section are hidden for such a device anyway (N1), and losing rpc control of
+// the tunnel over a chart would be the wrong trade.
+func (self *DeviceRemote) GetExtenderStats() *ExtenderStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return nil
+	}
+	stats, err := rpcCallNoArgAllowMissingMethod[*DeviceRemoteExtenderStats](
+		self.service,
+		"DeviceLocalRpc.GetExtenderStats",
+		self.closeService,
+	)
+	if err != nil || stats == nil {
+		return nil
+	}
+	return stats.ExtenderStats
+}
+
 func (self *DeviceRemote) GetProviderIdentities() *ProviderIdentityList {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -6598,6 +6622,17 @@ type DeviceRemoteExtenderStatus struct {
 	ExtenderStatus *ExtenderStatusRpc
 }
 
+// The reply of DeviceLocalRpc.GetExtenderStats. A wrapper rather than the bare
+// pointer because gob cannot encode a nil reply, and nil is the answer of a
+// device with no running role (O2); the same reason DeviceRemotePacketStats
+// wraps its PacketStatsRpc. ExtenderStats is plain int64 fields, so it crosses
+// as it stands, guarded by TestRpcGobExtenderStatsComplete.
+//
+//gomobile:noexport
+type DeviceRemoteExtenderStats struct {
+	ExtenderStats *ExtenderStats
+}
+
 // ExtenderStatusRpc is the explicit gob mirror of ExtenderStatus (K5). The
 // bound form carries an `*ExtenderInfoList`, whose backing slice is
 // unexported, so the list is flattened here; every other field is a plain
@@ -11715,6 +11750,13 @@ func (self *DeviceLocalRpc) SetProvideExtender(provideExtender bool, _ RpcVoid) 
 		return nil
 	}
 	self.deviceLocal.SetProvideExtender(provideExtender)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetExtenderStats(_ RpcNoArg, stats **DeviceRemoteExtenderStats) error {
+	*stats = &DeviceRemoteExtenderStats{
+		ExtenderStats: self.deviceLocal.GetExtenderStats(),
+	}
 	return nil
 }
 
