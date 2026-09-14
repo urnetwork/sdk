@@ -107,6 +107,55 @@ func testExtenderProvideDeviceProcess(
 	return service
 }
 
+// A remote built before its device process exists -- an app started while the
+// daemon is down -- and the function that brings the device up on the
+// remote's address and waits for the sync that follows.
+func testExtenderProvideRemoteBeforeLocal(
+	t *testing.T,
+	networkSpace *NetworkSpace,
+) (*DeviceRemote, func() *DeviceLocal) {
+	t.Helper()
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+	settings := defaultDeviceRpcSettings()
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace, "", instanceId, settings, clientId, testing_deviceRpcDialer(settings),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(deviceRemote.Close)
+	if deviceRemote.GetRemoteConnected() {
+		t.Fatal("the remote found a device process before one was started")
+	}
+
+	bringUp := func() *DeviceLocal {
+		t.Helper()
+		localSettings := testExtenderStatusDeviceSettings()
+		localSettings.EnableRpc = true
+		deviceLocal, err := newDeviceLocalWithOverrides(
+			networkSpace, "", "", "", "", instanceId, localSettings, clientId,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(deviceLocal.Close)
+		deviceRemote.Sync()
+		if !deviceRemote.waitForSync(30 * time.Second) {
+			t.Fatal("the device remote did not sync after the device came up")
+		}
+		return deviceLocal
+	}
+	return deviceRemote, bringUp
+}
+
+func testQueuedProvideExtender(deviceRemote *DeviceRemote) deviceRemoteValue[bool] {
+	deviceRemote.stateLock.Lock()
+	defer deviceRemote.stateLock.Unlock()
+	return deviceRemote.state.ProvideExtender
+}
+
 // The status a remote reads is the one the device process derived, State and
 // Reason included: the rule of N3 runs once, where the role is (N2).
 func TestDeviceRemoteExtenderProvideStatus(t *testing.T) {
@@ -154,6 +203,49 @@ func TestDeviceRemoteProvideExtenderSetting(t *testing.T) {
 	// and a change made on the device is what the remote reads back
 	deviceLocal.SetProvideExtender(true)
 	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), true)
+}
+
+// Turned off while the daemon is down, the setting reads back off at once and
+// reaches the device at the next sync, as the provide mode does (N2).
+func TestDeviceRemoteQueuesTheProvideExtenderSettingWhileUnreachable(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceRemote, bringUp := testExtenderProvideRemoteBeforeLocal(t, networkSpace)
+
+	deviceRemote.SetProvideExtender(false)
+	// the toggle does not snap back while the daemon is down
+	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), false)
+	if queued := testQueuedProvideExtender(deviceRemote); !queued.IsSet || queued.Value {
+		t.Fatalf("queued = %+v, expected off queued for replay", queued)
+	}
+
+	deviceLocal := bringUp()
+
+	// the remote never writes the setting itself, so an off on the device can
+	// only have come across the sync
+	connect.AssertEqual(t, deviceLocal.GetProvideExtender(), false)
+	if queued := testQueuedProvideExtender(deviceRemote); queued.IsSet {
+		t.Fatalf("queued = %+v after the sync, expected nothing left to replay", queued)
+	}
+	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), false)
+}
+
+// With the device process gone the remote reads the last value it read or
+// wrote, not the default, so a setting the user turned off stays off in the
+// ui while the daemon restarts (N2).
+func TestDeviceRemoteProvideExtenderLastKnownWhileUnreachable(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
+
+	deviceRemote.SetProvideExtender(false)
+	connect.AssertEqual(t, deviceLocal.GetProvideExtender(), false)
+	if queued := testQueuedProvideExtender(deviceRemote); queued.IsSet {
+		t.Fatalf("queued = %+v, expected a write the device took to leave nothing queued", queued)
+	}
+
+	deviceLocal.Close()
+
+	// the default is on, so reading off here is the last known value
+	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), false)
 }
 
 // A change on the device reaches the remote's listener, through the local
@@ -253,7 +345,12 @@ func TestDeviceRemoteExtenderProvideWithoutTheMethods(t *testing.T) {
 	connect.AssertEqual(t, status.State, ExtenderProvideStateOff)
 	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), true)
 	// the setter is a write to a method that is not there, and is dropped
+	// rather than queued, or it would replay on every reconnect
 	deviceRemote.SetProvideExtender(false)
+	if queued := testQueuedProvideExtender(deviceRemote); queued.IsSet {
+		t.Fatalf("queued = %+v, expected a write the device process cannot take to be dropped", queued)
+	}
+	connect.AssertEqual(t, deviceRemote.GetProvideExtender(), true)
 	// the listener add goes the same way
 	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
 		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {}),
@@ -308,6 +405,9 @@ func TestProvideExtenderHostedGuard(t *testing.T) {
 
 	deviceRemote.SetProvideExtender(false)
 	connect.AssertEqual(t, deviceProcess.sets(), 0)
+	if queued := testQueuedProvideExtender(deviceRemote); queued.IsSet {
+		t.Fatalf("queued = %+v, expected the hosted guard to queue nothing", queued)
+	}
 
 	// the rpc layer blocks it independently, for a local object that was not
 	// constructed with the DeviceLocal guard

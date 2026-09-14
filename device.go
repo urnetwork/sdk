@@ -702,9 +702,12 @@ type Device interface {
 
 	// GetProvideExtender is the user's provider extender setting, stored per
 	// network space and independent of the provide mode (N4). Default on; a
-	// device that cannot be reached reads the same default.
+	// device that cannot be reached reads the value queued for it, else the
+	// last value read, else the default.
 	GetProvideExtender() bool
 
+	// queued while the device cannot be reached and replayed at the next sync,
+	// as the provide mode is
 	SetProvideExtender(provideExtender bool)
 
 	// packet stats

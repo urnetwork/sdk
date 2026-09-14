@@ -1304,32 +1304,39 @@ func (self *DeviceRemote) GetExtenderProvideStatus() *ExtenderProvideStatus {
 }
 
 // GetProvideExtender reads the setting through to the local device, which owns
-// the space it is stored in (N2, F3). A device that cannot be reached reads
-// the local default, which is on.
+// the space it is stored in (N2, F3). A device that cannot be reached, or one
+// too old to answer, reads the value queued for it, else the last value read,
+// else the local default, which is on -- exactly as the provide mode reads.
 func (self *DeviceRemote) GetProvideExtender() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 
-	if self.service == nil {
-		return true
+	if self.service != nil {
+		// as the status above: a device process that does not have the method
+		// yet keeps its session. The row is hidden against it, since its status
+		// reports the role unsupported.
+		provideExtender, err := rpcCallNoArgAllowMissingMethod[bool](
+			self.service,
+			"DeviceLocalRpc.GetProvideExtender",
+			self.closeService,
+		)
+		if err == nil {
+			self.lastKnownState.ProvideExtender.Set(provideExtender)
+			return provideExtender
+		}
 	}
-	// as the status above: a device process that does not have the method yet
-	// keeps its session, and the caller reads the default. The row is hidden
-	// in that case anyway, since the status reports the role unsupported.
-	provideExtender, err := rpcCallNoArgAllowMissingMethod[bool](
-		self.service,
-		"DeviceLocalRpc.GetProvideExtender",
-		self.closeService,
-	)
-	if err != nil {
-		return true
-	}
-	return provideExtender
+	return self.state.ProvideExtender.Get(self.lastKnownState.ProvideExtender.Get(true))
 }
 
 // SetProvideExtender writes the setting through to the local device, which
-// persists it and applies it at once (N4). A hosted device never runs the role
-// (G1), so the setter is guarded there exactly as SetProvideMode is.
+// persists it and applies it at once (N4). While the device process cannot be
+// reached the value is queued and replayed at the next sync, as the provide
+// mode is, so the toggle does not snap back while a daemon restarts. A device
+// process too old to have the setter drops the write instead of queueing it:
+// its status reports the role unsupported, the row is hidden, and a queued
+// value would replay on every reconnect for as long as that process runs. A
+// hosted device never runs the role (G1), so the setter is guarded there as
+// SetProvideMode is.
 func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	if self.hostedIncompatibleGuarded("SetProvideExtender") {
 		return
@@ -1338,14 +1345,25 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	defer self.stateLock.Unlock()
 
 	if self.service == nil {
+		self.state.ProvideExtender.Set(provideExtender)
 		return
 	}
-	rpcCallVoidAllowMissingMethod(
+	err := rpcCallVoidAllowMissingMethod(
 		self.service,
 		"DeviceLocalRpc.SetProvideExtender",
 		provideExtender,
 		self.closeService,
 	)
+	switch {
+	case err == nil:
+		self.state.ProvideExtender.Unset()
+		self.lastKnownState.ProvideExtender.Set(provideExtender)
+	case rpcMissingMethodError(err):
+		self.state.ProvideExtender.Unset()
+		self.log.Infof("[dr]provide extender dropped: the device process has no setter")
+	default:
+		self.state.ProvideExtender.Set(provideExtender)
+	}
 }
 
 func (self *DeviceRemote) GetProviderIdentities() *ProviderIdentityList {
@@ -6681,19 +6699,22 @@ type DevicePerformanceProfile struct {
 type DeviceRemoteState struct {
 	// thick state + last known state
 
-	CanShowRatingDialog      deviceRemoteValue[bool]
-	CanPromptIntroFunnel     deviceRemoteValue[bool]
-	ProvideControlMode       deviceRemoteValue[ProvideControlMode]
-	CanRefer                 deviceRemoteValue[bool]
-	AllowForeground          deviceRemoteValue[bool]
-	RouteLocal               deviceRemoteValue[bool]
-	LogVerbosity             deviceRemoteValue[int]
-	ControlIpFamilyPolicy    deviceRemoteValue[int]
-	BlockerEnabled           deviceRemoteValue[bool]
-	InitProvideSecretKeys    deviceRemoteValue[bool]
-	LoadProvideSecretKeys    deviceRemoteValue[[]*ProvideSecretKey]
-	ProvideMode              deviceRemoteValue[ProvideMode]        // auto, always, never
-	ProvideNetworkMode       deviceRemoteValue[ProvideNetworkMode] // wifi or cellular + wifi
+	CanShowRatingDialog   deviceRemoteValue[bool]
+	CanPromptIntroFunnel  deviceRemoteValue[bool]
+	ProvideControlMode    deviceRemoteValue[ProvideControlMode]
+	CanRefer              deviceRemoteValue[bool]
+	AllowForeground       deviceRemoteValue[bool]
+	RouteLocal            deviceRemoteValue[bool]
+	LogVerbosity          deviceRemoteValue[int]
+	ControlIpFamilyPolicy deviceRemoteValue[int]
+	BlockerEnabled        deviceRemoteValue[bool]
+	InitProvideSecretKeys deviceRemoteValue[bool]
+	LoadProvideSecretKeys deviceRemoteValue[[]*ProvideSecretKey]
+	ProvideMode           deviceRemoteValue[ProvideMode]        // auto, always, never
+	ProvideNetworkMode    deviceRemoteValue[ProvideNetworkMode] // wifi or cellular + wifi
+	// the provider extender setting, stored independently of the provide mode
+	// (N4) and queued while the device process cannot be reached (N2)
+	ProvideExtender          deviceRemoteValue[bool]
 	ProvidePaused            deviceRemoteValue[bool]
 	Offline                  deviceRemoteValue[bool]
 	VpnInterfaceWhileOffline deviceRemoteValue[bool]
@@ -6770,6 +6791,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.LoadProvideSecretKeys.Merge(update.LoadProvideSecretKeys)
 	self.ProvideMode.Merge(update.ProvideMode)
 	self.ProvideNetworkMode.Merge(update.ProvideNetworkMode)
+	self.ProvideExtender.Merge(update.ProvideExtender)
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
 	self.VpnInterfaceWhileOffline.Merge(update.VpnInterfaceWhileOffline)
@@ -6816,6 +6838,7 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.LoadProvideSecretKeys.IsSet ||
 		self.ProvideMode.IsSet ||
 		self.ProvideNetworkMode.IsSet ||
+		self.ProvideExtender.IsSet ||
 		self.ProvidePaused.IsSet ||
 		self.Offline.IsSet ||
 		self.VpnInterfaceWhileOffline.IsSet ||
@@ -6940,7 +6963,10 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 // UNLESS the value is read-only and its absence degrades to a sensible default
 // on its own, in which case `rpcCallNoArgAllowMissingMethod` keeps the session
 // and the caller reads the default. `DeviceLocalRpc.GetExtenderStatus` is that
-// case: an empty extender panel, not a misread setting.
+// case: an empty extender panel, not a misread setting. The provider extender
+// setting is the gated exception that helper describes: a device process
+// without it also lacks the status method, reports the role unsupported, and
+// the app hides the row instead of reading the default.
 const DeviceRpcVersion = 3
 
 //gomobile:noexport
@@ -8462,6 +8488,14 @@ func rpcCallNoArgVoid(service *rpcClient, name string, cleanup func()) error {
 // value that carries settable state must NOT use this: the caller would read
 // the default as truth and never learn the peer cannot answer. That case is a
 // DeviceRpcVersion bump.
+//
+// The one exception is a settable value whose control is gated by a read-only
+// capability flag shipped in the same version: a peer without the value also
+// lacks the flag's method, so the caller learns it cannot answer from the flag
+// and never offers the control, and the default is never read as truth. A
+// queued write to such a peer is dropped, not kept for replay. The provider
+// extender setting is that case, gated by `ExtenderProvideStatus.Supported`
+// (EXTENDER.md N1, N2).
 func rpcCallNoArgAllowMissingMethod[T any](
 	service *rpcClient,
 	name string,
@@ -9342,6 +9376,7 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.LoadProvideSecretKeys.Set(self.deviceLocal.GetProvideSecretKeys().getAll())
 	state.ProvideMode.Set(self.deviceLocal.GetProvideMode())
 	state.ProvideNetworkMode.Set(self.deviceLocal.GetProvideNetworkMode())
+	state.ProvideExtender.Set(self.deviceLocal.GetProvideExtender())
 	state.ProvidePaused.Set(self.deviceLocal.GetProvidePaused())
 	state.Offline.Set(self.deviceLocal.GetOffline())
 	state.VpnInterfaceWhileOffline.Set(self.deviceLocal.GetVpnInterfaceWhileOffline())
@@ -9540,6 +9575,11 @@ func (self *DeviceLocalRpc) Sync(
 		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provide-control-mode", state.ProvideControlMode.Value)); err != nil {
 			return err
 		}
+	}
+	// the provider extender setting is its own file, independent of the
+	// provide mode and of the control mode order above (N4)
+	if state.ProvideExtender.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetProvideExtender(state.ProvideExtender.Value)
 	}
 	if state.ProvideNetworkMode.IsSet && !hostedIncompatible {
 		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provide-network-mode", state.ProvideNetworkMode.Value)); err != nil {
