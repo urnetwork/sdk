@@ -296,6 +296,7 @@ type DeviceRemote struct {
 	contractStatusChangeListeners            map[connect.Id]ContractStatusChangeListener
 	windowStatusChangeListeners              map[connect.Id]WindowStatusChangeListener
 	extenderStatusChangeListeners            map[connect.Id]ExtenderStatusChangeListener
+	extenderProvideStatusChangeListeners     map[connect.Id]ExtenderProvideStatusChangeListener
 	blockActionWindowChangeListeners         map[connect.Id]BlockActionWindowChangeListener
 	blockStatsChangeListeners                map[connect.Id]BlockStatsChangeListener
 	blockActionOverridesChangeListeners      map[connect.Id]BlockActionOverridesChangeListener
@@ -349,7 +350,11 @@ type DeviceRemote struct {
 	// same reason: the panel freezes on the last readout while the rpc is
 	// down instead of flashing an empty network (K5)
 	lastExtenderStatus *ExtenderStatusRpc
-	lastNetworkPeers   *NetworkPeers
+	// the last provider extender status the local device answered, retained
+	// for the same reason: the row holds the last readout while the rpc is
+	// down instead of flipping to unsupported and disappearing (N2)
+	lastExtenderProvideStatus *ExtenderProvideStatus
+	lastNetworkPeers          *NetworkPeers
 
 	// providerLocationsMonitor is a lazily created, internally subscribed
 	// window monitor: registration is what makes windowMonitorEvents readable,
@@ -516,6 +521,7 @@ func newDeviceRemoteWithOverrides(
 		contractStatusChangeListeners:            map[connect.Id]ContractStatusChangeListener{},
 		windowStatusChangeListeners:              map[connect.Id]WindowStatusChangeListener{},
 		extenderStatusChangeListeners:            map[connect.Id]ExtenderStatusChangeListener{},
+		extenderProvideStatusChangeListeners:     map[connect.Id]ExtenderProvideStatusChangeListener{},
 		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
 		blockStatsChangeListeners:                map[connect.Id]BlockStatsChangeListener{},
 		blockActionOverridesChangeListeners:      map[connect.Id]BlockActionOverridesChangeListener{},
@@ -698,6 +704,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		ContractStatusChangeListenerIds:           slices.Collect(maps.Keys(self.contractStatusChangeListeners)),
 		WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
 		ExtenderStatusChangeListenerIds:           slices.Collect(maps.Keys(self.extenderStatusChangeListeners)),
+		ExtenderProvideStatusChangeListenerIds:    slices.Collect(maps.Keys(self.extenderProvideStatusChangeListeners)),
 		BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
 		BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
 		BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
@@ -1257,6 +1264,88 @@ func (self *DeviceRemote) GetExtenderStatus() *ExtenderStatus {
 		return self.lastExtenderStatus.toExtenderStatus()
 	}
 	return emptyExtenderStatus()
+}
+
+// GetExtenderProvideStatus reads through to the local device, which is where
+// the role runs (N2, F3). The state and reason of N3 are already derived
+// there, so every app behind the rpc renders the rule the device decided. On a
+// missing service it degrades to the last known readout, and to the
+// unsupported status when there has never been one -- which is also what a
+// device process too old to answer the method reports, so the row is hidden
+// rather than dead (N1).
+func (self *DeviceRemote) GetExtenderProvideStatus() *ExtenderProvideStatus {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	status, success := func() (*ExtenderProvideStatus, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+		// a device process from before this method keeps its rpc session and
+		// answers nothing, which reads as unsupported below
+		status, err := rpcCallNoArgAllowMissingMethod[*ExtenderProvideStatus](
+			self.service,
+			"DeviceLocalRpc.GetExtenderProvideStatus",
+			self.closeService,
+		)
+		if err != nil || status == nil {
+			return nil, false
+		}
+		self.lastExtenderProvideStatus = cloneExtenderProvideStatus(status)
+		return status, true
+	}()
+	if success {
+		return status
+	}
+	if self.lastExtenderProvideStatus != nil {
+		return cloneExtenderProvideStatus(self.lastExtenderProvideStatus)
+	}
+	return unsupportedExtenderProvideStatus()
+}
+
+// GetProvideExtender reads the setting through to the local device, which owns
+// the space it is stored in (N2, F3). A device that cannot be reached reads
+// the local default, which is on.
+func (self *DeviceRemote) GetProvideExtender() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return true
+	}
+	// as the status above: a device process that does not have the method yet
+	// keeps its session, and the caller reads the default. The row is hidden
+	// in that case anyway, since the status reports the role unsupported.
+	provideExtender, err := rpcCallNoArgAllowMissingMethod[bool](
+		self.service,
+		"DeviceLocalRpc.GetProvideExtender",
+		self.closeService,
+	)
+	if err != nil {
+		return true
+	}
+	return provideExtender
+}
+
+// SetProvideExtender writes the setting through to the local device, which
+// persists it and applies it at once (N4). A hosted device never runs the role
+// (G1), so the setter is guarded there exactly as SetProvideMode is.
+func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
+	if self.hostedIncompatibleGuarded("SetProvideExtender") {
+		return
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return
+	}
+	rpcCallVoidAllowMissingMethod(
+		self.service,
+		"DeviceLocalRpc.SetProvideExtender",
+		provideExtender,
+		self.closeService,
+	)
 }
 
 func (self *DeviceRemote) GetProviderIdentities() *ProviderIdentityList {
@@ -2314,6 +2403,21 @@ func (self *DeviceRemote) AddExtenderStatusChangeListener(listener ExtenderStatu
 		self.extenderStatusChangeListeners,
 		"DeviceLocalRpc.AddExtenderStatusChangeListener",
 		"DeviceLocalRpc.RemoveExtenderStatusChangeListener",
+	)
+}
+
+// The provider extender status mirrors the same way, and for the same reason:
+// a device process that does not have the listener yet must leave the app with
+// the getter rather than lose a healthy session over a settings row (N2).
+func (self *DeviceRemote) AddExtenderProvideStatusChangeListener(
+	listener ExtenderProvideStatusChangeListener,
+) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.extenderProvideStatusChangeListeners,
+		"DeviceLocalRpc.AddExtenderProvideStatusChangeListener",
+		"DeviceLocalRpc.RemoveExtenderProvideStatusChangeListener",
 	)
 }
 
@@ -4073,6 +4177,31 @@ func (self *DeviceRemote) extenderStatusChanged(extenderStatusRpc *ExtenderStatu
 	for _, extenderStatusChangeListener := range listenerList {
 		connect.HandleError(func() {
 			extenderStatusChangeListener.ExtenderStatusChanged(status)
+		})
+	}
+}
+
+// As the extender status above: the pushed status refreshes the cached last
+// value, so a getter called right after a disconnect answers what the device
+// last published (N2).
+func (self *DeviceRemote) extenderProvideStatusChanged(status *ExtenderProvideStatus) {
+	listenerList := func() []ExtenderProvideStatusChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if status != nil {
+			self.lastExtenderProvideStatus = cloneExtenderProvideStatus(status)
+		}
+		return listenerList(self.extenderProvideStatusChangeListeners)
+	}()
+	// a listener is handed the published value rather than the cache, and
+	// never nil: the Device surface promises a status a caller can render
+	published := cloneExtenderProvideStatus(status)
+	if published == nil {
+		published = unsupportedExtenderProvideStatus()
+	}
+	for _, extenderProvideStatusChangeListener := range listenerList {
+		connect.HandleError(func() {
+			extenderProvideStatusChangeListener.ExtenderProvideStatusChanged(published)
 		})
 	}
 }
@@ -6854,6 +6983,7 @@ type DeviceRemoteSyncRequest struct {
 	ContractStatusChangeListenerIds            []connect.Id
 	WindowStatusChangeListenerIds              []connect.Id
 	ExtenderStatusChangeListenerIds            []connect.Id
+	ExtenderProvideStatusChangeListenerIds     []connect.Id
 	BlockActionWindowChangeListenerIds         []connect.Id
 	BlockStatsChangeListenerIds                []connect.Id
 	BlockActionOverridesChangeListenerIds      []connect.Id
@@ -8610,6 +8740,7 @@ type DeviceLocalRpc struct {
 	contractStatusChangeListenerIds            map[connect.Id]bool
 	windowStatusChangeListenerIds              map[connect.Id]bool
 	extenderStatusChangeListenerIds            map[connect.Id]bool
+	extenderProvideStatusChangeListenerIds     map[connect.Id]bool
 	blockActionWindowChangeListenerIds         map[connect.Id]bool
 	blockStatsChangeListenerIds                map[connect.Id]bool
 	blockActionOverridesChangeListenerIds      map[connect.Id]bool
@@ -8660,6 +8791,7 @@ type DeviceLocalRpc struct {
 	contractStatusChangeListenerSub            Sub
 	windowStatusChangeListenerSub              Sub
 	extenderStatusChangeListenerSub            Sub
+	extenderProvideStatusChangeListenerSub     Sub
 	blockActionWindowChangeListenerSub         Sub
 	blockStatsChangeListenerSub                Sub
 	blockActionOverridesChangeListenerSub      Sub
@@ -8740,6 +8872,7 @@ func newDeviceLocalRpc(
 		contractStatusChangeListenerIds:            map[connect.Id]bool{},
 		windowStatusChangeListenerIds:              map[connect.Id]bool{},
 		extenderStatusChangeListenerIds:            map[connect.Id]bool{},
+		extenderProvideStatusChangeListenerIds:     map[connect.Id]bool{},
 		blockActionWindowChangeListenerIds:         map[connect.Id]bool{},
 		blockStatsChangeListenerIds:                map[connect.Id]bool{},
 		blockActionOverridesChangeListenerIds:      map[connect.Id]bool{},
@@ -8963,6 +9096,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for extenderStatusChangeListenerId, _ := range self.extenderStatusChangeListenerIds {
 		self.removeExtenderStatusChangeListener(extenderStatusChangeListenerId)
+	}
+	for extenderProvideStatusChangeListenerId, _ := range self.extenderProvideStatusChangeListenerIds {
+		self.removeExtenderProvideStatusChangeListener(extenderProvideStatusChangeListenerId)
 	}
 	for blockActionWindowChangeListenerId, _ := range self.blockActionWindowChangeListenerIds {
 		self.removeBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
@@ -9576,6 +9712,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, extenderStatusChangeListenerId := range syncRequest.ExtenderStatusChangeListenerIds {
 		self.addExtenderStatusChangeListener(extenderStatusChangeListenerId)
 	}
+	for _, extenderProvideStatusChangeListenerId := range syncRequest.ExtenderProvideStatusChangeListenerIds {
+		self.addExtenderProvideStatusChangeListener(extenderProvideStatusChangeListenerId)
+	}
 	for _, blockActionWindowChangeListenerId := range syncRequest.BlockActionWindowChangeListenerIds {
 		self.addBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
 	}
@@ -9740,6 +9879,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.extenderStatusChangeListenerSub != nil {
 		self.extenderStatusChanged(self.deviceLocal.GetExtenderStatus())
+	}
+	if self.extenderProvideStatusChangeListenerSub != nil {
+		self.extenderProvideStatusChanged(self.deviceLocal.GetExtenderProvideStatus())
 	}
 	if self.blockActionWindowChangeListenerSub != nil {
 		self.blockActionWindowChanged(self.deviceLocal.GetBlockActions())
@@ -9985,6 +10127,37 @@ func (self *DeviceLocalRpc) RemoveExtenderStatusChangeListener(listenerId connec
 	return nil
 }
 
+func (self *DeviceLocalRpc) AddExtenderProvideStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addExtenderProvideStatusChangeListener(listenerId)
+	return nil
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) addExtenderProvideStatusChangeListener(listenerId connect.Id) {
+	self.extenderProvideStatusChangeListenerIds[listenerId] = true
+	if self.extenderProvideStatusChangeListenerSub == nil {
+		self.extenderProvideStatusChangeListenerSub = self.deviceLocal.AddExtenderProvideStatusChangeListener(self)
+	}
+}
+
+// must be called with stateLock
+func (self *DeviceLocalRpc) removeExtenderProvideStatusChangeListener(listenerId connect.Id) {
+	delete(self.extenderProvideStatusChangeListenerIds, listenerId)
+	if len(self.extenderProvideStatusChangeListenerIds) == 0 && self.extenderProvideStatusChangeListenerSub != nil {
+		self.extenderProvideStatusChangeListenerSub.Close()
+		self.extenderProvideStatusChangeListenerSub = nil
+	}
+}
+
+func (self *DeviceLocalRpc) RemoveExtenderProvideStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeExtenderProvideStatusChangeListener(listenerId)
+	return nil
+}
+
 // TunnelChangeListener
 func (self *DeviceLocalRpc) TunnelChanged(tunnelStarted bool) {
 	self.stateLock.Lock()
@@ -10040,6 +10213,23 @@ func (self *DeviceLocalRpc) extenderStatusChanged(extenderStatus *ExtenderStatus
 		ExtenderStatus: newExtenderStatusRpc(extenderStatus),
 	}
 	self.reverseNotify("DeviceRemoteRpc.ExtenderStatusChanged", status)
+}
+
+// ExtenderProvideStatusChangeListener
+func (self *DeviceLocalRpc) ExtenderProvideStatusChanged(status *ExtenderProvideStatus) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.extenderProvideStatusChanged(status)
+}
+
+// enqueues an async, coalescing reverse notification (see sendLoop). The
+// status is every field a plain value, so it crosses as it stands rather than
+// through a hand-written mirror (N2).
+func (self *DeviceLocalRpc) extenderProvideStatusChanged(status *ExtenderProvideStatus) {
+	if status == nil {
+		status = unsupportedExtenderProvideStatus()
+	}
+	self.reverseNotify("DeviceRemoteRpc.ExtenderProvideStatusChanged", status)
 }
 
 // privacy block
@@ -11464,6 +11654,24 @@ func (self *DeviceLocalRpc) GetExtenderStatus(_ RpcNoArg, status **DeviceRemoteE
 	return nil
 }
 
+func (self *DeviceLocalRpc) GetExtenderProvideStatus(_ RpcNoArg, status **ExtenderProvideStatus) error {
+	*status = self.deviceLocal.GetExtenderProvideStatus()
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetProvideExtender(_ RpcNoArg, provideExtender *bool) error {
+	*provideExtender = self.deviceLocal.GetProvideExtender()
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetProvideExtender(provideExtender bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetProvideExtender") {
+		return nil
+	}
+	self.deviceLocal.SetProvideExtender(provideExtender)
+	return nil
+}
+
 func (self *DeviceLocalRpc) GetProviderIdentities(_ RpcNoArg, deviceProviderIdentities **DeviceProviderIdentities) error {
 	*deviceProviderIdentities = newDeviceProviderIdentities(self.deviceLocal.GetProviderIdentities())
 	return nil
@@ -12859,6 +13067,14 @@ func (self *DeviceRemoteRpc) ExtenderStatusChanged(status *DeviceRemoteExtenderS
 	self.deviceRemote.log.Infof("[drrpc]ExtenderStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.extenderStatusChanged(status.ExtenderStatus)
+	})
+	return nil
+}
+
+func (self *DeviceRemoteRpc) ExtenderProvideStatusChanged(status *ExtenderProvideStatus, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ExtenderProvideStatusChanged")
+	self.dispatch(func() {
+		self.deviceRemote.extenderProvideStatusChanged(status)
 	})
 	return nil
 }
