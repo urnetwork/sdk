@@ -32,10 +32,40 @@ const extenderProvideStatusEpoch = 1 * time.Second
 // provider extender tests turn it back on for their own device.
 var extenderProvideRoleEnabled = true
 
+// The states an app renders, derived once here so every app shows one rule
+// (N3). Exported as plain strings, which is what gomobile, the cgo abi and the
+// js types all carry; the apps map them to their own color and localized text.
+const (
+	// The setting is off.
+	ExtenderProvideStateOff = "off"
+	// The setting is on but the device is not providing.
+	ExtenderProvideStateNotProviding = "not_providing"
+	// The role runs and there is no outcome yet: the carriers are binding, or
+	// the first activation is in flight.
+	ExtenderProvideStateSettingUp = "setting_up"
+	// At least one family is activated.
+	ExtenderProvideStateActive = "active"
+	// Revoked, no carrier bound, or the last activation failed or was refused
+	// with no family active. `Reason` carries the raw text.
+	ExtenderProvideStateError = "error"
+)
+
 // The provider extender state as the apps render it (F3). Every field is a
 // gomobile-bindable value: the times are unix milliseconds, and the per-carrier
 // bind failures are one string rather than a bound map.
 type ExtenderProvideStatus struct {
+	// True in a process built with the role (G1): a desktop or connectctl
+	// binary. An ios, android or js build answers false, and so does a device
+	// process too old to report the status at all, so an app hides the row
+	// rather than drawing a dead toggle (N1, N2).
+	Supported bool
+	// The state an app renders, one of the ExtenderProvideState values above,
+	// derived once from the fields below plus the setting and whether the
+	// device is providing (N3).
+	State string
+	// The raw error text behind the state, empty when it has none. The app
+	// prefixes the localized case label (N3, N5).
+	Reason string
 	// True while the role is running: this build carries it, the setting is on
 	// and the device is providing.
 	Enabled bool
@@ -108,9 +138,91 @@ func (self extenderProvideState) status(connectionCount int) *ExtenderProvideSta
 }
 
 // The status of a device that runs no role: this build has none, the setting
-// is off, or the device is not providing.
+// is off, or the device is not providing. The state of N3 is stamped on by the
+// device that reports it, which is the only thing that knows the setting.
 func disabledExtenderProvideStatus() *ExtenderProvideStatus {
 	return &ExtenderProvideStatus{}
+}
+
+// The status of a device that cannot describe the role at all (N2): a build
+// that carries none, a device process out of contact, or one too old to answer
+// the read. Off rather than nothing, so an app that draws the row anyway
+// renders a state; N1 hides it while Supported is false.
+func unsupportedExtenderProvideStatus() *ExtenderProvideStatus {
+	return &ExtenderProvideStatus{State: ExtenderProvideStateOff}
+}
+
+// A copy of one status. Every field is a plain value, so the cached last value
+// of the rpc reader is handed out as a copy rather than as the cache itself.
+func cloneExtenderProvideStatus(status *ExtenderProvideStatus) *ExtenderProvideStatus {
+	if status == nil {
+		return nil
+	}
+	copied := *status
+	return &copied
+}
+
+// The one rule every app renders (N3), derived from the role's own fields plus
+// the two halves of the condition that starts it: the user's setting, and
+// whether the device would run the role if the setting allowed it. Tested in
+// this order, the first match winning:
+//
+//   - off: the setting is off (or this build carries no role at all).
+//   - not_providing: the setting is on and the device is not providing --
+//     provide mode none, the embedder's switch off, or a hosted device.
+//   - error, revoked: the operator revoked this extender's key. The case is
+//     the whole message, so there is no reason text.
+//   - active: at least one family is activated, with the other family's last
+//     error beside it when that family failed, else nothing.
+//   - error, listen: no carrier bound, and the bind failures say why.
+//   - error, activation: the last activation failed or was refused and no
+//     family is active. This stands through the activator's backoff, since an
+//     outcome exists; yellow is only ever the time before the first outcome.
+//   - setting_up: anything else, which is the role running with no outcome
+//     yet -- the carriers binding, or the first activation in flight.
+//
+// Pure: everything it reads is an argument, so the table test of N6 is the
+// whole rule.
+func extenderProvideStateAndReason(
+	status *ExtenderProvideStatus,
+	provideExtender bool,
+	providing bool,
+) (string, string) {
+	switch {
+	case status == nil || !status.Supported:
+		// this process carries no role, so there is nothing to be setting up
+		return ExtenderProvideStateOff, ""
+	case !provideExtender:
+		return ExtenderProvideStateOff, ""
+	case !providing:
+		return ExtenderProvideStateNotProviding, ""
+	case status.RevokedTime != 0:
+		return ExtenderProvideStateError, ""
+	case status.ActivatedV4 || status.ActivatedV6:
+		// a family that succeeds clears its own error, so an error that still
+		// stands here belongs to the family that did not activate (F3)
+		return ExtenderProvideStateActive, status.LastActivationError
+	case !status.Listening && status.ListenError != "":
+		// a role whose carriers are still binding is not listening either, but
+		// has no failure yet, and falls through to setting_up
+		return ExtenderProvideStateError, status.ListenError
+	case status.LastActivationTime != 0 && status.LastActivationError != "":
+		return ExtenderProvideStateError, status.LastActivationError
+	default:
+		return ExtenderProvideStateSettingUp, ""
+	}
+}
+
+// The status as an app reads it: this build's Supported, and the state of N3
+// derived from the setting and the providing state. Applied by whatever
+// reports the status, since the role itself knows neither.
+func (self *ExtenderProvideStatus) withState(
+	provideExtender bool,
+	providing bool,
+) *ExtenderProvideStatus {
+	self.Supported = extenderProvideSupported
+	self.State, self.Reason = extenderProvideStateAndReason(self, provideExtender, providing)
+	return self
 }
 
 // What one extender role is built from (G2, G3). The provider fills it from
@@ -259,16 +371,34 @@ func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 }
 
 // The provider extender status (F3). A device that runs no role reports a
-// disabled status rather than nil, so a caller never has to branch.
+// disabled status rather than nil, so a caller never has to branch. The state
+// and reason of N3 are derived here, so every consumer -- this device, the rpc
+// and every app behind it -- renders the same rule (N2).
 func (self *DeviceLocal) GetExtenderProvideStatus() *ExtenderProvideStatus {
 	self.stateLock.Lock()
 	provider := self.provider
 	closed := self.closed
 	self.stateLock.Unlock()
-	if closed || provider == nil {
-		return disabledExtenderProvideStatus()
+	status := disabledExtenderProvideStatus()
+	if !closed && provider != nil {
+		status = provider.extenderProvideStatus()
 	}
-	return provider.extenderProvideStatus()
+	return status.withState(self.GetProvideExtender(), self.extenderProvideProviding())
+}
+
+// Whether this device would run the role if the setting allowed it (G1, G2):
+// it is providing, the embedder's switch is on, and it is not hosted -- a
+// hosted device's space is shared across unrelated customers and it cannot
+// provide at all. The setting is the other half of the same condition, and
+// N3's first two states are exactly these two halves.
+func (self *DeviceLocal) extenderProvideProviding() bool {
+	self.stateLock.Lock()
+	closed := self.closed
+	self.stateLock.Unlock()
+	return !closed &&
+		!self.settings.HostedIncompatible &&
+		self.settings.ProvideExtenderEnabled &&
+		self.GetProvideEnabled()
 }
 
 // AddExtenderProvideStatusChangeListener subscribes to the provider extender
@@ -299,22 +429,20 @@ func (self *DeviceLocal) extenderProvideStatusChanged() {
 func (self *DeviceLocal) updateExtenderProvide() {
 	self.stateLock.Lock()
 	provider := self.provider
-	closed := self.closed
 	self.stateLock.Unlock()
-	if provider == nil {
-		return
+	if provider != nil {
+		// the embedder's switch and the user's setting must both allow it (G1,
+		// F3). A hosted device never runs it: its space is shared across
+		// unrelated customers, and an extender published for this host would
+		// name the proxy host's own address. That device cannot provide
+		// either, so this is defense in depth beside the hosted provide guard.
+		// The same two halves are what N3's off and not_providing states
+		// report.
+		provider.setExtenderEnabled(self.extenderProvideProviding() && self.GetProvideExtender())
 	}
-	// the embedder's switch and the user's setting must both allow it (G1,
-	// F3). A hosted device never runs it: its space is shared across unrelated
-	// customers, and an extender published for this host would name the proxy
-	// host's own address. That device cannot provide either, so this is
-	// defense in depth beside the hosted provide guard.
-	provider.setExtenderEnabled(
-		!closed &&
-			!self.settings.HostedIncompatible &&
-			self.settings.ProvideExtenderEnabled &&
-			self.GetProvideEnabled() &&
-			self.GetProvideExtender())
+	// the watch is woken whether or not there is a provider: the state of N3
+	// follows the setting and the provide state, so a device with no provider
+	// still moves between off and not_providing (N2, N3)
 	self.extenderProvideMonitor.NotifyAll()
 }
 

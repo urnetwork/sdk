@@ -85,6 +85,305 @@ func TestExtenderDnsPortsText(t *testing.T) {
 	}
 }
 
+// The one state rule every app renders (N3), case by case and in order. The
+// order is the rule: the same status reads as a different state depending on
+// which earlier case it matches, so every pair the design orders is pinned
+// here with a status that matches both.
+func TestExtenderProvideStateRule(t *testing.T) {
+	// the fields of a role that is up and activated on both families, which
+	// the precedence cases below start from
+	active := func() *ExtenderProvideStatus {
+		return &ExtenderProvideStatus{
+			Supported:   true,
+			Enabled:     true,
+			Listening:   true,
+			ActivatedV4: true,
+			ActivatedV6: true,
+			Ipv4:        "192.0.2.10",
+			Ipv6:        "2001:db8::a",
+		}
+	}
+
+	cases := []struct {
+		name            string
+		status          *ExtenderProvideStatus
+		provideExtender bool
+		providing       bool
+		expectState     string
+		expectReason    string
+	}{
+		// off
+		{
+			name:            "the setting is off",
+			status:          &ExtenderProvideStatus{Supported: true},
+			provideExtender: false,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
+		{
+			name:            "the setting is off while the role still runs",
+			status:          active(),
+			provideExtender: false,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
+		{
+			name:            "a build with no role, whatever the setting says",
+			status:          &ExtenderProvideStatus{},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
+		// not_providing
+		{
+			name:            "the setting is on and the device is not providing",
+			status:          &ExtenderProvideStatus{Supported: true},
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		{
+			name: "not providing beats everything the role last reported",
+			status: func() *ExtenderProvideStatus {
+				status := active()
+				status.RevokedTime = 1
+				status.ListenError = "tcp: bind refused"
+				return status
+			}(),
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		// error, revoked
+		{
+			name: "the operator revoked the key",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				Listening:   true,
+				RevokedTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			// the case is the whole message; the app names it (N5)
+			expectReason: "",
+		},
+		{
+			name: "revoked beats an activated family",
+			status: func() *ExtenderProvideStatus {
+				status := active()
+				status.RevokedTime = 1757000000000
+				return status
+			}(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+		},
+		// active
+		{
+			name:            "both families",
+			status:          active(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+		},
+		{
+			name: "one family",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				Listening:   true,
+				ActivatedV4: true,
+				Ipv4:        "192.0.2.10",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+		},
+		{
+			name: "one family, with the other family's failure beside it",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				Listening:           true,
+				ActivatedV6:         true,
+				Ipv6:                "2001:db8::a",
+				LastActivationTime:  1757000000000,
+				LastActivationError: "the operator refused the activation",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+			expectReason:    "the operator refused the activation",
+		},
+		{
+			name: "an activated family beats a carrier that did not bind",
+			status: func() *ExtenderProvideStatus {
+				status := active()
+				status.Listening = false
+				status.ListenError = "tcp: bind refused"
+				return status
+			}(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateActive,
+		},
+		// error, listen
+		{
+			name: "no carrier bound",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				ListenError: "tcp: bind refused; quic: bind refused; dns: bind refused",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectReason:    "tcp: bind refused; quic: bind refused; dns: bind refused",
+		},
+		{
+			name: "the bind failure is reported before an activation that never ran",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				ListenError:         "tcp: bind refused",
+				LastActivationTime:  1757000000000,
+				LastActivationError: "the operator refused the activation",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectReason:    "tcp: bind refused",
+		},
+		// error, activation
+		{
+			name: "the last activation failed",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				Listening:           true,
+				LastActivationTime:  1757000000000,
+				LastActivationError: "post activate: connection refused",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectReason:    "post activate: connection refused",
+		},
+		{
+			name: "still an error through the backoff after a refusal",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				Listening:           true,
+				LastActivationTime:  1757000000000,
+				LastActivationError: "the operator refused the activation",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectReason:    "the operator refused the activation",
+		},
+		// setting_up
+		{
+			name: "the carriers are still binding",
+			status: &ExtenderProvideStatus{
+				Supported: true,
+				Enabled:   true,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		{
+			name: "bound, and the first activation is in flight",
+			status: &ExtenderProvideStatus{
+				Supported: true,
+				Enabled:   true,
+				Listening: true,
+				DnsPorts:  "53,4053",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		{
+			name: "a carrier that failed while another bound is not a listen error",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				Listening:   true,
+				ListenError: "dns: bind refused",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+		{
+			name: "an attempt that recorded no error is not an error",
+			status: &ExtenderProvideStatus{
+				Supported:          true,
+				Enabled:            true,
+				Listening:          true,
+				LastActivationTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
+	}
+	for _, c := range cases {
+		state, reason := extenderProvideStateAndReason(c.status, c.provideExtender, c.providing)
+		if state != c.expectState {
+			t.Errorf("%s: state = %q, expected %q", c.name, state, c.expectState)
+		}
+		if reason != c.expectReason {
+			t.Errorf("%s: reason = %q, expected %q", c.name, reason, c.expectReason)
+		}
+	}
+
+	// the rule is pure: reading it does not rewrite the status it read
+	status := active()
+	before := *status
+	extenderProvideStateAndReason(status, true, true)
+	if *status != before {
+		t.Fatalf("the state rule mutated the status it read: %+v", status)
+	}
+	// and a status a caller never filled in is off rather than a panic
+	if state, reason := extenderProvideStateAndReason(nil, true, true); state !=
+		ExtenderProvideStateOff || reason != "" {
+		t.Fatalf("no status = %q, %q, expected off", state, reason)
+	}
+}
+
+// What a build that carries no role answers (G1, N2): an ios, android or js
+// device runs the stub, whose disabled status carries `Supported` false
+// through the same derivation, and that is exactly the unsupported status the
+// rpc reader falls back to. The two must not drift, or an app hides the row on
+// one platform and draws a dead one on another.
+func TestExtenderProvideStubAnswersTheUnsupportedStatus(t *testing.T) {
+	stub := disabledExtenderProvideStatus()
+	// the stub's build sets this false; here it is set explicitly, so the
+	// derivation under test is the one that runs on a phone
+	stub.Supported = false
+	stub.State, stub.Reason = extenderProvideStateAndReason(stub, true, true)
+
+	if stub.Supported {
+		t.Fatal("the status of a build with no role reported the role supported")
+	}
+	if stub.State != ExtenderProvideStateOff {
+		t.Fatalf("state = %q, expected off", stub.State)
+	}
+	if !reflect.DeepEqual(stub, unsupportedExtenderProvideStatus()) {
+		t.Fatalf(
+			"the stub's status is %+v and the rpc reader's unsupported status is %+v",
+			stub,
+			unsupportedExtenderProvideStatus(),
+		)
+	}
+}
+
 // Every field of the published state reaches the status an app renders. A
 // field added to the state and not mapped here is dropped silently, which is
 // the same defect the rpc mirror test exists for (F3).

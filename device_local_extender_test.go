@@ -736,6 +736,14 @@ func TestDeviceLocalProviderExtenderActivatesEveryFamily(t *testing.T) {
 		t.Fatalf("status dns ports = %q, expected the bound carrier %d",
 			status.DnsPorts, fixture.dnsPort)
 	}
+	// and the state an app renders, derived from exactly these fields (N3)
+	if !status.Supported {
+		t.Fatalf("status = %+v, expected a build that carries the role", status)
+	}
+	if status.State != ExtenderProvideStateActive || status.Reason != "" {
+		t.Fatalf("state = %q, %q, expected active with nothing to say",
+			status.State, status.Reason)
+	}
 
 	// the operator's record for this extender's own key is in the directory,
 	// with the carriers the activation proved (C2, E1)
@@ -838,6 +846,11 @@ func TestDeviceLocalProviderExtenderReportsARevokedKey(t *testing.T) {
 	}
 	if !strings.Contains(status.LastActivationError, "the tcp carrier did not answer") {
 		t.Fatalf("last activation error = %q, expected the operator's refusal", status.LastActivationError)
+	}
+	// a revocation is the state whatever else the role reports, and the case
+	// is the whole message (N3)
+	if status.State != ExtenderProvideStateError || status.Reason != "" {
+		t.Fatalf("state = %q, %q, expected the revoked error", status.State, status.Reason)
 	}
 
 	// the operator accepts again on the next attempt, which the backoff holds
@@ -1026,6 +1039,10 @@ func TestDeviceLocalProviderExtenderSkipsAFailedCarrier(t *testing.T) {
 	}
 	if !strings.HasPrefix(status.ListenError, connect.ExtenderCarrierTcp+": ") {
 		t.Fatalf("listen error = %q, expected the tcp carrier", status.ListenError)
+	}
+	// one carrier down while another is activated is still active (N3)
+	if status.State != ExtenderProvideStateActive {
+		t.Fatalf("state = %q, expected active", status.State)
 	}
 
 	// only the tcp carrier carries the mesh, so nothing is advertised (D2)
