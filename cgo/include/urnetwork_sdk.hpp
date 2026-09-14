@@ -210,6 +210,11 @@ inline constexpr const char* ExtenderGossipStateConnecting = "connecting";
 inline constexpr const char* ExtenderGossipStateDisconnected = "disconnected";
 inline constexpr const char* ExtenderImportErrorForeignHost = "import_extenders_foreign_host";
 inline constexpr const char* ExtenderImportErrorInvalid = "import_extenders_invalid";
+inline constexpr const char* ExtenderProvideErrorActivationFailed = "activation_failed";
+inline constexpr const char* ExtenderProvideErrorActivationRefused = "activation_refused";
+inline constexpr const char* ExtenderProvideErrorListen = "listen";
+inline constexpr const char* ExtenderProvideErrorRevoked = "revoked";
+inline constexpr const char* ExtenderProvideErrorStart = "start";
 inline constexpr const char* ExtenderProvideStateActive = "active";
 inline constexpr const char* ExtenderProvideStateError = "error";
 inline constexpr const char* ExtenderProvideStateNotProviding = "not_providing";
@@ -1562,8 +1567,10 @@ struct ExtenderInfo {
 struct ExtenderProvideStatus {
 	bool Supported{};
 	std::string State{};
+	std::string ErrorCase{};
 	std::string Reason{};
 	bool Enabled{};
+	std::string StartError{};
 	bool Listening{};
 	std::string ListenError{};
 	bool ActivatedV4{};
@@ -7210,8 +7217,10 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j = nlohmann::json::object();
 	j["Supported"] = v.Supported;
 	j["State"] = v.State;
+	j["ErrorCase"] = v.ErrorCase;
 	j["Reason"] = v.Reason;
 	j["Enabled"] = v.Enabled;
+	j["StartError"] = v.StartError;
 	j["Listening"] = v.Listening;
 	j["ListenError"] = v.ListenError;
 	j["ActivatedV4"] = v.ActivatedV4;
@@ -7234,11 +7243,17 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	if (auto it = j.find("State"); it != j.end() && !it->is_null()) {
 		it->get_to(v.State);
 	}
+	if (auto it = j.find("ErrorCase"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorCase);
+	}
 	if (auto it = j.find("Reason"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Reason);
 	}
 	if (auto it = j.find("Enabled"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Enabled);
+	}
+	if (auto it = j.find("StartError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StartError);
 	}
 	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Listening);

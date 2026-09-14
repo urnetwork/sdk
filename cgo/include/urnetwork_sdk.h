@@ -130,6 +130,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_GOSSIP_STATE_DISCONNECTED "disconnected"
 #define URNET_EXTENDER_IMPORT_ERROR_FOREIGN_HOST "import_extenders_foreign_host"
 #define URNET_EXTENDER_IMPORT_ERROR_INVALID "import_extenders_invalid"
+#define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_FAILED "activation_failed"
+#define URNET_EXTENDER_PROVIDE_ERROR_ACTIVATION_REFUSED "activation_refused"
+#define URNET_EXTENDER_PROVIDE_ERROR_LISTEN "listen"
+#define URNET_EXTENDER_PROVIDE_ERROR_REVOKED "revoked"
+#define URNET_EXTENDER_PROVIDE_ERROR_START "start"
 #define URNET_EXTENDER_PROVIDE_STATE_ACTIVE "active"
 #define URNET_EXTENDER_PROVIDE_STATE_ERROR "error"
 #define URNET_EXTENDER_PROVIDE_STATE_NOT_PROVIDING "not_providing"
@@ -2597,8 +2602,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ExtenderProvideStatus (json):
  *   Supported: boolean
  *   State: string
+ *   ErrorCase: string
  *   Reason: string
  *   Enabled: boolean
+ *   StartError: string
  *   Listening: boolean
  *   ListenError: string
  *   ActivatedV4: boolean
