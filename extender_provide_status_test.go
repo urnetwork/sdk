@@ -136,6 +136,13 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			providing:       true,
 			expectState:     ExtenderProvideStateOff,
 		},
+		{
+			name:            "the setting off beats not providing",
+			status:          &ExtenderProvideStatus{Supported: true},
+			provideExtender: false,
+			providing:       false,
+			expectState:     ExtenderProvideStateOff,
+		},
 		// not_providing
 		{
 			name:            "the setting is on and the device is not providing",
@@ -227,6 +234,34 @@ func TestExtenderProvideStateRule(t *testing.T) {
 				status.RevokedTime = 1757000000000
 				return status
 			}(),
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
+		},
+		{
+			name: "revoked beats a carrier bind failure",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				Enabled:     true,
+				ListenError: "tcp: bind refused; quic: bind refused; dns: bind refused",
+				RevokedTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorRevoked,
+		},
+		{
+			name: "revoked beats a standing activation error",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				Enabled:             true,
+				Listening:           true,
+				LastActivationTime:  1757000000000,
+				LastActivationError: "post activate: connection refused",
+				RevokedTime:         1757000001000,
+			},
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,

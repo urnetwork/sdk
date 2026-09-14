@@ -283,6 +283,115 @@ func TestDeviceRemoteExtenderProvideStatusListener(t *testing.T) {
 	}
 }
 
+// A listener added while the daemon is down is carried by the next sync, and
+// the device replays the current status to it, so a row opened before the
+// daemon came up fills in without waiting for a change (N2). Closing its sub
+// removes the device's subscription over the rpc.
+func TestDeviceRemoteExtenderProvideStatusListenerReplaysAtSync(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceRemote, bringUp := testExtenderProvideRemoteBeforeLocal(t, networkSpace)
+
+	statuses := make(chan *ExtenderProvideStatus, 8)
+	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+
+	deviceLocal := bringUp()
+
+	select {
+	case status := <-statuses:
+		// nothing changes on the device, so the level it replayed is what it
+		// reports now
+		connect.AssertEqual(t, status, deviceLocal.GetExtenderProvideStatus())
+	case <-time.After(60 * time.Second):
+		t.Fatal("the device never replayed the status to a listener added before it came up")
+	}
+	// the listener id crossed in the sync: the device holds one subscription
+	// for the rpc
+	connect.AssertEqual(t, len(deviceLocal.extenderProvideStatusChangeListeners.Get()), 1)
+
+	sub.Close()
+	connect.AssertEqual(t, len(deviceLocal.extenderProvideStatusChangeListeners.Get()), 0)
+}
+
+// The last status the remote read, not only the last one pushed, stands while
+// the device process is gone (N2, K5).
+func TestDeviceRemoteExtenderProvideStatusReadCacheSurvivesServiceLoss(t *testing.T) {
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemote(t, networkSpace)
+
+	// no listener is registered, so nothing is pushed: the read is the only
+	// writer of the cache here
+	read := deviceRemote.GetExtenderProvideStatus()
+	if !read.Supported || read.State == "" {
+		t.Fatalf("status = %+v, expected the device's derived status", read)
+	}
+
+	deviceLocal.Close()
+
+	connect.AssertEqual(t, deviceRemote.GetExtenderProvideStatus(), read)
+}
+
+// A pushed status carries its error case and reason intact over the real
+// transport (N2, N3). The device provides with the role on and an identity it
+// cannot activate under, so it reports the start error without running a role.
+func TestDeviceRemoteExtenderProvideStatusPushCarriesTheErrorCase(t *testing.T) {
+	testEnableExtenderProvideRole(t)
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.providerExtenderSettings = func(extenderSettings *deviceLocalExtenderSettings) {
+				extenderSettings.IdentityKeySeed = []byte("not an extender key seed")
+			}
+		},
+	)
+
+	statuses := make(chan *ExtenderProvideStatus, 16)
+	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	// providing is what asks for the role
+	deviceLocal.SetProvideMode(ProvideModePublic)
+
+	deadline := time.After(60 * time.Second)
+	for {
+		select {
+		case status := <-statuses:
+			if status.ErrorCase != ExtenderProvideErrorStart {
+				continue
+			}
+			local := deviceLocal.GetExtenderProvideStatus()
+			if status.State != ExtenderProvideStateError ||
+				local.StartError == "" ||
+				status.StartError != local.StartError ||
+				status.Reason != local.StartError {
+				t.Fatalf("pushed = %+v, local = %+v, expected the start error intact", status, local)
+			}
+			return
+		case <-deadline:
+			t.Fatalf(
+				"the start error never crossed the rpc, local = %+v",
+				deviceLocal.GetExtenderProvideStatus(),
+			)
+		}
+	}
+}
+
 // With the device process down the remote answers the last readout it saw, and
 // the unsupported status when it has never seen one (N2).
 func TestDeviceRemoteExtenderProvideStatusCachesTheLastValue(t *testing.T) {
