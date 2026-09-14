@@ -237,7 +237,9 @@ func TestExtenderRoleForPlatform(t *testing.T) {
 		{name: "js", mode: ExtenderGossipModeAuto, feedOnlyBuild: true, memoryBudget: desktopMemory, expect: ExtenderRoleFeed},
 		{name: "mobile low memory", mode: ExtenderGossipModeAuto, mobile: true, memoryBudget: lowMemory, expect: ExtenderRoleFeed},
 		{name: "mobile at the target", mode: ExtenderGossipModeAuto, mobile: true, memoryBudget: mobileSteadyMemoryTargetByteCount, expect: ExtenderRoleFeed},
-		{name: "mobile above the target", mode: ExtenderGossipModeAuto, mobile: true, memoryBudget: desktopMemory, expect: ExtenderRoleMember},
+		// feed is a device-class decision, not a byte count: a phone given a
+		// larger budget is still not an extender member
+		{name: "mobile above the target", mode: ExtenderGossipModeAuto, mobile: true, memoryBudget: desktopMemory, expect: ExtenderRoleFeed},
 		{name: "mobile no budget", mode: ExtenderGossipModeAuto, mobile: true, expect: ExtenderRoleMember},
 		{name: "forced member on js", mode: ExtenderGossipModeMember, feedOnlyBuild: true, expect: ExtenderRoleMember},
 		{name: "forced feed on desktop", mode: ExtenderGossipModeFeed, memoryBudget: desktopMemory, expect: ExtenderRoleFeed},

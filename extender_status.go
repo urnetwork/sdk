@@ -65,7 +65,7 @@ func extenderRoleForPlatform(
 	if feedOnlyBuild {
 		return ExtenderRoleFeed
 	}
-	if mobileLowMemoryPolicyEnabledForPlatform(memoryBudgetByteCount, mobile) {
+	if mobileMemoryPolicyEnabledForPlatform(memoryBudgetByteCount, mobile) {
 		return ExtenderRoleFeed
 	}
 	return ExtenderRoleMember
