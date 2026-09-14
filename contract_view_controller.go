@@ -2,9 +2,10 @@
 
 // view controller for the live throughput ui.
 // Builds time series of throughput samples from the device's cumulative
-// packet counters: one series for the client traffic and one for the
-// provider traffic relayed for remote clients. Each point splits the
-// deltas by route (remote, local, block). The series are poll-driven so
+// packet counters: one series for the client traffic, one for the provider
+// traffic relayed for remote clients, and one for the traffic the provider
+// extender role relayed (EXTENDER.md O3). Each point splits the deltas by
+// route (remote, local, block). The series are poll-driven so
 // they tick whether or not a connect client is up, and are densely
 // sampled: missed ticks and ticks with no stats are zero-held so the
 // series always has one point per sample interval. Alongside the route
@@ -63,6 +64,11 @@ type ThroughputSample struct {
 // relayed out to the internet) is presented as local egress, and remote egress
 // (the return relayed back to the client) as local ingress. see
 // `mirrorProviderThroughputPoint`
+//
+// the extender series carries its sample in the remote route only, with no
+// mirror: egress is what the role relayed back toward clients and ingress what
+// it relayed from clients toward the operator, and the packet counts are the
+// relay's reads (O1, O3)
 type ThroughputPoint struct {
 	// sample end time, unix millis
 	Time   int64
@@ -183,6 +189,12 @@ type ContractViewController struct {
 
 	clientSeries   *throughputSeries
 	providerSeries *throughputSeries
+	// the traffic the provider extender role relayed (O3). Poll-only: there is
+	// no stats push for it
+	extenderSeries *throughputSeries
+	// the extender stats of the latest sample, nil while the device reports
+	// none
+	latestExtenderStats *ExtenderStats
 
 	// the transport types the device's client / provider transport settings
 	// enable, kept current by the settings change listeners. read for the
@@ -208,6 +220,7 @@ func newContractViewController(ctx context.Context, device Device) *ContractView
 
 		clientSeries:   &throughputSeries{},
 		providerSeries: &throughputSeries{},
+		extenderSeries: &throughputSeries{},
 
 		throughputListeners: connect.NewCallbackList[ThroughputListener](),
 	}
@@ -286,6 +299,7 @@ func (self *ContractViewController) sample() {
 	// the device is an external object. call it outside the state lock.
 	packetStats := self.device.GetPacketStats()
 	providerPacketStats := self.device.GetProviderPacketStats()
+	extenderStats := self.device.GetExtenderStats()
 	sampleTime := time.Now()
 
 	appended := false
@@ -300,11 +314,16 @@ func (self *ContractViewController) sample() {
 		if self.sampleSeriesWithLock(self.providerSeries, providerPacketStats, sampleTime, true) {
 			appended = true
 		}
+		self.latestExtenderStats = extenderStats
+		if self.sampleExtenderSeriesWithLock(self.extenderSeries, extenderStats, sampleTime) {
+			appended = true
+		}
 		if appended {
-			// evaluate both so each series records its idle delivery
+			// evaluate every series so each records its idle delivery
 			clientNotify := throughputSeriesNotifyWithLock(self.clientSeries)
 			providerNotify := throughputSeriesNotifyWithLock(self.providerSeries)
-			notify = clientNotify || providerNotify
+			extenderNotify := throughputSeriesNotifyWithLock(self.extenderSeries)
+			notify = clientNotify || providerNotify || extenderNotify
 		}
 	}()
 
@@ -427,6 +446,30 @@ func (self *ContractViewController) sampleSeriesWithLock(series *throughputSerie
 
 	series.points = trimThroughputPoints(series.points, sampleTime, self.windowDuration)
 	return appended
+}
+
+// extenderStatsPacketStats maps the extender counters onto the remote route
+// of a PacketStats, so the extender series is sampled by the same code as the
+// other two (O3): egress and ingress as O1 defines them, the reads riding in
+// the packet count fields, no local or block route and no carrier breakdown.
+// Nil stays nil, which is what zero-holds the series.
+func extenderStatsPacketStats(stats *ExtenderStats) *PacketStats {
+	if stats == nil {
+		return nil
+	}
+	return &PacketStats{
+		RemoteEgressByteCount:    stats.EgressByteCount,
+		RemoteEgressPacketCount:  stats.EgressReadCount,
+		RemoteIngressByteCount:   stats.IngressByteCount,
+		RemoteIngressPacketCount: stats.IngressReadCount,
+	}
+}
+
+// must be called with `stateLock`.
+// the extender counterpart of sampleSeriesWithLock: the same holds, gaps and
+// trim over the adapted stats, never the provider mirror
+func (self *ContractViewController) sampleExtenderSeriesWithLock(series *throughputSeries, stats *ExtenderStats, sampleTime time.Time) bool {
+	return self.sampleSeriesWithLock(series, extenderStatsPacketStats(stats), sampleTime, false)
 }
 
 // newThroughputPoint computes the route deltas between two cumulative stats.
@@ -687,6 +730,18 @@ func (self *ContractViewController) GetProviderThroughputPoints() *ThroughputPoi
 	return throughputPoints
 }
 
+// returns a snapshot of the extender throughput points, oldest first: the
+// traffic the provider extender role relayed, in the Remote route only (O3).
+// Empty until the device first reports extender stats; after the role stops
+// the series zero-holds, as the provider series does when provide stops
+func (self *ContractViewController) GetExtenderThroughputPoints() *ThroughputPointList {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	throughputPoints := NewThroughputPointList()
+	throughputPoints.addAll(self.extenderSeries.points...)
+	return throughputPoints
+}
+
 // returns the client remote traffic of the window partitioned by the transport
 // type that carried it, ready to render (see `TransportShare`). The window is
 // the same one the throughput points span, evaluated as of now -- so as active
@@ -829,6 +884,16 @@ func (self *ContractViewController) GetProviderPacketStats() *PacketStats {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.providerSeries.latestPacketStats
+}
+
+// the extender stats of the latest sample (O2, O4). Nil while the device
+// reports none: the role is not running, this build has none, or a remote
+// device is out of contact. The mirror of GetProviderPacketStats for the
+// extender section's presence
+func (self *ContractViewController) GetExtenderStats() *ExtenderStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.latestExtenderStats
 }
 
 func (self *ContractViewController) SetWindowDurationSeconds(seconds int) {
