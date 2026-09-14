@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/urnetwork/connect"
 )
 
 type testing_throughputListener struct {
@@ -538,6 +540,134 @@ func TestThroughputSeriesNotifyDeliversOneIdleSnapshot(t *testing.T) {
 	}
 	if throughputSeriesNotifyWithLock(series) {
 		t.Fatal("idle series notified after its final snapshot")
+	}
+}
+
+// A device whose three polled stats a test sets directly.
+type testing_throughputPresenceDevice struct {
+	Device
+	mutex               sync.Mutex
+	packetStats         *PacketStats
+	providerPacketStats *PacketStats
+	extenderStats       *ExtenderStats
+}
+
+func (self *testing_throughputPresenceDevice) GetPacketStats() *PacketStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.packetStats
+}
+
+func (self *testing_throughputPresenceDevice) GetProviderPacketStats() *PacketStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.providerPacketStats
+}
+
+func (self *testing_throughputPresenceDevice) GetExtenderStats() *ExtenderStats {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.extenderStats
+}
+
+// A series whose stats appear or vanish inside an idle window notifies once,
+// even after another series has spent the idle notification, and idle ticks
+// after it stay silent. That notification is how an app resolves the series'
+// presence on the throughput tick (O4, O8). The controller is built without its
+// run loop and sampled directly, so every notification is one this test made:
+// consecutive samples are far less than an interval apart, so each appends one
+// point per series with a base and never backfills.
+func TestContractViewControllerSeriesPresenceChangeNotifiesWhileIdle(t *testing.T) {
+	type presence struct {
+		name    string
+		set     func(device *testing_throughputPresenceDevice, present bool)
+		present func(vc *ContractViewController) bool
+	}
+	provider := presence{
+		name: "provider",
+		set: func(device *testing_throughputPresenceDevice, present bool) {
+			device.mutex.Lock()
+			defer device.mutex.Unlock()
+			device.providerPacketStats = nil
+			if present {
+				device.providerPacketStats = &PacketStats{}
+			}
+		},
+		present: func(vc *ContractViewController) bool {
+			return vc.GetProviderPacketStats() != nil
+		},
+	}
+	extender := presence{
+		name: "extender",
+		set: func(device *testing_throughputPresenceDevice, present bool) {
+			device.mutex.Lock()
+			defer device.mutex.Unlock()
+			device.extenderStats = nil
+			if present {
+				device.extenderStats = &ExtenderStats{}
+			}
+		},
+		present: func(vc *ContractViewController) bool {
+			return vc.GetExtenderStats() != nil
+		},
+	}
+
+	for _, series := range []presence{provider, extender} {
+		for _, appear := range []bool{true, false} {
+			direction := "vanishes"
+			if appear {
+				direction = "appears"
+			}
+			t.Run(series.name+" "+direction, func(t *testing.T) {
+				// the client series always has stats, so it is the series that
+				// spends every series' idle notification on its first point
+				device := &testing_throughputPresenceDevice{packetStats: &PacketStats{}}
+				series.set(device, !appear)
+				vc := &ContractViewController{
+					device:              device,
+					sampleInterval:      defaultThroughputSampleInterval,
+					windowDuration:      defaultThroughputWindowDuration,
+					clientSeries:        &throughputSeries{},
+					providerSeries:      &throughputSeries{},
+					extenderSeries:      &throughputSeries{},
+					throughputListeners: connect.NewCallbackList[ThroughputListener](),
+				}
+				listener := &testing_throughputListener{}
+				sub := vc.AddThroughputListener(listener)
+				defer sub.Close()
+
+				// the first sample sets the bases, the second appends and
+				// spends the idle notification of all three series, the third
+				// is idle
+				for range 3 {
+					vc.sample()
+				}
+				if count := listener.getCount(); count != 1 {
+					t.Fatalf("notifications = %d before the change, expected the one idle snapshot", count)
+				}
+				if series.present(vc) == appear {
+					t.Fatalf("the %s series is already in its final presence", series.name)
+				}
+
+				series.set(device, appear)
+				vc.sample()
+				if series.present(vc) != appear {
+					t.Fatalf("the %s series' presence did not follow the device", series.name)
+				}
+				if count := listener.getCount(); count != 2 {
+					t.Fatalf("notifications = %d after the %s series %s inside an idle window, expected one more",
+						count, series.name, direction)
+				}
+
+				// one notification per change, not one per idle tick
+				for range 3 {
+					vc.sample()
+				}
+				if count := listener.getCount(); count != 2 {
+					t.Fatalf("notifications = %d over the idle ticks after the change, expected none", count)
+				}
+			})
+		}
 	}
 }
 

@@ -164,8 +164,12 @@ type throughputSeries struct {
 	// oldest first
 	points []*ThroughputPoint
 	// whether the idle (all zero hold) snapshot has been delivered since the
-	// series was last active. see `throughputSeriesNotifyWithLock`
+	// series was last active or its presence last changed. see
+	// `throughputSeriesNotifyWithLock`
 	idleNotified bool
+	// whether the last poll returned stats. Written by the poll only, since the
+	// device push also writes `latestPacketStats` and would hide a change
+	present bool
 }
 
 type ContractViewController struct {
@@ -355,7 +359,11 @@ func throughputSeriesNeedsNotification(series *throughputSeries) bool {
 // series is active (see `throughputSeriesNeedsNotification`), plus exactly one
 // idle snapshot after it goes quiet -- or after it starts, so a fresh series
 // delivers its first (zero) points and clients resolve the series' presence
-// (e.g. whether the device has a provider) without waiting for traffic
+// (e.g. whether the device has a provider) without waiting for traffic. Every
+// series is evaluated whenever any series appends, so a series' idle snapshot
+// can be spent before its own stats exist; a change of presence (its stats
+// appearing or vanishing) re-arms it in `sampleSeriesWithLock`, so the change
+// notifies once even inside an idle window
 func throughputSeriesNotifyWithLock(series *throughputSeries) bool {
 	if throughputSeriesNeedsNotification(series) {
 		series.idleNotified = false
@@ -408,6 +416,14 @@ func (self *ContractViewController) sampleSeriesWithLock(series *throughputSerie
 		}
 	}
 
+	// a series whose stats appear or vanish owes clients one snapshot, since
+	// that snapshot is how they resolve its presence: re-arm the idle
+	// notification, which another series may already have spent in this
+	// idle window. Only a change re-arms it, so an idle tick adds nothing
+	if present := packetStats != nil; present != series.present {
+		series.present = present
+		series.idleNotified = false
+	}
 	series.latestPacketStats = packetStats
 	if packetStats == nil {
 		// no stats this tick. zero-hold while the series is live.
