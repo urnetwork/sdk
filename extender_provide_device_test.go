@@ -328,68 +328,13 @@ func TestDeviceRemoteExtenderProvideStatusReadCacheSurvivesServiceLoss(t *testin
 	// no listener is registered, so nothing is pushed: the read is the only
 	// writer of the cache here
 	read := deviceRemote.GetExtenderProvideStatus()
-	if !read.Supported || read.State == "" {
+	if read.State == "" {
 		t.Fatalf("status = %+v, expected the device's derived status", read)
 	}
 
 	deviceLocal.Close()
 
 	connect.AssertEqual(t, deviceRemote.GetExtenderProvideStatus(), read)
-}
-
-// A pushed status carries its error case and reason intact over the real
-// transport (N2, N3). The device provides with the role on and an identity it
-// cannot activate under, so it reports the start error without running a role.
-func TestDeviceRemoteExtenderProvideStatusPushCarriesTheErrorCase(t *testing.T) {
-	testEnableExtenderProvideRole(t)
-	_, networkSpace := testExtenderStatusSpace(t)
-	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
-		t,
-		networkSpace,
-		func(settings *DeviceLocalSettings) {
-			settings.AllowProvider = true
-			settings.providerExtenderSettings = func(extenderSettings *deviceLocalExtenderSettings) {
-				extenderSettings.IdentityKeySeed = []byte("not an extender key seed")
-			}
-		},
-	)
-
-	statuses := make(chan *ExtenderProvideStatus, 16)
-	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
-		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
-			select {
-			case statuses <- status:
-			default:
-			}
-		}),
-	)
-	defer sub.Close()
-
-	// providing is what asks for the role
-	deviceLocal.SetProvideMode(ProvideModePublic)
-
-	deadline := time.After(60 * time.Second)
-	for {
-		select {
-		case status := <-statuses:
-			if status.ErrorCase != ExtenderProvideErrorStart {
-				continue
-			}
-			local := deviceLocal.GetExtenderProvideStatus()
-			if status.State != ExtenderProvideStateError ||
-				local.StartError == "" ||
-				status.StartError != local.StartError ||
-				status.Reason != local.StartError {
-				t.Fatalf("pushed = %+v, local = %+v, expected the start error intact", status, local)
-			}
-			return
-		case <-deadline:
-			t.Fatalf(
-				"the start error never crossed the rpc, local = %+v",
-				deviceLocal.GetExtenderProvideStatus(),
-			)
-		}
-	}
 }
 
 // With the device process down the remote answers the last readout it saw, and

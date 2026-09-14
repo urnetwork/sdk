@@ -1300,6 +1300,62 @@ func TestDeviceLocalProviderExtenderReportsASpaceWithNoDirectory(t *testing.T) {
 	}
 }
 
+// A pushed status carries its error case and reason intact over the real
+// transport (N2, N3). The device provides with the role on and an identity it
+// cannot activate under, so it reports the start error without running a role;
+// only a build that carries the role can report one.
+func TestDeviceRemoteExtenderProvideStatusPushCarriesTheErrorCase(t *testing.T) {
+	testEnableExtenderProvideRole(t)
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.providerExtenderSettings = func(extenderSettings *deviceLocalExtenderSettings) {
+				extenderSettings.IdentityKeySeed = []byte("not an extender key seed")
+			}
+		},
+	)
+
+	statuses := make(chan *ExtenderProvideStatus, 16)
+	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	// providing is what asks for the role
+	deviceLocal.SetProvideMode(ProvideModePublic)
+
+	deadline := time.After(60 * time.Second)
+	for {
+		select {
+		case status := <-statuses:
+			if status.ErrorCase != ExtenderProvideErrorStart {
+				continue
+			}
+			local := deviceLocal.GetExtenderProvideStatus()
+			if status.State != ExtenderProvideStateError ||
+				local.StartError == "" ||
+				status.StartError != local.StartError ||
+				status.Reason != local.StartError {
+				t.Fatalf("pushed = %+v, local = %+v, expected the start error intact", status, local)
+			}
+			return
+		case <-deadline:
+			t.Fatalf(
+				"the start error never crossed the rpc, local = %+v",
+				deviceLocal.GetExtenderProvideStatus(),
+			)
+		}
+	}
+}
+
 // With no seed anywhere the role generates one, and the embedder reads it back
 // through the key material, which is the only place a url-only space can keep
 // it (B1, G2).
