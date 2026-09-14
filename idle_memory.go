@@ -99,6 +99,11 @@ type mobileMemoryReclaimer struct {
 	sample                  func() mobileMemoryReclaimSnapshot
 	reclaim                 func()
 	lastReclaimTime         time.Time
+	// The previous quiet attempt's owner count, valid while observed. Owners
+	// that have not grown by more than maxPoolOutstanding between two quiet
+	// attempts are settled (stranded or long-lived), not a burst in flight.
+	lastPoolOutstanding     int64
+	poolOutstandingObserved bool
 }
 
 func (self *mobileMemoryReclaimer) attempt() mobileMemoryReclaimResult {
@@ -110,12 +115,27 @@ func (self *mobileMemoryReclaimer) attempt() mobileMemoryReclaimResult {
 	if snapshot.runtimeByteCount <= self.targetByteCount &&
 		(physicalTargetByteCount <= 0 ||
 			snapshot.physicalByteCount <= physicalTargetByteCount) {
+		self.poolOutstandingObserved = false
 		return mobileMemoryReclaimResult{outcome: mobileMemoryReclaimBelowTarget}
 	}
 	if self.maxPoolOutstanding < snapshot.poolOutstanding {
-		return mobileMemoryReclaimResult{
-			outcome:    mobileMemoryReclaimInFlight,
-			retryAfter: self.quietRetry,
+		// An absolute owner ceiling alone vetoed every quiet window on a device
+		// whose tunnel keeps hundreds to thousands of buffers borrowed at idle
+		// (the audit's premerge provider held 2,309-2,359 flat for five minutes
+		// at 28.67 MiB). The rebuild only touches free lists, so held buffers are
+		// never at risk; the ceiling exists to avoid a forced GC under a live
+		// burst. A burst moves the count; settled ownership does not. Defer once
+		// to observe, then proceed when the count has not grown past the idle
+		// working set since that observation.
+		settled := self.poolOutstandingObserved &&
+			snapshot.poolOutstanding <= self.lastPoolOutstanding+self.maxPoolOutstanding
+		self.lastPoolOutstanding = snapshot.poolOutstanding
+		self.poolOutstandingObserved = true
+		if !settled {
+			return mobileMemoryReclaimResult{
+				outcome:    mobileMemoryReclaimInFlight,
+				retryAfter: self.quietRetry,
+			}
 		}
 	}
 	now := self.now()
@@ -130,6 +150,7 @@ func (self *mobileMemoryReclaimer) attempt() mobileMemoryReclaimResult {
 	}
 	self.reclaim()
 	self.lastReclaimTime = now
+	self.poolOutstandingObserved = false
 	return mobileMemoryReclaimResult{outcome: mobileMemoryReclaimed}
 }
 

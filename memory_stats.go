@@ -60,6 +60,13 @@ type MemoryStats struct {
 	IdleMemoryTrimCooldownCount        int64
 	LastIdleMemoryTrimBeforeByteCount  ByteCount
 	LastIdleMemoryTrimAfterByteCount   ByteCount
+	// Host platform trim levels (ReportMemoryTrimLevel): the latest level, how
+	// many reports arrived, how many acted, and the bytes the latest trim pass
+	// dropped.
+	TrimLevelLast                 int64
+	TrimLevelCount                int64
+	TrimLevelActionCount          int64
+	LastTrimLevelDroppedByteCount ByteCount
 
 	// Process-global platform carrier reservations. These counters explain
 	// topology-driven retention without constructing transport status lists.
@@ -203,6 +210,10 @@ func readMemoryStats(stats *MemoryStats) {
 		IdleMemoryTrimCooldownCount:               mobileIdleMemoryTrimCooldowns.Load(),
 		LastIdleMemoryTrimBeforeByteCount:         mobileIdleMemoryTrimBefore.Load(),
 		LastIdleMemoryTrimAfterByteCount:          mobileIdleMemoryTrimAfter.Load(),
+		TrimLevelLast:                             mobileTrimLevelLast.Load(),
+		TrimLevelCount:                            mobileTrimLevelCount.Load(),
+		TrimLevelActionCount:                      mobileTrimLevelActionCount.Load(),
+		LastTrimLevelDroppedByteCount:             ByteCount(mobileTrimLevelDropped.Load()),
 		PlatformTransportBudgetTotalByteCount:     transportBudgetStats.TotalByteCount,
 		PlatformTransportBudgetUsedByteCount:      transportBudgetStats.UsedByteCount,
 		PlatformTransportBudgetUsedCount:          transportBudgetStats.UsedTransportCount,
