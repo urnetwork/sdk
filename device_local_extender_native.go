@@ -451,6 +451,9 @@ func (self *deviceLocalExtender) state() extenderProvideState {
 		if family.LastError != "" && !family.LastActivationTime.Before(lastErrorTime) {
 			lastErrorTime = family.LastActivationTime
 			state.LastActivationError = family.LastError
+			// whether that error is the operator's refusal, from the same
+			// family, so the case the rule picks matches the text (N2, N3)
+			state.LastActivationRefused = family.LastRefused
 		}
 	}
 	state.LastActivationTime = extenderStatusTimeMs(lastActivationTime)

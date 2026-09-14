@@ -1495,6 +1495,111 @@ func TestDeviceRemoteExtenderProvideStatusPushCarriesTheErrorCase(t *testing.T) 
 	}
 }
 
+// The operator's refusal is the refused case, not a failed request (N2, N3):
+// after a first activation the operator refuses the daily one, no family stays
+// active, and the status carries the operator's text with the refusal flag.
+func TestDeviceLocalProviderExtenderReportsARefusal(t *testing.T) {
+	fixture := newTestProvideExtenderFixture(t, nil)
+	fixture.waitPass()
+	fixture.waitPost()
+	fixture.waitPost()
+	fixture.waitStatus("activated", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4 && status.ActivatedV6
+	})
+
+	fixture.operator.setRefusal("the tcp carrier did not answer")
+	// the daily activation (G3)
+	fixture.step(25 * time.Hour)
+	fixture.waitPost()
+
+	status := fixture.waitStatus("refused", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorActivationRefused
+	})
+	if status.State != ExtenderProvideStateError || status.ActivatedV4 || status.ActivatedV6 {
+		t.Fatalf("status = %+v, expected an inactive refused extender", status)
+	}
+	if !status.LastActivationRefused {
+		t.Fatalf("status = %+v, expected the refusal flag", status)
+	}
+	if !strings.Contains(status.Reason, "the tcp carrier did not answer") ||
+		status.Reason != status.LastActivationError {
+		t.Fatalf("reason = %q, expected the operator's refusal", status.Reason)
+	}
+}
+
+// A refused status crosses the real transport with its case, flag and reason
+// intact (N2, N3): a role activating against a refusing operator, pushed to a
+// remote listener.
+func TestDeviceRemoteExtenderProvideStatusPushCarriesARefusal(t *testing.T) {
+	testEnableExtenderProvideRole(t)
+
+	_, rootPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := newTestExtenderClock()
+	operator := newTestProvideExtenderOperator(t, clock, rootPrivateKey)
+	operator.setRefusal("the dns carrier did not answer")
+	// the role's settings as the provider extender fixture builds them, over
+	// ephemeral loopback carriers and the refusing operator
+	role := &testProvideExtenderFixture{
+		t:        t,
+		clock:    clock,
+		operator: operator,
+		tcpPort:  testFreeTcpPort(t),
+		udpPort:  testFreeUdpPort(t),
+		dnsPort:  testFreeUdpPort(t),
+	}
+
+	_, networkSpace := testExtenderStatusSpace(t)
+	deviceLocal, deviceRemote := testExtenderStatusSyncedDeviceLocalRemoteWithSettings(
+		t,
+		networkSpace,
+		func(settings *DeviceLocalSettings) {
+			settings.AllowProvider = true
+			settings.providerExtenderSettings = role.configureExtender
+		},
+	)
+
+	statuses := make(chan *ExtenderProvideStatus, 16)
+	sub := deviceRemote.AddExtenderProvideStatusChangeListener(
+		extenderProvideStatusChangeListenerFunc(func(status *ExtenderProvideStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	// providing is what starts the role, which activates at start (G3)
+	deviceLocal.SetProvideMode(ProvideModePublic)
+
+	deadline := time.After(60 * time.Second)
+	for {
+		select {
+		case status := <-statuses:
+			if status.ErrorCase != ExtenderProvideErrorActivationRefused {
+				continue
+			}
+			local := deviceLocal.GetExtenderProvideStatus()
+			if status.State != ExtenderProvideStateError ||
+				!status.LastActivationRefused ||
+				!strings.Contains(status.Reason, "the dns carrier did not answer") ||
+				status.Reason != local.Reason ||
+				status.LastActivationRefused != local.LastActivationRefused {
+				t.Fatalf("pushed = %+v, local = %+v, expected the refusal intact", status, local)
+			}
+			return
+		case <-deadline:
+			t.Fatalf(
+				"the refusal never crossed the rpc, local = %+v",
+				deviceLocal.GetExtenderProvideStatus(),
+			)
+		}
+	}
+}
+
 // With no seed anywhere the role generates one, and the embedder reads it back
 // through the key material, which is the only place a url-only space can keep
 // it (B1, G2).

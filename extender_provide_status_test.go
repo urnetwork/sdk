@@ -293,13 +293,14 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			// the reason alone, with no case
 			name: "one family, with the other family's refusal beside it",
 			status: &ExtenderProvideStatus{
-				Supported:           true,
-				Enabled:             true,
-				Listening:           true,
-				ActivatedV6:         true,
-				Ipv6:                "2001:db8::a",
-				LastActivationTime:  1757000000000,
-				LastActivationError: "the operator refused the activation",
+				Supported:             true,
+				Enabled:               true,
+				Listening:             true,
+				ActivatedV6:           true,
+				Ipv6:                  "2001:db8::a",
+				LastActivationTime:    1757000000000,
+				LastActivationError:   "the operator refused the activation",
+				LastActivationRefused: true,
 			},
 			provideExtender: true,
 			providing:       true,
@@ -335,11 +336,12 @@ func TestExtenderProvideStateRule(t *testing.T) {
 		{
 			name: "the bind failure is reported before an activation that never ran",
 			status: &ExtenderProvideStatus{
-				Supported:           true,
-				Enabled:             true,
-				ListenError:         "tcp: bind refused",
-				LastActivationTime:  1757000000000,
-				LastActivationError: "the operator refused the activation",
+				Supported:             true,
+				Enabled:               true,
+				ListenError:           "tcp: bind refused",
+				LastActivationTime:    1757000000000,
+				LastActivationError:   "the operator refused the activation",
+				LastActivationRefused: true,
 			},
 			provideExtender: true,
 			providing:       true,
@@ -364,21 +366,21 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			expectReason:    "post activate: connection refused",
 		},
 		{
-			// the activator does not yet report a refusal apart from a failed
-			// request, so a refusal is a failure until it does; this case
-			// becomes activation_refused when the status carries the refusal
+			// the operator's refusal is its own case, and it stands through the
+			// activator's backoff, since an outcome exists
 			name: "still an error through the backoff after a refusal",
 			status: &ExtenderProvideStatus{
-				Supported:           true,
-				Enabled:             true,
-				Listening:           true,
-				LastActivationTime:  1757000000000,
-				LastActivationError: "the operator refused the activation",
+				Supported:             true,
+				Enabled:               true,
+				Listening:             true,
+				LastActivationTime:    1757000000000,
+				LastActivationError:   "the operator refused the activation",
+				LastActivationRefused: true,
 			},
 			provideExtender: true,
 			providing:       true,
 			expectState:     ExtenderProvideStateError,
-			expectErrorCase: ExtenderProvideErrorActivationFailed,
+			expectErrorCase: ExtenderProvideErrorActivationRefused,
 			expectReason:    "the operator refused the activation",
 		},
 		// setting_up

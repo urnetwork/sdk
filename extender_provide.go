@@ -110,6 +110,11 @@ type ExtenderProvideStatus struct {
 	LastActivationTime int64
 	// Why the last attempt failed, empty when it succeeded.
 	LastActivationError string
+	// True when LastActivationError is the operator's refusal (an answer with
+	// activated false) rather than a request that failed. It rides beside the
+	// error in every state: in error it picks the refused case, and in active
+	// it says whether the other family's text is a refusal (N2, N3).
+	LastActivationRefused bool
 	// Unix milliseconds of when this extender's key was first seen revoked in
 	// the directory, 0 while it is not revoked.
 	RevokedTime int64
@@ -148,33 +153,35 @@ type ExtenderStats struct {
 // moves with every relayed connection and no ui wants a callback per
 // connection.
 type extenderProvideState struct {
-	Enabled             bool
-	Listening           bool
-	ListenError         string
-	ActivatedV4         bool
-	ActivatedV6         bool
-	Ipv4                string
-	Ipv6                string
-	LastActivationTime  int64
-	LastActivationError string
-	RevokedTime         int64
-	DnsPorts            string
+	Enabled               bool
+	Listening             bool
+	ListenError           string
+	ActivatedV4           bool
+	ActivatedV6           bool
+	Ipv4                  string
+	Ipv6                  string
+	LastActivationTime    int64
+	LastActivationError   string
+	LastActivationRefused bool
+	RevokedTime           int64
+	DnsPorts              string
 }
 
 func (self extenderProvideState) status(connectionCount int) *ExtenderProvideStatus {
 	return &ExtenderProvideStatus{
-		Enabled:             self.Enabled,
-		Listening:           self.Listening,
-		ListenError:         self.ListenError,
-		ActivatedV4:         self.ActivatedV4,
-		ActivatedV6:         self.ActivatedV6,
-		Ipv4:                self.Ipv4,
-		Ipv6:                self.Ipv6,
-		LastActivationTime:  self.LastActivationTime,
-		LastActivationError: self.LastActivationError,
-		RevokedTime:         self.RevokedTime,
-		DnsPorts:            self.DnsPorts,
-		ConnectionCount:     connectionCount,
+		Enabled:               self.Enabled,
+		Listening:             self.Listening,
+		ListenError:           self.ListenError,
+		ActivatedV4:           self.ActivatedV4,
+		ActivatedV6:           self.ActivatedV6,
+		Ipv4:                  self.Ipv4,
+		Ipv6:                  self.Ipv6,
+		LastActivationTime:    self.LastActivationTime,
+		LastActivationError:   self.LastActivationError,
+		LastActivationRefused: self.LastActivationRefused,
+		RevokedTime:           self.RevokedTime,
+		DnsPorts:              self.DnsPorts,
+		ConnectionCount:       connectionCount,
 	}
 }
 
@@ -263,11 +270,12 @@ func extenderProvideStateRule(
 }
 
 // Whether a standing activation error is the operator's refusal or a failed
-// request (N3, N5). The activator does not report the difference yet: every
-// failure is one string in connect's family status, so every activation error
-// is a failure here. When the family status records a refusal, the status
-// carries it and this is the one place that reads it.
+// request (N3, N5): the activator records which on the family whose error the
+// status reports, and this is the one place the rule reads it.
 func extenderProvideActivationErrorCase(status *ExtenderProvideStatus) string {
+	if status.LastActivationRefused {
+		return ExtenderProvideErrorActivationRefused
+	}
 	return ExtenderProvideErrorActivationFailed
 }
 
