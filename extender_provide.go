@@ -405,8 +405,12 @@ func (self *DeviceLocal) GetProvideExtender() bool {
 // Persists the provider extender setting and applies it at once (F3, G2).
 // Turning it off stops the extender server, the activation loop and the
 // extender node together; turning it on starts them again while the device is
-// providing.
+// providing. A hosted device never runs the role (G1), so the setter is
+// guarded there as SetProvideMode is.
 func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
+	if self.hostedIncompatibleGuarded("SetProvideExtender") {
+		return
+	}
 	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
 		if err := asyncLocalState.GetLocalState().SetProvideExtender(provideExtender); err != nil {
 			self.log.Infof("[device]provide extender err = %s\n", err)

@@ -425,6 +425,27 @@ func TestProvideExtenderHostedGuard(t *testing.T) {
 	}
 	connect.AssertEqual(t, localRpc.SetProvideExtender(false, nil), nil)
 	connect.AssertEqual(t, deviceLocal.GetProvideExtender(), true)
+
+	// and the device itself refuses it when it is hosted, for a caller in the
+	// same process that never crosses the rpc
+	_, hostedSpace := testExtenderStatusSpace(t)
+	hostedSettings := testExtenderStatusDeviceSettings()
+	hostedSettings.HostedIncompatible = true
+	hostedDevice, err := newDeviceLocalWithOverrides(
+		hostedSpace, "", "", "", "", NewId(), hostedSettings, connect.NewId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hostedDevice.Close()
+	hostedDevice.SetProvideExtender(false)
+	connect.AssertEqual(t, hostedDevice.GetProvideExtender(), true)
+	// a hosted device cannot provide, so what it reports is not providing
+	connect.AssertEqual(
+		t,
+		hostedDevice.GetExtenderProvideStatus().State,
+		ExtenderProvideStateNotProviding,
+	)
 }
 
 // Every field of the status survives the rpc wire. It crosses as it stands
