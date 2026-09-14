@@ -5,6 +5,8 @@ package sdk
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"slices"
@@ -86,18 +88,20 @@ type deviceLocalExtender struct {
 
 // The role is running when this returns: the server is binding its carriers,
 // the node is up, and the loop that activates and publishes the status has
-// started. Nil when this space cannot run one.
+// started. When this space cannot run one, the error says why, and the
+// provider reports it as the start error of N3.
 func newDeviceLocalExtender(
 	ctx context.Context,
 	settings *deviceLocalExtenderSettings,
-) *deviceLocalExtender {
+) (*deviceLocalExtender, error) {
 	if settings == nil || settings.NetworkSpace == nil {
-		return nil
+		return nil, errors.New("the device has no network space")
 	}
 	if settings.NetworkSpace.extenderDirectory == nil {
-		// a url-only space discovers nothing and has no directory to publish
-		// this extender's own record into (F1)
-		return nil
+		// a space whose api url derives no extender network host (an ip
+		// literal or a single label) keeps no directory to publish this
+		// extender's own record into (F1)
+		return nil, errors.New("the network space has no extender directory")
 	}
 	log := settings.Log
 	if log == nil {
@@ -106,7 +110,7 @@ func newDeviceLocalExtender(
 	publicKey, err := connect.ExtenderPublicKeyFromSeed(settings.IdentityKeySeed)
 	if err != nil {
 		log.Infof("[extender]provide identity err = %s\n", err)
-		return nil
+		return nil, fmt.Errorf("the extender identity is not usable: %s", err)
 	}
 
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -163,7 +167,7 @@ func newDeviceLocalExtender(
 		defer close(self.done)
 		self.run()
 	}, cancel)
-	return self
+	return self, nil
 }
 
 // The carrier ports (A1). tcp and udp share port 443 in production, which is

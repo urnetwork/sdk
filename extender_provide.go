@@ -90,6 +90,10 @@ type ExtenderProvideStatus struct {
 	// True while the role is running: this build carries it, the setting is on
 	// and the device is providing.
 	Enabled bool
+	// Why the role could not start while it was asked to: the space has no
+	// extender directory or no identity. Empty while the role runs or was not
+	// asked to.
+	StartError string
 	// True while at least one carrier is bound.
 	Listening bool
 	// The carriers that failed to bind, as "<carrier>: <error>" joined by
@@ -191,6 +195,9 @@ func cloneExtenderProvideStatus(status *ExtenderProvideStatus) *ExtenderProvideS
 //   - off: the setting is off (or this build carries no role at all).
 //   - not_providing: the setting is on and the device is not providing --
 //     provide mode none, the embedder's switch off, or a hosted device.
+//   - error, start: the role was asked to run and could not start in this
+//     space. A role that never started has no revocation, family or bind to
+//     report, and an outcome exists, so it is not setting up.
 //   - error, revoked: the operator revoked this extender's key. The case is
 //     the whole message, so there is no reason text.
 //   - active: at least one family is activated, with the other family's last
@@ -218,6 +225,8 @@ func extenderProvideStateRule(
 		return ExtenderProvideStateOff, "", ""
 	case !providing:
 		return ExtenderProvideStateNotProviding, "", ""
+	case !status.Enabled && status.StartError != "":
+		return ExtenderProvideStateError, ExtenderProvideErrorStart, status.StartError
 	case status.RevokedTime != 0:
 		return ExtenderProvideStateError, ExtenderProvideErrorRevoked, ""
 	case status.ActivatedV4 || status.ActivatedV6:

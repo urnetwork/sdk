@@ -21,8 +21,8 @@ func TestExtenderProvideMobileStubIsUnsupported(t *testing.T) {
 	}
 
 	// the role is never built here, whatever it is asked for
-	extender := newDeviceLocalExtender(context.Background(), &deviceLocalExtenderSettings{})
-	if extender != nil {
+	extender, err := newDeviceLocalExtender(context.Background(), &deviceLocalExtenderSettings{})
+	if extender != nil || err == nil {
 		t.Fatal("a build with no extender role built one")
 	}
 	if extender.statusUpdate() != nil {

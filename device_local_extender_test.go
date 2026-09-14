@@ -425,7 +425,11 @@ func newTestProvideExtenderFixtureWithSpace(
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixture.networkSpace.extenderDirectory.SetRootKeys(keySet)
+		// a space that derives no extender network keeps no directory, which
+		// is the space a start error is tested on
+		if fixture.networkSpace.extenderDirectory != nil {
+			fixture.networkSpace.extenderDirectory.SetRootKeys(keySet)
+		}
 	} else {
 		fixture.networkSpaceManager = NewNetworkSpaceManager(storagePath)
 		fixture.networkSpace = fixture.networkSpaceManager.updateNetworkSpace(
@@ -1218,6 +1222,84 @@ func TestDeviceLocalProviderExtenderActivatesOnAUrlOnlySpace(t *testing.T) {
 	}
 }
 
+// A role asked for that cannot be built reports why, in red, rather than
+// setting up forever (N3): here an identity the space cannot activate under.
+// The error stands until the role is no longer asked for, and comes back when
+// it is asked for again.
+func TestDeviceLocalProviderExtenderReportsAStartError(t *testing.T) {
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.IdentityKeySeed = []byte("not an extender key seed")
+	})
+
+	status := fixture.waitStatus("the start error", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorStart
+	})
+	if status.Enabled || status.Listening {
+		t.Fatalf("status = %+v, expected a role that never started", status)
+	}
+	if status.State != ExtenderProvideStateError {
+		t.Fatalf("state = %q, expected error", status.State)
+	}
+	if !strings.Contains(status.StartError, "identity") || status.Reason != status.StartError {
+		t.Fatalf("start error = %q, reason = %q, expected the identity error as the reason",
+			status.StartError, status.Reason)
+	}
+	if fixture.extender() != nil {
+		t.Fatal("a role that could not start was installed")
+	}
+
+	// turning the setting off is not a start error
+	fixture.device.SetProvideExtender(false)
+	status = fixture.device.GetExtenderProvideStatus()
+	if status.State != ExtenderProvideStateOff || status.ErrorCase != "" || status.StartError != "" {
+		t.Fatalf("status = %+v, expected off with nothing standing", status)
+	}
+
+	// and asking again fails again, for the same reason
+	fixture.device.SetProvideExtender(true)
+	status = fixture.device.GetExtenderProvideStatus()
+	if status.ErrorCase != ExtenderProvideErrorStart || !strings.Contains(status.StartError, "identity") {
+		t.Fatalf("status = %+v, expected the start error again", status)
+	}
+}
+
+// A space whose api url derives no extender network keeps no directory, and a
+// provider asked to run the role there reports that rather than setting up
+// forever (N3, F1). Providing off is not a start error either.
+func TestDeviceLocalProviderExtenderReportsASpaceWithNoDirectory(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithSpace(
+		t,
+		func(ctx context.Context) *NetworkSpace {
+			strategySettings := connect.DefaultClientStrategySettings()
+			strategySettings.Log = connect.NewNoopLogger()
+			return NewNetworkSpaceWithUrls(ctx, "https://192.0.2.1", "wss://192.0.2.1", strategySettings)
+		},
+		nil,
+		nil,
+	)
+	if fixture.networkSpace.extenderDirectory != nil {
+		t.Fatal("the ip literal space kept an extender directory, so the role would start")
+	}
+
+	status := fixture.waitStatus("the start error", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorStart
+	})
+	if status.Enabled || status.State != ExtenderProvideStateError {
+		t.Fatalf("status = %+v, expected the start error", status)
+	}
+	if !strings.Contains(status.StartError, "extender directory") {
+		t.Fatalf("start error = %q, expected the missing directory", status.StartError)
+	}
+
+	fixture.device.SetProvideMode(ProvideModeNone)
+	fixture.waitStatus("not providing", func(status *ExtenderProvideStatus) bool {
+		return status.State == ExtenderProvideStateNotProviding
+	})
+	if status := fixture.device.GetExtenderProvideStatus(); status.StartError != "" || status.ErrorCase != "" {
+		t.Fatalf("status = %+v, expected nothing standing while not providing", status)
+	}
+}
+
 // With no seed anywhere the role generates one, and the embedder reads it back
 // through the key material, which is the only place a url-only space can keep
 // it (B1, G2).
@@ -1361,9 +1443,9 @@ func TestDeviceLocalProviderExtenderSettingsDnsPorts(t *testing.T) {
 	defer networkSpace.close()
 
 	provider := &deviceLocalProvider{networkSpace: networkSpace}
-	settings := provider.extenderSettings()
-	if settings == nil {
-		t.Fatal("the space has no identity to activate under")
+	settings, err := provider.extenderSettings()
+	if err != nil {
+		t.Fatalf("the space has no identity to activate under: %s", err)
 	}
 	connect.AssertEqual(t, settings.DnsPort, connect.ExtenderDnsPort)
 	connect.AssertEqual(t, settings.DnsPort, connect.DefaultWhodisPort)

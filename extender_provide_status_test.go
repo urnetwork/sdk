@@ -156,6 +156,54 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			providing:       false,
 			expectState:     ExtenderProvideStateNotProviding,
 		},
+		// error, start
+		{
+			name: "the role was asked for and could not start",
+			status: &ExtenderProvideStatus{
+				Supported:  true,
+				StartError: "the network space has no extender directory",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorStart,
+			expectReason:    "the network space has no extender directory",
+		},
+		{
+			name: "a start error beats a stale revocation",
+			status: &ExtenderProvideStatus{
+				Supported:   true,
+				StartError:  "the extender identity is not usable: bad seed",
+				RevokedTime: 1757000000000,
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorStart,
+			expectReason:    "the extender identity is not usable: bad seed",
+		},
+		{
+			name: "not providing beats a start error",
+			status: &ExtenderProvideStatus{
+				Supported:  true,
+				StartError: "the network space has no extender directory",
+			},
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		{
+			name: "a role that runs has no start error to report",
+			status: &ExtenderProvideStatus{
+				Supported:  true,
+				Enabled:    true,
+				Listening:  true,
+				StartError: "the network space has no extender directory",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateSettingUp,
+		},
 		// error, revoked
 		{
 			name: "the operator revoked the key",
