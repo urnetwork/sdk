@@ -120,3 +120,44 @@ func TestMobileExtenderStringSlicePolicyDoesNotPrefixMatch(t *testing.T) {
 		t.Fatal("a similarly named but unreviewed extender omission was accepted")
 	}
 }
+
+// Native dial signatures remain deliberate omissions on concrete Devices.
+func TestMobileSocketNativeOmissionsAreExplicit(t *testing.T) {
+	root := t.TempDir()
+	lines := []string{}
+	for _, typeName := range []string{"DeviceLocal", "DeviceRemote"} {
+		for _, method := range []string{"Dial", "DialContext", "DialTls", "DialTlsContext"} {
+			lines = append(lines, "// skipped method "+typeName+"."+method+" with unsupported parameter or return types")
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "NativeSocket.java"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err != nil {
+		t.Fatalf("native-only concrete dial methods were not accepted: %v", err)
+	}
+}
+
+// Portable entry points and connection controls cannot inherit Go-only skips.
+func TestMobileSocketPortableOmissionsAreRejected(t *testing.T) {
+	for _, identifier := range []string{
+		"Device.OpenSocket", "DeviceLocal.OpenSocket", "DeviceRemote.OpenSocket",
+		"Socket.Read", "Socket.Write", "Socket.Close", "Socket.SetDeadlineMillis",
+		"Socket.SetReadDeadlineMillis", "Socket.SetWriteDeadlineMillis",
+		"Socket.GetLocalAddr", "Socket.GetRemoteAddr",
+		"SocketRead.Data", "SocketRead.Eof", "SocketTLSOptions.SetNextProtos",
+	} {
+		root := t.TempDir()
+		kind := "method"
+		if strings.HasPrefix(identifier, "SocketRead.") {
+			kind = "field"
+		}
+		line := "// skipped " + kind + " " + identifier + " with unsupported parameter or return types\n"
+		if err := os.WriteFile(filepath.Join(root, "PortableSocket.java"), []byte(line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateMobileExports(root); err == nil {
+			t.Errorf("portable socket omission %s was accepted", identifier)
+		}
+	}
+}

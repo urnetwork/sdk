@@ -83,6 +83,7 @@ _build_android:
 	mkdir "$$BUILD_DIR"; \
 	gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
+		-tags sdk_mobile_bind \
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
@@ -129,6 +130,7 @@ build_apple:
 	mkdir "$$BUILD_DIR"; \
 	gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
+		-tags sdk_mobile_bind \
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
@@ -139,7 +141,7 @@ build_apple:
 	gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
-		-tags ios_extension \
+		-tags sdk_mobile_bind,ios_extension \
 		-trimpath \
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \

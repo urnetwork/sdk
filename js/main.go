@@ -44,8 +44,13 @@ func jsDevice(device sdk.Device) js.Value {
 	if device == nil {
 		return js.Null()
 	}
-	// Device methods can be added here as needed
-	return js.ValueOf(map[string]any{})
+	if remote, ok := device.(*sdk.DeviceRemote); ok {
+		return jsDeviceRemote(remote)
+	}
+	m := map[string]any{}
+	handles := jsBindSocketDevice(device, m)
+	m["close"] = js.FuncOf(func(js.Value, []js.Value) any { go handles.close(); device.Close(); return nil })
+	return js.ValueOf(m)
 }
 
 func jsProxyConfigResult(proxyConfigResult *sdk.ProxyConfigResult) js.Value {

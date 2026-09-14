@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/urnetwork/glog"
+	"github.com/urnetwork/sdk"
 )
 
 // opaque handle registry
@@ -41,10 +42,15 @@ func handleValue(id uint64) (any, bool) {
 
 func handleRelease(id uint64) bool {
 	handleRegistry.mutex.Lock()
-	defer handleRegistry.mutex.Unlock()
-	_, ok := handleRegistry.values[id]
+	value, ok := handleRegistry.values[id]
 	if ok {
 		delete(handleRegistry.values, id)
+	}
+	handleRegistry.mutex.Unlock()
+	if owned, ok := value.(interface{ releaseHandle() }); ok {
+		owned.releaseHandle()
+	} else if socket, ok := value.(*sdk.Socket); ok {
+		_ = socket.Close()
 	}
 	return ok
 }

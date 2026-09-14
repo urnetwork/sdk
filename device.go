@@ -478,6 +478,11 @@ func GetDefaultTunnelMtu() int32 {
 
 // every device must also support the unexported `device` interface
 type Device interface {
+	deviceSocketDialer
+	// OpenSocket is the mobile-compatible socket entry point. Nil TLS options
+	// mean plain TCP/UDP; non-nil options enable TLS/DTLS with verification.
+	OpenSocket(network, address string, timeoutMillis int64, tlsOptions *SocketTLSOptions) (*Socket, error)
+
 	GetClientId() *Id
 	GetInstanceId() *Id
 

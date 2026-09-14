@@ -410,6 +410,7 @@ class ProvideViewController;
 class ProviderLocationsViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
+class Socket;
 class SubscriptionBalanceViewController;
 class Tunnel;
 class WalletViewController;
@@ -678,6 +679,8 @@ struct SnSetWalletError;
 struct SnSetWalletResult;
 struct SnUnsignedTx;
 struct SnValidateWalletResult;
+struct SocketRead;
+struct SocketTLSOptions;
 struct SolanaPaymentIntentArgs;
 struct SolanaPaymentIntentError;
 struct SolanaPaymentIntentResult;
@@ -1406,6 +1409,7 @@ struct DeviceLocalMemoryUsage {
 	int64_t PlatformTransportUsedCount{};
 	int64_t PlatformTransportPendingH1Count{};
 	int64_t PlatformTransportPendingH1Bytes{};
+	int64_t PlatformTransportPreemptedH3Count{};
 	int64_t TotalByteCount{};
 };
 
@@ -2702,6 +2706,17 @@ struct SnValidateWalletResult {
 	std::optional<SnError> error;
 };
 
+struct SocketRead {
+	std::string Data{};
+	bool Eof{};
+};
+
+struct SocketTLSOptions {
+	std::optional<std::string> serverName;
+	std::optional<std::string> rootCAPEM;
+	std::optional<std::vector<std::string>> nextProtos;
+};
+
 struct SolanaPaymentIntentArgs {
 	std::string reference{};
 	std::string plan{};
@@ -3634,6 +3649,10 @@ inline void to_json(nlohmann::json& j, const SnUnsignedTx& v);
 inline void from_json(const nlohmann::json& j, SnUnsignedTx& v);
 inline void to_json(nlohmann::json& j, const SnValidateWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v);
+inline void to_json(nlohmann::json& j, const SocketRead& v);
+inline void from_json(const nlohmann::json& j, SocketRead& v);
+inline void to_json(nlohmann::json& j, const SocketTLSOptions& v);
+inline void from_json(const nlohmann::json& j, SocketTLSOptions& v);
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentArgs& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentArgs& v);
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentError& v);
@@ -6543,6 +6562,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["PlatformTransportUsedCount"] = v.PlatformTransportUsedCount;
 	j["PlatformTransportPendingH1Count"] = v.PlatformTransportPendingH1Count;
 	j["PlatformTransportPendingH1Bytes"] = v.PlatformTransportPendingH1Bytes;
+	j["PlatformTransportPreemptedH3Count"] = v.PlatformTransportPreemptedH3Count;
 	j["TotalByteCount"] = v.TotalByteCount;
 }
 inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
@@ -6590,6 +6610,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("PlatformTransportPendingH1Bytes"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportPendingH1Bytes);
+	}
+	if (auto it = j.find("PlatformTransportPreemptedH3Count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportPreemptedH3Count);
 	}
 	if (auto it = j.find("TotalByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TotalByteCount);
@@ -12412,6 +12435,56 @@ inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SocketRead& v) {
+	j = nlohmann::json::object();
+	j["Data"] = v.Data;
+	j["Eof"] = v.Eof;
+}
+inline void from_json(const nlohmann::json& j, SocketRead& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Data"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Data);
+	}
+	if (auto it = j.find("Eof"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Eof);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SocketTLSOptions& v) {
+	j = nlohmann::json::object();
+	if (v.serverName) {
+		j["serverName"] = *v.serverName;
+	}
+	if (v.rootCAPEM) {
+		j["rootCAPEM"] = *v.rootCAPEM;
+	}
+	if (v.nextProtos) {
+		j["nextProtos"] = *v.nextProtos;
+	}
+}
+inline void from_json(const nlohmann::json& j, SocketTLSOptions& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("serverName"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.serverName = std::move(tmp);
+	}
+	if (auto it = j.find("rootCAPEM"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.rootCAPEM = std::move(tmp);
+	}
+	if (auto it = j.find("nextProtos"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.nextProtos = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentArgs& v) {
 	j = nlohmann::json::object();
 	j["reference"] = v.reference;
@@ -14594,6 +14667,7 @@ public:
 	std::optional<WindowStatus> getWindowStatus() const;
 	void initProvideSecretKeys() const;
 	void loadProvideSecretKeys(const std::optional<ProvideSecretKeyList>& provide_secret_key_list) const;
+	Socket openSocket(const std::string& network, const std::string& address, int64_t timeout_millis, const std::optional<SocketTLSOptions>& tls_options) const;
 	void reconnect(const std::optional<ConnectLocation>& location) const;
 	void refreshToken(int64_t attempt) const;
 	void removeBlockActionOverride(const std::string& override_id) const;
@@ -14976,6 +15050,9 @@ public:
 	void setRoutingTier(int64_t tier) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
 	void setSnChainSettings(const std::optional<SnChainSettings>& settings) const;
+	void setTransferDiagAllowDirect(bool enabled, bool allow_direct) const;
+	void setTransferDiagDeferTimeoutResend(bool enabled) const;
+	void setTransferDiagLaneRule(bool enabled) const;
 	void setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const;
 	void shuffleExits() const;
 	std::string signSnFleetBinding(const std::string& binding_json) const;
@@ -14992,6 +15069,8 @@ public:
 	void syncSnChainSettings(SnEpochCallback callback) const;
 	void syncSnWallet(SnGetWalletCallback callback) const;
 	std::string takeMemorySamplesJson() const;
+	bool transferDiagDeferTimeoutResend() const;
+	bool transferDiagLaneRule() const;
 	std::optional<StringList> tunnelDnsAddressesIpv4() const;
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
@@ -15543,6 +15622,22 @@ public:
 	std::optional<GetNetworkReferralCodeResult> getReferralCodeResult() const;
 	void start() const;
 	void stop() const;
+};
+
+class Socket final : public detail::Handle {
+public:
+	Socket() = default;
+	explicit Socket(uint64_t h) : detail::Handle(h) {}
+	void close() const;
+	void closeRead() const;
+	void closeWrite() const;
+	std::string getLocalAddr() const;
+	std::string getRemoteAddr() const;
+	std::optional<SocketRead> read(int64_t max_bytes) const;
+	void setDeadlineMillis(int64_t t) const;
+	void setReadDeadlineMillis(int64_t t) const;
+	void setWriteDeadlineMillis(int64_t t) const;
+	int64_t write(const uint8_t* data, int32_t data_len) const;
 };
 
 class SubscriptionBalanceViewController final : public detail::Handle {
@@ -21924,6 +22019,20 @@ inline void Device::loadProvideSecretKeys(const std::optional<ProvideSecretKeyLi
 	}
 	urnet_device_load_provide_secret_keys(handle(), provide_secret_key_list_c);
 }
+inline Socket Device::openSocket(const std::string& network, const std::string& address, int64_t timeout_millis, const std::optional<SocketTLSOptions>& tls_options) const {
+	std::string tls_options_json;
+	const char* tls_options_c = nullptr;
+	if (tls_options) {
+		tls_options_json = nlohmann::json(*tls_options).dump();
+		tls_options_c = tls_options_json.c_str();
+	}
+	char* err_c = nullptr;
+	Socket r(urnet_device_open_socket(handle(), network.c_str(), address.c_str(), timeout_millis, tls_options_c, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline void Device::reconnect(const std::optional<ConnectLocation>& location) const {
 	std::string location_json;
 	const char* location_c = nullptr;
@@ -24007,6 +24116,15 @@ inline void DeviceLocal::setSnChainSettings(const std::optional<SnChainSettings>
 		throw Error("urnet: urnet_device_local_set_sn_chain_settings failed");
 	}
 }
+inline void DeviceLocal::setTransferDiagAllowDirect(bool enabled, bool allow_direct) const {
+	urnet_device_local_set_transfer_diag_allow_direct(handle(), enabled, allow_direct);
+}
+inline void DeviceLocal::setTransferDiagDeferTimeoutResend(bool enabled) const {
+	urnet_device_local_set_transfer_diag_defer_timeout_resend(handle(), enabled);
+}
+inline void DeviceLocal::setTransferDiagLaneRule(bool enabled) const {
+	urnet_device_local_set_transfer_diag_lane_rule(handle(), enabled);
+}
 inline void DeviceLocal::setTunnelDnsSetting(const std::optional<TunnelDnsSetting>& setting) const {
 	std::string setting_json;
 	const char* setting_c = nullptr;
@@ -24112,6 +24230,14 @@ inline void DeviceLocal::syncSnWallet(SnGetWalletCallback callback) const {
 inline std::string DeviceLocal::takeMemorySamplesJson() const {
 	char* r_c = urnet_device_local_take_memory_samples_json(handle());
 	return detail::takeString(r_c);
+}
+inline bool DeviceLocal::transferDiagDeferTimeoutResend() const {
+	bool r = urnet_device_local_transfer_diag_defer_timeout_resend(handle());
+	return r;
+}
+inline bool DeviceLocal::transferDiagLaneRule() const {
+	bool r = urnet_device_local_transfer_diag_lane_rule(handle());
+	return r;
 }
 inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv4() const {
 	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv4(handle());
@@ -26282,6 +26408,94 @@ inline void ReferralCodeViewController::start() const {
 inline void ReferralCodeViewController::stop() const {
 	urnet_referral_code_view_controller_stop(handle());
 }
+inline void Socket::close() const {
+	char* err_c = nullptr;
+	bool ok = urnet_socket_close(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_socket_close failed");
+	}
+}
+inline void Socket::closeRead() const {
+	char* err_c = nullptr;
+	bool ok = urnet_socket_close_read(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_socket_close_read failed");
+	}
+}
+inline void Socket::closeWrite() const {
+	char* err_c = nullptr;
+	bool ok = urnet_socket_close_write(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_socket_close_write failed");
+	}
+}
+inline std::string Socket::getLocalAddr() const {
+	char* r_c = urnet_socket_get_local_addr(handle());
+	return detail::takeString(r_c);
+}
+inline std::string Socket::getRemoteAddr() const {
+	char* r_c = urnet_socket_get_remote_addr(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<SocketRead> Socket::read(int64_t max_bytes) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_socket_read(handle(), max_bytes, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SocketRead>(r_s->c_str());
+}
+inline void Socket::setDeadlineMillis(int64_t t) const {
+	char* err_c = nullptr;
+	bool ok = urnet_socket_set_deadline_millis(handle(), t, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_socket_set_deadline_millis failed");
+	}
+}
+inline void Socket::setReadDeadlineMillis(int64_t t) const {
+	char* err_c = nullptr;
+	bool ok = urnet_socket_set_read_deadline_millis(handle(), t, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_socket_set_read_deadline_millis failed");
+	}
+}
+inline void Socket::setWriteDeadlineMillis(int64_t t) const {
+	char* err_c = nullptr;
+	bool ok = urnet_socket_set_write_deadline_millis(handle(), t, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_socket_set_write_deadline_millis failed");
+	}
+}
+inline int64_t Socket::write(const uint8_t* data, int32_t data_len) const {
+	char* err_c = nullptr;
+	int64_t r = urnet_socket_write(handle(), data, data_len, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline Sub SubscriptionBalanceViewController::addPurchaseConfirmationListener(PurchaseConfirmationListener listener) const {
 	std::shared_ptr<PurchaseConfirmationListener> listener_fn;
 	if (listener) {
@@ -27111,6 +27325,10 @@ inline std::optional<LogFileInfoList> logInventory() {
 	}
 	return detail::parseJson<LogFileInfoList>(r_s->c_str());
 }
+inline std::string memoryClassesJsonForDiag() {
+	char* r_c = urnet_memory_classes_json_for_diag();
+	return detail::takeString(r_c);
+}
 inline double monthlyEquivalentAmount(double yearly_amount, int64_t minor_unit_digits) {
 	double r = urnet_monthly_equivalent_amount(yearly_amount, minor_unit_digits);
 	return r;
@@ -27773,6 +27991,14 @@ inline void writeHeapProfile(const std::string& path) {
 	if (!ok) {
 		throw Error("urnet: urnet_write_heap_profile failed");
 	}
+}
+inline std::string writeHeapProfileForDiag(const std::string& path) {
+	char* err_c = nullptr;
+	char* r_c = urnet_write_heap_profile_for_diag(path.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 
 /* ----- hand-written wrappers (buffer-out c functions) ----- */

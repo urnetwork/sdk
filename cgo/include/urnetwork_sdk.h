@@ -30,6 +30,8 @@ extern "C" {
 
 /* the sdk version this library was built from */
 char* urnet_version(void);
+/* incompatible C ABI revision; additive exports retain this value */
+int32_t urnet_abi_version(void);
 void urnet_free_string(char* s);
 /* release a handle. returns false if the handle was unknown. */
 bool urnet_release(uint64_t handle);
@@ -37,6 +39,23 @@ bool urnet_release(uint64_t handle);
 int64_t urnet_live_handle_count(void);
 
 /* ----- byte buffer results (hand-written) ----- */
+
+/* Socket calls block: use a worker thread. Timeouts are milliseconds; deadlines
+ * are Unix epoch milliseconds (0 clears). Read consumes bytes/datagrams, and
+ * cannot be used as a size query. A partial result can accompany out_error.
+ * EOF is separate from an empty UDP datagram. Release closes socket handles. */
+uint64_t urnet_device_dial(uint64_t self, const char* network, const char* address, int64_t timeout_millis, char** out_error);
+uint64_t urnet_device_dial_tls(uint64_t self, const char* network, const char* address, int64_t timeout_millis, const char* tls_json, char** out_error);
+int32_t urnet_conn_read(uint64_t self, uint8_t* out, int32_t capacity, bool* eof, char** out_error);
+int32_t urnet_conn_write(uint64_t self, const uint8_t* data, int32_t length, char** out_error);
+bool urnet_conn_set_deadline(uint64_t self, int64_t epoch_millis, char** out_error);
+bool urnet_conn_set_read_deadline(uint64_t self, int64_t epoch_millis, char** out_error);
+bool urnet_conn_set_write_deadline(uint64_t self, int64_t epoch_millis, char** out_error);
+bool urnet_conn_close(uint64_t self, char** out_error);
+bool urnet_conn_close_read(uint64_t self, char** out_error);
+bool urnet_conn_close_write(uint64_t self, char** out_error);
+char* urnet_conn_local_addr(uint64_t self);
+char* urnet_conn_remote_addr(uint64_t self);
 
 /* buffer-out pattern: *inout_len is always set to the needed size. the copy
  * happens and true is returned only when out is non-null and the passed
@@ -992,6 +1011,7 @@ bool urnet_device_get_vpn_interface_while_offline(uint64_t self);
 char* urnet_device_get_window_status(uint64_t self);
 void urnet_device_init_provide_secret_keys(uint64_t self);
 void urnet_device_load_provide_secret_keys(uint64_t self, const char* provide_secret_key_list_json);
+uint64_t urnet_device_open_socket(uint64_t self, const char* network, const char* address, int64_t timeout_millis, const char* tls_options_json, char** out_error);
 void urnet_device_reconnect(uint64_t self, const char* location_json);
 bool urnet_device_refresh_token(uint64_t self, int64_t attempt, char** out_error);
 void urnet_device_remove_block_action_override(uint64_t self, const char* override_id);
@@ -1119,6 +1139,9 @@ void urnet_device_local_set_reliability_settings(uint64_t self, const char* reli
 void urnet_device_local_set_routing_tier(uint64_t self, int64_t tier);
 bool urnet_device_local_set_rpc_server(uint64_t self, const char* server_pem, const char* client_cert_pem, const char* host_port, char** out_error);
 bool urnet_device_local_set_sn_chain_settings(uint64_t self, const char* settings_json, char** out_error);
+void urnet_device_local_set_transfer_diag_allow_direct(uint64_t self, bool enabled, bool allow_direct);
+void urnet_device_local_set_transfer_diag_defer_timeout_resend(uint64_t self, bool enabled);
+void urnet_device_local_set_transfer_diag_lane_rule(uint64_t self, bool enabled);
 void urnet_device_local_set_tunnel_dns_setting(uint64_t self, const char* setting_json);
 void urnet_device_local_shuffle_exits(uint64_t self);
 char* urnet_device_local_sign_sn_fleet_binding(uint64_t self, const char* binding_json, char** out_error);
@@ -1135,6 +1158,8 @@ char* urnet_device_local_subprotocol_stats(uint64_t self);
 void urnet_device_local_sync_sn_chain_settings(uint64_t self, urnet_sn_epoch_cb callback_result, void* callback_user_data);
 void urnet_device_local_sync_sn_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
 char* urnet_device_local_take_memory_samples_json(uint64_t self);
+bool urnet_device_local_transfer_diag_defer_timeout_resend(uint64_t self);
+bool urnet_device_local_transfer_diag_lane_rule(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
@@ -1579,6 +1604,19 @@ char* urnet_referral_code_view_controller_get_referral_code_result(uint64_t self
 void urnet_referral_code_view_controller_start(uint64_t self);
 void urnet_referral_code_view_controller_stop(uint64_t self);
 
+/* ----- Socket ----- */
+
+bool urnet_socket_close(uint64_t self, char** out_error);
+bool urnet_socket_close_read(uint64_t self, char** out_error);
+bool urnet_socket_close_write(uint64_t self, char** out_error);
+char* urnet_socket_get_local_addr(uint64_t self);
+char* urnet_socket_get_remote_addr(uint64_t self);
+char* urnet_socket_read(uint64_t self, int64_t max_bytes, char** out_error);
+bool urnet_socket_set_deadline_millis(uint64_t self, int64_t t, char** out_error);
+bool urnet_socket_set_read_deadline_millis(uint64_t self, int64_t t, char** out_error);
+bool urnet_socket_set_write_deadline_millis(uint64_t self, int64_t t, char** out_error);
+int64_t urnet_socket_write(uint64_t self, const uint8_t* data, int32_t data_len, char** out_error);
+
 /* ----- Sub ----- */
 
 void urnet_sub_close(uint64_t self);
@@ -1724,6 +1762,7 @@ bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_valid_payment_reference(const char* s);
 char* urnet_log_inventory(void);
+char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
 double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
@@ -1809,6 +1848,7 @@ char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
 bool urnet_verify_payout_proof_hex(const char* root_hex, const char* leaf_hex, const char* proof_hex_json);
 bool urnet_write_heap_profile(const char* path, char** out_error);
+char* urnet_write_heap_profile_for_diag(const char* path, char** out_error);
 
 /* ----- linux/unix only ----- */
 
@@ -2422,6 +2462,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PlatformTransportUsedCount: number
  *   PlatformTransportPendingH1Count: number
  *   PlatformTransportPendingH1Bytes: number
+ *   PlatformTransportPreemptedH3Count: number
  *   TotalByteCount: number
  */
 
@@ -3886,6 +3927,17 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* SnWalletList (json):
  *   = SnWallet | null[]
+ */
+
+/* SocketRead (json):
+ *   Data: string (base64)
+ *   Eof: boolean
+ */
+
+/* SocketTLSOptions (json):
+ *   serverName?: string
+ *   rootCAPEM?: string
+ *   nextProtos?: string[]
  */
 
 /* SolanaPaymentIntentArgs (json):

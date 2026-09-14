@@ -8573,6 +8573,8 @@ func (self *deviceLocalRpcManager) CloseAndWait(ctx context.Context) error {
 
 //gomobile:noexport
 type DeviceLocalRpc struct {
+	sockets socketRpcRegistry
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -8827,9 +8829,11 @@ func (self *gobServerCodec) Close() error {
 func (self *DeviceLocalRpc) run() {
 	defer func() {
 		self.cancel()
+		self.sockets.close()
 		self.conn.Close()
 		self.reverseConn.Close()
 		self.workers.Wait()
+		self.sockets.workers.Wait()
 		close(self.done)
 	}()
 	self.workers.Add(1)

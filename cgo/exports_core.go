@@ -16,6 +16,12 @@ import (
 // core exports that are part of the abi contract rather than the sdk surface.
 // the sdk surface exports are generated, see gen/gen.go
 
+// urnet_abi_version changes only for an incompatible C ABI revision. Additive
+// exports do not require a bump; every language binding checks this on load.
+//
+//export urnet_abi_version
+func urnet_abi_version() C.int32_t { return 1 }
+
 //export urnet_version
 func urnet_version() *C.char {
 	defer cgoGuard("urnet_version")

@@ -15,3 +15,27 @@ temp/*
 # agent planning artifacts -- internal workflow, never shipped upstream
 .superpowers/
 docs/superpowers/
+
+# Language package outputs and isolated build tools.
+packaging/.venv/
+packaging/__pycache__/
+python/dist/
+python/build/
+python/src/urnetwork/native/
+python/**/__pycache__/
+python/src/*.egg-info/
+java/dist/
+java/target/
+java/src/main/resources/native/
+csharp/dist/
+csharp/obj/
+csharp/runtimes/
+ruby/dist/
+ruby/lib/urnetwork/native/
+rust/dist/
+rust/target/
+rust/native/
+swift/dist/
+js/release/
+packaging/release/
+cgo/dist/

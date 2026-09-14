@@ -61,3 +61,12 @@ build_bundle: build_wasm
 build: generate_types build_bundle
 	npm ci && \
 	npm run build;
+
+.PHONY: package check-package publish
+package: build
+	go -C ../packaging run . npm package
+check-package:
+	npm test
+	go -C ../packaging run . npm check
+publish:
+	go -C ../packaging run . publish npm

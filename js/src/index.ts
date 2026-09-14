@@ -1,4 +1,6 @@
 import { initWasm, isWasmInitialized, getWasmGlobals } from "./loader";
+import { attachSocketAPI } from "./socket";
+export * from "./socket";
 import type {
   InitOptions,
   ProxyDevice,
@@ -69,7 +71,12 @@ export class URNetwork {
     setupCallback?: SetupDeviceCallback,
   ): ProxyDevice {
     const { URnetworkNewProxyDeviceWithDefaults } = getWasmGlobals();
-    return URnetworkNewProxyDeviceWithDefaults(config, setupCallback);
+    const proxy = URnetworkNewProxyDeviceWithDefaults(config, setupCallback
+      ? (device: object, result: Parameters<SetupDeviceCallback>[1]) => setupCallback(attachSocketAPI(device), result)
+      : undefined);
+    const getDevice = proxy.getDevice.bind(proxy);
+    proxy.getDevice = () => attachSocketAPI(getDevice());
+    return proxy;
   }
 
   /**
@@ -117,7 +124,7 @@ export class URNetwork {
     if (device.error) {
       throw new Error(String(device.error));
     }
-    return device as DeviceRemote;
+    return attachSocketAPI(device) as DeviceRemote;
   }
 
   /**
@@ -204,7 +211,7 @@ export class URNetwork {
     if (device.error) {
       throw new Error(String(device.error));
     }
-    return device as DeviceRemote;
+    return attachSocketAPI(device) as DeviceRemote;
   }
 
   /**

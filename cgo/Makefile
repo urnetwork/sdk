@@ -21,9 +21,33 @@ build: generate build_windows build_linux
 #   windows/arm64: llvm-mingw (aarch64-w64-mingw32-clang)
 #   linux: zig cc, pinning the ubuntu 22.04 glibc 2.35 floor
 WINDOWS_AMD64_CC ?= x86_64-w64-mingw32-gcc
+SDK_GO_MODULE ?= $(shell awk '$$1 ~ /^github.com\/urnetwork\/sdk(\/v[0-9]+)?$$/ { print $$1; exit }' go.mod)
 WINDOWS_ARM64_CC ?= aarch64-w64-mingw32-clang
 LINUX_AMD64_CC ?= zig cc -target x86_64-linux-gnu.2.35
 LINUX_ARM64_CC ?= zig cc -target aarch64-linux-gnu.2.35
+
+.PHONY: build_darwin build_darwin_amd64 build_darwin_arm64
+.PHONY: package check-package publish publish-conan publish-vcpkg
+package:
+	go -C ../packaging run . c package
+check-package:
+	go -C ../packaging run . c check
+publish: publish-conan publish-vcpkg
+publish-conan:
+	go -C ../packaging run . publish conan
+publish-vcpkg:
+	go -C ../packaging run . publish vcpkg
+build_darwin: build_darwin_amd64 build_darwin_arm64
+build_darwin_amd64 build_darwin_arm64:
+	@arch="$(@:build_darwin_%=%)"; \
+	mkdir -p "build/darwin/$$arch" && \
+	rm -f "build/darwin/$$arch/libURnetworkSdk.dylib" && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH="$$arch" MACOSX_DEPLOYMENT_TARGET=13.5 \
+	go build -trimpath -buildmode=c-shared -ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION:-0.0.1-dev.0} -buildid=" \
+		-o "build/darwin/$$arch/libURnetworkSdk.dylib" . && \
+	install_name_tool -id @rpath/libURnetworkSdk.dylib "build/darwin/$$arch/libURnetworkSdk.dylib" && \
+	codesign --force --sign - "build/darwin/$$arch/libURnetworkSdk.dylib" && \
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp "build/darwin/$$arch/"
 
 build_windows: build_windows_amd64 build_windows_arm64
 	rm -f build/URnetworkSdkWindows.zip && \
@@ -36,7 +60,7 @@ build_windows_amd64:
 	rm -f build/windows/amd64/URnetworkSdk.dll && \
 	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC="$(WINDOWS_AMD64_CC)" \
 	go build -trimpath -buildmode=c-shared \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
+		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/windows/amd64/URnetworkSdk.dll . && \
 	rm -f build/windows/amd64/URnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def build/windows/amd64/;
@@ -48,7 +72,7 @@ build_windows_arm64:
 	rm -f build/windows/arm64/URnetworkSdk.dll && \
 	CGO_ENABLED=1 GOOS=windows GOARCH=arm64 CC="$(WINDOWS_ARM64_CC)" \
 	go build -trimpath -buildmode=c-shared \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
+		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/windows/arm64/URnetworkSdk.dll . && \
 	rm -f build/windows/arm64/URnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def build/windows/arm64/;
@@ -64,7 +88,7 @@ build_linux_amd64:
 	rm -f build/linux/amd64/libURnetworkSdk.so && \
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="$(LINUX_AMD64_CC)" \
 	go build -trimpath -buildmode=c-shared \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
+		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/linux/amd64/libURnetworkSdk.so . && \
 	rm -f build/linux/amd64/libURnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp build/linux/amd64/;
@@ -76,7 +100,7 @@ build_linux_arm64:
 	rm -f build/linux/arm64/libURnetworkSdk.so && \
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(LINUX_ARM64_CC)" \
 	go build -trimpath -buildmode=c-shared \
-		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} -buildid=" \
+		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/linux/arm64/libURnetworkSdk.so . && \
 	rm -f build/linux/arm64/libURnetworkSdk.h && \
 	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp build/linux/arm64/;
@@ -88,7 +112,7 @@ build_host:
 	mkdir -p build/host && \
 	rm -f build/host/libURnetworkSdk.dylib && \
 	CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-		-ldflags "-X github.com/urnetwork/sdk.Version=$${WARP_VERSION}" \
+		-ldflags "-X $(SDK_GO_MODULE).Version=$${WARP_VERSION}" \
 		-o build/host/libURnetworkSdk.dylib . && \
 	rm -f build/host/libURnetworkSdk.h;
 

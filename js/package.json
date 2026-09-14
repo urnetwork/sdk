@@ -1,5 +1,5 @@
 {
-  "name": "@urnetwork/sdk-js",
+  "name": "@urnetwork/sdk",
   "version": "0.0.1-beta.7",
   "description": "JS/TS SDK for URnetwork integration",
   "license": "MPL-2.0",

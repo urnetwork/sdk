@@ -67,6 +67,22 @@ func allowedMobileOmission(identifier string) bool {
 	if len(parts) == 2 {
 		memberName = parts[1]
 	}
+	// The portable socket entry point must not disappear under the broad
+	// DeviceRemote RPC-internal omission policy below.
+	if (typeName == "Device" || typeName == "DeviceLocal" || typeName == "DeviceRemote") && memberName == "OpenSocket" {
+		return false
+	}
+	// OpenSocket/Socket provide the mobile surface; these standard-library
+	// signatures and HTTP/3/RPC internals are intentionally Go-only.
+	if typeName == "Dialer" || typeName == "TLSDialer" || typeName == "Conn" || typeName == "WebTransportOptions" ||
+		typeName == "DeviceSocketRequest" || typeName == "DeviceSocketResponse" || identifier == "DialWebTransport" ||
+		identifier == "SocketTLSOptions.NextProtos" || identifier == "SocketTLSOptions.TLSConfig" {
+		return true
+	}
+	if (typeName == "Device" || typeName == "DeviceLocal") &&
+		(memberName == "Dial" || memberName == "DialContext" || memberName == "DialTls" || memberName == "DialTlsContext") {
+		return true
+	}
 
 	if typeName == "DeviceLocalRpc" || typeName == "DeviceProviderIdentities" ||
 		strings.HasPrefix(typeName, "DeviceRemote") ||

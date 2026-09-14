@@ -7814,6 +7814,31 @@ func urnet_device_load_provide_secret_keys(self C.uint64_t, provideSecretKeyList
 	self_.LoadProvideSecretKeys(provideSecretKeyList_)
 }
 
+//export urnet_device_open_socket
+func urnet_device_open_socket(self C.uint64_t, network *C.char, address *C.char, timeoutMillis C.int64_t, tlsOptions *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_device_open_socket")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_open_socket")
+	if !ok {
+		return 0
+	}
+	var tlsOptions_ *sdk.SocketTLSOptions
+	if tlsOptions != nil {
+		tlsOptions_ = &sdk.SocketTLSOptions{}
+		if !goJson(tlsOptions, tlsOptions_, "urnet_device_open_socket") {
+			return 0
+		}
+	}
+	r0, err := self_.OpenSocket(goString(network), goString(address), int64(timeoutMillis), tlsOptions_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_reconnect
 func urnet_device_reconnect(self C.uint64_t, location *C.char) {
 	defer cgoGuard("urnet_device_reconnect")
@@ -9524,6 +9549,36 @@ func urnet_device_local_set_sn_chain_settings(self C.uint64_t, settings *C.char,
 	return C.bool(true)
 }
 
+//export urnet_device_local_set_transfer_diag_allow_direct
+func urnet_device_local_set_transfer_diag_allow_direct(self C.uint64_t, enabled C.bool, allowDirect C.bool) {
+	defer cgoGuard("urnet_device_local_set_transfer_diag_allow_direct")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_transfer_diag_allow_direct")
+	if !ok {
+		return
+	}
+	self_.SetTransferDiagAllowDirect(bool(enabled), bool(allowDirect))
+}
+
+//export urnet_device_local_set_transfer_diag_defer_timeout_resend
+func urnet_device_local_set_transfer_diag_defer_timeout_resend(self C.uint64_t, enabled C.bool) {
+	defer cgoGuard("urnet_device_local_set_transfer_diag_defer_timeout_resend")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_transfer_diag_defer_timeout_resend")
+	if !ok {
+		return
+	}
+	self_.SetTransferDiagDeferTimeoutResend(bool(enabled))
+}
+
+//export urnet_device_local_set_transfer_diag_lane_rule
+func urnet_device_local_set_transfer_diag_lane_rule(self C.uint64_t, enabled C.bool) {
+	defer cgoGuard("urnet_device_local_set_transfer_diag_lane_rule")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_set_transfer_diag_lane_rule")
+	if !ok {
+		return
+	}
+	self_.SetTransferDiagLaneRule(bool(enabled))
+}
+
 //export urnet_device_local_set_tunnel_dns_setting
 func urnet_device_local_set_tunnel_dns_setting(self C.uint64_t, setting *C.char) {
 	defer cgoGuard("urnet_device_local_set_tunnel_dns_setting")
@@ -9751,6 +9806,28 @@ func urnet_device_local_take_memory_samples_json(self C.uint64_t) *C.char {
 	}
 	r0 := self_.TakeMemorySamplesJson()
 	return cString(string(r0))
+}
+
+//export urnet_device_local_transfer_diag_defer_timeout_resend
+func urnet_device_local_transfer_diag_defer_timeout_resend(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_transfer_diag_defer_timeout_resend")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_transfer_diag_defer_timeout_resend")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.TransferDiagDeferTimeoutResend()
+	return C.bool(r0)
+}
+
+//export urnet_device_local_transfer_diag_lane_rule
+func urnet_device_local_transfer_diag_lane_rule(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_local_transfer_diag_lane_rule")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_transfer_diag_lane_rule")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.TransferDiagLaneRule()
+	return C.bool(r0)
 }
 
 //export urnet_device_local_tunnel_dns_addresses_ipv4
@@ -13302,6 +13379,13 @@ func urnet_login_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_memory_classes_json_for_diag
+func urnet_memory_classes_json_for_diag() *C.char {
+	defer cgoGuard("urnet_memory_classes_json_for_diag")
+	r0 := sdk.MemoryClassesJsonForDiag()
+	return cString(string(r0))
+}
+
 //export urnet_monthly_equivalent_amount
 func urnet_monthly_equivalent_amount(yearlyAmount C.double, minorUnitDigits C.int64_t) C.double {
 	defer cgoGuard("urnet_monthly_equivalent_amount")
@@ -15825,6 +15909,151 @@ func urnet_sn_testnet_chain_settings() *C.char {
 	return cJson(r0, "urnet_sn_testnet_chain_settings")
 }
 
+//export urnet_socket_close
+func urnet_socket_close(self C.uint64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_socket_close")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_close")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.Close()
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_socket_close_read
+func urnet_socket_close_read(self C.uint64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_socket_close_read")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_close_read")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.CloseRead()
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_socket_close_write
+func urnet_socket_close_write(self C.uint64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_socket_close_write")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_close_write")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.CloseWrite()
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_socket_get_local_addr
+func urnet_socket_get_local_addr(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_socket_get_local_addr")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_get_local_addr")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetLocalAddr()
+	return cString(string(r0))
+}
+
+//export urnet_socket_get_remote_addr
+func urnet_socket_get_remote_addr(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_socket_get_remote_addr")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_get_remote_addr")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetRemoteAddr()
+	return cString(string(r0))
+}
+
+//export urnet_socket_read
+func urnet_socket_read(self C.uint64_t, maxBytes C.int64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_socket_read")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_read")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.Read(int(int64(maxBytes)))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_socket_read")
+}
+
+//export urnet_socket_set_deadline_millis
+func urnet_socket_set_deadline_millis(self C.uint64_t, t C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_socket_set_deadline_millis")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_set_deadline_millis")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetDeadlineMillis(int64(t))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_socket_set_read_deadline_millis
+func urnet_socket_set_read_deadline_millis(self C.uint64_t, t C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_socket_set_read_deadline_millis")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_set_read_deadline_millis")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetReadDeadlineMillis(int64(t))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_socket_set_write_deadline_millis
+func urnet_socket_set_write_deadline_millis(self C.uint64_t, t C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_socket_set_write_deadline_millis")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_set_write_deadline_millis")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetWriteDeadlineMillis(int64(t))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_socket_write
+func urnet_socket_write(self C.uint64_t, data *C.uint8_t, data_len C.int32_t, outError **C.char) C.int64_t {
+	defer cgoGuard("urnet_socket_write")
+	self_, ok := resolveHandle[*sdk.Socket](uint64(self), "urnet_socket_write")
+	if !ok {
+		return 0
+	}
+	r0, err := self_.Write(goBytes(data, data_len))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.int64_t(r0)
+}
+
 //export urnet_sub_close
 func urnet_sub_close(self C.uint64_t) {
 	defer cgoGuard("urnet_sub_close")
@@ -16660,4 +16889,15 @@ func urnet_write_heap_profile(path *C.char, outError **C.char) C.bool {
 		return C.bool(false)
 	}
 	return C.bool(true)
+}
+
+//export urnet_write_heap_profile_for_diag
+func urnet_write_heap_profile_for_diag(path *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_write_heap_profile_for_diag")
+	r0, err := sdk.WriteHeapProfileForDiag(goString(path))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
 }

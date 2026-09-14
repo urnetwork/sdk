@@ -49,7 +49,7 @@ export default [
       "react",
       "react/jsx-runtime",
       "@tanstack/react-query",
-      "@urnetwork/sdk-js",
+      "@urnetwork/sdk",
     ],
     plugins: [
       resolve(),

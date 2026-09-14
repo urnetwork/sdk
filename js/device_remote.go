@@ -141,13 +141,16 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	}
 
 	m := map[string]any{}
+	socketHandles := jsBindSocketDevice(device, m)
 
 	// lifecycle
 	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		go socketHandles.close()
 		device.Close()
 		return js.Null()
 	})
 	m["cancel"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		go socketHandles.close()
 		device.Cancel()
 		return js.Null()
 	})

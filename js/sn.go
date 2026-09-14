@@ -32,6 +32,7 @@ func jsPromise(run func(resolve func(any), reject func(error))) js.Value {
 		})
 		return nil
 	})
+	defer handler.Release()
 	return js.Global().Get("Promise").New(handler)
 }
 

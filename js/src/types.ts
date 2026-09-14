@@ -1,3 +1,5 @@
+import type { SocketDevice } from "./socket";
+
 /**
  * Configuration for proxy behavior
  */
@@ -34,10 +36,9 @@ export interface ProxyConfigResult {
 }
 
 /**
- * Device interface - placeholder for future device methods
+ * Device socket methods shared by local/proxy and remote device wrappers.
  */
-export interface Device {
-  // Device methods will be added as needed
+export interface Device extends SocketDevice {
 }
 
 /**
@@ -187,7 +188,7 @@ export type Unsubscribe = () => void;
  * (route local, provide settings) are accepted but no-op on the hosted device;
  * the getters and listeners still reflect real device state.
  */
-export interface DeviceRemote {
+export interface DeviceRemote extends SocketDevice {
   // lifecycle
   close(): void;
   cancel(): void;

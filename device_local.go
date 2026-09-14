@@ -634,6 +634,8 @@ type deviceMultiClientGenerator interface {
 }
 
 type DeviceLocal struct {
+	sockets deviceSockets
+
 	networkSpace *NetworkSpace
 	// api is the credential session used by this device. Ordinary app devices
 	// use the NetworkSpace API directly. Hosted devices own a private session
@@ -1797,6 +1799,7 @@ func (self *DeviceLocal) SetUpgradeMuxSettings(settings *connect.UpgradeMuxSetti
 		settings.Dns.ServerStatsSeed = self.dohServerScoresSeed
 	}
 	self.upgradeMuxSettings = settings
+	self.sockets.setResolver(self.dnsResolverSettingsWithLock())
 	// apply to the live mux immediately when non-nil (rebuilds its DohCache); nil takes
 	// effect on the next client recreation, which then creates no mux
 	if self.upgradeMux != nil && settings != nil {
@@ -5023,6 +5026,7 @@ func (self *DeviceLocal) Close() {
 	self.closeOnce.Do(self.close)
 	self.lifecycleJoinOnce.Do(func() {
 		go func() {
+			self.sockets.closeAndWait()
 			if self.authPublication != nil {
 				<-self.authPublication.Done()
 			}

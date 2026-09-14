@@ -8,7 +8,9 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/websocket v1.5.3
 	github.com/multiformats/go-multiaddr v0.16.1
+	github.com/pion/dtls/v3 v3.1.5
 	github.com/quic-go/quic-go v0.61.0
+	github.com/quic-go/webtransport-go v0.12.0
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/glog v0.0.0
 	github.com/urnetwork/goidenticons v0.0.0
@@ -22,6 +24,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
+	github.com/dunglas/httpsfv v1.1.0 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/google/btree v1.1.3 // indirect
@@ -55,7 +58,6 @@ require (
 	github.com/multiformats/go-varint v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
-	github.com/pion/dtls/v3 v3.1.5 // indirect
 	github.com/pion/ice/v4 v4.4.1 // indirect
 	github.com/pion/interceptor v0.1.47 // indirect
 	github.com/pion/logging v0.2.4 // indirect
