@@ -24,6 +24,7 @@ import (
 	"go/format"
 	"go/types"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -195,6 +196,10 @@ func main() {
 type gen struct {
 	pkg   *types.Package
 	scope *types.Scope
+	// Hand-written //export directives are inputs beside the generated files.
+	// Tests can emit into a temporary working directory while retaining this
+	// production source directory.
+	sourceDirectory string
 
 	errorType  types.Type
 	deviceType *types.Named
@@ -265,13 +270,14 @@ func load() (*gen, error) {
 		return nil, fmt.Errorf("expected one package, got %d", len(pkgs))
 	}
 	g := &gen{
-		pkg:           pkgs[0].Types,
-		scope:         pkgs[0].Types.Scope(),
-		errorType:     types.Universe.Lookup("error").Type(),
-		callbacks:     map[string]*types.Named{},
-		dataTypes:     map[string]*types.Named{},
-		cNames:        map[string]string{},
-		deviceDerived: map[string]bool{},
+		pkg:             pkgs[0].Types,
+		scope:           pkgs[0].Types.Scope(),
+		sourceDirectory: ".",
+		errorType:       types.Universe.Lookup("error").Type(),
+		callbacks:       map[string]*types.Named{},
+		dataTypes:       map[string]*types.Named{},
+		cNames:          map[string]string{},
+		deviceDerived:   map[string]bool{},
 	}
 	if obj := g.scope.Lookup("Device"); obj != nil {
 		if named, ok := types.Unalias(obj.Type()).(*types.Named); ok {
@@ -1685,7 +1691,7 @@ func (g *gen) write() error {
 				names = append(names, e.cName)
 			}
 		}
-		names = append(names, manualExports()...)
+		names = append(names, manualExports(g.sourceDirectory)...)
 		sort.Strings(names)
 		names = slices.Compact(names)
 		var b strings.Builder
@@ -1781,10 +1787,11 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 
 `
 
-// manualExports scans the hand-written package files for //export directives
-func manualExports() []string {
+// manualExports scans the hand-written package files for //export directives.
+// The source directory is independent of the generator's output directory.
+func manualExports(sourceDirectory string) []string {
 	var names []string
-	entries, err := os.ReadDir(".")
+	entries, err := os.ReadDir(sourceDirectory)
 	if err != nil {
 		return names
 	}
@@ -1799,7 +1806,7 @@ func manualExports() []string {
 		if !strings.HasSuffix(name, ".go") || strings.HasPrefix(name, "exports_gen") || name == "exports_core.go" {
 			continue
 		}
-		b, err := os.ReadFile(name)
+		b, err := os.ReadFile(filepath.Join(sourceDirectory, name))
 		if err != nil {
 			continue
 		}

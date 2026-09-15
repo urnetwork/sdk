@@ -27,6 +27,7 @@ func testingPreferenceGenerator(t *testing.T) *gen {
 	if err != nil {
 		t.Fatal(err)
 	}
+	g.sourceDirectory = filepath.Dir(testingGenDir(t))
 	return g
 }
 
