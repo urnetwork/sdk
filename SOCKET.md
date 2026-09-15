@@ -1,45 +1,22 @@
 # Device sockets
 
-Design, implementation, and WebTransport research. Reviewed September 14, 2026.
+Design, implementation, and Direct Sockets research. Reviewed September 15, 2026.
 
 ## Purpose and scope
 
-An SDK Device can open application connections through its packet path without an application creating a kernel socket or installing an operating-system VPN interface. Go callers receive `net.Conn`-compatible connections; JavaScript, C, and mobile bindings expose the same behavior in their own types. The first release provides outbound TCP, UDP, TLS over TCP, DTLS over UDP, and an HTTP/3 WebTransport client. Server sockets, listeners, multicast, and unconnected UDP are future work.
+An SDK Device can open application connections through its packet path without an application creating a kernel socket or installing an operating-system VPN interface. Go callers receive `net.Conn`-compatible connections; JavaScript, C, and mobile bindings expose the same behavior in their own types. The first release provides outbound TCP, UDP, TLS over TCP, DTLS over UDP, and a JavaScript Direct Sockets client interface. Server sockets, listeners, multicast, and unconnected UDP are future work.
 
 The central UDP decision is explicit: **for a hostname with both A and AAAA records, race the initial application datagram and select the first replying address. The initial datagram can be delivered to both addresses.** Later datagrams wait for selection and use only the winner. This is application-visible behavior, not a transparent implementation detail.
 
-The implementation is in [`socket.go`](socket.go), [`socket_udp.go`](socket_udp.go), [`socket_rpc.go`](socket_rpc.go), [`socket_mobile.go`](socket_mobile.go), [`socket_webtransport.go`](socket_webtransport.go), [`js/socket.go`](js/socket.go), [`js/src/socket.ts`](js/src/socket.ts), and [`cgo/exports_socket.go`](cgo/exports_socket.go). User-facing guidance belongs in the ur.io Developers → Socket page. Package distribution is covered separately in [PACKAGEMANAGERS.md](PACKAGEMANAGERS.md).
+The implementation is in [`socket.go`](socket.go), [`socket_udp.go`](socket_udp.go), [`socket_rpc.go`](socket_rpc.go), [`socket_mobile.go`](socket_mobile.go), [`js/socket.go`](js/socket.go), [`js/src/socket.ts`](js/src/socket.ts), and [`cgo/exports_socket.go`](cgo/exports_socket.go). User-facing guidance belongs in the ur.io Developers → Socket page. Package distribution is covered separately in [PACKAGEMANAGERS.md](PACKAGEMANAGERS.md).
 
-## Research findings: raw sockets and WebTransport
+## Research findings: Direct Sockets
 
-### Two different interfaces
+The compatibility target is the WICG Direct Sockets proposal: `TCPSocket(host, port, options)` and `UDPSocket(options)`, `opened`/`closed` promises, and Web Streams. TCP supports byte/BYOB reads and BufferSource writes; connected UDP carries `UDPMessage` objects. The proposal also describes server and bound-UDP modes, which remain outside this outbound release.[^direct]
 
-WebTransport is a session API with reliable streams and unreliable datagrams. The current W3C document is the July 30, 2026 Candidate Recommendation snapshot; it is still evolving. It defines protocol mappings for HTTP/3 and HTTP/2, not an arbitrary TCP/UDP endpoint API. The SDK should expose its raw `dial`/`Conn` API separately from a WebTransport session facade.[^w3c]
+Chrome exposes its native implementation to Isolated Web Apps, subject to their permissions policies. The SDK instead binds the familiar constructor signatures to one initialized UR Device; applications can use them in ordinary browsers and Node without an IWA package or browser Direct Sockets permission. It does not install global constructors, open a destination kernel socket, or change browser permissions.[^chrome-direct]
 
-The WICG **Direct Sockets** proposal describes `TCPSocket` and `UDPSocket`, which more closely match the requested raw socket semantics. It is a distinct browser capability with its own exposure and permission model. Using an SDK Device does not implement or grant that browser capability, and the SDK does not install replacements for those global constructors.[^direct]
-
-The old W3C TCP and UDP Sockets API is a historical Working Group Note, not the current WebTransport standard. It is useful background, not a compatibility target.[^old-sockets]
-
-### HTTP/3 transport requirements
-
-WebTransport over HTTP/3 establishes a session using an extended HTTP CONNECT request and negotiated settings. The HTTPS endpoint must implement WebTransport; a UDP echo server or ordinary HTTPS handler is insufficient. The protocol associates streams and HTTP datagrams with a session and carries session closure information. The selected implementation speaks `draft-ietf-webtrans-http3-16`.[^http3-wt]
-
-QUIC runs over UDP but uses TLS 1.3 integrated into its cryptographic handshake. It does **not** run TLS records or DTLS over the UDP socket. Consequently, WebTransport opens a plain connected UDP Device socket and places QUIC above it; it must not call `DialTls("udp", ...)`.[^quic-tls]
-
-QUIC datagrams do not provide retransmission or ordered delivery. A successful send therefore cannot promise that an application received the datagram. Reliable streams are the appropriate channel for data requiring ordered delivery and retransmission.[^quic-datagrams]
-
-### Implementation selection
-
-| Option | Device routing | Protocol fit | Decision |
-| --- | --- | --- | --- |
-| Browser `globalThis.WebTransport` | Browser chooses the network path; no custom Device dialer | Browser implementation and version | Do not use for Device sessions |
-| Direct Sockets globals | Browser-managed sockets/permissions | Raw TCP/UDP, not WebTransport sessions | Separate browser feature; do not depend on it |
-| WebSocket frames called “datagrams” | Could use an existing browser transport | Does not provide HTTP/3 WebTransport interoperability | Not a WebTransport implementation |
-| `quic-go` + `webtransport-go` above a Device UDP connection | Explicit PacketConn adapter over the Device | Real QUIC/HTTP/3 session and stream protocol | Implemented |
-
-The SDK already depends on `quic-go` v0.61.0. `webtransport-go` v0.12.0 matches that dependency and identifies draft 16 in its release README. Pin these versions together and recheck protocol compatibility when upgrading. Some older WebTransport library documentation describes older wire drafts; the pinned source/release and the corresponding IETF document are the implementation reference.[^wt-go]
-
-Tests establish interoperability with a local `webtransport-go` v0.12.0 server through both local and RPC Devices. They do not establish compatibility with every deployed WebTransport server or browser version, nor complete W3C conformance.
+The adapter uses the existing Device dialer and Conn bridge. No session protocol or specialized server is required: an ordinary TCP or UDP endpoint is sufficient. The API is a documented client compatibility profile, not complete browser/WebIDL conformance. Options that cannot be honored fail explicitly. The earlier session API and its protocol implementation have been removed.
 
 ## Go API and socket semantics
 
@@ -120,9 +97,9 @@ Explicit `tcp4`/`udp4` or `tcp6`/`udp6` restrict the family. A literal IP select
 
 ### TCP and secure handshakes
 
-Plain TCP uses `connect.Tun.DialContext`'s connection racing. A winner has completed a TCP connection. TLS races family-specific TCP **plus TLS handshakes**, allowing a family with a stalled or failing TLS handshake to lose to a working family. DTLS similarly races completed DTLS handshakes. QUIC races completed QUIC handshakes before HTTP/3 WebTransport session establishment. A successful bare UDP `connect` cannot be used as evidence that DTLS or QUIC works on that path.
+Plain TCP uses `connect.Tun.DialContext`'s connection racing. A winner has completed a TCP connection. TLS races family-specific TCP **plus TLS handshakes**, allowing a family with a stalled or failing TLS handshake to lose to a working family. DTLS similarly races completed DTLS handshakes. A successful bare UDP `connect` cannot be used as evidence that DTLS works on that path.
 
-Only handshake traffic is raced for secure connections. Application writes begin after a winner is returned; the raw-UDP duplicate-initial-application-datagram policy does not apply to TLS, DTLS, or QUIC application data. Multiple connection attempts can nevertheless be observed by servers.
+Only handshake traffic is raced for secure connections. Application writes begin after a winner is returned; the raw-UDP duplicate-initial-application-datagram policy does not apply to TLS or DTLS application data. Multiple connection attempts can nevertheless be observed by servers.
 
 ### Plain UDP: initial datagram and first reply
 
@@ -144,7 +121,7 @@ The portable `SocketTLSOptions` contains `serverName`, `rootCAPEM`, and `nextPro
 
 For DTLS the shared configuration supports roots, server name, client certificates, application protocols, `VerifyPeerCertificate`, explicit Go verification bypass, and key logging. Options without an equivalent supported mapping—such as TLS `VerifyConnection`, TLS client-certificate callback, custom cipher/curve lists, ECH, custom time/random sources, TLS session cache, or a version range excluding DTLS 1.2—fail rather than being silently treated as enforced. DTLS 1.3 is not implemented.
 
-The WASM executable includes `golang.org/x/crypto/x509roots/fallback` because a browser-hosted Go executable cannot assume a native system certificate store. This dependency embeds trust roots and must be kept current with SDK rebuilds. Custom root PEM and WebTransport certificate hashes are explicit alternate trust inputs.[^roots]
+The WASM executable includes `golang.org/x/crypto/x509roots/fallback` because a browser-hosted Go executable cannot assume a native system certificate store. This dependency embeds trust roots and must be kept current with SDK rebuilds. Custom root PEM is an explicit alternate trust input.[^roots]
 
 ## Remote Device and C/mobile bindings
 
@@ -156,7 +133,7 @@ An RPC session owns a random-ID registry limited to 128 sockets, including pendi
 
 `DeviceRemote` captures the active ordinary or browser service at dial time. A connection remains bound to that service; it is not rebound or replayed after reconnect. Session shutdown cancels pending dials, closes sockets, and joins workers. IDs cannot be used from another RPC session. An older peer without the optional method returns an error; the client does not fall back to a kernel connection.
 
-TLS/DTLS and QUIC can run in the client above this raw RPC connection. In the JS SDK that keeps the secure-protocol state in WASM while the owning remote Device supplies the packet path. Polling and buffer copies add overhead; these APIs emulate socket behavior, not the performance of a local file descriptor.
+TLS/DTLS can run in the client above this raw RPC connection. In the JS SDK that keeps the secure-protocol state in WASM while the owning remote Device supplies the packet path. Polling and buffer copies add overhead; these APIs emulate socket behavior, not the performance of a local file descriptor.
 
 ### C ABI
 
@@ -172,7 +149,7 @@ All three gomobile binds select the internal `sdk_mobile_bind` build tag (combin
 
 ## JavaScript SDK
 
-SDK factories attach `dial`, `dialTls`, and `webTransport` to Device wrappers, including proxy callbacks and returned Devices. The WASM bridge uses one asynchronous dispatcher per Device and monotonically allocated resource handles, capped at 512 sockets/streams/sessions. Releasing a WebTransport session also releases its child handles, including streams arriving after closure. Device cancellation/closure tears down its registry.
+SDK factories attach `dial`, `dialTls`, and `directSockets` to Device wrappers, including proxy callbacks and returned Devices. The WASM bridge uses one asynchronous dispatcher per Device and monotonically allocated resource handles, capped at 512 sockets. A lifecycle notification wakes idle Direct Sockets when their Device closes. Device cancellation/closure tears down its registry and closes late dial results.
 
 ```ts
 // `device` is an initialized SDK Device with an available packet path.
@@ -192,57 +169,68 @@ try {
 
 `AbortSignal` and `timeoutMillis` control opening/handshakes. Established connections use deadlines and explicit close. WASM I/O runs in Go goroutines and resolves Promises without blocking the JS event loop.
 
-### Implemented WebTransport profile
+### Direct Sockets client profile
 
-Use `device.webTransport(url, options)`, or import the SDK `WebTransport` constructor and pass `(device, url, options)`. This extra Device argument is intentional; the SDK does not replace the browser constructor.
+`const {TCPSocket, UDPSocket} = device.directSockets` selects constructors bound to that Device. The exported `createDirectSockets(device)` factory supplies the same interface for dependency injection. Constructor arguments then match the Direct Sockets API, without an extra Device parameter. TypeScript exports the corresponding socket, options, open-info, and UDPMessage types.
 
 ```ts
-const session = device.webTransport("https://transport.example/session");
-await session.ready;
+const {TCPSocket, UDPSocket} = device.directSockets;
+const tcp = new TCPSocket("echo.example", 9000);
+const {readable, writable} = await tcp.opened;
+const writer = writable.getWriter();
+const reader = readable.getReader({mode: "byob"});
 try {
-  const stream = await session.createBidirectionalStream();
-  const writer = stream.writable.getWriter();
   await writer.write(new TextEncoder().encode("hello"));
-  await writer.close(); // sends FIN; receiving remains possible
-  const reader = stream.readable.getReader();
-  console.log(await reader.read());
-
-  const datagrams = session.datagrams.writable.getWriter();
-  await datagrams.write(new Uint8Array([1, 2, 3]));
+  await writer.close(); // FIN; the readable side remains usable.
+  console.log(await reader.read(new Uint8Array(1024)));
 } finally {
-  session.close({ closeCode: 0, reason: "done" });
-  await session.closed;
+  await Promise.allSettled([reader.cancel(), writer.abort()]);
+  reader.releaseLock(); writer.releaseLock();
+  await tcp.close(); await tcp.closed;
+}
+
+const udp = new UDPSocket({remoteAddress: "echo.example", remotePort: 9001});
+const info = await udp.opened;
+const udpWriter = info.writable.getWriter();
+const udpReader = info.readable.getReader();
+try {
+  await udpWriter.write({data: new Uint8Array([1, 2, 3])});
+  const reply = await udpReader.read();
+  console.log(reply.value?.data); // An empty data array is a valid datagram.
+} finally {
+  await Promise.allSettled([udpReader.cancel(), udpWriter.abort()]);
+  udpReader.releaseLock(); udpWriter.releaseLock();
+  await udp.close(); await udp.closed;
 }
 ```
 
 | Feature | SDK behavior |
 | --- | --- |
-| Wire transport | HTTP/3, QUIC, TLS 1.3, draft-16 WebTransport; HTTP/2 fallback absent |
-| Lifecycle | `ready`, `closed`, `close({closeCode, reason})`; handshake failure rejects both promises; normal peer closure preserves its code/reason |
-| Reliable streams | Outgoing/incoming unidirectional and bidirectional streams, reads/writes, FIN, cancellation/reset |
-| Incoming queues | Demand-driven stream acceptance and datagram reads; graceful session closure ends queues |
-| Unreliable data | `datagrams.readable`, compatibility `datagrams.writable`, and `datagrams.createWritable()` |
-| Datagram size | Conservative 1,024-byte send limit; oversize writes are dropped. No promise of delivery. |
-| Negotiation | HTTPS URL, optional application protocols, page-derived Origin, `h3` ALPN |
-| Certificates | Normal PKI/custom root PEM, or explicit SHA-256 certificate pins with current lifetime ≤14 days and ECDSA P-256 |
-| Pooling/congestion | No pooling; nondefault congestion choices rejected; `reliability` reports unreliable support |
-| Not implemented | HTTP/2 mapping, BYOB readers, transferability, send groups/order, datagram age/queue tuning, per-stream/session statistics, draining/key export, and complete WebIDL/browser conformance |
+| Lifecycle | `opened` resolves to streams and endpoint fields; `closed` resolves after both directions end and the connection is released. Opening/network failures reject with `NetworkError`. |
+| TCP I/O | Byte stream with default and BYOB readers; BufferSource writes, backpressure, large-write chunking, partial I/O error preservation, and FIN/half-close. |
+| Connected UDP I/O | One `{data}` record per datagram; no destination fields in received messages. Per-message destination overrides reject with TypeError. No BYOB reader. |
+| Close | Promise-returning `close()` rejects with `InvalidStateError` before opening or while a reader/writer is locked. Cancel/abort pending I/O and release locks first. Repeated completed close is idempotent. |
+| Ownership | Closing the Device notifies idle sockets and errors active streams. Every completed connection releases its WASM handle. |
+| DNS | `dnsQueryType: "ipv4" / "ipv6"` restricts the family. Omission preserves Device hostname Happy Eyeballs. IPv6 constructor addresses are unbracketed. |
+| Tuning | Explicit `noDelay`, `keepAliveDelay`, `sendBufferSize`, and `receiveBufferSize` are validated and rejected with `NotSupportedError`; the Device's existing stack defaults apply. |
+| Future work | `TCPServerSocket`, bound/unconnected UDP, multicast, local binding, transferability, and complete WebIDL conformance. Unsupported valid binding/multicast requests throw `NotSupportedError`. |
+| Encryption | These constructors open plain TCP/UDP. The SDK's separate `dialTls` method provides TLS/DTLS. |
 
-Certificate pins match the full DER leaf certificate, not only its public key, and are copied before use. Pin mode replaces normal chain/name validation with pin/lifetime/key checks. Browser cookies and HTTP authorization headers are not implicitly inherited from `fetch`. Servers should validate Origin and apply application authentication appropriate to their session endpoint. Server protocol/version mismatch and certificate failures are reported; there is no silent switch to browser-native WebTransport.
+The UDP Happy Eyeballs policy is unchanged: `opened` makes the streams available before any datagram is sent, because waiting for a reply there would prevent the application from sending its initial datagram. A dual-family socket's address fields initially identify the first candidate and update after its first reply is consumed. Use a literal IP or `dnsQueryType` when a fixed endpoint tuple is required at opening. The first application datagram may reach both addresses; subsequent messages use the selected peer.
 
-The profile deliberately exposes a working protocol implementation plus a familiar JS stream/session surface. It is not advertised as a complete replacement for every feature in the current W3C interface. Missing advanced members must be implemented and validated before expanding that compatibility claim.
+Socket construction has the Device's default 30-second establishment bound. Direct Sockets has no per-I/O deadline member; use an application timer that cancels/aborts the streams, or use `Conn` when explicit deadlines and TLS/DTLS are needed. The runnable examples demonstrate cleanup on timeout.
 
 ## Platforms, validation, and future listeners
 
-The Go implementation builds on the SDK's existing Go targets. Android and Apple use portable gomobile bindings; C clients use the desktop C ABI. The JS package loads its WASM runtime in Node 24+ and modern browsers. Both environments use a configured reachable Device RPC endpoint with socket support. The browser does not require native WebTransport or Direct Sockets globals. Bun and other JS runtimes have not been qualified.
+The Go implementation builds on the SDK's existing Go targets. Android and Apple use portable gomobile bindings; C clients use the desktop C ABI. The JS package loads its WASM runtime in Node 24+ and modern browsers. Both environments use a configured reachable Device RPC endpoint with socket support. The browser does not require native Direct Sockets globals. Bun and other JS runtimes have not been qualified.
 
-The network tests use two real connect/gVisor TUNs with an in-memory Device packet route, local dual-family DNS servers, and actual TCP/UDP/TLS/DTLS/HTTP3 peers. No public DNS, provider account, or Internet echo service is needed for the socket tests. They cover:
+The network tests use two real connect/gVisor TUNs with an in-memory Device packet route, local dual-family DNS servers, and actual TCP/UDP/TLS/DTLS peers. No public DNS, provider account, or Internet echo service is needed for the socket tests. They cover:
 
 - Network/family matrix; names with working or blackholed IPv4/IPv6; TLS/DTLS handshake racing and inferred SNI.
 - TCP partial/large I/O, deadlines and recovery, cancellation, half-close, EOF, and close unblocking reads.
 - UDP empty datagrams, truncation, boundaries, IPv4/IPv6 fragmentation, initial duplicate delivery, delayed loser replies, no reply/deadline recovery, and fixed winner routing.
 - RPC responsiveness with blocked reads/dials, session isolation, limits, disconnects, and no replay.
-- Real HTTP/3 datagrams and both stream directions through local and remote Devices, protocol/Origin negotiation, certificate verification, pins, and session closure.
+- Direct Sockets constructor signatures, connected UDP messages, TCP BYOB reads, stream lock validation, half-close, pending-I/O cancellation, Device closure, and resource release. The real Go/WASM bridge carries TCP/UDP packets for IPv4 and IPv6.
 - C ABI byte counts/errors, EOF, bad buffers, deadline reset, release during reads, and stale handles.
 - TypeScript stream backpressure, lifecycle/error propagation, byte snapshots, large concurrent writes, and Go/WASM dispatcher/lifetime tests.
 - Real WASM initialization and closure in Node and Chrome, ESM/CommonJS package consumers, and executable Node/browser examples. Node's Undici/Axios adapters and Python's HTTPX/Requests adapters are tested against local HTTP and verified HTTPS peers.
@@ -254,7 +242,7 @@ go test -race . -run '^TestSocket' -count=1 -timeout=90s
 go test -short ./... -timeout=180s
 (cd cgo && go test -race . -run '^TestSocketABI' -count=1)
 (cd js && npm run build && npm test)
-(cd js && GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" . -run '^TestSocketWasm')
+(cd js && GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" . -run 'TestSocketWasm|TestDirectSocketsWasm')
 ```
 
 Generated C/C++ exports and Java gomobile exports are also checked. A macOS arm64 XCFramework is built and linked into the Swift example and an isolated SwiftPM consumer. An Android arm64 AAR and its sources/Javadocs are built and packaged. Full Apple/Android device coverage and cross-platform live-provider/browser interoperability remain release qualification work; passing host/Go/WASM tests does not substitute for them. The repository's long-running leak/soak tests need their own time budget rather than the short unit-test timeout.
@@ -263,15 +251,10 @@ Future server work should add a separate listener/packet-listener surface with e
 
 ## Sources
 
-Primary sources were consulted for protocol/API definitions; repository code and tests establish SDK-specific behavior. Research status is dated above because the WebTransport API and wire protocol remain active work.
+Primary sources were consulted for protocol/API definitions; repository code and tests establish SDK-specific behavior. Research status is dated above because the Direct Sockets proposal remains active work.
 
-[^w3c]: [W3C WebTransport Candidate Recommendation, July 30, 2026](https://www.w3.org/TR/2026/CR-webtransport-20260730/), including the session/stream model, lifecycle, datagrams, and certificate-hash mode.
 [^direct]: [WICG Direct Sockets API](https://wicg.github.io/direct-sockets/).
-[^old-sockets]: [W3C TCP and UDP Socket API Working Group Note](https://www.w3.org/TR/tcp-udp-sockets/).
-[^http3-wt]: [IETF WebTransport over HTTP/3, draft 16](https://datatracker.ietf.org/doc/html/draft-ietf-webtrans-http3-16).
-[^quic-tls]: [RFC 9001: Using TLS to Secure QUIC](https://www.rfc-editor.org/rfc/rfc9001.html).
-[^quic-datagrams]: [RFC 9221: An Unreliable Datagram Extension to QUIC](https://www.rfc-editor.org/rfc/rfc9221.html).
-[^wt-go]: [webtransport-go v0.12.0 release README](https://github.com/quic-go/webtransport-go/blob/v0.12.0/README.md).
+[^chrome-direct]: [Chrome Direct Sockets and Isolated Web Apps](https://developer.chrome.com/docs/iwa/direct-sockets).
 [^happy]: [RFC 8305: Happy Eyeballs Version 2](https://www.rfc-editor.org/rfc/rfc8305.html).
 [^dtls]: [Pion DTLS v3 API](https://pkg.go.dev/github.com/pion/dtls/v3).
 [^roots]: [Go x509roots fallback package](https://pkg.go.dev/golang.org/x/crypto/x509roots/fallback).

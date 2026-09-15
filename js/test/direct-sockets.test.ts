@@ -255,7 +255,7 @@ test("constructors validate supported options and reject unimplemented features 
   for (const port of [-1, 0, 65536, NaN, Infinity]) assert.throws(() => new TCPSocket("host", port), TypeError);
   for (const host of ["", "[::1]", "host/path", "host name"]) assert.throws(() => new TCPSocket(host, 7), TypeError);
   for (const options of [{ dnsQueryType: "all" }, { keepAliveDelay: 999 }, { sendBufferSize: 0 }, { receiveBufferSize: -1 }]) assert.throws(() => new TCPSocket("host", 7, options as any), TypeError);
-  for (const options of [{ noDelay: true }, { keepAliveDelay: 1000 }, { sendBufferSize: 1024 }, { receiveBufferSize: 1024 }]) assert.throws(() => new TCPSocket("host", 7, options), dom("NotSupportedError"));
+  for (const options of [{ noDelay: true }, { noDelay: false }, { keepAliveDelay: 1000 }, { sendBufferSize: 1024 }, { receiveBufferSize: 1024 }]) assert.throws(() => new TCPSocket("host", 7, options), dom("NotSupportedError"));
   for (const options of [{}, { remoteAddress: "host" }, { remotePort: 7 }, { remoteAddress: "host", remotePort: 7, localAddress: "::" }, { remoteAddress: "host", remotePort: 7, ipv6Only: false }]) assert.throws(() => new UDPSocket(options), TypeError);
   for (const options of [{ localAddress: "::" }, { remoteAddress: "224.0.0.1", remotePort: 7 }, { remoteAddress: "host", remotePort: 7, multicastLoopback: false }]) assert.throws(() => new UDPSocket(options), dom("NotSupportedError"));
   assert.equal(f.calls.length, 0);

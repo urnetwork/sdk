@@ -1038,7 +1038,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1094) ==
+== skipped (1092) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1583,7 +1583,6 @@ DeviceSetNameError: data: crosses as json
 DeviceSetNameResult: data: crosses as json
 DeviceSocketRequest: skipped: socket RPC internal
 DeviceSocketResponse: skipped: socket RPC internal
-DialWebTransport: skipped: Go/JS WebTransport surface
 Dialer: skipped: native Go socket interface; manual C socket exports
 DnsResolverSettings: data: crosses as json
 DnsResolverSettingsChangeListener: callback interface: crosses as c function pointer
@@ -2126,7 +2125,6 @@ WalletType: alias: crosses as its underlying c type
 WalletValidateAddressArgs: data: crosses as json
 WalletValidateAddressCallback: callback interface: crosses as c function pointer
 WalletValidateAddressResult: data: crosses as json
-WebTransportOptions: skipped: Go WebTransport configuration
 WebsocketDeviceRpcDialer.Dial: skipped: net.Conn internal; used by DeviceRemote internally
 WebsocketDeviceRpcListener.Accept: skipped: net.Conn internal; used by DeviceLocal internally
 WindowSizeSettings: data: crosses as json

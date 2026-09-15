@@ -120,7 +120,9 @@ const require = createRequire(import.meta.url);
 assert.equal(canonical, legacy);
 assert.equal(require("@urnetwork/sdk").URNetwork, require("@urnetwork/sdk-js").URNetwork);
 assert.equal(typeof sdk.Conn, "function");
-assert.equal(typeof sdk.WebTransport, "function");
+assert.equal(typeof sdk.createDirectSockets, "function");
+assert.equal("WebTransport" in sdk, false);
+assert.equal(typeof require("@urnetwork/sdk").createDirectSockets, "function");
 assert.ok(require.resolve("@urnetwork/sdk/wasm/sdk.wasm"));
 const initialized = await sdk.URNetwork.init();
 assert.equal(initialized.isInitialized(), true);
@@ -133,7 +135,18 @@ cjs.close();
 await new Promise(resolve => setTimeout(resolve, 30));
 `)
 	command(temp, nil, "node", "check.mjs")
-	textFile(filepath.Join(temp, "check.ts"), "import {Conn, URNetwork, WebTransport} from \"@urnetwork/sdk\";\nimport Legacy from \"@urnetwork/sdk-js\";\nconst same: typeof URNetwork = Legacy;\nlet conn: Conn; let transport: WebTransport;\n")
+	textFile(filepath.Join(temp, "check.ts"), `import {Conn, URNetwork, createDirectSockets, type DeviceRemote, type TCPSocket, type UDPSocket, type UDPMessage} from "@urnetwork/sdk";
+import Legacy from "@urnetwork/sdk-js";
+const same: typeof URNetwork = Legacy;
+declare const device: DeviceRemote;
+const {TCPSocket: TCP, UDPSocket: UDP} = createDirectSockets(device);
+const tcp: TCPSocket = new TCP("example.com", 80, {dnsQueryType: "ipv4"});
+const udp: UDPSocket = new device.directSockets.UDPSocket({remoteAddress: "example.com", remotePort: 53});
+const message: UDPMessage = {data: new Uint8Array([1])};
+tcp.opened.then(info => info.readable.getReader({mode: "byob"}).read(new Uint8Array(10)));
+udp.opened.then(info => info.writable.getWriter().write(message));
+let conn: Conn;
+`)
 	command(temp, nil, path("js/node_modules/.bin/tsc"), "--noEmit", "--skipLibCheck", "--target", "ES2022", "--module", "NodeNext", "--moduleResolution", "NodeNext", "check.ts")
 	markChecked(out)
 }

@@ -197,7 +197,7 @@ Each `examples/<language>/README.md` has its native installation guide. Each `ex
 
 The Developer SDK documentation includes Install, Socket and an Examples mini site. Its Go generator snapshots all twelve language source trees, including nested browser/Node programs and build manifests, while excluding generated outputs, dependencies and local credentials. Source links point back to the examples repository.
 
-Socket semantics, TLS/DTLS, Happy Eyeballs and the WebTransport support profile are specified in [SOCKET.md](SOCKET.md). Plain UDP races the initial datagram and accepts the first reply; the documentation explicitly covers possible duplicate initial delivery.
+Socket semantics, TLS/DTLS, Happy Eyeballs and the JavaScript Direct Sockets client profile are specified in [SOCKET.md](SOCKET.md). Plain UDP races the initial datagram and accepts the first reply; the documentation explicitly covers possible duplicate initial delivery.
 
 ## Sources
 

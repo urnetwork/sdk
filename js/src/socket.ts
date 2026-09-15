@@ -403,7 +403,7 @@ export function createDirectSockets(device: Pick<SocketDevice, "dial">): DirectS
           if (uint(options.keepAliveDelay, 0xffffffff, "keepAliveDelay") < 1000) throw new TypeError("keepAliveDelay must be at least 1000 ms");
           unsupported("Per-socket TCP keep-alive is not supported by the Device");
         }
-        if (options.noDelay) unsupported("Per-socket noDelay is not supported by the Device");
+        if (options.noDelay !== undefined) unsupported("Per-socket noDelay is not supported by the Device");
         super(device, protocol, destination(remoteAddress, remotePort), false);
       }
     },
