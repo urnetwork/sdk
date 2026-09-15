@@ -3,4 +3,4 @@ set -euo pipefail
 
 cd "${0:A:h}"
 echo "Rust SDK smoke: compiling and running a clean Cargo consumer"
-make package check-package
+make smoke

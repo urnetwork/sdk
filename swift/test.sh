@@ -29,4 +29,4 @@ if [[ ! -s "$artifact" ]]; then
 fi
 
 echo "Swift SDK smoke: compiling and running a Swift Package consumer"
-SDK_XCFRAMEWORK_ZIP="$artifact" make package check-package
+SDK_XCFRAMEWORK_ZIP="$artifact" make smoke

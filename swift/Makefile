@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := package
-.PHONY: all package check-package clean
+.PHONY: all package check-package smoke clean
 GO ?= go
 all: package
 package:
@@ -7,6 +7,7 @@ package:
 check-package:
 	cd dist/package && swift package dump-package > /dev/null
 	$(GO) -C ../packaging run . release check-swift
+smoke: package check-package
 publish:
 	$(GO) -C ../packaging run . publish swift
 publish-cocoapods:

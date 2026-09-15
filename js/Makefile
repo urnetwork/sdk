@@ -62,11 +62,13 @@ build: generate_types build_bundle
 	npm ci && \
 	npm run build;
 
-.PHONY: package check-package publish
+.PHONY: package check-package smoke publish
 package: build
 	go -C ../packaging run . npm package
 check-package:
 	npm test
 	go -C ../packaging run . npm check
+smoke: build
+	node --test test/smoke.test.ts
 publish:
 	go -C ../packaging run . publish npm
