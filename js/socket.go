@@ -13,7 +13,7 @@ import (
 	"time"
 
 	webtransport "github.com/quic-go/webtransport-go"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
 

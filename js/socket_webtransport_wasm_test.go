@@ -24,8 +24,8 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	webtransport "github.com/quic-go/webtransport-go"
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 type socketWasmTunDevice struct {
