@@ -3752,12 +3752,6 @@ func (self *DeviceLocal) GetConnectEnabled() bool {
 	return self.remoteUserNatClient != nil
 }
 
-// providerLocalUserNatSettings builds the settings for the provide exit nat.
-// Unlike the local-traffic nats (a single trusted source, no limits), the
-// exit nat serves unbounded remote sources, so the per source and aggregate
-// flow counts are bounded (lru evict of the idle-most flow) to put a hard
-// ceiling on flow state, sockets, and goroutines under any remote behavior.
-// Scaled by the memory budget (see `SetMemoryLimit`).
 // applyProvideMemorySharesWithLock reallocates the transfer budget
 // capacities between the client and provider pairs for the provide state:
 // while providing is off, the provider share backs the client pair instead
@@ -3818,12 +3812,29 @@ func (self *DeviceLocal) updateMobilePacketPerformanceModeWithLock() {
 	self.mobilePacketPressure.setH1AckReserveEnabled(h1ProviderOff)
 }
 
+// Sizes both device egress nats from the provider share. A disabled device
+// target retains legacy process-budget caps and the short udp idle reap;
+// without either budget it uses connect's unlimited provider profile.
 func providerLocalUserNatSettings(
 	memoryTargetByteCount ByteCount,
 	log connect.Logger,
 	dialContextSettings ...*connect.DialContextSettings,
 ) *connect.LocalUserNatSettings {
-	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(memoryTargetByteCount)
+	var localUserNatSettings *connect.LocalUserNatSettings
+	if memoryTargetByteCount <= 0 && 0 < connect.MemoryBudget() {
+		// DeviceLocal promises process-budget sizing when its target is off.
+		// The connect targetless provider profile serves independent server
+		// callers and deliberately does not infer flow caps from that budget.
+		localUserNatSettings = connect.DefaultLocalUserNatSettings()
+		localUserNatSettings.UdpBufferSettings.UserLimit = connect.MemoryScaledCount(512, 64)
+		localUserNatSettings.UdpBufferSettings.GlobalLimit = connect.MemoryScaledCount(2048, 256)
+		localUserNatSettings.TcpBufferSettings.UserLimit = connect.MemoryScaledCount(256, 32)
+		localUserNatSettings.TcpBufferSettings.GlobalLimit = connect.MemoryScaledCount(512, 64)
+		localUserNatSettings.IcmpBufferSettings.UserLimit = connect.MemoryScaledCount(128, 16)
+		localUserNatSettings.IcmpBufferSettings.GlobalLimit = connect.MemoryScaledCount(256, 32)
+	} else {
+		localUserNatSettings = connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(memoryTargetByteCount)
+	}
 	localUserNatSettings.Log = log
 	if len(dialContextSettings) != 0 && dialContextSettings[0] != nil {
 		// Both protocols must expose the same address identity. ICMP uses a

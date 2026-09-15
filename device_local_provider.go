@@ -223,14 +223,12 @@ func newDeviceLocalProviderWithOverrides(
 	platformTransportSettings.PlatformTransportBudgetPriority =
 		connect.PlatformTransportBudgetPriorityBackground
 
-	// This NAT is the local-fallback egress surface: use the explicit
-	// provider profile sized from the provider share, so an unbudgeted
-	// desktop/server build does not become unbounded, while generic local
-	// NAT callers do not inherit phone caps.
-	localUserNatSettings := connect.DefaultProviderLocalUserNatSettingsWithMemoryTarget(
+	// The local-fallback egress uses the same device memory policy as the
+	// remote exit, including process-budget sizing when the target is off.
+	localUserNatSettings := providerLocalUserNatSettings(
 		providerMemoryTargetByteCount,
+		clientSettings.Log,
 	)
-	localUserNatSettings.Log = clientSettings.Log
 	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	provider := &deviceLocalProvider{
