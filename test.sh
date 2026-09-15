@@ -21,22 +21,55 @@ if [[ $? != 0 ]]; then
     exit 1
 fi
 
-# submodules with their own go.mod (cgo, js, build): run each module's go
-# tests from inside the module, the way server/test.sh iterates its test
-# dirs. Only modules that contain _test.go files are run — the js/build
-# modules target wasm and do not build for the host. Notably cgo/gen holds
-# the ABI baseline test, which must run from the cgo module.
-for mod in `find . -mindepth 2 -maxdepth 2 -name go.mod | xargs -n 1 dirname | sort`; do
-    if [[ -z `find $mod -name '*_test.go' -not -path '*/node_modules/*' -print -quit` ]]; then
-        continue
-    fi
-    pushd $mod
-    go test -timeout 0 -v -race "$@" ./...
-    result=$?
-    popd
-    if [[ $result != 0 ]]; then
-        exit $result
-    fi
+# Match the test command's package-loading flags. Go applies GOFLAGS itself,
+# including test-only flags that go list correctly ignores. Consume test flag
+# values so a pattern such as `-run -tags` is not mistaken for a build flag.
+list_args=(-race)
+for ((arg_index = 1; arg_index <= $#; arg_index++)); do
+    argument=$argv[arg_index]
+    option=${argument%%=*}
+    option=${option/#--/-}
+    option=${option/#-test./-}
+    case "$option" in
+        -race|-msan|-asan)
+            list_args+=("$argument")
+            ;;
+        -tags|-mod|-modfile|-overlay|-compiler|-buildmode|-installsuffix)
+            list_args+=("$argument")
+            if [[ "$argument" != *=* ]]; then
+                ((arg_index++))
+                list_args+=("$argv[arg_index]")
+            fi
+            ;;
+        -args) break ;;
+        -run|-skip|-bench|-benchtime|-count|-cpu|-parallel|-timeout|-shuffle|\
+        -fuzz|-fuzztime|-fuzzminimizetime|\
+        -blockprofile|-blockprofilerate|-coverprofile|-covermode|-coverpkg|\
+        -cpuprofile|-memprofile|-memprofilerate|-mutexprofile|-mutexprofilefraction|\
+        -outputdir|-trace|-vet|-o|-p|-asmflags|-gcflags|-gccgoflags|-ldflags|-pgo|-toolexec)
+            if [[ "$argument" != *=* ]]; then
+                ((arg_index++))
+            fi
+            ;;
+    esac
+done
+
+# A filename alone does not make a test runnable for this target. Go's package
+# metadata honors platform suffixes, build/race tags, and nested module
+# boundaries. Keep discovery errors fatal and run every package in an admitted
+# module, including build's host contracts and cgo/gen's ABI baseline.
+for mod in "$sdk_dir"/*(N/); do
+    [[ -f "$mod/go.mod" ]] || continue
+    (
+        cd "$mod" || exit $?
+        host_tests=$(go list "${list_args[@]}" \
+            -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...) || exit $?
+        if [[ -z "$host_tests" ]]; then
+            printf 'SDK Go module %s: no tests for the active Go target\n' "${mod:t}"
+            exit 0
+        fi
+        go test -timeout 0 -v -race "$@" ./...
+    ) || exit $?
 done
 
 # js package tests (node --test via the package script): fetch_retry + the
