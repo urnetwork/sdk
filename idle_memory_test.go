@@ -320,3 +320,42 @@ func TestIdleMemoryTrimmerRetriesDeferredMaintenance(t *testing.T) {
 	case <-time.After(30 * time.Millisecond):
 	}
 }
+
+// The device audit's premerge provider held 2,309 to 2,359 pool owners flat
+// across a five-minute quiet window at 28.67 MiB. Owners that do not move
+// between two quiet attempts are stranded, not a burst in flight; the trim
+// never touches them, so they must not veto the free-list rebuild forever.
+func TestMobileMemoryReclaimerReclaimsUnderSettledOwnership(t *testing.T) {
+	now := time.Unix(100, 0)
+	snapshot := mobileMemoryReclaimSnapshot{runtimeByteCount: 30, poolOutstanding: 2359}
+	reclaimCount := 0
+	reclaimer := &mobileMemoryReclaimer{
+		targetByteCount:    24,
+		maxPoolOutstanding: mobileIdleMemoryMaxOutstandingPoolCount,
+		quietRetry:         mobileIdleMemoryTrimRetryDelay,
+		cooldown:           time.Minute,
+		now:                func() time.Time { return now },
+		sample:             func() mobileMemoryReclaimSnapshot { return snapshot },
+		reclaim:            func() { reclaimCount += 1 },
+	}
+
+	// First quiet attempt: many owners, no prior observation. Defer once.
+	if got := reclaimer.attempt(); got.outcome != mobileMemoryReclaimInFlight ||
+		got.retryAfter != mobileIdleMemoryTrimRetryDelay || reclaimCount != 0 {
+		t.Fatalf("first attempt = %+v count=%d, want one in-flight deferral", got, reclaimCount)
+	}
+	// Retry: ownership still growing by more than the idle working set is a
+	// live drain or a burst. Keep deferring.
+	now = now.Add(mobileIdleMemoryTrimRetryDelay)
+	snapshot.poolOutstanding = 2359 + mobileIdleMemoryMaxOutstandingPoolCount + 1
+	if got := reclaimer.attempt(); got.outcome != mobileMemoryReclaimInFlight || reclaimCount != 0 {
+		t.Fatalf("growing attempt = %+v count=%d, want deferral", got, reclaimCount)
+	}
+	// Retry: ownership flat (within the idle working set) since the last
+	// quiet observation. Settled: reclaim.
+	now = now.Add(mobileIdleMemoryTrimRetryDelay)
+	snapshot.poolOutstanding -= 3
+	if got := reclaimer.attempt(); got.outcome != mobileMemoryReclaimed || reclaimCount != 1 {
+		t.Fatalf("settled attempt = %+v count=%d, want reclaim", got, reclaimCount)
+	}
+}

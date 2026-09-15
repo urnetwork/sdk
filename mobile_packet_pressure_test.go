@@ -80,7 +80,7 @@ func TestMobilePacketPressureProductionGateIgnoresInboundPacketRoots(t *testing.
 	}
 }
 
-func TestMobilePacketPressureGateIsMobileTwentyFourMiBOnly(t *testing.T) {
+func TestMobilePacketPressureGateIsMobileOnly(t *testing.T) {
 	if mobilePacketPressureMaxOutstandingByteCount != 1024*1024 {
 		t.Fatalf("packet pressure ceiling = %d, want H3-safe 1-MiB ceiling", mobilePacketPressureMaxOutstandingByteCount)
 	}
@@ -102,7 +102,6 @@ func TestMobilePacketPressureGateIsMobileTwentyFourMiBOnly(t *testing.T) {
 		mobile bool
 	}{
 		{name: "server", target: mobileSteadyMemoryTargetByteCount, mobile: false},
-		{name: "larger mobile", target: 32 * 1024 * 1024, mobile: true},
 		{name: "disabled mobile", target: 0, mobile: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -110,9 +109,15 @@ func TestMobilePacketPressureGateIsMobileTwentyFourMiBOnly(t *testing.T) {
 				testCase.target,
 				testCase.mobile,
 			); gate != nil {
-				t.Fatal("created a mobile pressure gate outside the 24-MiB mobile profile")
+				t.Fatal("created a mobile pressure gate off the mobile profile")
 			}
 		})
+	}
+	// A raised target must keep the gate: device_local only starts the memory
+	// sampler when the gate exists, so losing it on a raise would remove the
+	// telemetry that shows whether the raise was safe.
+	if gate := newMobilePacketPressureGateForPlatform(32*1024*1024, true); gate == nil {
+		t.Fatal("a raised mobile target lost the pressure gate and its sampler")
 	}
 }
 

@@ -55,7 +55,7 @@ func newMobilePacketPressureGateForPlatform(
 	memoryTargetByteCount ByteCount,
 	mobile bool,
 ) *mobilePacketPressureGate {
-	if !mobileLowMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
+	if !mobileMemoryPolicyEnabledForPlatform(memoryTargetByteCount, mobile) {
 		return nil
 	}
 	return newMobilePacketPressureGate()
