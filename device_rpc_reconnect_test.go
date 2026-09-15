@@ -4,10 +4,12 @@ package sdk
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/rpc"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -215,6 +217,7 @@ func TestRpcClientCallParentCancellationClosesTransport(t *testing.T) {
 }
 
 type testingCountingDeviceRpcLogger struct {
+	infoFormat   string
 	infoCount    atomic.Int64
 	warningCount atomic.Int64
 	errorCount   atomic.Int64
@@ -225,7 +228,9 @@ func (self *testingCountingDeviceRpcLogger) Info(args ...any) {
 }
 
 func (self *testingCountingDeviceRpcLogger) Infof(format string, args ...any) {
-	self.infoCount.Add(1)
+	if self.infoFormat == "" || self.infoFormat == format {
+		self.infoCount.Add(1)
+	}
 }
 
 func (self *testingCountingDeviceRpcLogger) Warningf(format string, args ...any) {
@@ -635,34 +640,89 @@ func TestDeviceLocalRpcManagerPacesRepeatedAcceptErrors(t *testing.T) {
 	}
 }
 
-// TestDeviceLocalRpcManagerLogsRepeatedAcceptErrorOnce verifies a persistent
-// listener failure does not turn its retry pace into repeated log work.
+// Changed error text within one listener outage must not restart its log streak.
 func TestDeviceLocalRpcManagerLogsRepeatedAcceptErrorOnce(t *testing.T) {
-	logger := &testingCountingDeviceRpcLogger{}
-	settings := defaultDeviceRpcSettings()
-	settings.ClientSettings.Log = logger
-	settings.RpcReconnectTimeout = 10 * time.Millisecond
-	listener := &testingFailingDeviceRpcListener{
-		attemptTimes: make(chan time.Time, 16),
-	}
-	deviceLocal := &DeviceLocal{
-		log: settings.logger(),
-	}
-	manager := newDeviceLocalRpcManager(
-		context.Background(),
-		deviceLocal,
-		settings,
-		listener,
-	)
+	synctest.Test(t, func(t *testing.T) {
+		logger := &testingCountingDeviceRpcLogger{infoFormat: "[dlrcp]accept err = %s"}
+		settings := defaultDeviceRpcSettings()
+		listener := &testingScriptedDeviceRpcListener{
+			entered: make(chan struct{}),
+			results: make(chan testingDeviceRpcAcceptResult),
+		}
+		manager := newDeviceLocalRpcManager(t.Context(), &DeviceLocal{log: logger}, settings, listener)
+		defer manager.CloseAndWait(context.Background())
 
-	for range 4 {
-		testingReceiveDeviceRpcAttempt(t, listener.attemptTimes, time.Second)
+		<-listener.entered
+		for _, err := range []error{io.EOF, net.ErrClosed, io.EOF, net.ErrClosed} {
+			listener.results <- testingDeviceRpcAcceptResult{err: err}
+			// The next Accept proves the previous error and reconnect pace were
+			// processed; virtual time advances only while both sides are blocked.
+			<-listener.entered
+		}
+		if infoCount := logger.infoCount.Load(); infoCount != 1 {
+			t.Fatalf("repeated accept failure logged %d times, want one", infoCount)
+		}
+	})
+}
+
+// Supplies one explicit transport outcome at each accept boundary.
+type testingDeviceRpcAcceptResult struct {
+	forward net.Conn
+	reverse net.Conn
+	err     error
+}
+
+// Exposes the next Accept as a barrier after the prior result was processed.
+type testingScriptedDeviceRpcListener struct {
+	entered chan struct{}
+	results chan testingDeviceRpcAcceptResult
+}
+
+// Announces entry, then consumes one result or observes manager cancellation.
+func (self *testingScriptedDeviceRpcListener) Accept(ctx context.Context) (net.Conn, net.Conn, error) {
+	select {
+	case self.entered <- struct{}{}:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
 	}
-	manager.Close()
-	time.Sleep(20 * time.Millisecond)
-	if infoCount := logger.infoCount.Load(); infoCount != 1 {
-		t.Fatalf("repeated accept failure logged %d times, want one", infoCount)
+	select {
+	case result := <-self.results:
+		return result.forward, result.reverse, result.err
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
 	}
+}
+
+// The manager owns cancellation; this fixture has no separate listener socket.
+func (self *testingScriptedDeviceRpcListener) Close() error {
+	return nil
+}
+
+// A successful accept ends the outage, and shutdown joins the accepted session.
+func TestDeviceLocalRpcManagerLogsNewFailureAfterRecovery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logger := &testingCountingDeviceRpcLogger{infoFormat: "[dlrcp]accept err = %s"}
+		listener := &testingScriptedDeviceRpcListener{
+			entered: make(chan struct{}),
+			results: make(chan testingDeviceRpcAcceptResult),
+		}
+		manager := newDeviceLocalRpcManager(t.Context(), &DeviceLocal{log: logger}, defaultDeviceRpcSettings(), listener)
+		defer manager.CloseAndWait(context.Background())
+		<-listener.entered
+		listener.results <- testingDeviceRpcAcceptResult{err: io.EOF}
+		<-listener.entered
+		forward, forwardPeer := net.Pipe()
+		reverse, reversePeer := net.Pipe()
+		defer forwardPeer.Close()
+		defer reversePeer.Close()
+		listener.results <- testingDeviceRpcAcceptResult{forward: forward, reverse: reverse}
+		<-listener.entered
+		listener.results <- testingDeviceRpcAcceptResult{err: io.EOF}
+		<-listener.entered
+		if count := logger.infoCount.Load(); count != 2 {
+			t.Fatalf("failures separated by recovery logged %d times, want two", count)
+		}
+	})
 }
 
 func TestDeviceRemoteDefaultLocationFallsBackToLastKnownValue(t *testing.T) {

@@ -8693,7 +8693,7 @@ func newDeviceLocalRpcManager(
 func (self *deviceLocalRpcManager) run() {
 	defer self.Close()
 
-	lastAcceptError := ""
+	acceptFailed := false
 	for {
 		select {
 		case <-self.ctx.Done():
@@ -8712,10 +8712,9 @@ func (self *deviceLocalRpcManager) run() {
 				return
 			default:
 			}
-			acceptError := err.Error()
-			if acceptError != lastAcceptError {
+			if !acceptFailed {
+				acceptFailed = true
 				self.deviceLocal.log.Infof("[dlrcp]accept err = %s", err)
-				lastAcceptError = acceptError
 			}
 			select {
 			case <-self.ctx.Done():
@@ -8724,7 +8723,7 @@ func (self *deviceLocalRpcManager) run() {
 				continue
 			}
 		}
-		lastAcceptError = ""
+		acceptFailed = false
 
 		// each connection manages its own lifecycle; the rpc closes its
 		// connection when its context is cancelled

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -739,14 +740,16 @@ func deviceRpcKeepAliveConfig(settings *deviceRpcSettings) net.KeepAliveConfig {
 // compile check that WebsocketDeviceRpcDialer conforms to deviceRpcDialer
 var _ deviceRpcDialer = (*WebsocketDeviceRpcDialer)(nil)
 
+// Concurrent dials share one failure streak, ending at each successful
+// handshake. The address and settings must remain unchanged while dialing.
 type WebsocketDeviceRpcDialer struct {
-	address       *DeviceRemoteAddress
-	tlsConfig     *tls.Config
-	tlsConfigErr  error
-	useMtls       bool
-	lastDialError string
-	settings      *deviceRpcSettings
-	log           connect.Logger
+	address      *DeviceRemoteAddress
+	tlsConfig    *tls.Config
+	tlsConfigErr error
+	useMtls      bool
+	dialFailed   atomic.Bool
+	settings     *deviceRpcSettings
+	log          connect.Logger
 }
 
 // NewWebsocketDeviceRpcDialer dials the device local at address. If
@@ -774,6 +777,7 @@ func NewWebsocketDeviceRpcDialer(address *DeviceRemoteAddress, clientPem string,
 	}
 }
 
+// Opens the websocket over a socket with the configured timeout and keepalive.
 func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.Conn, error) {
 	// dial the raw TCP conn with OS-level keepalive enabled; gorilla wraps this
 	// conn with TLS for wss, so keepalive persists under encryption.
@@ -781,9 +785,15 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 		Timeout:         self.settings.RpcConnectTimeout,
 		KeepAliveConfig: deviceRpcKeepAliveConfig(self.settings),
 	}
+	return self.dial(ctx, netDialer.DialContext)
+}
+
+// Uses the same handshake and mux lifecycle with either a socket connector or
+// an in-memory connector for deterministic transport tests.
+func (self *WebsocketDeviceRpcDialer) dial(ctx context.Context, netDialContext func(context.Context, string, string) (net.Conn, error)) (net.Conn, net.Conn, error) {
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: self.settings.RpcConnectTimeout,
-		NetDialContext:   netDialer.DialContext,
+		NetDialContext:   netDialContext,
 	}
 	if self.tlsConfigErr != nil {
 		return nil, nil, self.tlsConfigErr
@@ -800,14 +810,14 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 	}
 	ws, _, err := dialer.DialContext(ctx, u.String(), nil)
 	if err != nil {
-		dialError := err.Error()
-		if dialError != self.lastDialError {
+		// Reserve the outage before calling the external logger. Error text
+		// can change without recovery, and another Dial may finish meanwhile.
+		if !self.dialFailed.Swap(true) {
 			self.log.Infof("[dr]dial %s err = %s", u.String(), err)
-			self.lastDialError = dialError
 		}
 		return nil, nil, err
 	}
-	self.lastDialError = ""
+	self.dialFailed.Store(false)
 	self.log.Infof("[dr]dial %s connected", u.String())
 	mux := newDeviceRpcMux(ctx, ws, self.settings)
 	return mux.conns[deviceRpcStreamForward], mux.conns[deviceRpcStreamReverse], nil
