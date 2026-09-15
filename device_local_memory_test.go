@@ -450,7 +450,7 @@ func TestProviderLocalUserNatSettings(t *testing.T) {
 	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 0)
 	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 0)
 	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 0)
-	for _, budget := range []connect.ByteCount{8*1024*1024, 64*1024*1024, 256*1024*1024} {
+	for _, budget := range []connect.ByteCount{8 * 1024 * 1024, 64 * 1024 * 1024, 256 * 1024 * 1024} {
 		connect.SetMemoryBudget(budget)
 		settings = providerLocalUserNatSettings(providerTarget, connect.NewNoopLogger())
 		if settings.UdpBufferSettings.GlobalLimit != 614 || settings.UdpBufferSettings.UserLimit != 256 || settings.TcpBufferSettings.GlobalLimit != 512 || settings.TcpBufferSettings.UserLimit != 256 {
