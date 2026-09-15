@@ -5,8 +5,15 @@
 
 all: clean build
 
+# Keep the module boundary present even while concurrent discovery sees cleanup.
 clean:
-	rm -rf build
+	@if [ -L build ]; then \
+		echo "refusing to clean symbolic cgo build directory" >&2; exit 1; \
+	elif [ -d build ]; then \
+		find -P build -mindepth 1 -maxdepth 1 ! -name go.mod -exec rm -rf -- {} +; \
+	elif [ -e build ]; then \
+		echo "cgo build path is not a directory" >&2; exit 1; \
+	fi
 
 # regenerate the c abi from the sdk surface
 # updates exports_gen*.go, callbacks.h/.c, include/, and coverage_report.txt
