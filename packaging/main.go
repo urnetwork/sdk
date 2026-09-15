@@ -317,13 +317,17 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	require(len(os.Args) >= 2, "usage: packaging generate | native/package/check LANGUAGE | npm package/check | mobile android/swift | publish REGISTRY | release PHASE")
+	require(len(os.Args) >= 2, "usage: packaging generate | native/package/check LANGUAGE | init/check-tools csharp | npm package/check | mobile android/swift | publish REGISTRY | release PHASE")
 	action := os.Args[1]
 	arg := ""
 	if len(os.Args) > 2 {
 		arg = os.Args[2]
 	}
 	switch action {
+	case "init":
+		initTools(arg)
+	case "check-tools":
+		checkTools(arg)
 	case "credential":
 		if hasCredential(arg) {
 			fmt.Println("yes")
@@ -342,6 +346,9 @@ func main() {
 			checkCNative()
 		}
 	case "package":
+		if arg == "csharp" {
+			requireDotnet() // Fail before compiling the native library.
+		}
 		buildPackage(arg, loadNative(), packageOut(arg))
 	case "check":
 		checkPackage(arg, packageOut(arg))

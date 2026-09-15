@@ -10,6 +10,12 @@ Set `SDK_PACKAGE_VERSION` for release builds; the development default is
 `0.0.1-dev.0`. Set `SDK_NATIVE_MANIFEST` to reuse the complete native matrix.
 Without it the build uses the local `sdk/cgo` Go module for the host platform.
 
+For C# on the macOS build host, run `make -C csharp init` from the SDK root
+to install .NET 8 through Homebrew. `make -C csharp check-tools` checks the
+SDK, runtime, and architecture without installing tools. Normal C# builds and
+the release runner use the same Go discovery helper, including Homebrew's
+keg-only installation. `SDK_DOTNET` selects an explicit executable if needed.
+
 The native manifest is JSON with `abi: 1`, `version`, and `libraries`, each with
 `platform`, absolute `path`, `sha256`, and `minimum_os`. Platforms are
 `darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`,

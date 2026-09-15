@@ -52,9 +52,12 @@ func checkPackage(language, out string) {
 		jar := filepath.Join(out, "artifacts", "urnetwork-sdk-"+manifest.Version+".jar")
 		command(temp, e, "java", "-cp", jar+string(os.PathListSeparator)+strings.TrimSpace(string(read(cp))), path("packaging/Smoke.java"))
 	case "csharp":
+		d := requireDotnet()
+		e = d.environment(e)
 		e["NUGET_PACKAGES"] = filepath.Join(temp, "nuget-cache")
-		command(temp, e, "dotnet", "new", "console", "--framework", "net8.0", "--output", temp)
-		command(temp, e, "dotnet", "add", "package", "URnetwork.SDK", "--version", manifest.Version, "--source", filepath.Join(out, "artifacts"))
+		copyFile(path("csharp/global.json"), filepath.Join(temp, "global.json"))
+		command(temp, e, d.executable, "new", "console", "--framework", "net8.0", "--output", temp)
+		command(temp, e, d.executable, "add", "package", "URnetwork.SDK", "--version", manifest.Version, "--source", filepath.Join(out, "artifacts"))
 		textFile(filepath.Join(temp, "Program.cs"), `using URnetwork.SDK;
 Console.WriteLine(Sdk.Version);
 if (Raw.urnet_abi_version() != 1) throw new Exception("ABI");
@@ -64,7 +67,7 @@ if (!Sdk.TakeString(Raw.urnet_new_network_space_key("héllo", "main"))!.Contains
 using var handle = new Handle(Raw.urnet_new_network_space_manager_no_storage());
 Raw.urnet_network_space_manager_close(handle.Value);
 `)
-		command(temp, e, "dotnet", "run", "--no-restore")
+		command(temp, e, d.executable, "run", "--no-restore")
 	case "ruby":
 		e["GEM_HOME"] = filepath.Join(temp, "gems")
 		e["GEM_PATH"] = e["GEM_HOME"]

@@ -49,12 +49,17 @@ Shared helper programs are Go in `packaging/`, a standard-library-only Go module
 
 `cgo` uses `publish-conan` and `publish-vcpkg`; Swift additionally uses `publish-cocoapods`. Kotlin delegates to Java, and JS/TS share one owner. There is no duplicate publication per example language.
 
+For C#, `make -C csharp init` installs the host .NET 8 SDK and runtime through Homebrew on macOS, or reuses an existing compatible installation. `make -C csharp check-tools` validates setup without installing anything. Both targets use the shared Go helper. On other platforms, install .NET 8 for the host architecture before building. Go, Make, and the native compiler toolchain are prerequisites.
+
+`build/all/run.sh` checks required host commands before repository pulls, signing setup, or builds. Additional registry tools are required only when that registry's publishing credentials are set. NuGet uses the C# helper to check SDK version, runtime availability, and architecture, including Homebrew installations outside `PATH`. Missing tools fail the release early; setup belongs in `make init`.
+
 Common inputs:
 
 - `SDK_PACKAGE_VERSION`: external SemVer release identity; local default `0.0.1-dev.0`.
 - `WARP_VERSION`: the SDK's embedded native version, retained separately from package-manager spelling.
 - `SDK_NATIVE_MANIFEST`: reuse already built, checksum-checked platform libraries. Without it, desktop package builds compile the current host through `sdk/cgo`.
 - `SDK_PACKAGE_OUT`: optional desktop package output directory.
+- `SDK_DOTNET`: optional explicit .NET executable for C# builds and tool checks; otherwise discover the host installation.
 - `SDK_PACKAGE_CHANNEL`: npm tag, default `nightly`.
 - `SDK_XCFRAMEWORK_ZIP` / `SDK_XCFRAMEWORK_URL`: checked Apple artifact and immutable public URL.
 - `SDK_RUST_RELEASE_ASSETS` / `SDK_C_RELEASE_ASSETS`: release asset staging destinations.
@@ -64,6 +69,7 @@ Examples:
 ```sh
 make -C python package check-package
 make -C java package check-package
+make -C csharp init
 make -C csharp package check-package
 make -C ruby package check-package
 make -C rust package check-package
@@ -104,6 +110,8 @@ The Go publisher signs artifacts with GPG, creates the Maven repository bundle a
 ### C#: NuGet
 
 The .NET 8 wrapper uses UTF-8 P/Invoke declarations and SafeHandle ownership. The NuGet package contains `runtimes/<rid>/native` assets selected from the manifest. Its isolated consumer restores from the built feed and loads the SDK.
+
+The macOS M1 build host uses the ARM64 .NET 8 SDK installed by `make -C csharp init`. The package build and isolated consumer share SDK selection through `global.json` and runtime discovery through the Go helper. See [C# build setup](csharp/README.md).
 
 The Go publisher uploads the exact checked `.nupkg` using NuGet's package-publish protocol. Mobile RIDs, Native AOT, trimming and single-file deployment are separate qualification tasks; the presence of a generic desktop RID does not establish those modes. [6][12]
 
