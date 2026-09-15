@@ -10,7 +10,8 @@ package: generate
 	$(GO) -C ../packaging run . package $(LANGUAGE)
 check-package:
 	$(GO) -C ../packaging run . check $(LANGUAGE)
-smoke: package check-package
+smoke: package
+	$(MAKE) check-package
 publish:
 	$(GO) -C ../packaging run . publish $(REGISTRY)
 clean:

@@ -7,7 +7,8 @@ package:
 check-package:
 	cd dist/package && swift package dump-package > /dev/null
 	$(GO) -C ../packaging run . release check-swift
-smoke: package check-package
+smoke: package
+	$(MAKE) check-package
 publish:
 	$(GO) -C ../packaging run . publish swift
 publish-cocoapods:
