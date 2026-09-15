@@ -107,6 +107,60 @@ func mobileReceiveQueueBudgetForPlatform(
 	return max(byteCountFraction(clientShareByteCount, 4, 7), 1536*1024)
 }
 
+// mobileReceiveQueueMaxByteCountForPool is the mobile ceiling on the
+// per-sequence receive hold, ReceiveQueueMaxByteCount.
+//
+// Connect advertises the smaller of that field and the attached receive
+// pool's live total (receiveWindowAdvertisement in connect/transfer.go), and
+// the sender clamps its window to the advertisement. The pool is what
+// admission charges -- bytes above it are never taken, and on mobile
+// ReceiveQueueMinByteCount is zero so nothing is held outside it -- so the
+// pool is the bound on what the phone will hold, and it is memory the device
+// has already reserved. A field below the pool therefore costs window and
+// saves nothing: the 768 KiB constant, calibrated for the 24 MiB profile
+// before the pools were attached, was undercutting a 1.5 MiB pool by half.
+//
+// On a pooled client the field's one job is to stay at or above every total
+// the pool can take, so the advertisement reads the pool itself, live through
+// the provide-mode resizes of applyProvideMemorySharesWithLock. That total is
+// at most mobileReceiveQueueBudgetMaxByteCount scaled by the target, the
+// ceiling of mobileReceiveQueueBudgetByteCountForTarget, and the provider
+// pair (4/7 of half the provider share) sits under the same line. Taking the
+// ceiling rather than the pool's total at call time keeps this independent of
+// when the policy runs relative to the pool being attached or resized.
+//
+// One unit mismatch to know about. The mobile pool charges retained bytes
+// (ReceiveQueueRetainedByteAccounting: the carrier root, the frame roots and
+// the owner per held Pack) while the field and the advertisement count
+// payload, so an out-of-order run fills the pool before the advertised
+// payload figure is reached and the receive hold policy evicts or refuses the
+// rest, which the eviction notice turns into resends. That is bandwidth after
+// a loss, never occupancy: admission still stops at the pool. The 768 KiB
+// constant was already above what the pool holds in payload for MTU-sized
+// Packs, so it protected nothing the pool does not.
+//
+// A client with no pool keeps the calibrated constant as its bound: there the
+// field is the only ceiling on the hold.
+func mobileReceiveQueueMaxByteCountForPool(
+	pooled bool,
+	memoryTargetByteCount ByteCount,
+) ByteCount {
+	maxByteCount := mobileTargetScaledByteCount(
+		mobileReceiveQueueMaxByteCount,
+		memoryTargetByteCount,
+	)
+	if pooled {
+		maxByteCount = max(
+			maxByteCount,
+			mobileTargetScaledByteCount(
+				mobileReceiveQueueBudgetMaxByteCount,
+				memoryTargetByteCount,
+			),
+		)
+	}
+	return maxByteCount
+}
+
 func mobilePackQueueBudgetForPlatform(
 	memoryTargetByteCount ByteCount,
 	clientShareByteCount ByteCount,
@@ -173,7 +227,10 @@ const (
 	// budget is exhausted, so a per-sequence byte floor is unnecessary for
 	// liveness. Zero makes all subsequent reorder ownership visible to and
 	// bounded by the shared device budget instead of multiplying by flow count.
-	mobileReceiveQueueMinByteCount                  = 0
+	mobileReceiveQueueMinByteCount = 0
+	// The per-sequence receive hold of a client with NO attached pool. On a
+	// pooled client the pool bounds the hold instead; see
+	// mobileReceiveQueueMaxByteCountForPool.
 	mobileReceiveQueueMaxByteCount                  = 768 * 1024
 	mobileUnreliableFlightMaxByteCount              = 128 * 1024
 	mobileUnreliableFlightMaxMessageCount           = 16
@@ -371,7 +428,10 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 		)
 		receive.ReceiveQueueMaxByteCount = min(
 			receive.ReceiveQueueMaxByteCount,
-			mobileTargetScaledByteCount(mobileReceiveQueueMaxByteCount, memoryTargetByteCount),
+			mobileReceiveQueueMaxByteCountForPool(
+				receive.ReceiveQueueBudget != nil,
+				memoryTargetByteCount,
+			),
 		)
 	}
 	if settings.ForwardBufferSettings != nil {

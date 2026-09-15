@@ -4288,6 +4288,16 @@ func (self *DeviceLocal) applyDestination(
 							self.networkSpace.apiUrl,
 							self.clientStrategy,
 						)
+						// share the device budgets so every window client's
+						// queues draw from the same pools. Stamped before the
+						// mobile policy so the policy caps the receive hold
+						// against the device pool it will be admitted against,
+						// not against the connect default the settings
+						// constructor attached (see
+						// mobileReceiveQueueMaxByteCountForPool)
+						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
+						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
+						clientSettings.ReceiveBufferSettings.PackQueueBudget = self.settings.ReceiveBufferSettings.PackQueueBudget
 						applyMobileLowMemoryClientSettings(
 							clientSettings,
 							self.settings.MemoryTargetByteCount,
@@ -4300,11 +4310,6 @@ func (self *DeviceLocal) applyDestination(
 						clientSettings.Log = self.log
 						self.attachTransferDiag(clientSettings)
 						self.applyTransferDiagSettings(clientSettings)
-						// share the device budgets so every window client's
-						// queues draw from the same pools
-						clientSettings.SendBufferSettings.ResendQueueBudget = self.settings.SendBufferSettings.ResendQueueBudget
-						clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = self.settings.ReceiveBufferSettings.ReceiveQueueBudget
-						clientSettings.ReceiveBufferSettings.PackQueueBudget = self.settings.ReceiveBufferSettings.PackQueueBudget
 						// every window client's p2p admits against the ONE
 						// dedicated device webRtc budget with the phone-sized
 						// SCTP buffer — never the receive queue that active

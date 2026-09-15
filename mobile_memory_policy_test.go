@@ -98,6 +98,9 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	}
 	settings := connect.DefaultClientSettingsWithBufferSize(256)
 	settings.ReceiveBufferSettings = connect.DefaultReceiveBufferSettingsWithBufferSize(256)
+	// no attached pool: the calibrated receive hold constant is the bound
+	// (a pooled client is covered by TestMobileReceiveHoldIsTheAttachedPool)
+	settings.ReceiveBufferSettings.ReceiveQueueBudget = nil
 	applyMobileLowMemoryClientSettingsForPlatform(
 		settings,
 		mobileSteadyMemoryTargetByteCount,
@@ -602,16 +605,18 @@ type mobileMemoryPolicySnapshot struct {
 	H1SequenceBufferByteCount ByteCount
 	ReceiveQueueMinByteCount  ByteCount
 	ReceiveQueueMaxByteCount  ByteCount
-	ForwardSequenceBufferSize int
-	ContractSequenceSize      int
-	MultiSequenceBufferSize   int
-	RemovalReceiveQueueSize   int
-	QualityWindowSize         int
-	SpeedWindowSize           int
-	H1AckPriorityBufferSize   int
-	H1LogicalDataLaneCount    int
-	ReceiveQueueBudget        ByteCount
-	PackQueueBudget           ByteCount
+	// the receive hold cap of a client with an attached pool
+	ReceiveQueueMaxByteCountPooled ByteCount
+	ForwardSequenceBufferSize      int
+	ContractSequenceSize           int
+	MultiSequenceBufferSize        int
+	RemovalReceiveQueueSize        int
+	QualityWindowSize              int
+	SpeedWindowSize                int
+	H1AckPriorityBufferSize        int
+	H1LogicalDataLaneCount         int
+	ReceiveQueueBudget             ByteCount
+	PackQueueBudget                ByteCount
 	// invariants: never sized from the target
 	PacketGroupMaxPacketCount int
 	PacketGroupMaxByteCount   ByteCount
@@ -644,6 +649,8 @@ func mobileMemoryPolicySnapshotForTarget(target ByteCount) mobileMemoryPolicySna
 	receive.H1SequenceBufferByteCount = hugeByteCount
 	receive.ReceiveQueueMinByteCount = hugeByteCount
 	receive.ReceiveQueueMaxByteCount = hugeByteCount
+	// the unpooled arm; the pooled cap is read from the policy's own function
+	receive.ReceiveQueueBudget = nil
 	settings.ForwardBufferSettings.SequenceBufferSize = hugeCount
 	settings.ContractManagerSettings.SequenceBufferSize = hugeCount
 	applyMobileLowMemoryClientSettingsForPlatform(settings, target, true)
@@ -686,6 +693,10 @@ func mobileMemoryPolicySnapshotForTarget(target ByteCount) mobileMemoryPolicySna
 		H1SequenceBufferByteCount: receive.H1SequenceBufferByteCount,
 		ReceiveQueueMinByteCount:  receive.ReceiveQueueMinByteCount,
 		ReceiveQueueMaxByteCount:  receive.ReceiveQueueMaxByteCount,
+		ReceiveQueueMaxByteCountPooled: mobileReceiveQueueMaxByteCountForPool(
+			true,
+			target,
+		),
 		ForwardSequenceBufferSize: settings.ForwardBufferSettings.SequenceBufferSize,
 		ContractSequenceSize:      settings.ContractManagerSettings.SequenceBufferSize,
 		MultiSequenceBufferSize:   multi.SequenceBufferSize,
@@ -730,22 +741,24 @@ func TestMobileMemoryPolicyIsByteIdenticalAtAndBelowTheSteadyTarget(t *testing.T
 		H1SequenceBufferByteCount: mobileH1ReceiveSequenceBufferMaxByteCount,
 		ReceiveQueueMinByteCount:  mobileReceiveQueueMinByteCount,
 		ReceiveQueueMaxByteCount:  mobileReceiveQueueMaxByteCount,
-		ForwardSequenceBufferSize: mobileClientSequenceBufferMaxCount,
-		ContractSequenceSize:      mobileClientSequenceBufferMaxCount,
-		MultiSequenceBufferSize:   mobileClientSequenceBufferMaxCount,
-		RemovalReceiveQueueSize:   mobileClientSequenceBufferMaxCount,
-		QualityWindowSize:         mobileQualityWindowSize,
-		SpeedWindowSize:           mobileSpeedWindowSize,
-		H1AckPriorityBufferSize:   mobileH1AckPriorityBufferSize,
-		H1LogicalDataLaneCount:    mobileH1LogicalDataLaneCount,
-		ReceiveQueueBudget:        mobileReceiveQueueBudgetMaxByteCount,
-		PackQueueBudget:           mobilePackQueueBudgetMaxByteCount,
-		PacketGroupMaxPacketCount: mobilePacketGroupMaxPacketCount,
-		PacketGroupMaxByteCount:   mobilePacketGroupMaxByteCount,
-		RetainedByteAccounting:    true,
-		StandingReserve:           false,
-		StrictWindowSizeHardMax:   true,
-		TcpSequenceIdleTimeout:    mobileTcpSequenceIdleTimeout,
+		// a pooled client's hold cap is the pool ceiling, above the constant
+		ReceiveQueueMaxByteCountPooled: mobileReceiveQueueBudgetMaxByteCount,
+		ForwardSequenceBufferSize:      mobileClientSequenceBufferMaxCount,
+		ContractSequenceSize:           mobileClientSequenceBufferMaxCount,
+		MultiSequenceBufferSize:        mobileClientSequenceBufferMaxCount,
+		RemovalReceiveQueueSize:        mobileClientSequenceBufferMaxCount,
+		QualityWindowSize:              mobileQualityWindowSize,
+		SpeedWindowSize:                mobileSpeedWindowSize,
+		H1AckPriorityBufferSize:        mobileH1AckPriorityBufferSize,
+		H1LogicalDataLaneCount:         mobileH1LogicalDataLaneCount,
+		ReceiveQueueBudget:             mobileReceiveQueueBudgetMaxByteCount,
+		PackQueueBudget:                mobilePackQueueBudgetMaxByteCount,
+		PacketGroupMaxPacketCount:      mobilePacketGroupMaxPacketCount,
+		PacketGroupMaxByteCount:        mobilePacketGroupMaxByteCount,
+		RetainedByteAccounting:         true,
+		StandingReserve:                false,
+		StrictWindowSizeHardMax:        true,
+		TcpSequenceIdleTimeout:         mobileTcpSequenceIdleTimeout,
 	}
 	if steady != want {
 		t.Fatalf("policy at the steady target = %+v, want the calibrated %+v", steady, want)
@@ -787,6 +800,7 @@ func TestMobileMemoryPolicyCapsAreMonotoneInTheTarget(t *testing.T) {
 			snapshot.H1SequenceBufferByteCount,
 			snapshot.ReceiveQueueMinByteCount,
 			snapshot.ReceiveQueueMaxByteCount,
+			snapshot.ReceiveQueueMaxByteCountPooled,
 			ByteCount(snapshot.ForwardSequenceBufferSize),
 			ByteCount(snapshot.ContractSequenceSize),
 			ByteCount(snapshot.MultiSequenceBufferSize),
@@ -831,5 +845,146 @@ func TestMobileMemoryPolicyCapsAreMonotoneInTheTarget(t *testing.T) {
 		if doubled[i] != 2*value {
 			t.Fatalf("cap %d at a doubled target = %d, want %d", i, doubled[i], 2*value)
 		}
+	}
+}
+
+// A phone downloading is bound by its own advertised receive hold, which
+// connect sends as the smaller of ReceiveQueueMaxByteCount and the attached
+// receive pool's live total (receiveWindowAdvertisement). The mobile policy
+// used to cap the field at the 768 KiB constant, below the pool the same
+// construction attaches, so the phone told the sender it could hold half of
+// what it had reserved. After the fix the advertised hold is the pool and
+// never more than it, on the iOS shape (20 MiB target inside a 32 MiB process
+// budget) and the Android shape (28 inside 40), and the pool itself is
+// unchanged, so this is a window raise and not a memory raise: admission
+// already stops at the pool. A mobile client with no pool keeps the 768 KiB
+// constant, its original protective role.
+func TestMobileReceiveHoldIsTheAttachedPool(t *testing.T) {
+	defer connect.SetMemoryBudget(0)
+
+	// mirrors receiveWindowAdvertisement in connect/transfer.go
+	advertised := func(receive *connect.ReceiveBufferSettings) ByteCount {
+		share := receive.ReceiveQueueMaxByteCount
+		if receive.ReceiveQueueBudget != nil {
+			share = min(share, receive.ReceiveQueueBudget.TotalByteCount())
+		}
+		return max(0, share)
+	}
+
+	for _, shape := range []struct {
+		name          string
+		target        ByteCount
+		processBudget ByteCount
+		// the device pool with providing off (the phone default) and on, as
+		// applyProvideMemorySharesWithLock sizes it; pinned so a pool change
+		// cannot hide behind this test
+		poolProviderOff ByteCount
+		poolProviderOn  ByteCount
+		// the calibrated constant at this target, the no-pool bound
+		unpooledHold ByteCount
+	}{
+		{"iOS", 20 * 1024 * 1024, 32 * 1024 * 1024, 1536 * 1024, 1536 * 1024, 768 * 1024},
+		{"Android", 28 * 1024 * 1024, 40 * 1024 * 1024, 1908408, 1792 * 1024, 896 * 1024},
+	} {
+		t.Run(shape.name, func(t *testing.T) {
+			connect.SetMemoryBudget(shape.processBudget)
+			defer connect.SetMemoryBudget(0)
+
+			// the construction sequence of newDeviceLocalWithOverrides: the
+			// window rule sizes the field from the process share, the device
+			// attaches its pool from the client share, the mobile policy runs,
+			// and the provide-state resize sets the pool's mobile total
+			deviceSettings := &DeviceLocalSettings{
+				MemoryTargetByteCount: shape.target,
+				AllowProvider:         true,
+			}
+			_, clientShare, _, providerShare := deviceMemoryShares(deviceSettings)
+			settings := connect.DefaultClientSettingsWithBufferSize(256)
+			_, pool := deviceLocalTransferBudgets(clientShare)
+			settings.ReceiveBufferSettings.ReceiveQueueBudget = pool
+			applyMobileLowMemoryClientSettingsForPlatform(settings, shape.target, true)
+			pool.SetTotalByteCount(
+				mobileReceiveQueueBudgetForPlatform(shape.target, clientShare+providerShare, true),
+			)
+			receive := settings.ReceiveBufferSettings
+
+			// the pool is unchanged by the hold change
+			if got := pool.TotalByteCount(); got != shape.poolProviderOff {
+				t.Fatalf("receive pool = %d, want the unchanged %d", got, shape.poolProviderOff)
+			}
+			// the advertised hold is the pool, and never above it
+			if got := advertised(receive); got != shape.poolProviderOff {
+				t.Fatalf(
+					"advertised hold = %d, want the attached pool %d (field %d)",
+					got,
+					shape.poolProviderOff,
+					receive.ReceiveQueueMaxByteCount,
+				)
+			}
+			if receive.ReceiveQueueMaxByteCount < pool.TotalByteCount() {
+				t.Fatalf(
+					"receive hold cap %d undercuts the attached pool %d",
+					receive.ReceiveQueueMaxByteCount,
+					pool.TotalByteCount(),
+				)
+			}
+			// the field is not the pool: the advertisement follows the pool's
+			// live total through a provide-mode resize
+			pool.SetTotalByteCount(
+				mobileReceiveQueueBudgetForPlatform(shape.target, clientShare, true),
+			)
+			if got := pool.TotalByteCount(); got != shape.poolProviderOn {
+				t.Fatalf("provider-on receive pool = %d, want the unchanged %d", got, shape.poolProviderOn)
+			}
+			if got := advertised(receive); got != shape.poolProviderOn {
+				t.Fatalf("advertised hold after the provide-on resize = %d, want the pool %d", got, shape.poolProviderOn)
+			}
+			// never above the largest total a mobile pool can take
+			if ceiling := mobileTargetScaledByteCount(
+				mobileReceiveQueueBudgetMaxByteCount,
+				shape.target,
+			); receive.ReceiveQueueMaxByteCount != ceiling {
+				t.Fatalf(
+					"pooled receive hold cap = %d, want the pool ceiling %d",
+					receive.ReceiveQueueMaxByteCount,
+					ceiling,
+				)
+			}
+
+			// a mobile client with no pool keeps the constant as its bound
+			unpooled := connect.DefaultClientSettingsWithBufferSize(256)
+			unpooled.ReceiveBufferSettings.ReceiveQueueBudget = nil
+			applyMobileLowMemoryClientSettingsForPlatform(unpooled, shape.target, true)
+			if got := unpooled.ReceiveBufferSettings.ReceiveQueueMaxByteCount; got != shape.unpooledHold {
+				t.Fatalf("unpooled receive hold = %d, want the constant %d", got, shape.unpooledHold)
+			}
+			if got := advertised(unpooled.ReceiveBufferSettings); got != shape.unpooledHold {
+				t.Fatalf("unpooled advertised hold = %d, want %d", got, shape.unpooledHold)
+			}
+		})
+	}
+
+	// the constant itself did not move
+	if mobileReceiveQueueMaxByteCount != 768*1024 {
+		t.Fatalf("mobileReceiveQueueMaxByteCount = %d, want 768 KiB", mobileReceiveQueueMaxByteCount)
+	}
+	// and the pooled cap is monotone in the target, like every other cap
+	previous := ByteCount(0)
+	for _, target := range []ByteCount{
+		1,
+		20 * 1024 * 1024,
+		mobileSteadyMemoryTargetByteCount,
+		28 * 1024 * 1024,
+		64 * 1024 * 1024,
+	} {
+		pooled := mobileReceiveQueueMaxByteCountForPool(true, target)
+		unpooled := mobileReceiveQueueMaxByteCountForPool(false, target)
+		if pooled < previous {
+			t.Fatalf("pooled hold cap %d at target %d below %d at a smaller target", pooled, target, previous)
+		}
+		if pooled < unpooled {
+			t.Fatalf("pooled hold cap %d at target %d below the unpooled %d", pooled, target, unpooled)
+		}
+		previous = pooled
 	}
 }
