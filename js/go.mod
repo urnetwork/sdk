@@ -3,7 +3,6 @@ module github.com/urnetwork/sdk/js
 go 1.26.5
 
 require (
-	github.com/quic-go/webtransport-go v0.12.0
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/sdk v0.0.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260908180501-3f62bf119e84

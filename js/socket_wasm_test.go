@@ -105,7 +105,7 @@ func TestSocketWasmDialTimeout(t *testing.T) {
 	}
 }
 
-func TestSocketWasmReleasesChildrenAndRejectsLateStreams(t *testing.T) {
+func TestSocketWasmDeviceClosureNotifiesIdleSocketAndRejectsLateDial(t *testing.T) {
 	m := map[string]any{}
 	h := jsBindSocketDevice(&socketWasmDevice{}, m)
 	defer h.close()
@@ -113,31 +113,26 @@ func TestSocketWasmReleasesChildrenAndRejectsLateStreams(t *testing.T) {
 	defer fn.Release()
 	a, b := net.Pipe()
 	defer b.Close()
-	parent, err := h.add(a)
+	handle, err := h.add(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := parent.(map[string]any)["id"].(int)
-	c, d := net.Pipe()
-	defer d.Close()
-	if _, err = h.add(c, id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = awaitSocketPromise(t, fn.Invoke("release", id, js.Null())); err != nil {
-		t.Fatal(err)
-	}
+	id := handle.(map[string]any)["id"].(int)
+	closed := fn.Invoke("socketClosed", id, js.Null())
+	h.close()
+	_, _ = awaitSocketPromise(t, closed) // Resolution or rejection both notify JS.
 	h.mu.Lock()
 	count := len(h.values)
 	h.mu.Unlock()
 	if count != 0 {
-		t.Fatal("child stream handle leaked")
+		t.Fatal("socket handle leaked after Device closure")
 	}
 	late, peer := net.Pipe()
 	defer peer.Close()
-	if _, err = h.add(late, id); err == nil {
-		t.Fatal("late stream attached to released parent")
+	if _, err = h.add(late); err == nil {
+		t.Fatal("late dial attached to closed Device")
 	}
 	if _, err = late.Write([]byte{1}); err == nil {
-		t.Fatal("late stream was not closed")
+		t.Fatal("late connection was not closed")
 	}
 }

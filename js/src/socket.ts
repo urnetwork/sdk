@@ -4,11 +4,11 @@ export interface DialOptions { signal?: AbortSignal; timeoutMillis?: number }
 export interface SocketDevice {
   dial(network: SocketNetwork, address: string, options?: DialOptions): Promise<Conn>;
   dialTls(network: SocketNetwork, address: string, tls?: SocketTLSOptions, options?: DialOptions): Promise<Conn>;
-  webTransport(url: string, options?: WebTransportOptions): WebTransport;
+  readonly directSockets: DirectSockets;
 }
 /** Internal WASM bridge. Public devices are decorated by SDK factories. */
 export interface SocketBridge { socketOperation(operation: string, handle: number, argument: unknown): Promise<any> }
-interface Handle { id: number; localAddr?: string; remoteAddr?: string; protocol?: string }
+interface Handle { id: number; localAddr?: string; remoteAddr?: string }
 function bytes(value: Uint8Array): Uint8Array {
   if (!(value instanceof Uint8Array)) throw new TypeError("Expected Uint8Array");
   return value.slice();
@@ -45,6 +45,8 @@ export class Conn {
     if (this.released) return Promise.reject(new Error("Socket is closed"));
     return this.bridge.socketOperation(op, this.handle.id, arg);
   }
+  /** Internal lifecycle notification used by the Direct Sockets adapter. */
+  waitClosed(): Promise<void> { return this.call("socketClosed"); }
   get localAddr(): string { return this.handle.localAddr ?? ""; }
   get remoteAddr(): string { return this.handle.remoteAddr ?? ""; }
   async read(maxBytes = 65535): Promise<Uint8Array | null> {
@@ -89,152 +91,6 @@ export class Conn {
     await this.bridge.socketOperation("release", this.handle.id, null);
   }
 }
-export interface WebTransportOptions extends DialOptions {
-  tls?: SocketTLSOptions;
-  serverCertificateHashes?: { algorithm: "sha-256"; value: ArrayBuffer | ArrayBufferView }[];
-  protocols?: string[]; allowPooling?: boolean; requireUnreliable?: boolean; congestionControl?: "default";
-}
-export interface WebTransportCloseInfo { closeCode?: number; reason?: string }
-export interface WebTransportBidirectionalStream { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> }
-const buffer = (v: ArrayBuffer | ArrayBufferView): Uint8Array => ArrayBuffer.isView(v) ? new Uint8Array(v.buffer, v.byteOffset, v.byteLength) : new Uint8Array(v);
-/** HTTP/3 WebTransport over a Device socket, with QUIC and TLS in WASM. */
-export class WebTransport {
-  readonly ready: Promise<void>;
-  readonly closed: Promise<Required<WebTransportCloseInfo>>;
-  readonly incomingBidirectionalStreams: ReadableStream<WebTransportBidirectionalStream>;
-  readonly incomingUnidirectionalStreams: ReadableStream<ReadableStream<Uint8Array>>;
-  readonly datagrams: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array>; createWritable(): WritableStream<Uint8Array>; readonly maxDatagramSize: number };
-  readonly reliability = "supports-unreliable";
-  readonly congestionControl = "default";
-  private selectedProtocol = "";
-  get protocol(): string { return this.selectedProtocol; }
-  private bridge: SocketBridge;
-  private id = 0;
-  private stopping = false;
-  private normalClose = false;
-  private abort = new AbortController();
-  private resolveClosed!: (value: Required<WebTransportCloseInfo>) => void;
-  private rejectClosed!: (error: unknown) => void;
-  constructor(device: SocketDevice | SocketBridge, url: string, options: WebTransportOptions = {}) {
-    this.bridge = device as SocketBridge;
-    validateDialOptions(options);
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || url.includes("#")) throw new TypeError("Expected HTTPS URL without credentials or fragment");
-    if (options.allowPooling) throw new DOMException("Connection pooling is unsupported", "NotSupportedError");
-    if (options.congestionControl && options.congestionControl !== "default") throw new DOMException("Unsupported congestion control", "NotSupportedError");
-    const hashes = (options.serverCertificateHashes ?? []).map(hash => {
-      if (hash.algorithm !== "sha-256" || buffer(hash.value).length !== 32) throw new TypeError("Expected SHA-256 certificate hash");
-      return btoa(String.fromCharCode(...buffer(hash.value)));
-    });
-    const protocols = options.protocols ?? [];
-    if (new Set(protocols).size !== protocols.length || protocols.some(p => !p || !/^[\x21-\x7e]+$/.test(p))) throw new TypeError("Invalid or duplicate WebTransport protocol");
-    this.closed = new Promise((resolve, reject) => { this.resolveClosed = resolve; this.rejectClosed = reject; });
-    void this.closed.catch(() => {});
-    const abort = () => this.abort.abort(options.signal?.reason);
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted) abort();
-    this.ready = this.bridge.socketOperation("webTransport", 0, {
-      address: parsed.href, tls: options.tls, hashes, protocols, signal: this.abort.signal, timeoutMillis: options.timeoutMillis,
-    }).then(async (handle: Handle) => {
-      this.id = handle.id; this.selectedProtocol = handle.protocol ?? "";
-      if (this.stopping) {
-        await this.bridge.socketOperation("release", this.id, null);
-        throw new DOMException("Closed while connecting", "AbortError");
-      }
-      void this.bridge.socketOperation("sessionClosed", this.id, null).then(
-        info => { this.stopping = true; this.normalClose = true; this.resolveClosed(info); },
-        error => { this.stopping = true; this.rejectClosed(error); },
-      ).finally(() => this.bridge.socketOperation("release", this.id, null)).catch(() => {});
-    }).catch(error => { this.stopping = true; this.rejectClosed(error); throw error; })
-      .finally(() => options.signal?.removeEventListener("abort", abort));
-    void this.ready.catch(() => {});
-    this.incomingBidirectionalStreams = this.incoming("acceptBi", h => this.stream(h, true, true) as WebTransportBidirectionalStream);
-    this.incomingUnidirectionalStreams = this.incoming("acceptUni", h => this.stream(h, true, false).readable!);
-    const createWritable = () => new WritableStream<Uint8Array>({
-      write: async value => { const data = bytes(value); if (data.length <= 1024) await this.call("sendDatagram", data); },
-    });
-    this.datagrams = {
-      maxDatagramSize: 1024,
-      readable: this.incoming("receiveDatagram", value => value as Uint8Array),
-      writable: createWritable(), createWritable,
-    };
-  }
-  private incoming<T>(operation: string, convert: (value: any) => T): ReadableStream<T> {
-    let ended = false;
-    return new ReadableStream<T>({
-      start: controller => {
-        void this.closed.then(() => { if (!ended) { ended = true; controller.close(); } }, error => {
-          if (!ended) { ended = true; controller.error(error); }
-        });
-      },
-      pull: async controller => {
-        try {
-          const value = await this.call(operation);
-          if (ended) {
-            if (operation !== "receiveDatagram" && value?.id) await this.bridge.socketOperation("release", value.id, null);
-          } else if (value?.closed) { ended = true; controller.close(); }
-          else controller.enqueue(convert(value));
-        } catch (error) { if (!ended && !this.normalClose) { ended = true; controller.error(error); } }
-      },
-      cancel: () => { ended = true; },
-    }, { highWaterMark: 0 });
-  }
-  private async call(op: string, arg: unknown = null): Promise<any> {
-    await this.ready;
-    if (this.stopping) throw new DOMException("WebTransport is closed", "InvalidStateError");
-    return this.bridge.socketOperation(op, this.id, arg);
-  }
-  private stream(handle: Handle, read: boolean, write: boolean): Partial<WebTransportBidirectionalStream> {
-    let readDone = !read, writeDone = !write;
-    let pendingReadError: Error | undefined;
-    const call = (op: string, arg: unknown = null) => this.bridge.socketOperation(op, handle.id, arg);
-    const release = async () => { if (readDone && writeDone) await call("release", "finished"); };
-    const result: Partial<WebTransportBidirectionalStream> = {};
-    if (read) result.readable = new ReadableStream({
-      pull: async controller => {
-        try {
-          if (pendingReadError) throw pendingReadError;
-          const r = await call("read", 65535);
-          if (r.data.length) controller.enqueue(r.data);
-          if (r.error) pendingReadError = new Error(r.error);
-          if (r.eof) { readDone = true; controller.close(); await release(); }
-        } catch (err) { readDone = true; await release(); throw err; }
-      },
-      cancel: async reason => { readDone = true; await call("cancelRead", streamErrorCode(reason)); await release(); },
-    }, { highWaterMark: 0 });
-    if (write) result.writable = new WritableStream({
-      write: async value => {
-        const data = bytes(value);
-        for (let pos = 0; pos < data.length;) {
-          const chunk = data.subarray(pos, pos + 65535), result = await call("write", chunk);
-          const n = typeof result === "number" ? result : result.bytesWritten;
-          if (result.error) throw Object.assign(new Error(result.error), { bytesWritten: pos + n });
-          if (n !== chunk.length) throw new Error("Short WebTransport stream write");
-          pos += n;
-        }
-      },
-      close: async () => { await call("closeWrite"); writeDone = true; await release(); },
-      abort: async reason => { await call("cancelWrite", streamErrorCode(reason)); writeDone = true; await release(); },
-    });
-    return result;
-  }
-  async createBidirectionalStream(): Promise<WebTransportBidirectionalStream> { return this.stream(await this.call("openBi"), true, true) as WebTransportBidirectionalStream; }
-  async createUnidirectionalStream(): Promise<WritableStream<Uint8Array>> { return this.stream(await this.call("openUni"), false, true).writable!; }
-  close(info: WebTransportCloseInfo = {}): void {
-    const closeCode = info.closeCode ?? 0, reason = info.reason ?? "";
-    if (!Number.isInteger(closeCode) || closeCode < 0 || closeCode > 0xffffffff) throw new RangeError("Invalid close code");
-    if (new TextEncoder().encode(reason).length > 1024) throw new RangeError("Close reason exceeds 1024 bytes");
-    if (this.stopping) return;
-    this.stopping = true;
-    if (!this.id) { this.abort.abort(); return; }
-    void this.bridge.socketOperation("sessionClose", this.id, { closeCode, reason }).catch(this.rejectClosed);
-  }
-}
-function streamErrorCode(reason: unknown): number {
-  const code = (reason as { streamErrorCode?: number } | null)?.streamErrorCode ?? 0;
-  if (!Number.isInteger(code) || code < 0 || code > 0xffffffff) throw new RangeError("Invalid stream error code");
-  return code;
-}
 /** Called by all SDK device factories, including proxy setup callbacks. */
 export function attachSocketAPI<T extends object>(device: T): T & SocketDevice {
   const bridge = device as unknown as SocketBridge;
@@ -246,12 +102,325 @@ export function attachSocketAPI<T extends object>(device: T): T & SocketDevice {
     if (options.signal?.aborted) { await bridge.socketOperation("release", handle.id, null); options.signal.throwIfAborted(); }
     return new Conn(bridge, handle, network);
   };
-  return Object.assign(device, {
+  const result = Object.assign(device, {
     dial: (network: SocketNetwork, address: string, options?: DialOptions) => dial("dial", network, address, undefined, options),
     dialTls: (network: SocketNetwork, address: string, tls?: SocketTLSOptions, options?: DialOptions) => dial("dialTls", network, address, tls, options),
-    webTransport: (url: string, options?: WebTransportOptions) => new WebTransport(bridge, url, options),
   });
+  return Object.assign(result, { directSockets: createDirectSockets(result) });
 }
 function validateDialOptions(options: DialOptions): void {
   if (options.timeoutMillis !== undefined && (!Number.isSafeInteger(options.timeoutMillis) || options.timeoutMillis < 0 || options.timeoutMillis > 2147483647)) throw new RangeError("timeoutMillis must be between 0 and 2147483647");
+}
+
+
+export type SocketDnsQueryType = "ipv4" | "ipv6";
+export interface TCPSocketOptions {
+  dnsQueryType?: SocketDnsQueryType;
+  noDelay?: boolean;
+  keepAliveDelay?: number;
+  sendBufferSize?: number;
+  receiveBufferSize?: number;
+}
+export interface UDPSocketOptions {
+  remoteAddress?: string;
+  remotePort?: number;
+  localAddress?: string;
+  localPort?: number;
+  dnsQueryType?: SocketDnsQueryType;
+  sendBufferSize?: number;
+  receiveBufferSize?: number;
+  ipv6Only?: boolean;
+  multicastTimeToLive?: number;
+  multicastLoopback?: boolean;
+  multicastAllowAddressSharing?: boolean;
+}
+export interface UDPMessage {
+  data: BufferSource;
+  remoteAddress?: string;
+  remotePort?: number;
+  dnsQueryType?: SocketDnsQueryType;
+}
+export interface TCPSocketOpenInfo {
+  readable: ReadableStream<Uint8Array>;
+  writable: WritableStream<BufferSource>;
+  remoteAddress: string;
+  remotePort: number;
+  localAddress: string;
+  localPort: number;
+}
+export interface UDPSocketOpenInfo {
+  readable: ReadableStream<UDPMessage & { data: Uint8Array }>;
+  writable: WritableStream<UDPMessage>;
+  remoteAddress?: string;
+  remotePort?: number;
+  localAddress: string;
+  localPort: number;
+}
+export interface TCPSocket {
+  readonly opened: Promise<TCPSocketOpenInfo>;
+  readonly closed: Promise<void>;
+  close(): Promise<void>;
+}
+export interface UDPSocket {
+  readonly opened: Promise<UDPSocketOpenInfo>;
+  readonly closed: Promise<void>;
+  close(): Promise<void>;
+}
+export interface DirectSockets {
+  readonly TCPSocket: new (remoteAddress: string, remotePort: number, options?: TCPSocketOptions) => TCPSocket;
+  readonly UDPSocket: new (options?: UDPSocketOptions) => UDPSocket;
+}
+
+function invalidState(message: string): DOMException { return new DOMException(message, "InvalidStateError"); }
+function unsupported(message: string): never { throw new DOMException(message, "NotSupportedError"); }
+function networkError(cause: unknown): DOMException {
+  return new DOMException(cause instanceof Error ? cause.message : String(cause), "NetworkError");
+}
+function uint(value: number, max: number, field: string): number {
+  const n = Math.trunc(Number(value));
+  if (!Number.isFinite(n) || n < 0 || n > max) throw new TypeError(field + " is out of range");
+  return n;
+}
+function destination(host: string, port: number): string {
+  if (typeof host !== "string" || !host || /[\s/\[\]?#@]/.test(host)) throw new TypeError("Expected a hostname or unbracketed IP address");
+  const n = uint(port, 65535, "remotePort");
+  if (!n) throw new TypeError("remotePort must be nonzero");
+  if (/^(?:22[4-9]|23\d)\./.test(host) || /^ff[\da-f]{0,2}:/i.test(host)) unsupported("Multicast sockets are not supported");
+  return (host.includes(":") ? "[" + host + "]" : host) + ":" + n;
+}
+function network(protocol: "tcp" | "udp", options: TCPSocketOptions | UDPSocketOptions): SocketNetwork {
+  if (options.dnsQueryType !== undefined && options.dnsQueryType !== "ipv4" && options.dnsQueryType !== "ipv6") throw new TypeError("Invalid dnsQueryType");
+  for (const field of ["sendBufferSize", "receiveBufferSize"] as const) {
+    if (options[field] !== undefined) {
+      if (!uint(options[field]!, 0xffffffff, field)) throw new TypeError(field + " must be nonzero");
+      unsupported("Per-socket " + field + " is not supported by the Device");
+    }
+  }
+  return (protocol + (options.dnsQueryType === "ipv4" ? "4" : options.dnsQueryType === "ipv6" ? "6" : "")) as SocketNetwork;
+}
+function copyBuffer(value: BufferSource): Uint8Array {
+  if (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value)) throw new TypeError("Expected BufferSource");
+  const view = ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : new Uint8Array(value);
+  if (!(view.buffer instanceof ArrayBuffer)) throw new TypeError("Shared buffers are not supported");
+  return view.slice();
+}
+function endpoint(address: string): { address: string; port: number } {
+  const split = address.lastIndexOf(":");
+  let host = address.slice(0, split);
+  if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  const port = Number(address.slice(split + 1));
+  if (split < 1 || !host || !Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Device returned an invalid socket address");
+  return { address: host, port };
+}
+
+type OpenInfo = TCPSocketOpenInfo | UDPSocketOpenInfo;
+type ReadController = ReadableByteStreamController | ReadableStreamDefaultController<UDPMessage & { data: Uint8Array }>;
+
+/** Lifecycle shared by the connected TCP and UDP profiles. */
+class DirectSocket<I extends OpenInfo> {
+  readonly opened: Promise<I>;
+  readonly closed: Promise<void>;
+  private resolveClosed!: () => void;
+  private rejectClosed!: (error: unknown) => void;
+  private conn?: Conn;
+  private info?: I;
+  private readController?: ReadController;
+  private writeController?: WritableStreamDefaultController;
+  private readDone = false;
+  private writeDone = false;
+  private readStopped = false;
+  private writeStopped = false;
+  private reading = false;
+  private writing = false;
+  private readStop?: Promise<void>;
+  private writeStop?: Promise<void>;
+  private finishing?: Promise<void>;
+  private failed = false;
+  private failure: unknown;
+  private settled = false;
+  private udp: boolean;
+
+  constructor(device: Pick<SocketDevice, "dial">, protocol: SocketNetwork, address: string, udp: boolean) {
+    this.udp = udp;
+    this.closed = new Promise((resolve, reject) => { this.resolveClosed = resolve; this.rejectClosed = reject; });
+    void this.closed.catch(() => {});
+    this.opened = Promise.resolve().then(() => device.dial(protocol, address)).then(async conn => {
+      this.conn = conn;
+      try {
+        this.info = this.streams();
+        // Device shutdown must settle even an idle socket with no pending I/O.
+        void conn.waitClosed().then(() => {
+          if (!this.finishing) this.fail(networkError("Socket closed by its Device"));
+        }, error => { if (!this.finishing) this.fail(networkError(error)); });
+        return this.info;
+      } catch (error) { await conn.close(); throw error; }
+    }).catch(error => {
+      const failure = networkError(error);
+      this.settled = true;
+      this.rejectClosed(failure);
+      throw failure;
+    });
+    void this.opened.catch(() => {});
+  }
+
+  private streams(): I {
+    const conn = this.conn!;
+    const readable = this.udp
+      ? new ReadableStream<UDPMessage & { data: Uint8Array }>({
+        start: c => { this.readController = c; },
+        pull: c => this.pull(c), cancel: () => this.stopRead(),
+      }, { highWaterMark: 0 })
+      : new ReadableStream({
+        type: "bytes", autoAllocateChunkSize: 65535,
+        start: c => { this.readController = c; },
+        pull: c => this.pull(c), cancel: () => this.stopRead(),
+      }, { highWaterMark: 0 });
+    const writable = new WritableStream<BufferSource | UDPMessage>({
+      start: c => {
+        this.writeController = c;
+        c.signal.addEventListener("abort", () => { void this.stopWrite().catch(error => this.fail(networkError(error))); }, { once: true });
+      },
+      write: value => this.write(value),
+      close: () => this.stopWrite(),
+      abort: () => this.stopWrite(),
+    });
+    // UDP Happy Eyeballs chooses its definitive addresses after the first
+    // reply. Getters keep an already-resolved opened object up to date.
+    return {
+      readable, writable,
+      get remoteAddress() { return endpoint(conn.remoteAddr).address; },
+      get remotePort() { return endpoint(conn.remoteAddr).port; },
+      get localAddress() { return endpoint(conn.localAddr).address; },
+      get localPort() { return endpoint(conn.localAddr).port; },
+    } as I;
+  }
+
+  private async pull(controller: ReadController): Promise<void> {
+    if (this.readDone) return;
+    this.reading = true;
+    try {
+      const request = "byobRequest" in controller ? controller.byobRequest : null;
+      const data = await this.conn!.read(Math.min(request?.view?.byteLength ?? 65535, 65535));
+      if (this.readDone) return;
+      if (data === null) {
+        this.readDone = true;
+        this.readStopped = true;
+        controller.close();
+        if (request) request.respond(0);
+        await this.finish();
+      } else if ("byobRequest" in controller) {
+        if (!data.length) return; // A TCP zero-byte read is not a byte-stream chunk.
+        if (request?.view) {
+          new Uint8Array(request.view.buffer, request.view.byteOffset, request.view.byteLength).set(data);
+          request.respond(data.length);
+        } else controller.enqueue(data.slice());
+      } else controller.enqueue({ data: data.slice() });
+    } catch (error) { if (!this.readDone) this.fail(networkError(error)); }
+    finally { this.reading = false; }
+  }
+
+  private async write(value: BufferSource | UDPMessage): Promise<void> {
+    let data: Uint8Array;
+    try {
+      if (this.udp) {
+        const message = value as UDPMessage;
+        if (!message || typeof message !== "object") throw new TypeError("Expected UDPMessage");
+        if (message.remoteAddress !== undefined || message.remotePort !== undefined || message.dnsQueryType !== undefined) throw new TypeError("Connected UDP messages must not specify a destination");
+        data = copyBuffer(message.data);
+      } else data = copyBuffer(value as BufferSource);
+    } catch (error) {
+      this.failed = true; this.failure = error;
+      await this.stopWrite();
+      throw error;
+    }
+    this.writing = true;
+    try { await this.conn!.write(data); }
+    catch (error) {
+      if (this.writeController!.signal.aborted) throw this.writeController!.signal.reason;
+      const failure = networkError(error);
+      if (error && typeof error === "object" && "bytesWritten" in error) Object.assign(failure, { bytesWritten: error.bytesWritten });
+      this.fail(failure);
+      throw failure;
+    } finally { this.writing = false; }
+  }
+
+  private stopRead(): Promise<void> {
+    if (this.readStop) return this.readStop;
+    if (this.readDone) return this.finish();
+    this.readDone = true;
+    this.readStop = (async () => {
+      if (!this.udp) await this.conn!.closeRead();
+      else if (this.reading) await this.conn!.setReadDeadline(1);
+    })().then(() => { this.readStopped = true; return this.finish(); }, error => this.fail(networkError(error)));
+    return this.readStop;
+  }
+  private stopWrite(): Promise<void> {
+    if (this.writeStop) return this.writeStop;
+    if (this.writeDone) return this.finish();
+    this.writeDone = true;
+    this.writeStop = (async () => {
+      if (!this.udp) await this.conn!.closeWrite();
+      else if (this.writing) await this.conn!.setWriteDeadline(1);
+    })().then(() => { this.writeStopped = true; return this.finish(); }, error => this.fail(networkError(error)));
+    return this.writeStop;
+  }
+  private fail(error: unknown): void {
+    if (this.finishing) return;
+    this.failed = true; this.failure = error;
+    this.readDone = true; this.writeDone = true;
+    this.readStopped = true; this.writeStopped = true;
+    this.readController?.error(error);
+    this.writeController?.error(error);
+    void this.finish();
+  }
+  private finish(): Promise<void> {
+    if (!this.readDone || !this.writeDone || !this.readStopped || !this.writeStopped) return Promise.resolve();
+    if (!this.finishing) {
+      this.finishing = Promise.resolve().then(() => this.conn!.close()).then(() => {
+        this.settled = true;
+        if (this.failed) this.rejectClosed(this.failure); else this.resolveClosed();
+      }, error => { this.settled = true; this.rejectClosed(networkError(error)); });
+    }
+    return this.finishing;
+  }
+  close(): Promise<void> {
+    if (!this.info) return Promise.reject(invalidState("Socket has not opened"));
+    if (this.settled) return this.closed;
+    if (this.info.readable.locked || this.info.writable.locked) return Promise.reject(invalidState("Release the reader and writer locks before closing the socket"));
+    void this.info.readable.cancel().catch(() => {});
+    void this.info.writable.abort().catch(() => {});
+    return this.closed;
+  }
+}
+
+/** Bind the standard Direct Sockets constructor signatures to one UR Device. */
+export function createDirectSockets(device: Pick<SocketDevice, "dial">): DirectSockets {
+  return Object.freeze({
+    TCPSocket: class TCPSocket extends DirectSocket<TCPSocketOpenInfo> {
+      constructor(remoteAddress: string, remotePort: number, options: TCPSocketOptions = {}) {
+        const protocol = network("tcp", options);
+        if (options.keepAliveDelay !== undefined) {
+          if (uint(options.keepAliveDelay, 0xffffffff, "keepAliveDelay") < 1000) throw new TypeError("keepAliveDelay must be at least 1000 ms");
+          unsupported("Per-socket TCP keep-alive is not supported by the Device");
+        }
+        if (options.noDelay) unsupported("Per-socket noDelay is not supported by the Device");
+        super(device, protocol, destination(remoteAddress, remotePort), false);
+      }
+    },
+    UDPSocket: class UDPSocket extends DirectSocket<UDPSocketOpenInfo> {
+      constructor(options: UDPSocketOptions = {}) {
+        const protocol = network("udp", options);
+        if ((options.remoteAddress === undefined) !== (options.remotePort === undefined)) throw new TypeError("remoteAddress and remotePort must be specified together");
+        if (options.localPort !== undefined && (options.localAddress === undefined || !uint(options.localPort, 65535, "localPort"))) throw new TypeError("localPort requires localAddress and must be nonzero");
+        if (options.localAddress !== undefined) {
+          if (options.remoteAddress !== undefined) throw new TypeError("Local and remote binding options cannot be combined");
+          unsupported("Bound UDP sockets are reserved for the future listener API");
+        }
+        if (options.remoteAddress === undefined) throw new TypeError("Connected UDP requires remoteAddress and remotePort");
+        if (options.ipv6Only !== undefined) throw new TypeError("ipv6Only is only valid for bound UDP");
+        if (options.multicastTimeToLive !== undefined || options.multicastLoopback !== undefined || options.multicastAllowAddressSharing !== undefined) unsupported("Multicast sockets are not supported");
+        super(device, protocol, destination(options.remoteAddress, options.remotePort!), true);
+      }
+    },
+  });
 }

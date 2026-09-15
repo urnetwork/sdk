@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { attachSocketAPI, Conn, WebTransport } from "../src/socket.ts";
-import type { SocketBridge } from "../src/socket.ts";
+import { attachSocketAPI, Conn } from "../src/socket.ts";
 
 const deferred = <T>() => { let resolve!: (value: T) => void, reject!: (reason: unknown) => void; const promise = new Promise<T>((a,b)=>{resolve=a;reject=b}); return {promise,resolve,reject}; };
 test("socket read distinguishes empty datagram, bytes plus EOF and EOF", async () => {
@@ -29,15 +28,6 @@ test("a dial result arriving after cancellation is released",async()=>{
 test("socket streams apply backpressure and half-close the write side",async()=>{
  const gate=deferred<number>();const calls:string[]=[];const c=new Conn({socketOperation:async(op)=>{calls.push(op);if(op==="write")return gate.promise;return {data:new Uint8Array(),eof:true}}},{id:1},"tcp");assert.deepEqual(calls,[]);const writer=c.writable.getWriter();const write=writer.write(Uint8Array.of(1));await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,["write"]);gate.resolve(1);await write;await writer.close();assert.equal(calls.at(-1),"closeWrite");const reader=c.readable.getReader();assert.equal((await reader.read()).done,true);
 });
-function transportFixture(){const closed=deferred<any>();const calls:any[]=[];let id=10;const bridge:SocketBridge={socketOperation:async(op,handle,arg)=>{calls.push([op,handle,arg]);switch(op){case "webTransport":return{id:1,protocol:"echo"};case "sessionClosed":return closed.promise;case "openBi":case "openUni":case "acceptBi":case "acceptUni":return{id:++id};case "read":return{data:Uint8Array.of(1,2),eof:true};case "write":return(arg as Uint8Array).length;case "receiveDatagram":return new Uint8Array();case "sessionClose":closed.resolve(arg);return;}}};return{closed,calls,bridge};}
-test("WebTransport negotiates session, streams, datagrams and graceful close",async()=>{
- const f=transportFixture();const wt=new WebTransport(f.bridge,"https://socket.test/path",{protocols:["echo"]});await wt.ready;assert.equal(wt.protocol,"echo");assert.equal(wt.reliability,"supports-unreliable");const s=await wt.createBidirectionalStream();const w=s.writable.getWriter();await w.write(Uint8Array.of(3));await w.close();const reader=s.readable.getReader();assert.deepEqual((await reader.read()).value,Uint8Array.of(1,2));assert.equal((await reader.read()).done,true);const uni=await wt.createUnidirectionalStream();await uni.getWriter().close();const incoming=await wt.incomingUnidirectionalStreams.getReader().read();assert.ok(incoming.value instanceof ReadableStream);const writer=wt.datagrams.writable.getWriter();await writer.write(new Uint8Array());await writer.write(new Uint8Array(1025));assert.equal(f.calls.filter(x=>x[0]==="sendDatagram").length,1);wt.close({closeCode:42,reason:"done"});assert.deepEqual(await wt.closed,{closeCode:42,reason:"done"});await assert.rejects(wt.createBidirectionalStream(),/closed/);
-});
-test("WebTransport does not read datagrams or accept streams without demand",async()=>{const f=transportFixture();const wt=new WebTransport(f.bridge,"https://socket.test");await wt.ready;assert.equal(f.calls.filter(x=>/accept|receive/.test(x[0])).length,0);wt.close();await wt.closed});
-test("WebTransport rejects invalid URL, pooling, protocols and pins",()=>{const {bridge}=transportFixture();for(const u of ["http://socket.test","https://user@socket.test","https://socket.test/#"]){assert.throws(()=>new WebTransport(bridge,u),TypeError)}assert.throws(()=>new WebTransport(bridge,"https://socket.test",{allowPooling:true}),/pooling/);assert.throws(()=>new WebTransport(bridge,"https://socket.test",{protocols:["x","x"]}),TypeError);assert.throws(()=>new WebTransport(bridge,"https://socket.test",{serverCertificateHashes:[{algorithm:"sha-256",value:new Uint8Array(31)}]}),TypeError)});
-test("WebTransport failure rejects both lifecycle promises",async()=>{const wt=new WebTransport({socketOperation:async()=>{throw new Error("certificate refused")}},"https://socket.test");await assert.rejects(wt.ready,/certificate/);await assert.rejects(wt.closed,/certificate/)});
-test("closing WebTransport during a pending handshake releases a late session",async()=>{const p=deferred<any>();const calls:any[]=[];const wt=new WebTransport({socketOperation:async(op,id)=>{calls.push([op,id]);if(op==="webTransport")return p.promise}},"https://socket.test");wt.close();p.resolve({id:17});await assert.rejects(wt.ready,/Closed while connecting/);await assert.rejects(wt.closed);assert.deepEqual(calls.at(-1),["release",17])});
-
 test("concurrent logical TCP writes do not interleave chunks", async () => {
  const order:number[]=[];
  const c=new Conn({socketOperation:async(_op,_id,data:any)=>{order.push(data[0]);await new Promise(resolve=>setImmediate(resolve));return data.length}},{id:1},"tcp");
@@ -48,11 +38,4 @@ test("partial I/O retains bytes and exposes the error", async () => {
  const c=new Conn({socketOperation:async(op)=>op==="read"?{data:Uint8Array.of(8),error:"read timeout"}:{bytesWritten:2,error:"write timeout"}},{id:1},"tcp");
  assert.deepEqual(await c.read(),Uint8Array.of(8));await assert.rejects(c.read(),/read timeout/);
  await assert.rejects(c.write(Uint8Array.of(1,2,3)),(e:any)=>e.bytesWritten===2 && /write timeout/.test(e.message));
-});
-test("normal WebTransport closure ends incoming queues", async () => {
- const f=transportFixture(),wt=new WebTransport(f.bridge,"https://socket.test");await wt.ready;
- f.closed.resolve({closeCode:7,reason:"peer done"});await wt.closed;
- assert.equal((await wt.datagrams.readable.getReader().read()).done,true);
- assert.equal((await wt.incomingBidirectionalStreams.getReader().read()).done,true);
- assert.equal((await wt.incomingUnidirectionalStreams.getReader().read()).done,true);
 });

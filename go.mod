@@ -10,7 +10,6 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/pion/dtls/v3 v3.1.5
 	github.com/quic-go/quic-go v0.61.0
-	github.com/quic-go/webtransport-go v0.12.0
 	github.com/urnetwork/connect v0.0.0
 	github.com/urnetwork/glog v0.0.0
 	github.com/urnetwork/goidenticons v0.0.0

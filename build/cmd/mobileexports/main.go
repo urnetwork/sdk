@@ -74,8 +74,8 @@ func allowedMobileOmission(identifier string) bool {
 	}
 	// OpenSocket/Socket provide the mobile surface; these standard-library
 	// signatures and HTTP/3/RPC internals are intentionally Go-only.
-	if typeName == "Dialer" || typeName == "TLSDialer" || typeName == "Conn" || typeName == "WebTransportOptions" ||
-		typeName == "DeviceSocketRequest" || typeName == "DeviceSocketResponse" || identifier == "DialWebTransport" ||
+	if typeName == "Dialer" || typeName == "TLSDialer" || typeName == "Conn" ||
+		typeName == "DeviceSocketRequest" || typeName == "DeviceSocketResponse" ||
 		identifier == "SocketTLSOptions.NextProtos" || identifier == "SocketTLSOptions.TLSConfig" {
 		return true
 	}

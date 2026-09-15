@@ -99,7 +99,6 @@ var skipTypes = map[string]string{
 	"Dialer":               "native Go socket interface; manual C socket exports",
 	"TLSDialer":            "native Go TLS interface; manual C socket exports",
 	"Conn":                 "net.Conn alias; manual C socket exports",
-	"WebTransportOptions":  "Go WebTransport configuration",
 	"DeviceSocketRequest":  "socket RPC internal",
 	"DeviceSocketResponse": "socket RPC internal",
 	"DeviceLocalRpc":       "rpc gob internal (macOS parity: ignored)",
@@ -116,7 +115,6 @@ var skipTypePatterns = []*regexp.Regexp{
 var keepTypes = map[string]bool{}
 
 var skipFuncs = map[string]string{
-	"DialWebTransport":        "Go/JS WebTransport surface",
 	"NewPlatformNetworkSpace": "platform constructor (macOS parity: ignored)",
 	"NewPlatformDeviceLocal":  "platform constructor (macOS parity: ignored)",
 	"RequireIdFromBytes":      "panics on bad input; use urnet_parse_id",

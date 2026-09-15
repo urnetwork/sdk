@@ -617,6 +617,10 @@ def bind(lib):
     lib.urnet_contract_view_controller_add_throughput_listener.restype = c_uint64
     lib.urnet_contract_view_controller_close.argtypes = [c_uint64]
     lib.urnet_contract_view_controller_close.restype = None
+    lib.urnet_contract_view_controller_get_extender_stats.argtypes = [c_uint64]
+    lib.urnet_contract_view_controller_get_extender_stats.restype = c_void_p
+    lib.urnet_contract_view_controller_get_extender_throughput_points.argtypes = [c_uint64]
+    lib.urnet_contract_view_controller_get_extender_throughput_points.restype = c_void_p
     lib.urnet_contract_view_controller_get_packet_stats.argtypes = [c_uint64]
     lib.urnet_contract_view_controller_get_packet_stats.restype = c_void_p
     lib.urnet_contract_view_controller_get_provider_packet_stats.argtypes = [c_uint64]
@@ -675,6 +679,8 @@ def bind(lib):
     lib.urnet_device_add_egress_contract_details_change_listener.restype = c_uint64
     lib.urnet_device_add_egress_contract_stats_change_listener.argtypes = [c_uint64, urnet_contract_stats_change_cb, c_void_p]
     lib.urnet_device_add_egress_contract_stats_change_listener.restype = c_uint64
+    lib.urnet_device_add_extender_provide_status_change_listener.argtypes = [c_uint64, urnet_extender_provide_status_change_cb, c_void_p]
+    lib.urnet_device_add_extender_provide_status_change_listener.restype = c_uint64
     lib.urnet_device_add_extender_status_change_listener.argtypes = [c_uint64, urnet_extender_status_change_cb, c_void_p]
     lib.urnet_device_add_extender_status_change_listener.restype = c_uint64
     lib.urnet_device_add_ingress_contract_details_change_listener.argtypes = [c_uint64, urnet_contract_details_change_cb, c_void_p]
@@ -781,6 +787,10 @@ def bind(lib):
     lib.urnet_device_get_egress_contract_details.restype = c_void_p
     lib.urnet_device_get_egress_contract_stats.argtypes = [c_uint64]
     lib.urnet_device_get_egress_contract_stats.restype = c_void_p
+    lib.urnet_device_get_extender_provide_status.argtypes = [c_uint64]
+    lib.urnet_device_get_extender_provide_status.restype = c_void_p
+    lib.urnet_device_get_extender_stats.argtypes = [c_uint64]
+    lib.urnet_device_get_extender_stats.restype = c_void_p
     lib.urnet_device_get_extender_status.argtypes = [c_uint64]
     lib.urnet_device_get_extender_status.restype = c_void_p
     lib.urnet_device_get_ingress_contract_details.argtypes = [c_uint64]
@@ -807,6 +817,8 @@ def bind(lib):
     lib.urnet_device_get_provide_control_mode.restype = c_void_p
     lib.urnet_device_get_provide_enabled.argtypes = [c_uint64]
     lib.urnet_device_get_provide_enabled.restype = c_bool
+    lib.urnet_device_get_provide_extender.argtypes = [c_uint64]
+    lib.urnet_device_get_provide_extender.restype = c_bool
     lib.urnet_device_get_provide_mode.argtypes = [c_uint64]
     lib.urnet_device_get_provide_mode.restype = c_int64
     lib.urnet_device_get_provide_network_mode.argtypes = [c_uint64]
@@ -895,6 +907,8 @@ def bind(lib):
     lib.urnet_device_set_performance_profile.restype = None
     lib.urnet_device_set_provide_control_mode.argtypes = [c_uint64, c_char_p]
     lib.urnet_device_set_provide_control_mode.restype = None
+    lib.urnet_device_set_provide_extender.argtypes = [c_uint64, c_bool]
+    lib.urnet_device_set_provide_extender.restype = None
     lib.urnet_device_set_provide_mode.argtypes = [c_uint64, c_int64]
     lib.urnet_device_set_provide_mode.restype = None
     lib.urnet_device_set_provide_network_mode.argtypes = [c_uint64, c_char_p]
@@ -915,8 +929,6 @@ def bind(lib):
     lib.urnet_device_shuffle.restype = None
     lib.urnet_device_upload_logs.argtypes = [c_uint64, c_char_p, urnet_upload_logs_cb, c_void_p, POINTER(c_void_p)]
     lib.urnet_device_upload_logs.restype = c_bool
-    lib.urnet_device_local_add_extender_provide_status_change_listener.argtypes = [c_uint64, urnet_extender_provide_status_change_cb, c_void_p]
-    lib.urnet_device_local_add_extender_provide_status_change_listener.restype = c_uint64
     lib.urnet_device_local_add_local_state_save_listener.argtypes = [c_uint64, urnet_local_state_save_cb, c_void_p]
     lib.urnet_device_local_add_local_state_save_listener.restype = c_uint64
     lib.urnet_device_local_add_receive_packet.argtypes = [c_uint64, urnet_receive_packet_cb, c_void_p]
@@ -969,8 +981,6 @@ def bind(lib):
     lib.urnet_device_local_get_destination_exits.restype = c_void_p
     lib.urnet_device_local_get_exits.argtypes = [c_uint64]
     lib.urnet_device_local_get_exits.restype = c_void_p
-    lib.urnet_device_local_get_extender_provide_status.argtypes = [c_uint64]
-    lib.urnet_device_local_get_extender_provide_status.restype = c_void_p
     lib.urnet_device_local_get_first_load_timeline_json.argtypes = [c_uint64]
     lib.urnet_device_local_get_first_load_timeline_json.restype = c_void_p
     lib.urnet_device_local_get_key_material.argtypes = [c_uint64]
@@ -981,8 +991,6 @@ def bind(lib):
     lib.urnet_device_local_get_pinned_app_ids.restype = c_void_p
     lib.urnet_device_local_get_probe_results.argtypes = [c_uint64]
     lib.urnet_device_local_get_probe_results.restype = c_void_p
-    lib.urnet_device_local_get_provide_extender.argtypes = [c_uint64]
-    lib.urnet_device_local_get_provide_extender.restype = c_bool
     lib.urnet_device_local_get_provide_secret_keys.argtypes = [c_uint64]
     lib.urnet_device_local_get_provide_secret_keys.restype = c_void_p
     lib.urnet_device_local_get_provider_client_key_registered.argtypes = [c_uint64]
@@ -1093,8 +1101,6 @@ def bind(lib):
     lib.urnet_device_local_set_key_material.restype = None
     lib.urnet_device_local_set_performance_degraded.argtypes = [c_uint64, c_bool]
     lib.urnet_device_local_set_performance_degraded.restype = None
-    lib.urnet_device_local_set_provide_extender.argtypes = [c_uint64, c_bool]
-    lib.urnet_device_local_set_provide_extender.restype = None
     lib.urnet_device_local_set_reliability_settings.argtypes = [c_uint64, c_char_p]
     lib.urnet_device_local_set_reliability_settings.restype = None
     lib.urnet_device_local_set_routing_tier.argtypes = [c_uint64, c_int64]
@@ -2247,6 +2253,8 @@ def bind(lib):
     lib.urnet_purchase_report_backoff_millis.restype = c_int64
     lib.urnet_record_tunnel_recovery_stage.argtypes = [c_char_p, c_char_p, c_bool, c_bool, c_bool, c_int64, c_int64]
     lib.urnet_record_tunnel_recovery_stage.restype = c_void_p
+    lib.urnet_report_memory_trim_level.argtypes = [c_int64]
+    lib.urnet_report_memory_trim_level.restype = None
     lib.urnet_saving_percent.argtypes = [c_double, c_double, c_int64]
     lib.urnet_saving_percent.restype = c_int64
     lib.urnet_selectable_transport_modes.argtypes = []

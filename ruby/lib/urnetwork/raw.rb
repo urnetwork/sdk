@@ -403,6 +403,8 @@ module URnetwork
       attach_function :urnet_contract_details_view_controller_stop, [:uint64], :void, blocking: true
       attach_function :urnet_contract_view_controller_add_throughput_listener, [:uint64, :urnet_throughput_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_contract_view_controller_close, [:uint64], :void, blocking: true
+      attach_function :urnet_contract_view_controller_get_extender_stats, [:uint64], :pointer, blocking: true
+      attach_function :urnet_contract_view_controller_get_extender_throughput_points, [:uint64], :pointer, blocking: true
       attach_function :urnet_contract_view_controller_get_packet_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_contract_view_controller_get_provider_packet_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_contract_view_controller_get_provider_throughput_points, [:uint64], :pointer, blocking: true
@@ -432,6 +434,7 @@ module URnetwork
       attach_function :urnet_device_add_dns_resolver_settings_change_listener, [:uint64, :urnet_dns_resolver_settings_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_egress_contract_details_change_listener, [:uint64, :urnet_contract_details_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_egress_contract_stats_change_listener, [:uint64, :urnet_contract_stats_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_extender_provide_status_change_listener, [:uint64, :urnet_extender_provide_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_extender_status_change_listener, [:uint64, :urnet_extender_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_ingress_contract_details_change_listener, [:uint64, :urnet_contract_details_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_ingress_contract_stats_change_listener, [:uint64, :urnet_contract_stats_change_cb, :pointer], :uint64, blocking: true
@@ -485,6 +488,8 @@ module URnetwork
       attach_function :urnet_device_get_done, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_egress_contract_details, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_egress_contract_stats, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_extender_provide_status, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_extender_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_extender_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_ingress_contract_details, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_ingress_contract_stats, [:uint64], :pointer, blocking: true
@@ -498,6 +503,7 @@ module URnetwork
       attach_function :urnet_device_get_performance_profile, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_control_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_enabled, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_get_provide_extender, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_provide_mode, [:uint64], :int64, blocking: true
       attach_function :urnet_device_get_provide_network_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_provide_paused, [:uint64], :bool, blocking: true
@@ -542,6 +548,7 @@ module URnetwork
       attach_function :urnet_device_set_offline, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_performance_profile, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_control_mode, [:uint64, :string], :void, blocking: true
+      attach_function :urnet_device_set_provide_extender, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_provide_mode, [:uint64, :int64], :void, blocking: true
       attach_function :urnet_device_set_provide_network_mode, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_paused, [:uint64, :bool], :void, blocking: true
@@ -552,7 +559,6 @@ module URnetwork
       attach_function :urnet_device_set_vpn_interface_while_offline, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_shuffle, [:uint64], :void, blocking: true
       attach_function :urnet_device_upload_logs, [:uint64, :string, :urnet_upload_logs_cb, :pointer, :pointer], :bool, blocking: true
-      attach_function :urnet_device_local_add_extender_provide_status_change_listener, [:uint64, :urnet_extender_provide_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_add_local_state_save_listener, [:uint64, :urnet_local_state_save_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_add_receive_packet, [:uint64, :urnet_receive_packet_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_local_add_receive_packet_batch, [:uint64, :urnet_receive_packet_batch_cb, :pointer], :uint64, blocking: true
@@ -579,13 +585,11 @@ module URnetwork
       attach_function :urnet_device_local_get_client_jwt, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_destination_exits, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_exits, [:uint64], :pointer, blocking: true
-      attach_function :urnet_device_local_get_extender_provide_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_first_load_timeline_json, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_key_material, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_local_get_last_local_state_save_result, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_local_get_pinned_app_ids, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_probe_results, [:uint64], :pointer, blocking: true
-      attach_function :urnet_device_local_get_provide_extender, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_get_provide_secret_keys, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_provider_client_key_registered, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_get_provider_connected, [:uint64], :bool, blocking: true
@@ -641,7 +645,6 @@ module URnetwork
       attach_function :urnet_device_local_set_flow_owner_lookup, [:uint64, :urnet_flow_owner_lookup_cb, :pointer], :void, blocking: true
       attach_function :urnet_device_local_set_key_material, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_device_local_set_performance_degraded, [:uint64, :bool], :void, blocking: true
-      attach_function :urnet_device_local_set_provide_extender, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_local_set_reliability_settings, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_local_set_routing_tier, [:uint64, :int64], :void, blocking: true
       attach_function :urnet_device_local_set_rpc_server, [:uint64, :string, :string, :string, :pointer], :bool, blocking: true
@@ -1218,6 +1221,7 @@ module URnetwork
       attach_function :urnet_public_identity_key_hash, [:pointer, :int32], :pointer, blocking: true
       attach_function :urnet_purchase_report_backoff_millis, [:int64], :int64, blocking: true
       attach_function :urnet_record_tunnel_recovery_stage, [:string, :string, :bool, :bool, :bool, :int64, :int64], :pointer, blocking: true
+      attach_function :urnet_report_memory_trim_level, [:int64], :void, blocking: true
       attach_function :urnet_saving_percent, [:double, :double, :int64], :int64, blocking: true
       attach_function :urnet_selectable_transport_modes, [], :pointer, blocking: true
       attach_function :urnet_service_host_name, [:string, :string, :string], :pointer, blocking: true
