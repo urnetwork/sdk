@@ -7,6 +7,8 @@ require (
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260908180501-3f62bf119e84
 )
 
+require github.com/urnetwork/goidenticons/v2026 v2026.9.14-1046484290 // indirect
+
 require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -70,12 +72,11 @@ require (
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.61.0 // indirect
+	github.com/quic-go/quic-go v0.61.0
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/urnetwork/connect/v2026 v2026.9.14-1046484290
-	github.com/urnetwork/glog/v2026 v2026.9.14-1046484290
-	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/glog/v2026 v2026.9.14-1046484290 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.9.14-1046484290
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect

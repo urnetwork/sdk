@@ -2,12 +2,15 @@ module github.com/urnetwork/sdk/build
 
 go 1.26.5
 
+require github.com/urnetwork/sdk/v2026 v2026.9.14-1046484290
+
 require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
+	github.com/dunglas/httpsfv v1.1.0 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
@@ -65,12 +68,12 @@ require (
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.61.0 // indirect
+	github.com/quic-go/webtransport-go v0.12.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.9.14-1046484290
-	github.com/urnetwork/glog/v2026 v2026.9.14-1046484290
-	github.com/urnetwork/goidenticons/v2026 v2026.9.14-1046484290
-	github.com/urnetwork/sdk/v2026 v2026.9.14-1046484290
+	github.com/urnetwork/connect/v2026 v2026.9.14-1046484290 // indirect
+	github.com/urnetwork/glog/v2026 v2026.9.14-1046484290 // indirect
+	github.com/urnetwork/goidenticons/v2026 v2026.9.14-1046484290 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
