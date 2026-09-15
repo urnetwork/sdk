@@ -19,7 +19,7 @@ fi
 # Run the public-surface smoke on its own so a load/constructor regression is
 # reported before the longer race-enabled suite. The full command below runs it
 # again as part of the complete package test.
-go test -timeout 30s -v -race -run '^TestSDKSmoke$'
+go test -count=1 -timeout 30s -v -race -run '^TestSDKSmoke$'
 if [[ $? != 0 ]]; then
     exit 1
 fi
