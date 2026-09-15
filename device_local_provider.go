@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -106,6 +107,9 @@ type deviceLocalProvider struct {
 	// the extender role while it runs (G2), nil while provide or the setting
 	// is off and on every build that does not carry it (G1)
 	extender *deviceLocalExtender
+	// why the role could not start while it was asked to run, empty while it
+	// runs or was not asked to (N3)
+	extenderStartError string
 	// the device's effective provide mode, which decides whether the standby
 	// dials direct (J4). The device hands it over on every change.
 	provideMode ProvideMode
@@ -899,6 +903,10 @@ func newDeviceClientSettings(
 // called after every provide change and after the setting of F3 changes, and
 // is a no-op when the role is already in the requested state or when this
 // build carries none (G1).
+//
+// A role that was asked for and could not be built records why, which the
+// status reports as the start error of N3 until the role is asked for again
+// or no longer asked for.
 func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 	self.extenderLock.Lock()
 	defer self.extenderLock.Unlock()
@@ -912,25 +920,31 @@ func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 		// ios, android and js carry no role at all (G1)
 		enabled = false
 	}
-	if enabled == (current != nil) {
-		return
-	}
 	if !enabled {
+		// nothing is asked for, so nothing failed to start
 		func() {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()
 			self.extender = nil
+			self.extenderStartError = ""
 		}()
-		current.Close()
+		if current != nil {
+			current.Close()
+		}
+		return
+	}
+	if current != nil {
 		return
 	}
 
-	settings := self.extenderSettings()
-	if settings == nil {
+	settings, err := self.extenderSettings()
+	if err != nil {
+		self.setExtenderStartError(err)
 		return
 	}
-	extender := newDeviceLocalExtender(self.ctx, settings)
-	if extender == nil {
+	extender, err := newDeviceLocalExtender(self.ctx, settings)
+	if err != nil {
+		self.setExtenderStartError(err)
 		return
 	}
 	installed := func() bool {
@@ -940,6 +954,7 @@ func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 			return false
 		}
 		self.extender = extender
+		self.extenderStartError = ""
 		return true
 	}()
 	if !installed {
@@ -948,20 +963,29 @@ func (self *deviceLocalProvider) setExtenderEnabled(enabled bool) {
 	}
 }
 
-// The role's settings for this space and this device (G2, G3), or nil when
-// there is nothing to run: a space with no identity to activate under, since
-// an extender whose key changed on every launch would be revoked as fast as it
-// activates. The identity is the space's (B1): its persisted `.extender_key`,
+func (self *deviceLocalProvider) setExtenderStartError(err error) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed {
+		return
+	}
+	self.extenderStartError = err.Error()
+}
+
+// The role's settings for this space and this device (G2, G3), or an error
+// when there is nothing to run: a device with no space, or a space with no
+// identity to activate under, since an extender whose key changed on every
+// launch would be revoked as fast as it activates. The identity is the space's (B1): its persisted `.extender_key`,
 // the seed an embedder supplied through the device's key material, or one the
 // space generated, which the embedder can read back and keep.
-func (self *deviceLocalProvider) extenderSettings() *deviceLocalExtenderSettings {
+func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSettings, error) {
 	networkSpace := self.networkSpace
 	if networkSpace == nil {
-		return nil
+		return nil, errors.New("the device has no network space")
 	}
 	identityKeySeed := networkSpace.extenderIdentityKeySeed()
 	if len(identityKeySeed) == 0 {
-		return nil
+		return nil, errors.New("the network space has no extender identity")
 	}
 
 	// the relay's forward dial is the device's own egress: the extender
@@ -995,7 +1019,7 @@ func (self *deviceLocalProvider) extenderSettings() *deviceLocalExtenderSettings
 	if self.extenderSettingsConfigure != nil {
 		self.extenderSettingsConfigure(settings)
 	}
-	return settings
+	return settings, nil
 }
 
 // The client jwt of this provider, read at each activation so a refresh is
@@ -1010,12 +1034,27 @@ func (self *deviceLocalProvider) byJwt() string {
 }
 
 // The provider extender status (F3). A provider with no role reports a
-// disabled status.
+// disabled status, carrying why the role did not start when it was asked to
+// (N3).
 func (self *deviceLocalProvider) extenderProvideStatus() *ExtenderProvideStatus {
 	self.stateLock.Lock()
 	extender := self.extender
+	startError := self.extenderStartError
 	self.stateLock.Unlock()
+	if extender == nil && startError != "" {
+		status := disabledExtenderProvideStatus()
+		status.StartError = startError
+		return status
+	}
 	return extender.status()
+}
+
+// The relayed traffic of the running role (O2), nil while there is none.
+func (self *deviceLocalProvider) extenderStats() *ExtenderStats {
+	self.stateLock.Lock()
+	extender := self.extender
+	self.stateLock.Unlock()
+	return extender.stats()
 }
 
 // A channel armed at the instant of the read, so a consumer is woken when the

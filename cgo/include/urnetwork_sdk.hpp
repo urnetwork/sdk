@@ -210,6 +210,16 @@ inline constexpr const char* ExtenderGossipStateConnecting = "connecting";
 inline constexpr const char* ExtenderGossipStateDisconnected = "disconnected";
 inline constexpr const char* ExtenderImportErrorForeignHost = "import_extenders_foreign_host";
 inline constexpr const char* ExtenderImportErrorInvalid = "import_extenders_invalid";
+inline constexpr const char* ExtenderProvideErrorActivationFailed = "activation_failed";
+inline constexpr const char* ExtenderProvideErrorActivationRefused = "activation_refused";
+inline constexpr const char* ExtenderProvideErrorListen = "listen";
+inline constexpr const char* ExtenderProvideErrorRevoked = "revoked";
+inline constexpr const char* ExtenderProvideErrorStart = "start";
+inline constexpr const char* ExtenderProvideStateActive = "active";
+inline constexpr const char* ExtenderProvideStateError = "error";
+inline constexpr const char* ExtenderProvideStateNotProviding = "not_providing";
+inline constexpr const char* ExtenderProvideStateOff = "off";
+inline constexpr const char* ExtenderProvideStateSettingUp = "setting_up";
 inline constexpr const char* ExtenderRoleFeed = "feed";
 inline constexpr const char* ExtenderRoleMember = "member";
 inline constexpr const char* IpFamilyDualstack = "dualstack";
@@ -528,6 +538,7 @@ struct ExtenderProvideStatus;
 struct ExtenderSettings;
 struct ExtenderShareDecodeResult;
 struct ExtenderShareResult;
+struct ExtenderStats;
 struct ExtenderStatus;
 struct FeedbackSendNeeds;
 struct FeedbackSendArgs;
@@ -1558,7 +1569,12 @@ struct ExtenderInfo {
 };
 
 struct ExtenderProvideStatus {
+	bool Supported{};
+	std::string State{};
+	std::string ErrorCase{};
+	std::string Reason{};
 	bool Enabled{};
+	std::string StartError{};
 	bool Listening{};
 	std::string ListenError{};
 	bool ActivatedV4{};
@@ -1567,6 +1583,7 @@ struct ExtenderProvideStatus {
 	std::string Ipv6{};
 	int64_t LastActivationTime{};
 	std::string LastActivationError{};
+	bool LastActivationRefused{};
 	int64_t RevokedTime{};
 	std::string DnsPorts{};
 	int64_t ConnectionCount{};
@@ -1597,6 +1614,13 @@ struct ExtenderShareResult {
 	std::string Text{};
 	int64_t Count{};
 	bool IncludesSettings{};
+};
+
+struct ExtenderStats {
+	int64_t IngressByteCount{};
+	int64_t IngressReadCount{};
+	int64_t EgressByteCount{};
+	int64_t EgressReadCount{};
 };
 
 struct ExtenderStatus {
@@ -1914,6 +1938,10 @@ struct MemoryStats {
 	int64_t IdleMemoryTrimCooldownCount{};
 	int64_t LastIdleMemoryTrimBeforeByteCount{};
 	int64_t LastIdleMemoryTrimAfterByteCount{};
+	int64_t TrimLevelLast{};
+	int64_t TrimLevelCount{};
+	int64_t TrimLevelActionCount{};
+	int64_t LastTrimLevelDroppedByteCount{};
 	int64_t PlatformTransportBudgetTotalByteCount{};
 	int64_t PlatformTransportBudgetUsedByteCount{};
 	int64_t PlatformTransportBudgetUsedCount{};
@@ -3347,6 +3375,8 @@ inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v);
 inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v);
 inline void to_json(nlohmann::json& j, const ExtenderShareResult& v);
 inline void from_json(const nlohmann::json& j, ExtenderShareResult& v);
+inline void to_json(nlohmann::json& j, const ExtenderStats& v);
+inline void from_json(const nlohmann::json& j, ExtenderStats& v);
 inline void to_json(nlohmann::json& j, const ExtenderStatus& v);
 inline void from_json(const nlohmann::json& j, ExtenderStatus& v);
 inline void to_json(nlohmann::json& j, const FeedbackSendNeeds& v);
@@ -7218,7 +7248,12 @@ inline void from_json(const nlohmann::json& j, ExtenderInfo& v) {
 
 inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j = nlohmann::json::object();
+	j["Supported"] = v.Supported;
+	j["State"] = v.State;
+	j["ErrorCase"] = v.ErrorCase;
+	j["Reason"] = v.Reason;
 	j["Enabled"] = v.Enabled;
+	j["StartError"] = v.StartError;
 	j["Listening"] = v.Listening;
 	j["ListenError"] = v.ListenError;
 	j["ActivatedV4"] = v.ActivatedV4;
@@ -7227,6 +7262,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["Ipv6"] = v.Ipv6;
 	j["LastActivationTime"] = v.LastActivationTime;
 	j["LastActivationError"] = v.LastActivationError;
+	j["LastActivationRefused"] = v.LastActivationRefused;
 	j["RevokedTime"] = v.RevokedTime;
 	j["DnsPorts"] = v.DnsPorts;
 	j["ConnectionCount"] = v.ConnectionCount;
@@ -7235,8 +7271,23 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	if (!j.is_object()) {
 		return;
 	}
+	if (auto it = j.find("Supported"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Supported);
+	}
+	if (auto it = j.find("State"); it != j.end() && !it->is_null()) {
+		it->get_to(v.State);
+	}
+	if (auto it = j.find("ErrorCase"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorCase);
+	}
+	if (auto it = j.find("Reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Reason);
+	}
 	if (auto it = j.find("Enabled"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Enabled);
+	}
+	if (auto it = j.find("StartError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StartError);
 	}
 	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Listening);
@@ -7261,6 +7312,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("LastActivationError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LastActivationError);
+	}
+	if (auto it = j.find("LastActivationRefused"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastActivationRefused);
 	}
 	if (auto it = j.find("RevokedTime"); it != j.end() && !it->is_null()) {
 		it->get_to(v.RevokedTime);
@@ -7377,6 +7431,31 @@ inline void from_json(const nlohmann::json& j, ExtenderShareResult& v) {
 	}
 	if (auto it = j.find("IncludesSettings"); it != j.end() && !it->is_null()) {
 		it->get_to(v.IncludesSettings);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ExtenderStats& v) {
+	j = nlohmann::json::object();
+	j["IngressByteCount"] = v.IngressByteCount;
+	j["IngressReadCount"] = v.IngressReadCount;
+	j["EgressByteCount"] = v.EgressByteCount;
+	j["EgressReadCount"] = v.EgressReadCount;
+}
+inline void from_json(const nlohmann::json& j, ExtenderStats& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("IngressByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IngressByteCount);
+	}
+	if (auto it = j.find("IngressReadCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.IngressReadCount);
+	}
+	if (auto it = j.find("EgressByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EgressByteCount);
+	}
+	if (auto it = j.find("EgressReadCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.EgressReadCount);
 	}
 }
 
@@ -8730,6 +8809,10 @@ inline void to_json(nlohmann::json& j, const MemoryStats& v) {
 	j["IdleMemoryTrimCooldownCount"] = v.IdleMemoryTrimCooldownCount;
 	j["LastIdleMemoryTrimBeforeByteCount"] = v.LastIdleMemoryTrimBeforeByteCount;
 	j["LastIdleMemoryTrimAfterByteCount"] = v.LastIdleMemoryTrimAfterByteCount;
+	j["TrimLevelLast"] = v.TrimLevelLast;
+	j["TrimLevelCount"] = v.TrimLevelCount;
+	j["TrimLevelActionCount"] = v.TrimLevelActionCount;
+	j["LastTrimLevelDroppedByteCount"] = v.LastTrimLevelDroppedByteCount;
 	j["PlatformTransportBudgetTotalByteCount"] = v.PlatformTransportBudgetTotalByteCount;
 	j["PlatformTransportBudgetUsedByteCount"] = v.PlatformTransportBudgetUsedByteCount;
 	j["PlatformTransportBudgetUsedCount"] = v.PlatformTransportBudgetUsedCount;
@@ -8837,6 +8920,18 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	}
 	if (auto it = j.find("LastIdleMemoryTrimAfterByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.LastIdleMemoryTrimAfterByteCount);
+	}
+	if (auto it = j.find("TrimLevelLast"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TrimLevelLast);
+	}
+	if (auto it = j.find("TrimLevelCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TrimLevelCount);
+	}
+	if (auto it = j.find("TrimLevelActionCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TrimLevelActionCount);
+	}
+	if (auto it = j.find("LastTrimLevelDroppedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastTrimLevelDroppedByteCount);
 	}
 	if (auto it = j.find("PlatformTransportBudgetTotalByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportBudgetTotalByteCount);
@@ -14578,6 +14673,7 @@ public:
 	Sub addDnsResolverSettingsChangeListener(DnsResolverSettingsChangeListener listener) const;
 	Sub addEgressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addEgressContractStatsChangeListener(ContractStatsChangeListener listener) const;
+	Sub addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const;
 	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
 	Sub addIngressContractDetailsChangeListener(ContractDetailsChangeListener listener) const;
 	Sub addIngressContractStatsChangeListener(ContractStatsChangeListener listener) const;
@@ -14631,6 +14727,8 @@ public:
 	bool getDone() const;
 	std::optional<ContractDetailsList> getEgressContractDetails() const;
 	std::optional<ContractStats> getEgressContractStats() const;
+	std::optional<ExtenderProvideStatus> getExtenderProvideStatus() const;
+	std::optional<ExtenderStats> getExtenderStats() const;
 	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::optional<ContractDetailsList> getIngressContractDetails() const;
 	std::optional<ContractStats> getIngressContractStats() const;
@@ -14644,6 +14742,7 @@ public:
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
 	bool getProvideEnabled() const;
+	bool getProvideExtender() const;
 	int64_t getProvideMode() const;
 	std::string getProvideNetworkMode() const;
 	bool getProvidePaused() const;
@@ -14688,6 +14787,7 @@ public:
 	void setOffline(bool offline) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& performance_profile) const;
 	void setProvideControlMode(const std::string& mode) const;
+	void setProvideExtender(bool provide_extender) const;
 	void setProvideMode(int64_t provide_mode) const;
 	void setProvideNetworkMode(const std::string& mode) const;
 	void setProvidePaused(bool provide_paused) const;
@@ -14939,6 +15039,8 @@ public:
 	explicit ContractViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addThroughputListener(ThroughputListener listener) const;
 	void close() const;
+	std::optional<ExtenderStats> getExtenderStats() const;
+	std::optional<ThroughputPointList> getExtenderThroughputPoints() const;
 	std::optional<PacketStats> getPacketStats() const;
 	std::optional<PacketStats> getProviderPacketStats() const;
 	std::optional<ThroughputPointList> getProviderThroughputPoints() const;
@@ -14956,7 +15058,6 @@ class DeviceLocal final : public Device {
 public:
 	DeviceLocal() = default;
 	explicit DeviceLocal(uint64_t h) : Device(h) {}
-	Sub addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const;
 	Sub addLocalStateSaveListener(LocalStateSaveListener listener) const;
 	Sub addReceivePacket(ReceivePacket receive_packet) const;
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
@@ -14983,13 +15084,11 @@ public:
 	std::string getClientJwt() const;
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
-	std::optional<ExtenderProvideStatus> getExtenderProvideStatus() const;
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
 	DeviceLocalSaveResult getLastLocalStateSaveResult() const;
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
-	bool getProvideExtender() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
 	bool getProviderClientKeyRegistered() const;
 	bool getProviderConnected() const;
@@ -15045,7 +15144,6 @@ public:
 	void setFlowOwnerLookup(FlowOwnerLookup lookup) const;
 	void setKeyMaterial(const DeviceLocalKeyMaterial& key_material) const;
 	void setPerformanceDegraded(bool degraded) const;
-	void setProvideExtender(bool provide_extender) const;
 	void setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const;
 	void setRoutingTier(int64_t tier) const;
 	void setRpcServer(const std::string& server_pem, const std::string& client_cert_pem, const std::string& host_port) const;
@@ -21350,6 +21448,17 @@ inline Sub Device::addEgressContractStatsChangeListener(ContractStatsChangeListe
 	}
 	return r;
 }
+inline Sub Device::addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const {
+	std::shared_ptr<ExtenderProvideStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ExtenderProvideStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_extender_provide_status_change_listener(handle(), listener_fn ? &detail::retained_extender_provide_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const {
 	std::shared_ptr<ExtenderStatusChangeListener> listener_fn;
 	if (listener) {
@@ -21795,6 +21904,22 @@ inline std::optional<ContractStats> Device::getEgressContractStats() const {
 	}
 	return detail::parseJson<ContractStats>(r_s->c_str());
 }
+inline std::optional<ExtenderProvideStatus> Device::getExtenderProvideStatus() const {
+	char* r_c = urnet_device_get_extender_provide_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderProvideStatus>(r_s->c_str());
+}
+inline std::optional<ExtenderStats> Device::getExtenderStats() const {
+	char* r_c = urnet_device_get_extender_stats(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStats>(r_s->c_str());
+}
 inline std::optional<ExtenderStatus> Device::getExtenderStatus() const {
 	char* r_c = urnet_device_get_extender_status(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -21873,6 +21998,10 @@ inline std::string Device::getProvideControlMode() const {
 }
 inline bool Device::getProvideEnabled() const {
 	bool r = urnet_device_get_provide_enabled(handle());
+	return r;
+}
+inline bool Device::getProvideExtender() const {
+	bool r = urnet_device_get_provide_extender(handle());
 	return r;
 }
 inline int64_t Device::getProvideMode() const {
@@ -22147,6 +22276,9 @@ inline void Device::setPerformanceProfile(const std::optional<PerformanceProfile
 }
 inline void Device::setProvideControlMode(const std::string& mode) const {
 	urnet_device_set_provide_control_mode(handle(), mode.c_str());
+}
+inline void Device::setProvideExtender(bool provide_extender) const {
+	urnet_device_set_provide_extender(handle(), provide_extender);
 }
 inline void Device::setProvideMode(int64_t provide_mode) const {
 	urnet_device_set_provide_mode(handle(), provide_mode);
@@ -23493,6 +23625,22 @@ inline Sub ContractViewController::addThroughputListener(ThroughputListener list
 inline void ContractViewController::close() const {
 	urnet_contract_view_controller_close(handle());
 }
+inline std::optional<ExtenderStats> ContractViewController::getExtenderStats() const {
+	char* r_c = urnet_contract_view_controller_get_extender_stats(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderStats>(r_s->c_str());
+}
+inline std::optional<ThroughputPointList> ContractViewController::getExtenderThroughputPoints() const {
+	char* r_c = urnet_contract_view_controller_get_extender_throughput_points(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ThroughputPointList>(r_s->c_str());
+}
 inline std::optional<PacketStats> ContractViewController::getPacketStats() const {
 	char* r_c = urnet_contract_view_controller_get_packet_stats(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -23562,17 +23710,6 @@ inline void ContractViewController::start() const {
 }
 inline void ContractViewController::stop() const {
 	urnet_contract_view_controller_stop(handle());
-}
-inline Sub DeviceLocal::addExtenderProvideStatusChangeListener(ExtenderProvideStatusChangeListener listener) const {
-	std::shared_ptr<ExtenderProvideStatusChangeListener> listener_fn;
-	if (listener) {
-		listener_fn = std::make_shared<ExtenderProvideStatusChangeListener>(std::move(listener));
-	}
-	Sub r(urnet_device_local_add_extender_provide_status_change_listener(handle(), listener_fn ? &detail::retained_extender_provide_status_change : nullptr, listener_fn.get()));
-	if (listener_fn) {
-		r.retain(listener_fn);
-	}
-	return r;
 }
 inline Sub DeviceLocal::addLocalStateSaveListener(LocalStateSaveListener listener) const {
 	std::shared_ptr<LocalStateSaveListener> listener_fn;
@@ -23730,14 +23867,6 @@ inline std::optional<ExitList> DeviceLocal::getExits() const {
 	}
 	return detail::parseJson<ExitList>(r_s->c_str());
 }
-inline std::optional<ExtenderProvideStatus> DeviceLocal::getExtenderProvideStatus() const {
-	char* r_c = urnet_device_local_get_extender_provide_status(handle());
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<ExtenderProvideStatus>(r_s->c_str());
-}
 inline std::string DeviceLocal::getFirstLoadTimelineJson() const {
 	char* r_c = urnet_device_local_get_first_load_timeline_json(handle());
 	return detail::takeString(r_c);
@@ -23765,10 +23894,6 @@ inline std::optional<ProbeResultList> DeviceLocal::getProbeResults() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ProbeResultList>(r_s->c_str());
-}
-inline bool DeviceLocal::getProvideExtender() const {
-	bool r = urnet_device_local_get_provide_extender(handle());
-	return r;
 }
 inline std::optional<ProvideSecretKeyList> DeviceLocal::getProvideSecretKeys() const {
 	char* r_c = urnet_device_local_get_provide_secret_keys(handle());
@@ -24074,9 +24199,6 @@ inline void DeviceLocal::setKeyMaterial(const DeviceLocalKeyMaterial& key_materi
 }
 inline void DeviceLocal::setPerformanceDegraded(bool degraded) const {
 	urnet_device_local_set_performance_degraded(handle(), degraded);
-}
-inline void DeviceLocal::setProvideExtender(bool provide_extender) const {
-	urnet_device_local_set_provide_extender(handle(), provide_extender);
 }
 inline void DeviceLocal::setReliabilitySettings(const std::optional<ReliabilitySettings>& reliability_settings) const {
 	std::string reliability_settings_json;
@@ -27716,6 +27838,9 @@ inline int64_t purchaseReportBackoffMillis(int64_t attempt) {
 inline std::string recordTunnelRecoveryStage(const std::string& stage, const std::string& result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation) {
 	char* r_c = urnet_record_tunnel_recovery_stage(stage.c_str(), result.c_str(), intended, consumer_present, has_location, provider_count, generation);
 	return detail::takeString(r_c);
+}
+inline void reportMemoryTrimLevel(int64_t level) {
+	urnet_report_memory_trim_level(level);
 }
 inline int64_t savingPercent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits) {
 	int64_t r = urnet_saving_percent(yearly_amount, monthly_amount, minor_unit_digits);

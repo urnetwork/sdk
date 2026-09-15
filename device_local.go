@@ -558,6 +558,11 @@ type DeviceLocalSettings struct {
 	// carrier ports and point the activation at an in-process operator through
 	// it; production takes the fixed carrier ports and the space's own urls.
 	providerExtenderSettings func(settings *deviceLocalExtenderSettings)
+	// testingBeforeExtenderProvideWatch, when set, runs in the provider
+	// extender status watch's goroutine before the watch waits on anything. A
+	// test holds it to land a change before the watch runs; production never
+	// sets it.
+	testingBeforeExtenderProvideWatch func()
 	// Verbose opts into periodic, summarized security-policy diagnostics. It
 	// is disabled by default because a DeviceRemote poll performs RPC and app
 	// foreground/background polling belongs to view controllers.
@@ -1590,11 +1595,18 @@ func newDeviceLocalWithOverrides(
 		})
 	}
 
-	// the provider extender status, coalesced to one callback per second (F3)
+	// the provider extender status, coalesced to one callback per second (F3).
+	// The wake is armed here, before the goroutine exists, so a provide or
+	// setting change made the instant the constructor returns wakes the watch
+	// instead of closing a channel it has not armed yet
+	extenderProvideUpdate := deviceLocal.extenderProvideMonitor.NotifyChannel()
 	deviceLocal.lifecycleWorkers.Add(1)
 	go connect.HandleError(func() {
 		defer deviceLocal.lifecycleWorkers.Done()
-		deviceLocal.watchExtenderProvideStatus()
+		if hook := deviceLocal.settings.testingBeforeExtenderProvideWatch; hook != nil {
+			hook()
+		}
+		deviceLocal.watchExtenderProvideStatus(extenderProvideUpdate)
 	})
 
 	// the trailing edge of the contract stats epoch gate: carries out the last

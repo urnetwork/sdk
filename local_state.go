@@ -60,6 +60,13 @@ type LocalState struct {
 	// providerPriorsStaleAfter; 0 means unlimited. Unexported field, not a
 	// gomobile boundary -- there is no exported setter for it in this task.
 	providerPriorsRetention time.Duration
+
+	// The provider extender setting, read from `.provide_extender` once and
+	// cached after (EXTENDER.md N4). Guarded by provideExtenderLock, which also
+	// serializes the file writes so the file and the cache end on one value.
+	provideExtenderLock   sync.Mutex
+	provideExtenderLoaded bool
+	provideExtender       bool
 }
 
 // One immutable read generation of the persisted

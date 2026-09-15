@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/netip"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -198,5 +200,74 @@ func TestStoredNetworkSpaceKeepsItsOwnExtenderIdentity(t *testing.T) {
 	networkSpace.setExtenderKeySeed(embedderKeySeed)
 	if !slices.Equal(networkSpace.extenderIdentityKeySeed(), storedKeySeed) {
 		t.Fatal("an embedder replaced the persisted extender identity")
+	}
+}
+
+// A change that lands before a space's extender status watch runs is still
+// pushed (F2, K5): every channel the watch waits on first is armed before its
+// goroutine starts. The barrier holds the watch goroutine until the change has
+// landed.
+func TestNetworkSpaceExtenderStatusWatchKeepsAChangeBeforeItRuns(t *testing.T) {
+	const apiUrl = "https://api.watch.example"
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWatch := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+	hook := func(networkSpace *NetworkSpace) {
+		// only this test's space waits
+		if networkSpace.apiUrl != apiUrl && networkSpace.values.ApiUrl != apiUrl {
+			return
+		}
+		close(entered)
+		<-release
+	}
+	testingBeforeExtenderStatusWatch.Store(&hook)
+	t.Cleanup(func() {
+		testingBeforeExtenderStatusWatch.Store(nil)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings.Log = connect.NewNoopLogger()
+	networkSpace := NewNetworkSpaceWithUrls(ctx, apiUrl, "wss://connect.watch.example", strategySettings)
+	t.Cleanup(networkSpace.Close)
+	// released before the space closes
+	t.Cleanup(releaseWatch)
+	if networkSpace.extenderDirectory == nil {
+		t.Fatal("the space keeps no extender directory, so it runs no watch")
+	}
+
+	statuses := make(chan *ExtenderStatus, 4)
+	sub := networkSpace.AddExtenderStatusChangeListener(
+		extenderStatusChangeListenerFunc(func(status *ExtenderStatus) {
+			select {
+			case statuses <- status:
+			default:
+			}
+		}),
+	)
+	defer sub.Close()
+
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the extender status watch never started")
+	}
+	// the change lands while the watch goroutine exists and has not waited on
+	// anything yet
+	networkSpace.extenderDirectory.AddBootstrap(
+		netip.MustParseAddr("192.0.2.1"),
+		connect.ExtenderSourceDns,
+	)
+	releaseWatch()
+
+	select {
+	case status := <-statuses:
+		connect.AssertEqual(t, status.KnownCount, 1)
+	case <-time.After(10 * time.Second):
+		t.Fatal("a change that landed before the watch ran was never pushed")
 	}
 }

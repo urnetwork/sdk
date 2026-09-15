@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 )
 
 // device_local_extender_mobile.go — the builds that carry no extender role
@@ -20,15 +21,22 @@ const extenderProvideSupported = false
 
 type deviceLocalExtender struct{}
 
+// Never reached: the provider forces the role off on this build before it
+// builds one (G1). The error is what it would report if it were.
 func newDeviceLocalExtender(
 	ctx context.Context,
 	settings *deviceLocalExtenderSettings,
-) *deviceLocalExtender {
-	return nil
+) (*deviceLocalExtender, error) {
+	return nil, errors.New("this build carries no extender role")
 }
 
 func (self *deviceLocalExtender) status() *ExtenderProvideStatus {
 	return disabledExtenderProvideStatus()
+}
+
+// No role, so nothing is relayed and there is no series to show (O2).
+func (self *deviceLocalExtender) stats() *ExtenderStats {
+	return nil
 }
 
 func (self *deviceLocalExtender) statusUpdate() chan struct{} {

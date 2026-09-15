@@ -207,6 +207,8 @@ EXPORTS
 	urnet_contract_details_view_controller_stop
 	urnet_contract_view_controller_add_throughput_listener
 	urnet_contract_view_controller_close
+	urnet_contract_view_controller_get_extender_stats
+	urnet_contract_view_controller_get_extender_throughput_points
 	urnet_contract_view_controller_get_packet_stats
 	urnet_contract_view_controller_get_provider_packet_stats
 	urnet_contract_view_controller_get_provider_throughput_points
@@ -247,6 +249,7 @@ EXPORTS
 	urnet_device_add_dns_resolver_settings_change_listener
 	urnet_device_add_egress_contract_details_change_listener
 	urnet_device_add_egress_contract_stats_change_listener
+	urnet_device_add_extender_provide_status_change_listener
 	urnet_device_add_extender_status_change_listener
 	urnet_device_add_ingress_contract_details_change_listener
 	urnet_device_add_ingress_contract_stats_change_listener
@@ -302,6 +305,8 @@ EXPORTS
 	urnet_device_get_done
 	urnet_device_get_egress_contract_details
 	urnet_device_get_egress_contract_stats
+	urnet_device_get_extender_provide_status
+	urnet_device_get_extender_stats
 	urnet_device_get_extender_status
 	urnet_device_get_ingress_contract_details
 	urnet_device_get_ingress_contract_stats
@@ -315,6 +320,7 @@ EXPORTS
 	urnet_device_get_performance_profile
 	urnet_device_get_provide_control_mode
 	urnet_device_get_provide_enabled
+	urnet_device_get_provide_extender
 	urnet_device_get_provide_mode
 	urnet_device_get_provide_network_mode
 	urnet_device_get_provide_paused
@@ -339,7 +345,6 @@ EXPORTS
 	urnet_device_get_window_status
 	urnet_device_init_provide_secret_keys
 	urnet_device_load_provide_secret_keys
-	urnet_device_local_add_extender_provide_status_change_listener
 	urnet_device_local_add_local_state_save_listener
 	urnet_device_local_add_receive_packet
 	urnet_device_local_add_receive_packet_batch
@@ -368,13 +373,11 @@ EXPORTS
 	urnet_device_local_get_destination_exits
 	urnet_device_local_get_exits
 	urnet_device_local_get_extender_key_seed
-	urnet_device_local_get_extender_provide_status
 	urnet_device_local_get_first_load_timeline_json
 	urnet_device_local_get_key_material
 	urnet_device_local_get_last_local_state_save_result
 	urnet_device_local_get_pinned_app_ids
 	urnet_device_local_get_probe_results
-	urnet_device_local_get_provide_extender
 	urnet_device_local_get_provide_secret_keys
 	urnet_device_local_get_provide_tls_certificate_pem
 	urnet_device_local_get_provide_tls_private_key_pem
@@ -449,7 +452,6 @@ EXPORTS
 	urnet_device_local_set_flow_owner_lookup
 	urnet_device_local_set_key_material
 	urnet_device_local_set_performance_degraded
-	urnet_device_local_set_provide_extender
 	urnet_device_local_set_reliability_settings
 	urnet_device_local_set_routing_tier
 	urnet_device_local_set_rpc_server
@@ -579,6 +581,7 @@ EXPORTS
 	urnet_device_set_offline
 	urnet_device_set_performance_profile
 	urnet_device_set_provide_control_mode
+	urnet_device_set_provide_extender
 	urnet_device_set_provide_mode
 	urnet_device_set_provide_network_mode
 	urnet_device_set_provide_paused
@@ -958,6 +961,7 @@ EXPORTS
 	urnet_referral_code_view_controller_stop
 	urnet_release
 	urnet_render_identicon_png
+	urnet_report_memory_trim_level
 	urnet_saving_percent
 	urnet_selectable_transport_modes
 	urnet_service_host_name
