@@ -7,6 +7,7 @@ import (
 	"net"
 	"runtime/debug"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -413,6 +414,9 @@ func TestDeviceLocalNetworkPeerP2pCapacityCoversReplacementPair(t *testing.T) {
 // per source and aggregate flow counts (the local-traffic nats stay
 // unlimited), sized from the provider share of the device memory target.
 func TestProviderLocalUserNatSettings(t *testing.T) {
+	previous := connect.MemoryBudget()
+	t.Cleanup(func() { connect.SetMemoryBudget(previous) })
+	connect.SetMemoryBudget(0)
 	// the provider share (4/20) of the default 20 MB device target: half the
 	// share sizes the nat, 60% udp / 40% tcp by bytes over the per-flow cost
 	// model. Functional floors retain one real cold multi-origin page without
@@ -424,15 +428,17 @@ func TestProviderLocalUserNatSettings(t *testing.T) {
 	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 512)
 	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 256)
 
-	// a zero target with a process budget keeps the legacy scaled caps
-	// (24/64 of the unscaled limits)
+	// A targetless provider keeps its flow policy when a process budget is
+	// installed. Buffer depths still follow the process allocation budget.
 	connect.SetMemoryBudget(24 * 1024 * 1024)
-	defer connect.SetMemoryBudget(0)
 	settings = providerLocalUserNatSettings(0, connect.NewNoopLogger())
-	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 192)
-	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 768)
-	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 96)
-	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 192)
+	connect.AssertEqual(t, settings.UdpBufferSettings.UserLimit, 0)
+	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 0)
+	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 0)
+	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 0)
+	connect.AssertEqual(t, settings.IcmpBufferSettings.UserLimit, 0)
+	connect.AssertEqual(t, settings.IcmpBufferSettings.GlobalLimit, 0)
+	connect.AssertEqual(t, settings.UdpBufferSettings.IdleTimeout, 300*time.Second)
 	// the scaled per flow depths flow through from the connect defaults
 	connect.AssertEqual(t, settings.UdpBufferSettings.SequenceBufferSize, 96)
 	connect.AssertEqual(t, settings.TcpBufferSettings.SequenceBufferSize, 384)
@@ -444,6 +450,13 @@ func TestProviderLocalUserNatSettings(t *testing.T) {
 	connect.AssertEqual(t, settings.UdpBufferSettings.GlobalLimit, 0)
 	connect.AssertEqual(t, settings.TcpBufferSettings.UserLimit, 0)
 	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 0)
+	for _, budget := range []connect.ByteCount{8*1024*1024, 64*1024*1024, 256*1024*1024} {
+		connect.SetMemoryBudget(budget)
+		settings = providerLocalUserNatSettings(providerTarget, connect.NewNoopLogger())
+		if settings.UdpBufferSettings.GlobalLimit != 614 || settings.UdpBufferSettings.UserLimit != 256 || settings.TcpBufferSettings.GlobalLimit != 512 || settings.TcpBufferSettings.UserLimit != 256 {
+			t.Fatalf("process budget %d replaced the explicit4MiB provider flow target", budget)
+		}
+	}
 }
 
 func TestProviderLocalUserNatSettingsAppliesExitDialerOnlyToTCPAndUDP(t *testing.T) {
