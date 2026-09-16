@@ -68,3 +68,5 @@ An application can speak its own protocol between two devices' clients through t
 - `SubprotocolStats()` reads the client's counters.
 
 The registrations live on the device: they are applied to the device's own client when the device starts and re-applied when that client is replaced.
+
+`DeviceRemote.OpenSubprotocolContext` carries the same discrete messages over a device-RPC session. The JavaScript wrapper exposes this as `await device.enableSubprotocol(id, listener)`; the returned subscription provides `send`, `querySubprotocols`, `close`, and a `closed` promise. It requires a provider-capable native `DeviceLocal`, such as an extension-owned device or the examples repository's authenticated loopback companion. Hosted proxy devices reject this capability because their non-visible proxy identity cannot participate in peer messaging. Subscriptions belong to one RPC generation and must be reopened after a disconnect.

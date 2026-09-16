@@ -97,13 +97,16 @@ var behavioralTypes = map[string]bool{
 // skipped types are not exported. mirror the gomobile validate exclusions
 // (see build/Makefile): rpc gob internals, testing and platform constructors.
 var skipTypes = map[string]string{
-	"Dialer":               "native Go socket interface; manual C socket exports",
-	"TLSDialer":            "native Go TLS interface; manual C socket exports",
-	"Conn":                 "net.Conn alias; manual C socket exports",
-	"DeviceSocketRequest":  "socket RPC internal",
-	"DeviceSocketResponse": "socket RPC internal",
-	"DeviceLocalRpc":       "rpc gob internal (macOS parity: ignored)",
-	"DeviceRemoteRpc":      "rpc gob internal (macOS parity: ignored)",
+	"Dialer":                    "native Go socket interface; manual C socket exports",
+	"TLSDialer":                 "native Go TLS interface; manual C socket exports",
+	"Conn":                      "net.Conn alias; manual C socket exports",
+	"DeviceSocketRequest":       "socket RPC internal",
+	"DeviceSocketResponse":      "socket RPC internal",
+	"DeviceSubprotocolRequest":  "subprotocol RPC internal",
+	"DeviceSubprotocolResponse": "subprotocol RPC internal",
+	"RemoteSubprotocol":         "Go/JS RPC session; native bindings use DeviceLocal subprotocol methods",
+	"DeviceLocalRpc":            "rpc gob internal (macOS parity: ignored)",
+	"DeviceRemoteRpc":           "rpc gob internal (macOS parity: ignored)",
 }
 
 var skipTypePatterns = []*regexp.Regexp{
@@ -141,6 +144,7 @@ var skipMethods = map[string]string{
 	"Device.DialTlsContext":                          "manual export urnet_device_dial_tls",
 	"DeviceLocal.Ctx":                                "go context does not cross the abi",
 	"DeviceRemote.Ctx":                               "go context does not cross the abi",
+	"DeviceRemote.OpenSubprotocolContext":            "Go/JS RPC session; native bindings use DeviceLocal subprotocol methods",
 	"DeviceLocal.SetUpgradeMuxSettings":              "connect internal type (macOS parity: ignored)",
 	"DeviceLocal.SetClientSecurityPolicyGenerator":   "func param (macOS parity: ignored)",
 	"DeviceLocal.SetProviderSecurityPolicyGenerator": "func param (macOS parity: ignored)",

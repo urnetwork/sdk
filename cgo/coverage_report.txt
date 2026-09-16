@@ -1038,7 +1038,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1092) ==
+== skipped (1096) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1504,6 +1504,7 @@ DeviceRemote.GetWindowStatus: device interface method: use urnet_device_get_wind
 DeviceRemote.InitProvideSecretKeys: device interface method: use urnet_device_init_provide_secret_keys
 DeviceRemote.LoadProvideSecretKeys: device interface method: use urnet_device_load_provide_secret_keys
 DeviceRemote.OpenSocket: device interface method: use urnet_device_open_socket
+DeviceRemote.OpenSubprotocolContext: skipped: Go/JS RPC session; native bindings use DeviceLocal subprotocol methods
 DeviceRemote.Reconnect: device interface method: use urnet_device_reconnect
 DeviceRemote.RefreshToken: device interface method: use urnet_device_refresh_token
 DeviceRemote.RemoveBlockActionOverride: device interface method: use urnet_device_remove_block_action_override
@@ -1583,6 +1584,8 @@ DeviceSetNameError: data: crosses as json
 DeviceSetNameResult: data: crosses as json
 DeviceSocketRequest: skipped: socket RPC internal
 DeviceSocketResponse: skipped: socket RPC internal
+DeviceSubprotocolRequest: skipped: subprotocol RPC internal
+DeviceSubprotocolResponse: skipped: subprotocol RPC internal
 Dialer: skipped: native Go socket interface; manual C socket exports
 DnsResolverSettings: data: crosses as json
 DnsResolverSettingsChangeListener: callback interface: crosses as c function pointer
@@ -1924,6 +1927,7 @@ ReliabilityMetrics: data: crosses as json
 ReliabilitySettings: data: crosses as json
 ReliabilityWindow: data: crosses as json
 RemoteChangeListener: callback interface: crosses as c function pointer
+RemoteSubprotocol: skipped: Go/JS RPC session; native bindings use DeviceLocal subprotocol methods
 RemoveAuthArgs: data: crosses as json
 RemoveAuthCallback: callback interface: crosses as c function pointer
 RemoveAuthError: data: crosses as json

@@ -1,8 +1,10 @@
 # URnetwork JavaScript SDK
 
-The Go/WASM SDK runs in modern browsers and Node 24+. Both use a configured
-hosted DeviceRemote. The canonical npm name is `@urnetwork/sdk`; its first
-publication is pending. `@urnetwork/sdk-js` is the compatibility import.
+The Go/WASM SDK runs in modern browsers and Node 24+. It controls a native
+Device through `DeviceRemote`, using either a configured hosted device or an
+extension/companion transport. The canonical npm name is `@urnetwork/sdk`;
+its first publication is pending. `@urnetwork/sdk-js` is the compatibility
+import.
 
 ## Install
 
@@ -57,6 +59,32 @@ Full programs and run guides are in the
 They include hosted Device setup, Undici/Axios socket integration for Node,
 a browser Axios request adapter, and Direct Sockets TCP/UDP echo. Browser fetch and XHR
 do not expose a custom socket factory.
+
+## Peer messages
+
+A provider-capable native Device can expose raw application subprotocols to
+JavaScript through an extension/companion `DeviceRemote`:
+
+```js
+const messages = await device.enableSubprotocol(4097, async message => {
+  console.log(message.sourceClientId, message.bytes);
+});
+const supported = await messages.querySubprotocols(peerClientId, 10_000);
+if (supported?.includes(4097)) {
+  await messages.send(peerClientId, new TextEncoder().encode("hello"));
+}
+await messages.close();
+await messages.closed;
+```
+
+Each callback receives one complete owned `Uint8Array` and the authenticated
+source client ID. `send()` reports local queue acceptance, so application
+protocols should acknowledge delivery when needed. A subscription is bound to
+one RPC connection and closes on reconnect. Hosted proxy devices reject this
+API because they do not have a visible peer identity. The executable
+[JavaScript messages example](https://github.com/urnetwork/examples/tree/main/javascript/messages)
+includes live peer updates, support queries, TEXT/ACK framing, and an
+authenticated numeric-loopback native companion.
 
 ## Build, check and publish
 

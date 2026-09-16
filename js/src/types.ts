@@ -1,4 +1,5 @@
 import type { SocketDevice } from "./socket";
+import type { SubprotocolDevice } from "./subprotocol";
 
 /**
  * Configuration for proxy behavior
@@ -179,20 +180,22 @@ export interface ConnectedProviderLocationInfo {
 export type Unsubscribe = () => void;
 
 /**
- * DeviceRemote — the client's handle on a hosted DeviceLocal. It reaches the
- * device over the proxy host's device-rpc websocket (authenticated with the
- * device's signed proxy id) and controls it exactly as the app process controls
- * the device in the native apps.
+ * DeviceRemote — the client's handle on a native DeviceLocal. It reaches the
+ * device through a device-rpc transport and controls it as an app process
+ * controls a local device. Platform remotes use the hosted proxy websocket;
+ * extension remotes use the caller's opaque byte transport.
  *
  * Mirrors the bindings in sdk/js/device_remote.go. Hosted-incompatible setters
  * (route local, provide settings) are accepted but no-op on the hosted device;
  * the getters and listeners still reflect real device state.
  */
-export interface DeviceRemote extends SocketDevice {
+export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   // lifecycle
   close(): void;
   cancel(): void;
   getRemoteConnected(): boolean;
+  getClientId(): string;
+  getInstanceId(): string;
   /** Last explicit RPC sync refusal; empty while pending or after success. */
   getSyncError(): string;
   /** A random tag of 1–3 distinct emoji to prefill the emoji-tag editor with; count 0 or omitted picks the length at random. */

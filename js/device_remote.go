@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"syscall/js"
@@ -142,15 +143,20 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 
 	m := map[string]any{}
 	socketHandles := jsBindSocketDevice(device, m)
+	subprotocolHandles := jsBindSubprotocolDevice(device.Ctx(), func(ctx context.Context, id int32) (jsSubprotocol, error) {
+		return device.OpenSubprotocolContext(ctx, id)
+	}, m)
 
 	// lifecycle
 	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		go socketHandles.close()
+		go subprotocolHandles.close()
 		device.Close()
 		return js.Null()
 	})
 	m["cancel"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		go socketHandles.close()
+		go subprotocolHandles.close()
 		device.Cancel()
 		return js.Null()
 	})
@@ -160,6 +166,8 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["getSyncError"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(device.GetSyncError())
 	})
+	m["getClientId"] = js.FuncOf(func(js.Value, []js.Value) any { return device.GetClientId().String() })
+	m["getInstanceId"] = js.FuncOf(func(js.Value, []js.Value) any { return device.GetInstanceId().String() })
 	// suggestEmojiTag(count): synchronous; a random tag of 1–3 distinct emoji
 	// to prefill the emoji-tag editor with (count 0 or omitted picks the
 	// length at random). Pure; no device state involved.
