@@ -29,10 +29,7 @@ func jsProxyDevice(proxyDevice *sdk.ProxyDevice) js.Value {
 			return js.Null()
 		}),
 
-		"close": js.FuncOf(func(this js.Value, args []js.Value) any {
-			proxyDevice.Close()
-			return js.Null()
-		}),
+		"close": jsViewControllerClose(proxyDevice.Close),
 
 		"isDone": js.FuncOf(func(this js.Value, args []js.Value) any {
 			return js.ValueOf(proxyDevice.GetDone())
@@ -49,7 +46,7 @@ func jsDevice(device sdk.Device) js.Value {
 	}
 	m := map[string]any{}
 	handles := jsBindSocketDevice(device, m)
-	m["close"] = js.FuncOf(func(js.Value, []js.Value) any { go handles.close(); device.Close(); return nil })
+	m["close"] = jsViewControllerClose(device.Close, handles.close)
 	return js.ValueOf(m)
 }
 

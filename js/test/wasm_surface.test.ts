@@ -5,6 +5,26 @@ import { readFileSync } from "node:fs";
 const source = (relative: string): string =>
   readFileSync(new URL(relative, import.meta.url), "utf8");
 
+// Only SDK-owned exported closes return a join promise. The inbound transport
+// callback remains synchronous and must not be confused with a WASM owner.
+test("owned WASM close promises do not change caller-supplied transport callbacks", () => {
+  const declarations = source("../src/types.ts");
+  for (const name of ["ProxyDevice", "DeviceRemote", "ConnectViewController", "ContractDetailsViewController",
+    "ContractViewController", "BlockActionViewController", "LocationsViewController", "DevicesViewController",
+    "PointsLeaderboardViewController", "ProviderLocationsViewController", "PeerViewController",
+    "AccountPreferencesViewController", "NetworkUserViewController", "FeedbackViewController", "ReferralCodeViewController",
+    "SubscriptionBalanceViewController", "AccountHost"]) {
+    const body = declarations.match(new RegExp(`export interface ${name}\\b[\\s\\S]*?\\n}`))?.[0];
+    assert.match(body || "", /close\(\): Promise<void>/, name);
+  }
+  const transport = declarations.match(/export interface DeviceRpcTransportConnection[\s\S]*?\n}/)?.[0];
+  assert.match(transport || "", /close\(\): void/);
+  assert.match(source("../account_host.go"), /m\["close"\] = jsViewControllerClose\(/);
+  assert.match(source("../device_remote.go"), /m\["close"\] = jsViewControllerClose\(device.Close, socketHandles.close, subprotocolHandles.close\)/);
+  assert.match(source("../main.go"), /"close": jsViewControllerClose\(proxyDevice.Close\)/);
+  assert.match(source("../main.go"), /m\["close"\] = jsViewControllerClose\(device.Close, handles.close\)/);
+});
+
 // The WASM bindings are authored in Go while the public declarations are
 // authored in TypeScript. Keep a small explicit baseline for the
 // contract-details surface so a rename cannot compile on one side and become

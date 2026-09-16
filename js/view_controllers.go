@@ -9,11 +9,30 @@ import (
 	"github.com/urnetwork/sdk"
 )
 
-func jsViewControllerClose(closeController func()) js.Func {
+// Dispatches teardown outside the browser callback. Joining a worker here can
+// otherwise block the same event loop that must deliver its fetch/socket abort.
+// Child handles close concurrently with their owner (either can release the
+// other's wait); the one shared promise joins all of them exactly once.
+func jsViewControllerClose(closeController func(), closeResources ...func()) js.Func {
 	var closeOnce sync.Once
+	var completion js.Value
 	return js.FuncOf(func(this js.Value, args []js.Value) any {
-		closeOnce.Do(closeController)
-		return js.Null()
+		closeOnce.Do(func() {
+			completion = jsPromise(func(resolve func(any), reject func(error)) {
+				var resources sync.WaitGroup
+				for _, closeResource := range closeResources {
+					resources.Add(1)
+					go func() {
+						defer resources.Done()
+						closeResource()
+					}()
+				}
+				closeController()
+				resources.Wait()
+				resolve(js.Undefined())
+			})
+		})
+		return completion
 	})
 }
 

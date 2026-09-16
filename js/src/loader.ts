@@ -70,7 +70,10 @@ async function loadWasmExec(url?: string): Promise<void> {
   });
 }
 
-async function instantiateWasm(
+// Fetch exactly once. A rejected fetch (notably document teardown) must not
+// start a second request in a dying document. Only streaming compilation may
+// fall back, using the same response bytes and preserving real fetch errors.
+export async function instantiateWasm(
   wasmUrl: string,
   go: any,
 ): Promise<WebAssembly.Instance> {
@@ -81,10 +84,12 @@ async function instantiateWasm(
     return result.instance;
   }
 
+  const response = await fetch(wasmUrl);
+  if (!response.ok) throw new Error(`Could not load WASM: HTTP ${response.status}`);
   if (WebAssembly.instantiateStreaming) {
     try {
       result = await WebAssembly.instantiateStreaming(
-        fetch(wasmUrl),
+        response.clone(),
         go.importObject,
       );
       return result.instance;
@@ -93,9 +98,7 @@ async function instantiateWasm(
     }
   }
 
-  const wasmBuffer = await fetch(wasmUrl).then((response) =>
-    response.arrayBuffer(),
-  );
+  const wasmBuffer = await response.arrayBuffer();
   result = await WebAssembly.instantiate(wasmBuffer, go.importObject);
   return result.instance;
 }

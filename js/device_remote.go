@@ -148,12 +148,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	}, m)
 
 	// lifecycle
-	m["close"] = js.FuncOf(func(this js.Value, args []js.Value) any {
-		go socketHandles.close()
-		go subprotocolHandles.close()
-		device.Close()
-		return js.Null()
-	})
+	m["close"] = jsViewControllerClose(device.Close, socketHandles.close, subprotocolHandles.close)
 	m["cancel"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		go socketHandles.close()
 		go subprotocolHandles.close()
