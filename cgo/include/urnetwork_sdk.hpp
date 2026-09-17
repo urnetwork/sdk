@@ -15104,6 +15104,7 @@ public:
 	std::optional<DeviceLocalMemoryUsage> memoryUsed() const;
 	int64_t migrateExit(const std::string& client_id) const;
 	void networkChanged() const;
+	void networkQualityChanged() const;
 	void notifyNetworkChange() const;
 	AccountPreferencesViewController openAccountPreferencesViewController() const;
 	AccountViewController openAccountViewController() const;
@@ -23985,6 +23986,9 @@ inline int64_t DeviceLocal::migrateExit(const std::string& client_id) const {
 }
 inline void DeviceLocal::networkChanged() const {
 	urnet_device_local_network_changed(handle());
+}
+inline void DeviceLocal::networkQualityChanged() const {
+	urnet_device_local_network_quality_changed(handle());
 }
 inline void DeviceLocal::notifyNetworkChange() const {
 	urnet_device_local_notify_network_change(handle());

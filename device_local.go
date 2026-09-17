@@ -4059,6 +4059,13 @@ func (self *DeviceLocal) NetworkChanged() {
 	self.networkChangedUpgradeMux()
 }
 
+// NetworkQualityChanged reports a radio or path-quality change that does not
+// require reconnecting a working transport. The transfer clients remeasure
+// their adaptive pacing and notify active peers, including provider clients.
+func (self *DeviceLocal) NetworkQualityChanged() {
+	connect.NetworkQualityChanged()
+}
+
 func (self *DeviceLocal) networkChangedUpgradeMux() {
 	self.stateLock.Lock()
 	upgradeMux := self.upgradeMux

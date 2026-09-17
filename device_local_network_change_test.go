@@ -53,3 +53,35 @@ func TestNotifyNetworkChangeUsesCanonicalRecoverySeam(t *testing.T) {
 		t.Fatalf("NotifyNetworkChange fired %d kicks, want canonical single kick", kicks)
 	}
 }
+
+func TestDeviceLocalNetworkQualityChangedDoesNotReconnect(t *testing.T) {
+	device := &DeviceLocal{}
+	qualityChanges := 0
+	networkChanges := 0
+	unregisterQuality := connect.AddNetworkQualityChangeListener(func() { qualityChanges++ })
+	defer unregisterQuality()
+	unregisterNetwork := connect.AddNetworkChangeListener(func() { networkChanges++ })
+	defer unregisterNetwork()
+
+	device.NetworkQualityChanged()
+
+	if qualityChanges != 1 {
+		t.Fatalf("NetworkQualityChanged fired %d quality changes, want exactly 1", qualityChanges)
+	}
+	if networkChanges != 0 {
+		t.Fatalf("NetworkQualityChanged fired %d transport reconnects", networkChanges)
+	}
+}
+
+func TestDeviceLocalNetworkChangedAlsoInvalidatesQuality(t *testing.T) {
+	device := &DeviceLocal{}
+	qualityChanges := 0
+	unregisterQuality := connect.AddNetworkQualityChangeListener(func() { qualityChanges++ })
+	defer unregisterQuality()
+
+	device.NetworkChanged()
+
+	if qualityChanges != 1 {
+		t.Fatalf("NetworkChanged fired %d quality changes, want exactly 1", qualityChanges)
+	}
+}

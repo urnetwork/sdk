@@ -1108,6 +1108,7 @@ uint64_t urnet_device_local_load(uint64_t self, char** out_error);
 char* urnet_device_local_memory_used(uint64_t self);
 int64_t urnet_device_local_migrate_exit(uint64_t self, const char* client_id);
 void urnet_device_local_network_changed(uint64_t self);
+void urnet_device_local_network_quality_changed(uint64_t self);
 void urnet_device_local_notify_network_change(uint64_t self);
 uint64_t urnet_device_local_open_account_preferences_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_account_view_controller(uint64_t self);

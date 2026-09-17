@@ -407,6 +407,7 @@ EXPORTS
 	urnet_device_local_memory_used
 	urnet_device_local_migrate_exit
 	urnet_device_local_network_changed
+	urnet_device_local_network_quality_changed
 	urnet_device_local_notify_network_change
 	urnet_device_local_open_account_preferences_view_controller
 	urnet_device_local_open_account_view_controller

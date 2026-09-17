@@ -8971,6 +8971,16 @@ func urnet_device_local_network_changed(self C.uint64_t) {
 	self_.NetworkChanged()
 }
 
+//export urnet_device_local_network_quality_changed
+func urnet_device_local_network_quality_changed(self C.uint64_t) {
+	defer cgoGuard("urnet_device_local_network_quality_changed")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_network_quality_changed")
+	if !ok {
+		return
+	}
+	self_.NetworkQualityChanged()
+}
+
 //export urnet_device_local_notify_network_change
 func urnet_device_local_notify_network_change(self C.uint64_t) {
 	defer cgoGuard("urnet_device_local_notify_network_change")
