@@ -2,6 +2,8 @@ module github.com/urnetwork/sdk/build
 
 go 1.26.5
 
+require github.com/urnetwork/sdk/v2026 v2026.9.17-1048721260
+
 require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -67,10 +69,9 @@ require (
 	github.com/quic-go/quic-go v0.61.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.9.17-1048721260
-	github.com/urnetwork/glog/v2026 v2026.9.17-1048721260
-	github.com/urnetwork/goidenticons/v2026 v2026.9.17-1048721260
-	github.com/urnetwork/sdk/v2026 v2026.9.17-1048721260
+	github.com/urnetwork/connect/v2026 v2026.9.17-1048721260 // indirect
+	github.com/urnetwork/glog/v2026 v2026.9.17-1048721260 // indirect
+	github.com/urnetwork/goidenticons/v2026 v2026.9.17-1048721260 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
