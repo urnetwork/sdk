@@ -2,10 +2,74 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
+	for _, language := range []string{"java", "objc"} {
+		t.Run(language, func(t *testing.T) {
+			outputDirectory := t.TempDir()
+			args := []string{
+				"run", "golang.org/x/mobile/cmd/gobind",
+				"-lang=" + language,
+				"-tags=sdk_mobile_bind",
+				"-outdir=" + outputDirectory,
+			}
+			if language == "java" {
+				args = append(args, "-javapkg=com.bringyour")
+			}
+			args = append(args, "github.com/urnetwork/sdk")
+			command := exec.Command("go", args...)
+			command.Dir = "../.."
+			command.Env = append(
+				os.Environ(),
+				"GODEBUG=gotypesalias=0",
+				"GOEXPERIMENT=greenteagc",
+				"GOPROXY=off",
+				"GOSUMDB=off",
+				"GOWORK=off",
+			)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("generate %s bindings: %v\n%s", language, err, output)
+			}
+			if language == "java" {
+				if err := validateMobileExports(outputDirectory); err != nil {
+					t.Fatalf("validate generated Java: %v", err)
+				}
+			}
+
+			forbidden := []string{
+				"DeviceSubprotocolRequest",
+				"DeviceSubprotocolResponse",
+				"RemoteSubprotocol",
+			}
+			err := filepath.WalkDir(outputDirectory, func(path string, entry os.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if entry.IsDir() {
+					return nil
+				}
+				contents, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				for _, name := range forbidden {
+					if strings.Contains(string(contents), name) {
+						t.Errorf("%s binding leaked RPC implementation type %s in %s", language, name, path)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestMobileLifecycleJoinOmissionsAreExplicit(t *testing.T) {
 	root := t.TempDir()
