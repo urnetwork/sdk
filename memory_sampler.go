@@ -153,9 +153,21 @@ type mobileMemoryRuntimeSnapshot struct {
 	packetPoolRetainedByteCount         int64
 	largeObjectPoolRetainedByteCount    int64
 	poolCapacityByteCount               int64
+	transportBudgetTotalByteCount       int64
 	transportBudgetUsedByteCount        int64
+	transportBudgetMaxCount             int64
 	transportBudgetUsedCount            int64
 	transportBudgetPendingH1Count       int64
+	transportBudgetPendingH1ByteCount   int64
+	transportBudgetReservedByteCount    int64
+	transportBudgetReleasedByteCount    int64
+	transportBudgetActiveHandoffCount   int64
+	transportBudgetHandoffByteCount     int64
+	transportBudgetHandoffCount         int64
+	transportBudgetHandoffID            uint64
+	transportBudgetHandoffFromClass     string
+	transportBudgetHandoffToClass       string
+	transportBudgetHandoffH1ByteCount   int64
 	idleReclaimCount                    int64
 	forcedGCCount                       int64
 	gcCycleCount                        int64
@@ -170,6 +182,7 @@ type mobileMemoryRuntimeSnapshot struct {
 }
 
 type mobileMemoryRuntimeReader struct {
+	mutex   sync.Mutex
 	samples [9]metrics.Sample
 }
 
@@ -189,6 +202,10 @@ func mobileMetricInt64(sample *metrics.Sample) int64 {
 // detailed MemoryStats getter it does not call runtime.ReadMemStats or create a
 // gomobile-visible object.
 func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapshot) {
+	// The diagnostic interval and mobile sampler may share this reader.
+	// runtime/metrics overwrites the reusable sample array on every read.
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 	if self.samples[0].Name == "" {
 		self.samples = [9]metrics.Sample{
 			{Name: "/gc/heap/live:bytes"},
@@ -227,21 +244,33 @@ func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapsho
 		largeObjectPoolRetainedByteCount: int64(
 			poolStats.LargeObjectRetainedByteCount,
 		),
-		poolCapacityByteCount:          int64(poolStats.CapacityByteCount),
-		transportBudgetUsedByteCount:   int64(transportBudgetStats.UsedByteCount),
-		transportBudgetUsedCount:       int64(transportBudgetStats.UsedTransportCount),
-		transportBudgetPendingH1Count:  int64(transportBudgetStats.PendingH1Count),
-		idleReclaimCount:               mobileIdleMemoryTrimCount.Load(),
-		forcedGCCount:                  mobileMetricInt64(&self.samples[5]),
-		gcCycleCount:                   mobileMetricInt64(&self.samples[6]),
-		totalAllocatedByteCount:        mobileMetricInt64(&self.samples[7]),
-		profilingBucketByteCount:       mobileMetricInt64(&self.samples[8]),
-		memoryProfileRateByteCount:     int64(runtime.MemProfileRate),
-		idleReclaimDeferredCount:       mobileIdleMemoryTrimDeferred.Load(),
-		idleReclaimBelowTargetCount:    mobileIdleMemoryTrimBelow.Load(),
-		idleReclaimCooldownCount:       mobileIdleMemoryTrimCooldowns.Load(),
-		lastIdleReclaimBeforeByteCount: mobileIdleMemoryTrimBefore.Load(),
-		lastIdleReclaimAfterByteCount:  mobileIdleMemoryTrimAfter.Load(),
+		poolCapacityByteCount:             int64(poolStats.CapacityByteCount),
+		transportBudgetTotalByteCount:     int64(transportBudgetStats.TotalByteCount),
+		transportBudgetUsedByteCount:      int64(transportBudgetStats.UsedByteCount),
+		transportBudgetMaxCount:           int64(transportBudgetStats.MaxTransportCount),
+		transportBudgetUsedCount:          int64(transportBudgetStats.UsedTransportCount),
+		transportBudgetPendingH1Count:     int64(transportBudgetStats.PendingH1Count),
+		transportBudgetPendingH1ByteCount: int64(transportBudgetStats.PendingH1ByteCount),
+		transportBudgetReservedByteCount:  int64(transportBudgetStats.ReservedByteCount),
+		transportBudgetReleasedByteCount:  int64(transportBudgetStats.ReleasedByteCount),
+		transportBudgetActiveHandoffCount: int64(transportBudgetStats.ActiveHandoffCount),
+		transportBudgetHandoffByteCount:   int64(transportBudgetStats.ActiveHandoffByteCount),
+		transportBudgetHandoffCount:       int64(transportBudgetStats.ActiveHandoffTransportCount),
+		transportBudgetHandoffID:          transportBudgetStats.ActiveHandoffID,
+		transportBudgetHandoffFromClass:   transportBudgetStats.ActiveHandoffFromClass,
+		transportBudgetHandoffToClass:     transportBudgetStats.ActiveHandoffToClass,
+		transportBudgetHandoffH1ByteCount: int64(transportBudgetStats.ActiveHandoffH1ByteCount),
+		idleReclaimCount:                  mobileIdleMemoryTrimCount.Load(),
+		forcedGCCount:                     mobileMetricInt64(&self.samples[5]),
+		gcCycleCount:                      mobileMetricInt64(&self.samples[6]),
+		totalAllocatedByteCount:           mobileMetricInt64(&self.samples[7]),
+		profilingBucketByteCount:          mobileMetricInt64(&self.samples[8]),
+		memoryProfileRateByteCount:        int64(runtime.MemProfileRate),
+		idleReclaimDeferredCount:          mobileIdleMemoryTrimDeferred.Load(),
+		idleReclaimBelowTargetCount:       mobileIdleMemoryTrimBelow.Load(),
+		idleReclaimCooldownCount:          mobileIdleMemoryTrimCooldowns.Load(),
+		lastIdleReclaimBeforeByteCount:    mobileIdleMemoryTrimBefore.Load(),
+		lastIdleReclaimAfterByteCount:     mobileIdleMemoryTrimAfter.Load(),
 	}
 }
 

@@ -505,8 +505,9 @@ func applyPersistedControlIpFamilyPolicy(localState *LocalState, log connect.Log
 // limit, so oversized pool caps squeeze the collector into assist mode near
 // the limit (measured as an ios throughput regression at 22 MB of caps) —
 // the caps only need to cover the in-flight high-water. The remaining 20
-// parts are the reference per-device 20 MB memory target (split dns 2 :
-// client 14 : provider 4 inside the device) — each device's target is set
+// parts are the reference per-device 20 MB memory target: DNS 2, one shared
+// 13-part transfer/topology root with overlapping client/provider/NAT
+// children, and platform carriers 5. Each device's target is set
 // explicitly where the device is created (see
 // DeviceLocalSettings.MemoryTargetByteCount and
 // NewDeviceLocalWithMemoryTarget), not by this call.

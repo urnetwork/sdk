@@ -90,8 +90,8 @@ func mobileReceiveQueueBudgetByteCountForTarget(
 }
 
 // mobileReceiveQueueBudgetForPlatform preserves the desktop/server share
-// calculation and installs the exact aggregate mobile ceiling only for the
-// <=24-MiB profile. Keeping this pure makes the provider on/off sizing policy
+// calculation and installs the target-scaled exact aggregate mobile ceiling.
+// Keeping this pure makes the provider on/off sizing policy
 // directly testable on a non-mobile host.
 func mobileReceiveQueueBudgetForPlatform(
 	memoryTargetByteCount ByteCount,
@@ -356,6 +356,9 @@ func applyMobileLowMemoryClientSettingsForPlatform(
 	settings.ForwardBufferSize = min(settings.ForwardBufferSize, sequenceBufferMaxCount)
 	if settings.SendBufferSettings != nil {
 		send := settings.SendBufferSettings
+		// Retained resend roots are lifetime owners, including retries; an
+		// empty flow or its tuning floor cannot overdraw the shared pool.
+		send.ResendQueueRetainedByteAccounting = true
 		send.SequenceBufferSize = min(send.SequenceBufferSize, sequenceBufferMaxCount)
 		send.AckBufferSize = min(
 			send.AckBufferSize,
@@ -481,8 +484,8 @@ func applyMobileH1PerformanceClientSettingsForPlatform(
 	)
 }
 
-// applyMobileLowMemoryMultiClientSettings reduces the connected control/live
-// set for a 24-MiB mobile DeviceLocal. Explicit fixed destinations are
+// applyMobileLowMemoryMultiClientSettings sizes the connected control/live
+// set for a memory-targeted mobile DeviceLocal. Explicit fixed destinations are
 // unaffected; this changes only Auto's quality and speed windows. Server and
 // desktop defaults never pass the mobile platform gate.
 func applyMobileLowMemoryMultiClientSettings(

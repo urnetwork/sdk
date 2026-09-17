@@ -88,13 +88,16 @@ func (self *fixedWindowMonitor) Events() (*connect.WindowExpandEvent, map[connec
 // value where the device is created (NewDeviceLocalWithMemoryTarget).
 const defaultDeviceLocalMemoryTargetByteCount = 20 * 1024 * 1024
 
-// device memory target split, in parts of `deviceMemoryRatioParts`:
-// dns 2 : client 9 : platform carriers 5 : provider 4. The platform share is
-// the same quarter-target carrier policy used by Connect, but it is owned by
-// this DeviceLocal instead of a process global. The provider share follows the
-// provide state: while providing is off it backs the client pair instead of
-// idling (see applyProvideMemorySharesWithLock), and when the device can never
-// provide it folds statically (see deviceMemoryShares).
+// Base device shares, in parts of `deviceMemoryRatioParts`, are DNS 2, client
+// 9, platform carriers 5, and provider 4. A memory-targeted mobile device puts
+// the client and provider shares behind one stable 13-part transfer/topology
+// root; its client, provider, and NAT children are overlapping admission
+// ceilings rather than additive pools. The platform share is the same
+// quarter-target carrier policy used by Connect, but it is owned by this
+// DeviceLocal instead of a process global. The provider role controls the
+// child ceilings (see applyProvideMemorySharesWithLock), and when the device
+// can never provide the provider base share folds statically into the client
+// share (see deviceMemoryShares).
 const (
 	deviceMemoryRatioDns               = 2
 	deviceMemoryRatioClient            = 9
@@ -211,15 +214,15 @@ func deviceLocalSequenceBufferSize(clientShareByteCount ByteCount) int {
 // sizes for a zero share. Per-sequence queues borrow above their floor
 // from these pools, so the aggregate queue memory stays flat as the window
 // grows.
-func deviceLocalTransferBudgets(clientShareByteCount ByteCount) (resendQueueBudget *connect.TransferMemoryBudget, receiveQueueBudget *connect.TransferMemoryBudget) {
+func deviceLocalTransferBudgets(clientShareByteCount ByteCount, parents ...*connect.TransferMemoryBudget) (resendQueueBudget *connect.TransferMemoryBudget, receiveQueueBudget *connect.TransferMemoryBudget) {
 	resendQueueByteCount := connect.MemoryScaledByteCount(6*1024*1024, 1024*1024)
 	receiveQueueByteCount := connect.MemoryScaledByteCount(8*1024*1024, 1536*1024)
 	if 0 < clientShareByteCount {
 		resendQueueByteCount = max(byteCountFraction(clientShareByteCount, 3, 7), 1024*1024)
 		receiveQueueByteCount = max(byteCountFraction(clientShareByteCount, 4, 7), 1536*1024)
 	}
-	return connect.NewTransferMemoryBudget(resendQueueByteCount),
-		connect.NewTransferMemoryBudget(receiveQueueByteCount)
+	return deviceLocalTransferBudgetWithParent(resendQueueByteCount, parents...),
+		deviceLocalTransferBudgetWithParent(receiveQueueByteCount, parents...)
 }
 
 // deviceLocalP2pReceiveBufferByteCount is the per-peer-connection SCTP receive
@@ -262,8 +265,13 @@ func deviceLocalDestinationWebRtcSettings(
 		receiveBufferByteCount,
 		deviceLocalNetworkPeerP2pReceiveBufferByteCount,
 	)
-	memoryBudget = connect.NewTransferMemoryBudget(
-		deviceLocalNetworkPeerP2pConnectionCount * receiveBufferByteCount,
+	var parent *connect.TransferMemoryBudget
+	if memoryBudget != nil {
+		parent = memoryBudget.Parent()
+	}
+	memoryBudget = connect.NewTransferMemoryBudgetWithParent(
+		deviceLocalNetworkPeerP2pConnectionCount*receiveBufferByteCount,
+		parent,
 	)
 	return
 }
@@ -305,14 +313,14 @@ func applyDeviceLocalDestinationWebRtcSettings(
 // provider-side floor aligned with connect's mobile peer-count floor; larger
 // client shares still scale above it. A zero share keeps p2p unbudgeted
 // (desktop/server).
-func deviceLocalWebRtcBudget(shareByteCount ByteCount) *connect.TransferMemoryBudget {
+func deviceLocalWebRtcBudget(shareByteCount ByteCount, parents ...*connect.TransferMemoryBudget) *connect.TransferMemoryBudget {
 	if shareByteCount <= 0 {
 		return nil
 	}
-	return connect.NewTransferMemoryBudget(max(
+	return deviceLocalTransferBudgetWithParent(max(
 		shareByteCount/8,
 		deviceLocalP2pMinPeerConnectionCount*deviceLocalP2pReceiveBufferByteCount,
-	))
+	), parents...)
 }
 
 func DefaultDeviceLocalSettings() *DeviceLocalSettings {
@@ -483,12 +491,15 @@ func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
 type DeviceLocalSettings struct {
 	// Diagnostic-only injection of the existing allocator-error return path.
 	testingTakeLocalAddress func() (netip.Addr, bool)
-	// MemoryTargetByteCount is this device's memory target, split by ratio
-	// (dns 2 : client 9 : platform carriers 5 : provider 4, see
-	// deviceMemoryShares) among dns resolution and IP-mux state, the client
-	// transfer buffers and p2p admission, every H1/H3 platform carrier, and the
-	// provider path (the provider client's budget pair + egress nat flow caps).
-	// When the device cannot provide, the provider share folds into the client
+	// Constructor seams observe admission ordering without creating a client.
+	testingBeforePeerPinStoreAdmission func(*deviceLocalTransferMemory)
+	testingBeforeProviderConstruction  func()
+	// MemoryTargetByteCount is this device's memory target. A targeted mobile
+	// device uses DNS 2 parts, one shared 13-part transfer/topology root with
+	// overlapping client/provider/NAT children, and 5 parts for every H1/H3
+	// platform carrier. The 13-part root is seeded from the 9-part client and
+	// 4-part provider base shares returned by deviceMemoryShares; when the
+	// device cannot provide, the provider base share folds into the client
 	// share. Per device, so a
 	// multi-device process (the cloud proxy) gives each instance independent
 	// admission and sizing state; the message pools are the process-global complement
@@ -639,7 +650,8 @@ type deviceMultiClientGenerator interface {
 }
 
 type DeviceLocal struct {
-	sockets deviceSockets
+	peerKeyPinStore *boundedPeerClientKeyPinStore
+	sockets         deviceSockets
 
 	networkSpace *NetworkSpace
 	// api is the credential session used by this device. Ordinary app devices
@@ -748,8 +760,8 @@ type DeviceLocal struct {
 	connectionGeneration int64
 
 	performanceProfile *PerformanceProfile
-	// Fixed-ring primitive telemetry for the 24-MiB mobile policy. Nil outside
-	// the mobile low-memory profile; its goroutine follows self.ctx.
+	// Fixed-ring primitive telemetry for memory-targeted mobile devices. Nil
+	// outside the mobile policy; its goroutine follows self.ctx.
 	memorySampler                 *mobileMemorySampler
 	platformTransportReceiveStats *connect.PlatformTransportReceiveStats
 	// transferDiagStats is the shared p2p data-plane counter set of the
@@ -766,7 +778,7 @@ type DeviceLocal struct {
 	// for clients built after it is set; nil leaves the build's default.
 	transferDiagLaneRule *bool
 	// Aggregate packet ownership is the remaining active-load risk after
-	// per-flow queue bounds. This gate exists only on <=24-MiB mobile devices;
+	// per-flow queue bounds. This gate exists on memory-targeted mobile devices;
 	// server/default paths retain their original admission and hot path.
 	mobilePacketPressure           *mobilePacketPressureGate
 	mobilePacketPressureDropCount  atomic.Int64
@@ -808,6 +820,9 @@ type DeviceLocal struct {
 	// carrier owned by this DeviceLocal, and by no other DeviceLocal. Its size
 	// is derived from MemoryTargetByteCount.
 	platformTransportBudget *connect.PlatformTransportBudget
+	transferMemory          *deviceLocalTransferMemory
+	// At most one deferred remote-NAT constructor waits for shared root space.
+	remoteUserNatProviderMemoryWait bool
 
 	// dohServerScoresSeed is the per-DoH-server success ordering carried into
 	// each mux build: loaded from local storage at construction (the last
@@ -850,7 +865,9 @@ type DeviceLocal struct {
 	// Test-only rotation barriers and final counter seam. Nil is a production
 	// no-op; hooks always run outside stateLock.
 	beforeRemoteUserNatProviderRotationJoinForTest func()
+	beforeRemoteUserNatProviderPacketStatsForTest  func()
 	remoteUserNatProviderFinalPacketStatsForTest   func(*connect.RemoteUserNatProvider) *connect.PacketStats
+	remoteUserNatProviderCloseFinalStatsForTest    func(*connect.RemoteUserNatProvider) *connect.PacketStats
 	newRemoteUserNatProviderForTest                func(
 		*connect.Client,
 		*connect.LocalUserNat,
@@ -1060,9 +1077,9 @@ func NewDeviceLocalWithKeyMaterial(
 }
 
 // NewDeviceLocalWithMemoryTarget creates a device with an explicit
-// per-device memory target (see DeviceLocalSettings.MemoryTargetByteCount:
-// split dns 2 : client 14 : provider 4 by ratio, with the provider share
-// folded into the client share when the device cannot provide). This is the
+// per-device memory target (see DeviceLocalSettings.MemoryTargetByteCount):
+// DNS 2 parts, a shared 13-part transfer/topology root with overlapping
+// client/provider/NAT children, and 5 parts for platform carriers. This is the
 // host-facing constructor for sizing a device's memory where it is created;
 // keyMaterial may be nil.
 func NewDeviceLocalWithMemoryTarget(
@@ -1231,6 +1248,17 @@ func newDeviceLocalWithOverrides(
 	settings *DeviceLocalSettings,
 	clientId connect.Id,
 ) (*DeviceLocal, error) {
+	return newDeviceLocalWithOverridesForPlatform(networkSpace, byJwt, deviceDescription, deviceSpec,
+		appVersion, instanceId, settings, clientId, mobileRuntime())
+}
+
+func newDeviceLocalWithOverridesForPlatform(
+	networkSpace *NetworkSpace, byJwt, deviceDescription, deviceSpec, appVersion string,
+	instanceId *Id, settings *DeviceLocalSettings, clientId connect.Id, mobile bool,
+) (*DeviceLocal, error) {
+	// Runtime-owned stores must not leak into a reusable caller settings value.
+	settingsCopy := *settings
+	settings = &settingsCopy
 	if settings.KeyMaterial != nil {
 		applyDeviceLocalKeyMaterial(&settings.ClientSettings, settings.KeyMaterial)
 		// the extender identity belongs to the space, not to the client
@@ -1298,36 +1326,55 @@ func newDeviceLocalWithOverrides(
 	// sized them from its default, and the caller may have overridden
 	// MemoryTargetByteCount (or disabled providing, folding the provider
 	// share into the client share) since
-	dnsShareByteCount, clientShareByteCount, _, providerShareByteCount :=
+	dnsShareByteCount, _, _, providerShareByteCount :=
 		deviceMemoryShares(settings)
 	platformTransportBudget := connect.NewPlatformTransportBudgetForMemoryTarget(
 		settings.MemoryTargetByteCount,
 	)
-	resendQueueBudget, receiveQueueBudget := deviceLocalTransferBudgets(clientShareByteCount)
-	settings.ClientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
-	settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
-	settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget =
-		mobilePackQueueBudgetForPlatform(
-			settings.MemoryTargetByteCount,
-			clientShareByteCount,
-			mobileRuntime(),
-		)
-	applyMobileLowMemoryClientSettings(
-		&settings.ClientSettings,
-		settings.MemoryTargetByteCount,
-	)
-	// dedicated p2p admission budget + phone-sized SCTP buffer (see
-	// deviceLocalWebRtcBudget / PACKETRESEARCH1 §17). Only on a
-	// memory-targeted device; a zero share keeps the connect defaults.
-	if 0 < clientShareByteCount {
-		settings.ClientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
-		settings.ClientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(clientShareByteCount)
+	transferMemory := newDeviceLocalTransferMemoryForPlatform(settings, mobile)
+	configureDeviceLocalClientMemoryForPlatform(settings, transferMemory, mobile)
+	if settings.testingBeforePeerPinStoreAdmission != nil {
+		settings.testingBeforePeerPinStoreAdmission(transferMemory)
+	}
+	var peerKeyPinStore *boundedPeerClientKeyPinStore
+	pinStoreTransferred := false
+	defer func() {
+		if !pinStoreTransferred {
+			peerKeyPinStore.Close()
+		}
+	}()
+	if settings.ClientSettings.EncryptionSettings == nil {
+		settings.ClientSettings.EncryptionSettings = connect.DefaultEncryptionSettings()
+	}
+	if !settings.HostedIncompatible && localState != nil && settings.ClientSettings.EncryptionSettings.PeerClientKeyPinStore == nil {
+		encryption := *settings.ClientSettings.EncryptionSettings
+		if transferMemory != nil {
+			var pinOwner *deviceAuthPublicationGate
+			if authLocalState != nil {
+				pinOwner = authPublication
+			}
+			peerKeyPinStore, err = prepareBoundedPeerClientKeyPinStore(localState, pinOwner, transferMemory.peerKeyPins)
+			if err != nil {
+				cancel()
+				if ownsApi {
+					_ = api.CloseAndWait(context.Background())
+				}
+				return nil, fmt.Errorf("admit peer identity pin store: %w", err)
+			}
+			encryption.PeerClientKeyPinStore = peerKeyPinStore
+		} else {
+			encryption.PeerClientKeyPinStore = localState.peerClientKeyPinStore()
+		}
+		settings.ClientSettings.EncryptionSettings = &encryption
 	}
 
 	var provider *deviceLocalProvider
 	if settings.AllowProvider {
+		if settings.testingBeforeProviderConstruction != nil {
+			settings.testingBeforeProviderConstruction()
+		}
 		providerTransportMode, providerModePreferences := toConnectTransportPolicy(providerTransportSettings, true)
-		provider = newDeviceLocalProviderWithOverrides(
+		provider, err = newDeviceLocalProviderWithOverrides(
 			ctx,
 			networkSpace,
 			byJwt,
@@ -1343,7 +1390,15 @@ func newDeviceLocalWithOverrides(
 			providerModePreferences,
 			settings.ProviderDialContextSettings,
 			settings.DnsPumpHost,
+			transferMemory,
 		)
+		if err != nil {
+			cancel()
+			if ownsApi {
+				_ = api.CloseAndWait(context.Background())
+			}
+			return nil, fmt.Errorf("create device provider: %w", err)
+		}
 	}
 
 	defaultRouteLocal := settings.DefaultRouteLocal
@@ -1398,6 +1453,7 @@ func newDeviceLocalWithOverrides(
 		deviceSpec:             deviceSpec,
 		appVersion:             appVersion,
 		settings:               settings,
+		peerKeyPinStore:        peerKeyPinStore,
 		log:                    log,
 		clientId:               clientId,
 		instanceId:             instanceId.toConnectId(),
@@ -1415,6 +1471,7 @@ func newDeviceLocalWithOverrides(
 		// life of the device (see the field doc)
 		dnsMemoryTarget:           connect.NewMemoryTarget(dnsShareByteCount),
 		platformTransportBudget:   platformTransportBudget,
+		transferMemory:            transferMemory,
 		generatorFunc:             settings.GeneratorFunc,
 		provider:                  provider,
 		transportSettings:         cloneTransportSettings(transportSettings),
@@ -1517,21 +1574,6 @@ func newDeviceLocalWithOverrides(
 		if !settings.HostedIncompatible && settings.MultiClientIdentityStore == nil {
 			deviceLocal.windowIdentityStore = newLocalStateWindowIdentityStore(localState, clientId)
 		}
-		// Signed-identity tier ratchet (connect/DESIGNNOTES3 §4). Without a
-		// durable store a peer that has produced signed evidence before can
-		// silently stop producing it, which is a cheaper substitution than
-		// forging one. Locally owned devices only, for the same reason the
-		// window identity store is: a hosted device's operator already runs
-		// its client, and one shared store would leak which providers a
-		// tenant has sealed to.
-		if !settings.HostedIncompatible &&
-			settings.ClientSettings.EncryptionSettings != nil &&
-			settings.ClientSettings.EncryptionSettings.PeerClientKeyPinStore == nil {
-			// copy-on-propagate: never mutate the caller's nested settings
-			encryptionSettings := *settings.ClientSettings.EncryptionSettings
-			encryptionSettings.PeerClientKeyPinStore = localState.peerClientKeyPinStore()
-			settings.ClientSettings.EncryptionSettings = &encryptionSettings
-		}
 	}
 
 	// publish the initial send-route snapshot so `sendPacket` always has a
@@ -1587,6 +1629,13 @@ func newDeviceLocalWithOverrides(
 		_ = deviceLocal.CloseAndWait(context.Background())
 		return nil, fmt.Errorf("publish device client auth: %w", err)
 	}
+	if peerKeyPinStore != nil {
+		if err := peerKeyPinStore.activate(); err != nil {
+			_ = deviceLocal.CloseAndWait(context.Background())
+			return nil, fmt.Errorf("activate peer identity pin store: %w", err)
+		}
+	}
+	pinStoreTransferred = true
 	api.StartJwtRefresh()
 
 	// set up with nil destination
@@ -1644,7 +1693,7 @@ func newDeviceLocalWithOverrides(
 	deviceLocal.applyProvideMemorySharesWithLock(false)
 	deviceLocal.mobilePacketPressure = newMobilePacketPressureGateForPlatform(
 		settings.MemoryTargetByteCount,
-		mobileRuntime(),
+		mobile,
 	)
 	deviceLocal.updateMobilePacketPerformanceModeWithLock()
 	deviceLocal.startTransferDiag()
@@ -1856,29 +1905,58 @@ func (self *DeviceLocal) GetTunnelDnsInterceptorActive() bool {
 // memory accounting versus its target (see
 // `DeviceLocalSettings.MemoryTargetByteCount`). Tracked usage covers the
 // live budget accounting: in-flight dns resolution, client and provider
-// transfer queues, and platform carrier reservations. The egress nat's
-// per-flow memory is bounded by flow-count caps rather than live byte
-// accounting, so it is not included here — the memory target load test
-// measures that remainder as process heap.
+// transfer queues, and platform carrier reservations. On mobile, the shared
+// transfer root also includes P2P receive-window admission and exact egress
+// NAT ownership. Legacy non-mobile NATs retain flow-count-only accounting.
 type DeviceLocalMemoryUsage struct {
-	TargetByteCount        ByteCount
-	DnsByteCount           ByteCount
-	ClientSendByteCount    ByteCount
-	ClientReceiveByteCount ByteCount
+	// The fixed peer-pin child is included in the client/transfer root, not
+	// additive to TotalByteCount. Counts/rejections contain no peer identities.
+	// Logical pin counters are a separately sampled diagnostic;
+	// root/child byte fields below remain one coherent admission snapshot.
+	PeerKeyPinBudgetByteCount     ByteCount
+	PeerKeyPinUsedByteCount       ByteCount
+	PeerKeyPinReservedByteCount   ByteCount
+	PeerKeyPinReleasedByteCount   ByteCount
+	PeerKeyPinCount               int
+	PeerKeyPinCapacityRefusals    int64
+	PeerKeyPinPersistenceFailures int64
+	PeerKeyPinRollbackRefusals    int64
+	PeerKeyPinStateFailures       int64
+	TargetByteCount               ByteCount
+	DnsByteCount                  ByteCount
+	ClientSendByteCount           ByteCount
+	ClientReceiveByteCount        ByteCount
 	// PackQueue* isolates the device-wide aggregate decoded-pack handoff
 	// budget already included in ClientReceiveByteCount. It is shared by the
 	// control client, window clients, and provider so diagnostics can distinguish
 	// active queue pressure from allocator or message-pool retention.
-	PackQueueUsedByteCount           ByteCount
-	PackQueueCapacityByteCount       ByteCount
-	ProviderSendByteCount            ByteCount
-	ProviderReceiveByteCount         ByteCount
+	PackQueueUsedByteCount     ByteCount
+	PackQueueCapacityByteCount ByteCount
+	ProviderSendByteCount      ByteCount
+	ProviderReceiveByteCount   ByteCount
+	// The root includes client/provider queues, the shared Pack queue once,
+	// all P2P generations, and both NATs. Child samples are diagnostic subsets,
+	// not additional memory. Root and group fields share one coherent snapshot.
+	TransferRootBudgetByteCount      ByteCount
+	TransferRootUsedByteCount        ByteCount
+	TransferRootReservedByteCount    ByteCount
+	TransferRootReleasedByteCount    ByteCount
+	ClientTransferBudgetByteCount    ByteCount
+	ClientTransferUsedByteCount      ByteCount
+	ProviderTransferBudgetByteCount  ByteCount
+	ProviderTransferUsedByteCount    ByteCount
+	NatBudgetByteCount               ByteCount
+	NatUsedByteCount                 ByteCount
+	NatReservedByteCount             ByteCount
+	NatReleasedByteCount             ByteCount
 	PlatformTransportBudgetByteCount ByteCount
 	PlatformTransportUsedByteCount   ByteCount
 	PlatformTransportMaxCount        int
 	PlatformTransportUsedCount       int
 	PlatformTransportPendingH1Count  int
 	PlatformTransportPendingH1Bytes  ByteCount
+	PlatformTransportReservedBytes   ByteCount
+	PlatformTransportReleasedBytes   ByteCount
 	// Handoff fields come from the same private-budget Stats call as pending
 	// admission. Window readiness is sampled from this DeviceLocal's current
 	// client under stateLock, not from a process-wide ingress readiness flag.
@@ -1888,6 +1966,10 @@ type DeviceLocalMemoryUsage struct {
 	PlatformTransportActiveHandoffCount  int
 	PlatformTransportHandoffByteCount    ByteCount
 	PlatformTransportHandoffCount        int
+	PlatformTransportHandoffID           int64
+	PlatformTransportHandoffFromClass    string
+	PlatformTransportHandoffToClass      string
+	PlatformTransportHandoffH1ByteCount  ByteCount
 	ProviderWindowKnown                  bool
 	ProviderWindowMinSatisfied           bool
 	// PlatformTransportPreemptedH3Count is the lifetime count for this
@@ -1907,6 +1989,15 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 		TargetByteCount: self.settings.MemoryTargetByteCount,
 		DnsByteCount:    self.dnsMemoryTarget.Used(),
 	}
+	if self.peerKeyPinStore != nil {
+		pins := self.peerKeyPinStore.Stats()
+		usage.PeerKeyPinCount = pins.PeerCount
+		usage.PeerKeyPinCapacityRefusals = int64(pins.CapacityRefusals)
+		usage.PeerKeyPinPersistenceFailures = int64(pins.PersistenceFailures)
+		usage.PeerKeyPinRollbackRefusals = int64(pins.RollbackRefusals)
+		usage.PeerKeyPinStateFailures = int64(pins.StateFailures)
+	}
+	var packQueueBudget *connect.TransferMemoryBudget
 	if sendBufferSettings := self.settings.ClientSettings.SendBufferSettings; sendBufferSettings != nil && sendBufferSettings.ResendQueueBudget != nil {
 		usage.ClientSendByteCount = sendBufferSettings.ResendQueueBudget.UsedByteCount()
 	}
@@ -1915,6 +2006,7 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 			usage.ClientReceiveByteCount = receiveBufferSettings.ReceiveQueueBudget.UsedByteCount()
 		}
 		if receiveBufferSettings.PackQueueBudget != nil {
+			packQueueBudget = receiveBufferSettings.PackQueueBudget
 			usage.PackQueueUsedByteCount = receiveBufferSettings.PackQueueBudget.UsedByteCount()
 			usage.PackQueueCapacityByteCount = receiveBufferSettings.PackQueueBudget.TotalByteCount()
 			usage.ClientReceiveByteCount += usage.PackQueueUsedByteCount
@@ -1930,6 +2022,7 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 	}
 	platformTransportStats := self.platformTransportBudget.Stats()
 	applyPlatformTransportMemoryUsage(usage, platformTransportStats)
+	applyDeviceLocalTransferMemoryUsage(usage, self.transferMemory, packQueueBudget)
 	switch client := self.remoteUserNatClient.(type) {
 	case *connect.RemoteUserNatClient:
 		// Fixed destinations have the same readiness semantics as GetWindowStatus.
@@ -1942,6 +2035,9 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 		usage.ClientSendByteCount + usage.ClientReceiveByteCount +
 		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount +
 		usage.PlatformTransportUsedByteCount
+	if self.transferMemory != nil {
+		usage.TotalByteCount = usage.DnsByteCount + usage.TransferRootUsedByteCount + usage.PlatformTransportUsedByteCount
+	}
 	return usage
 }
 
@@ -1955,10 +2051,16 @@ func applyPlatformTransportMemoryUsage(
 	usage.PlatformTransportUsedCount = platformTransportStats.UsedTransportCount
 	usage.PlatformTransportPendingH1Count = platformTransportStats.PendingH1Count
 	usage.PlatformTransportPendingH1Bytes = platformTransportStats.PendingH1ByteCount
+	usage.PlatformTransportReservedBytes = platformTransportStats.ReservedByteCount
+	usage.PlatformTransportReleasedBytes = platformTransportStats.ReleasedByteCount
 	usage.PlatformTransportPendingHandoffCount = platformTransportStats.PendingHandoffCount
 	usage.PlatformTransportActiveHandoffCount = platformTransportStats.ActiveHandoffCount
 	usage.PlatformTransportHandoffByteCount = platformTransportStats.ActiveHandoffByteCount
 	usage.PlatformTransportHandoffCount = platformTransportStats.ActiveHandoffTransportCount
+	usage.PlatformTransportHandoffID = int64(min(platformTransportStats.ActiveHandoffID, uint64(1<<63-1)))
+	usage.PlatformTransportHandoffFromClass = platformTransportStats.ActiveHandoffFromClass
+	usage.PlatformTransportHandoffToClass = platformTransportStats.ActiveHandoffToClass
+	usage.PlatformTransportHandoffH1ByteCount = platformTransportStats.ActiveHandoffH1ByteCount
 	if platformTransportStats.PreemptedH3Count > uint64(1<<63-1) {
 		usage.PlatformTransportPreemptedH3Count = 1<<63 - 1
 	} else {
@@ -3810,6 +3912,7 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 		// no target: legacy static sizing
 		return
 	}
+	self.transferMemory.setProvideActive(provideActive)
 	clientPairByteCount := clientShareByteCount
 	providerPairByteCount := ByteCount(0)
 	if provideActive {
@@ -3827,13 +3930,13 @@ func (self *DeviceLocal) applyProvideMemorySharesWithLock(provideActive bool) {
 			mobileReceiveQueueBudgetForPlatform(
 				self.settings.MemoryTargetByteCount,
 				clientPairByteCount,
-				mobileRuntime(),
+				mobileRuntime() || self.transferMemory != nil,
 			),
 		)
 	}
 	if packQueueBudget := self.settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget; packQueueBudget != nil {
 		packQueueBudget.SetTotalByteCount(
-			mobilePackQueueBudgetByteCount(clientPairByteCount),
+			mobilePackQueueBudgetByteCountForTarget(clientPairByteCount, self.settings.MemoryTargetByteCount),
 		)
 	}
 	if self.provider != nil {
@@ -4350,6 +4453,7 @@ func (self *DeviceLocal) applyDestination(
 							self.networkSpace.apiUrl,
 							self.clientStrategy,
 						)
+						shareDevicePeerKeyPinStore(clientSettings, &self.settings.ClientSettings)
 						// share the device budgets so every window client's
 						// queues draw from the same pools. Stamped before the
 						// mobile policy so the policy caps the receive hold
@@ -5110,6 +5214,9 @@ func (self *DeviceLocal) Close() {
 				<-self.authPublication.Done()
 			}
 			self.lifecycleWorkers.Wait()
+			// Every provider/window encryption worker has joined before the
+			// pin array and serialization owner surrender their root claim.
+			self.peerKeyPinStore.Close()
 			if self.ownsApi {
 				_ = self.api.CloseAndWait(context.Background())
 			}
@@ -5471,15 +5578,19 @@ func (self *DeviceLocal) nextRemoteUserNatProviderGenerationWithLock() uint64 {
 // Builds the provider egress path for the current Client and current explicit
 // provide intent. A saturation join owns the nil interval and must finish
 // before this helper creates a replacement generation.
-func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() {
+func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 	if self.closed || self.provideMode == ProvideModeNone ||
 		self.remoteUserNatProviderRotationPending ||
 		self.remoteUserNatProvider != nil {
-		return
+		return nil
 	}
 	client := self.providerClient()
 	if client == nil {
-		return
+		return nil
+	}
+	var capacityNotify <-chan struct{}
+	if self.transferMemory != nil {
+		capacityNotify = self.transferMemory.nat.CapacityNotify()
 	}
 	_, _, _, providerShareByteCount := deviceMemoryShares(self.settings)
 	if self.remoteUserNatProviderLocalUserNat == nil {
@@ -5488,11 +5599,21 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() {
 			self.log,
 			self.settings.ProviderDialContextSettings,
 		)
-		self.remoteUserNatProviderLocalUserNat = connect.NewLocalUserNat(
+		if self.transferMemory != nil {
+			localUserNatSettings.MemoryBudget = self.transferMemory.nat
+		}
+		localUserNat, err := connect.TryNewLocalUserNat(
 			client.Ctx(),
 			self.clientId.String(),
 			localUserNatSettings,
 		)
+		if err != nil {
+			if errors.Is(err, connect.ErrNatMemoryBudget) {
+				self.waitRemoteUserNatProviderMemoryWithLock(capacityNotify)
+			}
+			return err
+		}
+		self.remoteUserNatProviderLocalUserNat = localUserNat
 	}
 	providerSettings := connect.DefaultRemoteUserNatProviderSettingsWithMemoryTarget(
 		providerShareByteCount,
@@ -5504,21 +5625,85 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() {
 	providerSettings.SourceLifecycleSaturated = func() {
 		self.remoteUserNatProviderSourceLifecycleSaturated(generation)
 	}
-	newProvider := connect.NewRemoteUserNatProvider
-	if self.newRemoteUserNatProviderForTest != nil {
-		newProvider = self.newRemoteUserNatProviderForTest
+	var provider *connect.RemoteUserNatProvider
+	var packetStatsSub func()
+	var err error
+	packetStatsCallback := func(provider *connect.RemoteUserNatProvider, packetStats *connect.PacketStats) {
+		if self.beforeRemoteUserNatProviderPacketStatsForTest != nil {
+			self.beforeRemoteUserNatProviderPacketStatsForTest()
+		}
+		self.updateProviderPacketStatsForGeneration(provider, generation, packetStats)
 	}
-	provider := newProvider(client, self.remoteUserNatProviderLocalUserNat, providerSettings)
+	if self.newRemoteUserNatProviderForTest != nil {
+		provider = self.newRemoteUserNatProviderForTest(client, self.remoteUserNatProviderLocalUserNat, providerSettings)
+		if provider == nil {
+			err = connect.ErrNatMemoryBudget
+		} else {
+			packetStatsSub, err = provider.TryAddPacketStatsCallback(func(stats *connect.PacketStats) { packetStatsCallback(provider, stats) })
+			if err != nil {
+				self.startLifecycleWorkerWithLock(provider.Close)
+			}
+		}
+	} else {
+		provider, packetStatsSub, err = connect.TryNewRemoteUserNatProviderWithPacketStats(client, self.remoteUserNatProviderLocalUserNat, providerSettings, packetStatsCallback)
+	}
+	if err != nil {
+		if errors.Is(err, connect.ErrNatMemoryBudget) {
+			self.waitRemoteUserNatProviderMemoryWithLock(capacityNotify)
+		} else {
+			// Permanent policy/configuration refusal cannot use this NAT and
+			// must not strand its fixed claim or keep a capacity retry alive.
+			localUserNat := self.remoteUserNatProviderLocalUserNat
+			self.remoteUserNatProviderLocalUserNat = nil
+			if localUserNat != nil {
+				localUserNat.Close()
+				self.startLifecycleWorkerWithLock(func() { _ = localUserNat.CloseAndWait(context.Background()) })
+			}
+			if self.log != nil {
+				self.log.Errorf("[device] provider construction refused: %v", err)
+			}
+		}
+		return err
+	}
 	self.remoteUserNatProvider = provider
-	self.providerPacketStatsSub = provider.AddPacketStatsCallback(func(
-		packetStats *connect.PacketStats,
-	) {
-		self.updateProviderPacketStatsForGeneration(
-			provider,
-			generation,
-			packetStats,
-		)
-	})
+	self.providerPacketStatsSub = packetStatsSub
+	return nil
+}
+
+// One worker retries both NAT and provider-graph admission. Capture notify
+// before either attempt; a permanent policy error never starts/spins a retry.
+func (self *DeviceLocal) waitRemoteUserNatProviderMemoryWithLock(capacityNotify <-chan struct{}) {
+	if capacityNotify == nil || self.remoteUserNatProviderMemoryWait {
+		return
+	}
+	self.remoteUserNatProviderMemoryWait = true
+	self.lifecycleWorkers.Add(1)
+	go func() {
+		defer self.lifecycleWorkers.Done()
+		for {
+			select {
+			case <-self.ctx.Done():
+				self.stateLock.Lock()
+				self.remoteUserNatProviderMemoryWait = false
+				self.stateLock.Unlock()
+				return
+			case <-capacityNotify:
+			}
+			self.stateLock.Lock()
+			capacityNotify = self.transferMemory.nat.CapacityNotify()
+			err := self.ensureRemoteUserNatProviderWithLock()
+			done := self.closed || self.provideMode == ProvideModeNone ||
+				self.remoteUserNatProvider != nil || self.remoteUserNatProviderRotationPending ||
+				(err != nil && !errors.Is(err, connect.ErrNatMemoryBudget))
+			if done {
+				self.remoteUserNatProviderMemoryWait = false
+			}
+			self.stateLock.Unlock()
+			if done {
+				return
+			}
+		}
+	}()
 }
 
 // Schedules a generation-wide reset after the exact Connect source bound is
@@ -5594,17 +5779,27 @@ func (self *DeviceLocal) closeRemoteUserNatProviderWithLock() {
 		self.providerPacketStatsSub()
 		self.providerPacketStatsSub = nil
 	}
-	if provider != nil {
-		addConnectPacketStats(&self.providerPacketStatsBase, provider.PacketStats())
-		provider.Close()
-	}
 	if localUserNat != nil {
 		localUserNat.Close()
 	}
 	if provider != nil || localUserNat != nil {
 		self.startLifecycleWorkerWithLock(func() {
+			// A captured stats callback may already be waiting for stateLock.
+			// Detach above makes it inert; never join it while holding that lock.
+			if provider != nil {
+				provider.Close()
+			}
 			if localUserNat != nil {
 				_ = localUserNat.CloseAndWait(context.Background())
+			}
+			if provider != nil {
+				finalPacketStats := provider.PacketStats()
+				if self.remoteUserNatProviderCloseFinalStatsForTest != nil {
+					finalPacketStats = self.remoteUserNatProviderCloseFinalStatsForTest(provider)
+				}
+				self.stateLock.Lock()
+				addConnectPacketStats(&self.providerPacketStatsBase, finalPacketStats)
+				self.stateLock.Unlock()
 			}
 		})
 	}

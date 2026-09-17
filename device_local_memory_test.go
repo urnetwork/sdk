@@ -209,18 +209,27 @@ func TestDeviceLocalMemoryUsageIncludesPrivateHandoffSnapshot(t *testing.T) {
 		PendingH1Count: 2, PendingH1ByteCount: 512 * 1024,
 		PendingHandoffCount: 3, ActiveHandoffCount: 1,
 		ActiveHandoffByteCount: 256 * 1024, ActiveHandoffTransportCount: 1,
+		ReservedByteCount: 768 * 1024, ReleasedByteCount: 256 * 1024,
+		ActiveHandoffID: 17, ActiveHandoffFromClass: "h1", ActiveHandoffToClass: "h3_explicit",
+		ActiveHandoffH1ByteCount: 256 * 1024,
 	})
 	if usage.PlatformTransportPendingH1Count != 2 ||
 		usage.PlatformTransportPendingHandoffCount != 3 ||
 		usage.PlatformTransportActiveHandoffCount != 1 ||
 		usage.PlatformTransportHandoffByteCount != 256*1024 ||
-		usage.PlatformTransportHandoffCount != 1 {
+		usage.PlatformTransportHandoffCount != 1 ||
+		usage.PlatformTransportReservedBytes != 768*1024 || usage.PlatformTransportReleasedBytes != 256*1024 ||
+		usage.PlatformTransportHandoffID != 17 || usage.PlatformTransportHandoffFromClass != "h1" ||
+		usage.PlatformTransportHandoffToClass != "h3_explicit" || usage.PlatformTransportHandoffH1ByteCount != 256*1024 {
 		t.Fatalf("private handoff snapshot = %+v", usage)
 	}
 	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{})
 	if usage.PlatformTransportPendingHandoffCount != 0 ||
 		usage.PlatformTransportActiveHandoffCount != 0 ||
-		usage.PlatformTransportHandoffByteCount != 0 || usage.PlatformTransportHandoffCount != 0 {
+		usage.PlatformTransportHandoffByteCount != 0 || usage.PlatformTransportHandoffCount != 0 ||
+		usage.PlatformTransportReservedBytes != 0 || usage.PlatformTransportReleasedBytes != 0 ||
+		usage.PlatformTransportHandoffID != 0 || usage.PlatformTransportHandoffFromClass != "" ||
+		usage.PlatformTransportHandoffToClass != "" || usage.PlatformTransportHandoffH1ByteCount != 0 {
 		t.Fatalf("reset retained handoff state: %+v", usage)
 	}
 }

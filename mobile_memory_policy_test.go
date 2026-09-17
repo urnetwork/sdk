@@ -168,6 +168,9 @@ func TestMobileLowMemoryClientSettingsBoundOwnership(t *testing.T) {
 	if !settings.ReceiveBufferSettings.ReceiveQueueRetainedByteAccounting {
 		t.Fatal("mobile receive queue did not enable retained-allocation accounting")
 	}
+	if !settings.SendBufferSettings.ResendQueueRetainedByteAccounting {
+		t.Fatal("mobile resend retained accounting is disabled")
+	}
 	if settings.ReceiveBufferSettings.PackQueueRetainedByteAccounting {
 		t.Fatal("fixed mobile Pack queue unexpectedly enabled adaptive retained accounting")
 	}

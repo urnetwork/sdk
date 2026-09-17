@@ -38,6 +38,12 @@ type LocalState struct {
 	// In-process publication ownership, guarded by authStateLock. Different
 	// LocalState objects still require their external manager to join teardown.
 	deviceAuthOwner *deviceAuthPublicationGate
+	// Pin publication is independent of JWT ownership: anonymous devices also
+	// replace stores, and must never commit a stale snapshot over durable pins.
+	// Guarded by authStateLock; the private directory has one LocalState owner.
+	peerPinStoreOwner               *boundedPeerClientKeyPinStore
+	peerPinStoreGeneration          uint64
+	peerPinStorePublishedGeneration uint64
 	// Changes on committed auth mutations, including explicit equality no-ops.
 	// Unlike durable Generation, logout must not reset this in-process epoch.
 	deviceAuthGeneration uint64

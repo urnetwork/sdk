@@ -199,6 +199,97 @@ func TestMobileExtenderStringSlicePolicyDoesNotPrefixMatch(t *testing.T) {
 	}
 }
 
+// These internal types are absent under sdk_mobile_bind. A skipped record is
+// a source-boundary regression, not a permitted unsupported app declaration.
+func TestMobileSubprotocolRpcOmissionsAreRejected(t *testing.T) {
+	for _, source := range []string{
+		"// skipped field DeviceSubprotocolRequest.ID with unsupported type",
+		"// skipped field DeviceSubprotocolRequest.ClientID with unsupported type",
+		"// skipped field DeviceSubprotocolRequest.InstanceID with unsupported type",
+		"// skipped field DeviceSubprotocolRequest.Destination with unsupported type",
+		"// skipped field DeviceSubprotocolResponse.Source with unsupported type",
+		"// skipped field DeviceSubprotocolResponse.Protocols with unsupported type",
+		"// skipped method RemoteSubprotocol.Query with unsupported parameter or return types",
+		"// skipped method RemoteSubprotocol.Receive with unsupported parameter or return types",
+		"// skipped method RemoteSubprotocol.Send with unsupported parameter or return types",
+	} {
+		t.Run(strings.Fields(source)[3], func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "Subprotocol.java"), []byte(source+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateMobileExports(root); err == nil {
+				t.Fatal("an internal subprotocol declaration was accepted as a mobile omission")
+			}
+		})
+	}
+}
+
+func TestMobileSubprotocolPolicyRejectsAdjacentApiLoss(t *testing.T) {
+	for _, record := range []struct{ kind, identifier string }{
+		{"field", "DeviceSubprotocolRequest.IDAndMore"},
+		{"field", "DeviceSubprotocolResponse.ProtocolsAndMore"},
+		{"method", "RemoteSubprotocol.SendAndMore"},
+		{"field", "DeviceSubprotocolRequestExtra.ID"},
+		{"field", "DeviceSubprotocolResponseExtra.Source"},
+		{"method", "RemoteSubprotocolExtra.Receive"},
+		{"field", "DeviceSubprotocolRequest.Data"},
+		{"field", "DeviceSubprotocolResponse.Data"},
+		{"method", "RemoteSubprotocol.Close"},
+		{"method", "DeviceLocal.EnableSubprotocol"},
+		{"method", "DeviceLocal.DisableSubprotocol"},
+		{"method", "DeviceLocal.EnabledSubprotocols"},
+		{"method", "DeviceLocal.SendSubprotocolBytes"},
+		{"method", "DeviceLocal.QuerySubprotocols"},
+		{"method", "DeviceLocal.SubprotocolReceivedCount"},
+		{"method", "DeviceLocal.SubprotocolStats"},
+		{"method", "SubprotocolListener.SubprotocolMessage"},
+		{"method", "SubprotocolsQueryCallback.Result"},
+		{"field", "SubprotocolStats.Sent"},
+	} {
+		t.Run(record.identifier, func(t *testing.T) {
+			root := t.TempDir()
+			source := "// skipped " + record.kind + " " + record.identifier + " with unsupported type\n"
+			if err := os.WriteFile(filepath.Join(root, "Subprotocol.java"), []byte(source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := validateMobileExports(root)
+			if err == nil {
+				t.Fatal("an unreviewed subprotocol omission was accepted")
+			}
+			if !strings.Contains(err.Error(), record.identifier) {
+				t.Fatalf("unexpected omission was not identified: %v", err)
+			}
+		})
+	}
+}
+
+func TestMobilePeerIdentityStorePolicyRejectsAdjacentApiLoss(t *testing.T) {
+	for _, identifier := range []string{
+		"LocalState.GetPeerClientKeyPinStoreAndMore",
+		"LocalStateExtra.GetPeerClientKeyPinStore",
+		"AsyncLocalState.GetPeerClientKeyPinStore",
+		"LocalState.SetPeerClientKeyPinStore",
+		"LocalState.GetDeviceLocalKeyMaterial",
+		"LocalState.GetProvideSecretKeys",
+	} {
+		t.Run(identifier, func(t *testing.T) {
+			root := t.TempDir()
+			source := "// skipped method " + identifier + " with unsupported parameter or return types\n"
+			if err := os.WriteFile(filepath.Join(root, "LocalState.java"), []byte(source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := validateMobileExports(root)
+			if err == nil {
+				t.Fatal("an unreviewed local-state omission was accepted")
+			}
+			if !strings.Contains(err.Error(), identifier) {
+				t.Fatalf("unexpected omission was not identified: %v", err)
+			}
+		})
+	}
+}
+
 // Native dial signatures remain deliberate omissions on concrete Devices.
 func TestMobileSocketNativeOmissionsAreExplicit(t *testing.T) {
 	root := t.TempDir()

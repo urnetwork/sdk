@@ -2,10 +2,30 @@ package sdk
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/urnetwork/connect"
 )
+
+func TestMobileMemoryRuntimeReaderConcurrent(t *testing.T) {
+	reader := &mobileMemoryRuntimeReader{}
+	var workers sync.WaitGroup
+	for range 4 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for range 40 {
+				var snapshot mobileMemoryRuntimeSnapshot
+				reader.read(&snapshot)
+				if snapshot.totalByteCount <= 0 || snapshot.transportBudgetTotalByteCount <= 0 {
+					t.Error("concurrent runtime reader returned an incomplete sample")
+				}
+			}
+		}()
+	}
+	workers.Wait()
+}
 
 func TestMobileMemorySamplerIsBoundedOrderedAndDrainable(t *testing.T) {
 	sampler := &mobileMemorySampler{}

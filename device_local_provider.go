@@ -158,7 +158,8 @@ func newDeviceLocalProviderWithOverrides(
 	modePreferences map[connect.TransportMode]int,
 	dialContextSettings *connect.DialContextSettings,
 	dnsPumpHost string,
-) *deviceLocalProvider {
+	transferMemory *deviceLocalTransferMemory,
+) (*deviceLocalProvider, error) {
 	providerCtx, providerCancel := context.WithCancel(ctx)
 	apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
@@ -189,11 +190,32 @@ func newDeviceLocalProviderWithOverrides(
 	// return streams restored by StreamReset after a process restart. Window
 	// clients created for an outbound destination leave this false.
 	clientSettings.ProviderStreamPolicy = true
+	var providerTransferParent *connect.TransferMemoryBudget
+	if transferMemory != nil {
+		providerTransferParent = transferMemory.provider
+	}
 
 	resendQueueBudget, receiveQueueBudget := configureDeviceLocalProviderMemory(
 		clientSettings,
 		providerMemoryTargetByteCount,
+		providerTransferParent,
 	)
+	// Admit the fallback NAT while the new device root is still empty, before
+	// starting the provider client. It is a lifetime owner even with providing
+	// disabled. Refusal is observable; never install a dead/nil NAT as a route.
+	localUserNatSettings := providerLocalUserNatSettings(
+		providerMemoryTargetByteCount,
+		clientSettings.Log,
+	)
+	if transferMemory != nil {
+		localUserNatSettings.MemoryBudget = transferMemory.nat
+	}
+	localUserNat, err := connect.TryNewLocalUserNat(providerCtx, clientId.String(), localUserNatSettings)
+	if err != nil {
+		providerCancel()
+		_ = clientOob.CloseAndWait(context.Background())
+		return nil, fmt.Errorf("admit fallback NAT: %w", err)
+	}
 
 	client := connect.NewClient(
 		providerCtx,
@@ -222,14 +244,6 @@ func newDeviceLocalProviderWithOverrides(
 	// Explicit provider H3 is a required reservation and ignores this priority.
 	platformTransportSettings.PlatformTransportBudgetPriority =
 		connect.PlatformTransportBudgetPriorityBackground
-
-	// The local-fallback egress uses the same device memory policy as the
-	// remote exit, including process-budget sizing when the target is off.
-	localUserNatSettings := providerLocalUserNatSettings(
-		providerMemoryTargetByteCount,
-		clientSettings.Log,
-	)
-	localUserNat := connect.NewLocalUserNat(client.Ctx(), clientId.String(), localUserNatSettings)
 
 	provider := &deviceLocalProvider{
 		ctx:          providerCtx,
@@ -269,7 +283,7 @@ func newDeviceLocalProviderWithOverrides(
 	// the platform asks the client to migrate its transport when the resident
 	// is draining (make-before-break, CONNECTDRAIN2.md §3.3)
 	client.AddReceiveCallback(provider.handleControlFrames)
-	return provider
+	return provider, nil
 }
 
 // Whether a provide mode serves public peers (J4). The modes are ordered by
@@ -427,6 +441,7 @@ func (self *deviceLocalProvider) familyTransportStatus() *ProviderFamilyTranspor
 func configureDeviceLocalProviderMemory(
 	clientSettings *connect.ClientSettings,
 	memoryTargetByteCount ByteCount,
+	parents ...*connect.TransferMemoryBudget,
 ) (resendQueueBudget *connect.TransferMemoryBudget, receiveQueueBudget *connect.TransferMemoryBudget) {
 	if memoryTargetByteCount <= 0 {
 		return
@@ -435,8 +450,8 @@ func configureDeviceLocalProviderMemory(
 	// Half the provider share is the transfer pair, split 3:4 send:receive;
 	// egress NAT flow caps own the other half.
 	pairTarget := memoryTargetByteCount / 2
-	resendQueueBudget = connect.NewTransferMemoryBudget(max(byteCountFraction(pairTarget, 3, 7), 256*1024))
-	receiveQueueBudget = connect.NewTransferMemoryBudget(max(byteCountFraction(pairTarget, 4, 7), 384*1024))
+	resendQueueBudget = deviceLocalTransferBudgetWithParent(max(byteCountFraction(pairTarget, 3, 7), 256*1024), parents...)
+	receiveQueueBudget = deviceLocalTransferBudgetWithParent(max(byteCountFraction(pairTarget, 4, 7), 384*1024), parents...)
 	clientSettings.SendBufferSettings.ResendQueueBudget = resendQueueBudget
 	clientSettings.ReceiveBufferSettings.ReceiveQueueBudget = receiveQueueBudget
 
@@ -444,7 +459,7 @@ func configureDeviceLocalProviderMemory(
 	// the active transfer receive queue (which is legitimately full precisely
 	// when P2P is needed).
 	clientSettings.WebRtcSettings.ReceiveBufferSize = deviceLocalP2pReceiveBufferByteCount
-	clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(memoryTargetByteCount)
+	clientSettings.WebRtcSettings.MemoryBudget = deviceLocalWebRtcBudget(memoryTargetByteCount, parents...)
 	// ICE UDP socket buffers: 4 MiB is the server default; a phone keeps the
 	// provider's ACK drops away at 512 KiB per socket without the footprint
 	// of a gathered candidate set at server size (FLIGHTGATEFIX §13.7,
@@ -456,8 +471,9 @@ func configureDeviceLocalProviderMemory(
 	// starve the many-peer public pool.
 	clientSettings.WebRtcSettings.NetworkPeerReceiveBufferSize =
 		deviceLocalNetworkPeerP2pReceiveBufferByteCount
-	clientSettings.WebRtcSettings.NetworkPeerMemoryBudget = connect.NewTransferMemoryBudget(
-		deviceLocalNetworkPeerP2pConnectionCount * deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+	clientSettings.WebRtcSettings.NetworkPeerMemoryBudget = deviceLocalTransferBudgetWithParent(
+		deviceLocalNetworkPeerP2pConnectionCount*deviceLocalNetworkPeerP2pReceiveBufferByteCount,
+		parents...,
 	)
 	return
 }
@@ -922,6 +938,20 @@ func newDeviceClientSettings(
 	}
 
 	return &clientSettings
+}
+
+// All destination generations reuse the device's durable ratchet. Copy the
+// encryption options before attaching it; never mutate shared defaults.
+func shareDevicePeerKeyPinStore(client, device *connect.ClientSettings) {
+	if device.EncryptionSettings == nil {
+		return
+	}
+	if client.EncryptionSettings == nil {
+		client.EncryptionSettings = connect.DefaultEncryptionSettings()
+	}
+	encryption := *client.EncryptionSettings
+	encryption.PeerClientKeyPinStore = device.EncryptionSettings.PeerClientKeyPinStore
+	client.EncryptionSettings = &encryption
 }
 
 // setExtenderEnabled starts or stops the provider extender role (G2). It is
