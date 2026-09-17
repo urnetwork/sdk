@@ -1517,6 +1517,21 @@ func newDeviceLocalWithOverrides(
 		if !settings.HostedIncompatible && settings.MultiClientIdentityStore == nil {
 			deviceLocal.windowIdentityStore = newLocalStateWindowIdentityStore(localState, clientId)
 		}
+		// Signed-identity tier ratchet (connect/DESIGNNOTES3 §4). Without a
+		// durable store a peer that has produced signed evidence before can
+		// silently stop producing it, which is a cheaper substitution than
+		// forging one. Locally owned devices only, for the same reason the
+		// window identity store is: a hosted device's operator already runs
+		// its client, and one shared store would leak which providers a
+		// tenant has sealed to.
+		if !settings.HostedIncompatible &&
+			settings.ClientSettings.EncryptionSettings != nil &&
+			settings.ClientSettings.EncryptionSettings.PeerClientKeyPinStore == nil {
+			// copy-on-propagate: never mutate the caller's nested settings
+			encryptionSettings := *settings.ClientSettings.EncryptionSettings
+			encryptionSettings.PeerClientKeyPinStore = localState.GetPeerClientKeyPinStore()
+			settings.ClientSettings.EncryptionSettings = &encryptionSettings
+		}
 	}
 
 	// publish the initial send-route snapshot so `sendPacket` always has a

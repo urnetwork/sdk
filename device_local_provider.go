@@ -894,6 +894,33 @@ func newDeviceClientSettings(
 		}
 	}
 
+	// Install the signed-identity resolver when none is configured. Unlike the
+	// cross-check above this one is enforcing under `EncryptionModeRequired`:
+	// it withholds the session cipher until the contract-supplied identity key
+	// is corroborated against evidence the operator signed, and a verified
+	// disagreement is terminal for that peer. See connect/DESIGNNOTES3.
+	if clientSettings.EncryptionSettings != nil &&
+		clientSettings.EncryptionSettings.NewPeerClientKeyHistoryFetcher == nil {
+		clientSettings.EncryptionSettings.NewPeerClientKeyHistoryFetcher = func(peerId connect.Id) func(context.Context) ([][]byte, error) {
+			url := fmt.Sprintf("%s/key/%s/history", apiUrl, peerId)
+			return func(fetchCtx context.Context) ([][]byte, error) {
+				r, err := connect.HttpGetWithStrategy(
+					fetchCtx,
+					clientStrategy,
+					url,
+					"",
+					&connect.GetClientKeyHistoryResult{},
+					connect.NewNoopApiCallback[*connect.GetClientKeyHistoryResult](),
+				)
+				if err != nil {
+					// an availability failure, never evidence of substitution
+					return nil, err
+				}
+				return r.History, nil
+			}
+		}
+	}
+
 	return &clientSettings
 }
 
