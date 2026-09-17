@@ -199,7 +199,8 @@ func TestExtenderStatusCountsAndEventRate(t *testing.T) {
 
 	// three usable addresses, one of them carrying a connection
 	for _, ip := range []string{"192.0.2.1", "198.51.100.7", "203.0.113.42"} {
-		directory.AddBootstrap(netip.MustParseAddr(ip), connect.ExtenderSourceDns)
+		// manual: usable without a record, which a dns address without one is not
+		directory.AddBootstrap(netip.MustParseAddr(ip), connect.ExtenderSourceManual)
 	}
 	directory.SetInUse(netip.MustParseAddr("192.0.2.1"), 1)
 
@@ -340,7 +341,8 @@ func TestDeviceRemoteExtenderStatus(t *testing.T) {
 	_, networkSpace := testExtenderStatusSpace(t)
 	networkSpace.extenderDirectory.AddBootstrap(
 		netip.MustParseAddr("192.0.2.1"),
-		connect.ExtenderSourceDns,
+		// manual: usable without a record, which a dns address without one is not
+		connect.ExtenderSourceManual,
 	)
 	networkSpace.extenderDirectory.SetInUse(netip.MustParseAddr("192.0.2.1"), 1)
 
