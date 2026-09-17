@@ -27,7 +27,7 @@ export interface URNetworkAPIProviderProps {
  *
  * @example
  * ```tsx
- * import { URNetworkAPIProvider } from '@urnetwork/sdk-js/react';
+ * import { URNetworkAPIProvider } from '@urnetwork/sdk/react';
  *
  * function App() {
  *   return (

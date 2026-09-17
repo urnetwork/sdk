@@ -72,7 +72,7 @@ rpc endpoint.
 - The browser `WebSocket` API cannot set request headers. Carrying the signed proxy id in
   the url query sidesteps that entirely — unlike a jwt in an `Authorization` header, it
   needs no first-frame handshake.
-- The wasm build exists and ships (`sdk/js`, npm `@urnetwork/sdk-js`), but the Go
+- The wasm build exists and ships (`sdk/js`, npm `@urnetwork/sdk`), but the Go
   networking paths are runtime-inert in a browser: the connect `ClientStrategy` sets
   `DialTLSContext` on its `http.Transport`, which defeats Go's automatic Fetch fallback
   under js/wasm, and gorilla/websocket has no browser backend. Today's JS SDK works only

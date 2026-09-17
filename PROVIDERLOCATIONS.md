@@ -807,7 +807,7 @@ permission grants stored in browser chrome, and Permissions Policy (whose defaul
 `world: "MAIN"` content script (Chrome 111+/Firefox 128+ — our
 `strict_min_version` is already 128), never `chrome.debugger` (see D-EXTOVERRIDE).
 **The blocker is not the spoof, it's the data**: the extension has no device plane at
-all — it depends on the published `@urnetwork/sdk-js` for REST hooks only, the wasm
+all — it depends on `@urnetwork/sdk` for REST hooks only, the wasm
 loader is commented out in `popup/App.tsx`, and `URNetwork.init()` is never called.
 It cannot learn the oldest provider's coordinates today; that needs a new bridge verb
 or a popup-side `DeviceRemote`, which is a bigger lift than the override itself.
