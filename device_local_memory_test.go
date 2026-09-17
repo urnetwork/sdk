@@ -201,6 +201,51 @@ func TestDeviceLocalMemoryUsageIncludesCarrierPreemptionTelemetry(t *testing.T) 
 	}
 }
 
+// Handoff state comes from the budget sample, not a process-wide policy flag;
+// a new/reset sample overwrites every gauge instead of accumulating history.
+func TestDeviceLocalMemoryUsageIncludesPrivateHandoffSnapshot(t *testing.T) {
+	usage := &DeviceLocalMemoryUsage{}
+	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{
+		PendingH1Count: 2, PendingH1ByteCount: 512 * 1024,
+		PendingHandoffCount: 3, ActiveHandoffCount: 1,
+		ActiveHandoffByteCount: 256 * 1024, ActiveHandoffTransportCount: 1,
+	})
+	if usage.PlatformTransportPendingH1Count != 2 ||
+		usage.PlatformTransportPendingHandoffCount != 3 ||
+		usage.PlatformTransportActiveHandoffCount != 1 ||
+		usage.PlatformTransportHandoffByteCount != 256*1024 ||
+		usage.PlatformTransportHandoffCount != 1 {
+		t.Fatalf("private handoff snapshot = %+v", usage)
+	}
+	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{})
+	if usage.PlatformTransportPendingHandoffCount != 0 ||
+		usage.PlatformTransportActiveHandoffCount != 0 ||
+		usage.PlatformTransportHandoffByteCount != 0 || usage.PlatformTransportHandoffCount != 0 {
+		t.Fatalf("reset retained handoff state: %+v", usage)
+	}
+}
+
+func TestDeviceLocalMemoryUsageProviderWindowReadinessAndReset(t *testing.T) {
+	usage := &DeviceLocalMemoryUsage{}
+	for _, test := range []struct {
+		name             string
+		window           *connect.WindowExpandEvent
+		known, satisfied bool
+	}{
+		{"missing", nil, false, false},
+		{"unsatisfied", &connect.WindowExpandEvent{}, true, false},
+		{"satisfied", &connect.WindowExpandEvent{MinSatisfied: true}, true, true},
+		{"reset", nil, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			applyProviderWindowMemoryUsage(usage, test.window)
+			if usage.ProviderWindowKnown != test.known || usage.ProviderWindowMinSatisfied != test.satisfied {
+				t.Fatalf("readiness = known:%t satisfied:%t", usage.ProviderWindowKnown, usage.ProviderWindowMinSatisfied)
+			}
+		})
+	}
+}
+
 // A headless provider's source identity must reach its QUIC packet endpoint,
 // not only the TCP/UDP exit dialers. This reproduces the carrier omission that
 // collapsed a thousand simulated miners onto one server rate-limit identity.

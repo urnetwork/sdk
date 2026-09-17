@@ -1864,6 +1864,17 @@ type DeviceLocalMemoryUsage struct {
 	PlatformTransportUsedCount       int
 	PlatformTransportPendingH1Count  int
 	PlatformTransportPendingH1Bytes  ByteCount
+	// Handoff fields come from the same private-budget Stats call as pending
+	// admission. Window readiness is sampled from this DeviceLocal's current
+	// client under stateLock, not from a process-wide ingress readiness flag.
+	// The budget and window own separate locks: this is a same-owner sample,
+	// not proof of event-time ordering or of one reservation's lifetime.
+	PlatformTransportPendingHandoffCount int
+	PlatformTransportActiveHandoffCount  int
+	PlatformTransportHandoffByteCount    ByteCount
+	PlatformTransportHandoffCount        int
+	ProviderWindowKnown                  bool
+	ProviderWindowMinSatisfied           bool
 	// PlatformTransportPreemptedH3Count is the lifetime count for this
 	// DeviceLocal's private carrier budget. Embedders aggregate it without
 	// exporting device identity so a repeated H1/H3 handoff loop remains
@@ -1904,6 +1915,14 @@ func (self *DeviceLocal) MemoryUsed() *DeviceLocalMemoryUsage {
 	}
 	platformTransportStats := self.platformTransportBudget.Stats()
 	applyPlatformTransportMemoryUsage(usage, platformTransportStats)
+	switch client := self.remoteUserNatClient.(type) {
+	case *connect.RemoteUserNatClient:
+		// Fixed destinations have the same readiness semantics as GetWindowStatus.
+		applyProviderWindowMemoryUsage(usage, &connect.WindowExpandEvent{MinSatisfied: true})
+	case *connect.RemoteUserNatMultiClient:
+		// Do not copy provider maps or identities merely to sample readiness.
+		applyProviderWindowMemoryUsage(usage, client.Monitor().WindowExpandEvent())
+	}
 	usage.TotalByteCount = usage.DnsByteCount +
 		usage.ClientSendByteCount + usage.ClientReceiveByteCount +
 		usage.ProviderSendByteCount + usage.ProviderReceiveByteCount +
@@ -1921,11 +1940,21 @@ func applyPlatformTransportMemoryUsage(
 	usage.PlatformTransportUsedCount = platformTransportStats.UsedTransportCount
 	usage.PlatformTransportPendingH1Count = platformTransportStats.PendingH1Count
 	usage.PlatformTransportPendingH1Bytes = platformTransportStats.PendingH1ByteCount
+	usage.PlatformTransportPendingHandoffCount = platformTransportStats.PendingHandoffCount
+	usage.PlatformTransportActiveHandoffCount = platformTransportStats.ActiveHandoffCount
+	usage.PlatformTransportHandoffByteCount = platformTransportStats.ActiveHandoffByteCount
+	usage.PlatformTransportHandoffCount = platformTransportStats.ActiveHandoffTransportCount
 	if platformTransportStats.PreemptedH3Count > uint64(1<<63-1) {
 		usage.PlatformTransportPreemptedH3Count = 1<<63 - 1
 	} else {
 		usage.PlatformTransportPreemptedH3Count = int64(platformTransportStats.PreemptedH3Count)
 	}
+}
+
+// Keeps an absent/reset window unknown instead of manufacturing readiness.
+func applyProviderWindowMemoryUsage(usage *DeviceLocalMemoryUsage, window *connect.WindowExpandEvent) {
+	usage.ProviderWindowKnown = window != nil
+	usage.ProviderWindowMinSatisfied = window != nil && window.MinSatisfied
 }
 
 // SetClientSecurityPolicyGenerator sets the multi-client (the device's own traffic) security policy.

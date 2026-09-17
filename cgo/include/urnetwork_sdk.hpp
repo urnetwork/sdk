@@ -1420,6 +1420,12 @@ struct DeviceLocalMemoryUsage {
 	int64_t PlatformTransportUsedCount{};
 	int64_t PlatformTransportPendingH1Count{};
 	int64_t PlatformTransportPendingH1Bytes{};
+	int64_t PlatformTransportPendingHandoffCount{};
+	int64_t PlatformTransportActiveHandoffCount{};
+	int64_t PlatformTransportHandoffByteCount{};
+	int64_t PlatformTransportHandoffCount{};
+	bool ProviderWindowKnown{};
+	bool ProviderWindowMinSatisfied{};
 	int64_t PlatformTransportPreemptedH3Count{};
 	int64_t TotalByteCount{};
 };
@@ -6592,6 +6598,12 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["PlatformTransportUsedCount"] = v.PlatformTransportUsedCount;
 	j["PlatformTransportPendingH1Count"] = v.PlatformTransportPendingH1Count;
 	j["PlatformTransportPendingH1Bytes"] = v.PlatformTransportPendingH1Bytes;
+	j["PlatformTransportPendingHandoffCount"] = v.PlatformTransportPendingHandoffCount;
+	j["PlatformTransportActiveHandoffCount"] = v.PlatformTransportActiveHandoffCount;
+	j["PlatformTransportHandoffByteCount"] = v.PlatformTransportHandoffByteCount;
+	j["PlatformTransportHandoffCount"] = v.PlatformTransportHandoffCount;
+	j["ProviderWindowKnown"] = v.ProviderWindowKnown;
+	j["ProviderWindowMinSatisfied"] = v.ProviderWindowMinSatisfied;
 	j["PlatformTransportPreemptedH3Count"] = v.PlatformTransportPreemptedH3Count;
 	j["TotalByteCount"] = v.TotalByteCount;
 }
@@ -6640,6 +6652,24 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("PlatformTransportPendingH1Bytes"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportPendingH1Bytes);
+	}
+	if (auto it = j.find("PlatformTransportPendingHandoffCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportPendingHandoffCount);
+	}
+	if (auto it = j.find("PlatformTransportActiveHandoffCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportActiveHandoffCount);
+	}
+	if (auto it = j.find("PlatformTransportHandoffByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportHandoffByteCount);
+	}
+	if (auto it = j.find("PlatformTransportHandoffCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportHandoffCount);
+	}
+	if (auto it = j.find("ProviderWindowKnown"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderWindowKnown);
+	}
+	if (auto it = j.find("ProviderWindowMinSatisfied"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderWindowMinSatisfied);
 	}
 	if (auto it = j.find("PlatformTransportPreemptedH3Count"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportPreemptedH3Count);
