@@ -5,7 +5,7 @@ package main
 import (
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // More view-controller JS bindings (see view_controllers.go for conventions).
