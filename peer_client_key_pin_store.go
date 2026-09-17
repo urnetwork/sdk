@@ -50,6 +50,8 @@ type localStatePeerClientKeyPinStore struct {
 	storage   peerClientKeyPinsStorage
 }
 
+var _ connect.PeerClientKeyPinStore = (*localStatePeerClientKeyPinStore)(nil)
+
 func newLocalStatePeerClientKeyPinStore(localStorageDir string) *localStatePeerClientKeyPinStore {
 	store := &localStatePeerClientKeyPinStore{
 		path: filepath.Join(localStorageDir, peerClientKeyPinsFileName),
@@ -142,13 +144,14 @@ func (self *localStatePeerClientKeyPinStore) SetSignedHistorySeen() {
 	self.flushWithLock()
 }
 
-// GetPeerClientKeyPinStore returns the device-scoped pin store. A device
+// peerClientKeyPinStore returns the device-scoped pin store. A device
 // without its own local storage (a hosted device sharing a host's directory)
 // gets nil, which disables the ratchet: a hosted device's operator already
 // runs its client, so there is no separate party for the ratchet to protect it
 // from, and sharing one store across tenants would leak which providers a
-// tenant has sealed to.
-func (self *LocalState) GetPeerClientKeyPinStore() connect.PeerClientKeyPinStore {
+// tenant has sealed to. This stays unexported because connect's store interface
+// is an internal wiring seam that gomobile cannot bind.
+func (self *LocalState) peerClientKeyPinStore() connect.PeerClientKeyPinStore {
 	if self.localStorageDir == "" {
 		return nil
 	}

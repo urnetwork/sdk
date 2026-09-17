@@ -44,6 +44,7 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 			forbidden := []string{
 				"DeviceSubprotocolRequest",
 				"DeviceSubprotocolResponse",
+				"GetPeerClientKeyPinStore",
 				"RemoteSubprotocol",
 			}
 			err := filepath.WalkDir(outputDirectory, func(path string, entry os.DirEntry, walkErr error) error {
@@ -68,6 +69,19 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// The pin store is security-critical Go wiring, not an app API. Allowlisting
+// its unsupported connect interface would silently omit the getter again.
+func TestMobilePinStoreOmissionIsRejected(t *testing.T) {
+	root := t.TempDir()
+	source := "// skipped method LocalState.GetPeerClientKeyPinStore with unsupported parameter or return types\n"
+	if err := os.WriteFile(filepath.Join(root, "LocalState.java"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err == nil {
+		t.Fatal("the internal peer client key pin store was accepted as a mobile omission")
 	}
 }
 

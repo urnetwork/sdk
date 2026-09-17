@@ -1529,7 +1529,7 @@ func newDeviceLocalWithOverrides(
 			settings.ClientSettings.EncryptionSettings.PeerClientKeyPinStore == nil {
 			// copy-on-propagate: never mutate the caller's nested settings
 			encryptionSettings := *settings.ClientSettings.EncryptionSettings
-			encryptionSettings.PeerClientKeyPinStore = localState.GetPeerClientKeyPinStore()
+			encryptionSettings.PeerClientKeyPinStore = localState.peerClientKeyPinStore()
 			settings.ClientSettings.EncryptionSettings = &encryptionSettings
 		}
 	}
