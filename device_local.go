@@ -821,8 +821,10 @@ type DeviceLocal struct {
 	// is derived from MemoryTargetByteCount.
 	platformTransportBudget *connect.PlatformTransportBudget
 	transferMemory          *deviceLocalTransferMemory
-	// At most one deferred remote-NAT constructor waits for shared root space.
-	remoteUserNatProviderMemoryWait bool
+	// At most one deferred constructor waits for shared root space. Its channel
+	// joins that admission worker without waiting on unrelated device work.
+	// Guarded by stateLock; nil means no admission worker is pending.
+	remoteUserNatProviderMemoryWaitDone <-chan struct{}
 
 	// dohServerScoresSeed is the per-DoH-server success ordering carried into
 	// each mux build: loaded from local storage at construction (the last
@@ -5692,18 +5694,20 @@ func (self *DeviceLocal) ensureRemoteUserNatProviderWithLock() error {
 // One worker retries both NAT and provider-graph admission. Capture notify
 // before either attempt; a permanent policy error never starts/spins a retry.
 func (self *DeviceLocal) waitRemoteUserNatProviderMemoryWithLock(capacityNotify <-chan struct{}) {
-	if capacityNotify == nil || self.remoteUserNatProviderMemoryWait {
+	if capacityNotify == nil || self.remoteUserNatProviderMemoryWaitDone != nil {
 		return
 	}
-	self.remoteUserNatProviderMemoryWait = true
+	workerDone := make(chan struct{})
+	self.remoteUserNatProviderMemoryWaitDone = workerDone
 	self.lifecycleWorkers.Add(1)
 	go func() {
 		defer self.lifecycleWorkers.Done()
+		defer close(workerDone)
 		for {
 			select {
 			case <-self.ctx.Done():
 				self.stateLock.Lock()
-				self.remoteUserNatProviderMemoryWait = false
+				self.remoteUserNatProviderMemoryWaitDone = nil
 				self.stateLock.Unlock()
 				return
 			case <-capacityNotify:
@@ -5715,7 +5719,7 @@ func (self *DeviceLocal) waitRemoteUserNatProviderMemoryWithLock(capacityNotify 
 				self.remoteUserNatProvider != nil || self.remoteUserNatProviderRotationPending ||
 				(err != nil && !errors.Is(err, connect.ErrNatMemoryBudget))
 			if done {
-				self.remoteUserNatProviderMemoryWait = false
+				self.remoteUserNatProviderMemoryWaitDone = nil
 			}
 			self.stateLock.Unlock()
 			if done {

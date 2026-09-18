@@ -247,73 +247,51 @@ func TestDeviceLocalTransferHierarchyNatGenerationsAndTelemetry(t *testing.T) {
 	connect.AssertEqual(t, usage.NatReservedByteCount, usage.NatReleasedByteCount)
 }
 
+// The initial NAT retry has its own completion boundary for both successful
+// admission and cancellation; cleanup alone joins the closed device lifecycle.
 func TestDeviceLocalTransferHierarchyDeferredNatAdmissionAndCancel(t *testing.T) {
 	for _, cancelBeforeRelease := range []bool{false, true} {
-		t.Run(fmt.Sprint(cancelBeforeRelease), func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			device, _ := transferMemoryTestDevice(t, 20*1024*1024)
-			memory := device.transferMemory
-			clientSettings := connect.DefaultClientSettings()
-			clientSettings.Log = connect.NewNoopLogger()
-			client := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), clientSettings)
-			defer client.CloseAndWait(context.Background())
-			device.ctx, device.cancel = ctx, cancel
-			device.clientId = client.ClientId()
-			device.provider.client = client
-			device.provideMode = ProvideModePublic
-			device.providerPacketStatsChangeListeners = connect.NewCallbackList[PacketStatsChangeListener]()
-			held := memory.root.TotalByteCount()
-			connect.AssertEqual(t, memory.client.TryReserve(held), true)
-			defer func() { memory.client.Release(held) }()
-			device.applyProvideMemorySharesWithLock(true)
-			created := make(chan struct{}, 1)
-			device.newRemoteUserNatProviderForTest = func(client *connect.Client, nat *connect.LocalUserNat, settings *connect.RemoteUserNatProviderSettings) *connect.RemoteUserNatProvider {
-				created <- struct{}{}
-				return connect.NewRemoteUserNatProvider(client, nat, settings)
-			}
-			device.stateLock.Lock()
-			device.ensureRemoteUserNatProviderWithLock()
-			if device.remoteUserNatProvider != nil || device.remoteUserNatProviderLocalUserNat != nil || !device.remoteUserNatProviderMemoryWait {
-				t.Fatal("refused NAT installed an owner or did not arrange retry")
-			}
-			device.stateLock.Unlock()
-			connect.AssertEqual(t, memory.nat.UsedByteCount(), ByteCount(0))
-			if cancelBeforeRelease {
-				cancel()
-			} else {
-				// Wake on enough real capacity, not an enlarged nominal child.
-				// NAT256KiB + provider544KiB + one stats registration1KiB.
-				const constructorBytes = ByteCount((256 + 544 + 1) * 1024)
-				memory.client.Release(constructorBytes)
-				held -= constructorBytes
-				select {
-				case <-created:
-				case <-time.After(5 * time.Second):
-					t.Fatal("NAT did not retry after sibling drain")
-				}
-			}
-			joined := make(chan struct{})
-			go func() { device.lifecycleWorkers.Wait(); close(joined) }()
-			select {
-			case <-joined:
-			case <-time.After(5 * time.Second):
-				t.Fatal("NAT admission worker did not join")
-			}
-			device.stateLock.Lock()
-			if device.remoteUserNatProviderMemoryWait {
-				t.Error("admission worker left pending flag")
-			}
-			if cancelBeforeRelease && (device.remoteUserNatProvider != nil || device.remoteUserNatProviderLocalUserNat != nil) {
+		device, _ := providerMemoryTestDevice(t, 20*1024*1024)
+		memory := device.transferMemory
+		held := memory.root.TotalByteCount()
+		connect.AssertEqual(t, memory.client.TryReserve(held), true)
+		defer func() { memory.client.Release(held) }()
+		device.applyProvideMemorySharesWithLock(true)
+		device.stateLock.Lock()
+		device.ensureRemoteUserNatProviderWithLock()
+		admissionDone := device.remoteUserNatProviderMemoryWaitDone
+		refused := device.remoteUserNatProvider == nil && device.remoteUserNatProviderLocalUserNat == nil && admissionDone != nil
+		device.stateLock.Unlock()
+		if !refused {
+			t.Fatal("refused NAT installed an owner or did not arrange retry")
+		}
+		connect.AssertEqual(t, memory.nat.UsedByteCount(), ByteCount(0))
+		if cancelBeforeRelease {
+			device.cancel()
+		} else {
+			// Wake on enough real capacity, not an enlarged nominal child.
+			const constructorBytes = providerMemoryTestNatByteCount + providerMemoryTestProviderByteCount + providerMemoryTestStatsByteCount
+			memory.client.Release(constructorBytes)
+			held -= constructorBytes
+		}
+		waitProviderRotationBarrier(t, admissionDone, "NAT admission worker")
+		device.stateLock.Lock()
+		if device.remoteUserNatProviderMemoryWaitDone != nil {
+			t.Error("admission worker left pending flag")
+		}
+		if cancelBeforeRelease {
+			if device.remoteUserNatProvider != nil || device.remoteUserNatProviderLocalUserNat != nil {
 				t.Error("canceled refusal constructed a NAT")
 			}
-			device.closed = true
-			device.provideMode = ProvideModeNone
-			device.closeRemoteUserNatProviderWithLock()
-			device.stateLock.Unlock()
-			device.lifecycleWorkers.Wait()
-			connect.AssertEqual(t, memory.nat.UsedByteCount(), ByteCount(0))
-			connect.AssertEqual(t, memory.root.UsedByteCount(), held)
-		})
+		} else if device.remoteUserNatProvider == nil || device.remoteUserNatProviderLocalUserNat == nil || device.providerPacketStatsSub == nil {
+			t.Error("sibling drain did not admit the complete provider graph")
+		}
+		device.closed = true
+		device.provideMode = ProvideModeNone
+		device.closeRemoteUserNatProviderWithLock()
+		device.stateLock.Unlock()
+		device.lifecycleWorkers.Wait()
+		connect.AssertEqual(t, memory.nat.UsedByteCount(), ByteCount(0))
+		connect.AssertEqual(t, memory.root.UsedByteCount(), held)
 	}
 }
