@@ -163,7 +163,6 @@ func TestDeviceLocalSyntheticDeviceRemoteMemorySoak(t *testing.T) {
 	}
 
 	writeSyntheticMemoryProfiles(t)
-	env.assertTraffic(t)
 	assertSyntheticMemoryBehavior(
 		t,
 		env.device,
@@ -173,6 +172,10 @@ func TestDeviceLocalSyntheticDeviceRemoteMemorySoak(t *testing.T) {
 		naturalSamples,
 		recoverySamples,
 	)
+	// Join the sole device-packet sender before comparing cumulative counters.
+	// RPC reads can otherwise land between a route refusal and its bridge count.
+	env.bridge.Close()
+	env.assertTraffic(t)
 	env.Close()
 
 	finalGoroutines, finalHeap := sampleStable()
@@ -598,22 +601,23 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 			self.bridge.receiveBatchCount.Load(),
 		)
 	}
-	// SendPacketBatch reports route acceptance, so deliberate policy rejects
-	// (the DHT probes) appear here too. A small second-order tail is expected
-	// from teardown packets on reset flows; bound it relative to the security
-	// counter instead of misclassifying every rejection as bridge packet loss.
+	// SendPacketBatch refuses policy blocks and redundant TCP packets already
+	// covered by Transfer. The two workloads have no fixed count relationship;
+	// require every refusal to have a measured cause instead of a guessed tail.
 	clientStats := self.remote.GetPacketStats()
 	rejected := self.bridge.droppedPacketCount.Load()
 	blocked := int64(0)
 	if clientStats != nil {
 		blocked = clientStats.BlockEgressPacketCount
 	}
-	if rejected < blocked || blocked*3+8 < rejected {
-		t.Errorf(
-			"compact packet route rejections are not explained by policy: rejected=%d blocked=%d",
-			rejected,
-			blocked,
-		)
+	multi, ok := self.device.sendRoute.Load().remoteUserNatClient.(*connect.RemoteUserNatMultiClient)
+	if !ok {
+		t.Fatal("synthetic route does not expose multi-client packet accounting")
+	}
+	collapsed := int64(multi.TcpCollapseDropCount())
+	t.Logf("compact packet route refusals: rejected=%d blocked=%d collapsed=%d", rejected, blocked, collapsed)
+	if err := syntheticPacketRejectionError(rejected, blocked, collapsed); err != nil {
+		t.Error(err)
 	}
 	for _, port := range []int{80, 443, 465, 587} {
 		if dials := self.exit.router.Dials(port); dials == 0 {
@@ -665,6 +669,19 @@ func (self *syntheticMemoryEnvironment) assertTraffic(t *testing.T) {
 		51415,
 		"synthetic blocked DHT",
 	)
+}
+
+// Reconciles the compact ABI's refusal count against intentional route outcomes.
+func syntheticPacketRejectionError(rejected int64, blocked int64, collapsed int64) error {
+	if rejected != blocked+collapsed {
+		return fmt.Errorf(
+			"compact packet route rejections are unexplained: rejected=%d blocked=%d collapsed=%d",
+			rejected,
+			blocked,
+			collapsed,
+		)
+	}
+	return nil
 }
 
 type syntheticMemoryPointValue struct {
