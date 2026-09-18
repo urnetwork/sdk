@@ -283,8 +283,8 @@ func TestDeviceLocalTransferHierarchyDeferredNatAdmissionAndCancel(t *testing.T)
 				cancel()
 			} else {
 				// Wake on enough real capacity, not an enlarged nominal child.
-				// NAT256KiB + provider512KiB + one stats registration1KiB.
-				const constructorBytes = ByteCount((256 + 512 + 1) * 1024)
+				// NAT256KiB + provider544KiB + one stats registration1KiB.
+				const constructorBytes = ByteCount((256 + 544 + 1) * 1024)
 				memory.client.Release(constructorBytes)
 				held -= constructorBytes
 				select {
