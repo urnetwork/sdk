@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"context"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -36,9 +35,8 @@ func TestExtenderHostsNormalize(t *testing.T) {
 	}
 }
 
-// testExtenderManualHostsNetwork turns the network client on with an
-// in-process resolver and hello, and records the settings of every client a
-// space builds, so a test can see what the refresh loop was configured with.
+// Records the settings of every client a space builds, so a test can see
+// what the refresh loop was configured with.
 type testExtenderNetworkClientSettingsRecorder struct {
 	stateLock sync.Mutex
 	manual    [][]string
@@ -65,21 +63,14 @@ func (self *testExtenderNetworkClientSettingsRecorder) count() int {
 	return len(self.manual)
 }
 
+// Enables an in-process refresh loop and records every replacement's hosts.
 func testEnableExtenderManualHostsNetwork(t *testing.T) *testExtenderNetworkClientSettingsRecorder {
 	t.Helper()
 	recorder := &testExtenderNetworkClientSettingsRecorder{}
 	extenderNetworkClientEnabled = true
 	extenderNetworkClientConfigure = func(settings *connect.ExtenderNetworkClientSettings) {
 		recorder.record(settings.ManualHosts)
-		settings.ResolveDns = func(ctx context.Context, name string) ([]netip.Addr, error) {
-			return nil, nil
-		}
-		settings.Hello = func(ctx context.Context) (*connect.ExtenderHelloResult, error) {
-			return &connect.ExtenderHelloResult{}, nil
-		}
-		// no probe pass: nothing here measures latency, and a probe would
-		// dial whatever the directory holds
-		settings.ProbeWindowCount = 0
+		testConfigureInProcessExtenderNetworkClient(settings)
 	}
 	t.Cleanup(func() {
 		extenderNetworkClientEnabled = false
@@ -117,22 +108,24 @@ func TestExtenderHostsReachTheNetworkClientAndRestartIt(t *testing.T) {
 	}
 	// an ip literal is added to the directory as a manual address, which the
 	// removal policy never takes away
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		manual := false
-		for _, entry := range networkSpace.extenderDirectory.Snapshot().Entries {
-			if entry.Ip.String() == "192.0.2.1" && entry.Source == connect.ExtenderSourceManual {
-				manual = true
+	waitManualHost := func(ip string) {
+		t.Helper()
+		timeout := time.After(30 * time.Second)
+		for {
+			_, update := networkSpace.extenderDirectory.ChangeMonitor().Get()
+			for _, entry := range networkSpace.extenderDirectory.Snapshot().Entries {
+				if entry.Ip.String() == ip && entry.Source == connect.ExtenderSourceManual {
+					return
+				}
+			}
+			select {
+			case <-update:
+			case <-timeout:
+				t.Fatalf("the manual host %s never reached the directory", ip)
 			}
 		}
-		if manual {
-			break
-		}
-		if deadline.Before(time.Now()) {
-			t.Fatal("the manual host never reached the directory")
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
+	waitManualHost("192.0.2.1")
 
 	previousNetworkClient := networkSpace.getExtenderNetworkClient()
 	previousCount := recorder.count()
@@ -190,6 +183,7 @@ func TestExtenderHostsReachTheNetworkClientAndRestartIt(t *testing.T) {
 	if networkSpaceManager.GetNetworkSpace(key) != networkSpace {
 		t.Fatal("a real change replaced the space")
 	}
+	waitManualHost("198.51.100.7")
 	expected = append(expected, "198.51.100.7")
 
 	// and the value survives a restart of the whole manager
