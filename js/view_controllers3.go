@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // Account-plane and peer view-controller bindings (see view_controllers.go for
