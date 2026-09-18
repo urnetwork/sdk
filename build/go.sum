@@ -178,6 +178,14 @@ github.com/spaolacci/murmur3 v1.1.0 h1:7c1g84S4BPRrfL5Xrdp6fOJ206sU9y293DDHaoy0b
 github.com/spaolacci/murmur3 v1.1.0/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/urnetwork/connect/v2026 v2026.9.18-1049469180 h1:HoOlsKLnfGNGhBSrHce/ORRKQ1m7idPl9ooIQZtOhf0=
+github.com/urnetwork/connect/v2026 v2026.9.18-1049469180/go.mod h1:YXEP8SVu4dRqWD/Hc1/IGSRXxUL5LhlATcpwVcROZqE=
+github.com/urnetwork/glog/v2026 v2026.9.18-1049469180 h1:NYfF8odQtvEs0H/VfrBYmU8JoXleeW7QQbdACeivmCE=
+github.com/urnetwork/glog/v2026 v2026.9.18-1049469180/go.mod h1:uSTI+aZPsaTYPQFKMq4d7S9vEi6uz408iURoTudkyYA=
+github.com/urnetwork/goidenticons/v2026 v2026.9.18-1049469180 h1:HtOzEHPfkxUEM+oA1yHdVB/09+W1R0MhUiNvTNS1ANQ=
+github.com/urnetwork/goidenticons/v2026 v2026.9.18-1049469180/go.mod h1:jcVbosYda85kM0GKspZlvLoTp+ziEhqj+fhsqOAgPqY=
+github.com/urnetwork/sdk/v2026 v2026.9.18-1049469180 h1:jSKf11xVyRMsAVSRvO2dhuqb8BCaCn1sF6kRbywY9hI=
+github.com/urnetwork/sdk/v2026 v2026.9.18-1049469180/go.mod h1:muRzgfC1hIQ+jENBcV+6HklW0kKLAVEDh2s6l0Vf39c=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 go.uber.org/dig v1.19.0 h1:BACLhebsYdpQ7IROQ1AGPjrXcP5dF80U3gKoFzbaq/4=
