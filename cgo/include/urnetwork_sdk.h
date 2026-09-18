@@ -2463,6 +2463,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* DeviceLocalMemoryUsage (json):
+ *   PeerKeyPinBudgetByteCount: number
+ *   PeerKeyPinUsedByteCount: number
+ *   PeerKeyPinReservedByteCount: number
+ *   PeerKeyPinReleasedByteCount: number
+ *   PeerKeyPinCount: number
+ *   PeerKeyPinCapacityRefusals: number
+ *   PeerKeyPinPersistenceFailures: number
+ *   PeerKeyPinRollbackRefusals: number
+ *   PeerKeyPinStateFailures: number
  *   TargetByteCount: number
  *   DnsByteCount: number
  *   ClientSendByteCount: number
@@ -2471,16 +2480,34 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   PackQueueCapacityByteCount: number
  *   ProviderSendByteCount: number
  *   ProviderReceiveByteCount: number
+ *   TransferRootBudgetByteCount: number
+ *   TransferRootUsedByteCount: number
+ *   TransferRootReservedByteCount: number
+ *   TransferRootReleasedByteCount: number
+ *   ClientTransferBudgetByteCount: number
+ *   ClientTransferUsedByteCount: number
+ *   ProviderTransferBudgetByteCount: number
+ *   ProviderTransferUsedByteCount: number
+ *   NatBudgetByteCount: number
+ *   NatUsedByteCount: number
+ *   NatReservedByteCount: number
+ *   NatReleasedByteCount: number
  *   PlatformTransportBudgetByteCount: number
  *   PlatformTransportUsedByteCount: number
  *   PlatformTransportMaxCount: number
  *   PlatformTransportUsedCount: number
  *   PlatformTransportPendingH1Count: number
  *   PlatformTransportPendingH1Bytes: number
+ *   PlatformTransportReservedBytes: number
+ *   PlatformTransportReleasedBytes: number
  *   PlatformTransportPendingHandoffCount: number
  *   PlatformTransportActiveHandoffCount: number
  *   PlatformTransportHandoffByteCount: number
  *   PlatformTransportHandoffCount: number
+ *   PlatformTransportHandoffID: number
+ *   PlatformTransportHandoffFromClass: string
+ *   PlatformTransportHandoffToClass: string
+ *   PlatformTransportHandoffH1ByteCount: number
  *   ProviderWindowKnown: boolean
  *   ProviderWindowMinSatisfied: boolean
  *   PlatformTransportPreemptedH3Count: number

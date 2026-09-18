@@ -1,7 +1,7 @@
 
 .PHONY: all clean generate build build_windows build_windows_amd64 \
 	build_windows_arm64 build_linux build_linux_amd64 build_linux_arm64 \
-	build_host smoke smoke_hpp init
+	build_host smoke smoke_hpp smoke_memory_usage_json init
 
 all: clean build
 
@@ -132,9 +132,15 @@ smoke: build_host
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke;
 
 # c++ wrapper (hpp) smoke test against the host library
-smoke_hpp: build_host
+smoke_hpp: build_host smoke_memory_usage_json
 	clang++ -std=c++17 -Iinclude -I$(NLOHMANN_INCLUDE) -o build/host/smoke_hpp smoke/smoke_hpp.cpp build/host/libURnetworkSdk.dylib && \
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke_hpp;
+
+# Shipped header JSON conversions, without constructing devices or linking Go.
+smoke_memory_usage_json:
+	mkdir -p build/host && \
+	clang++ -std=c++17 -Iinclude -I$(NLOHMANN_INCLUDE) -o build/host/memory_usage_json smoke/memory_usage_json.cpp && \
+	./build/host/memory_usage_json;
 
 # Toolchains for the mac-host cgo cross-builds:
 #   zig            -> linux/{amd64,arm64} SDK (glibc-pinned for portability)

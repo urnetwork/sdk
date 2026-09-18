@@ -62,3 +62,7 @@ with empty json shapes (usually a type that should be classified behavioral).
 
 `make smoke` builds a host (macOS) library and runs `smoke/smoke.cpp` against
 it: strings, ids, buffer-out, json, handle lifecycle, and async callbacks.
+
+`make smoke_memory_usage_json` checks the shipped C++ memory snapshot's JSON
+round-trip and legacy defaults without linking the SDK library. It also runs
+as part of `make smoke_hpp`.

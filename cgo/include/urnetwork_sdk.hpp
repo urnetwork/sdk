@@ -1406,6 +1406,15 @@ struct DestinationExit {
 };
 
 struct DeviceLocalMemoryUsage {
+	int64_t PeerKeyPinBudgetByteCount{};
+	int64_t PeerKeyPinUsedByteCount{};
+	int64_t PeerKeyPinReservedByteCount{};
+	int64_t PeerKeyPinReleasedByteCount{};
+	int64_t PeerKeyPinCount{};
+	int64_t PeerKeyPinCapacityRefusals{};
+	int64_t PeerKeyPinPersistenceFailures{};
+	int64_t PeerKeyPinRollbackRefusals{};
+	int64_t PeerKeyPinStateFailures{};
 	int64_t TargetByteCount{};
 	int64_t DnsByteCount{};
 	int64_t ClientSendByteCount{};
@@ -1414,16 +1423,34 @@ struct DeviceLocalMemoryUsage {
 	int64_t PackQueueCapacityByteCount{};
 	int64_t ProviderSendByteCount{};
 	int64_t ProviderReceiveByteCount{};
+	int64_t TransferRootBudgetByteCount{};
+	int64_t TransferRootUsedByteCount{};
+	int64_t TransferRootReservedByteCount{};
+	int64_t TransferRootReleasedByteCount{};
+	int64_t ClientTransferBudgetByteCount{};
+	int64_t ClientTransferUsedByteCount{};
+	int64_t ProviderTransferBudgetByteCount{};
+	int64_t ProviderTransferUsedByteCount{};
+	int64_t NatBudgetByteCount{};
+	int64_t NatUsedByteCount{};
+	int64_t NatReservedByteCount{};
+	int64_t NatReleasedByteCount{};
 	int64_t PlatformTransportBudgetByteCount{};
 	int64_t PlatformTransportUsedByteCount{};
 	int64_t PlatformTransportMaxCount{};
 	int64_t PlatformTransportUsedCount{};
 	int64_t PlatformTransportPendingH1Count{};
 	int64_t PlatformTransportPendingH1Bytes{};
+	int64_t PlatformTransportReservedBytes{};
+	int64_t PlatformTransportReleasedBytes{};
 	int64_t PlatformTransportPendingHandoffCount{};
 	int64_t PlatformTransportActiveHandoffCount{};
 	int64_t PlatformTransportHandoffByteCount{};
 	int64_t PlatformTransportHandoffCount{};
+	int64_t PlatformTransportHandoffID{};
+	std::string PlatformTransportHandoffFromClass{};
+	std::string PlatformTransportHandoffToClass{};
+	int64_t PlatformTransportHandoffH1ByteCount{};
 	bool ProviderWindowKnown{};
 	bool ProviderWindowMinSatisfied{};
 	int64_t PlatformTransportPreemptedH3Count{};
@@ -6584,6 +6611,15 @@ inline void from_json(const nlohmann::json& j, DestinationExit& v) {
 
 inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j = nlohmann::json::object();
+	j["PeerKeyPinBudgetByteCount"] = v.PeerKeyPinBudgetByteCount;
+	j["PeerKeyPinUsedByteCount"] = v.PeerKeyPinUsedByteCount;
+	j["PeerKeyPinReservedByteCount"] = v.PeerKeyPinReservedByteCount;
+	j["PeerKeyPinReleasedByteCount"] = v.PeerKeyPinReleasedByteCount;
+	j["PeerKeyPinCount"] = v.PeerKeyPinCount;
+	j["PeerKeyPinCapacityRefusals"] = v.PeerKeyPinCapacityRefusals;
+	j["PeerKeyPinPersistenceFailures"] = v.PeerKeyPinPersistenceFailures;
+	j["PeerKeyPinRollbackRefusals"] = v.PeerKeyPinRollbackRefusals;
+	j["PeerKeyPinStateFailures"] = v.PeerKeyPinStateFailures;
 	j["TargetByteCount"] = v.TargetByteCount;
 	j["DnsByteCount"] = v.DnsByteCount;
 	j["ClientSendByteCount"] = v.ClientSendByteCount;
@@ -6592,16 +6628,34 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 	j["PackQueueCapacityByteCount"] = v.PackQueueCapacityByteCount;
 	j["ProviderSendByteCount"] = v.ProviderSendByteCount;
 	j["ProviderReceiveByteCount"] = v.ProviderReceiveByteCount;
+	j["TransferRootBudgetByteCount"] = v.TransferRootBudgetByteCount;
+	j["TransferRootUsedByteCount"] = v.TransferRootUsedByteCount;
+	j["TransferRootReservedByteCount"] = v.TransferRootReservedByteCount;
+	j["TransferRootReleasedByteCount"] = v.TransferRootReleasedByteCount;
+	j["ClientTransferBudgetByteCount"] = v.ClientTransferBudgetByteCount;
+	j["ClientTransferUsedByteCount"] = v.ClientTransferUsedByteCount;
+	j["ProviderTransferBudgetByteCount"] = v.ProviderTransferBudgetByteCount;
+	j["ProviderTransferUsedByteCount"] = v.ProviderTransferUsedByteCount;
+	j["NatBudgetByteCount"] = v.NatBudgetByteCount;
+	j["NatUsedByteCount"] = v.NatUsedByteCount;
+	j["NatReservedByteCount"] = v.NatReservedByteCount;
+	j["NatReleasedByteCount"] = v.NatReleasedByteCount;
 	j["PlatformTransportBudgetByteCount"] = v.PlatformTransportBudgetByteCount;
 	j["PlatformTransportUsedByteCount"] = v.PlatformTransportUsedByteCount;
 	j["PlatformTransportMaxCount"] = v.PlatformTransportMaxCount;
 	j["PlatformTransportUsedCount"] = v.PlatformTransportUsedCount;
 	j["PlatformTransportPendingH1Count"] = v.PlatformTransportPendingH1Count;
 	j["PlatformTransportPendingH1Bytes"] = v.PlatformTransportPendingH1Bytes;
+	j["PlatformTransportReservedBytes"] = v.PlatformTransportReservedBytes;
+	j["PlatformTransportReleasedBytes"] = v.PlatformTransportReleasedBytes;
 	j["PlatformTransportPendingHandoffCount"] = v.PlatformTransportPendingHandoffCount;
 	j["PlatformTransportActiveHandoffCount"] = v.PlatformTransportActiveHandoffCount;
 	j["PlatformTransportHandoffByteCount"] = v.PlatformTransportHandoffByteCount;
 	j["PlatformTransportHandoffCount"] = v.PlatformTransportHandoffCount;
+	j["PlatformTransportHandoffID"] = v.PlatformTransportHandoffID;
+	j["PlatformTransportHandoffFromClass"] = v.PlatformTransportHandoffFromClass;
+	j["PlatformTransportHandoffToClass"] = v.PlatformTransportHandoffToClass;
+	j["PlatformTransportHandoffH1ByteCount"] = v.PlatformTransportHandoffH1ByteCount;
 	j["ProviderWindowKnown"] = v.ProviderWindowKnown;
 	j["ProviderWindowMinSatisfied"] = v.ProviderWindowMinSatisfied;
 	j["PlatformTransportPreemptedH3Count"] = v.PlatformTransportPreemptedH3Count;
@@ -6610,6 +6664,33 @@ inline void to_json(nlohmann::json& j, const DeviceLocalMemoryUsage& v) {
 inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("PeerKeyPinBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinBudgetByteCount);
+	}
+	if (auto it = j.find("PeerKeyPinUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinUsedByteCount);
+	}
+	if (auto it = j.find("PeerKeyPinReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinReservedByteCount);
+	}
+	if (auto it = j.find("PeerKeyPinReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinReleasedByteCount);
+	}
+	if (auto it = j.find("PeerKeyPinCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinCount);
+	}
+	if (auto it = j.find("PeerKeyPinCapacityRefusals"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinCapacityRefusals);
+	}
+	if (auto it = j.find("PeerKeyPinPersistenceFailures"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinPersistenceFailures);
+	}
+	if (auto it = j.find("PeerKeyPinRollbackRefusals"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinRollbackRefusals);
+	}
+	if (auto it = j.find("PeerKeyPinStateFailures"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerKeyPinStateFailures);
 	}
 	if (auto it = j.find("TargetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TargetByteCount);
@@ -6635,6 +6716,42 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	if (auto it = j.find("ProviderReceiveByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderReceiveByteCount);
 	}
+	if (auto it = j.find("TransferRootBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransferRootBudgetByteCount);
+	}
+	if (auto it = j.find("TransferRootUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransferRootUsedByteCount);
+	}
+	if (auto it = j.find("TransferRootReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransferRootReservedByteCount);
+	}
+	if (auto it = j.find("TransferRootReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TransferRootReleasedByteCount);
+	}
+	if (auto it = j.find("ClientTransferBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientTransferBudgetByteCount);
+	}
+	if (auto it = j.find("ClientTransferUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientTransferUsedByteCount);
+	}
+	if (auto it = j.find("ProviderTransferBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderTransferBudgetByteCount);
+	}
+	if (auto it = j.find("ProviderTransferUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderTransferUsedByteCount);
+	}
+	if (auto it = j.find("NatBudgetByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NatBudgetByteCount);
+	}
+	if (auto it = j.find("NatUsedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NatUsedByteCount);
+	}
+	if (auto it = j.find("NatReservedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NatReservedByteCount);
+	}
+	if (auto it = j.find("NatReleasedByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.NatReleasedByteCount);
+	}
 	if (auto it = j.find("PlatformTransportBudgetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportBudgetByteCount);
 	}
@@ -6653,6 +6770,12 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	if (auto it = j.find("PlatformTransportPendingH1Bytes"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportPendingH1Bytes);
 	}
+	if (auto it = j.find("PlatformTransportReservedBytes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportReservedBytes);
+	}
+	if (auto it = j.find("PlatformTransportReleasedBytes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportReleasedBytes);
+	}
 	if (auto it = j.find("PlatformTransportPendingHandoffCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportPendingHandoffCount);
 	}
@@ -6664,6 +6787,18 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 	}
 	if (auto it = j.find("PlatformTransportHandoffCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.PlatformTransportHandoffCount);
+	}
+	if (auto it = j.find("PlatformTransportHandoffID"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportHandoffID);
+	}
+	if (auto it = j.find("PlatformTransportHandoffFromClass"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportHandoffFromClass);
+	}
+	if (auto it = j.find("PlatformTransportHandoffToClass"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportHandoffToClass);
+	}
+	if (auto it = j.find("PlatformTransportHandoffH1ByteCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PlatformTransportHandoffH1ByteCount);
 	}
 	if (auto it = j.find("ProviderWindowKnown"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderWindowKnown);
