@@ -120,6 +120,10 @@ func allowedMobileOmission(identifier string) bool {
 		strings.HasPrefix(identifier, "SnEpochResult") || identifier == "VerifyKeysResult.Keys" {
 		return true
 	}
+	// Subprotocol types use connect.Id and []int32 which gomobile cannot export.
+	if strings.HasPrefix(typeName, "DeviceSubprotocol") || typeName == "RemoteSubprotocol" {
+		return true
+	}
 	return false
 }
 
