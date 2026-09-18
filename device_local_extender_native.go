@@ -66,6 +66,9 @@ type deviceLocalExtender struct {
 	listener       *gossip.InProcessListener
 	feedServer     *gossip.FeedServer
 	server         *extender.ExtenderServer
+	// what this extender measured of each attesting provider, batched to
+	// the operator (connect/DESIGNNOTES4.md §3)
+	latencyReporter *connect.ExtenderLatencyReporter
 
 	// the comparable half of the status; a consumer is woken only on an actual
 	// change, and the connection count is read live beside it
@@ -132,6 +135,16 @@ func newDeviceLocalExtender(
 		strategySettings = connect.DefaultClientStrategySettings()
 	}
 	self.clientStrategy = connect.NewDirectClientStrategy(cancelCtx, strategySettings, 0)
+
+	// the report goes under the same client credential the activation uses,
+	// to whichever api url this role has: the plain one, else the hello url,
+	// else a family url, since a report may arrive on either family
+	reporterSettings := connect.DefaultExtenderLatencyReporterSettings()
+	reporterSettings.Log = log
+	reporterSettings.ApiUrl = extenderReporterApiUrl(settings)
+	reporterSettings.ByJwt = settings.ByJwt
+	reporterSettings.ClientStrategy = self.clientStrategy
+	self.latencyReporter = connect.NewExtenderLatencyReporter(cancelCtx, reporterSettings)
 
 	self.listener = gossip.NewInProcessListener(cancelCtx, gossip.DefaultInProcessListenerSettings())
 	self.feedServer = gossip.NewFeedServer(
@@ -227,6 +240,7 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 		}
 	}
 	settings.FeedConnHandler = self.feedServer.Serve
+	settings.ProbeAttestationHandler = self.latencyReporter.Report
 	// a bind failure is not a user-visible error: it disables that carrier,
 	// is logged once by the server, and appears in the status (G2, F3)
 	settings.ListenErrorHandler = func(carrier string, err error) {
@@ -543,6 +557,17 @@ func (self *deviceLocalExtender) Close() {
 		self.settings.NetworkSpace.restoreExtenderNodeRole()
 		self.feedServer.Close()
 		self.listener.Close()
+		self.latencyReporter.Close()
 		self.clientStrategy.Close()
 	})
+}
+
+// The api url the latency report is posted to: the first this role has.
+func extenderReporterApiUrl(settings *deviceLocalExtenderSettings) string {
+	for _, apiUrl := range []string{settings.ApiUrl, settings.HelloUrl, settings.ApiUrlV4, settings.ApiUrlV6} {
+		if apiUrl != "" {
+			return apiUrl
+		}
+	}
+	return ""
 }

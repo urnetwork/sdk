@@ -1709,6 +1709,21 @@ func newDeviceLocalWithOverridesForPlatform(
 		}()
 	}
 
+	// a provider attests its measured distance to the extenders it probes
+	// (connect/DESIGNNOTES4.md §1). A consumer never identifies itself to an
+	// extender, so the attestor exists only while the provider does: it is
+	// installed here and cleared when the provider closes.
+	if provider != nil {
+		if networkClient := networkSpace.getExtenderNetworkClient(); networkClient != nil {
+			if keyManager := provider.Client().ClientKeyManager(); keyManager != nil {
+				networkClient.SetProbeAttestor(&connect.ExtenderProbeAttestor{
+					ClientId: clientId,
+					Sign:     keyManager.Sign,
+				})
+			}
+		}
+	}
+
 	return deviceLocal, nil
 }
 
@@ -5302,6 +5317,10 @@ func (self *DeviceLocal) close() {
 		self.subprotocols.attach(nil)
 		provider.Close()
 		self.provider = nil
+		// nothing may attest in the provider's name once it is gone
+		if networkClient := self.networkSpace.getExtenderNetworkClient(); networkClient != nil {
+			networkClient.SetProbeAttestor(nil)
+		}
 		self.startLifecycleWorkerWithLock(func() {
 			_ = provider.CloseAndWait(context.Background())
 		})

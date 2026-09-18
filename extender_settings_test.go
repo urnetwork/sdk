@@ -77,6 +77,9 @@ func testEnableExtenderManualHostsNetwork(t *testing.T) *testExtenderNetworkClie
 		settings.Hello = func(ctx context.Context) (*connect.ExtenderHelloResult, error) {
 			return &connect.ExtenderHelloResult{}, nil
 		}
+		// no probe pass: nothing here measures latency, and a probe would
+		// dial whatever the directory holds
+		settings.ProbeWindowCount = 0
 	}
 	t.Cleanup(func() {
 		extenderNetworkClientEnabled = false
