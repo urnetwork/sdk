@@ -21,8 +21,8 @@ type sdkTestScriptFixture struct {
 	tracePath string
 }
 
-// Installs the current launcher and records real Go test invocations. Child
-// output stays captured, including intentionally failing fixture processes.
+// Installs the current launcher and records real Go test invocations and smoke
+// execution. Child output stays captured, including intentional failures.
 func newSdkTestScriptFixture(t *testing.T) *sdkTestScriptFixture {
 	t.Helper()
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
@@ -90,6 +90,29 @@ printf 'npm:js\n' >>"$SDK_TEST_FIXTURE_TRACE"
 	)
 	fixture.module(t, ".")
 	fixture.write(t, "fixture_test.go", sdkTestScriptSource("fixture", ""), 0o600)
+	fixture.write(t, "smoke_test.go", `// Makes the launcher's separate smoke phase observable even under a test filter.
+package fixture
+
+import (
+	"os"
+	"testing"
+)
+
+// Uses the exact test name selected by the public SDK launcher.
+func TestSDKSmoke(t *testing.T) {
+	traceFile, err := os.OpenFile(os.Getenv("SDK_TEST_FIXTURE_TRACE"), os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceFile.Close()
+	if _, err := traceFile.WriteString("smoke:.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("SDK_TEST_FIXTURE_SMOKE_FAILURE") == "1" {
+		t.Fatal("synthetic smoke failure")
+	}
+}
+`, 0o600)
 	fixture.write(t, "js/package.json", "{}\n", 0o600)
 	return fixture
 }
@@ -162,7 +185,7 @@ func TestSdkTestScriptHostModuleDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host module discovery aborted: %v\n%s", err, output)
 	}
-	expected := []string{"go-test:.", "go-test:build", "go-test:cgo", "go-test:packaging", "go-test:raceonly", "go-test:testonly", "npm:js"}
+	expected := []string{"go-test:.", "smoke:.", "go-test:.", "go-test:build", "go-test:cgo", "go-test:packaging", "go-test:raceonly", "go-test:testonly", "npm:js"}
 	if !slices.Equal(trace, expected) {
 		t.Fatalf("module commands = %q, want %q", trace, expected)
 	}
@@ -180,6 +203,7 @@ func TestSdkTestScriptBuildTags(t *testing.T) {
 		{args: []string{"-tags=fixture_tag"}, selected: true},
 		{flags: "-tags=fixture_tag", selected: true},
 		{args: []string{"-run", "-tags", "-tags", "fixture_tag"}, selected: true},
+		{args: []string{"-list", "-tags", "-tags", "fixture_tag"}, selected: true},
 		{args: []string{"-tags=other_fixture_tag"}, flags: "-tags=fixture_tag", selected: false},
 	} {
 		fixture := newSdkTestScriptFixture(t)
@@ -195,9 +219,9 @@ func TestSdkTestScriptBuildTags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tags args=%q flags=%q: %v\n%s", options.args, options.flags, err, output)
 		}
-		expected := []string{"go-test:.", "npm:js"}
+		expected := []string{"go-test:.", "smoke:.", "go-test:.", "npm:js"}
 		if options.selected {
-			expected = []string{"go-test:.", "go-test:js", "go-test:space module", "npm:js"}
+			expected = []string{"go-test:.", "smoke:.", "go-test:.", "go-test:js", "go-test:space module", "npm:js"}
 		}
 		if !slices.Equal(trace, expected) {
 			t.Fatalf("tags args=%q flags=%q: commands=%q, want %q", options.args, options.flags, trace, expected)
@@ -218,7 +242,7 @@ func TestSdkTestScriptDiscoveryErrorStopsSuite(t *testing.T) {
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output, "errors parsing go.mod") {
 		t.Fatalf("malformed module result: %v\n%s", err, output)
 	}
-	if !slices.Equal(trace, []string{"go-test:."}) {
+	if !slices.Equal(trace, []string{"go-test:.", "smoke:.", "go-test:."}) {
 		t.Fatalf("discovery error continued the suite: %q", trace)
 	}
 }
@@ -235,7 +259,39 @@ func TestSdkTestScriptHostFailureStopsSuite(t *testing.T) {
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output, "synthetic fixture failure") {
 		t.Fatalf("host failure result: %v\n%s", err, output)
 	}
-	if !slices.Equal(trace, []string{"go-test:.", "go-test:build"}) {
+	if !slices.Equal(trace, []string{"go-test:.", "smoke:.", "go-test:.", "go-test:build"}) {
 		t.Fatalf("host failure retried or continued the suite: %q", trace)
+	}
+}
+
+// A failed smoke must stop before the ordinary root tests, discovery, and npm.
+func TestSdkTestScriptSmokeFailureStopsSuite(t *testing.T) {
+	fixture := newSdkTestScriptFixture(t)
+	fixture.env = append(fixture.env, "SDK_TEST_FIXTURE_SMOKE_FAILURE=1")
+	fixture.module(t, "build")
+	fixture.write(t, "build/fixture_test.go", sdkTestScriptSource("fixture", ""), 0o600)
+	output, trace, err := fixture.run(t, "-count=1", "-run", "^TestFixture$")
+	var exitError *exec.ExitError
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output, "synthetic smoke failure") {
+		t.Fatalf("smoke failure result: %v\n%s", err, output)
+	}
+	if !slices.Equal(trace, []string{"go-test:.", "smoke:."}) {
+		t.Fatalf("smoke failure retried or continued the suite: %q", trace)
+	}
+}
+
+// Passing the separate smoke must not hide a failure in the ordinary root tests.
+func TestSdkTestScriptRootFailureStopsSuite(t *testing.T) {
+	fixture := newSdkTestScriptFixture(t)
+	fixture.write(t, "fixture_test.go", fmt.Sprintf("package fixture\nimport \"testing\"\nfunc TestFixture(t *testing.T) { t.Fatal(%q) }\n", "synthetic root failure"), 0o600)
+	fixture.module(t, "build")
+	fixture.write(t, "build/fixture_test.go", sdkTestScriptSource("fixture", ""), 0o600)
+	output, trace, err := fixture.run(t, "-count=1", "-run", "^TestFixture$")
+	var exitError *exec.ExitError
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output, "synthetic root failure") {
+		t.Fatalf("root failure result: %v\n%s", err, output)
+	}
+	if !slices.Equal(trace, []string{"go-test:.", "smoke:.", "go-test:."}) {
+		t.Fatalf("root failure retried or continued the suite: %q", trace)
 	}
 }

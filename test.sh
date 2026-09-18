@@ -49,7 +49,7 @@ for ((arg_index = 1; arg_index <= $#; arg_index++)); do
             fi
             ;;
         -args) break ;;
-        -run|-skip|-bench|-benchtime|-count|-cpu|-parallel|-timeout|-shuffle|\
+        -run|-skip|-list|-bench|-benchtime|-count|-cpu|-parallel|-timeout|-shuffle|\
         -fuzz|-fuzztime|-fuzzminimizetime|\
         -blockprofile|-blockprofilerate|-coverprofile|-covermode|-coverpkg|\
         -cpuprofile|-memprofile|-memprofilerate|-mutexprofile|-mutexprofilefraction|\
