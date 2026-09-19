@@ -8,7 +8,7 @@ import (
 	"net"
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 type jsSubprotocol interface {
