@@ -69,9 +69,9 @@ require (
 	github.com/quic-go/quic-go v0.61.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.9.19-1050096260
+	github.com/urnetwork/connect/v2026 v2026.9.19-1050096260 // indirect
 	github.com/urnetwork/glog/v2026 v2026.9.19-1050096260
-	github.com/urnetwork/goidenticons/v2026 v2026.9.19-1050096260
+	github.com/urnetwork/goidenticons/v2026 v2026.9.19-1050096260 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.9.19-1050096260
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
