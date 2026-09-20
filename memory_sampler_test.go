@@ -180,6 +180,10 @@ func TestMobileDeviceMemorySampleHotPathDoesNotAllocate(t *testing.T) {
 	if sample.DeviceTrackedByteCount != 654 {
 		t.Fatalf("tracked bytes = %d, want queue ownership 654", sample.DeviceTrackedByteCount)
 	}
+	if sample.GoHeapAllocByteCount <= 0 || sample.GoStackInuseByteCount <= 0 ||
+		sample.GoHeapUnusedByteCount < 0 || sample.GoHeapFreeByteCount < 0 {
+		t.Fatalf("allocator classes were not copied into the device sample: %+v", sample)
+	}
 	if sample.ResendQueueUsedByteCount != 111 || sample.ResendQueueCapacityByteCount != 2048 {
 		t.Fatalf(
 			"resend queue sample = (%d/%d), want (111/2048)",

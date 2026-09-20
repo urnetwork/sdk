@@ -16,7 +16,7 @@ import (
 const (
 	mobileMemorySampleInterval = 15 * time.Second
 	mobileMemorySampleCapacity = 64
-	mobileMemorySampleSchema   = 12
+	mobileMemorySampleSchema   = 13
 )
 
 // mobileMemorySample contains primitives only. Recording it never constructs
@@ -24,10 +24,16 @@ const (
 type mobileMemorySample struct {
 	UnixMillis int64 `json:"unix_millis"`
 
-	GoTotalByteCount      int64 `json:"go_total_bytes"`
-	GoLiveByteCount       int64 `json:"go_live_bytes"`
-	GoGoalByteCount       int64 `json:"go_goal_bytes"`
-	GoLimitByteCount      int64 `json:"go_limit_bytes"`
+	GoTotalByteCount int64 `json:"go_total_bytes"`
+	GoLiveByteCount  int64 `json:"go_live_bytes"`
+	GoGoalByteCount  int64 `json:"go_goal_bytes"`
+	GoLimitByteCount int64 `json:"go_limit_bytes"`
+	// Allocator classes separate live objects, pinned span slack, unused free
+	// pages and goroutine stacks at the exact runtime peak (no heap profiling).
+	GoHeapAllocByteCount  int64 `json:"go_heap_alloc_bytes"`
+	GoHeapUnusedByteCount int64 `json:"go_heap_unused_bytes"`
+	GoHeapFreeByteCount   int64 `json:"go_heap_free_bytes"`
+	GoStackInuseByteCount int64 `json:"go_stack_inuse_bytes"`
 	PhysicalByteCount     int64 `json:"physical_bytes"`
 	PhysicalPeakByteCount int64 `json:"physical_peak_bytes"`
 	PhysicalPressureCount int64 `json:"physical_pressure_signals"`
@@ -142,6 +148,10 @@ type mobileMemoryRuntimeSnapshot struct {
 	liveByteCount                       int64
 	goalByteCount                       int64
 	limitByteCount                      int64
+	heapAllocByteCount                  int64
+	heapUnusedByteCount                 int64
+	heapFreeByteCount                   int64
+	stackInuseByteCount                 int64
 	physicalByteCount                   int64
 	physicalPeakByteCount               int64
 	physicalPressureCount               int64
@@ -183,7 +193,7 @@ type mobileMemoryRuntimeSnapshot struct {
 
 type mobileMemoryRuntimeReader struct {
 	mutex   sync.Mutex
-	samples [9]metrics.Sample
+	samples [13]metrics.Sample
 }
 
 func mobileMetricInt64(sample *metrics.Sample) int64 {
@@ -207,7 +217,7 @@ func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapsho
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.samples[0].Name == "" {
-		self.samples = [9]metrics.Sample{
+		self.samples = [13]metrics.Sample{
 			{Name: "/gc/heap/live:bytes"},
 			{Name: "/gc/heap/goal:bytes"},
 			{Name: "/memory/classes/total:bytes"},
@@ -217,6 +227,10 @@ func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapsho
 			{Name: "/gc/cycles/total:gc-cycles"},
 			{Name: "/gc/heap/allocs:bytes"},
 			{Name: "/memory/classes/profiling/buckets:bytes"},
+			{Name: "/memory/classes/heap/objects:bytes"},
+			{Name: "/memory/classes/heap/unused:bytes"},
+			{Name: "/memory/classes/heap/free:bytes"},
+			{Name: "/memory/classes/heap/stacks:bytes"},
 		}
 	}
 	metrics.Read(self.samples[:])
@@ -230,6 +244,10 @@ func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapsho
 		liveByteCount:                  mobileMetricInt64(&self.samples[0]),
 		goalByteCount:                  mobileMetricInt64(&self.samples[1]),
 		limitByteCount:                 debug.SetMemoryLimit(-1),
+		heapAllocByteCount:             mobileMetricInt64(&self.samples[9]),
+		heapUnusedByteCount:            mobileMetricInt64(&self.samples[10]),
+		heapFreeByteCount:              mobileMetricInt64(&self.samples[11]),
+		stackInuseByteCount:            mobileMetricInt64(&self.samples[12]),
 		physicalByteCount:              mobilePhysicalFootprintCurrent.Load(),
 		physicalPeakByteCount:          mobilePhysicalFootprintPeak.Load(),
 		physicalPressureCount:          mobilePhysicalPressureCount.Load(),
@@ -404,6 +422,10 @@ func (self *DeviceLocal) memorySample() mobileMemorySample {
 		GoLiveByteCount:                        runtimeSnapshot.liveByteCount,
 		GoGoalByteCount:                        runtimeSnapshot.goalByteCount,
 		GoLimitByteCount:                       runtimeSnapshot.limitByteCount,
+		GoHeapAllocByteCount:                   runtimeSnapshot.heapAllocByteCount,
+		GoHeapUnusedByteCount:                  runtimeSnapshot.heapUnusedByteCount,
+		GoHeapFreeByteCount:                    runtimeSnapshot.heapFreeByteCount,
+		GoStackInuseByteCount:                  runtimeSnapshot.stackInuseByteCount,
 		PhysicalByteCount:                      runtimeSnapshot.physicalByteCount,
 		PhysicalPeakByteCount:                  runtimeSnapshot.physicalPeakByteCount,
 		PhysicalPressureCount:                  runtimeSnapshot.physicalPressureCount,
