@@ -1537,11 +1537,14 @@ type GetNetworkReferralCodeResult struct {
 	// The referral program terms, from the server's pro.yml: the one place the
 	// cap and bonus live. All zero when the server reports none (no pro.yml: no
 	// cap, no grant); apps keep their display defaults then.
-	MaxReferrals          int                          `json:"max_referrals"`
-	BonusPerReferralBytes int64                        `json:"bonus_per_referral_bytes"`
-	ReferredBonusBytes    int64                        `json:"referred_bonus_bytes"`
-	BonusPeriodSeconds    int64                        `json:"bonus_period_seconds"`
-	Error                 *GetNetworkReferralCodeError `json:"error,omitempty"`
+	MaxReferrals          int   `json:"max_referrals"`
+	BonusPerReferralBytes int64 `json:"bonus_per_referral_bytes"`
+	ReferredBonusBytes    int64 `json:"referred_bonus_bytes"`
+	BonusPeriodSeconds    int64 `json:"bonus_period_seconds"`
+	// HasReferralNetwork says this network is a referee and therefore receives
+	// ReferredBonusBytes even when it has no outgoing referrals.
+	HasReferralNetwork bool                         `json:"has_referral_network"`
+	Error              *GetNetworkReferralCodeError `json:"error,omitempty"`
 }
 
 // BonusGibPerDay is the referrer's bonus per referral as whole GiB per day,
