@@ -96,6 +96,8 @@ retract [v0.0.1, v1.0.0]
 
 replace github.com/urnetwork/connect => ../connect
 
+replace github.com/pion/sctp => ../connect/third_party/sctp
+
 replace github.com/urnetwork/glog => ../glog
 
 replace github.com/urnetwork/goidenticons => ../goidenticons

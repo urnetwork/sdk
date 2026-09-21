@@ -95,6 +95,8 @@ replace github.com/urnetwork/sdk => ..
 
 replace github.com/urnetwork/connect => ../../connect
 
+replace github.com/pion/sctp => ../../connect/third_party/sctp
+
 replace github.com/urnetwork/glog => ../../glog
 
 replace github.com/urnetwork/goidenticons => ../../goidenticons
