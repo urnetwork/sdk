@@ -3,6 +3,8 @@
 // No packages required: Node >= 20 and the SDK's Go toolchain are sufficient.
 // Run from any directory: node sdk/build/bench-device-rpc.mjs --pairs=10
 // --memory-pairs=2 --gomaxprocs=3 --out=/new/artifact/directory
+// Add --baseline-binary=/previous/artifact/sdk-device-rpc.test to compare a
+// pinned pre-change XL arm in the same alternating fresh-process blocks.
 // A memory arm is intentionally excluded from timing confidence intervals.
 
 import assert from 'node:assert/strict';
@@ -61,18 +63,22 @@ function summarize(records) {
       const matching = records.filter(r => r.payload_bytes === size.bytes && r.direction === direction);
       const timing = matching.filter(r => !r.memory_diagnostic);
       if (!timing.length) continue;
+      const armOf = r => r.arm ?? r.carrier;
+      const arms = ['websocket', 'framerxl'];
+      if (timing.some(r => armOf(r) === 'framerxl-before')) arms.push('framerxl-before');
       const blocks = [...new Set(timing.map(r => r.block))];
-      const pairs = blocks.map(block => {
-        const pair = ['websocket', 'framerxl'].map(mode => timing.find(r => r.block === block && r.carrier === mode));
+      const pairFor = control => blocks.map(block => {
+        const pair = [control, 'framerxl'].map(mode => timing.find(r => r.block === block && armOf(r) === mode));
         assert(pair.every(Boolean), `incomplete pair for ${size.bytes}/${direction}/${block}`);
         assert.equal(pair[0].carrier_frames_per_rpc, pair[1].carrier_frames_per_rpc, 'paired arms must send identical gob/mux frame counts');
         assert.equal(pair[0].carrier_payload_bytes_per_rpc, pair[1].carrier_payload_bytes_per_rpc, 'paired arms must send identical gob/mux payload bytes');
         return pair;
       });
+      const pairs = pairFor('websocket');
       const entry = { payload_bytes: size.bytes, direction, pairs: pairs.length, modes: {} };
-      for (const carrier of ['websocket', 'framerxl']) {
-        const arm = timing.filter(r => r.carrier === carrier);
-        const memory = matching.filter(r => r.carrier === carrier && r.memory_diagnostic);
+      for (const carrier of arms) {
+        const arm = timing.filter(r => armOf(r) === carrier);
+        const memory = matching.filter(r => armOf(r) === carrier && r.memory_diagnostic);
         const values = {};
         for (const key of [
           'latency_p50_ns', 'latency_p95_ns', 'latency_p99_ns', 'cpu_ns_per_rpc', 'payload_mbps',
@@ -101,6 +107,16 @@ function summarize(records) {
         p95_latency_reduction: pairedChange(pairs, 'latency_p95_ns', true),
         allocation_bytes_reduction: pairedChange(pairs, 'allocated_bytes_per_rpc', true),
       };
+      if (arms.includes('framerxl-before')) {
+        const baselinePairs = pairFor('framerxl-before');
+        entry.collector_fix_changes = {
+          throughput_improvement: pairedChange(baselinePairs, 'payload_mbps'),
+          cpu_reduction: pairedChange(baselinePairs, 'cpu_ns_per_rpc', true),
+          p50_latency_reduction: pairedChange(baselinePairs, 'latency_p50_ns', true),
+          p95_latency_reduction: pairedChange(baselinePairs, 'latency_p95_ns', true),
+          allocation_bytes_reduction: pairedChange(baselinePairs, 'allocated_bytes_per_rpc', true),
+        };
+      }
       summary.push(entry);
     }
   }
@@ -135,7 +151,7 @@ function main() {
     return [match[1], match[2] ?? true];
   }));
   for (const name of args.keys()) {
-    if (!['pairs', 'memory-pairs', 'gomaxprocs', 'out', 'smoke', 'self-test', 'analyze'].includes(name)) throw new Error(`unknown option ${name}`);
+    if (!['pairs', 'memory-pairs', 'gomaxprocs', 'out', 'smoke', 'self-test', 'analyze', 'baseline-binary'].includes(name)) throw new Error(`unknown option ${name}`);
   }
   if (args.has('self-test')) return selfTest();
   if (args.has('analyze')) {
@@ -152,6 +168,7 @@ function main() {
   const memoryPairs = integer('memory-pairs', 2, 0, 100);
   const gomaxprocs = integer('gomaxprocs', 3, 1, Math.max(1, Math.ceil(os.availableParallelism() * 0.7)));
   const smoke = args.has('smoke');
+  const baselineBinary = args.has('baseline-binary') ? path.resolve(String(args.get('baseline-binary'))) : null;
   const output = args.has('out') ? path.resolve(String(args.get('out'))) : fs.mkdtempSync(path.join(os.tmpdir(), 'urnetwork-device-rpc-'));
   if (args.has('out')) fs.mkdirSync(output, { recursive: false }); // refuse accidental overwrite
   const environment = { ...process.env, GOMAXPROCS: String(gomaxprocs) };
@@ -171,6 +188,7 @@ function main() {
     scope: 'both endpoints; pinned local mTLS; real native dialer/handler/deviceRpcMux/net-rpc gob; one outstanding call per stream; request+reply payload Mb/s; no added batching',
     memory: 'separate fresh-process arms; 1ms runtime/metrics sampling plus every completed call; sampled lower bound, not absolute iOS-profile gate',
     tls_writes: 'underlying encrypted socket Write calls (TLS record splitting included), not tls.Conn.Write calls',
+    baseline_binary: baselineBinary ? { path: baselineBinary, sha256: sha256(baselineBinary) } : null,
     files_sha256: Object.fromEntries(['device_rpc_h1plus_benchmark_test.go', 'build/bench-device-rpc.mjs'].map(file => [file, sha256(path.join(sdk, file))])),
     repos: Object.fromEntries(['sdk', 'connect'].map(repo => [repo, {
       head: run('git', ['-C', path.join(sdk, '..', repo), 'rev-parse', 'HEAD']).trim(),
@@ -185,18 +203,27 @@ function main() {
   fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify(provenance, null, 2) + '\n');
   const observations = [];
   const raw = path.join(output, 'observations.jsonl');
-  const total = (pairs + memoryPairs) * cases.length * 2;
+  const orders = baselineBinary ? [
+    ['websocket', 'framerxl-before', 'framerxl'],
+    ['framerxl', 'websocket', 'framerxl-before'],
+    ['framerxl-before', 'framerxl', 'websocket'],
+    ['framerxl-before', 'websocket', 'framerxl'],
+    ['framerxl', 'framerxl-before', 'websocket'],
+    ['websocket', 'framerxl', 'framerxl-before'],
+  ] : [['websocket', 'framerxl'], ['framerxl', 'websocket']];
+  const total = (pairs + memoryPairs) * cases.length * orders[0].length;
   for (const [phase, blocks] of [['timing', pairs], ['memory', memoryPairs]]) {
     for (let block = 0; block < blocks; block++) {
       for (let offset = 0; offset < cases.length; offset++) {
         const index = (offset + block) % cases.length;
         const c = cases[index];
-        const modes = (block + index) % 2 ? ['framerxl', 'websocket'] : ['websocket', 'framerxl'];
+        const modes = orders[(block + index) % orders.length];
         for (let position = 0; position < modes.length; position++) {
           const mode = modes[position];
+          const carrier = mode === 'websocket' ? mode : 'framerxl';
           const childEnv = {
             ...environment,
-            DEVICE_RPC_BENCH_CARRIER: mode,
+            DEVICE_RPC_BENCH_CARRIER: carrier,
             DEVICE_RPC_BENCH_PAYLOAD: String(c.payload_bytes),
             DEVICE_RPC_BENCH_ITERATIONS: String(c.iterations),
             DEVICE_RPC_BENCH_DIRECTION: c.direction,
@@ -204,7 +231,7 @@ function main() {
           };
           let text;
           try {
-            text = run(binary, ['-test.run=^TestDeviceRpcH1PlusMeasurement$', '-test.count=1', '-test.timeout=150s'], { env: childEnv });
+            text = run(mode === 'framerxl-before' ? baselineBinary : binary, ['-test.run=^TestDeviceRpcH1PlusMeasurement$', '-test.count=1', '-test.timeout=150s'], { env: childEnv });
           } catch (error) {
             fs.appendFileSync(path.join(output, 'failures.jsonl'), JSON.stringify({
               phase, block, position, carrier: mode, ...c, failed_utc: new Date().toISOString(), error: String(error),
@@ -213,9 +240,9 @@ function main() {
           }
           const lines = text.split('\n').filter(line => line.startsWith('DEVICE_RPC_MEASUREMENT '));
           assert.equal(lines.length, 1, 'exactly one measurement is required per fresh process');
-          const record = { block, position, ...JSON.parse(lines[0].slice('DEVICE_RPC_MEASUREMENT '.length)) };
+          const record = { block, position, arm: mode, ...JSON.parse(lines[0].slice('DEVICE_RPC_MEASUREMENT '.length)) };
           assert.equal(record.correct, true);
-          assert.equal(record.carrier, mode);
+          assert.equal(record.carrier, carrier);
           assert.equal(record.direction, c.direction);
           assert.equal(record.payload_bytes, c.payload_bytes);
           assert.equal(record.iterations_per_direction, c.iterations);

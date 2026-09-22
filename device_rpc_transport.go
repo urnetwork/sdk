@@ -134,6 +134,12 @@ type deviceRpcMux struct {
 	// pool on teardown.
 	send chan []byte
 
+	// Exclusive to writeLoop, like the underlying carrier's writer. Reusing
+	// these descriptors avoids a heap-allocated 32-entry slice array on every
+	// ready flush. Clear every borrowed payload reference before returning its
+	// ownership; neither a completed nor failed flush may retain a message.
+	writeMessages [32][]byte
+
 	// Admission closes before the writer joins producers and drains send.
 	// Only external Write calls register; the write loop never joins itself.
 	stateLock  sync.Mutex
@@ -412,11 +418,12 @@ func (self *deviceRpcMux) readMessage() (int, []byte, error) {
 }
 
 func (self *deviceRpcMux) writeReadyMessages(writer interface{ WriteMessages([][]byte) error }, first []byte) error {
-	var messages [32][]byte
+	messages := &self.writeMessages
 	messages[0] = first
 	count, total := 1, len(first)
 	defer func() {
-		for _, message := range messages[:count] {
+		for i, message := range messages[:count] {
+			messages[i] = nil
 			connect.MessagePoolReturn(message)
 			self.sendBytes.release(len(message))
 		}
