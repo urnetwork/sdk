@@ -764,6 +764,8 @@ type DeviceLocal struct {
 	// outside the mobile policy; its goroutine follows self.ctx.
 	memorySampler                 *mobileMemorySampler
 	platformTransportReceiveStats *connect.PlatformTransportReceiveStats
+	// Shared by every outbound window/generation, separate from provider H1.
+	h1ConnectionStats connect.H1ConnectionStats
 	// transferDiagStats is the shared p2p data-plane counter set of the
 	// build-time transfer diagnostic seam (transfer_diag.go); nil unless on.
 	transferDiagStats *connect.P2pDataPlaneStats
@@ -4445,6 +4447,7 @@ func (self *DeviceLocal) applyDestination(
 						self.settings.MemoryTargetByteCount,
 					)
 					settings.ReceiveStats = self.platformTransportReceiveStats
+					settings.H1ConnectionStats = &self.h1ConnectionStats
 					return settings
 				}
 				transportMode, modePreferences := toConnectTransportPolicy(self.transportSettings, false)
@@ -6194,6 +6197,7 @@ func packetStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
 // the client route stats: the multi client counters plus the fallback local route
 func (self *DeviceLocal) clientPacketStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
 	stats := packetStatsFromConnect(packetStats)
+	applyH1ConnectionStats(stats, self.h1ConnectionStats.Snapshot())
 	stats.LocalEgressPacketCount += self.localFallbackEgressPacketCount.Load()
 	stats.LocalEgressByteCount += ByteCount(self.localFallbackEgressByteCount.Load())
 	stats.LocalIngressPacketCount += self.localFallbackIngressPacketCount.Load()
@@ -6272,7 +6276,17 @@ func (self *DeviceLocal) GetProviderPacketStats() *PacketStats {
 	if self.provider == nil {
 		return nil
 	}
-	return packetStatsFromConnect(self.combinedProviderConnectPacketStatsWithLock())
+	return self.providerPacketStatsFromConnect(self.combinedProviderConnectPacketStatsWithLock())
+}
+
+// Called with stateLock. The provider collector spans overlapping migration
+// generations and is separate from outbound client connections.
+func (self *DeviceLocal) providerPacketStatsFromConnect(packetStats *connect.PacketStats) *PacketStats {
+	stats := packetStatsFromConnect(packetStats)
+	if self.provider != nil {
+		applyH1ConnectionStats(stats, self.provider.h1ConnectionStats.Snapshot())
+	}
+	return stats
 }
 
 // Applies a current provider epoch. A nonnil provider/generation pair makes
@@ -6295,7 +6309,7 @@ func (self *DeviceLocal) updateProviderPacketStatsForGeneration(
 		}
 		combined := self.providerPacketStatsBase
 		addConnectPacketStats(&combined, packetStats)
-		netPacketStats = packetStatsFromConnect(&combined)
+		netPacketStats = self.providerPacketStatsFromConnect(&combined)
 		trafficByteCount := packetStatsTrafficByteCount(netPacketStats)
 		trafficDelta = packetStatsTrafficDelta(
 			self.mobileMemoryProviderTrafficByteCount,

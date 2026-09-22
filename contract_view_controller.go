@@ -89,11 +89,16 @@ type ThroughputPoint struct {
 // and blocked traffic never enter a carrier, so they are absent by
 // construction (see `PacketStats.TransportStats`). Totals, not rates.
 type TransportShare struct {
-	TransportType      TransportType
-	EgressByteCount    ByteCount
-	IngressByteCount   ByteCount
-	EgressPacketCount  int64
-	IngressPacketCount int64
+	TransportType TransportType
+	// Current negotiated connections, not window totals. For the H1 row, apps
+	// display H1+ while H1PlusConnectionCount > 0, including a mixed window.
+	// A fallback or disconnect removes the H1+ indication on the next sample.
+	H1WebSocketConnectionCount int64
+	H1PlusConnectionCount      int64
+	EgressByteCount            ByteCount
+	IngressByteCount           ByteCount
+	EgressPacketCount          int64
+	IngressPacketCount         int64
 	// the transport's fraction of the window's remote bytes (both directions),
 	// 0..1. 0 while idle. the shares of a distribution sum to 1 when there is
 	// traffic
@@ -170,6 +175,9 @@ type throughputSeries struct {
 	// whether the last poll returned stats. Written by the poll only, since the
 	// device push also writes `latestPacketStats` and would hide a change
 	present bool
+	// Last polled H1 activity; a push may replace latestPacketStats between
+	// polls, and missing stats must clear this state only once.
+	h1Connections connect.H1ConnectionStatsSnapshot
 }
 
 type ContractViewController struct {
@@ -422,6 +430,12 @@ func (self *ContractViewController) sampleSeriesWithLock(series *throughputSerie
 	// idle window. Only a change re-arms it, so an idle tick adds nothing
 	if present := packetStats != nil; present != series.present {
 		series.present = present
+		series.idleNotified = false
+	}
+	// Negotiation and fallback can change the label without packet traffic.
+	// Compare polls, not latestPacketStats (a push may already replace it).
+	if connections := h1ConnectionStatsFromPacketStats(packetStats); series.h1Connections != connections {
+		series.h1Connections = connections
 		series.idleNotified = false
 	}
 	series.latestPacketStats = packetStats
@@ -803,6 +817,7 @@ func (self *ContractViewController) transportDistributionWithLock(
 		}
 	}
 	shares := make([]*TransportShare, len(types))
+	h1Connections := h1ConnectionStatsFromPacketStats(series.latestPacketStats)
 	for i, transportType := range types {
 		shares[i] = &TransportShare{
 			TransportType:      transportType,
@@ -811,6 +826,10 @@ func (self *ContractViewController) transportDistributionWithLock(
 			EgressPacketCount:  max(totals[i].egressPacketCount, 0),
 			IngressPacketCount: max(totals[i].ingressPacketCount, 0),
 			Enabled:            enabled[transportType],
+		}
+		if transportType == TransportTypeH1 {
+			shares[i].H1WebSocketConnectionCount = h1Connections.WebSocketConnectionCount
+			shares[i].H1PlusConnectionCount = h1Connections.H1PlusConnectionCount
 		}
 	}
 	return newTransportDistribution(shares)

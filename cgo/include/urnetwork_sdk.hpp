@@ -1807,6 +1807,7 @@ struct GetNetworkReferralCodeResult {
 	int64_t bonus_per_referral_bytes{};
 	int64_t referred_bonus_bytes{};
 	int64_t bonus_period_seconds{};
+	bool has_referral_network{};
 	std::optional<GetNetworkReferralCodeError> error;
 };
 
@@ -2991,6 +2992,8 @@ struct TransportModePriority {
 struct TransportPacketStats {
 	std::string TransportType{};
 	std::optional<PacketStats> Stats;
+	int64_t H1WebSocketConnectionCount{};
+	int64_t H1PlusConnectionCount{};
 };
 
 struct TransportSettings {
@@ -3000,6 +3003,8 @@ struct TransportSettings {
 
 struct TransportShare {
 	std::string TransportType{};
+	int64_t H1WebSocketConnectionCount{};
+	int64_t H1PlusConnectionCount{};
 	int64_t EgressByteCount{};
 	int64_t IngressByteCount{};
 	int64_t EgressPacketCount{};
@@ -8283,6 +8288,7 @@ inline void to_json(nlohmann::json& j, const GetNetworkReferralCodeResult& v) {
 	j["bonus_per_referral_bytes"] = v.bonus_per_referral_bytes;
 	j["referred_bonus_bytes"] = v.referred_bonus_bytes;
 	j["bonus_period_seconds"] = v.bonus_period_seconds;
+	j["has_referral_network"] = v.has_referral_network;
 	if (v.error) {
 		j["error"] = *v.error;
 	}
@@ -8310,6 +8316,9 @@ inline void from_json(const nlohmann::json& j, GetNetworkReferralCodeResult& v) 
 	}
 	if (auto it = j.find("bonus_period_seconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.bonus_period_seconds);
+	}
+	if (auto it = j.find("has_referral_network"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_referral_network);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		GetNetworkReferralCodeError tmp{};
@@ -13729,6 +13738,8 @@ inline void to_json(nlohmann::json& j, const TransportPacketStats& v) {
 	if (v.Stats) {
 		j["Stats"] = *v.Stats;
 	}
+	j["H1WebSocketConnectionCount"] = v.H1WebSocketConnectionCount;
+	j["H1PlusConnectionCount"] = v.H1PlusConnectionCount;
 }
 inline void from_json(const nlohmann::json& j, TransportPacketStats& v) {
 	if (!j.is_object()) {
@@ -13741,6 +13752,12 @@ inline void from_json(const nlohmann::json& j, TransportPacketStats& v) {
 		PacketStats tmp{};
 		it->get_to(tmp);
 		v.Stats = std::move(tmp);
+	}
+	if (auto it = j.find("H1WebSocketConnectionCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.H1WebSocketConnectionCount);
+	}
+	if (auto it = j.find("H1PlusConnectionCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.H1PlusConnectionCount);
 	}
 }
 
@@ -13768,6 +13785,8 @@ inline void from_json(const nlohmann::json& j, TransportSettings& v) {
 inline void to_json(nlohmann::json& j, const TransportShare& v) {
 	j = nlohmann::json::object();
 	j["TransportType"] = v.TransportType;
+	j["H1WebSocketConnectionCount"] = v.H1WebSocketConnectionCount;
+	j["H1PlusConnectionCount"] = v.H1PlusConnectionCount;
 	j["EgressByteCount"] = v.EgressByteCount;
 	j["IngressByteCount"] = v.IngressByteCount;
 	j["EgressPacketCount"] = v.EgressPacketCount;
@@ -13784,6 +13803,12 @@ inline void from_json(const nlohmann::json& j, TransportShare& v) {
 	}
 	if (auto it = j.find("TransportType"); it != j.end() && !it->is_null()) {
 		it->get_to(v.TransportType);
+	}
+	if (auto it = j.find("H1WebSocketConnectionCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.H1WebSocketConnectionCount);
+	}
+	if (auto it = j.find("H1PlusConnectionCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.H1PlusConnectionCount);
 	}
 	if (auto it = j.find("EgressByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EgressByteCount);
@@ -15341,6 +15366,7 @@ public:
 	std::string tunnelLocalAddress() const;
 	std::string tunnelLocalAddressIpv6() const;
 	bool waitForClose(int64_t timeout_milliseconds) const;
+	void writeMemoryOwnerCensus(const std::string& path) const;
 	/* stable provider identity across process starts */
 	std::vector<uint8_t> getClientKeySeed() const;
 	std::vector<uint8_t> getProvideTlsCertificatePem() const;
@@ -24566,6 +24592,16 @@ inline bool DeviceLocal::waitForClose(int64_t timeout_milliseconds) const {
 	bool r = urnet_device_local_wait_for_close(handle(), timeout_milliseconds);
 	return r;
 }
+inline void DeviceLocal::writeMemoryOwnerCensus(const std::string& path) const {
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_write_memory_owner_census(handle(), path.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_write_memory_owner_census failed");
+	}
+}
 inline bool DeviceLocalKeyMaterial::isEmpty() const {
 	bool r = urnet_device_local_key_material_is_empty(handle());
 	return r;
@@ -28057,6 +28093,9 @@ inline std::string serviceUrl(const std::optional<NetworkSpaceKey>& key, const s
 }
 inline void setControlIpFamilyPolicy(int64_t policy) {
 	urnet_set_control_ip_family_policy(policy);
+}
+inline void setDeviceRpcH1PlusEnabled(bool enabled) {
+	urnet_set_device_rpc_h1_plus_enabled(enabled);
 }
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);

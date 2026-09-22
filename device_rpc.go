@@ -7905,8 +7905,10 @@ type DeviceRemotePacketStats struct {
 
 //gomobile:noexport
 type TransportPacketStatsRpc struct {
-	TransportType TransportType
-	Stats         *PacketStatsRpc
+	TransportType              TransportType
+	Stats                      *PacketStatsRpc
+	H1WebSocketConnectionCount int64
+	H1PlusConnectionCount      int64
 }
 
 // PacketStatsRpc is the explicit gob mirror. TransportPacketStatsList keeps
@@ -7954,8 +7956,10 @@ func newPacketStatsRpc(stats *PacketStats, includeTransportStats bool) *PacketSt
 				continue
 			}
 			rpc.TransportStats = append(rpc.TransportStats, &TransportPacketStatsRpc{
-				TransportType: transportStats.TransportType,
-				Stats:         newPacketStatsRpc(transportStats.Stats, false),
+				TransportType:              transportStats.TransportType,
+				Stats:                      newPacketStatsRpc(transportStats.Stats, false),
+				H1WebSocketConnectionCount: transportStats.H1WebSocketConnectionCount,
+				H1PlusConnectionCount:      transportStats.H1PlusConnectionCount,
 			})
 		}
 	}
@@ -7987,8 +7991,10 @@ func (self *PacketStatsRpc) toPacketStats(includeTransportStats bool) *PacketSta
 				continue
 			}
 			stats.TransportStats.Add(&TransportPacketStats{
-				TransportType: transportStats.TransportType,
-				Stats:         transportStats.Stats.toPacketStats(false),
+				TransportType:              transportStats.TransportType,
+				Stats:                      transportStats.Stats.toPacketStats(false),
+				H1WebSocketConnectionCount: transportStats.H1WebSocketConnectionCount,
+				H1PlusConnectionCount:      transportStats.H1PlusConnectionCount,
 			})
 		}
 	}

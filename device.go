@@ -288,6 +288,11 @@ type PacketStats struct {
 type TransportPacketStats struct {
 	TransportType TransportType
 	Stats         *PacketStats
+	// Live negotiated H1 connections, independent of the cumulative byte
+	// counters. Both can be nonzero in a mixed provider window. Zero for other
+	// transport types and older SDK peers. H1+ remains TransportTypeH1.
+	H1WebSocketConnectionCount int64
+	H1PlusConnectionCount      int64
 }
 
 type TransportPacketStatsList struct {

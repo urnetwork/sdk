@@ -1180,6 +1180,7 @@ char* urnet_device_local_tunnel_dns_setting(uint64_t self);
 char* urnet_device_local_tunnel_local_address(uint64_t self);
 char* urnet_device_local_tunnel_local_address_ipv6(uint64_t self);
 bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_milliseconds);
+bool urnet_device_local_write_memory_owner_census(uint64_t self, const char* path, char** out_error);
 
 /* ----- DeviceLocalKeyMaterial ----- */
 
@@ -1836,6 +1837,7 @@ char* urnet_selectable_transport_modes(void);
 char* urnet_service_host_name(const char* key_json, const char* values_json, const char* service);
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);
 void urnet_set_control_ip_family_policy(int64_t policy);
+void urnet_set_device_rpc_h1_plus_enabled(bool enabled);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
 void urnet_set_extender_store_read_only(bool read_only);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
@@ -2873,6 +2875,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   bonus_per_referral_bytes: number
  *   referred_bonus_bytes: number
  *   bonus_period_seconds: number
+ *   has_referral_network: boolean
  *   error?: GetNetworkReferralCodeError | null
  */
 
@@ -4248,6 +4251,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* TransportPacketStats (json):
  *   TransportType: string
  *   Stats: PacketStats | null
+ *   H1WebSocketConnectionCount: number
+ *   H1PlusConnectionCount: number
  */
 
 /* TransportPacketStatsList (json):
@@ -4261,6 +4266,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* TransportShare (json):
  *   TransportType: string
+ *   H1WebSocketConnectionCount: number
+ *   H1PlusConnectionCount: number
  *   EgressByteCount: number
  *   IngressByteCount: number
  *   EgressPacketCount: number

@@ -123,6 +123,7 @@ type deviceLocalProvider struct {
 	auth                  *connect.ClientAuth
 	authVersion           uint64
 	platformTransport     migratablePlatformTransport
+	h1ConnectionStats     connect.H1ConnectionStats
 	migrationWorkers      sync.WaitGroup
 	closeOnce             sync.Once
 	joinOnce              sync.Once
@@ -275,6 +276,7 @@ func newDeviceLocalProviderWithOverrides(
 	// the provider proves both address families through its family-pinned
 	// transports (IPV6.md A1, A4); nothing else runs on the provider yet, so
 	// the transport is installed without the lock
+	platformTransportSettings.H1ConnectionStats = &provider.h1ConnectionStats
 	provider.platformTransport = provider.newProviderPlatformTransport(
 		auth,
 		targetMode,

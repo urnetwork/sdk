@@ -415,16 +415,18 @@ func jsTransportDistribution(distribution *sdk.TransportDistribution) js.Value {
 				continue
 			}
 			shares = append(shares, map[string]any{
-				"transportType":      share.TransportType,
-				"egressByteCount":    share.EgressByteCount,
-				"ingressByteCount":   share.IngressByteCount,
-				"egressPacketCount":  share.EgressPacketCount,
-				"ingressPacketCount": share.IngressPacketCount,
-				"share":              share.Share,
-				"boundary":           share.Boundary,
-				"percent":            share.Percent,
-				"used":               share.Used,
-				"enabled":            share.Enabled,
+				"transportType":              share.TransportType,
+				"h1WebSocketConnectionCount": share.H1WebSocketConnectionCount,
+				"h1PlusConnectionCount":      share.H1PlusConnectionCount,
+				"egressByteCount":            share.EgressByteCount,
+				"ingressByteCount":           share.IngressByteCount,
+				"egressPacketCount":          share.EgressPacketCount,
+				"ingressPacketCount":         share.IngressPacketCount,
+				"share":                      share.Share,
+				"boundary":                   share.Boundary,
+				"percent":                    share.Percent,
+				"used":                       share.Used,
+				"enabled":                    share.Enabled,
 			})
 		}
 	}

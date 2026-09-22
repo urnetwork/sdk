@@ -452,6 +452,28 @@ export interface PacketStats {
   blockIngressByteCount: number;
 }
 
+/** Traffic share plus live carrier selection; H1+ retains transportType "h1". */
+export interface TransportShare {
+  transportType: string;
+  h1WebSocketConnectionCount: number;
+  h1PlusConnectionCount: number;
+  egressByteCount: number;
+  ingressByteCount: number;
+  egressPacketCount: number;
+  ingressPacketCount: number;
+  share: number;
+  boundary: number;
+  percent: number;
+  used: boolean;
+  enabled: boolean;
+}
+
+export interface TransportDistribution {
+  shares: TransportShare[];
+  byteCount: number;
+  active: boolean;
+}
+
 /**
  * ContractViewController — throughput over the window, for the client feed and
  * the PROVIDER feed (the account's provider-statistics surface). Listener is
@@ -467,6 +489,8 @@ export interface ContractViewController {
   getProviderThroughputPoints(): ThroughputPoint[];
   getPacketStats(): PacketStats | null;
   getProviderPacketStats(): PacketStats | null;
+  getTransportDistribution(): TransportDistribution | null;
+  getProviderTransportDistribution(): TransportDistribution | null;
   getWindowDurationSeconds(): number;
   setWindowDurationSeconds(seconds: number): void;
 

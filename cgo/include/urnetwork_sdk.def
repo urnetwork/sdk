@@ -484,6 +484,7 @@ EXPORTS
 	urnet_device_local_tunnel_local_address
 	urnet_device_local_tunnel_local_address_ipv6
 	urnet_device_local_wait_for_close
+	urnet_device_local_write_memory_owner_census
 	urnet_device_open_socket
 	urnet_device_reconnect
 	urnet_device_refresh_token
@@ -968,6 +969,7 @@ EXPORTS
 	urnet_service_host_name
 	urnet_service_url
 	urnet_set_control_ip_family_policy
+	urnet_set_device_rpc_h1_plus_enabled
 	urnet_set_egress_interface_index
 	urnet_set_extender_store_read_only
 	urnet_set_log_dir

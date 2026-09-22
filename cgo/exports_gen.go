@@ -9957,6 +9957,21 @@ func urnet_device_local_wait_for_close(self C.uint64_t, timeoutMilliseconds C.in
 	return C.bool(r0)
 }
 
+//export urnet_device_local_write_memory_owner_census
+func urnet_device_local_write_memory_owner_census(self C.uint64_t, path *C.char, outError **C.char) C.bool {
+	defer cgoGuard("urnet_device_local_write_memory_owner_census")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_write_memory_owner_census")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.WriteMemoryOwnerCensus(goString(path))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_device_local_key_material_is_empty
 func urnet_device_local_key_material_is_empty(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_device_local_key_material_is_empty")
@@ -15805,6 +15820,12 @@ func urnet_service_url(key *C.char, values *C.char, scheme *C.char, service *C.c
 func urnet_set_control_ip_family_policy(policy C.int64_t) {
 	defer cgoGuard("urnet_set_control_ip_family_policy")
 	sdk.SetControlIpFamilyPolicy(int(int64(policy)))
+}
+
+//export urnet_set_device_rpc_h1_plus_enabled
+func urnet_set_device_rpc_h1_plus_enabled(enabled C.bool) {
+	defer cgoGuard("urnet_set_device_rpc_h1_plus_enabled")
+	sdk.SetDeviceRpcH1PlusEnabled(bool(enabled))
 }
 
 //export urnet_set_egress_interface_index
