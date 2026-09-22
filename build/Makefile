@@ -216,6 +216,4 @@ _init:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
 	go get golang.org/x/mobile/bind@$(GOMOBILE_VERSION) && \
 	go mod download "github.com/urnetwork/sdk" && \
-	go mod download "github.com/urnetwork/connect" && \
-	go clean -cache && \
-	go clean -modcache;
+	go mod download "github.com/urnetwork/connect";
