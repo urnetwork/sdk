@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	// "runtime/debug"
@@ -62,6 +63,10 @@ type DeviceRecreatedListener interface {
 }
 
 type deviceRpcSettings struct {
+	// Native custom RPC framing is enabled only for an explicit rollout cohort.
+	// Browsers ignore this setting and always use WebSocket.
+	EnableH1Plus        bool
+	H1PlusStats         *connect.H1PlusStats
 	RpcCallTimeout      time.Duration
 	RpcConnectTimeout   time.Duration
 	RpcReconnectTimeout time.Duration
@@ -133,6 +138,14 @@ type deviceRpcSettings struct {
 	DeviceLocalSettings
 }
 
+var defaultDeviceRpcH1Plus atomic.Bool
+
+// SetDeviceRpcH1PlusEnabled opts subsequently created native RPC sessions into
+// authenticated urnetwork-framerxl/1 with WebSocket fallback. The initial
+// default is false; browsers always skip the custom attempt. The connect
+// process-wide H1+ disable switch remains authoritative for all sessions.
+func SetDeviceRpcH1PlusEnabled(enabled bool) { defaultDeviceRpcH1Plus.Store(enabled) }
+
 // deviceRpcDefaultAddress is the default localhost rpc address, used by both
 // the DeviceLocal listener and the DeviceRemote dialer when no explicit
 // transport is set. A var so the test harness can point an entire test process
@@ -175,6 +188,7 @@ func (self *deviceRpcSettings) httpMaxConcurrent() int {
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
+		EnableH1Plus:      defaultDeviceRpcH1Plus.Load(),
 		RpcCallTimeout:    60 * time.Second,
 		RpcConnectTimeout: 30 * time.Second,
 		// Full-jitter over one second previously averaged two attempts per
