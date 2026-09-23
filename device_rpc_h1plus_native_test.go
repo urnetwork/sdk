@@ -561,3 +561,16 @@ func TestDeviceRpcH1PlusErrorsDoNotContainCredential(t *testing.T) {
 		t.Fatalf("unsafe or missing native dial error: %v", err)
 	}
 }
+
+// H1+ is opt-out for device RPC: new sessions offer XL unless the process opts
+// out, and opting back in restores the default.
+func TestDeviceRpcH1PlusEnabledByDefault(t *testing.T) {
+	if !defaultDeviceRpcSettings().EnableH1Plus {
+		t.Fatal("device RPC opted out of H1+ by default")
+	}
+	SetDeviceRpcH1PlusEnabled(false)
+	defer SetDeviceRpcH1PlusEnabled(true)
+	if defaultDeviceRpcSettings().EnableH1Plus {
+		t.Fatal("device RPC ignored the opt-out")
+	}
+}

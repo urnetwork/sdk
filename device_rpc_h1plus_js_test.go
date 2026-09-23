@@ -11,9 +11,10 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// A native rollout setting must never send the browser down an unsupported
-// raw-HTTP-upgrade path. Drive the actual browser dial function with the browser
-// WebSocket boundary instrumented, including its normal URL authorization.
+// The native H1+ setting, on by default, must never send the browser down an
+// unsupported raw-HTTP-upgrade path. Drive the actual browser dial function
+// with the browser WebSocket boundary instrumented, including its normal URL
+// authorization.
 func TestDeviceRpcH1PlusBrowserSkipsCustomUpgrade(t *testing.T) {
 	if connect.H1PlusAvailable() {
 		t.Fatal("browser advertised a raw HTTP upgrade capability")

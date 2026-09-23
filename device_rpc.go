@@ -63,7 +63,7 @@ type DeviceRecreatedListener interface {
 }
 
 type deviceRpcSettings struct {
-	// Native custom RPC framing is enabled only for an explicit rollout cohort.
+	// Native custom RPC framing, on by default (SetDeviceRpcH1PlusEnabled).
 	// Browsers ignore this setting and always use WebSocket.
 	EnableH1Plus        bool
 	H1PlusStats         *connect.H1PlusStats
@@ -138,13 +138,15 @@ type deviceRpcSettings struct {
 	DeviceLocalSettings
 }
 
-var defaultDeviceRpcH1Plus atomic.Bool
+// H1+ is opt-out, so the zero value leaves it enabled
+var deviceRpcH1PlusDisabled atomic.Bool
 
-// SetDeviceRpcH1PlusEnabled opts subsequently created native RPC sessions into
-// authenticated urnetwork-framerxl/1 with WebSocket fallback. The initial
-// default is false; browsers always skip the custom attempt. The connect
-// process-wide H1+ disable switch remains authoritative for all sessions.
-func SetDeviceRpcH1PlusEnabled(enabled bool) { defaultDeviceRpcH1Plus.Store(enabled) }
+// SetDeviceRpcH1PlusEnabled sets whether subsequently created native RPC
+// sessions use authenticated urnetwork-framerxl/1 with WebSocket fallback.
+// Enabled by default; pass false to opt out. Browsers always skip the custom
+// attempt. The connect process-wide H1+ disable switch remains authoritative
+// for all sessions.
+func SetDeviceRpcH1PlusEnabled(enabled bool) { deviceRpcH1PlusDisabled.Store(!enabled) }
 
 // deviceRpcDefaultAddress is the default localhost rpc address, used by both
 // the DeviceLocal listener and the DeviceRemote dialer when no explicit
@@ -188,7 +190,7 @@ func (self *deviceRpcSettings) httpMaxConcurrent() int {
 
 func defaultDeviceRpcSettings() *deviceRpcSettings {
 	return &deviceRpcSettings{
-		EnableH1Plus:      defaultDeviceRpcH1Plus.Load(),
+		EnableH1Plus:      !deviceRpcH1PlusDisabled.Load(),
 		RpcCallTimeout:    60 * time.Second,
 		RpcConnectTimeout: 30 * time.Second,
 		// Full-jitter over one second previously averaged two attempts per
