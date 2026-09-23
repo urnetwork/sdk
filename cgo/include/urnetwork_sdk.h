@@ -1174,6 +1174,7 @@ void urnet_device_local_sync_sn_wallet(uint64_t self, urnet_sn_get_wallet_cb cal
 char* urnet_device_local_take_memory_samples_json(uint64_t self);
 bool urnet_device_local_transfer_diag_defer_timeout_resend(uint64_t self);
 bool urnet_device_local_transfer_diag_lane_rule(uint64_t self);
+char* urnet_device_local_transfer_diagnostic_snapshot_json(uint64_t self, char** out_error);
 char* urnet_device_local_tunnel_dns_addresses_ipv4(uint64_t self);
 char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
@@ -1846,6 +1847,7 @@ bool urnet_set_log_verbosity(int64_t level, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_memory_profile_rate(int64_t byte_count);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
+bool urnet_set_transfer_diagnostic_snapshots_enabled(bool enabled);
 char* urnet_short_ss58(const char* address);
 char* urnet_sn_claim_transactions_for(const char* settings_json, const char* coldkey_ss58, const char* epochs_json, char** out_error);
 void urnet_sn_claims_for(const char* settings_json, const char* coldkey_ss58, int64_t from_epoch, urnet_sn_claims_cb callback_result, void* callback_user_data);

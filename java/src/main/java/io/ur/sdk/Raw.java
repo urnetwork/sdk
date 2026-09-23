@@ -606,6 +606,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_memory_used(long a0);
   long urnet_device_local_migrate_exit(long a0, String a1);
   void urnet_device_local_network_changed(long a0);
+  void urnet_device_local_network_quality_changed(long a0);
   void urnet_device_local_notify_network_change(long a0);
   long urnet_device_local_open_account_preferences_view_controller(long a0);
   long urnet_device_local_open_account_view_controller(long a0);
@@ -671,12 +672,14 @@ public interface Raw extends Library {
   Pointer urnet_device_local_take_memory_samples_json(long a0);
   byte urnet_device_local_transfer_diag_defer_timeout_resend(long a0);
   byte urnet_device_local_transfer_diag_lane_rule(long a0);
+  Pointer urnet_device_local_transfer_diagnostic_snapshot_json(long a0, PointerByReference a1);
   Pointer urnet_device_local_tunnel_dns_addresses_ipv4(long a0);
   Pointer urnet_device_local_tunnel_dns_addresses_ipv6(long a0);
   Pointer urnet_device_local_tunnel_dns_setting(long a0);
   Pointer urnet_device_local_tunnel_local_address(long a0);
   Pointer urnet_device_local_tunnel_local_address_ipv6(long a0);
   byte urnet_device_local_wait_for_close(long a0, long a1);
+  byte urnet_device_local_write_memory_owner_census(long a0, String a1, PointerByReference a2);
   byte urnet_device_local_key_material_is_empty(long a0);
   void urnet_device_local_key_material_set_extender_key_seed(long a0, Pointer a1, int a2);
   Pointer urnet_device_local_load_result_get_default_error(long a0);
@@ -1228,6 +1231,7 @@ public interface Raw extends Library {
   Pointer urnet_service_host_name(String a0, String a1, String a2);
   Pointer urnet_service_url(String a0, String a1, String a2, String a3);
   void urnet_set_control_ip_family_policy(long a0);
+  void urnet_set_device_rpc_h1_plus_enabled(byte a0);
   void urnet_set_egress_interface_index(long a0, long a1);
   void urnet_set_extender_store_read_only(byte a0);
   byte urnet_set_log_dir(String a0, PointerByReference a1);
@@ -1236,6 +1240,7 @@ public interface Raw extends Library {
   void urnet_set_memory_limit(long a0);
   void urnet_set_memory_profile_rate(long a0);
   void urnet_set_message_pool_memory_targets(long a0, long a1);
+  byte urnet_set_transfer_diagnostic_snapshots_enabled(byte a0);
   Pointer urnet_short_ss58(String a0);
   Pointer urnet_sn_claim_transactions_for(String a0, String a1, String a2, PointerByReference a3);
   void urnet_sn_claims_for(String a0, String a1, long a2, urnet_sn_claims_cb a3, Pointer a4);

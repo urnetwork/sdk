@@ -1379,6 +1379,9 @@ func newDeviceLocalWithOverridesForPlatform(
 		settings.ClientSettings.EncryptionSettings = &encryption
 	}
 
+	// Acceptance-only counters must be present before provider/window settings
+	// are copied into live clients. The default path allocates nothing.
+	transferDiagStats := prepareTransferDiag(&settings.ClientSettings)
 	var provider *deviceLocalProvider
 	if settings.AllowProvider {
 		if settings.testingBeforeProviderConstruction != nil {
@@ -1465,6 +1468,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		deviceSpec:             deviceSpec,
 		appVersion:             appVersion,
 		settings:               settings,
+		transferDiagStats:      transferDiagStats,
 		peerKeyPinStore:        peerKeyPinStore,
 		log:                    log,
 		clientId:               clientId,
@@ -1708,7 +1712,6 @@ func newDeviceLocalWithOverridesForPlatform(
 		mobile,
 	)
 	deviceLocal.updateMobilePacketPerformanceModeWithLock()
-	deviceLocal.startTransferDiag()
 	if deviceLocal.mobilePacketPressure != nil {
 		deviceLocal.platformTransportReceiveStats =
 			&connect.PlatformTransportReceiveStats{}
@@ -1720,6 +1723,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			<-memorySamplerDone
 		}()
 	}
+	deviceLocal.startTransferDiag()
 
 	// a provider attests its measured distance to the extenders it probes
 	// (connect/DESIGNNOTES4.md §1). A consumer never identifies itself to an

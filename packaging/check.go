@@ -30,6 +30,19 @@ func verifiedFiles(dir, version string, needReceipt bool) (inventory, []string) 
 	require(len(result) > 0, "empty package artifact set")
 	return inv, result
 }
+
+func rubyFFIInstallArgs(system, arch string) []string {
+	args := []string{"install", "ffi", "-v", "1.17.2", "--no-document"}
+	if system == "darwin" {
+		// Apple's universal RubyGems platform accepts both arm64 and x86_64
+		// gems. Restrict native FFI to the same CPU as this host's SDK library.
+		cpu := map[string]string{"arm64": "arm64", "amd64": "x86_64"}[arch]
+		require(cpu != "", "unsupported Darwin Ruby consumer architecture: %s", arch)
+		args = append(args, "--platform", cpu+"-darwin")
+	}
+	return args
+}
+
 func checkPackage(language, out string) {
 	var manifest inventory
 	jsonRead(filepath.Join(out, "manifest.json"), &manifest)
@@ -67,12 +80,14 @@ if (!Sdk.TakeString(Raw.urnet_new_network_space_key("héllo", "main"))!.Contains
 using var handle = new Handle(Raw.urnet_new_network_space_manager_no_storage());
 Raw.urnet_network_space_manager_close(handle.Value);
 `)
-		command(temp, e, d.executable, "run", "--no-restore")
+		// Keep compiler/build processes owned by the consumer check; no shared
+		// server may survive its temporary project or require host-wide shutdown.
+		command(temp, e, d.executable, "run", "--disable-build-servers", "--no-restore")
 	case "ruby":
 		e["GEM_HOME"] = filepath.Join(temp, "gems")
 		e["GEM_PATH"] = e["GEM_HOME"]
 		e["SDK_GEM_VERSION"] = languageVersion("ruby", manifest.Version)
-		command(temp, e, "gem", "install", "ffi", "-v", "1.17.2", "--no-document")
+		command(temp, e, "gem", rubyFFIInstallArgs(runtime.GOOS, runtime.GOARCH)...)
 		for _, p := range artifacts {
 			if strings.HasSuffix(p, ".gem") {
 				command(temp, e, "gem", "install", "--local", "--ignore-dependencies", "--no-document", p)

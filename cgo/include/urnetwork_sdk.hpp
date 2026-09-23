@@ -15360,6 +15360,7 @@ public:
 	std::string takeMemorySamplesJson() const;
 	bool transferDiagDeferTimeoutResend() const;
 	bool transferDiagLaneRule() const;
+	std::string transferDiagnosticSnapshotJson() const;
 	std::optional<StringList> tunnelDnsAddressesIpv4() const;
 	std::optional<StringList> tunnelDnsAddressesIpv6() const;
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
@@ -24556,6 +24557,14 @@ inline bool DeviceLocal::transferDiagLaneRule() const {
 	bool r = urnet_device_local_transfer_diag_lane_rule(handle());
 	return r;
 }
+inline std::string DeviceLocal::transferDiagnosticSnapshotJson() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_local_transfer_diagnostic_snapshot_json(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
 inline std::optional<StringList> DeviceLocal::tunnelDnsAddressesIpv4() const {
 	char* r_c = urnet_device_local_tunnel_dns_addresses_ipv4(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -28141,6 +28150,10 @@ inline void setMemoryProfileRate(int64_t byte_count) {
 }
 inline void setMessagePoolMemoryTargets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count) {
 	urnet_set_message_pool_memory_targets(packet_pool_byte_count, large_object_pool_byte_count);
+}
+inline bool setTransferDiagnosticSnapshotsEnabled(bool enabled) {
+	bool r = urnet_set_transfer_diagnostic_snapshots_enabled(enabled);
+	return r;
 }
 inline std::string shortSs58(const std::string& address) {
 	char* r_c = urnet_short_ss58(address.c_str());

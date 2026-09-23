@@ -1,8 +1,11 @@
 package sdk
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -22,6 +25,27 @@ import (
 // allocates nothing: the data-plane stats object is only created when the
 // seam is on.
 var transferDiagLogSeconds string = ""
+
+var transferDiagnosticSnapshotsEnabled atomic.Bool
+
+// SetTransferDiagnosticSnapshotsEnabled opts subsequently constructed devices
+// into acceptance diagnostics and returns the previous setting. It installs
+// only the real P2P counters, not a ticker, logger, or snapshot collector. Call
+// before creating the test device, then restore the previous value on teardown.
+// Existing devices are deliberately unaffected. Ordinary applications leave
+// this false; their data plane allocates and records no diagnostic counters.
+func SetTransferDiagnosticSnapshotsEnabled(enabled bool) bool {
+	return transferDiagnosticSnapshotsEnabled.Swap(enabled)
+}
+
+func prepareTransferDiag(clientSettings *connect.ClientSettings) *connect.P2pDataPlaneStats {
+	if !transferDiagnosticSnapshotsEnabled.Load() && transferDiagInterval() <= 0 {
+		return nil
+	}
+	stats := &connect.P2pDataPlaneStats{}
+	attachTransferDiagStats(clientSettings, stats)
+	return stats
+}
 
 func transferDiagInterval() time.Duration {
 	if transferDiagLogSeconds == "" {
@@ -299,7 +323,10 @@ type transferDiagReceive struct {
 // attachTransferDiag points a client's p2p transports at the device's shared
 // data-plane counters. A no-op unless the seam is on.
 func (self *DeviceLocal) attachTransferDiag(clientSettings *connect.ClientSettings) {
-	stats := self.transferDiagStats
+	attachTransferDiagStats(clientSettings, self.transferDiagStats)
+}
+
+func attachTransferDiagStats(clientSettings *connect.ClientSettings, stats *connect.P2pDataPlaneStats) {
 	if stats == nil || clientSettings == nil {
 		return
 	}
@@ -314,16 +341,13 @@ func (self *DeviceLocal) attachTransferDiag(clientSettings *connect.ClientSettin
 	p2pSettings.DataPlaneStats = stats
 }
 
-// startTransferDiag creates the shared counters, attaches them to the device
-// client settings (the provider client is built from these later) and starts
-// the logger. Called once at device construction.
+// startTransferDiag starts only the optional build-time logger. Counters are
+// installed before provider construction, not into already running settings.
 func (self *DeviceLocal) startTransferDiag() {
 	interval := transferDiagInterval()
 	if interval <= 0 {
 		return
 	}
-	self.transferDiagStats = &connect.P2pDataPlaneStats{}
-	self.attachTransferDiag(&self.settings.ClientSettings)
 	self.lifecycleWorkers.Add(1)
 	go func() {
 		defer self.lifecycleWorkers.Done()
@@ -340,8 +364,7 @@ func (self *DeviceLocal) startTransferDiag() {
 	}()
 }
 
-func (self *DeviceLocal) logTransferDiag() {
-	millis := time.Now().UnixMilli()
+func (self *DeviceLocal) collectTransferDiag(millis int64) []any {
 	state := transferDiagState{
 		Part:           "state",
 		UnixMillis:     millis,
@@ -414,6 +437,11 @@ func (self *DeviceLocal) logTransferDiag() {
 		}, deviceBudget, transferDiagTransferBudget(self.MemoryUsed(), millis))
 	}
 	lines = append([]any{state}, lines...)
+	return lines
+}
+
+func (self *DeviceLocal) logTransferDiag() {
+	lines := self.collectTransferDiag(time.Now().UnixMilli())
 	for _, line := range lines {
 		encoded, err := json.Marshal(line)
 		if err != nil {
@@ -421,6 +449,44 @@ func (self *DeviceLocal) logTransferDiag() {
 		}
 		glog.Infof("[flightgate] %s\n", string(encoded))
 	}
+}
+
+const transferDiagnosticSnapshotMaxBytes = 64 * 1024
+
+var errTransferDiagnosticUnavailable = errors.New("transfer diagnostic snapshot requires an opted-in mobile device")
+var errTransferDiagnosticSnapshotTooLarge = errors.New("transfer diagnostic snapshot exceeds 64 KiB")
+
+type boundedTransferDiagnosticBuffer struct {
+	bytes.Buffer
+}
+
+func (b *boundedTransferDiagnosticBuffer) Write(p []byte) (int, error) {
+	if len(p) > transferDiagnosticSnapshotMaxBytes-b.Len() {
+		return 0, errTransferDiagnosticSnapshotTooLarge
+	}
+	return b.Buffer.Write(p)
+}
+
+// TransferDiagnosticSnapshotJson returns one on-demand private NDJSON batch.
+// All parts share unix_millis; carrier root/child fields come from one atomic
+// StatsWithRoot snapshot, and the transfer hierarchy uses the same collector
+// as the existing diagnostic logger. It neither drains the primitive sampler
+// nor changes budgets, connectivity, GC, or routes. No batch is retained.
+// Opt-in is required before device construction so P2P counters measure real
+// traffic from both the provider and every outbound window. Missing evidence
+// is an error, not a plausible zero-valued snapshot.
+func (self *DeviceLocal) TransferDiagnosticSnapshotJson() (string, error) {
+	if self.transferDiagStats == nil || self.memorySampler == nil || self.platformTransportBudget == nil {
+		return "", errTransferDiagnosticUnavailable
+	}
+	var buffer boundedTransferDiagnosticBuffer
+	encoder := json.NewEncoder(&buffer)
+	for _, part := range self.collectTransferDiag(time.Now().UnixMilli()) {
+		if err := encoder.Encode(part); err != nil {
+			return "", err
+		}
+	}
+	return buffer.String(), nil
 }
 
 // SetTransferDiagDeferTimeoutResend turns FLIGHTGATEFIX §13.5's deferred

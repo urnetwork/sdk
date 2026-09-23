@@ -2,12 +2,14 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"runtime/metrics"
 	"runtime/pprof"
 	"sync"
 	"sync/atomic"
@@ -36,8 +38,10 @@ import (
 // the provider security policy, the exit nat's per-flow tcp/udp state, and the
 // return-path send sequences all carry real traffic.
 //
-// The test emits one greppable `[provider-mem]` line with the stable
-// measurement set, to compare across provider memory changes:
+// The test always runs a predeclared cohort of three fresh two-core processes.
+// Every process must pass; no failing peak is retried or removed. Each emits a
+// greppable `[provider-mem]` line and an exact `[provider-mem-json]` record with
+// allocator, GC, actual sampling gaps and completed-work telemetry:
 //
 //   - idle: quiesced heap with the device + peers connected, before load
 //   - peakTotal/peakHeap: max sampled Go soft-limit usage / live heap during
@@ -55,7 +59,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DeviceLocal provider memory test in -short mode")
 	}
-	if runIsolatedLoadTest(t) {
+	if runProviderMemoryCohort(t) {
 		return
 	}
 
@@ -198,6 +202,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	defer closePeers()
 
 	idleGoroutines, idleHeap := sampleStable()
+	idleStats := GetMemoryStats()
 	t.Logf("idle (device + %d peers connected): goroutines=%d heap=%s",
 		peerCount, idleGoroutines, humanBytes(idleHeap))
 
@@ -272,7 +277,52 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 
 	closePeers()
 	finalGoroutines, finalHeap := sampleStable()
+	finalStats := GetMemoryStats()
 	writeProviderMemProfile(t, "provider_mem_final")
+
+	// Retain exact bytes and coincident allocator state, not just rounded
+	// MiB or quiesced HeapAlloc. No JSON allocation occurs during the load.
+	gcPolicy := [...]metrics.Sample{{Name: "/gc/gogc:percent"}}
+	metrics.Read(gcPolicy[:])
+	if gcPolicy[0].Value.Kind() != metrics.KindUint64 || gcPolicy[0].Value.Uint64() != 10 {
+		t.Fatal("provider memory measurement lost its pinned GOGC=10 policy")
+	}
+	measurement := struct {
+		PID           int                    `json:"pid"`
+		GoVersion     string                 `json:"go_version"`
+		GOOS          string                 `json:"goos"`
+		GOARCH        string                 `json:"goarch"`
+		GOMAXPROCS    int                    `json:"gomaxprocs"`
+		HostCPUs      int                    `json:"host_cpus"`
+		ProfileRate   int                    `json:"memory_profile_rate_bytes"`
+		GOGC          uint64                 `json:"gogc"`
+		SoftLimit     int64                  `json:"soft_limit_bytes"`
+		PeakCeiling   int64                  `json:"peak_ceiling_bytes"`
+		Race          bool                   `json:"race"`
+		TCPBytes      int64                  `json:"tcp_bytes_completed"`
+		UDPRoundTrips int                    `json:"udp_round_trips_completed"`
+		TCPDuration   time.Duration          `json:"tcp_duration_ns"`
+		UDPDuration   time.Duration          `json:"udp_duration_ns"`
+		Idle          providerMemorySnapshot `json:"idle"`
+		TCP           peakMemoryTelemetry    `json:"tcp"`
+		UDP           peakMemoryTelemetry    `json:"udp"`
+		Loaded        providerMemorySnapshot `json:"loaded"`
+		Final         providerMemorySnapshot `json:"final"`
+	}{
+		PID: os.Getpid(), GoVersion: runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+		GOMAXPROCS: runtime.GOMAXPROCS(0), HostCPUs: runtime.NumCPU(), ProfileRate: runtime.MemProfileRate,
+		GOGC:      gcPolicy[0].Value.Uint64(),
+		SoftLimit: debug.SetMemoryLimit(-1), PeakCeiling: peakTotalCeiling, Race: raceEnabled,
+		TCPBytes: bytesMoved, UDPRoundTrips: peerCount * udpFlowsPerPeer,
+		TCPDuration: tcpElapsed, UDPDuration: udpElapsed,
+		Idle: providerMemoryValues(idleStats), TCP: tcpSampler.telemetry, UDP: udpSampler.telemetry,
+		Loaded: providerMemoryValues(stats), Final: providerMemoryValues(finalStats),
+	}
+	encoded, err := json.Marshal(measurement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("[provider-mem-json] %s", encoded)
 
 	// the stable measurement line for comparing provider memory changes
 	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s loadedTotal=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d tcpMiBps=%.1f udpRps=%.1f tcpPeakTotal=%s udpPeakTotal=%s",
@@ -526,6 +576,71 @@ func startUdpEchoServer(t *testing.T) (addr string, closeFn func()) {
 	}
 }
 
+// Snapshots keep coincident allocator state: independent maxima cannot explain
+// which allocation classes accounted for the actual total-runtime peak.
+type providerMemorySnapshot struct {
+	RuntimeBytes      int64 `json:"runtime_bytes"`
+	HeapLiveBytes     int64 `json:"heap_live_bytes"`
+	HeapAllocBytes    int64 `json:"heap_alloc_bytes"`
+	HeapInuseBytes    int64 `json:"heap_inuse_bytes"`
+	HeapSysBytes      int64 `json:"heap_sys_bytes"`
+	HeapReleasedBytes int64 `json:"heap_released_bytes"`
+	SysBytes          int64 `json:"sys_bytes"`
+	StackInuseBytes   int64 `json:"stack_inuse_bytes"`
+	MSpanInuseBytes   int64 `json:"mspan_inuse_bytes"`
+	MCacheInuseBytes  int64 `json:"mcache_inuse_bytes"`
+	GCSysBytes        int64 `json:"gc_sys_bytes"`
+	OtherSysBytes     int64 `json:"other_sys_bytes"`
+	ProfilingBytes    int64 `json:"profiling_bucket_bytes"`
+	NumGC             int64 `json:"num_gc"`
+	Goroutines        int   `json:"goroutines"`
+}
+
+func providerMemoryValues(stats *MemoryStats) providerMemorySnapshot {
+	return providerMemorySnapshot{
+		RuntimeBytes: stats.TotalRuntimeByteCount, HeapLiveBytes: stats.HeapLiveByteCount,
+		HeapAllocBytes: stats.HeapAllocByteCount, HeapInuseBytes: stats.HeapInuseByteCount,
+		HeapSysBytes: stats.HeapSystemByteCount, HeapReleasedBytes: stats.HeapReleasedByteCount,
+		SysBytes: stats.SystemByteCount, NumGC: stats.GCCycleCount, Goroutines: stats.GoroutineCount,
+		StackInuseBytes: stats.StackInuseByteCount, MSpanInuseBytes: stats.MSpanInuseByteCount,
+		MCacheInuseBytes: stats.MCacheInuseByteCount, GCSysBytes: stats.GCSystemByteCount,
+		OtherSysBytes: stats.OtherSystemByteCount, ProfilingBytes: stats.ProfilingBucketByteCount,
+	}
+}
+
+const peakMemorySampleCadence = 20 * time.Millisecond
+
+type peakMemoryTelemetry struct {
+	Cadence       time.Duration          `json:"requested_cadence_ns"`
+	Samples       int                    `json:"samples"`
+	Duration      time.Duration          `json:"duration_ns"`
+	MaxGap        time.Duration          `json:"max_gap_ns"`
+	AtPeak        providerMemorySnapshot `json:"at_runtime_peak"`
+	PeakElapsed   time.Duration          `json:"peak_elapsed_ns"`
+	PeakHeapAlloc int64                  `json:"peak_heap_alloc_bytes"`
+	PeakHeapInuse int64                  `json:"peak_heap_inuse_bytes"`
+	PeakSys       int64                  `json:"peak_sys_bytes"`
+	FirstGC       int64                  `json:"first_num_gc"`
+	LastGC        int64                  `json:"last_num_gc"`
+	first, last   time.Time
+}
+
+func (self *peakMemoryTelemetry) record(at time.Time, stats providerMemorySnapshot) {
+	if self.Samples == 0 {
+		self.Cadence, self.first, self.FirstGC = peakMemorySampleCadence, at, stats.NumGC
+	} else {
+		self.MaxGap = max(self.MaxGap, at.Sub(self.last))
+	}
+	self.Samples++
+	self.last, self.LastGC, self.Duration = at, stats.NumGC, at.Sub(self.first)
+	if stats.RuntimeBytes > self.AtPeak.RuntimeBytes {
+		self.AtPeak, self.PeakElapsed = stats, self.Duration
+	}
+	self.PeakHeapAlloc = max(self.PeakHeapAlloc, stats.HeapAllocBytes)
+	self.PeakHeapInuse = max(self.PeakHeapInuse, stats.HeapInuseBytes)
+	self.PeakSys = max(self.PeakSys, stats.SysBytes)
+}
+
 // peakSampler tracks the max Go soft-limit-accounted bytes, live heap, and
 // goroutine count while running. This is runtime-managed memory minus released
 // heap pages, not process RSS or the iOS jetsam footprint.
@@ -536,6 +651,9 @@ type peakSampler struct {
 	totalMax     atomic.Int64
 	heapMax      atomic.Int64
 	goroutineMax atomic.Int64
+	// Written only by the sampler, then by stop after joining the sampler.
+	// Callers inspect telemetry only after stop; no retained sample list grows.
+	telemetry peakMemoryTelemetry
 }
 
 func startPeakSampler() *peakSampler {
@@ -545,7 +663,7 @@ func startPeakSampler() *peakSampler {
 	}
 	go func() {
 		defer close(self.doneCh)
-		ticker := time.NewTicker(20 * time.Millisecond)
+		ticker := time.NewTicker(peakMemorySampleCadence)
 		defer ticker.Stop()
 		for {
 			self.sample()
@@ -560,7 +678,9 @@ func startPeakSampler() *peakSampler {
 }
 
 func (self *peakSampler) sample() {
-	stats := GetMemoryStats()
+	var stats MemoryStats
+	readMemoryStats(&stats)
+	self.telemetry.record(time.Now(), providerMemoryValues(&stats))
 	if self.totalMax.Load() < stats.TotalRuntimeByteCount {
 		self.totalMax.Store(stats.TotalRuntimeByteCount)
 	}

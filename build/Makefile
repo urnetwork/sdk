@@ -8,6 +8,7 @@ MOBILE_RUNTIME_GODEBUG := $(shell mobile_default_godebug="$$(go list -f '{{.Defa
 MOBILE_RUNTIME_LDFLAG := -X=runtime.godebugDefault=$(MOBILE_RUNTIME_GODEBUG)
 SDK_BUILD_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 ANDROID_OUTPUT_GATE := $(dir $(SDK_BUILD_MAKEFILE))sdk-android-output-lock.sh
+GOMOBILE_BIND_RETRY := $(dir $(SDK_BUILD_MAKEFILE))gomobile-bind-retry.sh
 
 # Android SDK staging, publication, cleanup, and input initialization share a
 # nonblocking kernel lock. Waiting would hide overlapping build ownership and
@@ -83,7 +84,7 @@ _build_android:
 	BUILD_DIR=android.`date +%s`; \
 	test ! -e "$$BUILD_DIR"; \
 	mkdir "$$BUILD_DIR"; \
-	gomobile bind \
+	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
 		-tags sdk_mobile_bind \
 		-javapkg com.bringyour \
@@ -130,7 +131,7 @@ build_apple:
 	BUILD_DIR=apple.`date +%s`; \
 	test ! -e "$$BUILD_DIR"; \
 	mkdir "$$BUILD_DIR"; \
-	gomobile bind \
+	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-tags sdk_mobile_bind \
 		-bundleid network.ur \
@@ -140,7 +141,7 @@ build_apple:
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
-	gomobile bind \
+	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
 		-bundleid network.ur \
 		-tags sdk_mobile_bind,ios_extension \

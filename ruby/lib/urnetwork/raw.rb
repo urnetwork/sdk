@@ -605,6 +605,7 @@ module URnetwork
       attach_function :urnet_device_local_memory_used, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_migrate_exit, [:uint64, :string], :int64, blocking: true
       attach_function :urnet_device_local_network_changed, [:uint64], :void, blocking: true
+      attach_function :urnet_device_local_network_quality_changed, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_notify_network_change, [:uint64], :void, blocking: true
       attach_function :urnet_device_local_open_account_preferences_view_controller, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_local_open_account_view_controller, [:uint64], :uint64, blocking: true
@@ -670,12 +671,14 @@ module URnetwork
       attach_function :urnet_device_local_take_memory_samples_json, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_transfer_diag_defer_timeout_resend, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_transfer_diag_lane_rule, [:uint64], :bool, blocking: true
+      attach_function :urnet_device_local_transfer_diagnostic_snapshot_json, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_dns_addresses_ipv4, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_dns_addresses_ipv6, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_dns_setting, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_local_address, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_local_address_ipv6, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_wait_for_close, [:uint64, :int64], :bool, blocking: true
+      attach_function :urnet_device_local_write_memory_owner_census, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_key_material_is_empty, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_key_material_set_extender_key_seed, [:uint64, :pointer, :int32], :void, blocking: true
       attach_function :urnet_device_local_load_result_get_default_error, [:uint64], :pointer, blocking: true
@@ -1227,6 +1230,7 @@ module URnetwork
       attach_function :urnet_service_host_name, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_service_url, [:string, :string, :string, :string], :pointer, blocking: true
       attach_function :urnet_set_control_ip_family_policy, [:int64], :void, blocking: true
+      attach_function :urnet_set_device_rpc_h1_plus_enabled, [:bool], :void, blocking: true
       attach_function :urnet_set_egress_interface_index, [:int64, :int64], :void, blocking: true
       attach_function :urnet_set_extender_store_read_only, [:bool], :void, blocking: true
       attach_function :urnet_set_log_dir, [:string, :pointer], :bool, blocking: true
@@ -1235,6 +1239,7 @@ module URnetwork
       attach_function :urnet_set_memory_limit, [:int64], :void, blocking: true
       attach_function :urnet_set_memory_profile_rate, [:int64], :void, blocking: true
       attach_function :urnet_set_message_pool_memory_targets, [:int64, :int64], :void, blocking: true
+      attach_function :urnet_set_transfer_diagnostic_snapshots_enabled, [:bool], :bool, blocking: true
       attach_function :urnet_short_ss58, [:string], :pointer, blocking: true
       attach_function :urnet_sn_claim_transactions_for, [:string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_sn_claims_for, [:string, :string, :int64, :urnet_sn_claims_cb, :pointer], :void, blocking: true

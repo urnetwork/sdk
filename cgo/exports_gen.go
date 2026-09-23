@@ -9882,6 +9882,21 @@ func urnet_device_local_transfer_diag_lane_rule(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_device_local_transfer_diagnostic_snapshot_json
+func urnet_device_local_transfer_diagnostic_snapshot_json(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_device_local_transfer_diagnostic_snapshot_json")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_transfer_diagnostic_snapshot_json")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.TransferDiagnosticSnapshotJson()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
+}
+
 //export urnet_device_local_tunnel_dns_addresses_ipv4
 func urnet_device_local_tunnel_dns_addresses_ipv4(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_tunnel_dns_addresses_ipv4")
@@ -15889,6 +15904,13 @@ func urnet_set_memory_profile_rate(byteCount C.int64_t) {
 func urnet_set_message_pool_memory_targets(packetPoolByteCount C.int64_t, largeObjectPoolByteCount C.int64_t) {
 	defer cgoGuard("urnet_set_message_pool_memory_targets")
 	sdk.SetMessagePoolMemoryTargets(int64(packetPoolByteCount), int64(largeObjectPoolByteCount))
+}
+
+//export urnet_set_transfer_diagnostic_snapshots_enabled
+func urnet_set_transfer_diagnostic_snapshots_enabled(enabled C.bool) C.bool {
+	defer cgoGuard("urnet_set_transfer_diagnostic_snapshots_enabled")
+	r0 := sdk.SetTransferDiagnosticSnapshotsEnabled(bool(enabled))
+	return C.bool(r0)
 }
 
 //export urnet_short_ss58

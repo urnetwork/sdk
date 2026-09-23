@@ -1,8 +1,11 @@
 package sdk
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/urnetwork/connect"
@@ -206,11 +209,163 @@ func TestTransferDiagDisabledRemainsInert(t *testing.T) {
 	previous := transferDiagLogSeconds
 	transferDiagLogSeconds = ""
 	defer func() { transferDiagLogSeconds = previous }()
+	previousSnapshots := SetTransferDiagnosticSnapshotsEnabled(false)
+	defer SetTransferDiagnosticSnapshotsEnabled(previousSnapshots)
 	device := &DeviceLocal{}
-	if allocations := testing.AllocsPerRun(100, func() { device.startTransferDiag() }); allocations != 0 {
+	if allocations := testing.AllocsPerRun(100, func() {
+		if prepareTransferDiag(nil) != nil {
+			t.Fatal("disabled diagnostic counters were constructed")
+		}
+		device.startTransferDiag()
+		if result, err := device.TransferDiagnosticSnapshotJson(); result != "" || !errors.Is(err, errTransferDiagnosticUnavailable) {
+			t.Fatal("disabled snapshot fabricated evidence")
+		}
+	}); allocations != 0 {
 		t.Fatalf("disabled diagnostics allocated %.2f objects/run", allocations)
 	}
 	if device.transferDiagStats != nil || transferDiagInterval() != 0 {
 		t.Fatal("disabled diagnostics installed runtime state")
+	}
+}
+
+func TestTransferDiagnosticSnapshotOptInPrecedesProviderCopy(t *testing.T) {
+	previous := SetTransferDiagnosticSnapshotsEnabled(true)
+	defer SetTransferDiagnosticSnapshotsEnabled(previous)
+	settings := connect.DefaultClientSettings()
+	stats := prepareTransferDiag(settings)
+	if stats == nil {
+		t.Fatal("opt-in did not install counters")
+	}
+	provider := newDeviceClientSettings(settings, "", nil)
+	window := connect.DefaultClientSettings()
+	device := &DeviceLocal{transferDiagStats: stats}
+	device.attachTransferDiag(window)
+	for _, settings := range []*connect.ClientSettings{settings, provider, window} {
+		if settings.StreamManagerSettings.StreamBufferSettings.P2pTransportSettings.DataPlaneStats != stats {
+			t.Fatal("provider/window did not inherit the one real counter owner")
+		}
+	}
+	SetTransferDiagnosticSnapshotsEnabled(false)
+	if prepareTransferDiag(connect.DefaultClientSettings()) != nil || device.transferDiagStats != stats {
+		t.Fatal("opt-out must affect new devices only")
+	}
+}
+
+func TestTransferDiagnosticDeviceConstructorAttachesBeforeProvider(t *testing.T) {
+	previous := SetTransferDiagnosticSnapshotsEnabled(true)
+	defer SetTransferDiagnosticSnapshotsEnabled(previous)
+	fixture := testingAuthClientShapeSpace(t)
+	settings := peerPinDeviceSettings(20 * 1024 * 1024)
+	var beforeProvider *connect.P2pDataPlaneStats
+	settings.testingBeforeProviderConstruction = func() {
+		beforeProvider = settings.StreamManagerSettings.StreamBufferSettings.P2pTransportSettings.DataPlaneStats
+		if beforeProvider == nil {
+			t.Fatal("diagnostic counters were attached after the provider started")
+		}
+	}
+	device := newPeerPinTestDevice(t, fixture, settings, "")
+	if beforeProvider == nil || device.transferDiagStats != beforeProvider {
+		t.Fatal("device and provider construction did not share the same counters")
+	}
+	if _, err := device.TransferDiagnosticSnapshotJson(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTransferDiagnosticSnapshotJoinedAndReadOnly(t *testing.T) {
+	device, _ := transferMemoryTestDevice(t, 20*1024*1024)
+	device.transferDiagStats = &connect.P2pDataPlaneStats{}
+	device.memorySampler = &mobileMemorySampler{}
+	device.memorySampler.record(mobileMemorySample{UnixMillis: 7})
+	if !device.transferMemory.client.TryReserve(123) {
+		t.Fatal("fixture reservation refused")
+	}
+	defer device.transferMemory.client.Release(123)
+	before := device.platformTransportBudget.StatsWithRoot()
+	batch, err := device.TransferDiagnosticSnapshotJson()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := map[string]map[string]any{}
+	var millis any
+	for _, line := range strings.Split(strings.TrimSuffix(batch, "\n"), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		if millis == nil {
+			millis = record["unix_millis"]
+		} else if millis != record["unix_millis"] {
+			t.Fatal("one batch mixed timestamps")
+		}
+		parts[record["part"].(string)] = record
+	}
+	for _, part := range []string{"state", "memory", "memory_device_transport", "memory_device_transfer"} {
+		if parts[part] == nil {
+			t.Errorf("missing %s", part)
+		}
+	}
+	if parts["memory_device_transfer"]["transfer_root_used_bytes"] != float64(123) || parts["memory"]["go_total_bytes"].(float64) <= 0 {
+		t.Fatal("snapshot did not read live accounting")
+	}
+	if after := device.platformTransportBudget.StatsWithRoot(); after != before {
+		t.Fatal("read-only snapshot changed carrier ownership")
+	}
+	if samples := device.memorySampler.take(); len(samples.Samples) != 1 || samples.Samples[0].UnixMillis != 7 {
+		t.Fatal("diagnostic export drained the independent primitive sampler")
+	}
+	var workers sync.WaitGroup
+	for range 4 {
+		workers.Go(func() {
+			for range 10 {
+				if _, err := device.TransferDiagnosticSnapshotJson(); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	workers.Wait()
+}
+
+func TestTransferDiagnosticSnapshotBoundAndUnavailable(t *testing.T) {
+	for _, device := range []*DeviceLocal{
+		{}, {transferDiagStats: &connect.P2pDataPlaneStats{}},
+		{transferDiagStats: &connect.P2pDataPlaneStats{}, memorySampler: &mobileMemorySampler{}},
+	} {
+		if result, err := device.TransferDiagnosticSnapshotJson(); result != "" || !errors.Is(err, errTransferDiagnosticUnavailable) {
+			t.Fatal("incomplete mobile evidence must fail closed")
+		}
+	}
+	var buffer boundedTransferDiagnosticBuffer
+	if n, err := buffer.Write(bytes.Repeat([]byte{'x'}, transferDiagnosticSnapshotMaxBytes)); n != transferDiagnosticSnapshotMaxBytes || err != nil {
+		t.Fatalf("exact limit: %d, %v", n, err)
+	}
+	if n, err := buffer.Write([]byte{'y'}); n != 0 || !errors.Is(err, errTransferDiagnosticSnapshotTooLarge) || buffer.Len() != transferDiagnosticSnapshotMaxBytes {
+		t.Fatal("oversized diagnostic retained a partial append")
+	}
+}
+
+func BenchmarkTransferDiagnosticDisabled(b *testing.B) {
+	device := &DeviceLocal{}
+	b.ReportAllocs()
+	for b.Loop() {
+		prepareTransferDiag(nil)
+		device.startTransferDiag()
+	}
+}
+
+func BenchmarkTransferDiagnosticSnapshot(b *testing.B) {
+	settings := DefaultDeviceLocalSettings()
+	settings.MemoryTargetByteCount = 20 * 1024 * 1024
+	device := &DeviceLocal{
+		settings: settings, dnsMemoryTarget: connect.NewMemoryTarget(0),
+		platformTransportBudget: connect.NewPlatformTransportBudget(0, 0),
+		memorySampler:           &mobileMemorySampler{}, transferDiagStats: &connect.P2pDataPlaneStats{},
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := device.TransferDiagnosticSnapshotJson(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

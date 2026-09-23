@@ -1021,6 +1021,8 @@ def bind(lib):
     lib.urnet_device_local_migrate_exit.restype = c_int64
     lib.urnet_device_local_network_changed.argtypes = [c_uint64]
     lib.urnet_device_local_network_changed.restype = None
+    lib.urnet_device_local_network_quality_changed.argtypes = [c_uint64]
+    lib.urnet_device_local_network_quality_changed.restype = None
     lib.urnet_device_local_notify_network_change.argtypes = [c_uint64]
     lib.urnet_device_local_notify_network_change.restype = None
     lib.urnet_device_local_open_account_preferences_view_controller.argtypes = [c_uint64]
@@ -1151,6 +1153,8 @@ def bind(lib):
     lib.urnet_device_local_transfer_diag_defer_timeout_resend.restype = c_bool
     lib.urnet_device_local_transfer_diag_lane_rule.argtypes = [c_uint64]
     lib.urnet_device_local_transfer_diag_lane_rule.restype = c_bool
+    lib.urnet_device_local_transfer_diagnostic_snapshot_json.argtypes = [c_uint64, POINTER(c_void_p)]
+    lib.urnet_device_local_transfer_diagnostic_snapshot_json.restype = c_void_p
     lib.urnet_device_local_tunnel_dns_addresses_ipv4.argtypes = [c_uint64]
     lib.urnet_device_local_tunnel_dns_addresses_ipv4.restype = c_void_p
     lib.urnet_device_local_tunnel_dns_addresses_ipv6.argtypes = [c_uint64]
@@ -1163,6 +1167,8 @@ def bind(lib):
     lib.urnet_device_local_tunnel_local_address_ipv6.restype = c_void_p
     lib.urnet_device_local_wait_for_close.argtypes = [c_uint64, c_int64]
     lib.urnet_device_local_wait_for_close.restype = c_bool
+    lib.urnet_device_local_write_memory_owner_census.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_device_local_write_memory_owner_census.restype = c_bool
     lib.urnet_device_local_key_material_is_empty.argtypes = [c_uint64]
     lib.urnet_device_local_key_material_is_empty.restype = c_bool
     lib.urnet_device_local_key_material_set_extender_key_seed.argtypes = [c_uint64, POINTER(c_uint8), c_int32]
@@ -2265,6 +2271,8 @@ def bind(lib):
     lib.urnet_service_url.restype = c_void_p
     lib.urnet_set_control_ip_family_policy.argtypes = [c_int64]
     lib.urnet_set_control_ip_family_policy.restype = None
+    lib.urnet_set_device_rpc_h1_plus_enabled.argtypes = [c_bool]
+    lib.urnet_set_device_rpc_h1_plus_enabled.restype = None
     lib.urnet_set_egress_interface_index.argtypes = [c_int64, c_int64]
     lib.urnet_set_egress_interface_index.restype = None
     lib.urnet_set_extender_store_read_only.argtypes = [c_bool]
@@ -2281,6 +2289,8 @@ def bind(lib):
     lib.urnet_set_memory_profile_rate.restype = None
     lib.urnet_set_message_pool_memory_targets.argtypes = [c_int64, c_int64]
     lib.urnet_set_message_pool_memory_targets.restype = None
+    lib.urnet_set_transfer_diagnostic_snapshots_enabled.argtypes = [c_bool]
+    lib.urnet_set_transfer_diagnostic_snapshots_enabled.restype = c_bool
     lib.urnet_short_ss58.argtypes = [c_char_p]
     lib.urnet_short_ss58.restype = c_void_p
     lib.urnet_sn_claim_transactions_for.argtypes = [c_char_p, c_char_p, c_char_p, POINTER(c_void_p)]

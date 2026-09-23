@@ -478,6 +478,7 @@ EXPORTS
 	urnet_device_local_take_memory_samples_json
 	urnet_device_local_transfer_diag_defer_timeout_resend
 	urnet_device_local_transfer_diag_lane_rule
+	urnet_device_local_transfer_diagnostic_snapshot_json
 	urnet_device_local_tunnel_dns_addresses_ipv4
 	urnet_device_local_tunnel_dns_addresses_ipv6
 	urnet_device_local_tunnel_dns_setting
@@ -978,6 +979,7 @@ EXPORTS
 	urnet_set_memory_limit
 	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets
+	urnet_set_transfer_diagnostic_snapshots_enabled
 	urnet_short_ss58
 	urnet_sn_claim_transactions_for
 	urnet_sn_claims_for
