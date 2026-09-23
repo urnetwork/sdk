@@ -376,6 +376,7 @@ EXPORTS
 	urnet_device_local_get_first_load_timeline_json
 	urnet_device_local_get_key_material
 	urnet_device_local_get_last_local_state_save_result
+	urnet_device_local_get_memory_stats
 	urnet_device_local_get_pinned_app_ids
 	urnet_device_local_get_probe_results
 	urnet_device_local_get_provide_secret_keys

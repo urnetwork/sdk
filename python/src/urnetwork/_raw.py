@@ -987,6 +987,8 @@ def bind(lib):
     lib.urnet_device_local_get_key_material.restype = c_uint64
     lib.urnet_device_local_get_last_local_state_save_result.argtypes = [c_uint64]
     lib.urnet_device_local_get_last_local_state_save_result.restype = c_uint64
+    lib.urnet_device_local_get_memory_stats.argtypes = [c_uint64]
+    lib.urnet_device_local_get_memory_stats.restype = c_void_p
     lib.urnet_device_local_get_pinned_app_ids.argtypes = [c_uint64]
     lib.urnet_device_local_get_pinned_app_ids.restype = c_void_p
     lib.urnet_device_local_get_probe_results.argtypes = [c_uint64]

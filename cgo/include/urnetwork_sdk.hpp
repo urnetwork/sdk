@@ -15277,6 +15277,7 @@ public:
 	std::string getFirstLoadTimelineJson() const;
 	DeviceLocalKeyMaterial getKeyMaterial() const;
 	DeviceLocalSaveResult getLastLocalStateSaveResult() const;
+	std::optional<MemoryStats> getMemoryStats() const;
 	std::optional<StringList> getPinnedAppIds() const;
 	std::optional<ProbeResultList> getProbeResults() const;
 	std::optional<ProvideSecretKeyList> getProvideSecretKeys() const;
@@ -24071,6 +24072,14 @@ inline DeviceLocalKeyMaterial DeviceLocal::getKeyMaterial() const {
 inline DeviceLocalSaveResult DeviceLocal::getLastLocalStateSaveResult() const {
 	DeviceLocalSaveResult r(urnet_device_local_get_last_local_state_save_result(handle()));
 	return r;
+}
+inline std::optional<MemoryStats> DeviceLocal::getMemoryStats() const {
+	char* r_c = urnet_device_local_get_memory_stats(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<MemoryStats>(r_s->c_str());
 }
 inline std::optional<StringList> DeviceLocal::getPinnedAppIds() const {
 	char* r_c = urnet_device_local_get_pinned_app_ids(handle());

@@ -588,6 +588,7 @@ module URnetwork
       attach_function :urnet_device_local_get_first_load_timeline_json, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_key_material, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_local_get_last_local_state_save_result, [:uint64], :uint64, blocking: true
+      attach_function :urnet_device_local_get_memory_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_pinned_app_ids, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_probe_results, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_get_provide_secret_keys, [:uint64], :pointer, blocking: true

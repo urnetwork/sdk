@@ -589,6 +589,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_get_first_load_timeline_json(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_local_get_key_material(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_device_local_get_last_local_state_save_result(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_get_memory_stats(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_get_pinned_app_ids(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_get_probe_results(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_local_get_provide_secret_keys(ulong a0);

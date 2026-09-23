@@ -589,6 +589,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_get_first_load_timeline_json(long a0);
   long urnet_device_local_get_key_material(long a0);
   long urnet_device_local_get_last_local_state_save_result(long a0);
+  Pointer urnet_device_local_get_memory_stats(long a0);
   Pointer urnet_device_local_get_pinned_app_ids(long a0);
   Pointer urnet_device_local_get_probe_results(long a0);
   Pointer urnet_device_local_get_provide_secret_keys(long a0);

@@ -1091,6 +1091,7 @@ char* urnet_device_local_get_exits(uint64_t self);
 char* urnet_device_local_get_first_load_timeline_json(uint64_t self);
 uint64_t urnet_device_local_get_key_material(uint64_t self);
 uint64_t urnet_device_local_get_last_local_state_save_result(uint64_t self);
+char* urnet_device_local_get_memory_stats(uint64_t self);
 char* urnet_device_local_get_pinned_app_ids(uint64_t self);
 char* urnet_device_local_get_probe_results(uint64_t self);
 char* urnet_device_local_get_provide_secret_keys(uint64_t self);

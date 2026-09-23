@@ -8751,6 +8751,20 @@ func urnet_device_local_get_last_local_state_save_result(self C.uint64_t) C.uint
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_local_get_memory_stats
+func urnet_device_local_get_memory_stats(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_local_get_memory_stats")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_memory_stats")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetMemoryStats()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_get_memory_stats")
+}
+
 //export urnet_device_local_get_pinned_app_ids
 func urnet_device_local_get_pinned_app_ids(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_local_get_pinned_app_ids")
