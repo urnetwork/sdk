@@ -33,13 +33,19 @@ func testing_waitForSyncError(t *testing.T, deviceRemote *DeviceRemote, timeout 
 // port collides with a concurrent suite run or a locally running app, and the
 // symptom is a sync timeout that reads as a delivery bug.
 func testing_newRpcDeviceLocal(t *testing.T, ctx context.Context) (*DeviceLocal, *deviceRpcSettings) {
+	return testing_newRpcDeviceLocalWithSettings(t, ctx, testDeviceLocalSettingsRpc())
+}
+
+// The RPC fixture can pin a device-local target without changing the process
+// sizing default used by unrelated devices in the same test process.
+func testing_newRpcDeviceLocalWithSettings(t *testing.T, ctx context.Context, settings *DeviceLocalSettings) (*DeviceLocal, *deviceRpcSettings) {
 	t.Helper()
 
 	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
 
 	deviceLocal, err := newDeviceLocalWithOverrides(
-		networkSpace, byJwt, "", "", "", NewId(), testDeviceLocalSettingsRpc(), connect.NewId(),
+		networkSpace, byJwt, "", "", "", NewId(), settings, connect.NewId(),
 	)
 	connect.AssertEqual(t, err, nil)
 	t.Cleanup(deviceLocal.Close)

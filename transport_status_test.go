@@ -73,6 +73,17 @@ func TestTransportStatusFollowsAutoPolicyAndMemoryBudget(t *testing.T) {
 	)
 }
 
+func TestTransportStatusUsesOwnerBudgetDespiteProcessDefault(t *testing.T) {
+	connect.SetMemoryBudget(8 * 1024 * 1024)
+	t.Cleanup(func() { connect.SetMemoryBudget(0) })
+
+	settings := DefaultTransportSettings()
+	largeOwner := connect.NewPlatformTransportBudgetForMemoryTarget(20 * 1024 * 1024)
+	lowMemoryOwner := connect.NewPlatformTransportBudgetForMemoryTarget(8 * 1024 * 1024)
+	assertTransportStatus(t, transportStatusForBudget(settings, false, largeOwner), false, []string{TransportModeH1, TransportModeH3, TransportModeDns, TransportModeDnsPump})
+	assertTransportStatus(t, transportStatusForBudget(settings, false, lowMemoryOwner), true, []string{TransportModeH1})
+}
+
 func TestTransportStatusDoesNotBuildFullTransportDefaults(t *testing.T) {
 	connect.SetMemoryBudget(32 * 1024 * 1024)
 	t.Cleanup(func() { connect.SetMemoryBudget(0) })
@@ -160,7 +171,9 @@ func TestDeviceRemoteTransportStatusGetterListenerAndRpcWire(t *testing.T) {
 	t.Cleanup(func() { connect.SetMemoryBudget(0) })
 
 	ctx := t.Context()
-	deviceLocal, rpcSettings := testing_newRpcDeviceLocal(t, ctx)
+	settings := testDeviceLocalSettingsRpc()
+	settings.MemoryTargetByteCount = 8 * 1024 * 1024
+	deviceLocal, rpcSettings := testing_newRpcDeviceLocalWithSettings(t, ctx, settings)
 	deviceRemote := testing_newRpcDeviceRemote(
 		t,
 		deviceLocal,

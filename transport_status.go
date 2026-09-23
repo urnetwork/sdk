@@ -38,7 +38,7 @@ func transportStatus(settings *TransportSettings, provider bool) *TransportStatu
 
 func transportStatusForBudget(settings *TransportSettings, provider bool, budget *connect.PlatformTransportBudget) *TransportStatus {
 	settings = normalizeTransportSettings(settings, provider)
-	// Eligibility only needs the configured modes and the process transport
+	// Eligibility only needs the configured modes and the owner's transport
 	// budget. Building all platform defaults here also creates TLS settings and
 	// reparses the pinned CA bundle on every status poll, even though neither is
 	// consulted by PlatformTransportAutoEligibility. Keep this frequent UI and
