@@ -83,11 +83,15 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		// loaded is still held to the budget/2 goal.
 		loadedHeapCeiling = budgetByteCount / 2
 
-		// Leave about 0.5 MiB above that new five-process maximum while still
-		// rejecting a peak that reaches the 32-MiB synthetic process budget.
-		// This host-side provider test no longer proves the mobile 28-MiB
-		// active goal; physical mobile-policy runs own that release gate.
-		peakTotalCeilingDarwin = 31 << 20
+		// The 0.5 MiB once left above that five-process maximum is gone. On
+		// the 2026-09-23 macOS 26.6 / Go 1.26.7 host, 10 fresh processes each
+		// measured 30.6-31.7 MiB at the commit before H1+ became the default
+		// and 30.7-31.5 MiB after it, over the old 31-MiB ceiling in 3 and 5
+		// runs. Darwin now holds the same line as linux below: do not exceed
+		// the 32-MiB synthetic process budget. This host-side provider test no
+		// longer proves the mobile 28-MiB active goal; physical mobile-policy
+		// runs own that release gate.
+		peakTotalCeilingDarwin = 32 << 20
 
 		// linux/amd64 CARRIES ~4 MiB MORE FOR THE SAME WORK, and it is the
 		// platform CI runs on, so the darwin figure failed every run on main.
