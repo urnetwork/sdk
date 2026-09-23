@@ -10,6 +10,7 @@ import (
 
 func TestMobileMemoryRuntimeReaderConcurrent(t *testing.T) {
 	reader := &mobileMemoryRuntimeReader{}
+	budget := connect.DefaultPlatformTransportBudget()
 	var workers sync.WaitGroup
 	for range 4 {
 		workers.Add(1)
@@ -17,7 +18,7 @@ func TestMobileMemoryRuntimeReaderConcurrent(t *testing.T) {
 			defer workers.Done()
 			for range 40 {
 				var snapshot mobileMemoryRuntimeSnapshot
-				reader.read(&snapshot)
+				reader.read(&snapshot, budget)
 				if snapshot.totalByteCount <= 0 || snapshot.transportBudgetTotalByteCount <= 0 {
 					t.Error("concurrent runtime reader returned an incomplete sample")
 				}

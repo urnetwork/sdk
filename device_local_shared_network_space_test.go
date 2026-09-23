@@ -106,6 +106,12 @@ func TestHostedDeviceLocalSessionsIsolateSharedApiLifecycle(t *testing.T) {
 	if firstApi == sharedApi || secondApi == sharedApi || firstApi == secondApi {
 		t.Fatal("hosted devices shared mutable API credential sessions")
 	}
+	if first.clientStrategy == networkSpace.clientStrategy || second.clientStrategy == networkSpace.clientStrategy || first.clientStrategy == second.clientStrategy {
+		t.Fatal("hosted devices shared control-plane dial pacing or DoH admission")
+	}
+	if firstApi.clientStrategy != first.clientStrategy || secondApi.clientStrategy != second.clientStrategy {
+		t.Fatal("hosted API did not use its device-owned control strategy")
+	}
 	if first.platformTransportBudget == second.platformTransportBudget {
 		t.Fatal("hosted devices shared one platform-carrier admission budget")
 	}

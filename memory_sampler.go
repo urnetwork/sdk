@@ -211,7 +211,7 @@ func mobileMetricInt64(sample *metrics.Sample) int64 {
 // uses runtime/metrics and primitive Connect snapshots only; unlike the public
 // detailed MemoryStats getter it does not call runtime.ReadMemStats or create a
 // gomobile-visible object.
-func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapshot) {
+func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapshot, budget *connect.PlatformTransportBudget) {
 	// The diagnostic interval and mobile sampler may share this reader.
 	// runtime/metrics overwrites the reusable sample array on every read.
 	self.mutex.Lock()
@@ -235,7 +235,12 @@ func (self *mobileMemoryRuntimeReader) read(snapshot *mobileMemoryRuntimeSnapsho
 	}
 	metrics.Read(self.samples[:])
 	poolStats := connect.GetMessagePoolAggregateStats()
-	transportBudgetStats := connect.DefaultPlatformTransportBudget().Stats()
+	// Carrier admission belongs to the device. Reading a newly constructed
+	// default budget here would silently report zero active transports.
+	var transportBudgetStats connect.PlatformTransportBudgetStats
+	if budget != nil {
+		transportBudgetStats = budget.Stats()
+	}
 	*snapshot = mobileMemoryRuntimeSnapshot{
 		totalByteCount: max(
 			int64(0),
@@ -358,7 +363,7 @@ func (self *mobileMemorySampler) start(
 
 func (self *DeviceLocal) memorySample() mobileMemorySample {
 	var runtimeSnapshot mobileMemoryRuntimeSnapshot
-	self.memorySampler.runtimeReader.read(&runtimeSnapshot)
+	self.memorySampler.runtimeReader.read(&runtimeSnapshot, self.platformTransportBudget)
 	noteMobileRuntimeFootprint(runtimeSnapshot.totalByteCount)
 
 	self.stateLock.Lock()

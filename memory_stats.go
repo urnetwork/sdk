@@ -68,8 +68,9 @@ type MemoryStats struct {
 	TrimLevelActionCount          int64
 	LastTrimLevelDroppedByteCount ByteCount
 
-	// Process-global platform carrier reservations. These counters explain
-	// topology-driven retention without constructing transport status lists.
+	// Carrier reservations for one DeviceLocal owner, populated by
+	// DeviceLocal.GetMemoryStats. Package-level GetMemoryStats leaves these
+	// fields zero because there is no shared process admission budget.
 	PlatformTransportBudgetTotalByteCount     ByteCount
 	PlatformTransportBudgetUsedByteCount      ByteCount
 	PlatformTransportBudgetUsedCount          int
@@ -140,6 +141,21 @@ func GetMemoryStats() *MemoryStats {
 	return stats
 }
 
+// GetMemoryStats includes this device's private carrier admission counters
+// alongside the process runtime and allocator counters.
+func (self *DeviceLocal) GetMemoryStats() *MemoryStats {
+	stats := GetMemoryStats()
+	if self != nil && self.platformTransportBudget != nil {
+		budgetStats := self.platformTransportBudget.Stats()
+		stats.PlatformTransportBudgetTotalByteCount = budgetStats.TotalByteCount
+		stats.PlatformTransportBudgetUsedByteCount = budgetStats.UsedByteCount
+		stats.PlatformTransportBudgetUsedCount = budgetStats.UsedTransportCount
+		stats.PlatformTransportBudgetPendingH1Count = budgetStats.PendingH1Count
+		stats.PlatformTransportBudgetPendingH1ByteCount = budgetStats.PendingH1ByteCount
+	}
+	return stats
+}
+
 // readMemoryStats fills caller-owned storage. The production sampler keeps the
 // destination and runtime/metrics descriptor array off the heap; the exported
 // getter retains its convenient one-object API for occasional host reads.
@@ -164,7 +180,6 @@ func readMemoryStats(stats *MemoryStats) {
 	}
 
 	poolStats := connect.GetMessagePoolAggregateStats()
-	transportBudgetStats := connect.DefaultPlatformTransportBudget().Stats()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	uint64ToInt64 := func(value uint64) int64 {
@@ -205,40 +220,35 @@ func readMemoryStats(stats *MemoryStats) {
 		LastIdleMemoryTrimDroppedByteCount: ByteCount(
 			mobileIdleMemoryTrimDropped.Load(),
 		),
-		IdleMemoryTrimDeferredCount:               mobileIdleMemoryTrimDeferred.Load(),
-		IdleMemoryTrimBelowTargetCount:            mobileIdleMemoryTrimBelow.Load(),
-		IdleMemoryTrimCooldownCount:               mobileIdleMemoryTrimCooldowns.Load(),
-		LastIdleMemoryTrimBeforeByteCount:         mobileIdleMemoryTrimBefore.Load(),
-		LastIdleMemoryTrimAfterByteCount:          mobileIdleMemoryTrimAfter.Load(),
-		TrimLevelLast:                             mobileTrimLevelLast.Load(),
-		TrimLevelCount:                            mobileTrimLevelCount.Load(),
-		TrimLevelActionCount:                      mobileTrimLevelActionCount.Load(),
-		LastTrimLevelDroppedByteCount:             ByteCount(mobileTrimLevelDropped.Load()),
-		PlatformTransportBudgetTotalByteCount:     transportBudgetStats.TotalByteCount,
-		PlatformTransportBudgetUsedByteCount:      transportBudgetStats.UsedByteCount,
-		PlatformTransportBudgetUsedCount:          transportBudgetStats.UsedTransportCount,
-		PlatformTransportBudgetPendingH1Count:     transportBudgetStats.PendingH1Count,
-		PlatformTransportBudgetPendingH1ByteCount: transportBudgetStats.PendingH1ByteCount,
-		HeapAllocByteCount:                        uint64ToInt64(mem.HeapAlloc),
-		HeapSystemByteCount:                       uint64ToInt64(mem.HeapSys),
-		HeapInuseByteCount:                        uint64ToInt64(mem.HeapInuse),
-		HeapIdleByteCount:                         uint64ToInt64(mem.HeapIdle),
-		HeapReleasedByteCount:                     uint64ToInt64(mem.HeapReleased),
-		HeapObjectCount:                           uint64ToInt64(mem.HeapObjects),
-		StackInuseByteCount:                       uint64ToInt64(mem.StackInuse),
-		MSpanInuseByteCount:                       uint64ToInt64(mem.MSpanInuse),
-		MCacheInuseByteCount:                      uint64ToInt64(mem.MCacheInuse),
-		GCSystemByteCount:                         uint64ToInt64(mem.GCSys),
-		OtherSystemByteCount:                      uint64ToInt64(mem.OtherSys),
-		ProfilingBucketByteCount:                  uint64ToInt64(mem.BuckHashSys),
-		SystemByteCount:                           uint64ToInt64(mem.Sys),
-		MemoryProfileRateByteCount:                int64(runtime.MemProfileRate),
-		TotalAllocatedByteCount:                   uint64ToInt64(mem.TotalAlloc),
-		MallocCount:                               uint64ToInt64(mem.Mallocs),
-		FreeCount:                                 uint64ToInt64(mem.Frees),
-		GCCycleCount:                              int64(mem.NumGC),
-		ForcedGCCycleCount:                        int64(mem.NumForcedGC),
-		GCPauseTotalNanoseconds:                   uint64ToInt64(mem.PauseTotalNs),
+		IdleMemoryTrimDeferredCount:       mobileIdleMemoryTrimDeferred.Load(),
+		IdleMemoryTrimBelowTargetCount:    mobileIdleMemoryTrimBelow.Load(),
+		IdleMemoryTrimCooldownCount:       mobileIdleMemoryTrimCooldowns.Load(),
+		LastIdleMemoryTrimBeforeByteCount: mobileIdleMemoryTrimBefore.Load(),
+		LastIdleMemoryTrimAfterByteCount:  mobileIdleMemoryTrimAfter.Load(),
+		TrimLevelLast:                     mobileTrimLevelLast.Load(),
+		TrimLevelCount:                    mobileTrimLevelCount.Load(),
+		TrimLevelActionCount:              mobileTrimLevelActionCount.Load(),
+		LastTrimLevelDroppedByteCount:     ByteCount(mobileTrimLevelDropped.Load()),
+		HeapAllocByteCount:                uint64ToInt64(mem.HeapAlloc),
+		HeapSystemByteCount:               uint64ToInt64(mem.HeapSys),
+		HeapInuseByteCount:                uint64ToInt64(mem.HeapInuse),
+		HeapIdleByteCount:                 uint64ToInt64(mem.HeapIdle),
+		HeapReleasedByteCount:             uint64ToInt64(mem.HeapReleased),
+		HeapObjectCount:                   uint64ToInt64(mem.HeapObjects),
+		StackInuseByteCount:               uint64ToInt64(mem.StackInuse),
+		MSpanInuseByteCount:               uint64ToInt64(mem.MSpanInuse),
+		MCacheInuseByteCount:              uint64ToInt64(mem.MCacheInuse),
+		GCSystemByteCount:                 uint64ToInt64(mem.GCSys),
+		OtherSystemByteCount:              uint64ToInt64(mem.OtherSys),
+		ProfilingBucketByteCount:          uint64ToInt64(mem.BuckHashSys),
+		SystemByteCount:                   uint64ToInt64(mem.Sys),
+		MemoryProfileRateByteCount:        int64(runtime.MemProfileRate),
+		TotalAllocatedByteCount:           uint64ToInt64(mem.TotalAlloc),
+		MallocCount:                       uint64ToInt64(mem.Mallocs),
+		FreeCount:                         uint64ToInt64(mem.Frees),
+		GCCycleCount:                      int64(mem.NumGC),
+		ForcedGCCycleCount:                int64(mem.NumForcedGC),
+		GCPauseTotalNanoseconds:           uint64ToInt64(mem.PauseTotalNs),
 	}
 }
 

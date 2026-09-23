@@ -29,9 +29,11 @@ type deviceMemoryOwnerCensus struct {
 func (self *DeviceLocal) memoryOwnerCensus() deviceMemoryOwnerCensus {
 	var out deviceMemoryOwnerCensus
 	out.ProcessPools = connect.GetPoolOwnerCensus()
-	out.ProcessClaims = connect.DefaultPlatformTransportBudget().MemoryOwnerCensus()
 	if self == nil {
 		return out
+	}
+	if self.platformTransportBudget != nil {
+		out.ProcessClaims = self.platformTransportBudget.MemoryOwnerCensus()
 	}
 	self.stateLock.Lock()
 	remote, provider, mux := self.remoteUserNatClient, self.provider, self.upgradeMux

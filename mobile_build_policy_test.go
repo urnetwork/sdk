@@ -25,7 +25,7 @@ func TestMobileBuildMemoryProfileRate(t *testing.T) {
 	}
 	var reader mobileMemoryRuntimeReader
 	var snapshot mobileMemoryRuntimeSnapshot
-	reader.read(&snapshot)
+	reader.read(&snapshot, nil)
 	if snapshot.memoryProfileRateByteCount != int64(expected) {
 		t.Fatalf(
 			"sampler memory profile rate = %d, want %d",

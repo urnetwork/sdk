@@ -389,7 +389,7 @@ func (self *DeviceLocal) logTransferDiag() {
 	}
 	if self.memorySampler != nil {
 		var runtimeSnapshot mobileMemoryRuntimeSnapshot
-		self.memorySampler.runtimeReader.read(&runtimeSnapshot)
+		self.memorySampler.runtimeReader.read(&runtimeSnapshot, self.platformTransportBudget)
 		rootBudget, deviceBudget := transferDiagCarrierBudgets(self.platformTransportBudget.StatsWithRoot(), millis)
 		lines = append(lines, transferDiagMemory{
 			Part:                             "memory",

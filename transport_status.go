@@ -33,6 +33,10 @@ func cloneTransportStatus(status *TransportStatus) *TransportStatus {
 }
 
 func transportStatus(settings *TransportSettings, provider bool) *TransportStatus {
+	return transportStatusForBudget(settings, provider, connect.DefaultPlatformTransportBudget())
+}
+
+func transportStatusForBudget(settings *TransportSettings, provider bool, budget *connect.PlatformTransportBudget) *TransportStatus {
 	settings = normalizeTransportSettings(settings, provider)
 	// Eligibility only needs the configured modes and the process transport
 	// budget. Building all platform defaults here also creates TLS settings and
@@ -42,7 +46,7 @@ func transportStatus(settings *TransportSettings, provider bool) *TransportStatu
 	// H1/H3 claims deliberately select that helper's memory-scaled defaults.
 	platformSettings := &connect.PlatformTransportSettings{
 		ModePreferences:         toConnectAutoModePreferences(settings, provider),
-		PlatformTransportBudget: connect.DefaultPlatformTransportBudget(),
+		PlatformTransportBudget: budget,
 	}
 	eligibility := connect.PlatformTransportAutoEligibility(platformSettings)
 

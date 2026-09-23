@@ -127,12 +127,15 @@ func newApi(
 }
 
 // newSession creates independently owned credential and refresh state while
-// reusing this API's network strategy and request seams. Hosted multi-device
-// processes use one session per device so a refresh or close cannot mutate a
-// sibling device, while every session still shares the NetworkSpace's dialer
-// and connection-selection core.
+// reusing this API's network strategy and request seams.
 func (self *Api) newSession(ctx context.Context) *Api {
-	session := newApi(ctx, self.clientStrategy, self.apiUrl)
+	return self.newSessionWithStrategy(ctx, self.clientStrategy)
+}
+
+// Hosted devices keep the immutable NetworkSpace metadata and API request
+// seams, but give each credential session its own control dial/DoH owner.
+func (self *Api) newSessionWithStrategy(ctx context.Context, strategy *connect.ClientStrategy) *Api {
+	session := newApi(ctx, strategy, self.apiUrl)
 	session.setHttpPostRaw(self.getHttpPostRaw())
 	session.setHttpGetRaw(self.getHttpGetRaw())
 	session.setHttpPostStreamRaw(self.getHttpPostStreamRaw())

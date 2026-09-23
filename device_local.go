@@ -655,11 +655,12 @@ type DeviceLocal struct {
 
 	networkSpace *NetworkSpace
 	// api is the credential session used by this device. Ordinary app devices
-	// use the NetworkSpace API directly. Hosted devices own a private session
-	// over the shared NetworkSpace strategy so credentials and teardown cannot
-	// cross device boundaries.
-	api     *Api
-	ownsApi bool
+	// use the NetworkSpace API directly. Hosted devices own both a credential
+	// session and a control strategy, so neither authentication nor dial/DoH
+	// admission can cross device boundaries.
+	api                *Api
+	ownsApi            bool
+	ownsClientStrategy bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -1274,6 +1275,8 @@ func newDeviceLocalWithOverridesForPlatform(
 	// resolve the device logger. all nested components and clients follow it.
 	log := settings.logger()
 	settings.ClientSettings.Log = log
+	dnsShareByteCount, _, _, providerShareByteCount := deviceMemoryShares(settings)
+	dnsMemoryTarget := connect.NewMemoryTarget(dnsShareByteCount)
 
 	// Prepare client auth without changing the serving device or durable store.
 	// Daemons commit their empty store only when construction can succeed; a
@@ -1294,12 +1297,18 @@ func newDeviceLocalWithOverridesForPlatform(
 	// apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
 	ownsApi := false
+	ownedClientStrategyTransferred := false
 	if settings.HostedIncompatible {
-		// The proxy shares one NetworkSpace across unrelated customers. Reuse
-		// its strategy/request core, but isolate mutable credentials, refresh
-		// listeners, and the refresh worker in a device-owned API session.
-		api = api.newSession(ctx)
+		// Proxy devices share immutable network metadata, not mutable API
+		// credentials or control-plane dial/DoH admission limits.
+		clientStrategy = networkSpace.newHostedClientStrategy(ctx, dnsMemoryTarget)
+		api = api.newSessionWithStrategy(ctx, clientStrategy)
 		ownsApi = true
+		defer func() {
+			if !ownedClientStrategyTransferred {
+				clientStrategy.Close()
+			}
+		}()
 	}
 
 	preparedAuth, err := api.prepareDeviceAuth(authLocalState, byJwt, instanceId, time.Now(), authPublication)
@@ -1330,8 +1339,6 @@ func newDeviceLocalWithOverridesForPlatform(
 	// sized them from its default, and the caller may have overridden
 	// MemoryTargetByteCount (or disabled providing, folding the provider
 	// share into the client share) since
-	dnsShareByteCount, _, _, providerShareByteCount :=
-		deviceMemoryShares(settings)
 	platformTransportBudget := connect.NewPlatformTransportBudgetForMemoryTarget(
 		settings.MemoryTargetByteCount,
 	)
@@ -1445,13 +1452,14 @@ func newDeviceLocalWithOverridesForPlatform(
 	}
 
 	deviceLocal := &DeviceLocal{
-		networkSpace: networkSpace,
-		api:          api,
-		ownsApi:      ownsApi,
-		ctx:          ctx,
-		cancel:       cancel,
-		byJwt:        byJwt,
-		subprotocols: newDeviceLocalSubprotocols(ctx, log),
+		networkSpace:       networkSpace,
+		api:                api,
+		ownsApi:            ownsApi,
+		ownsClientStrategy: settings.HostedIncompatible,
+		ctx:                ctx,
+		cancel:             cancel,
+		byJwt:              byJwt,
+		subprotocols:       newDeviceLocalSubprotocols(ctx, log),
 		// apiUrl:            apiUrl,
 		deviceDescription:      deviceDescription,
 		deviceSpec:             deviceSpec,
@@ -1473,7 +1481,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		windowIdentityStoreGenerations: newWindowIdentityStoreGenerations(),
 		// the dns share of the device memory target; one live budget for the
 		// life of the device (see the field doc)
-		dnsMemoryTarget:           connect.NewMemoryTarget(dnsShareByteCount),
+		dnsMemoryTarget:           dnsMemoryTarget,
 		platformTransportBudget:   platformTransportBudget,
 		transferMemory:            transferMemory,
 		generatorFunc:             settings.GeneratorFunc,
@@ -1728,6 +1736,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		}
 	}
 
+	ownedClientStrategyTransferred = true
 	return deviceLocal, nil
 }
 
@@ -5240,6 +5249,9 @@ func (self *DeviceLocal) Close() {
 			if self.ownsApi {
 				_ = self.api.CloseAndWait(context.Background())
 			}
+			if self.ownsClientStrategy {
+				self.clientStrategy.Close()
+			}
 			close(self.lifecycleDone)
 		}()
 	})
@@ -5944,7 +5956,7 @@ func (self *DeviceLocal) transportSettingsChanged(transportSettings *TransportSe
 }
 
 func (self *DeviceLocal) GetTransportStatus() *TransportStatus {
-	return transportStatus(self.GetTransportSettings(), false)
+	return transportStatusForBudget(self.GetTransportSettings(), false, self.platformTransportBudget)
 }
 
 func (self *DeviceLocal) AddTransportStatusChangeListener(listener TransportStatusChangeListener) Sub {
@@ -6033,7 +6045,7 @@ func (self *DeviceLocal) GetProviderTransportSettings() *TransportSettings {
 }
 
 func (self *DeviceLocal) GetProviderTransportStatus() *TransportStatus {
-	return transportStatus(self.GetProviderTransportSettings(), true)
+	return transportStatusForBudget(self.GetProviderTransportSettings(), true, self.platformTransportBudget)
 }
 
 func (self *DeviceLocal) AddProviderTransportStatusChangeListener(listener ProviderTransportStatusChangeListener) Sub {

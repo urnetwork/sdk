@@ -8,8 +8,8 @@ import (
 func TestMobileAllocatorClassReaderDoesNotAllocate(t *testing.T) {
 	reader := &mobileMemoryRuntimeReader{}
 	var snapshot mobileMemoryRuntimeSnapshot
-	reader.read(&snapshot)
-	if allocations := testing.AllocsPerRun(1000, func() { reader.read(&snapshot) }); allocations != 0 {
+	reader.read(&snapshot, nil)
+	if allocations := testing.AllocsPerRun(1000, func() { reader.read(&snapshot, nil) }); allocations != 0 {
 		t.Fatalf("allocator-class reader allocations = %v, want zero", allocations)
 	}
 	if snapshot.heapAllocByteCount <= 0 || snapshot.stackInuseByteCount <= 0 ||
