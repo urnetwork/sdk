@@ -813,10 +813,12 @@ func NewPlatformNetworkSpace(
 }
 
 // newHostedClientStrategy gives one hosted DeviceLocal its own control-plane
-// dial pacing, internal DoH cache and concurrency slots. It reuses only the
-// immutable settings and the shared read-only extender directory; constructing
-// a whole NetworkSpace per device would duplicate storage and discovery work.
-func (self *NetworkSpace) newHostedClientStrategy(ctx context.Context, dnsMemoryTarget *connect.MemoryTarget) *connect.ClientStrategy {
+// dial pacing, internal DoH cache and concurrency slots. Its parent context
+// is the NetworkSpace, not the device's data-plane context: the device cancels
+// data flow before generated clients finish their final contract retirement.
+// DeviceLocal explicitly closes this private strategy after those joins. It
+// reuses only immutable settings and the shared read-only extender directory.
+func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.MemoryTarget) *connect.ClientStrategy {
 	settings := *self.clientStrategySettings
 	dohSettings := settings.DohSettings
 	if dohSettings == nil {
@@ -825,7 +827,7 @@ func (self *NetworkSpace) newHostedClientStrategy(ctx context.Context, dnsMemory
 	privateDohSettings := *dohSettings
 	privateDohSettings.MemoryTarget = dnsMemoryTarget
 	settings.DohSettings = &privateDohSettings
-	strategy := connect.NewClientStrategy(ctx, &settings)
+	strategy := connect.NewClientStrategy(self.ctx, &settings)
 	if customExtenders := self.clientStrategy.CustomExtenders(); len(customExtenders) > 0 {
 		strategy.SetCustomExtenders(customExtenders)
 	}

@@ -1301,7 +1301,7 @@ func newDeviceLocalWithOverridesForPlatform(
 	if settings.HostedIncompatible {
 		// Proxy devices share immutable network metadata, not mutable API
 		// credentials or control-plane dial/DoH admission limits.
-		clientStrategy = networkSpace.newHostedClientStrategy(ctx, dnsMemoryTarget)
+		clientStrategy = networkSpace.newHostedClientStrategy(dnsMemoryTarget)
 		api = api.newSessionWithStrategy(ctx, clientStrategy)
 		ownsApi = true
 		defer func() {
