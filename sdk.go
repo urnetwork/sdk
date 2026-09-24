@@ -1134,9 +1134,10 @@ type PerformanceProfile struct {
 	WindowSize *WindowSizeSettings `json:"window_size"`
 	// setting this to true exposes the real source IP to the provider
 	AllowDirect bool `json:"allow_direct"`
-	// enable post-quantum e2e encryption to providers that support it.
-	// Opportunistic: providers without support fall back to plaintext at
-	// this layer.
+	// enable the post-quantum e2e sessions to providers. Required when set:
+	// a provider that cannot seal the session is skipped, never used in
+	// plaintext at this layer. Unset, the shipping default, no session is
+	// opened to the provider.
 	PostQuantumEncryption bool `json:"post_quantum_encryption"`
 }
 
