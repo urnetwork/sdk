@@ -677,6 +677,11 @@ type DeviceLocal struct {
 	// Explicit key saves are separate from preference autosave. Capture and
 	// commit one current value at a time without holding callback/native locks.
 	providerKeySaveLock sync.Mutex
+	// Serializes the hand-over of the provide mode to the provider, each
+	// reading the mode afresh, so the last hand-over carries the mode as it is
+	// now and a stale one never lands after it: the provider's attestor
+	// follows what it is handed. Always taken before stateLock.
+	providerProvideModeLock sync.Mutex
 	// Test-only barriers surround the final owner admission and real commit.
 	// The former is outside auth locks; the latter runs under paired locks.
 	testingBeforeProviderKeySaveAdmission func(string)
@@ -1730,16 +1735,18 @@ func newDeviceLocalWithOverridesForPlatform(
 	}
 	deviceLocal.startTransferDiag()
 
-	// a provider attests its measured distance to the extenders it probes and
-	// reports those measurements itself (connect/DESIGNNOTES4.md §1,
-	// connect/GEOMAP.md §2.5). A consumer never identifies itself to an
-	// extender, so the attestor exists only while the provider does: it is
-	// installed here and the provider clears it as it closes. A hosted device
-	// installs none: it never provides, and its space is shared across
-	// unrelated customers, whose probes it would attest -- and report -- in
-	// this tenant's name.
+	// a providing device attests its measured distance to the extenders it
+	// probes and reports those measurements itself (connect/DESIGNNOTES4.md
+	// §1, connect/GEOMAP.md §2.5). A device that does not provide never
+	// identifies itself to an extender, so the provider installs the attestor
+	// only when its provide mode leaves none, and clears it when the mode
+	// returns to none or the provider closes: a device built with a provider
+	// but provide mode none -- what every app build is -- probes to rank only.
+	// A hosted device enables none: it never provides, and its space is shared
+	// across unrelated customers, whose probes it would attest -- and report --
+	// in this tenant's name.
 	if provider != nil && !settings.HostedIncompatible {
-		provider.installProbeAttestor(log, settings.providerPingReporterSettings)
+		provider.enableProbeAttestor(log, settings.providerPingReporterSettings)
 	}
 
 	ownedClientStrategyTransferred = true
@@ -3407,9 +3414,10 @@ func (self *DeviceLocal) canReferChanged(canRefer bool) {
 
 func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
 	// self.assertNotLockOwner()
-	// the provider's transports follow the mode: a public provider dials the
-	// platform directly (EXTENDER.md J4)
-	self.updateProviderProvideMode(provideMode)
+	// the provider's transports and its attestor follow the mode: a public
+	// provider dials the platform directly (EXTENDER.md J4), and only a
+	// providing one attests its probes (connect/DESIGNNOTES4.md §1)
+	self.updateProviderProvideMode()
 	for _, listener := range self.provideModeChangeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ProvideModeChanged(provideMode)
@@ -3417,14 +3425,25 @@ func (self *DeviceLocal) provideModeChanged(provideMode ProvideMode) {
 	}
 }
 
-// Hands the current provide mode to the provider, which rebuilds its
-// transports when the public flag flips (J4). Never called with the device
-// lock held.
-func (self *DeviceLocal) updateProviderProvideMode(provideMode ProvideMode) {
-	self.stateLock.Lock()
-	provider := self.provider
-	closed := self.closed
-	self.stateLock.Unlock()
+// Hands the provide mode as it is now to the provider, which rebuilds its
+// transports when the public flag flips (J4) and attests only while the mode
+// is not none (connect/DESIGNNOTES4.md §1). The mode is read here rather than
+// taken from the change that prompted the hand-over, since two changes may
+// deliver out of order. Never called with the device lock held.
+func (self *DeviceLocal) updateProviderProvideMode() {
+	self.providerProvideModeLock.Lock()
+	defer self.providerProvideModeLock.Unlock()
+
+	var provider *deviceLocalProvider
+	var closed bool
+	var provideMode ProvideMode
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		provider = self.provider
+		closed = self.closed
+		provideMode = self.provideMode
+	}()
 	if closed || provider == nil {
 		return
 	}

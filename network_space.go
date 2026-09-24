@@ -240,10 +240,12 @@ type NetworkSpace struct {
 	closed    bool
 	// The attesting provider of the device that provides in this space, and
 	// the reporter its probes go to (connect/DESIGNNOTES4.md §1, GEOMAP §2.5).
-	// Nil while no provider has installed one. The space keeps the pair
-	// rather than leaving it on the client alone, because a settings change
-	// replaces the client in place (K6) and the replacement must attest
-	// exactly as the one it replaced.
+	// Nil while no device in the space provides: a provider installs the pair
+	// when its provide mode leaves none and clears it when the mode returns
+	// to none or it closes. The space keeps the pair rather than leaving it
+	// on the client alone, because a settings change replaces the client in
+	// place (K6) and the replacement must attest exactly as the one it
+	// replaced, no more and no less.
 	extenderProbeAttestor *connect.ExtenderProbeAttestor
 	extenderProbeReporter *connect.ExtenderPingReporter
 	// The extender identity of a space with no local state (B1): the seed an
@@ -328,10 +330,11 @@ func (self *NetworkSpace) getExtenderNetworkClient() *connect.ExtenderNetworkCli
 
 // Installs the attesting provider, and the reporter its probes go to, on the
 // refresh loop this space runs now and on every replacement a settings change
-// builds (K6). Only the provider role calls this: a consumer never identifies
-// itself to an extender. The client is written under the space lock, which
-// orders an install, a clear and a replacement, so none of them can land
-// between another's read and its write.
+// builds (K6), a space with no loop yet keeping the pair for its first. Only a
+// providing device calls this, when its provide mode leaves none: a device
+// that does not provide never identifies itself to an extender. The client
+// is written under the space lock, which orders an install, a clear and a
+// replacement, so none of them can land between another's read and its write.
 func (self *NetworkSpace) setExtenderProbeAttestor(
 	attestor *connect.ExtenderProbeAttestor,
 	reporter *connect.ExtenderPingReporter,
@@ -345,9 +348,9 @@ func (self *NetworkSpace) setExtenderProbeAttestor(
 	}
 }
 
-// Clears the attestor a provider installed, and nothing installed after it:
-// of two devices that share a space, the one that closes must not leave the
-// other ranking only.
+// Clears the attestor a provider installed, when its provide mode returns to
+// none or it closes, and nothing installed after it: of two devices that
+// share a space, the one that stops must not leave the other ranking only.
 func (self *NetworkSpace) clearExtenderProbeAttestor(attestor *connect.ExtenderProbeAttestor) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

@@ -329,8 +329,11 @@ func TestDeviceLocalProvideModeReachesProvider(t *testing.T) {
 	) migratablePlatformTransport {
 		return newFakeMigratablePlatformTransport(auth, true)
 	}
-	device := &DeviceLocal{provider: provider}
-	device.updateProviderProvideMode(ProvideModePublic)
+	device := &DeviceLocal{
+		provider:    provider,
+		provideMode: ProvideModePublic,
+	}
+	device.updateProviderProvideMode()
 
 	provider.stateLock.Lock()
 	provideMode := provider.provideMode
