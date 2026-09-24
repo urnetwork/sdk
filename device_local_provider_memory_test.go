@@ -15,11 +15,12 @@ import (
 	"github.com/urnetwork/connect/protocol"
 )
 
-// Mirror the bounded Connect graph, including the provider's prepaid control
-// workspace. Keep one exact ledger for admission and overlapping generations.
+// Mirror the bounded Connect graph, including its separate prepaid control
+// and ordinary-ingress workspaces. The extra 32 KiB remains inside the same
+// NAT/root ceilings, including the tighter iOS sizing profile.
 const (
 	providerMemoryTestNatByteCount      ByteCount = 256 * 1024
-	providerMemoryTestProviderByteCount ByteCount = 544 * 1024
+	providerMemoryTestProviderByteCount ByteCount = 576 * 1024
 	providerMemoryTestStatsByteCount    ByteCount = 1024
 )
 
@@ -207,7 +208,7 @@ func TestDeviceLocalProviderMemoryCapturedStatsCloseAndFinalSnapshot(t *testing.
 }
 
 func TestDeviceLocalProviderMemoryWorstSupportedOverlapProfiles(t *testing.T) {
-	for _, targetMiB := range []ByteCount{20, 28} {
+	for _, targetMiB := range []ByteCount{20, 24, 28} {
 		t.Run(fmt.Sprint(targetMiB), func(t *testing.T) {
 			device, client := providerMemoryTestDevice(t, targetMiB*1024*1024)
 			memory := device.transferMemory
@@ -235,6 +236,9 @@ func TestDeviceLocalProviderMemoryWorstSupportedOverlapProfiles(t *testing.T) {
 				providers = append(providers, provider)
 			}
 			const exactOverlap = 3*providerMemoryTestNatByteCount + 2*(providerMemoryTestProviderByteCount+providerMemoryTestStatsByteCount)
+			if exactOverlap != 1922*1024 {
+				t.Fatal("old/new ordinary ingress workspaces are missing from overlap ledger")
+			}
 			if memory.nat.UsedByteCount() != exactOverlap || memory.root.UsedByteCount() != exactOverlap || memory.nat.Available() != memory.nat.TotalByteCount()-exactOverlap {
 				t.Fatal("fallback+old/new provider graph escaped shared profile ledger")
 			}
