@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"net"
+	"net/netip"
 	"runtime"
 	"strconv"
 	"strings"
@@ -123,6 +124,25 @@ type ExtenderProvideStatus struct {
 	// cannot take 53, "53,4053" on one that can. Empty when the dns carrier is
 	// not listening.
 	DnsPorts string
+	// The pings this extender made of the other extenders in its directory,
+	// one per peer address family, for the life of the role (GEOMAP §2.1), and
+	// what the peers answered: co-signed, refused with a reason, or no verdict
+	// at all. A ping the peer made no nonce for, or that reached no carrier of
+	// it, counts toward the pings alone, so the three need not add up to it.
+	PeerPingCount         int
+	PeerPingCosignedCount int
+	PeerPingRejectedCount int
+	PeerPingUnknownCount  int
+	// Unix milliseconds of when the last peer ping completed, 0 before the
+	// first.
+	LastPeerPingTime int64
+	// The actions this extender's admission limits answered 429 (A12), by
+	// the limit: the distinct subnets of the whole extender, and one
+	// subnet's own actions. Read at each status change rather than waking
+	// one, since a flood would otherwise be a callback per refused
+	// connection.
+	LimitedBySubnetsCount int
+	LimitedBySourceCount  int
 	// Connections open over every carrier right now.
 	ConnectionCount int
 }
@@ -165,6 +185,13 @@ type extenderProvideState struct {
 	LastActivationRefused bool
 	RevokedTime           int64
 	DnsPorts              string
+	PeerPingCount         int
+	PeerPingCosignedCount int
+	PeerPingRejectedCount int
+	PeerPingUnknownCount  int
+	LastPeerPingTime      int64
+	LimitedBySubnetsCount int
+	LimitedBySourceCount  int
 }
 
 func (self extenderProvideState) status(connectionCount int) *ExtenderProvideStatus {
@@ -181,6 +208,13 @@ func (self extenderProvideState) status(connectionCount int) *ExtenderProvideSta
 		LastActivationRefused: self.LastActivationRefused,
 		RevokedTime:           self.RevokedTime,
 		DnsPorts:              self.DnsPorts,
+		PeerPingCount:         self.PeerPingCount,
+		PeerPingCosignedCount: self.PeerPingCosignedCount,
+		PeerPingRejectedCount: self.PeerPingRejectedCount,
+		PeerPingUnknownCount:  self.PeerPingUnknownCount,
+		LastPeerPingTime:      self.LastPeerPingTime,
+		LimitedBySubnetsCount: self.LimitedBySubnetsCount,
+		LimitedBySourceCount:  self.LimitedBySourceCount,
 		ConnectionCount:       connectionCount,
 	}
 }
@@ -328,6 +362,22 @@ type deviceLocalExtenderSettings struct {
 	// ephemeral carrier is the only dns port on any host.
 	DnsPrivilegedPort bool
 
+	// The admission limits of this extender (EXTENDER.md A12), each a rate
+	// per minute: the distinct source subnets it admits, and the actions of
+	// one subnet. Zero takes the connect default; a negative value disables
+	// the limit.
+	AdmissionSubnetsPerMinute          int
+	AdmissionActionsPerSubnetPerMinute int
+	// Source prefixes exempt from both limits: the fronts of an NLayer hop,
+	// which rate-limit their own clients (A12). Empty exempts nothing.
+	AdmissionUnlimitedSources []netip.Prefix
+
+	// The most peers the role's pinger pings, and the most active records the
+	// space's directory keeps while the role runs (GEOMAP §2.1, D26). Zero
+	// takes the connect default; a negative value is unbounded.
+	PeerSampleSize       int
+	MaxActiveRecordCount int
+
 	// The family api urls the activation is posted to, and the plain api url
 	// for an operator that has neither (C2, G3).
 	ApiUrlV4 string
@@ -361,9 +411,18 @@ type deviceLocalExtenderSettings struct {
 	RequestTimeout      time.Duration
 
 	// Now and IpVersionSupported, when set, replace the clock and the host
-	// family probe of the activation loop. Tests pin both.
+	// family probe of the activation loop and of the peer pinger. Tests pin
+	// both.
 	Now                func() time.Time
 	IpVersionSupported func(ipVersion int) bool
+
+	// ConfigurePeerPinger and ConfigurePingReporter, when set, adjust the
+	// settings of the peer pinger and of the reporter its pings go to before
+	// either is built (GEOMAP §2.1, §2.5). Tests pin the schedule, replace the
+	// ping and post every report at once through them; production takes the
+	// connect defaults.
+	ConfigurePeerPinger   func(settings *connect.ExtenderPeerPingerSettings)
+	ConfigurePingReporter func(settings *connect.ExtenderPingReporterSettings)
 }
 
 // Whether the dns carrier also binds 53 beside its unprivileged port (L2).

@@ -569,6 +569,11 @@ type DeviceLocalSettings struct {
 	// carrier ports and point the activation at an in-process operator through
 	// it; production takes the fixed carrier ports and the space's own urls.
 	providerExtenderSettings func(settings *deviceLocalExtenderSettings)
+	// providerPingReporterSettings, when set, adjusts the settings of the
+	// reporter the provider's attested probes go to before it is built
+	// (GEOMAP §2.5). Tests read the url, credential and strategy it posts with
+	// through it; production posts to the space's api url.
+	providerPingReporterSettings func(settings *connect.ExtenderPingReporterSettings)
 	// testingBeforeExtenderProvideWatch, when set, runs in the provider
 	// extender status watch's goroutine before the watch waits on anything. A
 	// test holds it to land a change before the watch runs; production never
@@ -1725,19 +1730,16 @@ func newDeviceLocalWithOverridesForPlatform(
 	}
 	deviceLocal.startTransferDiag()
 
-	// a provider attests its measured distance to the extenders it probes
-	// (connect/DESIGNNOTES4.md §1). A consumer never identifies itself to an
+	// a provider attests its measured distance to the extenders it probes and
+	// reports those measurements itself (connect/DESIGNNOTES4.md §1,
+	// connect/GEOMAP.md §2.5). A consumer never identifies itself to an
 	// extender, so the attestor exists only while the provider does: it is
-	// installed here and cleared when the provider closes.
-	if provider != nil {
-		if networkClient := networkSpace.getExtenderNetworkClient(); networkClient != nil {
-			if keyManager := provider.Client().ClientKeyManager(); keyManager != nil {
-				networkClient.SetProbeAttestor(&connect.ExtenderProbeAttestor{
-					ClientId: clientId,
-					Sign:     keyManager.Sign,
-				})
-			}
-		}
+	// installed here and the provider clears it as it closes. A hosted device
+	// installs none: it never provides, and its space is shared across
+	// unrelated customers, whose probes it would attest -- and report -- in
+	// this tenant's name.
+	if provider != nil && !settings.HostedIncompatible {
+		provider.installProbeAttestor(log, settings.providerPingReporterSettings)
 	}
 
 	ownedClientStrategyTransferred = true
@@ -5336,12 +5338,11 @@ func (self *DeviceLocal) close() {
 	if self.provider != nil {
 		provider := self.provider
 		self.subprotocols.attach(nil)
+		// the close also takes the provider's attestor off the space, so
+		// nothing attests in its name once it is gone; the join closes its
+		// reporter
 		provider.Close()
 		self.provider = nil
-		// nothing may attest in the provider's name once it is gone
-		if networkClient := self.networkSpace.getExtenderNetworkClient(); networkClient != nil {
-			networkClient.SetProbeAttestor(nil)
-		}
 		self.startLifecycleWorkerWithLock(func() {
 			_ = provider.CloseAndWait(context.Background())
 		})

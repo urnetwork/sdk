@@ -473,3 +473,209 @@ func TestExtenderStatusRpcListenerSubscriptionLifecycle(t *testing.T) {
 	connect.AssertEqual(t, status.ExtenderStatus.KnownCount, 1)
 	connect.AssertEqual(t, status.ExtenderStatus.Extenders[0].Ip, "192.0.2.1")
 }
+
+// The attesting provider and the reporter a space keeps for its network
+// client (GEOMAP §2.5), read under the lock the space writes them under.
+func testNetworkSpaceProbeAttestor(
+	networkSpace *NetworkSpace,
+) (*connect.ExtenderProbeAttestor, *connect.ExtenderPingReporter) {
+	networkSpace.stateLock.Lock()
+	defer networkSpace.stateLock.Unlock()
+	return networkSpace.extenderProbeAttestor, networkSpace.extenderProbeReporter
+}
+
+// Fails unless the network client carries exactly this attestor and reporter,
+// nil for none. The client reports the pair it uses through ProbeAttestor, so
+// the comparison is by identity against what the probe pass will sign with.
+func testAssertExtenderNetworkClientProbeAttestor(
+	t *testing.T,
+	networkClient *connect.ExtenderNetworkClient,
+	attestor *connect.ExtenderProbeAttestor,
+	reporter *connect.ExtenderPingReporter,
+) {
+	t.Helper()
+	installedAttestor, installedReporter := networkClient.ProbeAttestor()
+	if installedAttestor != attestor {
+		t.Fatalf("the network client carries attestor %p, expected %p", installedAttestor, attestor)
+	}
+	if installedReporter != reporter {
+		t.Fatalf("the network client carries reporter %p, expected %p", installedReporter, reporter)
+	}
+}
+
+// A providing device attests the probes of the space's network client and
+// reports them through a reporter of its own (connect/DESIGNNOTES4.md §1,
+// GEOMAP §2.5). The attestor names the provider and signs with its client key;
+// the reporter posts to the space's api url, through the space's strategy,
+// under whatever jwt the provider holds when it posts. A settings change that
+// replaces the client in place hands the replacement the same pair (K6), and
+// closing the device takes both off it.
+func TestDeviceLocalProviderInstallsItsProbeAttestor(t *testing.T) {
+	testEnableExtenderManualHostsNetwork(t)
+	_, networkSpace := testExtenderStatusSpace(t)
+	networkClient := networkSpace.getExtenderNetworkClient()
+	if networkClient == nil {
+		t.Fatal("the space ran no extender network client")
+	}
+
+	var reporterSettings *connect.ExtenderPingReporterSettings
+	settings := testExtenderStatusDeviceSettings()
+	settings.AllowProvider = true
+	settings.providerPingReporterSettings = func(settings *connect.ExtenderPingReporterSettings) {
+		reporterSettings = settings
+	}
+	clientId := connect.NewId()
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace, "", "", "", "", NewId(), settings, clientId,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = deviceLocal.CloseAndWait(context.Background())
+	})
+
+	attestor, reporter := testNetworkSpaceProbeAttestor(networkSpace)
+	if attestor == nil || reporter == nil {
+		t.Fatalf("attestor = %v, reporter = %v, expected the provider's pair", attestor, reporter)
+	}
+	if attestor.Kind() != connect.ExtenderPingerKindProvider || attestor.ClientId != clientId {
+		t.Fatalf(
+			"the attestor names %q %s, expected the provider %s",
+			attestor.Kind(),
+			attestor.ClientId,
+			clientId,
+		)
+	}
+	deviceLocal.stateLock.Lock()
+	provider := deviceLocal.provider
+	deviceLocal.stateLock.Unlock()
+	// the claim is signed with the provider's client key, which is the key
+	// the operator verifies it under (GEOMAP §2.4)
+	signingBytes := []byte(connect.ExtenderProbeSignatureDomain + " claim")
+	if !connect.VerifyClientKeySignature(
+		provider.Client().ClientKeyManager().PublicKey(),
+		signingBytes,
+		attestor.Sign(signingBytes),
+	) {
+		t.Fatal("the attestor does not sign with the provider's client key")
+	}
+	// the pair is the provider's own, and it is what the client carries
+	func() {
+		provider.stateLock.Lock()
+		defer provider.stateLock.Unlock()
+		if provider.probeAttestor != attestor || provider.pingReporter != reporter {
+			t.Fatal("the space carries a pair the provider did not install")
+		}
+	}()
+	testAssertExtenderNetworkClientProbeAttestor(t, networkClient, attestor, reporter)
+
+	// the report goes where every other api call of the provider goes, under
+	// the jwt the provider holds at the time of the post
+	if reporterSettings == nil {
+		t.Fatal("the provider built its reporter without its settings")
+	}
+	connect.AssertEqual(t, reporterSettings.ApiUrl, networkSpace.apiUrl)
+	if reporterSettings.ClientStrategy != networkSpace.clientStrategy {
+		t.Fatal("the reporter does not post through the space's strategy")
+	}
+	provider.SetByJwt("refreshed-jwt")
+	if byJwt := reporterSettings.ByJwt(); byJwt != "refreshed-jwt" {
+		t.Fatalf("the reporter posts under %q, expected the refreshed jwt", byJwt)
+	}
+
+	// a settings change replaces the client in place, and the replacement
+	// attests exactly as the one it replaced did (K6)
+	if !networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+		values.ExtenderHosts = []string{"192.0.2.9"}
+	}) {
+		t.Fatal("the settings change changed nothing")
+	}
+	replacement := networkSpace.getExtenderNetworkClient()
+	if replacement == nil || replacement == networkClient {
+		t.Fatal("the settings change did not replace the network client")
+	}
+	testAssertExtenderNetworkClientProbeAttestor(t, replacement, attestor, reporter)
+
+	// nothing attests in the provider's name once it is gone
+	if err := deviceLocal.CloseAndWait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if attestor, reporter := testNetworkSpaceProbeAttestor(networkSpace); attestor != nil || reporter != nil {
+		t.Fatal("the space kept the provider's pair after the device closed")
+	}
+	testAssertExtenderNetworkClientProbeAttestor(t, replacement, nil, nil)
+}
+
+// Only a provider identifies itself to an extender (THREAT-MODEL.md §4): a device
+// with no provider installs no attestor, and neither does a hosted device,
+// which never provides and whose space is shared across unrelated customers.
+// Of two providers in one space the later attests, and the earlier one closing
+// -- a device replaced at a re-login, say -- leaves the later one's in place
+// rather than leaving the space ranking only.
+func TestDeviceLocalProbeAttestorBelongsToOneProvider(t *testing.T) {
+	testEnableExtenderManualHostsNetwork(t)
+	_, networkSpace := testExtenderStatusSpace(t)
+	networkClient := networkSpace.getExtenderNetworkClient()
+	if networkClient == nil {
+		t.Fatal("the space ran no extender network client")
+	}
+	newDevice := func(configure func(settings *DeviceLocalSettings)) *DeviceLocal {
+		t.Helper()
+		settings := testExtenderStatusDeviceSettings()
+		configure(settings)
+		deviceLocal, err := newDeviceLocalWithOverrides(
+			networkSpace, "", "", "", "", NewId(), settings, connect.NewId(),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = deviceLocal.CloseAndWait(context.Background())
+		})
+		return deviceLocal
+	}
+	assertNoAttestor := func(name string) {
+		t.Helper()
+		if attestor, reporter := testNetworkSpaceProbeAttestor(networkSpace); attestor != nil || reporter != nil {
+			t.Fatalf("%s left an attestor installed", name)
+		}
+		testAssertExtenderNetworkClientProbeAttestor(t, networkClient, nil, nil)
+	}
+
+	newDevice(func(settings *DeviceLocalSettings) {
+		settings.AllowProvider = false
+	})
+	assertNoAttestor("a device with no provider")
+	newDevice(func(settings *DeviceLocalSettings) {
+		settings.AllowProvider = true
+		settings.HostedIncompatible = true
+	})
+	assertNoAttestor("a hosted device")
+
+	earlier := newDevice(func(settings *DeviceLocalSettings) {
+		settings.AllowProvider = true
+	})
+	earlierAttestor, _ := testNetworkSpaceProbeAttestor(networkSpace)
+	later := newDevice(func(settings *DeviceLocalSettings) {
+		settings.AllowProvider = true
+	})
+	laterAttestor, laterReporter := testNetworkSpaceProbeAttestor(networkSpace)
+	if earlierAttestor == nil || laterAttestor == nil || earlierAttestor == laterAttestor {
+		t.Fatal("each provider did not install an attestor of its own")
+	}
+	testAssertExtenderNetworkClientProbeAttestor(t, networkClient, laterAttestor, laterReporter)
+
+	if err := earlier.CloseAndWait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if attestor, reporter := testNetworkSpaceProbeAttestor(networkSpace); attestor != laterAttestor ||
+		reporter != laterReporter {
+		t.Fatal("the earlier provider's close took the later provider's attestor")
+	}
+	testAssertExtenderNetworkClientProbeAttestor(t, networkClient, laterAttestor, laterReporter)
+	if err := later.CloseAndWait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertNoAttestor("the last provider to close")
+}

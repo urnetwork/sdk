@@ -233,11 +233,19 @@ type NetworkSpace struct {
 	// stateLock guards the node, which the provider extender role replaces
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
-	// change restarts in place (K6), and the extender fields of `values`,
-	// which that change rewrites. Every other field of `values` is written
-	// once at construction.
+	// change restarts in place (K6), the attestor installed on that client,
+	// and the extender fields of `values`, which that change rewrites. Every
+	// other field of `values` is written once at construction.
 	stateLock sync.Mutex
 	closed    bool
+	// The attesting provider of the device that provides in this space, and
+	// the reporter its probes go to (connect/DESIGNNOTES4.md §1, GEOMAP §2.5).
+	// Nil while no provider has installed one. The space keeps the pair
+	// rather than leaving it on the client alone, because a settings change
+	// replaces the client in place (K6) and the replacement must attest
+	// exactly as the one it replaced.
+	extenderProbeAttestor *connect.ExtenderProbeAttestor
+	extenderProbeReporter *connect.ExtenderPingReporter
 	// The extender identity of a space with no local state (B1): the seed an
 	// embedder supplied through the device's key material, else one generated
 	// at first use. A space with local state keeps `.extender_key` instead,
@@ -316,6 +324,41 @@ func (self *NetworkSpace) getExtenderNetworkClient() *connect.ExtenderNetworkCli
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.extenderNetworkClient
+}
+
+// Installs the attesting provider, and the reporter its probes go to, on the
+// refresh loop this space runs now and on every replacement a settings change
+// builds (K6). Only the provider role calls this: a consumer never identifies
+// itself to an extender. The client is written under the space lock, which
+// orders an install, a clear and a replacement, so none of them can land
+// between another's read and its write.
+func (self *NetworkSpace) setExtenderProbeAttestor(
+	attestor *connect.ExtenderProbeAttestor,
+	reporter *connect.ExtenderPingReporter,
+) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.extenderProbeAttestor = attestor
+	self.extenderProbeReporter = reporter
+	if self.extenderNetworkClient != nil {
+		self.extenderNetworkClient.SetProbeAttestor(attestor, reporter)
+	}
+}
+
+// Clears the attestor a provider installed, and nothing installed after it:
+// of two devices that share a space, the one that closes must not leave the
+// other ranking only.
+func (self *NetworkSpace) clearExtenderProbeAttestor(attestor *connect.ExtenderProbeAttestor) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if attestor == nil || self.extenderProbeAttestor != attestor {
+		return
+	}
+	self.extenderProbeAttestor = nil
+	self.extenderProbeReporter = nil
+	if self.extenderNetworkClient != nil {
+		self.extenderNetworkClient.SetProbeAttestor(nil, nil)
+	}
 }
 
 // A copy of this space's values. The extender fields are replaced in place by
@@ -687,6 +730,11 @@ func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
 				return false
 			}
 			self.extenderNetworkClient = networkClient
+			// the replacement attests exactly as the client it replaced did,
+			// in the same scope, so a provider's close cannot land in between
+			if networkClient != nil && self.extenderProbeAttestor != nil {
+				networkClient.SetProbeAttestor(self.extenderProbeAttestor, self.extenderProbeReporter)
+			}
 			return true
 		}()
 		if !installed && networkClient != nil {

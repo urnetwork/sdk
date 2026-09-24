@@ -1922,3 +1922,408 @@ func TestDeviceLocalProviderExtenderActivatesEveryDnsPort(t *testing.T) {
 		t.Fatalf("listen error = %q, expected every carrier to bind", status.ListenError)
 	}
 }
+
+// One peer of the provider extender: an identity key, the documentation
+// address its signed record lists, and what it answers the role's ping with.
+type testProvideExtenderPeer struct {
+	ip         string
+	publicKey  ed25519.PublicKey
+	privateKey ed25519.PrivateKey
+	// a co-signature, a refusal or no verdict
+	outcome connect.ExtenderPingOutcome
+	// the ping is kept in flight until the role closes it
+	hold bool
+}
+
+// A peer at the documentation ip with a fresh identity, answering as told.
+func newTestProvideExtenderPeer(
+	t *testing.T,
+	ip string,
+	outcome connect.ExtenderPingOutcome,
+) *testProvideExtenderPeer {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &testProvideExtenderPeer{
+		ip:         ip,
+		publicKey:  publicKey,
+		privateKey: privateKey,
+		outcome:    outcome,
+	}
+}
+
+// The peer's own attestor, which signs as an extender does: with its identity
+// key and under the peer probe domain only (GEOMAP §2.2).
+func (self *testProvideExtenderPeer) attestor() *connect.ExtenderProbeAttestor {
+	return connect.NewExtenderProbeExtenderAttestor(
+		self.publicKey,
+		connect.NewExtenderPeerProbeSigner(self.privateKey),
+	)
+}
+
+// Publishes a peer as the operator does: a record signed by the fixture root
+// key for the fixture's network host, applied the way the mesh applies one.
+func (self *testProvideExtenderFixture) applyPeerRecord(peer *testProvideExtenderPeer) {
+	self.t.Helper()
+	now := self.clock.Now()
+	record, err := connect.SignExtenderRecord(self.rootPrivateKey, &protocol.ExtenderRecordBody{
+		PublicKey: peer.publicKey,
+		Addresses: []*protocol.ExtenderAddress{
+			{
+				Ip:        peer.ip,
+				IpVersion: 4,
+				Carriers:  []string{connect.ExtenderCarrierTcp},
+			},
+		},
+		TcpPort:      443,
+		CountryCode:  "zz",
+		IssueTimeMs:  uint64(now.UnixMilli()),
+		ExpireTimeMs: uint64(now.Add(24 * time.Hour).UnixMilli()),
+		NetworkHost:  testProvideExtenderHost,
+	})
+	if err != nil {
+		self.t.Fatal(err)
+	}
+	if _, err := self.networkSpace.extenderDirectory.ApplyRecord(record, connect.ExtenderSourceGossip); err != nil {
+		self.t.Fatal(err)
+	}
+}
+
+// One probe of the role's own server over its tcp carrier on loopback, made
+// by the given attestor (GEOMAP §2.4).
+func (self *testProvideExtenderFixture) probeExtender(
+	attestor *connect.ExtenderProbeAttestor,
+) *connect.ExtenderLatencyProbe {
+	self.t.Helper()
+	connectSettings := connect.DefaultConnectSettings()
+	connectSettings.ConnectTimeout = 10 * time.Second
+	connectSettings.TlsTimeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	probe, err := connect.ProbeExtenderLatency(
+		ctx,
+		connectSettings,
+		&connect.ExtenderConfig{
+			Profile: connect.ExtenderProfile{
+				ConnectMode: connect.ExtenderConnectModeTcpTls,
+				ServerName:  "front.example",
+				Port:        self.tcpPort,
+			},
+			Ip:        netip.MustParseAddr("127.0.0.1"),
+			PublicKey: self.extender().publicKey,
+		},
+		attestor,
+	)
+	if err != nil {
+		self.t.Fatal(err)
+	}
+	if !probe.Attested {
+		self.t.Fatalf("the probe attested nothing: %v", probe.AttestErr)
+	}
+	return probe
+}
+
+// The role's peer pings as the peers answer them (GEOMAP §2.3). Each claim is
+// the one the role's own attestor signed, and each answer is made the way a
+// peer's server makes it: a co-signature by the peer's key over the exact
+// claim, a refusal with its reason, or no verdict. A held peer keeps its ping
+// in flight until the role closes it.
+type testProvideExtenderPeerPings struct {
+	t *testing.T
+
+	// closed when the held ping starts, and when it returns
+	held     chan struct{}
+	released chan struct{}
+
+	stateLock sync.Mutex
+	// the role's identity key, which every claim must be signed under
+	publicKey ed25519.PublicKey
+	ipPeers   map[string]*testProvideExtenderPeer
+	holding   bool
+}
+
+// The peers of a role, with none yet and no key to judge claims by.
+func newTestProvideExtenderPeerPings(t *testing.T) *testProvideExtenderPeerPings {
+	return &testProvideExtenderPeerPings{
+		t:        t,
+		held:     make(chan struct{}),
+		released: make(chan struct{}),
+		ipPeers:  map[string]*testProvideExtenderPeer{},
+	}
+}
+
+// Sets the role's identity key every claim must be signed under.
+func (self *testProvideExtenderPeerPings) setPublicKey(publicKey ed25519.PublicKey) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.publicKey = publicKey
+}
+
+// Adds a peer the role's pings may reach.
+func (self *testProvideExtenderPeerPings) addPeer(peer *testProvideExtenderPeer) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.ipPeers[peer.ip] = peer
+}
+
+// One probe of one peer carrier, answered as that peer answers it.
+func (self *testProvideExtenderPeerPings) ping(
+	ctx context.Context,
+	extenderConfig *connect.ExtenderConfig,
+	attestor *connect.ExtenderProbeAttestor,
+) (*connect.ExtenderLatencyProbe, error) {
+	self.stateLock.Lock()
+	publicKey := self.publicKey
+	peer := self.ipPeers[extenderConfig.Ip.String()]
+	hold := peer != nil && peer.hold && !self.holding
+	if hold {
+		self.holding = true
+	}
+	self.stateLock.Unlock()
+
+	if peer == nil || !bytes.Equal(extenderConfig.PublicKey, peer.publicKey) {
+		self.t.Errorf("the role pinged %s, which is no peer of this test", extenderConfig.Ip)
+		return nil, fmt.Errorf("no peer at %s in this test", extenderConfig.Ip)
+	}
+	if hold {
+		defer close(self.released)
+		close(self.held)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	// the role pings as itself: an extender attestor over its identity key
+	if attestor == nil ||
+		attestor.Kind() != connect.ExtenderPingerKindExtender ||
+		!bytes.Equal(attestor.ExtenderPublicKey, publicKey) {
+		self.t.Errorf("the role pinged %s without its own extender attestor", extenderConfig.Ip)
+		return nil, fmt.Errorf("the ping of %s carried no attestor of the role", extenderConfig.Ip)
+	}
+
+	rtt := 10 * time.Millisecond
+	nonce, err := connect.NewExtenderProbeNonce()
+	if err != nil {
+		return nil, err
+	}
+	attestation := &protocol.ExtenderProbeAttestation{
+		PingerExtenderPublicKey: slices.Clone(attestor.ExtenderPublicKey),
+		ExtenderPublicKey:       slices.Clone(extenderConfig.PublicKey),
+		ProbeNonce:              nonce,
+		RttMs:                   uint32(rtt / time.Millisecond),
+		TimestampMs:             uint64(time.Now().UnixMilli()),
+	}
+	if err := connect.SignExtenderProbeAttestation(attestor, attestation); err != nil {
+		self.t.Errorf("the role's attestor did not sign its claim: %s", err)
+		return nil, err
+	}
+	// what a peer checks before it co-signs (GEOMAP §2.4)
+	if !connect.VerifyExtenderProbeAttestation(publicKey, attestation) {
+		self.t.Errorf("the role's claim on %s does not verify under its identity key", extenderConfig.Ip)
+	}
+	probe := &connect.ExtenderLatencyProbe{
+		Rtt:         rtt,
+		Response:    &protocol.ExtenderResponse{PublicKey: slices.Clone(extenderConfig.PublicKey)},
+		Attested:    true,
+		Attestation: attestation,
+		Outcome:     peer.outcome,
+	}
+	switch peer.outcome {
+	case connect.ExtenderPingCosigned:
+		cosignature, err := connect.SignExtenderProbeVerdict(
+			func(data []byte) []byte {
+				return ed25519.Sign(peer.privateKey, data)
+			},
+			attestation,
+		)
+		if err != nil {
+			return nil, err
+		}
+		probe.Verdict = &protocol.ExtenderProbeVerdict{
+			Accepted:    true,
+			Cosignature: cosignature,
+		}
+		probe.Cosigned = true
+	case connect.ExtenderPingRejected:
+		probe.Verdict = &protocol.ExtenderProbeVerdict{
+			Reason: connect.ExtenderProbeVerdictReasonRttBelowObserved,
+		}
+		probe.Reason = connect.ExtenderProbeVerdictReasonRttBelowObserved
+	}
+	return probe, nil
+}
+
+// The role pings its peers and judges theirs by the same records (GEOMAP §2.1
+// to §2.5). Its server refuses an extender that pings it as an unknown pinger
+// until the directory holds an active record of that key, and co-signs it
+// after. Its pinger pings every other active extender as this extender,
+// signing with the identity key, reports every attested ping to the role's
+// api url, and counts what the peers answered on the provide status. Closing
+// the role joins a ping still in flight.
+func TestDeviceLocalProviderExtenderPingsItsPeers(t *testing.T) {
+	reports := make(chan *connect.ExtenderPingReport, 64)
+	reportServer := newTestProvideExtenderServer(t, "127.0.0.1", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != connect.ExtenderPingReportPath {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			args := &connect.ExtenderPingReportArgs{}
+			if err := json.NewDecoder(r.Body).Decode(args); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			for _, report := range args.Pings {
+				select {
+				case reports <- report:
+				default:
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(&connect.ExtenderPingReportResult{Accepted: len(args.Pings)})
+		}))
+	t.Cleanup(reportServer.Close)
+
+	pings := newTestProvideExtenderPeerPings(t)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		// the family urls still activate, since the plain url is only their
+		// fallback; it is the first url the reports go to (GEOMAP §2.5)
+		settings.ApiUrl = reportServer.URL
+		settings.ConfigurePeerPinger = func(pingerSettings *connect.ExtenderPeerPingerSettings) {
+			// a new peer is pinged at once, with one probe
+			pingerSettings.SpreadTimeout = 0
+			pingerSettings.ProbeCount = 1
+			pingerSettings.Ping = pings.ping
+		}
+		settings.ConfigurePingReporter = func(reporterSettings *connect.ExtenderPingReporterSettings) {
+			// every report is posted as it arrives
+			reporterSettings.MaxBatchCount = 1
+		}
+	})
+	fixture.waitStatus("both families activated", func(status *ExtenderProvideStatus) bool {
+		return status.ActivatedV4 && status.ActivatedV6
+	})
+	publicKey := fixture.extender().publicKey
+	pings.setPublicKey(publicKey)
+	// a peer refuses a pinger it does not know, so the pinger waits for this
+	// extender's own record, which the activation applies (GEOMAP §2.1)
+	directory := fixture.networkSpace.extenderDirectory
+	ownRecordDeadline := time.After(60 * time.Second)
+	for {
+		_, update := directory.ChangeMonitor().Get()
+		if directory.IsActiveKey(publicKey) {
+			break
+		}
+		select {
+		case <-update:
+		case <-ownRecordDeadline:
+			t.Fatal("this extender's own record never became active")
+		}
+	}
+
+	// the server knows an extender pinger only by an active record of its key
+	cosignedPeer := newTestProvideExtenderPeer(t, "198.51.100.21", connect.ExtenderPingCosigned)
+	pings.addPeer(cosignedPeer)
+	probe := fixture.probeExtender(cosignedPeer.attestor())
+	if probe.Outcome != connect.ExtenderPingRejected ||
+		probe.Reason != connect.ExtenderProbeVerdictReasonUnknownPinger {
+		t.Fatalf(
+			"a probe by an extender with no record came to %q, reason %d, expected an unknown pinger",
+			probe.Outcome,
+			probe.Reason,
+		)
+	}
+	fixture.applyPeerRecord(cosignedPeer)
+	// a loaded host can stretch the interval the server observes past the
+	// claim, which is refused as below observed; that says nothing of the
+	// verifier, so the probe is made again
+	for range 3 {
+		probe = fixture.probeExtender(cosignedPeer.attestor())
+		if probe.Reason != connect.ExtenderProbeVerdictReasonRttBelowObserved {
+			break
+		}
+	}
+	if probe.Outcome != connect.ExtenderPingCosigned {
+		t.Fatalf(
+			"a probe by an active peer came to %q, reason %d, expected a co-signature",
+			probe.Outcome,
+			probe.Reason,
+		)
+	}
+
+	// the pinger pings every peer as it appears, and the provide status
+	// counts what each answered
+	peers := []*testProvideExtenderPeer{cosignedPeer}
+	for i, outcome := range []connect.ExtenderPingOutcome{
+		connect.ExtenderPingRejected,
+		connect.ExtenderPingRejected,
+		connect.ExtenderPingUnknown,
+		connect.ExtenderPingUnknown,
+		connect.ExtenderPingUnknown,
+	} {
+		peer := newTestProvideExtenderPeer(t, fmt.Sprintf("198.51.100.%d", 22+i), outcome)
+		pings.addPeer(peer)
+		fixture.applyPeerRecord(peer)
+		peers = append(peers, peer)
+	}
+	status := fixture.waitStatus("every peer pinged", func(status *ExtenderProvideStatus) bool {
+		return status.PeerPingCount == len(peers)
+	})
+	connect.AssertEqual(t, status.PeerPingCosignedCount, 1)
+	connect.AssertEqual(t, status.PeerPingRejectedCount, 2)
+	connect.AssertEqual(t, status.PeerPingUnknownCount, 3)
+	// the pinger reads the role's clock, which this test never moves
+	connect.AssertEqual(t, status.LastPeerPingTime, fixture.clock.Now().UnixMilli())
+
+	// and every ping that attested reached the operator as this extender's,
+	// whatever the peer answered (GEOMAP §2.5)
+	publicKeyHex := hex.EncodeToString(publicKey)
+	outcomeCounts := map[connect.ExtenderPingOutcome]int{}
+	targetKeyHexes := map[string]bool{}
+	reportDeadline := time.After(60 * time.Second)
+	for range peers {
+		select {
+		case report := <-reports:
+			if report.PingerKind != connect.ExtenderPingerKindExtender ||
+				report.PingerExtenderPublicKeyHex != publicKeyHex ||
+				report.PingerClientId != "" {
+				t.Fatalf("report = %+v, expected a ping by this extender", report)
+			}
+			if report.Outcome == connect.ExtenderPingCosigned &&
+				(report.TargetExtenderPublicKeyHex != hex.EncodeToString(cosignedPeer.publicKey) ||
+					report.Cosignature == "") {
+				t.Fatalf("report = %+v, expected the co-signed peer's co-signature", report)
+			}
+			outcomeCounts[report.Outcome] += 1
+			targetKeyHexes[report.TargetExtenderPublicKeyHex] = true
+		case <-reportDeadline:
+			t.Fatalf("the operator saw %v of %d pings", outcomeCounts, len(peers))
+		}
+	}
+	connect.AssertEqual(t, outcomeCounts, map[connect.ExtenderPingOutcome]int{
+		connect.ExtenderPingCosigned: 1,
+		connect.ExtenderPingRejected: 2,
+		connect.ExtenderPingUnknown:  3,
+	})
+	connect.AssertEqual(t, len(targetKeyHexes), len(peers))
+
+	// the role is not closed until every ping it started has ended
+	heldPeer := newTestProvideExtenderPeer(t, "198.51.100.29", connect.ExtenderPingUnknown)
+	heldPeer.hold = true
+	pings.addPeer(heldPeer)
+	fixture.applyPeerRecord(heldPeer)
+	select {
+	case <-pings.held:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the role never pinged the newest peer")
+	}
+	fixture.device.SetProvideExtender(false)
+	select {
+	case <-pings.released:
+	default:
+		t.Fatal("the role closed with a peer ping still in flight")
+	}
+	if status := fixture.device.GetExtenderProvideStatus(); status.Enabled || status.PeerPingCount != 0 {
+		t.Fatalf("status = %+v with the role off, expected the disabled status", status)
+	}
+}

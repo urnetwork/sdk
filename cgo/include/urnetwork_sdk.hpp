@@ -1619,6 +1619,13 @@ struct ExtenderProvideStatus {
 	bool LastActivationRefused{};
 	int64_t RevokedTime{};
 	std::string DnsPorts{};
+	int64_t PeerPingCount{};
+	int64_t PeerPingCosignedCount{};
+	int64_t PeerPingRejectedCount{};
+	int64_t PeerPingUnknownCount{};
+	int64_t LastPeerPingTime{};
+	int64_t LimitedBySubnetsCount{};
+	int64_t LimitedBySourceCount{};
 	int64_t ConnectionCount{};
 };
 
@@ -7435,6 +7442,13 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["LastActivationRefused"] = v.LastActivationRefused;
 	j["RevokedTime"] = v.RevokedTime;
 	j["DnsPorts"] = v.DnsPorts;
+	j["PeerPingCount"] = v.PeerPingCount;
+	j["PeerPingCosignedCount"] = v.PeerPingCosignedCount;
+	j["PeerPingRejectedCount"] = v.PeerPingRejectedCount;
+	j["PeerPingUnknownCount"] = v.PeerPingUnknownCount;
+	j["LastPeerPingTime"] = v.LastPeerPingTime;
+	j["LimitedBySubnetsCount"] = v.LimitedBySubnetsCount;
+	j["LimitedBySourceCount"] = v.LimitedBySourceCount;
 	j["ConnectionCount"] = v.ConnectionCount;
 }
 inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
@@ -7491,6 +7505,27 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("DnsPorts"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DnsPorts);
+	}
+	if (auto it = j.find("PeerPingCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerPingCount);
+	}
+	if (auto it = j.find("PeerPingCosignedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerPingCosignedCount);
+	}
+	if (auto it = j.find("PeerPingRejectedCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerPingRejectedCount);
+	}
+	if (auto it = j.find("PeerPingUnknownCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.PeerPingUnknownCount);
+	}
+	if (auto it = j.find("LastPeerPingTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LastPeerPingTime);
+	}
+	if (auto it = j.find("LimitedBySubnetsCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LimitedBySubnetsCount);
+	}
+	if (auto it = j.find("LimitedBySourceCount"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LimitedBySourceCount);
 	}
 	if (auto it = j.find("ConnectionCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ConnectionCount);

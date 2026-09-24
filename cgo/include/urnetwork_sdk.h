@@ -2693,6 +2693,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   LastActivationRefused: boolean
  *   RevokedTime: number
  *   DnsPorts: string
+ *   PeerPingCount: number
+ *   PeerPingCosignedCount: number
+ *   PeerPingRejectedCount: number
+ *   PeerPingUnknownCount: number
+ *   LastPeerPingTime: number
+ *   LimitedBySubnetsCount: number
+ *   LimitedBySourceCount: number
  *   ConnectionCount: number
  */
 

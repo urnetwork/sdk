@@ -34,12 +34,12 @@ import (
 // of that post, and the signed record that comes back names the address this
 // host is published under. Nothing here announces an address of its own.
 //
-// The parts are the same four connectctl's standalone extender wires (G4), in
-// the same order: the in-process gossip listener and the feed server behind the
-// reserved services (A8), the space's node rebuilt in the extender role (D2),
-// the extender server, and the activation loop. The listener is stable for the
-// life of the role, so a changed set of activated addresses rebuilds only the
-// node.
+// The parts are the ones connectctl's standalone extender wires (G4): the
+// in-process gossip listener and the feed server behind the reserved services
+// (A8), the space's node rebuilt in the extender role (D2), the extender
+// server, the peer pinger with the reporter its pings go to (GEOMAP §2.1,
+// §2.5), and the activation loop. The listener is stable for the life of the
+// role, so a changed set of activated addresses rebuilds only the node.
 //
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
@@ -66,9 +66,10 @@ type deviceLocalExtender struct {
 	listener       *gossip.InProcessListener
 	feedServer     *gossip.FeedServer
 	server         *extender.ExtenderServer
-	// what this extender measured of each attesting provider, batched to
-	// the operator (connect/DESIGNNOTES4.md §3)
-	latencyReporter *connect.ExtenderLatencyReporter
+	// what this extender measures of its peers, and the reporter those
+	// measurements are posted to the operator through (GEOMAP §2.1, §2.5)
+	pingReporter *connect.ExtenderPingReporter
+	peerPinger   *connect.ExtenderPeerPinger
 
 	// the comparable half of the status; a consumer is woken only on an actual
 	// change, and the connection count is read live beside it
@@ -87,6 +88,11 @@ type deviceLocalExtender struct {
 	nodeListenAddrs []string
 	// when this extender's key was first seen revoked in the directory (G3)
 	revokedTime time.Time
+
+	// the space directory's cap on active records before this role replaced
+	// it, restored when the role closes, and whether it was replaced (D26)
+	previousMaxActiveRecordCount int
+	maxActiveRecordCountReplaced bool
 }
 
 // The role is running when this returns: the server is binding its carriers,
@@ -110,11 +116,14 @@ func newDeviceLocalExtender(
 	if log == nil {
 		log = connect.DefaultLogger()
 	}
-	publicKey, err := connect.ExtenderPublicKeyFromSeed(settings.IdentityKeySeed)
+	// the identity key signs this extender's peer pings; the published key is
+	// derived from it (B1, GEOMAP §2.2)
+	privateKey, err := connect.ExtenderPrivateKeyFromSeed(settings.IdentityKeySeed)
 	if err != nil {
 		log.Infof("[extender]provide identity err = %s\n", err)
 		return nil, fmt.Errorf("the extender identity is not usable: %s", err)
 	}
+	publicKey := privateKey.Public().(ed25519.PublicKey)
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	self := &deviceLocalExtender{
@@ -135,16 +144,6 @@ func newDeviceLocalExtender(
 		strategySettings = connect.DefaultClientStrategySettings()
 	}
 	self.clientStrategy = connect.NewDirectClientStrategy(cancelCtx, strategySettings, 0)
-
-	// the report goes under the same client credential the activation uses,
-	// to whichever api url this role has: the plain one, else the hello url,
-	// else a family url, since a report may arrive on either family
-	reporterSettings := connect.DefaultExtenderLatencyReporterSettings()
-	reporterSettings.Log = log
-	reporterSettings.ApiUrl = extenderReporterApiUrl(settings)
-	reporterSettings.ByJwt = settings.ByJwt
-	reporterSettings.ClientStrategy = self.clientStrategy
-	self.latencyReporter = connect.NewExtenderLatencyReporter(cancelCtx, reporterSettings)
 
 	self.listener = gossip.NewInProcessListener(cancelCtx, gossip.DefaultInProcessListenerSettings())
 	self.feedServer = gossip.NewFeedServer(
@@ -175,6 +174,64 @@ func newDeviceLocalExtender(
 		}
 		self.wakeMonitor.NotifyAll()
 	}, cancel)
+
+	// what this extender measures of its peers goes to the operator in
+	// batches, under the same client credential the activation uses. The
+	// pinger reports; what a provider measures of this extender that provider
+	// reports itself (GEOMAP §2.5)
+	reporterSettings := connect.DefaultExtenderPingReporterSettings()
+	reporterSettings.Log = log
+	reporterSettings.ApiUrl = extenderReporterApiUrl(settings)
+	reporterSettings.ByJwt = settings.ByJwt
+	reporterSettings.ClientStrategy = self.clientStrategy
+	if settings.ConfigurePingReporter != nil {
+		settings.ConfigurePingReporter(reporterSettings)
+	}
+	self.pingReporter = connect.NewExtenderPingReporter(cancelCtx, reporterSettings)
+
+	// a peer judges this extender's pings by the same records this server
+	// judges the peer's by, so they are signed as this extender, with the
+	// identity key and under the peer probe domain only, and they start once
+	// this extender's own record is active (GEOMAP §2.1, §2.4)
+	pingerSettings := connect.DefaultExtenderPeerPingerSettings()
+	pingerSettings.Log = log
+	pingerSettings.OwnPublicKey = publicKey
+	pingerSettings.Attestor = connect.NewExtenderProbeExtenderAttestor(
+		publicKey,
+		connect.NewExtenderPeerProbeSigner(privateKey),
+	)
+	pingerSettings.Reporter = self.pingReporter
+	if settings.Now != nil {
+		pingerSettings.Now = settings.Now
+	}
+	pingerSettings.IpVersionSupported = settings.IpVersionSupported
+	// the bounded peer sample (GEOMAP §2.1, D26): zero keeps the connect
+	// default and a negative value pings every peer
+	switch {
+	case settings.PeerSampleSize < 0:
+		pingerSettings.PeerSampleSize = 0
+	case 0 < settings.PeerSampleSize:
+		pingerSettings.PeerSampleSize = settings.PeerSampleSize
+	}
+	if settings.ConfigurePeerPinger != nil {
+		settings.ConfigurePeerPinger(pingerSettings)
+	}
+	self.peerPinger = connect.NewExtenderPeerPinger(
+		cancelCtx,
+		self.clientStrategy,
+		self.directory(),
+		pingerSettings,
+	)
+
+	// the space directory's cap on active records while the role runs (D26):
+	// zero leaves it as the space has it, a negative value keeps every record,
+	// and the space's own comes back when the role closes
+	if settings.MaxActiveRecordCount != 0 {
+		directory := self.directory()
+		self.previousMaxActiveRecordCount = directory.MaxActiveRecordCount()
+		self.maxActiveRecordCountReplaced = true
+		directory.SetMaxActiveRecordCount(max(0, settings.MaxActiveRecordCount))
+	}
 
 	go connect.HandleError(func() {
 		defer close(self.done)
@@ -226,6 +283,23 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings.DialContext = self.settings.DialContext
 	settings.Listen = self.settings.Listen
 	settings.ListenPacket = self.settings.ListenPacket
+	// the admission limits of this instance (A12): zero keeps the connect
+	// default and a negative value disables the limit
+	for _, limit := range []struct {
+		value int
+		field *int
+	}{
+		{value: self.settings.AdmissionSubnetsPerMinute, field: &settings.AdmissionSubnetsPerMinute},
+		{value: self.settings.AdmissionActionsPerSubnetPerMinute, field: &settings.AdmissionActionsPerSubnetPerMinute},
+	} {
+		switch {
+		case limit.value < 0:
+			*limit.field = 0
+		case 0 < limit.value:
+			*limit.field = limit.value
+		}
+	}
+	settings.AdmissionUnlimitedSources = slices.Clone(self.settings.AdmissionUnlimitedSources)
 	if self.settings.DnsTld != "" {
 		settings.DnsTlds = []string{self.settings.DnsTld}
 	}
@@ -240,7 +314,9 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 		}
 	}
 	settings.FeedConnHandler = self.feedServer.Serve
-	settings.ProbeAttestationHandler = self.latencyReporter.Report
+	// a peer that pings this extender is judged against the records the
+	// operator vouched for, the same directory the feed serves (GEOMAP §2.4)
+	settings.ProbePeerVerifier = self.directory().IsActiveKey
 	// a bind failure is not a user-visible error: it disables that carrier,
 	// is logged once by the server, and appears in the status (G2, F3)
 	settings.ListenErrorHandler = func(carrier string, err error) {
@@ -281,6 +357,8 @@ func (self *deviceLocalExtender) run() {
 		if directory := self.directory(); directory != nil {
 			_, directoryUpdate = directory.ChangeMonitor().Get()
 		}
+		// the ping counts the status carries (GEOMAP §2.1)
+		_, pingerUpdate := self.peerPinger.StatusMonitor().Get()
 
 		self.updateNode()
 		self.publish()
@@ -291,6 +369,7 @@ func (self *deviceLocalExtender) run() {
 		case <-wake:
 		case <-activatorUpdate:
 		case <-directoryUpdate:
+		case <-pingerUpdate:
 		}
 	}
 }
@@ -472,6 +551,22 @@ func (self *deviceLocalExtender) state() extenderProvideState {
 	}
 	state.LastActivationTime = extenderStatusTimeMs(lastActivationTime)
 	state.RevokedTime = extenderStatusTimeMs(self.updateRevoked())
+
+	// what this extender measured of its peers and what they answered
+	// (GEOMAP §2.1, §2.3)
+	pingerStatus := self.peerPinger.Status()
+	state.PeerPingCount = pingerStatus.PingCount
+	state.PeerPingCosignedCount = pingerStatus.CosignedCount
+	state.PeerPingRejectedCount = pingerStatus.RejectedCount
+	state.PeerPingUnknownCount = pingerStatus.UnknownCount
+	state.LastPeerPingTime = extenderStatusTimeMs(pingerStatus.LastPingTime)
+
+	// what the admission limits turned away (A12), read at each publish; a
+	// refusal alone wakes nothing, since a flood would be a publish per
+	// refused connection
+	admissionStats := self.server.AdmissionStats()
+	state.LimitedBySubnetsCount = int(admissionStats.LimitedBySubnetsCount)
+	state.LimitedBySourceCount = int(admissionStats.LimitedBySourceCount)
 	return state
 }
 
@@ -552,17 +647,25 @@ func (self *deviceLocalExtender) Close() {
 		if activator := self.currentActivator(); activator != nil {
 			activator.Close()
 		}
+		// a ping in flight reports into the reporter, and both post and dial
+		// through the strategy, so the pinger is joined first and the strategy
+		// last
+		self.peerPinger.Close()
+		self.pingReporter.Close()
 		self.server.CloseAndWait()
 		// the node holds the listener, so it goes before the listener does
 		self.settings.NetworkSpace.restoreExtenderNodeRole()
 		self.feedServer.Close()
 		self.listener.Close()
-		self.latencyReporter.Close()
 		self.clientStrategy.Close()
+		if self.maxActiveRecordCountReplaced {
+			self.directory().SetMaxActiveRecordCount(self.previousMaxActiveRecordCount)
+		}
 	})
 }
 
-// The api url the latency report is posted to: the first this role has.
+// The api url the ping report is posted to: the first this role has. A report
+// may arrive on either family, so a family url serves when there is no other.
 func extenderReporterApiUrl(settings *deviceLocalExtenderSettings) string {
 	for _, apiUrl := range []string{settings.ApiUrl, settings.HelloUrl, settings.ApiUrlV4, settings.ApiUrlV6} {
 		if apiUrl != "" {

@@ -110,6 +110,12 @@ type deviceLocalProvider struct {
 	// why the role could not start while it was asked to run, empty while it
 	// runs or was not asked to (N3)
 	extenderStartError string
+	// the attestor this provider installed on the space's network client and
+	// the reporter its attested probes go to (GEOMAP §2.5), nil until the
+	// device installs them. The close clears the attestor from the space, and
+	// the join closes the reporter.
+	probeAttestor *connect.ExtenderProbeAttestor
+	pingReporter  *connect.ExtenderPingReporter
 	// the device's effective provide mode, which decides whether the standby
 	// dials direct (J4). The device hands it over on every change.
 	provideMode ProvideMode
@@ -757,6 +763,13 @@ func (self *deviceLocalProvider) Close() {
 		// a libp2p host and a listening server
 		extender := self.extender
 		self.extender = nil
+		// nothing may attest in this provider's name once it is gone. The
+		// clear is made under the lock the install was made under, so the two
+		// cannot cross, and it clears this provider's own attestor only
+		if self.probeAttestor != nil {
+			self.networkSpace.clearExtenderProbeAttestor(self.probeAttestor)
+			self.probeAttestor = nil
+		}
 		self.stateLock.Unlock()
 		if extender != nil {
 			self.migrationWorkers.Add(1)
@@ -786,7 +799,15 @@ func (self *deviceLocalProvider) Close() {
 			// read after the migration workers have drained, so a generation
 			// built by the last migration is covered too
 			directStandbyStrategy := self.directStandbyStrategy
+			pingReporter := self.pingReporter
 			self.stateLock.Unlock()
+			if pingReporter != nil {
+				// the close already took it off the space, and its loop ends
+				// with the provider's context; this joins it. What it still
+				// held is a measurement, dropped rather than posted on the way
+				// out
+				pingReporter.Close()
+			}
 			closeMigratablePlatformTransportAndWait(platformTransport)
 			if directStandbyStrategy != nil {
 				// after the transports that dial with it are joined (J4)
@@ -1079,8 +1100,8 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 	return settings, nil
 }
 
-// The client jwt of this provider, read at each activation so a refresh is
-// picked up by the next one (G3).
+// The client jwt of this provider, read at each activation and at each ping
+// report so a refresh is picked up by the next one (G3, GEOMAP §2.5).
 func (self *deviceLocalProvider) byJwt() string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -1088,6 +1109,58 @@ func (self *deviceLocalProvider) byJwt() string {
 		return ""
 	}
 	return self.auth.ByJwt
+}
+
+// Makes this provider the attesting pinger of the space's network client (connect/DESIGNNOTES4.md §1): what the client's probe pass
+// measures of an extender is attested under this provider's client id and
+// client key, and this provider reports it to the operator itself, batched,
+// under its own client credential (GEOMAP §2.5). A space that runs no network
+// client probes nothing, and gets neither. The device calls this once, after
+// it is built; configure, when set, adjusts the reporter's settings first.
+func (self *deviceLocalProvider) installProbeAttestor(
+	log connect.Logger,
+	configure func(settings *connect.ExtenderPingReporterSettings),
+) {
+	networkSpace := self.networkSpace
+	if networkSpace == nil || networkSpace.getExtenderNetworkClient() == nil || self.client == nil {
+		return
+	}
+	keyManager := self.client.ClientKeyManager()
+	if keyManager == nil {
+		return
+	}
+
+	reporterSettings := connect.DefaultExtenderPingReporterSettings()
+	reporterSettings.Log = log
+	reporterSettings.ApiUrl = networkSpace.apiUrl
+	// a getter, so the refresh SetByJwt hands the transports reaches the
+	// next report as well
+	reporterSettings.ByJwt = self.byJwt
+	// the space's strategy, which every other api call of this provider takes
+	reporterSettings.ClientStrategy = self.clientStrategy
+	if configure != nil {
+		configure(reporterSettings)
+	}
+	pingReporter := connect.NewExtenderPingReporter(self.ctx, reporterSettings)
+	attestor := connect.NewExtenderProbeProviderAttestor(self.client.ClientId(), keyManager.Sign)
+
+	// installed under the lock the close clears under, so a close cannot land
+	// in between and leave the space attesting in the name of a provider that
+	// is gone
+	installed := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.closed || self.probeAttestor != nil {
+			return false
+		}
+		self.probeAttestor = attestor
+		self.pingReporter = pingReporter
+		networkSpace.setExtenderProbeAttestor(attestor, pingReporter)
+		return true
+	}()
+	if !installed {
+		pingReporter.Close()
+	}
 }
 
 // The provider extender status (F3). A provider with no role reports a
