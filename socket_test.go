@@ -13,7 +13,6 @@ import (
 	"io"
 	"math/big"
 	"net"
-	"net/netip"
 	"net/rpc"
 	"os"
 	"strconv"
@@ -58,6 +57,13 @@ type socketTestNetwork struct {
 
 func newSocketTestNetwork(t *testing.T) *socketTestNetwork {
 	t.Helper()
+	return newSocketTestNetworkWithPacketReply(t, nil)
+}
+
+// The optional reply hook owns its packet copy and can queue delivery without
+// blocking the shared packet reader.
+func newSocketTestNetworkWithPacketReply(t *testing.T, replyPacket func(*connect.IpPath, func())) *socketTestNetwork {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	settings := connect.DefaultTunSettings()
 	settings.DialRace = 1
@@ -83,7 +89,14 @@ func newSocketTestNetwork(t *testing.T) *socketTestNetwork {
 				return
 			}
 			path, _ := connect.ParseIpPath(p)
-			d.receive(connect.TransferPath{}, protocol.ProvideMode_Network, path, p)
+			if replyPacket == nil {
+				d.receive(connect.TransferPath{}, protocol.ProvideMode_Network, path, p)
+			} else {
+				packet := append([]byte(nil), p...)
+				replyPacket(path, func() {
+					d.receive(connect.TransferPath{}, protocol.ProvideMode_Network, path, packet)
+				})
+			}
 			connect.MessagePoolReturn(p)
 		}
 	}()
@@ -295,8 +308,10 @@ func TestSocketNamedHappyEyeballs(t *testing.T) {
 		for _, dead := range []int32{0, 6, 4} {
 			t.Run(network+strconv.Itoa(int(dead)), func(t *testing.T) {
 				n := newSocketTestNetwork(t)
-				_ = n.echo(t, network+"4", 8443)
-				_ = n.echo(t, network+"6", 8443)
+				livePeers := map[string]bool{
+					n.echo(t, network+"4", 8443): dead != 4,
+					n.echo(t, network+"6", 8443): dead != 6,
+				}
 				n.nat.drop.Store(dead)
 				start := time.Now()
 				c, err := n.device.Dial(network, "socket.test:8443")
@@ -308,11 +323,10 @@ func TestSocketNamedHappyEyeballs(t *testing.T) {
 				if time.Since(start) > 2*time.Second {
 					t.Fatal("family fallback too slow")
 				}
-				wantV6 := dead != 6
-				host, _, _ := net.SplitHostPort(c.RemoteAddr().String())
-				ip, _ := netip.ParseAddr(host)
-				if ip.Is6() != wantV6 {
-					t.Fatalf("winner=%s", c.RemoteAddr())
+				// The first completed TCP handshake or UDP reply wins.
+				// When both paths work, either family can win the race.
+				if !livePeers[c.RemoteAddr().String()] {
+					t.Fatalf("winner=%s is not a live configured peer", c.RemoteAddr())
 				}
 				socketRoundTrip(t, c, []byte("second"), network == "udp")
 			})
