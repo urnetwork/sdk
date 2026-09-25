@@ -75,6 +75,8 @@ type SnHeadResult struct {
 	Uid    int64  `json:"uid,omitempty"`
 	Rank   int64  `json:"rank,omitempty"`
 	Epoch  int64  `json:"epoch"`
+	// the subnet the head spot is on
+	Netuid int64 `json:"netuid"`
 	// "server" (estimate) or "chain" (validator consensus)
 	Source string   `json:"source"`
 	Error  *SnError `json:"error,omitempty"`
@@ -91,6 +93,7 @@ type snHeadResultJson struct {
 	Uid          int64           `json:"uid"`
 	Rank         int64           `json:"rank"`
 	Epoch        int64           `json:"epoch"`
+	Netuid       int64           `json:"netuid"`
 	Source       string          `json:"source"`
 	Error        *SnError        `json:"error"`
 }
@@ -112,6 +115,7 @@ func (self *SnHeadResult) UnmarshalJSON(b []byte) error {
 		Uid:          j.Uid,
 		Rank:         j.Rank,
 		Epoch:        j.Epoch,
+		Netuid:       j.Netuid,
 		Source:       j.Source,
 		Error:        j.Error,
 	}

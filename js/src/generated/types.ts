@@ -45,16 +45,34 @@ export interface ProxyAuthResult {
 export interface ProxyConfigResult {
   expiration_time: string;
   keepalive_seconds: number;
+  change_id?: number;
+  create_time?: string | null;
+  proxy_id?: string | null;
+  client_id?: string | null;
+  instance_id?: string | null;
   http_proxy_url?: string;
   https_proxy_url?: string;
   socks_proxy_url?: string;
+  api_base_url?: string;
   proxy_host?: string;
-  sock_proxy_port?: number;
+  block?: string;
+  socks_proxy_port?: number;
   http_proxy_port?: number;
   https_proxy_port?: number;
+  api_port?: number;
   auth_token?: string;
+  wg_config?: WgConfig | null;
   http_proxy_auth: ProxyAuthResult | null;
   socks_proxy_auth: ProxyAuthResult | null;
+}
+
+export interface WgConfig {
+  wg_proxy_port: number;
+  client_private_key: string;
+  client_public_key: string;
+  proxy_public_key: string;
+  client_ipv4: string;
+  config: string;
 }
 
 export interface ApiError {
@@ -73,6 +91,7 @@ export interface PointsLeaderboardRow {
   network_name?: string;
   emoji_tag?: string;
   anonymous: boolean;
+  contains_profanity?: boolean;
   total_points: number;
   blocks_with_points: number;
   streak: number;
@@ -100,7 +119,7 @@ export interface PointsLeaderboardResult {
   snapshot_time?: string | null;
   latest_epoch: number;
   epoch_metrics_available: boolean;
-  me?: PointsLeaderboardRow & { points_leaderboard_public: boolean } | null;
+  me?: PointsLeaderboardRow & { points_leaderboard_public: boolean; ranked: boolean } | null;
   error?: PointsLeaderboardError | null;
 }
 
@@ -121,6 +140,7 @@ export interface SetPointsLeaderboardPublicArgs {
 }
 
 export interface SetPointsLeaderboardPublicResult {
+  points_leaderboard_public: boolean;
   error?: SetPointsLeaderboardPublicError | null;
 }
 
@@ -197,14 +217,17 @@ export interface NetworkCreateArgs {
   guest_mode: boolean;
   verify_use_numeric?: boolean;
   referral_code?: string;
+  balance_code?: string;
   wallet_auth?: WalletAuthArgs | null;
 }
 
 export interface NetworkCreateResult {
   network?: NetworkCreateResultNetwork | null;
+  user_auth?: string;
   seedphrase?: string;
   verification_required?: NetworkCreateResultVerification | null;
   error?: NetworkCreateResultError | null;
+  is_pro?: boolean;
 }
 
 export interface PriceTier {
@@ -353,7 +376,9 @@ export interface NetworkCreateResultVerification {
 
 export interface NetworkCreateResultNetwork {
   by_jwt?: string;
+  network_id?: string | null;
   network_name?: string;
+  is_pro?: boolean;
 }
 
 export interface WalletAuthArgs {
@@ -361,6 +386,7 @@ export interface WalletAuthArgs {
   wallet_signature?: string;
   wallet_message?: string;
   blockchain?: string;
+  wallet_nonce?: string;
 }
 
 export interface StringList {
@@ -432,6 +458,8 @@ export interface AuthNetworkClientArgs {
   source_client_id?: string | null;
   description: string;
   device_spec: string;
+  roles?: string[] | null;
+  principal?: string;
   proxy_config?: ProxyConfig | null;
   time_zone?: string;
   locale?: string;
@@ -443,6 +471,8 @@ export interface ProxyConfig {
   enable_socks: boolean;
   enable_http: boolean;
   http_require_auth: boolean;
+  https_require_auth: boolean;
+  enable_wg: boolean;
   initial_device_state: ProxyDeviceState | null;
 }
 
@@ -450,13 +480,18 @@ export interface FindLocationsArgs {
   query: string;
   max_distance_fraction?: number;
   enable_max_distance_fraction?: boolean;
+  rank_mode?: string;
 }
 
 export interface FindLocationsResult {
-  specs: ProviderSpec[] | null;
   groups: LocationGroupResult[] | null;
   locations: LocationResult[] | null;
   devices: LocationDeviceResult[] | null;
+  country_count: number;
+  region_count: number;
+  city_count: number;
+  stable_count: number;
+  strong_privacy_count: number;
 }
 
 export interface LocationResult {
@@ -496,6 +531,12 @@ export interface FilteredLocations {
   cities: ConnectLocation[] | null;
   regions: ConnectLocation[] | null;
   devices: ConnectLocation[] | null;
+  region_groups: RegionGroup[] | null;
+}
+
+export interface RegionGroup {
+  region: ConnectLocation | null;
+  cities: ConnectLocation[] | null;
 }
 
 export interface ConnectLocationId {
@@ -527,6 +568,7 @@ export interface ConnectLocation {
 export interface ProxyDeviceState {
   location: ConnectLocation | null;
   performance_profile: PerformanceProfile | null;
+  country_code?: string;
 }
 
 export interface PerformanceProfile {
@@ -734,6 +776,7 @@ export interface SnHeadResult {
   uid?: number;
   rank?: number;
   epoch: number;
+  netuid: number;
   source: string;
   error?: SnError | null;
 }

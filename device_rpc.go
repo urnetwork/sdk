@@ -1692,6 +1692,11 @@ func (self *DeviceRemote) GetWindowStatus() *WindowStatus {
 	}
 }
 
+// the license list is embedded in this process's SDK; no rpc needed
+func (self *DeviceRemote) GetLicenses(app string) *LicenseInfoList {
+	return GetLicenses(app)
+}
+
 func (self *DeviceRemote) GetStats() *DeviceStats {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()

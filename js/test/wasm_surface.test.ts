@@ -227,3 +227,66 @@ test("suggestEmojiTag declarations match WASM runtime keys", () => {
   assert.match(source("../device_remote.go"), /m\["suggestEmojiTag"\]/);
   assert.match(main, /URnetworkSuggestEmojiTag/);
 });
+
+test("license declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const device = declarations.match(/export interface Device extends[\s\S]*?\n}/)?.[0] || "";
+  const deviceRemote = declarations.match(/export interface DeviceRemote extends[\s\S]*?\n}/)?.[0] || "";
+  assert.match(device, /getLicenses\(app: LicenseApp\): LicenseInfo\[\]/);
+  assert.match(deviceRemote, /getLicenses\(app: LicenseApp\): LicenseInfo\[\]/);
+  assert.match(source("../main.go"), /m\["getLicenses"\] = js.FuncOf\(/);
+  assert.match(source("../main.go"), /js.Global\(\).Set\("URnetworkGetLicenses", js.FuncOf\(jsGetLicenses\)\)/);
+  assert.match(source("../device_remote.go"), /m\["getLicenses"\] = js.FuncOf\(/);
+  const info = declarations.match(/export interface LicenseInfo \{[\s\S]*?\n}/)?.[0] || "";
+  const runtime = source("../license.go");
+  assert.match(info, /\bkind: "data" \| "software" \| "font";/);
+  assert.match(runtime, /"kind":/);
+  for (const field of ["name", "version", "origin", "url", "spdx", "copyright", "notice", "text"]) {
+    assert.match(info, new RegExp(`\\b${field}: string;`), field);
+    assert.match(runtime, new RegExp(`"${field}":`), field);
+  }
+});
+
+test("filteredLocations declarations match the WASM runtime", () => {
+  const declarations = source("../src/types.ts");
+  const index = source("../src/index.ts");
+  const loader = source("../src/loader.ts");
+  const main = source("../main.go");
+  const runtime = source("../view_controllers2.go");
+
+  // the global, registered by main.go and surfaced by the loader and URNetwork
+  assert.match(main, /js.Global\(\).Set\("URnetworkFilteredLocationsFromResult", js.FuncOf\(FilteredLocationsFromResult\)\)/);
+  assert.match(main, /return jsFilteredLocations\(sdk.GetFilteredLocationsFromResult\(&result, filter\)\)/);
+  assert.match(loader, /URnetworkFilteredLocationsFromResult: any;/);
+  assert.match(loader, /URnetworkFilteredLocationsFromResult: runtimeGlobal.URnetworkFilteredLocationsFromResult/);
+  assert.match(index, /filteredLocations\(\s*result: [^)]*string,\s*filter: string = "",?\s*\): FilteredLocations \| null/);
+  assert.match(index, /URnetworkFilteredLocationsFromResult\(json, filter\)/);
+
+  // the go side takes (resultJson string, filter string)
+  assert.match(main, /args\[0\].Type\(\) != js.TypeString/);
+
+  // every group key jsFilteredLocations emits is declared, and vice versa
+  const filtered = declarations.match(/export interface FilteredLocations \{[\s\S]*?\n}/)?.[0] || "";
+  const emitted = runtime.match(/func jsFilteredLocations[\s\S]*?\n}/)?.[0] || "";
+  const runtimeKeys = [...emitted.matchAll(/"(\w+)":/g)].map((m) => m[1]).sort();
+  const declaredKeys = [...filtered.matchAll(/^\s{2}(\w+): /gm)].map((m) => m[1]).sort();
+  assert.deepEqual(declaredKeys, runtimeKeys);
+  assert.deepEqual(runtimeKeys, ["bestMatches", "cities", "countries", "devices", "promoted", "regionGroups", "regions"]);
+  assert.match(filtered, /regionGroups: RegionGroupInfo\[\];/);
+
+  const group = declarations.match(/export interface RegionGroupInfo \{[\s\S]*?\n}/)?.[0] || "";
+  const groupRuntime = runtime.match(/func jsRegionGroupList[\s\S]*?\n}/)?.[0] || "";
+  assert.match(group, /region: ConnectLocationInfo \| null;/);
+  assert.match(group, /cities: ConnectLocationInfo\[\];/);
+  assert.match(groupRuntime, /"region": region,/);
+  assert.match(groupRuntime, /"cities": jsConnectLocationList\(group.Cities\),/);
+
+  // each location is the ConnectLocationInfo shape jsConnectLocation emits
+  const info = declarations.match(/export interface ConnectLocationInfo \{[\s\S]*?\n}/)?.[0] || "";
+  const location = source("../device_remote.go").match(/func jsConnectLocation\([\s\S]*?\n}/)?.[0] || "";
+  for (const key of ["name", "locationType", "countryCode", "providerCount", "colorHex",
+    "connectLocationId", "locationId", "locationGroupId", "clientId", "bestAvailable"]) {
+    assert.match(location, new RegExp(`"${key}"`), key);
+    assert.match(info, new RegExp(`\\b${key}\\??: `), key);
+  }
+});

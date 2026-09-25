@@ -29,8 +29,12 @@ type NetworkUserUpdateSuccessListener interface {
 	Success()
 }
 
+// `model.NetworkUser` (the per-auth-type arrays `user_auths`, `sso_auths`,
+// `wallet_auths` and `seedphrase_auths` are not modeled here)
 type NetworkUser struct {
-	UserId        *Id         `json:"userId"`
+	// the wire name is `user_id` (an earlier tag, `userId`, never matched the
+	// server and left this nil)
+	UserId        *Id         `json:"user_id"`
 	UserName      string      `json:"user_name"`
 	UserAuth      string      `json:"user_auth,omitempty"`
 	Verified      bool        `json:"verified"`

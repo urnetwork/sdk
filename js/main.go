@@ -46,6 +46,9 @@ func jsDevice(device sdk.Device) js.Value {
 	}
 	m := map[string]any{}
 	handles := jsBindSocketDevice(device, m)
+	m["getLicenses"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsLicenses(device.GetLicenses(stringArg(args, 0)))
+	})
 	m["close"] = jsViewControllerClose(device.Close, handles.close)
 	return js.ValueOf(m)
 }
@@ -228,6 +231,9 @@ func main() {
 	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
 	js.Global().Set("URnetworkNewLocationsViewController", js.FuncOf(NewLocationsViewController))
 	js.Global().Set("URnetworkNewAccountHost", js.FuncOf(NewAccountHost))
+	// GetLicenses(app): the licenses and data attributions the app publishes
+	// under Settings -> Licenses (sdk license.yml), for a page with no device
+	js.Global().Set("URnetworkGetLicenses", js.FuncOf(jsGetLicenses))
 	// ColorHex(code): the sdk palette color for a code the page already holds
 	// (a country code, or a bare location / client id), no "#"
 	js.Global().Set("URnetworkColorHex", js.FuncOf(func(this js.Value, args []js.Value) any {

@@ -167,13 +167,33 @@ func jsFilteredLocations(f *sdk.FilteredLocations) js.Value {
 		return js.Null()
 	}
 	return js.ValueOf(map[string]any{
-		"bestMatches": jsConnectLocationList(f.BestMatches),
-		"promoted":    jsConnectLocationList(f.Promoted),
-		"countries":   jsConnectLocationList(f.Countries),
-		"regions":     jsConnectLocationList(f.Regions),
-		"cities":      jsConnectLocationList(f.Cities),
-		"devices":     jsConnectLocationList(f.Devices),
+		"bestMatches":  jsConnectLocationList(f.BestMatches),
+		"promoted":     jsConnectLocationList(f.Promoted),
+		"countries":    jsConnectLocationList(f.Countries),
+		"regions":      jsConnectLocationList(f.Regions),
+		"cities":       jsConnectLocationList(f.Cities),
+		"devices":      jsConnectLocationList(f.Devices),
+		"regionGroups": jsRegionGroupList(f.RegionGroups),
 	})
+}
+
+// jsRegionGroupList: [{region: ConnectLocation | null, cities: ConnectLocation[]}]
+func jsRegionGroupList(groups *sdk.RegionGroupList) js.Value {
+	out := []any{}
+	if groups != nil {
+		for i := 0; i < groups.Len(); i += 1 {
+			group := groups.Get(i)
+			region := js.Null()
+			if group.Region != nil {
+				region = jsConnectLocation(group.Region)
+			}
+			out = append(out, map[string]any{
+				"region": region,
+				"cities": jsConnectLocationList(group.Cities),
+			})
+		}
+	}
+	return js.ValueOf(out)
 }
 
 func jsLocationsViewController(vc *sdk.LocationsViewController, closeController func()) js.Value {

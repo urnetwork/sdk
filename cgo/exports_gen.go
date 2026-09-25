@@ -3680,17 +3680,24 @@ func urnet_api_create_stripe_payment_intent(self C.uint64_t, args *C.char, callb
 }
 
 //export urnet_api_delete_api_key
-func urnet_api_delete_api_key(self C.uint64_t, callback_result C.urnet_delete_api_key_cb, callback_user_data unsafe.Pointer) {
+func urnet_api_delete_api_key(self C.uint64_t, args *C.char, callback_result C.urnet_delete_api_key_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_delete_api_key")
 	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_delete_api_key")
 	if !ok {
 		return
 	}
+	var args_ *sdk.DeleteApiKeyArgs
+	if args != nil {
+		args_ = &sdk.DeleteApiKeyArgs{}
+		if !goJson(args, args_, "urnet_api_delete_api_key") {
+			return
+		}
+	}
 	var callback_ sdk.DeleteApiKeyCallback
 	if callback_result != nil {
 		callback_ = &cAdapterDeleteApiKeyCallback{cbResult: callback_result, userData: callback_user_data}
 	}
-	self_.DeleteApiKey(callback_)
+	self_.DeleteApiKey(args_, callback_)
 }
 
 //export urnet_api_device_set_name
@@ -7472,6 +7479,20 @@ func urnet_device_get_instance_id(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetInstanceId()
 	return cId(r0)
+}
+
+//export urnet_device_get_licenses
+func urnet_device_get_licenses(self C.uint64_t, app *C.char) *C.char {
+	defer cgoGuard("urnet_device_get_licenses")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_licenses")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetLicenses(goString(app))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_licenses")
 }
 
 //export urnet_device_get_local_override_app_ids
@@ -11875,6 +11896,16 @@ func urnet_get_fips140_enabled() C.bool {
 	defer cgoGuard("urnet_get_fips140_enabled")
 	r0 := sdk.GetFips140Enabled()
 	return C.bool(r0)
+}
+
+//export urnet_get_licenses
+func urnet_get_licenses(app *C.char) *C.char {
+	defer cgoGuard("urnet_get_licenses")
+	r0 := sdk.GetLicenses(goString(app))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_get_licenses")
 }
 
 //export urnet_get_log_dir

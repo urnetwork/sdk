@@ -7,7 +7,8 @@ package sdk
 // controller implementations that ordinarily own them.
 
 type NetworkUser struct {
-	UserId        *Id         `json:"userId"`
+	// the wire name is `user_id`; see network_user_view_controller.go
+	UserId        *Id         `json:"user_id"`
 	UserName      string      `json:"user_name"`
 	UserAuth      string      `json:"user_auth,omitempty"`
 	Verified      bool        `json:"verified"`
@@ -37,8 +38,11 @@ type AccountPayment struct {
 	NetworkId       *Id       `json:"network_id"`
 	PayoutByteCount ByteCount `json:"payout_byte_count"`
 	Payout          NanoCents `json:"payout_nano_cents"`
-	MinSweepTime    *Time     `json:"min_sweep_time"`
-	CreateTime      *Time     `json:"create_time"`
+	// the subsidized parts of Payout
+	SubsidyPayout      NanoCents `json:"subsidy_payout_nano_cents"`
+	ReliabilitySubsidy NanoCents `json:"reliability_subsidy_nano_cents"`
+	MinSweepTime       *Time     `json:"min_sweep_time"`
+	CreateTime         *Time     `json:"create_time"`
 
 	PaymentRecord  string  `json:"payment_record,omitempty"`
 	TokenType      string  `json:"token_type"`

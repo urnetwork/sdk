@@ -56,8 +56,11 @@ type AccountPayment struct {
 	NetworkId       *Id       `json:"network_id"`
 	PayoutByteCount ByteCount `json:"payout_byte_count"`
 	Payout          NanoCents `json:"payout_nano_cents"`
-	MinSweepTime    *Time     `json:"min_sweep_time"`
-	CreateTime      *Time     `json:"create_time"`
+	// the subsidized parts of Payout
+	SubsidyPayout      NanoCents `json:"subsidy_payout_nano_cents"`
+	ReliabilitySubsidy NanoCents `json:"reliability_subsidy_nano_cents"`
+	MinSweepTime       *Time     `json:"min_sweep_time"`
+	CreateTime         *Time     `json:"create_time"`
 
 	PaymentRecord  string  `json:"payment_record,omitempty"`
 	TokenType      string  `json:"token_type"`

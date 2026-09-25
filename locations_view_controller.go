@@ -26,6 +26,75 @@ type FilteredLocations struct {
 	Cities      *ConnectLocationList
 	Regions     *ConnectLocationList
 	Devices     *ConnectLocationList
+	// RegionGroups is Regions and Cities nested for a grouped search result:
+	// each region with the cities in it, in Regions order, then (Region nil)
+	// the cities whose region is not in the result. Set only when searching,
+	// like Regions and Cities; empty otherwise.
+	RegionGroups *RegionGroupList
+}
+
+// RegionGroup is one region of a search result and the cities in it.
+type RegionGroup struct {
+	// nil for the group of cities whose region is not in the result; the app
+	// labels it (e.g. "Other")
+	Region *ConnectLocation
+	Cities *ConnectLocationList
+}
+
+type RegionGroupList struct {
+	exportedList[*RegionGroup]
+}
+
+func NewRegionGroupList() *RegionGroupList {
+	return &RegionGroupList{
+		exportedList: *newExportedList[*RegionGroup](),
+	}
+}
+
+// groupCitiesByRegion nests sorted cities under sorted regions. A city belongs
+// to a region by the region's location id, or by region name when the result
+// carries no id. Every city lands in exactly one group.
+func groupCitiesByRegion(regions []*ConnectLocation, cities []*ConnectLocation) *RegionGroupList {
+	groups := NewRegionGroupList()
+	assigned := map[*ConnectLocation]bool{}
+	for _, region := range regions {
+		var regionId *Id
+		if region.ConnectLocationId != nil {
+			regionId = region.ConnectLocationId.LocationId
+		}
+		regionCities := NewConnectLocationList()
+		for _, city := range cities {
+			if assigned[city] {
+				continue
+			}
+			inRegion := false
+			if regionId != nil && city.RegionLocationId != nil {
+				inRegion = city.RegionLocationId.Cmp(regionId) == 0
+			} else if city.Region != "" && region.Name != "" {
+				inRegion = city.Region == region.Name
+			}
+			if inRegion {
+				assigned[city] = true
+				regionCities.Add(city)
+			}
+		}
+		groups.Add(&RegionGroup{
+			Region: region,
+			Cities: regionCities,
+		})
+	}
+	otherCities := NewConnectLocationList()
+	for _, city := range cities {
+		if !assigned[city] {
+			otherCities.Add(city)
+		}
+	}
+	if 0 < otherCities.Len() {
+		groups.Add(&RegionGroup{
+			Cities: otherCities,
+		})
+	}
+	return groups
 }
 
 // type FilteredLocationsStateListener interface {
@@ -334,12 +403,13 @@ func GetFilteredLocationsFromResult(result *FindLocationsResult, filter string) 
 	exportedDevices.addAll(devices...)
 
 	filteredLocations := &FilteredLocations{
-		BestMatches: exportedBestMatches,
-		Promoted:    exportedPromoted,
-		Countries:   exportedCountries,
-		Cities:      exportedCities,
-		Regions:     exportedRegions,
-		Devices:     exportedDevices,
+		BestMatches:  exportedBestMatches,
+		Promoted:     exportedPromoted,
+		Countries:    exportedCountries,
+		Cities:       exportedCities,
+		Regions:      exportedRegions,
+		Devices:      exportedDevices,
+		RegionGroups: groupCitiesByRegion(regions, cities),
 	}
 
 	return filteredLocations

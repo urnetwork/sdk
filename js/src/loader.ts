@@ -9,6 +9,8 @@ declare global {
     URnetworkNewLocationsViewController: any;
     URnetworkNewAccountHost: any;
     URnetworkColorHex: any;
+    URnetworkFilteredLocationsFromResult: any;
+    URnetworkGetLicenses: any;
     URnetworkClose: any;
   }
 }
@@ -185,6 +187,8 @@ export function getWasmGlobals() {
     URnetworkNewLocationsViewController: runtimeGlobal.URnetworkNewLocationsViewController,
     URnetworkNewAccountHost: runtimeGlobal.URnetworkNewAccountHost,
     URnetworkColorHex: runtimeGlobal.URnetworkColorHex,
+    URnetworkFilteredLocationsFromResult: runtimeGlobal.URnetworkFilteredLocationsFromResult,
+    URnetworkGetLicenses: runtimeGlobal.URnetworkGetLicenses,
     URnetworkClose: runtimeGlobal.URnetworkClose,
   };
 }

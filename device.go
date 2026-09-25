@@ -497,6 +497,11 @@ type Device interface {
 
 	GetStats() *DeviceStats
 
+	// GetLicenses returns the open source licenses and data attributions the
+	// app must publish, for `app` (one of the LicenseApp* constants). The
+	// list is embedded in the SDK (license.yml) and needs no network.
+	GetLicenses(app string) *LicenseInfoList
+
 	GetShouldShowRatingDialog() bool
 
 	GetCanShowRatingDialog() bool

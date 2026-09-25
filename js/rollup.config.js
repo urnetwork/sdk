@@ -30,6 +30,30 @@ export default [
       }),
     ],
   },
+  // The api client alone (no wasm, no DOM): for service workers and other
+  // fetch-only runtimes
+  {
+    input: "src/client.ts",
+    output: [
+      {
+        file: "dist/client.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/client.cjs",
+        format: "cjs",
+        sourcemap: true,
+      },
+    ],
+    plugins: [
+      resolve(),
+      typescript({
+        tsconfig: "./tsconfig.json",
+        declaration: false,
+      }),
+    ],
+  },
   // React entry point
   {
     input: "src/react/index.ts",

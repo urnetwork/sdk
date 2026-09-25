@@ -162,6 +162,9 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		return js.ValueOf(device.GetSyncError())
 	})
 	m["getClientId"] = js.FuncOf(func(js.Value, []js.Value) any { return device.GetClientId().String() })
+	m["getLicenses"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsLicenses(device.GetLicenses(stringArg(args, 0)))
+	})
 	m["getInstanceId"] = js.FuncOf(func(js.Value, []js.Value) any { return device.GetInstanceId().String() })
 	// suggestEmojiTag(count): synchronous; a random tag of 1–3 distinct emoji
 	// to prefill the emoji-tag editor with (count 0 or omitted picks the

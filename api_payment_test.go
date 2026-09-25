@@ -97,6 +97,11 @@ func TestSubscriptionBalanceDecode(t *testing.T) {
 	if result.ActiveTransferBalances == nil || result.ActiveTransferBalances.Len() != 1 {
 		t.Fatalf("active transfer balances = %+v", result.ActiveTransferBalances)
 	}
+	// the wire name is net_revenue_nano_cents; an earlier `net_revenue` tag
+	// left this 0 in every app
+	if got := result.ActiveTransferBalances.Get(0).NetRevenue; got != 5000000000 {
+		t.Errorf("net revenue = %d, want 5000000000", got)
+	}
 	if result.PendingPayoutUsdNanoCents != 123 {
 		t.Errorf("pending payout = %d", result.PendingPayoutUsdNanoCents)
 	}

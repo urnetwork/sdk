@@ -1,0 +1,12 @@
+This product includes GeoLite2 data created by MaxMind, available from
+https://www.maxmind.com.
+
+The location details (city, region, country, continent, coordinates and time
+zone) shown for an IP address come from the MaxMind GeoLite2 databases, used
+under the GeoLite2 End User License Agreement:
+https://www.maxmind.com/en/geolite2/eula
+
+GeoLite2 incorporates GeoNames geographical data, which is made available under
+the Creative Commons Attribution 4.0 License (CC BY 4.0):
+https://www.geonames.org
+https://creativecommons.org/licenses/by/4.0/

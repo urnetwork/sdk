@@ -2759,6 +2759,10 @@ func (self *DeviceLocal) GetStats() *DeviceStats {
 	return self.stats
 }
 
+func (self *DeviceLocal) GetLicenses(app string) *LicenseInfoList {
+	return GetLicenses(app)
+}
+
 func (self *DeviceLocal) GetShouldShowRatingDialog() bool {
 	if !self.stats.GetUserSuccess() {
 		return false

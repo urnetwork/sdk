@@ -15,11 +15,22 @@ import type {
   LocationsViewController,
   AccountHostOptions,
   AccountHost,
+  LicenseApp,
+  LicenseInfo,
+  Device,
+  FilteredLocations,
 } from "./types";
+import type { FindLocationsResult } from "./generated";
+import type * as OpenAPI from "./generated/openapi";
+import type { SocketDevice } from "./socket";
 
 export * from "./types";
-export * from "./api";
+export * from "./client";
 export * from "./utils";
+
+// a device as the wasm hands it over: its own methods, before the socket API
+// is attached
+type WasmDevice = Omit<Device, keyof SocketDevice>;
 
 export class URNetwork {
   private static instance: URNetwork | null = null;
@@ -74,10 +85,10 @@ export class URNetwork {
   ): ProxyDevice {
     const { URnetworkNewProxyDeviceWithDefaults } = getWasmGlobals();
     const proxy = URnetworkNewProxyDeviceWithDefaults(config, setupCallback
-      ? (device: object, result: Parameters<SetupDeviceCallback>[1]) => setupCallback(attachSocketAPI(device), result)
+      ? (device: WasmDevice, result: Parameters<SetupDeviceCallback>[1]) => setupCallback(attachSocketAPI(device), result)
       : undefined);
     const getDevice = proxy.getDevice.bind(proxy);
-    proxy.getDevice = () => attachSocketAPI(getDevice());
+    proxy.getDevice = () => attachSocketAPI(getDevice() as WasmDevice);
     return proxy;
   }
 
@@ -187,6 +198,53 @@ export class URNetwork {
       return "";
     }
     return String(URnetworkColorHex(code) || "");
+  }
+
+  /**
+   * Group and order a raw /network/provider-locations or
+   * /network/find-provider-locations result the way every app's location
+   * chooser renders it (best matches, promoted, countries, regions, cities,
+   * devices, and regions with their cities nested as regionGroups) — the
+   * sdk's own GetFilteredLocationsFromResult, run in the wasm, so a page
+   * with a result but no device orders it exactly like android/apple.
+   *
+   * `filter` is the search text the result answers: a non-empty filter puts
+   * exact matches (match distance 0) in bestMatches and fills
+   * regions/cities/regionGroups; an empty filter is the unsearched browse.
+   *
+   * Returns null when the result cannot be read as a FindLocationsResult.
+   *
+   * @example
+   * const result = await client.networkFindProviderLocations({ query: "ger" });
+   * const grouped = sdk.filteredLocations(result, "ger");
+   */
+  filteredLocations(
+    result: OpenAPI.FindLocationsResult | FindLocationsResult | string,
+    filter: string = "",
+  ): FilteredLocations | null {
+    const { URnetworkFilteredLocationsFromResult } = getWasmGlobals();
+    if (typeof URnetworkFilteredLocationsFromResult !== "function") {
+      throw new Error(
+        "URnetworkFilteredLocationsFromResult is not exported by the loaded wasm. Rebuild the sdk wasm.",
+      );
+    }
+    const json = typeof result === "string" ? result : JSON.stringify(result);
+    return (URnetworkFilteredLocationsFromResult(json, filter) ?? null) as FilteredLocations | null;
+  }
+
+  /**
+   * The open source licenses and data attributions `app` publishes under
+   * Settings -> Licenses, from the license list embedded in the sdk. Data
+   * attributions come first; an entry's `notice`, when set, must be shown.
+   */
+  licenses(app: LicenseApp): LicenseInfo[] {
+    const { URnetworkGetLicenses } = getWasmGlobals();
+    if (typeof URnetworkGetLicenses !== "function") {
+      throw new Error(
+        "URnetworkGetLicenses is not exported by the loaded wasm. Rebuild the sdk wasm.",
+      );
+    }
+    return (URnetworkGetLicenses(app) || []) as LicenseInfo[];
   }
 
   /**

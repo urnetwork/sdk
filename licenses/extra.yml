@@ -1,0 +1,313 @@
+# Hand-kept license entries: the ones no package manager can report.
+#
+# `go run ./licenses` merges these with the entries it discovers (Go modules,
+# npm, Maven, Swift packages) into ../license.yml. Add an entry here when an app
+# starts shipping data, a font or a vendored library that did not come from a
+# package manager, and regenerate.
+#
+# Fields:
+#   name, version, url, spdx, copyright, notice: shown as-is
+#   kind: data | software | font
+#   origin: data | vendored | font
+#   apps: any of android, apple, windows, linux, web, extension; or [all]
+#   text_file: the license text, relative to this directory
+#   text: the license text inline, when there is no file
+
+entries:
+  # IP location data. The apps and ur.io show city, region, country and time
+  # zone from the API's GeoLite2 lookup; the GeoLite2 EULA requires this notice
+  # wherever that data is shown, and the place names in it are GeoNames data
+  # under CC BY 4.0.
+  - name: GeoLite2 by MaxMind
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://www.maxmind.com
+    spdx: LicenseRef-MaxMind-GeoLite2-EULA
+    notice: This product includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com.
+    text_file: texts/GeoLite2.txt
+  - name: GeoNames
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://www.geonames.org
+    spdx: CC-BY-4.0
+    notice: GeoLite2 incorporates GeoNames data, available under CC BY 4.0.
+    text_file: texts/CC-BY-4.0.txt
+
+  # The ad and tracker blocklist compiled into connect (connect/ip_blocker_block.go,
+  # composition in sdk/BLOCKER.md). Every build of the SDK carries it.
+  - name: ShadowWhisperer BlockLists
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://github.com/ShadowWhisperer/BlockLists
+    spdx: Unlicense
+    text_file: texts/blocklist-shadowwhisperer.txt
+  - name: anudeepND blacklist
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://github.com/anudeepND/blacklist
+    spdx: MIT
+    text_file: texts/blocklist-anudeepnd-blacklist.txt
+  - name: anudeepND whitelist
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://github.com/anudeepND/whitelist
+    spdx: MIT
+    text_file: texts/blocklist-anudeepnd-whitelist.txt
+  - name: Geoffrey Frogeye tracker lists
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://hostfiles.frogeye.fr
+    spdx: MIT
+    text_file: texts/blocklist-frogeye.txt
+  - name: hostsVN
+    kind: data
+    origin: data
+    apps: [all]
+    url: https://github.com/bigdargon/hostsVN
+    spdx: MIT
+    text_file: texts/blocklist-hostsvn.txt
+
+  # The provider-locations globe: world-110m.json from world-atlas, drawn from
+  # Natural Earth. The native apps bundle the file; ur.io gets it from npm.
+  - name: Natural Earth
+    kind: data
+    origin: data
+    apps: [android, apple, windows, linux, web]
+    url: https://www.naturalearthdata.com
+    spdx: LicenseRef-Public-Domain
+    text_file: texts/Natural-Earth.txt
+  - name: world-atlas
+    kind: data
+    origin: data
+    apps: [android, apple, windows, linux]
+    url: https://github.com/topojson/world-atlas
+    spdx: ISC
+    copyright: Copyright 2013-2019 Michael Bostock
+    text_file: texts/ISC.txt
+
+  # goidenticons (github.com/urnetwork/goidenticons, MPL-2.0, listed by the Go
+  # collector) is our port of Nanoidenticons, which is based on Blockies.
+  # WTFPL has no conditions; this credits the upstream design.
+  - name: Nanoidenticons
+    kind: software
+    origin: vendored
+    apps: [all]
+    url: https://github.com/keerifox/Nanoidenticons
+    spdx: WTFPL
+    text: |
+      goidenticons (https://github.com/urnetwork/goidenticons) is a Go port of
+      Nanoidenticons (https://github.com/keerifox/Nanoidenticons), itself based
+      on Blockies (https://github.com/download13/blockies). Nanoidenticons is
+      released under the WTFPL, version 2 (http://www.wtfpl.net/).
+
+  # Windows: vendored and vcpkg C/C++ libraries (windows/app/THIRD-PARTY-NOTICES.txt)
+  - name: Wintun
+    version: 0.14.1
+    kind: software
+    origin: vendored
+    apps: [windows]
+    url: https://www.wintun.net
+    spdx: LicenseRef-Wintun-Prebuilt-Binaries
+    copyright: Copyright (C) WireGuard LLC. Wintun is a trademark of Jason A. Donenfeld.
+    text_file: texts/Wintun-Prebuilt-Binaries.txt
+  - name: nlohmann/json
+    kind: software
+    origin: vendored
+    apps: [windows, linux]
+    url: https://github.com/nlohmann/json
+    spdx: MIT
+    copyright: Copyright (c) 2013-2022 Niels Lohmann
+    text_file: texts/MIT.txt
+  - name: Windows Implementation Libraries (WIL)
+    kind: software
+    origin: vendored
+    apps: [windows]
+    url: https://github.com/microsoft/wil
+    spdx: MIT
+    copyright: Copyright (c) Microsoft Corporation
+    text_file: texts/MIT.txt
+  - name: QR Code generator library (C++)
+    version: 1.8.0
+    kind: software
+    origin: vendored
+    apps: [windows, linux]
+    url: https://www.nayuki.io/page/qr-code-generator-library
+    spdx: MIT
+    copyright: Copyright (c) Project Nayuki
+    text_file: texts/MIT.txt
+  - name: zxing-cpp
+    version: 2.2.1
+    kind: software
+    origin: vendored
+    apps: [windows, linux]
+    url: https://github.com/zxing-cpp/zxing-cpp
+    spdx: Apache-2.0
+    copyright: Copyright (c) ZXing authors and the zxing-cpp contributors
+    text_file: texts/Apache-2.0.txt
+
+  # Linux: the GTK stack the AppImage bundles (linux/APPIMAGE.md: "the GUI
+  # still carries the whole GTK stack"). The LGPL libraries are listed here;
+  # the permissively licensed rest of the bundle (HarfBuzz, FreeType,
+  # fontconfig, libepoxy, graphene, ...) still needs enumerating from a built
+  # AppImage.
+  - name: gtkmm
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://gtkmm.org
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The gtkmm Development Team
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: libadwaita
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://gnome.pages.gitlab.gnome.org/libadwaita/
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The GNOME Project
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: GTK
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://www.gtk.org
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The GTK Team
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: GLib
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://gitlab.gnome.org/GNOME/glib
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The GLib Team
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: Pango
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://gitlab.gnome.org/GNOME/pango
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The Pango Team
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: GdkPixbuf
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://gitlab.gnome.org/GNOME/gdk-pixbuf
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The GdkPixbuf Team
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: cairo
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://www.cairographics.org
+    spdx: LGPL-2.1-only OR MPL-1.1
+    copyright: Copyright (C) The cairo authors
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: FriBidi
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://github.com/fribidi/fribidi
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The FriBidi authors
+    text_file: texts/LGPL-2.1-or-later.txt
+  - name: libsecret
+    kind: software
+    origin: vendored
+    apps: [linux]
+    url: https://gitlab.gnome.org/GNOME/libsecret
+    spdx: LGPL-2.1-or-later
+    copyright: Copyright (C) The libsecret authors
+    text_file: texts/LGPL-2.1-or-later.txt
+
+  # Open fonts served by ur.io (react/public/fonts; Manrope and Urbanist are
+  # the hashed-name files). The brand fonts (ABC Gravity, PP NeueBit, PP Neue
+  # Montreal) are commercially licensed and carry no publication requirement,
+  # so they are not listed.
+  - name: Geist
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/vercel/geist-font
+    spdx: OFL-1.1
+    copyright: Copyright 2024 The Geist Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: Inter
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://rsms.me/inter/
+    spdx: OFL-1.1
+    copyright: Copyright 2016 The Inter Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: DM Sans
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/googlefonts/dm-fonts
+    spdx: OFL-1.1
+    copyright: Copyright 2014 The DM Sans Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: Figtree
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/erikdkennedy/figtree
+    spdx: OFL-1.1
+    copyright: Copyright 2022 The Figtree Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: Chakra Petch
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/cadsondemak/Chakra-Petch
+    spdx: OFL-1.1
+    copyright: Copyright 2018 The Chakra Petch Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: Manrope
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/sharanda/manrope
+    spdx: OFL-1.1
+    copyright: Copyright 2019-2021 The Manrope Project Authors
+    text_file: texts/OFL-1.1.txt
+  - name: Urbanist
+    kind: font
+    origin: font
+    apps: [web]
+    url: https://github.com/coreyhu/Urbanist
+    spdx: OFL-1.1
+    copyright: Copyright 2022 The Urbanist Project Authors
+    text_file: texts/OFL-1.1.txt
+
+# Go modules the collector does not list (each needs an entry above that
+# credits it instead)
+skip_go_modules: []
+
+# npm production dependencies that only run at build time (bundlers, the
+# static site generator, test drivers): the collector does not follow them.
+npm_build_only:
+  - playwright
+  - "@astrojs/sitemap"
+  - "@crxjs/vite-plugin"
+  - "@tailwindcss/vite"
+  - vite-plugin-zip-pack
+
+# npm dependencies whose own client runtime ships in the bundle but whose
+# dependency tree is build tooling: listed, not followed.
+npm_shallow:
+  - astro
+  - "@astrojs/react"
+  # tailwind v4 writes its preflight css, with its license header, into the
+  # shipped stylesheet
+  - tailwindcss
