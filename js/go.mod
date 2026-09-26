@@ -4,6 +4,8 @@ go 1.26.5
 
 require golang.org/x/crypto/x509roots/fallback v0.0.0-20260908180501-3f62bf119e84
 
+require github.com/urnetwork/goidenticons/v2026 v2026.9.26-1056471100 // indirect
+
 require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -70,8 +72,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/urnetwork/connect/v2026 v2026.9.26-1056471100
-	github.com/urnetwork/glog/v2026 v2026.9.26-1056471100
-	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/glog/v2026 v2026.9.26-1056471100 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.9.26-1056471100
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
@@ -83,7 +84,7 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
