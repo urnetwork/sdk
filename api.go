@@ -468,6 +468,11 @@ type AuthWalletChallengeCallback connect.ApiCallback[*AuthWalletChallengeResult]
 type AuthWalletChallengeArgs struct {
 	WalletAddress string     `json:"wallet_address,omitempty"`
 	Blockchain    Blockchain `json:"blockchain,omitempty"`
+	// Purpose is informational: the ur.io wallet bridge sends "connect" when
+	// the challenge proves a subnet claim wallet (POST /sn/wallet) rather than
+	// a sign-in. The server pins the challenge to the blockchain and address
+	// only; the miner CLI sends the same value so the request matches the app.
+	Purpose string `json:"purpose,omitempty"`
 }
 
 // `model.WalletAuthChallengeResult`
@@ -495,6 +500,28 @@ func (self *Api) AuthWalletChallenge(authWalletChallenge *AuthWalletChallengeArg
 			callback,
 		)
 	})
+}
+
+// AuthWalletChallengeSyncWithContext is the blocking form, for CLI callers
+// that fetch a challenge to sign locally (the miner's `provider wallet set`).
+// The route is public: the jwt is not needed and is sent only when one is set.
+//
+//gomobile:noexport
+func (self *Api) AuthWalletChallengeSyncWithContext(ctx context.Context, args *AuthWalletChallengeArgs) (*AuthWalletChallengeResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/auth/wallet-challenge", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&AuthWalletChallengeResult{},
+		connect.NewNoopApiCallback[*AuthWalletChallengeResult](),
+	)
+}
+
+//gomobile:noexport
+func (self *Api) AuthWalletChallengeSync(args *AuthWalletChallengeArgs) (*AuthWalletChallengeResult, error) {
+	return self.AuthWalletChallengeSyncWithContext(self.ctx, args)
 }
 
 type AuthLoginWithPasswordCallback connect.ApiCallback[*AuthLoginWithPasswordResult]
