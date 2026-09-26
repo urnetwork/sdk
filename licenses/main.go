@@ -7,12 +7,15 @@
 //	go run ./licenses -skip android    # regenerate, keeping android's entries as they are
 //	go run ./licenses -check sdk       # fail if the SDK's Go modules or extra.yml drifted
 //	go -C ../sdk run ./licenses -check android   # from an app repo's build
+//	go run ./licenses -check web -mmm-dir /path/to/mmm   # site outside the sibling checkouts
 //
 // ~/urnetwork is a monoroot: the sdk and the app repos are separate git repos
 // checked out side by side. The generator reads each sibling at whatever commit
 // is checked out and records that commit under `sources`. A sibling that is not
 // checked out keeps its existing entries; one that is present but fails to
 // collect is an error (pass -skip to keep its entries deliberately).
+// -mmm-dir selects the site's checkout when it lives outside those siblings,
+// as it does in the release build. Other sources still come from the SDK's siblings.
 //
 // Collectors, one per origin:
 //
@@ -140,6 +143,7 @@ type extraEntry struct {
 var (
 	sdkDir  string
 	rootDir string
+	mmmDir  string
 	extra   extraFile
 	offline bool
 )
@@ -147,21 +151,29 @@ var (
 func main() {
 	check := flag.String("check", "", "compare license.yml against this target instead of writing it: "+strings.Join(slices.Sorted(maps.Keys(checkTargets)), ", "))
 	skip := flag.String("skip", "", "comma separated origins to keep as they are in license.yml")
+	mmmCheckout := flag.String("mmm-dir", "", "mmm checkout containing ur.io (default: sibling of the SDK)")
 	flag.Parse()
 
-	if err := run(*check, *skip); err != nil {
+	if err := run(*check, *skip, *mmmCheckout); err != nil {
 		fmt.Fprintf(os.Stderr, "licenses: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(check string, skip string) error {
+func run(check string, skip string, mmmCheckout string) error {
 	var err error
 	sdkDir, err = findSdkDir()
 	if err != nil {
 		return err
 	}
 	rootDir = filepath.Dir(sdkDir)
+	mmmDir = filepath.Join(rootDir, "mmm")
+	if mmmCheckout != "" {
+		mmmDir, err = filepath.Abs(mmmCheckout)
+		if err != nil {
+			return fmt.Errorf("mmm checkout: %w", err)
+		}
+	}
 
 	extraBytes, err := os.ReadFile(filepath.Join(sdkDir, "licenses", "extra.yml"))
 	if err != nil {
@@ -209,6 +221,9 @@ func run(check string, skip string) error {
 	out := &licenseFile{}
 	for _, spec := range origins {
 		repoDir := filepath.Join(rootDir, spec.repo)
+		if spec.repo == "mmm" {
+			repoDir = mmmDir
+		}
 		keep := skipped[spec.name]
 		if !keep && !exists(repoDir) {
 			fmt.Fprintf(os.Stderr, "licenses: %s: %s is not checked out, keeping its entries\n", spec.name, spec.repo)
@@ -304,7 +319,7 @@ func collect(origin string) ([]*entry, error) {
 	case "swiftpm":
 		return collectSwiftpm()
 	case "npm-web":
-		return collectNpm("npm-web", []string{"web"}, "mmm/ur.io/react", "mmm/ur.io/astro")
+		return collectNpm("npm-web", []string{"web"}, filepath.Join(mmmDir, "ur.io/react"), filepath.Join(mmmDir, "ur.io/astro"))
 	case "npm-extension":
 		return collectNpm("npm-extension", []string{"extension"}, "extension")
 	}
@@ -893,7 +908,10 @@ type packageLock struct {
 func collectNpm(origin string, apps []string, projects ...string) ([]*entry, error) {
 	byKey := map[string]*entry{}
 	for _, project := range projects {
-		projectDir := filepath.Join(rootDir, project)
+		projectDir := project
+		if !filepath.IsAbs(projectDir) {
+			projectDir = filepath.Join(rootDir, projectDir)
+		}
 		b, err := os.ReadFile(filepath.Join(projectDir, "package-lock.json"))
 		if err != nil {
 			return nil, err
