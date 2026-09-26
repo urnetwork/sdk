@@ -249,6 +249,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_auth_verify(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_auth_verify_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_auth_verify_send(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_auth_verify_send_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_auth_wallet_challenge(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_auth_wallet_challenge_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_auth_wallet_challenge_sync(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_change_network_name(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_change_network_name_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_check_balance_code(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_check_balance_code_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_claim_network_name(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_claim_network_name_cb a2, IntPtr a3);
@@ -259,7 +260,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_solana_payment_intent(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_solana_payment_intent_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_stripe_checkout_session(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_stripe_create_checkout_session_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_create_stripe_payment_intent(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_stripe_payment_intent_cb a2, IntPtr a3);
-  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_delete_api_key(ulong a0, urnet_delete_api_key_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_delete_api_key(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_delete_api_key_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_device_set_name(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_device_set_name_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_find_locations(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_find_locations_cb a2, IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_find_provider_locations(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_find_locations_cb a2, IntPtr a3);
@@ -495,6 +496,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_ingress_contract_details(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_ingress_contract_stats(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_instance_id(ulong a0);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_licenses(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_local_override_app_ids(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern long urnet_device_get_log_verbosity(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_device_get_network_peers(ulong a0);
@@ -1155,6 +1157,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_get_extender_store_read_only();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_get_filtered_locations_from_result([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_get_fips140_enabled();
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_get_licenses([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_get_log_dir();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_get_log_root();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern long urnet_get_log_verbosity();

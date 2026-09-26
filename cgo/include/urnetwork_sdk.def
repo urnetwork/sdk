@@ -29,6 +29,7 @@ EXPORTS
 	urnet_api_auth_verify
 	urnet_api_auth_verify_send
 	urnet_api_auth_wallet_challenge
+	urnet_api_auth_wallet_challenge_sync
 	urnet_api_change_network_name
 	urnet_api_check_balance_code
 	urnet_api_claim_network_name

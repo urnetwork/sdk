@@ -249,6 +249,7 @@ public interface Raw extends Library {
   void urnet_api_auth_verify(long a0, String a1, urnet_auth_verify_cb a2, Pointer a3);
   void urnet_api_auth_verify_send(long a0, String a1, urnet_auth_verify_send_cb a2, Pointer a3);
   void urnet_api_auth_wallet_challenge(long a0, String a1, urnet_auth_wallet_challenge_cb a2, Pointer a3);
+  Pointer urnet_api_auth_wallet_challenge_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_change_network_name(long a0, String a1, urnet_change_network_name_cb a2, Pointer a3);
   void urnet_api_check_balance_code(long a0, String a1, urnet_check_balance_code_cb a2, Pointer a3);
   void urnet_api_claim_network_name(long a0, String a1, urnet_claim_network_name_cb a2, Pointer a3);
@@ -259,7 +260,7 @@ public interface Raw extends Library {
   void urnet_api_create_solana_payment_intent(long a0, String a1, urnet_solana_payment_intent_cb a2, Pointer a3);
   void urnet_api_create_stripe_checkout_session(long a0, String a1, urnet_stripe_create_checkout_session_cb a2, Pointer a3);
   void urnet_api_create_stripe_payment_intent(long a0, String a1, urnet_stripe_payment_intent_cb a2, Pointer a3);
-  void urnet_api_delete_api_key(long a0, urnet_delete_api_key_cb a1, Pointer a2);
+  void urnet_api_delete_api_key(long a0, String a1, urnet_delete_api_key_cb a2, Pointer a3);
   void urnet_api_device_set_name(long a0, String a1, urnet_device_set_name_cb a2, Pointer a3);
   void urnet_api_find_locations(long a0, String a1, urnet_find_locations_cb a2, Pointer a3);
   void urnet_api_find_provider_locations(long a0, String a1, urnet_find_locations_cb a2, Pointer a3);
@@ -495,6 +496,7 @@ public interface Raw extends Library {
   Pointer urnet_device_get_ingress_contract_details(long a0);
   Pointer urnet_device_get_ingress_contract_stats(long a0);
   Pointer urnet_device_get_instance_id(long a0);
+  Pointer urnet_device_get_licenses(long a0, String a1);
   Pointer urnet_device_get_local_override_app_ids(long a0);
   long urnet_device_get_log_verbosity(long a0);
   Pointer urnet_device_get_network_peers(long a0);
@@ -1155,6 +1157,7 @@ public interface Raw extends Library {
   byte urnet_get_extender_store_read_only();
   Pointer urnet_get_filtered_locations_from_result(String a0, String a1);
   byte urnet_get_fips140_enabled();
+  Pointer urnet_get_licenses(String a0);
   Pointer urnet_get_log_dir();
   Pointer urnet_get_log_root();
   long urnet_get_log_verbosity();

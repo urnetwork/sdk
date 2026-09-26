@@ -737,6 +737,7 @@ void urnet_api_auth_password_reset(uint64_t self, const char* auth_password_rese
 void urnet_api_auth_verify(uint64_t self, const char* auth_verify_json, urnet_auth_verify_cb callback_result, void* callback_user_data);
 void urnet_api_auth_verify_send(uint64_t self, const char* auth_verify_send_json, urnet_auth_verify_send_cb callback_result, void* callback_user_data);
 void urnet_api_auth_wallet_challenge(uint64_t self, const char* auth_wallet_challenge_json, urnet_auth_wallet_challenge_cb callback_result, void* callback_user_data);
+char* urnet_api_auth_wallet_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_change_network_name(uint64_t self, const char* args_json, urnet_change_network_name_cb callback_result, void* callback_user_data);
 void urnet_api_check_balance_code(uint64_t self, const char* args_json, urnet_check_balance_code_cb callback_result, void* callback_user_data);
 void urnet_api_claim_network_name(uint64_t self, const char* args_json, urnet_claim_network_name_cb callback_result, void* callback_user_data);
@@ -2148,6 +2149,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AuthWalletChallengeArgs (json):
  *   wallet_address?: string
  *   blockchain?: string
+ *   purpose?: string
  */
 
 /* AuthWalletChallengeResult (json):

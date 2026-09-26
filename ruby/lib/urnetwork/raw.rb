@@ -248,6 +248,7 @@ module URnetwork
       attach_function :urnet_api_auth_verify, [:uint64, :string, :urnet_auth_verify_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_verify_send, [:uint64, :string, :urnet_auth_verify_send_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_wallet_challenge, [:uint64, :string, :urnet_auth_wallet_challenge_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_auth_wallet_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_change_network_name, [:uint64, :string, :urnet_change_network_name_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_check_balance_code, [:uint64, :string, :urnet_check_balance_code_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_claim_network_name, [:uint64, :string, :urnet_claim_network_name_cb, :pointer], :void, blocking: true
@@ -258,7 +259,7 @@ module URnetwork
       attach_function :urnet_api_create_solana_payment_intent, [:uint64, :string, :urnet_solana_payment_intent_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_stripe_checkout_session, [:uint64, :string, :urnet_stripe_create_checkout_session_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_create_stripe_payment_intent, [:uint64, :string, :urnet_stripe_payment_intent_cb, :pointer], :void, blocking: true
-      attach_function :urnet_api_delete_api_key, [:uint64, :urnet_delete_api_key_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_delete_api_key, [:uint64, :string, :urnet_delete_api_key_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_device_set_name, [:uint64, :string, :urnet_device_set_name_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_find_locations, [:uint64, :string, :urnet_find_locations_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_find_provider_locations, [:uint64, :string, :urnet_find_locations_cb, :pointer], :void, blocking: true
@@ -494,6 +495,7 @@ module URnetwork
       attach_function :urnet_device_get_ingress_contract_details, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_ingress_contract_stats, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_instance_id, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_licenses, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_device_get_local_override_app_ids, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_log_verbosity, [:uint64], :int64, blocking: true
       attach_function :urnet_device_get_network_peers, [:uint64], :pointer, blocking: true
@@ -1154,6 +1156,7 @@ module URnetwork
       attach_function :urnet_get_extender_store_read_only, [], :bool, blocking: true
       attach_function :urnet_get_filtered_locations_from_result, [:string, :string], :pointer, blocking: true
       attach_function :urnet_get_fips140_enabled, [], :bool, blocking: true
+      attach_function :urnet_get_licenses, [:string], :pointer, blocking: true
       attach_function :urnet_get_log_dir, [], :pointer, blocking: true
       attach_function :urnet_get_log_root, [], :pointer, blocking: true
       attach_function :urnet_get_log_verbosity, [], :int64, blocking: true

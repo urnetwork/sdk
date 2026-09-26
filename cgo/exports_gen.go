@@ -3480,6 +3480,31 @@ func urnet_api_auth_wallet_challenge(self C.uint64_t, authWalletChallenge *C.cha
 	self_.AuthWalletChallenge(authWalletChallenge_, callback_)
 }
 
+//export urnet_api_auth_wallet_challenge_sync
+func urnet_api_auth_wallet_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_auth_wallet_challenge_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_auth_wallet_challenge_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.AuthWalletChallengeArgs
+	if args != nil {
+		args_ = &sdk.AuthWalletChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_auth_wallet_challenge_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.AuthWalletChallengeSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_auth_wallet_challenge_sync")
+}
+
 //export urnet_api_change_network_name
 func urnet_api_change_network_name(self C.uint64_t, args *C.char, callback_result C.urnet_change_network_name_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_change_network_name")

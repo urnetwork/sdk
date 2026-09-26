@@ -307,6 +307,8 @@ def bind(lib):
     lib.urnet_api_auth_verify_send.restype = None
     lib.urnet_api_auth_wallet_challenge.argtypes = [c_uint64, c_char_p, urnet_auth_wallet_challenge_cb, c_void_p]
     lib.urnet_api_auth_wallet_challenge.restype = None
+    lib.urnet_api_auth_wallet_challenge_sync.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_api_auth_wallet_challenge_sync.restype = c_void_p
     lib.urnet_api_change_network_name.argtypes = [c_uint64, c_char_p, urnet_change_network_name_cb, c_void_p]
     lib.urnet_api_change_network_name.restype = None
     lib.urnet_api_check_balance_code.argtypes = [c_uint64, c_char_p, urnet_check_balance_code_cb, c_void_p]
@@ -327,7 +329,7 @@ def bind(lib):
     lib.urnet_api_create_stripe_checkout_session.restype = None
     lib.urnet_api_create_stripe_payment_intent.argtypes = [c_uint64, c_char_p, urnet_stripe_payment_intent_cb, c_void_p]
     lib.urnet_api_create_stripe_payment_intent.restype = None
-    lib.urnet_api_delete_api_key.argtypes = [c_uint64, urnet_delete_api_key_cb, c_void_p]
+    lib.urnet_api_delete_api_key.argtypes = [c_uint64, c_char_p, urnet_delete_api_key_cb, c_void_p]
     lib.urnet_api_delete_api_key.restype = None
     lib.urnet_api_device_set_name.argtypes = [c_uint64, c_char_p, urnet_device_set_name_cb, c_void_p]
     lib.urnet_api_device_set_name.restype = None
@@ -799,6 +801,8 @@ def bind(lib):
     lib.urnet_device_get_ingress_contract_stats.restype = c_void_p
     lib.urnet_device_get_instance_id.argtypes = [c_uint64]
     lib.urnet_device_get_instance_id.restype = c_void_p
+    lib.urnet_device_get_licenses.argtypes = [c_uint64, c_char_p]
+    lib.urnet_device_get_licenses.restype = c_void_p
     lib.urnet_device_get_local_override_app_ids.argtypes = [c_uint64]
     lib.urnet_device_get_local_override_app_ids.restype = c_void_p
     lib.urnet_device_get_log_verbosity.argtypes = [c_uint64]
@@ -2119,6 +2123,8 @@ def bind(lib):
     lib.urnet_get_filtered_locations_from_result.restype = c_void_p
     lib.urnet_get_fips140_enabled.argtypes = []
     lib.urnet_get_fips140_enabled.restype = c_bool
+    lib.urnet_get_licenses.argtypes = [c_char_p]
+    lib.urnet_get_licenses.restype = c_void_p
     lib.urnet_get_log_dir.argtypes = []
     lib.urnet_get_log_dir.restype = c_void_p
     lib.urnet_get_log_root.argtypes = []

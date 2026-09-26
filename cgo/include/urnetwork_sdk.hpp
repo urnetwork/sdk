@@ -1183,6 +1183,7 @@ struct AuthVerifySendResult {
 struct AuthWalletChallengeArgs {
 	std::optional<std::string> wallet_address;
 	std::optional<std::string> blockchain;
+	std::optional<std::string> purpose;
 };
 
 struct AuthWalletChallengeResult {
@@ -5784,6 +5785,9 @@ inline void to_json(nlohmann::json& j, const AuthWalletChallengeArgs& v) {
 	if (v.blockchain) {
 		j["blockchain"] = *v.blockchain;
 	}
+	if (v.purpose) {
+		j["purpose"] = *v.purpose;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthWalletChallengeArgs& v) {
 	if (!j.is_object()) {
@@ -5798,6 +5802,11 @@ inline void from_json(const nlohmann::json& j, AuthWalletChallengeArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.blockchain = std::move(tmp);
+	}
+	if (auto it = j.find("purpose"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.purpose = std::move(tmp);
 	}
 }
 
@@ -15983,6 +15992,7 @@ public:
 	void authVerify(const std::optional<AuthVerifyArgs>& auth_verify, AuthVerifyCallback callback) const;
 	void authVerifySend(const std::optional<AuthVerifySendArgs>& auth_verify_send, AuthVerifySendCallback callback) const;
 	void authWalletChallenge(const std::optional<AuthWalletChallengeArgs>& auth_wallet_challenge, AuthWalletChallengeCallback callback) const;
+	std::optional<AuthWalletChallengeResult> authWalletChallengeSync(const std::optional<AuthWalletChallengeArgs>& args) const;
 	void changeNetworkName(const std::optional<ChangeNetworkNameArgs>& args, ChangeNetworkNameCallback callback) const;
 	void checkBalanceCode(const std::optional<CheckBalanceCodeArgs>& args, CheckBalanceCodeCallback callback) const;
 	void claimNetworkName(const std::optional<ClaimNetworkNameArgs>& args, ClaimNetworkNameCallback callback) const;
@@ -23680,6 +23690,24 @@ inline void Api::authWalletChallenge(const std::optional<AuthWalletChallengeArgs
 	}
 	auto* callback_fn = callback ? new AuthWalletChallengeCallback(std::move(callback)) : nullptr;
 	urnet_api_auth_wallet_challenge(handle(), auth_wallet_challenge_c, callback_fn ? &detail::oneshot_auth_wallet_challenge : nullptr, callback_fn);
+}
+inline std::optional<AuthWalletChallengeResult> Api::authWalletChallengeSync(const std::optional<AuthWalletChallengeArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_auth_wallet_challenge_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<AuthWalletChallengeResult>(r_s->c_str());
 }
 inline void Api::changeNetworkName(const std::optional<ChangeNetworkNameArgs>& args, ChangeNetworkNameCallback callback) const {
 	std::string args_json;
