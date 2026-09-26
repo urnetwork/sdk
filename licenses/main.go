@@ -16,6 +16,8 @@
 // collect is an error (pass -skip to keep its entries deliberately).
 // -mmm-dir selects the site's checkout when it lives outside those siblings,
 // as it does in the release build. Other sources still come from the SDK's siblings.
+// Release builds move the SDK's root module (including this tool and license.yml)
+// under sdk/vNNNN; the app repos and the SDK's cgo/js build modules stay in place.
 //
 // Collectors, one per origin:
 //
@@ -141,11 +143,12 @@ type extraEntry struct {
 }
 
 var (
-	sdkDir  string
-	rootDir string
-	mmmDir  string
-	extra   extraFile
-	offline bool
+	sdkDir     string // Go module containing license.yml (sdk or sdk/vNNNN)
+	sdkRepoDir string // checkout containing the cgo/js build modules
+	rootDir    string // sibling app checkouts
+	mmmDir     string
+	extra      extraFile
+	offline    bool
 )
 
 func main() {
@@ -162,11 +165,11 @@ func main() {
 
 func run(check string, skip string, mmmCheckout string) error {
 	var err error
-	sdkDir, err = findSdkDir()
+	sdkDir, sdkRepoDir, err = findSdkDirs()
 	if err != nil {
 		return err
 	}
-	rootDir = filepath.Dir(sdkDir)
+	rootDir = filepath.Dir(sdkRepoDir)
 	mmmDir = filepath.Join(rootDir, "mmm")
 	if mmmCheckout != "" {
 		mmmDir, err = filepath.Abs(mmmCheckout)
@@ -329,11 +332,18 @@ func collect(origin string) ([]*entry, error) {
 // Go
 
 type goTarget struct {
-	dir      string // relative to the sdk dir
+	dir      string // "." is the root module; other modules are relative to the checkout
 	env      []string
 	tags     string
 	packages []string
 	apps     []string
+}
+
+func (target goTarget) moduleDir() string {
+	if target.dir == "." {
+		return sdkDir
+	}
+	return filepath.Join(sdkRepoDir, target.dir)
 }
 
 var goTargets = []goTarget{
@@ -375,7 +385,7 @@ func collectGo() ([]*entry, error) {
 		}
 		args = append(args, target.packages...)
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(sdkDir, target.dir)
+		cmd.Dir = target.moduleDir()
 		cmd.Env = append(os.Environ(), target.env...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
@@ -1319,19 +1329,28 @@ func (self *licenseFile) write(path string) error {
 
 // helpers
 
-func findSdkDir() (string, error) {
+func findSdkDirs() (moduleDir, repoDir string, err error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	// A pattern (rather than an import-like quoted string) also survives the
+	// release harness's Go import rewriting before it forks the module.
+	moduleLine := regexp.MustCompile(`(?m)^module[\t ]+github[.]com/urnetwork/sdk(/v[0-9]+)?[\t ]*\r?$`)
 	for {
 		b, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if err == nil && bytes.HasPrefix(bytes.TrimSpace(b), []byte("module github.com/urnetwork/sdk\n")) {
-			return dir, nil
+		if err == nil {
+			if match := moduleLine.FindSubmatch(b); match != nil {
+				repoDir = dir
+				if suffix := strings.TrimPrefix(string(match[1]), "/"); suffix != "" && filepath.Base(dir) == suffix {
+					repoDir = filepath.Dir(dir)
+				}
+				return dir, repoDir, nil
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("run from the sdk repo (go run ./licenses), or from an app repo with go -C ../sdk run ./licenses")
+			return "", "", errors.New("run from the SDK Go module (sdk or sdk/vNNNN): go run ./licenses")
 		}
 		dir = parent
 	}
