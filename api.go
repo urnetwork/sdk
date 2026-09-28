@@ -41,9 +41,10 @@ type Api struct {
 	httpGetRawOwner        *deviceAuthPublicationGate
 	httpPostStreamRawOwner *deviceAuthPublicationGate
 
-	jwtRefreshListeners *connect.CallbackList[JwtRefreshListener]
-	authLogoutListeners *connect.CallbackList[AuthLogoutListener]
-	tokenManager        *apiTokenManager
+	jwtRefreshListeners             *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners             *connect.CallbackList[AuthLogoutListener]
+	clientRefreshIntegrityListeners *connect.CallbackList[ClientRefreshIntegrityListener]
+	tokenManager                    *apiTokenManager
 }
 
 // Delivers at most one terminal result. Marking delivery before entering the
@@ -119,8 +120,9 @@ func newApi(
 		httpPostRaw:    nil,
 		httpGetRaw:     nil,
 
-		jwtRefreshListeners: connect.NewCallbackList[JwtRefreshListener](),
-		authLogoutListeners: connect.NewCallbackList[AuthLogoutListener](),
+		jwtRefreshListeners:             connect.NewCallbackList[JwtRefreshListener](),
+		authLogoutListeners:             connect.NewCallbackList[AuthLogoutListener](),
+		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
 	}
 	api.tokenManager = newApiTokenManager(cancelCtx, api)
 	return api
@@ -3056,19 +3058,20 @@ type RefreshJwtCallback connect.ApiCallback[*RefreshJwtResult]
 
 func (self *Api) RefreshJwt(callback RefreshJwtCallback) {
 	runAsyncApiRequest[*RefreshJwtResult](callback, func(callback connect.ApiCallback[*RefreshJwtResult]) {
-		connect.HttpGetWithRawFunction(
-			self.ctx,
-			self.getHttpGetRaw(),
-			fmt.Sprintf("%s/auth/refresh", self.apiUrl),
-			self.GetByJwt(),
-			&RefreshJwtResult{},
-			callback,
-		)
+		result, err := self.refreshJwtSyncWithContext(self.ctx)
+		callback.Result(result, err)
 	})
 }
 
 func (self *Api) RefreshJwtSync() (*RefreshJwtResult, error) {
 	return self.refreshJwtSyncWithContext(self.ctx)
+}
+
+// Headless startup owns a finite refresh attempt separately from API lifetime.
+//
+//gomobile:noexport
+func (self *Api) RefreshJwtSyncWithContext(ctx context.Context) (*RefreshJwtResult, error) {
+	return self.refreshJwtSyncWithContext(ctx)
 }
 
 // refreshJwtSyncWithContext bounds the request to the caller's ctx, so a
@@ -3079,14 +3082,24 @@ func (self *Api) refreshJwtSyncWithContext(ctx context.Context) (*RefreshJwtResu
 }
 
 func (self *Api) refreshJwtSyncWithContextAndJwt(ctx context.Context, byJwt string) (*RefreshJwtResult, error) {
-	return connect.HttpGetWithRawFunction(
-		ctx,
-		self.getHttpGetRaw(),
-		fmt.Sprintf("%s/auth/refresh", self.apiUrl),
-		byJwt,
-		&RefreshJwtResult{},
-		connect.NewNoopApiCallback[*RefreshJwtResult](),
-	)
+	if ctx == nil {
+		return nil, &ClientControlResponseError{detail: "refresh context is absent"}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	raw, err := self.getHttpGetRaw()(ctx, fmt.Sprintf("%s/auth/refresh", self.apiUrl), byJwt)
+	if err != nil {
+		return nil, err
+	}
+	var result *RefreshJwtResult
+	if err := decodeClientControlJson(raw, &result); err != nil {
+		return nil, err
+	}
+	if result == nil || result.Error == nil && result.ByJwt == "" || result.Error != nil && (result.ByJwt != "" || result.Error.Message == "") {
+		return nil, &ClientControlResponseError{detail: "refresh must contain exactly one complete success or refusal"}
+	}
+	return result, nil
 }
 
 /**
