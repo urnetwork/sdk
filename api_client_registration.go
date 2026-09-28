@@ -11,11 +11,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/urnetwork/connect"
 )
 
 const NetworkClientRegistrationSchema = "urnetwork-client-registration-v1"
+
+// The dedicated server route admits this many encoded bytes, including JSON
+// escaping and ownership fields, independently of the decoded field limits.
+const networkClientRegistrationMaxRequestBytes = 16 * 1024
 
 // The opaque request identifier is not a client identity or an authorization.
 // Field order is the canonical request-hash format shared with the server.
@@ -74,7 +81,14 @@ func EncodeNetworkClientRegistration(args *RegisterNetworkClientArgs) ([]byte, e
 	if args == nil || args.Schema != NetworkClientRegistrationSchema || !validHash(args.RegistrationId) || !validHash(args.ScopeSha256) || len(args.DeviceDescription) > 1024 || len(args.DeviceSpec) > 4096 {
 		return nil, errors.New("versioned registration request is incomplete or unsupported")
 	}
-	return json.Marshal(args)
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > networkClientRegistrationMaxRequestBytes {
+		return nil, errors.New("versioned registration encoded request exceeds the server route bound")
+	}
+	return raw, nil
 }
 
 // The durable scope pins the exact endpoint that will consume its request.
@@ -109,7 +123,7 @@ func (self *Api) RegisterNetworkClientSyncWithContext(ctx context.Context, args 
 	if err != nil {
 		return nil, err
 	}
-	raw, err := self.getHttpPostRaw()(ctx, endpoint, bytes.Clone(body), self.GetByJwt())
+	raw, err := self.getHttpPostRaw()(connect.WithHttpRedirectsDisabled(ctx), endpoint, bytes.Clone(body), self.GetByJwt())
 	if err != nil {
 		var invalid *ClientControlResponseError
 		if errors.As(err, &invalid) {
@@ -117,6 +131,11 @@ func (self *Api) RegisterNetworkClientSyncWithContext(ctx context.Context, args 
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return nil, errors.Join(err, ctx.Err())
+		}
+		// A direct completed redirect is an endpoint contradiction. Do not
+		// select one status from a joined cause tree or relabel it unavailable.
+		if status, ok := err.(*connect.HttpStatusError); ok && http.StatusMultipleChoices <= status.StatusCode && status.StatusCode < http.StatusBadRequest {
+			return nil, &ClientControlResponseError{detail: fmt.Sprintf("versioned registration refused HTTP %d redirect from its pinned endpoint", status.StatusCode)}
 		}
 		if status, complete := clientControlOnlyUnsupportedStatus(err); complete {
 			return nil, &NetworkClientRegistrationUnsupportedError{Status: status}
