@@ -11,11 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/urnetwork/connect"
 )
 
 const NetworkClientRegistrationSchema = "urnetwork-client-registration-v1"
@@ -121,17 +118,14 @@ func (self *Api) RegisterNetworkClientSyncWithContext(ctx context.Context, args 
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return nil, errors.Join(err, ctx.Err())
 		}
-		var status *connect.HttpStatusError
-		if errors.As(err, &status) {
-			if status.StatusCode == http.StatusNotFound || status.StatusCode == http.StatusMethodNotAllowed || status.StatusCode == http.StatusNotImplemented {
-				return nil, &NetworkClientRegistrationUnsupportedError{Status: status.StatusCode}
-			}
-			if status.StatusCode != http.StatusRequestTimeout && status.StatusCode != http.StatusTooEarly && status.StatusCode != http.StatusTooManyRequests && status.StatusCode < 500 {
-				return nil, err
-			}
+		if status, complete := clientControlOnlyUnsupportedStatus(err); complete {
+			return nil, &NetworkClientRegistrationUnsupportedError{Status: status}
 		}
-		// Local encoding/route checks already completed. The raw transport
-		// owns this unknown outcome; no complete JSON verdict was decoded.
+		if !transientClientControlRequestError(err) {
+			return nil, err
+		}
+		// The complete physical cause tree is transient. No hard cause is
+		// hidden by selecting one HTTP leaf from a joined error.
 		return nil, &NetworkClientRegistrationUnavailableError{cause: err}
 	}
 	var result *RegisterNetworkClientResult

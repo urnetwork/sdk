@@ -34,6 +34,10 @@ func TestClientRefreshRejectsNullMixedAndDuplicateResponses(t *testing.T) {
 		"{\"by_jwt\":" + string(encoded) + ",\"error\":{\"message\":\"synthetic conflicting refusal\"}}",
 		"{\"by_jwt\":\"discarded\",\"by_jwt\":" + string(encoded) + "}",
 		"{\"error\":{\"message\":\"first\",\"message\":\"second\"}}",
+		`{"by_jwt":"discarded","BY_JWT":` + string(encoded) + `}`,
+		`{"by_jwt":` + string(encoded) + `,"error":{"message":"refused"},"Error":null}`,
+		`{"error":{"message":"first","Message":"second"}}`,
+		`{"BY_JWT":` + string(encoded) + `}`,
 	} {
 		api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) { return []byte(raw), nil })
 		if result, err := api.RefreshJwtSyncWithContext(ctx); err == nil || result != nil {
@@ -102,5 +106,20 @@ func TestClientRefreshMixedRejectionRetainsCredential(t *testing.T) {
 		if outcome.err == nil || outcome.loggedOut || outcome.stale || api.GetByJwt() != original {
 			t.Fatal("mixed refresh failure erased original credential")
 		}
+	}
+}
+
+func TestClientRefreshUnknownResponseFieldsStayCompatible(t *testing.T) {
+	ctx, api := newTestApi(t, http.NotFoundHandler())
+	original := testingRefreshableJwtWithMarker(t, "unknown-field-compatibility")
+	encoded, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"by_jwt":` + string(encoded) + `,"future_extension":{"BY_JWT":"not an ownership field here","Error":null},"FUTURE_EXTENSION":true}`)
+	api.setHttpGetRaw(func(context.Context, string, string) ([]byte, error) { return raw, nil })
+	result, err := api.RefreshJwtSyncWithContext(ctx)
+	if err != nil || result == nil || result.ByJwt != original {
+		t.Fatalf("unknown refresh extension changed known-field admission: %v", err)
 	}
 }

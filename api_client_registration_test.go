@@ -165,7 +165,7 @@ func TestNetworkClientRegistrationRejectsCompletedContradictions(t *testing.T) {
 		t.Fatal(err)
 	}
 	good := networkClientRegistrationTestResponse(t, request)
-	for _, fault := range []string{"null", "malformed", "request", "partial", "mixed", "duplicate", "zero"} {
+	for _, fault := range []string{"null", "malformed", "request", "partial", "mixed", "duplicate", "schema-alias", "identity-alias", "verdict-alias", "error-code-alias", "error-message-alias", "zero"} {
 		raw := bytes.Clone(good)
 		var decoded RegisterNetworkClientResult
 		if err := json.Unmarshal(raw, &decoded); err != nil {
@@ -178,6 +178,16 @@ func TestNetworkClientRegistrationRejectsCompletedContradictions(t *testing.T) {
 			raw = []byte("{")
 		case "duplicate":
 			raw = bytes.Replace(raw, []byte(`"schema":`), []byte(`"schema":"discarded","schema":`), 1)
+		case "schema-alias":
+			raw = bytes.Replace(raw, []byte(`"schema":`), []byte(`"Schema":"discarded","schema":`), 1)
+		case "identity-alias":
+			raw = bytes.Replace(raw, []byte(`"client_id":`), []byte(`"CLIENT_ID":"00000000-0000-0000-0000-000000000999","client_id":`), 1)
+		case "verdict-alias":
+			raw = append(raw[:len(raw)-1], []byte(`,"error":{"code":"identity_unavailable","message":"refused"},"Error":null}`)...)
+		case "error-code-alias":
+			raw = []byte(`{"error":{"code":"identity_unavailable","Code":"conflict","message":"refused"}}`)
+		case "error-message-alias":
+			raw = []byte(`{"error":{"code":"identity_unavailable","message":"first","Message":"second"}}`)
 		case "zero":
 			decoded.ClientId = newId([16]byte{})
 			raw, _ = json.Marshal(decoded)

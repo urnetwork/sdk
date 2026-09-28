@@ -3090,6 +3090,9 @@ func (self *Api) refreshJwtSyncWithContextAndJwt(ctx context.Context, byJwt stri
 	}
 	raw, err := self.getHttpGetRaw()(ctx, fmt.Sprintf("%s/auth/refresh", self.apiUrl), byJwt)
 	if err != nil {
+		if transientClientControlRequestError(err) {
+			return nil, &ClientControlUnavailableError{cause: err}
+		}
 		return nil, err
 	}
 	var result *RefreshJwtResult

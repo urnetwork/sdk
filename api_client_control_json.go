@@ -9,6 +9,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/urnetwork/connect"
 )
@@ -55,8 +57,11 @@ func decodeClientControlJson(raw []byte, target any) error {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-	var consume func(int) error
-	consume = func(depth int) error {
+	var consume func(int, reflect.Type) error
+	consume = func(depth int, valueType reflect.Type) error {
+		for valueType != nil && valueType.Kind() == reflect.Pointer {
+			valueType = valueType.Elem()
+		}
 		if depth > 16 {
 			return errors.New("response nesting exceeds its bound")
 		}
@@ -81,13 +86,21 @@ func decodeClientControlJson(raw []byte, target any) error {
 					return errors.New("response contains a duplicate object field")
 				}
 				seen[name] = true
-				if err := consume(depth + 1); err != nil {
+				fieldType, exact := clientControlJsonField(valueType, name)
+				if !exact {
+					return errors.New("response contains a noncanonical known field")
+				}
+				if err := consume(depth+1, fieldType); err != nil {
 					return err
 				}
 			}
 		case '[':
+			var elementType reflect.Type
+			if valueType != nil && (valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Array) {
+				elementType = valueType.Elem()
+			}
 			for decoder.More() {
-				if err := consume(depth + 1); err != nil {
+				if err := consume(depth+1, elementType); err != nil {
 					return err
 				}
 			}
@@ -97,7 +110,7 @@ func decodeClientControlJson(raw []byte, target any) error {
 		_, err = decoder.Token()
 		return err
 	}
-	if err := consume(0); err != nil {
+	if err := consume(0, reflect.TypeOf(target)); err != nil {
 		return &ClientControlResponseError{detail: "malformed or ambiguous JSON"}
 	}
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
@@ -107,4 +120,33 @@ func decodeClientControlJson(raw []byte, target any) error {
 		return &ClientControlResponseError{detail: "response fields have invalid types"}
 	}
 	return nil
+}
+
+// Known verdict and ownership tags use their exact wire spelling. The standard
+// decoder folds case; rejecting its aliases first prevents overwrite through
+// e.g. error/Error or by_jwt/BY_JWT. Truly unknown fields stay compatible.
+func clientControlJsonField(valueType reflect.Type, name string) (reflect.Type, bool) {
+	if valueType == nil || valueType.Kind() != reflect.Struct {
+		return nil, true
+	}
+	for index := range valueType.NumField() {
+		field := valueType.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		tag := strings.Split(field.Tag.Get("json"), ",")[0]
+		if tag == "-" {
+			continue
+		}
+		if tag == "" {
+			tag = field.Name
+		}
+		if tag == name {
+			return field.Type, true
+		}
+		if strings.EqualFold(tag, name) {
+			return nil, false
+		}
+	}
+	return nil, true
 }
