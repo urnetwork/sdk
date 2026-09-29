@@ -286,18 +286,43 @@ func citationNearest(name string, declared map[string][]string) string {
 // for one and a reader still has to be able to find them; and a build-tagged file's declarations
 // count too, or a link in the windows file to the unix spelling would be a false red.
 //
-// THE NARROWING IS EVERY OTHER PACKAGE'S NAMES, AND IT IS ASSERTED RATHER THAN PRINTED. A link
-// whose first element is an import of its own file's package is that repository's to declare --
-// counted, printed, and not followed, for citationDeclaredElsewhere's reason one paragraph up. A
-// link whose first element is a TYPE declared here is a member link and is resolved here whatever
-// else it looks like, so [mls.ErrNoOwner] and [Group.RemoveMember] can never be taken for one
-// another. A two-part link whose first element is NEITHER is a failure and not a shrug.
+// A QUALIFIED LINK IS RESOLVED IN THE PACKAGE ITS HEAD NAMES, AND THIS PARAGRAPH IS THIS GATE'S
+// OWN CORRECTION OF ITSELF. The first build of it CLASSIFIED such a link and called that a
+// narrowing: `case one.imports[parts[0]]: elsewhere += 1`, counted and printed and never asked
+// anything. That left 128 of 1,523 links -- and every one of the 8 heads -- outside the property
+// the gate is named for, and the shape of the hole was measured rather than argued: planting
+// `[messagegroup.ThisNameIsDeclaredNowhereAtAll]`,
+// `[messagegroup.GroupSession.NoSuchMethodEither]` and `[sdk.NoSuchExportedThing]` in this
+// package's production prose left the gate GREEN on all three, and three links in this module's
+// prose were dangling on the day it was declared closed -- [messagegroup.GroupSession.PeekSender],
+// which is the GroupHandle interface's method, and `InstallPqSecret` and `DeclarePqSecretRotated`
+// written as though they were package-level names when both are methods on *GroupSession. A COUNT
+// IS NOT A PROPERTY, which this corpus has now been taught by its own gate.
 //
-// AND THE CONTROLS ARE INLINE, WITH EVERY LITERAL TAKEN FROM THE SOURCE. `Group.RemoveMember` is a
-// member link this package declares and must resolve, or the resolver is blind to the whole class;
-// `Group.RemoveDevice` is the exact spelling item 259 found dangling and must resolve to NOTHING,
-// or the resolver is answering yes to names that do not exist; and a walk that saw no production
-// file, or no test file, would satisfy every count below with zero.
+// SO THE HEAD IS TURNED INTO A DIRECTORY, AND THERE ARE EXACTLY THREE ROADS. (1) This module's own
+// packages -- 14 of those 128 named them, and the walk was already holding their declarations, so
+// a [sdk.…] link is now held exactly like a same-package one. (2) A module go.mod REPLACES with a
+// directory: `replace github.com/urnetwork/connect => ../connect` makes that source a requirement
+// of this module's own build -- without it nothing here COMPILES -- so resolving the 111 links
+// into connect costs this suite no dependency it did not already have, and a rename in connect
+// reports here instead of going quiet. That is the measured difference from
+// citationDeclaredElsewhere above, whose targets are connect's `_test.go` files, which the build
+// does not need and which therefore stay a table. (3) GOROOT and the module cache, which this gate
+// does not read and which godocLinkOutsideThisBuild disposes of by name, held both ways.
+//
+// AND THE PRECEDENCE IS UNCHANGED: a link whose first element is a TYPE declared here is a member
+// link and is resolved here whatever else it looks like, so [mls.ErrNoOwner] and
+// [Group.RemoveMember] can never be taken for one another; a head that is neither a local type nor
+// an import of the file's own package is a failure and not a shrug.
+//
+// AND THE CONTROLS ARE INLINE, WITH EVERY LITERAL TAKEN FROM THE SOURCE IT IS ABOUT.
+// `Group.RemoveMember` is a member link this package declares and must resolve, or the resolver is
+// blind to the whole class; `Group.RemoveDevice` is the exact spelling item 259 found dangling and
+// must resolve to NOTHING; `StreamStore.SeedStreamIndex` is this module's ROOT package's and must
+// resolve, against `NoSuchExportedThing` which must not; connect's `GroupSession.InstallPqSecret`
+// and `GroupHandle.PeekSender` must resolve while `GroupSession.PeekSender` must not, which is the
+// pair this pass's finding turned on; and a walk that saw no production file, or no test file, or
+// that resolved nothing on either of the two new roads, would satisfy every count below with zero.
 
 // godocLinkQuoted is every bracketed spelling this module's production comments carry ONLY inside a
 // quoted or backticked span. A quotation is quoted text and not prose naming a declaration: five of
@@ -320,6 +345,28 @@ var godocLinkQuoted = map[string]string{
 		"quotation of the sentence it is quoting; it is a sibling package's name either way",
 }
 
+// godocLinkOutsideThisBuild is every link whose head names a package this build takes from GOROOT
+// or from the module cache rather than from a directory on this disk, with what it is.
+//
+// WHY THESE AND NOTHING ELSE NEEDS A ROW. Everything this module's go.mod REPLACES with a
+// directory is resolved for real -- this module does not compile without those directories, so
+// reading them costs nothing -- and so is every package of this module itself. What is left is the
+// standard library and the module cache, whose layout is a Go installation's business: GOROOT may
+// hold no sources at all on a stripped image, and asserting against a version-pinned cache entry
+// would make this suite red on a dependency bump rather than on a defect. So those get a row, and
+// the row is the record that somebody RESOLVED the name once.
+//
+// HELD BOTH WAYS, like godocLinkQuoted and citationDeclaredElsewhere. A spelling whose head this
+// build cannot reach and which has NO row is a failure, because the next one may be an invented
+// name; and a row no production comment carries any more is a failure, because that is the shape a
+// disposition rots into. What it cannot do is notice that `errors.Is` was renamed in a future Go;
+// that residual is stated here, and the reading that closes it is this module failing to build.
+var godocLinkOutsideThisBuild = map[string]string{
+	"errors.Is":                  "GOROOT/src/errors -- the standard library's sentinel comparison",
+	"sha256.Size":                "GOROOT/src/crypto/sha256 -- the digest length, 32",
+	"subtle.ConstantTimeCompare": "GOROOT/src/crypto/subtle -- the constant-time equality",
+}
+
 // godocPackage is one package directory's declarations as the AST reports them, which is what an
 // unqualified link in that directory's prose has to resolve against.
 type godocPackage struct {
@@ -332,13 +379,15 @@ type godocPackage struct {
 	// its method set.
 	members map[string]map[string]bool
 	// imports is every package name a file of this directory imports, under its alias when it
-	// has one. It is the whole of what a qualified link may name.
-	imports map[string]bool
+	// has one, mapped to the IMPORT PATH that name stands for. It is the whole of what a
+	// qualified link may name, and the PATH is what turns such a link's head into a directory
+	// this gate can resolve the rest of the link in.
+	imports map[string]string
 }
 
 func newGodocPackage() *godocPackage {
 	return &godocPackage{top: map[string]bool{}, types: map[string]bool{},
-		members: map[string]map[string]bool{}, imports: map[string]bool{}}
+		members: map[string]map[string]bool{}, imports: map[string]string{}}
 }
 
 func (self *godocPackage) member(typeName string, name string) {
@@ -362,6 +411,227 @@ func godocTypeName(expr ast.Expr) string {
 		return godocTypeName(typed.X)
 	}
 	return ""
+}
+
+// godocReadDeclarations adds ONE file's declarations and imports to a package's tables.
+//
+// IT IS THE ONE READER FOR BOTH SIDES, which is the property that makes a link into
+// `connect/messagegroup` answerable to the same standard as a link into this package. The walk
+// below builds this module's directories with it and godocDeclarationsAt builds a replaced
+// module's directory with it, so "a member of GroupSession" means the same thing on both sides of
+// the seam and no second, laxer reading exists for the other repository.
+func godocReadDeclarations(one *godocPackage, path string) error {
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return fmt.Errorf("parsing %s: %w", path, err)
+	}
+	for _, spec := range file.Imports {
+		importPath := strings.Trim(spec.Path.Value, `"`)
+		name := importPath
+		if at := strings.LastIndex(name, "/"); 0 <= at {
+			name = name[at+1:]
+		}
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		one.imports[name] = importPath
+	}
+	for _, decl := range file.Decls {
+		switch typed := decl.(type) {
+		case *ast.FuncDecl:
+			if typed.Recv == nil || len(typed.Recv.List) == 0 {
+				one.top[typed.Name.Name] = true
+				continue
+			}
+			if name := godocTypeName(typed.Recv.List[0].Type); name != "" {
+				one.member(name, typed.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range typed.Specs {
+				switch declared := spec.(type) {
+				case *ast.TypeSpec:
+					one.top[declared.Name.Name] = true
+					one.types[declared.Name.Name] = true
+					switch under := declared.Type.(type) {
+					case *ast.StructType:
+						for _, field := range under.Fields.List {
+							for _, ident := range field.Names {
+								one.member(declared.Name.Name, ident.Name)
+							}
+							if len(field.Names) == 0 {
+								// an embedded field is named by its own type
+								if name := godocTypeName(field.Type); name != "" {
+									one.member(declared.Name.Name, name)
+								}
+							}
+						}
+					case *ast.InterfaceType:
+						for _, method := range under.Methods.List {
+							for _, ident := range method.Names {
+								one.member(declared.Name.Name, ident.Name)
+							}
+						}
+					}
+				case *ast.ValueSpec:
+					for _, ident := range declared.Names {
+						one.top[ident.Name] = true
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// godocModule is this module's own import path and every module its go.mod REPLACES with a
+// directory, which together are the source tree a link's head can be resolved in.
+//
+// WHY go.mod AND NOT A CONSTANT. `replace github.com/urnetwork/connect => ../connect` is what
+// makes connect's source a hard requirement of this module rather than a courtesy: without that
+// directory this module does not COMPILE, so resolving a link into it costs this suite no
+// dependency it did not already have. That is the measured difference from
+// citationDeclaredElsewhere 300 lines up, whose targets are connect's `_test.go` files -- which
+// the build does NOT need -- and which therefore stays a table. Reading the directive rather than
+// writing the path down means a re-layout of the workspace moves this gate with it.
+type godocModule struct {
+	// path is this module's own import path, off go.mod's `module` line.
+	path string
+	// root is the directory that path names.
+	root string
+	// replaced is import-path prefix -> directory, for the filesystem replacements only. A
+	// replacement by another MODULE (`=> other/mod v1.2.3`) names no directory here and is left
+	// to the disposition table, like the standard library.
+	replaced map[string]string
+}
+
+func godocReadModule(t *testing.T, root string) *godocModule {
+	source, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("reading go.mod under %s: %v", root, err)
+	}
+	held := &godocModule{root: root, replaced: map[string]string{}}
+	inBlock := false
+	for _, raw := range strings.Split(string(source), "\n") {
+		line := strings.TrimSpace(raw)
+		if cut := strings.Index(line, "//"); 0 <= cut {
+			line = strings.TrimSpace(line[:cut])
+		}
+		if rest, is := strings.CutPrefix(line, "module "); is {
+			held.path = strings.TrimSpace(rest)
+			continue
+		}
+		switch {
+		case line == "replace (":
+			inBlock = true
+			continue
+		case inBlock && line == ")":
+			inBlock = false
+			continue
+		case strings.HasPrefix(line, "replace "):
+			line = strings.TrimSpace(strings.TrimPrefix(line, "replace "))
+		case inBlock:
+			// a row of a replace block, already in `line`
+		default:
+			continue
+		}
+		parts := strings.Fields(line)
+		arrow := -1
+		for at, part := range parts {
+			if part == "=>" {
+				arrow = at
+			}
+		}
+		// exactly one field on the right, and it has to look like a path rather than a version
+		if arrow < 1 || arrow != len(parts)-2 {
+			continue
+		}
+		target := parts[len(parts)-1]
+		if !strings.HasPrefix(target, ".") && !filepath.IsAbs(target) {
+			continue
+		}
+		held.replaced[parts[0]] = filepath.Clean(filepath.Join(root, filepath.FromSlash(target)))
+	}
+	if held.path == "" {
+		t.Fatalf("no `module` line in %s", filepath.Join(root, "go.mod"))
+	}
+	return held
+}
+
+// dirOf is the directory an import path names inside this build's SOURCE, and whether it belongs
+// to this module. It answers "" for anything the build takes from the module cache or from GOROOT,
+// which is what godocLinkOutsideThisBuild disposes of.
+func (self *godocModule) dirOf(importPath string) (string, bool) {
+	if importPath == self.path {
+		return self.root, true
+	}
+	if rest, is := strings.CutPrefix(importPath, self.path+"/"); is {
+		return filepath.Join(self.root, filepath.FromSlash(rest)), true
+	}
+	for prefix, dir := range self.replaced {
+		if importPath == prefix {
+			return dir, false
+		}
+		if rest, is := strings.CutPrefix(importPath, prefix+"/"); is {
+			return filepath.Join(dir, filepath.FromSlash(rest)), false
+		}
+	}
+	return "", false
+}
+
+// godocDeclarationsAt builds one directory OUTSIDE this module from its production files, cached
+// per directory because connect/mls alone is 140 files.
+//
+// `_test.go` IS EXCLUDED AND THAT IS THE LINE THIS GATE DRAWS. What the replace directive makes a
+// requirement of this build is the other module's PRODUCTION source; its test files are its own
+// business and a link in this repository's production prose has no business naming one. So a link
+// to a sibling's test helper reports here, with the same sentence as any other name that does not
+// resolve.
+func godocDeclarationsAt(t *testing.T, cache map[string]*godocPackage, dir string) *godocPackage {
+	if held, found := cache[dir]; found {
+		return held
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("a link resolves into %s and this build cannot read it: %v. That directory is a "+
+			"replace target of this module's go.mod, so its absence is a broken checkout rather "+
+			"than a stale link", dir, err)
+	}
+	one := newGodocPackage()
+	files := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if err := godocReadDeclarations(one, filepath.Join(dir, name)); err != nil {
+			t.Fatalf("%v", err)
+		}
+		files += 1
+	}
+	if files == 0 {
+		t.Fatalf("CONTROL FAILED: %s holds no production .go file, so every link resolving into it "+
+			"would be answered by an empty table", dir)
+	}
+	cache[dir] = one
+	return one
+}
+
+// godocHostsOf is every type of one package that declares a member by this name, in order. It is
+// the whole of the failure message for the shape this pass found three of: a METHOD written as
+// though it were a package-level name, which is what `[messagegroup.InstallPqSecret]` was.
+func godocHostsOf(one *godocPackage, member string) string {
+	hosts := []string{}
+	for typeName, members := range one.members {
+		if members[member] {
+			hosts = append(hosts, typeName)
+		}
+	}
+	if len(hosts) == 0 {
+		return ""
+	}
+	sort.Strings(hosts)
+	return fmt.Sprintf(" That package declares %s as a member of %s, so the link needs the type in "+
+		"it -- READ which one before writing it in.", member, strings.Join(hosts, ", "))
 }
 
 // godocLinkNet finds a doc link in one comment: a bracketed identifier path of one to three
@@ -408,64 +678,8 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 		if packages[dir] == nil {
 			packages[dir] = newGodocPackage()
 		}
-		one := packages[dir]
-		file, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
-		if parseErr != nil {
-			return fmt.Errorf("parsing %s: %w", path, parseErr)
-		}
-		for _, spec := range file.Imports {
-			name := strings.Trim(spec.Path.Value, `"`)
-			if at := strings.LastIndex(name, "/"); 0 <= at {
-				name = name[at+1:]
-			}
-			if spec.Name != nil {
-				name = spec.Name.Name
-			}
-			one.imports[name] = true
-		}
-		for _, decl := range file.Decls {
-			switch typed := decl.(type) {
-			case *ast.FuncDecl:
-				if typed.Recv == nil || len(typed.Recv.List) == 0 {
-					one.top[typed.Name.Name] = true
-					continue
-				}
-				if name := godocTypeName(typed.Recv.List[0].Type); name != "" {
-					one.member(name, typed.Name.Name)
-				}
-			case *ast.GenDecl:
-				for _, spec := range typed.Specs {
-					switch declared := spec.(type) {
-					case *ast.TypeSpec:
-						one.top[declared.Name.Name] = true
-						one.types[declared.Name.Name] = true
-						switch under := declared.Type.(type) {
-						case *ast.StructType:
-							for _, field := range under.Fields.List {
-								for _, ident := range field.Names {
-									one.member(declared.Name.Name, ident.Name)
-								}
-								if len(field.Names) == 0 {
-									// an embedded field is named by its own type
-									if name := godocTypeName(field.Type); name != "" {
-										one.member(declared.Name.Name, name)
-									}
-								}
-							}
-						case *ast.InterfaceType:
-							for _, method := range under.Methods.List {
-								for _, ident := range method.Names {
-									one.member(declared.Name.Name, ident.Name)
-								}
-							}
-						}
-					case *ast.ValueSpec:
-						for _, ident := range declared.Names {
-							one.top[ident.Name] = true
-						}
-					}
-				}
-			}
+		if readErr := godocReadDeclarations(packages[dir], path); readErr != nil {
+			return readErr
 		}
 		if !strings.HasSuffix(path, "_test.go") {
 			production += 1
@@ -497,10 +711,72 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 			"no production files or no test files is measuring nothing", total, production)
 	}
 
+	// ── THE CROSS-MODULE CONTROLS, OVER THE READER THAT ANSWERS FOR THE OTHER SIDE ─────────────
+	//
+	// EVERY LITERAL HERE IS COPIED FROM connect's OWN SOURCE, and the pair is the one this pass's
+	// finding turned on: PeekSender is declared on the GroupHandle INTERFACE and on the unexported
+	// engine handle, and NOT on GroupSession -- so `[messagegroup.GroupSession.PeekSender]` has to
+	// resolve to nothing while `[messagegroup.GroupHandle.PeekSender]` resolves. A build that
+	// answered yes to the first is the build that let three links dangle for a commit.
+	module := godocReadModule(t, root)
+	external := map[string]*godocPackage{}
+	if _, replaced := module.replaced["github.com/urnetwork/connect"]; !replaced {
+		t.Fatalf("CONTROL FAILED: go.mod carries no directory replacement for "+
+			"github.com/urnetwork/connect, so the resolver below has nowhere to resolve the 94 "+
+			"links this module's prose writes into it. Read %s", filepath.Join(root, "go.mod"))
+	}
+	messagegroupDir, ownsIt := module.dirOf("github.com/urnetwork/connect/messagegroup")
+	if ownsIt {
+		t.Fatalf("CONTROL FAILED: the resolver thinks connect/messagegroup is a directory of THIS " +
+			"module, so the two sides of the seam are not being told apart")
+	}
+	if messagegroupDir == "" {
+		t.Fatalf("CONTROL FAILED: the resolver turns github.com/urnetwork/connect/messagegroup into " +
+			"no directory although go.mod replaces that module with one. Every link into it would " +
+			"then fall through to the out-of-build disposition, where a row excuses it and nothing " +
+			"reads connect at all")
+	}
+	seam := godocDeclarationsAt(t, external, messagegroupDir)
+	if !seam.members["GroupSession"]["InstallPqSecret"] {
+		t.Fatalf("CONTROL FAILED: connect/messagegroup declares (*GroupSession).InstallPqSecret and "+
+			"the reader of %s does not see it, so every link into that package below is being "+
+			"answered by a blind instrument", messagegroupDir)
+	}
+	if !seam.members["GroupHandle"]["PeekSender"] {
+		t.Fatalf("CONTROL FAILED: connect/messagegroup's GroupHandle interface declares PeekSender " +
+			"and the reader does not see it, so the repaired spelling is passing for the wrong reason")
+	}
+	if seam.members["GroupSession"]["PeekSender"] {
+		t.Fatalf("CONTROL FAILED: the reader says connect/messagegroup declares " +
+			"(*GroupSession).PeekSender. That is the exact spelling this pass found dangling -- the " +
+			"method is the GroupHandle interface's -- so a yes here means the resolver answers yes " +
+			"to names that do not exist. If connect has since DELEGATED it onto the session, read " +
+			"that delegation and then delete this control rather than the link")
+	}
+	// AND THIS MODULE'S OWN ROOT PACKAGE IS REACHABLE UNDER ITS IMPORT NAME, which is the 14 links
+	// the previous build counted as "another repository's to declare" while holding their
+	// declarations in this very map.
+	rootDir, ownsRoot := module.dirOf(module.path)
+	if !ownsRoot || packages[rootDir] == nil {
+		t.Fatalf("CONTROL FAILED: the walk built no package for this module's own root %s", rootDir)
+	}
+	if !packages[rootDir].types["StreamStore"] || !packages[rootDir].members["StreamStore"]["SeedStreamIndex"] {
+		t.Fatalf("CONTROL FAILED: this module's root package declares StreamStore and its " +
+			"SeedStreamIndex method, and the resolver does not see them, so every [sdk.…] link " +
+			"below would pass by being unresolvable rather than by resolving")
+	}
+	if packages[rootDir].top["NoSuchExportedThing"] {
+		t.Fatalf("CONTROL FAILED: the resolver says this module's root package declares " +
+			"NoSuchExportedThing, so it answers yes to names that do not exist")
+	}
+
 	// ── THE PROPERTY ───────────────────────────────────────────────────────────────────────────
 	quotedOnly := map[string][]string{}
 	unquoted := map[string]bool{}
-	links, resolvedTop, resolvedMember, elsewhere := 0, 0, 0, 0
+	links, resolvedTop, resolvedMember := 0, 0, 0
+	resolvedPackage, resolvedOwnModule, resolvedReplaced, outsideThisBuild := 0, 0, 0, 0
+	needsRow := map[string][]string{}
+	tookOutside := map[string]bool{}
 	dirs := []string{}
 	for dir := range productionOf {
 		dirs = append(dirs, dir)
@@ -552,8 +828,10 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 					switch {
 					case len(parts) == 1 && one.top[parts[0]]:
 						resolvedTop += 1
-					case len(parts) == 1 && one.imports[parts[0]]:
-						elsewhere += 1
+					case len(parts) == 1 && one.imports[parts[0]] != "":
+						// a bare package name names a package and nothing inside one; there is
+						// no member to resolve and the import is the whole of the question.
+						resolvedPackage += 1
 					case len(parts) == 1:
 						t.Errorf("[%s] is written at %s and this package declares nothing by that "+
 							"name and imports no such package. A bracketed name that resolves to "+
@@ -571,12 +849,63 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 							"item 259's sweep found, and naming the wrong member is worse than "+
 							"naming none.%s", name, where, parts[0], strings.Join(parts[1:], "."),
 							godocNearestMember(one, parts[0], parts[1]))
-					case one.imports[parts[0]]:
-						elsewhere += 1
-					default:
+					case one.imports[parts[0]] == "":
 						t.Errorf("[%s] is written at %s and %s is neither a type this package "+
 							"declares nor a package this file's own package imports, so there is "+
 							"nothing for the rest of the link to hang off.", name, where, parts[0])
+					default:
+						// ── THE HEAD NAMES AN IMPORTED PACKAGE, SO THE REST IS RESOLVED IN IT ──
+						//
+						// THIS ARM USED TO BE `elsewhere += 1` AND THAT IS THE DEFECT THIS PASS
+						// CLOSED. Classifying a link is not resolving it: 128 of 1,523 links took
+						// this road and NOTHING was asked of any of them, so
+						// `[messagegroup.InstallPqSecret]` (a METHOD),
+						// `[messagegroup.GroupSession.PeekSender]` (the wrong TYPE) and any
+						// `[sdk.InventedName]` passed in silence -- 14 of the 128 naming packages
+						// whose declarations this very walk was already holding.
+						dir, own := module.dirOf(one.imports[parts[0]])
+						if dir == "" {
+							// GOROOT or the module cache: the disposition table's population
+							if _, disposed := godocLinkOutsideThisBuild[name]; !disposed {
+								needsRow[name] = append(needsRow[name], where)
+								break
+							}
+							outsideThisBuild += 1
+							tookOutside[name] = true
+							break
+						}
+						that := packages[dir]
+						if that == nil {
+							that = godocDeclarationsAt(t, external, dir)
+						}
+						resolved := false
+						switch len(parts) {
+						case 2:
+							resolved = that.top[parts[1]]
+						case 3:
+							resolved = that.types[parts[1]] && that.members[parts[1]][parts[2]]
+						}
+						if !resolved {
+							hint := godocHostsOf(that, parts[len(parts)-1])
+							if len(parts) == 3 && !that.types[parts[1]] {
+								hint = fmt.Sprintf(" %s is not a type that package declares.%s",
+									parts[1], hint)
+							}
+							t.Errorf("[%s] is written at %s and package %s (%s) declares no such "+
+								"%s. READ the target before rewriting this: a method written as "+
+								"though it were a package-level name, and a member hung off the "+
+								"wrong type of the same package, are the two shapes this gate's "+
+								"own repair pass found.%s", name, where, parts[0],
+								one.imports[parts[0]],
+								map[bool]string{true: "package-level name", false: "member"}[len(parts) == 2],
+								hint)
+							break
+						}
+						if own {
+							resolvedOwnModule += 1
+						} else {
+							resolvedReplaced += 1
+						}
 					}
 				}
 			}
@@ -608,17 +937,53 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 		}
 	}
 
+	// ── THE OUT-OF-BUILD NARROWING, HELD BOTH WAYS ─────────────────────────────────────────────
+	rowless := []string{}
+	for name := range needsRow {
+		rowless = append(rowless, name)
+	}
+	sort.Strings(rowless)
+	for _, name := range rowless {
+		t.Errorf("[%s] is written at %s and its head names a package this build takes from GOROOT "+
+			"or from the module cache, neither of which this gate reads. RESOLVE it by hand and add "+
+			"a row to godocLinkOutsideThisBuild saying what it is -- the row is the record that "+
+			"somebody looked, which is the whole of what this disposition buys.",
+			name, strings.Join(needsRow[name], ", "))
+	}
+	for name, why := range godocLinkOutsideThisBuild {
+		if !tookOutside[name] {
+			t.Errorf("[%s] is carved out as living outside this build's source (%s) and no "+
+				"production comment writes it any more. An entry nothing needs is how a disposition "+
+				"rots; delete it", name, why)
+		}
+	}
+
 	// ── THE COMPLEMENT, PRINTED BESIDE WHAT WAS ASSERTED ───────────────────────────────────────
 	t.Logf("%d .go files walked in %d package directories, %d of the files production", total,
 		len(packages), production)
-	t.Logf("%d godoc links in production prose: %d resolve to a package-level declaration of their "+
-		"own package, %d to a method or a field of a type it declares, %d name another package and "+
-		"are that repository's to declare", links, resolvedTop, resolvedMember, elsewhere)
+	t.Logf("%d godoc links in production prose: %d to a package-level declaration of their own "+
+		"package, %d to a member of a type it declares, %d to a declaration of another package OF "+
+		"THIS MODULE, %d to a declaration of a module go.mod replaces with a directory, %d a bare "+
+		"package name, %d disposed of as outside this build's source",
+		links, resolvedTop, resolvedMember, resolvedOwnModule, resolvedReplaced, resolvedPackage,
+		outsideThisBuild)
 	t.Logf("the quoted-span narrowing removed %d spelling(s) that appear nowhere in prose: %v",
 		len(carved), carved)
+	t.Logf("%d replaced module(s) read for real: %v; %d external package directory(ies) built",
+		len(module.replaced), module.replaced, len(external))
 	if resolvedMember == 0 || resolvedTop == 0 {
 		t.Errorf("no link resolved to a %s declaration at all, so the rule above is vacuous",
 			map[bool]string{true: "package-level", false: "member"}[resolvedTop == 0])
+	}
+	// AND THE TWO NEW ROADS ARE ASSERTED NON-EMPTY, or a resolver that fell back to counting would
+	// read as a pass. The own-module road is the 14 links ledger item 259's sweep missed and the
+	// replaced road is the 111 into connect; both are facts about this corpus today, so a zero is
+	// a broken instrument and not a clean repository.
+	if resolvedOwnModule == 0 || resolvedReplaced == 0 {
+		t.Errorf("resolvedOwnModule %d and resolvedReplaced %d: this module's prose links into its "+
+			"own root package and into connect/messagegroup, so a zero on either road means that "+
+			"road resolved nothing and the arm above is classifying again rather than resolving",
+			resolvedOwnModule, resolvedReplaced)
 	}
 }
 

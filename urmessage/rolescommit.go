@@ -467,10 +467,18 @@ func (self *Group) TransferOwnership(ctx context.Context, identityPub []byte) er
 // some of them is not removing the member: the ones left standing still read every epoch and still
 // write. So the leaves are found off the MEMBERSHIP -- the same roster [Group.Members] answers and
 // the same one every receiver reads the commit against -- and they go into one Remove vector. A
-// per-leaf verb is Spec A §7.3's `RemoveDevice`, which ruling 50 put in its own track after this
-// one ships and which nothing in this package declares: that verb is keyed on leaves, runs once per
-// group the identity belongs to, and owes a partial-success state machine. This one is keyed on an
-// identity in one group and has no partial state, because one commit either lands or does not.
+// per-leaf verb is Spec A §7.5's `RemoveDevice`, which ruling 50 put in its own track after this
+// one ships and which nothing in this package declares: that verb is keyed on leaves, runs once
+// per group the identity belongs to, and owes a partial-success state machine. This one is keyed
+// on an identity in one group and has no partial state, because one commit either lands or does
+// not.
+//
+// THE SECTION NUMBER IS §7.5 AND IT WAS §7.3 HERE FOR ONE COMMIT, which is worth the line because
+// the wrong number sends a reader to the verb this sentence is distinguishing `RemoveDevice` FROM.
+// §7.3 is "Groups" and declares `RemoveMember`; §7.5 is "Devices -- MASTER §5.4, §11" and declares
+// `RemoveDevice`. The godoc-link gate cannot see this class: a section number in backticked prose
+// is not a bracketed link, so a citation that names the right symbol under the wrong authority
+// passes it. What holds it is reading the spec.
 //
 // AND THE POLICY LEAVES WITH THE TREE, WHICH IS WHY THIS VERB IS NOT A CommitRemove. MASTER §6's
 // urmessage_group_policy is keyed by credential identity and nothing ever drops an entry, so a bare

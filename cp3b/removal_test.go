@@ -671,3 +671,110 @@ func removalAssertRemoved(t *testing.T, what string, err error) {
 		}
 	}
 }
+
+// ── THE ONE REPAIR THE REMOVED SENTINEL NAMES, THROUGH THE VERB THAT PERFORMS IT ────────────────
+
+// A DEVICE ADDED BACK THROUGH A REAL [urmessage.Device.Join] READS NO REMOVAL, AND THE DISK AGREES
+// ACROSS A RESTART.
+//
+// WHY THIS CASE EXISTS, AND IT IS A HOLE IN A SIBLING CASE RATHER THAN A NEW PROPERTY. The re-add
+// is driven one module over by
+// urmessage.TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalksAndTheHistory,
+// whose subject is what the repair COSTS -- three failed walks, the abandoned line, the cursor --
+// and all of that runs the real walk machinery. What it cannot run is the verb: no test in that
+// package can drive a publishing verb to completion, so its re-add is a `&Group{…}` the harness
+// composes and the "the state is GONE" half of the sentinel's promise is a reading of a struct
+// literal. That case listed "have [urmessage.Device.Join] carry the removal forward" as a mutant
+// it would catch and it CANNOT: the mutant leaves that whole module green. This case is where that
+// clause is held.
+//
+// THE TWO CLAUSES, AND THE SECOND IS THE ONE A HARNESS CANNOT FAKE. (1) After a real
+// AddMemberAndPublish and a real Join, [urmessage.Group.Removal] on the re-added group answers (0,
+// nil) -- the device that read a removal one epoch ago reads none now. (2) The device is then
+// KILLED and restarted, and the state is read off the restored group BEFORE any Receive, which is
+// the only reading that can tell a cleared part ten from one that happens to look clear in memory.
+// The disk held a removal before the re-add -- ruling 52 persists it, and this case asserts that
+// first -- so a Join that did not rewrite part ten leaves a device that comes back removed from a
+// group it is a member of, with a dead composer and no way back.
+//
+// THE CONTROL IS THE REMOVAL ITSELF, IN THIS CASE AND OVER THIS COMMIT: the removed device answers
+// [urmessage.ErrRemovedFromGroup] by name and reads a non-nil removal at the epoch it was removed
+// at, before anything is repaired. Without it both clauses are satisfied by a build that never
+// sets the removal state at all, which is exactly the build ruling 52 replaced.
+//
+// WHAT WOULD GO RED: have Join carry the persisted removal forward (clause 1, and clause 2 after
+// the restart); stop persisting the cleared state in Join's own persist (clause 2 only, which is
+// why the restart is here and not a flourish); drop the removal state altogether (the control).
+func TestADeviceAddedBackThroughARealJoinReadsNoRemovalAndTheDiskAgreesAfterARestart(t *testing.T) {
+	world := newWorld(t)
+	ctx := context.Background()
+
+	alice := world.newPersona(t, "alice")
+	bob := world.newPersona(t, "bob")
+	for _, who := range []*persona{alice, bob} {
+		if err := who.device.Connect(ctx); err != nil {
+			t.Fatalf("%s's Connect: %v", who.name, err)
+		}
+	}
+	groupId := newGroupId(t)
+	aliceGroup, bobGroup := openPair(t, ctx, alice, bob, groupId)
+
+	// bob's own line, sealed while he is a member: what the re-add does NOT give back, and the
+	// reason the disk has something to rewrite.
+	if _, err := bobGroup.Send(ctx, bobsFirstLine); err != nil {
+		t.Fatalf("bob's Send: %v", err)
+	}
+	if _, err := aliceGroup.Receive(ctx); err != nil {
+		t.Fatalf("alice's Receive before the removal: %v", err)
+	}
+	bobId := rolesIdentityOf(t, bobGroup)
+	removedAt := bobGroup.Epoch()
+
+	// ── THE CONTROL: THE REMOVAL, AND THE STATE IT SETS ─────────────────────────────────────────
+	if err := aliceGroup.RemoveMember(ctx, bobId); err != nil {
+		t.Fatalf("alice's RemoveMember of bob: %v", err)
+	}
+	_, receiveErr := bobGroup.Receive(ctx)
+	removalAssertRemoved(t, "CONTROL: the removed device's Receive", receiveErr)
+	if epoch, state := bobGroup.Removal(); state == nil || epoch != removedAt {
+		t.Fatalf("CONTROL FAILED: the removed device reads (%d, %v) from Removal, want (%d, "+
+			"non-nil). Nothing below clears a state that was never set", epoch, state, removedAt)
+	}
+
+	// ── THE REPAIR, THROUGH THE VERBS: AddMemberAndPublish ON ONE DEVICE, Join ON THE OTHER ─────
+	rejoined := removalAdd(t, ctx, "alice", aliceGroup, bob.device, "bob")
+	if got := rejoined.Epoch(); got <= removedAt {
+		t.Fatalf("the re-added group is at epoch %d and the removal opened epoch %d: a re-add takes "+
+			"a commit of its own, so this is not the group the welcome admitted", got, removedAt+1)
+	}
+
+	// ── CLAUSE 1: THE STATE IS GONE ─────────────────────────────────────────────────────────────
+	if epoch, state := rejoined.Removal(); state != nil || epoch != 0 {
+		t.Fatalf("the group a real Join built reads (%d, %v) from Removal: the ONE repair "+
+			"ErrRemovedFromGroup's own sentence names does not clear the state it names it for, so "+
+			"a device added back to a group is still told it was thrown out of it", epoch, state)
+	}
+
+	// ── CLAUSE 2: THE DISK, READ BEFORE ANY WALK IN A NEW PROCESS ───────────────────────────────
+	bob = world.restart(t, bob)
+	if err := bob.device.Connect(ctx); err != nil {
+		t.Fatalf("the restarted bob's Connect: %v", err)
+	}
+	restored, err := bob.device.Restore(ctx)
+	if err != nil {
+		t.Fatalf("the restarted bob's Restore: %v", err)
+	}
+	if len(restored) != 1 {
+		t.Fatalf("the restarted bob restored %d group(s), want 1", len(restored))
+	}
+	// NO Receive HAS RUN IN THIS PROCESS. A state read here came off part ten of the group record
+	// on the disk and from nowhere else, so this is the clause that holds Join's own persist.
+	if epoch, state := restored[0].Removal(); state != nil || epoch != 0 {
+		t.Fatalf("the RESTARTED re-added device reads (%d, %v) from Removal before its first "+
+			"Receive: Join cleared the state in memory and left the removal on the disk, so this "+
+			"device comes back reading as removed from a group it is a member of", epoch, state)
+	}
+	t.Logf("removed at epoch %d, added back through a real Join at epoch %d: Removal answers "+
+		"(0, nil) and still does after the process was killed and the group restored off the disk",
+		removedAt, rejoined.Epoch())
+}

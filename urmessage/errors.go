@@ -417,11 +417,13 @@ var (
 	// Leave, which is the surface ruling 48 made product: a leave request the app states, with
 	// mute-and-hide locally, and an admin's Remove as its MLS half. So the text names the door.
 	//
-	// IT IS NOT SPEC A §7.3's `RemoveDevice` EITHER, which ruling 50 put in its own track and
+	// IT IS NOT SPEC A §7.5's `RemoveDevice` EITHER, which ruling 50 put in its own track and
 	// which nothing in this package declares: that verb is keyed on LEAVES, is one commit per
 	// group the identity belongs to, and has a partial-success state machine. A member revoking
 	// one of its OTHER devices is its business (§11's self-service rule, ruling 2) and it is not
-	// reachable through an identity-keyed call.
+	// reachable through an identity-keyed call. (§7.5 is "Devices"; the number here read §7.3 for
+	// one commit, which is the section that declares `RemoveMember` -- the very verb this sentence
+	// is distinguishing `RemoveDevice` from. See [Group.RemoveMember]'s own note on it.)
 	ErrRemoveSelf = errors.New("urmessage: RemoveMember does not remove your own identity: no identity's last leaf ever leaves in its own commit, so ask an admin or the owner of this group to remove you")
 
 	// [Group.RemoveMember] NAMED THE IDENTITY THAT OWNS THE GROUP, and no commit removes it

@@ -549,9 +549,23 @@ func (self *rotWorld) readmit(committer *rotMember, removed *rotMember, receiver
 // measured. Both halves are here.
 //
 // WHAT THE REPAIR BUYS, AND IT IS THE WHOLE OF THE GOOD NEWS: the state is GONE. The re-added
-// device's group answers (0, nil) from [Group.Removal] -- a fresh [Group] at the epoch the welcome
-// admitted it at, with no removal on it -- and the record on the disk agrees, because
-// [Device.Join]'s own persist rewrites part ten with the new group's `removedNone`.
+// device's group answers (0, nil) from [Group.Removal] -- a group at the epoch the welcome
+// admitted it at, with no removal on it.
+//
+// AND THAT HALF IS HELD IN cp3b AND NOT HERE, WHICH IS A CORRECTION OF THIS HEADER RATHER THAN A
+// DIVISION OF LABOUR IT PLANNED. The re-add below runs through [rotWorld.readmit], which builds
+// its [Group] as a struct literal because no test in this package can drive a publishing verb to
+// completion -- so the (0, nil) read a few lines down is a reading of that literal, and a
+// [Device.Join] that carried a removal forward would leave this whole module GREEN. Measured, not
+// supposed. What holds the state half is
+// cp3b.TestADeviceAddedBackThroughARealJoinReadsNoRemovalAndTheDiskAgreesAfterARestart: a real
+// AddMemberAndPublish, a real Join, and the state read again off the DISK after the process is
+// killed, which is the clause a struct literal cannot fake. It is the only case in either module
+// that the carry-forward mutant turns red.
+//
+// WHAT IS HELD HERE IS THE COST, and every clause of it runs the real walk machinery -- the doors,
+// the attempts, the abandonment, the cursor, the ownHandles reading -- over a group whose ONE
+// composed field is the stream floor, which the next paragraph ties to production's own rule.
 //
 // AND WHAT IT COSTS, THREE THINGS, EACH MEASURED HERE RATHER THAN REASONED:
 //
@@ -577,15 +591,26 @@ func (self *rotWorld) readmit(committer *rotMember, removed *rotMember, receiver
 // is the SAME in both -- which is the finding, because it says the loss is the EPOCH's and not the
 // handle's, and no amount of [Group.ownHandles] bookkeeping can buy any of it back.
 //
+// AND THE SAME-LEAF ROW READS THE HANDLE OUT LOUD, BECAUSE A PRODUCTION SENTENCE WAS WRONG ABOUT
+// IT. [Group.recordIsOwnLocked]'s theorem carried a clause saying a re-add does not carry part
+// nine forward "so `maybeMine` is false for those records in the bargain". It is not: part nine is
+// seeded by [Group.noteOwnLeafLocked] from the group_handle_key and the LEAF and from nothing
+// else, so on a same-leaf re-add the fresh set holds the OLD handle byte for byte and `maybeMine`
+// is TRUE for this device's own pre-removal records. The reading below asserts exactly that, in
+// both directions -- true in the same-leaf row, false in the newcomer row -- so the theorem is
+// left resting on fact 1 alone, which is what it actually rests on.
+//
 // THE CONTROLS ARE INLINE AND EACH FIRES FOR ITS OWN REASON. The survivor OPENS the very record the
 // re-added device cannot, over the same octets, which is what makes "did not authenticate" a fact
 // about this device rather than about the record. And the re-added device's [Group.Removal] is read
 // BEFORE the failing walks, so the two are not one assertion.
 //
-// WHAT WOULD GO RED: have [Device.Join] carry the removal forward (the repair repairs nothing);
-// seed a re-added group with the epochs below its admission (the cost paragraph is wrong and the
-// record opens); raise [Group.ownFloorHeld] for a joiner above epoch one (door 1 opens and the
-// server's claims are met with a seal instead of a look).
+// WHAT WOULD GO RED: seed a re-added group with the epochs below its admission (the cost paragraph
+// is wrong and the record opens); raise [Group.ownFloorHeld] for a joiner above epoch one (door 1
+// opens and the server's claims are met with a seal instead of a look); seed [Group.ownHandles]
+// with the leaf a re-add LEFT as well as the one it landed on (the handle reading, in the newcomer
+// row). "Have [Device.Join] carry the removal forward" is NOT on this list and was on it once:
+// this case cannot see it, and the cp3b case named above can.
 func TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalksAndTheHistory(t *testing.T) {
 	for _, one := range []struct {
 		name      string
@@ -665,9 +690,38 @@ func TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalk
 				t.Fatalf("the re-add landed back at leaf %d although a newcomer was admitted first; "+
 					"this row exists to move the handle and it did not", again.leaf)
 			}
+			// AND THIS READING IS OF THE HARNESS'S OWN LITERAL, WHICH THE HEADER SAYS OUT LOUD:
+			// [rotWorld.enrollAt] composes a [Group] with no removal on it, so what production's
+			// [Device.Join] does with a removal it finds on the disk is held in cp3b by
+			// TestADeviceAddedBackThroughARealJoinReadsNoRemovalAndTheDiskAgreesAfterARestart and
+			// not by this line. It stays because the cost clauses below must not be measured over
+			// a group that is still carrying one.
 			if epoch, state := again.group.Removal(); state != nil || epoch != 0 {
-				t.Fatalf("the re-added group reads (%d, %v) from Removal: the ONE repair the "+
-					"sentinel names does not clear the state it names it for", epoch, state)
+				t.Fatalf("the re-added group reads (%d, %v) from Removal: the cost clauses below "+
+					"would then be measuring a group that is still removed", epoch, state)
+			}
+
+			// ── THE HANDLE, IN BOTH DIRECTIONS: WHAT PART NINE BUYS A RE-ADD, WHICH IS NOTHING ──
+			//
+			// [Group.noteOwnLeafLocked] seeds [Group.ownHandles] with
+			// SenderHandle(group_handle_key, own leaf) and with nothing else, so a re-add onto its
+			// OWN old leaf derives its OWN old sender_handle and `maybeMine` -- which is that set
+			// read through walk.own -- is TRUE for this device's pre-removal records. A production
+			// sentence in [Group.recordIsOwnLocked] said the opposite, and said it as a second
+			// line of defence for the misattribution hazard ledger item 245 repaired; it is
+			// struck, and this is the reading that struck it.
+			if held := len(again.group.ownHandles); held != 1 {
+				t.Errorf("the re-added group holds %d own handle(s), want 1: a re-add builds a fresh "+
+					"group and initTables seeds part nine from the leaf it landed on alone", held)
+			}
+			answered := again.group.ownHandles[mine.record.Header.SenderHandle]
+			if answered != one.sameLeaf {
+				t.Errorf("the re-added group's ownHandles answers %v for the handle of its OWN "+
+					"pre-removal record, want %v in this row. On a same-leaf re-add the key and the "+
+					"leaf are both unchanged, so the derived handle is byte-for-byte the old one and "+
+					"the answer is YES -- nothing had to be carried forward and recordIsOwnLocked's "+
+					"fallback would answer `mine`; when a newcomer takes the leaf first the handle "+
+					"moves and the answer is NO for a different reason", answered, one.sameLeaf)
 			}
 
 			// ── COST 1: BOTH DOORS, AND THEY NAME THE JOINER'S PRICE AND NOT THE REMOVAL ────────
@@ -740,8 +794,11 @@ func TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalk
 			}
 			t.Logf("leaf %d -> %d, re-added at epoch %d: the removal state is gone, both doors "+
 				"answer ErrStreamFloorUnheld, and one line of its own cost %d failed walks and is "+
-				"in UnopenedRecords for ever", leafBefore, again.leaf, again.group.Epoch(),
-				maxRecordAttempts)
+				"in UnopenedRecords for ever. ownHandles holds %d entry and answers %v for the "+
+				"handle of its own pre-removal record, so maybeMine for that record is %v and the "+
+				"theorem in recordIsOwnLocked rests on fact 1 alone", leafBefore, again.leaf,
+				again.group.Epoch(), maxRecordAttempts, len(again.group.ownHandles), answered,
+				answered)
 		})
 	}
 }

@@ -4370,7 +4370,7 @@ func (self *Group) openPageLocked(fetched *protocol.FetchResponse, walk *pageWal
 		//
 		// FIRST, IT IS AFTER THE OPEN. Above this line `leaf` is a value resolved from
 		// header.SenderHandle through walk.leaves, which is keyed on a PLAINTEXT CLAIM any member
-		// can write -- [messagegroup.GroupSession.PeekSender] "authenticates nothing and is never
+		// can write -- [messagegroup.GroupHandle.PeekSender] "authenticates nothing and is never
 		// the answer", and a lookup in a table built from handles is the same reading. OpenRecord
 		// returning nil is what makes that leaf the SIGNED one: MASTER §8.4.3's R1 refuses any
 		// frame whose signing leaf's SenderHandle is not the one the record carries. So the role
@@ -5429,12 +5429,25 @@ func (self *Group) senderAtSendLocked(epoch uint64, leaf uint32) ([]byte, string
 // THE THEOREM SURVIVES ITS OWN PREMISE GOING STALE, ON FACT 1 ALONE, AND THAT IS MEASURED TOO. The
 // re-added device holds state from its admission on, so its own pre-removal records answer
 // [ErrRecordOpen] on each of [maxRecordAttempts] walks and are then abandoned -- the same case
-// counts them -- and this comparison is never reached for one of them. A re-add does not carry part
-// nine forward either ([Group.ownHandles] says why), so `maybeMine` is false for those records in
-// the bargain.
+// counts them -- and this comparison is never reached for one of them.
 //
-// IT IS WRITTEN RATHER THAN DELETED FOR THE REASON THE SET IS DURABLE: the day a re-added device can
-// reach an epoch below its admission, a line that read `mine` off sixteen octets would show the NEXT
+// ON FACT 1 ALONE, AND THE SECOND LINE OF DEFENCE THAT STOOD HERE WAS FALSE IN THE UNSAFE
+// DIRECTION. It read: "a re-add does not carry part nine forward either, so `maybeMine` is false
+// for those records in the bargain." It is not false; it is TRUE. `maybeMine` is
+// [Group.ownHandles] read through walk.own, and [Group.noteOwnLeafLocked] seeds that set with
+// SenderHandle(group_handle_key, own leaf) -- a function of the KEY and the LEAF and of nothing
+// else. A device removed and added back with nobody joining in between lands on its OWN old leaf
+// (RFC 9420 §7.7 refills the leftmost blank one), so the key and the leaf are both unchanged, the
+// fresh set holds the OLD sixteen octets byte for byte, and NOTHING had to be carried forward for
+// this device's own pre-removal records to answer `mine` here. In that row the fallback WOULD
+// attribute them to this device; what refuses them is fact 1, and fact 1 is the whole of it. In
+// the newcomer row the handle does move and `maybeMine` is false -- for the other reason, that it
+// is a different leaf's octets. Both directions are asserted, and the answer printed, by
+// TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalksAndTheHistory.
+//
+// IT IS WRITTEN RATHER THAN DELETED FOR THE REASON THE SET IS DURABLE: the day a re-added device
+// can reach an epoch below its admission, a line that read `mine` off sixteen octets would show
+// the NEXT
 // occupant of its old leaf its own history. What is claimed for this line today is exactly that: it
 // is correct, it is unreachable on fact 1, and what would measure it is a past-epoch door a joiner
 // does not have.

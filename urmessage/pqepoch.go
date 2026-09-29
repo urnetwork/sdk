@@ -1,16 +1,19 @@
 // pq_secret ROTATES, ledger item 243's step 3, under item 251's rulings 36 to 40.
 //
 // WHAT THIS FILE IS. connect keeps a pq_secret TABLE keyed by epoch, on
-// [messagegroup.GroupSession] (ruling 40, connect 74abe029). This file is the other half: the thing that puts a
-// DIFFERENT value in it every epoch, the carrier that delivers that value to the other members,
-// and the three ways that delivery can fail said out loud rather than surfacing as a group that
-// stopped working.
+// [messagegroup.GroupSession] (ruling 40, connect 74abe029). This file is the other half: the
+// thing that puts a DIFFERENT value in it every epoch, the carrier that delivers that value to the
+// other members, and the three ways that delivery can fail said out loud rather than surfacing as
+// a group that stopped working.
 //
 // THE connect COMMIT THIS PACKAGE REQUIRES, STATED BECAUSE A MERGE ORDER CAN BE GOT WRONG AND A
-// WORKING TREE CANNOT SHOW IT. This file consumes [messagegroup.InstallPqSecret],
-// [messagegroup.DeclarePqSecretRotated], [messagegroup.ErrPqSecretEpochConflict] and
-// [messagegroup.ErrPqSecretUnknownEpoch], and NONE of them exists before connect 74abe029 --
-// three commits past 39931315, which is where item 243's step 2 left that repository.
+// WORKING TREE CANNOT SHOW IT. This file consumes
+// [messagegroup.GroupSession.InstallPqSecret], [messagegroup.GroupSession.DeclarePqSecretRotated],
+// [messagegroup.ErrPqSecretEpochConflict] and [messagegroup.ErrPqSecretUnknownEpoch], and NONE of
+// them exists before connect 74abe029 -- three commits past 39931315, which is where item 243's
+// step 2 left that repository. THE FIRST TWO ARE METHODS ON *GroupSession AND THE LINKS SAY SO:
+// both stood here unqualified, as though they were package-level names, until the citation gate
+// was taught to RESOLVE a qualified link in the package its head names instead of counting it.
 //
 //	git show 39931315:messagegroup/pqsecret.go
 //	  -> fatal: path '…' exists on disk, but not in '39931315'
