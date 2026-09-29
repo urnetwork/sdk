@@ -1096,6 +1096,22 @@ func urnet_message_group_stats(self C.uint64_t) *C.char {
 // out_error at this boundary. They are different screens from this one and they are owed their own
 // projection; this export is ruling 52's and says so rather than pretending to be a general one.
 //
+// AND THE ONE PLACE THAT COSTS SOMETHING IS NAMED RATHER THAN LEFT TO BE DISCOVERED, because ledger
+// item 259's adversary pass discovered it. The device a DIGEST-LESS removal NAMES reads `removed: false`
+// here. That is the right answer and not a hole in this projection: urmessage refuses such a commit
+// before applying it, for the victim exactly as for every survivor, so the victim was not removed -- it
+// REFUSED, its leaf is still in the tree it is standing in, and it is still a member at the epoch it
+// refused from. Saying "you are no longer in this group" would report a membership change the device
+// did not accept and its own MLS state does not carry.
+//
+// WHAT IT DOES COST is that such a device is in the HALT, and the halt has no projection here at all --
+// so a UI reading only this export can render NEITHER screen for it and has nothing but an out_error
+// sentence to go on. That is ruling 41's track and not ruling 52's: closing it is a header key, a ctest
+// reader and a ruling on whether an unauthorized commit and an unrotated removal are one state or two.
+// It is written here because this is where a reader meets the false-looking `false`.
+// urmessage's TestTheVictimOfADigestLessRemovalIsHaltedAndReadsNoRemoval drives the reading this
+// export makes, with a properly rotated removal of the same victim beside it as the control.
+//
 //export urnet_message_group_removal
 func urnet_message_group_removal(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_message_group_removal")

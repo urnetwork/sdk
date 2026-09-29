@@ -254,6 +254,26 @@ var (
 	// which is what Spec C screen 10's read-only variant renders. The only way back in is to be
 	// added again, which is a new leaf and a new epoch.
 	//
+	// AND WHAT THAT ONE REPAIR COSTS IS MEASURED RATHER THAN LEFT AS A SENTENCE, because a sentinel
+	// that names exactly one road owes the price of it. Driven by
+	// TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalksAndTheHistory,
+	// over both leaves a re-add can land on -- RFC 9420 §7.7 refills the leftmost BLANK leaf, so a
+	// device added straight back takes its OWN old leaf and one admitted after a newcomer takes the
+	// next -- and the cost is the same in both, which is the finding: it is the EPOCH's and not the
+	// handle's.
+	//
+	//   - THE STATE GOES. [Device.Join] builds a fresh [Group] at the epoch the welcome names and
+	//     rewrites part ten with it, so [Group.Removal] answers (0, nil) and the disk agrees.
+	//   - BOTH DOORS ARE STILL SHUT, answering [ErrStreamFloorUnheld] and not this: a re-add lands
+	//     where a previous occupant may have sealed, so one clean walk is owed before a seal. That
+	//     is [Device.Join]'s standing price for any joiner above epoch one, not a removal's.
+	//   - AND ITS OWN PRE-REMOVAL LINES ARE LOST, at [maxRecordAttempts] failed walks EACH. A
+	//     re-added device holds state from its admission on, so a record it wrote ITSELF below that
+	//     does not authenticate; the walk cannot tell that from a transient, spends its attempts,
+	//     answers [ErrRecordAbandoned], counts [Stats.Unopened] and resolves the cursor past it.
+	//     Nothing later repairs it. What the removed device could still read is exactly what the
+	//     re-added device cannot.
+	//
 	// AND THE PRECEDENCE AGAINST THE HALT IS DECIDED BY THE COMMIT'S VALIDITY, not by which field
 	// is read first. [Group.ingestCommitLocked]'s step (3a) refuses an unrotated removal BEFORE
 	// ApplyCommit, so a removal this device judges INVALID halts it and never reaches this state --
@@ -270,6 +290,27 @@ var (
 	// produce, and ruling 15's caller check in [Group.SetRole]). The rule that refused it is
 	// carried, as one of the sentinels below, mls's own, or the cause a configured
 	// [CommitAuthorizer] returned -- so a caller can errors.Is this AND the rule.
+	//
+	// ON RECEIPT IT IS NOT STICKY, AND THAT IS TWO FACTS RATHER THAN ONE. Measured walk by walk by
+	// TestARoleModelRefusalIsNeitherTheRemovalNorTheHaltAndTheWalksSayWhich: walk one answers this
+	// wrapping the rule; walk two answers [ErrCommitIngest] over `ratchet generation already
+	// consumed`, because step (0) of [Group.ingestCommitLocked] has spent the committer's ladder by
+	// then and the sentinel cannot be re-derived; walk three spends [maxRecordAttempts], answers
+	// [ErrRecordAbandoned] and resolves the cursor PAST the commit; and every walk after it answers
+	// nil.
+	//
+	//   - THE FIRST FACT IS CORRECT AND IS RULING 41 READ LITERALLY: it is NOT [Group.removed]. A
+	//     commit this device refused removed it from nothing -- its leaf is in the tree it is
+	//     standing in and it is still a member at n -- and step (3) takes the refusal before
+	//     ApplyCommit, so the removed arm is not reachable from it at all.
+	//   - THE SECOND IS A RESIDUAL AND IS NAMED HERE RATHER THAN DRESSED UP: it is not
+	//     [Group.halted] either. That field is [ErrRemovalWithoutRotation] and nothing else, and the
+	//     2026-09-24 repair that made it sticky and persisted was made for exactly this sequence one
+	//     refusal site along. Extending it here needs a second persisted kind, a projection and a
+	//     ruling on whether an unauthorized commit and an unrotated removal are one state or two, so
+	//     it is ruling 41's track. What it costs in the field is item 242's own accounting and is
+	//     not new: the server accepted the commit and moved current_epoch, so a refusing receiver is
+	//     stale, cannot write, and recovers by re-founding.
 	ErrCommitUnauthorized = errors.New("urmessage: the role model refused this commit: not built on the send side, not followed on receipt")
 
 	// ── the role model's rules, MASTER §11 and ledger item 242 (roles.go) ──────────────────
@@ -376,10 +417,11 @@ var (
 	// Leave, which is the surface ruling 48 made product: a leave request the app states, with
 	// mute-and-hide locally, and an admin's Remove as its MLS half. So the text names the door.
 	//
-	// IT IS NOT [Group.RemoveDevice] EITHER, which ruling 50 put in its own track: that verb is
-	// keyed on LEAVES, is one commit per group the identity belongs to, and has a partial-success
-	// state machine. A member revoking one of its OTHER devices is its business (§11's
-	// self-service rule, ruling 2) and it is not reachable through an identity-keyed call.
+	// IT IS NOT SPEC A §7.3's `RemoveDevice` EITHER, which ruling 50 put in its own track and
+	// which nothing in this package declares: that verb is keyed on LEAVES, is one commit per
+	// group the identity belongs to, and has a partial-success state machine. A member revoking
+	// one of its OTHER devices is its business (§11's self-service rule, ruling 2) and it is not
+	// reachable through an identity-keyed call.
 	ErrRemoveSelf = errors.New("urmessage: RemoveMember does not remove your own identity: no identity's last leaf ever leaves in its own commit, so ask an admin or the owner of this group to remove you")
 
 	// [Group.RemoveMember] NAMED THE IDENTITY THAT OWNS THE GROUP, and no commit removes it

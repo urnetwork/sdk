@@ -298,16 +298,22 @@ func TestOneRemoveMemberCallCarriesEveryLeafOfTheIdentityAndDropsItsPolicyEntry(
 // R2 AND R3 ARE THE TWO THIS VERB CLOSES. The rest are stated rather than quietly left out: R0a and
 // R0b are unreachable from any verb in this package because every verb encodes its policy through
 // mls's own validating encoder before the predicate runs; R6a, R6c and R6d judge ADDED leaves and
-// leaf identities, which no removal declares; the server id has no verb at all; and the caps need a
-// group of 500 identities or 1,000 leaves, which no case in either module builds. The window is a
-// crude instrument -- a sentinel inside a table whose verb call is thirty lines away is missed -- so
-// it is a FLOOR on what was undriven and not a ceiling.
+// leaf identities, which no removal declares; the server id has no verb at all; and no removal can
+// break a cap, whatever the size of the group. The window is a crude instrument -- a sentinel inside
+// a table whose verb call is thirty lines away is missed -- so it is a FLOOR on what was undriven
+// and not a ceiling.
 //
-// R6a IS NOT HERE AND THAT IS STATED RATHER THAN QUIETLY OMITTED: it judges ADDED leaves ("an Add
-// claiming an identity already in the group is that identity's own") and a removal declares none,
-// so no call of this verb can reach it. The caps are reachable only over a group larger than this
-// package builds -- 500 identities or 1,000 leaves -- and are judged over the post-commit tree,
-// which a removal only ever shrinks; [ruleCaps] is exercised by the pure table.
+// R6a AND THE CAPS ARE NOT HERE, AND THE REASON IS STRUCTURAL RATHER THAN A COST -- which is ledger
+// item 259's own correction of this paragraph. R6a judges ADDED leaves ("an Add claiming an identity
+// already in the group is that identity's own") and a removal declares none, so no call of this verb
+// can reach it. The caps are the same kind of unreachable and it is NOT that a case would need 500
+// identities or 1,000 leaves to build: [ruleCaps] reads three numbers off the POST-COMMIT tree --
+// the leaf count, the identity count and each identity's leaf count -- and a removal only ever
+// shrinks all three. So no removal of any size in a group of any size can move either cap's input
+// toward its bound; a group already over one could never have formed, because every commit that
+// built it was judged by this same predicate, and a removal there is the repair rather than the
+// offence. [ruleCaps] is exercised by the pure table, which is where a rule no verb can break
+// belongs.
 //
 // THE ORDER OF THE TWO KINDS OF REFUSAL IS A DECISION AND IT IS NOT [Group.SetRole]'s. SetRole
 // answers its caller check FIRST, "so that a member is still answered R4 and not this", because the

@@ -126,21 +126,46 @@ func sameDecision(t *testing.T, what string, sent *CommitAuthorization, received
 
 // THE SEND SIDE JUDGES THE SAME VALUE EVERY RECEIVER WILL JUDGE, which is the whole of what makes
 // one predicate two arms: for each shape a verb builds -- an Add of a stranger, an Add of the
-// committer's own second device, a policy commit promoting a member, a transfer, and a Remove
-// through the builder's own arm -- the decision built BEFORE the commit exists, off the live
-// tree and the intent, equals field for field the decision a receiver builds off the staged
+// committer's own second device, a policy commit promoting a member, a transfer, and the removal
+// [Group.RemoveMember] builds, a Remove of every leaf of one identity carried in ONE commit with
+// the policy entry that named it dropped -- the decision built BEFORE the commit exists, off the
+// live tree and the intent, equals field for field the decision a receiver builds off the staged
 // commit the seam then produces. The leaves an Add lands on, the identities and leaf-key facts
 // read off the key package, the post-commit list with 0xF001 replaced and 0x0003 kept, the
 // committer's leaf, identity and role: all of it.
 //
+// THE SIXTH ROW IS THE ONE LEDGER ITEM 259 FILED AS OWED, AND THE FIFTH IS WHY. Until it, the only
+// removal row here built a BARE [messagegroup.GroupHandle.CommitRemove] -- the shape no verb
+// builds any more: [Group.RemoveMember] goes through CommitRemoveWithExtensions with the policy
+// beside the Remove, because a bare Remove of the last leaf of a NAMED identity is an R0c phantom
+// every receiver refuses (ledger item 242's R2 filed exactly that as the removal track's
+// blocker). So the header's own promise -- one row per shape a verb builds -- was false of the
+// shape that ships. The bare row is KEPT and renamed: the seam still exposes that arm, a receiver
+// still has to judge one identically whoever built it, and deleting the row would trade a stale
+// label for lost coverage.
+//
+// AND THE SIXTH ROW BRINGS ITS OWN WORLD, for the reason removeWorld exists: a policy that NAMES
+// the subject, so the entry the removal drops is one that was really there and PolicyAfter really
+// differs from PolicyBefore. The extension list it hands the seam is the list the RULES ran over
+// -- `sent.ExtensionsAfter`, read off the send-side decision exactly as the verb reads it -- so a
+// row that composed its own list would be measuring its own arithmetic rather than the verb's.
+//
 // WHAT WOULD GO RED: an Add placed anywhere but the leftmost blank leaf, a key package's identity
 // or leaf keys read differently from how the staged tree reports them, a policy body replaced by
-// anything but the seam's own helper, or the committer read off the device rather than the tree.
+// anything but the seam's own helper, or the committer read off the device rather than the tree;
+// and on the sixth row, a removal that carries the Remove without the policy (the receiver's
+// PolicyAfter then still names the subject while the send side's does not).
 func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 	type shape struct {
-		name   string
+		name string
+		// world is this row's own fixture, or nil for the three-member world every row but the
+		// removal one needs. A removal needs a policy that NAMES its subject; see removeWorld.
+		world  func(t *testing.T) *roleWorld
 		intent func(t *testing.T, world *roleWorld, owner *roleMember) *outgoingCommit
-		build  func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit) []byte
+		// build takes the send-side decision as well as the intent, because the verb this row
+		// stands for reads its extension list off that decision rather than deriving it twice.
+		build func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+			sent *CommitAuthorization) []byte
 	}
 	shapes := []shape{
 		{
@@ -153,7 +178,8 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 				}
 				return &outgoingCommit{addKeyPackages: [][]byte{keyPackage}}
 			},
-			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit) []byte {
+			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+				_ *CommitAuthorization) []byte {
 				commit, _, _, err := owner.handle.CommitAdd(intent.addKeyPackages)
 				if err != nil {
 					t.Fatalf("CommitAdd: %v", err)
@@ -167,7 +193,8 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 				laptop := claimingKeyPackage(t, filepath.Join(world.root, "owner-laptop"), owner.dev.identityPub)
 				return &outgoingCommit{addKeyPackages: [][]byte{laptop}}
 			},
-			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit) []byte {
+			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+				_ *CommitAuthorization) []byte {
 				commit, _, _, err := owner.handle.CommitAdd(intent.addKeyPackages)
 				if err != nil {
 					t.Fatalf("CommitAdd: %v", err)
@@ -186,7 +213,8 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 				}
 				return &outgoingCommit{policy: body}
 			},
-			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit) []byte {
+			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+				_ *CommitAuthorization) []byte {
 				commit, _, _, err := owner.handle.CommitPolicy(intent.policy)
 				if err != nil {
 					t.Fatalf("CommitPolicy: %v", err)
@@ -206,7 +234,8 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 				}
 				return &outgoingCommit{policy: body}
 			},
-			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit) []byte {
+			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+				_ *CommitAuthorization) []byte {
 				commit, _, _, err := owner.handle.CommitPolicy(intent.policy)
 				if err != nil {
 					t.Fatalf("CommitPolicy: %v", err)
@@ -215,14 +244,44 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 			},
 		},
 		{
-			name: "a Remove of a member, through the builder's own arm",
+			name: "a bare Remove through the seam's by-value arm, which no verb builds any more",
 			intent: func(t *testing.T, world *roleWorld, owner *roleMember) *outgoingCommit {
 				return &outgoingCommit{removeLeaves: []uint32{world.member("carol").leaf}}
 			},
-			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit) []byte {
+			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+				_ *CommitAuthorization) []byte {
 				commit, _, _, err := owner.handle.CommitRemove(intent.removeLeaves)
 				if err != nil {
 					t.Fatalf("CommitRemove: %v", err)
+				}
+				return commit
+			},
+		},
+		{
+			name: "the removal [Group.RemoveMember] builds: every leaf of one identity, with its " +
+				"policy entry dropped, in ONE commit",
+			world: func(t *testing.T) *roleWorld {
+				return removeWorld(t, map[string]mls.Role{"bob": mls.RoleAdmin, "carol": mls.RoleMember},
+					"owner", "bob", "carol")
+			},
+			intent: func(t *testing.T, world *roleWorld, owner *roleMember) *outgoingCommit {
+				carol := world.member("carol")
+				policy := world.policyOf(owner)
+				policy.RemoveRole(carol.dev.identityPub)
+				body, err := policyBodyOf(policy)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return &outgoingCommit{removeLeaves: []uint32{carol.leaf}, policy: body}
+			},
+			build: func(t *testing.T, world *roleWorld, owner *roleMember, intent *outgoingCommit,
+				sent *CommitAuthorization) []byte {
+				// THE LIST THE RULES RAN OVER, which is the verb's own line and not a second
+				// derivation of it. [Group.RemoveMember] hands the seam `decision.ExtensionsAfter`.
+				commit, _, _, err := owner.handle.CommitRemoveWithExtensions(intent.removeLeaves,
+					sent.ExtensionsAfter)
+				if err != nil {
+					t.Fatalf("CommitRemoveWithExtensions: %v", err)
 				}
 				return commit
 			},
@@ -231,7 +290,15 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 	for _, one := range shapes {
 		t.Run(one.name, func(t *testing.T) {
 			world := newRoleWorld(t, "owner", "bob", "carol")
+			if one.world != nil {
+				world = one.world(t)
+			}
 			owner, bob := world.member("owner"), world.member("bob")
+			// THE EPOCH IS READ AND NOT ASSUMED, because a row that brings its own world brings its
+			// own epoch: removeWorld publishes a policy commit, so its owner stands at 2 and the
+			// three-member world's stands at 1. What is asserted is that building the decision moves
+			// NOTHING, which is the same property either way.
+			epochBefore := owner.handle.Epoch()
 			intent := one.intent(t, world, owner)
 
 			// the decision, BEFORE the commit exists, and the rules' answer to it
@@ -239,12 +306,13 @@ func TestTheSendSideJudgesTheSameValueEveryReceiverWillJudge(t *testing.T) {
 			if err := authorizeCommit(sent); err != nil {
 				t.Fatalf("the rules refuse the owner's %s on the send side: %v", one.name, err)
 			}
-			if owner.handle.Epoch() != 1 {
-				t.Fatalf("building the decision moved the owner's handle to epoch %d", owner.handle.Epoch())
+			if owner.handle.Epoch() != epochBefore {
+				t.Fatalf("building the decision moved the owner's handle from epoch %d to %d",
+					epochBefore, owner.handle.Epoch())
 			}
 
 			// the commit the seam builds from the same intent, judged at a receiver
-			commit := one.build(t, world, owner, intent)
+			commit := one.build(t, world, owner, intent, sent)
 			received := world.receivedDecision(bob, commit)
 			sameDecision(t, one.name, sent, received)
 

@@ -467,10 +467,10 @@ func (self *Group) TransferOwnership(ctx context.Context, identityPub []byte) er
 // some of them is not removing the member: the ones left standing still read every epoch and still
 // write. So the leaves are found off the MEMBERSHIP -- the same roster [Group.Members] answers and
 // the same one every receiver reads the commit against -- and they go into one Remove vector. A
-// per-leaf verb is [Group.RemoveDevice]'s shape, which ruling 50 put in its own track after this
-// one ships: that verb is keyed on leaves, runs once per group the identity belongs to, and owes a
-// partial-success state machine. This one is keyed on an identity in one group and has no partial
-// state, because one commit either lands or does not.
+// per-leaf verb is Spec A §7.3's `RemoveDevice`, which ruling 50 put in its own track after this
+// one ships and which nothing in this package declares: that verb is keyed on leaves, runs once per
+// group the identity belongs to, and owes a partial-success state machine. This one is keyed on an
+// identity in one group and has no partial state, because one commit either lands or does not.
 //
 // AND THE POLICY LEAVES WITH THE TREE, WHICH IS WHY THIS VERB IS NOT A CommitRemove. MASTER §6's
 // urmessage_group_policy is keyed by credential identity and nothing ever drops an entry, so a bare

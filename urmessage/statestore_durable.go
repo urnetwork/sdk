@@ -390,13 +390,13 @@ type GroupRecord struct {
 	// on every fetch would then be wrong about. So the fallback stays and the diagnosis is made
 	// durable instead.
 	//
-	// WHICH of the three it was, as the octet [WrapDarkKind] spells, or zero for "this group is
-	// not dark". It is the kind and not the sentence: an error string is a thing this build
-	// wrote and the next build would have to keep writing, while the sentinel is a value a
-	// caller compares with [errors.Is].
+	// WHICH of the three it was, as the octet [GroupRecord.WrapDarkKind] spells, or zero for
+	// "this group is not dark". It is the kind and not the sentence: an error string is a thing
+	// this build wrote and the next build would have to keep writing, while the sentinel is a
+	// value a caller compares with [errors.Is].
 	WrapDarkKind uint8
 
-	// The epoch [WrapDarkKind] was taken at. Meaningless when that is zero.
+	// The epoch [GroupRecord.WrapDarkKind] was taken at. Meaningless when that is zero.
 	WrapDarkEpoch uint64
 
 	// ── THE LEAF LEDGER: WHICH LEAVES THIS DEVICE HAS STOOD AT, AND WHICH ONES HAVE LEFT ────
@@ -457,8 +457,8 @@ type GroupRecord struct {
 	// still a member". It is the kind and not the sentence, for [GroupRecord.WrapDarkKind]'s reason.
 	RemovedKind uint8
 
-	// The epoch [RemovedKind] was taken at: the LAST epoch this device was a member of, not the
-	// epoch the removing commit opened. Meaningless when that is zero.
+	// The epoch [GroupRecord.RemovedKind] was taken at: the LAST epoch this device was a member
+	// of, not the epoch the removing commit opened. Meaningless when that is zero.
 	//
 	// IT IS THE LOWER OF THE TWO NUMBERS ON PURPOSE. The epoch the commit opened is one this device
 	// holds no state for and one item 246's ceiling will not serve it, so it is the wrong number to

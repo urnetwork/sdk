@@ -198,8 +198,8 @@ type Message struct {
 
 	// ── what the content envelope said ───────────────────────────────────────────────────
 
-	// The code at octet 0 of the application plaintext: what grammar [Text] and the fields
-	// below were read under. See kind.go.
+	// The code at octet 0 of the application plaintext: what grammar [Message.Text] and the
+	// fields below were read under. See kind.go.
 	//
 	// A KIND THIS BUILD DOES NOT KNOW IS CARRIED HERE AS ITSELF, and that is the whole of the
 	// unknown-kind rule's rendering obligation: the record kept its position and its
@@ -983,13 +983,22 @@ type Group struct {
 	// compares a body_hash this device sealed, and the MG-4 arm needs MLS's own spent-generation
 	// refusal.
 	//
-	// IT HAS EXACTLY ONE ENTRY FOR EVERY DEVICE THIS BUILD CAN PRODUCE, and saying so is the honest
-	// half. A member's leaf index does not move under RFC 9420, so the only way a second entry is
-	// ever written is a device removed from a group and re-added -- and the sdk exposes no product
-	// method over the seam's CommitRemove (ledger item 242's R1). The set and its durable half are
-	// here because the day that arm ships, a re-Add is one commit away and the alternative is a
-	// device that cannot read back a word it wrote; what they are NOT is measured, and
-	// [Group.recordIsOwnLocked] carries the mutant that says so.
+	// IT STILL HAS EXACTLY ONE ENTRY FOR EVERY DEVICE THIS BUILD CAN PRODUCE, AND THE REASON IS NOT
+	// THE ONE THAT STOOD HERE. It used to be "the sdk exposes no product method over the seam's
+	// CommitRemove", which ledger item 242's R1 was true about and [Group.RemoveMember] is not: a
+	// device can be removed now, and being added back is driven by
+	// TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalksAndTheHistory,
+	// which moves the handle in one of its two rows. What keeps the set at one entry is
+	// [Device.Join]: a re-add builds a FRESH [Group], so [Group.initTables] seeds this from the new
+	// leaf alone, and the persist that follows rewrites part nine with it. The earlier handle is
+	// dropped.
+	//
+	// AND THAT LOSS COSTS NOTHING TODAY, WHICH IS MEASURED AND IS NOT THE SAME AS BEING HARMLESS. A
+	// re-added device holds state from its admission on, so every record it wrote before the removal
+	// answers [ErrRecordOpen] on each of [maxRecordAttempts] walks and is then abandoned -- the same
+	// case measures it -- and what this set would have decided about those records is never asked.
+	// The day a re-added device can reach an epoch below its admission, [Device.Join] owes carrying
+	// part nine forward, and this paragraph is where that debt is written down.
 	ownHandles map[[16]byte]bool
 
 	// departedAt is, for every leaf this group has watched a commit REMOVE, the epoch the LAST such
@@ -1223,6 +1232,19 @@ type Group struct {
 	//   - VALID commit that REMOVED THIS DEVICE -> THIS, at n. Not refused, not followed, and not a
 	//     member: there is no n+1 for this device to be in or to be dark at, and the fan-out its own
 	//     removal opened never addressed it (ledger item 258's derivation).
+	//   - A COMMIT THE ROLE MODEL REFUSED -> NEITHER FIELD, at n. Still a member, and that is the
+	//     point: a commit this device refused removed it from nothing, so it is not THIS; and
+	//     [Group.halted] is [ErrRemovalWithoutRotation] and nothing else, so it is not that either.
+	//     The row is here because the fourth outcome is the one a reader of a three-row table goes
+	//     looking for; [ErrCommitUnauthorized] carries what it costs, and
+	//     TestARoleModelRefusalIsNeitherTheRemovalNorTheHaltAndTheWalksSayWhich drives it.
+	//
+	// AND THE SAME READING ANSWERS THE VICTIM OF A DIGEST-LESS REMOVAL, which is the one case where
+	// the subject of a removal ends up in the SECOND row rather than the third: step (3a) refuses
+	// that commit before ApplyCommit for the victim exactly as for every survivor, so the victim is
+	// HALTED and reads (0, nil) from [Group.Removal] -- `removed: false` at cgo's
+	// urnet_message_group_removal, deliberately, because it was not removed, it refused. Driven by
+	// TestTheVictimOfADigestLessRemovalIsHaltedAndReadsNoRemoval.
 	//
 	// IT IS STICKY AND PERSISTED FOR THE REASON THE HALT IS, and the measurement is the same shape
 	// one ruling along: the sentinel is available for exactly ONE walk in the life of the handle,
@@ -5395,15 +5417,27 @@ func (self *Group) senderAtSendLocked(epoch uint64, leaf uint32) ([]byte, string
 //
 // So the two answers differ only for a device whose handle has MOVED: one removed from a group and
 // re-added at a different leaf, whose own earlier records are under the earlier leaf's octets.
-// That is the same shape [Group.ownHandles] is a SET for, and this build cannot produce it -- the
-// sdk exposes no product method over the seam's CommitRemove (ledger item 242's R1 says so in as
-// many words), so no device in this package can be removed from a group at all, let alone re-added.
+// That is the same shape [Group.ownHandles] is a SET for.
 //
-// IT IS WRITTEN RATHER THAN DELETED, and the reason is the reason the set is durable: the day the
-// Remove arm ships, a re-Add is one commit away, and a device that read `mine` off sixteen octets
-// on that day would show the NEXT occupant of its old leaf its own history. The measurement above
-// is the whole of what is claimed for this line today: it is correct, it is unmeasured, and what
-// would measure it is a Remove arm that does not exist.
+// AND THAT SHAPE IS NOW BUILDABLE, WHICH IS THIS PARAGRAPH'S CORRECTION OF ITSELF. It used to read
+// "this build cannot produce it -- the sdk exposes no product method over the seam's CommitRemove",
+// which ledger item 242's R1 was true about and [Group.RemoveMember] is not.
+// TestTheOnlyRepairTheRemovedSentinelNamesIsBeingAddedBackAndItCostsThreeWalksAndTheHistory removes
+// a device and adds it back, and its second row admits a newcomer first so RFC 9420 §7.7 refills the
+// blank leaf with somebody else and the re-add lands one along: the handle moves.
+//
+// THE THEOREM SURVIVES ITS OWN PREMISE GOING STALE, ON FACT 1 ALONE, AND THAT IS MEASURED TOO. The
+// re-added device holds state from its admission on, so its own pre-removal records answer
+// [ErrRecordOpen] on each of [maxRecordAttempts] walks and are then abandoned -- the same case
+// counts them -- and this comparison is never reached for one of them. A re-add does not carry part
+// nine forward either ([Group.ownHandles] says why), so `maybeMine` is false for those records in
+// the bargain.
+//
+// IT IS WRITTEN RATHER THAN DELETED FOR THE REASON THE SET IS DURABLE: the day a re-added device can
+// reach an epoch below its admission, a line that read `mine` off sixteen octets would show the NEXT
+// occupant of its old leaf its own history. What is claimed for this line today is exactly that: it
+// is correct, it is unreachable on fact 1, and what would measure it is a past-epoch door a joiner
+// does not have.
 func (self *Group) recordIsOwnLocked(senderIdentity []byte, maybeMine bool) bool {
 	if len(senderIdentity) == 0 {
 		return maybeMine
@@ -6286,11 +6320,15 @@ func (self *Group) leafStreamFloorLocked(leaf uint32, epoch uint64) uint64 {
 }
 
 // crossEpochLadderLocked carries this group's receiver-ladder bookkeeping across an epoch change.
-// It is A4, and its ONE caller is the commit-ingest path ([Group.ingestCommitLocked]), where it
-// runs in the same statement block as the [messagegroup.GroupSession] install that zeroized the
-// ratchets it describes -- not before it, because a peer record could still be opened against the
-// epoch that is closing, and not after A3's persist, because a persist that named the new epoch
-// with the ladders still describing the old one would come back from a restart tracked at nothing.
+// It is A4, and it has TWO callers -- the commit-ingest path ([Group.ingestCommitLocked]) and, since
+// [Group.RemoveMember] gave a committer removed leaves of its own, the publish path
+// ([Group.publishCommitLocked]). In each it runs in the same statement block as the
+// [messagegroup.GroupSession] install that zeroized the ratchets it describes -- not before it,
+// because a peer record could still be opened against the epoch that is closing, and not after A3's
+// persist, because a persist that named the new epoch with the ladders still describing the old one
+// would come back from a restart tracked at nothing. Both callers run the departed-leaf filing and
+// the ladder prune BEFORE it, for the reason the loop below states; that both of them do is held by
+// TestBothArmsThatEnterAnEpochFileAndPruneWhatTheirOwnCommitRemoved.
 //
 // TWO THINGS ARE CLEARED AND ONE IS KEPT. [Group.tracked] and [Group.ownHeads] both name receiver
 // ratchets [messagegroup.GroupSession.AdvanceEpoch] has just zeroized, so they are cleared -- and
@@ -6305,7 +6343,7 @@ func (self *Group) leafStreamFloorLocked(leaf uint32, epoch uint64) uint64 {
 // lazily by [Group.advanceOwnLadderLocked] off [Group.ownIndexSeen], which survives the clear for
 // peerHeads' reason.
 //
-// newEpoch is [Group.handle.Epoch], which [messagegroup.GroupHandle.ApplyCommit] has already
+// newEpoch is [Group.handle]'s own Epoch, which [messagegroup.GroupHandle.ApplyCommit] has already
 // advanced; [Group.epoch] does not move until [Group.enterEpochLocked] runs after this, so the key
 // is built off the handle rather than the field. [Group.trackLocked]'s later keys use
 // [Group.epoch], which enterEpochLocked then sets equal to this, so the two agree.
@@ -6710,7 +6748,7 @@ type MemberWrapKey struct {
 //
 // THE PARSE IS A SECOND COPY OF A CHECK THE SEAM ALREADY MAKES, and saying so is the point: the
 // seam refuses a leaf carrying no urmessage_leaf_keys at all -- [Group.leavesLocked] and
-// [Group.wrapTargetsLocked] lean on exactly that -- and the body it hands back was produced by
+// [Group.wrapTargetsAtLocked] lean on exactly that -- and the body it hands back was produced by
 // `mls.LeafKeysExtension.Encode`, which refuses a wrong alg_id and a wrong length. So this parse
 // cannot fail against this build's engine, and it is here to NARROW the value rather than to
 // refuse one: what this method answers is a validated 1216-octet encapsulation key and not the

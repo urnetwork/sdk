@@ -1176,3 +1176,144 @@ func TestEveryStagedEpochTheIngestPathDoesNotInstallIsErasedThroughTheSeam(t *te
 		t.Errorf("the real handle moved to epoch %d over an erased value", carol.handle.Epoch())
 	}
 }
+
+// A ROLE-MODEL REFUSAL IS NEITHER RULING 52's REMOVAL NOR RULING 41's HALT, AND THE WALKS SAY WHICH.
+//
+// WHAT LEDGER ITEM 259's ADVERSARY PASS FILED, and it reproduces here exactly as filed: a commit
+// [authorizeCommit] refuses leaves NO STICKY STATE, so the same four-walk-then-silence sequence
+// ruling 52 was written to end is still what a refusing receiver gets. Measured, walk by walk, at
+// the commit this case landed in:
+//
+//	1st Receive: ErrCommitUnauthorized, wrapping the rule that refused it
+//	2nd Receive: ErrCommitIngest: processing the commit: mls: ratchet generation already consumed
+//	3rd Receive: ErrRecordAbandoned, after maxRecordAttempts attempts, cursor resolved PAST it
+//	4th Receive: nil. 5th: nil. Every later one: nil.
+//
+// THE HALF THAT IS CORRECT AND IS THE REASON THIS IS NOT A BUG REPORT. It is not [Group.removed],
+// and that is ruling 41's sentence read literally: a commit this device REFUSED removed it from
+// nothing. Its leaf is still in the tree it is standing in, it is still a member at epoch n, and a
+// state saying "you are no longer in this group" would be reporting a membership change this device
+// did not accept and its own MLS state does not carry. [Group.ingestCommitLocked]'s step (3) takes
+// the refusal BEFORE ApplyCommit, so the removed arm is not even reachable from it.
+//
+// AND THE HALF THAT IS A RESIDUAL, NAMED RATHER THAN DRESSED UP. It is not [Group.halted] either.
+// [Group.halted] is [ErrRemovalWithoutRotation] and nothing else -- ruling 41's ONE invalid shape --
+// and the 2026-09-24 repair that made it sticky and persisted was made for exactly the sequence
+// above, one refusal site along. The role model's refusal site did not get it. What that costs in
+// the field is item 242's own accounting and is not new: the server has already accepted the commit
+// and moved current_epoch, so a refusing receiver stays at n, can no longer write, and recovery is a
+// new group. What is new here is only that the SENTENCE is lost after walk one -- step (0) has
+// consumed the committer's ratchet generation by then, so the sentinel cannot be re-derived -- and
+// the client is left with a group that reads healthy. Extending the halt to this site is ruling 41's
+// track and not X4's: it needs a second persisted kind, a projection, and a ruling on whether an
+// unauthorized commit and an unrotated removal are one state or two.
+//
+// SO THIS CASE PINS THE STATE OF AFFAIRS AND NOT A DESIDERATUM, and says so out loud because a case
+// that pins a residual can be misread as blessing it. The day the halt reaches this site, THIS is
+// the case that goes red, and its header is what has to be read: the two clauses to rewrite are the
+// `halted == nil` reading and the silence at walk four.
+//
+// THE CONTROL IS INLINE AND FIRES FOR ITS OWN REASON: the same receiver, in the same case, FOLLOWS
+// an honest policy commit from the owner before the coup arrives. Without it "the walk went silent"
+// is satisfied by a walk that never followed anything.
+//
+// WHAT WOULD GO RED: set [Group.removed] on an authorization refusal (a refused commit would then
+// claim to have removed the refuser); route step (3)'s refusal through [Group.haltLocked] (the
+// residual is closed and this header is stale); take the refusal AFTER ApplyCommit (walk one's
+// epoch check).
+func TestARoleModelRefusalIsNeitherTheRemovalNorTheHaltAndTheWalksSayWhich(t *testing.T) {
+	world := newRoleWorld(t, "owner", "mallory", "carol")
+	owner, mallory, carol := world.member("owner"), world.member("mallory"), world.member("carol")
+
+	standingAt := carol.group.Epoch()
+
+	// ── THE COUP, AND THE FOUR WALKS OVER IT ────────────────────────────────────────────────────
+	coup := world.policyOf(mallory)
+	coup.SetRole(owner.dev.identityPub, mls.RoleAdmin)
+	coup.SetRole(mallory.dev.identityPub, mls.RoleOwner)
+	record := world.commitAndPublish(mallory, "CommitPolicy naming itself owner", func() ([]byte, []byte, []byte, error) {
+		return mallory.handle.CommitPolicy(world.policyBody(coup))
+	})
+
+	first := world.refuse(carol, record, ErrCommitOwnerTransfer)
+	refusedOnce := carol.group.Stats().CommitRefused
+	if !errors.Is(first, ErrCommitUnauthorized) {
+		t.Fatalf("walk 1 answered %v, want ErrCommitUnauthorized", first)
+	}
+
+	// walks two and three: the sentence is gone, then the record is abandoned
+	second := world.deliver(carol, record)
+	if second == nil {
+		t.Fatalf("walk 2 over the refused commit answered nil")
+	}
+	if errors.Is(second, ErrCommitUnauthorized) {
+		t.Errorf("walk 2 still answers ErrCommitUnauthorized (%v). That would be the residual above "+
+			"CLOSED, which is a change this case's header has to be rewritten for rather than a "+
+			"result to pass over", second)
+	}
+	if got := carol.group.Stats().CommitRefused; got != refusedOnce {
+		t.Errorf("Stats.CommitRefused went %d -> %d on walk 2: the refusal is being re-taken over a "+
+			"commit mls can no longer be asked about", refusedOnce, got)
+	}
+	third := world.deliver(carol, record)
+	if !errors.Is(third, ErrRecordAbandoned) {
+		t.Fatalf("walk 3 answered %v, want ErrRecordAbandoned after maxRecordAttempts attempts", third)
+	}
+	stats := carol.group.Stats()
+	if stats.Unopened != 1 || stats.FailedOpen != uint64(maxRecordAttempts) {
+		t.Errorf("after walk 3 Unopened is %d and FailedOpen %d, want 1 and %d",
+			stats.Unopened, stats.FailedOpen, maxRecordAttempts)
+	}
+	if carol.group.cursor < record.recordId {
+		t.Errorf("the cursor stands at %d, still below the refused commit %d",
+			carol.group.cursor, record.recordId)
+	}
+	for walk := 4; walk <= 5; walk += 1 {
+		if err := world.deliver(carol, record); err != nil {
+			t.Errorf("walk %d answered %v, want nil. A sentence here would be the residual above "+
+				"CLOSED and this header stale", walk, err)
+		}
+	}
+
+	// ── AND NEITHER STICKY STATE, WHICH IS THE WHOLE POINT OF THE CASE ───────────────────────────
+	if epoch, state := carol.group.Removal(); state != nil || epoch != 0 {
+		t.Errorf("the refusing receiver reads (%d, %v) from Removal. A commit this device REFUSED "+
+			"removed it from nothing: its leaf is in the tree it is standing in and it is still a "+
+			"member at epoch %d", epoch, state, standingAt)
+	}
+	if carol.group.halted != nil {
+		t.Errorf("the refusing receiver is halted (%v). [Group.halted] is ErrRemovalWithoutRotation "+
+			"and nothing else; if the halt now reaches the authorization site, this case's header is "+
+			"what has to be rewritten", carol.group.halted)
+	}
+	if got := carol.group.Epoch(); got != standingAt {
+		t.Errorf("the refusing receiver stands at epoch %d, want %d", got, standingAt)
+	}
+	if got := carol.handle.Epoch(); got != standingAt {
+		t.Errorf("the refusing receiver's MLS handle stands at epoch %d, want %d: the commit was "+
+			"applied and the refusal taken after it", got, standingAt)
+	}
+
+	// ── THE CONTROL, AFTERWARDS, WHICH IS WHERE IT BELONGS ──────────────────────────────────────
+	//
+	// The same receiver FOLLOWS an honest commit from the owner, built against the epoch the owner
+	// is still standing at -- because the owner refuses the coup too. So the silence above is the
+	// REFUSED RECORD's and not the walk's. What this does NOT show, and what item 242 already
+	// accounts for, is the field: there the server accepted the coup and moved current_epoch, so
+	// every honest receiver is stale and the owner's next commit is refused as EPOCH_STALE. This
+	// harness has no server, and the control is scoped to the record.
+	promotion := world.policyOf(owner)
+	promotion.SetRole(carol.dev.identityPub, mls.RoleMember)
+	honest := world.commitAndPublish(owner, "CommitPolicy naming carol", func() ([]byte, []byte, []byte, error) {
+		return owner.handle.CommitPolicy(world.policyBody(promotion))
+	})
+	world.ingest(carol, owner, honest)
+	if got := carol.group.Epoch(); got != standingAt+1 {
+		t.Fatalf("CONTROL FAILED: carol stands at epoch %d after an honest commit, want %d; the "+
+			"silence above would then be a walk that follows nothing", got, standingAt+1)
+	}
+	t.Logf("one refused commit: walk 1 names the rule, walk 2 loses the sentence, walk 3 abandons "+
+		"the record and resolves the cursor past it, walks 4 and 5 are silent -- and the group is "+
+		"neither removed nor halted, standing at epoch %d until it follows an honest commit to %d",
+		standingAt, carol.group.Epoch())
+}

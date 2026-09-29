@@ -101,8 +101,8 @@
 //     a record that comes back REASON_REJECTED gets exactly ONE recovery attempt: a fresh Hello
 //     through this transport, a rebind onto the nonce it issued, `ReauthRecord` to re-MAC the
 //     record that is already sealed -- which consumes no stream index and re-encrypts nothing --
-//     and one resubmission. If that is refused too, [Send] returns [ErrSubmitRefused] naming both
-//     refusals. It NEVER returns nil.
+//     and one resubmission. If that is refused too, [Group.Send] returns [ErrSubmitRefused] naming
+//     both refusals. It NEVER returns nil.
 //
 // The retry is bounded at one and is not a loop. A second refusal is a fact about the group or the
 // epoch rather than about the nonce, and a client that kept trying would turn a visible failure

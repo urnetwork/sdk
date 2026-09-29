@@ -329,7 +329,8 @@ func (self *Group) pqSecretLocked() []byte {
 
 // filePqSecretLocked records pq_secret[epoch] and drops what the window has moved past.
 //
-// THE VALUE IS COPIED, for [installPqSecretOnLoop]'s reason read from this side: the caller's
+// THE VALUE IS COPIED, for messagegroup's own `installPqSecretOnLoop`'s reason read from this
+// side -- an unexported method of a sibling package, which no godoc link can name: the caller's
 // array is the caller's, and a table aliasing it would erase a caller's buffer when the window
 // moved.
 //
@@ -828,7 +829,8 @@ func (self *Group) matchesEpochDigestLocked(mlsSecret []byte, digest *message.Ep
 // TestARemovalFannedOutOnTheHeldSecretIsRefusedAndTheGroupStaysAtItsEpoch, which asserts the
 // removed member's retained secret reproduces the survivors' storage_root before it asserts the
 // refusal. So the guard is now on the ANSWER -- every secret this function can return leaves
-// through [answerSecret] and is compared against the WHOLE table by
+// through `answerSecret`, the local exit of [Group.resolvePqSecretLocked] -- a closure, which no
+// godoc link can name -- and is compared against the WHOLE table by
 // [Group.pqSecretHeldAtLocked] -- and a fourth arm added later inherits it instead of having to
 // remember it. The rule is "no removal may be followed on a secret THIS RECEIVER has held", not
 // "no removal may be followed", which is why the guard is at the exit and not at the top: a
