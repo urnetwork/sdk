@@ -51,6 +51,12 @@ import (
 // or this query is looking in the wrong place. The present literal is the case that holds the
 // removal property one file away, and must resolve to exactly one. A build in which the walk found
 // no files at all would answer zero for BOTH, which the second control refuses.
+//
+// AND IT IS THE GATE THE godoc GATE HANDS ITS `Test...` SPELLINGS TO, which is why its walk and
+// its rule live in citationCorpus below rather than inside this function. A test function is not
+// part of the documented package, so a bracketed `[Test...]` link has nothing to resolve against
+// down there; it is handed to this rule, and the hand-off is ASSERTED against these very maps at
+// the receiving end. See citationCorpus, whose header records the defect that bought it.
 
 // citationDeclaredElsewhere is every cited name that lives in a SIBLING repository rather than in
 // this one, with where it lives and why this file cannot simply look.
@@ -92,11 +98,72 @@ var citationIsNotACase = map[string]string{
 		"a repository has one per package and the count is meaningless",
 }
 
-func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclaration(t *testing.T) {
-	root := moduleRoot(t)
-	// a Go test function's declaration, and the citation net that has to find the same spelling.
+// citationCorpus is every `Test...` function this repository declares and every citation of one in
+// its production prose, read ONCE and answered to by BOTH gates in this file.
+//
+// WHY ONE SCAN AND NOT TWO WALKS, AND THIS IS THIS FILE'S CORRECTION OF ITSELF. The godoc gate
+// below builds its resolution tables from PRODUCTION files only -- a test function is not part of
+// the documented package and `go doc -all -u ./urmessage` prints none of them -- so a bracketed
+// `[Test...]` spelling has nothing to resolve against down there and is HANDED to this corpus,
+// whose whole subject it is. A hand-off is only sound if the receiver catches it, so that gate
+// asserts against THIS structure -- the very maps the rule below runs on -- that every spelling it
+// hands over is seen by this scan's net AND held by this scan's rule. Narrow the net, or rename or
+// delete a case one of them names, and BOTH gates report rather than neither.
+//
+// THE DEFECT THAT BOUGHT THIS PARAGRAPH is recorded in godocReadDeclarations' header: the godoc
+// gate used to read `_test.go` declarations into the tables it resolved production prose against,
+// while the external half of the same seam excluded them. SIX of these names resolved down there
+// by a rule that existed nowhere -- and `rotWorld`, a test type and no `Test...` spelling at all,
+// resolved beside them, bracketed at urmessage/pqepoch.go:1147 with the same type correctly
+// backticked two lines above it.
+type citationCorpus struct {
+	// declared is every Test... function this repository declares, to the files declaring it.
+	declared map[string][]string
+	// cited is every Test... spelling a production comment names, to the sites naming it.
+	cited map[string][]string
+	// total and production are the .go files the walk saw and how many of them are not tests.
+	total, production int
+}
+
+// citationHolding is which disposition of the rule below holds one spelling, or none of them.
+type citationHolding int
+
+const (
+	citationHeldHere citationHolding = iota
+	citationHeldElsewhere
+	citationHeldNotACase
+	citationUnheld
+)
+
+// holding is THE reading of this file's test-citation rule, and there is exactly one of it.
+//
+// BOTH GATES DECIDE THROUGH THIS METHOD rather than each writing the switch out, because the
+// defect this file shipped once was two readings of one rule: the godoc gate's own walk and
+// godocDeclarationsAt disagreed about `_test.go`, and the laxer of the two was the one answering
+// this repository's own prose. A second copy of a decision is where that starts.
+func (self *citationCorpus) holding(name string) citationHolding {
+	if _, carved := citationIsNotACase[name]; carved {
+		return citationHeldNotACase
+	}
+	if _, carved := citationDeclaredElsewhere[name]; carved {
+		return citationHeldElsewhere
+	}
+	if len(self.declared[name]) == 1 {
+		return citationHeldHere
+	}
+	return citationUnheld
+}
+
+// citationNet is the spelling of a cited case, and it is a PACKAGE-level var because the godoc
+// gate decides what to hand over with this very expression. Routing on a second copy of it -- a
+// `strings.HasPrefix(name, "Test")`, say -- would let the two drift, and a spelling one net
+// matched and the other did not is a spelling nothing holds.
+var citationNet = regexp.MustCompile(`\bTest[A-Z][A-Za-z0-9_]*`)
+
+func citationScan(t *testing.T, root string) *citationCorpus {
+	// a Go test function's declaration, which has to name the same spelling citationNet finds.
 	declaration := regexp.MustCompile(`(?m)^func\s+(Test[A-Z][A-Za-z0-9_]*)\s*\(`)
-	citation := regexp.MustCompile(`\bTest[A-Z][A-Za-z0-9_]*`)
+	citation := citationNet
 
 	declared := map[string][]string{}
 	cited := map[string][]string{}
@@ -147,6 +214,14 @@ func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclarat
 	if err != nil {
 		t.Fatalf("walking %s: %v", root, err)
 	}
+	return &citationCorpus{declared: declared, cited: cited, total: total, production: production}
+}
+
+func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclaration(t *testing.T) {
+	root := moduleRoot(t)
+	scan := citationScan(t, root)
+	declared, cited := scan.declared, scan.cited
+	total, production := scan.total, scan.production
 
 	// ── THE CONTROLS, IN THE SAME QUERY AND OVER THE SAME MAPS ─────────────────────────────────
 	const absent = "TestAMemberRemovedByACommitCannotDeriveTheEpochThatCommitOpens"
@@ -193,19 +268,20 @@ func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclarat
 	sort.Strings(names)
 	here, elsewhere, exempt := 0, 0, 0
 	for _, name := range names {
-		if _, carved := citationIsNotACase[name]; carved {
+		// THE DISPOSITION IS DECIDED BY scan.holding AND NOWHERE ELSE, which is what makes the
+		// godoc gate's hand-off below answerable to this rule rather than to a copy of it.
+		switch scan.holding(name) {
+		case citationHeldNotACase:
 			exempt += 1
 			continue
-		}
-		if _, carved := citationDeclaredElsewhere[name]; carved {
+		case citationHeldElsewhere:
 			elsewhere += 1
 			continue
-		}
-		found := declared[name]
-		if len(found) == 1 {
+		case citationHeldHere:
 			here += 1
 			continue
 		}
+		found := declared[name]
 		if len(found) == 0 {
 			// the nearest declared name, so a rename or a typo says so rather than making the
 			// reader run the query by hand. It is a REPORT and not a suggestion: naming the wrong
@@ -315,6 +391,23 @@ func citationNearest(name string, declared map[string][]string) string {
 // [Group.RemoveMember] can never be taken for one another; a head that is neither a local type nor
 // an import of the file's own package is a failure and not a shrug.
 //
+// AND THE TABLES ARE BUILT FROM PRODUCTION FILES ONLY, WHICH IS THIS GATE'S SECOND CORRECTION OF
+// ITSELF. The first build read every `.go` file of this module into them, `_test.go` included,
+// while godocDeclarationsAt excluded exactly those on the other side of the seam, so the standard
+// this gate claimed to apply on both sides was applied on one, and the laxer side was this
+// repository's own. A bracketed name that named nothing but a test-file declaration RESOLVED.
+// Measured rather than supposed, by rebuilding the tables from production files and diffing: SEVEN
+// distinct spellings resolved for that reason and no other. Six were case names, which the gate
+// above already holds and which are HANDED to it here rather than dropped -- a test function is
+// not part of the documented package, `go doc -all -u ./urmessage` prints none of them, and the
+// rule that a case name resolves to exactly one declaration is that gate's. The seventh was
+// `rotWorld`, a test type, bracketed at urmessage/pqepoch.go:1147 -- two lines below
+// `rotWorld.admit` written correctly in BACKTICKS, which is what this gate's own failure message
+// prescribes, so the corpus contradicted itself inside one paragraph and the gate could not see
+// it. That link is now in backticks, and the pair of controls holding the class compares two
+// UNEXPORTED types, one from a test file and one from a production file, so a no cannot be
+// explained by a case rule.
+//
 // AND THE CONTROLS ARE INLINE, WITH EVERY LITERAL TAKEN FROM THE SOURCE IT IS ABOUT.
 // `Group.RemoveMember` is a member link this package declares and must resolve, or the resolver is
 // blind to the whole class; `Group.RemoveDevice` is the exact spelling item 259 found dangling and
@@ -419,7 +512,20 @@ func godocTypeName(expr ast.Expr) string {
 // `connect/messagegroup` answerable to the same standard as a link into this package. The walk
 // below builds this module's directories with it and godocDeclarationsAt builds a replaced
 // module's directory with it, so "a member of GroupSession" means the same thing on both sides of
-// the seam and no second, laxer reading exists for the other repository.
+// the seam.
+//
+// AND THE SENTENCE THAT USED TO FOLLOW -- *"no second, laxer reading exists for the other
+// repository"* -- WAS FALSE, IN THIS DIRECTION. A reader is one function; what it is CALLED ON is
+// the reading. The walk fed it every `.go` file including `_test.go`, while godocDeclarationsAt
+// skipped `_test.go` and said in its own header that a link in this repository's production prose
+// has no business naming one. So the laxer reading existed and it was the one answering THIS
+// repository's prose: a bracketed name that named only a test-file declaration resolved. It was
+// measured rather than supposed -- SEVEN distinct spellings resolved for that reason and no other,
+// six of them case names the gate above already held, and the seventh `rotWorld`, bracketed at
+// urmessage/pqepoch.go:1147 two lines below the same type written correctly in backticks. Both
+// callers now apply the same suffix test; this file's controls assert the result on a pair of
+// unexported types that differ only in which FILE declares them; and what the excluded half once
+// held is HANDED to the gate that owns it rather than dropped.
 func godocReadDeclarations(one *godocPackage, path string) error {
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
 	if err != nil {
@@ -581,11 +687,13 @@ func (self *godocModule) dirOf(importPath string) (string, bool) {
 // godocDeclarationsAt builds one directory OUTSIDE this module from its production files, cached
 // per directory because connect/mls alone is 140 files.
 //
-// `_test.go` IS EXCLUDED AND THAT IS THE LINE THIS GATE DRAWS. What the replace directive makes a
-// requirement of this build is the other module's PRODUCTION source; its test files are its own
-// business and a link in this repository's production prose has no business naming one. So a link
-// to a sibling's test helper reports here, with the same sentence as any other name that does not
-// resolve.
+// `_test.go` IS EXCLUDED AND THAT IS THE LINE THIS GATE DRAWS, ON BOTH SIDES NOW. What the replace
+// directive makes a requirement of this build is the other module's PRODUCTION source; its test
+// files are its own business and a link in this repository's production prose has no business
+// naming one. So a link to a sibling's test helper reports here, with the same sentence as any
+// other name that does not resolve. For one commit that rule was drawn HERE and not in the walk
+// over this module, which is the defect godocReadDeclarations' header records: the same sentence
+// was true of connect and false of this repository, and it is the near side a reader trusts most.
 func godocDeclarationsAt(t *testing.T, cache map[string]*godocPackage, dir string) *godocPackage {
 	if held, found := cache[dir]; found {
 		return held
@@ -674,6 +782,13 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 			return nil
 		}
 		total += 1
+		// `_test.go` IS EXCLUDED HERE, WHICH IS THE SAME SUFFIX TEST godocDeclarationsAt APPLIES,
+		// and until this line existed the two halves of the seam disagreed. See
+		// godocReadDeclarations' header for what the disagreement admitted.
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		production += 1
 		dir := filepath.Dir(path)
 		if packages[dir] == nil {
 			packages[dir] = newGodocPackage()
@@ -681,10 +796,7 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 		if readErr := godocReadDeclarations(packages[dir], path); readErr != nil {
 			return readErr
 		}
-		if !strings.HasSuffix(path, "_test.go") {
-			production += 1
-			productionOf[dir] = append(productionOf[dir], path)
-		}
+		productionOf[dir] = append(productionOf[dir], path)
 		return nil
 	})
 	if err != nil {
@@ -709,6 +821,27 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 	if total == 0 || production == 0 || total == production {
 		t.Fatalf("CONTROL FAILED: the walk saw %d .go files of which %d are production; a run with "+
 			"no production files or no test files is measuring nothing", total, production)
+	}
+	// ── AND THE TABLES HOLD NO TEST-FILE DECLARATION, WHICH IS THIS PASS'S OWN FINDING ─────────
+	//
+	// BOTH LITERALS ARE COPIED FROM THE SOURCE AND THE PAIR FIRES FOR ITS OWN REASON. `rotWorld` is
+	// declared `type rotWorld struct` at urmessage/pqrotation_test.go:56 and nowhere else, and
+	// `go doc -all -u ./urmessage` prints no declaration of it -- so the documented package does
+	// not contain it and the resolver must not either. `ladderKey` is declared at
+	// urmessage/group.go:688 and is just as UNEXPORTED, so a no here cannot be explained by a case
+	// rule: the difference between the two is which FILE declares them, which is the whole of what
+	// this pass changed.
+	if here.types["rotWorld"] {
+		t.Fatalf("CONTROL FAILED: the resolver says this package declares the type rotWorld. It is " +
+			"declared in urmessage/pqrotation_test.go and in no production file, so a yes here means " +
+			"`_test.go` declarations are back in the tables that answer PRODUCTION prose -- which is " +
+			"the defect godocReadDeclarations' header records, and it let [rotWorld] read as a link " +
+			"for a commit")
+	}
+	if !here.types["ladderKey"] {
+		t.Fatalf("CONTROL FAILED: this package declares the unexported type ladderKey at " +
+			"urmessage/group.go:688 and the resolver does not see it, so the no above is satisfied " +
+			"by a resolver that dropped unexported names rather than test-file ones")
 	}
 
 	// ── THE CROSS-MODULE CONTROLS, OVER THE READER THAT ANSWERS FOR THE OTHER SIDE ─────────────
@@ -770,11 +903,37 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 			"NoSuchExportedThing, so it answers yes to names that do not exist")
 	}
 
+	// ── THE HAND-OFF'S OWN CONTROLS, OVER THE GATE THAT RECEIVES IT ────────────────────────────
+	//
+	// EVERY `Test...` SPELLING BELOW IS ANSWERED BY THE OTHER GATE'S MAPS, NOT BY A COPY OF ITS
+	// RULE. A test function is not part of the documented package, so the tables above hold none of
+	// them by construction now; the six such links this corpus writes are handed to citationCorpus
+	// and the hand-off is asserted at BOTH ends -- seen by that scan's net, and held by that scan's
+	// rule -- so a spelling either gate drops reddens in the other. Both literals are copied from
+	// the source: the first is a case this module declares exactly once and the other gate holds,
+	// and the second is ledger item 257's own dangling name, which no file declares.
+	scan := citationScan(t, root)
+	const handedAndHeld = "TestThreeMembersRotateAcrossTwoEpochsAndAMemberRemovedByThatCommitCannotFollow"
+	const neverDeclared = "TestAMemberRemovedByACommitCannotDeriveTheEpochThatCommitOpens"
+	if scan.holding(handedAndHeld) != citationHeldHere {
+		t.Fatalf("CONTROL FAILED: the test-citation corpus does not hold %s, which "+
+			"urmessage/pqrotation_test.go:720 declares exactly once and urmessage/group.go:1955 "+
+			"brackets. Every hand-off below would then be asserted against a blind receiver",
+			handedAndHeld)
+	}
+	if scan.holding(neverDeclared) != citationUnheld {
+		t.Fatalf("CONTROL FAILED: the test-citation corpus HOLDS %s, which is ledger item 257's own "+
+			"dangling name and which no file declares -- so its rule answers yes to cases that do "+
+			"not exist and the hand-off below buys nothing", neverDeclared)
+	}
+
 	// ── THE PROPERTY ───────────────────────────────────────────────────────────────────────────
 	quotedOnly := map[string][]string{}
 	unquoted := map[string]bool{}
 	links, resolvedTop, resolvedMember := 0, 0, 0
 	resolvedPackage, resolvedOwnModule, resolvedReplaced, outsideThisBuild := 0, 0, 0, 0
+	resolvedTestName := 0
+	handedToTestGate := map[string][]string{}
 	needsRow := map[string][]string{}
 	tookOutside := map[string]bool{}
 	dirs := []string{}
@@ -832,6 +991,36 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 						// a bare package name names a package and nothing inside one; there is
 						// no member to resolve and the import is the whole of the question.
 						resolvedPackage += 1
+					case len(parts) == 1 && citationNet.FindString(parts[0]) == parts[0]:
+						// ── THE SPELLING IS A CASE, SO THE OTHER GATE HOLDS IT ─────────────────
+						//
+						// AND THE HAND-OFF IS ASSERTED, NOT ASSUMED. The precedence matters: this
+						// arm is BELOW the two above, so a production declaration whose name
+						// happens to start with Test still resolves here as itself. What reaches
+						// this arm is a spelling the documented package does not contain, which
+						// is exactly citationCorpus's subject. Both clauses are checked because
+						// each is a separate way for the receiver to go quiet -- its net could
+						// stop seeing the spelling, or its rule could stop resolving it.
+						resolvedTestName += 1
+						handedToTestGate[name] = append(handedToTestGate[name], where)
+						if len(scan.cited[name]) == 0 {
+							t.Errorf("[%s] is written at %s and the test-citation gate's own net "+
+								"does not see it in production prose, so this gate is handing it "+
+								"to a rule that never reads it and NOTHING holds the name. Read "+
+								"citationNet and the gate it feeds before narrowing either one.",
+								name, where)
+						}
+						if scan.holding(name) == citationUnheld {
+							t.Errorf("[%s] is written at %s and the test-citation gate does not "+
+								"hold it: this repository declares it %d time(s) and no carve-out "+
+								"names it. A bracketed case name is handed to that gate because a "+
+								"test function is not part of the documented package -- so a name "+
+								"it cannot resolve is held by nothing at all. Either the case was "+
+								"renamed, or it lives in a sibling repository and belongs in "+
+								"citationDeclaredElsewhere, having been READ.%s", name, where,
+								len(scan.declared[name]),
+								citationNearest(name, scan.declared))
+						}
 					case len(parts) == 1:
 						t.Errorf("[%s] is written at %s and this package declares nothing by that "+
 							"name and imports no such package. A bracketed name that resolves to "+
@@ -959,14 +1148,21 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 	}
 
 	// ── THE COMPLEMENT, PRINTED BESIDE WHAT WAS ASSERTED ───────────────────────────────────────
-	t.Logf("%d .go files walked in %d package directories, %d of the files production", total,
-		len(packages), production)
+	t.Logf("%d .go files walked, %d of them production; %d package directories built FROM "+
+		"PRODUCTION FILES ONLY", total, production, len(packages))
 	t.Logf("%d godoc links in production prose: %d to a package-level declaration of their own "+
 		"package, %d to a member of a type it declares, %d to a declaration of another package OF "+
 		"THIS MODULE, %d to a declaration of a module go.mod replaces with a directory, %d a bare "+
-		"package name, %d disposed of as outside this build's source",
-		links, resolvedTop, resolvedMember, resolvedOwnModule, resolvedReplaced, resolvedPackage,
-		outsideThisBuild)
+		"package name, %d handed to the test-citation gate, %d disposed of as outside this build's "+
+		"source", links, resolvedTop, resolvedMember, resolvedOwnModule, resolvedReplaced,
+		resolvedPackage, resolvedTestName, outsideThisBuild)
+	handed := []string{}
+	for name := range handedToTestGate {
+		handed = append(handed, name)
+	}
+	sort.Strings(handed)
+	t.Logf("the %d case name(s) handed over, each asserted SEEN and HELD by that gate's own maps: %v",
+		len(handed), handed)
 	t.Logf("the quoted-span narrowing removed %d spelling(s) that appear nowhere in prose: %v",
 		len(carved), carved)
 	t.Logf("%d replaced module(s) read for real: %v; %d external package directory(ies) built",
@@ -984,6 +1180,27 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 			"own root package and into connect/messagegroup, so a zero on either road means that "+
 			"road resolved nothing and the arm above is classifying again rather than resolving",
 			resolvedOwnModule, resolvedReplaced)
+	}
+	// AND THE HAND-OFF IS ASSERTED NON-EMPTY, for the same reason as the two roads above: this
+	// corpus writes six bracketed case names in production prose today, so a zero means the arm
+	// never ran and the two assertions inside it held nothing. It is a fact about the corpus and not
+	// a rule about it -- the day the last such link is rewritten in backticks this reddens, and the
+	// honest repair is to delete the arm with it rather than to weaken this line.
+	if resolvedTestName == 0 {
+		t.Errorf("resolvedTestName 0: this module's production prose brackets case names (six of " +
+			"them at the commit that wrote this), so a zero means no link reached the hand-off arm " +
+			"and neither of its assertions ran")
+	}
+	// AND THE SUM IS ASSERTED, so no road can be added that counts nothing and no link can be
+	// counted twice. A link is either resolved on one of the six roads, handed to the other gate,
+	// disposed of by a row, or already reported above -- and `links` is the only number the loop
+	// increments unconditionally.
+	disposed := resolvedTop + resolvedMember + resolvedOwnModule + resolvedReplaced +
+		resolvedPackage + resolvedTestName + outsideThisBuild
+	if !t.Failed() && disposed != links {
+		t.Errorf("%d links were counted and %d were disposed of: the difference is a link that took "+
+			"a road this complement does not print, which is how a count stops being a property",
+			links, disposed)
 	}
 }
 

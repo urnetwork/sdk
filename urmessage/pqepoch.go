@@ -1144,7 +1144,7 @@ func (self *Group) resolvePqSecretLocked(mlsSecret []byte, opensEpoch uint64,
 //     puts ONE page in front of TWO receivers -- the founder REFUSES the replay of pq_secret[1]
 //     and the member admitted at epoch 3 FOLLOWS it -- over a world door, `rotWorld.admit`, that
 //     admits a member LATER than the founding commit. The sentence that stood here said that
-//     measurement was a probe and that no test drives it because [rotWorld] has no such door;
+//     measurement was a probe and that no test drives it because `rotWorld` has no such door;
 //     both halves were false the moment the row landed, and the other door's header said so in
 //     the same commit. What is held BESIDE it is the founder's side -- every case in
 //     pqdarkgate_test.go section 3 is a receiver that did hold the replayed value.
