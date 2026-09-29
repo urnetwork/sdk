@@ -44,7 +44,14 @@ func (g *h1OwnerGenerator) FixedDestinationSize() (int, bool) {
 }
 
 func (g *h1OwnerGenerator) NewClient(ctx context.Context, args *connect.MultiClientGeneratorClientArgs, settings *connect.ClientSettings) (*connect.Client, error) {
-	client, err := g.ApiMultiClientGenerator.NewClient(ctx, args, settings)
+	return g.NewClientContext(ctx, ctx, args, settings)
+}
+
+// The window prefers context-aware setup. Override the embedded capability so
+// both entry points retain the fixture's peer and ownership hooks, while the
+// separate setup context never becomes the admitted client's lifetime.
+func (g *h1OwnerGenerator) NewClientContext(ctx context.Context, setupCtx context.Context, args *connect.MultiClientGeneratorClientArgs, settings *connect.ClientSettings) (*connect.Client, error) {
+	client, err := g.ApiMultiClientGenerator.NewClientContext(ctx, setupCtx, args, settings)
 	if err == nil {
 		for _, provider := range g.providers {
 			client.ContractManager().AddNoContractPeer(provider.ClientId())
