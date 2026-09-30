@@ -289,8 +289,9 @@ func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclarat
 	sort.Strings(names)
 	here, elsewhere, exempt := 0, 0, 0
 	for _, name := range names {
-		// THE DISPOSITION IS DECIDED BY scan.holding AND NOWHERE ELSE, which is what makes the
-		// godoc gate's hand-off below answerable to this rule rather than to a copy of it.
+		// THE DISPOSITION IS DECIDED BY scan.holding AND NOWHERE ELSE, so this rule has exactly one
+		// reading. It had two callers while the godoc gate handed its bracketed case names over;
+		// ruling 57 left it one, and one reading is still the point.
 		switch scan.holding(name) {
 		case citationHeldNotACase:
 			exempt += 1
@@ -563,7 +564,8 @@ func godocTypeName(expr ast.Expr) string {
 // urmessage/pqepoch.go:1147 two lines below the same type written correctly in backticks. Both
 // callers now apply the same suffix test; this file's controls assert the result on a pair of
 // unexported types that differ only in which FILE declares them; and what the excluded half once
-// held is HANDED to the gate that owns it rather than dropped.
+// held was first HANDED to the gate that owns it and then, under ruling 57, put in BACKTICKS --
+// because a bracket is a link and a link must name a declaration the documented package contains.
 func godocReadDeclarations(one *godocPackage, path string) error {
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
 	if err != nil {
