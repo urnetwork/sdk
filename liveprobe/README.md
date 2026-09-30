@@ -17,21 +17,42 @@ developer's machine must not require an operator account.
     liveprobe \
       -a  <file holding party A's by_client_jwt> \
       -b  <file holding party B's by_client_jwt> \
-      -c  <file holding party C's by_client_jwt, the third member step 5 adds and the member step 10 refuses> \
+      -c  <file holding party C's by_client_jwt> \
       -server <the message server's client_id> \
       -host beta-test.net \
-      -dir /var/lib/urmessage/probe
+      -dir /var/lib/urmessage/probe-2026-09-29
 
 Each `by_client_jwt` is a `network_client` credential minted by `POST /network/auth-client`
 against that operator, per spec B §9.1. **They are secrets**: pass paths, never values, and keep
 the files at mode 600.
 
-`-dir` is where each party's **durable** state lives, and it now matters: step 7 kills a client and
-starts it again over the same directory. Use a path that survives the run, and note that each
-party holds a single-writer exclusion on its own subdirectory — if a second probe is refused with
-"the state directory is held", a previous run is still alive.
+**Which account plays which role**, because after step 10 they are not interchangeable:
 
-## The ten steps, and what each one is for
+| flag | party | what it is for |
+|---|---|---|
+| `-a` | **A** | founds the group; the OWNER until step 10's transfer; step 11 demotes it to MEMBER, has it refused a removal, takes it **offline across the removal** and brings it back to converge. |
+| `-b` | **B** | the second member; step 7 **kills and restarts** it; step 10's transfer makes it the OWNER; step 11 has it **commit the removal**. |
+| `-c` | **C** | the third member step 5 adds; step 10 demotes it to OBSERVER; step 11 makes it a MEMBER again, gives it a **second device leaf**, and **removes it** — so it is the party that must answer the removed sentinel and still answer it after a restart. |
+
+`-dir` is where each party's **durable** state lives, and it now matters twice: step 7 kills a
+client and starts it again over the same directory, and step 11 does it to two more. **Use a FRESH,
+EMPTY directory for every run** — a second run over one `-dir` fails at step 7 with "B was in one
+group and N came back from the disk", because `Restore` brings back every group the directory
+holds. Use a path that survives the run, and note that each party holds a single-writer exclusion on
+its own subdirectory — if a second probe is refused with "the state directory is held", a previous
+run is still alive.
+
+**A directory written before the X-Wing wrap seed existed is refused BY NAME at dial time**, before
+any step spends a round trip. Such a directory holds a three-part identity record and is answered
+with a nil error and an *empty* seed (urmessage's `DurableStateStore.GetDeviceIdentity` says why it
+is not refused there), so the device publishes a leaf whose private half nothing can reconstruct and
+can follow no epoch anybody else opens. The deployed alpha's own device directories are three-part
+ones — ledger item 257, whose **ruling 53 is to re-found that deployment**. This matters most to
+step 11: a device that derives no epoch at all would *satisfy* "the removed member cannot derive the
+epoch its own removal opened", so that clause would pass vacuously on the one party it is about.
+Hence the named refusal rather than a late, generic "a wrap did not open".
+
+## The eleven steps, and what each one is for
 
 1. **Hello on both parties.** A 32-octet `server_nonce`, and the capabilities the server
    advertises are PRINTED — `max_records_per_fetch`, `max_request_bytes`,
@@ -110,9 +131,100 @@ party holds a single-writer exclusion on its own subdirectory — if a second pr
     not make. A roles table is printed per party at every stage, off each party's OWN roster with
     its epoch, and any disagreement between the three is a `FAIL` line naming the party, the
     identity and both roles. (In-process, this is `cp3b`'s `TestRolesConvergeAcrossThreeDevices`.)
+11. **A REMOVAL on the real mesh: the OWNER takes a member's two devices out in one commit, a
+    survivor that was offline across it converges, and the removed device is told so and stays
+    told.** This is the removal track (ledger items 257–259), and none of it had ever crossed an
+    operator's mesh: the derivation and the refusals are held in `urmessage`, the submit and the
+    convergence in `cp3b`'s
+    `TestOneCallRemovesEveryLeafOfOneIdentityAndTheRemovedMemberCannotFollow` and
+    `TestARemovedDeviceIsToldSoByNameOnEveryWalkAndStillIsAfterARestart`. Twelve stages, and each
+    of the six properties has a way to fail that one process cannot show:
+
+    - **Stage 0 — the dial-time seed check's own control, both ways.** A device whose seed has been
+      erased answers `ErrNoDeviceWrapKey`; a live party answers a *different* error to the same
+      empty ciphertext. Without both arms the refusal described above is either dead or fires for
+      everything.
+    - **Stages 1–3 — the cast.** B, the owner, makes C a MEMBER again (so the removal is of a
+      member, and C's own `Send` in stage 7 is refused for the *removal* and not for being an
+      observer's); **C adds its OWN second device leaf** and commits that add itself (MASTER §11's
+      self-service rule, and R6a requires an Add claiming an identity already in the group to be
+      committed BY that identity); B demotes A to MEMBER. Every party's roster then reads **four
+      rows and three identities**, with C's identity at **two leaves** and each survivor at one —
+      the control the whole step rests on, since an identity with one leaf cannot tell a
+      per-identity removal from a per-leaf one.
+    - **Stage 4 — the send-side refusals, while the victim is still a member.** A, a MEMBER, is
+      refused `RemoveMember(C)` with `ErrCommitUnauthorized` wrapping R2's
+      `ErrCommitRemoveByNonAdmin` and `Stats.CommitRefusedOwn` moves by one. Then the three
+      by-name doors, and **ruling 55's order is asserted rather than relied on**: a MEMBER asking
+      to remove the OWNER is answered `ErrRemoveOwner` — "nobody removes the owner, transfer
+      first" — and **not** R2, because the subject-level doors come before the predicate. Removing
+      its own identity is `ErrRemoveSelf`, an identity with no leaf is `ErrNoSuchMember`, and
+      neither is counted as a role refusal. Then **nothing reached the wire**, at every party: no
+      entry, no epoch move, no ingest, and no *receiving*-side refusal either, since one would be
+      evidence that a commit the send side should have refused reached the server.
+    - **Stage 5 — a survivor goes OFFLINE, across the removal.** Everything A holds is dropped and
+      its directory is left alone. This is the case every real group chat meets on its first day
+      and no in-process test can: the member that was not there.
+    - **Stage 6 — the removal.** One call, by identity. B's epoch moves by one, **both** of C's
+      leaves are gone, each survivor still holds exactly one, and the roster's roles say the policy
+      entry went with the leaves (a commit that left C named would be an R0c phantom every honest
+      receiver refuses).
+    - **Stages 7 and 9 — the removed device's own client, and item 246's ceiling.** Four walks and
+      a `Send`, each answering `urmessage.ErrRemovedFromGroup` **wrapping mls's own sentinel** and
+      **none of the eight other states** ruling 52 says it must be distinguishable from — the halt,
+      the dark group, an abandoned record, a transport refusal, a group that has not reconciled.
+      `Stats.FailedOpen` does not move and nothing is abandoned, because a removal is the one
+      record a device cannot open and must not retry. It still reads its own pre-removal
+      transcript. Then B seals three lines at the epoch the removal opened and the removed
+      device's **fetched-record delta per walk does not change** — which is F0's ceiling measured
+      on the server's own pages, and is stronger than "it cannot open them". Its control is in
+      stage 11.
+    - **Stage 10 — the restart.** The removed device is killed and reopened over the same
+      directory, and `Removal()` is read **before its first Receive**: the cursor is not persisted,
+      so a state read there came off the disk and nowhere else. Without ruling 52's persist such a
+      device comes back reading as caught up and silent.
+    - **Stage 11 — the offline survivor returns.** One walk takes it to the new epoch, having
+      ingested **exactly one** commit (the only one above the epoch its disk restored) and opened
+      at least one device wrap, because the epoch a removal opens is reached only by opening the
+      fan-out wrap addressed to this leaf. Zero malformed gaps — the removed member's records sit
+      *below* the removing commit and are its whole half of the conversation — and zero
+      out-of-window gaps, per item 241. It **opens every one of the three lines B sealed above the
+      ceiling**, which is stage 9's control the other way round: without it, a ceiling and a server
+      that served those rows to nobody are the same measurement. Its roster is then compared
+      **row by row** against the remover's, and the two exchange a line at the new epoch, which
+      one shared `storage_root` is the only way to do.
+    - **Stage 12 — the per-party line**, printed the way the counters step prints: epoch, roster
+      rows, own role, the removal state in words, and `fetched opened ingested refusedOwn refused
+      wraps pastEpoch FAILED gaps`.
+
+    **What this step does NOT do, and why.** The victim's second device is a **leaf**, not a fourth
+    `urmessage.Device`: a Device's credential identity *is* its signature key and it mints one
+    identity per state store, so that package has no door onto a second leaf of an existing
+    identity. What carries one is a seam-level key package whose credential names C's identity and
+    whose signer is its own — the same construction as `cp3b`'s `world.seamMemberClaiming`. That
+    leaf never connects and never fetches; a fourth *reading* party would need a fourth credential
+    and this deployment has three accounts. For the same reason there is **no online non-committer
+    survivor**: with three accounts and one victim there are exactly two survivors, and one of them
+    is the committer, so the ingest-while-online arm of a removal stays where `cp3b` holds it with
+    three survivors in one process.
 
 Then the counters, per party: `fetched opened ceremony own otherClasses FAILED submitted rebound
 pages unattested`. **`FAILED` must be 0.**
+
+And last, **this run reads back its own output**. Every octet the probe writes to stdout or stderr is
+kept, and the final step asserts that the three-octet prefix every JWT begins with occurs in it
+**zero** times, with two controls in the same block: a fabricated JWT-shaped value that the same
+scanner must find exactly once, and the transcript's own octet count, so a zero is not a property of
+a scanner that matches nothing or of a log that was never written. The three things this binary is
+given are bearer credentials for real network clients, its output gets redirected into files and
+pasted into tickets, and no reading of the source can promise that no formatted error carried one —
+the errors come from four packages `main.go` does not own. The needle itself is deliberately never
+printed, so that a success line does not put a hit in the very log an operator greps. **Stated limit:
+it covers every print this file makes and not a library writing to the process's stdout by its own
+hand; catching those needs the file descriptor replaced by a pipe, which costs a drained goroutine
+and loses whatever is in flight when the probe exits on a failure.**
+
+The run therefore prints **13 steps**: the eleven scenario steps, the counters, and the read-back.
 
 ## What it does NOT assert
 
