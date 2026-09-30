@@ -1616,16 +1616,21 @@ func receive(group *urmessage.Group, ctx context.Context, who string) []*urmessa
 	return got
 }
 
-// receiveRound is one round of [receiveAcrossTheEpochCeiling]: how many entries that round read, and
-// what epoch it left the group at.
+// receiveRound is one round of [receiveAcrossTheEpochCeiling]: the epoch it left the group at.
 //
-// BOTH FIELDS ARE ASSERTED ON AND THEY ARE ASSERTED ON DIFFERENT THINGS. The FIRST round's epoch is
-// where the one-epoch-per-round-trip rule is held -- it is the assertion stage 11 made when it
-// believed a single Receive was the whole stage. The UNION of the rounds is where the content
-// assertions are held, because content sealed above the ceiling is not in the round that crosses it.
+// ONE FIELD, BECAUSE ONE FIELD IS WHAT ANYTHING ASKS ABOUT. The FIRST round's epoch is where the
+// one-epoch-per-round-trip rule is held -- it is the assertion stage 11 made when it believed a
+// single Receive was the whole stage -- and `len(rounds)` is how many round trips it took. The
+// UNION of the rounds is where the content assertions are held, because content sealed above the
+// ceiling is not in the round that crosses it.
+//
+// AND IT USED TO CARRY AN `entries` COUNT THAT NOTHING READ, under a header saying both fields were
+// asserted on. There is no assertion for it to hold that is true either way item 246's ceiling is
+// deployed: with the ceiling the crossing round is short of the rounds above it, without it the
+// first round is the whole answer, and a probe that has to pass in both cannot pin either shape.
+// What the counts are FOR is a human reading a red, and the per-round line below prints them.
 type receiveRound struct {
-	entries int
-	epoch   uint64
+	epoch uint64
 }
 
 // receiveAcrossTheEpochCeiling is [receive] REPEATED until the group answers nothing and crosses
@@ -1669,12 +1674,29 @@ func receiveAcrossTheEpochCeiling(group *urmessage.Group, ctx context.Context,
 		before := group.Epoch()
 		got := receive(group, ctx, who)
 		union = append(union, got...)
-		rounds = append(rounds, receiveRound{entries: len(got), epoch: group.Epoch()})
+		rounds = append(rounds, receiveRound{epoch: group.Epoch()})
 		fmt.Fprintf(out, "  %s's round trip %d across the ceiling: %d entr%s, epoch %d -> %d\n",
 			who, at, len(got), map[bool]string{true: "y", false: "ies"}[len(got) == 1],
 			before, group.Epoch())
 		// nothing new and no epoch crossed: this reader is at its own ceiling's head, which under F0
 		// is the only "caught up" a reader can observe about itself.
+		//
+		// THE EPOCH CLAUSE IS A GUARD OVER THE MECHANISM AND NOT OVER THIS ONE CALL SITE, and saying
+		// which is the correction of a published measurement. Its subject is a reader whose cursor is
+		// already past its history: under the ceiling such a reader is served the one commit above it
+		// and NOTHING above that on a page that comes back COMPLETE, so its crossing round answers
+		// zero entries while the epoch moves, and "nothing new" alone would call that caught up with
+		// content still unread. MEASURED in cp3b against the real server's own api.Handler and
+		// store.MemoryStore, in that shape: rounds [{0 3} {3 3} {0 3}] with the clause, and with the
+		// clause dropped ONE round [{0 3}] missing 3 of the 3 lines sealed above the ceiling.
+		//
+		// AT THIS FILE'S ONE CALL SITE IT IS NOT LOAD-BEARING, and that is stated rather than left to
+		// be rediscovered. The returning A comes back through a RESTART and the receive cursor is not
+		// persisted, so its crossing round re-walks its whole history and answers MANY entries, not
+		// zero. Measured in the same harness, same server, in the call site's shape: rounds
+		// [{6 3} {3 3} {0 3}] with the clause and the SAME [{6 3} {3 3} {0 3}] without it, missing
+		// nothing either way. So the mutant does not convict here; it convicts the day the cursor is
+		// persisted, or the day a second call site drains a party that never died.
 		if len(got) == 0 && group.Epoch() == before {
 			return union, rounds
 		}

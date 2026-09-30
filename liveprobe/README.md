@@ -188,12 +188,25 @@ Hence the named refusal rather than a late, generic "a wrap did not open".
       the `read_epoch` inside its own request, and the page it gets back is *complete* — the ceiling
       is a filter and not a truncation — so **one `Receive` crosses one epoch and stops**, and a
       party that must cross the epoch the removal opened *and* read what was sealed above it needs
-      more than one. Measured against the real `msgrepo` server, in this stage's shape, rather than
-      argued: one `Receive` took a survivor one epoch behind *across* the epoch with **0 entries and
-      none of the three lines above it**, and the drain settled in **three** round trips — one that
-      crosses, one that reads above, one that answers nothing at an epoch it did not move. The
-      mutant that keeps the loop honest was driven too: `len(got) == 0` without the epoch clause
-      settles on that very first round. `msgrepo` holds the same rule end to end in
+      more than one. Measured against the real `msgrepo` server — its own `api.Handler` over
+      `store.MemoryStore`, in `cp3b` — rather than argued: **in this stage's shape**, where the
+      survivor comes back through a *restart* and the receive cursor is not persisted, the rounds are
+      `[{6 3} {3 3} {0 3}]` — one that crosses the epoch carrying the re-walked history below it, one
+      that reads the three lines sealed above the ceiling, one that answers nothing at an epoch it did
+      not move — and **none of the three lines above the ceiling is in the crossing round**, which is
+      what makes one `Receive` the wrong unit here.
+      **The mutant, re-driven in this stage's shape, does NOT convict, and the earlier claim that it
+      did was measured in a shape this call site does not have.** `len(got) == 0` without the epoch
+      clause takes the same `[{6 3} {3 3} {0 3}]` and the same union: the crossing round answers six
+      entries, not zero, so nothing settles early. The shape where it *does* convict is a reader
+      whose cursor is already past its history — an in-process party that simply stopped calling
+      `Receive`, which is what the first measurement drove: rounds `[{0 3} {3 3} {0 3}]` with the
+      clause, and `[{0 3}]` alone without it, **missing 3 of the 3 lines above the ceiling**. Both
+      arms of that pair were measured in the same harness against the same server, so the no above is
+      about the restart and not about the instrument. The clause therefore stays as a guard over the
+      *mechanism* — it convicts the day the cursor is persisted, or the day a second call site drains
+      a party that never died — and this probe's one call site does not exercise it.
+      `msgrepo` holds the same rule end to end in
       `TestAMemberSeveralEpochsBehindWalksForwardOneEpochPerRoundTrip`, and `cp3b`'s
       `rolesReceiveAll` drains for the same reason and says so. **Exactly one call site in this
       probe drains**, because every other entry assertion is an exact count on a group that is
