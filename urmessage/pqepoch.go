@@ -1365,7 +1365,7 @@ func parseLeafWrapKey(leafKeys []byte) ([]byte, error) {
 // by comparison answers the empty set for that commit (`self.handle.MemberCount()` against
 // `pending.MemberCount`, the live leaves against the staged ones, "the highest leaves that no
 // longer fit"), and the fan-out then seals the next epoch's post-quantum secret straight to the
-// member the commit exists to shut out. [TestARemovalTheSameCommitRefillsIsStillLeftOutOfTheFanOut]
+// member the commit exists to shut out. `TestARemovalTheSameCommitRefillsIsStillLeftOutOfTheFanOut`
 // drives exactly that commit through this function; connect holds the same property one layer down
 // in messagegroup's TestARemovalWhoseLeafIsRefilledInTheSameCommitIsStillNamedByTheStagedCommit.
 //
@@ -1536,7 +1536,7 @@ func (self *Group) stageEpochRotationLocked(pending *messagegroup.PendingEpoch) 
 // carrying a wrap tag, because ledger open item 185 leaves that record's eph_window unstated while
 // Spec A S19 and Spec B section 5.1 check 3 refuse an implausible one and a wrap head has no
 // sent_at to divide. That refusal is MEASURED from this side rather than described --
-// [TestTheEphRootTwinOfTheDeviceWrapIsRefusedByConnectAndNotByThisPackage] -- and it goes RED the
+// `TestTheEphRootTwinOfTheDeviceWrapIsRefusedByConnectAndNotByThisPackage` -- and it goes RED the
 // day 185 is ruled and the refusal lifts, which is when the second record is due and
 // expected_wrap_count becomes MASTER section 8.2's 2 x device_leaves + 1.
 func (self *Group) sealEpochWrapLocked(opensEpoch uint64, target wrapTarget, pqSecret []byte) (*message.Record, error) {

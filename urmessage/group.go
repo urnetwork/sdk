@@ -715,7 +715,7 @@ type epochLadderKey struct {
 // ratchet is tracked for this sender and retention class." The epoch is what makes a new-epoch key
 // miss the memo and re-track; [Group.crossEpochLadderLocked] clears the whole map in the same block
 // as the install anyway, so the two are the one rule stated twice, and
-// [TestAfterAnEpochChangeEveryTrackedKeyNamesTheNewEpochAndTheOldOnesArePrinted] holds it -- as a
+// `TestAfterAnEpochChangeEveryTrackedKeyNamesTheNewEpochAndTheOldOnesArePrinted` holds it -- as a
 // behaviour over a seeded old-epoch key and its printed complement, not as a reading of this type.
 type trackedKey struct {
 	epoch uint64
@@ -1952,7 +1952,7 @@ func (self *Group) streamFloorRefusalLocked() error {
 // a sentence asking arms to remember. What remains is a bug in the fan-out, which is what ruling
 // 54 leaves "re-found the group" as the recovery for.
 //
-// THE PROPERTY THAT HOLDS IT is [TestThreeMembersRotateAcrossTwoEpochsAndAMemberRemovedByThatCommitCannotFollow]:
+// THE PROPERTY THAT HOLDS IT is `TestThreeMembersRotateAcrossTwoEpochsAndAMemberRemovedByThatCommitCannotFollow`:
 // a three-member group where the second rotation's commit removes one member, holding that the
 // epoch's fan-out addresses every survivor and not the removed leaf, that the removed member's
 // RETAINED pq_secret does not reproduce the survivors' storage_root even when the epoch's exporter
@@ -3453,7 +3453,7 @@ type pageWalk struct {
 // rather than an incidental one. The diagnosis ruling 38 exists to keep could never reach a
 // caller again. Passing the error IN makes the decision one place the compiler will not let an
 // arm skip; a sixth arm added tomorrow has to say what its error is, and
-// [TestEveryErrorReceiveAnswersComesOutOfTheWalksOwnCommit] refuses one that answers around it.
+// `TestEveryErrorReceiveAnswersComesOutOfTheWalksOwnCommit` refuses one that answers around it.
 //
 // THE ORDER THE SIX ERRORS ARE RETURNED IN IS A DECISION, and the three ahead of `fetchErr` are
 // ahead of it for the same reason they are ahead of each other: they are STICKY refusals about
