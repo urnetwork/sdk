@@ -212,3 +212,42 @@ func TestConnectViewControllerAutoSaveDefaultFailureKeepsCommittedCurrent(t *tes
 		t.Fatal("partial current/default operation hid the default failure")
 	}
 }
+
+// Auto keeps Network provide while disconnected (device mapping). The
+// controller's disconnect must agree instead of transiently setting None,
+// which tore down the provider and persisted a mode the device overrode.
+func TestConnectViewControllerAutoDisconnectKeepsNetworkProvide(t *testing.T) {
+	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
+	fixture.seedDistinctLogin(t)
+	settings := DefaultDeviceLocalSettings()
+	settings.EnableRpc = false
+	settings.DisableLogging = true
+	settings.AllowProvider = true
+	settings.GeneratorFunc = func([]*connect.ProviderSpec) connect.MultiClientGenerator { return &testingDnsOwnerGenerator{} }
+	device, err := newDeviceLocalWithOverrides(fixture.networkSpace, fixture.initialJwt, "auto-disconnect", "test", "0", fixture.instanceId, settings, connect.NewId())
+	if err != nil {
+		t.Fatal("actual provider device construction failed")
+	}
+	t.Cleanup(func() { testingJoinPreferenceDevice(t, device) })
+	device.SetProvideControlMode(ProvideControlModeAuto)
+	if device.GetProvideControlMode() != ProvideControlModeAuto ||
+		device.GetProvideMode() != ProvideModeNetwork || !device.GetProvideEnabled() {
+		t.Fatal("Auto without a connect location did not provide to the network")
+	}
+
+	var modes []ProvideMode
+	sub := device.AddProvideModeChangeListener(testingCatalogProvideModeListener(func(mode ProvideMode) { modes = append(modes, mode) }))
+	defer sub.Close()
+	controller := testingPreferenceController(t, device)
+	controller.Disconnect()
+
+	if device.GetProvideMode() != ProvideModeNetwork || !device.GetProvideEnabled() {
+		t.Fatal("Auto disconnect did not leave Network provide")
+	}
+	if len(modes) != 0 {
+		t.Fatalf("Auto disconnect transiently changed provide mode: %v", modes)
+	}
+	if mode := device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().GetProvideMode(); mode != ProvideModeNetwork {
+		t.Fatalf("Auto disconnect persisted provide mode %d, device enforces Network", mode)
+	}
+}

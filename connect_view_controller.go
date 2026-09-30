@@ -444,8 +444,11 @@ func (self *ConnectViewController) Disconnect() {
 	self.beginGeneration(Disconnected)
 
 	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
-		// disable provider
-		provideMode := ProvideModeNone
+		// Auto stops providing publicly on disconnect but keeps Network
+		// provide, the same mapping the device enforces for Auto without a
+		// connect location. Setting None here briefly tore down the provider
+		// and persisted a mode the device immediately overrode.
+		provideMode := ProvideModeNetwork
 		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
 		self.device.SetProvideMode(provideMode)
 	}
