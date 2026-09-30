@@ -1050,6 +1050,39 @@ func (self *ConnectGrid) resize() {
 	self.gridPoints = gridPoints
 }
 
+// gridConnectionStatus is the status shown for a connected grid.
+//
+// A window is Connected when it reaches its minimum size. The minimum (4 for
+// the mobile quality window, 2 for a quality or speed profile) is not capped by
+// the number of providers the selected location has, so in a location with
+// fewer providers than the minimum the window can never be satisfied, and the
+// status stayed Connecting with every provider of the location already active.
+// When the active providers cover the location's provider count, there is no
+// provider left to connect to, and the status is Connected.
+// A location without a provider count (best available, a group, a client id)
+// relies on the window minimum alone.
+func gridConnectionStatus(
+	minSatisfied bool,
+	failed bool,
+	activeProviderCount int,
+	locationProviderCount int32,
+) ConnectionStatus {
+	if minSatisfied {
+		return Connected
+	}
+	if 0 < locationProviderCount && 0 < activeProviderCount &&
+		int(locationProviderCount) <= activeProviderCount {
+		return Connected
+	}
+	if failed {
+		// the window honesty layer's terminal outcome: zero Added past
+		// both deadlines. Checked after the satisfied cases so a recovered
+		// window's satisfied state always wins.
+		return ConnectFailed
+	}
+	return Connecting
+}
+
 // connect.MonitorEventFunction
 func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
 	// D2 generation gate: once the user has issued a disconnect (or a new
@@ -1062,6 +1095,12 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 	// controller's stateLock, and the grid's own stateLock is taken below.
 	if !self.connectViewController.generationCurrent(self.generation) {
 		return
+	}
+	// read before the grid lock, like the generation gate above: the view
+	// controller's stateLock is never taken under the grid's
+	locationProviderCount := int32(0)
+	if location := self.connectViewController.GetSelectedLocation(); location != nil {
+		locationProviderCount = location.ProviderCount
 	}
 	done := false
 	windowSizeChanged := false
@@ -1217,16 +1256,12 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 		}
 
 		// note the callback is only active while the device is connected
-		if windowExpandEvent.MinSatisfied {
-			connectionStatus = Connected
-		} else if windowExpandEvent.Failed {
-			// the window honesty layer's terminal outcome: zero Added past
-			// both deadlines. Checked after MinSatisfied so a recovered
-			// window's satisfied state always wins.
-			connectionStatus = ConnectFailed
-		} else {
-			connectionStatus = Connecting
-		}
+		connectionStatus = gridConnectionStatus(
+			windowExpandEvent.MinSatisfied,
+			windowExpandEvent.Failed,
+			windowCurrentSize,
+			locationProviderCount,
+		)
 
 		deviceLog(self.connectViewController.device).Infof(
 			"[grid]%d->%d(%t) points=%d %s (w=%t, p=%t)\n",
