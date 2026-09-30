@@ -183,16 +183,34 @@ Hence the named refusal rather than a late, generic "a wrap did not open".
       directory, and `Removal()` is read **before its first Receive**: the cursor is not persisted,
       so a state read there came off the disk and nowhere else. Without ruling 52's persist such a
       device comes back reading as caught up and silent.
-    - **Stage 11 — the offline survivor returns.** One walk takes it to the new epoch, having
-      ingested **exactly one** commit (the only one above the epoch its disk restored) and opened
-      at least one device wrap, because the epoch a removal opens is reached only by opening the
-      fan-out wrap addressed to this leaf. Zero malformed gaps — the removed member's records sit
-      *below* the removing commit and are its whole half of the conversation — and zero
-      out-of-window gaps, per item 241. It **opens every one of the three lines B sealed above the
-      ceiling**, which is stage 9's control the other way round: without it, a ceiling and a server
-      that served those rows to nobody are the same measurement. Its roster is then compared
-      **row by row** against the remover's, and the two exchange a line at the new epoch, which
-      one shared `storage_root` is the only way to do.
+    - **Stage 11 — the offline survivor returns.** It **drains rather than walking once, and the
+      unit is the round trip.** Under item 246's ceiling a reader is served only rows at or below
+      the `read_epoch` inside its own request, and the page it gets back is *complete* — the ceiling
+      is a filter and not a truncation — so **one `Receive` crosses one epoch and stops**, and a
+      party that must cross the epoch the removal opened *and* read what was sealed above it needs
+      more than one. Measured against the real `msgrepo` server, in this stage's shape, rather than
+      argued: one `Receive` took a survivor one epoch behind *across* the epoch with **0 entries and
+      none of the three lines above it**, and the drain settled in **three** round trips — one that
+      crosses, one that reads above, one that answers nothing at an epoch it did not move. The
+      mutant that keeps the loop honest was driven too: `len(got) == 0` without the epoch clause
+      settles on that very first round. `msgrepo` holds the same rule end to end in
+      `TestAMemberSeveralEpochsBehindWalksForwardOneEpochPerRoundTrip`, and `cp3b`'s
+      `rolesReceiveAll` drains for the same reason and says so. **Exactly one call site in this
+      probe drains**, because every other entry assertion is an exact count on a group that is
+      already at the head. The **first** round trip is where it must reach the new epoch, having
+      ingested **exactly one** commit across the whole drain — the only one above the epoch its disk
+      restored, and holding that over a drain is the stronger reading, since a round trip that
+      re-applied anything shows up there first — and opened at least one device wrap, because the
+      epoch a removal opens is reached only by opening the fan-out wrap addressed to this leaf. Zero
+      malformed gaps — the removed member's records sit *below* the removing commit and are its
+      whole half of the conversation — and zero out-of-window gaps, per item 241. It **opens every
+      one of the three lines B sealed above the ceiling**, which is stage 9's control the other way
+      round: without it, a ceiling and a server that served those rows to nobody are the same
+      measurement, and the per-round lines the drain prints are what says which of the two a red
+      there names — a reader that reached the new epoch and then answered nothing on a further round
+      trip is the omission, a reader that never reached it is a convergence failure. Its roster is
+      then compared **row by row** against the remover's, and the two exchange a line at the new
+      epoch, which one shared `storage_root` is the only way to do.
     - **Stage 12 — the per-party line**, printed the way the counters step prints: epoch, roster
       rows, own role, the removal state in words, and `fetched opened ingested refusedOwn refused
       wraps pastEpoch FAILED gaps`.
@@ -219,10 +237,21 @@ a scanner that matches nothing or of a log that was never written. The three thi
 given are bearer credentials for real network clients, its output gets redirected into files and
 pasted into tickets, and no reading of the source can promise that no formatted error carried one —
 the errors come from four packages `main.go` does not own. The needle itself is deliberately never
-printed, so that a success line does not put a hit in the very log an operator greps. **Stated limit:
-it covers every print this file makes and not a library writing to the process's stdout by its own
-hand; catching those needs the file descriptor replaced by a pipe, which costs a drained goroutine
-and loses whatever is in flight when the probe exits on a failure.**
+printed, so that a success line does not put a hit in the very log an operator greps.
+
+**The same scanner runs inside the failure path, and that is not a nicety.** Every failure here ends
+in `os.Exit`, so a scan that lived only in the final step would only ever run over runs in which
+nothing failed — while **the print most likely to carry a credential is the FAIL line itself**, for
+exactly the reason above. So one scanner has two callers: the final step, which asserts zero, and
+`fail`, which scans *after* printing (the transcript tees `errOut`, so by then the FAIL text is
+already octets it can see) and, on a non-zero count, prints a loud **treat the credentials as
+disclosed and mint replacements** sentence beside the failure. Measured on the built binary with both
+arms: `-server not-a-valid-id` fails and prints nothing extra; `-server` given a *fabricated*
+JWT-shaped value fails and prints the disclosure, naming the count and never the prefix.
+
+**Stated limit:** it covers every print this file makes and not a library writing to the process's
+stdout by its own hand; catching those needs the file descriptor replaced by a pipe, which costs a
+drained goroutine and loses whatever is in flight when the probe exits on a failure.
 
 The run therefore prints **13 steps**: the eleven scenario steps, the counters, and the read-back.
 

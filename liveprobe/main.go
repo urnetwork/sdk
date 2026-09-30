@@ -77,14 +77,22 @@ var (
 // actually written, rather than argued.
 //
 // WHAT IT COVERS AND WHAT IT DOES NOT, stated rather than implied. It covers everything written
-// through `out` and `errOut`, which is every print this file makes -- and `errOut` is in it so that
-// a FAIL line is scanned too, since a run that failed still leaves a log. It does NOT cover a
+// through `out` and `errOut`, which is every print this file makes. `errOut` is in it so that a FAIL
+// line is scanned too -- and the tee alone does not buy that, it only makes it possible: what buys it
+// is [scanForCredentials] being called from inside [fail], because every failure path here ends in
+// os.Exit and a scan placed only in the final step would never run over a run that failed. It does NOT cover a
 // library writing to this process's stdout by its own hand: catching those would need the file
 // descriptor itself replaced by a pipe, which costs a drained goroutine and loses whatever is still
 // in flight when [fail] calls os.Exit.
 type transcriptLog struct {
 	mutex sync.Mutex
 	held  []byte
+	// announced is whether the disclosure sentence has already been printed. It lives HERE, under
+	// the same lock as the octets it is about, rather than beside [scanForCredentials] as a package
+	// variable: the scan has two callers and one of them is [fail], so "only the main goroutine can
+	// reach it" is an argument about today's call graph and not a property of the type. Under the
+	// lock it needs no argument.
+	announced bool
 }
 
 // tee is a writer that goes to `to` AND into this transcript.
@@ -97,11 +105,21 @@ func (self *transcriptLog) tee(to io.Writer) io.Writer {
 	return &transcriptWriter{log: self, to: to}
 }
 
-// count is how many times a needle occurs in everything written so far.
-func (self *transcriptLog) count(needle string) int {
+// count is how many times a needle occurs in everything written so far, and whether THIS caller is
+// the one that gets to announce it.
+//
+// THE TWO ANSWERS COME OUT OF ONE CRITICAL SECTION because they are one decision. A count read and an
+// announcement claimed separately can interleave into two disclosures for one hit, or -- worse -- a
+// claim taken against a count that a concurrent write has since moved.
+func (self *transcriptLog) count(needle string) (held int, announce bool) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	return strings.Count(string(self.held), needle)
+	held = strings.Count(string(self.held), needle)
+	announce = 0 < held && !self.announced
+	if announce {
+		self.announced = true
+	}
+	return held, announce
 }
 
 // octets is how much has been written, which is what makes a count of zero non-vacuous.
@@ -1194,15 +1212,26 @@ func main() {
 		"the returning A came back at epoch %d and was at %d when it went offline: the disk did not "+
 			"hold the epoch, so nothing below is about a member catching up",
 		aGroup.Epoch(), aWasAtEpoch)
-	backFromOffline := receive(aGroup, ctx, "the returning A")
+	// IT DRAINS, AND THE UNIT IS THE ROUND TRIP RATHER THAN THE WALK. Under item 246's ceiling one
+	// Receive crosses one epoch and stops -- the reasoning is on [receiveAcrossTheEpochCeiling] -- so
+	// a party that must cross the epoch the removal opened AND read the lines B sealed above it needs
+	// more than one, and a stage built on one would have gone red naming the server.
+	backFromOffline, aRounds := receiveAcrossTheEpochCeiling(aGroup, ctx, "the returning A")
+	check(aRounds[0].epoch == openedEpoch,
+		"the returning A is at epoch %d after its FIRST round trip, want %d: it did not follow the "+
+			"removal it slept through. Exactly one commit sits above the epoch its disk restored, and "+
+			"item 246 serves one epoch per round trip, so crossing it is the FIRST round's whole job "+
+			"and reading what was sealed above it is a later round's", aRounds[0].epoch, openedEpoch)
 	check(aGroup.Epoch() == openedEpoch,
-		"the returning A is at epoch %d after one walk, want %d: it did not follow the removal it slept through",
-		aGroup.Epoch(), openedEpoch)
+		"the returning A settled at epoch %d after %d round trip(s), want %d",
+		aGroup.Epoch(), len(aRounds), openedEpoch)
 	check(aGroup.Stats().Ingested == 1,
-		"the returning A ingested %d commit(s). Exactly one commit sits above the epoch its disk "+
-			"restored -- the removal -- and every commit below has a header epoch this session is past, "+
-			"which is ceremony a walk reads over. Any other number means the re-walk re-ingested commits "+
-			"it had already applied", aGroup.Stats().Ingested)
+		"the returning A ingested %d commit(s) over %d round trip(s). Exactly one commit sits above "+
+			"the epoch its disk restored -- the removal -- and every commit below has a header epoch "+
+			"this session is past, which is ceremony a walk reads over. Any other number means the "+
+			"re-walk re-ingested commits it had already applied, and holding it over a DRAIN is the "+
+			"stronger reading: a round trip that re-applied anything shows up here first",
+		aGroup.Stats().Ingested, len(aRounds))
 	check(0 < aGroup.Stats().WrapOpened,
 		"the returning A opened %d device wrap(s) over a walk that took it into a new epoch. The "+
 			"epoch a removal opens is reached ONLY by opening the fan-out wrap addressed to this "+
@@ -1226,9 +1255,13 @@ func main() {
 	openedAfterOffline := textsPresent(backFromOffline)
 	for _, line := range ceiling {
 		check(openedAfterOffline[line],
-			"the returning A did not open %q, which B sealed at epoch %d. Without this the ceiling "+
-				"measurement in stage 9 is satisfied by a server that served those rows to NOBODY, "+
-				"which is an omission rather than a ceiling", line, openedEpoch)
+			"the returning A did not open %q over %d round trip(s), which B sealed at epoch %d. Without "+
+				"this the ceiling measurement in stage 9 is satisfied by a server that served those rows "+
+				"to NOBODY, which is an omission rather than a ceiling.\n"+
+				"  THE PER-ROUND LINES ABOVE SAY WHICH PARTY THIS NAMES, and the two are not the same\n"+
+				"  finding: a reader that reached epoch %d and then answered NOTHING on a further round\n"+
+				"  trip is the omission; a reader that never reached epoch %d is a convergence failure.",
+			line, len(aRounds), openedEpoch, openedEpoch, openedEpoch)
 	}
 	// AND THE VICTIM'S PRE-REMOVAL HALF IS STILL READABLE at the survivor that learned the removal
 	// by INGEST rather than by making it.
@@ -1282,14 +1315,17 @@ func main() {
 	check(0 < transcript.octets(),
 		"CONTROL FAILED: the transcript holds %d octets, so a count of zero is about nothing that was written",
 		transcript.octets())
-	inTheLog := transcript.count(credentialNeedle)
+	// THE SAME SCANNER THE FAILURE PATH USES, and that is the one thing this block must not have its
+	// own copy of: every failure below step 1 ends in os.Exit before this statement, so a scanner
+	// written here and nowhere else would run only over runs in which nothing failed.
+	inTheLog := scanForCredentials("this run's output")
 	check(inTheLog == 0,
 		"THIS RUN'S OWN OUTPUT CARRIES %d OCCURRENCE(S) OF THE THREE-OCTET PREFIX EVERY JWT BEGINS "+
-			"WITH. A credential has reached the log. Find it with `grep -c` for that prefix over this "+
-			"run's output, treat the credentials the three -a/-b/-c files hold as disclosed, and mint "+
-			"replacements before anything else", inTheLog)
+			"WITH, and the disclosure sentence above says what to do about it", inTheLog)
 	fmt.Fprintf(out, "  %d octets written, and none of them begins a JWT; the control finds its one\n",
 		transcript.octets())
+	fmt.Fprintf(out, "  the same scanner runs inside the failure path, so a run that FAILS is scanned over\n"+
+		"  its own FAIL line rather than exiting before the check\n")
 
 	fmt.Fprintf(out, "\n=== %d STEPS, %d ASSERTIONS, ALL HELD ===\n", steps, checks)
 	fmt.Fprintf(out, "WHAT THIS PROBE DOES NOT ASSERT, and it needs a database credential this binary must\n"+
@@ -1578,6 +1614,79 @@ func receive(group *urmessage.Group, ctx context.Context, who string) []*urmessa
 		fail("%s Receive: %v", who, err)
 	}
 	return got
+}
+
+// receiveRound is one round of [receiveAcrossTheEpochCeiling]: how many entries that round read, and
+// what epoch it left the group at.
+//
+// BOTH FIELDS ARE ASSERTED ON AND THEY ARE ASSERTED ON DIFFERENT THINGS. The FIRST round's epoch is
+// where the one-epoch-per-round-trip rule is held -- it is the assertion stage 11 made when it
+// believed a single Receive was the whole stage. The UNION of the rounds is where the content
+// assertions are held, because content sealed above the ceiling is not in the round that crosses it.
+type receiveRound struct {
+	entries int
+	epoch   uint64
+}
+
+// receiveAcrossTheEpochCeiling is [receive] REPEATED until the group answers nothing and crosses
+// nothing, with every round's entries unioned into one answer.
+//
+// WHY ONE Receive IS THE WRONG UNIT FOR A PARTY THAT MUST CROSS AN EPOCH *AND* READ ABOVE IT. Under
+// ledger item 246's F0 ceiling the store serves only rows whose epoch is at or below the `read_epoch`
+// inside the request's own req_auth, and the client sends `ReadEpoch: self.epoch` fresh on each page
+// (urmessage/group.go:3225). A reader one commit behind is therefore served that commit and NOTHING
+// ABOVE IT -- and the page it gets back is COMPLETE, because the ceiling is a FILTER and not a
+// truncation: msgrepo's `store.MemoryStore.Fetch` opens with `Complete: true` and `continue`s over
+// every row above the ceiling, and its own comment says the filter is deliberate. A complete page
+// ends the walk at urmessage/group.go:3278, so the epoch the ingest just moved is only ever used by
+// a page the walk no longer asks for. ONE Receive crosses ONE EPOCH, by design. msgrepo holds that
+// end to end in TestAMemberSeveralEpochsBehindWalksForwardOneEpochPerRoundTrip, and cp3b's
+// `rolesReceiveAll` drains for exactly this reason and says so.
+//
+// SO THIS IS NOT A RETRY LOOP AND IT IS NOT [receive] WITH SLACK ADDED. What one Receive produces for
+// such a party is not an error at all: it is a party at the right epoch holding an empty answer --
+// which is indistinguishable from a server that served those rows to NOBODY. Telling those two apart
+// is stage 11's whole job as stage 9's control, so a stage built on one Receive would have failed
+// naming the wrong party.
+//
+// EXACTLY ONE CALL SITE IN THIS FILE DRAINS, and that is deliberate rather than conservative. [opens]
+// and [countOnce] assert EXACT entry counts on groups that are already at the head, where a blanket
+// drain would break the counts they hold; the party this is for is the one party in the run that
+// slept through a commit.
+//
+// THE BOUND IS A FAILURE AND NOT A break. A group that will not settle is a real defect, and a drain
+// that gave up quietly would hand every assertion below it a partial union and call it converged.
+func receiveAcrossTheEpochCeiling(group *urmessage.Group, ctx context.Context,
+	who string) ([]*urmessage.Message, []receiveRound) {
+
+	// THE ONE CALL SITE CROSSES ONE EPOCH AND SETTLES IN THREE ROUNDS: one that crosses it carrying
+	// the history below, one that reads what was sealed above it, one that answers nothing at an
+	// epoch it did not move. Eight is five rounds of slack and still a number a stall cannot hide in.
+	const maxRounds = 8
+	union := []*urmessage.Message{}
+	rounds := []receiveRound{}
+	for at := 1; at <= maxRounds; at += 1 {
+		before := group.Epoch()
+		got := receive(group, ctx, who)
+		union = append(union, got...)
+		rounds = append(rounds, receiveRound{entries: len(got), epoch: group.Epoch()})
+		fmt.Fprintf(out, "  %s's round trip %d across the ceiling: %d entr%s, epoch %d -> %d\n",
+			who, at, len(got), map[bool]string{true: "y", false: "ies"}[len(got) == 1],
+			before, group.Epoch())
+		// nothing new and no epoch crossed: this reader is at its own ceiling's head, which under F0
+		// is the only "caught up" a reader can observe about itself.
+		if len(got) == 0 && group.Epoch() == before {
+			return union, rounds
+		}
+	}
+	fail("%s did not settle after %d Receive round(s), stalled at epoch %d having read %d entr%s.\n"+
+		"  Under item 246's ceiling a reader walks forward ONE EPOCH PER ROUND TRIP, so this loop ends\n"+
+		"  when a round answers nothing AND crosses nothing. A group that never reaches that is not a\n"+
+		"  slow drain: it is a reader whose epoch or cursor keeps moving without converging, and the\n"+
+		"  per-round lines above say which of the two it is.",
+		who, maxRounds, group.Epoch(), len(union),
+		map[bool]string{true: "y", false: "ies"}[len(union) == 1])
+	return nil, nil
 }
 
 // opens is one direction of a group chat: [receive] on the far side, then the assertion that the
@@ -1956,10 +2065,51 @@ func firstDifference(want string, got string) int {
 	return -1
 }
 
+// scanForCredentials counts the JWT prefix in everything this run has written SO FAR and announces a
+// disclosure if it finds any. It answers the count.
+//
+// IT HAS TWO CALLERS AND THAT IS THE WHOLE POINT OF IT BEING A FUNCTION. The final step scans because
+// a clean run should say so; [fail] scans because THE PRINT MOST LIKELY TO CARRY A CREDENTIAL IS THE
+// FAIL LINE ITSELF -- the errors formatted into it come from four packages this file does not own,
+// which is the file's own stated reason for having the check at all. Every failure path here ends in
+// os.Exit, so a scan that lived only in the final step would be a scanner the failing run never
+// reaches: exactly the run whose log an operator is about to paste into a ticket.
+//
+// THAT WAS THE DEFECT THIS SHAPE REPAIRS, and it was measured on the built binary rather than read.
+// Before it, `liveprobe -server not-a-valid-id ...` printed one FAIL line and the read-back's own
+// success line never appeared at all -- the scan sat in the last statement of main, which os.Exit
+// skips. Both arms of the repair were then driven: with no needle anywhere the failing run prints
+// nothing extra, and with a FABRICATED JWT-shaped value in the flag the failing run prints the
+// disclosure.
+//
+// IT DOES NOT CALL [fail] AND THAT IS NOT A STYLE CHOICE: [fail] is one of its two callers, so a
+// scanner that failed would recurse for ever on the one run where it matters. The final step wraps
+// the count in a [check] instead, which is where the assertion belongs.
+//
+// THE NEEDLE IS NOT IN WHAT IT PRINTS. A disclosure line that named the prefix would put a hit in
+// the very log it is telling the operator to grep, and the next run's scan would find it.
+func scanForCredentials(about string) int {
+	held, announce := transcript.count(credentialNeedle)
+	if announce {
+		fmt.Fprintf(errOut, "\n"+
+			"CREDENTIAL DISCLOSURE: %d occurrence(s) of the three-octet prefix every JWT this system\n"+
+			"  mints begins with, in %s.\n"+
+			"  A CREDENTIAL HAS REACHED THE LOG. Find them with `grep -c` for that prefix over this\n"+
+			"  run's output, treat the credentials the three -a/-b/-c files hold as DISCLOSED, and mint\n"+
+			"  replacements before anything else.\n", held, about)
+	}
+	return held
+}
+
 func fail(format string, args ...any) {
 	if current != "" {
 		fmt.Fprintf(errOut, "\nFAIL at step %d (%s)\n", steps, current)
 	}
 	fmt.Fprintf(errOut, "FAIL: "+format+"\n", args...)
+	// THE SCAN RUNS ON THE FAILING PATH TOO, and it runs AFTER the print rather than over a
+	// pre-formatted copy of it: `errOut` tees into the transcript, so by this line the FAIL text and
+	// the step line above it are already octets the scan can see. That is why this costs one call and
+	// no duplicated formatting -- and why deleting the tee on `errOut` would silently narrow it.
+	scanForCredentials("this run's output, including the FAIL line above")
 	os.Exit(1)
 }

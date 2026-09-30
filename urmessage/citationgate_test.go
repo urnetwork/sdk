@@ -61,18 +61,33 @@ import (
 // citationDeclaredElsewhere is every cited name that lives in a SIBLING repository rather than in
 // this one, with where it lives and why this file cannot simply look.
 //
-// WHY A TABLE AND NOT A WALK OF ../connect. connect's own cross-repo gate reads ../../sdk, so the
+// WHY A TABLE AND NOT A WALK OF THE SIBLING. connect's own cross-repo gate reads ../../sdk, so the
 // precedent for reaching across exists -- and the cost is what decides against it here: a walk of
 // a sibling checkout makes THIS repository's suite depend on that checkout being present and at a
 // compatible commit, so a developer with only `sdk` cloned gets a red suite about somebody else's
 // file layout. A table costs one line per citation, needs no second checkout, and -- because it is
-// held both ways below -- reports a connect rename as loudly as a walk would. What it cannot do is
-// notice that the named test has been DELETED in connect while its name stays in this table; that
-// residual is stated here rather than left to be found, and the reading that closes it is connect's
-// own suite going red on the deletion.
+// held both ways below -- reports a rename over there as loudly as a walk would. What it cannot do
+// is notice that the named test has been DELETED in the sibling while its name stays in this table;
+// that residual is stated here rather than left to be found, and the reading that closes it is that
+// sibling's own suite going red on the deletion.
+//
+// AND THE ARGUMENT IS STRICTLY STRONGER FOR msgrepo THAN FOR connect, which is worth saying now that
+// an entry names it. `go.mod` replaces connect to ../connect, so connect's source is already a
+// requirement of this module's build and the godoc gate below walks it for that reason. msgrepo
+// appears in this module's go.mod nowhere at all -- it is the SERVER -- so a walk of it would add a
+// checkout this build does not need for any other purpose.
 var citationDeclaredElsewhere = map[string]string{
 	"TestABodyNoRungCouldHoldCostsNeitherAnIndexNorAGeneration": "connect/messagegroup/mlsframe_test.go -- " +
 		"the frame-size ladder is connect's and the cost it prices is read from this side",
+	// THE FIRST msgrepo ENTRY IN THIS TABLE, and it is read rather than named: that case walks a
+	// member holding read_key[1] from epoch 1 to epoch 3, asserts THREE round trips for three
+	// epochs ("one per epoch"), that every page comes back Complete, and that the walk arrives
+	// holding records 1..12. It is ledger item 246's own acceptance condition -- F0 is wrong if a
+	// behind member cannot walk forward under the ceiling -- and it is cited from this side because
+	// it is why liveprobe's one drain call site exists.
+	"TestAMemberSeveralEpochsBehindWalksForwardOneEpochPerRoundTrip": "msgrepo/api/epochceiling_test.go -- " +
+		"item 246's F0 ceiling paced end to end at the server: one epoch per round trip, every page " +
+		"Complete, and the walk arrives at the present rather than short of it",
 	"TestARemovalWhoseLeafIsRefilledInTheSameCommitIsStillNamedByTheStagedCommit": "connect/messagegroup/" +
 		"engineremovewithextensions_test.go -- ledger ruling 51's derivation held one layer down, " +
 		"on the seam's own PendingEpoch.RemovedLeaves",
@@ -382,9 +397,10 @@ func citationNearest(name string, declared map[string][]string) string {
 // of this module's own build -- without it nothing here COMPILES -- so resolving the 111 links
 // into connect costs this suite no dependency it did not already have, and a rename in connect
 // reports here instead of going quiet. That is the measured difference from
-// citationDeclaredElsewhere above, whose targets are connect's `_test.go` files, which the build
-// does not need and which therefore stay a table. (3) GOROOT and the module cache, which this gate
-// does not read and which godocLinkOutsideThisBuild disposes of by name, held both ways.
+// citationDeclaredElsewhere above, whose targets are `_test.go` files in connect AND in msgrepo --
+// which the build does not need, and msgrepo is not in this module's go.mod at all -- and which
+// therefore stay a table. (3) GOROOT and the module cache, which this gate does not read and
+// which godocLinkOutsideThisBuild disposes of by name, held both ways.
 //
 // AND THE PRECEDENCE IS UNCHANGED: a link whose first element is a TYPE declared here is a member
 // link and is resolved here whatever else it looks like, so [mls.ErrNoOwner] and
@@ -596,9 +612,10 @@ func godocReadDeclarations(one *godocPackage, path string) error {
 // makes connect's source a hard requirement of this module rather than a courtesy: without that
 // directory this module does not COMPILE, so resolving a link into it costs this suite no
 // dependency it did not already have. That is the measured difference from
-// citationDeclaredElsewhere 300 lines up, whose targets are connect's `_test.go` files -- which
-// the build does NOT need -- and which therefore stays a table. Reading the directive rather than
-// writing the path down means a re-layout of the workspace moves this gate with it.
+// citationDeclaredElsewhere 300 lines up, whose targets are `_test.go` files in connect AND in
+// msgrepo -- which the build does NOT need, and msgrepo is in this module's go.mod nowhere -- and
+// which therefore stays a table. Reading the directive rather than writing the path down means a
+// re-layout of the workspace moves this gate with it.
 type godocModule struct {
 	// path is this module's own import path, off go.mod's `module` line.
 	path string
