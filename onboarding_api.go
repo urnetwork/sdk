@@ -360,7 +360,8 @@ type StripePaymentSheetResult struct {
 type StripePaymentSheetCallback connect.ApiCallback[*StripePaymentSheetResult]
 
 // StripePaymentSheet prepares an inline Stripe PaymentSheet purchase of Pro
-// (the non-Play Android flavors, Windows and Linux only).
+// (the Stripe-billed apps only: the non-Play Android flavors, Windows, Linux
+// and the direct-download macOS build).
 func (self *Api) StripePaymentSheet(args *StripePaymentSheetArgs, callback StripePaymentSheetCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(

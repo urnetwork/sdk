@@ -322,6 +322,241 @@ func TestStripePaymentIntentAndCustomerPortal(t *testing.T) {
 	}
 }
 
+// TestStripePaymentSheet pins the inline pay sheet call the Stripe-billed
+// apps (the non-Play Android flavors, Windows, Linux and the direct-download
+// macOS build) make: the server's route, the wire args, and every field of
+// the server's StripePaymentSheetResult, including the RFC 3339 trial end the
+// binding carries as a string.
+func TestStripePaymentSheet(t *testing.T) {
+	var path, method, body atomic.Value
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		path.Store(r.URL.Path)
+		method.Store(r.Method)
+		b, _ := io.ReadAll(r.Body)
+		body.Store(string(b))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"customer_id": "cus_test",
+			"ephemeral_key_secret": "ek_test_secret",
+			"setup_intent_client_secret": "seti_test_secret",
+			"intent_type": "setup",
+			"subscription_id": "sub_test",
+			"publishable_key": "pk_test",
+			"tier": "regional",
+			"currency": "USD",
+			"plan": "yearly",
+			"amount_first_period_usd": 3,
+			"regular_period_usd": 4,
+			"trial_days": 14,
+			"trial_end_at": "2026-10-14T00:00:00Z",
+			"offer_applied": true
+		}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*StripePaymentSheetResult](context.Background())
+	api.StripePaymentSheet(
+		&StripePaymentSheetArgs{
+			Plan:              PlanYearly,
+			StorefrontCountry: "RU",
+			StripeVersion:     "2024-06-20",
+		},
+		callback,
+	)
+	r := awaitApiResult(t, c, "StripePaymentSheet never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if got := path.Load(); got != "/subscription/stripe/payment-sheet" {
+		t.Errorf("path = %v", got)
+	}
+	if got := method.Load(); got != http.MethodPost {
+		t.Errorf("method = %v", got)
+	}
+	var sent map[string]any
+	if err := json.Unmarshal([]byte(body.Load().(string)), &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent["plan"] != "yearly" || sent["storefront_country"] != "RU" || sent["stripe_version"] != "2024-06-20" {
+		t.Errorf("sent args = %v", sent)
+	}
+	result := r.Result
+	if result.Error != nil {
+		t.Fatalf("unexpected error: %+v", result.Error)
+	}
+	if result.CustomerId != "cus_test" ||
+		result.EphemeralKeySecret != "ek_test_secret" ||
+		result.SetupIntentClientSecret != "seti_test_secret" ||
+		result.PaymentIntentClientSecret != "" ||
+		result.IntentType != StripeIntentTypeSetup ||
+		result.SubscriptionId != "sub_test" ||
+		result.PublishableKey != "pk_test" ||
+		result.Tier != "regional" ||
+		result.Currency != "USD" ||
+		result.Plan != PlanYearly {
+		t.Errorf("result = %+v", result)
+	}
+	if result.AmountFirstPeriodUsd != 3 || result.RegularPeriodUsd != 4 || result.TrialDays != 14 || !result.OfferApplied {
+		t.Errorf("offer fields = %+v", result)
+	}
+	if result.TrialEndAt != "2026-10-14T00:00:00Z" {
+		t.Errorf("trial_end_at = %q", result.TrialEndAt)
+	}
+	if _, err := time.Parse(time.RFC3339, result.TrialEndAt); err != nil {
+		t.Errorf("trial_end_at is not RFC 3339: %v", err)
+	}
+}
+
+func TestStripePaymentSheetMonthlyOmitsOptionalArgs(t *testing.T) {
+	var body atomic.Value
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body.Store(string(b))
+		w.Header().Set("Content-Type", "application/json")
+		// the monthly plan has no trial: a PaymentIntent and no trial_end_at
+		fmt.Fprint(w, `{
+			"customer_id": "cus_test",
+			"ephemeral_key_secret": "ek_test_secret",
+			"payment_intent_client_secret": "pi_test_secret",
+			"intent_type": "payment",
+			"subscription_id": "sub_test",
+			"publishable_key": "pk_test",
+			"tier": "standard",
+			"currency": "USD",
+			"plan": "monthly",
+			"amount_first_period_usd": 0.5,
+			"regular_period_usd": 0.5,
+			"trial_days": 0,
+			"offer_applied": false
+		}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*StripePaymentSheetResult](context.Background())
+	api.StripePaymentSheet(&StripePaymentSheetArgs{Plan: PlanMonthly}, callback)
+	r := awaitApiResult(t, c, "StripePaymentSheet never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	// the server treats a missing storefront and stripe version as unknown;
+	// neither key is sent when unset
+	sentBody := body.Load().(string)
+	if strings.Contains(sentBody, "storefront_country") || strings.Contains(sentBody, "stripe_version") {
+		t.Errorf("empty optional args were serialized: %s", sentBody)
+	}
+	result := r.Result
+	if result.IntentType != StripeIntentTypePayment ||
+		result.PaymentIntentClientSecret != "pi_test_secret" ||
+		result.SetupIntentClientSecret != "" {
+		t.Errorf("intent = %+v", result)
+	}
+	if result.TrialDays != 0 || result.TrialEndAt != "" || result.OfferApplied {
+		t.Errorf("trial fields = %+v", result)
+	}
+}
+
+func TestStripePaymentSheetError(t *testing.T) {
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// the server's exact payload (controller.stripePaymentSheetError)
+		fmt.Fprint(w, `{"amount_first_period_usd":0,"regular_period_usd":0,"trial_days":0,"offer_applied":false,"error":{"message":"Unknown plan."}}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*StripePaymentSheetResult](context.Background())
+	api.StripePaymentSheet(&StripePaymentSheetArgs{Plan: "weekly"}, callback)
+	r := awaitApiResult(t, c, "StripePaymentSheet never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if r.Result.Error == nil || r.Result.Error.Message != "Unknown plan." {
+		t.Errorf("error = %+v", r.Result.Error)
+	}
+	if r.Result.CustomerId != "" || r.Result.SubscriptionId != "" {
+		t.Errorf("error result carried ids: %+v", r.Result)
+	}
+}
+
+// TestStripePrices pins the price lookup the Stripe-billed apps make before
+// showing the pay sheet: a GET with the storefront as a query parameter
+// (the server reads ?storefront_country), and every field of the server's
+// StripePricesResult.
+func TestStripePrices(t *testing.T) {
+	var path, method, query atomic.Value
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		path.Store(r.URL.Path)
+		method.Store(r.Method)
+		query.Store(r.URL.Query().Get("storefront_country"))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"tier": "regional",
+			"currency": "USD",
+			"yearly_price_id": "price_yearly_test",
+			"monthly_price_id": "price_monthly_test",
+			"yearly_usd": 4,
+			"monthly_usd": 0.5,
+			"publishable_key": "pk_test",
+			"onboarding_coupon_id": "onboarding25",
+			"offer_eligible": true
+		}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*StripePricesResult](context.Background())
+	api.StripePrices("RU", callback)
+	r := awaitApiResult(t, c, "StripePrices never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if got := path.Load(); got != "/subscription/stripe/prices" {
+		t.Errorf("path = %v", got)
+	}
+	if got := method.Load(); got != http.MethodGet {
+		t.Errorf("method = %v", got)
+	}
+	if got := query.Load(); got != "RU" {
+		t.Errorf("storefront_country query = %v", got)
+	}
+	result := r.Result
+	if result.Error != nil {
+		t.Fatalf("unexpected error: %+v", result.Error)
+	}
+	if result.Tier != "regional" ||
+		result.Currency != "USD" ||
+		result.YearlyPriceId != "price_yearly_test" ||
+		result.MonthlyPriceId != "price_monthly_test" ||
+		result.YearlyUsd != 4 ||
+		result.MonthlyUsd != 0.5 ||
+		result.PublishableKey != "pk_test" ||
+		result.OnboardingCouponId != "onboarding25" ||
+		!result.OfferEligible {
+		t.Errorf("result = %+v", result)
+	}
+}
+
+func TestStripePricesWithoutStorefront(t *testing.T) {
+	var rawQuery atomic.Value
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		rawQuery.Store(r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		// the server's exact payload when prices are not configured
+		fmt.Fprint(w, `{"tier":"","currency":"","yearly_price_id":"","monthly_price_id":"","yearly_usd":0,"monthly_usd":0,"publishable_key":"","offer_eligible":false,"error":{"message":"Prices are not configured."}}`)
+	})
+
+	callback, c := connect.NewBlockingApiCallback[*StripePricesResult](context.Background())
+	// whitespace is an unknown storefront, not a query value
+	api.StripePrices("  ", callback)
+	r := awaitApiResult(t, c, "StripePrices never returned")
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if got := rawQuery.Load(); got != "" {
+		t.Errorf("query = %q, want none", got)
+	}
+	if r.Result.Error == nil || r.Result.Error.Message != "Prices are not configured." {
+		t.Errorf("error = %+v", r.Result.Error)
+	}
+	if r.Result.OfferEligible || r.Result.YearlyPriceId != "" {
+		t.Errorf("error result carried prices: %+v", r.Result)
+	}
+}
+
 func TestVerifyPlayPurchase(t *testing.T) {
 	var path, body atomic.Value
 	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
