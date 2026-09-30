@@ -103,3 +103,42 @@ func TestDeviceLocalContractStatusErrorClears(t *testing.T) {
 	device.updateContractStatus(&connect.ContractStatus{})
 	connect.AssertEqual(t, false, device.GetContractStatus().InsufficientBalance)
 }
+
+type testingContractStatusChangeListener func(*ContractStatus)
+
+func (self testingContractStatusChangeListener) ContractStatusChanged(contractStatus *ContractStatus) {
+	self(contractStatus)
+}
+
+// TestDeviceLocalContractStatusClearsOnDisconnect asserts the contract status
+// is dropped with the connection that reported it. An insufficient balance
+// error previously outlived a disconnect: nothing can report a healthy status
+// while disconnected, so the latched error kept the UI on the subscribe
+// prompt even after the balance was refreshed.
+func TestDeviceLocalContractStatusClearsOnDisconnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	device := testing_newContractStatusDevice(ctx, t, 10, 10*time.Minute)
+	defer device.Close()
+
+	insufficientBalance := protocol.ContractError_InsufficientBalance
+	device.updateContractStatus(&connect.ContractStatus{Error: &insufficientBalance})
+	connect.AssertEqual(t, true, device.GetContractStatus().InsufficientBalance)
+
+	var changes []*ContractStatus
+	sub := device.AddContractStatusChangeListener(testingContractStatusChangeListener(func(contractStatus *ContractStatus) {
+		changes = append(changes, contractStatus)
+	}))
+	defer sub.Close()
+
+	device.SetConnectLocation(nil)
+
+	if device.GetContractStatus().InsufficientBalance {
+		t.Fatalf("insufficient balance outlived the disconnect")
+	}
+	connect.AssertEqual(t, 0, testing_contractStatusUpdateCount(device))
+	if len(changes) != 1 || changes[0].InsufficientBalance {
+		t.Fatalf("disconnect did not publish the cleared contract status: %v", changes)
+	}
+}
