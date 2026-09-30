@@ -4268,6 +4268,38 @@ func (self *Group) openPageLocked(fetched *protocol.FetchResponse, walk *pageWal
 				walk.unobtainable[header.Epoch] = true
 				return true
 			}
+			// AND THE SAME FACT ARRIVING FROM ITEM 243's TABLE RATHER THAN FROM THE STORE. A
+			// derivation for an epoch this session holds no pq_secret for answers
+			// ErrPqSecretUnknownEpoch, and for a PAST epoch that is the same news as the two
+			// above: either this device never stood in that epoch, or the epoch fell out of
+			// messagegroup.PastEpochWindow. Both are history no key here reaches, which is
+			// GapOutOfWindow's own definition, and no re-fetch repairs either.
+			//
+			// FOUND BY liveprobe STEP 11 AND BY NOTHING ELSE, ledger item 262: a device removed
+			// at epoch 8 that joined at epoch 2 came back from a restart, re-walked from a cursor
+			// nothing persists, and counted its 602 PRE-JOIN records as failed opens -- the same
+			// records it had counted as out_of_window gaps when it walked them at epoch 2. The two
+			// answers differ because the roads do: at epoch 2 the derivation missed in the STORE
+			// and answered the sentinel above, while at epoch 8 it missed in the per-epoch
+			// pq_secret table item 243 added and answered this one, which this predicate did not
+			// know. Item 243 built a new road to an old fact and this line is the road's arrival.
+			//
+			// THE BOUND `header.Epoch < self.epoch` IS NOT DRIVEN BY ANY CASE IN THIS REPOSITORY
+			// AND IS KEPT ANYWAY: dropping it leaves every test in urmessage and cp3b green, which
+			// is measured and not assumed. It is kept because this arm SILENCES a record -- it
+			// notes a gap and resolves the id, so the cursor moves past it for ever -- and the
+			// shape above the bound is one that repairs itself: a peer that sends at epoch n+1
+			// puts a record above a reader still standing at n, which holds no pq_secret for n+1
+			// until it ingests that commit, and a fetch page truncated between the two delivers
+			// exactly that. Resolved as history, such a record is LOST a second before it would
+			// have opened; left a failure, walk.blocked holds the cursor and the next Receive gets
+			// it. A silencing rule must be no wider than the fact that justifies it, and the fact
+			// here is about PAST epochs. The case that would drive it needs a page boundary placed
+			// between a commit and the records above it; it is owed, not claimed.
+			if errors.Is(err, messagegroup.ErrPqSecretUnknownEpoch) && header.Epoch < self.epoch {
+				walk.unobtainable[header.Epoch] = true
+				return true
+			}
 			return false
 		}
 		if maybeMine {
