@@ -4336,6 +4336,7 @@ func (self *DeviceLocal) applyDestination(
 	sameTransport := false
 	locationChanged := false
 	closed := false
+	contractStatusChanged := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
@@ -4362,6 +4363,16 @@ func (self *DeviceLocal) applyDestination(
 		if self.contractStatusSub != nil {
 			self.contractStatusSub()
 			self.contractStatusSub = nil
+		}
+		// the contract status summarizes the multi client being torn down, so
+		// it goes with the subscription. Otherwise a latched error (e.g.
+		// insufficient balance) outlives the connection that reported it, and
+		// while disconnected no new contract result can ever clear it, so the
+		// UI keeps asking to subscribe after the balance has been refreshed
+		self.orderedContractStatusUpdates = []*contractStatusUpdate{}
+		if self.netContractStatus == nil || *self.netContractStatus != (ContractStatus{}) {
+			self.netContractStatus = &ContractStatus{}
+			contractStatusChanged = true
 		}
 		if self.windowMonitorSub != nil {
 			self.windowMonitorSub()
@@ -4771,6 +4782,9 @@ func (self *DeviceLocal) applyDestination(
 		self.windowStatusChanged(self.GetWindowStatus())
 		self.providerIdentitiesChanged()
 		self.connectedProviderLocationsChanged()
+		if contractStatusChanged {
+			self.contractStatusChanged(self.GetContractStatus())
+		}
 		if provideChanged {
 			self.provideModeChanged(self.GetProvideMode())
 			self.provideChanged(self.GetProvideEnabled())
