@@ -37,6 +37,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -86,6 +87,8 @@ func main() {
 	dir := flag.String("dir", "", "this peer's OWN durable state directory; never the app's and never a copy of it")
 	keyPackagePath := flag.String("keypackage", "", "file the app wrote its key package to; consumed and deleted")
 	invitePath := flag.String("invite", "", "file this helper writes the invite to; KEY MATERIAL, 0600, outside any repo")
+	joinCode := flag.String("joincode", "", "a base64 JOIN CODE pasted out of the app (or @FILE holding one); replaces -keypackage, and is what works between two machines")
+	printInvite := flag.Bool("printinvite", false, "print the invite as a base64 INVITE CODE on stdout, for pasting back into the app")
 	waitFor := flag.Duration("wait", 5*time.Minute, "how long to wait for the key package file to appear")
 	serve := flag.Duration("serve", 4*time.Minute, "how long to keep fetching after the sends, so the app's own lines are seen")
 	poll := flag.Duration("poll", 3*time.Second, "how often to fetch while serving")
@@ -93,10 +96,26 @@ func main() {
 	reconnect := flag.Duration("reconnect", 0, "how long Device.Connect rides out the ~60s reconnect window; 0 takes urmessage's own default")
 	flag.Parse()
 
-	if *jwtPath == "" || *dir == "" || *keyPackagePath == "" || *invitePath == "" {
-		fail("-jwt, -dir, -keypackage and -invite are all required.\n" +
+	// TWO ROADS IN AND TWO ROADS OUT, and a run needs one of each.
+	//
+	//   in:   -keypackage FILE   the developer road: the app writes it beside its credential
+	//         -joincode  TEXT    the person road: they copied it out of the app and sent it
+	//   out:  -invite FILE       the developer road: the app polls for it on the same disk
+	//         -printinvite       the person road: paste the printed code back into their app
+	//
+	// The CODE roads are the ones that work when the two people are not at the same machine,
+	// which is every test with a real second person in it.
+	if *jwtPath == "" || *dir == "" {
+		fail("-jwt and -dir are required.\n" +
 			"  -jwt is this PEER's credential (user2). Handing it the app's (user1) is the one\n" +
 			"  mistake this helper cannot detect and the one that breaks both AEADs.")
+	}
+	if *keyPackagePath == "" && *joinCode == "" {
+		fail("one of -keypackage or -joincode is required: this helper cannot mint the app's key\n" +
+			"  package, only consume it.")
+	}
+	if *invitePath == "" && !*printInvite {
+		fail("one of -invite or -printinvite is required: an invite nobody receives joins nobody.")
 	}
 
 	server, err := connect.ParseId(*serverId)
@@ -181,21 +200,47 @@ func main() {
 	fmt.Printf("  nothing to restore; this is a first run and the handshake below is how the app\n" +
 		"  gets into a group at all\n")
 
-	say("waiting for the app's key package at " + *keyPackagePath)
-	fmt.Printf("  THE APP PUBLISHES IT. Launch URmessage.exe with --live; it writes its key package\n" +
-		"  here when it holds no group, then polls for the invite this helper writes back.\n")
-	keyPackage, err := awaitFile(ctx, *keyPackagePath, *waitFor, *poll)
-	if err != nil {
-		fail("no key package: %v\n"+
-			"  Nothing here mints one: it is the APP's device identity and only the app's device\n"+
-			"  holds the private halves a Welcome addressed to it is opened with.", err)
-	}
-	fmt.Printf("  read %d octets\n", len(keyPackage))
-	// CONSUMED AND DELETED. A key package is single use; leaving the file behind invites a second
-	// run to build an invite the app cannot open.
-	if err := os.Remove(*keyPackagePath); err != nil {
-		fmt.Printf("  WARNING: the key package file could not be removed (%v). Remove it by hand:\n"+
-			"  a stale one read by a later run builds an invite that will not join.\n", err)
+	var keyPackage []byte
+	if *joinCode != "" {
+		say("reading the join code")
+		text := *joinCode
+		if strings.HasPrefix(text, "@") {
+			raw, err := os.ReadFile(strings.TrimPrefix(text, "@"))
+			if err != nil {
+				fail("read join code file: %v", err)
+			}
+			text = string(raw)
+		}
+		// WHITESPACE OUT FIRST. A code that has been through a mail client or a chat window comes
+		// back wrapped, and refusing it would blame the person for their mail client.
+		text = strings.Join(strings.Fields(text), "")
+		decoded, err := base64.StdEncoding.DecodeString(text)
+		if err != nil {
+			fail("that join code is not base64: %v\n"+
+				"  Copy the WHOLE code out of the app - it is one long line.", err)
+		}
+		keyPackage = decoded
+		fmt.Printf("  %d characters decoded to %d octets\n", len(text), len(keyPackage))
+		fmt.Printf("  A JOIN CODE IS NOT A SECRET: it is a public offer to be added, and whoever\n" +
+			"  holds it can only add that device to a group. The INVITE below is the secret.\n")
+	} else {
+		say("waiting for the app's key package at " + *keyPackagePath)
+		fmt.Printf("  THE APP PUBLISHES IT. Launch URmessage.exe with --live; it writes its key package\n" +
+			"  here when it holds no group, then polls for the invite this helper writes back.\n")
+		raw, err := awaitFile(ctx, *keyPackagePath, *waitFor, *poll)
+		if err != nil {
+			fail("no key package: %v\n"+
+				"  Nothing here mints one: it is the APP's device identity and only the app's device\n"+
+				"  holds the private halves a Welcome addressed to it is opened with.", err)
+		}
+		keyPackage = raw
+		fmt.Printf("  read %d octets\n", len(keyPackage))
+		// CONSUMED AND DELETED. A key package is single use; leaving the file behind invites a
+		// second run to build an invite the app cannot open.
+		if err := os.Remove(*keyPackagePath); err != nil {
+			fmt.Printf("  WARNING: the key package file could not be removed (%v). Remove it by hand:\n"+
+				"  a stale one read by a later run builds an invite that will not join.\n", err)
+		}
 	}
 
 	// ── 3. found, add, open ────────────────────────────────────────────────────────────────
@@ -233,26 +278,51 @@ func main() {
 	fmt.Printf("  group %s at epoch %d, open on the server\n", hex.EncodeToString(group.Id()), group.Epoch())
 
 	// ── 4. hand the invite over ────────────────────────────────────────────────────────────
-	say("writing the invite to " + *invitePath)
-	fmt.Printf("  THIS FILE IS KEY MATERIAL IN FULL: whoever reads it is in this group. It is written\n" +
-		"  0600 and the app deletes it the moment it has joined.\n")
-	if err := writeSecret(*invitePath, encoded); err != nil {
-		fail("write invite: %v", err)
+	if *invitePath != "" {
+		say("writing the invite to " + *invitePath)
+		fmt.Printf("  THIS FILE IS KEY MATERIAL IN FULL: whoever reads it is in this group. It is written\n" +
+			"  0600 and the app deletes it the moment it has joined.\n")
+		if err := writeSecret(*invitePath, encoded); err != nil {
+			fail("write invite: %v", err)
+		}
+		fmt.Printf("  %d octets written\n", len(encoded))
 	}
-	fmt.Printf("  %d octets written\n", len(encoded))
+	if *printInvite {
+		say("the INVITE CODE - paste this back into the app that sent the join code")
+		fmt.Printf("  WHOEVER READS THE NEXT LINE IS IN THIS GROUP. Send it the way you would send a\n" +
+			"  password, give it to ONE person, and do not post it where a copy is kept. It can\n" +
+			"  be used once.\n\n")
+		code := base64.StdEncoding.EncodeToString(encoded)
+		fmt.Println(code)
+		fmt.Printf("\n  %d octets as %d characters\n", len(encoded), len(code))
+	}
 
 	// ── 5. wait for the app to actually be in the group ────────────────────────────────────
 	// THE APP DELETING THE INVITE IS THE ONLY SIGNAL THERE IS. A member joining is invisible from
 	// here: MLS's Welcome is opened by the joiner and the server is told nothing. So this waits on
 	// the file going away rather than pretending to observe a membership.
-	say("waiting for the app to consume the invite")
-	joined := awaitGone(ctx, *invitePath, *waitFor, *poll)
-	if joined {
-		fmt.Printf("  the invite file is gone, so the app has read it\n")
+	// AND IT IS ONLY A SIGNAL WHEN THERE IS A FILE. With -printinvite and no -invite there is
+	// nothing on disk to go away, and awaitGone answers true immediately for an empty path - so
+	// the old line printed "the app has read it" about a file that was never written. That is a
+	// pass with no subject: the strongest thing it could have meant is still unobserved, and
+	// saying it anyway is worse than saying nothing. The code road has no confirmation here at
+	// all, and the honest report is to say which road this run took and what it did not see.
+	if *invitePath != "" {
+		say("waiting for the app to consume the invite")
+		joined := awaitGone(ctx, *invitePath, *waitFor, *poll)
+		if joined {
+			fmt.Printf("  the invite file is gone, so the app has read it\n")
+		} else {
+			fmt.Printf("  WARNING: the invite is still on disk. The sends below still happen and are\n" +
+				"  still readable whenever the app does join - a record sealed at epoch 1 opens for\n" +
+				"  every member of epoch 1, whenever they arrive. Delete it by hand when done.\n")
+		}
 	} else {
-		fmt.Printf("  WARNING: the invite is still on disk. The sends below still happen and are\n" +
-			"  still readable whenever the app does join — a record sealed at epoch 1 opens for\n" +
-			"  every member of epoch 1, whenever they arrive. Delete it by hand when done.\n")
+		say("the invite was printed, not written, so nothing here can see it being used")
+		fmt.Printf("  A MEMBER JOINING IS INVISIBLE FROM THIS SIDE: MLS's Welcome is opened by the\n" +
+			"  joiner and the server is told nothing. With a file there is at least a deletion to\n" +
+			"  watch; with a pasted code there is not. What WILL show that they joined is a line\n" +
+			"  from them arriving in the fetch below, and nothing before that.\n")
 	}
 
 	// ── 6 and 7: the half a restored run shares with this one ──────────────────────────────
