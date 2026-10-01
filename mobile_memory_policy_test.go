@@ -1,11 +1,18 @@
 package sdk
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/urnetwork/connect"
 )
+
+func TestMobileRuntimePolicyMatchesProductionPlatforms(t *testing.T) {
+	if got, want := mobileRuntime(), runtime.GOOS == "android" || runtime.GOOS == "ios"; got != want {
+		t.Fatalf("mobile policy on %s = %t, want %t", runtime.GOOS, got, want)
+	}
+}
 
 func TestMobileMemoryPolicyAppliesToEveryMobileTarget(t *testing.T) {
 	if got := defaultDeviceLocalMemoryTargetByteCountForPlatform(true); got != mobileSteadyMemoryTargetByteCount {

@@ -177,6 +177,10 @@ func newDeviceLocalPlatformTransportSettings(
 	settings := connect.DefaultPlatformTransportSettingsWithMemoryTarget(
 		memoryTargetByteCount,
 	)
+	// Both provider and destination carriers need the mobile ownership policy;
+	// applying it only in the destination generator leaves a larger provider
+	// target on the desktop carrier path.
+	applyMobileLowMemoryPlatformTransportSettings(settings, memoryTargetByteCount)
 	settings.PlatformTransportBudget = platformTransportBudget
 	if altUrl = strings.TrimSpace(altUrl); altUrl != "" {
 		settings.AltUrl = altUrl

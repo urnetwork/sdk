@@ -36,7 +36,7 @@ func transferMemoryTestDevice(t *testing.T, target ByteCount) (*DeviceLocal, *co
 }
 
 func TestDeviceLocalTransferHierarchyProfilesAndOwnership(t *testing.T) {
-	for _, targetMiB := range []ByteCount{20, 28} {
+	for _, targetMiB := range []ByteCount{20, 28, 32, 64} {
 		t.Run(fmt.Sprint(targetMiB), func(t *testing.T) {
 			device, provider := transferMemoryTestDevice(t, targetMiB*1024*1024)
 			memory := device.transferMemory
@@ -102,7 +102,7 @@ func TestDeviceLocalTransferHierarchyProfilesAndOwnership(t *testing.T) {
 }
 
 func TestDeviceLocalTransferHierarchyRoleOverlapBothDirections(t *testing.T) {
-	for _, targetMiB := range []ByteCount{20, 28} {
+	for _, targetMiB := range []ByteCount{20, 28, 32, 64} {
 		t.Run(fmt.Sprint(targetMiB), func(t *testing.T) {
 			device, _ := transferMemoryTestDevice(t, targetMiB*1024*1024)
 			memory := device.transferMemory
@@ -145,7 +145,7 @@ func TestDeviceLocalTransferHierarchyRoleOverlapBothDirections(t *testing.T) {
 }
 
 func TestDeviceLocalTransferHierarchyRoleResizeFanout(t *testing.T) {
-	for _, targetMiB := range []ByteCount{20, 28} {
+	for _, targetMiB := range []ByteCount{20, 28, 32, 64} {
 		t.Run(fmt.Sprint(targetMiB), func(t *testing.T) {
 			device, provider := transferMemoryTestDevice(t, targetMiB*1024*1024)
 			memory := device.transferMemory

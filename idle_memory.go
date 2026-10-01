@@ -1,7 +1,7 @@
 package sdk
 
 import (
-	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +26,21 @@ const mobileIdleMemoryTrimCooldown = 60 * time.Second
 // fixed control working set, but never collect under the thousands of owners a
 // real transfer burst can create.
 const mobileIdleMemoryMaxOutstandingPoolCount int64 = 16
+
+// Keep the established 24-MiB pressure threshold through the 32-MiB iOS
+// soft-limit profile. A larger mobile allowance can retain three quarters of
+// its actual Go soft limit before quiet reclamation: 48 MiB at Android64.
+// This is neither admission nor a hard footprint bound. The independent
+// physical-pressure trigger and OS memory-pressure callbacks remain unchanged.
+func mobileRuntimeReclaimTargetForLimit(softLimit int64) int64 {
+	return max(int64(mobileSteadyMemoryTargetByteCount), softLimit/4*3+softLimit%4*3/4)
+}
+
+// Read the real runtime limit at this low-frequency boundary, not constructor
+// sizing or a startup-only copy that can become stale after a limit change.
+func currentMobileRuntimeReclaimTarget() int64 {
+	return mobileRuntimeReclaimTargetForLimit(debug.SetMemoryLimit(-1))
+}
 
 // The extension's current documented baseline is roughly 16 MiB below a
 // roughly 50-MiB jetsam boundary. Start a quiet reclaim at 40 MiB by default,
@@ -90,7 +105,7 @@ func mobileMemoryPressureShouldRearm(before, after, target int64) bool {
 // injects runtime/pool counters and the reclaim operation; tests inject exact
 // time and state so no scheduler sleeps are needed for policy coverage.
 type mobileMemoryReclaimer struct {
-	targetByteCount         int64
+	targetByteCount         func() int64
 	physicalTargetByteCount func() int64
 	maxPoolOutstanding      int64
 	quietRetry              time.Duration
@@ -112,7 +127,7 @@ func (self *mobileMemoryReclaimer) attempt() mobileMemoryReclaimResult {
 	if self.physicalTargetByteCount != nil {
 		physicalTargetByteCount = self.physicalTargetByteCount()
 	}
-	if snapshot.runtimeByteCount <= self.targetByteCount &&
+	if snapshot.runtimeByteCount <= self.targetByteCount() &&
 		(physicalTargetByteCount <= 0 ||
 			snapshot.physicalByteCount <= physicalTargetByteCount) {
 		self.poolOutstandingObserved = false
@@ -167,14 +182,14 @@ func mobileMemorySnapshot() mobileMemoryReclaimSnapshot {
 }
 
 func startMobileIdleMemoryTrimmer() {
-	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+	if !mobileRuntime() {
 		return
 	}
 	mobileIdleMemoryTrimmerOnce.Do(func() {
 		mobileIdleMemoryTrimmerStarted.Store(true)
 		go connect.HandleError(func() {
 			reclaimer := &mobileMemoryReclaimer{
-				targetByteCount:         int64(mobileSteadyMemoryTargetByteCount),
+				targetByteCount:         currentMobileRuntimeReclaimTarget,
 				physicalTargetByteCount: mobilePhysicalPressureByteCount.Load,
 				maxPoolOutstanding:      mobileIdleMemoryMaxOutstandingPoolCount,
 				quietRetry:              mobileIdleMemoryTrimRetryDelay,
@@ -202,7 +217,7 @@ func startMobileIdleMemoryTrimmer() {
 					if mobileMemoryPressureShouldRearm(
 						before,
 						after,
-						int64(mobileSteadyMemoryTargetByteCount),
+						currentMobileRuntimeReclaimTarget(),
 					) {
 						mobileRuntimePressureArmed.Store(false)
 					}
@@ -305,7 +320,7 @@ func noteMobileRuntimeFootprint(byteCount int64) {
 		armed := mobileRuntimePressureArmed.Load()
 		nextArmed, signal := mobileRuntimePressureTransition(
 			byteCount,
-			int64(mobileSteadyMemoryTargetByteCount),
+			currentMobileRuntimeReclaimTarget(),
 			armed,
 		)
 		if nextArmed == armed || mobileRuntimePressureArmed.CompareAndSwap(armed, nextArmed) {
