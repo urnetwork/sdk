@@ -92,7 +92,7 @@ _build_android:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2026"; \
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
 	test -s "$$BUILD_DIR/URnetworkSdk-sources.jar"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
@@ -139,7 +139,7 @@ build_apple:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2026"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
 	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
@@ -149,7 +149,7 @@ build_apple:
 		-gcflags "-dwarf=false" \
 		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkExtensionSdk.xcframework" \
-		"github.com/urnetwork/sdk"; \
+		"github.com/urnetwork/sdk/v2026"; \
 	test -d "$$BUILD_DIR/URnetworkExtensionSdk.xcframework"; \
 	./check_apple_size.sh \
 		--sdk "$$BUILD_DIR/URnetworkSdk.xcframework" \
@@ -216,5 +216,5 @@ _init:
 	"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init_tools
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
 	go get golang.org/x/mobile/bind@$(GOMOBILE_VERSION) && \
-	go mod download "github.com/urnetwork/sdk" && \
-	go mod download "github.com/urnetwork/connect";
+	go mod download "github.com/urnetwork/sdk/v2026" && \
+	go mod download "github.com/urnetwork/connect/v2026";
