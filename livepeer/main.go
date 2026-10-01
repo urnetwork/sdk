@@ -89,6 +89,8 @@ func main() {
 	invitePath := flag.String("invite", "", "file this helper writes the invite to; KEY MATERIAL, 0600, outside any repo")
 	joinCode := flag.String("joincode", "", "a base64 JOIN CODE pasted out of the app (or @FILE holding one); replaces -keypackage, and is what works between two machines")
 	printInvite := flag.Bool("printinvite", false, "print the invite as a base64 INVITE CODE on stdout, for pasting back into the app")
+	outbox := flag.String("outbox", "", "a file this peer WATCHES: every line appended to it is sent into the group, so somebody on this side can hold a conversation without restarting and paying the reconnect window again")
+	quiet := flag.Bool("quiet", false, "skip the three scripted lines, the reply and the two reactions; restore, serve, and send only what -outbox gets")
 	waitFor := flag.Duration("wait", 5*time.Minute, "how long to wait for the key package file to appear")
 	serve := flag.Duration("serve", 4*time.Minute, "how long to keep fetching after the sends, so the app's own lines are seen")
 	poll := flag.Duration("poll", 3*time.Second, "how often to fetch while serving")
@@ -141,11 +143,57 @@ func main() {
 
 	// ── 1. Hello ───────────────────────────────────────────────────────────────────────────
 	say("Hello, and what the server advertises")
-	hctx, hcancel := context.WithTimeout(ctx, *timeout)
-	reason, hello, err := p.transport.Hello(hctx, 1)
-	hcancel()
-	if err != nil {
-		fail("hello: %v", err)
+	// RETRIED ACROSS THE OPERATOR'S RECONNECT WINDOW, and this used to be a single shot that
+	// could not survive a restart.
+	//
+	// A client_id that has just re-dialled is not routed to for about sixty seconds, so the FIRST
+	// Hello after any restart is answered by nobody. dial() above builds the device with a
+	// urmessage.ConnectPolicy carrying -reconnect as its budget -- but that policy belongs to
+	// Device.Connect, which is step 2, and THIS call goes straight at the transport. So the budget
+	// was wired, correct, and unreachable: every restart inside the window died here with
+	// "no response carrying this request_id arrived before the deadline", one minute after launch,
+	// before the retrying code was ever reached. Measured twice in a row while a person waited on
+	// the far side of a conversation this process was supposed to be holding up.
+	//
+	// THE BUDGET IS THE SAME ONE, so -reconnect means one thing across this binary. Zero takes a
+	// default comfortably past the window rather than failing on the first attempt, because the
+	// window is a property of the operator and not of how this run was invoked.
+	helloBudget := *reconnect
+	if helloBudget <= 0 {
+		helloBudget = 3 * time.Minute
+	}
+	var reason protocol.Reason
+	var hello *protocol.HelloResponse
+	helloStarted := time.Now()
+	for attempt := 1; ; attempt += 1 {
+		hctx, hcancel := context.WithTimeout(ctx, *timeout)
+		var err error
+		// THE SECOND ARGUMENT IS THE PROTOCOL VERSIONS THIS CLIENT SPEAKS, NOT A REQUEST ID, and
+		// it is 1 on EVERY attempt. The first cut of this loop passed the attempt counter, so the
+		// retry that finally got through the reconnect window announced "I speak v2" and the
+		// server answered REASON_UNSUPPORTED_VERSION -- correctly -- one round trip after the
+		// fix had done its job. Hello(ctx, versions ...uint32) is the signature; the request id
+		// is the transport's own, assigned per call.
+		reason, hello, err = p.transport.Hello(hctx, 1)
+		hcancel()
+		if err == nil {
+			if 1 < attempt {
+				fmt.Printf("  answered on attempt %d, after %v\n", attempt, time.Since(helloStarted).Round(time.Second))
+			}
+			break
+		}
+		if helloBudget <= time.Since(helloStarted) {
+			fail("hello: %v\n"+
+				"  Unanswered for %v, which is past -reconnect. A client_id that has just re-dialled\n"+
+				"  is not routed to for about a minute; if this run followed another under the same\n"+
+				"  account, give it longer or wait before starting it.", err, helloBudget)
+		}
+		fmt.Printf("  reconnecting: Hello attempt %d was not answered (%v); waiting 5s\n", attempt, err)
+		select {
+		case <-ctx.Done():
+			fail("hello: cancelled while waiting out the reconnect window")
+		case <-time.After(5 * time.Second):
+		}
 	}
 	if reason != protocol.Reason_REASON_OK {
 		fail("Hello answered %v, want REASON_OK", reason)
@@ -193,7 +241,7 @@ func main() {
 		} else {
 			fmt.Printf("  the restored group read %d record(s) back\n", len(got))
 		}
-		converse(ctx, group, *serve, *poll)
+		converse(ctx, group, *serve, *poll, *outbox, *quiet)
 		report(group)
 		return
 	}
@@ -326,7 +374,7 @@ func main() {
 	}
 
 	// ── 6 and 7: the half a restored run shares with this one ──────────────────────────────
-	converse(ctx, group, *serve, *poll)
+	converse(ctx, group, *serve, *poll, *outbox, *quiet)
 	report(group)
 }
 
@@ -335,50 +383,56 @@ func main() {
 // IT IS A FUNCTION BECAUSE A RESTORED RUN NEEDS EXACTLY THIS AND NONE OF THE HANDSHAKE. The
 // handshake happens ONCE in the life of a pairing; everything interesting happens here, on every
 // run.
-func converse(ctx context.Context, group *urmessage.Group, serve time.Duration, poll time.Duration) {
+func converse(ctx context.Context, group *urmessage.Group, serve time.Duration, poll time.Duration, outbox string, quiet bool) {
 	// EVERY RUN'S FIRST LINE IS DISTINCT. A second run that re-sent the same three strings would be
 	// indistinguishable, on the far side, from the first run's still being there -- so the clock is
 	// in the text and a new line is visibly new.
-	stamp := time.Now().Format("15:04:05")
-	say("sending real messages: texts, a reply, and a reaction")
-	lines := []string{
-		"Hello from the second device (" + stamp + ") — this line was sealed on another machine.",
-		"This is the URmessage alpha over the real mesh: two accounts, two clients, one group.",
-		"Nothing on this screen was written by the app you are looking at.",
-	}
-	var anchorId []byte
-	for at, line := range lines {
-		sent, err := group.Send(ctx, line)
+	// THE SCRIPT IS SKIPPABLE. Its three lines, the reply and the two reactions exist to prove the
+	// kinds cross. A run whose job is to TALK does not want them: the person on the far side would
+	// have to scroll past a demo to find the conversation.
+	if !quiet {
+		stamp := time.Now().Format("15:04:05")
+		say("sending real messages: texts, a reply, and a reaction")
+		lines := []string{
+			"Hello from the second device (" + stamp + ") — this line was sealed on another machine.",
+			"This is the URmessage alpha over the real mesh: two accounts, two clients, one group.",
+			"Nothing on this screen was written by the app you are looking at.",
+		}
+		var anchorId []byte
+		for at, line := range lines {
+			sent, err := group.Send(ctx, line)
+			if err != nil {
+				fail("Send line %d: %v", at+1, err)
+			}
+			fmt.Printf("  sent record %d message %s: %q\n", sent.RecordId, short(sent.MessageId), line)
+			if at == 0 {
+				anchorId = append([]byte(nil), sent.MessageId...)
+			}
+		}
+
+		// A REPLY carries its parent's NAME and never its text: a receiver renders it by looking the
+		// parent up. Pointing it at this helper's own first line means the app has both halves and can
+		// be seen to have resolved the reference rather than to have carried it.
+		const replyText = "…and this one is a reply to the first line, so the app has a parent to resolve."
+		replySent, err := group.SendReply(ctx, anchorId, replyText)
 		if err != nil {
-			fail("Send line %d: %v", at+1, err)
+			fail("SendReply: %v", err)
 		}
-		fmt.Printf("  sent record %d message %s: %q\n", sent.RecordId, short(sent.MessageId), line)
-		if at == 0 {
-			anchorId = append([]byte(nil), sent.MessageId...)
+		fmt.Printf("  sent a REPLY, record %d, naming %s\n", replySent.RecordId, short(anchorId))
+
+		// A REACTION adds no line of its own: it changes a line that is already there. What comes back
+		// is the reaction's own record id, not a row to render.
+		for _, emoji := range []string{"👍", "🎉"} {
+			reacted, err := group.React(ctx, anchorId, emoji)
+			if err != nil {
+				fail("React %q: %v", emoji, err)
+			}
+			fmt.Printf("  sent a REACTION %s, record %d\n", emoji, reacted.RecordId)
 		}
+
+		// serve: fetch in a loop so the app's own lines are seen here too
 	}
 
-	// A REPLY carries its parent's NAME and never its text: a receiver renders it by looking the
-	// parent up. Pointing it at this helper's own first line means the app has both halves and can
-	// be seen to have resolved the reference rather than to have carried it.
-	const replyText = "…and this one is a reply to the first line, so the app has a parent to resolve."
-	replySent, err := group.SendReply(ctx, anchorId, replyText)
-	if err != nil {
-		fail("SendReply: %v", err)
-	}
-	fmt.Printf("  sent a REPLY, record %d, naming %s\n", replySent.RecordId, short(anchorId))
-
-	// A REACTION adds no line of its own: it changes a line that is already there. What comes back
-	// is the reaction's own record id, not a row to render.
-	for _, emoji := range []string{"👍", "🎉"} {
-		reacted, err := group.React(ctx, anchorId, emoji)
-		if err != nil {
-			fail("React %q: %v", emoji, err)
-		}
-		fmt.Printf("  sent a REACTION %s, record %d\n", emoji, reacted.RecordId)
-	}
-
-	// serve: fetch in a loop so the app's own lines are seen here too
 	say(fmt.Sprintf("fetching every %v for %v, printing what arrives", poll, serve))
 	fmt.Printf("  THERE IS NO PUSH. This transport is a poll and so is the app's; a line the app\n" +
 		"  sends becomes visible here on the next fetch and not before.\n")
@@ -389,12 +443,44 @@ func converse(ctx context.Context, group *urmessage.Group, serve time.Duration, 
 	ingested := group.Stats().Ingested
 	deadline := time.Now().Add(serve)
 	seen := map[string]bool{}
+	// How far into the outbox file this run has already sent. Zero at start, so a file left over
+	// from an earlier run IS re-sent -- which is why the caller gives each run a fresh one.
+	var outboxAt int64
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			fmt.Printf("  cancelled\n")
 			return
 		case <-time.After(poll):
+		}
+		// THE OUTBOX, read before the fetch so a line written while this slept goes out on this
+		// turn rather than the next. BY OFFSET, not by diffing the whole file: the file only ever
+		// grows, and re-reading it whole would re-send everything after any edit.
+		if outbox != "" {
+			if raw, err := os.ReadFile(outbox); err == nil && int64(len(raw)) > outboxAt {
+				fresh := string(raw[outboxAt:])
+				outboxAt = int64(len(raw))
+				for _, line := range strings.Split(fresh, "\n") {
+					line = strings.TrimRight(line, "\r")
+					if strings.TrimSpace(line) == "" {
+						continue
+					}
+					sendStarted := time.Now()
+					sent, err := group.Send(ctx, line)
+					submitMs := time.Since(sendStarted).Milliseconds()
+					if err != nil {
+						// NOT fail(): a refused send must not end a conversation. Say so and keep serving.
+						fmt.Printf("  -> REFUSED: %v\n", err)
+						continue
+					}
+					// THE SUBMIT IS A ROUND TRIP TO THE SERVER AND IS TIMED SEPARATELY from when the far
+					// side SEES it. Those are two different numbers and conflating them is how "the app
+					// feels slow" becomes unanswerable: a 90ms submit followed by a 3s poll is a fast
+					// protocol with a coarse clock, not a slow network.
+					fmt.Printf("  [%s] -> sent record %d in %dms: %q\n",
+						time.Now().Format("15:04:05.000"), sent.RecordId, submitMs, line)
+				}
+			}
 		}
 		got, err := group.Receive(ctx)
 		if err != nil {
@@ -412,7 +498,8 @@ func converse(ctx context.Context, group *urmessage.Group, serve time.Duration, 
 				continue
 			}
 			seen[key] = true
-			fmt.Printf("  <- record %d from %s kind=%s deleted=%v reply_to=%s: %q\n",
+			fmt.Printf("  [%s] <- record %d from %s kind=%s deleted=%v reply_to=%s: %q\n",
+				time.Now().Format("15:04:05.000"),
 				one.RecordId, short(one.SenderHandle), one.Kind, one.Deleted,
 				short(one.ReplyToId), clip(one.Text))
 		}
