@@ -307,6 +307,7 @@ uint64_t urnet_message_group_add_member(uint64_t self, const uint8_t* key_packag
  * the sentence carries urmessage's own stable prefix, which is what a caller branches on -- there
  * is no commit-kind here, because the return value is spent on the invite handle you need to
  * encode an invitation with. */
+uint64_t urnet_message_group_add_member_and_publish(uint64_t self, uint64_t ctx, const uint8_t* key_package, int32_t key_package_len, char** out_error);
 /* buffer-out. WHAT COMES OUT IS KEY MATERIAL: an invite that reaches a third party is a group
  * that third party is in. move it like a private key and destroy it afterwards. */
 bool urnet_message_invite_encode(uint64_t self, uint8_t* out, int32_t* inout_len, char** out_error);
