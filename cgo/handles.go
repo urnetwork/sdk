@@ -4,8 +4,8 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"github.com/urnetwork/glog"
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/glog/v2026"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // opaque handle registry
