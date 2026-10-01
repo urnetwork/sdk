@@ -137,6 +137,79 @@ func TestTheLoopbackHarnessIsNotInTheShippingLibrarysDef(t *testing.T) {
 //
 // WHAT IT DOES NOT HOLD: that the GENERATED exports and the .def agree. That is
 // TestExportedSymbolCompatibilityBaseline's half, over its own list.
+// THE .def IS ONE PROMISE ABOUT THE SHIPPED LIBRARY AND THE HEADER IS THE OTHER, and until this
+// case only the first was kept. A C or C++ consumer needs BOTH: the .def is what the import
+// library is built from, so a name missing there is a LINK error, and the header is what the
+// compiler reads, so a name missing there is a COMPILE error one step earlier.
+//
+// WRITTEN BECAUSE THE SECOND ONE HAPPENED. urnet_message_group_add_member_and_publish was added
+// to exports_message.go and to the .def, and the patch that was meant to declare it in
+// urnetwork_message.h built the explanatory comment and never appended the declaration under it.
+// Nine lines landed, every one of them comment, and the commit message said the symbol was
+// declared. Everything in this module passed: the exports were real, the .def named them, both
+// suites were green. The Windows client found it with C3861, identifier not found, the first
+// time it called the verb -- which is a compile in another repository and is no kind of gate.
+//
+// THE MATCH IS ON THE DECLARATION AND NOT ON THE NAME ANYWHERE IN THE FILE, which is the whole
+// point: the name appeared SEVEN times in that header, all inside comments about it, and a
+// strings.Contains gate would have passed the defect it was written for. What is required is the
+// name followed by an open parenthesis, at the start of a line, which is what a declaration is
+// and what a comment about one is not.
+func TestTheMessagingHeaderDeclaresEveryMessagingExport(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not resolve test path")
+	}
+	root := filepath.Join(filepath.Dir(filename), "..")
+	headerBytes, err := os.ReadFile(filepath.Join(root, "include", "urnetwork_message.h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := strings.ReplaceAll(string(headerBytes), "\r\n", "\n")
+
+	// A DECLARATION, not a mention. `(?m)^[^/*].*\bNAME\(` -- the line must not open a comment
+	// and the name must be followed by its parameter list.
+	declares := func(name string) bool {
+		return regexp.MustCompile(`(?m)^[^/* ].*\b` + regexp.QuoteMeta(name) + `\(`).MatchString(header)
+	}
+
+	b, err := os.ReadFile(filepath.Join(root, "exports_message.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := exportDirective.FindAllStringSubmatch(string(b), -1)
+	if len(found) == 0 {
+		t.Fatal("exports_message.go declares no //export at all, so this case would pass vacuously")
+	}
+	missing := []string{}
+	for _, m := range found {
+		if !declares(m[1]) {
+			missing = append(missing, m[1])
+		}
+	}
+
+	// TWO CONTROLS, AND THE SECOND IS THE ONE THAT MATTERS. The first says the matcher can find a
+	// declaration that is there. The second says it does NOT find a name that appears only in
+	// prose -- without it, a matcher that answered true for every string in the file would pass
+	// this whole case and would have passed the defect it exists for.
+	if !declares("urnet_message_group_add_member") {
+		t.Fatal("CONTROL FAILED: the matcher cannot find a declaration that is in the header")
+	}
+	if declares("urnet_message_this_name_is_in_no_declaration") {
+		t.Fatal("CONTROL FAILED: the matcher answers yes for a name the header does not declare")
+	}
+	const prose = "A JOIN CODE IS NOT A SECRET"
+	if strings.Contains(header, prose) && declares(prose) {
+		t.Fatal("CONTROL FAILED: the matcher treats comment prose as a declaration")
+	}
+
+	if len(missing) != 0 {
+		t.Fatalf("include/urnetwork_message.h does not DECLARE %d of the %d messaging exports, so a C consumer calling them does not compile: %v",
+			len(missing), len(found), missing)
+	}
+	t.Logf("include/urnetwork_message.h declares all %d messaging exports", len(found))
+}
+
 func TestTheDefNamesEveryHandWrittenExportThatShips(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
