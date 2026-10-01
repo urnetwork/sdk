@@ -700,6 +700,43 @@ func urnet_message_group_add_member(self C.uint64_t, keyPackage *C.uint8_t, keyP
 	return C.uint64_t(newHandle(invite))
 }
 
+// urnet_message_group_add_member_and_publish BRINGS SOMEBODY INTO A GROUP THAT IS ALREADY OPEN,
+// which urnet_message_group_add_member above cannot do: that one builds the FOUNDING commit and
+// is refused once the group is open. This one stages a commit at the current epoch, publishes it,
+// and merges only on the server's REASON_OK -- so a refused or lost commit leaves this group
+// exactly where it was.
+//
+// IT IS ROLE-GATED ON THE SENDING SIDE, which is MASTER section 11 (ledger item 242 R2, ruling 1):
+// adding a new identity is an ADMIN's or the OWNER's, and an identity's own second device is its
+// own to add at any role. A member's add is refused HERE, before anything is built, with the same
+// sentence every receiver would have judged it by.
+//
+// THE FAILURE CHANNEL IS THE SENTENCE AND NOT A KIND, unlike urnet_message_group_set_role, and
+// that is a deliberate difference rather than an oversight: this call's RESULT is the invite
+// handle the caller needs in order to encode an invitation, so the return value is spent on that.
+// What a caller loses is the cheap branch between a lost epoch race (worth retrying as-is) and a
+// refusal by role (never worth retrying), and what it gets instead is urmessage's own stable
+// prefix in out_error, which names both. A caller that must branch should match the prefix.
+//
+//export urnet_message_group_add_member_and_publish
+func urnet_message_group_add_member_and_publish(self C.uint64_t, ctx C.uint64_t, keyPackage *C.uint8_t, keyPackageLen C.int32_t, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_message_group_add_member_and_publish")
+	self_, ok := resolveHandle[*urmessage.Group](uint64(self), "urnet_message_group_add_member_and_publish")
+	if !ok || self_ == nil {
+		return 0
+	}
+	ctx_, ok := messageCtx(ctx, "urnet_message_group_add_member_and_publish")
+	if !ok {
+		return 0
+	}
+	invite, err := self_.AddMemberAndPublish(ctx_, goBytes(keyPackage, keyPackageLen))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.uint64_t(newHandle(invite))
+}
+
 // urnet_message_invite_encode is the buffer-out pattern. WHAT COMES OUT IS KEY MATERIAL: two of
 // an invite's four fields are secret (pq_secret, and the MLS init secret inside the Welcome), so
 // an invite that reaches a third party is a group that third party is in. Move it the way you

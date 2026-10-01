@@ -9582,6 +9582,27 @@ func urnet_new_login_view_controller(api C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_message_transport
+func urnet_new_message_transport(config *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_new_message_transport")
+	var config_ *sdk.MessageTransportConfig
+	if config != nil {
+		config_ = &sdk.MessageTransportConfig{}
+		if !goJson(config, config_, "urnet_new_message_transport") {
+			return nil
+		}
+	}
+	r0, err := sdk.NewMessageTransport(config_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_message_transport")
+}
+
 //export urnet_new_network_name_validation_view_controller
 func urnet_new_network_name_validation_view_controller(api C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_new_network_name_validation_view_controller")
@@ -9707,6 +9728,20 @@ func urnet_normal_env_name(envName *C.char) *C.char {
 	defer cgoGuard("urnet_normal_env_name")
 	r0 := sdk.NormalEnvName(goString(envName))
 	return cString(string(r0))
+}
+
+//export urnet_open_stream_store
+func urnet_open_stream_store(dir *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_open_stream_store")
+	r0, err := sdk.OpenStreamStore(goString(dir))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_open_stream_store")
 }
 
 //export urnet_parse_id

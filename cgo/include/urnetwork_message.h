@@ -298,6 +298,15 @@ uint64_t urnet_message_device_join(uint64_t self, uint64_t ctx, uint64_t invite,
 /* the alpha adds exactly ONE member, BEFORE urnet_message_group_open: it is the commit that
  * opens epoch 1. a second add is a second epoch and is refused by name. */
 uint64_t urnet_message_group_add_member(uint64_t self, const uint8_t* key_package, int32_t key_package_len, char** out_error);
+/* ADDS SOMEBODY TO A GROUP THAT IS ALREADY OPEN, which the call above cannot: that one builds the
+ * founding commit and is refused once the group is open. This one stages a commit at the current
+ * epoch, publishes it, and merges only on the server's REASON_OK, so a refused or lost commit
+ * leaves the group where it was. ROLE-GATED ON THE SENDING SIDE: adding a new identity is an
+ * admin's or the owner's (MASTER section 11), and an identity's own second device is its own to
+ * add at any role. Answers 0 and out_error on a refusal, a lost epoch race or a transport failure;
+ * the sentence carries urmessage's own stable prefix, which is what a caller branches on -- there
+ * is no commit-kind here, because the return value is spent on the invite handle you need to
+ * encode an invitation with. */
 /* buffer-out. WHAT COMES OUT IS KEY MATERIAL: an invite that reaches a third party is a group
  * that third party is in. move it like a private key and destroy it afterwards. */
 bool urnet_message_invite_encode(uint64_t self, uint8_t* out, int32_t* inout_len, char** out_error);
