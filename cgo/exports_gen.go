@@ -14220,6 +14220,31 @@ func urnet_network_space_manager_import_network_space_from_json(self C.uint64_t,
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_network_space_manager_migrate_network_space
+func urnet_network_space_manager_migrate_network_space(self C.uint64_t, fromKey *C.char, toKey *C.char) C.bool {
+	defer cgoGuard("urnet_network_space_manager_migrate_network_space")
+	self_, ok := resolveHandle[*sdk.NetworkSpaceManager](uint64(self), "urnet_network_space_manager_migrate_network_space")
+	if !ok {
+		return C.bool(false)
+	}
+	var fromKey_ *sdk.NetworkSpaceKey
+	if fromKey != nil {
+		fromKey_ = &sdk.NetworkSpaceKey{}
+		if !goJson(fromKey, fromKey_, "urnet_network_space_manager_migrate_network_space") {
+			return C.bool(false)
+		}
+	}
+	var toKey_ *sdk.NetworkSpaceKey
+	if toKey != nil {
+		toKey_ = &sdk.NetworkSpaceKey{}
+		if !goJson(toKey, toKey_, "urnet_network_space_manager_migrate_network_space") {
+			return C.bool(false)
+		}
+	}
+	r0 := self_.MigrateNetworkSpace(fromKey_, toKey_)
+	return C.bool(r0)
+}
+
 //export urnet_network_space_manager_remove_network_space
 func urnet_network_space_manager_remove_network_space(self C.uint64_t, networkSpace C.uint64_t) C.bool {
 	defer cgoGuard("urnet_network_space_manager_remove_network_space")

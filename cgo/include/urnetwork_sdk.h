@@ -1526,6 +1526,7 @@ uint64_t urnet_network_space_manager_get_active_network_space(uint64_t self);
 uint64_t urnet_network_space_manager_get_network_space(uint64_t self, const char* key_json);
 char* urnet_network_space_manager_get_network_spaces(uint64_t self);
 uint64_t urnet_network_space_manager_import_network_space_from_json(uint64_t self, const char* network_space_json, char** out_error);
+bool urnet_network_space_manager_migrate_network_space(uint64_t self, const char* from_key_json, const char* to_key_json);
 bool urnet_network_space_manager_remove_network_space(uint64_t self, uint64_t network_space);
 void urnet_network_space_manager_set_active_network_space(uint64_t self, uint64_t network_space);
 uint64_t urnet_network_space_manager_update_network_space(uint64_t self, const char* key_json, urnet_network_space_update_cb callback_update, void* callback_user_data);

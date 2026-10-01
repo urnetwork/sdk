@@ -16737,6 +16737,7 @@ public:
 	NetworkSpace getNetworkSpace(const std::optional<NetworkSpaceKey>& key) const;
 	std::optional<NetworkSpaceList> getNetworkSpaces() const;
 	NetworkSpace importNetworkSpaceFromJson(const std::string& network_space_json) const;
+	bool migrateNetworkSpace(const std::optional<NetworkSpaceKey>& from_key, const std::optional<NetworkSpaceKey>& to_key) const;
 	bool removeNetworkSpace(const NetworkSpace& network_space) const;
 	void setActiveNetworkSpace(const NetworkSpace& network_space) const;
 	NetworkSpace updateNetworkSpace(const std::optional<NetworkSpaceKey>& key, NetworkSpaceUpdate callback) const;
@@ -27322,6 +27323,22 @@ inline NetworkSpace NetworkSpaceManager::importNetworkSpaceFromJson(const std::s
 	if (err_c) {
 		detail::throwError(err_c);
 	}
+	return r;
+}
+inline bool NetworkSpaceManager::migrateNetworkSpace(const std::optional<NetworkSpaceKey>& from_key, const std::optional<NetworkSpaceKey>& to_key) const {
+	std::string from_key_json;
+	const char* from_key_c = nullptr;
+	if (from_key) {
+		from_key_json = nlohmann::json(*from_key).dump();
+		from_key_c = from_key_json.c_str();
+	}
+	std::string to_key_json;
+	const char* to_key_c = nullptr;
+	if (to_key) {
+		to_key_json = nlohmann::json(*to_key).dump();
+		to_key_c = to_key_json.c_str();
+	}
+	bool r = urnet_network_space_manager_migrate_network_space(handle(), from_key_c, to_key_c);
 	return r;
 }
 inline bool NetworkSpaceManager::removeNetworkSpace(const NetworkSpace& network_space) const {

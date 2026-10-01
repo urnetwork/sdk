@@ -16,3 +16,7 @@ urnet_client_event_queue_new_session
 urnet_client_event_queue_pending_count
 urnet_client_event_queue_set_app_version
 urnet_client_event_queue_set_locale
+
+# network space key migration: the desktop apps call this on every launch
+# to move the bundled space from ur.network/main to bringyour.com/main
+urnet_network_space_manager_migrate_network_space
