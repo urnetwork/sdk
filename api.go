@@ -1046,9 +1046,21 @@ type LocationDeviceResult struct {
 }
 
 func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
-	go connect.HandleError(func() {
+	self.getProviderLocations(self.ctx, callback)
+}
+
+// The public API is scoped to the API lifetime. Controllers additionally pass
+// their request lifetime so closing or replacing a search cancels its I/O.
+func (self *Api) getProviderLocations(ctx context.Context, callback FindLocationsCallback) {
+	runAsyncApiRequest(locationsResultCallback(callback), func(callback connect.ApiCallback[*FindLocationsResult]) {
+		ctx, cancel := self.locationsRequestContext(ctx)
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			callback.Result(nil, err)
+			return
+		}
 		connect.HttpGetWithRawFunction(
-			self.ctx,
+			ctx,
 			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/network/provider-locations", self.apiUrl),
 			self.GetByJwt(),
@@ -1059,9 +1071,19 @@ func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
 }
 
 func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
-	go connect.HandleError(func() {
+	self.findProviderLocations(self.ctx, findLocations, callback)
+}
+
+func (self *Api) findProviderLocations(ctx context.Context, findLocations *FindLocationsArgs, callback FindLocationsCallback) {
+	runAsyncApiRequest(locationsResultCallback(callback), func(callback connect.ApiCallback[*FindLocationsResult]) {
+		ctx, cancel := self.locationsRequestContext(ctx)
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			callback.Result(nil, err)
+			return
+		}
 		connect.HttpPostWithRawFunction(
-			self.ctx,
+			ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/find-provider-locations", self.apiUrl),
 			findLocations,
@@ -1069,6 +1091,60 @@ func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callbac
 			&FindLocationsResult{},
 			callback,
 		)
+	})
+}
+
+func (self *Api) locationsRequestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	requestCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(self.ctx, cancel)
+	if self.ctx.Err() != nil {
+		cancel()
+	}
+	return requestCtx, func() {
+		stop()
+		cancel()
+	}
+}
+
+var errLocationsResultInvalid = errors.New("provider locations response is invalid")
+
+func locationsResultCallback(callback FindLocationsCallback) connect.ApiCallback[*FindLocationsResult] {
+	return connect.NewApiCallback(func(result *FindLocationsResult, err error) {
+		if err == nil {
+			if result == nil {
+				err = errLocationsResultInvalid
+			} else {
+				// Empty result sections may be omitted or encoded as null. The
+				// exported list wrappers need concrete empty lists for Len/Get.
+				if result.Groups == nil {
+					result.Groups = NewLocationGroupResultList()
+				}
+				if result.Locations == nil {
+					result.Locations = NewLocationResultList()
+				}
+				if result.Devices == nil {
+					result.Devices = NewLocationDeviceResultList()
+				}
+				// JSON null is valid inside an array but cannot be rendered as a
+				// location. Reject it before entering a platform's callback.
+				for i := 0; i < result.Groups.Len(); i++ {
+					if result.Groups.Get(i) == nil {
+						err = errLocationsResultInvalid
+					}
+				}
+				for i := 0; i < result.Locations.Len(); i++ {
+					if result.Locations.Get(i) == nil {
+						err = errLocationsResultInvalid
+					}
+				}
+				for i := 0; i < result.Devices.Len(); i++ {
+					if result.Devices.Get(i) == nil {
+						err = errLocationsResultInvalid
+					}
+				}
+			}
+		}
+		callback.Result(result, err)
 	})
 }
 

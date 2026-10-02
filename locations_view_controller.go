@@ -117,8 +117,8 @@ type LocationsViewController struct {
 
 	stateLock sync.Mutex
 
-	nextFilterSequenceNumber     int64
-	previousFilterSequenceNumber int64
+	nextFilterSequenceNumber int64
+	filterCancel             context.CancelFunc
 
 	filteredLocations     *FilteredLocations
 	filteredLocationState FilterLocationsState
@@ -135,10 +135,7 @@ func newLocationsViewController(ctx context.Context, device Device) *LocationsVi
 		cancel: cancel,
 		device: device,
 
-		nextFilterSequenceNumber:     0,
-		previousFilterSequenceNumber: 0,
-		filteredLocations:            nil,
-		filteredLocationState:        LocationsError,
+		filteredLocationState: LocationsError,
 
 		filteredLocationListeners: connect.NewCallbackList[FilteredLocationsListener](),
 		// filteredLocationsStateListeners: connect.NewCallbackList[FilteredLocationsStateListener](),
@@ -197,6 +194,9 @@ func (self *LocationsViewController) GetFilteredLocationState() FilterLocationsS
 
 func (self *LocationsViewController) filteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState) {
 	for _, listener := range self.filteredLocationListeners.Get() {
+		if self.ctx.Err() != nil {
+			return
+		}
 		connect.HandleError(func() {
 			listener.FilteredLocationsChanged(locations, state)
 		})
@@ -226,48 +226,46 @@ func (self *LocationsViewController) AddFilteredLocationsListener(listener Filte
 // }
 
 func (self *LocationsViewController) FilterLocations(filter string) {
-	// api call, call callback
 	filter = strings.TrimSpace(filter)
 
-	// locationsVcLog("FILTER LOCATIONS %s", filter)
-	// self.filterLocationsStateChanged(LocationsLoading)
+	self.stateLock.Lock()
+	if self.ctx.Err() != nil {
+		self.stateLock.Unlock()
+		return
+	}
+	previousCancel := self.filterCancel
+	requestCtx, cancel := context.WithCancel(self.ctx)
+	self.filterCancel = cancel
+	self.nextFilterSequenceNumber++
+	filterSequenceNumber := self.nextFilterSequenceNumber
+	self.filteredLocationState = LocationsLoading
+	snapshotLocations := self.filteredLocations
+	self.stateLock.Unlock()
+	if previousCancel != nil {
+		previousCancel()
+	}
 
-	var filterSequenceNumber int64
-	var snapshotLocations *FilteredLocations
-	var snapshotState FilterLocationsState
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.nextFilterSequenceNumber += 1
-		filterSequenceNumber = self.nextFilterSequenceNumber
-
-		self.filteredLocationState = LocationsLoading
-		snapshotLocations = self.filteredLocations
-		snapshotState = self.filteredLocationState
-	}()
-
-	self.filteredLocationsChanged(snapshotLocations, snapshotState)
-
-	// locationsVcLog("POST FILTER LOCATIONS %s", filter)
+	self.filteredLocationsChanged(snapshotLocations, LocationsLoading)
 
 	callback := FindLocationsCallback(connect.NewApiCallback[*FindLocationsResult](
 		func(result *FindLocationsResult, err error) {
-			// locationsVcLog("FIND LOCATIONS RESULT %s %s", result, err)
-
+			defer cancel()
 			update := false
 			var notifyLocations *FilteredLocations
 			var notifyState FilterLocationsState
 			func() {
 				self.stateLock.Lock()
 				defer self.stateLock.Unlock()
-				if self.previousFilterSequenceNumber < filterSequenceNumber {
-					self.previousFilterSequenceNumber = filterSequenceNumber
+				// A transport can return after cancellation. Only the latest
+				// requested query may change this controller's rows or state.
+				if requestCtx.Err() == nil && self.nextFilterSequenceNumber == filterSequenceNumber {
+					self.filterCancel = nil
 					update = true
-					if err == nil {
+					if err == nil && result != nil {
 						self.setFilteredLocationsFromResult(result, filter)
 					} else {
 						self.filteredLocationState = LocationsError
-						self.filteredLocations = nil
+						// Keep the last successful rows available during an outage.
 					}
 					notifyLocations = self.filteredLocations
 					notifyState = self.filteredLocationState
@@ -280,12 +278,12 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 	))
 
 	if filter == "" {
-		self.getApi().GetProviderLocations(callback)
+		self.getApi().getProviderLocations(requestCtx, callback)
 	} else {
 		findLocations := &FindLocationsArgs{
 			Query: filter,
 		}
-		self.getApi().FindProviderLocations(findLocations, callback)
+		self.getApi().findProviderLocations(requestCtx, findLocations, callback)
 	}
 }
 
