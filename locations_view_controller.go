@@ -192,11 +192,16 @@ func (self *LocationsViewController) GetFilteredLocationState() FilterLocationsS
 	return self.filteredLocationState
 }
 
-func (self *LocationsViewController) filteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState) {
+func (self *LocationsViewController) filteredLocationsChanged(sequenceNumber int64, locations *FilteredLocations, state FilterLocationsState) {
 	for _, listener := range self.filteredLocationListeners.Get() {
-		if self.ctx.Err() != nil {
+		self.stateLock.Lock()
+		current := self.ctx.Err() == nil && self.nextFilterSequenceNumber == sequenceNumber
+		self.stateLock.Unlock()
+		if !current {
 			return
 		}
+		// A listener may synchronously replace the query. Recheck before each
+		// following listener, without holding our mutex through foreign code.
 		connect.HandleError(func() {
 			listener.FilteredLocationsChanged(locations, state)
 		})
@@ -245,7 +250,7 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 		previousCancel()
 	}
 
-	self.filteredLocationsChanged(snapshotLocations, LocationsLoading)
+	self.filteredLocationsChanged(filterSequenceNumber, snapshotLocations, LocationsLoading)
 
 	callback := FindLocationsCallback(connect.NewApiCallback[*FindLocationsResult](
 		func(result *FindLocationsResult, err error) {
@@ -272,7 +277,7 @@ func (self *LocationsViewController) FilterLocations(filter string) {
 				}
 			}()
 			if update {
-				self.filteredLocationsChanged(notifyLocations, notifyState)
+				self.filteredLocationsChanged(filterSequenceNumber, notifyLocations, notifyState)
 			}
 		},
 	))
