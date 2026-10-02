@@ -242,3 +242,36 @@ func TestLocationsFailedRefreshPreservesRows(t *testing.T) {
 		}
 	})
 }
+
+func TestLocationsReentrantQueryDiscardsRemainingOldNotifications(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hold := make(chan struct{})
+		api := locationsRequestApi(t, func(ctx context.Context, query string) ([]byte, error) {
+			if query != "" {
+				<-hold
+			}
+			return locationsRequestBody(query), nil
+		})
+		vc := NewLocationsViewControllerWithApi(t.Context(), api)
+		defer vc.Close()
+		started, stale := false, false
+		vc.AddFilteredLocationsListener(locationsRequestListener(func(_ *FilteredLocations, state FilterLocationsState) {
+			if state == LocationsLoaded && !started {
+				started = true
+				vc.FilterLocations("replacement")
+			}
+		}))
+		vc.AddFilteredLocationsListener(locationsRequestListener(func(_ *FilteredLocations, state FilterLocationsState) {
+			if state == LocationsLoaded && vc.GetFilteredLocationState() == LocationsLoading {
+				stale = true
+			}
+		}))
+		vc.FilterLocations("")
+		synctest.Wait()
+		close(hold)
+		synctest.Wait()
+		if stale {
+			t.Fatal("old loaded notification followed replacement loading notification")
+		}
+	})
+}
