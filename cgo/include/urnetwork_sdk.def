@@ -496,12 +496,14 @@ EXPORTS
 	urnet_message_device_key_package
 	urnet_message_device_new
 	urnet_message_device_restore
+	urnet_message_device_wait_push
 	urnet_message_durable_state_store_close
 	urnet_message_durable_state_store_open
 	urnet_message_group_add_member
 	urnet_message_group_add_member_and_publish
 	urnet_message_group_close
 	urnet_message_group_delete
+	urnet_message_group_ensure_subscribed
 	urnet_message_group_epoch
 	urnet_message_group_id
 	urnet_message_group_is_open

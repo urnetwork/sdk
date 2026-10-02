@@ -163,6 +163,7 @@ type MessageRouteClient struct {
 	mutex        sync.Mutex
 	callbacks    map[uint64]connect.ReceiveFunction
 	nextCallback uint64
+	replaced     map[uint64]func()
 	connected    bool
 	connects     int
 	lastError    string
@@ -193,6 +194,7 @@ func NewMessageRouteClient(ctx context.Context, config *MessageRouteConfig) (*Me
 		pin:       append([]byte(nil), config.Pin...),
 		outbound:  make(chan messageRouteOutbound, messageRouteOutboundDepth),
 		callbacks: map[uint64]connect.ReceiveFunction{},
+		replaced:  map[uint64]func(){},
 	}
 
 	switch {
@@ -296,7 +298,17 @@ func (self *MessageRouteClient) run() {
 		self.connected = true
 		self.connects += 1
 		self.lastError = ""
+		var replaced []func()
+		if 1 < self.connects {
+			// a second session is a new connection at the server, with no Hello on it
+			for _, callback := range self.replaced {
+				replaced = append(replaced, callback)
+			}
+		}
 		self.mutex.Unlock()
+		for _, callback := range replaced {
+			callback()
+		}
 
 		err = self.serve(ws)
 
@@ -532,6 +544,21 @@ func (self *MessageRouteClient) AddReceiveCallback(receiveCallback connect.Recei
 		self.mutex.Lock()
 		defer self.mutex.Unlock()
 		delete(self.callbacks, id)
+	}
+}
+
+// OnSessionReplaced registers a callback for every session after the first: each one is a new
+// connection at the server, so whatever said Hello on the old one must say it again.
+func (self *MessageRouteClient) OnSessionReplaced(callback func()) func() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	id := self.nextCallback
+	self.nextCallback += 1
+	self.replaced[id] = callback
+	return func() {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		delete(self.replaced, id)
 	}
 }
 

@@ -103,6 +103,9 @@ var epochKeyProducerSites = map[string]string{
 		"call's length. Both halves are in the digest's preimage, LP-framed, so a candidate that " +
 		"reproduced only one of them would not reproduce the digest.",
 	"Receive|next.ReadKey": "the read key §4.3.8's req_auth is computed under, re-derived when the walk crosses an epoch",
+	"subscribeLocked|keys.ReadKey": "the read key §4.3.5's subscription is authorized under, by the same " +
+		"§4.3.8 req_auth a fetch carries, at op 14. It lives for the one call: keys.Destroy runs when " +
+		"subscribeLocked returns.",
 }
 
 // epochKeySink is one entry in the disposition below: WHICH VALUES a site may receive, and why.
@@ -215,6 +218,12 @@ var epochKeySinks = map[string]epochKeySink{
 		why: "the copy of that bootstrap key. messagegroup.EpochKeys.WriteKey hands back " +
 			"the session's own backing array and Destroy zeroizes it, so the request would carry an " +
 			"erased key without this.",
+	},
+
+	"subscribeLocked|call authorizeSubscribe": {
+		carries: []string{"readKey"},
+		why: "the READ key into §4.3.8's req_auth for a SubscribeRequest, a mac computed under the " +
+			"key, exactly as Receive's authorizeFetch consumes it. Nothing of the key reaches the wire.",
 	},
 
 	"Receive|call authorizeFetch": {

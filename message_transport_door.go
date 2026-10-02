@@ -106,6 +106,18 @@ func (self *MessageTransport) Capabilities() *protocol.Capabilities {
 }
 
 // Close stops receiving. The connect client is the caller's and is not closed.
+// OnPush registers a callback for every §4.3.5 push. It runs on the receive goroutine and must not
+// block. The answer unregisters it.
+func (self *MessageTransport) OnPush(callback func(*protocol.MessageServerPush)) func() {
+	return self.inner.OnPush(callback)
+}
+
+// OnSessionReplaced registers a callback for every session the client opens after its first,
+// when the client can see them ([MessageRouteClient] can). The registrant says Hello again.
+func (self *MessageTransport) OnSessionReplaced(callback func()) func() {
+	return self.inner.OnSessionReplaced(callback)
+}
+
 func (self *MessageTransport) Close() {
 	self.inner.Close()
 }

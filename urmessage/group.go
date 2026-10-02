@@ -815,6 +815,13 @@ type Group struct {
 
 	mutex sync.Mutex
 
+	// §4.3.5: whether this group holds a subscription on the server, and the epoch ceiling and the
+	// Hello it was made under. Either moving makes it stale: a record above the ceiling produces
+	// no push, and a new connection holds no subscription at all.
+	subscribed           bool
+	subscribedEpoch      uint64
+	subscribedNonceEpoch uint64
+
 	// The session at epoch zero, which exists on the FOUNDER only and only until the group is
 	// open. It is what seals the founding commit: 4.3.2 self-certifies that record under
 	// bootstrap_write_key, which is epoch zero's write key, and the session that holds epoch
@@ -3132,6 +3139,10 @@ func (self *Group) Receive(ctx context.Context) ([]*Message, error) {
 	if self.session == nil {
 		return nil, ErrNoMemberAdded
 	}
+	// a replaced session holds no connection at the server until a Hello opens one
+	if err := self.device.helloIfReplaced(ctx); err != nil {
+		return nil, err
+	}
 	if err := self.rebindLocked(); err != nil {
 		return nil, err
 	}
@@ -4288,7 +4299,7 @@ func (self *Group) openPageLocked(fetched *protocol.FetchResponse, walk *pageWal
 			// AND IS KEPT ANYWAY: dropping it leaves every test in urmessage and cp3b green, which
 			// is measured and not assumed. It is kept because this arm SILENCES a record -- it
 			// notes a gap and resolves the id, so the cursor moves past it for ever -- and the
-			// shape above the bound is one that repairs itself: a peer that sends at epoch n+1
+			// shape above the bound is a TRANSIENT one: a peer that sends at epoch n+1
 			// puts a record above a reader still standing at n, which holds no pq_secret for n+1
 			// until it ingests that commit, and a fetch page truncated between the two delivers
 			// exactly that. Resolved as history, such a record is LOST a second before it would
@@ -6980,6 +6991,89 @@ func (self *Group) rebind() error {
 // A FAILED REBIND IS RETURNED AND IS NEVER SWALLOWED. A session still MAC'ing under a nonce the
 // server has destroyed produces records that are refused on the wire, and a caller that was told
 // its send succeeded would have a message that silently never arrives.
+// ── §4.3.5 subscribe ─────────────────────────────────────────────────────────────────────────
+
+// ErrSubscribeRefused is a subscription the server did not take.
+var ErrSubscribeRefused = errors.New("urmessage: the server refused the subscription")
+
+// Subscribe asks the server to push a notification whenever this group gains records this device
+// may read, and answers the snapshot high water the server holds now. A push names the group and
+// carries no records: [Group.Receive] reads them, so a push is answered with a Receive.
+func (self *Group) Subscribe(ctx context.Context) (uint64, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.subscribeLocked(ctx)
+}
+
+// EnsureSubscribed subscribes when this group holds no current subscription: none yet, one made
+// at an older epoch ceiling, or one made on a connection a Hello has since replaced. It answers
+// whether it subscribed, so a caller can follow a new subscription with a Receive.
+func (self *Group) EnsureSubscribed(ctx context.Context) (bool, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	// a replaced session is a new connection: the Hello it is owed moves the nonce epoch, which is
+	// what makes the subscription below stale
+	if err := self.device.helloIfReplaced(ctx); err != nil {
+		return false, err
+	}
+	if self.subscribed && self.subscribedEpoch == self.epoch {
+		if _, nonceEpoch, err := self.device.nonce(); err == nil && nonceEpoch == self.subscribedNonceEpoch {
+			return false, nil
+		}
+	}
+	if _, err := self.subscribeLocked(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (self *Group) subscribeLocked(ctx context.Context) (uint64, error) {
+	if self.closed {
+		return 0, fmt.Errorf("urmessage: this group is closed")
+	}
+	if self.session == nil {
+		return 0, ErrNoMemberAdded
+	}
+	if err := self.rebindLocked(); err != nil {
+		return 0, err
+	}
+	nonce, nonceEpoch, err := self.device.nonce()
+	if err != nil {
+		return 0, err
+	}
+	keys, err := self.session.EpochKeys()
+	if err != nil {
+		return 0, fmt.Errorf("urmessage: this epoch's keys: %w", err)
+	}
+	defer keys.Destroy()
+	readKey, err := keys.ReadKey()
+	if err != nil {
+		return 0, err
+	}
+	request := &protocol.SubscribeRequest{
+		Subscriptions: []*protocol.Subscription{{GroupId: self.id, SinceRecordId: self.cursor}},
+		ReadEpoch:     self.epoch,
+	}
+	if err := authorizeSubscribe(request, readKey, nonce); err != nil {
+		return 0, err
+	}
+	response, err := self.device.transport.Call(ctx, request)
+	if err != nil {
+		return 0, fmt.Errorf("urmessage: Subscribe: %w", err)
+	}
+	if response.GetReason() != protocol.Reason_REASON_OK {
+		return 0, fmt.Errorf("%w: answered %v", ErrSubscribeRefused, response.GetReason())
+	}
+	acks := response.GetSubscribe().GetAcks()
+	if len(acks) != 1 || acks[0].GetReason() != protocol.Reason_REASON_OK || !bytes.Equal(acks[0].GetGroupId(), self.id) {
+		return 0, fmt.Errorf("%w: the acknowledgement does not name this group", ErrSubscribeRefused)
+	}
+	self.subscribed = true
+	self.subscribedEpoch = self.epoch
+	self.subscribedNonceEpoch = nonceEpoch
+	return acks[0].GetSnapshotRecordId(), nil
+}
+
 func (self *Group) rebindLocked() error {
 	nonce, nonceEpoch, err := self.device.nonce()
 	if err != nil {

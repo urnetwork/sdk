@@ -349,6 +349,55 @@ func urnet_message_client_close(self C.uint64_t) {
 	self_.Close()
 }
 
+// ── §4.3.5 push ─────────────────────────────────────────────────────────────────────────────
+
+// urnet_message_group_ensure_subscribed subscribes this group to the server's push when it holds
+// no current subscription (none, an older epoch, or a connection a Hello has replaced). Answers 1
+// when it subscribed now, 0 when the subscription was already current, and -1 with out_error when
+// the server refused. After a 1, receive once: the subscription only announces what arrives later.
+//
+//export urnet_message_group_ensure_subscribed
+func urnet_message_group_ensure_subscribed(self C.uint64_t, ctx C.uint64_t, outError **C.char) C.int32_t {
+	defer cgoGuard("urnet_message_group_ensure_subscribed")
+	self_, ok := resolveHandle[*urmessage.Group](uint64(self), "urnet_message_group_ensure_subscribed")
+	if !ok || self_ == nil {
+		return -1
+	}
+	ctx_, ok := messageCtx(ctx, "urnet_message_group_ensure_subscribed")
+	if !ok {
+		return -1
+	}
+	subscribed, err := self_.EnsureSubscribed(ctx_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return -1
+	}
+	if subscribed {
+		return 1
+	}
+	return 0
+}
+
+// urnet_message_device_wait_push waits up to timeout_ms for a §4.3.5 push and answers the group id
+// it names as hex, or NULL on timeout. A push carries no records: answer it with
+// urnet_message_group_receive. Free with urnet_free_string.
+//
+//export urnet_message_device_wait_push
+func urnet_message_device_wait_push(self C.uint64_t, timeoutMs C.int64_t) *C.char {
+	defer cgoGuard("urnet_message_device_wait_push")
+	self_, ok := resolveHandle[*urmessage.Device](uint64(self), "urnet_message_device_wait_push")
+	if !ok || self_ == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+	groupId, err := self_.WaitPush(ctx)
+	if err != nil {
+		return nil
+	}
+	return cString(hex.EncodeToString(groupId))
+}
+
 // ── the route client: the server's own endpoint, through a URnetwork exit or directly ───────
 
 // urnet_message_route_client_new reaches a message server at its OWN TLS endpoint rather than

@@ -244,6 +244,18 @@ char* urnet_message_client_platform_url(uint64_t self);
 /* stop the platform transport, the client and everything under them. idempotent. */
 void urnet_message_client_close(uint64_t self);
 
+/* ----- push (spec B 4.3.5) ----- */
+
+/* subscribe this group to the server's push when it holds no current subscription: none yet, one
+ * at an older epoch, or one on a connection a Hello has since replaced. answers 1 when it
+ * subscribed now, 0 when it was already current, -1 with out_error when the server refused. after
+ * a 1, receive once: a subscription only announces what arrives after it. */
+int32_t urnet_message_group_ensure_subscribed(uint64_t self, uint64_t ctx, char** out_error);
+/* wait up to timeout_ms for a push and answer the group id it names, as hex, or NULL on timeout.
+ * a push carries no records: answer it with urnet_message_group_receive. free with
+ * urnet_free_string. */
+char* urnet_message_device_wait_push(uint64_t self, int64_t timeout_ms);
+
 /* ----- the route client: the server's own endpoint ----- */
 
 /* the two ways a route reaches the server's own endpoint */

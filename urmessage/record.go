@@ -252,6 +252,29 @@ func authorizeFetch(request *protocol.FetchRequest, readKey []byte, serverNonce 
 	return nil
 }
 
+// authorizeSubscribe is [authorizeFetch] for §4.3.5's SubscribeRequest, op 14: the same MAC under
+// the read key of the epoch the request names, over this connection's nonce, authorized LAST.
+func authorizeSubscribe(request *protocol.SubscribeRequest, readKey []byte, serverNonce []byte) error {
+	if len(readKey) == 0 {
+		return fmt.Errorf("%w: a subscription is macced under the epoch's read key", ErrSubscribeRefused)
+	}
+	if len(serverNonce) == 0 {
+		return ErrNotConnected
+	}
+	op, err := opOf(request)
+	if err != nil {
+		return err
+	}
+	request.ReqAuth = nil
+	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+	if err != nil {
+		return err
+	}
+	auth := message.ComputeRequestAuth(readKey, serverNonce, op, canonical)
+	request.ReqAuth = auth[:]
+	return nil
+}
+
 // opOf is §4.3.8's `op`: the field number of the arm of `MessageServerRequest.body` that carries
 // this type, read out of the compiled descriptor rather than written down.
 //

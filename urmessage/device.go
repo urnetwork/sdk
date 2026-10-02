@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/urnetwork/connect/messagegroup"
@@ -280,6 +281,61 @@ type Device struct {
 
 	mutex  sync.Mutex
 	groups map[string]*Group
+
+	// §4.3.5's pushes and the replaced-session flag: see [pushInbox], which is what the transport's
+	// callbacks hold instead of this device.
+	inbox *pushInbox
+}
+
+// pushInbox is the part of a device the transport's callbacks are bound to, and it holds NONE of
+// the device's keys: registering with the transport must hand it no reference to the wrap seed
+// (TestEveryWrapSeedInThisPackageGoesWhereTheDispositionSaysItGoes). It runs on the client's
+// receive goroutine, so it only queues.
+type pushInbox struct {
+	// one group id per push, for [Device.WaitPush]. Buffered and never blocking: a push that finds it
+	// full is dropped, because a full buffer already says "fetch", and the fetch the waiter does next
+	// reads everything a dropped push would have named. An EMPTY id is the replaced-session wake.
+	pushes chan []byte
+	// set when the client reports a NEW session to the server, which holds no connection until
+	// somebody says Hello on it; the next operation that needs the nonce does ([Device.helloIfReplaced])
+	helloNeeded atomic.Bool
+
+	unsubscribePush     func()
+	unsubscribeReplaced func()
+}
+
+func newPushInbox(transport *sdk.MessageTransport) *pushInbox {
+	inbox := &pushInbox{pushes: make(chan []byte, 64)}
+	inbox.unsubscribePush = transport.OnPush(inbox.pushed)
+	inbox.unsubscribeReplaced = transport.OnSessionReplaced(inbox.sessionReplaced)
+	return inbox
+}
+
+func (self *pushInbox) pushed(push *protocol.MessageServerPush) {
+	records := push.GetRecords()
+	if records == nil || len(records.GetGroupId()) == 0 {
+		return
+	}
+	self.wake(append([]byte(nil), records.GetGroupId()...))
+}
+
+// sessionReplaced marks the Hello as owed and wakes [Device.WaitPush] with an empty id, so the
+// caller's next Receive or EnsureSubscribed says it at once rather than at the next poll.
+func (self *pushInbox) sessionReplaced() {
+	self.helloNeeded.Store(true)
+	self.wake([]byte{})
+}
+
+func (self *pushInbox) wake(groupId []byte) {
+	select {
+	case self.pushes <- groupId:
+	default:
+	}
+}
+
+func (self *pushInbox) close() {
+	self.unsubscribePush()
+	self.unsubscribeReplaced()
 }
 
 // NewDevice opens this device's identity and its MLS engine.
@@ -378,6 +434,7 @@ func NewDevice(config DeviceConfig) (*Device, error) {
 	}
 	// the one exit that hands the seed on: the field below holds the array the defer would
 	// otherwise clear, and from here [Device.Close] owns it.
+	inbox := newPushInbox(config.Transport)
 	held = true
 	return &Device{
 		transport:        config.Transport,
@@ -393,6 +450,7 @@ func NewDevice(config DeviceConfig) (*Device, error) {
 		random:           random,
 		commitAuthorizer: config.CommitAuthorizer,
 		groups:           map[string]*Group{},
+		inbox:            inbox,
 	}, nil
 }
 
@@ -760,7 +818,40 @@ func (self *Device) Groups() []*Group {
 // second Close erases nothing and a decapsulation after a Close refuses by name
 // ([ErrNoDeviceWrapKey]) instead of decapsulating under 32 zero octets -- which is a well formed
 // X-Wing seed and would answer a perfectly uniform-looking wrong secret.
+// helloIfReplaced says Hello when the transport reported a new session since the last one, on
+// the caller's goroutine and context. A failed Hello leaves it owed, so the next call tries again.
+func (self *Device) helloIfReplaced(ctx context.Context) error {
+	if !self.inbox.helloNeeded.CompareAndSwap(true, false) {
+		return nil
+	}
+	reason, hello, err := self.transport.Hello(ctx)
+	if err == nil && reason == protocol.Reason_REASON_OK && 0 < len(hello.GetServerNonce()) {
+		return nil
+	}
+	self.inbox.helloNeeded.Store(true)
+	if err != nil {
+		return fmt.Errorf("%w: the session to the server was replaced, and the Hello on the new one failed: %w", ErrNotConnected, err)
+	}
+	return fmt.Errorf("%w: the session to the server was replaced, and the Hello on the new one was answered %v", ErrNotConnected, reason)
+}
+
+// WaitPush answers the group id of the next §4.3.5 push, or the context's error. A push says only
+// that the group has records above what this device was last told; [Group.Receive] is what reads
+// them, so a caller answers a push with a Receive. An EMPTY id means the session to the server was
+// replaced: the same Receive answers it too, and says Hello on the new session first.
+func (self *Device) WaitPush(ctx context.Context) ([]byte, error) {
+	select {
+	case groupId := <-self.inbox.pushes:
+		return groupId, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func (self *Device) Close() error {
+	if self.inbox != nil {
+		self.inbox.close()
+	}
 	self.mutex.Lock()
 	groups := make([]*Group, 0, len(self.groups))
 	for _, group := range self.groups {

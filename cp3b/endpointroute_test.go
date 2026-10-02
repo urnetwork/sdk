@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,11 +41,42 @@ import (
 // not the server's, and the endpoint's own counters show nothing ever arrived.
 
 type endpointWorld struct {
-	endpoint *endpoint.Endpoint
-	url      string
-	pin      []byte
-	serverId connect.Id
-	peer     *peer.Peer
+	endpoint      *endpoint.Endpoint
+	url           string
+	pin           []byte
+	serverId      connect.Id
+	peer          *peer.Peer
+	listener      *trackingListener
+	subscriptions *api.Subscriptions
+}
+
+// trackingListener remembers every connection it accepts, so a case can cut them all from the
+// server's side: what an exit provider leaving the mesh looks like to the server.
+type trackingListener struct {
+	net.Listener
+	mutex sync.Mutex
+	conns []net.Conn
+}
+
+func (self *trackingListener) Accept() (net.Conn, error) {
+	conn, err := self.Listener.Accept()
+	if err == nil {
+		self.mutex.Lock()
+		self.conns = append(self.conns, conn)
+		self.mutex.Unlock()
+	}
+	return conn, err
+}
+
+func (self *trackingListener) dropAll() int {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, conn := range self.conns {
+		conn.Close()
+	}
+	dropped := len(self.conns)
+	self.conns = nil
+	return dropped
 }
 
 func newEndpointWorld(t *testing.T) *endpointWorld {
@@ -56,11 +88,12 @@ func newEndpointWorld(t *testing.T) *endpointWorld {
 		cancel()
 		t.Fatalf("endpoint.New: %v", err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		cancel()
 		t.Fatalf("listening: %v", err)
 	}
+	listener := &trackingListener{Listener: raw}
 	go served.Serve(listener)
 
 	connections, err := peer.NewConnections(rand.Reader, time.Now, time.Hour)
@@ -73,10 +106,12 @@ func newEndpointWorld(t *testing.T) *endpointWorld {
 		cancel()
 		t.Fatalf("peer.NewChecks: %v", err)
 	}
+	subscriptions := api.NewSubscriptions()
 	handler, err := api.New(api.Config{
-		Store:       store.NewMemoryStore(store.DefaultLimits()),
-		KnownGroups: api.NewMemoryKnownGroups(),
-		Front:       checks,
+		Store:         store.NewMemoryStore(store.DefaultLimits()),
+		KnownGroups:   api.NewMemoryKnownGroups(),
+		Front:         checks,
+		Subscriptions: subscriptions,
 	})
 	if err != nil {
 		cancel()
@@ -97,17 +132,21 @@ func newEndpointWorld(t *testing.T) *endpointWorld {
 		cancel()
 		t.Fatalf("peer.New: %v", err)
 	}
+	subscriptions.SetPusher(dispatch)
 	t.Cleanup(func() {
 		dispatch.Close()
+		subscriptions.Close()
 		served.Close()
 		cancel()
 	})
 	return &endpointWorld{
-		endpoint: served,
-		url:      "wss://" + listener.Addr().String() + endpoint.DefaultPath,
-		pin:      served.Pin(),
-		serverId: connect.NewId(),
-		peer:     dispatch,
+		endpoint:      served,
+		url:           "wss://" + listener.Addr().String() + endpoint.DefaultPath,
+		pin:           served.Pin(),
+		serverId:      connect.NewId(),
+		peer:          dispatch,
+		listener:      listener,
+		subscriptions: subscriptions,
 	}
 }
 
@@ -127,8 +166,17 @@ func (self *endpointWorld) route(t *testing.T, pin []byte) *sdk.MessageRouteClie
 
 func (self *endpointWorld) device(t *testing.T, name string) *urmessage.Device {
 	t.Helper()
+	device, _, _ := self.deviceAndRoute(t, name)
+	return device
+}
+
+// deviceAndRoute is [endpointWorld.device] with the route client it speaks over, for a case that
+// reads the route's own state.
+func (self *endpointWorld) deviceAndRoute(t *testing.T, name string) (*urmessage.Device, *sdk.MessageRouteClient, *sdk.MessageTransport) {
+	t.Helper()
+	route := self.route(t, self.pin)
 	transport, err := sdk.NewMessageTransport(&sdk.MessageTransportConfig{
-		Client:          self.route(t, self.pin),
+		Client:          route,
 		Server:          self.serverId,
 		ProtocolVersion: worldProtocolVersion,
 		Timeout:         30 * time.Second,
@@ -150,7 +198,7 @@ func (self *endpointWorld) device(t *testing.T, name string) *urmessage.Device {
 		t.Fatalf("%s: urmessage.NewDevice: %v", name, err)
 	}
 	t.Cleanup(func() { device.Close() })
-	return device
+	return device, route, transport
 }
 
 func TestTheExchangeCrossesTheServersOwnEndpointWithItsKeyPinned(t *testing.T) {

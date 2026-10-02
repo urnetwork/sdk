@@ -180,6 +180,9 @@ type messageTransportCounts struct {
 	// request that timed out with fragments half-arrived must leave no buffer
 	// behind either, and a buffer is the other map entry a waiter can strand.
 	Reassembling uint64
+
+	// §4.3.5 pushes that arrived and were handed to the OnPush callbacks.
+	PushFrames uint64
 }
 
 // What a waiter is handed: the response, or the local refusal that ended the
@@ -203,6 +206,10 @@ type messageTransport struct {
 
 	unsubscribe func()
 	closed      sync.Once
+
+	pushMutex        sync.Mutex
+	pushCallbacks    map[uint64]func(*protocol.MessageServerPush)
+	nextPushCallback uint64
 
 	nextRequestId atomic.Uint64
 
@@ -233,6 +240,7 @@ func newMessageTransport(config *messageTransportConfig) (*messageTransport, err
 		timeout:         config.Timeout,
 		waiting:         map[uint64]chan messageTransportAnswer{},
 		partial:         map[uint64]*messageFragmentPartial{},
+		pushCallbacks:   map[uint64]func(*protocol.MessageServerPush){},
 	}
 	if self.timeout <= 0 {
 		self.timeout = messageTransportDefaultTimeout
@@ -282,6 +290,10 @@ func (self *messageTransport) receive(source connect.TransferPath, frames []*pro
 				continue
 			}
 			self.deliver(response)
+		case protocol.MessageType_MessageMessageServerPush:
+			// §4.3.5's push: the one code point that answers no request. It is not correlated;
+			// it is handed to the OnPush callbacks (message_transport_push.go)
+			self.deliverPush(frame)
 		case protocol.MessageType_MessageMessageServerFragment:
 			self.countFragmentFrame()
 			fragment := &protocol.MessageServerFragment{}

@@ -670,6 +670,15 @@ func TestMessageTransportReadsOnlyTheCodePointsThatAreItsOwn(t *testing.T) {
 	// being the rule.
 	parent := (&protocol.MessageServerResponse{}).ProtoReflect().Descriptor().FullName().Parent()
 	for _, codePoint := range sortedCodePoints(mine) {
+		// §4.3.5's PUSH IS THE ONE EXCEPTION, AND IT IS NAMED RATHER THAN LET THROUGH. It is the one
+		// message-server code point that is not an answer: it declares no request_id, and this binding
+		// reads it only to hand it to OnPush, never to a waiter. That is asserted below by delivering
+		// one, so the exception is a measured route and not a hole in the rule. Ledger 269.
+		if codePoint == protocol.MessageType_MessageMessageServerPush {
+			t.Logf("  %s is read, declares no request_id, and is routed to OnPush (asserted below)",
+				protocol.MessageType_name[int32(codePoint)])
+			continue
+		}
 		spelled, named := protocol.MessageType_name[int32(codePoint)], protoreflect.FullName("")
 		if spelled == "" {
 			t.Fatalf("the receive path reads code point %d, which protocol's enum does not name", codePoint)
@@ -716,6 +725,34 @@ func TestMessageTransportReadsOnlyTheCodePointsThatAreItsOwn(t *testing.T) {
 	}
 	if counts.Waiting != 1 {
 		t.Fatalf("Counts().Waiting is %d, want 1 -- the waiter was answered by a frame at another code point", counts.Waiting)
+	}
+
+	// the push, at its own code point: handed to OnPush, and nothing else moves
+	if !mine[protocol.MessageType_MessageMessageServerPush] {
+		t.Fatal("the receive path does not read §4.3.5's push, so nothing ever reaches OnPush")
+	}
+	pushed := make(chan *protocol.MessageServerPush, 1)
+	unsubscribe := transport.OnPush(func(push *protocol.MessageServerPush) { pushed <- push })
+	defer unsubscribe()
+	pushBytes, err := proto.Marshal(&protocol.MessageServerPush{Body: &protocol.MessageServerPush_Records{
+		Records: &protocol.RecordPush{GroupId: []byte("group"), HighWaterRecordId: 7}}})
+	if err != nil {
+		t.Fatalf("marshalling a push: %v", err)
+	}
+	fake.deliver(t, &protocol.Frame{MessageType: protocol.MessageType_MessageMessageServerPush, MessageBytes: pushBytes})
+	select {
+	case push := <-pushed:
+		if push.GetRecords().GetHighWaterRecordId() != 7 {
+			t.Fatalf("OnPush was handed %v, want the push that was delivered", push)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a push at its own code point did not reach OnPush")
+	}
+	counts = transport.Counts()
+	if counts.PushFrames != 1 || counts.ResponseFrames != 0 || counts.Responses != 0 || counts.Unmatched != 0 || counts.Waiting != 1 {
+		t.Fatalf("after one push: PushFrames %d ResponseFrames %d Responses %d Unmatched %d Waiting %d, want 1 0 0 0 1 -- "+
+			"a push is never correlated and never answers a waiter",
+			counts.PushFrames, counts.ResponseFrames, counts.Responses, counts.Unmatched, counts.Waiting)
 	}
 
 	// and the code point that IS this binding's arrives
