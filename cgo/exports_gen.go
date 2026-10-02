@@ -9755,6 +9755,17 @@ func urnet_parse_id(src *C.char, outError **C.char) *C.char {
 	return cId(r0)
 }
 
+//export urnet_parse_message_route_mode
+func urnet_parse_message_route_mode(value *C.char, outError **C.char) C.int64_t {
+	defer cgoGuard("urnet_parse_message_route_mode")
+	r0, err := sdk.ParseMessageRouteMode(goString(value))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.int64_t(r0)
+}
+
 //export urnet_peer_view_controller_add_peers_listener
 func urnet_peer_view_controller_add_peers_listener(self C.uint64_t, listener_peers_changed C.urnet_peers_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_peer_view_controller_add_peers_listener")

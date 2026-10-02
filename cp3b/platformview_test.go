@@ -285,9 +285,20 @@ type exchangeResult struct {
 
 func runExchange(t *testing.T, world *platformWorld) exchangeResult {
 	t.Helper()
-	ctx := context.Background()
 	alice, aliceClient := world.device(t, "alice")
 	bob, bobClient := world.device(t, "bob")
+	return exchangeResult{
+		texts:   exchangeBetween(t, alice, bob),
+		clients: map[string]*connect.Client{"alice": aliceClient, "bob": bobClient},
+	}
+}
+
+// exchangeBetween is the whole CP3b exchange between two devices, whatever carries their frames:
+// connect, alice founds and adds bob, opens, sends; bob joins, receives, answers; alice receives.
+// It answers the texts typed, both of which it has checked arrived intact.
+func exchangeBetween(t *testing.T, alice *urmessage.Device, bob *urmessage.Device) []string {
+	t.Helper()
+	ctx := context.Background()
 	if err := alice.Connect(ctx); err != nil {
 		t.Fatalf("alice's Connect: %v", err)
 	}
@@ -341,10 +352,7 @@ func runExchange(t *testing.T, world *platformWorld) exchangeResult {
 	if len(back) != 1 || back[0].Text != typedByBob {
 		t.Fatalf("alice received %+v for the one message bob sent", back)
 	}
-	return exchangeResult{
-		texts:   []string{typedByAlice, typedByBob},
-		clients: map[string]*connect.Client{"alice": aliceClient, "bob": bobClient},
-	}
+	return []string{typedByAlice, typedByBob}
 }
 
 // ── the platform ───────────────────────────────────────────────────────────────────────────

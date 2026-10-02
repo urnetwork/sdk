@@ -35,7 +35,7 @@ type party struct {
 	name string
 	dir  string
 
-	client      *sdk.MessageClient
+	client      interface{ Close() }
 	transport   *sdk.MessageTransport
 	streamStore *sdk.StreamStore
 	stateStore  *urmessage.DurableStateStore
@@ -51,6 +51,11 @@ type dialer struct {
 	host    string
 	root    string
 	timeout time.Duration
+
+	// which client a party speaks over: see routeClient
+	route    string
+	endpoint string
+	pin      string
 
 	// connect is handed to every device this dialer stands up, so that a re-dial rides out the
 	// operator's reconnect window instead of reporting it as a failure.
@@ -175,6 +180,9 @@ func main() {
 	timeout := flag.Duration("timeout", 60*time.Second, "per-request transport timeout")
 	reconnect := flag.Duration("reconnect", 0,
 		"how long Device.Connect rides out the ~60s reconnect window; 0 takes urmessage's own default")
+	route := flag.String("route", "platform", "platform (the operator path), urnetwork (the server's own endpoint through a URnetwork exit) or direct (that endpoint, no tunnel)")
+	endpoint := flag.String("endpoint", "", "the server's own endpoint, a wss:// url; required unless -route platform")
+	pin := flag.String("pin", "", "SHA-256 of the endpoint's SubjectPublicKeyInfo, 64 hex characters; required unless -route platform")
 	flag.Parse()
 
 	server, err := connect.ParseId(*serverId)
@@ -198,6 +206,7 @@ func main() {
 	// docs/reports/2026-09-15-operator-and-connect-findings.md; NOT closed by this, and the
 	// user still waits the sixty seconds.
 	mesh := &dialer{ctx: ctx, server: server, host: *host, root: *dir, timeout: *timeout,
+		route: *route, endpoint: *endpoint, pin: *pin,
 		connect: urmessage.ConnectPolicy{Budget: *reconnect, OnAttempt: printConnectAttempt}}
 
 	a := mesh.dial("A", *aJwt)
@@ -1351,20 +1360,61 @@ func main() {
 // THAT IS THE POINT RATHER THAN A TIDY-UP. This binary is the one thing that is ever run against a
 // real operator, so putting the shared declaration on ITS path is what makes a live run evidence
 // about the code the Windows app links rather than about a copy of it.
+// routeClient builds the client a transport speaks over: the operator-attached one, or a route
+// to the server's own endpoint through a URnetwork exit or directly (sdk/message_route.go).
+// The credential goes to the constructor and nowhere else.
+func routeClient(ctx context.Context, route string, byJwt string, host string, endpoint string, pin string, appVersion string) (sdk.MessageTransportClient, interface{ Close() }, string) {
+	if route == "" || route == "platform" {
+		client, err := sdk.NewMessageClient(ctx, &sdk.MessageClientConfig{
+			ByClientJwt: byJwt,
+			Host:        host,
+			AppVersion:  appVersion,
+		})
+		if err != nil {
+			fail("client: %v", err)
+		}
+		return client, client, fmt.Sprintf("platform: client_id %s dialling %s", client.ClientId(), client.PlatformUrl())
+	}
+	mode, err := sdk.ParseMessageRouteMode(route)
+	if err != nil {
+		fail("-route: %v", err)
+	}
+	parsedPin, err := sdk.ParseMessageRoutePin(pin)
+	if err != nil {
+		fail("-pin: %v", err)
+	}
+	client, err := sdk.NewMessageRouteClient(ctx, &sdk.MessageRouteConfig{
+		Endpoint:    endpoint,
+		Pin:         parsedPin,
+		Mode:        mode,
+		ByClientJwt: byJwt,
+		Host:        host,
+		AppVersion:  appVersion,
+	})
+	if err != nil {
+		fail("route: %v", err)
+	}
+	return client, client, fmt.Sprintf("route %s to %s", mode, endpoint)
+}
+
+// routeStatus prints what a route client knows about its route; nothing for the platform path.
+func routeStatus(client sdk.MessageTransportClient) string {
+	route, ok := client.(*sdk.MessageRouteClient)
+	if !ok {
+		return ""
+	}
+	status := route.Status()
+	return fmt.Sprintf("route %s: connected=%v connects=%d window_providers=%d countries=%v last_error=%q",
+		status.Mode, status.Connected, status.Connects, status.WindowProviders, status.WindowCountries, status.LastError)
+}
+
 func (self *dialer) dial(name string, jwtPath string) *party {
 	raw, err := os.ReadFile(jwtPath)
 	if err != nil {
 		fail("%s read jwt: %v", name, err)
 	}
 	byJwt := strings.TrimSpace(string(raw))
-	client, err := sdk.NewMessageClient(self.ctx, &sdk.MessageClientConfig{
-		ByClientJwt: byJwt,
-		Host:        self.host,
-		AppVersion:  "alphaprobe",
-	})
-	if err != nil {
-		fail("%s client: %v", name, err)
-	}
+	client, closer, described := routeClient(self.ctx, self.route, byJwt, self.host, self.endpoint, self.pin, "alphaprobe")
 
 	transport, err := sdk.NewMessageTransport(&sdk.MessageTransportConfig{
 		Client: client, Server: self.server, ProtocolVersion: 1, Timeout: self.timeout,
@@ -1435,10 +1485,10 @@ func (self *dialer) dial(name string, jwtPath string) *party {
 			"  the old public half. RE-FOUND this deployment (ledger item 257, ruling 53), or point -dir\n"+
 			"  at a fresh directory, which is what the README asks for anyway: %v", name, dir, err)
 	}
-	fmt.Fprintf(out, "%s  client_id %s, dialling %s, durable state in %s (wrap seed present)\n",
-		name, client.ClientId(), client.PlatformUrl(), dir)
+	fmt.Fprintf(out, "%s  %s, durable state in %s (wrap seed present)\n",
+		name, described, dir)
 	return &party{
-		name: name, dir: dir, client: client, transport: transport,
+		name: name, dir: dir, client: closer, transport: transport,
 		streamStore: streamStore, stateStore: stateStore, device: device,
 	}
 }

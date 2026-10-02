@@ -79,6 +79,8 @@ bool urnet_device_get_public_identity_key(uint64_t self, uint8_t* out, int32_t* 
 #define URNET_LOCATION_TYPE_COUNTRY "country"
 #define URNET_LOCATION_TYPE_REGION "region"
 #define URNET_MATIC "MATIC"
+#define URNET_MESSAGE_ROUTE_DIRECT 1
+#define URNET_MESSAGE_ROUTE_URNETWORK 0
 #define URNET_PROVIDER_STATE_ADDED "Added"
 #define URNET_PROVIDER_STATE_EVALUATION_FAILED "EvaluationFailed"
 #define URNET_PROVIDER_STATE_IN_EVALUATION "InEvaluation"
@@ -1092,6 +1094,7 @@ uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_open_stream_store(const char* dir, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
+int64_t urnet_parse_message_route_mode(const char* value, char** out_error);
 int64_t urnet_points_to_nano_points(double points);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 char* urnet_service_url(const char* key_json, const char* values_json, const char* scheme, const char* service);

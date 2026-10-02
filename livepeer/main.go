@@ -55,7 +55,7 @@ import (
 )
 
 type party struct {
-	client      *sdk.MessageClient
+	client      interface{ Close() }
 	transport   *sdk.MessageTransport
 	streamStore *sdk.StreamStore
 	stateStore  *urmessage.DurableStateStore
@@ -96,6 +96,9 @@ func main() {
 	poll := flag.Duration("poll", 3*time.Second, "how often to fetch while serving")
 	timeout := flag.Duration("timeout", 60*time.Second, "per-request transport timeout")
 	reconnect := flag.Duration("reconnect", 0, "how long Device.Connect rides out the ~60s reconnect window; 0 takes urmessage's own default")
+	route := flag.String("route", "platform", "platform (the operator path), urnetwork (the server's own endpoint through a URnetwork exit) or direct (that endpoint, no tunnel)")
+	endpoint := flag.String("endpoint", "", "the server's own endpoint, a wss:// url; required unless -route platform")
+	pin := flag.String("pin", "", "SHA-256 of the endpoint's SubjectPublicKeyInfo, 64 hex characters; required unless -route platform")
 	flag.Parse()
 
 	// TWO ROADS IN AND TWO ROADS OUT, and a run needs one of each.
@@ -138,7 +141,7 @@ func main() {
 		cancel()
 	}()
 
-	p := dial(ctx, *jwtPath, *host, server, *dir, *timeout, *reconnect)
+	p := dial(ctx, *jwtPath, *host, server, *dir, *timeout, *reconnect, *route, *endpoint, *pin)
 	defer p.close()
 
 	// ── 1. Hello ───────────────────────────────────────────────────────────────────────────
@@ -531,7 +534,7 @@ func converse(ctx context.Context, group *urmessage.Group, serve time.Duration, 
 // Windows app links calls — so a run of this is evidence about the code the app links rather than
 // about a copy of it.
 func dial(ctx context.Context, jwtPath string, host string, server connect.Id, root string,
-	timeout time.Duration, reconnect time.Duration) *party {
+	timeout time.Duration, reconnect time.Duration, route string, endpoint string, pin string) *party {
 	raw, err := os.ReadFile(jwtPath)
 	if err != nil {
 		fail("read jwt: %v", err)
@@ -542,14 +545,7 @@ func dial(ctx context.Context, jwtPath string, host string, server connect.Id, r
 	byJwt := strings.TrimSpace(string(raw))
 	fmt.Printf("credential read from %s (%d bytes; its contents are never printed)\n", jwtPath, len(byJwt))
 
-	client, err := sdk.NewMessageClient(ctx, &sdk.MessageClientConfig{
-		ByClientJwt: byJwt,
-		Host:        host,
-		AppVersion:  "urmessage-livepeer",
-	})
-	if err != nil {
-		fail("client: %v", err)
-	}
+	client, closer, described := routeClient(ctx, route, byJwt, host, endpoint, pin, "urmessage-livepeer")
 	transport, err := sdk.NewMessageTransport(&sdk.MessageTransportConfig{
 		Client: client, Server: server, ProtocolVersion: 1, Timeout: timeout,
 	})
@@ -583,10 +579,57 @@ func dial(ctx context.Context, jwtPath string, host string, server connect.Id, r
 	if err != nil {
 		fail("NewDevice: %v", err)
 	}
-	fmt.Printf("client_id %s, dialling %s, durable state in %s\n",
-		client.ClientId(), client.PlatformUrl(), root)
-	return &party{client: client, transport: transport, streamStore: streamStore,
+	fmt.Printf("%s, durable state in %s\n", described, root)
+	return &party{client: closer, transport: transport, streamStore: streamStore,
 		stateStore: stateStore, device: device}
+}
+
+// routeClient builds the client a transport speaks over: the operator-attached one, or a route
+// to the server's own endpoint through a URnetwork exit or directly (sdk/message_route.go).
+// The credential goes to the constructor and nowhere else.
+func routeClient(ctx context.Context, route string, byJwt string, host string, endpoint string, pin string, appVersion string) (sdk.MessageTransportClient, interface{ Close() }, string) {
+	if route == "" || route == "platform" {
+		client, err := sdk.NewMessageClient(ctx, &sdk.MessageClientConfig{
+			ByClientJwt: byJwt,
+			Host:        host,
+			AppVersion:  appVersion,
+		})
+		if err != nil {
+			fail("client: %v", err)
+		}
+		return client, client, fmt.Sprintf("platform: client_id %s dialling %s", client.ClientId(), client.PlatformUrl())
+	}
+	mode, err := sdk.ParseMessageRouteMode(route)
+	if err != nil {
+		fail("-route: %v", err)
+	}
+	parsedPin, err := sdk.ParseMessageRoutePin(pin)
+	if err != nil {
+		fail("-pin: %v", err)
+	}
+	client, err := sdk.NewMessageRouteClient(ctx, &sdk.MessageRouteConfig{
+		Endpoint:    endpoint,
+		Pin:         parsedPin,
+		Mode:        mode,
+		ByClientJwt: byJwt,
+		Host:        host,
+		AppVersion:  appVersion,
+	})
+	if err != nil {
+		fail("route: %v", err)
+	}
+	return client, client, fmt.Sprintf("route %s to %s", mode, endpoint)
+}
+
+// routeStatus prints what a route client knows about its route; nothing for the platform path.
+func routeStatus(client sdk.MessageTransportClient) string {
+	route, ok := client.(*sdk.MessageRouteClient)
+	if !ok {
+		return ""
+	}
+	status := route.Status()
+	return fmt.Sprintf("route %s: connected=%v connects=%d window_providers=%d countries=%v last_error=%q",
+		status.Mode, status.Connected, status.Connects, status.WindowProviders, status.WindowCountries, status.LastError)
 }
 
 // ── the file seam ────────────────────────────────────────────────────────────────────────────

@@ -135,6 +135,8 @@ inline constexpr const char* LocationsError = "LOCATIONS_ERROR";
 inline constexpr const char* LocationsLoaded = "LOCATIONS_LOADED";
 inline constexpr const char* LocationsLoading = "LOCATIONS_LOADING";
 inline constexpr const char* MATIC = "MATIC";
+inline constexpr int64_t MessageRouteDirect = 1;
+inline constexpr int64_t MessageRouteUrnetwork = 0;
 inline constexpr const char* ProvideControlModeAlways = "always";
 inline constexpr const char* ProvideControlModeAuto = "auto";
 inline constexpr const char* ProvideControlModeManual = "manual";
@@ -18347,6 +18349,14 @@ inline std::string parseId(const std::string& src) {
 		detail::throwError(err_c);
 	}
 	return detail::takeString(r_c);
+}
+inline int64_t parseMessageRouteMode(const std::string& value) {
+	char* err_c = nullptr;
+	int64_t r = urnet_parse_message_route_mode(value.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
 }
 inline int64_t pointsToNanoPoints(double points) {
 	int64_t r = urnet_points_to_nano_points(points);

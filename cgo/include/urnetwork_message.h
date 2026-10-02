@@ -244,6 +244,36 @@ char* urnet_message_client_platform_url(uint64_t self);
 /* stop the platform transport, the client and everything under them. idempotent. */
 void urnet_message_client_close(uint64_t self);
 
+/* ----- the route client: the server's own endpoint ----- */
+
+/* the two ways a route reaches the server's own endpoint */
+#define URNET_MESSAGE_ROUTE_URNETWORK 0
+#define URNET_MESSAGE_ROUTE_DIRECT 1
+
+/* reach a message server at its OWN TLS endpoint rather than through the operator. the handle is a
+ * client urnet_message_transport_new takes, exactly as it takes urnet_message_client_new's.
+ *
+ * mode URNET_MESSAGE_ROUTE_URNETWORK (the default) leaves through a URnetwork exit provider over a
+ * tunnel inside this process -- no adapter, no service, no administrator -- and the server sees the
+ * exit's address, not this device's. URNET_MESSAGE_ROUTE_DIRECT is an ordinary connection and shows
+ * this device's address to the message server.
+ *
+ * endpoint is a wss:// url. pin is the SHA-256 of the server certificate's SubjectPublicKeyInfo, 64
+ * hex characters, optionally "sha256/"-prefixed: a server presenting any other key is never sent a
+ * frame. by_client_jwt (A SECRET) and host are what the tunnel's exit clients are minted from, and
+ * are ignored for DIRECT. env and app_version may be NULL. every refusal answers 0 AND sets
+ * out_error. it does not block; urnet_message_device_connect finds out whether the server answered.
+ *
+ * CLOSE IT WITH urnet_message_route_client_close BEFORE urnet_release, after the device and the
+ * transport built over it. */
+uint64_t urnet_message_route_client_new(const char* by_client_jwt, const char* host, const char* env, const char* endpoint, const char* pin, int32_t mode, const char* app_version, char** out_error);
+/* the route's state as json: mode, connected, connects (above 1 means it re-established),
+ * last_error, and in URNETWORK mode window_providers and window_countries, the exits the tunnel
+ * holds. free with urnet_free_string. */
+char* urnet_message_route_client_status(uint64_t self);
+/* end the session and the tunnel. idempotent. */
+void urnet_message_route_client_close(uint64_t self);
+
 /* ----- the transport ----- */
 
 /* bind to one message server over a connect client YOU own: nothing here dials, authenticates or

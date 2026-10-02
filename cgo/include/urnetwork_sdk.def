@@ -530,6 +530,9 @@ EXPORTS
 	urnet_message_member_list_count
 	urnet_message_member_list_info
 	urnet_message_parse_invite
+	urnet_message_route_client_close
+	urnet_message_route_client_new
+	urnet_message_route_client_status
 	urnet_message_stream_index_reserver_new
 	urnet_message_stream_store_close
 	urnet_message_stream_store_open
@@ -609,6 +612,7 @@ EXPORTS
 	urnet_normal_env_name
 	urnet_open_stream_store
 	urnet_parse_id
+	urnet_parse_message_route_mode
 	urnet_peer_view_controller_add_peers_listener
 	urnet_peer_view_controller_close
 	urnet_peer_view_controller_get_connected_count

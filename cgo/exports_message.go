@@ -11,6 +11,7 @@ import "C"
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -342,6 +343,88 @@ func urnet_message_client_platform_url(self C.uint64_t) *C.char {
 func urnet_message_client_close(self C.uint64_t) {
 	defer cgoGuard("urnet_message_client_close")
 	self_, ok := resolveHandle[*sdk.MessageClient](uint64(self), "urnet_message_client_close")
+	if !ok || self_ == nil {
+		return
+	}
+	self_.Close()
+}
+
+// ── the route client: the server's own endpoint, through a URnetwork exit or directly ───────
+
+// urnet_message_route_client_new reaches a message server at its OWN TLS endpoint rather than
+// through the operator (sdk/message_route.go, ledger 268). The handle satisfies the same seam as
+// urnet_message_client_new's, so urnet_message_transport_new takes it unchanged.
+//
+// mode is URNET_MESSAGE_ROUTE_URNETWORK (0, the default): the connection leaves through a
+// URnetwork exit provider over a tunnel inside this process -- no adapter, no service, no
+// administrator -- and the server sees the exit's address. Or URNET_MESSAGE_ROUTE_DIRECT (1): an
+// ordinary connection, which shows this device's address to the message server.
+//
+// endpoint is a wss:// url, e.g. "wss://74.50.11.53/urmessage/v1". pin is the SHA-256 of the
+// server certificate's SubjectPublicKeyInfo as 64 hex characters, optionally "sha256/"-prefixed;
+// a server presenting any other key is never sent a frame. by_client_jwt and host are needed for
+// URNET_MESSAGE_ROUTE_URNETWORK, where the tunnel's window clients are minted from the credential
+// on that operator, and are ignored for DIRECT. by_client_jwt IS A SECRET. env and app_version may
+// be NULL. Every refusal answers 0 AND sets out_error.
+//
+// IT DOES NOT BLOCK. The tunnel finds its exit providers and the session dials on their own
+// goroutines and redial with backoff; urnet_message_device_connect is what finds out whether the
+// server answered, and urnet_message_route_client_status says how the route is doing.
+//
+// CLOSE IT WITH urnet_message_route_client_close BEFORE urnet_release, after the transport and the
+// device built over it.
+//
+//export urnet_message_route_client_new
+func urnet_message_route_client_new(byClientJwt *C.char, host *C.char, env *C.char, endpoint *C.char, pin *C.char, mode C.int32_t, appVersion *C.char, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_message_route_client_new")
+	parsedPin, err := sdk.ParseMessageRoutePin(goString(pin))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	client, err := sdk.NewMessageRouteClient(context.Background(), &sdk.MessageRouteConfig{
+		Endpoint:    goString(endpoint),
+		Pin:         parsedPin,
+		Mode:        sdk.MessageRouteMode(mode),
+		ByClientJwt: goString(byClientJwt),
+		Host:        goString(host),
+		Env:         goString(env),
+		AppVersion:  goString(appVersion),
+	})
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	return C.uint64_t(newHandle(client))
+}
+
+// urnet_message_route_client_status is the route's state as json: {"mode":"urnetwork"|"direct",
+// "connected":bool, "connects":n, "last_error":"...", "window_providers":n,
+// "window_countries":[...]}. connects above 1 means the session has been re-established. The
+// window fields are the tunnel's exit providers and are zero in direct mode. Free with
+// urnet_free_string.
+//
+//export urnet_message_route_client_status
+func urnet_message_route_client_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_message_route_client_status")
+	self_, ok := resolveHandle[*sdk.MessageRouteClient](uint64(self), "urnet_message_route_client_status")
+	if !ok || self_ == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(self_.Status())
+	if err != nil {
+		return nil
+	}
+	return cString(string(encoded))
+}
+
+// urnet_message_route_client_close ends the session and the tunnel. Idempotent. Close the device
+// and the transport over it first; neither closes this.
+//
+//export urnet_message_route_client_close
+func urnet_message_route_client_close(self C.uint64_t) {
+	defer cgoGuard("urnet_message_route_client_close")
+	self_, ok := resolveHandle[*sdk.MessageRouteClient](uint64(self), "urnet_message_route_client_close")
 	if !ok || self_ == nil {
 		return
 	}
