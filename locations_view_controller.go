@@ -105,6 +105,12 @@ type FilteredLocationsListener interface {
 	FilteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState)
 }
 
+type locationsNotification struct {
+	sequenceNumber int64
+	locations      *FilteredLocations
+	state          FilterLocationsState
+}
+
 type LocationsViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -122,6 +128,8 @@ type LocationsViewController struct {
 
 	filteredLocations     *FilteredLocations
 	filteredLocationState FilterLocationsState
+	notifying             bool
+	pendingNotification   *locationsNotification
 
 	filteredLocationListeners *connect.CallbackList[FilteredLocationsListener]
 	// filteredLocationsStateListeners *connect.CallbackList[FilteredLocationsStateListener]
@@ -193,19 +201,39 @@ func (self *LocationsViewController) GetFilteredLocationState() FilterLocationsS
 }
 
 func (self *LocationsViewController) filteredLocationsChanged(sequenceNumber int64, locations *FilteredLocations, state FilterLocationsState) {
-	for _, listener := range self.filteredLocationListeners.Get() {
-		self.stateLock.Lock()
-		current := self.ctx.Err() == nil && self.nextFilterSequenceNumber == sequenceNumber
+	self.stateLock.Lock()
+	if self.ctx.Err() != nil || self.nextFilterSequenceNumber != sequenceNumber {
 		self.stateLock.Unlock()
-		if !current {
-			return
-		}
-		// A listener may synchronously replace the query. Recheck before each
-		// following listener, without holding our mutex through foreign code.
-		connect.HandleError(func() {
-			listener.FilteredLocationsChanged(locations, state)
-		})
+		return
 	}
+	// A slow listener cannot accumulate requests or let a replacement event
+	// overtake the callback already running. Keep only the newest pending
+	// snapshot; a reentrant FilterLocations call enqueues and returns.
+	self.pendingNotification = &locationsNotification{sequenceNumber, locations, state}
+	if self.notifying {
+		self.stateLock.Unlock()
+		return
+	}
+	self.notifying = true
+	for self.pendingNotification != nil {
+		notification := self.pendingNotification
+		self.pendingNotification = nil
+		self.stateLock.Unlock()
+		for _, listener := range self.filteredLocationListeners.Get() {
+			self.stateLock.Lock()
+			current := self.ctx.Err() == nil && self.nextFilterSequenceNumber == notification.sequenceNumber
+			self.stateLock.Unlock()
+			if !current {
+				break
+			}
+			connect.HandleError(func() {
+				listener.FilteredLocationsChanged(notification.locations, notification.state)
+			})
+		}
+		self.stateLock.Lock()
+	}
+	self.notifying = false
+	self.stateLock.Unlock()
 }
 
 func (self *LocationsViewController) AddFilteredLocationsListener(listener FilteredLocationsListener) Sub {

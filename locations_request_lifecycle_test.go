@@ -275,3 +275,47 @@ func TestLocationsReentrantQueryDiscardsRemainingOldNotifications(t *testing.T) 
 		}
 	})
 }
+
+func TestLocationsConcurrentNotificationsFinishInRequestOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		oldCallbackEntered, releaseOldCallback := make(chan struct{}), make(chan struct{})
+		newRequestEntered, releaseNewRequest := make(chan struct{}), make(chan struct{})
+		api := locationsRequestApi(t, func(ctx context.Context, query string) ([]byte, error) {
+			if query != "" {
+				close(newRequestEntered)
+				<-releaseNewRequest
+				return locationsRequestBody("New"), nil
+			}
+			return locationsRequestBody("Old"), nil
+		})
+		vc := NewLocationsViewControllerWithApi(t.Context(), api)
+		defer vc.Close()
+		applied := make(chan FilterLocationsState, 8)
+		vc.AddFilteredLocationsListener(locationsRequestListener(func(rows *FilteredLocations, state FilterLocationsState) {
+			if state == LocationsLoaded && rows.Countries.Get(0).Name == "Old" {
+				close(oldCallbackEntered)
+				<-releaseOldCallback
+			}
+			applied <- state
+		}))
+		vc.FilterLocations("")
+		<-oldCallbackEntered
+		vc.FilterLocations("New")
+		<-newRequestEntered
+		synctest.Wait()
+		close(releaseOldCallback)
+		synctest.Wait()
+		var last FilterLocationsState
+		for len(applied) != 0 {
+			last = <-applied
+		}
+		if last != LocationsLoading {
+			t.Errorf("old callback completed after the replacement loading notification: %s", last)
+		}
+		close(releaseNewRequest)
+		synctest.Wait()
+		if vc.GetFilteredLocationState() != LocationsLoaded || <-applied != LocationsLoaded {
+			t.Fatal("replacement completion was not delivered")
+		}
+	})
+}
