@@ -197,6 +197,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
+#define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
 #define URNET_OFFER_DECLINE_CONTROL_BACK "back"
 #define URNET_OFFER_DECLINE_CONTROL_FREE_PLAN_LINK "free_plan_link"
 #define URNET_OFFER_DECLINE_CONTROL_SYSTEM_DISMISS "system_dismiss"
@@ -393,6 +394,8 @@ typedef void (*urnet_check_balance_code_cb)(void* user_data, const char* result_
 typedef void (*urnet_claim_network_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ClientEventsSendCallback */
 typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_json, const char* err_param);
+/* ClientRefreshIntegrityListener */
+typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t notice);
 /* CommitCallback */
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 /* ConnectChangeListener */
@@ -726,6 +729,7 @@ void urnet_api_account_preferences_get(uint64_t self, urnet_account_preferences_
 void urnet_api_account_preferences_update(uint64_t self, const char* account_preferences_json, urnet_account_preferences_set_cb callback_result, void* callback_user_data);
 void urnet_api_add_auth(uint64_t self, const char* args_json, urnet_add_auth_cb callback_result, void* callback_user_data);
 uint64_t urnet_api_add_auth_logout_listener(uint64_t self, urnet_auth_logout_cb listener_auth_logout, void* listener_user_data);
+uint64_t urnet_api_add_client_refresh_integrity_listener(uint64_t self, urnet_client_refresh_integrity_cb listener_client_refresh_invalid, void* listener_user_data);
 uint64_t urnet_api_add_jwt_refresh_listener(uint64_t self, urnet_jwt_refresh_cb listener_jwt_refreshed, void* listener_user_data);
 void urnet_api_auth_code_create(uint64_t self, const char* code_create_args_json, urnet_auth_code_create_cb callback_result, void* callback_user_data);
 void urnet_api_auth_code_login(uint64_t self, const char* args_json, urnet_auth_code_login_cb callback_result, void* callback_user_data);
@@ -775,6 +779,7 @@ void urnet_api_get_transfer_stats(uint64_t self, urnet_get_transfer_stats_cb cal
 void urnet_api_list_api_keys(uint64_t self, urnet_list_api_keys_cb callback_result, void* callback_user_data);
 void urnet_api_network_block_location(uint64_t self, const char* args_json, urnet_network_block_location_cb callback_result, void* callback_user_data);
 void urnet_api_network_check(uint64_t self, const char* network_check_json, urnet_network_check_cb callback_result, void* callback_user_data);
+char* urnet_api_network_client_registration_endpoint(uint64_t self, char** out_error);
 void urnet_api_network_create(uint64_t self, const char* network_create_json, urnet_network_create_cb callback_result, void* callback_user_data);
 void urnet_api_network_delete(uint64_t self, urnet_network_delete_cb callback_result, void* callback_user_data);
 void urnet_api_network_unblock_location(uint64_t self, const char* args_json, urnet_network_unblock_location_cb callback_result, void* callback_user_data);
@@ -871,6 +876,10 @@ void urnet_client_event_queue_new_session(uint64_t self);
 int64_t urnet_client_event_queue_pending_count(uint64_t self);
 void urnet_client_event_queue_set_app_version(uint64_t self, const char* app_version);
 void urnet_client_event_queue_set_locale(uint64_t self, const char* locale);
+
+/* ----- ClientRefreshIntegrityNotice ----- */
+
+bool urnet_client_refresh_integrity_notice_close_api_if_current(uint64_t self);
 
 /* ----- ConnectGrid ----- */
 

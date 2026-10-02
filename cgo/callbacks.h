@@ -67,6 +67,8 @@ typedef void (*urnet_claim_network_name_cb)(void* user_data, const char* result_
 void urnet_invoke_claim_network_name(urnet_claim_network_name_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_client_events_send(urnet_client_events_send_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t notice);
+void urnet_invoke_client_refresh_integrity(urnet_client_refresh_integrity_cb cb, void* user_data, uint64_t notice);
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success);
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);

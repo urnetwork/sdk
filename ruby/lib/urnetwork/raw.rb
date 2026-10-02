@@ -33,6 +33,7 @@ module URnetwork
       callback :urnet_check_balance_code_cb, [:pointer, :string, :string], :void
       callback :urnet_claim_network_name_cb, [:pointer, :string, :string], :void
       callback :urnet_client_events_send_cb, [:pointer, :string, :string], :void
+      callback :urnet_client_refresh_integrity_cb, [:pointer, :uint64], :void
       callback :urnet_commit_cb, [:pointer, :bool], :void
       callback :urnet_connect_change_cb, [:pointer, :bool], :void
       callback :urnet_connect_location_change_cb, [:pointer, :string], :void
@@ -237,6 +238,7 @@ module URnetwork
       attach_function :urnet_api_account_preferences_update, [:uint64, :string, :urnet_account_preferences_set_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_add_auth, [:uint64, :string, :urnet_add_auth_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_add_auth_logout_listener, [:uint64, :urnet_auth_logout_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_api_add_client_refresh_integrity_listener, [:uint64, :urnet_client_refresh_integrity_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_add_jwt_refresh_listener, [:uint64, :urnet_jwt_refresh_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_api_auth_code_create, [:uint64, :string, :urnet_auth_code_create_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_auth_code_login, [:uint64, :string, :urnet_auth_code_login_cb, :pointer], :void, blocking: true
@@ -286,6 +288,7 @@ module URnetwork
       attach_function :urnet_api_list_api_keys, [:uint64, :urnet_list_api_keys_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_network_block_location, [:uint64, :string, :urnet_network_block_location_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_network_check, [:uint64, :string, :urnet_network_check_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_network_client_registration_endpoint, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_network_create, [:uint64, :string, :urnet_network_create_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_network_delete, [:uint64, :urnet_network_delete_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_network_unblock_location, [:uint64, :string, :urnet_network_unblock_location_cb, :pointer], :void, blocking: true
@@ -373,6 +376,7 @@ module URnetwork
       attach_function :urnet_client_event_queue_pending_count, [:uint64], :int64, blocking: true
       attach_function :urnet_client_event_queue_set_app_version, [:uint64, :string], :void, blocking: true
       attach_function :urnet_client_event_queue_set_locale, [:uint64, :string], :void, blocking: true
+      attach_function :urnet_client_refresh_integrity_notice_close_api_if_current, [:uint64], :bool, blocking: true
       attach_function :urnet_connect_grid_get_height, [:uint64], :int64, blocking: true
       attach_function :urnet_connect_grid_get_provider_grid_point_by_client_id, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_connect_grid_get_provider_grid_point_list, [:uint64], :pointer, blocking: true
@@ -953,6 +957,7 @@ module URnetwork
       attach_function :urnet_network_space_manager_get_network_space, [:uint64, :string], :uint64, blocking: true
       attach_function :urnet_network_space_manager_get_network_spaces, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_manager_import_network_space_from_json, [:uint64, :string, :pointer], :uint64, blocking: true
+      attach_function :urnet_network_space_manager_migrate_network_space, [:uint64, :string, :string], :bool, blocking: true
       attach_function :urnet_network_space_manager_remove_network_space, [:uint64, :uint64], :bool, blocking: true
       attach_function :urnet_network_space_manager_set_active_network_space, [:uint64, :uint64], :void, blocking: true
       attach_function :urnet_network_space_manager_update_network_space, [:uint64, :string, :urnet_network_space_update_cb, :pointer], :uint64, blocking: true

@@ -18,6 +18,7 @@ EXPORTS
 	urnet_api_account_preferences_update
 	urnet_api_add_auth
 	urnet_api_add_auth_logout_listener
+	urnet_api_add_client_refresh_integrity_listener
 	urnet_api_add_jwt_refresh_listener
 	urnet_api_auth_code_create
 	urnet_api_auth_code_login
@@ -67,6 +68,7 @@ EXPORTS
 	urnet_api_list_api_keys
 	urnet_api_network_block_location
 	urnet_api_network_check
+	urnet_api_network_client_registration_endpoint
 	urnet_api_network_create
 	urnet_api_network_delete
 	urnet_api_network_unblock_location
@@ -160,6 +162,7 @@ EXPORTS
 	urnet_client_event_queue_pending_count
 	urnet_client_event_queue_set_app_version
 	urnet_client_event_queue_set_locale
+	urnet_client_refresh_integrity_notice_close_api_if_current
 	urnet_collapse_host_names
 	urnet_collapse_host_names_list
 	urnet_compare_points_leaderboard_keys

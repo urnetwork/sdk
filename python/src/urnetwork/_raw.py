@@ -33,6 +33,7 @@ urnet_change_network_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_check_balance_code_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_claim_network_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_client_events_send_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_client_refresh_integrity_cb = CFUNCTYPE(None, c_void_p, c_uint64)
 urnet_commit_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_connect_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_connect_location_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -285,6 +286,8 @@ def bind(lib):
     lib.urnet_api_add_auth.restype = None
     lib.urnet_api_add_auth_logout_listener.argtypes = [c_uint64, urnet_auth_logout_cb, c_void_p]
     lib.urnet_api_add_auth_logout_listener.restype = c_uint64
+    lib.urnet_api_add_client_refresh_integrity_listener.argtypes = [c_uint64, urnet_client_refresh_integrity_cb, c_void_p]
+    lib.urnet_api_add_client_refresh_integrity_listener.restype = c_uint64
     lib.urnet_api_add_jwt_refresh_listener.argtypes = [c_uint64, urnet_jwt_refresh_cb, c_void_p]
     lib.urnet_api_add_jwt_refresh_listener.restype = c_uint64
     lib.urnet_api_auth_code_create.argtypes = [c_uint64, c_char_p, urnet_auth_code_create_cb, c_void_p]
@@ -383,6 +386,8 @@ def bind(lib):
     lib.urnet_api_network_block_location.restype = None
     lib.urnet_api_network_check.argtypes = [c_uint64, c_char_p, urnet_network_check_cb, c_void_p]
     lib.urnet_api_network_check.restype = None
+    lib.urnet_api_network_client_registration_endpoint.argtypes = [c_uint64, POINTER(c_void_p)]
+    lib.urnet_api_network_client_registration_endpoint.restype = c_void_p
     lib.urnet_api_network_create.argtypes = [c_uint64, c_char_p, urnet_network_create_cb, c_void_p]
     lib.urnet_api_network_create.restype = None
     lib.urnet_api_network_delete.argtypes = [c_uint64, urnet_network_delete_cb, c_void_p]
@@ -557,6 +562,8 @@ def bind(lib):
     lib.urnet_client_event_queue_set_app_version.restype = None
     lib.urnet_client_event_queue_set_locale.argtypes = [c_uint64, c_char_p]
     lib.urnet_client_event_queue_set_locale.restype = None
+    lib.urnet_client_refresh_integrity_notice_close_api_if_current.argtypes = [c_uint64]
+    lib.urnet_client_refresh_integrity_notice_close_api_if_current.restype = c_bool
     lib.urnet_connect_grid_get_height.argtypes = [c_uint64]
     lib.urnet_connect_grid_get_height.restype = c_int64
     lib.urnet_connect_grid_get_provider_grid_point_by_client_id.argtypes = [c_uint64, c_char_p]
@@ -1717,6 +1724,8 @@ def bind(lib):
     lib.urnet_network_space_manager_get_network_spaces.restype = c_void_p
     lib.urnet_network_space_manager_import_network_space_from_json.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_network_space_manager_import_network_space_from_json.restype = c_uint64
+    lib.urnet_network_space_manager_migrate_network_space.argtypes = [c_uint64, c_char_p, c_char_p]
+    lib.urnet_network_space_manager_migrate_network_space.restype = c_bool
     lib.urnet_network_space_manager_remove_network_space.argtypes = [c_uint64, c_uint64]
     lib.urnet_network_space_manager_remove_network_space.restype = c_bool
     lib.urnet_network_space_manager_set_active_network_space.argtypes = [c_uint64, c_uint64]

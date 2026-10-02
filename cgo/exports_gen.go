@@ -527,6 +527,17 @@ func (self *cAdapterClientEventsSendCallback) Result(result *sdk.ClientEventsSen
 	}
 }
 
+type cAdapterClientRefreshIntegrityListener struct {
+	cbClientRefreshInvalid C.urnet_client_refresh_integrity_cb
+	userData               unsafe.Pointer
+}
+
+func (self *cAdapterClientRefreshIntegrityListener) ClientRefreshInvalid(notice *sdk.ClientRefreshIntegrityNotice) {
+	defer cgoGuard("urnet_client_refresh_integrity_cb")
+	notice_ := C.uint64_t(newHandle(notice))
+	C.urnet_invoke_client_refresh_integrity(self.cbClientRefreshInvalid, self.userData, notice_)
+}
+
 type cAdapterCommitCallback struct {
 	cbComplete C.urnet_commit_cb
 	userData   unsafe.Pointer
@@ -3251,6 +3262,21 @@ func urnet_api_add_auth_logout_listener(self C.uint64_t, listener_auth_logout C.
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_api_add_client_refresh_integrity_listener
+func urnet_api_add_client_refresh_integrity_listener(self C.uint64_t, listener_client_refresh_invalid C.urnet_client_refresh_integrity_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_api_add_client_refresh_integrity_listener")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_add_client_refresh_integrity_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ClientRefreshIntegrityListener
+	if listener_client_refresh_invalid != nil {
+		listener_ = &cAdapterClientRefreshIntegrityListener{cbClientRefreshInvalid: listener_client_refresh_invalid, userData: listener_user_data}
+	}
+	r0 := self_.AddClientRefreshIntegrityListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_api_add_jwt_refresh_listener
 func urnet_api_add_jwt_refresh_listener(self C.uint64_t, listener_jwt_refreshed C.urnet_jwt_refresh_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_api_add_jwt_refresh_listener")
@@ -4154,6 +4180,21 @@ func urnet_api_network_check(self C.uint64_t, networkCheck *C.char, callback_res
 		callback_ = &cAdapterNetworkCheckCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.NetworkCheck(networkCheck_, callback_)
+}
+
+//export urnet_api_network_client_registration_endpoint
+func urnet_api_network_client_registration_endpoint(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_network_client_registration_endpoint")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_network_client_registration_endpoint")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.NetworkClientRegistrationEndpoint()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	return cString(string(r0))
 }
 
 //export urnet_api_network_create
@@ -5651,6 +5692,17 @@ func urnet_client_event_queue_set_locale(self C.uint64_t, locale *C.char) {
 		return
 	}
 	self_.SetLocale(goString(locale))
+}
+
+//export urnet_client_refresh_integrity_notice_close_api_if_current
+func urnet_client_refresh_integrity_notice_close_api_if_current(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_refresh_integrity_notice_close_api_if_current")
+	self_, ok := resolveHandle[*sdk.ClientRefreshIntegrityNotice](uint64(self), "urnet_client_refresh_integrity_notice_close_api_if_current")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.CloseApiIfCurrent()
+	return C.bool(r0)
 }
 
 //export urnet_collapse_host_names

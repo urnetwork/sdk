@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -57,8 +58,11 @@ func TestPlatformRemoteMemberRefreshRejectionPreservesAuth(t *testing.T) {
 	sub := device.AddJwtRefreshListener(jwtRefreshListenerFunc(func(string) { observed += 1 }))
 	t.Cleanup(sub.Close)
 	requests := 0
-	fixture.api.setHttpGetRaw(func(_ context.Context, requestUrl string, byJwt string) ([]byte, error) {
+	fixture.api.setHttpGetRaw(func(ctx context.Context, requestUrl string, byJwt string) ([]byte, error) {
 		requests += 1
+		if err := ctx.Err(); err != nil {
+			t.Errorf("manual platform refresh reached transport with a canceled context: %v", err)
+		}
 		if !strings.HasSuffix(requestUrl, "/auth/refresh") || byJwt != memberJwt {
 			t.Error("manual platform refresh used the wrong path or credential")
 		}
@@ -68,11 +72,18 @@ func TestPlatformRemoteMemberRefreshRejectionPreservesAuth(t *testing.T) {
 	})
 	result, err := fixture.api.RefreshJwtSync()
 	if err != nil {
-		t.Fatal("manual member refresh did not return its logical rejection")
+		t.Fatalf("manual member refresh did not return its logical rejection: %v (requests=%d)", err, requests)
 	}
 	if requests != 1 || result == nil || result.Error == nil ||
 		result.Error.Message != "Client ID is required for token refresh." || result.ByJwt != "" {
 		t.Fatal("manual member refresh lost the server rejection contract")
+	}
+	// Closing the API is different from stopping its optional refresh worker:
+	// a later manual request must fail before reaching the injected transport.
+	fixture.api.Close()
+	result, err = fixture.api.RefreshJwtSync()
+	if !errors.Is(err, context.Canceled) || result != nil || requests != 1 {
+		t.Fatalf("closed API admitted a manual refresh: err=%v result_nil=%t requests=%d", err, result == nil, requests)
 	}
 	device.stateLock.Lock()
 	deviceJwt := device.byJwt

@@ -47,6 +47,8 @@ var behavioralTypes = map[string]bool{
 	"DeviceLocalSaveResult":           true,
 	"LocalStateLocationReadResult":    true,
 	"LocalStateKeyMaterialReadResult": true,
+	// Its guarded action must retain the private API owner and generation.
+	"ClientRefreshIntegrityNotice": true,
 
 	"NetworkSpaceManager":        true,
 	"NetworkSpace":               true,

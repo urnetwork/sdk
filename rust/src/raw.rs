@@ -32,6 +32,7 @@ pub type urnet_change_network_name_cb = Option<unsafe extern "C" fn(*mut c_void,
 pub type urnet_check_balance_code_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_claim_network_name_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_client_events_send_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_client_refresh_integrity_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
 pub type urnet_commit_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_connect_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_connect_location_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -238,6 +239,7 @@ pub struct Raw {
     pub urnet_api_account_preferences_update: unsafe extern "C" fn(u64, *const c_char, urnet_account_preferences_set_cb, *mut c_void) -> (),
     pub urnet_api_add_auth: unsafe extern "C" fn(u64, *const c_char, urnet_add_auth_cb, *mut c_void) -> (),
     pub urnet_api_add_auth_logout_listener: unsafe extern "C" fn(u64, urnet_auth_logout_cb, *mut c_void) -> u64,
+    pub urnet_api_add_client_refresh_integrity_listener: unsafe extern "C" fn(u64, urnet_client_refresh_integrity_cb, *mut c_void) -> u64,
     pub urnet_api_add_jwt_refresh_listener: unsafe extern "C" fn(u64, urnet_jwt_refresh_cb, *mut c_void) -> u64,
     pub urnet_api_auth_code_create: unsafe extern "C" fn(u64, *const c_char, urnet_auth_code_create_cb, *mut c_void) -> (),
     pub urnet_api_auth_code_login: unsafe extern "C" fn(u64, *const c_char, urnet_auth_code_login_cb, *mut c_void) -> (),
@@ -287,6 +289,7 @@ pub struct Raw {
     pub urnet_api_list_api_keys: unsafe extern "C" fn(u64, urnet_list_api_keys_cb, *mut c_void) -> (),
     pub urnet_api_network_block_location: unsafe extern "C" fn(u64, *const c_char, urnet_network_block_location_cb, *mut c_void) -> (),
     pub urnet_api_network_check: unsafe extern "C" fn(u64, *const c_char, urnet_network_check_cb, *mut c_void) -> (),
+    pub urnet_api_network_client_registration_endpoint: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_network_create: unsafe extern "C" fn(u64, *const c_char, urnet_network_create_cb, *mut c_void) -> (),
     pub urnet_api_network_delete: unsafe extern "C" fn(u64, urnet_network_delete_cb, *mut c_void) -> (),
     pub urnet_api_network_unblock_location: unsafe extern "C" fn(u64, *const c_char, urnet_network_unblock_location_cb, *mut c_void) -> (),
@@ -374,6 +377,7 @@ pub struct Raw {
     pub urnet_client_event_queue_pending_count: unsafe extern "C" fn(u64) -> i64,
     pub urnet_client_event_queue_set_app_version: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_client_event_queue_set_locale: unsafe extern "C" fn(u64, *const c_char) -> (),
+    pub urnet_client_refresh_integrity_notice_close_api_if_current: unsafe extern "C" fn(u64) -> bool,
     pub urnet_connect_grid_get_height: unsafe extern "C" fn(u64) -> i64,
     pub urnet_connect_grid_get_provider_grid_point_by_client_id: unsafe extern "C" fn(u64, *const c_char) -> *mut c_char,
     pub urnet_connect_grid_get_provider_grid_point_list: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -954,6 +958,7 @@ pub struct Raw {
     pub urnet_network_space_manager_get_network_space: unsafe extern "C" fn(u64, *const c_char) -> u64,
     pub urnet_network_space_manager_get_network_spaces: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_network_space_manager_import_network_space_from_json: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> u64,
+    pub urnet_network_space_manager_migrate_network_space: unsafe extern "C" fn(u64, *const c_char, *const c_char) -> bool,
     pub urnet_network_space_manager_remove_network_space: unsafe extern "C" fn(u64, u64) -> bool,
     pub urnet_network_space_manager_set_active_network_space: unsafe extern "C" fn(u64, u64) -> (),
     pub urnet_network_space_manager_update_network_space: unsafe extern "C" fn(u64, *const c_char, urnet_network_space_update_cb, *mut c_void) -> u64,
@@ -1322,6 +1327,7 @@ impl Raw {
             urnet_api_account_preferences_update: unsafe { *library.get(b"urnet_api_account_preferences_update\0")? },
             urnet_api_add_auth: unsafe { *library.get(b"urnet_api_add_auth\0")? },
             urnet_api_add_auth_logout_listener: unsafe { *library.get(b"urnet_api_add_auth_logout_listener\0")? },
+            urnet_api_add_client_refresh_integrity_listener: unsafe { *library.get(b"urnet_api_add_client_refresh_integrity_listener\0")? },
             urnet_api_add_jwt_refresh_listener: unsafe { *library.get(b"urnet_api_add_jwt_refresh_listener\0")? },
             urnet_api_auth_code_create: unsafe { *library.get(b"urnet_api_auth_code_create\0")? },
             urnet_api_auth_code_login: unsafe { *library.get(b"urnet_api_auth_code_login\0")? },
@@ -1371,6 +1377,7 @@ impl Raw {
             urnet_api_list_api_keys: unsafe { *library.get(b"urnet_api_list_api_keys\0")? },
             urnet_api_network_block_location: unsafe { *library.get(b"urnet_api_network_block_location\0")? },
             urnet_api_network_check: unsafe { *library.get(b"urnet_api_network_check\0")? },
+            urnet_api_network_client_registration_endpoint: unsafe { *library.get(b"urnet_api_network_client_registration_endpoint\0")? },
             urnet_api_network_create: unsafe { *library.get(b"urnet_api_network_create\0")? },
             urnet_api_network_delete: unsafe { *library.get(b"urnet_api_network_delete\0")? },
             urnet_api_network_unblock_location: unsafe { *library.get(b"urnet_api_network_unblock_location\0")? },
@@ -1458,6 +1465,7 @@ impl Raw {
             urnet_client_event_queue_pending_count: unsafe { *library.get(b"urnet_client_event_queue_pending_count\0")? },
             urnet_client_event_queue_set_app_version: unsafe { *library.get(b"urnet_client_event_queue_set_app_version\0")? },
             urnet_client_event_queue_set_locale: unsafe { *library.get(b"urnet_client_event_queue_set_locale\0")? },
+            urnet_client_refresh_integrity_notice_close_api_if_current: unsafe { *library.get(b"urnet_client_refresh_integrity_notice_close_api_if_current\0")? },
             urnet_connect_grid_get_height: unsafe { *library.get(b"urnet_connect_grid_get_height\0")? },
             urnet_connect_grid_get_provider_grid_point_by_client_id: unsafe { *library.get(b"urnet_connect_grid_get_provider_grid_point_by_client_id\0")? },
             urnet_connect_grid_get_provider_grid_point_list: unsafe { *library.get(b"urnet_connect_grid_get_provider_grid_point_list\0")? },
@@ -2038,6 +2046,7 @@ impl Raw {
             urnet_network_space_manager_get_network_space: unsafe { *library.get(b"urnet_network_space_manager_get_network_space\0")? },
             urnet_network_space_manager_get_network_spaces: unsafe { *library.get(b"urnet_network_space_manager_get_network_spaces\0")? },
             urnet_network_space_manager_import_network_space_from_json: unsafe { *library.get(b"urnet_network_space_manager_import_network_space_from_json\0")? },
+            urnet_network_space_manager_migrate_network_space: unsafe { *library.get(b"urnet_network_space_manager_migrate_network_space\0")? },
             urnet_network_space_manager_remove_network_space: unsafe { *library.get(b"urnet_network_space_manager_remove_network_space\0")? },
             urnet_network_space_manager_set_active_network_space: unsafe { *library.get(b"urnet_network_space_manager_set_active_network_space\0")? },
             urnet_network_space_manager_update_network_space: unsafe { *library.get(b"urnet_network_space_manager_update_network_space\0")? },
