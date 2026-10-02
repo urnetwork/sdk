@@ -353,6 +353,9 @@ type DeviceRemote struct {
 	state DeviceRemoteState
 	// last observed values
 	lastKnownState DeviceRemoteState
+	// Guarded by stateLock. A status RPC must not replace a notification or
+	// another status reply published while it was in flight.
+	contractStatusRevision uint64
 
 	// last observed post quantum identity values. Read-only data (there are
 	// no setters), so these are cached outside the settable
@@ -942,6 +945,7 @@ func (self *DeviceRemote) run() {
 				defer self.stateLock.Unlock()
 
 				self.lastKnownState = syncResponse.State
+				self.contractStatusRevision++
 				self.syncError = ""
 				self.remoteConnected = true
 				if self.settings.BrowserStateOnly {
@@ -1642,28 +1646,31 @@ func (self *DeviceRemote) GetTunnelStarted() bool {
 
 func (self *DeviceRemote) GetContractStatus() *ContractStatus {
 	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
+	service := self.service
+	revision := self.contractStatusRevision
+	self.stateLock.Unlock()
 
-	contractStatus, success := func() (*ContractStatus, bool) {
-		if self.service == nil {
-			return nil, false
-		}
-
-		status, err := rpcCallNoArg[*DeviceRemoteContractStatus](self.service, "DeviceLocalRpc.GetContractStatus", self.closeService)
-		if err != nil {
-			return nil, false
-		}
-		contractStatus := status.ContractStatus
-		self.lastKnownState.ContractStatus.Set(contractStatus)
-		return contractStatus, true
-	}()
-	if success {
-		return contractStatus
-	} else {
-		return self.state.ContractStatus.Get(
-			self.lastKnownState.ContractStatus.Get(nil),
+	// Picker HTTP dispatch and response delivery also need stateLock. Never
+	// hold it while waiting for a synchronous status read from the extension.
+	var status *DeviceRemoteContractStatus
+	var err error
+	if service != nil {
+		status, err = rpcCallNoArg[*DeviceRemoteContractStatus](
+			service, "DeviceLocalRpc.GetContractStatus",
+			func() { self.closeServiceInstance(service) },
 		)
 	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if err == nil && status != nil && self.service == service && self.contractStatusRevision == revision {
+		self.lastKnownState.ContractStatus.Set(status.ContractStatus)
+		self.contractStatusRevision++
+		return status.ContractStatus
+	}
+	return self.state.ContractStatus.Get(
+		self.lastKnownState.ContractStatus.Get(nil),
+	)
 }
 
 func (self *DeviceRemote) GetWindowStatus() *WindowStatus {
@@ -4191,6 +4198,7 @@ func (self *DeviceRemote) contractStatusChanged(contractStatus *ContractStatus) 
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.lastKnownState.ContractStatus.Set(contractStatus)
+		self.contractStatusRevision++
 		return listenerList(self.contractStatusChangeListeners)
 	}()
 	for _, contractStatusChangeListener := range listenerList {
