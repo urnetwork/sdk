@@ -561,13 +561,13 @@ func TestDeviceLocalDnsResolverSettings(t *testing.T) {
 	sub := device.AddDnsResolverSettingsChangeListener(dnsListener)
 	defer sub.Close()
 
-	// the default mirrors the default upgrade mux resolver, with the fallback on
+	// the default mirrors the default upgrade mux resolver, with the fallback off
 	dnsResolverSettings := device.GetDnsResolverSettings()
 	if dnsResolverSettings == nil || !dnsResolverSettings.EnableRemoteDoh {
 		t.Fatalf("unexpected default dns resolver settings %+v", dnsResolverSettings)
 	}
-	if !dnsResolverSettings.EnableFallback {
-		t.Fatalf("expected the default fallback enabled %+v", dnsResolverSettings)
+	if dnsResolverSettings.EnableFallback {
+		t.Fatalf("expected the default fallback disabled %+v", dnsResolverSettings)
 	}
 	if dnsResolverSettings.DnsUpgradeMaskAddress != connect.DefaultDnsUpgradeMaskAddress {
 		t.Fatalf("unexpected default dns upgrade mask %q", dnsResolverSettings.DnsUpgradeMaskAddress)

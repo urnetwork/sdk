@@ -523,13 +523,45 @@ func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
 	return nil
 }
 
+// The persisted dns resolver record carries the fallback opt-in version. The host-network
+// fallback ("fast DNS on connect") used to be on by default, and the dns editors save every
+// field, so an unversioned record's EnableFallback=true cannot be told apart from the old
+// default carried along. An unversioned record therefore loads with the fallback off (dns
+// resolves only through the tunnel); a record written at this version keeps the user's choice.
+const dnsResolverSettingsFallbackOptInVersion = 1
+
+type dnsResolverSettingsRecord struct {
+	DnsResolverSettings
+	FallbackOptInVersion int `json:",omitempty"`
+}
+
+func encodeDnsResolverSettingsRecord(dnsResolverSettings *DnsResolverSettings) ([]byte, error) {
+	return json.Marshal(&dnsResolverSettingsRecord{
+		DnsResolverSettings:  *dnsResolverSettings,
+		FallbackOptInVersion: dnsResolverSettingsFallbackOptInVersion,
+	})
+}
+
+// Applies the fallback opt-in migration to records written by older sdks.
+func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) {
+	var record dnsResolverSettingsRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return nil, err
+	}
+	if record.FallbackOptInVersion < dnsResolverSettingsFallbackOptInVersion {
+		record.EnableFallback = false
+	}
+	dnsResolverSettings := record.DnsResolverSettings
+	return &dnsResolverSettings, nil
+}
+
 func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) error {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettings == nil {
 		os.Remove(path)
 		return nil
 	} else {
-		dnsResolverSettingsBytes, err := json.Marshal(dnsResolverSettings)
+		dnsResolverSettingsBytes, err := encodeDnsResolverSettingsRecord(dnsResolverSettings)
 		if err != nil {
 			return err
 		}
@@ -740,9 +772,8 @@ var _ connect.PriorsStore = (*localStatePriorsStore)(nil)
 func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettingsBytes, err := os.ReadFile(path); err == nil {
-		var dnsResolverSettings DnsResolverSettings
-		if err := json.Unmarshal(dnsResolverSettingsBytes, &dnsResolverSettings); err == nil {
-			return &dnsResolverSettings
+		if dnsResolverSettings, err := decodeDnsResolverSettingsRecord(dnsResolverSettingsBytes); err == nil {
+			return dnsResolverSettings
 		}
 	}
 	return nil
