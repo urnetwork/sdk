@@ -234,6 +234,7 @@ type SubscriptionBalanceViewController struct {
 	available           ByteCount
 	pending             ByteCount
 	serverIsPro         bool
+	serverGuest         bool
 	currentSubscription *Subscription
 	subscriptions       *SubscriptionList
 
@@ -344,6 +345,7 @@ func (self *SubscriptionBalanceViewController) Stop() {
 	self.available = 0
 	self.pending = 0
 	self.serverIsPro = false
+	self.serverGuest = false
 	self.currentSubscription = nil
 	self.subscriptions = NewSubscriptionList()
 	self.jwtPro = false
@@ -581,11 +583,17 @@ func (self *SubscriptionBalanceViewController) isProLocked() bool {
 	return self.jwtPro
 }
 
-// GetIsGuest is the jwt's guest_mode claim.
+// GetIsGuest reports a legacy guest network, one with no login method: the
+// server's `guest` once a snapshot has loaded, or the jwt's guest_mode claim.
+// The claim alone is not enough: every token refresh signs the jwt without it,
+// so a refreshed guest would read as a normal account and could be sold a plan
+// for a network nothing can sign back in to. A claim that is still set (an
+// older server, or a guest that just added a login method and has not
+// refreshed yet) keeps reading as a guest until the jwt is re-signed.
 func (self *SubscriptionBalanceViewController) GetIsGuest() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
-	return self.jwtGuest
+	return self.jwtGuest || (self.loaded && self.serverGuest)
 }
 
 // GetIsLoaded reports whether at least one balance fetch succeeded this
@@ -958,6 +966,7 @@ func (self *SubscriptionBalanceViewController) fetchDone(generation int, result 
 	self.available = result.BalanceByteCount
 	self.pending = result.OpenTransferByteCount
 	self.currentSubscription = result.CurrentSubscription
+	self.serverGuest = result.Guest
 	if result.Subscriptions != nil {
 		self.subscriptions = result.Subscriptions
 	} else {

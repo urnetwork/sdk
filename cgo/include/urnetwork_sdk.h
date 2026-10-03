@@ -4383,6 +4383,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   active_transfer_balances?: TransferBalanceList | null
  *   pending_payout_usd_nano_cents: number
  *   update_time: string
+ *   guest?: boolean
  *   price_tier?: PriceTier | null
  *   onboarding_offer?: OnboardingOffer | null
  *   experiments?: ExperimentAssignmentList | null
