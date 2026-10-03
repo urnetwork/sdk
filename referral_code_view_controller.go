@@ -34,6 +34,8 @@ type ReferralCodeViewController struct {
 	// api-only (NewReferralCodeViewControllerWithApi): no device, the same
 	// controller over the network space api. Exactly one of device / api.
 	api *Api
+	// replaces the api call when set (tests drive the result without a network)
+	referralCodeRequest func(callback GetNetworkReferralCodeCallback)
 
 	referralCodeListeners           *connect.CallbackList[ReferralCodeListener]
 	referralCodeFetchErrorListeners *connect.CallbackList[ReferralCodeFetchErrorListener]
@@ -113,6 +115,14 @@ func (self *ReferralCodeViewController) referralCodeChanged(code string) {
 	}
 }
 
+func (self *ReferralCodeViewController) requestReferralCode(callback GetNetworkReferralCodeCallback) {
+	if self.referralCodeRequest != nil {
+		self.referralCodeRequest(callback)
+		return
+	}
+	self.getApi().GetNetworkReferralCode(callback)
+}
+
 func (self *ReferralCodeViewController) Start() {
 	go connect.HandleError(self.fetchNetworkReferralCode)
 }
@@ -145,7 +155,7 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 	if !enter {
 		return
 	}
-	self.getApi().GetNetworkReferralCode(
+	self.requestReferralCode(
 		GetNetworkReferralCodeCallback(
 			connect.NewApiCallback[*GetNetworkReferralCodeResult](
 				func(result *GetNetworkReferralCodeResult, err error) {
