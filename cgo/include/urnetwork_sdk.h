@@ -84,6 +84,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 /* ----- constants ----- */
 
 #define URNET_ASYNC_QUEUE_SIZE 32
+#define URNET_AUTH_VERIFY_SEND_ERROR_CODE_RATE_LIMITED "verify_rate_limited"
+#define URNET_AUTH_VERIFY_SEND_ERROR_CODE_SEND_FAILED "verify_send_failed"
 #define URNET_BALANCE_CODE_LENGTH 26
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_ALREADY_REDEEMED "already_redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
@@ -2089,6 +2091,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* AuthLoginWithPasswordResultVerification (json):
  *   user_auth: string
+ *   send_error?: AuthVerifySendError | null
  */
 
 /* AuthNetworkClientArgs (json):
@@ -2141,10 +2144,18 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AuthVerifySendArgs (json):
  *   user_auth: string
  *   use_numeric?: boolean
+ *   result_errors?: boolean
+ */
+
+/* AuthVerifySendError (json):
+ *   code: string
+ *   message: string
+ *   retry_after_seconds?: number
  */
 
 /* AuthVerifySendResult (json):
  *   user_auth: string
+ *   error?: AuthVerifySendError | null
  */
 
 /* AuthWalletChallengeArgs (json):
@@ -3277,6 +3288,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* NetworkCreateResultVerification (json):
  *   user_auth: string
+ *   send_error?: AuthVerifySendError | null
  */
 
 /* NetworkDeleteResult (json):

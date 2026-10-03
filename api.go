@@ -542,6 +542,9 @@ type AuthLoginWithPasswordResult struct {
 
 type AuthLoginWithPasswordResultVerification struct {
 	UserAuth string `json:"user_auth"`
+	// set when the server did not send a code; the verify screen must not
+	// say a code was sent
+	SendError *AuthVerifySendError `json:"send_error,omitempty"`
 }
 
 type AuthLoginWithPasswordResultNetwork struct {
@@ -635,10 +638,30 @@ type AuthVerifySendCallback connect.ApiCallback[*AuthVerifySendResult]
 type AuthVerifySendArgs struct {
 	UserAuth   string `json:"user_auth"`
 	UseNumeric bool   `json:"use_numeric,omitempty"`
+	// ask the server to answer a rate limit or a failed send in the result
+	// `Error` instead of an HTTP 429 / 502 error, so the retry time is known
+	ResultErrors bool `json:"result_errors,omitempty"`
 }
 
 type AuthVerifySendResult struct {
 	UserAuth string `json:"user_auth"`
+	// set when no code was sent (requires `ResultErrors`)
+	Error *AuthVerifySendError `json:"error,omitempty"`
+}
+
+// Stable codes for a verification code the server did not send.
+const (
+	AuthVerifySendErrorCodeSendFailed  = "verify_send_failed"
+	AuthVerifySendErrorCodeRateLimited = "verify_rate_limited"
+)
+
+// Why the server did not send a verification code. Apps localize on `Code`
+// and fall back to `Message`.
+type AuthVerifySendError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	// seconds until a new code can be requested; zero when not known
+	RetryAfterSeconds int `json:"retry_after_seconds,omitempty"`
 }
 
 func (self *Api) AuthVerifySend(authVerifySend *AuthVerifySendArgs, callback AuthVerifySendCallback) {
@@ -730,6 +753,9 @@ type NetworkCreateResultNetwork struct {
 
 type NetworkCreateResultVerification struct {
 	UserAuth string `json:"user_auth"`
+	// set when the server did not send a code; the verify screen must not
+	// say a code was sent
+	SendError *AuthVerifySendError `json:"send_error,omitempty"`
 }
 
 type NetworkCreateResultError struct {

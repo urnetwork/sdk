@@ -145,6 +145,8 @@ protected:
 /* ----- constants ----- */
 
 inline constexpr int64_t AsyncQueueSize = 32;
+inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
+inline constexpr const char* AuthVerifySendErrorCodeSendFailed = "verify_send_failed";
 inline constexpr int64_t BalanceCodeLength = 26;
 inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
@@ -471,6 +473,7 @@ struct AuthLoginResultNetwork;
 struct AuthLoginResult;
 struct AuthLoginWithPasswordArgs;
 struct AuthLoginWithPasswordResultNetwork;
+struct AuthVerifySendError;
 struct AuthLoginWithPasswordResultVerification;
 struct AuthLoginWithPasswordResult;
 struct ConnectLocationId;
@@ -1016,8 +1019,15 @@ struct AuthLoginWithPasswordResultNetwork {
 	std::optional<std::string> name;
 };
 
+struct AuthVerifySendError {
+	std::string code{};
+	std::string message{};
+	std::optional<int64_t> retry_after_seconds;
+};
+
 struct AuthLoginWithPasswordResultVerification {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> send_error;
 };
 
 struct AuthLoginWithPasswordResult {
@@ -1174,10 +1184,12 @@ struct AuthVerifyResult {
 struct AuthVerifySendArgs {
 	std::string user_auth{};
 	std::optional<bool> use_numeric;
+	std::optional<bool> result_errors;
 };
 
 struct AuthVerifySendResult {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> error;
 };
 
 struct AuthWalletChallengeArgs {
@@ -2241,6 +2253,7 @@ struct NetworkCreateResultNetwork {
 
 struct NetworkCreateResultVerification {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> send_error;
 };
 
 struct NetworkCreateResult {
@@ -3419,6 +3432,8 @@ inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordArgs& v);
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordArgs& v);
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResultNetwork& v);
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultNetwork& v);
+inline void to_json(nlohmann::json& j, const AuthVerifySendError& v);
+inline void from_json(const nlohmann::json& j, AuthVerifySendError& v);
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResultVerification& v);
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultVerification& v);
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResult& v);
@@ -4944,9 +4959,37 @@ inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultNetwor
 	}
 }
 
+inline void to_json(nlohmann::json& j, const AuthVerifySendError& v) {
+	j = nlohmann::json::object();
+	j["code"] = v.code;
+	j["message"] = v.message;
+	if (v.retry_after_seconds) {
+		j["retry_after_seconds"] = *v.retry_after_seconds;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthVerifySendError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.code);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+	if (auto it = j.find("retry_after_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_after_seconds = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResultVerification& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.send_error) {
+		j["send_error"] = *v.send_error;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultVerification& v) {
 	if (!j.is_object()) {
@@ -4954,6 +4997,11 @@ inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultVerifi
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("send_error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.send_error = std::move(tmp);
 	}
 }
 
@@ -5749,6 +5797,9 @@ inline void to_json(nlohmann::json& j, const AuthVerifySendArgs& v) {
 	if (v.use_numeric) {
 		j["use_numeric"] = *v.use_numeric;
 	}
+	if (v.result_errors) {
+		j["result_errors"] = *v.result_errors;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthVerifySendArgs& v) {
 	if (!j.is_object()) {
@@ -5762,11 +5813,19 @@ inline void from_json(const nlohmann::json& j, AuthVerifySendArgs& v) {
 		it->get_to(tmp);
 		v.use_numeric = std::move(tmp);
 	}
+	if (auto it = j.find("result_errors"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.result_errors = std::move(tmp);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const AuthVerifySendResult& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthVerifySendResult& v) {
 	if (!j.is_object()) {
@@ -5774,6 +5833,11 @@ inline void from_json(const nlohmann::json& j, AuthVerifySendResult& v) {
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -10466,6 +10530,9 @@ inline void from_json(const nlohmann::json& j, NetworkCreateResultNetwork& v) {
 inline void to_json(nlohmann::json& j, const NetworkCreateResultVerification& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.send_error) {
+		j["send_error"] = *v.send_error;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkCreateResultVerification& v) {
 	if (!j.is_object()) {
@@ -10473,6 +10540,11 @@ inline void from_json(const nlohmann::json& j, NetworkCreateResultVerification& 
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("send_error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.send_error = std::move(tmp);
 	}
 }
 
