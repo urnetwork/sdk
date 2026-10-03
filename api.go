@@ -3005,6 +3005,12 @@ type SolanaPaymentIntentResult struct {
 	RegularAmountUsd float64 `json:"regular_amount_usd,omitempty"`
 	OfferApplied     bool    `json:"offer_applied,omitempty"`
 	Currency         string  `json:"currency,omitempty"`
+	// Where to pay, from the server with the quote: the merchant address and the
+	// SPL token mint (USDC), both base58. Pass them to BuildSolanaPaymentUrl as
+	// Recipient and SplTokenMint instead of hardcoding them; the address has
+	// rotated before. Empty from a server that predates these fields.
+	Recipient    string `json:"recipient,omitempty"`
+	SplTokenMint string `json:"spl_token_mint,omitempty"`
 }
 
 type SolanaPaymentIntentError struct {

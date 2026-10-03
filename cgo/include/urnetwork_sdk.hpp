@@ -2993,6 +2993,8 @@ struct SolanaPaymentIntentResult {
 	std::optional<double> regular_amount_usd;
 	std::optional<bool> offer_applied;
 	std::optional<std::string> currency;
+	std::optional<std::string> recipient;
+	std::optional<std::string> spl_token_mint;
 };
 
 struct SolanaPaymentUrlArgs {
@@ -13868,6 +13870,12 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v) {
 	if (v.currency) {
 		j["currency"] = *v.currency;
 	}
+	if (v.recipient) {
+		j["recipient"] = *v.recipient;
+	}
+	if (v.spl_token_mint) {
+		j["spl_token_mint"] = *v.spl_token_mint;
+	}
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 	if (!j.is_object()) {
@@ -13907,6 +13915,16 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.currency = std::move(tmp);
+	}
+	if (auto it = j.find("recipient"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.recipient = std::move(tmp);
+	}
+	if (auto it = j.find("spl_token_mint"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.spl_token_mint = std::move(tmp);
 	}
 }
 
