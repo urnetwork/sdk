@@ -2005,7 +2005,8 @@ func TestAGuardEntryInsideTheRowDirectoryWouldBeAFinding(t *testing.T) {
 func TestEveryForcedFlushInTheStoreIsCounted(t *testing.T) {
 	const source = "message_stream_store.go"
 
-	// every Sync call site in the package's production source, and the function it sits in.
+	// every Sync call site in the package's production source, keyed by its file and the declaration
+	// it sits in, which is what streamStoreSyncRulings names.
 	sites := map[string]int{}
 	for _, name := range streamTestProductionSources(t) {
 		content, err := os.ReadFile(name)
@@ -2028,17 +2029,45 @@ func TestEveryForcedFlushInTheStoreIsCounted(t *testing.T) {
 					return true
 				}
 				if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Sync" {
-					sites[function.Name.Name] += 1
+					sites[name+" "+messageFragmentEnclosing(parsed, call.Pos())] += 1
 				}
 				return true
 			})
 			return false
 		})
 	}
-	t.Logf("Sync call sites in this package's production source, by enclosing function: %v", sites)
-	if len(sites) != 1 || sites["forceFlush"] != 1 {
-		t.Errorf("this package has %v Sync call sites; there must be exactly one and it must be forceFlush, which is what makes the flush counter a count of flushes PERFORMED rather than of flushes intended -- a counter above a Sync counts the same whether the Sync is there or not, and that is how \"return from Reserve before the flush\" survived a whole suite once",
-			sites)
+	const flush = "message_stream_store.go StreamStore.forceFlush"
+	t.Logf("Sync call sites in this package's production source, by file and declaration: %v", sites)
+	excused := []string{}
+	unexcused := map[string]int{}
+	for site, count := range sites {
+		if site == flush {
+			continue
+		}
+		if _, ruled := streamStoreSyncRulings[site]; ruled {
+			excused = append(excused, site)
+			continue
+		}
+		unexcused[site] = count
+	}
+	stale := []string{}
+	for site := range streamStoreSyncRulings {
+		if _, there := sites[site]; !there {
+			stale = append(stale, site)
+		}
+	}
+	slices.Sort(excused)
+	slices.Sort(stale)
+	t.Logf("of those, EXCUSED by a ruling of their own as not the store's: %d %v", len(excused), excused)
+	if sites[flush] != 1 || len(unexcused) != 0 {
+		t.Errorf("this package has %v Sync call site(s) that are neither %s nor ruled in streamStoreSyncRulings, and %d in %s; "+
+			"the store's one Sync must be forceFlush's, which is what makes the flush counter a count of flushes PERFORMED "+
+			"rather than of flushes intended. If a site is not the stream store's, rule on it there, by the key printed",
+			unexcused, flush, sites[flush], flush)
+	}
+	if len(stale) != 0 {
+		t.Errorf("%d ruling(s) in streamStoreSyncRulings excuse a Sync that is not there: %v. An excuse for something "+
+			"that is gone is an excuse nothing checks", len(stale), stale)
 	}
 
 	// and forceFlush counts, after the call returns.
@@ -2076,6 +2105,27 @@ func TestEveryForcedFlushInTheStoreIsCounted(t *testing.T) {
 // streamTestProductionSources is every non-test .go file in this package, whatever GOOS it is
 // constrained to: the gates below read source rather than compile it, so a file this build
 // excludes is still read.
+// Sync call sites in package sdk that are NOT the stream store's, excused one at a time and by name,
+// the way messageFragmentPartSizeCopyRulings excuses copies of the part size: keyed by the file and
+// the declaration the call sits in, each with a sentence, and each asserted to match something.
+//
+// Every entry arrived with the merge of upstream urnetwork/sdk main (msgrepo ledger 277). Before it
+// the store's forceFlush held the only Sync in the package and this gate said so in those words.
+// Package sdk is upstream's package, and upstream's own persistence syncs files of its own. A Sync
+// added anywhere in the package still fails the gate until somebody rules on it, which is the
+// decision being asked for rather than skipped.
+var streamStoreSyncRulings = map[string]string{
+	"device_rpc.go addListenerWithRpcCall": "deviceRemote.Sync() is DeviceRemote's own method, which wakes its " +
+		"reconnect monitor to publish listener state. It is not a file sync at all: it is in the class because " +
+		"the class is a selector named Sync",
+	"local_state_auth.go LocalState.writeAuthStateLocked": "the auth state's atomic write: a temp file synced " +
+		"before its rename, then its directory. Upstream's local state, with no flush counter of the store's in it",
+	"local_state_location.go LocalState.writePreferenceBytesWithLock": "a preference file's atomic write, the " +
+		"same shape for the same reason. Upstream's local state",
+	"peer_client_key_pin_store_bounded.go boundedPeerClientKeyPinStore.persistWithLock": "the peer key-pin " +
+		"store's commit: its file and then its directory. Upstream's store, not this one",
+}
+
 func streamTestProductionSources(t *testing.T) []string {
 	t.Helper()
 	names, err := filepath.Glob("*.go")

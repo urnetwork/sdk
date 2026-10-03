@@ -1266,6 +1266,20 @@ var messageFragmentPartSizeCopyRulings = map[string]string{
 		"tun fd, nothing carries it to a MessageServerFragment, and it predates this binding. It is in " +
 		"the class because the class is the VALUE, which is the property that makes the class worth " +
 		"having, and it is excused by name here rather than by narrowing the scope back to three files.",
+
+	// UPSTREAM sdk's, with the merge of urnetwork/sdk main (msgrepo ledger 277): five more values that
+	// happen to equal the part size, ruled the same way rather than by narrowing the scope.
+	"device_local.go providerLocalUserNatSettings": "connect.MemoryScaledCount(2048, 256) -- the provider's " +
+		"local user-NAT UDP buffer global limit: a COUNT of buffers, scaled by device memory. Not a byte budget of any " +
+		"kind, and nothing carries it to a MessageServerFragment",
+	"mobile_memory_policy.go mobilePackQueueBudgetMaxByteCount": "2 * 1024 * 1024 -- 2 MiB, the mobile Pack " +
+		"queue's byte budget. Its 2048 is the subexpression 2 * 1024 of a MiB product, not a part size",
+	"mobile_memory_policy.go mobileReceiveQueueBudgetMaxByteCount": "2 * 1024 * 1024 -- 2 MiB, the mobile " +
+		"receive queue's byte budget. The same MiB product for the same reason",
+	"mobile_packet_pressure.go mobilePacketPressureMaxOutstandingByteCount": "512 * 2048 -- 1 MiB of outstanding " +
+		"packet bytes, written as 512 packet slots of 2048. A packet-pressure gate, not a frame budget",
+	"mobile_packet_pressure.go mobilePacketPressureH1AckMaxOutstandingByteCount": "2 * 1024 * 1024 -- 2 MiB, the " +
+		"H1 acknowledgement allowance. The same MiB product",
 }
 
 // The declaration an expression sits inside, named the way a ruling names it:

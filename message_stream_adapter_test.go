@@ -1121,6 +1121,136 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"streamStoreHeldHere":                      streamAdapterPackageVarOf(&streamStoreHeldHere),
 	"streamStoreHeldHereMutex":                 streamAdapterPackageVarOf(&streamStoreHeldHereMutex),
 	"streamStoreSentinelRulings":               streamAdapterPackageVarOf(&streamStoreSentinelRulings),
+
+	// message_route.go, the route to the server's own endpoint (ledger 268). Added 2026-10-03:
+	// the census had not been told about them, and this gate had not been run since they landed.
+	"ErrMessageRouteBadEndpoint":   streamAdapterPackageVarOf(&ErrMessageRouteBadEndpoint),
+	"ErrMessageRouteBadMode":       streamAdapterPackageVarOf(&ErrMessageRouteBadMode),
+	"ErrMessageRouteBadPin":        streamAdapterPackageVarOf(&ErrMessageRouteBadPin),
+	"ErrMessageRouteNoEndpoint":    streamAdapterPackageVarOf(&ErrMessageRouteNoEndpoint),
+	"ErrMessageRoutePinMismatch":   streamAdapterPackageVarOf(&ErrMessageRoutePinMismatch),
+	"errMessageRouteClosed":        streamAdapterPackageVarOf(&errMessageRouteClosed),
+	"messageRouteDialTimeout":      streamAdapterPackageConstOf(messageRouteDialTimeout),
+	"messageRouteHandshakeTimeout": streamAdapterPackageConstOf(messageRouteHandshakeTimeout),
+	"messageRouteMaxBackoff":       streamAdapterPackageConstOf(messageRouteMaxBackoff),
+	"messageRouteMinBackoff":       streamAdapterPackageConstOf(messageRouteMinBackoff),
+	"messageRoutePingInterval":     streamAdapterPackageConstOf(messageRoutePingInterval),
+	"messageRouteWriteTimeout":     streamAdapterPackageConstOf(messageRouteWriteTimeout),
+
+	// UPSTREAM sdk's, with the merge of urnetwork/sdk main (msgrepo ledger 277). The census is
+	// over the whole package by design, so a value upstream declares is named here like any other.
+	"BlockActionReasonBlocker":              streamAdapterPackageConstOf(BlockActionReasonBlocker),
+	"BlockActionReasonOverride":             streamAdapterPackageConstOf(BlockActionReasonOverride),
+	"BlockActionReasonSecurity":             streamAdapterPackageConstOf(BlockActionReasonSecurity),
+	"BlockActionReasonSecurityBittorrent":   streamAdapterPackageConstOf(BlockActionReasonSecurityBittorrent),
+	"BlockActionReasonSecurityEncrypted":    streamAdapterPackageConstOf(BlockActionReasonSecurityEncrypted),
+	"BlockActionReasonSecurityIp":           streamAdapterPackageConstOf(BlockActionReasonSecurityIp),
+	"BlockActionReasonSecurityPort":         streamAdapterPackageConstOf(BlockActionReasonSecurityPort),
+	"BlockActionReasonSecuritySmtp":         streamAdapterPackageConstOf(BlockActionReasonSecuritySmtp),
+	"EmojiTagMaxCount":                      streamAdapterPackageConstOf(EmojiTagMaxCount),
+	"EmojiTagSuggestMaxCount":               streamAdapterPackageConstOf(EmojiTagSuggestMaxCount),
+	"ErrWalletCircleTransferRequestId":      streamAdapterPackageVarOf(&ErrWalletCircleTransferRequestId),
+	"ExtenderGossipStateConnected":          streamAdapterPackageConstOf(ExtenderGossipStateConnected),
+	"ExtenderGossipStateConnecting":         streamAdapterPackageConstOf(ExtenderGossipStateConnecting),
+	"ExtenderGossipStateDisconnected":       streamAdapterPackageConstOf(ExtenderGossipStateDisconnected),
+	"Version":                               streamAdapterPackageVarOf(&Version),
+	"bundledExtenderRootPublicKeyHexes":     streamAdapterPackageVarOf(&bundledExtenderRootPublicKeyHexes),
+	"clientEventFlushInterval":              streamAdapterPackageConstOf(clientEventFlushInterval),
+	"clientEventPropKeys":                   streamAdapterPackageVarOf(&clientEventPropKeys),
+	"currentLogDir":                         streamAdapterPackageVarOf(&currentLogDir),
+	"currentLogDirMu":                       streamAdapterPackageVarOf(&currentLogDirMu),
+	"currentLogRoot":                        streamAdapterPackageVarOf(&currentLogRoot),
+	"defaultMobileTrimLevelReporter":        streamAdapterPackageVarOf(&defaultMobileTrimLevelReporter),
+	"defaultSubprotocolsQueryTimeout":       streamAdapterPackageConstOf(defaultSubprotocolsQueryTimeout),
+	"deviceRpcH1PlusDisabled":               streamAdapterPackageVarOf(&deviceRpcH1PlusDisabled),
+	"errApiRequestFailed":                   streamAdapterPackageVarOf(&errApiRequestFailed),
+	"errApiRequestReturnedWithoutCallback":  streamAdapterPackageVarOf(&errApiRequestReturnedWithoutCallback),
+	"errByJwtNoClientId":                    streamAdapterPackageVarOf(&errByJwtNoClientId),
+	"errDeviceRemoteLocationInvalid":        streamAdapterPackageVarOf(&errDeviceRemoteLocationInvalid),
+	"errDeviceRemoteLocationReadFailed":     streamAdapterPackageVarOf(&errDeviceRemoteLocationReadFailed),
+	"errDeviceRemoteLocationSuperseded":     streamAdapterPackageVarOf(&errDeviceRemoteLocationSuperseded),
+	"errDeviceRemoteLocationUnavailable":    streamAdapterPackageVarOf(&errDeviceRemoteLocationUnavailable),
+	"errFindRoutesRemoved":                  streamAdapterPackageVarOf(&errFindRoutesRemoved),
+	"errGuestUpgradeRouteRemoved":           streamAdapterPackageVarOf(&errGuestUpgradeRouteRemoved),
+	"errLocationsResultInvalid":             streamAdapterPackageVarOf(&errLocationsResultInvalid),
+	"errPeerPinStoreBudget":                 streamAdapterPackageVarOf(&errPeerPinStoreBudget),
+	"errPeerPinStoreCapacity":               streamAdapterPackageVarOf(&errPeerPinStoreCapacity),
+	"errPeerPinStoreClosed":                 streamAdapterPackageVarOf(&errPeerPinStoreClosed),
+	"errPeerPinStoreCorrupt":                streamAdapterPackageVarOf(&errPeerPinStoreCorrupt),
+	"errPeerPinStoreIO":                     streamAdapterPackageVarOf(&errPeerPinStoreIO),
+	"errPeerPinStoreOversize":               streamAdapterPackageVarOf(&errPeerPinStoreOversize),
+	"errPeerPinStoreRollback":               streamAdapterPackageVarOf(&errPeerPinStoreRollback),
+	"errPeerPinStoreSuperseded":             streamAdapterPackageVarOf(&errPeerPinStoreSuperseded),
+	"errTransferDiagnosticSnapshotTooLarge": streamAdapterPackageVarOf(&errTransferDiagnosticSnapshotTooLarge),
+	"errTransferDiagnosticUnavailable":      streamAdapterPackageVarOf(&errTransferDiagnosticUnavailable),
+	"extenderNetworkClientConfigure":        streamAdapterPackageVarOf(&extenderNetworkClientConfigure),
+	"extenderNetworkClientEnabled":          streamAdapterPackageVarOf(&extenderNetworkClientEnabled),
+	"extenderNodeEnabled":                   streamAdapterPackageVarOf(&extenderNodeEnabled),
+	"extenderProvideListenTimeout":          streamAdapterPackageConstOf(extenderProvideListenTimeout),
+	"extenderProvideRoleEnabled":            streamAdapterPackageVarOf(&extenderProvideRoleEnabled),
+	"extenderProvideStatusEpoch":            streamAdapterPackageConstOf(extenderProvideStatusEpoch),
+	"extenderStatusEpoch":                   streamAdapterPackageConstOf(extenderStatusEpoch),
+	"extenderStoreReadOnly":                 streamAdapterPackageVarOf(&extenderStoreReadOnly),
+	"licenseYml":                            streamAdapterPackageVarOf(&licenseYml),
+	"loadLicenseFile":                       streamAdapterPackageVarOf(&loadLicenseFile),
+	"localPreferenceCatalog":                streamAdapterPackageVarOf(&localPreferenceCatalog),
+	"logSeverities":                         streamAdapterPackageVarOf(&logSeverities),
+	"logVerbosityMu":                        streamAdapterPackageVarOf(&logVerbosityMu),
+	"memoryClassNames":                      streamAdapterPackageVarOf(&memoryClassNames),
+	"minRefreshTimeout":                     streamAdapterPackageConstOf(minRefreshTimeout),
+	"mobileH1ReceiveAckHandoffWaitTimeout":  streamAdapterPackageConstOf(mobileH1ReceiveAckHandoffWaitTimeout),
+	"mobileH1ReceivePackHandoffWaitTimeout": streamAdapterPackageConstOf(mobileH1ReceivePackHandoffWaitTimeout),
+	"mobileIdleMemoryActivity":              streamAdapterPackageVarOf(&mobileIdleMemoryActivity),
+	"mobileIdleMemoryTrimAfter":             streamAdapterPackageVarOf(&mobileIdleMemoryTrimAfter),
+	"mobileIdleMemoryTrimBefore":            streamAdapterPackageVarOf(&mobileIdleMemoryTrimBefore),
+	"mobileIdleMemoryTrimBelow":             streamAdapterPackageVarOf(&mobileIdleMemoryTrimBelow),
+	"mobileIdleMemoryTrimCooldown":          streamAdapterPackageConstOf(mobileIdleMemoryTrimCooldown),
+	"mobileIdleMemoryTrimCooldowns":         streamAdapterPackageVarOf(&mobileIdleMemoryTrimCooldowns),
+	"mobileIdleMemoryTrimCount":             streamAdapterPackageVarOf(&mobileIdleMemoryTrimCount),
+	"mobileIdleMemoryTrimDeferred":          streamAdapterPackageVarOf(&mobileIdleMemoryTrimDeferred),
+	"mobileIdleMemoryTrimDelay":             streamAdapterPackageConstOf(mobileIdleMemoryTrimDelay),
+	"mobileIdleMemoryTrimDropped":           streamAdapterPackageVarOf(&mobileIdleMemoryTrimDropped),
+	"mobileIdleMemoryTrimRetryDelay":        streamAdapterPackageConstOf(mobileIdleMemoryTrimRetryDelay),
+	"mobileIdleMemoryTrimmerOnce":           streamAdapterPackageVarOf(&mobileIdleMemoryTrimmerOnce),
+	"mobileIdleMemoryTrimmerStarted":        streamAdapterPackageVarOf(&mobileIdleMemoryTrimmerStarted),
+	"mobileMemorySampleInterval":            streamAdapterPackageConstOf(mobileMemorySampleInterval),
+	"mobilePhysicalFootprintCurrent":        streamAdapterPackageVarOf(&mobilePhysicalFootprintCurrent),
+	"mobilePhysicalFootprintPeak":           streamAdapterPackageVarOf(&mobilePhysicalFootprintPeak),
+	"mobilePhysicalPressureArmed":           streamAdapterPackageVarOf(&mobilePhysicalPressureArmed),
+	"mobilePhysicalPressureByteCount":       streamAdapterPackageVarOf(&mobilePhysicalPressureByteCount),
+	"mobilePhysicalPressureCount":           streamAdapterPackageVarOf(&mobilePhysicalPressureCount),
+	"mobileRuntimePressureArmed":            streamAdapterPackageVarOf(&mobileRuntimePressureArmed),
+	"mobileTcpSequenceIdleTimeout":          streamAdapterPackageConstOf(mobileTcpSequenceIdleTimeout),
+	"mobileTrimLevelActionCount":            streamAdapterPackageVarOf(&mobileTrimLevelActionCount),
+	"mobileTrimLevelCount":                  streamAdapterPackageVarOf(&mobileTrimLevelCount),
+	"mobileTrimLevelDropped":                streamAdapterPackageVarOf(&mobileTrimLevelDropped),
+	"mobileTrimLevelLast":                   streamAdapterPackageVarOf(&mobileTrimLevelLast),
+	"noExpirationRefreshTimeout":            streamAdapterPackageConstOf(noExpirationRefreshTimeout),
+	"pointsLeaderboardTestBeforeFetch":      streamAdapterPackageVarOf(&pointsLeaderboardTestBeforeFetch),
+	"pointsLeaderboardTierPercents":         streamAdapterPackageVarOf(&pointsLeaderboardTierPercents),
+	"providerPriorsStaleAfter":              streamAdapterPackageConstOf(providerPriorsStaleAfter),
+	"purchaseReportBackoffMillis":           streamAdapterPackageVarOf(&purchaseReportBackoffMillis),
+	"redactAddrBytesPattern":                streamAdapterPackageVarOf(&redactAddrBytesPattern),
+	"redactIPv4Pattern":                     streamAdapterPackageVarOf(&redactIPv4Pattern),
+	"redactIPv6Pattern":                     streamAdapterPackageVarOf(&redactIPv6Pattern),
+	"redactUUIDPattern":                     streamAdapterPackageVarOf(&redactUUIDPattern),
+	"runtimeTotalMetricLock":                streamAdapterPackageVarOf(&runtimeTotalMetricLock),
+	"runtimeTotalMetricSamples":             streamAdapterPackageVarOf(&runtimeTotalMetricSamples),
+	"snArtifactFetchTimeout":                streamAdapterPackageConstOf(snArtifactFetchTimeout),
+	"snClaimReceiptPoll":                    streamAdapterPackageConstOf(snClaimReceiptPoll),
+	"snClaimReceiptTimeout":                 streamAdapterPackageConstOf(snClaimReceiptTimeout),
+	"snClaimTimeout":                        streamAdapterPackageConstOf(snClaimTimeout),
+	"snClaimsTimeout":                       streamAdapterPackageConstOf(snClaimsTimeout),
+	"snHexRe":                               streamAdapterPackageVarOf(&snHexRe),
+	"snRpcTimeout":                          streamAdapterPackageConstOf(snRpcTimeout),
+	"snWeiPerTao":                           streamAdapterPackageVarOf(&snWeiPerTao),
+	"subscriptionStoreAppleRe":              streamAdapterPackageVarOf(&subscriptionStoreAppleRe),
+	"subscriptionStoreGoogleRe":             streamAdapterPackageVarOf(&subscriptionStoreGoogleRe),
+	"subscriptionStoreStripeRe":             streamAdapterPackageVarOf(&subscriptionStoreStripeRe),
+	"testingBeforeExtenderStatusWatch":      streamAdapterPackageVarOf(&testingBeforeExtenderStatusWatch),
+	"transferDiagLogSeconds":                streamAdapterPackageVarOf(&transferDiagLogSeconds),
+	"transferDiagnosticSnapshotsEnabled":    streamAdapterPackageVarOf(&transferDiagnosticSnapshotsEnabled),
+	"tunnelLocalIpv6Prefix":                 streamAdapterPackageVarOf(&tunnelLocalIpv6Prefix),
 }
 
 // streamAdapterPackageConstOf answers a package-level CONSTANT's DECLARED type, the same way
@@ -1180,6 +1310,38 @@ var streamAdapterNonSentinelRulings = map[string]string{
 	"ErrMessageClientNoJwt":                "NewMessageClient's refusal that no by_client_jwt was handed in. It is raised by a free function that CONSTRUCTS a platform-attached connect client, before any store exists; the reserver's call graph reaches a StreamStore and a StreamStore mints no credentials",
 	"ErrMessageClientNoClientId":           "NewMessageClient's refusal that the credential names no client_id, so the client it would build is at the zero id. Same seat as the one above: a construction refusal taken before a client exists, and no method the adapter holds can produce it",
 	"ErrMessageClientNoHost":               "NewMessageClient's refusal that the config named neither a host nor both absolute service urls, so there is nowhere to dial. It is decided over the config alone, in a free function no store call reaches",
+	// message_route.go, the route to the server's own endpoint (ledger 268). Not one of the stream
+	// store's refusals: the route client is a transport, and the adapter holds no route client.
+	"ErrMessageRouteBadEndpoint": "the route client's refusal that the configured endpoint is not a wss:// url with a host. It is decided when a MessageRouteClient is built, before any stream exists",
+	"ErrMessageRouteBadMode":     "the route client's refusal of a route mode it does not know. Same seat: construction",
+	"ErrMessageRouteBadPin":      "the route client's refusal of a pin that is not 64 hex characters of SHA-256. Same seat",
+	"ErrMessageRouteNoEndpoint":  "the route client's refusal that a route to the server's own endpoint named none. Same seat",
+	"ErrMessageRoutePinMismatch": "the route client's TLS refusal that the server presented a key other than the pinned one. It ends a dial, on the route client's side of the transport",
+	"errMessageRouteClosed":      "the route client's refusal to carry a frame after Close, on its own send path",
+
+	// UPSTREAM sdk's, with the merge of urnetwork/sdk main (msgrepo ledger 277). Each is the refusal of
+	// a part of package sdk the stream store has no part in, and each is measured below like any other.
+	"ErrWalletCircleTransferRequestId":      "the wallet API's refusal of a Circle transfer with no persisted request_id",
+	"errApiRequestFailed":                   "the API client's failure of one request",
+	"errApiRequestReturnedWithoutCallback":  "the API client's failure that a request returned without calling its callback",
+	"errByJwtNoClientId":                    "the local device's refusal of a by_client_jwt with no client_id claim",
+	"errDeviceRemoteLocationInvalid":        "DeviceRemote's refusal of a malformed current-location answer",
+	"errDeviceRemoteLocationReadFailed":     "DeviceRemote's failure to read the current location",
+	"errDeviceRemoteLocationSuperseded":     "DeviceRemote's refusal of a current location read across a device change",
+	"errDeviceRemoteLocationUnavailable":    "DeviceRemote's answer that no current location is available",
+	"errFindRoutesRemoved":                  "the API client's refusal to call a route the server removed",
+	"errGuestUpgradeRouteRemoved":           "the API client's refusal to call the removed guest-upgrade route",
+	"errLocationsResultInvalid":             "the API client's refusal of a malformed provider-locations answer",
+	"errPeerPinStoreBudget":                 "the bounded peer key-pin store's refusal that its memory budget is full",
+	"errPeerPinStoreCapacity":               "the bounded peer key-pin store's refusal that its capacity is full",
+	"errPeerPinStoreClosed":                 "the bounded peer key-pin store's refusal after close",
+	"errPeerPinStoreCorrupt":                "the bounded peer key-pin store's refusal of an invalid persisted store",
+	"errPeerPinStoreIO":                     "the bounded peer key-pin store's persistence failure; it wraps this one, inside the store's own commit",
+	"errPeerPinStoreOversize":               "the bounded peer key-pin store's refusal of a persisted store over 128 KiB",
+	"errPeerPinStoreRollback":               "the bounded peer key-pin store's refusal of a generation rollback or conflict",
+	"errPeerPinStoreSuperseded":             "the bounded peer key-pin store's refusal from a superseded owner",
+	"errTransferDiagnosticSnapshotTooLarge": "the transfer diagnostics' refusal of a snapshot over 64 KiB",
+	"errTransferDiagnosticUnavailable":      "the transfer diagnostics' refusal on a device that has not opted in",
 }
 
 // streamAdapterPredeclaredTypeNames is the set of type names a CONSTANT's declared type can be
@@ -1789,7 +1951,14 @@ func streamAdapterFreeFunctionsFrom(declarations []streamAdapterDeclaration, hel
 //	drop the out-of-scope branch and demand every class member -> the same red
 func TestTheValueCensusScopeIsThisBuildsOwnFileSet(t *testing.T) {
 	_, parsed, _ := streamAdapterParse(t)
-	here := streamAdapterBuiltUnder(t, parsed, build.Default)
+	// THE TWO BUILDS ARE NAMED, NOT READ OFF THE HOST. The property is a movement between a build that
+	// compiles the Windows exclusion file and one that does not, and which of the two the host is plays
+	// no part in it. This case used to take "here" from build.Default, and its first run on a linux host
+	// -- the fork's CI, after the merge of upstream sdk (msgrepo ledger 277) -- failed for that alone.
+	windows := build.Default
+	windows.GOOS = "windows"
+	windows.GOARCH = "amd64"
+	here := streamAdapterBuiltUnder(t, parsed, windows)
 	excludedHere := []string{}
 	for _, name := range slices.Sorted(maps.Keys(here)) {
 		if !here[name] {
@@ -1797,7 +1966,7 @@ func TestTheValueCensusScopeIsThisBuildsOwnFileSet(t *testing.T) {
 		}
 	}
 	t.Logf("SCOPE: go/build says this %s/%s build compiles %d of package sdk's %d production files",
-		build.Default.GOOS, build.Default.GOARCH, len(parsed)-len(excludedHere), len(parsed))
+		windows.GOOS, windows.GOARCH, len(parsed)-len(excludedHere), len(parsed))
 	t.Logf("COMPLEMENT the build narrowing removed (%d file(s) this build does not compile): %v", len(excludedHere), excludedHere)
 	if len(excludedHere) == 0 {
 		t.Fatal("go/build excludes no production file of package sdk, so the census scope narrows nothing and this case is measuring nothing")
@@ -1813,17 +1982,17 @@ func TestTheValueCensusScopeIsThisBuildsOwnFileSet(t *testing.T) {
 		t.Fatalf("%s is not among the production files this gate parses", flockFile)
 	}
 
-	namedHere, _, outOfScopeHere, _ := streamAdapterValuePositionsUnder(t, build.Default)
+	namedHere, _, outOfScopeHere, _ := streamAdapterValuePositionsUnder(t, windows)
 	elsewhere := build.Default
 	elsewhere.GOOS = "linux"
 	elsewhere.GOARCH = "amd64"
 	namedThere, _, outOfScopeThere, _ := streamAdapterValuePositionsUnder(t, elsewhere)
 
 	if here[flockFile] {
-		t.Errorf("go/build says this %s build compiles %s; the two exclusion files' constraints are complements and exactly one of them is this build's", build.Default.GOOS, flockFile)
+		t.Errorf("go/build says this %s build compiles %s; the two exclusion files' constraints are complements and exactly one of them is this build's", windows.GOOS, flockFile)
 	}
 	if !here[windowsFile] {
-		t.Errorf("go/build says this %s build does not compile %s", build.Default.GOOS, windowsFile)
+		t.Errorf("go/build says this %s build does not compile %s", windows.GOOS, windowsFile)
 	}
 	there := streamAdapterBuiltUnder(t, parsed, elsewhere)
 	if there[windowsFile] {
