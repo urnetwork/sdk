@@ -967,6 +967,21 @@ export interface FeedbackViewController {
   addIsSendingFeedbackListener(cb: (sending: boolean) => void): Unsubscribe;
 }
 
+/** AccountHost.redeemBalanceCodeOutcome result through its json tags */
+export interface BalanceCodeRedeemOutcome {
+  outcome: "redeemed" | "already_redeemed" | "invalid" | "unknown";
+  transfer_balance?: {
+    transfer_balance_id: string;
+    start_time: string;
+    end_time: string;
+    balance_byte_count: number;
+  };
+  /** the server's rejection, when it answered */
+  error?: { message: string };
+  /** the redeem call's own failure, when it got no answer */
+  transport_error?: { message: string; kind: "http" | "network" | "timeout" | "parse"; is_timeout: boolean };
+}
+
 /** the referral code result through its json tags */
 export interface ReferralCodeInfo {
   referral_code?: string;
@@ -1103,6 +1118,13 @@ export interface AccountHost {
   getNetworkReliability(): Promise<any>;
   getNetworkRedeemedBalanceCodes(): Promise<any>;
   redeemBalanceCode(secret: string): Promise<any>;
+  /**
+   * Redeem and classify. Never rejects for a failed call (it may still have
+   * credited the code): outcome "already_redeemed" means the code is in this
+   * network's redeemed list, "unknown" that neither the redeem nor the list
+   * answered.
+   */
+  redeemBalanceCodeOutcome(secret: string): Promise<BalanceCodeRedeemOutcome>;
   checkBalanceCode(secret: string): Promise<any>;
   subscriptionBalance(): Promise<any>;
   getNetworkUser(): Promise<any>;

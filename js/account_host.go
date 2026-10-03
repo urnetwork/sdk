@@ -216,6 +216,24 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 			api.RedeemBalanceCode(&sdk.RedeemBalanceCodeArgs{Secret: secret}, sdk.RedeemBalanceCodeCallback(cb))
 		})
 	})
+	// redeemBalanceCodeOutcome(secret): redeem and classify (api_error.go).
+	// Resolves { outcome, transfer_balance?, error?, transport_error? } with
+	// outcome redeemed | already_redeemed | invalid | unknown; never rejects
+	// for a failed call, since a failed call may still have credited the code.
+	m["redeemBalanceCodeOutcome"] = promiseMethod(func(args []js.Value) js.Value {
+		secret := stringArg(args, 0)
+		return jsPromise(func(resolve func(any), reject func(error)) {
+			resolve(jsJson(redeemBalanceCodeOutcome(
+				secret,
+				func(args *sdk.RedeemBalanceCodeArgs, callback sdk.RedeemBalanceCodeCallback) {
+					api.RedeemBalanceCode(args, callback)
+				},
+				func(callback sdk.GetNetworkRedeemedBalanceCodesCallback) {
+					api.GetNetworkRedeemedBalanceCodes(callback)
+				},
+			)))
+		})
+	})
 	m["checkBalanceCode"] = promiseMethod(func(args []js.Value) js.Value {
 		secret := stringArg(args, 0)
 		return apiPromise(func(cb connect.ApiCallback[*sdk.CheckBalanceCodeResult]) {
@@ -339,12 +357,13 @@ func promiseMethod(run func(args []js.Value) js.Value) js.Func {
 }
 
 // apiPromise runs one sdk Api call and resolves with the result as json
-// (jsJson), or rejects with the sdk error.
+// (jsJson), or rejects with the sdk error as an Error carrying `kind`,
+// `isTimeout` and `status` (jsError), the fields the generated TS client sets.
 func apiPromise[R any](run func(callback connect.ApiCallback[R])) js.Value {
 	return jsPromise(func(resolve func(any), reject func(error)) {
 		run(connect.NewApiCallback[R](func(result R, err error) {
 			if err != nil {
-				reject(err)
+				reject(&apiCallError{err: err})
 				return
 			}
 			resolve(jsJson(result))
