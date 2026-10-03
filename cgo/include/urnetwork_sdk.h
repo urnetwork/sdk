@@ -89,6 +89,14 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
+#define URNET_BLOCK_ACTION_REASON_BLOCKER "blocker"
+#define URNET_BLOCK_ACTION_REASON_OVERRIDE "override"
+#define URNET_BLOCK_ACTION_REASON_SECURITY "security"
+#define URNET_BLOCK_ACTION_REASON_SECURITY_BITTORRENT "security-bittorrent"
+#define URNET_BLOCK_ACTION_REASON_SECURITY_ENCRYPTED "security-encrypted"
+#define URNET_BLOCK_ACTION_REASON_SECURITY_IP "security-ip"
+#define URNET_BLOCK_ACTION_REASON_SECURITY_PORT "security-port"
+#define URNET_BLOCK_ACTION_REASON_SECURITY_SMTP "security-smtp"
 #define URNET_CHECKOUT_BRIDGE_URL "https://ur.io/checkout"
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
@@ -2175,6 +2183,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   RouteOverride: RouteOverride | null
  *   PacketCount: number
  *   ByteCount: number
+ *   Reason: string
  */
 
 /* BlockActionList (json):
