@@ -32,6 +32,14 @@ jobs:
       - name: Check out goidenticons dependency
         run: git clone --depth 1 https://github.com/urnetwork/goidenticons.git ../goidenticons
 
+      # Read only by TestSdkApiUrlsMatchServerRoutes, which checks every api url
+      # the sdk builds against the server's route table (api/api.go) and fails
+      # under CI when the checkout is missing. Only api/ is checked out.
+      - name: Check out server routes
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/urnetwork/server.git ../server
+          git -C ../server sparse-checkout set api
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
