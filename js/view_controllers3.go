@@ -279,6 +279,21 @@ func jsFeedbackViewController(vc *sdk.FeedbackViewController, closeController fu
 		}
 		return jsSub(vc.AddIsSendingFeedbackListener(&jsBoolStateListener{cb}))
 	})
+	// one result per send, delivered before sending returns to false
+	m["addFeedbackSendErrorListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddFeedbackSendErrorListener(&jsMessageListener{cb}))
+	})
+	m["addFeedbackSendSuccessListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddFeedbackSendSuccessListener(&jsSuccessListener{cb}))
+	})
 	return js.ValueOf(m)
 }
 

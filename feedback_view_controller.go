@@ -13,6 +13,17 @@ type IsSendingFeedbackListener interface {
 	StateChanged(bool)
 }
 
+// The send failed; the message is the api error. The form keeps its text so
+// the user can send again.
+type FeedbackSendErrorListener interface {
+	Message(string)
+}
+
+// The server accepted the feedback.
+type FeedbackSendSuccessListener interface {
+	Success()
+}
+
 type FeedbackViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -20,12 +31,16 @@ type FeedbackViewController struct {
 	// api-only (NewFeedbackViewControllerWithApi): no device, the same
 	// controller over the network space api. Exactly one of device / api.
 	api *Api
+	// replaces the api call when set (tests drive the result without a network)
+	sendFeedbackRequest func(args *FeedbackSendArgs, callback SendFeedbackCallback)
 
 	stateLock sync.Mutex
 
 	isSendingFeedback bool
 
-	isSendingFeedbackListeners *connect.CallbackList[IsSendingFeedbackListener]
+	isSendingFeedbackListeners   *connect.CallbackList[IsSendingFeedbackListener]
+	feedbackSendErrorListeners   *connect.CallbackList[FeedbackSendErrorListener]
+	feedbackSendSuccessListeners *connect.CallbackList[FeedbackSendSuccessListener]
 }
 
 func newFeedbackViewController(ctx context.Context, device Device) *FeedbackViewController {
@@ -36,7 +51,9 @@ func newFeedbackViewController(ctx context.Context, device Device) *FeedbackView
 		cancel: cancel,
 		device: device,
 
-		isSendingFeedbackListeners: connect.NewCallbackList[IsSendingFeedbackListener](),
+		isSendingFeedbackListeners:   connect.NewCallbackList[IsSendingFeedbackListener](),
+		feedbackSendErrorListeners:   connect.NewCallbackList[FeedbackSendErrorListener](),
+		feedbackSendSuccessListeners: connect.NewCallbackList[FeedbackSendSuccessListener](),
 	}
 	return vc
 }
@@ -56,6 +73,14 @@ func (vc *FeedbackViewController) getApi() *Api {
 	return vc.device.GetApi()
 }
 
+func (vc *FeedbackViewController) requestSendFeedback(args *FeedbackSendArgs, callback SendFeedbackCallback) {
+	if vc.sendFeedbackRequest != nil {
+		vc.sendFeedbackRequest(args, callback)
+		return
+	}
+	vc.getApi().SendFeedback(args, callback)
+}
+
 func (vc *FeedbackViewController) Start() {}
 
 func (vc *FeedbackViewController) Stop() {}
@@ -71,6 +96,38 @@ func (vc *FeedbackViewController) AddIsSendingFeedbackListener(listener IsSendin
 	return newSub(func() {
 		vc.isSendingFeedbackListeners.Remove(callbackId)
 	})
+}
+
+// Each send ends with exactly one result, delivered before the sending state
+// returns to false, so a listener on both sees the result first.
+func (vc *FeedbackViewController) AddFeedbackSendErrorListener(listener FeedbackSendErrorListener) Sub {
+	callbackId := vc.feedbackSendErrorListeners.Add(listener)
+	return newSub(func() {
+		vc.feedbackSendErrorListeners.Remove(callbackId)
+	})
+}
+
+func (vc *FeedbackViewController) AddFeedbackSendSuccessListener(listener FeedbackSendSuccessListener) Sub {
+	callbackId := vc.feedbackSendSuccessListeners.Add(listener)
+	return newSub(func() {
+		vc.feedbackSendSuccessListeners.Remove(callbackId)
+	})
+}
+
+func (vc *FeedbackViewController) feedbackSendFailed(message string) {
+	for _, listener := range vc.feedbackSendErrorListeners.Get() {
+		connect.HandleError(func() {
+			listener.Message(message)
+		})
+	}
+}
+
+func (vc *FeedbackViewController) feedbackSendSucceeded() {
+	for _, listener := range vc.feedbackSendSuccessListeners.Get() {
+		connect.HandleError(func() {
+			listener.Success()
+		})
+	}
 }
 
 func (vc *FeedbackViewController) isSendingFeedbackChanged(isSending bool) {
@@ -116,11 +173,16 @@ func (vc *FeedbackViewController) SendFeedback(
 		StarCount: starCount,
 	}
 
-	vc.getApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
+	vc.requestSendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
 		func(result *FeedbackSendResult, err error) {
-
+			// the result goes out before the sending state clears
+			if err != nil {
+				deviceLog(vc.device).Infof("[fbvc]error sending feedback: %s", err)
+				vc.feedbackSendFailed(err.Error())
+			} else {
+				vc.feedbackSendSucceeded()
+			}
 			vc.setIsSendingFeedback(false)
-
 		},
 	)))
 
