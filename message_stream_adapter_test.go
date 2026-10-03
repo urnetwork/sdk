@@ -1574,7 +1574,9 @@ func streamAdapterValuePositionsUnder(t *testing.T, context build.Context) (map[
 
 	decls := map[string]streamAdapterValueDecl{}
 	complement := []string{}
-	for name, file := range parsed {
+	// In sorted order, so the result never depends on map iteration (see the variant rule below).
+	for _, name := range slices.Sorted(maps.Keys(parsed)) {
+		file := parsed[name]
 		for _, declaration := range file.Decls {
 			general, ok := declaration.(*ast.GenDecl)
 			if !ok || (general.Tok != token.VAR && general.Tok != token.CONST) {
@@ -1597,6 +1599,14 @@ func streamAdapterValuePositionsUnder(t *testing.T, context build.Context) (map[
 					if identifier.Name == "_" {
 						complement = append(complement, fmt.Sprintf(
 							"a blank identifier at %s in %s -- unreferenceable, so no errors.Is can reach it", position, name))
+						continue
+					}
+					// A NAME DECLARED IN MORE THAN ONE FILE is a set of build variants: extender_node_js.go
+					// and extender_node_native.go both declare extenderNodeEnabled, and exactly one of them is
+					// this build's. That one is the declaration this build can name, so it is kept whatever
+					// order the files come in. Without this rule the kept declaration was whichever file a map
+					// yielded last, and the gate passed or failed by iteration order (fork run 37119743194).
+					if existing, seen := decls[identifier.Name]; seen && built[existing.file] && !built[name] {
 						continue
 					}
 					decls[identifier.Name] = streamAdapterValueDecl{
