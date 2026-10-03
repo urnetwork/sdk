@@ -333,6 +333,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_TRANSPORT_TYPE_P2P "p2p"
 #define URNET_TRANSPORT_TYPE_UNKNOWN "unknown"
 #define URNET_TUNNEL_LOCAL_PREFIX_LENGTH_IPV6 64
+#define URNET_VERIFY_SEEKER_NFT_HOLDER_ERROR_CODE_INVALID_SIGNATURE "seeker_invalid_signature"
+#define URNET_VERIFY_SEEKER_NFT_HOLDER_ERROR_CODE_LOOKUP_FAILED "seeker_lookup_failed"
+#define URNET_VERIFY_SEEKER_NFT_HOLDER_ERROR_CODE_TOKEN_NOT_FOUND "seeker_token_not_found"
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -4600,6 +4603,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* VerifySeekerNftHolderError (json):
+ *   code?: string
  *   message: string
  */
 

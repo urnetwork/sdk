@@ -394,6 +394,9 @@ inline constexpr const char* TransportTypeH3 = "h3";
 inline constexpr const char* TransportTypeP2p = "p2p";
 inline constexpr const char* TransportTypeUnknown = "unknown";
 inline constexpr int64_t TunnelLocalPrefixLengthIpv6 = 64;
+inline constexpr const char* VerifySeekerNftHolderErrorCodeInvalidSignature = "seeker_invalid_signature";
+inline constexpr const char* VerifySeekerNftHolderErrorCodeLookupFailed = "seeker_lookup_failed";
+inline constexpr const char* VerifySeekerNftHolderErrorCodeTokenNotFound = "seeker_token_not_found";
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
@@ -3318,6 +3321,7 @@ struct VerifySeekerNftHolderArgs {
 };
 
 struct VerifySeekerNftHolderError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -15385,11 +15389,19 @@ inline void from_json(const nlohmann::json& j, VerifySeekerNftHolderArgs& v) {
 
 inline void to_json(nlohmann::json& j, const VerifySeekerNftHolderError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, VerifySeekerNftHolderError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
