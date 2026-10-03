@@ -491,6 +491,7 @@ EXPORTS
 	urnet_message_device_close
 	urnet_message_device_connect
 	urnet_message_device_create_group
+	urnet_message_device_forget_group
 	urnet_message_device_groups
 	urnet_message_device_join
 	urnet_message_device_key_package

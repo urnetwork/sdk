@@ -171,6 +171,13 @@ type DeviceStore interface {
 	// its keys, or what it said, on the disk.
 	DeleteGroupRecord(groupId []byte) error
 
+	// MarkGroupForgetting, GroupBeingForgotten and GroupsBeingForgotten are the mark a leave writes
+	// before it closes a group and the erase removes last, so an erase that stops part way is
+	// finished rather than restored. See [DurableStateStore.MarkGroupForgetting].
+	MarkGroupForgetting(groupId []byte) error
+	GroupBeingForgotten(groupId []byte) (bool, error)
+	GroupsBeingForgotten() ([][]byte, error)
+
 	// PutSentRecord writes the copy of one record this device sealed in one group, BEFORE that
 	// record is submitted. SentRecords answers every copy one group holds, ascending by stream
 	// index. See [SentRecord] for why the copy exists at all.
@@ -819,6 +826,7 @@ const (
 	stateKindGroupRecord    byte = 5
 	stateKindSentRecord     byte = 6
 	stateKindPeerHeads      byte = 7
+	stateKindForgetting     byte = 8
 )
 
 // encodeStateRecord frames one record: magic, version, kind, the parts each length-prefixed, and
@@ -1125,6 +1133,13 @@ func (self *DurableStateStore) epochDir(groupId []byte) string {
 // before it, and a version bump would do the same to every record in the directory at once.
 func (self *DurableStateStore) peerHeadsPath(groupId []byte) string {
 	return filepath.Join(self.groupDir(groupId), "heads")
+}
+
+// forgettingPath is the mark a leave writes BEFORE it closes one group and that the erase removes
+// LAST ([DurableStateStore.MarkGroupForgetting]). While it stands the group is being left: it is
+// no group to restore, and [Device.Restore] or [Device.ForgetGroup] finishes the erase.
+func (self *DurableStateStore) forgettingPath(groupId []byte) string {
+	return filepath.Join(self.groupDir(groupId), "forgetting")
 }
 
 // sentDir is where one group's [SentRecord] copies live, each named by its stream index as sixteen
@@ -1827,6 +1842,11 @@ func (self *DurableStateStore) GroupRecords() ([]*GroupRecord, error) {
 	sort.Strings(names)
 	records := []*GroupRecord{}
 	for _, name := range names {
+		// A GROUP BEING LEFT IS NOT A GROUP TO RESTORE: its epoch states may already be gone, and a
+		// restore of it would fail at every launch. [Device.Restore] finishes its erase instead.
+		if _, err := os.Stat(filepath.Join(root, name, "forgetting")); err == nil {
+			continue
+		}
 		parts, err := self.readRecord(filepath.Join(root, name, "meta"), stateKindGroupRecord)
 		if err != nil {
 			if errors.Is(err, ErrStateNotFound) {
@@ -1980,12 +2000,99 @@ func (self *DurableStateStore) DeleteGroupRecord(groupId []byte) error {
 	if err := self.removeLocked(self.groupRecordPath(groupId)); err != nil {
 		return err
 	}
+	// THE MARK A LEAVE WROTE GOES LAST, so an erase interrupted anywhere above leaves it standing,
+	// and the group is finished rather than restored ([Device.Restore], [Device.ForgetGroup]). A
+	// group with no mark is erased all the same: removing a mark that is not there is not a failure.
+	if err := self.removeLocked(self.forgettingPath(groupId)); err != nil {
+		return err
+	}
 	// the now-empty epoch, sent and group directories, best effort: an empty directory is not a
 	// value anybody can read, so a failure to remove one is not a failure of this call.
 	os.Remove(self.epochDir(groupId))
 	os.Remove(self.sentDir(groupId))
 	os.Remove(self.groupDir(groupId))
 	return nil
+}
+
+// MarkGroupForgetting writes the mark that says this group is being LEFT, durably, before it
+// returns. It does not ask for a record: a group founded and never opened has none yet and may
+// still have epoch states on the disk, which are key material the erase must take.
+//
+// IT IS WHAT MAKES A LEAVE RESUMABLE (msgrepo ledger §7, 2026-10-03, review H1). The erase
+// removes the epoch states first, so an erase that fails or is interrupted part way leaves a group
+// that cannot be restored and, unmarked, could not be named again: closed and dropped by the
+// process that tried, refused by every Restore after it, and still holding this device's own
+// lines on the disk. With the mark it is neither restored nor lost: [Device.Restore] and
+// [Device.ForgetGroup] both finish it.
+func (self *DurableStateStore) MarkGroupForgetting(groupId []byte) error {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if err := self.refuseIfClosed(); err != nil {
+		return err
+	}
+	return self.writeRecord(self.forgettingPath(groupId), stateKindForgetting, groupId)
+}
+
+// GroupBeingForgotten reports whether that mark stands for one group.
+func (self *DurableStateStore) GroupBeingForgotten(groupId []byte) (bool, error) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if err := self.refuseIfClosed(); err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(self.forgettingPath(groupId)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%w: %v", ErrStateStoreState, err)
+	}
+	return true, nil
+}
+
+// GroupsBeingForgotten is every group that mark stands for, by the group id the mark itself
+// carries: the name of a directory is a hash and cannot be turned back into an id. A non-nil error
+// beside a list reports a mark it skipped.
+func (self *DurableStateStore) GroupsBeingForgotten() ([][]byte, error) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if err := self.refuseIfClosed(); err != nil {
+		return nil, err
+	}
+	root := filepath.Join(self.dataDir, "group")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%w: %s could not be read: %v", ErrStateStoreState, root, err)
+	}
+	// A MARK THAT CANNOT BE READ, or that names another directory, is REPORTED and skipped: one bad
+	// mark does not stop every other leave from being finished. Its group is not restored either
+	// (GroupRecords skips any directory with a mark), so it waits for somebody to look.
+	ids := [][]byte{}
+	var bad error
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		parts, err := self.readRecord(filepath.Join(root, entry.Name(), "forgetting"), stateKindForgetting)
+		if err != nil {
+			if !errors.Is(err, ErrStateNotFound) && bad == nil {
+				bad = err
+			}
+			continue
+		}
+		// THE MARK MUST NAME THE DIRECTORY IT SITS IN: one copied in from another group's directory
+		// would otherwise send the erase to a group nobody left.
+		if len(parts) != 1 || stateNameOf(parts[0]) != entry.Name() {
+			if bad == nil {
+				bad = fmt.Errorf("%w: the leave mark in %s does not name its own group", ErrStateStoreFormat, entry.Name())
+			}
+			continue
+		}
+		ids = append(ids, parts[0])
+	}
+	return ids, bad
 }
 
 // PutSentRecord writes one [SentRecord], durably, before it returns.

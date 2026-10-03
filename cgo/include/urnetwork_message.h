@@ -178,6 +178,25 @@ extern "C" {
 #define URNET_MESSAGE_COMMIT_INVALID 3
 #define URNET_MESSAGE_COMMIT_FAILED  4
 
+/* urnet_message_device_forget_group ("delete for me and leave") answers one of these KINDS:
+ *
+ * OK: this device has left the group and its copy on the disk is erased.
+ * REFUSED: nothing changed and the group is held and open as it was -- an owner holding its
+ * identity's last leaf while anybody else is in the group (transfer ownership first), a roster
+ * that could not be read, or a leave mark that could not be written. out_error says which.
+ * UNFINISHED: this device HAS left -- the group is closed and no longer held, so release its
+ * handles -- but its copy on the disk was not erased in full. calling this again, or the next
+ * urnet_message_device_restore, finishes the erase. treating this as a refusal leaves a caller
+ * holding a closed group.
+ * FAILED: no such group is held (never joined, or already left). out_error left NULL is an
+ * unknown self handle.
+ *
+ * a go test holds these equal, by name and value, to the library's own constants. */
+#define URNET_MESSAGE_FORGET_OK         0
+#define URNET_MESSAGE_FORGET_REFUSED    1
+#define URNET_MESSAGE_FORGET_UNFINISHED 2
+#define URNET_MESSAGE_FORGET_FAILED     3
+
 /* ----- callback types ----- */
 
 /* one Hello that did not connect. fires on the thread inside urnet_message_device_connect --
@@ -341,6 +360,12 @@ uint64_t urnet_message_device_create_group(uint64_t self, uint64_t ctx, const ui
  * carries it, so that order is correct in both cases and needs no epoch test. errors here are
  * sentences and not codes -- this abi has no typed error channel. */
 uint64_t urnet_message_device_join(uint64_t self, uint64_t ctx, uint64_t invite, char** out_error);
+/* "delete for me and leave": close the group and ERASE this device's whole copy of it -- every
+ * epoch key, every copy of a line it sent, the group's record. it commits nothing: nobody is told,
+ * and this device's leaf stays until somebody removes it. answers a URNET_MESSAGE_FORGET_* KIND:
+ * after OK or UNFINISHED this device has left, so release every handle held for that group.
+ * group_id is 32 octets. */
+int32_t urnet_message_device_forget_group(uint64_t self, const uint8_t* group_id, int32_t group_id_len, char** out_error);
 
 /* ----- the invite, which is secret in full ----- */
 

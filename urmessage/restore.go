@@ -206,6 +206,20 @@ func (self *Device) Restore(ctx context.Context) ([]*Group, error) {
 	if !durable {
 		return nil, ErrNoDeviceStore
 	}
+	// A LEAVE THAT DID NOT FINISH ERASING IS FINISHED FIRST, and before the nonce is asked for: it
+	// needs no connection, and a device that cannot connect should still not keep a group it left
+	// on the disk. A group being left is never restored ([DurableStateStore.GroupRecords] skips
+	// it), and an erase that fails again is reported and tried again at the next Restore.
+	// one mark it cannot read is reported, and does not stop the others being finished
+	leaving, unfinished := store.GroupsBeingForgotten()
+	for _, groupId := range leaving {
+		if self.holdsGroup(groupId) {
+			continue
+		}
+		if err := store.DeleteGroupRecord(groupId); err != nil && unfinished == nil {
+			unfinished = fmt.Errorf("%w: group %x: %w", ErrForgetUnfinished, groupId, err)
+		}
+	}
 	nonce, nonceEpoch, err := self.nonce()
 	if err != nil {
 		return nil, err
@@ -228,6 +242,9 @@ func (self *Device) Restore(ctx context.Context) ([]*Group, error) {
 			continue
 		}
 		restored = append(restored, group)
+	}
+	if firstFailure == nil {
+		firstFailure = unfinished
 	}
 	return restored, firstFailure
 }

@@ -766,6 +766,65 @@ func urnet_message_device_create_group(self C.uint64_t, ctx C.uint64_t, groupId 
 	return C.uint64_t(newHandle(group))
 }
 
+// urnet_message_device_forget_group is "delete for me and leave": urmessage's Device.ForgetGroup.
+// It CLOSES the group and ERASES this device's whole copy of it -- every epoch key, every copy of a
+// line this device sent, the group's record -- and commits nothing, so nobody is told and this
+// device's leaf stays in the group until somebody removes it with urnet_message_group_remove_member
+// (msgrepo ledger 257, ruling 48: a leave is product surface, not an MLS proposal).
+//
+// IT ANSWERS A URNET_MESSAGE_FORGET_* KIND AND NOT A BOOL, because a caller has to tell apart two
+// failures a bool folds together (msgrepo ledger §7, 2026-10-03, review H1): REFUSED changed nothing,
+// and the group is held and open as it was; UNFINISHED means this device HAS left -- the group is
+// closed and no longer held -- and only the erase on the disk is still owed, which calling this
+// again or the next urnet_message_device_restore finishes. A caller that treated UNFINISHED as a
+// refusal would go on holding a closed group, and every send into it would fail.
+//
+// AN OWNER HOLDING ITS IDENTITY'S LAST LEAF, WITH SOMEBODY ELSE IN THE GROUP, IS REFUSED (MASTER
+// section 11): transfer ownership first with urnet_message_group_transfer_ownership. A caller that
+// wants to OFFER the transfer asks the roster before it asks this.
+//
+// THE RESULT IS NAMED AND PRESET TO FAILED (re-check R3): cgoGuard recovers a panic, and an unnamed
+// result then answers its zero value, which is URNET_MESSAGE_FORGET_OK -- and a caller told OK
+// releases its handles and treats the device as having left.
+//
+//export urnet_message_device_forget_group
+func urnet_message_device_forget_group(self C.uint64_t, groupId *C.uint8_t, groupIdLen C.int32_t, outError **C.char) (kind C.int32_t) {
+	kind = C.int32_t(messageForgetFailed)
+	defer cgoGuard("urnet_message_device_forget_group")
+	self_, ok := resolveHandle[*urmessage.Device](uint64(self), "urnet_message_device_forget_group")
+	if !ok || self_ == nil {
+		return C.int32_t(messageForgetFailed)
+	}
+	err := self_.ForgetGroup(goBytes(groupId, groupIdLen))
+	setErrorOut(outError, err)
+	return C.int32_t(messageForgetKindOf(err))
+}
+
+// THE FOUR ANSWERS OF urnet_message_device_forget_group, held equal to the header's
+// URNET_MESSAGE_FORGET_* by name and value (TestTheHeaderDefinesExactlyTheForgetKinds).
+const (
+	messageForgetOk         int32 = 0
+	messageForgetRefused    int32 = 1
+	messageForgetUnfinished int32 = 2
+	messageForgetFailed     int32 = 3
+)
+
+// messageForgetKindOf is the projection of ForgetGroup's error onto the kinds above. UNFINISHED and
+// FAILED are named by their sentinels. Every other answer ForgetGroup gives -- the owner refusal, a
+// roster it could not read, a leave mark it could not write, a store it could not ask -- is given
+// before anything is changed, so it is REFUSED.
+func messageForgetKindOf(err error) int32 {
+	switch {
+	case err == nil:
+		return messageForgetOk
+	case errors.Is(err, urmessage.ErrForgetUnfinished):
+		return messageForgetUnfinished
+	case errors.Is(err, urmessage.ErrGroupNotHeld):
+		return messageForgetFailed
+	}
+	return messageForgetRefused
+}
+
 // urnet_message_device_join joins the group an invite carries. A group joined ABOVE EPOCH ONE will
 // not seal until urnet_message_group_receive has run once over it -- that is urmessage's
 // ErrStreamFloorUnheld, and it is what bounds a leaf a removed member may have stood at. It is the

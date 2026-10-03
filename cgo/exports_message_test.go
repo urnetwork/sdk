@@ -1282,6 +1282,65 @@ func callExportNil(t *testing.T, fn any, args ...any) []reflect.Value {
 	return value.Call(in)
 }
 
+// LEAVING OVER A DEVICE HANDLE THAT DOES NOT RESOLVE answers FAILED with out_error left NULL, which
+// is the same shape every device verb has: what a real leave erases, and the owner it refuses, is
+// cp3b's leave_test.go over a real server.
+func TestForgetGroupRefusesADeviceHandleThatDoesNotResolve(t *testing.T) {
+	const unknown = uint64(1) << 62
+	for _, handle := range []uint64{0, unknown} {
+		if got := callExportNil(t, urnet_message_device_forget_group, handle, nil, int32(0), nil)[0].Int(); int32(got) != messageForgetFailed {
+			t.Errorf("forget_group on device handle %d answered kind %d, want FAILED", handle, got)
+		}
+	}
+}
+
+// THE FORGET KINDS TELL THE FOUR ANSWERS APART, and the one a bool folded together is the point:
+// UNFINISHED is a device that has LEFT, and must not read as a refusal (review H1).
+func TestTheForgetKindProjectionTellsALeaveThatHappenedFromOneThatDidNot(t *testing.T) {
+	rows := []struct {
+		err  error
+		want int32
+	}{
+		{nil, messageForgetOk},
+		{fmt.Errorf("%w: a file stayed open", urmessage.ErrForgetUnfinished), messageForgetUnfinished},
+		{fmt.Errorf("%w: ab", urmessage.ErrGroupNotHeld), messageForgetFailed},
+		{fmt.Errorf("%w: 1 other leaf/leaves", urmessage.ErrOwnerMustTransfer), messageForgetRefused},
+		{errors.New("urmessage: who owns this group could not be read"), messageForgetRefused},
+	}
+	for _, row := range rows {
+		if got := messageForgetKindOf(row.err); got != row.want {
+			t.Errorf("%v projected to kind %d, want %d", row.err, got, row.want)
+		}
+	}
+}
+
+func TestTheHeaderDefinesExactlyTheForgetKinds(t *testing.T) {
+	header, err := os.ReadFile("include/urnetwork_message.h")
+	if err != nil {
+		t.Fatalf("reading the header: %v", err)
+	}
+	defined := map[string]int32{}
+	for _, match := range regexp.MustCompile(`(?m)^#define URNET_MESSAGE_FORGET_([A-Z]+)\s+(\d+)`).FindAllStringSubmatch(string(header), -1) {
+		value, err := strconv.ParseInt(match[2], 10, 32)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defined[match[1]] = int32(value)
+	}
+	constants := map[string]int32{
+		"OK":         messageForgetOk,
+		"REFUSED":    messageForgetRefused,
+		"UNFINISHED": messageForgetUnfinished,
+		"FAILED":     messageForgetFailed,
+	}
+	if len(defined) < 2 {
+		t.Fatalf("the header defines %d URNET_MESSAGE_FORGET_* kinds; the positive control is not met", len(defined))
+	}
+	if !reflect.DeepEqual(defined, constants) {
+		t.Fatalf("the header defines the forget kinds as %v and the library's constants are %v", defined, constants)
+	}
+}
+
 // THE ROSTER AND THE VERBS OVER A HANDLE THAT DOES NOT RESOLVE, WHICH C CANNOT TELL FROM A
 // REFUSAL: the zero handle and an unknown one answer 0 / NULL / FAILED with out_error left NULL,
 // the verbs answer FAILED for an unknown ctx too, and the member list accessors bound their index.

@@ -101,3 +101,32 @@ func TestTheSameSenderRuleIsPerDeviceAndAnEmptyIdentityMatchesNothing(t *testing
 		t.Error("two empty identities under one handle matched: an undetermined sender retracted a line")
 	}
 }
+
+// sameSender IS ONE PREDICATE FOR BOTH SIDES OF T-b, and this is its truth table. The receive arm
+// asks it with a tombstone's operands and [Group.Delete] with this device's own, so a row that
+// changes here changes both sides at once.
+func TestSameSenderIsTheSameLeafAndTheSameIdentityAndNothingEmptyMatches(t *testing.T) {
+	handle := bytes.Repeat([]byte{0x0A}, 16)
+	identity := bytes.Repeat([]byte{0xA1}, 32)
+	target := &Message{SenderHandle: handle, SenderIdentity: identity}
+	bare := &Message{SenderHandle: handle}
+	rows := []struct {
+		name     string
+		handle   []byte
+		identity []byte
+		target   *Message
+		want     bool
+	}{
+		{"the same leaf and the same identity", handle, identity, target, true},
+		{"another leaf, the same identity", bytes.Repeat([]byte{0x0B}, 16), identity, target, false},
+		{"the same leaf, another identity", handle, bytes.Repeat([]byte{0xA2}, 32), target, false},
+		{"no identity on either side", handle, nil, bare, false},
+		{"no identity on the tombstone", handle, nil, target, false},
+		{"no handle to compare", nil, identity, &Message{SenderIdentity: identity}, false},
+	}
+	for _, row := range rows {
+		if got := sameSender(row.handle, row.identity, row.target); got != row.want {
+			t.Errorf("%s: sameSender answered %v, want %v", row.name, got, row.want)
+		}
+	}
+}

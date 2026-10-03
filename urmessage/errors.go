@@ -723,4 +723,22 @@ var (
 	// ([Group.noteUnparsedClaimLocked]), so this sentinel means exactly what its text says and
 	// nothing else: Receive once before Send.
 	ErrStreamFloorUnheld = errors.New("urmessage: this group was joined on a leaf that may carry a previous occupant's stream claims and its own floor has not been held against them yet; Receive once before Send")
+
+	// [Device.ForgetGroup] was asked to leave a group this device does not hold: never joined,
+	// already left, or closed under it.
+	ErrGroupNotHeld = errors.New("urmessage: this device holds no such group")
+
+	// [Device.ForgetGroup] LEFT the group -- it is closed, its keys are gone from memory, and this
+	// device no longer holds it -- but the erase of its copy on the disk did not finish. The leave
+	// mark stands, so the next [Device.Restore] finishes the erase, and so does ForgetGroup again.
+	// [Device.Join] and [Device.CreateGroup] answer it too, for a group whose leave they could not
+	// finish before writing anything of it.
+	ErrForgetUnfinished = errors.New("urmessage: this device has left the group, but its copy on the disk could not be erased in full; ForgetGroup again, or the next Restore, finishes the erase")
+
+	// [Device.ForgetGroup] was asked to leave a group this device OWNS, from its identity's last
+	// leaf, while somebody else is in it. Nobody removes an owner's leaf (ruling 11), so leaving
+	// would strand every other member with an owner gone for good -- who could never be removed,
+	// or added back. MASTER §11: "the leave action is refused for an OWNER until ownership has been
+	// transferred". Nothing changed: the group is open, and every file of it is still on the disk.
+	ErrOwnerMustTransfer = errors.New("urmessage: you own this group and somebody else is in it, so hand it over first with TransferOwnership; leaving now would leave them with an owner nobody can remove")
 )

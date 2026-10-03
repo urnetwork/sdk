@@ -1294,6 +1294,9 @@ func (self *Device) CreateGroup(ctx context.Context, groupId []byte) (*Group, er
 	if len(groupId) != GroupIdBytes {
 		return nil, fmt.Errorf("urmessage: a group id is %d octets and this one is %d", GroupIdBytes, len(groupId))
 	}
+	if err := self.finishLeaveBefore(groupId); err != nil {
+		return nil, err
+	}
 	nonce, nonceEpoch, err := self.nonce()
 	if err != nil {
 		return nil, err
@@ -1372,6 +1375,9 @@ func (self *Device) Join(ctx context.Context, invite *Invite) (*Group, error) {
 		return nil, fmt.Errorf("urmessage: no invite")
 	}
 	if err := invite.check(); err != nil {
+		return nil, err
+	}
+	if err := self.finishLeaveBefore(invite.GroupId); err != nil {
 		return nil, err
 	}
 	nonce, nonceEpoch, err := self.nonce()
@@ -2456,8 +2462,11 @@ func (self *Group) react(ctx context.Context, kind ContentKind, target []byte, e
 //
 // THE SAME-SENDER RULE IS ENFORCED ON BOTH SIDES AND THIS IS THE SEND SIDE (T-b). A tombstone
 // applies only if its sender_handle AND its sender identity equal the target's (the identity half
-// since msgrepo ledger 273, review H4; this side checks the identity half, by [Message.Mine]). That
-// is what MASTER §12.1's "a deletion cannot be forged" needs beyond R1: R1 proves who wrote the
+// since msgrepo ledger 273, review H4), and BOTH SIDES ASK [sameSender], so they cannot disagree.
+// This side used to ask [Message.Mine], which is the identity alone and falls back to the handle
+// when the identity could not be determined -- so in that residual it sealed a tombstone the
+// receive side then ignored. That is what MASTER §12.1's "a deletion cannot be forged" needs
+// beyond R1: R1 proves who wrote the
 // TOMBSTONE and nothing proves they wrote the target. So a tombstone naming somebody else's
 // message is a record every honest receiver would ignore, and the honest thing is not to seal one.
 //
@@ -2482,7 +2491,7 @@ func (self *Group) Delete(ctx context.Context, target []byte) (*Message, error) 
 	if err != nil {
 		return nil, err
 	}
-	if !held.Mine {
+	if !sameSender(self.ownHandleLocked(), self.device.identityPub, held) {
 		return nil, fmt.Errorf("%w: message %x was sealed by %x and this device may only delete its own",
 			ErrContentMalformed, target, held.SenderHandle)
 	}
@@ -5949,6 +5958,32 @@ func reactionKey(senderHandle []byte, emoji string) string {
 	return string(senderHandle) + "\x00" + emoji
 }
 
+// sameSender is T-b, THE SAME-SENDER RULE, as the one predicate both of its sides ask: the receive
+// arm with a tombstone's handle and identity, [Group.Delete] with this device's own. A tombstone
+// applies only when it was sealed from the target's own leaf AND by the target's own identity.
+//
+// AN EMPTY OPERAND MATCHES NOTHING. An empty identity is the RoleUndeterminable residual, where the
+// open succeeded and RoleAt refused; an empty handle is a group with no MLS handle to derive one
+// from. Either way the honest answer is "not shown to be the same sender", and two empties are not
+// a match.
+func sameSender(handle []byte, identity []byte, target *Message) bool {
+	if len(handle) == 0 || !bytes.Equal(handle, target.SenderHandle) {
+		return false
+	}
+	return len(identity) != 0 && bytes.Equal(identity, target.SenderIdentity)
+}
+
+// ownHandleLocked is the sender_handle this device's CURRENT leaf derives, which is the handle a
+// tombstone it sealed now would carry -- or nil for a group with no MLS handle yet, which then
+// deletes nothing ([sameSender]).
+func (self *Group) ownHandleLocked() []byte {
+	if self.handle == nil || len(self.groupHandleKey) == 0 {
+		return nil
+	}
+	own := messagegroup.SenderHandle(self.groupHandleKey, self.handle.OwnLeafIndex())
+	return own[:]
+}
+
 // effectOrder is server order: `record_id` ascending, which is what §5.3 says decides which of two
 // reactions came last.
 //
@@ -5990,15 +6025,14 @@ func (self *contentEffect) applyTo(target *Message, seen map[string]struct{}) {
 		// they sealed the target. A tombstone from anybody else is ignored -- not refused,
 		// because the record is a legal record and a receiver that failed the walk over one
 		// would be handing any member a way to wedge the conversation.
-		if !bytes.Equal(self.senderHandle, target.SenderHandle) {
-			return
-		}
-		// ...AND THE SAME IDENTITY, because the handle is a leaf's label and a refilled leaf keeps it
-		// (item 245; msgrepo ledger 273, review H4). Since the owner ruled on 2026-10-02 that there is
-		// no time bound on a deletion, a handle-only test let a newcomer retract the previous
-		// occupant's whole history. BOTH must match. That keeps the rule at the device level: a second
-		// device of the same person holds another handle, and D7 is unruled.
-		if len(self.senderIdentity) == 0 || !bytes.Equal(self.senderIdentity, target.SenderIdentity) {
+		//
+		// THE SAME LEAF AND THE SAME IDENTITY, because a handle is only a leaf's label and a refilled
+		// leaf keeps it (item 245; msgrepo ledger 273, review H4). Since the owner ruled on 2026-10-02
+		// that there is no time bound on a deletion, a handle-only test let a newcomer retract the
+		// previous occupant's whole history. BOTH must match, in [sameSender], which [Group.Delete]
+		// asks too. That keeps the rule at the device level: a second device of the same person holds
+		// another handle, and D7 is unruled.
+		if !sameSender(self.senderHandle, self.senderIdentity, target) {
 			return
 		}
 		// T-a: only a stored CONTENT message can be deleted. A reaction, a tombstone and a
@@ -6966,6 +7000,12 @@ func (self *Group) Stats() Stats {
 func (self *Group) Close() error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	return self.closeLocked()
+}
+
+// closeLocked is [Group.Close] for a caller that already holds the lock: [Group.closeToForget],
+// whose refusal and close have to be ONE critical section.
+func (self *Group) closeLocked() error {
 	if self.closed {
 		return nil
 	}
