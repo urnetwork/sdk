@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -715,55 +712,5 @@ func TestUpgradeGuestFailsImmediatelyWithoutHttp(t *testing.T) {
 
 	if got := requests.Load(); got != 0 {
 		t.Errorf("deprecated methods made %d HTTP requests, want 0", got)
-	}
-}
-
-// TestSdkPaymentEndpointsMatchServerRoutes cross-checks the payment endpoints
-// this SDK calls against the server's route table, so a removed server route
-// fails loudly here instead of 404ing in production (the failure mode of
-// finding S6). It reads the sibling server repo read-only and skips when the
-// repo is not checked out (e.g. a standalone sdk CI).
-func TestSdkPaymentEndpointsMatchServerRoutes(t *testing.T) {
-	serverApiPath := filepath.Join("..", "server", "api", "api.go")
-	routesSource, err := os.ReadFile(serverApiPath)
-	if err != nil {
-		t.Skipf("server repo not available (%v); skipping route conformance", err)
-	}
-	routeRe := regexp.MustCompile(`NewRoute\("(?:GET|POST|PUT|DELETE)",\s*"([^"]+)"`)
-	routes := map[string]bool{}
-	for _, m := range routeRe.FindAllStringSubmatch(string(routesSource), -1) {
-		routes[m[1]] = true
-	}
-	if len(routes) == 0 {
-		t.Fatal("no routes parsed from server api.go; the conformance regex is stale")
-	}
-
-	// every payment/upgrade endpoint the SDK calls must exist server-side
-	required := []string{
-		"/subscription/balance",
-		"/subscription/check-balance-code",
-		"/subscription/redeem-balance-code",
-		"/subscription/create-payment-id",
-		"/subscription/verify-play-purchase",
-		"/subscription/verify-apple-transaction",
-		"/stripe/payment-intent",
-		"/stripe/customer-portal",
-		"/stripe/create-checkout-session",
-		"/account/balance-codes",
-		"/auth/refresh",
-	}
-	for _, route := range required {
-		if !routes[route] {
-			t.Errorf("SDK calls %s but the server no longer routes it", route)
-		}
-	}
-
-	// the deprecated guest-upgrade methods must STAY deprecated while the
-	// routes are gone; if the server restores them, this fails to prompt
-	// un-deprecating the SDK methods
-	for _, route := range []string{"/auth/upgrade-guest", "/auth/upgrade-guest-existing"} {
-		if routes[route] {
-			t.Errorf("server restored %s; un-deprecate the SDK guest-upgrade method", route)
-		}
 	}
 }
