@@ -103,6 +103,13 @@ extern "C" {
  * abi takes a default; any other value is refused at transport_new, by name. */
 #define URNET_MESSAGE_PROTOCOL_VERSION 1
 
+/* the longest text urnet_message_group_send seals, in UTF-8 OCTETS and not characters, and the
+ * longest a reply may carry, which spends 32 of them naming its parent. a longer text is refused by
+ * the sealer, so check BEFORE handing a person's text over: a refusal after the box has emptied is
+ * a lost message. tied to the sealer's own constants by cgo/gen's TestTheHeadersTextLimits. */
+#define URNET_MESSAGE_MAX_TEXT_OCTETS 65333
+#define URNET_MESSAGE_MAX_REPLY_TEXT_OCTETS 65301
+
 /* the content kinds this build knows, which is what urnet_message_list_info's "kind" carries.
  * THE CODE IS THE VERSION OF ITS OWN GRAMMAR: a later kind is a NEW code and never a flag inside an
  * old one, so a build that does not know a code keeps the record's position and shows a
