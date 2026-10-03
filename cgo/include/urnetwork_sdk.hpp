@@ -1161,10 +1161,12 @@ struct AuthNetworkClientResult {
 
 struct AuthPasswordResetArgs {
 	std::string user_auth{};
+	std::optional<bool> result_errors;
 };
 
 struct AuthPasswordResetResult {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> error;
 };
 
 struct AuthVerifyArgs {
@@ -5713,6 +5715,9 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientResult& v) {
 inline void to_json(nlohmann::json& j, const AuthPasswordResetArgs& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.result_errors) {
+		j["result_errors"] = *v.result_errors;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthPasswordResetArgs& v) {
 	if (!j.is_object()) {
@@ -5721,11 +5726,19 @@ inline void from_json(const nlohmann::json& j, AuthPasswordResetArgs& v) {
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
 	}
+	if (auto it = j.find("result_errors"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.result_errors = std::move(tmp);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const AuthPasswordResetResult& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthPasswordResetResult& v) {
 	if (!j.is_object()) {
@@ -5733,6 +5746,11 @@ inline void from_json(const nlohmann::json& j, AuthPasswordResetResult& v) {
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
