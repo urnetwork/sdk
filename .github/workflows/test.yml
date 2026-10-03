@@ -23,8 +23,12 @@ jobs:
       # go.mod resolves these with `replace github.com/urnetwork/<x> => ../<x>`,
       # so they have to sit beside the checkout. The directory names must match
       # the replace targets exactly — `connect`, not whatever a fork is named.
+      # ON THE FORK, connect is the fork's main: it carries the URmessage packages
+      # (message, messagegroup, mls) that urmessage/ and the message_* files import,
+      # and urnetwork/connect does not have them until its pull request lands. The
+      # upstream branch of this repository clones urnetwork/connect here instead.
       - name: Check out connect dependency
-        run: git clone --depth 1 https://github.com/urnetwork/connect.git ../connect
+        run: git clone --depth 1 https://github.com/Ryanmello07/connect.git ../connect
 
       - name: Check out glog dependency
         run: git clone --depth 1 https://github.com/urnetwork/glog.git ../glog
