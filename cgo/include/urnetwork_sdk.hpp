@@ -258,6 +258,7 @@ inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
+inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
 inline constexpr const char* OfferDeclineControlBack = "back";
 inline constexpr const char* OfferDeclineControlFreePlanLink = "free_plan_link";
 inline constexpr const char* OfferDeclineControlSystemDismiss = "system_dismiss";
@@ -519,6 +520,7 @@ struct ClientEvent;
 struct ClientEventRejection;
 struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
+struct ClientRefreshIntegrityNotice;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
 struct TransferPath;
@@ -1341,6 +1343,9 @@ struct ClientEventsSendArgs {
 struct ClientEventsSendResult {
 	int64_t accepted{};
 	std::optional<ClientEventRejectionList> rejected;
+};
+
+struct ClientRefreshIntegrityNotice {
 };
 
 struct ConnectedProviderLocation {
@@ -2958,6 +2963,8 @@ struct SolanaPaymentIntentResult {
 	std::optional<double> regular_amount_usd;
 	std::optional<bool> offer_applied;
 	std::optional<std::string> currency;
+	std::optional<std::string> recipient;
+	std::optional<std::string> spl_token_mint;
 };
 
 struct SolanaPaymentUrlArgs {
@@ -3515,6 +3522,8 @@ inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendArgs& v);
 inline void to_json(nlohmann::json& j, const ClientEventsSendResult& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v);
+inline void to_json(nlohmann::json& j, const ClientRefreshIntegrityNotice& v);
+inline void from_json(const nlohmann::json& j, ClientRefreshIntegrityNotice& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v);
 inline void to_json(nlohmann::json& j, const ContractClientRow& v);
@@ -6505,6 +6514,15 @@ inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v) {
 		ClientEventRejectionList tmp{};
 		it->get_to(tmp);
 		v.rejected = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientRefreshIntegrityNotice& v) {
+	j = nlohmann::json::object();
+}
+inline void from_json(const nlohmann::json& j, ClientRefreshIntegrityNotice& v) {
+	if (!j.is_object()) {
+		return;
 	}
 }
 
@@ -13734,6 +13752,12 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v) {
 	if (v.currency) {
 		j["currency"] = *v.currency;
 	}
+	if (v.recipient) {
+		j["recipient"] = *v.recipient;
+	}
+	if (v.spl_token_mint) {
+		j["spl_token_mint"] = *v.spl_token_mint;
+	}
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 	if (!j.is_object()) {
@@ -13773,6 +13797,16 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.currency = std::move(tmp);
+	}
+	if (auto it = j.find("recipient"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.recipient = std::move(tmp);
+	}
+	if (auto it = j.find("spl_token_mint"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.spl_token_mint = std::move(tmp);
 	}
 }
 
@@ -15614,6 +15648,7 @@ using ChangeNetworkNameCallback = std::function<void(std::optional<ChangeNetwork
 using CheckBalanceCodeCallback = std::function<void(std::optional<CheckBalanceCodeResult> result, std::optional<std::string> err_param)>;
 using ClaimNetworkNameCallback = std::function<void(std::optional<ClaimNetworkNameResult> result, std::optional<std::string> err_param)>;
 using ClientEventsSendCallback = std::function<void(std::optional<ClientEventsSendResult> result, std::optional<std::string> err_param)>;
+using ClientRefreshIntegrityListener = std::function<void(std::optional<ClientRefreshIntegrityNotice> notice)>;
 using CommitCallback = std::function<void(bool success)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
@@ -15981,6 +16016,7 @@ public:
 	void accountPreferencesUpdate(const std::optional<AccountPreferencesSetArgs>& account_preferences, AccountPreferencesSetCallback callback) const;
 	void addAuth(const std::optional<AddAuthArgs>& args, AddAuthCallback callback) const;
 	Sub addAuthLogoutListener(AuthLogoutListener listener) const;
+	Sub addClientRefreshIntegrityListener(ClientRefreshIntegrityListener listener) const;
 	Sub addJwtRefreshListener(JwtRefreshListener listener) const;
 	void authCodeCreate(const std::optional<AuthCodeCreateArgs>& code_create_args, AuthCodeCreateCallback callback) const;
 	void authCodeLogin(const std::optional<AuthCodeLoginArgs>& args, AuthCodeLoginCallback callback) const;
@@ -16030,6 +16066,7 @@ public:
 	void listApiKeys(ListApiKeysCallback callback) const;
 	void networkBlockLocation(const std::optional<NetworkBlockLocationArgs>& args, NetworkBlockLocationCallback callback) const;
 	void networkCheck(const std::optional<NetworkCheckArgs>& network_check, NetworkCheckCallback callback) const;
+	std::string networkClientRegistrationEndpoint() const;
 	void networkCreate(const std::optional<NetworkCreateArgs>& network_create, NetworkCreateCallback callback) const;
 	void networkDelete(NetworkDeleteCallback callback) const;
 	void networkUnblockLocation(const std::optional<NetworkUnblockLocationArgs>& args, NetworkUnblockLocationCallback callback) const;
@@ -17895,6 +17932,34 @@ inline void oneshot_client_events_send(void* user_data, const char* result_json,
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_client_refresh_integrity(void* user_data, const char* notice_json) {
+	auto* f = static_cast<ClientRefreshIntegrityListener*>(user_data);
+	try {
+		std::optional<ClientRefreshIntegrityNotice> notice_v;
+		if (notice_json) {
+			notice_v = parseJson<ClientRefreshIntegrityNotice>(notice_json);
+		}
+		(*f)(std::move(notice_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_client_refresh_integrity(void* user_data, const char* notice_json) {
+	auto* f = static_cast<ClientRefreshIntegrityListener*>(user_data);
+	try {
+		std::optional<ClientRefreshIntegrityNotice> notice_v;
+		if (notice_json) {
+			notice_v = parseJson<ClientRefreshIntegrityNotice>(notice_json);
+		}
+		(*f)(std::move(notice_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -23573,6 +23638,17 @@ inline Sub Api::addAuthLogoutListener(AuthLogoutListener listener) const {
 	}
 	return r;
 }
+inline Sub Api::addClientRefreshIntegrityListener(ClientRefreshIntegrityListener listener) const {
+	std::shared_ptr<ClientRefreshIntegrityListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ClientRefreshIntegrityListener>(std::move(listener));
+	}
+	Sub r(urnet_api_add_client_refresh_integrity_listener(handle(), listener_fn ? &detail::retained_client_refresh_integrity : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Api::addJwtRefreshListener(JwtRefreshListener listener) const {
 	std::shared_ptr<JwtRefreshListener> listener_fn;
 	if (listener) {
@@ -23976,6 +24052,14 @@ inline void Api::networkCheck(const std::optional<NetworkCheckArgs>& network_che
 	}
 	auto* callback_fn = callback ? new NetworkCheckCallback(std::move(callback)) : nullptr;
 	urnet_api_network_check(handle(), network_check_c, callback_fn ? &detail::oneshot_network_check : nullptr, callback_fn);
+}
+inline std::string Api::networkClientRegistrationEndpoint() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_network_client_registration_endpoint(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline void Api::networkCreate(const std::optional<NetworkCreateArgs>& network_create, NetworkCreateCallback callback) const {
 	std::string network_create_json;

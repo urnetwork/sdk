@@ -324,6 +324,47 @@ func TestPaymentIntentResultCarriesTheQuotedAmount(t *testing.T) {
 	}
 }
 
+// The quote also says where to pay, so the url is built from the server's
+// recipient and mint rather than an app constant (UPGRADE.md §4.3).
+func TestPaymentIntentResultNamesWhereToPay(t *testing.T) {
+	// the server's payload for a successful intent
+	var quoted SolanaPaymentIntentResult
+	err := json.Unmarshal([]byte(`{
+		"amount_usd": 40,
+		"plan": "yearly",
+		"currency": "USD",
+		"recipient": "`+testRecipient+`",
+		"spl_token_mint": "`+testUsdcMint+`"
+	}`), &quoted)
+	if err != nil {
+		t.Fatalf("unmarshal: %s", err)
+	}
+	if quoted.Recipient != testRecipient || quoted.SplTokenMint != testUsdcMint {
+		t.Fatalf("the quote lost where to pay: recipient %q, spl_token_mint %q", quoted.Recipient, quoted.SplTokenMint)
+	}
+
+	reference := CreatePaymentReference()
+	raw, err := BuildSolanaPaymentUrl(&SolanaPaymentUrlArgs{
+		Recipient:    quoted.Recipient,
+		AmountUsd:    quoted.AmountUsd,
+		SplTokenMint: quoted.SplTokenMint,
+		Reference:    reference,
+	})
+	if err != nil {
+		t.Fatalf("build from the quote: %s", err)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if u.Opaque != testRecipient {
+		t.Errorf("url pays %q, want the quoted recipient %q", u.Opaque, testRecipient)
+	}
+	if got := u.Query().Get("spl-token"); got != testUsdcMint {
+		t.Errorf("url mint %q, want the quoted mint %q", got, testUsdcMint)
+	}
+}
+
 // The end-to-end shape an app must follow: quote from the server, then build the
 // url from that quote. Pins the ordering so a refactor cannot reintroduce a
 // client-side price.
