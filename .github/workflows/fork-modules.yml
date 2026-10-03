@@ -9,7 +9,8 @@
 #              includes windows.h for its threads, so no Linux host can run it.
 #   cp3b       URmessage's end-to-end suite, against the fork's message-server
 #   packaging  the package-manager manifests and the generated language bindings
-#   build      the gomobile module; three of its tests drive test.sh, which is a zsh script
+#   build      the gomobile module: zsh for the three tests that drive test.sh, and a warm module
+#              cache for gobind, which its tests run with GOPROXY=off
 #   js         under GOOS=js GOARCH=wasm, run by node
 #   livepeer, liveprobe   vetted: each is one main.go with no tests
 #   cgo/build  no code at all: it is the module boundary that build output sits behind
@@ -91,6 +92,8 @@ jobs:
         run: |
           set -eu
           sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+          # mobileexports runs gobind with GOPROXY=off, so the cache must already hold x/mobile
+          go mod download
           go test ./... -count=1 -timeout 20m
 
       - name: js (GOOS=js GOARCH=wasm, under node)
