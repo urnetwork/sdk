@@ -81,7 +81,7 @@ func newMakeFixture(t *testing.T) (dir, logPath string) {
 	if err := os.MkdirAll(binDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"urnetwork_sdk.h", "urnetwork_sdk.hpp", "urnetwork_sdk.def"} {
+	for _, name := range []string{"urnetwork_sdk.h", "urnetwork_sdk.hpp", "urnetwork_sdk.def", "urnetwork_message.h"} {
 		if err := os.WriteFile(filepath.Join(dir, "include", name), []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}

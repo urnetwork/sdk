@@ -54,7 +54,7 @@ build_darwin_amd64 build_darwin_arm64:
 		-o "build/darwin/$$arch/libURnetworkSdk.dylib" . && \
 	install_name_tool -id @rpath/libURnetworkSdk.dylib "build/darwin/$$arch/libURnetworkSdk.dylib" && \
 	codesign --force --sign - "build/darwin/$$arch/libURnetworkSdk.dylib" && \
-	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp "build/darwin/$$arch/"
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_message.h "build/darwin/$$arch/"
 
 build_windows: build_windows_amd64 build_windows_arm64
 	rm -f build/URnetworkSdkWindows.zip && \
