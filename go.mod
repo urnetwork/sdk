@@ -103,4 +103,6 @@ replace github.com/urnetwork/glog => ../glog
 
 replace github.com/urnetwork/goidenticons => ../goidenticons
 
+replace gvisor.dev/gvisor => ../gvisor
+
 tool golang.org/x/mobile/cmd/gobind

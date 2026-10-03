@@ -100,3 +100,5 @@ replace github.com/pion/sctp => ../../connect/sctp
 replace github.com/urnetwork/glog => ../../glog
 
 replace github.com/urnetwork/goidenticons => ../../goidenticons
+
+replace gvisor.dev/gvisor => ../../gvisor
