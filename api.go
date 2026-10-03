@@ -2301,7 +2301,17 @@ type VerifySeekerNftHolderArgs struct {
 	Message   string `json:"wallet_message,omitempty"`
 }
 
+// Stable codes for a Seeker verification that did not succeed.
+const (
+	VerifySeekerNftHolderErrorCodeInvalidSignature = "seeker_invalid_signature"
+	VerifySeekerNftHolderErrorCodeLookupFailed     = "seeker_lookup_failed"
+	VerifySeekerNftHolderErrorCodeTokenNotFound    = "seeker_token_not_found"
+)
+
 type VerifySeekerNftHolderError struct {
+	// one of the `VerifySeekerNftHolderErrorCode*` values. Apps localize on it
+	// and fall back to `Message`; empty from an older server.
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
