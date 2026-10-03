@@ -493,6 +493,16 @@ func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
 // are reachable through the *Millis accessor pairs at the end of this file,
 // so an app can set them; the other three are Go-construction only.
 type DeviceLocalSettings struct {
+	// Explicit platform-owned authorities. Nil retains the application HTTP
+	// path. These are captured per device and never installed on a shared API.
+	//gomobile:noexport Go-only local control authorities.
+	ClientCredentials connect.NetworkClientCredentials
+	//gomobile:noexport Go-only local control authority.
+	ClientControl connect.NetworkClientControl
+	//gomobile:noexport Go-only local discovery authority.
+	ProviderDiscovery connect.NetworkProviderDiscovery
+	//gomobile:noexport Go-only private API authority.
+	LocalApi LocalDeviceApi
 	// Diagnostic-only injection of the existing allocator-error return path.
 	testingTakeLocalAddress func() (netip.Addr, bool)
 	// Constructor seams observe admission ordering without creating a client.
@@ -1278,6 +1288,12 @@ func newDeviceLocalWithOverridesForPlatform(
 	// Runtime-owned stores must not leak into a reusable caller settings value.
 	settingsCopy := *settings
 	settings = &settingsCopy
+	if settings.LocalApi != nil && !settings.HostedIncompatible {
+		return nil, errors.New("local device API requires an isolated hosted session")
+	}
+	if settings.LocalApi != nil && settings.AllowProvider {
+		return nil, errors.New("local device API supports hosted source devices only")
+	}
 	if settings.KeyMaterial != nil {
 		applyDeviceLocalKeyMaterial(&settings.ClientSettings, settings.KeyMaterial)
 		// the extender identity belongs to the space, not to the client
@@ -1317,6 +1333,10 @@ func newDeviceLocalWithOverridesForPlatform(
 		// credentials or control-plane dial/DoH admission limits.
 		clientStrategy = networkSpace.newHostedClientStrategy(dnsMemoryTarget)
 		api = api.newSessionWithStrategy(ctx, clientStrategy)
+		if settings.LocalApi != nil {
+			api.setHttpGetRaw(settings.LocalApi.Get)
+			api.setHttpPostRaw(settings.LocalApi.Post)
+		}
 		ownsApi = true
 		defer func() {
 			if !ownedClientStrategyTransferred {
@@ -4487,6 +4507,9 @@ func (self *DeviceLocal) applyDestination(
 				generator = self.generatorFunc(connectSpecs)
 			} else {
 				apiGeneratorSettings := connect.DefaultApiMultiClientGeneratorSettings()
+				apiGeneratorSettings.ClientCredentials = self.settings.ClientCredentials
+				apiGeneratorSettings.ClientControl = self.settings.ClientControl
+				apiGeneratorSettings.ProviderDiscovery = self.settings.ProviderDiscovery
 				apiGeneratorSettings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
 					settings := newDeviceLocalPlatformTransportSettings(
 						self.settings.MemoryTargetByteCount,
@@ -4527,6 +4550,7 @@ func (self *DeviceLocal) applyDestination(
 							self.clientStrategy,
 						)
 						shareDevicePeerKeyPinStore(clientSettings, &self.settings.ClientSettings)
+						applyLocalDeviceApiKeyFetchers(clientSettings, self.settings.LocalApi, self.networkSpace.apiUrl)
 						// share the device budgets so every window client's
 						// queues draw from the same pools. Stamped before the
 						// mobile policy so the policy caps the receive hold
