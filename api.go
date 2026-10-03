@@ -1719,6 +1719,14 @@ type SubscriptionBalanceResult struct {
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
 	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
 	UpdateTime                string               `json:"update_time"`
+	/**
+	 * Guest - the network has no login method (a legacy guest network). The
+	 * server reads it from the live auth methods, so unlike the jwt's
+	 * guest_mode claim (which every token refresh clears) it is still true for
+	 * a refreshed guest, and false once a login method is added with AddAuth.
+	 * False from an older server.
+	 */
+	Guest bool `json:"guest,omitempty"`
 
 	// ----- the onboarding plan fields (onboarding_api.go) -----
 	// PriceTier is the caller's regional price tier (an estimate unless the

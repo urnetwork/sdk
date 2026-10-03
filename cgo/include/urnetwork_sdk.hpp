@@ -3124,6 +3124,7 @@ struct SubscriptionBalanceResult {
 	std::optional<TransferBalanceList> active_transfer_balances;
 	int64_t pending_payout_usd_nano_cents{};
 	std::string update_time{};
+	std::optional<bool> guest;
 	std::optional<PriceTier> price_tier;
 	std::optional<OnboardingOffer> onboarding_offer;
 	std::optional<ExperimentAssignmentList> experiments;
@@ -14508,6 +14509,9 @@ inline void to_json(nlohmann::json& j, const SubscriptionBalanceResult& v) {
 	}
 	j["pending_payout_usd_nano_cents"] = v.pending_payout_usd_nano_cents;
 	j["update_time"] = v.update_time;
+	if (v.guest) {
+		j["guest"] = *v.guest;
+	}
 	if (v.price_tier) {
 		j["price_tier"] = *v.price_tier;
 	}
@@ -14551,6 +14555,11 @@ inline void from_json(const nlohmann::json& j, SubscriptionBalanceResult& v) {
 	}
 	if (auto it = j.find("update_time"); it != j.end() && !it->is_null()) {
 		it->get_to(v.update_time);
+	}
+	if (auto it = j.find("guest"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.guest = std::move(tmp);
 	}
 	if (auto it = j.find("price_tier"); it != j.end() && !it->is_null()) {
 		PriceTier tmp{};
