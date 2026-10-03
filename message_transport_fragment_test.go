@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // Task 6's three properties: the cut, the join, and the one home for the part

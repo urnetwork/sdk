@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // §4.3.1: Hello, the per-connection `server_nonce`, and the `Capabilities`

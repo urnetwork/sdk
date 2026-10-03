@@ -16,7 +16,7 @@
 // that have the primitive, and the platform without one would ship two stores allocating the same
 // index with nothing to say so.
 
-//go:build !windows && !darwin && !dragonfly && !freebsd && !illumos && !linux && !netbsd && !openbsd
+//go:build !windows && !darwin && !dragonfly && !freebsd && !illumos && !linux && !netbsd && !openbsd && !sdk_mobile_bind
 
 package sdk
 

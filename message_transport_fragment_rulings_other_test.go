@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !sdk_mobile_bind
 
 package sdk
 

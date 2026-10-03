@@ -14,7 +14,7 @@
 // spells those two GOOS values' constraints. The complement of this list, plus windows, is the
 // fallback file's constituency: solaris, aix, js, wasip1 and plan9.
 
-//go:build darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd
+//go:build (darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd) && !sdk_mobile_bind
 
 package sdk
 

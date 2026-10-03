@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // Task 7's four properties: Hello, the per-connection nonce, the Capabilities

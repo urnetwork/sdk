@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // The message-server binding: §4.2 frames over an existing connect.Client,

@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // THE LINUX HALF OF messageFragmentPartSizeCopyRulings, for a copy of the part size only a linux build

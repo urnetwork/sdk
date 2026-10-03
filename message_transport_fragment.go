@@ -1,3 +1,5 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // §4.6 fragmentation, both directions: the cut this binding applies to a request

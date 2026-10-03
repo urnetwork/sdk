@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !sdk_mobile_bind
 
 package sdk
 

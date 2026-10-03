@@ -1,9 +1,11 @@
+//go:build !sdk_mobile_bind
+
 package sdk
 
 // THE MESSAGING CLIENT.
 //
-// This file carries no code. It carries the two things the next person to write a call on this
-// leg needs before they write it, in the source rather than only in a plan document.
+// This file carries no code. It carries the three things the next person to write a call on
+// this leg needs before they write it, in the source rather than only in a plan document.
 //
 // ---------------------------------------------------------------------------------------------
 // READ EVERY SIGNATURE FROM THE FILE THAT DECLARES IT. THE SOURCE COMMENT ON THIS LEG'S OWN
@@ -54,3 +56,16 @@ package sdk
 // makes the second time an index is handed out impossible rather than unlikely; every refusal it
 // owns is in message_errors.go and every one of them exists because its alternative is a silent
 // zero.
+//
+// ---------------------------------------------------------------------------------------------
+// WHY EVERY message_* FILE IS BUILT WITHOUT sdk_mobile_bind.
+// ---------------------------------------------------------------------------------------------
+//
+// The mobile SDK is package sdk run through gobind, and build/cmd/mobileexports runs gobind with
+// -tags=sdk_mobile_bind and fails on every declaration gobind skips that its policy does not
+// name. This leg's Go surface is full of what gobind skips: connect.Id, funcs, contexts,
+// []string, time.Duration. An app reaches the messenger through the C ABI
+// (cgo/include/urnetwork_message.h), not through gomobile. So every production message_* file
+// carries !sdk_mobile_bind, and the mobile SDK holds none of it, rather than a half-bound
+// MessageClient. A new message_* file needs the same constraint, or that check fails naming
+// what it skipped.
