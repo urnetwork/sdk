@@ -25,7 +25,8 @@ func jsPromise(run func(resolve func(any), reject func(error))) js.Value {
 		go connect.HandleError(func() {
 			run(
 				func(value any) { resolve.Invoke(value) },
-				func(err error) { reject.Invoke(js.Global().Get("Error").New(err.Error())) },
+				// an api call's failure carries its kind fields (api_error.go)
+				func(err error) { reject.Invoke(jsError(err)) },
 			)
 		}, func(err error) {
 			reject.Invoke(js.Global().Get("Error").New(err.Error()))
