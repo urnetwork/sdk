@@ -1,4 +1,18 @@
 **/bin
+
+# the two names liveprobe/README.md tells an operator to build into this tracked directory.
+# `**/bin` does not match them, and the tracked 35 MB binary this replaced is why they are here.
+liveprobe/liveprobe
+liveprobe/liveprobe-arm64
+# and the Windows spelling, which neither name above matches: `go build` in this directory on
+# Windows writes liveprobe.exe, 36 MB. It was staged once, on 2026-09-17, before this line existed.
+liveprobe/*.exe
+# livepeer is liveprobe's second half -- the other party, in its own process -- and its build
+# output has exactly the same shape and the same 36 MB. Same three names, before the first
+# `git add .` in this directory rather than after it.
+livepeer/livepeer
+livepeer/livepeer-arm64
+livepeer/*.exe
 build/apple*
 build/ios*
 build/android*
@@ -16,6 +30,9 @@ temp/*
 .superpowers/
 docs/superpowers/
 
+# a compiled test binary was tracked at the repo root until 2026-09-24; `go test -c`
+# writes one here by default and it is 20+ MB of build output, not source.
+*.test
 # Language package outputs and isolated build tools.
 packaging/.venv/
 packaging/__pycache__/

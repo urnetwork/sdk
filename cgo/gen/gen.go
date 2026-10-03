@@ -20,6 +20,7 @@ package main
 
 import (
 	"fmt"
+	"go/build/constraint"
 	"go/constant"
 	"go/format"
 	"go/types"
@@ -1816,11 +1817,73 @@ func manualExports(sourceDirectory string) []string {
 		if err != nil {
 			continue
 		}
+		if !inAnyShippedBuild(string(b)) {
+			continue
+		}
 		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
 			names = append(names, m[1])
 		}
 	}
 	return names
+}
+
+// inAnyShippedBuild reports whether a source file is compiled into any library this repo ships.
+//
+// IT EXISTS BECAUSE THE .def IS A PROMISE ABOUT THE LIBRARY. manualExports reads raw file bytes,
+// so before this an //export inside a build-tag-gated file reached include/urnetwork_sdk.def, and
+// an MSVC import library built from a .def naming a symbol the shipped dll does not contain is a
+// LINK ERROR at the consumer -- a break the generator would have caused and which nothing here
+// would have caught. loopback_test_world.go is the file that exists today: it is behind
+// `//go:build urnet_message_loopback`, its five exports are in no shipped library, and the
+// generator has not been run since it landed.
+//
+// THE QUESTION IT ASKS IS "IS THIS FILE IN ANY SHIPPED BUILD", not "is it in this one". A custom
+// tag -- one no Makefile target passes -- is always false. A platform tag is evaluated BOTH ways
+// and either answer counts, because the library ships for four platforms: a file gated on
+// `//go:build !js` is in all of them and one gated on `//go:build js` is in the js build, and an
+// evaluator that pinned the platform tags one way would drop one of those two.
+func inAnyShippedBuild(source string) bool {
+	for _, line := range strings.Split(source, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "//") {
+			// past the header, where a //go:build line may no longer appear
+			return true
+		}
+		if !strings.HasPrefix(line, "//go:build ") {
+			continue
+		}
+		expr, err := constraint.Parse(line)
+		if err != nil {
+			// an unparseable constraint is not a licence to publish the symbol
+			return false
+		}
+		for _, platform := range []bool{true, false} {
+			if expr.Eval(func(tag string) bool {
+				switch tag {
+				case "unix", "cgo", "gc":
+					return platform
+				}
+				return (knownOS[tag] || knownArch[tag]) && platform
+			}) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+var knownOS = map[string]bool{
+	"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true,
+	"hurd": true, "illumos": true, "ios": true, "js": true, "linux": true,
+	"netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "wasip1": true,
+	"windows": true, "zos": true,
+}
+
+var knownArch = map[string]bool{
+	"386": true, "amd64": true, "arm": true, "arm64": true, "loong64": true, "mips": true,
+	"mips64": true, "mips64le": true, "mipsle": true, "ppc64": true, "ppc64le": true,
+	"riscv64": true, "s390x": true, "wasm": true,
 }
 
 // ---------------------------------------------------------------------------
