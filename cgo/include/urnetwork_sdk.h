@@ -2148,10 +2148,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* AuthPasswordResetArgs (json):
  *   user_auth: string
+ *   result_errors?: boolean
  */
 
 /* AuthPasswordResetResult (json):
  *   user_auth: string
+ *   error?: AuthVerifySendError | null
  */
 
 /* AuthVerifyArgs (json):

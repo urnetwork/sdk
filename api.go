@@ -613,10 +613,16 @@ type AuthPasswordResetCallback connect.ApiCallback[*AuthPasswordResetResult]
 
 type AuthPasswordResetArgs struct {
 	UserAuth string `json:"user_auth"`
+	// ask the server to answer a rate limit or a failed send in the result
+	// `Error` instead of an HTTP 429 / 502 error, so the retry time is known
+	ResultErrors bool `json:"result_errors,omitempty"`
 }
 
 type AuthPasswordResetResult struct {
 	UserAuth string `json:"user_auth"`
+	// set when no reset code was sent (requires `ResultErrors`). Uses the
+	// verify send error codes.
+	Error *AuthVerifySendError `json:"error,omitempty"`
 }
 
 func (self *Api) AuthPasswordReset(authPasswordReset *AuthPasswordResetArgs, callback AuthPasswordResetCallback) {
