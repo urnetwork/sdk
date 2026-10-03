@@ -3,99 +3,74 @@
 package sdk
 
 import (
-	"net/http"
-	"sync"
+	"context"
+	"errors"
 	"testing"
-	"time"
 )
 
-// Records the order of every feedback controller callback, so a test can
-// assert that the send result arrives before the sending state clears.
+// Records every feedback controller callback in order. The fake request
+// answers synchronously, so the order is final when SendFeedback returns.
 type feedbackEventRecorder struct {
-	stateLock sync.Mutex
-	events    []string
-	done      chan struct{}
-}
-
-func newFeedbackEventRecorder() *feedbackEventRecorder {
-	return &feedbackEventRecorder{done: make(chan struct{})}
-}
-
-func (self *feedbackEventRecorder) add(event string) {
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	self.events = append(self.events, event)
-	if event == "sending:false" {
-		close(self.done)
-	}
+	events []string
 }
 
 func (self *feedbackEventRecorder) StateChanged(isSending bool) {
 	if isSending {
-		self.add("sending:true")
+		self.events = append(self.events, "sending:true")
 	} else {
-		self.add("sending:false")
+		self.events = append(self.events, "sending:false")
 	}
 }
 
 func (self *feedbackEventRecorder) Message(message string) {
-	self.add("error")
+	self.events = append(self.events, "error:"+message)
 }
 
 func (self *feedbackEventRecorder) Success() {
-	self.add("success")
+	self.events = append(self.events, "success")
 }
 
-func (self *feedbackEventRecorder) wait(t *testing.T) []string {
+// Sends one feedback through a controller whose api answers err (nil = ok)
+// without leaving the goroutine, and returns the callbacks it made.
+func sendTestFeedback(t *testing.T, err error) []string {
 	t.Helper()
-	select {
-	case <-self.done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the send never finished")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newFeedbackViewController(ctx, nil)
+	defer vc.Close()
+	vc.sendFeedbackRequest = func(args *FeedbackSendArgs, callback SendFeedbackCallback) {
+		if args.Needs.Other != "the tunnel stops after an hour" || args.StarCount != 4 {
+			t.Fatalf("request args %+v", args)
+		}
+		if err != nil {
+			callback.Result(nil, err)
+		} else {
+			callback.Result(&FeedbackSendResult{}, nil)
+		}
 	}
-	self.stateLock.Lock()
-	defer self.stateLock.Unlock()
-	return append([]string{}, self.events...)
-}
 
-func sendTestFeedback(t *testing.T, status int) []string {
-	t.Helper()
-	ctx, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/feedback/send-feedback" {
-			http.NotFound(w, r)
-			return
-		}
-		if status != http.StatusOK {
-			http.Error(w, "unavailable", status)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{}`))
-	}))
-	vc := NewFeedbackViewControllerWithApi(ctx, api)
-	t.Cleanup(vc.Close)
-
-	recorder := newFeedbackEventRecorder()
+	recorder := &feedbackEventRecorder{}
 	vc.AddIsSendingFeedbackListener(recorder)
 	vc.AddFeedbackSendErrorListener(recorder)
 	vc.AddFeedbackSendSuccessListener(recorder)
 
 	vc.SendFeedback("the tunnel stops after an hour", 4)
-	return recorder.wait(t)
+	return recorder.events
 }
 
-// A failed send reports the error before the sending state clears, and never
-// reports success, so the form can keep the text instead of thanking the user.
+// The root cause: the api error was dropped and a failed send ended exactly
+// like a successful one (sending true, then false), so a client could not
+// tell them apart. A failed send must report the error before sending clears.
 func TestFeedbackSendFailureReportsError(t *testing.T) {
-	events := sendTestFeedback(t, http.StatusServiceUnavailable)
-	want := []string{"sending:true", "error", "sending:false"}
+	events := sendTestFeedback(t, errors.New("503 Service Unavailable"))
+	want := []string{"sending:true", "error:503 Service Unavailable", "sending:false"}
 	if !equalStrings(events, want) {
 		t.Fatalf("events %v, want %v", events, want)
 	}
 }
 
 func TestFeedbackSendSuccessReportsSuccess(t *testing.T) {
-	events := sendTestFeedback(t, http.StatusOK)
+	events := sendTestFeedback(t, nil)
 	want := []string{"sending:true", "success", "sending:false"}
 	if !equalStrings(events, want) {
 		t.Fatalf("events %v, want %v", events, want)

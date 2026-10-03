@@ -31,6 +31,8 @@ type FeedbackViewController struct {
 	// api-only (NewFeedbackViewControllerWithApi): no device, the same
 	// controller over the network space api. Exactly one of device / api.
 	api *Api
+	// replaces the api call when set (tests drive the result without a network)
+	sendFeedbackRequest func(args *FeedbackSendArgs, callback SendFeedbackCallback)
 
 	stateLock sync.Mutex
 
@@ -69,6 +71,14 @@ func (vc *FeedbackViewController) getApi() *Api {
 		return vc.api
 	}
 	return vc.device.GetApi()
+}
+
+func (vc *FeedbackViewController) requestSendFeedback(args *FeedbackSendArgs, callback SendFeedbackCallback) {
+	if vc.sendFeedbackRequest != nil {
+		vc.sendFeedbackRequest(args, callback)
+		return
+	}
+	vc.getApi().SendFeedback(args, callback)
 }
 
 func (vc *FeedbackViewController) Start() {}
@@ -163,7 +173,7 @@ func (vc *FeedbackViewController) SendFeedback(
 		StarCount: starCount,
 	}
 
-	vc.getApi().SendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
+	vc.requestSendFeedback(args, SendFeedbackCallback(connect.NewApiCallback[*FeedbackSendResult](
 		func(result *FeedbackSendResult, err error) {
 			// the result goes out before the sending state clears
 			if err != nil {
