@@ -401,10 +401,11 @@ type DnsResolverSettings struct {
 	EnableLocalDoh  bool
 	EnableRemoteDns bool
 	EnableLocalDns  bool
-	// EnableFallback races a handicapped resolver over the local host network
-	// when the tunnel resolver is slow, bridging tunnel startup. The fallback
-	// servers are derived as the host-side projection of the resolver settings
-	// above. When false, DNS only ever resolves through the tunnel
+	// EnableFallback ("fast DNS on connect", off by default) races a handicapped
+	// resolver over the local host network when the tunnel resolver is slow,
+	// bridging tunnel startup at the cost of revealing those lookups to the local
+	// network. The fallback servers are derived as the host-side projection of the
+	// resolver settings above. When false, DNS only ever resolves through the tunnel
 	EnableFallback bool
 	// DnsUpgradeMaskAddress is the plain-DNS address advertised to the OS while
 	// the UpgradeMux intercepts UDP/TCP :53. It is a stand-in for the mux, not
@@ -461,8 +462,9 @@ func GetRecommendedDnsResolverSettings(countryCode string) *DnsResolverSettings 
 }
 
 // GetDefaultDnsResolverSettings returns the default, most secure dns settings:
-// encrypted DNS over HTTPS through the tunnel, with the host-side DoH fallback
-// while the tunnel starts. This is what the device uses out of the box
+// encrypted DNS over HTTPS through the tunnel only. The host-side DoH fallback
+// while the tunnel starts is off (an opt-in). This is what the device uses out
+// of the box
 func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	muxSettings := connect.DefaultUpgradeMuxSettings()
 	if muxSettings == nil || muxSettings.Dns == nil || muxSettings.Dns.Resolver == nil {

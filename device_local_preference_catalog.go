@@ -274,9 +274,7 @@ func decodeLocalPreference(name string, data []byte) (any, error) {
 		err := json.Unmarshal(data, &value)
 		return normalizeTransportSettings(&value, name == "provider-transport-settings"), err
 	case "dns-resolver-settings":
-		var value DnsResolverSettings
-		err := json.Unmarshal(data, &value)
-		return &value, err
+		return decodeDnsResolverSettingsRecord(data)
 	case "block-action-overrides":
 		value := NewBlockActionOverrideList()
 		if err := json.Unmarshal(data, value); err != nil {
@@ -335,6 +333,8 @@ func (self *LocalState) saveCatalogPreferenceWithLock(name string, value any) er
 		if value.(*PerformanceProfile) != nil {
 			data, err = json.Marshal(value)
 		}
+	case "dns-resolver-settings":
+		data, err = encodeDnsResolverSettingsRecord(value.(*DnsResolverSettings))
 	default:
 		data, err = json.Marshal(value)
 	}
