@@ -2455,21 +2455,22 @@ func (self *Group) react(ctx context.Context, kind ContentKind, target []byte, e
 // Delete seals one TOMBSTONE naming a message of THIS DEVICE'S OWN, and submits it.
 //
 // THE SAME-SENDER RULE IS ENFORCED ON BOTH SIDES AND THIS IS THE SEND SIDE (T-b). A tombstone
-// applies only if its sender_handle equals the target's, which is what MASTER §12.1's "a deletion
-// cannot be forged" needs beyond R1: R1 proves who wrote the TOMBSTONE and nothing proves they
-// wrote the target. So a tombstone naming somebody else's message is a record every honest receiver
-// would ignore, and the honest thing is not to seal one.
+// applies only if its sender_handle AND its sender identity equal the target's (the identity half
+// since msgrepo ledger 273, review H4; this side checks the identity half, by [Message.Mine]). That
+// is what MASTER §12.1's "a deletion cannot be forged" needs beyond R1: R1 proves who wrote the
+// TOMBSTONE and nothing proves they wrote the target. So a tombstone naming somebody else's
+// message is a record every honest receiver would ignore, and the honest thing is not to seal one.
 //
 // WHAT IT DOES NOT DO. It does not erase the record on the server -- spec B's B6 is "no
 // client-initiated server-side erase in v1" -- and it does not decide what a UI shows: the target
 // is marked [Message.Deleted] and keeps its text, because this package refuses to be the layer that
 // throws away a user's data on a peer's say-so.
 //
-// THE 24-HOUR WINDOW IS NOT IMPLEMENTED AND IS NOT FORGOTTEN. MASTER §12.1:2564 bounds a tombstone
-// to 24 hours and no document says WHICH CLOCK measures it; every clock reading in a record is its
-// sender's claim, and the three candidate clocks are enumerated as owner choice 6 (msgrepo
-// docs/reports/2026-09-16-content-kinds.md §5.4 T-d). Building one of them here would be this
-// package taking an owner's decision.
+// THERE IS NO WINDOW, BY RULING. The owner ruled on 2026-10-02, verbatim: "I think you should be able
+// to delete your messages at any time". A tombstone applies however old its line is, and the line
+// stays as a deleted placeholder, so a retraction is never silent. That ruling closed msgrepo item
+// 211, which had asked which clock a 24-hour bound should read, and MASTER §12.1 no longer carries a
+// bound. TestAnOldLineIsDeletedLikeANewOne holds it.
 func (self *Group) Delete(ctx context.Context, target []byte) (*Message, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -5673,6 +5674,15 @@ type contentEffect struct {
 	senderHandle []byte
 	mine         bool
 
+	// THE IDENTITY THAT SIGNED IT, copied off [Message.SenderIdentity] at the open, and T-b's
+	// second operand (msgrepo ledger 273, review H4). The handle above is a LEAF's label: a
+	// newcomer on a refilled leaf carries the previous occupant's sixteen octets byte for byte
+	// (item 245), so a tombstone tested on the handle alone let that newcomer delete the previous
+	// occupant's lines. An effect is never built from a gap, so this is empty only in the
+	// RoleUndeterminable residual (the open succeeded and RoleAt refused). There T-b fails closed in
+	// both directions, while [Message.Mine] falls back to the handle.
+	senderIdentity []byte
+
 	// THE ROLE THAT SENDER HELD AT THE EPOCH IT SEALED THIS RECORD, carried across from
 	// [Message.SenderRoleAtSend] and never read again afterwards.
 	//
@@ -5704,6 +5714,7 @@ func effectOf(received *Message, entry *Content) (*contentEffect, bool) {
 		messageId:        messageKeyOf(received.MessageId),
 		recordId:         received.RecordId,
 		senderHandle:     append([]byte(nil), received.SenderHandle...),
+		senderIdentity:   append([]byte(nil), received.SenderIdentity...),
 		mine:             received.Mine,
 		senderRoleAtSend: received.SenderRoleAtSend,
 		target:           messageKeyOf(entry.Target),
@@ -5980,6 +5991,14 @@ func (self *contentEffect) applyTo(target *Message, seen map[string]struct{}) {
 		// because the record is a legal record and a receiver that failed the walk over one
 		// would be handing any member a way to wedge the conversation.
 		if !bytes.Equal(self.senderHandle, target.SenderHandle) {
+			return
+		}
+		// ...AND THE SAME IDENTITY, because the handle is a leaf's label and a refilled leaf keeps it
+		// (item 245; msgrepo ledger 273, review H4). Since the owner ruled on 2026-10-02 that there is
+		// no time bound on a deletion, a handle-only test let a newcomer retract the previous
+		// occupant's whole history. BOTH must match. That keeps the rule at the device level: a second
+		// device of the same person holds another handle, and D7 is unruled.
+		if len(self.senderIdentity) == 0 || !bytes.Equal(self.senderIdentity, target.SenderIdentity) {
 			return
 		}
 		// T-a: only a stored CONTENT message can be deleted. A reaction, a tombstone and a

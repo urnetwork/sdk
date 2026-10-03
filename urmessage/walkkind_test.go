@@ -792,21 +792,23 @@ func TestATombstoneFromAnotherSenderIsIgnored(t *testing.T) {
 
 	mine := bytes.Repeat([]byte{0x01}, 16)
 	theirs := bytes.Repeat([]byte{0x02}, 16)
+	mineId := bytes.Repeat([]byte{0xA1}, 32)
+	theirId := bytes.Repeat([]byte{0xA2}, 32)
 	lineId := aTarget(0xA1)
 
-	line := newMessage(&Content{Kind: KindText, Text: "a line"}, 10, mine, nil, false, 0, lineId, "member")
+	line := newMessage(&Content{Kind: KindText, Text: "a line"}, 10, mine, mineId, false, 0, lineId, "member")
 	if !deliverOneThroughAWalk(group, line, &Content{Kind: KindText, Text: "a line"}) {
 		t.Fatal("a TEXT did not become a line of the conversation")
 	}
 
 	stranger := &Content{Kind: KindTombstone, Target: lineId}
-	deliverOneThroughAWalk(group, newMessage(stranger, 11, theirs, nil, false, 0, aTarget(0xA2), "member"), stranger)
+	deliverOneThroughAWalk(group, newMessage(stranger, 11, theirs, theirId, false, 0, aTarget(0xA2), "member"), stranger)
 	if heldIn(t, group, lineId).Deleted {
 		t.Errorf("a tombstone sealed by %x deleted a message sealed by %x", theirs, mine)
 	}
 
 	owner := &Content{Kind: KindTombstone, Target: lineId}
-	deliverOneThroughAWalk(group, newMessage(owner, 12, mine, nil, false, 0, aTarget(0xA3), "member"), owner)
+	deliverOneThroughAWalk(group, newMessage(owner, 12, mine, mineId, false, 0, aTarget(0xA3), "member"), owner)
 	if !heldIn(t, group, lineId).Deleted {
 		t.Error("a tombstone sealed by the line's own sender did not delete it")
 	}
@@ -892,11 +894,12 @@ func TestAKindThisBuildCannotReadIsNotReactableAndIsNotDeletable(t *testing.T) {
 	lineId := aTarget(0xC2)
 
 	placeholder := &Content{Kind: KindEdit}
-	if !deliverOneThroughAWalk(group, newMessage(placeholder, 10, sender, nil, true, 0, placeholderId, "member"), placeholder) {
+	senderId := bytes.Repeat([]byte{0xC9}, 32)
+	if !deliverOneThroughAWalk(group, newMessage(placeholder, 10, sender, senderId, true, 0, placeholderId, "member"), placeholder) {
 		t.Fatal("a placeholder is an entry of the conversation and this build dropped it")
 	}
 	line := &Content{Kind: KindText, Text: "a line"}
-	deliverOneThroughAWalk(group, newMessage(line, 11, sender, nil, true, 0, lineId, "member"), line)
+	deliverOneThroughAWalk(group, newMessage(line, 11, sender, senderId, true, 0, lineId, "member"), line)
 
 	// the send side
 	if _, err := group.reactableLocked(placeholderId); !errors.Is(err, ErrNoSuchMessage) {
@@ -908,14 +911,14 @@ func TestAKindThisBuildCannotReadIsNotReactableAndIsNotDeletable(t *testing.T) {
 
 	// and the receipt side: a tombstone from the placeholder's OWN sender, which passes T-b
 	tombstone := &Content{Kind: KindTombstone, Target: placeholderId}
-	deliverOneThroughAWalk(group, newMessage(tombstone, 12, sender, nil, true, 0, aTarget(0xC3), "member"), tombstone)
+	deliverOneThroughAWalk(group, newMessage(tombstone, 12, sender, senderId, true, 0, aTarget(0xC3), "member"), tombstone)
 	if heldIn(t, group, placeholderId).Deleted {
 		t.Error("a tombstone deleted a record whose kind this build cannot read")
 	}
 	// the control, which is what says the clause above is about the KIND and not about the
 	// tombstone being ignored altogether
 	onTheLine := &Content{Kind: KindTombstone, Target: lineId}
-	deliverOneThroughAWalk(group, newMessage(onTheLine, 13, sender, nil, true, 0, aTarget(0xC4), "member"), onTheLine)
+	deliverOneThroughAWalk(group, newMessage(onTheLine, 13, sender, senderId, true, 0, aTarget(0xC4), "member"), onTheLine)
 	if !heldIn(t, group, lineId).Deleted {
 		t.Error("the control: a tombstone on this sender's own TEXT did not delete it")
 	}
