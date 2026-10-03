@@ -178,6 +178,25 @@ const isAbortError = (error: unknown): boolean =>
   error !== null &&
   (error as { name?: unknown }).name === "AbortError";
 
+// Snapshot an exact customer intent before asynchronous token lookup. Number
+// cannot represent every int64; refuse unsafe money instead of rounding it.
+const customerTransferIntent = (body: unknown): Record<string, unknown> => {
+  if (typeof body !== "object" || body === null) {
+    throw new TypeError("customer transfer requires a persisted request_id");
+  }
+  const intent = { ...(body as Record<string, unknown>) };
+  if (typeof intent.request_id !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(intent.request_id) ||
+      intent.request_id === "00000000-0000-0000-0000-000000000000") {
+    throw new TypeError("customer transfer requires a persisted request_id; reuse it for every retry");
+  }
+  const amount = intent.amount_usdc_nano_cents;
+  if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0 || amount % 1000 !== 0) {
+    throw new TypeError("customer transfer requires an exact positive safe integer amount divisible by 1000");
+  }
+  return intent;
+};
+
 const serverMessage = (body: unknown): string | undefined => {
   if (typeof body !== "object" || body === null) {
     return undefined;
@@ -303,6 +322,12 @@ export class URNetworkApiClientBase {
     options?: RequestOptions,
   ): Promise<R> {
     const op = normalize(operation);
+    if (op.method === "POST" && op.path === "/wallet/circle-transfer-out") {
+      if (options?.signal?.aborted) {
+        throw options.signal.reason;
+      }
+      body = customerTransferIntent(body);
+    }
     const values = (params ?? {}) as Record<string, unknown>;
 
     // url

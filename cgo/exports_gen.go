@@ -15028,6 +15028,16 @@ func urnet_new_urls_network_space(apiUrl *C.char, platformUrl *C.char) C.uint64_
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_wallet_circle_transfer_out_args
+func urnet_new_wallet_circle_transfer_out_args(toAddress *C.char, amountUsdcNanoCents C.int64_t, terms C.bool) *C.char {
+	defer cgoGuard("urnet_new_wallet_circle_transfer_out_args")
+	r0 := sdk.NewWalletCircleTransferOutArgs(goString(toAddress), int64(amountUsdcNanoCents), bool(terms))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_wallet_circle_transfer_out_args")
+}
+
 //export urnet_new_widget_added_event
 func urnet_new_widget_added_event(kind *C.char) *C.char {
 	defer cgoGuard("urnet_new_widget_added_event")

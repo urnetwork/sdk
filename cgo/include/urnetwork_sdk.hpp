@@ -1520,6 +1520,10 @@ struct DeviceLocalMemoryUsage {
 };
 
 struct DeviceLocalSettings {
+	nlohmann::json ClientCredentials{};
+	nlohmann::json ClientControl{};
+	nlohmann::json ProviderDiscovery{};
+	nlohmann::json LocalApi{};
 	int64_t MemoryTargetByteCount{};
 	int64_t SendTimeout{};
 	int64_t SequenceBufferSize{};
@@ -3323,6 +3327,7 @@ struct WalletCircleInitResult {
 };
 
 struct WalletCircleTransferOutArgs {
+	std::optional<std::string> request_id;
 	std::string to_address{};
 	int64_t amount_usdc_nano_cents{};
 	bool terms{};
@@ -3333,6 +3338,8 @@ struct WalletCircleTransferOutError {
 };
 
 struct WalletCircleTransferOutResult {
+	std::optional<std::string> request_id;
+	std::optional<std::string> challenge_status;
 	std::optional<CircleUserToken> user_token;
 	std::optional<std::string> challenge_id;
 	std::optional<WalletCircleTransferOutError> error;
@@ -7225,6 +7232,10 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 
 inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j = nlohmann::json::object();
+	j["ClientCredentials"] = v.ClientCredentials;
+	j["ClientControl"] = v.ClientControl;
+	j["ProviderDiscovery"] = v.ProviderDiscovery;
+	j["LocalApi"] = v.LocalApi;
 	j["MemoryTargetByteCount"] = v.MemoryTargetByteCount;
 	j["SendTimeout"] = v.SendTimeout;
 	j["SequenceBufferSize"] = v.SequenceBufferSize;
@@ -7265,6 +7276,18 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("ClientCredentials"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientCredentials);
+	}
+	if (auto it = j.find("ClientControl"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ClientControl);
+	}
+	if (auto it = j.find("ProviderDiscovery"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderDiscovery);
+	}
+	if (auto it = j.find("LocalApi"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LocalApi);
 	}
 	if (auto it = j.find("MemoryTargetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.MemoryTargetByteCount);
@@ -15394,6 +15417,9 @@ inline void from_json(const nlohmann::json& j, WalletCircleInitResult& v) {
 
 inline void to_json(nlohmann::json& j, const WalletCircleTransferOutArgs& v) {
 	j = nlohmann::json::object();
+	if (v.request_id) {
+		j["request_id"] = *v.request_id;
+	}
 	j["to_address"] = v.to_address;
 	j["amount_usdc_nano_cents"] = v.amount_usdc_nano_cents;
 	j["terms"] = v.terms;
@@ -15401,6 +15427,11 @@ inline void to_json(nlohmann::json& j, const WalletCircleTransferOutArgs& v) {
 inline void from_json(const nlohmann::json& j, WalletCircleTransferOutArgs& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("request_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.request_id = std::move(tmp);
 	}
 	if (auto it = j.find("to_address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.to_address);
@@ -15428,6 +15459,12 @@ inline void from_json(const nlohmann::json& j, WalletCircleTransferOutError& v) 
 
 inline void to_json(nlohmann::json& j, const WalletCircleTransferOutResult& v) {
 	j = nlohmann::json::object();
+	if (v.request_id) {
+		j["request_id"] = *v.request_id;
+	}
+	if (v.challenge_status) {
+		j["challenge_status"] = *v.challenge_status;
+	}
 	if (v.user_token) {
 		j["user_token"] = *v.user_token;
 	}
@@ -15441,6 +15478,16 @@ inline void to_json(nlohmann::json& j, const WalletCircleTransferOutResult& v) {
 inline void from_json(const nlohmann::json& j, WalletCircleTransferOutResult& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("request_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.request_id = std::move(tmp);
+	}
+	if (auto it = j.find("challenge_status"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.challenge_status = std::move(tmp);
 	}
 	if (auto it = j.find("user_token"); it != j.end() && !it->is_null()) {
 		CircleUserToken tmp{};
@@ -29036,6 +29083,14 @@ inline Tunnel newTunnel() {
 inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::string& platform_url) {
 	NetworkSpace r(urnet_new_urls_network_space(api_url.c_str(), platform_url.c_str()));
 	return r;
+}
+inline std::optional<WalletCircleTransferOutArgs> newWalletCircleTransferOutArgs(const std::string& to_address, int64_t amount_usdc_nano_cents, bool terms) {
+	char* r_c = urnet_new_wallet_circle_transfer_out_args(to_address.c_str(), amount_usdc_nano_cents, terms);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<WalletCircleTransferOutArgs>(r_s->c_str());
 }
 inline std::optional<ClientEvent> newWidgetAddedEvent(const std::string& kind) {
 	char* r_c = urnet_new_widget_added_event(kind.c_str());

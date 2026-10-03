@@ -1574,28 +1574,50 @@ func (self *Api) GetAccountPayments(callback GetAccountPaymentsCallback) {
 type WalletCircleTransferOutCallback connect.ApiCallback[*WalletCircleTransferOutResult]
 
 type WalletCircleTransferOutArgs struct {
+	// Persist this id with the intent before calling the API; reuse it on every
+	// retry/restart. A distinct intended transfer needs a distinct id.
+	RequestId           *Id       `json:"request_id"`
 	ToAddress           string    `json:"to_address"`
 	AmountUsdcNanoCents NanoCents `json:"amount_usdc_nano_cents"`
 	Terms               bool      `json:"terms"`
 }
 
 type WalletCircleTransferOutResult struct {
-	UserToken   *CircleUserToken              `json:"user_token,omitempty"`
-	ChallengeId string                        `json:"challenge_id,omitempty"`
-	Error       *WalletCircleTransferOutError `json:"error,omitempty"`
+	RequestId       *Id                           `json:"request_id,omitempty"`
+	ChallengeStatus string                        `json:"challenge_status,omitempty"`
+	UserToken       *CircleUserToken              `json:"user_token,omitempty"`
+	ChallengeId     string                        `json:"challenge_id,omitempty"`
+	Error           *WalletCircleTransferOutError `json:"error,omitempty"`
 }
 
 type WalletCircleTransferOutError struct {
 	Message string `json:"message"`
 }
 
+// Construct once per user intent, then durably save these arguments before
+// submission. Reconstruct from saved JSON on restart rather than calling again.
+func NewWalletCircleTransferOutArgs(toAddress string, amountUsdcNanoCents NanoCents, terms bool) *WalletCircleTransferOutArgs {
+	return &WalletCircleTransferOutArgs{RequestId: NewId(), ToAddress: toAddress, AmountUsdcNanoCents: amountUsdcNanoCents, Terms: terms}
+}
+
+var ErrWalletCircleTransferRequestId = errors.New("wallet transfer requires a persisted caller request_id; reuse it for every retry")
+
 func (self *Api) WalletCircleTransferOut(walletCircleTransferOut *WalletCircleTransferOutArgs, callback WalletCircleTransferOutCallback) {
+	if walletCircleTransferOut == nil || walletCircleTransferOut.RequestId == nil || walletCircleTransferOut.RequestId.id == ([16]byte{}) {
+		go connect.HandleError(func() { callback.Result(nil, ErrWalletCircleTransferRequestId) })
+		return
+	}
+	// Freeze this asynchronous call's fields without changing the caller's
+	// persisted intent or allocating a new request id inside a transport retry.
+	args := *walletCircleTransferOut
+	requestId := *args.RequestId
+	args.RequestId = &requestId
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/wallet/circle-transfer-out", self.apiUrl),
-			walletCircleTransferOut,
+			&args,
 			self.GetByJwt(),
 			&WalletCircleTransferOutResult{},
 			callback,

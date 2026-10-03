@@ -889,6 +889,7 @@ EXPORTS
 	urnet_new_transfer_path
 	urnet_new_tunnel
 	urnet_new_urls_network_space
+	urnet_new_wallet_circle_transfer_out_args
 	urnet_new_widget_added_event
 	urnet_normal_env_name
 	urnet_normal_extender_gossip_mode

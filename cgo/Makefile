@@ -132,7 +132,7 @@ smoke: build_host
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke;
 
 # c++ wrapper (hpp) smoke test against the host library
-smoke_hpp: build_host smoke_memory_usage_json smoke_transport_stats_json
+smoke_hpp: build_host smoke_memory_usage_json smoke_transport_stats_json smoke_customer_transfer_json
 	clang++ -std=c++17 -Iinclude -I$(NLOHMANN_INCLUDE) -o build/host/smoke_hpp smoke/smoke_hpp.cpp build/host/libURnetworkSdk.dylib && \
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke_hpp;
 
@@ -147,6 +147,13 @@ smoke_transport_stats_json:
 	mkdir -p build/host && \
 	clang++ -std=c++17 -Iinclude -I$(NLOHMANN_INCLUDE) -o build/host/transport_stats_json smoke/transport_stats_json.cpp && \
 	./build/host/transport_stats_json;
+
+# Retained caller intent and exact int64 amounts in the generated C++ surface.
+.PHONY: smoke_customer_transfer_json
+smoke_customer_transfer_json:
+	mkdir -p build/host && \
+	clang++ -std=c++17 -Iinclude -I$(NLOHMANN_INCLUDE) -o build/host/customer_transfer_json smoke/customer_transfer_json.cpp && \
+	./build/host/customer_transfer_json;
 
 # Toolchains for the mac-host cgo cross-builds:
 #   zig            -> linux/{amd64,arm64} SDK (glibc-pinned for portability)

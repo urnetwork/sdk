@@ -1846,6 +1846,7 @@ int64_t urnet_new_time_unix_milli(int64_t unix_milli);
 char* urnet_new_transfer_path(const char* source_id, const char* destination_id, const char* stream_id);
 uint64_t urnet_new_tunnel(void);
 uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
+char* urnet_new_wallet_circle_transfer_out_args(const char* to_address, int64_t amount_usdc_nano_cents, bool terms);
 char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_normal_extender_gossip_mode(const char* mode);
@@ -2561,6 +2562,10 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* DeviceLocalSettings (json):
+ *   ClientCredentials: any
+ *   ClientControl: any
+ *   ProviderDiscovery: any
+ *   LocalApi: any
  *   MemoryTargetByteCount: number
  *   SendTimeout: number (ns)
  *   SequenceBufferSize: number
@@ -4604,6 +4609,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* WalletCircleTransferOutArgs (json):
+ *   request_id: string (uuid) | null
  *   to_address: string
  *   amount_usdc_nano_cents: number
  *   terms: boolean
@@ -4614,6 +4620,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* WalletCircleTransferOutResult (json):
+ *   request_id?: string (uuid) | null
+ *   challenge_status?: string
  *   user_token?: CircleUserToken | null
  *   challenge_id?: string
  *   error?: WalletCircleTransferOutError | null
