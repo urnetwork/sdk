@@ -13,6 +13,12 @@ type ReferralCodeListener interface {
 	ReferralCodeUpdated(string)
 }
 
+// A fetch ended without a code; the message is the api error. Start fetches
+// again, so a client can show the error with a retry instead of loading forever.
+type ReferralCodeFetchErrorListener interface {
+	Message(string)
+}
+
 type ReferralCodeViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -28,8 +34,11 @@ type ReferralCodeViewController struct {
 	// api-only (NewReferralCodeViewControllerWithApi): no device, the same
 	// controller over the network space api. Exactly one of device / api.
 	api *Api
+	// replaces the api call when set (tests drive the result without a network)
+	referralCodeRequest func(callback GetNetworkReferralCodeCallback)
 
-	referralCodeListeners *connect.CallbackList[ReferralCodeListener]
+	referralCodeListeners           *connect.CallbackList[ReferralCodeListener]
+	referralCodeFetchErrorListeners *connect.CallbackList[ReferralCodeFetchErrorListener]
 }
 
 // NewReferralCodeViewControllerWithApi opens the referral code controller over
@@ -70,7 +79,8 @@ func newReferralCodeViewController(ctx context.Context, device Device) *Referral
 		cancel: cancel,
 		device: device,
 
-		referralCodeListeners: connect.NewCallbackList[ReferralCodeListener](),
+		referralCodeListeners:           connect.NewCallbackList[ReferralCodeListener](),
+		referralCodeFetchErrorListeners: connect.NewCallbackList[ReferralCodeFetchErrorListener](),
 	}
 	return vc
 }
@@ -82,12 +92,35 @@ func (self *ReferralCodeViewController) AddReferralCodeListener(listener Referra
 	})
 }
 
+func (self *ReferralCodeViewController) AddReferralCodeFetchErrorListener(listener ReferralCodeFetchErrorListener) Sub {
+	callbackId := self.referralCodeFetchErrorListeners.Add(listener)
+	return newSub(func() {
+		self.referralCodeFetchErrorListeners.Remove(callbackId)
+	})
+}
+
+func (self *ReferralCodeViewController) referralCodeFetchFailed(message string) {
+	for _, listener := range self.referralCodeFetchErrorListeners.Get() {
+		connect.HandleError(func() {
+			listener.Message(message)
+		})
+	}
+}
+
 func (self *ReferralCodeViewController) referralCodeChanged(code string) {
 	for _, listener := range self.referralCodeListeners.Get() {
 		connect.HandleError(func() {
 			listener.ReferralCodeUpdated(code)
 		})
 	}
+}
+
+func (self *ReferralCodeViewController) requestReferralCode(callback GetNetworkReferralCodeCallback) {
+	if self.referralCodeRequest != nil {
+		self.referralCodeRequest(callback)
+		return
+	}
+	self.getApi().GetNetworkReferralCode(callback)
 }
 
 func (self *ReferralCodeViewController) Start() {
@@ -122,21 +155,26 @@ func (self *ReferralCodeViewController) fetchNetworkReferralCode() {
 	if !enter {
 		return
 	}
-	self.getApi().GetNetworkReferralCode(
+	self.requestReferralCode(
 		GetNetworkReferralCodeCallback(
 			connect.NewApiCallback[*GetNetworkReferralCodeResult](
 				func(result *GetNetworkReferralCodeResult, err error) {
+					// fetching clears first, so an error listener may Start a retry
 					if err != nil {
 						self.setIsFetching(false)
 						deviceLog(self.device).Infof("[rcvc]error fetching referral code: %s", err)
+						self.referralCodeFetchFailed(err.Error())
 						return
 					}
 
-					if result != nil && result.ReferralCode != "" {
-						self.setResult(result)
-						self.referralCodeChanged(result.ReferralCode)
+					if result == nil || result.ReferralCode == "" {
+						self.setIsFetching(false)
+						self.referralCodeFetchFailed("no referral code")
+						return
 					}
 
+					self.setResult(result)
+					self.referralCodeChanged(result.ReferralCode)
 					self.setIsFetching(false)
 				},
 			),
