@@ -56,6 +56,14 @@ type SubscriptionJwtOutOfSyncListener interface {
 	SubscriptionJwtOutOfSync(serverIsPro bool)
 }
 
+// SubscriptionBalanceFetchErrorListener fires when a balance fetch fails; the
+// message is the api error. The last snapshot stays published and the poll
+// retries, so a client that has no snapshot yet (GetIsLoaded false) can show
+// the error with a retry (Refresh) instead of loading until a poll succeeds.
+type SubscriptionBalanceFetchErrorListener interface {
+	Message(string)
+}
+
 // The purchase-confirmation lifecycle, delivered via
 // PurchaseConfirmationListener and readable from
 // GetPurchaseConfirmationState. Confirmed and ConfirmationGaveUp are TERMINAL
@@ -212,6 +220,7 @@ type SubscriptionBalanceViewController struct {
 	balanceListeners      *connect.CallbackList[SubscriptionBalanceChangeListener]
 	jwtListeners          *connect.CallbackList[SubscriptionJwtOutOfSyncListener]
 	confirmationListeners *connect.CallbackList[PurchaseConfirmationListener]
+	fetchErrorListeners   *connect.CallbackList[SubscriptionBalanceFetchErrorListener]
 
 	// test seams (unexported; not bound)
 	nowFunc   func() time.Time
@@ -241,6 +250,7 @@ func newSubscriptionBalanceViewController(ctx context.Context, api *Api) *Subscr
 		balanceListeners:      connect.NewCallbackList[SubscriptionBalanceChangeListener](),
 		jwtListeners:          connect.NewCallbackList[SubscriptionJwtOutOfSyncListener](),
 		confirmationListeners: connect.NewCallbackList[PurchaseConfirmationListener](),
+		fetchErrorListeners:   connect.NewCallbackList[SubscriptionBalanceFetchErrorListener](),
 		nowFunc:               time.Now,
 	}
 	vc.fetchFunc = func(callback SubscriptionBalanceCallback) {
@@ -641,6 +651,21 @@ func (self *SubscriptionBalanceViewController) AddPurchaseConfirmationListener(l
 	})
 }
 
+func (self *SubscriptionBalanceViewController) AddSubscriptionBalanceFetchErrorListener(listener SubscriptionBalanceFetchErrorListener) Sub {
+	callbackId := self.fetchErrorListeners.Add(listener)
+	return newSub(func() {
+		self.fetchErrorListeners.Remove(callbackId)
+	})
+}
+
+func (self *SubscriptionBalanceViewController) balanceFetchFailed(message string) {
+	for _, listener := range self.fetchErrorListeners.Get() {
+		connect.HandleError(func() {
+			listener.Message(message)
+		})
+	}
+}
+
 func (self *SubscriptionBalanceViewController) balanceChanged() {
 	for _, listener := range self.balanceListeners.Get() {
 		connect.HandleError(func() {
@@ -808,8 +833,14 @@ func (self *SubscriptionBalanceViewController) fetchDone(generation int, result 
 	}
 	self.fetchInFlight = false
 	if err != nil || result == nil {
-		// keep the last snapshot; the poll retries
+		// keep the last snapshot; the poll retries. Report the failure: with
+		// no snapshot yet a client otherwise loads until a poll succeeds.
 		self.stateLock.Unlock()
+		message := "no balance"
+		if err != nil {
+			message = err.Error()
+		}
+		self.balanceFetchFailed(message)
 		self.scheduleWake()
 		return
 	}
