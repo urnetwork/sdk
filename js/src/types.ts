@@ -965,6 +965,9 @@ export interface FeedbackViewController {
 
   sendFeedback(message: string, starCount: number): void;
   addIsSendingFeedbackListener(cb: (sending: boolean) => void): Unsubscribe;
+  /** One result per send, delivered before the sending state returns to false. */
+  addFeedbackSendErrorListener(cb: (message: string) => void): Unsubscribe;
+  addFeedbackSendSuccessListener(cb: () => void): Unsubscribe;
 }
 
 /** the referral code result through its json tags */
