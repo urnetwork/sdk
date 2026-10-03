@@ -457,6 +457,14 @@ func jsSubscriptionBalanceViewController(
 		}
 		return jsSub(vc.AddPurchaseConfirmationListener(&jsPurchaseConfirmationListener{cb}))
 	})
+	// a failed fetch; refresh() fetches again
+	m["addSubscriptionBalanceFetchErrorListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddSubscriptionBalanceFetchErrorListener(&jsMessageListener{cb}))
+	})
 	return js.ValueOf(m)
 }
 

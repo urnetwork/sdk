@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -725,5 +726,82 @@ func TestFetchErrorKeepsLastSnapshot(t *testing.T) {
 	stub.awaitFetch(t, "no second retry after error")
 	if !vc.GetIsLoaded() || vc.GetAvailableByteCount() != 30 {
 		t.Error("error dropped the last snapshot")
+	}
+}
+
+// Collects the controller's fetch errors and balance changes.
+type balanceFetchEventRecorder struct {
+	mutex   sync.Mutex
+	errors  []string
+	changes int
+}
+
+func (self *balanceFetchEventRecorder) Message(message string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.errors = append(self.errors, message)
+}
+
+func (self *balanceFetchEventRecorder) SubscriptionBalanceChanged() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.changes += 1
+}
+
+func (self *balanceFetchEventRecorder) snapshot() ([]string, int) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return append([]string(nil), self.errors...), self.changes
+}
+
+// The root cause: a failed fetch only kept the last snapshot, so no listener
+// fired and a client with no snapshot yet showed its loading placeholder for
+// as long as the polls failed. A failed fetch must report its error, and a
+// later successful fetch must publish the balance. The controller is never
+// started (no poll runs); fetchDone is driven directly.
+func TestFetchErrorReportedToListener(t *testing.T) {
+	stub := newBalanceFetchStub(nil)
+	vc, closeVc := newTestSubscriptionBalanceVc(t, testSubscriptionJwt(t, false, false), stub)
+	defer closeVc()
+
+	recorder := &balanceFetchEventRecorder{}
+	vc.AddSubscriptionBalanceFetchErrorListener(recorder)
+	vc.AddSubscriptionBalanceChangeListener(recorder)
+
+	vc.fetchDone(vc.generation, nil, errors.New("503 Service Unavailable"))
+	errorMessages, changes := recorder.snapshot()
+	if len(errorMessages) != 1 || errorMessages[0] != "503 Service Unavailable" || changes != 0 {
+		t.Fatalf("after a failed fetch: errors %v changes %d", errorMessages, changes)
+	}
+	if vc.GetIsLoaded() {
+		t.Fatal("a failed fetch must not load a snapshot")
+	}
+
+	// a reply with no result is a failure too
+	vc.fetchDone(vc.generation, nil, nil)
+	errorMessages, _ = recorder.snapshot()
+	if len(errorMessages) != 2 {
+		t.Fatalf("after an empty reply: errors %v", errorMessages)
+	}
+
+	vc.fetchDone(vc.generation, testBalanceResult(100, 30, 20, ""), nil)
+	errorMessages, changes = recorder.snapshot()
+	if len(errorMessages) != 2 || changes != 1 || !vc.GetIsLoaded() || vc.GetAvailableByteCount() != 30 {
+		t.Fatalf("after the retry: errors %v changes %d loaded %t", errorMessages, changes, vc.GetIsLoaded())
+	}
+}
+
+// A fetch superseded by Stop (logout) reports nothing.
+func TestFetchErrorOfStaleGenerationNotReported(t *testing.T) {
+	stub := newBalanceFetchStub(nil)
+	vc, closeVc := newTestSubscriptionBalanceVc(t, testSubscriptionJwt(t, false, false), stub)
+	defer closeVc()
+
+	recorder := &balanceFetchEventRecorder{}
+	vc.AddSubscriptionBalanceFetchErrorListener(recorder)
+
+	vc.fetchDone(vc.generation-1, nil, errors.New("503 Service Unavailable"))
+	if errorMessages, _ := recorder.snapshot(); len(errorMessages) != 0 {
+		t.Fatalf("stale fetch reported: %v", errorMessages)
 	}
 }

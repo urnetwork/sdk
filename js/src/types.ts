@@ -1051,6 +1051,8 @@ export interface SubscriptionBalanceViewController {
   addSubscriptionBalanceChangeListener(cb: () => void): Unsubscribe;
   addSubscriptionJwtOutOfSyncListener(cb: (serverIsPro: boolean) => void): Unsubscribe;
   addPurchaseConfirmationListener(cb: (state: PurchaseConfirmationState) => void): Unsubscribe;
+  /** A fetch failed; the last snapshot stays and `refresh()` fetches again. */
+  addSubscriptionBalanceFetchErrorListener(cb: (message: string) => void): Unsubscribe;
 }
 
 export interface AccountHostOptions {
