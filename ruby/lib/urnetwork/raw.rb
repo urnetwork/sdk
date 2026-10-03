@@ -1220,6 +1220,7 @@ module URnetwork
       attach_function :urnet_new_transfer_path, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_new_tunnel, [], :uint64, blocking: true
       attach_function :urnet_new_urls_network_space, [:string, :string], :uint64, blocking: true
+      attach_function :urnet_new_wallet_circle_transfer_out_args, [:string, :int64, :bool], :pointer, blocking: true
       attach_function :urnet_new_widget_added_event, [:string], :pointer, blocking: true
       attach_function :urnet_normal_env_name, [:string], :pointer, blocking: true
       attach_function :urnet_normal_extender_gossip_mode, [:string], :pointer, blocking: true

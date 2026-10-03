@@ -2250,6 +2250,8 @@ def bind(lib):
     lib.urnet_new_tunnel.restype = c_uint64
     lib.urnet_new_urls_network_space.argtypes = [c_char_p, c_char_p]
     lib.urnet_new_urls_network_space.restype = c_uint64
+    lib.urnet_new_wallet_circle_transfer_out_args.argtypes = [c_char_p, c_int64, c_bool]
+    lib.urnet_new_wallet_circle_transfer_out_args.restype = c_void_p
     lib.urnet_new_widget_added_event.argtypes = [c_char_p]
     lib.urnet_new_widget_added_event.restype = c_void_p
     lib.urnet_normal_env_name.argtypes = [c_char_p]

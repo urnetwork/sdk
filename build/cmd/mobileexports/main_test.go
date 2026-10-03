@@ -9,7 +9,7 @@ import (
 )
 
 func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
-	for _, language := range []string{"java", "objc"} {
+	for _, language := range []string{"java", "objc", "go"} {
 		t.Run(language, func(t *testing.T) {
 			outputDirectory := t.TempDir()
 			args := []string{
@@ -46,6 +46,10 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 				"DeviceSubprotocolResponse",
 				"GetPeerClientKeyPinStore",
 				"RemoteSubprotocol",
+				// Hosted local authorities must not generate empty foreign
+				// interfaces or invalid Go proxy assignments (missing Get).
+				"LocalDeviceApi",
+				"localDeviceApi",
 			}
 			err := filepath.WalkDir(outputDirectory, func(path string, entry os.DirEntry, walkErr error) error {
 				if walkErr != nil {
@@ -60,7 +64,7 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 				}
 				for _, name := range forbidden {
 					if strings.Contains(string(contents), name) {
-						t.Errorf("%s binding leaked RPC implementation type %s in %s", language, name, path)
+						t.Errorf("%s binding leaked Go-only implementation type %s in %s", language, name, path)
 					}
 				}
 				return nil

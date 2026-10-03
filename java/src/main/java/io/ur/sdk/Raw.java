@@ -1221,6 +1221,7 @@ public interface Raw extends Library {
   Pointer urnet_new_transfer_path(String a0, String a1, String a2);
   long urnet_new_tunnel();
   long urnet_new_urls_network_space(String a0, String a1);
+  Pointer urnet_new_wallet_circle_transfer_out_args(String a0, long a1, byte a2);
   Pointer urnet_new_widget_added_event(String a0);
   Pointer urnet_normal_env_name(String a0);
   Pointer urnet_normal_extender_gossip_mode(String a0);

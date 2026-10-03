@@ -17,6 +17,7 @@ require (
 	golang.org/x/net v0.57.0
 	golang.org/x/sys v0.47.0
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -87,7 +88,6 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect

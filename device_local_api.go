@@ -7,19 +7,9 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// A hosted device's private API dispatches through the embedding platform.
-// Implementations authenticate each request and return ordinary API JSON; no
-// error falls back to HTTP. The device joins API work before releasing it.
-//
-//gomobile:noexport Go-only server integration.
-type LocalDeviceApi interface {
-	Get(context.Context, string, string) ([]byte, error)
-	Post(context.Context, string, []byte, string) ([]byte, error)
-}
-
 // Encrypted peer verification remains enforced while its public-key reads
 // use the same local authority as credential refresh and provider discovery.
-func applyLocalDeviceApiKeyFetchers(settings *connect.ClientSettings, local LocalDeviceApi, apiUrl string) {
+func applyLocalDeviceApiKeyFetchers(settings *connect.ClientSettings, local localDeviceApi, apiUrl string) {
 	if local == nil || settings.EncryptionSettings == nil {
 		return
 	}

@@ -1221,6 +1221,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_transfer_path([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_new_tunnel();
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern ulong urnet_new_urls_network_space([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_wallet_circle_transfer_out_args([MarshalAs(UnmanagedType.LPUTF8Str)] string a0, long a1, byte a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_new_widget_added_event([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_normal_env_name([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_normal_extender_gossip_mode([MarshalAs(UnmanagedType.LPUTF8Str)] string a0);

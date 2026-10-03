@@ -30,6 +30,12 @@ load the packaged library. Raw users must retain callback objects until the
 native subscription is removed, copy borrowed callback buffers, and close
 objects before releasing their handles. See `cgo/include/urnetwork_sdk.h`.
 
+Package, native, and smoke targets check these committed bindings without
+rewriting them. After a C ABI change, run `go -C packaging run . generate`
+from the SDK root and commit all five generated files before starting a
+source-pinned build or test campaign. `go -C packaging run . check-generated`
+is the standalone read-only freshness preflight.
+
 All shared build, generation and publishing helpers are Go programs in this
 module. Run `go -C packaging test -race ./...` from the SDK root to test the
 release helpers. Python remains only for the Python SDK/setuptools backend and

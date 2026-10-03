@@ -502,7 +502,7 @@ type DeviceLocalSettings struct {
 	//gomobile:noexport Go-only local discovery authority.
 	ProviderDiscovery connect.NetworkProviderDiscovery
 	//gomobile:noexport Go-only private API authority.
-	LocalApi LocalDeviceApi
+	LocalApi localDeviceApi
 	// Diagnostic-only injection of the existing allocator-error return path.
 	testingTakeLocalAddress func() (netip.Addr, bool)
 	// Constructor seams observe admission ordering without creating a client.

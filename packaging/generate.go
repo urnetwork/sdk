@@ -2,7 +2,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -57,7 +59,13 @@ func declarations() (callbacks, functions []declaration) {
 	return
 }
 
-func generateBindings() {
+type generatedBinding struct {
+	path, source string
+}
+
+// One renderer owns both deliberate regeneration and read-only build checks.
+// Checking stale inputs must never repair a source-pinned campaign in place.
+func renderBindings() (bindings []generatedBinding, functionCount, callbackCount int) {
 	callbacks, functions := declarations()
 	types := strings.Split("void|bool|int32_t|int64_t|uint64_t|double|char*|const char*|void*|uint8_t*|const uint8_t*|bool*|int32_t*|char**", "|")
 	typeMap := func(values string) map[string]string {
@@ -138,10 +146,34 @@ func generateBindings() {
 		fmt.Fprintf(&r, "            %s: unsafe { *library.get(b\"%s\\0\")? },\n", d.name, d.name)
 	}
 	r.WriteString("            _library: library,\n        })\n    }\n}\n")
-	textFile(path("python/src/urnetwork/_raw.py"), p.String())
-	textFile(path("java/src/main/java/io/ur/sdk/Raw.java"), j.String()+"}\n")
-	textFile(path("csharp/Raw.g.cs"), c.String()+"}\n")
-	textFile(path("rust/src/raw.rs"), r.String())
-	textFile(path("ruby/lib/urnetwork/raw.rb"), b.String()+"    end\n  end\nend\n")
-	fmt.Printf("Generated %d functions and %d callbacks for five bindings\n", len(functions), len(callbacks))
+	return []generatedBinding{
+		{"python/src/urnetwork/_raw.py", p.String()},
+		{"java/src/main/java/io/ur/sdk/Raw.java", j.String() + "}\n"},
+		{"csharp/Raw.g.cs", c.String() + "}\n"},
+		{"rust/src/raw.rs", r.String()},
+		{"ruby/lib/urnetwork/raw.rb", b.String() + "    end\n  end\nend\n"},
+	}, len(functions), len(callbacks)
+}
+
+func generateBindings() {
+	bindings, functions, callbacks := renderBindings()
+	for _, binding := range bindings {
+		textFile(path(binding.path), binding.source)
+	}
+	fmt.Printf("Generated %d functions and %d callbacks for five bindings\n", functions, callbacks)
+}
+
+func checkGeneratedBindings() error {
+	bindings, _, _ := renderBindings()
+	var stale []string
+	for _, binding := range bindings {
+		actual, err := os.ReadFile(path(binding.path))
+		if err != nil || !bytes.Equal(actual, []byte(binding.source)) {
+			stale = append(stale, binding.path)
+		}
+	}
+	if len(stale) != 0 {
+		return fmt.Errorf("generated bindings stale or unreadable: %s; run `go -C packaging run . generate` from the SDK root and commit the generated bindings", strings.Join(stale, ", "))
+	}
+	return nil
 }

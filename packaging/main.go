@@ -317,7 +317,7 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	require(len(os.Args) >= 2, "usage: packaging generate | native/package/check LANGUAGE | init/check-tools csharp | npm package/check | mobile android/swift | publish REGISTRY | release PHASE")
+	require(len(os.Args) >= 2, "usage: packaging generate/check-generated | native/package/check LANGUAGE | init/check-tools csharp | npm package/check | mobile android/swift | publish REGISTRY | release PHASE")
 	action := os.Args[1]
 	arg := ""
 	if len(os.Args) > 2 {
@@ -336,6 +336,8 @@ func main() {
 		}
 	case "generate":
 		generateBindings()
+	case "check-generated":
+		must(checkGeneratedBindings())
 	case "native":
 		stageNative(arg, path(arg), loadNative())
 	case "c":
