@@ -1,16 +1,23 @@
-# THE FORK'S CHECK OVER EVERY sdk MODULE THAT test.yml CANNOT REACH. FORK-ONLY: the
+# THE FORK'S CHECK OVER EVERY sdk MODULE THAT test.yml DOES NOT REACH. FORK-ONLY: the
 # upstream branch drops this file (msgrepo ledger 277).
 #
-# test.yml runs `go test ./...` from the root, and a Go module boundary stops it, so the
-# cgo module (which builds the shipping C ABI, and holds upstream's build-contract tests),
-# cp3b (URmessage's end-to-end suite), livepeer and liveprobe get no run there. After the
-# 2026-10-03 merge of upstream main, two of upstream's build-contract tests failed, and no
-# run of anything showed it, because nothing ran that module on Linux. The ledger's
-# rule for a lesson that recurred (items 269 and 277) is a mechanical check rather than a
-# louder reminder, and this is it: every push to the fork's main runs every module.
+# test.yml runs `go test ./...` from the root, and a Go module boundary stops it. sdk has nine
+# go.mod files; the root is test.yml's, and this job covers the other eight:
+#   cgo        `go test ./...`: the C ABI, gen's currentness test and upstream's build-contract
+#              tests. Plus a build of the loopback module file `make ctest` builds with, which the
+#              2026-10-03 merge broke. `make ctest` itself stays Windows-only: its C program
+#              includes windows.h for its threads, so no Linux host can run it.
+#   cp3b       URmessage's end-to-end suite, against the fork's message-server
+#   packaging  the package-manager manifests and the generated language bindings
+#   build      the gomobile module; three of its tests drive test.sh, which is a zsh script
+#   js         under GOOS=js GOARCH=wasm, run by node
+#   livepeer, liveprobe   vetted: each is one main.go with no tests
+#   cgo/build  no code at all: it is the module boundary that build output sits behind
+# If a module is added, add it here: this list is what the job claims, and a module missing from
+# it is the narrowing the job exists to prevent (items 269 and 277 recorded it twice).
 #
-# The siblings are the fork's connect and message-server: they carry the URmessage
-# packages the modules import, which upstream does not have until its pull requests land.
+# The siblings are the fork's connect and message-server: they carry the URmessage packages the
+# modules import, which upstream does not have until its pull requests land.
 name: Fork - every sdk module
 
 on:
@@ -64,3 +71,36 @@ jobs:
           set -eu
           (cd livepeer && go vet ./...)
           (cd liveprobe && go vet ./...)
+
+      - name: cgo loopback build (the module file make ctest builds with)
+        if: always()
+        working-directory: cgo
+        run: |
+          set -eu
+          CGO_ENABLED=1 go build -modfile=loopback.go.mod -tags urnet_message_loopback -buildmode=c-shared -o "$RUNNER_TEMP/loopback.so" .
+          CGO_ENABLED=1 go vet -modfile=loopback.go.mod -tags urnet_message_loopback .
+
+      - name: packaging
+        if: always()
+        working-directory: packaging
+        run: go test ./... -count=1 -timeout 20m
+
+      - name: build (the gomobile module)
+        if: always()
+        working-directory: build
+        run: |
+          set -eu
+          sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+          go test ./... -count=1 -timeout 20m
+
+      - name: js (GOOS=js GOARCH=wasm, under node)
+        if: always()
+        working-directory: js
+        env:
+          GOOS: js
+          GOARCH: wasm
+          GOEXPERIMENT: greenteagc
+        run: |
+          set -eu
+          go vet ./...
+          go test ./... -count=1 -timeout 20m -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec"
