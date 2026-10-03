@@ -1,0 +1,66 @@
+# THE FORK'S CHECK OVER EVERY sdk MODULE THAT test.yml CANNOT REACH. FORK-ONLY: the
+# upstream branch drops this file (msgrepo ledger 277).
+#
+# test.yml runs `go test ./...` from the root, and a Go module boundary stops it, so the
+# cgo module (which builds the shipping C ABI, and holds upstream's build-contract tests),
+# cp3b (URmessage's end-to-end suite), livepeer and liveprobe get no run there. After the
+# 2026-10-03 merge of upstream main, two of upstream's build-contract tests failed, and no
+# run of anything showed it, because nothing ran that module on Linux. The ledger's
+# rule for a lesson that recurred (items 269 and 277) is a mechanical check rather than a
+# louder reminder, and this is it: every push to the fork's main runs every module.
+#
+# The siblings are the fork's connect and message-server: they carry the URmessage
+# packages the modules import, which upstream does not have until its pull requests land.
+name: Fork - every sdk module
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  modules:
+    name: cgo, cp3b, livepeer, liveprobe
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Check out sdk
+        uses: actions/checkout@v4
+
+      - name: Check out the siblings the modules replace to
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/Ryanmello07/connect.git ../connect
+          git clone --depth 1 https://github.com/urnetwork/glog.git ../glog
+          git clone --depth 1 https://github.com/urnetwork/goidenticons.git ../goidenticons
+          git clone --depth 1 --branch go https://github.com/urnetwork/gvisor.git ../gvisor
+          git clone --depth 1 https://github.com/Ryanmello07/urnetwork-message-server.git ../message-server
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/urnetwork/server.git ../server
+          git -C ../server sparse-checkout set api
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cgo/go.mod
+
+      # Each step runs even when an earlier one failed, so one red module never hides another.
+      - name: cgo (cgo, gen, buildcontract)
+        if: always()
+        working-directory: cgo
+        run: go test ./... -count=1 -timeout 30m
+
+      - name: cp3b
+        if: always()
+        working-directory: cp3b
+        run: go test ./... -count=1 -timeout 30m
+
+      - name: livepeer and liveprobe vet
+        if: always()
+        run: |
+          set -eu
+          (cd livepeer && go vet ./...)
+          (cd liveprobe && go vet ./...)
