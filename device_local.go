@@ -3123,6 +3123,10 @@ func (self *deviceLocalEgressSecurityPolicy) Stats(reset bool) connect.SecurityP
 	return self.deviceLocal.egressSecurityPolicyStats(reset)
 }
 
+func (self *deviceLocalEgressSecurityPolicy) Reasons(reset bool) connect.SecurityPolicyReasonStats {
+	return self.deviceLocal.egressSecurityPolicyReasons(reset)
+}
+
 // func (self *deviceLocalEgressSecurityPolicy) ResetStats() {
 // 	self.deviceLocal.resetEgressSecurityPolicyStats()
 // }
@@ -3139,6 +3143,30 @@ func newDeviceLocalIngressSecurityPolicy(deviceLocal *DeviceLocal) *deviceLocalI
 
 func (self *deviceLocalIngressSecurityPolicy) Stats(reset bool) connect.SecurityPolicyStats {
 	return self.deviceLocal.ingressSecurityPolicyStats(reset)
+}
+
+func (self *deviceLocalIngressSecurityPolicy) Reasons(reset bool) connect.SecurityPolicyReasonStats {
+	return self.deviceLocal.ingressSecurityPolicyReasons(reset)
+}
+
+func (self *DeviceLocal) egressSecurityPolicyReasons(reset bool) connect.SecurityPolicyReasonStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if reasons, ok := self.remoteUserNatClient.(connectSecurityPolicyReasons); ok {
+		return reasons.SecurityPolicyReasons(reset)
+	}
+	return connect.SecurityPolicyReasonStats{}
+}
+
+func (self *DeviceLocal) ingressSecurityPolicyReasons(reset bool) connect.SecurityPolicyReasonStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.remoteUserNatProvider != nil {
+		return self.remoteUserNatProvider.SecurityPolicyReasons(reset)
+	}
+	return connect.SecurityPolicyReasonStats{}
 }
 
 // func (self *deviceLocalIngressSecurityPolicy) ResetStats() {
@@ -6445,6 +6473,7 @@ func (self *DeviceLocal) blockActionFromConnectWithLock(blockAction *connect.Blo
 		Local:         blockAction.Local,
 		PacketCount:   blockAction.PacketCount,
 		ByteCount:     blockAction.ByteCount,
+		Reason:        blockAction.Reason,
 	}
 	// resolve the applied overrides. when an override was removed since the
 	// decision, reflect the decision itself

@@ -3844,6 +3844,26 @@ func (self *deviceRemoteEgressSecurityPolicy) Stats(reset bool) connect.Security
 	return self.deviceRemote.egressSecurityPolicyStats(reset)
 }
 
+func (self *deviceRemoteEgressSecurityPolicy) Reasons(reset bool) connect.SecurityPolicyReasonStats {
+	return self.deviceRemote.securityPolicyReasons("DeviceLocalRpc.EgressSecurityPolicyReasons", reset)
+}
+
+// securityPolicyReasons reads a diagnostic reason table from the local device.
+// It is best effort: without a connected service the table is empty.
+func (self *DeviceRemote) securityPolicyReasons(name string, reset bool) connect.SecurityPolicyReasonStats {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		return connect.SecurityPolicyReasonStats{}
+	}
+	reasons, err := rpcCall[connect.SecurityPolicyReasonStats](self.service, name, reset, self.closeService)
+	if err != nil {
+		return connect.SecurityPolicyReasonStats{}
+	}
+	return reasons
+}
+
 // func (self *deviceRemoteEgressSecurityPolicy) ResetStats() {
 // 	self.deviceRemote.resetEgressSecurityPolicyStats()
 // }
@@ -3860,6 +3880,10 @@ func newDeviceRemoteIngressSecurityPolicy(deviceRemote *DeviceRemote) *deviceRem
 
 func (self *deviceRemoteIngressSecurityPolicy) Stats(reset bool) connect.SecurityPolicyStats {
 	return self.deviceRemote.ingressSecurityPolicyStats(reset)
+}
+
+func (self *deviceRemoteIngressSecurityPolicy) Reasons(reset bool) connect.SecurityPolicyReasonStats {
+	return self.deviceRemote.securityPolicyReasons("DeviceLocalRpc.IngressSecurityPolicyReasons", reset)
 }
 
 // func (self *deviceRemoteIngressSecurityPolicy) ResetStats() {
@@ -7433,6 +7457,7 @@ type BlockActionRpc struct {
 	RouteOverride *RouteOverride
 	PacketCount   int
 	ByteCount     ByteCount
+	Reason        string
 }
 
 func newBlockActionRpc(blockAction *BlockAction) *BlockActionRpc {
@@ -7451,6 +7476,7 @@ func newBlockActionRpc(blockAction *BlockAction) *BlockActionRpc {
 		RouteOverride: copyRouteOverride(blockAction.RouteOverride),
 		PacketCount:   blockAction.PacketCount,
 		ByteCount:     blockAction.ByteCount,
+		Reason:        blockAction.Reason,
 	}
 	if blockAction.BlockActionId != nil {
 		blockActionRpc.BlockActionId = blockAction.BlockActionId.toConnectId()
@@ -7479,6 +7505,7 @@ func (self *BlockActionRpc) toBlockAction() *BlockAction {
 		RouteOverride: copyRouteOverride(self.RouteOverride),
 		PacketCount:   self.PacketCount,
 		ByteCount:     self.ByteCount,
+		Reason:        self.Reason,
 	}
 	if self.OverrideId != nil {
 		blockAction.OverrideId = newId(*self.OverrideId)
@@ -12570,6 +12597,22 @@ func (self *DeviceLocalRpc) EgressSecurityPolicyStats(reset bool, stats *connect
 
 func (self *DeviceLocalRpc) IngressSecurityPolicyStats(reset bool, stats *connect.SecurityPolicyStats) error {
 	*stats = self.ingressSecurityPolicy.Stats(reset)
+	return nil
+}
+
+func (self *DeviceLocalRpc) EgressSecurityPolicyReasons(reset bool, reasons *connect.SecurityPolicyReasonStats) error {
+	*reasons = connect.SecurityPolicyReasonStats{}
+	if policyReasons, ok := self.egressSecurityPolicy.(securityPolicyReasons); ok {
+		*reasons = policyReasons.Reasons(reset)
+	}
+	return nil
+}
+
+func (self *DeviceLocalRpc) IngressSecurityPolicyReasons(reset bool, reasons *connect.SecurityPolicyReasonStats) error {
+	*reasons = connect.SecurityPolicyReasonStats{}
+	if policyReasons, ok := self.ingressSecurityPolicy.(securityPolicyReasons); ok {
+		*reasons = policyReasons.Reasons(reset)
+	}
 	return nil
 }
 
