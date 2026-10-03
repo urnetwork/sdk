@@ -145,6 +145,8 @@ protected:
 /* ----- constants ----- */
 
 inline constexpr int64_t AsyncQueueSize = 32;
+inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
+inline constexpr const char* AuthVerifySendErrorCodeSendFailed = "verify_send_failed";
 inline constexpr int64_t BalanceCodeLength = 26;
 inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
@@ -481,6 +483,7 @@ struct AuthLoginResultNetwork;
 struct AuthLoginResult;
 struct AuthLoginWithPasswordArgs;
 struct AuthLoginWithPasswordResultNetwork;
+struct AuthVerifySendError;
 struct AuthLoginWithPasswordResultVerification;
 struct AuthLoginWithPasswordResult;
 struct ConnectLocationId;
@@ -1026,8 +1029,15 @@ struct AuthLoginWithPasswordResultNetwork {
 	std::optional<std::string> name;
 };
 
+struct AuthVerifySendError {
+	std::string code{};
+	std::string message{};
+	std::optional<int64_t> retry_after_seconds;
+};
+
 struct AuthLoginWithPasswordResultVerification {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> send_error;
 };
 
 struct AuthLoginWithPasswordResult {
@@ -1184,10 +1194,12 @@ struct AuthVerifyResult {
 struct AuthVerifySendArgs {
 	std::string user_auth{};
 	std::optional<bool> use_numeric;
+	std::optional<bool> result_errors;
 };
 
 struct AuthVerifySendResult {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> error;
 };
 
 struct AuthWalletChallengeArgs {
@@ -2256,6 +2268,7 @@ struct NetworkCreateResultNetwork {
 
 struct NetworkCreateResultVerification {
 	std::string user_auth{};
+	std::optional<AuthVerifySendError> send_error;
 };
 
 struct NetworkCreateResult {
@@ -3437,6 +3450,8 @@ inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordArgs& v);
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordArgs& v);
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResultNetwork& v);
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultNetwork& v);
+inline void to_json(nlohmann::json& j, const AuthVerifySendError& v);
+inline void from_json(const nlohmann::json& j, AuthVerifySendError& v);
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResultVerification& v);
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultVerification& v);
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResult& v);
@@ -4962,9 +4977,37 @@ inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultNetwor
 	}
 }
 
+inline void to_json(nlohmann::json& j, const AuthVerifySendError& v) {
+	j = nlohmann::json::object();
+	j["code"] = v.code;
+	j["message"] = v.message;
+	if (v.retry_after_seconds) {
+		j["retry_after_seconds"] = *v.retry_after_seconds;
+	}
+}
+inline void from_json(const nlohmann::json& j, AuthVerifySendError& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.code);
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+	if (auto it = j.find("retry_after_seconds"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.retry_after_seconds = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const AuthLoginWithPasswordResultVerification& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.send_error) {
+		j["send_error"] = *v.send_error;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultVerification& v) {
 	if (!j.is_object()) {
@@ -4972,6 +5015,11 @@ inline void from_json(const nlohmann::json& j, AuthLoginWithPasswordResultVerifi
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("send_error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.send_error = std::move(tmp);
 	}
 }
 
@@ -5767,6 +5815,9 @@ inline void to_json(nlohmann::json& j, const AuthVerifySendArgs& v) {
 	if (v.use_numeric) {
 		j["use_numeric"] = *v.use_numeric;
 	}
+	if (v.result_errors) {
+		j["result_errors"] = *v.result_errors;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthVerifySendArgs& v) {
 	if (!j.is_object()) {
@@ -5780,11 +5831,19 @@ inline void from_json(const nlohmann::json& j, AuthVerifySendArgs& v) {
 		it->get_to(tmp);
 		v.use_numeric = std::move(tmp);
 	}
+	if (auto it = j.find("result_errors"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.result_errors = std::move(tmp);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const AuthVerifySendResult& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.error) {
+		j["error"] = *v.error;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthVerifySendResult& v) {
 	if (!j.is_object()) {
@@ -5792,6 +5851,11 @@ inline void from_json(const nlohmann::json& j, AuthVerifySendResult& v) {
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
 	}
 }
 
@@ -10504,6 +10568,9 @@ inline void from_json(const nlohmann::json& j, NetworkCreateResultNetwork& v) {
 inline void to_json(nlohmann::json& j, const NetworkCreateResultVerification& v) {
 	j = nlohmann::json::object();
 	j["user_auth"] = v.user_auth;
+	if (v.send_error) {
+		j["send_error"] = *v.send_error;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkCreateResultVerification& v) {
 	if (!j.is_object()) {
@@ -10511,6 +10578,11 @@ inline void from_json(const nlohmann::json& j, NetworkCreateResultVerification& 
 	}
 	if (auto it = j.find("user_auth"); it != j.end() && !it->is_null()) {
 		it->get_to(v.user_auth);
+	}
+	if (auto it = j.find("send_error"); it != j.end() && !it->is_null()) {
+		AuthVerifySendError tmp{};
+		it->get_to(tmp);
+		v.send_error = std::move(tmp);
 	}
 }
 
@@ -15696,6 +15768,8 @@ using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsRe
 using ExtenderProvideStatusChangeListener = std::function<void(std::optional<ExtenderProvideStatus> status)>;
 using ExtenderStatusChangeListener = std::function<void(std::optional<ExtenderStatus> status)>;
 using ExtenderViewControllerListener = std::function<void(std::optional<ExtenderStatus> status)>;
+using FeedbackSendErrorListener = std::function<void(std::string p0)>;
+using FeedbackSendSuccessListener = std::function<void()>;
 using FilteredLocationsListener = std::function<void(std::optional<FilteredLocations> locations, std::string state)>;
 using FindLocationsCallback = std::function<void(std::optional<FindLocationsResult> result, std::optional<std::string> err_param)>;
 using FindProviders2Callback = std::function<void(std::optional<FindProviders2Result> result, std::optional<std::string> err_param)>;
@@ -15769,6 +15843,7 @@ using ReceivePacket = std::function<void(int64_t ip_version, int64_t ip_protocol
 using ReceivePacketBatch = std::function<void(const uint8_t* packet_batch_bytes, int32_t packet_batch_bytes_len)>;
 using ReceivePackets = std::function<void(PacketBatch packet_batch)>;
 using RedeemBalanceCodeCallback = std::function<void(std::optional<RedeemBalanceCodeResult> result, std::optional<std::string> err_param)>;
+using ReferralCodeFetchErrorListener = std::function<void(std::string p0)>;
 using ReferralCodeListener = std::function<void(std::string p0)>;
 using RefreshJwtCallback = std::function<void(std::optional<RefreshJwtResult> result, std::optional<std::string> err_param)>;
 using RegenerateSeedphraseCallback = std::function<void(std::optional<RegenerateSeedphraseResult> result, std::optional<std::string> err_param)>;
@@ -16584,6 +16659,8 @@ class FeedbackViewController final : public detail::Handle {
 public:
 	FeedbackViewController() = default;
 	explicit FeedbackViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addFeedbackSendErrorListener(FeedbackSendErrorListener listener) const;
+	Sub addFeedbackSendSuccessListener(FeedbackSendSuccessListener listener) const;
 	Sub addIsSendingFeedbackListener(IsSendingFeedbackListener listener) const;
 	void close() const;
 	void sendFeedback(const std::string& msg, int64_t star_count) const;
@@ -16943,6 +17020,7 @@ class ReferralCodeViewController final : public detail::Handle {
 public:
 	ReferralCodeViewController() = default;
 	explicit ReferralCodeViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addReferralCodeFetchErrorListener(ReferralCodeFetchErrorListener listener) const;
 	Sub addReferralCodeListener(ReferralCodeListener listener) const;
 	void close() const;
 	std::optional<GetNetworkReferralCodeResult> getReferralCodeResult() const;
@@ -18505,6 +18583,46 @@ inline void oneshot_extender_view_controller(void* user_data, const char* status
 			status_v = parseJson<ExtenderStatus>(status_json);
 		}
 		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_feedback_send_error(void* user_data, const char* p0) {
+	auto* f = static_cast<FeedbackSendErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_feedback_send_error(void* user_data, const char* p0) {
+	auto* f = static_cast<FeedbackSendErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_feedback_send_success(void* user_data) {
+	auto* f = static_cast<FeedbackSendSuccessListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_feedback_send_success(void* user_data) {
+	auto* f = static_cast<FeedbackSendSuccessListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -20563,6 +20681,26 @@ inline void oneshot_redeem_balance_code(void* user_data, const char* result_json
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_referral_code_fetch_error(void* user_data, const char* p0) {
+	auto* f = static_cast<ReferralCodeFetchErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_referral_code_fetch_error(void* user_data, const char* p0) {
+	auto* f = static_cast<ReferralCodeFetchErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -26339,6 +26477,28 @@ inline void ExtenderViewController::start() const {
 inline void ExtenderViewController::stop() const {
 	urnet_extender_view_controller_stop(handle());
 }
+inline Sub FeedbackViewController::addFeedbackSendErrorListener(FeedbackSendErrorListener listener) const {
+	std::shared_ptr<FeedbackSendErrorListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<FeedbackSendErrorListener>(std::move(listener));
+	}
+	Sub r(urnet_feedback_view_controller_add_feedback_send_error_listener(handle(), listener_fn ? &detail::retained_feedback_send_error : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline Sub FeedbackViewController::addFeedbackSendSuccessListener(FeedbackSendSuccessListener listener) const {
+	std::shared_ptr<FeedbackSendSuccessListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<FeedbackSendSuccessListener>(std::move(listener));
+	}
+	Sub r(urnet_feedback_view_controller_add_feedback_send_success_listener(handle(), listener_fn ? &detail::retained_feedback_send_success : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub FeedbackViewController::addIsSendingFeedbackListener(IsSendingFeedbackListener listener) const {
 	std::shared_ptr<IsSendingFeedbackListener> listener_fn;
 	if (listener) {
@@ -27851,6 +28011,17 @@ inline std::optional<ProxyConfigResult> ProxyDevice::getProxyConfigResult() cons
 		return std::nullopt;
 	}
 	return detail::parseJson<ProxyConfigResult>(r_s->c_str());
+}
+inline Sub ReferralCodeViewController::addReferralCodeFetchErrorListener(ReferralCodeFetchErrorListener listener) const {
+	std::shared_ptr<ReferralCodeFetchErrorListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ReferralCodeFetchErrorListener>(std::move(listener));
+	}
+	Sub r(urnet_referral_code_view_controller_add_referral_code_fetch_error_listener(handle(), listener_fn ? &detail::retained_referral_code_fetch_error : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
 }
 inline Sub ReferralCodeViewController::addReferralCodeListener(ReferralCodeListener listener) const {
 	std::shared_ptr<ReferralCodeListener> listener_fn;

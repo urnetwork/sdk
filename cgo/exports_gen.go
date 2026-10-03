@@ -808,6 +808,28 @@ func (self *cAdapterExtenderViewControllerListener) ExtenderStatusChanged(status
 	}
 }
 
+type cAdapterFeedbackSendErrorListener struct {
+	cbMessage C.urnet_feedback_send_error_cb
+	userData  unsafe.Pointer
+}
+
+func (self *cAdapterFeedbackSendErrorListener) Message(p0 string) {
+	defer cgoGuard("urnet_feedback_send_error_cb")
+	p0_ := cString(string(p0))
+	C.urnet_invoke_feedback_send_error(self.cbMessage, self.userData, p0_)
+	cStringFree(p0_)
+}
+
+type cAdapterFeedbackSendSuccessListener struct {
+	cbSuccess C.urnet_feedback_send_success_cb
+	userData  unsafe.Pointer
+}
+
+func (self *cAdapterFeedbackSendSuccessListener) Success() {
+	defer cgoGuard("urnet_feedback_send_success_cb")
+	C.urnet_invoke_feedback_send_success(self.cbSuccess, self.userData)
+}
+
 type cAdapterFilteredLocationsListener struct {
 	cbFilteredLocationsChanged C.urnet_filtered_locations_cb
 	userData                   unsafe.Pointer
@@ -1953,6 +1975,18 @@ func (self *cAdapterRedeemBalanceCodeCallback) Result(result *sdk.RedeemBalanceC
 	if errParam_ != nil {
 		cStringFree(errParam_)
 	}
+}
+
+type cAdapterReferralCodeFetchErrorListener struct {
+	cbMessage C.urnet_referral_code_fetch_error_cb
+	userData  unsafe.Pointer
+}
+
+func (self *cAdapterReferralCodeFetchErrorListener) Message(p0 string) {
+	defer cgoGuard("urnet_referral_code_fetch_error_cb")
+	p0_ := cString(string(p0))
+	C.urnet_invoke_referral_code_fetch_error(self.cbMessage, self.userData, p0_)
+	cStringFree(p0_)
 }
 
 type cAdapterReferralCodeListener struct {
@@ -11738,6 +11772,36 @@ func urnet_extender_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_feedback_view_controller_add_feedback_send_error_listener
+func urnet_feedback_view_controller_add_feedback_send_error_listener(self C.uint64_t, listener_message C.urnet_feedback_send_error_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_feedback_view_controller_add_feedback_send_error_listener")
+	self_, ok := resolveHandle[*sdk.FeedbackViewController](uint64(self), "urnet_feedback_view_controller_add_feedback_send_error_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.FeedbackSendErrorListener
+	if listener_message != nil {
+		listener_ = &cAdapterFeedbackSendErrorListener{cbMessage: listener_message, userData: listener_user_data}
+	}
+	r0 := self_.AddFeedbackSendErrorListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_feedback_view_controller_add_feedback_send_success_listener
+func urnet_feedback_view_controller_add_feedback_send_success_listener(self C.uint64_t, listener_success C.urnet_feedback_send_success_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_feedback_view_controller_add_feedback_send_success_listener")
+	self_, ok := resolveHandle[*sdk.FeedbackViewController](uint64(self), "urnet_feedback_view_controller_add_feedback_send_success_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.FeedbackSendSuccessListener
+	if listener_success != nil {
+		listener_ = &cAdapterFeedbackSendSuccessListener{cbSuccess: listener_success, userData: listener_user_data}
+	}
+	r0 := self_.AddFeedbackSendSuccessListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_feedback_view_controller_add_is_sending_feedback_listener
 func urnet_feedback_view_controller_add_is_sending_feedback_listener(self C.uint64_t, listener_state_changed C.urnet_is_sending_feedback_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_feedback_view_controller_add_is_sending_feedback_listener")
@@ -15862,6 +15926,21 @@ func urnet_record_tunnel_recovery_stage(stage *C.char, result *C.char, intended 
 	defer cgoGuard("urnet_record_tunnel_recovery_stage")
 	r0 := sdk.RecordTunnelRecoveryStage(goString(stage), goString(result), bool(intended), bool(consumerPresent), bool(hasLocation), int64(providerCount), int64(generation))
 	return cString(string(r0))
+}
+
+//export urnet_referral_code_view_controller_add_referral_code_fetch_error_listener
+func urnet_referral_code_view_controller_add_referral_code_fetch_error_listener(self C.uint64_t, listener_message C.urnet_referral_code_fetch_error_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_referral_code_view_controller_add_referral_code_fetch_error_listener")
+	self_, ok := resolveHandle[*sdk.ReferralCodeViewController](uint64(self), "urnet_referral_code_view_controller_add_referral_code_fetch_error_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ReferralCodeFetchErrorListener
+	if listener_message != nil {
+		listener_ = &cAdapterReferralCodeFetchErrorListener{cbMessage: listener_message, userData: listener_user_data}
+	}
+	r0 := self_.AddReferralCodeFetchErrorListener(listener_)
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_referral_code_view_controller_add_referral_code_listener

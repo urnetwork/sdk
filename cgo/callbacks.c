@@ -205,6 +205,14 @@ void urnet_invoke_extender_view_controller(urnet_extender_view_controller_cb cb,
 	cb(user_data, status_json);
 }
 
+void urnet_invoke_feedback_send_error(urnet_feedback_send_error_cb cb, void* user_data, const char* p0) {
+	cb(user_data, p0);
+}
+
+void urnet_invoke_feedback_send_success(urnet_feedback_send_success_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_filtered_locations(urnet_filtered_locations_cb cb, void* user_data, const char* locations_json, const char* state) {
 	cb(user_data, locations_json, state);
 }
@@ -499,6 +507,10 @@ void urnet_invoke_receive_packets(urnet_receive_packets_cb cb, void* user_data, 
 
 void urnet_invoke_redeem_balance_code(urnet_redeem_balance_code_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_referral_code_fetch_error(urnet_referral_code_fetch_error_cb cb, void* user_data, const char* p0) {
+	cb(user_data, p0);
 }
 
 void urnet_invoke_referral_code(urnet_referral_code_cb cb, void* user_data, const char* p0) {

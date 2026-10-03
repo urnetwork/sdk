@@ -107,6 +107,10 @@ typedef void (*urnet_extender_status_change_cb)(void* user_data, const char* sta
 void urnet_invoke_extender_status_change(urnet_extender_status_change_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_extender_view_controller_cb)(void* user_data, const char* status_json);
 void urnet_invoke_extender_view_controller(urnet_extender_view_controller_cb cb, void* user_data, const char* status_json);
+typedef void (*urnet_feedback_send_error_cb)(void* user_data, const char* p0);
+void urnet_invoke_feedback_send_error(urnet_feedback_send_error_cb cb, void* user_data, const char* p0);
+typedef void (*urnet_feedback_send_success_cb)(void* user_data);
+void urnet_invoke_feedback_send_success(urnet_feedback_send_success_cb cb, void* user_data);
 typedef void (*urnet_filtered_locations_cb)(void* user_data, const char* locations_json, const char* state);
 void urnet_invoke_filtered_locations(urnet_filtered_locations_cb cb, void* user_data, const char* locations_json, const char* state);
 typedef void (*urnet_find_locations_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -255,6 +259,8 @@ typedef void (*urnet_receive_packets_cb)(void* user_data, uint64_t packet_batch)
 void urnet_invoke_receive_packets(urnet_receive_packets_cb cb, void* user_data, uint64_t packet_batch);
 typedef void (*urnet_redeem_balance_code_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_redeem_balance_code(urnet_redeem_balance_code_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_referral_code_fetch_error_cb)(void* user_data, const char* p0);
+void urnet_invoke_referral_code_fetch_error(urnet_referral_code_fetch_error_cb cb, void* user_data, const char* p0);
 typedef void (*urnet_referral_code_cb)(void* user_data, const char* p0);
 void urnet_invoke_referral_code(urnet_referral_code_cb cb, void* user_data, const char* p0);
 typedef void (*urnet_refresh_jwt_cb)(void* user_data, const char* result_json, const char* err_param);

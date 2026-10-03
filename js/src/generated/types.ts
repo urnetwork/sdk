@@ -183,6 +183,7 @@ export interface AuthLoginWithPasswordResult {
 
 export interface AuthLoginWithPasswordResultVerification {
   user_auth: string;
+  send_error?: AuthVerifySendError | null;
 }
 
 export interface AuthLoginWithPasswordResultNetwork {
@@ -372,6 +373,7 @@ export interface NetworkCreateResultError {
 
 export interface NetworkCreateResultVerification {
   user_auth: string;
+  send_error?: AuthVerifySendError | null;
 }
 
 export interface NetworkCreateResultNetwork {

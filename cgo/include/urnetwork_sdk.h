@@ -84,6 +84,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 /* ----- constants ----- */
 
 #define URNET_ASYNC_QUEUE_SIZE 32
+#define URNET_AUTH_VERIFY_SEND_ERROR_CODE_RATE_LIMITED "verify_rate_limited"
+#define URNET_AUTH_VERIFY_SEND_ERROR_CODE_SEND_FAILED "verify_send_failed"
 #define URNET_BALANCE_CODE_LENGTH 26
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_ALREADY_REDEEMED "already_redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
@@ -442,6 +444,10 @@ typedef void (*urnet_extender_provide_status_change_cb)(void* user_data, const c
 typedef void (*urnet_extender_status_change_cb)(void* user_data, const char* status_json);
 /* ExtenderViewControllerListener */
 typedef void (*urnet_extender_view_controller_cb)(void* user_data, const char* status_json);
+/* FeedbackSendErrorListener */
+typedef void (*urnet_feedback_send_error_cb)(void* user_data, const char* p0);
+/* FeedbackSendSuccessListener */
+typedef void (*urnet_feedback_send_success_cb)(void* user_data);
 /* FilteredLocationsListener */
 typedef void (*urnet_filtered_locations_cb)(void* user_data, const char* locations_json, const char* state);
 /* FindLocationsCallback */
@@ -588,6 +594,8 @@ typedef void (*urnet_receive_packet_batch_cb)(void* user_data, const uint8_t* pa
 typedef void (*urnet_receive_packets_cb)(void* user_data, uint64_t packet_batch);
 /* RedeemBalanceCodeCallback */
 typedef void (*urnet_redeem_balance_code_cb)(void* user_data, const char* result_json, const char* err_param);
+/* ReferralCodeFetchErrorListener */
+typedef void (*urnet_referral_code_fetch_error_cb)(void* user_data, const char* p0);
 /* ReferralCodeListener */
 typedef void (*urnet_referral_code_cb)(void* user_data, const char* p0);
 /* RefreshJwtCallback */
@@ -1357,6 +1365,8 @@ void urnet_extender_view_controller_stop(uint64_t self);
 
 /* ----- FeedbackViewController ----- */
 
+uint64_t urnet_feedback_view_controller_add_feedback_send_error_listener(uint64_t self, urnet_feedback_send_error_cb listener_message, void* listener_user_data);
+uint64_t urnet_feedback_view_controller_add_feedback_send_success_listener(uint64_t self, urnet_feedback_send_success_cb listener_success, void* listener_user_data);
 uint64_t urnet_feedback_view_controller_add_is_sending_feedback_listener(uint64_t self, urnet_is_sending_feedback_cb listener_state_changed, void* listener_user_data);
 void urnet_feedback_view_controller_close(uint64_t self);
 void urnet_feedback_view_controller_send_feedback(uint64_t self, const char* msg, int64_t star_count);
@@ -1648,6 +1658,7 @@ char* urnet_proxy_device_get_proxy_config_result(uint64_t self);
 
 /* ----- ReferralCodeViewController ----- */
 
+uint64_t urnet_referral_code_view_controller_add_referral_code_fetch_error_listener(uint64_t self, urnet_referral_code_fetch_error_cb listener_message, void* listener_user_data);
 uint64_t urnet_referral_code_view_controller_add_referral_code_listener(uint64_t self, urnet_referral_code_cb listener_referral_code_updated, void* listener_user_data);
 void urnet_referral_code_view_controller_close(uint64_t self);
 char* urnet_referral_code_view_controller_get_referral_code_result(uint64_t self);
@@ -2107,6 +2118,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* AuthLoginWithPasswordResultVerification (json):
  *   user_auth: string
+ *   send_error?: AuthVerifySendError | null
  */
 
 /* AuthNetworkClientArgs (json):
@@ -2159,10 +2171,18 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* AuthVerifySendArgs (json):
  *   user_auth: string
  *   use_numeric?: boolean
+ *   result_errors?: boolean
+ */
+
+/* AuthVerifySendError (json):
+ *   code: string
+ *   message: string
+ *   retry_after_seconds?: number
  */
 
 /* AuthVerifySendResult (json):
  *   user_auth: string
+ *   error?: AuthVerifySendError | null
  */
 
 /* AuthWalletChallengeArgs (json):
@@ -3300,6 +3320,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* NetworkCreateResultVerification (json):
  *   user_auth: string
+ *   send_error?: AuthVerifySendError | null
  */
 
 /* NetworkDeleteResult (json):
