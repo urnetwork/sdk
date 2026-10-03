@@ -2271,11 +2271,25 @@ func TestTheExclusionBuildConstraintsAreDerivedFromThePrimitive(t *testing.T) {
 		t.Errorf("the windows file's terms are %v, want exactly [windows]", windows.positive)
 	}
 
+	// THE MOBILE-BINDING TAG IS NOT A GOOS. Every message_* file builds only without
+	// sdk_mobile_bind (message.go says why), so each of the three carries it negated, and it is
+	// set aside before the GOOS partition below is compared. That all three carry it is held
+	// here, so the tag cannot leave one of them and quietly put it back in the mobile bindings.
+	const mobileBind = "sdk_mobile_bind"
+	for _, each := range []struct {
+		name  string
+		terms streamBuildConstraint
+	}{{"message_stream_exclusion_unix.go", flockGoos}, {"message_stream_exclusion_windows.go", windows}, {"message_stream_exclusion_other.go", fallback}} {
+		if !slices.Contains(each.terms.negative, mobileBind) {
+			t.Errorf("%s does not negate %s; every message_* file builds only without it", each.name, mobileBind)
+		}
+	}
+
 	// the fallback's constraint must be the EXACT complement of the other two, so no GOOS
 	// gets two implementations and none gets zero.
 	covered := append(append([]string{}, flockGoos.positive...), windows.positive...)
 	slices.Sort(covered)
-	negated := append([]string{}, fallback.negative...)
+	negated := slices.DeleteFunc(append([]string{}, fallback.negative...), func(term string) bool { return term == mobileBind })
 	slices.Sort(negated)
 	if !slices.Equal(covered, negated) {
 		t.Errorf("the fallback negates %v and the two implementations cover %v; a GOOS in neither gets no acquireStreamStoreExclusion at all and a GOOS in both gets two", negated, covered)
@@ -2381,8 +2395,11 @@ func streamTestBuildTerms(t *testing.T, name string) streamBuildConstraint {
 		}
 		found = true
 		for _, term := range strings.Fields(strings.TrimPrefix(line, "//go:build ")) {
+			// parentheses group a disjunction under the sdk_mobile_bind conjunct that every message_*
+			// file carries; the terms inside are what this reads, so the grouping is trimmed off them
+			term = strings.Trim(term, "()")
 			switch {
-			case term == "||" || term == "&&":
+			case term == "" || term == "||" || term == "&&":
 			case strings.HasPrefix(term, "!"):
 				constraint.negative = append(constraint.negative, strings.TrimPrefix(term, "!"))
 			default:
