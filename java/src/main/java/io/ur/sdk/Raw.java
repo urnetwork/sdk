@@ -54,6 +54,8 @@ public interface Raw extends Library {
   interface urnet_extender_provide_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_extender_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_extender_view_controller_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_feedback_send_error_cb extends Callback { void invoke(Pointer a0, String a1); }
+  interface urnet_feedback_send_success_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_filtered_locations_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_find_locations_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_find_providers2_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -127,6 +129,7 @@ public interface Raw extends Library {
   interface urnet_receive_packet_batch_cb extends Callback { void invoke(Pointer a0, Pointer a1, int a2); }
   interface urnet_receive_packets_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_redeem_balance_code_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_referral_code_fetch_error_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_referral_code_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_refresh_jwt_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_regenerate_seedphrase_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
@@ -167,6 +170,7 @@ public interface Raw extends Library {
   interface urnet_subprotocols_query_cb extends Callback { void invoke(Pointer a0, String a1, byte a2); }
   interface urnet_subscription_balance_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_subscription_balance_change_cb extends Callback { void invoke(Pointer a0); }
+  interface urnet_subscription_balance_fetch_error_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_subscription_create_payment_id_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_subscription_jwt_out_of_sync_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_throughput_cb extends Callback { void invoke(Pointer a0); }
@@ -802,6 +806,8 @@ public interface Raw extends Library {
   Pointer urnet_extender_view_controller_set_settings(long a0, String a1, String a2, String a3);
   void urnet_extender_view_controller_start(long a0);
   void urnet_extender_view_controller_stop(long a0);
+  long urnet_feedback_view_controller_add_feedback_send_error_listener(long a0, urnet_feedback_send_error_cb a1, Pointer a2);
+  long urnet_feedback_view_controller_add_feedback_send_success_listener(long a0, urnet_feedback_send_success_cb a1, Pointer a2);
   long urnet_feedback_view_controller_add_is_sending_feedback_listener(long a0, urnet_is_sending_feedback_cb a1, Pointer a2);
   void urnet_feedback_view_controller_close(long a0);
   void urnet_feedback_view_controller_send_feedback(long a0, String a1, long a2);
@@ -1036,6 +1042,7 @@ public interface Raw extends Library {
   long urnet_proxy_device_get_device(long a0);
   byte urnet_proxy_device_get_done(long a0);
   Pointer urnet_proxy_device_get_proxy_config_result(long a0);
+  long urnet_referral_code_view_controller_add_referral_code_fetch_error_listener(long a0, urnet_referral_code_fetch_error_cb a1, Pointer a2);
   long urnet_referral_code_view_controller_add_referral_code_listener(long a0, urnet_referral_code_cb a1, Pointer a2);
   void urnet_referral_code_view_controller_close(long a0);
   Pointer urnet_referral_code_view_controller_get_referral_code_result(long a0);
@@ -1054,6 +1061,7 @@ public interface Raw extends Library {
   void urnet_sub_close(long a0);
   long urnet_subscription_balance_view_controller_add_purchase_confirmation_listener(long a0, urnet_purchase_confirmation_cb a1, Pointer a2);
   long urnet_subscription_balance_view_controller_add_subscription_balance_change_listener(long a0, urnet_subscription_balance_change_cb a1, Pointer a2);
+  long urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener(long a0, urnet_subscription_balance_fetch_error_cb a1, Pointer a2);
   long urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener(long a0, urnet_subscription_jwt_out_of_sync_cb a1, Pointer a2);
   void urnet_subscription_balance_view_controller_clear_purchase_confirmation(long a0);
   void urnet_subscription_balance_view_controller_close(long a0);
@@ -1067,9 +1075,12 @@ public interface Raw extends Library {
   byte urnet_subscription_balance_view_controller_get_is_guest(long a0);
   byte urnet_subscription_balance_view_controller_get_is_loaded(long a0);
   byte urnet_subscription_balance_view_controller_get_is_pro(long a0);
+  Pointer urnet_subscription_balance_view_controller_get_last_fetch_error(long a0);
   long urnet_subscription_balance_view_controller_get_pending_byte_count(long a0);
+  Pointer urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(long a0);
   Pointer urnet_subscription_balance_view_controller_get_purchase_confirmation_state(long a0);
   long urnet_subscription_balance_view_controller_get_start_balance_byte_count(long a0);
+  Pointer urnet_subscription_balance_view_controller_get_subscription_balance_result(long a0);
   Pointer urnet_subscription_balance_view_controller_get_subscriptions(long a0);
   long urnet_subscription_balance_view_controller_get_used_balance_byte_count(long a0);
   void urnet_subscription_balance_view_controller_jwt_refreshed(long a0);
@@ -1078,6 +1089,7 @@ public interface Raw extends Library {
   void urnet_subscription_balance_view_controller_set_confirmation_budget_millis(long a0, long a1);
   void urnet_subscription_balance_view_controller_set_confirmation_poll_interval_millis(long a0, long a1);
   void urnet_subscription_balance_view_controller_set_foreground(long a0, byte a1);
+  void urnet_subscription_balance_view_controller_set_storefront_country(long a0, String a1);
   void urnet_subscription_balance_view_controller_start(long a0);
   void urnet_subscription_balance_view_controller_start_purchase_confirmation(long a0);
   void urnet_subscription_balance_view_controller_stop(long a0);
@@ -1197,6 +1209,7 @@ public interface Raw extends Library {
   Pointer urnet_new_feedback_submitted_event(long a0, String a1, String a2);
   Pointer urnet_new_id();
   long urnet_new_login_view_controller(long a0);
+  Pointer urnet_new_message_transport(String a0, PointerByReference a1);
   long urnet_new_network_name_validation_view_controller(long a0);
   Pointer urnet_new_network_space_key(String a0, String a1);
   long urnet_new_network_space_manager(String a0);
@@ -1225,10 +1238,12 @@ public interface Raw extends Library {
   Pointer urnet_new_widget_added_event(String a0);
   Pointer urnet_normal_env_name(String a0);
   Pointer urnet_normal_extender_gossip_mode(String a0);
+  Pointer urnet_open_stream_store(String a0, PointerByReference a1);
   Pointer urnet_order_connected_provider_locations(String a0);
   Pointer urnet_parse_checkout_redirect(String a0, PointerByReference a1);
   Pointer urnet_parse_client_events_json(String a0, PointerByReference a1);
   Pointer urnet_parse_id(String a0, PointerByReference a1);
+  long urnet_parse_message_route_mode(String a0, PointerByReference a1);
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);

@@ -52,6 +52,8 @@ pub type urnet_dns_resolver_settings_change_cb = Option<unsafe extern "C" fn(*mu
 pub type urnet_extender_provide_status_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_extender_status_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_extender_view_controller_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_feedback_send_error_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
+pub type urnet_feedback_send_success_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_filtered_locations_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_find_locations_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_find_providers2_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -125,6 +127,7 @@ pub type urnet_receive_packet_cb = Option<unsafe extern "C" fn(*mut c_void, i64,
 pub type urnet_receive_packet_batch_cb = Option<unsafe extern "C" fn(*mut c_void, *const u8, i32) -> ()>;
 pub type urnet_receive_packets_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
 pub type urnet_redeem_balance_code_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_referral_code_fetch_error_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_referral_code_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_refresh_jwt_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_regenerate_seedphrase_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
@@ -165,6 +168,7 @@ pub type urnet_subprotocol_cb = Option<unsafe extern "C" fn(*mut c_void, i64, *c
 pub type urnet_subprotocols_query_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, bool) -> ()>;
 pub type urnet_subscription_balance_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_subscription_balance_change_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
+pub type urnet_subscription_balance_fetch_error_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_subscription_create_payment_id_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_subscription_jwt_out_of_sync_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_throughput_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
@@ -802,6 +806,8 @@ pub struct Raw {
     pub urnet_extender_view_controller_set_settings: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char) -> *mut c_char,
     pub urnet_extender_view_controller_start: unsafe extern "C" fn(u64) -> (),
     pub urnet_extender_view_controller_stop: unsafe extern "C" fn(u64) -> (),
+    pub urnet_feedback_view_controller_add_feedback_send_error_listener: unsafe extern "C" fn(u64, urnet_feedback_send_error_cb, *mut c_void) -> u64,
+    pub urnet_feedback_view_controller_add_feedback_send_success_listener: unsafe extern "C" fn(u64, urnet_feedback_send_success_cb, *mut c_void) -> u64,
     pub urnet_feedback_view_controller_add_is_sending_feedback_listener: unsafe extern "C" fn(u64, urnet_is_sending_feedback_cb, *mut c_void) -> u64,
     pub urnet_feedback_view_controller_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_feedback_view_controller_send_feedback: unsafe extern "C" fn(u64, *const c_char, i64) -> (),
@@ -1036,6 +1042,7 @@ pub struct Raw {
     pub urnet_proxy_device_get_device: unsafe extern "C" fn(u64) -> u64,
     pub urnet_proxy_device_get_done: unsafe extern "C" fn(u64) -> bool,
     pub urnet_proxy_device_get_proxy_config_result: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_referral_code_view_controller_add_referral_code_fetch_error_listener: unsafe extern "C" fn(u64, urnet_referral_code_fetch_error_cb, *mut c_void) -> u64,
     pub urnet_referral_code_view_controller_add_referral_code_listener: unsafe extern "C" fn(u64, urnet_referral_code_cb, *mut c_void) -> u64,
     pub urnet_referral_code_view_controller_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_referral_code_view_controller_get_referral_code_result: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -1054,6 +1061,7 @@ pub struct Raw {
     pub urnet_sub_close: unsafe extern "C" fn(u64) -> (),
     pub urnet_subscription_balance_view_controller_add_purchase_confirmation_listener: unsafe extern "C" fn(u64, urnet_purchase_confirmation_cb, *mut c_void) -> u64,
     pub urnet_subscription_balance_view_controller_add_subscription_balance_change_listener: unsafe extern "C" fn(u64, urnet_subscription_balance_change_cb, *mut c_void) -> u64,
+    pub urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener: unsafe extern "C" fn(u64, urnet_subscription_balance_fetch_error_cb, *mut c_void) -> u64,
     pub urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener: unsafe extern "C" fn(u64, urnet_subscription_jwt_out_of_sync_cb, *mut c_void) -> u64,
     pub urnet_subscription_balance_view_controller_clear_purchase_confirmation: unsafe extern "C" fn(u64) -> (),
     pub urnet_subscription_balance_view_controller_close: unsafe extern "C" fn(u64) -> (),
@@ -1067,9 +1075,12 @@ pub struct Raw {
     pub urnet_subscription_balance_view_controller_get_is_guest: unsafe extern "C" fn(u64) -> bool,
     pub urnet_subscription_balance_view_controller_get_is_loaded: unsafe extern "C" fn(u64) -> bool,
     pub urnet_subscription_balance_view_controller_get_is_pro: unsafe extern "C" fn(u64) -> bool,
+    pub urnet_subscription_balance_view_controller_get_last_fetch_error: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_subscription_balance_view_controller_get_pending_byte_count: unsafe extern "C" fn(u64) -> i64,
+    pub urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_subscription_balance_view_controller_get_purchase_confirmation_state: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_subscription_balance_view_controller_get_start_balance_byte_count: unsafe extern "C" fn(u64) -> i64,
+    pub urnet_subscription_balance_view_controller_get_subscription_balance_result: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_subscription_balance_view_controller_get_subscriptions: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_subscription_balance_view_controller_get_used_balance_byte_count: unsafe extern "C" fn(u64) -> i64,
     pub urnet_subscription_balance_view_controller_jwt_refreshed: unsafe extern "C" fn(u64) -> (),
@@ -1078,6 +1089,7 @@ pub struct Raw {
     pub urnet_subscription_balance_view_controller_set_confirmation_budget_millis: unsafe extern "C" fn(u64, i64) -> (),
     pub urnet_subscription_balance_view_controller_set_confirmation_poll_interval_millis: unsafe extern "C" fn(u64, i64) -> (),
     pub urnet_subscription_balance_view_controller_set_foreground: unsafe extern "C" fn(u64, bool) -> (),
+    pub urnet_subscription_balance_view_controller_set_storefront_country: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_subscription_balance_view_controller_start: unsafe extern "C" fn(u64) -> (),
     pub urnet_subscription_balance_view_controller_start_purchase_confirmation: unsafe extern "C" fn(u64) -> (),
     pub urnet_subscription_balance_view_controller_stop: unsafe extern "C" fn(u64) -> (),
@@ -1197,6 +1209,7 @@ pub struct Raw {
     pub urnet_new_feedback_submitted_event: unsafe extern "C" fn(i64, *const c_char, *const c_char) -> *mut c_char,
     pub urnet_new_id: unsafe extern "C" fn() -> *mut c_char,
     pub urnet_new_login_view_controller: unsafe extern "C" fn(u64) -> u64,
+    pub urnet_new_message_transport: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_new_network_name_validation_view_controller: unsafe extern "C" fn(u64) -> u64,
     pub urnet_new_network_space_key: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char,
     pub urnet_new_network_space_manager: unsafe extern "C" fn(*const c_char) -> u64,
@@ -1225,10 +1238,12 @@ pub struct Raw {
     pub urnet_new_widget_added_event: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_normal_env_name: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_normal_extender_gossip_mode: unsafe extern "C" fn(*const c_char) -> *mut c_char,
+    pub urnet_open_stream_store: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_order_connected_provider_locations: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_parse_checkout_redirect: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_parse_client_events_json: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_parse_id: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> *mut c_char,
+    pub urnet_parse_message_route_mode: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> i64,
     pub urnet_points_leaderboard_key_of: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_points_leaderboard_scroll_label: unsafe extern "C" fn(i64, i64) -> *mut c_char,
     pub urnet_points_to_nano_points: unsafe extern "C" fn(f64) -> i64,
@@ -1891,6 +1906,8 @@ impl Raw {
             urnet_extender_view_controller_set_settings: unsafe { *library.get(b"urnet_extender_view_controller_set_settings\0")? },
             urnet_extender_view_controller_start: unsafe { *library.get(b"urnet_extender_view_controller_start\0")? },
             urnet_extender_view_controller_stop: unsafe { *library.get(b"urnet_extender_view_controller_stop\0")? },
+            urnet_feedback_view_controller_add_feedback_send_error_listener: unsafe { *library.get(b"urnet_feedback_view_controller_add_feedback_send_error_listener\0")? },
+            urnet_feedback_view_controller_add_feedback_send_success_listener: unsafe { *library.get(b"urnet_feedback_view_controller_add_feedback_send_success_listener\0")? },
             urnet_feedback_view_controller_add_is_sending_feedback_listener: unsafe { *library.get(b"urnet_feedback_view_controller_add_is_sending_feedback_listener\0")? },
             urnet_feedback_view_controller_close: unsafe { *library.get(b"urnet_feedback_view_controller_close\0")? },
             urnet_feedback_view_controller_send_feedback: unsafe { *library.get(b"urnet_feedback_view_controller_send_feedback\0")? },
@@ -2125,6 +2142,7 @@ impl Raw {
             urnet_proxy_device_get_device: unsafe { *library.get(b"urnet_proxy_device_get_device\0")? },
             urnet_proxy_device_get_done: unsafe { *library.get(b"urnet_proxy_device_get_done\0")? },
             urnet_proxy_device_get_proxy_config_result: unsafe { *library.get(b"urnet_proxy_device_get_proxy_config_result\0")? },
+            urnet_referral_code_view_controller_add_referral_code_fetch_error_listener: unsafe { *library.get(b"urnet_referral_code_view_controller_add_referral_code_fetch_error_listener\0")? },
             urnet_referral_code_view_controller_add_referral_code_listener: unsafe { *library.get(b"urnet_referral_code_view_controller_add_referral_code_listener\0")? },
             urnet_referral_code_view_controller_close: unsafe { *library.get(b"urnet_referral_code_view_controller_close\0")? },
             urnet_referral_code_view_controller_get_referral_code_result: unsafe { *library.get(b"urnet_referral_code_view_controller_get_referral_code_result\0")? },
@@ -2143,6 +2161,7 @@ impl Raw {
             urnet_sub_close: unsafe { *library.get(b"urnet_sub_close\0")? },
             urnet_subscription_balance_view_controller_add_purchase_confirmation_listener: unsafe { *library.get(b"urnet_subscription_balance_view_controller_add_purchase_confirmation_listener\0")? },
             urnet_subscription_balance_view_controller_add_subscription_balance_change_listener: unsafe { *library.get(b"urnet_subscription_balance_view_controller_add_subscription_balance_change_listener\0")? },
+            urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener: unsafe { *library.get(b"urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener\0")? },
             urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener: unsafe { *library.get(b"urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener\0")? },
             urnet_subscription_balance_view_controller_clear_purchase_confirmation: unsafe { *library.get(b"urnet_subscription_balance_view_controller_clear_purchase_confirmation\0")? },
             urnet_subscription_balance_view_controller_close: unsafe { *library.get(b"urnet_subscription_balance_view_controller_close\0")? },
@@ -2156,9 +2175,12 @@ impl Raw {
             urnet_subscription_balance_view_controller_get_is_guest: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_is_guest\0")? },
             urnet_subscription_balance_view_controller_get_is_loaded: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_is_loaded\0")? },
             urnet_subscription_balance_view_controller_get_is_pro: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_is_pro\0")? },
+            urnet_subscription_balance_view_controller_get_last_fetch_error: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_last_fetch_error\0")? },
             urnet_subscription_balance_view_controller_get_pending_byte_count: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_pending_byte_count\0")? },
+            urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason\0")? },
             urnet_subscription_balance_view_controller_get_purchase_confirmation_state: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_purchase_confirmation_state\0")? },
             urnet_subscription_balance_view_controller_get_start_balance_byte_count: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_start_balance_byte_count\0")? },
+            urnet_subscription_balance_view_controller_get_subscription_balance_result: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_subscription_balance_result\0")? },
             urnet_subscription_balance_view_controller_get_subscriptions: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_subscriptions\0")? },
             urnet_subscription_balance_view_controller_get_used_balance_byte_count: unsafe { *library.get(b"urnet_subscription_balance_view_controller_get_used_balance_byte_count\0")? },
             urnet_subscription_balance_view_controller_jwt_refreshed: unsafe { *library.get(b"urnet_subscription_balance_view_controller_jwt_refreshed\0")? },
@@ -2167,6 +2189,7 @@ impl Raw {
             urnet_subscription_balance_view_controller_set_confirmation_budget_millis: unsafe { *library.get(b"urnet_subscription_balance_view_controller_set_confirmation_budget_millis\0")? },
             urnet_subscription_balance_view_controller_set_confirmation_poll_interval_millis: unsafe { *library.get(b"urnet_subscription_balance_view_controller_set_confirmation_poll_interval_millis\0")? },
             urnet_subscription_balance_view_controller_set_foreground: unsafe { *library.get(b"urnet_subscription_balance_view_controller_set_foreground\0")? },
+            urnet_subscription_balance_view_controller_set_storefront_country: unsafe { *library.get(b"urnet_subscription_balance_view_controller_set_storefront_country\0")? },
             urnet_subscription_balance_view_controller_start: unsafe { *library.get(b"urnet_subscription_balance_view_controller_start\0")? },
             urnet_subscription_balance_view_controller_start_purchase_confirmation: unsafe { *library.get(b"urnet_subscription_balance_view_controller_start_purchase_confirmation\0")? },
             urnet_subscription_balance_view_controller_stop: unsafe { *library.get(b"urnet_subscription_balance_view_controller_stop\0")? },
@@ -2286,6 +2309,7 @@ impl Raw {
             urnet_new_feedback_submitted_event: unsafe { *library.get(b"urnet_new_feedback_submitted_event\0")? },
             urnet_new_id: unsafe { *library.get(b"urnet_new_id\0")? },
             urnet_new_login_view_controller: unsafe { *library.get(b"urnet_new_login_view_controller\0")? },
+            urnet_new_message_transport: unsafe { *library.get(b"urnet_new_message_transport\0")? },
             urnet_new_network_name_validation_view_controller: unsafe { *library.get(b"urnet_new_network_name_validation_view_controller\0")? },
             urnet_new_network_space_key: unsafe { *library.get(b"urnet_new_network_space_key\0")? },
             urnet_new_network_space_manager: unsafe { *library.get(b"urnet_new_network_space_manager\0")? },
@@ -2314,10 +2338,12 @@ impl Raw {
             urnet_new_widget_added_event: unsafe { *library.get(b"urnet_new_widget_added_event\0")? },
             urnet_normal_env_name: unsafe { *library.get(b"urnet_normal_env_name\0")? },
             urnet_normal_extender_gossip_mode: unsafe { *library.get(b"urnet_normal_extender_gossip_mode\0")? },
+            urnet_open_stream_store: unsafe { *library.get(b"urnet_open_stream_store\0")? },
             urnet_order_connected_provider_locations: unsafe { *library.get(b"urnet_order_connected_provider_locations\0")? },
             urnet_parse_checkout_redirect: unsafe { *library.get(b"urnet_parse_checkout_redirect\0")? },
             urnet_parse_client_events_json: unsafe { *library.get(b"urnet_parse_client_events_json\0")? },
             urnet_parse_id: unsafe { *library.get(b"urnet_parse_id\0")? },
+            urnet_parse_message_route_mode: unsafe { *library.get(b"urnet_parse_message_route_mode\0")? },
             urnet_points_leaderboard_key_of: unsafe { *library.get(b"urnet_points_leaderboard_key_of\0")? },
             urnet_points_leaderboard_scroll_label: unsafe { *library.get(b"urnet_points_leaderboard_scroll_label\0")? },
             urnet_points_to_nano_points: unsafe { *library.get(b"urnet_points_to_nano_points\0")? },
