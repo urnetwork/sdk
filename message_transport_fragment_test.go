@@ -1179,9 +1179,10 @@ func TestThePartSizeHasExactlyOneDeclarationInPackageSdk(t *testing.T) {
 	excused := []string{}
 	unexcused := []messageFragmentCopy{}
 	matched := map[string]bool{}
+	rulings := messageFragmentPartSizeRulings()
 	for _, copied := range outside {
 		key := copied.file + " " + copied.where
-		if _, ruled := messageFragmentPartSizeCopyRulings[key]; !ruled {
+		if _, ruled := rulings[key]; !ruled {
 			unexcused = append(unexcused, copied)
 			continue
 		}
@@ -1189,7 +1190,7 @@ func TestThePartSizeHasExactlyOneDeclarationInPackageSdk(t *testing.T) {
 		excused = append(excused, fmt.Sprintf("%s %s (in %s)", copied.pos, copied.text, key))
 	}
 	stale := []string{}
-	for key := range messageFragmentPartSizeCopyRulings {
+	for key := range rulings {
 		if !matched[key] {
 			stale = append(stale, key)
 		}
@@ -1260,6 +1261,19 @@ func copiesOf(copies []messageFragmentCopy) []string {
 // It holds no entry in the binding's own files and cannot: a copy there is
 // refused before this table is consulted. This is a table for values that are
 // not this bound, never a second home for this bound.
+// messageFragmentPartSizeRulings is the table below merged with this platform's half, which is
+// message_transport_fragment_rulings_linux_test.go on linux and its empty twin everywhere else.
+func messageFragmentPartSizeRulings() map[string]string {
+	merged := map[string]string{}
+	for key, ruling := range messageFragmentPartSizeCopyRulings {
+		merged[key] = ruling
+	}
+	for key, ruling := range messageFragmentPartSizePlatformCopyRulings {
+		merged[key] = ruling
+	}
+	return merged
+}
+
 var messageFragmentPartSizeCopyRulings = map[string]string{
 	"device_local_ioloop.go IoLoop.run": "MessagePoolGet(2048) — the buffer the !windows fd read loop " +
 		"reads one packet into. It is a packet buffer and not a frame budget: it bounds a read from a " +
