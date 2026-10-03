@@ -673,6 +673,10 @@ void urnet_invoke_subscription_balance_change(urnet_subscription_balance_change_
 	cb(user_data);
 }
 
+void urnet_invoke_subscription_balance_fetch_error(urnet_subscription_balance_fetch_error_cb cb, void* user_data, const char* p0) {
+	cb(user_data, p0);
+}
+
 void urnet_invoke_subscription_create_payment_id(urnet_subscription_create_payment_id_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

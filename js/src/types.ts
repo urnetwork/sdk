@@ -1010,6 +1010,9 @@ export type PurchaseConfirmationState =
   | "confirmed"
   | "confirmation_gave_up";
 
+/** Why a confirmation gave up: the server never reflected the purchase, or it could not be reached. */
+export type PurchaseConfirmationGiveUpReason = "not_reflected" | "unreachable";
+
 /**
  * SubscriptionBalanceViewController — balance, plan and the purchase
  * confirmation state machine (background poll, confirmation poll with a
@@ -1034,12 +1037,20 @@ export interface SubscriptionBalanceViewController {
   getCurrentStore(): string;
   getPurchaseConfirmationState(): PurchaseConfirmationState;
   getConfirmationBudgetRemainingMillis(): number;
+  /** Why the confirmation gave up while the state is confirmation_gave_up; "" otherwise. */
+  getPurchaseConfirmationGiveUpReason(): PurchaseConfirmationGiveUpReason | "";
+  /** The last fetch's error when it failed; "" once a fetch succeeds. */
+  getLastFetchError(): string;
+  /** The last successful balance response, whole (price tier, offer, experiments); null before one loads. */
+  getSubscriptionBalanceResult(): any | null;
 
   refresh(): void;
   setForeground(foreground: boolean): void;
   startPurchaseConfirmation(): void;
   clearPurchaseConfirmation(): void;
   jwtRefreshed(): void;
+  /** The store's storefront country sent with every fetch; "" lets the server resolve the tier. */
+  setStorefrontCountry(storefrontCountry: string): void;
 
   getBackgroundPollIntervalMillis(): number;
   setBackgroundPollIntervalMillis(millis: number): void;

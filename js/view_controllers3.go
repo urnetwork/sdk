@@ -395,6 +395,15 @@ func jsSubscriptionBalanceViewController(
 	m["getConfirmationBudgetRemainingMillis"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(vc.GetConfirmationBudgetRemainingMillis())
 	})
+	m["getPurchaseConfirmationGiveUpReason"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetPurchaseConfirmationGiveUpReason())
+	})
+	m["getLastFetchError"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(vc.GetLastFetchError())
+	})
+	m["getSubscriptionBalanceResult"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(vc.GetSubscriptionBalanceResult())
+	})
 
 	// actions
 	m["refresh"] = js.FuncOf(func(this js.Value, args []js.Value) any { vc.Refresh(); return js.Null() })
@@ -411,6 +420,10 @@ func jsSubscriptionBalanceViewController(
 		return js.Null()
 	})
 	m["jwtRefreshed"] = js.FuncOf(func(this js.Value, args []js.Value) any { vc.JwtRefreshed(); return js.Null() })
+	m["setStorefrontCountry"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc.SetStorefrontCountry(stringArg(args, 0))
+		return js.Null()
+	})
 
 	// tunables (millis)
 	m["getBackgroundPollIntervalMillis"] = js.FuncOf(func(this js.Value, args []js.Value) any {

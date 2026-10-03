@@ -2697,6 +2697,18 @@ func (self *cAdapterSubscriptionBalanceChangeListener) SubscriptionBalanceChange
 	C.urnet_invoke_subscription_balance_change(self.cbSubscriptionBalanceChanged, self.userData)
 }
 
+type cAdapterSubscriptionBalanceFetchErrorListener struct {
+	cbMessage C.urnet_subscription_balance_fetch_error_cb
+	userData  unsafe.Pointer
+}
+
+func (self *cAdapterSubscriptionBalanceFetchErrorListener) Message(p0 string) {
+	defer cgoGuard("urnet_subscription_balance_fetch_error_cb")
+	p0_ := cString(string(p0))
+	C.urnet_invoke_subscription_balance_fetch_error(self.cbMessage, self.userData, p0_)
+	cStringFree(p0_)
+}
+
 type cAdapterSubscriptionCreatePaymentIdCallback struct {
 	cbResult C.urnet_subscription_create_payment_id_cb
 	userData unsafe.Pointer
@@ -16431,6 +16443,21 @@ func urnet_subscription_balance_view_controller_add_subscription_balance_change_
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener
+func urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener(self C.uint64_t, listener_message C.urnet_subscription_balance_fetch_error_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener")
+	self_, ok := resolveHandle[*sdk.SubscriptionBalanceViewController](uint64(self), "urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.SubscriptionBalanceFetchErrorListener
+	if listener_message != nil {
+		listener_ = &cAdapterSubscriptionBalanceFetchErrorListener{cbMessage: listener_message, userData: listener_user_data}
+	}
+	r0 := self_.AddSubscriptionBalanceFetchErrorListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener
 func urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener(self C.uint64_t, listener_subscription_jwt_out_of_sync C.urnet_subscription_jwt_out_of_sync_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener")
@@ -16579,6 +16606,17 @@ func urnet_subscription_balance_view_controller_get_is_pro(self C.uint64_t) C.bo
 	return C.bool(r0)
 }
 
+//export urnet_subscription_balance_view_controller_get_last_fetch_error
+func urnet_subscription_balance_view_controller_get_last_fetch_error(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_subscription_balance_view_controller_get_last_fetch_error")
+	self_, ok := resolveHandle[*sdk.SubscriptionBalanceViewController](uint64(self), "urnet_subscription_balance_view_controller_get_last_fetch_error")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetLastFetchError()
+	return cString(string(r0))
+}
+
 //export urnet_subscription_balance_view_controller_get_pending_byte_count
 func urnet_subscription_balance_view_controller_get_pending_byte_count(self C.uint64_t) C.int64_t {
 	defer cgoGuard("urnet_subscription_balance_view_controller_get_pending_byte_count")
@@ -16588,6 +16626,17 @@ func urnet_subscription_balance_view_controller_get_pending_byte_count(self C.ui
 	}
 	r0 := self_.GetPendingByteCount()
 	return C.int64_t(r0)
+}
+
+//export urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason
+func urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason")
+	self_, ok := resolveHandle[*sdk.SubscriptionBalanceViewController](uint64(self), "urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetPurchaseConfirmationGiveUpReason()
+	return cString(string(r0))
 }
 
 //export urnet_subscription_balance_view_controller_get_purchase_confirmation_state
@@ -16610,6 +16659,20 @@ func urnet_subscription_balance_view_controller_get_start_balance_byte_count(sel
 	}
 	r0 := self_.GetStartBalanceByteCount()
 	return C.int64_t(r0)
+}
+
+//export urnet_subscription_balance_view_controller_get_subscription_balance_result
+func urnet_subscription_balance_view_controller_get_subscription_balance_result(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_subscription_balance_view_controller_get_subscription_balance_result")
+	self_, ok := resolveHandle[*sdk.SubscriptionBalanceViewController](uint64(self), "urnet_subscription_balance_view_controller_get_subscription_balance_result")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetSubscriptionBalanceResult()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_subscription_balance_view_controller_get_subscription_balance_result")
 }
 
 //export urnet_subscription_balance_view_controller_get_subscriptions
@@ -16695,6 +16758,16 @@ func urnet_subscription_balance_view_controller_set_foreground(self C.uint64_t, 
 		return
 	}
 	self_.SetForeground(bool(foreground))
+}
+
+//export urnet_subscription_balance_view_controller_set_storefront_country
+func urnet_subscription_balance_view_controller_set_storefront_country(self C.uint64_t, storefrontCountry *C.char) {
+	defer cgoGuard("urnet_subscription_balance_view_controller_set_storefront_country")
+	self_, ok := resolveHandle[*sdk.SubscriptionBalanceViewController](uint64(self), "urnet_subscription_balance_view_controller_set_storefront_country")
+	if !ok {
+		return
+	}
+	self_.SetStorefrontCountry(goString(storefrontCountry))
 }
 
 //export urnet_subscription_balance_view_controller_start

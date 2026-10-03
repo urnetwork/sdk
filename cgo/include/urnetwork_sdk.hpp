@@ -322,6 +322,8 @@ inline constexpr const char* ProviderStateEvaluationFailed = "EvaluationFailed";
 inline constexpr const char* ProviderStateInEvaluation = "InEvaluation";
 inline constexpr const char* ProviderStateNotAdded = "NotAdded";
 inline constexpr const char* ProviderStateRemoved = "Removed";
+inline constexpr const char* PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected";
+inline constexpr const char* PurchaseConfirmationGiveUpReasonUnreachable = "unreachable";
 inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up";
 inline constexpr const char* PurchaseConfirmationStateConfirmed = "confirmed";
 inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
@@ -15916,6 +15918,7 @@ using SubprotocolListener = std::function<void(int64_t subprotocol_id, std::stri
 using SubprotocolsQueryCallback = std::function<void(std::optional<IntList> subprotocol_ids, bool ok_param)>;
 using SubscriptionBalanceCallback = std::function<void(std::optional<SubscriptionBalanceResult> result, std::optional<std::string> err_param)>;
 using SubscriptionBalanceChangeListener = std::function<void()>;
+using SubscriptionBalanceFetchErrorListener = std::function<void(std::string p0)>;
 using SubscriptionCreatePaymentIdCallback = std::function<void(std::optional<SubscriptionCreatePaymentIdResult> result, std::optional<std::string> err_param)>;
 using SubscriptionJwtOutOfSyncListener = std::function<void(bool server_is_pro)>;
 using ThroughputListener = std::function<void()>;
@@ -17080,6 +17083,7 @@ public:
 	explicit SubscriptionBalanceViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addPurchaseConfirmationListener(PurchaseConfirmationListener listener) const;
 	Sub addSubscriptionBalanceChangeListener(SubscriptionBalanceChangeListener listener) const;
+	Sub addSubscriptionBalanceFetchErrorListener(SubscriptionBalanceFetchErrorListener listener) const;
 	Sub addSubscriptionJwtOutOfSyncListener(SubscriptionJwtOutOfSyncListener listener) const;
 	void clearPurchaseConfirmation() const;
 	void close() const;
@@ -17093,9 +17097,12 @@ public:
 	bool getIsGuest() const;
 	bool getIsLoaded() const;
 	bool getIsPro() const;
+	std::string getLastFetchError() const;
 	int64_t getPendingByteCount() const;
+	std::string getPurchaseConfirmationGiveUpReason() const;
 	std::string getPurchaseConfirmationState() const;
 	int64_t getStartBalanceByteCount() const;
+	std::optional<SubscriptionBalanceResult> getSubscriptionBalanceResult() const;
 	std::optional<SubscriptionList> getSubscriptions() const;
 	int64_t getUsedBalanceByteCount() const;
 	void jwtRefreshed() const;
@@ -17104,6 +17111,7 @@ public:
 	void setConfirmationBudgetMillis(int64_t millis) const;
 	void setConfirmationPollIntervalMillis(int64_t millis) const;
 	void setForeground(bool foreground) const;
+	void setStorefrontCountry(const std::string& storefront_country) const;
 	void start() const;
 	void startPurchaseConfirmation() const;
 	void stop() const;
@@ -21950,6 +21958,26 @@ inline void oneshot_subscription_balance_change(void* user_data) {
 	auto* f = static_cast<SubscriptionBalanceChangeListener*>(user_data);
 	try {
 		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_subscription_balance_fetch_error(void* user_data, const char* p0) {
+	auto* f = static_cast<SubscriptionBalanceFetchErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_subscription_balance_fetch_error(void* user_data, const char* p0) {
+	auto* f = static_cast<SubscriptionBalanceFetchErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -28191,6 +28219,17 @@ inline Sub SubscriptionBalanceViewController::addSubscriptionBalanceChangeListen
 	}
 	return r;
 }
+inline Sub SubscriptionBalanceViewController::addSubscriptionBalanceFetchErrorListener(SubscriptionBalanceFetchErrorListener listener) const {
+	std::shared_ptr<SubscriptionBalanceFetchErrorListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SubscriptionBalanceFetchErrorListener>(std::move(listener));
+	}
+	Sub r(urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener(handle(), listener_fn ? &detail::retained_subscription_balance_fetch_error : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub SubscriptionBalanceViewController::addSubscriptionJwtOutOfSyncListener(SubscriptionJwtOutOfSyncListener listener) const {
 	std::shared_ptr<SubscriptionJwtOutOfSyncListener> listener_fn;
 	if (listener) {
@@ -28252,9 +28291,17 @@ inline bool SubscriptionBalanceViewController::getIsPro() const {
 	bool r = urnet_subscription_balance_view_controller_get_is_pro(handle());
 	return r;
 }
+inline std::string SubscriptionBalanceViewController::getLastFetchError() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_last_fetch_error(handle());
+	return detail::takeString(r_c);
+}
 inline int64_t SubscriptionBalanceViewController::getPendingByteCount() const {
 	int64_t r = urnet_subscription_balance_view_controller_get_pending_byte_count(handle());
 	return r;
+}
+inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationGiveUpReason() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(handle());
+	return detail::takeString(r_c);
 }
 inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationState() const {
 	char* r_c = urnet_subscription_balance_view_controller_get_purchase_confirmation_state(handle());
@@ -28263,6 +28310,14 @@ inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationSta
 inline int64_t SubscriptionBalanceViewController::getStartBalanceByteCount() const {
 	int64_t r = urnet_subscription_balance_view_controller_get_start_balance_byte_count(handle());
 	return r;
+}
+inline std::optional<SubscriptionBalanceResult> SubscriptionBalanceViewController::getSubscriptionBalanceResult() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_subscription_balance_result(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SubscriptionBalanceResult>(r_s->c_str());
 }
 inline std::optional<SubscriptionList> SubscriptionBalanceViewController::getSubscriptions() const {
 	char* r_c = urnet_subscription_balance_view_controller_get_subscriptions(handle());
@@ -28293,6 +28348,9 @@ inline void SubscriptionBalanceViewController::setConfirmationPollIntervalMillis
 }
 inline void SubscriptionBalanceViewController::setForeground(bool foreground) const {
 	urnet_subscription_balance_view_controller_set_foreground(handle(), foreground);
+}
+inline void SubscriptionBalanceViewController::setStorefrontCountry(const std::string& storefront_country) const {
+	urnet_subscription_balance_view_controller_set_storefront_country(handle(), storefront_country.c_str());
 }
 inline void SubscriptionBalanceViewController::start() const {
 	urnet_subscription_balance_view_controller_start(handle());

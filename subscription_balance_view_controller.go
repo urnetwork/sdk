@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,18 @@ const (
 	// poll and the next launch pick it up. The UI must say so honestly
 	// instead of spinning or silently staying Free.
 	PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up"
+)
+
+// Why a confirmation gave up, from GetPurchaseConfirmationGiveUpReason. The
+// two need different words: one is "we could not check", the other "the
+// payment has not reached your account yet".
+const (
+	// the server answered and never reflected the purchase within the budget
+	// (a lost or slow payment webhook)
+	PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected"
+	// no balance fetch succeeded during the confirmation, or the last one
+	// failed: the purchase state is unknown (GetLastFetchError has the error)
+	PurchaseConfirmationGiveUpReasonUnreachable = "unreachable"
 )
 
 // PurchaseConfirmationListener receives every confirmation state transition
@@ -202,6 +215,18 @@ type SubscriptionBalanceViewController struct {
 	baselineIsPro     bool
 	baselineAvailable ByteCount
 	confirmationState string
+	// fetch outcomes during the running confirmation, for the give-up reason
+	confirmationFetchSucceeded  bool
+	confirmationLastFetchFailed bool
+	giveUpReason                string
+
+	// sent with every fetch so the plan fields (price tier, offer) are the
+	// store's; "" lets the server resolve the tier
+	storefrontCountry string
+	// the last successful fetch, whole (price tier, offer, experiments)
+	lastResult *SubscriptionBalanceResult
+	// the last failed fetch's error, "" once a fetch succeeds
+	lastFetchError string
 
 	// snapshot (server state; seeded from the jwt claims before first load)
 	loaded              bool
@@ -224,7 +249,7 @@ type SubscriptionBalanceViewController struct {
 
 	// test seams (unexported; not bound)
 	nowFunc   func() time.Time
-	fetchFunc func(callback SubscriptionBalanceCallback)
+	fetchFunc func(storefrontCountry string, callback SubscriptionBalanceCallback)
 }
 
 // NewSubscriptionBalanceViewController creates a standalone controller on an
@@ -237,6 +262,14 @@ func NewSubscriptionBalanceViewController(api *Api) *SubscriptionBalanceViewCont
 }
 
 func newSubscriptionBalanceViewController(ctx context.Context, api *Api) *SubscriptionBalanceViewController {
+	vc := newSubscriptionBalanceViewControllerWithoutRun(ctx, api)
+	go vc.run()
+	return vc
+}
+
+// newSubscriptionBalanceViewControllerWithoutRun is the controller without its
+// polling loop; a test drives step() itself on an injected clock.
+func newSubscriptionBalanceViewControllerWithoutRun(ctx context.Context, api *Api) *SubscriptionBalanceViewController {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	vc := &SubscriptionBalanceViewController{
 		ctx:                   cancelCtx,
@@ -253,10 +286,9 @@ func newSubscriptionBalanceViewController(ctx context.Context, api *Api) *Subscr
 		fetchErrorListeners:   connect.NewCallbackList[SubscriptionBalanceFetchErrorListener](),
 		nowFunc:               time.Now,
 	}
-	vc.fetchFunc = func(callback SubscriptionBalanceCallback) {
-		api.SubscriptionBalance(callback)
+	vc.fetchFunc = func(storefrontCountry string, callback SubscriptionBalanceCallback) {
+		api.SubscriptionBalanceForStorefront(storefrontCountry, callback)
 	}
-	go vc.run()
 	return vc
 }
 
@@ -300,10 +332,13 @@ func (self *SubscriptionBalanceViewController) Stop() {
 	self.nextPollAt = time.Time{}
 	self.confirming = false
 	self.budget = confirmationBudgetTracker{}
+	self.giveUpReason = ""
 	if self.confirmationState != PurchaseConfirmationStateIdle {
 		self.confirmationState = PurchaseConfirmationStateIdle
 		confirmationChanged = true
 	}
+	self.lastResult = nil
+	self.lastFetchError = ""
 	self.loaded = false
 	self.startBalance = 0
 	self.available = 0
@@ -368,6 +403,27 @@ func (self *SubscriptionBalanceViewController) Refresh() {
 	self.scheduleWake()
 }
 
+// SetStorefrontCountry sets the store's storefront country (StoreKit
+// Storefront.countryCode, Play billing region) sent with every fetch, so the
+// plan fields of GetSubscriptionBalanceResult (price tier, welcome offer) are
+// the store's rather than an ip estimate. "" (the default, and the desktop
+// and web, which have no store) lets the server resolve the tier. A change
+// fetches again.
+func (self *SubscriptionBalanceViewController) SetStorefrontCountry(storefrontCountry string) {
+	storefrontCountry = strings.TrimSpace(storefrontCountry)
+	self.stateLock.Lock()
+	if self.storefrontCountry == storefrontCountry {
+		self.stateLock.Unlock()
+		return
+	}
+	self.storefrontCountry = storefrontCountry
+	self.forcePoll = true
+	self.nextPollAt = time.Time{}
+	self.stateLock.Unlock()
+
+	self.scheduleWake()
+}
+
 // ---- purchase confirmation ---------------------------------------------------
 
 // StartPurchaseConfirmation begins the post-purchase confirmation poll: after
@@ -399,6 +455,9 @@ func (self *SubscriptionBalanceViewController) StartPurchaseConfirmation() {
 	self.baselineLoaded = self.loaded
 	self.baselineIsPro = self.serverIsPro
 	self.baselineAvailable = self.available
+	self.confirmationFetchSucceeded = false
+	self.confirmationLastFetchFailed = false
+	self.giveUpReason = ""
 	self.confirmationState = PurchaseConfirmationStateWaitingForConfirmation
 	self.forcePoll = true
 	self.nextPollAt = time.Time{}
@@ -418,6 +477,7 @@ func (self *SubscriptionBalanceViewController) ClearPurchaseConfirmation() {
 		return
 	}
 	self.confirmationState = PurchaseConfirmationStateIdle
+	self.giveUpReason = ""
 	self.stateLock.Unlock()
 
 	self.confirmationStateChanged(PurchaseConfirmationStateIdle)
@@ -429,6 +489,18 @@ func (self *SubscriptionBalanceViewController) GetPurchaseConfirmationState() st
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.confirmationState
+}
+
+// GetPurchaseConfirmationGiveUpReason is why the confirmation gave up, one of
+// the PurchaseConfirmationGiveUpReason* values, while the state is
+// ConfirmationGaveUp; "" otherwise.
+func (self *SubscriptionBalanceViewController) GetPurchaseConfirmationGiveUpReason() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.confirmationState != PurchaseConfirmationStateConfirmationGaveUp {
+		return ""
+	}
+	return self.giveUpReason
 }
 
 // GetConfirmationBudgetRemainingMillis returns how much polling budget the
@@ -572,6 +644,25 @@ func (self *SubscriptionBalanceViewController) GetSubscriptions() *SubscriptionL
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.subscriptions
+}
+
+// GetSubscriptionBalanceResult is the last successful fetch, whole: the plan
+// fields the derived accessors do not cover (price tier, welcome offer,
+// experiments, active balances, pending payout). nil before the first
+// successful fetch and after Stop.
+func (self *SubscriptionBalanceViewController) GetSubscriptionBalanceResult() *SubscriptionBalanceResult {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.lastResult
+}
+
+// GetLastFetchError is the error of the last balance fetch when it failed, ""
+// once a fetch succeeds. SubscriptionBalanceFetchErrorListener delivers the
+// same message as it happens.
+func (self *SubscriptionBalanceViewController) GetLastFetchError() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.lastFetchError
 }
 
 // GetCurrentStore is the normalized store family
@@ -750,6 +841,7 @@ func (self *SubscriptionBalanceViewController) run() {
 func (self *SubscriptionBalanceViewController) step() (delay time.Duration, arm bool) {
 	var launchFetch bool
 	var generation int
+	var storefrontCountry string
 	var gaveUp bool
 
 	self.stateLock.Lock()
@@ -766,6 +858,11 @@ func (self *SubscriptionBalanceViewController) step() (delay time.Duration, arm 
 		self.confirming = false
 		self.budget = confirmationBudgetTracker{}
 		self.confirmationState = PurchaseConfirmationStateConfirmationGaveUp
+		if self.confirmationFetchSucceeded && !self.confirmationLastFetchFailed {
+			self.giveUpReason = PurchaseConfirmationGiveUpReasonNotReflected
+		} else {
+			self.giveUpReason = PurchaseConfirmationGiveUpReasonUnreachable
+		}
 		gaveUp = true
 	}
 
@@ -784,6 +881,7 @@ func (self *SubscriptionBalanceViewController) step() (delay time.Duration, arm 
 		}
 		self.nextPollAt = now.Add(interval)
 		generation = self.generation
+		storefrontCountry = self.storefrontCountry
 		launchFetch = true
 	}
 
@@ -810,7 +908,7 @@ func (self *SubscriptionBalanceViewController) step() (delay time.Duration, arm 
 				self.fetchDone(generation, result, err)
 			},
 		)
-		self.fetchFunc(callback)
+		self.fetchFunc(storefrontCountry, callback)
 	}
 	return
 }
@@ -835,17 +933,27 @@ func (self *SubscriptionBalanceViewController) fetchDone(generation int, result 
 	if err != nil || result == nil {
 		// keep the last snapshot; the poll retries. Report the failure: with
 		// no snapshot yet a client otherwise loads until a poll succeeds.
-		self.stateLock.Unlock()
 		message := "no balance"
 		if err != nil {
 			message = err.Error()
 		}
+		self.lastFetchError = message
+		if self.confirming {
+			self.confirmationLastFetchFailed = true
+		}
+		self.stateLock.Unlock()
 		self.balanceFetchFailed(message)
 		self.scheduleWake()
 		return
 	}
 
 	self.loaded = true
+	self.lastResult = result
+	self.lastFetchError = ""
+	if self.confirming {
+		self.confirmationFetchSucceeded = true
+		self.confirmationLastFetchFailed = false
+	}
 	self.startBalance = result.StartBalanceByteCount
 	self.available = result.BalanceByteCount
 	self.pending = result.OpenTransferByteCount
