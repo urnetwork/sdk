@@ -90,6 +90,17 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	// This test measures subsystem rebuilds while one device stays open. Its
+	// unrelated top-level provider carrier otherwise reconnects to the fake
+	// test host forever, and an H3-over-DNS attempt contributes a transient
+	// cohort of goroutines whose phase can differ between the two snapshots.
+	// Keep the provider client and local NAT under test, but retire that carrier.
+	platformTransport := func() migratablePlatformTransport {
+		device.provider.stateLock.Lock()
+		defer device.provider.stateLock.Unlock()
+		return device.provider.platformTransport
+	}()
+	platformTransport.Close()
 
 	// This test targets ownership of the mux, multi-client, security policy,
 	// provider NAT, and their workers. It sends no DNS packets, so disable DNS

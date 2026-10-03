@@ -33,6 +33,10 @@ type IoLoop struct {
 	doneCallback IoLoopDoneCallback
 }
 
+func ioLoopCopyPacket(readBuffer []byte, byteCount int) []byte {
+	return connect.MessagePoolCopy(readBuffer[:byteCount])
+}
+
 // the fd must be:
 // - opened in non blocking mode
 // - detached so that it can be closed the the ioloop
@@ -82,20 +86,40 @@ func (self *IoLoop) run() {
 
 	var writeMutex sync.Mutex
 
-	receive := func(source connect.TransferPath, provideMode protocol.ProvideMode, ipPath *connect.IpPath, packet []byte) {
-		// note `packet` is only valid for the lifecycle of this call
+	receivePackets := func(
+		source connect.TransferPath,
+		provideMode protocol.ProvideMode,
+		ipPath *connect.IpPath,
+		packets [][]byte,
+	) {
+		// Every packet is borrowed for this call only. The synchronous TUN write
+		// is the device-side flow-control exception documented in CODESTYLE.md.
 		writeMutex.Lock()
 		defer writeMutex.Unlock()
-
-		_, err := f.Write(packet)
-		if err != nil {
-			self.cancel()
+		for _, packet := range packets {
+			if _, err := f.Write(packet); err != nil {
+				self.cancel()
+				return
+			}
 		}
 	}
 
-	unsub := self.deviceLocal.AddReceivePacketCallback(receive)
+	unsub := self.deviceLocal.AddReceivePacketsCallback(receivePackets)
 	defer unsub()
 
+	// The packet slice is only borrowed by sendPacketsNoCopy for the duration
+	// of the call. Keep one fixed batch for the lifetime of the TUN loop rather
+	// than escaping a new [64][]byte to the heap on every read burst. Clear the
+	// entries after ownership transfers so a pool buffer rejected by a full
+	// free list is not kept alive by this long-lived goroutine.
+	var packetStorage [64][]byte
+	// A TUN read does not reveal its datagram length before Read. Stage into one
+	// reusable buffer, then copy the exact packet into the matching message-pool
+	// class. This adds one bounded memory copy, but lets the common 40--100 byte
+	// TCP ACK retain 256 bytes instead of 2 KiB and avoids a Get/Return pair for
+	// every nonblocking EAGAIN probe. The staging buffer escapes at most once for
+	// the lifetime of the loop.
+	var readBuffer [2048]byte
 	for {
 		select {
 		case <-self.ctx.Done():
@@ -103,18 +127,33 @@ func (self *IoLoop) run() {
 		default:
 		}
 
-		packet := MessagePoolGet(2048)
-		n, err := f.Read(packet)
-		// self.log.Infof("[io]READ PACKET %d (%s)\n", n, err)
-		if 0 < n {
-			success := self.deviceLocal.SendPacketNoCopy(packet, int32(n))
-			if !success {
-				MessagePoolReturn(packet)
+		n, readErr := f.Read(readBuffer[:])
+		if n <= 0 {
+			if readErr != nil {
+				return
 			}
-		} else {
-			MessagePoolReturn(packet)
+			continue
 		}
-		if err != nil {
+		packetStorage[0] = ioLoopCopyPacket(readBuffer[:], n)
+		packetCount := 1
+		for packetCount < len(packetStorage) {
+			nextByteCount, err := syscall.Read(self.fd, readBuffer[:])
+			if 0 < nextByteCount {
+				packetStorage[packetCount] = ioLoopCopyPacket(readBuffer[:], nextByteCount)
+				packetCount += 1
+				continue
+			}
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				break
+			}
+			if err != nil {
+				readErr = err
+			}
+			break
+		}
+		self.deviceLocal.sendPacketsNoCopy(packetStorage[:packetCount])
+		clear(packetStorage[:packetCount])
+		if readErr != nil {
 			return
 		}
 	}

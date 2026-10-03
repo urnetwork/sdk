@@ -57,6 +57,85 @@ func TestRpcMirrorExitComplete(t *testing.T) {
 	connect.AssertEqual(t, wired.toExit(), exit)
 }
 
+func TestExitFromConnectPublishesProviderDiagnostics(t *testing.T) {
+	clientId := connect.NewId()
+	exit := exitFromConnect(&connect.ExitInfo{
+		ClientId:                     clientId,
+		ProviderDiagnosticsAvailable: true,
+		ProviderBuildVersion:         "provider-build-27",
+		ProviderSecurityPolicyHash:   "policy-hash-27",
+		ProviderBlockIngressPackets:  11,
+		ProviderBlockIngressBytes:    1100,
+		ProviderBlockEgressPackets:   7,
+		ProviderBlockEgressBytes:     700,
+		ProviderDiagnosticsSequence:  27,
+	})
+	if exit == nil || exit.ClientId == nil || exit.ClientId.toConnectId() != clientId {
+		t.Fatal("connect exit identity did not cross the SDK boundary")
+	}
+	if !exit.ProviderDiagnosticsAvailable ||
+		exit.ProviderBuildVersion != "provider-build-27" ||
+		exit.ProviderSecurityPolicyHash != "policy-hash-27" ||
+		exit.ProviderBlockIngressPacketCount != 11 ||
+		exit.ProviderBlockIngressByteCount != 1100 ||
+		exit.ProviderBlockEgressPacketCount != 7 ||
+		exit.ProviderBlockEgressByteCount != 700 ||
+		exit.ProviderDiagnosticsSequence != 27 {
+		t.Fatalf("provider diagnostics were not preserved: %+v", exit)
+	}
+}
+
+func TestSdkVersionStampsConnectProviderBuild(t *testing.T) {
+	previousSdkVersion := Version
+	previousConnectVersion := connect.BuildVersion()
+	t.Cleanup(func() {
+		Version = previousSdkVersion
+		connect.SetBuildVersion(previousConnectVersion)
+	})
+
+	Version = "mobile-provider-build-41"
+	stampConnectBuildVersion()
+	if got := connect.BuildVersion(); got != Version {
+		t.Fatalf("Connect provider build = %q, want %q", got, Version)
+	}
+}
+
+func TestSdkStickyRecoverySettingsAndMetricsComplete(t *testing.T) {
+	connectSettings := &connect.ReliabilitySettings{
+		MaxStickyFlowsPerExit:    73,
+		StickyFlowIdleTimeout:    41 * time.Second,
+		FreshFlowAffinity:        true,
+		PerformanceAwareAffinity: true,
+	}
+	sdkSettings := reliabilitySettingsFromConnect(connectSettings)
+	if sdkSettings.MaxStickyFlowsPerExit != 73 || sdkSettings.StickyFlowIdleTimeoutMillis != 41_000 ||
+		!sdkSettings.FreshFlowAffinity || !sdkSettings.PerformanceAwareAffinity {
+		t.Fatalf("Connect -> SDK sticky settings = %+v", sdkSettings)
+	}
+	roundTripSettings := sdkSettings.toConnect()
+	if roundTripSettings.MaxStickyFlowsPerExit != 73 || roundTripSettings.StickyFlowIdleTimeout != 41*time.Second ||
+		!roundTripSettings.FreshFlowAffinity || !roundTripSettings.PerformanceAwareAffinity {
+		t.Fatalf("SDK -> Connect sticky settings = %+v", roundTripSettings)
+	}
+
+	sdkMetrics := reliabilityMetricsFromConnect(&connect.ReliabilityMetricsSnapshot{
+		QuarantineTcpResets:                   5,
+		QuarantineAffinityInvalidations:       9,
+		StickyFlowsRetired:                    3,
+		AffinityPerformanceSamples:            11,
+		AffinityPerformanceDonorBypasses:      7,
+		AffinityPerformanceCandidatesFiltered: 4,
+	})
+	if sdkMetrics.QuarantineTcpResets != 5 ||
+		sdkMetrics.QuarantineAffinityInvalidations != 9 ||
+		sdkMetrics.StickyFlowsRetired != 3 ||
+		sdkMetrics.AffinityPerformanceSamples != 11 ||
+		sdkMetrics.AffinityPerformanceDonorBypasses != 7 ||
+		sdkMetrics.AffinityPerformanceCandidatesFiltered != 4 {
+		t.Fatalf("Connect -> SDK recovery metrics = %+v", sdkMetrics)
+	}
+}
+
 func TestRpcMirrorDestinationExitComplete(t *testing.T) {
 	seed := 0
 	destinationExit := &DestinationExit{}
@@ -499,11 +578,13 @@ func (self *testingReliabilityActionLogger) V(level int32) connect.Verbose {
 // actually reached the DeviceLocal side, rather than merely returning without
 // error. No-oping any of the three DeviceLocalRpc handlers must fail this.
 //
-// The observable is the connect-side action log every dev action emits: the
-// bridge drops the DeviceLocal return values by contract, and against a stub
-// window with no admitted clients the actions change no readable state. For
-// MigrateExit the log also carries the exit id, which is what pins the
-// ARGUMENT crossing the wire (string -> connect.Id -> *Id -> connect).
+// The observable is the connect-side action log every dev action emits:
+// against a stub window with no admitted clients the actions change no
+// readable state, and the counts MigrateExit and ProbeAllExits now return
+// (see device_rpc_advanced_mode_test.go) are their "nothing to do" sentinels
+// here, which a dead rpc would also produce. For MigrateExit the log also
+// carries the exit id, which is what pins the ARGUMENT crossing the wire
+// (string -> connect.Id -> *Id -> connect).
 func TestDeviceRemoteReliabilityActionsReachTheLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

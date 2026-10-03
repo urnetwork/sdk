@@ -325,7 +325,6 @@ func messageFragmentFrame(t *testing.T, fragment *protocol.MessageServerFragment
 	}
 }
 
-
 // §4.6: "Reassembly state is per (source client_id, request_id)". This binding
 // talks to ONE server, so the source is fixed and the key is the request_id
 // alone — and that is exactly the claim worth driving, because a reassembler
@@ -418,7 +417,6 @@ func firstFewOf(value string) string {
 	}
 	return value[:24] + "..."
 }
-
 
 // §4.6 caps the SERVER's reassembly state at sixteen per client and thirty
 // seconds. It caps a client's at nothing, and the client is the side that
@@ -767,9 +765,12 @@ func TestAReassemblyThatCompletesIntoUndecodableBytesTellsItsWaiter(t *testing.T
 // ── the abort table, and the gate that keeps it from understating itself ─────
 //
 // GATE CLASS: the rules of [messageFragmentAborts] — read off the table at run
-//             time, never listed here.
+//
+//	time, never listed here.
+//
 // GATE SCOPE: the arriving sequences of [messageFragmentCases], which is this
-//             file's whole set of §4.6 malformations.
+//
+//	file's whole set of §4.6 malformations.
 //
 // A class typed out by hand has understated itself every time it has been tried
 // on this project, so the assertion is a BIJECTION rather than a count: every
@@ -1435,12 +1436,13 @@ func sitesOf(sites []messageFragmentConstSite) []string {
 	return shown
 }
 
-
 // ── the cut, and the budget that must reach it from one place ────────────────
 //
 // GATE CLASS, derived: every function in package sdk's production files that
-//             CONSTRUCTS a protocol.MessageServerFragment, read off the
-//             type-checked composite literal's own type rather than off a name.
+//
+//	CONSTRUCTS a protocol.MessageServerFragment, read off the
+//	type-checked composite literal's own type rather than off a name.
+//
 // GATE SCOPE, derived separately: the whole package, for Property 3's reason.
 //
 // This is the half of Property 3 that Task 7's Property 4 is coupled to. The

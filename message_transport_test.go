@@ -140,13 +140,13 @@ func (self *messageTransportFake) AddReceiveCallback(receiveCallback connect.Rec
 
 func (self *messageTransportFake) SendWithTimeout(
 	frame *protocol.Frame,
-	destination connect.TransferPath,
+	destinationId connect.Id,
 	ackCallback connect.AckFunction,
 	timeout time.Duration,
 	opts ...any,
 ) bool {
 	self.mutex.Lock()
-	self.destinations = append(self.destinations, destination)
+	self.destinations = append(self.destinations, connect.DestinationId(destinationId))
 	self.sent = append(self.sent, frame.GetMessageType())
 	refuse := self.refuse
 	self.mutex.Unlock()
@@ -2266,8 +2266,9 @@ func sortedKeys(set map[string]bool) []string {
 //
 // GATE CLASS: the verdict the classifier returns for one construction.
 // GATE SCOPE: the synthetic package of each case, which is deliberately NOT
-//             package sdk -- a self-test over the shipped source could only
-//             ever re-derive that the shipped source is clean.
+//
+//	package sdk -- a self-test over the shipped source could only
+//	ever re-derive that the shipped source is clean.
 func TestTheBorrowClassifierRefusesWhatItClaimsTo(t *testing.T) {
 	cases := []struct {
 		name    string

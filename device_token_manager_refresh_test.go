@@ -8,7 +8,7 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// The shape of deviceTokenManager.run(), in miniature: capture the notify channel at the
+// The shape of apiTokenManager.run(), in miniature: capture the notify channel at the
 // TOP of each iteration, wait, then do slow work (the /auth/refresh http call).
 //
 // `levelTriggered` selects the fix. With it, a request made DURING the slow work survives

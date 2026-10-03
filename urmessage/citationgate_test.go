@@ -456,23 +456,18 @@ func citationNearest(name string, declared map[string][]string) string {
 // pair this pass's finding turned on; and a walk that saw no production file, or no test file, or
 // that resolved nothing on either of the two new roads, would satisfy every count below with zero.
 
-// godocLinkQuoted is every bracketed spelling this module's production comments carry ONLY inside a
-// quoted or backticked span. A quotation is quoted text and not prose naming a declaration: five of
-// the six below are log tags inside a format string in commented-out code, and the sixth is a real
-// link written inside a quotation of another sentence. So the net blanks quoted spans before it
-// reads a comment, and this table is that narrowing written down.
+// godocLinkQuoted is every bracketed spelling URmessage's production comments carry ONLY inside a
+// quoted or backticked span ([urmessageOwns] is the scope). A quotation is quoted text and not prose
+// naming a declaration, so the net blanks quoted spans before it reads a comment, and this table is
+// that narrowing written down. Five entries for log tags and a wire sketch in upstream's files
+// (device_rpc.go, device_local.go and two more) went when the rule's scope became URmessage's own
+// files: the rot check below named each as excusing nothing, which is what it is for.
 //
 // HELD BOTH WAYS, like citationDeclaredElsewhere. An entry that no quoted-only span carries any
 // more is a carve-out excusing nothing, which is how a disposition rots, and it is deleted. A
 // spelling that appears ONLY inside quotes and has no entry is a FAILURE, because the next one may
 // be a doc link somebody buried in a string rather than another log tag.
 var godocLinkQuoted = map[string]string{
-	"dlrpc": "device_rpc.go -- a log tag inside a commented-out Infof format string",
-	"dr":    "device_rpc.go -- the same log tag, at two commented-out sites",
-	"io":    "device_local_ioloop.go -- the same",
-	"trace": "device_local.go -- the same",
-	"streamTag": "device_rpc_transport.go -- a wire-format sketch, `[streamTag][payload...]`, " +
-		"where the brackets are the format and not a link",
 	"messagegroup.GroupHandle.Commit": "urmessage/group.go -- a REAL link, written inside a " +
 		"quotation of the sentence it is quoting; it is a sibling package's name either way",
 }
@@ -804,6 +799,25 @@ func godocBlankQuoted(line string) string {
 	})
 }
 
+// urmessageOwns is the SUBJECT of the doc-link rule below: the production files URmessage wrote.
+//
+// IT IS NARROWER THAN THE REPOSITORY SINCE THIS BRANCH MERGED UPSTREAM sdk (msgrepo ledger 277), and
+// the reason is the rule's subject rather than its convenience. Upstream writes brackets as plain
+// prose -- `[contract]`, `[multi]` in device_local.go and sdk.go -- and this house rule is ours to
+// keep, not one to impose on files we did not write. DECLARATIONS are still read from every
+// production file, so a link from URmessage's prose into upstream's code resolves exactly as it
+// did; only the prose that is CHECKED is ours. The test prints both counts, so what the narrowing
+// removed is on the page beside what it kept.
+func urmessageOwns(rel string) bool {
+	for _, dir := range []string{"urmessage/", "cp3b/", "livepeer/", "liveprobe/"} {
+		if strings.HasPrefix(rel, dir) {
+			return true
+		}
+	}
+	base := rel[strings.LastIndex(rel, "/")+1:]
+	return strings.HasPrefix(base, "message") || strings.Contains(base, "_message")
+}
+
 func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *testing.T) {
 	root := moduleRoot(t)
 	packages := map[string]*godocPackage{}
@@ -983,17 +997,27 @@ func TestEveryGodocLinkInThisRepositorysProductionProseNamesADeclaration(t *test
 		dirs = append(dirs, dir)
 	}
 	sort.Strings(dirs)
+	checkedFiles, upstreamFiles := 0, 0
+	defer func() {
+		t.Logf("the doc-link rule read %d production file(s) of URmessage's and skipped %d of upstream's "+
+			"(declarations were read from all of them)", checkedFiles, upstreamFiles)
+	}()
 	for _, dir := range dirs {
 		one := packages[dir]
 		for _, path := range productionOf[dir] {
-			source, readErr := os.ReadFile(path)
-			if readErr != nil {
-				t.Fatalf("reading %s: %v", path, readErr)
-			}
 			rel := filepath.ToSlash(func() string {
 				at, _ := filepath.Rel(root, path)
 				return at
 			}())
+			if !urmessageOwns(rel) {
+				upstreamFiles += 1
+				continue
+			}
+			checkedFiles += 1
+			source, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatalf("reading %s: %v", path, readErr)
+			}
 			for at, line := range strings.Split(string(source), "\n") {
 				cut := strings.Index(line, "//")
 				if cut < 0 {

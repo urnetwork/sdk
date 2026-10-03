@@ -56,3 +56,17 @@ If you see this error, run the following command.
 # gomobile: -target="ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64" requires Xcode
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer/
 ```
+
+# Subprotocols
+
+An application can speak its own protocol between two devices' clients through the subprotocol frame (`connect/SUBPROTOCOL.md`, §8.9 for the sdk boundary). The device exposes the raw-bytes surface only; the application owns its codec.
+
+- `DeviceLocal.EnableSubprotocol(id, listener) (Sub, error)` enables a 16-bit id for a listener and returns the `Sub` that removes it. Ids below `SubprotocolReservedLimit` (1024) belong to the network and are refused. Any number of listeners may share an id; the client registration goes with the last one. `DisableSubprotocol(id)` removes every listener of the id at once, and `EnabledSubprotocols()` lists the enabled ids.
+- `SubprotocolListener.SubprotocolMessage(id, sourceClientId, messageBytes)` is called inline on the client's receive path with the listener's own copy of the bytes, so it must not block.
+- `SendSubprotocolBytes(id, destinationClientId, messageBytes) bool` sends one message, fire and forget; the bytes are copied once into the frame. False means it was not enqueued (no client, invalid id, control destination, or a full queue).
+- `QuerySubprotocols(destinationClientId, timeoutMillis, callback)` asks a peer which ids it supports and answers on the callback from a worker; `ok` is false on timeout, and a peer older than the frame never answers.
+- `SubprotocolStats()` reads the client's counters.
+
+The registrations live on the device: they are applied to the device's own client when the device starts and re-applied when that client is replaced.
+
+`DeviceRemote.OpenSubprotocolContext` carries the same discrete messages over a device-RPC session. The JavaScript wrapper exposes this as `await device.enableSubprotocol(id, listener)`; the returned subscription provides `send`, `querySubprotocols`, `close`, and a `closed` promise. It requires a provider-capable native `DeviceLocal`, such as an extension-owned device or the examples repository's authenticated loopback companion. Hosted proxy devices reject this capability because their non-visible proxy identity cannot participate in peer messaging. Subscriptions belong to one RPC generation and must be reopened after a disconnect.

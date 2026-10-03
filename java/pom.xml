@@ -1,0 +1,16 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.ur</groupId><artifactId>urnetwork-sdk</artifactId><version>0.0.1-dev.0</version>
+  <name>URnetwork SDK</name><description>URnetwork desktop JVM bindings over the CGo SDK</description>
+  <url>https://ur.io</url>
+  <licenses><license><name>MPL-2.0</name><url>https://mozilla.org/MPL/2.0/</url></license></licenses>
+  <developers><developer><id>urnetwork</id><name>URnetwork</name><email>support@ur.io</email></developer></developers>
+  <scm><connection>scm:git:https://github.com/urnetwork/sdk.git</connection><url>https://github.com/urnetwork/sdk</url></scm>
+  <properties><maven.compiler.release>17</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+  <dependencies><dependency><groupId>net.java.dev.jna</groupId><artifactId>jna</artifactId><version>5.17.0</version></dependency></dependencies>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.0</version></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-source-plugin</artifactId><version>3.3.1</version><executions><execution><goals><goal>jar-no-fork</goal></goals></execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-javadoc-plugin</artifactId><version>3.11.2</version><configuration><doclint>none</doclint></configuration><executions><execution><goals><goal>jar</goal></goals></execution></executions></plugin>
+  </plugins></build>
+</project>

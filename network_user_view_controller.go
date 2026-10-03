@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 package sdk
 
 import (
@@ -27,8 +29,12 @@ type NetworkUserUpdateSuccessListener interface {
 	Success()
 }
 
+// `model.NetworkUser` (the per-auth-type arrays `user_auths`, `sso_auths`,
+// `wallet_auths` and `seedphrase_auths` are not modeled here)
 type NetworkUser struct {
-	UserId        *Id         `json:"userId"`
+	// the wire name is `user_id` (an earlier tag, `userId`, never matched the
+	// server and left this nil)
+	UserId        *Id         `json:"user_id"`
 	UserName      string      `json:"user_name"`
 	UserAuth      string      `json:"user_auth,omitempty"`
 	Verified      bool        `json:"verified"`
@@ -42,6 +48,9 @@ type NetworkUserViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	device Device
+	// api-only (NewNetworkUserViewControllerWithApi): no device, the same
+	// controller over the network space api. Exactly one of device / api.
+	api *Api
 
 	stateLock sync.Mutex
 
@@ -73,6 +82,21 @@ func newNetworkUserViewController(ctx context.Context, device Device) *NetworkUs
 		networkUserUpdateSuccessListener: connect.NewCallbackList[NetworkUserUpdateSuccessListener](),
 	}
 	return vc
+}
+
+// NewNetworkUserViewControllerWithApi opens the profile controller over an api
+// with no device; the caller owns Close.
+func NewNetworkUserViewControllerWithApi(ctx context.Context, api *Api) *NetworkUserViewController {
+	vc := newNetworkUserViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (vc *NetworkUserViewController) getApi() *Api {
+	if vc.api != nil {
+		return vc.api
+	}
+	return vc.device.GetApi()
 }
 
 func (vc *NetworkUserViewController) Start() {
@@ -158,7 +182,7 @@ func (self *NetworkUserViewController) FetchNetworkUser() {
 	}
 	self.isLoadingChanged(true)
 
-	self.device.GetApi().GetNetworkUser(GetNetworkUserCallback(connect.NewApiCallback[*GetNetworkUserResult](
+	self.getApi().GetNetworkUser(GetNetworkUserCallback(connect.NewApiCallback[*GetNetworkUserResult](
 		func(result *GetNetworkUserResult, err error) {
 
 			if err != nil {
@@ -260,7 +284,7 @@ func (self *NetworkUserViewController) UpdateNetworkUser(networkName string) {
 	}
 	self.isNetworkUserUpdating(true)
 
-	self.device.GetApi().NetworkUserUpdate(
+	self.getApi().NetworkUserUpdate(
 		&NetworkUserUpdateArgs{
 			NetworkName: networkName,
 		},

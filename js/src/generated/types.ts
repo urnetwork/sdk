@@ -18,8 +18,13 @@ export interface NetworkSpaceValues {
   sso_google?: boolean;
   api_url?: string;
   platform_url?: string;
+  alt_url?: string;
+  sn_chain?: SnChainSettings | null;
   net_extender?: NetExtender | null;
-  net_extender_auto_configure?: NetExtenderAutoConfigure | null;
+  extender_dns_name?: string;
+  gossip_url?: string;
+  extender_root_public_keys?: string[];
+  extender_hosts?: string[];
 }
 
 export interface ExportNetworkSpace {
@@ -32,11 +37,6 @@ export interface NetExtender {
   secret: string;
 }
 
-export interface NetExtenderAutoConfigure {
-  dns_ip?: string;
-  extender_hostname?: string;
-}
-
 export interface ProxyAuthResult {
   username: string;
   password: string;
@@ -45,19 +45,127 @@ export interface ProxyAuthResult {
 export interface ProxyConfigResult {
   expiration_time: string;
   keepalive_seconds: number;
+  change_id?: number;
+  create_time?: string | null;
+  proxy_id?: string | null;
+  client_id?: string | null;
+  instance_id?: string | null;
   http_proxy_url?: string;
   https_proxy_url?: string;
   socks_proxy_url?: string;
+  api_base_url?: string;
   proxy_host?: string;
-  sock_proxy_port?: number;
+  block?: string;
+  socks_proxy_port?: number;
   http_proxy_port?: number;
   https_proxy_port?: number;
+  api_port?: number;
   auth_token?: string;
+  wg_config?: WgConfig | null;
   http_proxy_auth: ProxyAuthResult | null;
   socks_proxy_auth: ProxyAuthResult | null;
 }
 
+export interface WgConfig {
+  wg_proxy_port: number;
+  client_private_key: string;
+  client_public_key: string;
+  proxy_public_key: string;
+  client_ipv4: string;
+  config: string;
+}
+
 export interface ApiError {
+  message: string;
+}
+
+export interface GetPointsLeaderboardArgs {
+  sort: string;
+  cursor?: string;
+  seek_rank?: number;
+  limit?: number;
+}
+
+export interface PointsLeaderboardRow {
+  network_id: string | null;
+  network_name?: string;
+  emoji_tag?: string;
+  anonymous: boolean;
+  contains_profanity?: boolean;
+  total_points: number;
+  blocks_with_points: number;
+  streak: number;
+  longest_streak: number;
+  rank_points: number;
+  rank_blocks: number;
+  rank_streak: number;
+  position: number;
+  display_name?: string;
+  total_points_text?: string;
+  blocks_with_points_text?: string;
+  streak_text?: string;
+  longest_streak_text?: string;
+  rank_points_text?: string;
+  rank_blocks_text?: string;
+  rank_streak_text?: string;
+}
+
+export interface PointsLeaderboardResult {
+  rows: PointsLeaderboardRow[] | null;
+  next_cursor?: string;
+  prev_cursor?: string;
+  restart?: boolean;
+  total_ranked: number;
+  snapshot_time?: string | null;
+  latest_epoch: number;
+  epoch_metrics_available: boolean;
+  me?: PointsLeaderboardRow & { points_leaderboard_public: boolean; ranked: boolean } | null;
+  error?: PointsLeaderboardError | null;
+}
+
+export interface PointsLeaderboardError {
+  message: string;
+}
+
+export interface PointsLeaderboardScrollLabelParts {
+  rank: number;
+  total: number;
+  rank_text: string;
+  tier: number;
+  tier_percent: number;
+}
+
+export interface SetPointsLeaderboardPublicArgs {
+  public: boolean;
+}
+
+export interface SetPointsLeaderboardPublicResult {
+  points_leaderboard_public: boolean;
+  error?: SetPointsLeaderboardPublicError | null;
+}
+
+export interface SetPointsLeaderboardPublicError {
+  message: string;
+}
+
+export interface SetEmojiTagArgs {
+  emoji_tag: string;
+}
+
+export interface SetEmojiTagResult {
+  emoji_tag?: string;
+  error?: SetEmojiTagError | null;
+}
+
+export interface SetEmojiTagError {
+  message: string;
+}
+
+export interface EmojiTagValidation {
+  ok: boolean;
+  count: number;
+  normalized: string;
+  reason: string;
   message: string;
 }
 
@@ -75,6 +183,7 @@ export interface AuthLoginWithPasswordResult {
 
 export interface AuthLoginWithPasswordResultVerification {
   user_auth: string;
+  send_error?: AuthVerifySendError | null;
 }
 
 export interface AuthLoginWithPasswordResultNetwork {
@@ -109,14 +218,153 @@ export interface NetworkCreateArgs {
   guest_mode: boolean;
   verify_use_numeric?: boolean;
   referral_code?: string;
+  balance_code?: string;
   wallet_auth?: WalletAuthArgs | null;
 }
 
 export interface NetworkCreateResult {
   network?: NetworkCreateResultNetwork | null;
+  user_auth?: string;
   seedphrase?: string;
   verification_required?: NetworkCreateResultVerification | null;
   error?: NetworkCreateResultError | null;
+  is_pro?: boolean;
+}
+
+export interface PriceTier {
+  name: string;
+  yearly_usd: number;
+  monthly_usd: number;
+  currency: string;
+  source: string;
+  estimate: boolean;
+}
+
+export interface OnboardingOffer {
+  issued_at: string;
+  expires_at: string;
+  percent_off: number;
+  months_free: number;
+  first_year_usd: number;
+  regular_year_usd: number;
+  tier: string;
+  currency: string;
+  state: string;
+  apple_offer_code?: string;
+  play_offer_tag?: string;
+  stripe_coupon_id?: string;
+  redeemed_at?: string;
+  store?: string;
+}
+
+export interface ExperimentAssignment {
+  surface: string;
+  experiment_id: string;
+  variant: string;
+}
+
+export interface OnboardingError {
+  message: string;
+}
+
+export interface OnboardingOfferIssueArgs {
+  surface?: string;
+  storefront_country?: string;
+}
+
+export interface OnboardingOfferIssueResult {
+  offer?: OnboardingOffer | null;
+  created: boolean;
+  error?: OnboardingError | null;
+}
+
+export interface ClientEvent {
+  name: string;
+  at?: string;
+  platform?: string;
+  app_version?: string;
+  locale?: string;
+  session?: string;
+}
+
+export interface ClientEventRejection {
+  index: number;
+  message: string;
+}
+
+export interface ClientEventsSendArgs {
+  events: ClientEvent[] | null;
+}
+
+export interface ClientEventsSendResult {
+  accepted: number;
+  rejected?: ClientEventRejection[] | null;
+}
+
+export interface StripePaymentSheetArgs {
+  plan: string;
+  storefront_country?: string;
+  stripe_version?: string;
+}
+
+export interface StripePaymentSheetResult {
+  customer_id?: string;
+  ephemeral_key_secret?: string;
+  setup_intent_client_secret?: string;
+  payment_intent_client_secret?: string;
+  intent_type?: string;
+  subscription_id?: string;
+  publishable_key?: string;
+  tier?: string;
+  currency?: string;
+  plan?: string;
+  amount_first_period_usd: number;
+  regular_period_usd: number;
+  trial_days: number;
+  trial_end_at?: string;
+  offer_applied: boolean;
+  error?: OnboardingError | null;
+}
+
+export interface StripePricesResult {
+  tier: string;
+  currency: string;
+  yearly_price_id: string;
+  monthly_price_id: string;
+  yearly_usd: number;
+  monthly_usd: number;
+  publishable_key: string;
+  onboarding_coupon_id?: string;
+  offer_eligible: boolean;
+  error?: OnboardingError | null;
+}
+
+export interface OnboardingClickArgs {
+  token: string;
+}
+
+export interface OnboardingClickResult {
+  ok: boolean;
+  step?: string;
+  destination?: string;
+  error?: string;
+}
+
+export interface OnboardingFeedbackTokenResult {
+  ok: boolean;
+  step?: string;
+  rating?: number;
+  reason?: string;
+  error?: string;
+}
+
+export interface PriceEquivalent {
+  monthly_equivalent: number;
+  monthly_equivalent_minor: number;
+  show_equivalent: boolean;
+  saving_percent: number;
+  yearly_minor: number;
+  monthly_minor: number;
 }
 
 export interface NetworkCreateResultError {
@@ -125,11 +373,14 @@ export interface NetworkCreateResultError {
 
 export interface NetworkCreateResultVerification {
   user_auth: string;
+  send_error?: AuthVerifySendError | null;
 }
 
 export interface NetworkCreateResultNetwork {
   by_jwt?: string;
+  network_id?: string | null;
   network_name?: string;
+  is_pro?: boolean;
 }
 
 export interface WalletAuthArgs {
@@ -137,6 +388,7 @@ export interface WalletAuthArgs {
   wallet_signature?: string;
   wallet_message?: string;
   blockchain?: string;
+  wallet_nonce?: string;
 }
 
 export interface StringList {
@@ -185,6 +437,7 @@ export interface AuthCodeLoginResult {
 
 export interface AuthNetworkClientResult {
   by_client_jwt?: string;
+  client_id?: string | null;
   proxy_config_result: ProxyConfigResult | null;
   error?: AuthNetworkClientError | null;
 }
@@ -207,7 +460,11 @@ export interface AuthNetworkClientArgs {
   source_client_id?: string | null;
   description: string;
   device_spec: string;
+  roles?: string[] | null;
+  principal?: string;
   proxy_config?: ProxyConfig | null;
+  time_zone?: string;
+  locale?: string;
 }
 
 export interface ProxyConfig {
@@ -216,6 +473,8 @@ export interface ProxyConfig {
   enable_socks: boolean;
   enable_http: boolean;
   http_require_auth: boolean;
+  https_require_auth: boolean;
+  enable_wg: boolean;
   initial_device_state: ProxyDeviceState | null;
 }
 
@@ -223,13 +482,18 @@ export interface FindLocationsArgs {
   query: string;
   max_distance_fraction?: number;
   enable_max_distance_fraction?: boolean;
+  rank_mode?: string;
 }
 
 export interface FindLocationsResult {
-  specs: ProviderSpec[] | null;
   groups: LocationGroupResult[] | null;
   locations: LocationResult[] | null;
   devices: LocationDeviceResult[] | null;
+  country_count: number;
+  region_count: number;
+  city_count: number;
+  stable_count: number;
+  strong_privacy_count: number;
 }
 
 export interface LocationResult {
@@ -269,6 +533,12 @@ export interface FilteredLocations {
   cities: ConnectLocation[] | null;
   regions: ConnectLocation[] | null;
   devices: ConnectLocation[] | null;
+  region_groups: RegionGroup[] | null;
+}
+
+export interface RegionGroup {
+  region: ConnectLocation | null;
+  cities: ConnectLocation[] | null;
 }
 
 export interface ConnectLocationId {
@@ -300,6 +570,7 @@ export interface ConnectLocation {
 export interface ProxyDeviceState {
   location: ConnectLocation | null;
   performance_profile: PerformanceProfile | null;
+  country_code?: string;
 }
 
 export interface PerformanceProfile {
@@ -355,5 +626,160 @@ export interface DeleteApiKeyArgs {
 
 export interface DeleteApiKeyResult {
   error?: ApiError | null;
+}
+
+export interface SnChainSettings {
+  chain_id: number;
+  vault_address: string;
+  coordinator_address: string;
+  no_id: string;
+  netuid: number;
+  explorer_tx_url: string;
+  artifact_base_url: string;
+  tx_type: string;
+  lookback_epochs: number;
+  rpc_urls?: string[];
+}
+
+export interface SnError {
+  code?: string;
+  message: string;
+}
+
+export interface SnWallet {
+  coldkey_ss58: string;
+  client_id?: string;
+  set_at_millis: number;
+  from_epoch?: number;
+}
+
+export interface SnSetWalletArgs {
+  coldkey_ss58: string;
+  client_id?: string | null;
+  signature?: string;
+  message?: string;
+}
+
+export interface SnSetWalletResult {
+  wallet?: SnWallet | null;
+  error?: SnSetWalletError | null;
+}
+
+export interface SnSetWalletError {
+  message: string;
+}
+
+export interface SnGetWalletResult {
+  wallet?: SnWallet | null;
+  wallets?: SnWallet[] | null;
+  error?: SnError | null;
+}
+
+export interface SnValidateWalletArgs {
+  address: string;
+}
+
+export interface SnValidateWalletResult {
+  valid_syntax: boolean;
+  exists_on_chain: boolean;
+  banned: boolean;
+  message?: string;
+  error?: SnError | null;
+}
+
+export interface SnConnectWalletResult {
+  wallet?: SnWallet | null;
+  exists_on_chain: boolean;
+  warning?: string;
+  error?: SnError | null;
+}
+
+export interface SnGasKey {
+  address: string;
+  mirror_ss58: string;
+}
+
+export interface SnGasBalanceResult {
+  address: string;
+  wei: string;
+  tao: number;
+  error?: SnError | null;
+}
+
+export interface SnEpochClaim {
+  epoch: number;
+  share_bps: number;
+  amount_rao: number;
+  status: string;
+  claim_open_block: number;
+  expiry_block: number;
+  tx_hash?: string;
+  payout_root?: string;
+  artifact_hash?: string;
+  message?: string;
+}
+
+export interface SnClaimsResult {
+  claims: SnEpochClaim[] | null;
+  total_claimable_rao: number;
+  current_epoch: number;
+  block_number: number;
+  coldkey_ss58?: string;
+  error?: SnError | null;
+}
+
+export interface SnUnsignedTx {
+  epoch: number;
+  chain_id: number;
+  to: string;
+  data: string;
+  value: string;
+  amount_rao: number;
+}
+
+export interface SnEpochResult {
+  epoch: number;
+  start_block: number;
+  commit_deadline_block: number;
+  trails_deadline_block: number;
+  finalize_block: number;
+  t_epoch_blocks: number;
+  chain_id: number;
+  contract_address: string;
+  settlement_vault_address?: string;
+  no_id?: number;
+  netuid?: number;
+  rpc_url?: string;
+}
+
+export interface AccountEpoch {
+  epoch: number;
+  start_millis: number;
+  end_millis: number;
+  points: number;
+  share_bps: number;
+  rank?: number;
+}
+
+export interface AccountEpochsResult {
+  epochs: AccountEpoch[] | null;
+  total_points?: number;
+  error?: SnError | null;
+}
+
+export interface SnHeadResult {
+  eligible: boolean;
+  score: number;
+  floor: number;
+  rank_estimate: number;
+  cutoff: number;
+  bound: boolean;
+  hotkey?: string;
+  uid?: number;
+  rank?: number;
+  epoch: number;
+  netuid: number;
+  source: string;
+  error?: SnError | null;
 }
 

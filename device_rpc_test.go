@@ -23,6 +23,157 @@ import (
 // FIXME start remote and local
 // FIXME use a test JWT against a bogus network space, the client doesn't need to connect
 
+type testingOptionalMethodRpc struct{}
+
+func (*testingOptionalMethodRpc) Ping(_ bool, reply *bool) error {
+	*reply = true
+	return nil
+}
+
+// A new app can briefly talk to the previous extension process after an app
+// update. Missing optional listener methods must not close that otherwise
+// compatible RPC session; the current value remains available from sync/getter
+// state until the extension process restarts on the new binary.
+func TestRpcOptionalMissingMethodKeepsSessionAlive(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	server := rpc.NewServer()
+	if err := server.RegisterName("Optional", &testingOptionalMethodRpc{}); err != nil {
+		t.Fatal(err)
+	}
+	go server.ServeConn(serverConn)
+
+	settings := defaultDeviceRpcSettings()
+	service := &rpcClientWithTimeout{
+		ctx:         context.Background(),
+		log:         settings.logger(),
+		timeout:     time.Second,
+		closeClient: clientConn.Close,
+		client:      rpc.NewClient(clientConn),
+	}
+	defer service.Close()
+
+	cleanupCalled := false
+	err := rpcCallVoidAllowMissingMethod(
+		service,
+		"Optional.AddFutureListener",
+		true,
+		func() {
+			cleanupCalled = true
+			clientConn.Close()
+		},
+	)
+	if err == nil || !rpcMissingMethodError(err) {
+		t.Fatalf("missing optional method error=%v", err)
+	}
+	if cleanupCalled {
+		t.Fatal("missing optional method closed the RPC session")
+	}
+
+	var reply bool
+	if err := service.Call("Optional.Ping", true, &reply); err != nil || !reply {
+		t.Fatalf("RPC session did not survive optional method miss: reply=%t err=%v", reply, err)
+	}
+}
+
+// TestRpcOptionalMissingMethodKeepsSessionAlive above serves the connection
+// with net/rpc's own ServeConn loop, which never stops on a missing method. The
+// production forward rpc does not use ServeConn: DeviceLocalRpc.run() drives
+// server.ServeRequest one request at a time so handler panics can be recovered,
+// and that loop decides for itself what to do with a serve error. This test
+// stands up the real DeviceLocal / DeviceLocalRpcManager / DeviceRemote pair
+// over the websocket transport and drives that loop: a call to a method the
+// local device does not implement must be answered as an error and leave the
+// session usable for the next call on the same connection.
+func TestDeviceRemoteMissingMethodKeepsSessionAlive(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	networkSpace, byJwt, err := testing_newNetworkSpace(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	clientId := connect.NewId()
+	instanceId := NewId()
+
+	deviceLocal, err := newDeviceLocalWithOverrides(
+		networkSpace,
+		byJwt,
+		"",
+		"",
+		"",
+		instanceId,
+		testDeviceLocalSettingsRpc(),
+		clientId,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceLocal.Close()
+
+	deviceRemote, err := newDeviceRemoteWithOverrides(
+		networkSpace,
+		byJwt,
+		instanceId,
+		defaultDeviceRpcSettings(),
+		clientId,
+		testing_deviceRpcDialerDefault(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer deviceRemote.Close()
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(10 * time.Second) {
+		t.Fatal("device remote did not complete its initial sync")
+	}
+
+	// hold the service the sync established: the second call must go over this
+	// same connection, not over one a reconnect quietly replaced it with
+	service := deviceRemote.getService()
+	if service == nil {
+		t.Fatal("device remote has no rpc service after sync")
+	}
+
+	// a newer app calling an optional method this local device predates. The
+	// cleanup only records that it ran; a cleanup that closed the connection
+	// itself would mask what the serve loop did with the session. These two
+	// checks report without stopping so a regression run also shows the state
+	// the session was left in below.
+	cleanupCalled := false
+	err = rpcCallVoidAllowMissingMethod(
+		service,
+		"DeviceLocalRpc.AddFutureOptionalChangeListener",
+		true,
+		func() {
+			cleanupCalled = true
+		},
+	)
+	if err == nil || !rpcMissingMethodError(err) {
+		t.Errorf("missing optional method error=%v", err)
+	}
+	if cleanupCalled {
+		t.Errorf("missing optional method closed the RPC session")
+	}
+
+	// the same service must still serve a method the local device does
+	// implement; if run() broke out of its serve loop, the connection is gone
+	// and this reports "connection is shut down"
+	tunnelStarted, err := rpcCallNoArg[bool](
+		service,
+		"DeviceLocalRpc.GetTunnelStarted",
+		func() {},
+	)
+	if err != nil {
+		t.Fatalf("rpc session did not survive a missing optional method: err=%v", err)
+	}
+	connect.AssertEqual(t, tunnelStarted, deviceLocal.GetTunnelStarted())
+}
+
 func TestDeviceRemoteSimple(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -67,6 +218,10 @@ func TestDeviceRemoteSimple(t *testing.T) {
 		panic(err)
 	}
 	defer deviceRemote.Close()
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(10 * time.Second) {
+		t.Fatal("device remote did not complete its initial sync")
+	}
 
 	connect.AssertEqual(t, true, deviceRemote.GetOffline())
 	connect.AssertEqual(t, true, deviceLocal.GetOffline())
@@ -137,6 +292,10 @@ func TestDeviceRemotePostQuantumIdentity(t *testing.T) {
 		panic(err)
 	}
 	defer deviceRemote.Close()
+	deviceRemote.Sync()
+	if !deviceRemote.waitForSync(10 * time.Second) {
+		t.Fatal("device remote did not complete its initial sync")
+	}
 
 	// the local provider client exists (`AllowProvider`), so the public
 	// identity key is available on both ends and hashes consistently
@@ -220,6 +379,10 @@ func TestDeviceRemoteFull(t *testing.T) {
 				panic(err)
 			}
 			defer deviceRemote.Close()
+			deviceRemote.Sync()
+			if !deviceRemote.waitForSync(10 * time.Second) {
+				t.Fatal("device remote did not complete its initial sync")
+			}
 
 			// add all listeners
 
@@ -615,16 +778,40 @@ func TestDeviceRemoteApi(t *testing.T) {
 	}
 	defer deviceRemote.Close()
 
-	bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
+	// a local stand-in for the api: what is under test is the http bridge
+	// (remote request -> rpc -> local strategy fetch -> reverse response), and
+	// a live endpoint made the assertions depend on external network conditions
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(`{"message":"hello"}`))
+		case http.MethodPost:
+			requestBodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Write(requestBodyBytes)
+		default:
+			http.Error(w, "unsupported method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	// sync first so the requests deterministically take the rpc bridge rather
+	// than racing the background connect into the local fallback
+	deviceRemote.Sync()
+	connect.AssertEqual(t, deviceRemote.waitForSync(15*time.Second), true)
+
+	bodyBytes, err := deviceRemote.httpGetRaw(ctx, server.URL+"/hello", "")
 	connect.AssertEqual(t, err, nil)
 	connect.AssertNotEqual(t, bodyBytes, nil)
 	glog.Infof("response body=%s", string(bodyBytes))
-	connect.AssertNotEqual(t, len(bodyBytes), 0)
+	connect.AssertEqual(t, string(bodyBytes), `{"message":"hello"}`)
 
-	// FIXME allow POST on the hello route
-	// bodyBytes, err := deviceRemote.httpGetRaw(ctx, "https://api.bringyour.com/hello", "")
-	// connect.AssertEqual(t, err, nil)
-
+	postBodyBytes, err := deviceRemote.httpPostRaw(ctx, server.URL+"/hello", []byte(`{"echo":true}`), "")
+	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, string(postBodyBytes), `{"echo":true}`)
 }
 
 func TestDeviceRemoteBlockAndDns(t *testing.T) {

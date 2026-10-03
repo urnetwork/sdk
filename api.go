@@ -2,9 +2,13 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
+	"sync/atomic"
 
 	"github.com/urnetwork/connect"
 )
@@ -19,11 +23,85 @@ type Api struct {
 
 	apiUrl string
 
-	mutex sync.Mutex
-	byJwt string
+	// Serializes credential mutations through a durable startup commit without
+	// holding mutex across I/O. Never held during callback delivery or joins.
+	// Lock order: authMutationLock -> LocalState.authStateLock -> mutex.
+	authMutationLock     sync.Mutex
+	mutex                sync.Mutex
+	byJwt                string
+	rejectedByJwt        string
+	deviceAuthGeneration uint64
+	log                  connect.Logger
 
-	httpPostRaw connect.HttpPostRawFunction
-	httpGetRaw  connect.HttpGetRawFunction
+	httpPostRaw            connect.HttpPostRawFunction
+	httpGetRaw             connect.HttpGetRawFunction
+	httpPostStreamRaw      connect.HttpPostStreamRawFunction
+	deviceAuthOwner        *deviceAuthPublicationGate
+	httpPostRawOwner       *deviceAuthPublicationGate
+	httpGetRawOwner        *deviceAuthPublicationGate
+	httpPostStreamRawOwner *deviceAuthPublicationGate
+
+	jwtRefreshListeners             *connect.CallbackList[JwtRefreshListener]
+	authLogoutListeners             *connect.CallbackList[AuthLogoutListener]
+	clientRefreshIntegrityListeners *connect.CallbackList[ClientRefreshIntegrityListener]
+	tokenManager                    *apiTokenManager
+}
+
+// Delivers at most one terminal result. Marking delivery before entering the
+// foreign callback prevents its own panic from being mistaken for a request
+// panic and invoking application code twice.
+type terminalApiCallback[R any] struct {
+	callback connect.ApiCallback[R]
+	called   atomic.Bool
+}
+
+func (self *terminalApiCallback[R]) Result(result R, err error) {
+	if !self.called.CompareAndSwap(false, true) {
+		return
+	}
+	self.callback.Result(result, err)
+}
+
+var (
+	errApiRequestFailed                  = errors.New("api request failed")
+	errApiRequestReturnedWithoutCallback = errors.New("api request returned without a callback")
+)
+
+// Converts every synchronous exit without callback delivery into the same
+// terminal error shape as marshal, transport, and decode failures.
+func runApiRequest[R any](callback connect.ApiCallback[R], request func(connect.ApiCallback[R])) {
+	terminalCallback := &terminalApiCallback[R]{callback: callback}
+	defer func() {
+		if recover() != nil {
+			// Panic values are intentionally not logged or exposed. Authentication
+			// request arguments and foreign callback failures may contain secrets.
+			var empty R
+			func() {
+				defer func() { _ = recover() }()
+				terminalCallback.Result(empty, errApiRequestFailed)
+			}()
+		}
+	}()
+
+	request(terminalCallback)
+	var empty R
+	terminalCallback.Result(empty, errApiRequestReturnedWithoutCallback)
+}
+
+func runAsyncApiRequest[R any](callback connect.ApiCallback[R], request func(connect.ApiCallback[R])) {
+	go runApiRequest(callback, request)
+}
+
+type jwtRefreshListenerFunc func(string)
+
+func (self jwtRefreshListenerFunc) JwtRefreshed(jwt string) {
+	self(jwt)
+}
+
+type authLogoutListenerFunc func()
+
+func (self authLogoutListenerFunc) AuthLogout() {
+	self()
 }
 
 func newApi(
@@ -33,22 +111,83 @@ func newApi(
 ) *Api {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	return &Api{
+	api := &Api{
 		ctx:            cancelCtx,
 		cancel:         cancel,
 		clientStrategy: clientStrategy,
 		apiUrl:         apiUrl,
+		log:            connect.DefaultLogger(),
 		httpPostRaw:    nil,
 		httpGetRaw:     nil,
+
+		jwtRefreshListeners:             connect.NewCallbackList[JwtRefreshListener](),
+		authLogoutListeners:             connect.NewCallbackList[AuthLogoutListener](),
+		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
 	}
+	api.tokenManager = newApiTokenManager(cancelCtx, api)
+	return api
+}
+
+// newSession creates independently owned credential and refresh state while
+// reusing this API's network strategy and request seams.
+func (self *Api) newSession(ctx context.Context) *Api {
+	return self.newSessionWithStrategy(ctx, self.clientStrategy)
+}
+
+// Hosted devices keep the immutable NetworkSpace metadata and API request
+// seams, but give each credential session its own control dial/DoH owner.
+func (self *Api) newSessionWithStrategy(ctx context.Context, strategy *connect.ClientStrategy) *Api {
+	session := newApi(ctx, strategy, self.apiUrl)
+	session.setHttpPostRaw(self.getHttpPostRaw())
+	session.setHttpGetRaw(self.getHttpGetRaw())
+	session.setHttpPostStreamRaw(self.getHttpPostStreamRaw())
+	return session
+}
+
+// NewApi creates a standalone SDK API using the caller-owned client strategy.
+// The API owns the current JWT and its refresh worker; callers that install a
+// renewable client JWT should register refresh/logout listeners and then call
+// StartJwtRefresh. The worker shares the API lifetime and stops on Close.
+//
+//gomobile:noexport
+func NewApi(ctx context.Context, clientStrategy *connect.ClientStrategy, apiUrl string) *Api {
+	return newApi(ctx, clientStrategy, apiUrl)
 }
 
 // this gets attached to api calls that need it
 func (self *Api) SetByJwt(byJwt string) {
+	self.authMutationLock.Lock()
+	self.mutex.Lock()
+	self.deviceAuthGeneration += 1
+	changed := self.byJwt != byJwt
+	self.byJwt = byJwt
+	self.deviceAuthOwner = nil
+	self.rejectedByJwt = ""
+	tokenManager := self.tokenManager
+	self.mutex.Unlock()
+	self.authMutationLock.Unlock()
+
+	if changed && tokenManager != nil {
+		tokenManager.TokenChanged()
+	}
+}
+
+// clearByJwt clears the credential only when it is still the value owned by
+// the closing caller. It prevents stale teardown from clearing a newer login
+// installed concurrently on the same non-session API.
+func (self *Api) clearByJwt(byJwt string) bool {
+	self.authMutationLock.Lock()
+	defer self.authMutationLock.Unlock()
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-
-	self.byJwt = byJwt
+	if self.byJwt != byJwt {
+		return false
+	}
+	self.byJwt = ""
+	self.rejectedByJwt = ""
+	self.deviceAuthOwner = nil
+	self.deviceAuthGeneration += 1
+	return true
 }
 
 func (self *Api) GetByJwt() string {
@@ -58,11 +197,126 @@ func (self *Api) GetByJwt() string {
 	return self.byJwt
 }
 
+func (self *Api) setLog(log connect.Logger) {
+	if log == nil {
+		log = connect.DefaultLogger()
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.log = log
+}
+
+func (self *Api) logger() connect.Logger {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.log
+}
+
+// A real refresh request supplies its captured auth generation as well as the
+// token. Equal-byte explicit login is still a newer owner. The token-only form
+// is retained for synchronous package-internal commit discriminators.
+func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string, expectedGeneration ...uint64) bool {
+	self.authMutationLock.Lock()
+	self.mutex.Lock()
+	if self.byJwt != previousByJwt ||
+		(0 < len(expectedGeneration) && self.deviceAuthGeneration != expectedGeneration[0]) {
+		self.mutex.Unlock()
+		self.authMutationLock.Unlock()
+		return false
+	}
+	self.byJwt = byJwt
+	self.rejectedByJwt = ""
+	self.deviceAuthGeneration += 1
+	self.mutex.Unlock()
+	self.authMutationLock.Unlock()
+
+	for _, listener := range self.jwtRefreshListeners.Get() {
+		listener := listener
+		connect.HandleError(func() {
+			listener.JwtRefreshed(byJwt)
+		})
+	}
+	return true
+}
+
+// Clears only the request's current token/generation. Rejection listeners own
+// persistence/UI/process policy and run after every auth lock is released.
+func (self *Api) rejectByJwt(rejectedByJwt string, expectedGeneration ...uint64) bool {
+	self.authMutationLock.Lock()
+	self.mutex.Lock()
+	if self.byJwt != rejectedByJwt ||
+		(0 < len(expectedGeneration) && self.deviceAuthGeneration != expectedGeneration[0]) {
+		self.mutex.Unlock()
+		self.authMutationLock.Unlock()
+		return false
+	}
+	self.byJwt = ""
+	self.rejectedByJwt = rejectedByJwt
+	self.deviceAuthGeneration += 1
+	self.mutex.Unlock()
+	self.authMutationLock.Unlock()
+
+	for _, listener := range self.authLogoutListeners.Get() {
+		listener := listener
+		connect.HandleError(listener.AuthLogout)
+	}
+	return true
+}
+
+// AddJwtRefreshListener observes successfully installed refreshed JWTs. The
+// callback runs after Api.GetByJwt has begun returning the new value.
+//
+//gomobile:noexport
+func (self *Api) AddJwtRefreshListener(listener JwtRefreshListener) Sub {
+	callbackId := self.jwtRefreshListeners.Add(listener)
+	return newSub(func() {
+		self.jwtRefreshListeners.Remove(callbackId)
+	})
+}
+
+// AddAuthLogoutListener observes a confirmed server rejection of the current
+// client JWT. Transport failures and non-401 server failures never fire it.
+//
+//gomobile:noexport
+func (self *Api) AddAuthLogoutListener(listener AuthLogoutListener) Sub {
+	callbackId := self.authLogoutListeners.Add(listener)
+	return newSub(func() {
+		self.authLogoutListeners.Remove(callbackId)
+	})
+}
+
+// StartJwtRefresh idempotently enables the API-owned refresh worker. Network
+// login JWTs are not refreshable and remain dormant; a client JWT containing
+// client_id and device_id is validated/refreshed immediately and then ahead of
+// expiry.
+//
+//gomobile:noexport
+func (self *Api) StartJwtRefresh() {
+	self.tokenManager.Start()
+}
+
+// RequestJwtRefresh asks the API worker to refresh the current client JWT as
+// soon as possible. The request is level-triggered and cannot be lost behind
+// an in-flight refresh.
+//
+//gomobile:noexport
+func (self *Api) RequestJwtRefresh() {
+	self.tokenManager.RefreshToken()
+}
+
+// remoteTransportAvailable retries a refresh only when an earlier attempt is
+// still outstanding. DeviceRemote calls this after publishing a usable RPC
+// service, never merely after configuring or dialing one.
+func (self *Api) remoteTransportAvailable() {
+	self.tokenManager.transportAvailable()
+}
+
 func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
 	self.httpPostRaw = httpPostRaw
+	self.httpPostRawOwner = nil
 }
 
 func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
@@ -83,6 +337,7 @@ func (self *Api) setHttpGetRaw(httpGetRaw connect.HttpGetRawFunction) {
 	defer self.mutex.Unlock()
 
 	self.httpGetRaw = httpGetRaw
+	self.httpGetRawOwner = nil
 }
 
 func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
@@ -101,14 +356,50 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	if self.httpPostStreamRaw != nil {
+		return self.httpPostStreamRaw
+	}
 
 	return func(ctx context.Context, requestUrl string, body io.Reader, byJwt string) ([]byte, error) {
 		return connect.HttpPostStreamWithStrategyRaw(ctx, requestUrl, body, byJwt)
 	}
 }
 
+func (self *Api) setHttpPostStreamRaw(httpPostStreamRaw connect.HttpPostStreamRawFunction) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.httpPostStreamRaw = httpPostStreamRaw
+	self.httpPostStreamRawOwner = nil
+}
+
+// Requests cancellation without joining the refresh worker. This remains safe
+// from refresh/logout callbacks, which must not join their own worker.
 func (self *Api) Close() {
 	self.cancel()
+}
+
+// Joins the API-owned refresh worker after cancellation. External owners use
+// this before releasing a shared strategy; callbacks must use Close instead.
+//
+//gomobile:noexport
+func (self *Api) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.tokenManager.done:
+		return nil
+	default:
+	}
+	select {
+	case <-self.tokenManager.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.tokenManager.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 // ApiError represents a generic error response from the API
@@ -132,6 +423,11 @@ type WalletAuthArgs struct {
 	Signature  string `json:"wallet_signature,omitempty"`
 	Message    string `json:"wallet_message,omitempty"`
 	Blockchain string `json:"blockchain,omitempty"`
+	// Nonce is the legacy /auth/wallet-nonce anti-replay token, echoed as
+	// `wallet_nonce`. Deprecated and inert on the server: replay protection
+	// now comes from the /auth/wallet-challenge message that Message carries
+	// verbatim (AuthWalletChallenge). New callers leave it empty.
+	Nonce string `json:"wallet_nonce,omitempty"`
 }
 
 // `model.AuthLoginResult`
@@ -156,7 +452,7 @@ type AuthLoginResultNetwork struct {
 }
 
 func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthLoginResult](callback, func(callback connect.ApiCallback[*AuthLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -174,6 +470,11 @@ type AuthWalletChallengeCallback connect.ApiCallback[*AuthWalletChallengeResult]
 type AuthWalletChallengeArgs struct {
 	WalletAddress string     `json:"wallet_address,omitempty"`
 	Blockchain    Blockchain `json:"blockchain,omitempty"`
+	// Purpose is informational: the ur.io wallet bridge sends "connect" when
+	// the challenge proves a subnet claim wallet (POST /sn/wallet) rather than
+	// a sign-in. The server pins the challenge to the blockchain and address
+	// only; the miner CLI sends the same value so the request matches the app.
+	Purpose string `json:"purpose,omitempty"`
 }
 
 // `model.WalletAuthChallengeResult`
@@ -190,7 +491,7 @@ type AuthWalletChallengeResult struct {
 // The wallet signs the returned message_template and the signature is passed to
 // AuthLogin via WalletAuthArgs. Used by the apple + solana mobile wallet flow.
 func (self *Api) AuthWalletChallenge(authWalletChallenge *AuthWalletChallengeArgs, callback AuthWalletChallengeCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthWalletChallengeResult](callback, func(callback connect.ApiCallback[*AuthWalletChallengeResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -201,6 +502,28 @@ func (self *Api) AuthWalletChallenge(authWalletChallenge *AuthWalletChallengeArg
 			callback,
 		)
 	})
+}
+
+// AuthWalletChallengeSyncWithContext is the blocking form, for CLI callers
+// that fetch a challenge to sign locally (the miner's `provider wallet set`).
+// The route is public: the jwt is not needed and is sent only when one is set.
+//
+//gomobile:noexport
+func (self *Api) AuthWalletChallengeSyncWithContext(ctx context.Context, args *AuthWalletChallengeArgs) (*AuthWalletChallengeResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/auth/wallet-challenge", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&AuthWalletChallengeResult{},
+		connect.NewNoopApiCallback[*AuthWalletChallengeResult](),
+	)
+}
+
+//gomobile:noexport
+func (self *Api) AuthWalletChallengeSync(args *AuthWalletChallengeArgs) (*AuthWalletChallengeResult, error) {
+	return self.AuthWalletChallengeSyncWithContext(self.ctx, args)
 }
 
 type AuthLoginWithPasswordCallback connect.ApiCallback[*AuthLoginWithPasswordResult]
@@ -219,6 +542,9 @@ type AuthLoginWithPasswordResult struct {
 
 type AuthLoginWithPasswordResultVerification struct {
 	UserAuth string `json:"user_auth"`
+	// set when the server did not send a code; the verify screen must not
+	// say a code was sent
+	SendError *AuthVerifySendError `json:"send_error,omitempty"`
 }
 
 type AuthLoginWithPasswordResultNetwork struct {
@@ -227,7 +553,7 @@ type AuthLoginWithPasswordResultNetwork struct {
 }
 
 func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPasswordArgs, callback AuthLoginWithPasswordCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthLoginWithPasswordResult](callback, func(callback connect.ApiCallback[*AuthLoginWithPasswordResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -238,6 +564,19 @@ func (self *Api) AuthLoginWithPassword(authLoginWithPassword *AuthLoginWithPassw
 			callback,
 		)
 	})
+}
+
+//gomobile:noexport
+func (self *Api) AuthLoginWithPasswordSyncWithContext(ctx context.Context, args *AuthLoginWithPasswordArgs) (*AuthLoginWithPasswordResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/auth/login-with-password", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&AuthLoginWithPasswordResult{},
+		connect.NewNoopApiCallback[*AuthLoginWithPasswordResult](),
+	)
 }
 
 type AuthVerifyCallback connect.ApiCallback[*AuthVerifyResult]
@@ -257,7 +596,7 @@ type AuthVerifyResultNetwork struct {
 }
 
 func (self *Api) AuthVerify(authVerify *AuthVerifyArgs, callback AuthVerifyCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthVerifyResult](callback, func(callback connect.ApiCallback[*AuthVerifyResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -274,14 +613,20 @@ type AuthPasswordResetCallback connect.ApiCallback[*AuthPasswordResetResult]
 
 type AuthPasswordResetArgs struct {
 	UserAuth string `json:"user_auth"`
+	// ask the server to answer a rate limit or a failed send in the result
+	// `Error` instead of an HTTP 429 / 502 error, so the retry time is known
+	ResultErrors bool `json:"result_errors,omitempty"`
 }
 
 type AuthPasswordResetResult struct {
 	UserAuth string `json:"user_auth"`
+	// set when no reset code was sent (requires `ResultErrors`). Uses the
+	// verify send error codes.
+	Error *AuthVerifySendError `json:"error,omitempty"`
 }
 
 func (self *Api) AuthPasswordReset(authPasswordReset *AuthPasswordResetArgs, callback AuthPasswordResetCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthPasswordResetResult](callback, func(callback connect.ApiCallback[*AuthPasswordResetResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -299,14 +644,34 @@ type AuthVerifySendCallback connect.ApiCallback[*AuthVerifySendResult]
 type AuthVerifySendArgs struct {
 	UserAuth   string `json:"user_auth"`
 	UseNumeric bool   `json:"use_numeric,omitempty"`
+	// ask the server to answer a rate limit or a failed send in the result
+	// `Error` instead of an HTTP 429 / 502 error, so the retry time is known
+	ResultErrors bool `json:"result_errors,omitempty"`
 }
 
 type AuthVerifySendResult struct {
 	UserAuth string `json:"user_auth"`
+	// set when no code was sent (requires `ResultErrors`)
+	Error *AuthVerifySendError `json:"error,omitempty"`
+}
+
+// Stable codes for a verification code the server did not send.
+const (
+	AuthVerifySendErrorCodeSendFailed  = "verify_send_failed"
+	AuthVerifySendErrorCodeRateLimited = "verify_rate_limited"
+)
+
+// Why the server did not send a verification code. Apps localize on `Code`
+// and fall back to `Message`.
+type AuthVerifySendError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	// seconds until a new code can be requested; zero when not known
+	RetryAfterSeconds int `json:"retry_after_seconds,omitempty"`
 }
 
 func (self *Api) AuthVerifySend(authVerifySend *AuthVerifySendArgs, callback AuthVerifySendCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthVerifySendResult](callback, func(callback connect.ApiCallback[*AuthVerifySendResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -330,7 +695,7 @@ type NetworkCheckResult struct {
 }
 
 func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCheckCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*NetworkCheckResult](callback, func(callback connect.ApiCallback[*NetworkCheckResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -350,33 +715,53 @@ func (self *Api) NetworkCheck(networkCheck *NetworkCheckArgs, callback NetworkCh
 type NetworkCreateCallback connect.ApiCallback[*NetworkCreateResult]
 
 type NetworkCreateArgs struct {
-	UserName         string          `json:"user_name,omitempty"`
-	UserAuth         string          `json:"user_auth,omitempty"`
-	AuthJwt          string          `json:"auth_jwt,omitempty"`
-	AuthJwtType      string          `json:"auth_jwt_type,omitempty"`
-	Password         string          `json:"password,omitempty"`
-	NetworkName      string          `json:"network_name,omitempty"`
-	Terms            bool            `json:"terms"`
-	GuestMode        bool            `json:"guest_mode"`
-	VerifyOtpNumeric bool            `json:"verify_use_numeric,omitempty"`
-	ReferralCode     string          `json:"referral_code,omitempty"`
-	WalletAuth       *WalletAuthArgs `json:"wallet_auth,omitempty"`
+	UserName    string `json:"user_name,omitempty"`
+	UserAuth    string `json:"user_auth,omitempty"`
+	AuthJwt     string `json:"auth_jwt,omitempty"`
+	AuthJwtType string `json:"auth_jwt_type,omitempty"`
+	Password    string `json:"password,omitempty"`
+	NetworkName string `json:"network_name,omitempty"`
+	Terms       bool   `json:"terms"`
+	// GuestMode is not read by the server (guest networks are no longer
+	// created by /auth/network-create); it is kept because the Android and
+	// Apple sign-up flows still set it, and the server ignores unknown fields.
+	GuestMode        bool   `json:"guest_mode"`
+	VerifyOtpNumeric bool   `json:"verify_use_numeric,omitempty"`
+	ReferralCode     string `json:"referral_code,omitempty"`
+	// BalanceCode is a transfer balance code redeemed into the new network as
+	// part of sign-up (the same secret RedeemBalanceCode takes).
+	BalanceCode string          `json:"balance_code,omitempty"`
+	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
+	// ProductUpdatesOptOut is the sign-up form's "Periodic product updates"
+	// line UNTICKED. The wire field is product_updates (see MarshalJSON in
+	// onboarding_api.go): false here sends product_updates true, so the zero
+	// value keeps the preference on, as the form ships.
+	ProductUpdatesOptOut bool `json:"-"`
 }
 
 type NetworkCreateResult struct {
 	Network              *NetworkCreateResultNetwork      `json:"network,omitempty"`
+	UserAuth             string                           `json:"user_auth,omitempty"`
 	Seedphrase           string                           `json:"seedphrase,omitempty"`
 	VerificationRequired *NetworkCreateResultVerification `json:"verification_required,omitempty"`
 	Error                *NetworkCreateResultError        `json:"error,omitempty"`
+	// IsPro is true when the new network was created with the Pro
+	// entitlement (e.g. from a Pro balance code)
+	IsPro bool `json:"is_pro,omitempty"`
 }
 
 type NetworkCreateResultNetwork struct {
 	ByJwt       string `json:"by_jwt,omitempty"`
+	NetworkId   *Id    `json:"network_id,omitempty"`
 	NetworkName string `json:"network_name,omitempty"`
+	IsPro       bool   `json:"is_pro,omitempty"`
 }
 
 type NetworkCreateResultVerification struct {
 	UserAuth string `json:"user_auth"`
+	// set when the server did not send a code; the verify screen must not
+	// say a code was sent
+	SendError *AuthVerifySendError `json:"send_error,omitempty"`
 }
 
 type NetworkCreateResultError struct {
@@ -384,7 +769,7 @@ type NetworkCreateResultError struct {
 }
 
 func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*NetworkCreateResult](callback, func(callback connect.ApiCallback[*NetworkCreateResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -401,12 +786,14 @@ func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback Networ
  * Delete network
  */
 
-type NetworkDeleteResult struct{}
+type NetworkDeleteResult struct {
+	Error *ApiError `json:"error,omitempty"`
+}
 
 type NetworkDeleteCallback connect.ApiCallback[*NetworkDeleteResult]
 
 func (self *Api) NetworkDelete(callback NetworkDeleteCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*NetworkDeleteResult](callback, func(callback connect.ApiCallback[*NetworkDeleteResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -431,11 +818,27 @@ type AuthNetworkClientArgs struct {
 	DeviceDescription string `json:"description"`
 	DeviceSpec        string `json:"device_spec"`
 
+	// Roles and Principal are the identity roles and principal assigned to
+	// the client at creation, immutable after. Only a network-level session
+	// may set them; when omitted the session's own roles and principal (e.g.
+	// from an auth code) are inherited. The values have no meaning to the
+	// network itself.
+	Roles     *StringList `json:"roles,omitempty"`
+	Principal string      `json:"principal,omitempty"`
+
 	ProxyConfig *ProxyConfig `json:"proxy_config,omitempty"`
+
+	// TimeZone is the device's IANA zone ("America/Chicago") and Locale its
+	// BCP 47 tag ("pt-BR"): the onboarding campaign sends in the user's local
+	// morning and picks the email template's language from them
+	// (mmm/onboarding/PLAN.md). Optional; the apps set both on every call.
+	TimeZone string `json:"time_zone,omitempty"`
+	Locale   string `json:"locale,omitempty"`
 }
 
 type AuthNetworkClientResult struct {
 	ByClientJwt       string                  `json:"by_client_jwt,omitempty"`
+	ClientId          *Id                     `json:"client_id,omitempty"`
 	ProxyConfigResult *ProxyConfigResult      `json:"proxy_config_result"`
 	Error             *AuthNetworkClientError `json:"error,omitempty"`
 }
@@ -452,7 +855,7 @@ type AuthNetworkClientError struct {
 }
 
 func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, callback AuthNetworkClientCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthNetworkClientResult](callback, func(callback connect.ApiCallback[*AuthNetworkClientResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -465,26 +868,43 @@ func (self *Api) AuthNetworkClient(authNetworkClient *AuthNetworkClientArgs, cal
 	})
 }
 
-type GetNetworkClientsCallback connect.ApiCallback[*NetworkClientsResult]
-
-type NetworkClientResident struct {
-	ClientId              *Id      `json:"client_id"`
-	InstanceId            *Id      `json:"instance_id"`
-	ResidentId            *Id      `json:"resident_id"`
-	ResidentHost          string   `json:"resident_host"`
-	ResidentService       string   `json:"resident_service"`
-	ResidentBlock         string   `json:"resident_block"`
-	ResidentInternalPorts *IntList `json:"resident_internal_ports"`
+// AuthNetworkClientSyncWithContext is the caller-bounded headless form used
+// to turn a network-login JWT into a renewable client JWT before starting a
+// long-lived service.
+//
+//gomobile:noexport
+func (self *Api) AuthNetworkClientSyncWithContext(ctx context.Context, authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/auth-client", self.apiUrl),
+		authNetworkClient,
+		self.GetByJwt(),
+		&AuthNetworkClientResult{},
+		connect.NewNoopApiCallback[*AuthNetworkClientResult](),
+	)
 }
+
+// AuthNetworkClientSync uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) AuthNetworkClientSync(authNetworkClient *AuthNetworkClientArgs) (*AuthNetworkClientResult, error) {
+	return self.AuthNetworkClientSyncWithContext(self.ctx, authNetworkClient)
+}
+
+type GetNetworkClientsCallback connect.ApiCallback[*NetworkClientsResult]
 
 type NetworkClientsResult struct {
 	Clients *NetworkClientInfoList `json:"clients"`
 }
 
 type NetworkClientInfo struct {
-	ClientId  *Id `json:"client_id"`
-	DeviceId  *Id `json:"device_id"`
-	NetworkId *Id `json:"network_id"`
+	ClientId *Id `json:"client_id"`
+	// SourceClientId is set on a child client created on behalf of another
+	// client; the network's device list only carries top-level clients
+	SourceClientId *Id `json:"source_client_id,omitempty"`
+	DeviceId       *Id `json:"device_id"`
+	NetworkId      *Id `json:"network_id"`
 	// see the naming note on AuthNetworkClientArgs.DeviceDescription
 	DeviceDescription string `json:"description"`
 	DeviceName        string `json:"device_name"`
@@ -493,9 +913,50 @@ type NetworkClientInfo struct {
 	CreateTime *Time `json:"create_time"`
 	AuthTime   *Time `json:"auth_time"`
 
-	Resident    *NetworkClientResident       `json:"resident,omitempty"`
-	ProvideMode ProvideMode                  `json:"provide_mode"`
+	// the identity roles and principal assigned at creation
+	// (AuthNetworkClientArgs.Roles / Principal)
+	Roles     *StringList `json:"roles,omitempty"`
+	Principal string      `json:"principal,omitempty"`
+
+	ProvideMode ProvideMode `json:"provide_mode"`
+	// ProxyClient carries the hosted proxy device's credentials; only the
+	// /network/proxies listing fills it, /network/clients never does
+	ProxyClient *ProxyClient                 `json:"proxy_client,omitempty"`
 	Connections *NetworkClientConnectionList `json:"connections"`
+}
+
+// `model.ProxyClient`: the credentials of a hosted proxy device
+type ProxyClient struct {
+	ChangeId       int64  `json:"change_id,omitempty"`
+	CreateTime     *Time  `json:"create_time"`
+	ProxyId        *Id    `json:"proxy_id"`
+	ClientId       *Id    `json:"client_id"`
+	InstanceId     *Id    `json:"instance_id"`
+	SocksProxyUrl  string `json:"socks_proxy_url"`
+	HttpProxyUrl   string `json:"http_proxy_url"`
+	HttpsProxyUrl  string `json:"https_proxy_url"`
+	ApiBaseUrl     string `json:"api_base_url"`
+	AuthToken      string `json:"auth_token"`
+	ProxyHost      string `json:"proxy_host"`
+	Block          string `json:"block"`
+	HttpProxyPort  int    `json:"http_proxy_port"`
+	HttpsProxyPort int    `json:"https_proxy_port"`
+	SocksProxyPort int    `json:"socks_proxy_port"`
+	ApiPort        int    `json:"api_port"`
+
+	WgConfig *WgConfig `json:"wg_config"`
+}
+
+// `model.WgConfig`: the WireGuard leg of a hosted proxy, nil when the plan
+// does not include it
+type WgConfig struct {
+	WgProxyPort      int    `json:"wg_proxy_port"`
+	ClientPrivateKey string `json:"client_private_key"`
+	ClientPublicKey  string `json:"client_public_key"`
+	ProxyPublicKey   string `json:"proxy_public_key"`
+	ClientIpv4       string `json:"client_ipv4"`
+	// Config is the complete client-side wg-quick configuration
+	Config string `json:"config"`
 }
 
 type NetworkClientConnection struct {
@@ -558,18 +1019,29 @@ type FindLocationsArgs struct {
 	// in other words `len(Query) * (1 - MaxDistanceFraction)` length the query must match
 	MaxDistanceFraction       float32 `json:"max_distance_fraction,omitempty"`
 	EnableMaxDistanceFraction bool    `json:"enable_max_distance_fraction,omitempty"`
+	// RankMode is the provider ranking the location counts are taken from,
+	// "quality" (the default) or "speed" (the FindProviders2Args.RankMode
+	// values)
+	RankMode string `json:"rank_mode,omitempty"`
 }
 
 type FindLocationsResult struct {
-	Specs *ProviderSpecList `json:"specs"`
 	// this includes groups that show up in the location results
 	// all `ProviderCount` are from inside the location results
 	// groups are suggestions that can be used to broaden the search
 	Groups *LocationGroupResultList `json:"groups"`
 	// this includes all parent locations that show up in the location results
 	// every `CityId`, `RegionId`, `CountryId` will have an entry
-	Locations *LocationResultList       `json:"locations"`
-	Devices   *LocationDeviceResultList `json:"devices"`
+	Locations *LocationResultList `json:"locations"`
+	// direct devices
+	Devices *LocationDeviceResultList `json:"devices"`
+
+	// location stats over the returned locations
+	CountryCount       int `json:"country_count"`
+	RegionCount        int `json:"region_count"`
+	CityCount          int `json:"city_count"`
+	StableCount        int `json:"stable_count"`
+	StrongPrivacyCount int `json:"strong_privacy_count"`
 }
 
 type LocationResult struct {
@@ -606,9 +1078,21 @@ type LocationDeviceResult struct {
 }
 
 func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
-	go connect.HandleError(func() {
+	self.getProviderLocations(self.ctx, callback)
+}
+
+// The public API is scoped to the API lifetime. Controllers additionally pass
+// their request lifetime so closing or replacing a search cancels its I/O.
+func (self *Api) getProviderLocations(ctx context.Context, callback FindLocationsCallback) {
+	runAsyncApiRequest(locationsResultCallback(callback), func(callback connect.ApiCallback[*FindLocationsResult]) {
+		ctx, cancel := self.locationsRequestContext(ctx)
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			callback.Result(nil, err)
+			return
+		}
 		connect.HttpGetWithRawFunction(
-			self.ctx,
+			ctx,
 			self.getHttpGetRaw(),
 			fmt.Sprintf("%s/network/provider-locations", self.apiUrl),
 			self.GetByJwt(),
@@ -619,9 +1103,19 @@ func (self *Api) GetProviderLocations(callback FindLocationsCallback) {
 }
 
 func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
-	go connect.HandleError(func() {
+	self.findProviderLocations(self.ctx, findLocations, callback)
+}
+
+func (self *Api) findProviderLocations(ctx context.Context, findLocations *FindLocationsArgs, callback FindLocationsCallback) {
+	runAsyncApiRequest(locationsResultCallback(callback), func(callback connect.ApiCallback[*FindLocationsResult]) {
+		ctx, cancel := self.locationsRequestContext(ctx)
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			callback.Result(nil, err)
+			return
+		}
 		connect.HttpPostWithRawFunction(
-			self.ctx,
+			ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/network/find-provider-locations", self.apiUrl),
 			findLocations,
@@ -632,17 +1126,78 @@ func (self *Api) FindProviderLocations(findLocations *FindLocationsArgs, callbac
 	})
 }
 
+func (self *Api) locationsRequestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	requestCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(self.ctx, cancel)
+	if self.ctx.Err() != nil {
+		cancel()
+	}
+	return requestCtx, func() {
+		stop()
+		cancel()
+	}
+}
+
+var errLocationsResultInvalid = errors.New("provider locations response is invalid")
+
+func locationsResultCallback(callback FindLocationsCallback) connect.ApiCallback[*FindLocationsResult] {
+	return connect.NewApiCallback(func(result *FindLocationsResult, err error) {
+		if err == nil {
+			if result == nil {
+				err = errLocationsResultInvalid
+			} else {
+				// Empty result sections may be omitted or encoded as null. The
+				// exported list wrappers need concrete empty lists for Len/Get.
+				if result.Groups == nil {
+					result.Groups = NewLocationGroupResultList()
+				}
+				if result.Locations == nil {
+					result.Locations = NewLocationResultList()
+				}
+				if result.Devices == nil {
+					result.Devices = NewLocationDeviceResultList()
+				}
+				// JSON null is valid inside an array but cannot be rendered as a
+				// location. Reject it before entering a platform's callback.
+				for i := 0; i < result.Groups.Len(); i++ {
+					if result.Groups.Get(i) == nil {
+						err = errLocationsResultInvalid
+					}
+				}
+				for i := 0; i < result.Locations.Len(); i++ {
+					if result.Locations.Get(i) == nil {
+						err = errLocationsResultInvalid
+					}
+				}
+				for i := 0; i < result.Devices.Len(); i++ {
+					if result.Devices.Get(i) == nil {
+						err = errLocationsResultInvalid
+					}
+				}
+			}
+		}
+		callback.Result(result, err)
+	})
+}
+
+// errFindRoutesRemoved is the immediate failure for the two find methods
+// whose server routes no longer exist, replacing the 404 round-trip.
+var errFindRoutesRemoved = errors.New(
+	"the /network/find-locations and /network/find-providers server routes " +
+		"were removed (server commit 978e15eb); use FindProviderLocations and " +
+		"FindProviders2; this call fails without contacting the server",
+)
+
+// FindLocations searched locations without provider counts.
+//
+// Deprecated: the server route POST /network/find-locations was removed
+// (server commit 978e15eb) with no remaining handler, so every call 404s.
+// The method now fails immediately with a clear error instead of making the
+// doomed round-trip; it is kept only for ABI compatibility. Use
+// FindProviderLocations.
 func (self *Api) FindLocations(findLocations *FindLocationsArgs, callback FindLocationsCallback) {
-	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/network/find-locations", self.apiUrl),
-			findLocations,
-			self.GetByJwt(),
-			&FindLocationsResult{},
-			callback,
-		)
+	runAsyncApiRequest[*FindLocationsResult](callback, func(callback connect.ApiCallback[*FindLocationsResult]) {
+		callback.Result(nil, errFindRoutesRemoved)
 	})
 }
 
@@ -659,17 +1214,16 @@ type FindProvidersResult struct {
 	ClientIds *IdList `json:"client_ids,omitempty"`
 }
 
+// FindProviders found provider client ids for one location.
+//
+// Deprecated: the server route POST /network/find-providers was removed
+// (server commit 978e15eb) with no remaining handler, so every call 404s.
+// The method now fails immediately with a clear error instead of making the
+// doomed round-trip; it is kept only for ABI compatibility. Use
+// FindProviders2.
 func (self *Api) FindProviders(findProviders *FindProvidersArgs, callback FindProvidersCallback) {
-	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/network/find-providers", self.apiUrl),
-			findProviders,
-			self.GetByJwt(),
-			&FindProvidersResult{},
-			callback,
-		)
+	runAsyncApiRequest[*FindProvidersResult](callback, func(callback connect.ApiCallback[*FindProvidersResult]) {
+		callback.Result(nil, errFindRoutesRemoved)
 	})
 }
 
@@ -703,10 +1257,50 @@ func (self *ProviderSpec) toConnectProviderSpec() *connect.ProviderSpec {
 
 type FindProviders2Callback connect.ApiCallback[*FindProviders2Result]
 
+// The FindProviders2Args.RankMode values.
+const (
+	RankModeQuality = "quality"
+	RankModeSpeed   = "speed"
+)
+
+// The FindProviders2Args.IpFamily capability filters, in the connect
+// vocabulary; the exact categories are IpFamilyDualstack, IpFamilyV4Only and
+// IpFamilyV6Only (ip_family.go).
+const (
+	IpFamilyFilterV4Capable = "v4-capable"
+	IpFamilyFilterV6Capable = "v6-capable"
+)
+
 type FindProviders2Args struct {
-	Specs            *ProviderSpecList `json:"specs"`
-	Count            int               `json:"count"`
-	ExcludeClientIds *IdList           `json:"exclude_client_ids"`
+	Specs *ProviderSpecList `json:"specs"`
+	Count int               `json:"count"`
+	// ForceCount asks for exactly Count providers; otherwise the server
+	// loads at least a minimum block (20) to reduce db activity
+	ForceCount       bool    `json:"force_count,omitempty"`
+	ExcludeClientIds *IdList `json:"exclude_client_ids"`
+	// ExcludeDestinations excludes multi-hop destinations; the last id of
+	// each entry is the excluded final destination
+	ExcludeDestinations *MultiHopIdList `json:"exclude_destinations,omitempty"`
+	// RankMode is RankModeQuality (the default) or RankModeSpeed
+	RankMode     string `json:"rank_mode,omitempty"`
+	ForceMinimum bool   `json:"force_minimum,omitempty"`
+	// IpFamily filters providers by proven address family: "" and
+	// IpFamilyFilterV4Capable (dualstack first, then v4-only),
+	// IpFamilyFilterV6Capable (dualstack first, then v6-only), or the exact
+	// categories IpFamilyDualstack, IpFamilyV4Only, IpFamilyV6Only.
+	IpFamily string `json:"ip_family,omitempty"`
+}
+
+// MultiHopIdList is a list of multi-hop ids, each an ordered *IdList
+// (intermediaries first, destination last).
+type MultiHopIdList struct {
+	exportedList[*IdList]
+}
+
+func NewMultiHopIdList() *MultiHopIdList {
+	return &MultiHopIdList{
+		exportedList: *newExportedList[*IdList](),
+	}
 }
 
 type FindProviders2Result struct {
@@ -716,6 +1310,49 @@ type FindProviders2Result struct {
 type FindProvidersProvider struct {
 	ClientId                *Id `json:"client_id"`
 	EstimatedBytesPerSecond int `json:"estimated_bytes_per_second"`
+	// HasEstimatedBytesPerSecond is false when the provider has no speed
+	// test, in which case EstimatedBytesPerSecond is not an estimate
+	HasEstimatedBytesPerSecond bool `json:"has_estimated_bytes_per_second"`
+	// Tier is the provider's band in the requested RankMode, 0 best; a
+	// provider named by client id carries 0 since it bypasses discovery
+	Tier int `json:"tier"`
+	// IntermediaryIds is reserved for future multi-hop routes (the
+	// intermediaries to reach ClientId through, in order). Find-providers
+	// never returns multi-hop routes today, so this is always absent/empty.
+	IntermediaryIds       *IdList `json:"intermediary_ids,omitempty"`
+	NetworkOnly           bool    `json:"network_only,omitempty"`
+	ReputationFailedNames string  `json:"reputation_failed_names,omitempty"`
+	// Location is the provider's location, nil when the server does not
+	// know it
+	Location *ProviderLocation `json:"location,omitempty"`
+	// IpFamily is the provider's proven category, IpFamilyDualstack,
+	// IpFamilyV4Only or IpFamilyV6Only; empty for a fixed client-id spec,
+	// which bypasses discovery
+	IpFamily string `json:"ip_family,omitempty"`
+}
+
+// `model.ProviderLocation`: the location of a provider client, resolved from
+// its active connection. Coordinate objects are nil when unknown.
+type ProviderLocation struct {
+	Country     string `json:"country,omitempty"`
+	CountryCode string `json:"country_code,omitempty"`
+	Region      string `json:"region,omitempty"`
+	City        string `json:"city,omitempty"`
+
+	CountryLocationId *Id `json:"country_location_id,omitempty"`
+	RegionLocationId  *Id `json:"region_location_id,omitempty"`
+	CityLocationId    *Id `json:"city_location_id,omitempty"`
+
+	// the region centroid and the city centroid
+	RegionCoordinates *LocationCoordinates `json:"region_coordinates,omitempty"`
+	CityCoordinates   *LocationCoordinates `json:"city_coordinates,omitempty"`
+}
+
+// A wgs84 point. Zero is a valid coordinate; absence is expressed by a nil
+// LocationCoordinates, never by (0, 0).
+type LocationCoordinates struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
 }
 
 func (self *Api) FindProviders2(findProviders2 *FindProviders2Args, callback FindProviders2Callback) {
@@ -730,6 +1367,21 @@ func (self *Api) FindProviders2(findProviders2 *FindProviders2Args, callback Fin
 			callback,
 		)
 	})
+}
+
+// FindProviders2SyncWithContext is the caller-bounded Go/headless form.
+//
+//gomobile:noexport
+func (self *Api) FindProviders2SyncWithContext(ctx context.Context, args *FindProviders2Args) (*FindProviders2Result, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/find-providers2", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&FindProviders2Result{},
+		connect.NewNoopApiCallback[*FindProviders2Result](),
+	)
 }
 
 type WalletCircleInitCallback connect.ApiCallback[*WalletCircleInitResult]
@@ -904,6 +1556,8 @@ type CircleWalletInfo struct {
 	BlockchainSymbol     string    `json:"blockchain_symbol"`
 	CreateDate           string    `json:"create_date"`
 	BalanceUsdcNanoCents NanoCents `json:"balance_usdc_nano_cents"`
+	// Address is the wallet's on-chain address
+	Address string `json:"address"`
 }
 
 type WalletBalanceCallback connect.ApiCallback[*WalletBalanceResult]
@@ -952,28 +1606,50 @@ func (self *Api) GetAccountPayments(callback GetAccountPaymentsCallback) {
 type WalletCircleTransferOutCallback connect.ApiCallback[*WalletCircleTransferOutResult]
 
 type WalletCircleTransferOutArgs struct {
+	// Persist this id with the intent before calling the API; reuse it on every
+	// retry/restart. A distinct intended transfer needs a distinct id.
+	RequestId           *Id       `json:"request_id"`
 	ToAddress           string    `json:"to_address"`
 	AmountUsdcNanoCents NanoCents `json:"amount_usdc_nano_cents"`
 	Terms               bool      `json:"terms"`
 }
 
 type WalletCircleTransferOutResult struct {
-	UserToken   *CircleUserToken              `json:"user_token,omitempty"`
-	ChallengeId string                        `json:"challenge_id,omitempty"`
-	Error       *WalletCircleTransferOutError `json:"error,omitempty"`
+	RequestId       *Id                           `json:"request_id,omitempty"`
+	ChallengeStatus string                        `json:"challenge_status,omitempty"`
+	UserToken       *CircleUserToken              `json:"user_token,omitempty"`
+	ChallengeId     string                        `json:"challenge_id,omitempty"`
+	Error           *WalletCircleTransferOutError `json:"error,omitempty"`
 }
 
 type WalletCircleTransferOutError struct {
 	Message string `json:"message"`
 }
 
+// Construct once per user intent, then durably save these arguments before
+// submission. Reconstruct from saved JSON on restart rather than calling again.
+func NewWalletCircleTransferOutArgs(toAddress string, amountUsdcNanoCents NanoCents, terms bool) *WalletCircleTransferOutArgs {
+	return &WalletCircleTransferOutArgs{RequestId: NewId(), ToAddress: toAddress, AmountUsdcNanoCents: amountUsdcNanoCents, Terms: terms}
+}
+
+var ErrWalletCircleTransferRequestId = errors.New("wallet transfer requires a persisted caller request_id; reuse it for every retry")
+
 func (self *Api) WalletCircleTransferOut(walletCircleTransferOut *WalletCircleTransferOutArgs, callback WalletCircleTransferOutCallback) {
+	if walletCircleTransferOut == nil || walletCircleTransferOut.RequestId == nil || walletCircleTransferOut.RequestId.id == ([16]byte{}) {
+		go connect.HandleError(func() { callback.Result(nil, ErrWalletCircleTransferRequestId) })
+		return
+	}
+	// Freeze this asynchronous call's fields without changing the caller's
+	// persisted intent or allocating a new request id inside a transport retry.
+	args := *walletCircleTransferOut
+	requestId := *args.RequestId
+	args.RequestId = &requestId
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/wallet/circle-transfer-out", self.apiUrl),
-			walletCircleTransferOut,
+			&args,
 			self.GetByJwt(),
 			&WalletCircleTransferOutResult{},
 			callback,
@@ -993,9 +1669,21 @@ type TransferBalance struct {
 	StartTime             string    `json:"start_time"`
 	EndTime               string    `json:"end_time"`
 	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
-	// how much money the platform made after subtracting fees
-	NetRevenue       NanoCents `json:"net_revenue"`
-	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	// how much money the platform made after subtracting fees. The wire name
+	// is `net_revenue_nano_cents` (an earlier tag, `net_revenue`, never
+	// matched the server and left this 0 in every app).
+	NetRevenue NanoCents `json:"net_revenue_nano_cents"`
+	// the subsidized part of NetRevenue
+	SubsidyNetRevenue NanoCents `json:"subsidy_net_revenue_nano_cents,omitempty"`
+	BalanceByteCount  ByteCount `json:"balance_byte_count"`
+	// PurchaseToken is the store purchase the balance came from, when any
+	PurchaseToken string `json:"purchase_token,omitempty"`
+	// Paid means the balance carries revenue. It is NOT the same as Pro: a
+	// data code is paid but data-only.
+	Paid bool `json:"paid,omitempty"`
+	// Pro means the balance carries the Pro entitlement. A network is Pro iff
+	// it has an in-window balance with this set.
+	Pro bool `json:"pro,omitempty"`
 }
 
 type SubscriptionBalanceCallback connect.ApiCallback[*SubscriptionBalanceResult]
@@ -1012,11 +1700,67 @@ type SubscriptionBalanceResult struct {
 	/**
 	 * OpenTransferByteCount - The total number of bytes tied up in open transfers
 	 */
-	OpenTransferByteCount     ByteCount            `json:"open_transfer_byte_count"`
-	CurrentSubscription       *Subscription        `json:"current_subscription,omitempty"`
+	OpenTransferByteCount ByteCount `json:"open_transfer_byte_count"`
+	/**
+	 * CurrentSubscription - ONE of the active subscriptions, or nil. Shipped apps
+	 * read this as the plan indicator, so it keeps its exact single-value meaning;
+	 * it cannot name more than one store. Use Subscriptions for the full set.
+	 */
+	CurrentSubscription *Subscription `json:"current_subscription,omitempty"`
+	/**
+	 * Subscriptions - EVERY store currently billing this network, one entry per
+	 * store, so each can be offered its own cancel path. Subscribing on two stores
+	 * means being charged by both, and each is cancelled only where it was bought.
+	 *
+	 * A list rather than a slice because gomobile binds neither slices of struct
+	 * pointers nor slices of slices (same reason as ActiveTransferBalances).
+	 */
+	Subscriptions             *SubscriptionList    `json:"subscriptions,omitempty"`
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
 	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
 	UpdateTime                string               `json:"update_time"`
+	/**
+	 * Guest - the network has no login method (a legacy guest network). The
+	 * server reads it from the live auth methods, so unlike the jwt's
+	 * guest_mode claim (which every token refresh clears) it is still true for
+	 * a refreshed guest, and false once a login method is added with AddAuth.
+	 * False from an older server.
+	 */
+	Guest bool `json:"guest,omitempty"`
+
+	// ----- the onboarding plan fields (onboarding_api.go) -----
+	// PriceTier is the caller's regional price tier (an estimate unless the
+	// source is a storefront or a billing country); nil from an older server.
+	PriceTier *PriceTier `json:"price_tier,omitempty"`
+	// OnboardingOffer is the caller's welcome offer; nil when none was issued.
+	OnboardingOffer *OnboardingOffer `json:"onboarding_offer,omitempty"`
+	// Experiments is the caller's variant per experiment surface; nil when no
+	// experiment runs.
+	Experiments *ExperimentAssignmentList `json:"experiments,omitempty"`
+}
+
+// ExperimentVariant is the caller's variant on a surface, "" when no
+// experiment runs on it (see ExperimentAssignmentList.IsHoldout for the
+// in-app offer's surfaces).
+func (self *SubscriptionBalanceResult) ExperimentVariant(surface string) string {
+	if self.Experiments == nil {
+		return ""
+	}
+	return self.Experiments.VariantForSurface(surface)
+}
+
+// IsHoldout reports whether the caller is held out on a surface (the regular
+// plan picker, no offer screen, for the in-app offer surfaces).
+func (self *SubscriptionBalanceResult) IsHoldout(surface string) bool {
+	if self.Experiments == nil {
+		return false
+	}
+	return self.Experiments.IsHoldout(surface)
+}
+
+// OfferActive reports whether the welcome offer can be redeemed now.
+func (self *SubscriptionBalanceResult) OfferActive() bool {
+	return self.OnboardingOffer != nil && self.OnboardingOffer.IsActive()
 }
 
 func (self *Api) SubscriptionBalance(callback SubscriptionBalanceCallback) {
@@ -1129,9 +1873,53 @@ func (self *Api) NetworkUserUpdate(updateNetworkUser *NetworkUserUpdateArgs, cal
  */
 
 type GetNetworkReferralCodeResult struct {
-	ReferralCode   string                       `json:"referral_code,omitempty"`
-	TotalReferrals int                          `json:"total_referrals"`
-	Error          *GetNetworkReferralCodeError `json:"error,omitempty"`
+	ReferralCode   string `json:"referral_code,omitempty"`
+	TotalReferrals int    `json:"total_referrals"`
+	// The referral program terms, from the server's pro.yml: the one place the
+	// cap and bonus live. All zero when the server reports none (no pro.yml: no
+	// cap, no grant); apps keep their display defaults then.
+	MaxReferrals          int   `json:"max_referrals"`
+	BonusPerReferralBytes int64 `json:"bonus_per_referral_bytes"`
+	ReferredBonusBytes    int64 `json:"referred_bonus_bytes"`
+	BonusPeriodSeconds    int64 `json:"bonus_period_seconds"`
+	// HasReferralNetwork says this network is a referee and therefore receives
+	// ReferredBonusBytes even when it has no outgoing referrals.
+	HasReferralNetwork bool                         `json:"has_referral_network"`
+	Error              *GetNetworkReferralCodeError `json:"error,omitempty"`
+}
+
+// BonusGibPerDay is the referrer's bonus per referral as whole GiB per day,
+// the number the apps print ("+3 GiB/day"). 0 when the server reports no terms.
+func (self *GetNetworkReferralCodeResult) BonusGibPerDay() int64 {
+	return referralGibPerDay(self.BonusPerReferralBytes, self.BonusPeriodSeconds)
+}
+
+// ReferredBonusGibPerDay is the referred network's bonus as whole GiB per day.
+// 0 when the server reports no terms.
+func (self *GetNetworkReferralCodeResult) ReferredBonusGibPerDay() int64 {
+	return referralGibPerDay(self.ReferredBonusBytes, self.BonusPeriodSeconds)
+}
+
+// PaidReferrals is how many of totalReferrals the network is paid for: the
+// count capped at MaxReferrals, or the whole count when there is no cap.
+func (self *GetNetworkReferralCodeResult) PaidReferrals(totalReferrals int64) int64 {
+	if totalReferrals < 0 {
+		return 0
+	}
+	if 0 < self.MaxReferrals && int64(self.MaxReferrals) < totalReferrals {
+		return int64(self.MaxReferrals)
+	}
+	return totalReferrals
+}
+
+// referralGibPerDay converts a grant of byteCount per periodSeconds to whole GiB
+// per day, rounded; 0 when either is unknown.
+func referralGibPerDay(byteCount int64, periodSeconds int64) int64 {
+	if byteCount <= 0 || periodSeconds <= 0 {
+		return 0
+	}
+	perDay := float64(byteCount) * float64(24*60*60) / float64(periodSeconds)
+	return int64(math.Round(perDay / float64(int64(1)<<30)))
 }
 
 type GetNetworkReferralCodeError struct {
@@ -1164,8 +1952,9 @@ type ValidateReferralCodeArgs struct {
 }
 
 type ValidateReferralCodeResult struct {
-	IsValid  bool `json:"is_valid"`
-	IsCapped bool `json:"is_capped"`
+	IsValid  bool      `json:"is_valid"`
+	IsCapped bool      `json:"is_capped"`
+	Error    *ApiError `json:"error,omitempty"`
 }
 
 type ValidateReferralCodeCallback connect.ApiCallback[*ValidateReferralCodeResult]
@@ -1321,12 +2110,36 @@ func (self *Api) RemoveWallet(
  */
 
 type FeedbackSendArgs struct {
+	Uses      *FeedbackSendUses  `json:"uses,omitempty"`
 	Needs     *FeedbackSendNeeds `json:"needs"`
 	StarCount int                `json:"star_count"`
 }
 
+// FeedbackSendUses is how the user uses URnetwork (the feedback form's
+// "I use it for" line)
+type FeedbackSendUses struct {
+	Personal bool `json:"personal"`
+	Business bool `json:"business"`
+}
+
+// FeedbackSendNeeds is what the user needs from URnetwork: the form's tick
+// boxes plus the free-text Other
 type FeedbackSendNeeds struct {
-	Other string `json:"other"`
+	Private          bool   `json:"private"`
+	Safe             bool   `json:"safe"`
+	Global           bool   `json:"global"`
+	Collaborate      bool   `json:"collaborate"`
+	AppControl       bool   `json:"app_control"`
+	BlockDataBrokers bool   `json:"block_data_brokers"`
+	BlockAds         bool   `json:"block_ads"`
+	Focus            bool   `json:"focus"`
+	ConnectServers   bool   `json:"connect_servers"`
+	RunServers       bool   `json:"run_servers"`
+	PreventCyber     bool   `json:"prevent_cyber"`
+	Audit            bool   `json:"audit"`
+	ZeroTrust        bool   `json:"zero_trust"`
+	Visualize        bool   `json:"visualize"`
+	Other            string `json:"other"`
 }
 
 type FeedbackSendResult struct {
@@ -1445,7 +2258,7 @@ type AuthCodeLoginResult struct {
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
 
 func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthCodeLoginResult](callback, func(callback connect.ApiCallback[*AuthCodeLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -1458,6 +2271,19 @@ func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCa
 	})
 }
 
+//gomobile:noexport
+func (self *Api) AuthCodeLoginSyncWithContext(ctx context.Context, args *AuthCodeLoginArgs) (*AuthCodeLoginResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/auth/code-login", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&AuthCodeLoginResult{},
+		connect.NewNoopApiCallback[*AuthCodeLoginResult](),
+	)
+}
+
 /**
  * Auth code create
  */
@@ -1465,6 +2291,11 @@ func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCa
 type AuthCodeCreateArgs struct {
 	DurationMinutes float64 `json:"duration_minutes,omitempty"`
 	Uses            int     `json:"uses,omitempty"`
+	// Roles and Principal are carried by every login minted from this code
+	// (see AuthNetworkClientArgs.Roles). Only a network-level session may
+	// set them; when omitted the session's own are inherited.
+	Roles     *StringList `json:"roles,omitempty"`
+	Principal string      `json:"principal,omitempty"`
 }
 
 type AuthCodeCreateResult struct {
@@ -1485,7 +2316,7 @@ func (self *Api) AuthCodeCreate(
 	codeCreateArgs *AuthCodeCreateArgs,
 	callback AuthCodeCreateCallback,
 ) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AuthCodeCreateResult](callback, func(callback connect.ApiCallback[*AuthCodeCreateResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -1531,17 +2362,16 @@ type UpgradeGuesteResultError struct {
 	Message string `json:"message"`
 }
 
+// UpgradeGuest upgraded a guest network to a brand new named network.
+//
+// Deprecated: the server route POST /auth/upgrade-guest was removed (server
+// commit 340d828a, 2026-07-15) with no remaining handler, so every call
+// 404s. The method now fails immediately with a clear error instead of
+// making the doomed round-trip. It is kept only for ABI compatibility; there
+// is currently no supported guest-conversion path through the SDK.
 func (self *Api) UpgradeGuest(upgradeGuest *UpgradeGuestArgs, callback UpgradeGuestCallback) {
-	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/auth/upgrade-guest", self.apiUrl),
-			upgradeGuest,
-			self.GetByJwt(),
-			&UpgradeGuestResult{},
-			callback,
-		)
+	runAsyncApiRequest[*UpgradeGuestResult](callback, func(callback connect.ApiCallback[*UpgradeGuestResult]) {
+		callback.Result(nil, errGuestUpgradeRouteRemoved)
 	})
 }
 
@@ -1577,17 +2407,25 @@ type UpgradeGuestExistingResult struct {
 	Error                *UpgradeGuesteExistingResultError       `json:"error,omitempty"`
 }
 
+// errGuestUpgradeRouteRemoved is the immediate failure for the deprecated
+// guest-upgrade methods, replacing the confusing 404 round-trip the removed
+// server routes would produce.
+var errGuestUpgradeRouteRemoved = errors.New(
+	"guest upgrade is no longer supported: the /auth/upgrade-guest and " +
+		"/auth/upgrade-guest-existing server routes were removed " +
+		"(server commit 340d828a); this call fails without contacting the server",
+)
+
+// UpgradeGuestExisting merged a guest network into an existing account.
+//
+// Deprecated: the server route POST /auth/upgrade-guest-existing was removed
+// (server commit 340d828a, 2026-07-15) with no remaining handler, so every
+// call 404s. The method now fails immediately with a clear error instead of
+// making the doomed round-trip. It is kept only for ABI compatibility; there
+// is currently no supported guest-conversion path through the SDK.
 func (self *Api) UpgradeGuestExisting(upgradeGuest *UpgradeGuestExistingArgs, callback UpgradeGuestExistingCallback) {
-	go connect.HandleError(func() {
-		connect.HttpPostWithRawFunction(
-			self.ctx,
-			self.getHttpPostRaw(),
-			fmt.Sprintf("%s/auth/upgrade-guest-existing", self.apiUrl),
-			upgradeGuest,
-			self.GetByJwt(),
-			&UpgradeGuestExistingResult{},
-			callback,
-		)
+	runAsyncApiRequest[*UpgradeGuestExistingResult](callback, func(callback connect.ApiCallback[*UpgradeGuestExistingResult]) {
+		callback.Result(nil, errGuestUpgradeRouteRemoved)
 	})
 }
 
@@ -1601,7 +2439,17 @@ type VerifySeekerNftHolderArgs struct {
 	Message   string `json:"wallet_message,omitempty"`
 }
 
+// Stable codes for a Seeker verification that did not succeed.
+const (
+	VerifySeekerNftHolderErrorCodeInvalidSignature = "seeker_invalid_signature"
+	VerifySeekerNftHolderErrorCodeLookupFailed     = "seeker_lookup_failed"
+	VerifySeekerNftHolderErrorCodeTokenNotFound    = "seeker_token_not_found"
+)
+
 type VerifySeekerNftHolderError struct {
+	// one of the `VerifySeekerNftHolderErrorCode*` values. Apps localize on it
+	// and fall back to `Message`; empty from an older server.
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -1642,7 +2490,12 @@ type LeaderboardEarner struct {
 
 type LeaderboardResult struct {
 	Earners *LeaderboardEarnersList `json:"earners"`
-	Error   *LeaderboardError       `json:"error,omitempty"`
+	// Rank is the caller network's leaderboard position (1 = top earner), 0
+	// when the network has no ranked payouts; Total is the number of ranked
+	// networks. Both come from the same ranking the leaderboard is cut from.
+	Rank  int               `json:"rank"`
+	Total int               `json:"total"`
+	Error *LeaderboardError `json:"error,omitempty"`
 }
 
 type LeaderboardError struct {
@@ -1669,10 +2522,21 @@ func (self *Api) GetLeaderboard(args *GetLeaderboardArgs, callback GetLeaderboar
  * Get Network Leaderboard ranking
  */
 
+// NetworkRanking is the wire shape of /network/ranking's `network_ranking`:
+// the server's `controller.NetworkRankingWithPoints`, which embeds
+// `model.NetworkRanking` (the three data-leaderboard fields) and adds the
+// points-leaderboard fields flattened beside them.
 type NetworkRanking struct {
 	NetMiBCount       float32 `json:"net_mib_count"`
 	LeaderboardRank   int     `json:"leaderboard_rank"`
 	LeaderboardPublic bool    `json:"leaderboard_public"`
+	// the all-time points leaderboard (android/POINTSLEADERBOARD.md): the
+	// caller's opt-in, its emoji tag and its three ranks (0 = not ranked)
+	PointsLeaderboardPublic bool   `json:"points_leaderboard_public"`
+	EmojiTag                string `json:"emoji_tag,omitempty"`
+	RankPoints              int    `json:"rank_points"`
+	RankBlocks              int    `json:"rank_blocks"`
+	RankStreak              int    `json:"rank_streak"`
 }
 
 type GetNetworkRankingResult struct {
@@ -1731,11 +2595,229 @@ func (self *Api) SetNetworkLeaderboardPublic(args *SetNetworkRankingPublicArgs, 
 }
 
 /**
+ * Points leaderboard (all time), android/POINTSLEADERBOARD.md
+ */
+
+// The dimensions the points leaderboard can be sorted by.
+const (
+	PointsLeaderboardSortPoints = "points"
+	PointsLeaderboardSortBlocks = "blocks"
+	PointsLeaderboardSortStreak = "streak"
+)
+
+// IsPointsLeaderboardSort reports whether sort is one of the
+// PointsLeaderboardSort* values.
+func IsPointsLeaderboardSort(sort string) bool {
+	switch sort {
+	case PointsLeaderboardSortPoints, PointsLeaderboardSortBlocks, PointsLeaderboardSortStreak:
+		return true
+	}
+	return false
+}
+
+type GetPointsLeaderboardArgs struct {
+	Sort   string `json:"sort"`
+	Cursor string `json:"cursor,omitempty"`
+	// SeekRank opens the page at this 1-based position of the sort's total
+	// order (clamped by the server); used without a cursor.
+	SeekRank int64 `json:"seek_rank,omitempty"`
+	Limit    int   `json:"limit,omitempty"`
+}
+
+// PointsLeaderboardRow is one ranked network. The `*Text` fields and
+// `DisplayName` are filled by the view controller (not sent by the server):
+// `DisplayName` is the network name, or empty when `Anonymous` (the app then
+// shows its localized "Anonymous"); `EmojiTag` shows either way.
+type PointsLeaderboardRow struct {
+	NetworkId   *Id    `json:"network_id"`
+	NetworkName string `json:"network_name,omitempty"`
+	EmojiTag    string `json:"emoji_tag,omitempty"`
+	Anonymous   bool   `json:"anonymous"`
+	// ContainsProfanity flags a public name the apps may mask
+	ContainsProfanity bool    `json:"contains_profanity,omitempty"`
+	TotalPoints       float64 `json:"total_points"`
+	BlocksWithPoints  int64   `json:"blocks_with_points"`
+	Streak            int64   `json:"streak"`
+	LongestStreak     int64   `json:"longest_streak"`
+	RankPoints        int64   `json:"rank_points"`
+	RankBlocks        int64   `json:"rank_blocks"`
+	RankStreak        int64   `json:"rank_streak"`
+	// Position is the row's 1-based place in the requested sort's total order
+	// (ranks tie, positions never do): the seek coordinate and the key the
+	// view controller keeps its loaded window by.
+	Position int64 `json:"position"`
+
+	DisplayName          string `json:"display_name,omitempty"`
+	TotalPointsText      string `json:"total_points_text,omitempty"`
+	BlocksWithPointsText string `json:"blocks_with_points_text,omitempty"`
+	StreakText           string `json:"streak_text,omitempty"`
+	LongestStreakText    string `json:"longest_streak_text,omitempty"`
+	RankPointsText       string `json:"rank_points_text,omitempty"`
+	RankBlocksText       string `json:"rank_blocks_text,omitempty"`
+	RankStreakText       string `json:"rank_streak_text,omitempty"`
+}
+
+// PointsLeaderboardMe is the caller's own row plus its opt-in state. On the
+// wire it is the row's fields with `points_leaderboard_public` and `ranked`
+// beside them. Ranked is false when the network has no points yet (the row
+// fields are then zero).
+type PointsLeaderboardMe struct {
+	Row                     *PointsLeaderboardRow
+	PointsLeaderboardPublic bool
+	Ranked                  bool
+}
+
+func (self *PointsLeaderboardMe) UnmarshalJSON(b []byte) error {
+	row := &PointsLeaderboardRow{}
+	if err := json.Unmarshal(b, row); err != nil {
+		return err
+	}
+	var flags struct {
+		PointsLeaderboardPublic bool `json:"points_leaderboard_public"`
+		Ranked                  bool `json:"ranked"`
+	}
+	if err := json.Unmarshal(b, &flags); err != nil {
+		return err
+	}
+	self.Row = row
+	self.PointsLeaderboardPublic = flags.PointsLeaderboardPublic
+	self.Ranked = flags.Ranked
+	return nil
+}
+
+func (self *PointsLeaderboardMe) MarshalJSON() ([]byte, error) {
+	fields := map[string]any{}
+	if self.Row != nil {
+		rowJson, err := json.Marshal(self.Row)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(rowJson, &fields); err != nil {
+			return nil, err
+		}
+	}
+	fields["points_leaderboard_public"] = self.PointsLeaderboardPublic
+	fields["ranked"] = self.Ranked
+	return json.Marshal(fields)
+}
+
+type PointsLeaderboardResult struct {
+	Rows *PointsLeaderboardRowList `json:"rows"`
+	// the cursor of the next page; empty on the last page
+	NextCursor string `json:"next_cursor,omitempty"`
+	// the cursor of the page before this one; empty when this page starts at
+	// the top
+	PrevCursor string `json:"prev_cursor,omitempty"`
+	// the snapshot behind the cursor is gone: start again from the top
+	Restart     bool  `json:"restart,omitempty"`
+	TotalRanked int64 `json:"total_ranked"`
+	// when the ranks were computed
+	SnapshotTime *Time `json:"snapshot_time,omitempty"`
+	// the latest finalized epoch the snapshot counts
+	LatestEpoch int64 `json:"latest_epoch"`
+	// false means the server had no legitimate finalized epoch windows. Total
+	// points and their ranking remain valid, but block/streak values and ranks
+	// must be presented as unavailable rather than as measured zeroes.
+	EpochMetricsAvailable bool `json:"epoch_metrics_available"`
+	// the caller's own row, only with a jwt
+	Me    *PointsLeaderboardMe    `json:"me,omitempty"`
+	Error *PointsLeaderboardError `json:"error,omitempty"`
+}
+
+type PointsLeaderboardError struct {
+	Message string `json:"message"`
+}
+
+type GetPointsLeaderboardCallback connect.ApiCallback[*PointsLeaderboardResult]
+
+// GetPointsLeaderboard is one page of the all-time points leaderboard. The
+// leaderboard is public; the jwt only adds `me`.
+func (self *Api) GetPointsLeaderboard(args *GetPointsLeaderboardArgs, callback GetPointsLeaderboardCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/stats/points-leaderboard", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&PointsLeaderboardResult{},
+			callback,
+		)
+	})
+}
+
+type SetPointsLeaderboardPublicArgs struct {
+	Public bool `json:"public"`
+}
+
+type SetPointsLeaderboardPublicResult struct {
+	// the opt-in state after the call
+	PointsLeaderboardPublic bool                             `json:"points_leaderboard_public"`
+	Error                   *SetPointsLeaderboardPublicError `json:"error,omitempty"`
+}
+
+type SetPointsLeaderboardPublicError struct {
+	Message string `json:"message"`
+}
+
+type SetPointsLeaderboardPublicCallback connect.ApiCallback[*SetPointsLeaderboardPublicResult]
+
+// SetPointsLeaderboardPublic opts the network in to (or out of) the points
+// leaderboard. The name still shows only when the data leaderboard's
+// name-public flag is on (SetNetworkLeaderboardPublic).
+func (self *Api) SetPointsLeaderboardPublic(args *SetPointsLeaderboardPublicArgs, callback SetPointsLeaderboardPublicCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/points-ranking-visibility", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SetPointsLeaderboardPublicResult{},
+			callback,
+		)
+	})
+}
+
+type SetEmojiTagArgs struct {
+	// 1 to 6 emoji (ValidateEmojiTag), or empty to clear the tag
+	EmojiTag string `json:"emoji_tag"`
+}
+
+type SetEmojiTagResult struct {
+	EmojiTag string            `json:"emoji_tag,omitempty"`
+	Error    *SetEmojiTagError `json:"error,omitempty"`
+}
+
+type SetEmojiTagError struct {
+	Message string `json:"message"`
+}
+
+type SetEmojiTagCallback connect.ApiCallback[*SetEmojiTagResult]
+
+// SetEmojiTag sets the emoji tag shown next to the network on the points
+// leaderboard. Validate with ValidateEmojiTag first and send `Normalized`.
+func (self *Api) SetEmojiTag(args *SetEmojiTagArgs, callback SetEmojiTagCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/emoji", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&SetEmojiTagResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Network points
  * Eventually these will be transferrable to token
  */
 
 type AccountPoint struct {
+	AccountPointId   *Id        `json:"account_point_id"`
 	NetworkId        *Id        `json:"network_id"`
 	Event            string     `json:"event"`
 	PointValue       NanoPoints `json:"point_value"`
@@ -1834,6 +2916,7 @@ func (self *Api) NetworkUnblockLocation(args *NetworkUnblockLocationArgs, callba
 
 type GetNetworkBlockedLocationsResult struct {
 	BlockedLocations *BlockedLocationsList `json:"blocked_locations"`
+	Error            *ApiError             `json:"error,omitempty"`
 }
 
 type GetNetworkBlockedLocationsCallback connect.ApiCallback[*GetNetworkBlockedLocationsResult]
@@ -1904,10 +2987,38 @@ func (self *Api) GetNetworkReliability(callback GetNetworkReliabilityCallback) {
 
 type SolanaPaymentIntentArgs struct {
 	Reference string `json:"reference"`
+	// The plan the customer picked ("monthly" or "yearly"). REQUIRED: the server
+	// looks the price up from pro.yml by plan and rejects the intent with
+	// "Unknown plan." when this is empty, so an app that omits it cannot sell at
+	// all. The price is deliberately not a field here -- a client-supplied amount
+	// would let anyone quote themselves a year for a cent. PlanYearlyOnboarding
+	// is the welcome offer (refused unless the caller's offer is redeemable).
+	Plan string `json:"plan"`
+	// the store's storefront country, when the app knows it; else the server
+	// resolves the regional tier from the Stripe billing country or the ip
+	StorefrontCountry string `json:"storefront_country,omitempty"`
 }
 
 type SolanaPaymentIntentResult struct {
-	Error *SolanaPaymentIntentError `json:"error,omitempty"`
+	// The price the SERVER quoted. Pass this to BuildSolanaPaymentUrl. The webhook
+	// checks the arriving payment against this same number, so a client-side price
+	// constant is how a customer pays and gets nothing.
+	AmountUsd float64                   `json:"amount_usd,omitempty"`
+	Error     *SolanaPaymentIntentError `json:"error,omitempty"`
+	// the regional tier the quote came from, the plan, the plan's regular price
+	// (the full-year price for PlanYearlyOnboarding) and whether the welcome
+	// offer was applied
+	Tier             string  `json:"tier,omitempty"`
+	Plan             string  `json:"plan,omitempty"`
+	RegularAmountUsd float64 `json:"regular_amount_usd,omitempty"`
+	OfferApplied     bool    `json:"offer_applied,omitempty"`
+	Currency         string  `json:"currency,omitempty"`
+	// Where to pay, from the server with the quote: the merchant address and the
+	// SPL token mint (USDC), both base58. Pass them to BuildSolanaPaymentUrl as
+	// Recipient and SplTokenMint instead of hardcoding them; the address has
+	// rotated before. Empty from a server that predates these fields.
+	Recipient    string `json:"recipient,omitempty"`
+	SplTokenMint string `json:"spl_token_mint,omitempty"`
 }
 
 type SolanaPaymentIntentError struct {
@@ -2001,11 +3112,22 @@ func (self *Api) StripeCreateCustomerPortal(args *StripeCreateCustomerPortalArgs
 
 type StripeCreateCheckoutSessionArgs struct {
 	ItemId string `json:"item_id"`
-	// "hosted" (default) or "embedded". A single Stripe session carries one shape
-	// or the other, never both: hosted returns checkout_url for a browser,
-	// embedded returns client_secret + publishable_key for Stripe.js Embedded
-	// Checkout (the desktop apps load ur.io/checkout in a webview with these).
+	// "hosted" (default) or "embedded" (StripeUiModeHosted /
+	// StripeUiModeEmbedded). A single Stripe session carries one shape or the
+	// other, never both: hosted returns checkout_url for a browser, embedded
+	// returns client_secret + publishable_key for Stripe.js Embedded Checkout
+	// (the desktop apps load ur.io/checkout in a webview with these).
 	UiMode string `json:"ui_mode,omitempty"`
+	// "never" (StripeRedirectOnCompletionNever) keeps an EMBEDDED checkout
+	// fully inline: Stripe fires the client's onComplete callback instead of
+	// redirecting anywhere, so the page the customer is on never navigates.
+	// Only valid with ui_mode "embedded". Empty means the embedded flow
+	// redirects to the configured return_url, and hosted behaves as always.
+	RedirectOnCompletion string `json:"redirect_on_completion,omitempty"`
+	// the store's storefront country, when the caller knows it: the Pro items
+	// are priced at the caller's regional tier and the welcome-offer coupon is
+	// applied server-side when redeemable (yearly only)
+	StorefrontCountry string `json:"storefront_country,omitempty"`
 }
 
 type StripeCreateCheckoutSessionError struct {
@@ -2089,15 +3211,9 @@ type RefreshJwtResult struct {
 type RefreshJwtCallback connect.ApiCallback[*RefreshJwtResult]
 
 func (self *Api) RefreshJwt(callback RefreshJwtCallback) {
-	go connect.HandleError(func() {
-		connect.HttpGetWithRawFunction(
-			self.ctx,
-			self.getHttpGetRaw(),
-			fmt.Sprintf("%s/auth/refresh", self.apiUrl),
-			self.GetByJwt(),
-			&RefreshJwtResult{},
-			callback,
-		)
+	runAsyncApiRequest[*RefreshJwtResult](callback, func(callback connect.ApiCallback[*RefreshJwtResult]) {
+		result, err := self.refreshJwtSyncWithContext(self.ctx)
+		callback.Result(result, err)
 	})
 }
 
@@ -2105,18 +3221,42 @@ func (self *Api) RefreshJwtSync() (*RefreshJwtResult, error) {
 	return self.refreshJwtSyncWithContext(self.ctx)
 }
 
+// Headless startup owns a finite refresh attempt separately from API lifetime.
+//
+//gomobile:noexport
+func (self *Api) RefreshJwtSyncWithContext(ctx context.Context) (*RefreshJwtResult, error) {
+	return self.refreshJwtSyncWithContext(ctx)
+}
+
 // refreshJwtSyncWithContext bounds the request to the caller's ctx, so a
 // caller with a narrower lifetime than the api (e.g. the device token
 // manager) does not leave the request running after it closes
 func (self *Api) refreshJwtSyncWithContext(ctx context.Context) (*RefreshJwtResult, error) {
-	return connect.HttpGetWithRawFunction(
-		ctx,
-		self.getHttpGetRaw(),
-		fmt.Sprintf("%s/auth/refresh", self.apiUrl),
-		self.GetByJwt(),
-		&RefreshJwtResult{},
-		connect.NewNoopApiCallback[*RefreshJwtResult](),
-	)
+	return self.refreshJwtSyncWithContextAndJwt(ctx, self.GetByJwt())
+}
+
+func (self *Api) refreshJwtSyncWithContextAndJwt(ctx context.Context, byJwt string) (*RefreshJwtResult, error) {
+	if ctx == nil {
+		return nil, &ClientControlResponseError{detail: "refresh context is absent"}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	raw, err := self.getHttpGetRaw()(ctx, fmt.Sprintf("%s/auth/refresh", self.apiUrl), byJwt)
+	if err != nil {
+		if transientClientControlRequestError(err) {
+			return nil, &ClientControlUnavailableError{cause: err}
+		}
+		return nil, err
+	}
+	var result *RefreshJwtResult
+	if err := decodeClientControlJson(raw, &result); err != nil {
+		return nil, err
+	}
+	if result == nil || result.Error == nil && result.ByJwt == "" || result.Error != nil && (result.ByJwt != "" || result.Error.Message == "") {
+		return nil, &ClientControlResponseError{detail: "refresh must contain exactly one complete success or refusal"}
+	}
+	return result, nil
 }
 
 /**
@@ -2145,6 +3285,12 @@ type RedeemBalanceCodeError struct {
 
 type RedeemBalanceCodeCallback connect.ApiCallback[*RedeemBalanceCodeResult]
 
+// RedeemBalanceCode redeems a balance code into this network. Note the
+// server reports the SAME error payload ({"error":{"message":"Unknown
+// balance code."}}) for a nonexistent code and an already-redeemed one; use
+// ClassifyBalanceCodeRedeem (with GetNetworkRedeemedBalanceCodes) to
+// distinguish transport failure / invalid / already-redeemed before telling
+// the user anything.
 func (self *Api) RedeemBalanceCode(args *RedeemBalanceCodeArgs, callback RedeemBalanceCodeCallback) {
 	go connect.HandleError(func() {
 		connect.HttpPostWithRawFunction(
@@ -2157,6 +3303,179 @@ func (self *Api) RedeemBalanceCode(args *RedeemBalanceCodeArgs, callback RedeemB
 			callback,
 		)
 	})
+}
+
+/**
+ * check balance code (without redeeming it)
+ */
+
+type CheckBalanceCodeArgs struct {
+	Secret string `json:"secret"`
+}
+
+type CheckBalanceCodeBalance struct {
+	StartTime        *Time     `json:"start_time"`
+	EndTime          *Time     `json:"end_time"`
+	BalanceByteCount ByteCount `json:"balance_byte_count"`
+}
+
+type CheckBalanceCodeError struct {
+	Message string `json:"message"`
+}
+
+type CheckBalanceCodeResult struct {
+	Balance *CheckBalanceCodeBalance `json:"balance,omitempty"`
+	Error   *CheckBalanceCodeError   `json:"error,omitempty"`
+}
+
+type CheckBalanceCodeCallback connect.ApiCallback[*CheckBalanceCodeResult]
+
+// CheckBalanceCode looks a balance code up WITHOUT redeeming it, so a UI can
+// preview what the code grants before the user commits. Mirrors the server's
+// POST /subscription/check-balance-code (previously reached by raw HTTP from
+// the apps). Like RedeemBalanceCode, the server reports "Unknown balance
+// code." for both a nonexistent and an already-redeemed code.
+func (self *Api) CheckBalanceCode(args *CheckBalanceCodeArgs, callback CheckBalanceCodeCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/check-balance-code", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&CheckBalanceCodeResult{},
+			callback,
+		)
+	})
+}
+
+/**
+ * purchase reporting (verify proof of purchase with the store)
+ *
+ * The wave-2 half of the lost-webhook fix: the app reports proof of purchase
+ * (Play purchase token, App Store transaction JWS) and the server verifies it
+ * with the store and credits through the same idempotency gates as the
+ * webhooks and the payment reconciler. See PurchaseReportBackoffMillis for
+ * the client retry contract (persist proof -> retry until terminal -> only
+ * then acknowledge/finish).
+ */
+
+type VerifyPlayPurchaseArgs struct {
+	// PackageName is optional; the server defaults to (and requires) the
+	// app's own package.
+	PackageName string `json:"package_name,omitempty"`
+	// ProductId is the sku the client believes it bought (e.g. "supporter").
+	ProductId     string `json:"product_id"`
+	PurchaseToken string `json:"purchase_token"`
+}
+
+type VerifyAppleTransactionArgs struct {
+	// SignedTransaction is the StoreKit transaction JWS
+	// (Transaction.jwsRepresentation).
+	SignedTransaction string `json:"signed_transaction"`
+}
+
+// VerifyStorePurchaseResult is the shared response of both verify endpoints.
+// Status is one of the PurchaseReportStatus* values; use
+// IsPurchaseReportTerminal to decide whether to keep retrying.
+type VerifyStorePurchaseResult struct {
+	Status     string `json:"status"`
+	ExpiryTime *Time  `json:"expiry_time,omitempty"`
+}
+
+// ExpiryTimeMillis is the store-side subscription expiry as unix millis, or 0
+// when the server sent none (pending/invalid/wrong_network answers).
+func (self *VerifyStorePurchaseResult) ExpiryTimeMillis() int64 {
+	if self.ExpiryTime == nil {
+		return 0
+	}
+	return self.ExpiryTime.UnixMilli()
+}
+
+type VerifyPlayPurchaseCallback connect.ApiCallback[*VerifyStorePurchaseResult]
+
+// VerifyPlayPurchase reports a Play purchase token to the server, which
+// verifies it with the Android Publisher API and credits it idempotently.
+// Call BEFORE acknowledging the purchase; acknowledge only once the status is
+// terminal (IsPurchaseReportTerminal).
+func (self *Api) VerifyPlayPurchase(args *VerifyPlayPurchaseArgs, callback VerifyPlayPurchaseCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/verify-play-purchase", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&VerifyStorePurchaseResult{},
+			callback,
+		)
+	})
+}
+
+// VerifyPlayPurchaseSyncWithContext is the caller-bounded headless form, for
+// retry loops (e.g. a WorkManager job) that outlive no context of their own.
+//
+//gomobile:noexport
+func (self *Api) VerifyPlayPurchaseSyncWithContext(ctx context.Context, args *VerifyPlayPurchaseArgs) (*VerifyStorePurchaseResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/subscription/verify-play-purchase", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&VerifyStorePurchaseResult{},
+		connect.NewNoopApiCallback[*VerifyStorePurchaseResult](),
+	)
+}
+
+// VerifyPlayPurchaseSync uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) VerifyPlayPurchaseSync(args *VerifyPlayPurchaseArgs) (*VerifyStorePurchaseResult, error) {
+	return self.VerifyPlayPurchaseSyncWithContext(self.ctx, args)
+}
+
+type VerifyAppleTransactionCallback connect.ApiCallback[*VerifyStorePurchaseResult]
+
+// VerifyAppleTransaction reports a StoreKit transaction JWS to the server,
+// which verifies it (full pinned-root verification, same as the App Store
+// webhook) and credits it idempotently. Call BEFORE Transaction.finish();
+// finish only once the status is terminal (IsPurchaseReportTerminal).
+func (self *Api) VerifyAppleTransaction(args *VerifyAppleTransactionArgs, callback VerifyAppleTransactionCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/subscription/verify-apple-transaction", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&VerifyStorePurchaseResult{},
+			callback,
+		)
+	})
+}
+
+// VerifyAppleTransactionSyncWithContext is the caller-bounded headless form,
+// for retry loops with their own lifetime.
+//
+//gomobile:noexport
+func (self *Api) VerifyAppleTransactionSyncWithContext(ctx context.Context, args *VerifyAppleTransactionArgs) (*VerifyStorePurchaseResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/subscription/verify-apple-transaction", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&VerifyStorePurchaseResult{},
+		connect.NewNoopApiCallback[*VerifyStorePurchaseResult](),
+	)
+}
+
+// VerifyAppleTransactionSync uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) VerifyAppleTransactionSync(args *VerifyAppleTransactionArgs) (*VerifyStorePurchaseResult, error) {
+	return self.VerifyAppleTransactionSyncWithContext(self.ctx, args)
 }
 
 /**
@@ -2197,6 +3516,58 @@ type RemoveNetworkClientArgs struct {
 
 type RemoveNetworkClientResult struct {
 	Error *ApiError `json:"error,omitempty"`
+}
+
+type RemoveNetworkClientCallback connect.ApiCallback[*RemoveNetworkClientResult]
+
+// Removes one client through this API's configured NetworkSpace transport.
+// Keeping the operation on that transport is significant on desktop tunnel
+// transitions, where the platform resolver may need to replace stale state.
+func (self *Api) RemoveNetworkClient(args *RemoveNetworkClientArgs, callback RemoveNetworkClientCallback) {
+	go connect.HandleError(func() {
+		connect.HttpPostWithRawFunction(
+			self.ctx,
+			self.getHttpPostRaw(),
+			fmt.Sprintf("%s/network/remove-client", self.apiUrl),
+			args,
+			self.GetByJwt(),
+			&RemoveNetworkClientResult{},
+			callback,
+		)
+	})
+}
+
+// Caller-bounded headless form used by service and acceptance cleanup.
+//
+//gomobile:noexport
+func (self *Api) RemoveNetworkClientSyncWithContext(ctx context.Context, args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
+	return self.RemoveNetworkClientSyncWithContextAndJwt(ctx, args, self.GetByJwt())
+}
+
+// Removes one client with an explicit network-owner credential while still
+// using this API's configured transport. A DeviceLocal or DeviceRemote can
+// replace the API's current credential with its client JWT, which is not
+// authorized to remove clients; cleanup callers that retained the owner JWT
+// must not mutate the live API session merely to authenticate this request.
+//
+//gomobile:noexport
+func (self *Api) RemoveNetworkClientSyncWithContextAndJwt(ctx context.Context, args *RemoveNetworkClientArgs, byJwt string) (*RemoveNetworkClientResult, error) {
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/network/remove-client", self.apiUrl),
+		args,
+		byJwt,
+		&RemoveNetworkClientResult{},
+		connect.NewNoopApiCallback[*RemoveNetworkClientResult](),
+	)
+}
+
+// Uses the API lifetime as its bound.
+//
+//gomobile:noexport
+func (self *Api) RemoveNetworkClientSync(args *RemoveNetworkClientArgs) (*RemoveNetworkClientResult, error) {
+	return self.RemoveNetworkClientSyncWithContext(self.ctx, args)
 }
 
 /**
@@ -2268,12 +3639,16 @@ type DeleteApiKeyResult struct {
 
 type DeleteApiKeyCallback connect.ApiCallback[*DeleteApiKeyResult]
 
-func (self *Api) DeleteApiKey(callback DeleteApiKeyCallback) {
+// DeleteApiKey removes one api key by id (POST /account/api-key/remove).
+// An earlier form issued a GET with no body, which the server route never
+// accepted.
+func (self *Api) DeleteApiKey(args *DeleteApiKeyArgs, callback DeleteApiKeyCallback) {
 	go connect.HandleError(func() {
-		connect.HttpGetWithRawFunction(
+		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpGetRaw(),
+			self.getHttpPostRaw(),
 			fmt.Sprintf("%s/account/api-key/remove", self.apiUrl),
+			args,
 			self.GetByJwt(),
 			&DeleteApiKeyResult{},
 			callback,
@@ -2293,7 +3668,7 @@ type GenerateSeedphraseResult struct {
 }
 
 func (self *Api) GenerateSeedphrase(args *GenerateSeedphraseArgs, callback GenerateSeedphraseCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*GenerateSeedphraseResult](callback, func(callback connect.ApiCallback[*GenerateSeedphraseResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -2318,7 +3693,7 @@ type RegenerateSeedphraseResult struct {
 }
 
 func (self *Api) RegenerateSeedphrase(args *RegenerateSeedphraseArgs, callback RegenerateSeedphraseCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*RegenerateSeedphraseResult](callback, func(callback connect.ApiCallback[*RegenerateSeedphraseResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -2352,7 +3727,7 @@ type AddAuthError struct {
 }
 
 func (self *Api) AddAuth(args *AddAuthArgs, callback AddAuthCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*AddAuthResult](callback, func(callback connect.ApiCallback[*AddAuthResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -2382,7 +3757,7 @@ type RemoveAuthError struct {
 }
 
 func (self *Api) RemoveAuth(args *RemoveAuthArgs, callback RemoveAuthCallback) {
-	go connect.HandleError(func() {
+	runAsyncApiRequest[*RemoveAuthResult](callback, func(callback connect.ApiCallback[*RemoveAuthResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
 			self.getHttpPostRaw(),
@@ -2401,6 +3776,9 @@ type ChangeNetworkNameCallback connect.ApiCallback[*ChangeNetworkNameResult]
 
 type ChangeNetworkNameArgs struct {
 	NewName string `json:"new_name"`
+	// NetworkName is an alias of NewName the server also accepts (it reads
+	// network_name first, then new_name); callers set one or the other
+	NetworkName string `json:"network_name,omitempty"`
 }
 
 type ChangeNetworkNameResult struct {
@@ -2432,6 +3810,8 @@ type ClaimNetworkNameCallback connect.ApiCallback[*ClaimNetworkNameResult]
 
 type ClaimNetworkNameArgs struct {
 	NewName string `json:"new_name"`
+	// see ChangeNetworkNameArgs.NetworkName
+	NetworkName string `json:"network_name,omitempty"`
 }
 
 type ClaimNetworkNameResult struct {

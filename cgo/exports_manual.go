@@ -109,6 +109,16 @@ func urnet_device_local_get_provide_tls_private_key_pem(self C.uint64_t, out *C.
 	return copyOut(out, inoutLen, self_.GetProvideTlsPrivateKeyPem())
 }
 
+//export urnet_device_local_get_extender_key_seed
+func urnet_device_local_get_extender_key_seed(self C.uint64_t, out *C.uint8_t, inoutLen *C.int32_t) C.bool {
+	defer cgoGuard("urnet_device_local_get_extender_key_seed")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_get_extender_key_seed")
+	if !ok || self_ == nil {
+		return C.bool(false)
+	}
+	return copyOut(out, inoutLen, self_.GetExtenderKeySeed())
+}
+
 //export urnet_device_local_key_material_get_client_key_seed
 func urnet_device_local_key_material_get_client_key_seed(self C.uint64_t, out *C.uint8_t, inoutLen *C.int32_t) C.bool {
 	defer cgoGuard("urnet_device_local_key_material_get_client_key_seed")
@@ -117,6 +127,16 @@ func urnet_device_local_key_material_get_client_key_seed(self C.uint64_t, out *C
 		return C.bool(false)
 	}
 	return copyOut(out, inoutLen, self_.GetClientKeySeed())
+}
+
+//export urnet_device_local_key_material_get_extender_key_seed
+func urnet_device_local_key_material_get_extender_key_seed(self C.uint64_t, out *C.uint8_t, inoutLen *C.int32_t) C.bool {
+	defer cgoGuard("urnet_device_local_key_material_get_extender_key_seed")
+	self_, ok := resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(self), "urnet_device_local_key_material_get_extender_key_seed")
+	if !ok || self_ == nil {
+		return C.bool(false)
+	}
+	return copyOut(out, inoutLen, self_.GetExtenderKeySeed())
 }
 
 //export urnet_device_local_key_material_get_provide_tls_certificate_pem
@@ -164,4 +184,14 @@ func urnet_device_get_public_identity_key(self C.uint64_t, out *C.uint8_t, inout
 		return C.bool(false)
 	}
 	return copyOut(out, inoutLen, self_.GetPublicIdentityKey())
+}
+
+//export urnet_packet_batch_get
+func urnet_packet_batch_get(self C.uint64_t, index C.int64_t, out *C.uint8_t, inoutLen *C.int32_t) C.bool {
+	defer cgoGuard("urnet_packet_batch_get")
+	self_, ok := resolveHandle[*sdk.PacketBatch](uint64(self), "urnet_packet_batch_get")
+	if !ok || self_ == nil {
+		return C.bool(false)
+	}
+	return copyOut(out, inoutLen, self_.Get(int(index)))
 }

@@ -247,7 +247,7 @@ func (self *MessageClient) ApiUrl() string {
 // SendWithTimeout forwards to the client. It is one half of [MessageTransportClient].
 func (self *MessageClient) SendWithTimeout(
 	frame *protocol.Frame,
-	destination connect.TransferPath,
+	destination connect.Id,
 	ackCallback connect.AckFunction,
 	timeout time.Duration,
 	opts ...any,

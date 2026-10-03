@@ -419,11 +419,14 @@ func TestAnUnadvertisedBoundIsNotABoundOfZero(t *testing.T) {
 // ── the bounds this binding enforces, and the ones it does not ───────────────
 //
 // GATE CLASS: the fields of §4.3.1's `Capabilities`, read off the compiled
-//             descriptor rather than listed.
+//
+//	descriptor rather than listed.
+//
 // GATE SCOPE: `messageCapabilityBounds`, which is the production table `Call`
-//             actually enforces — so a bound that is in the table is in this
-//             gate, and a bound that is enforced by a line of code somewhere
-//             else is not in the table and therefore not claimed here.
+//
+//	actually enforces — so a bound that is in the table is in this
+//	gate, and a bound that is enforced by a line of code somewhere
+//	else is not in the table and therefore not claimed here.
 //
 // The complement is the point. §4.3.1 advertises twenty-five fields and this
 // binding enforces ONE; a reader who is told only "Capabilities is enforced"

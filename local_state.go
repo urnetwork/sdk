@@ -11,15 +11,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-
-	gojwt "github.com/golang-jwt/jwt/v5"
+	"sync"
 
 	"github.com/urnetwork/connect"
 )
 
 const AsyncQueueSize = 32
 
-const LocalStorageFilePermissions = 0700
+const LocalStorageDirectoryPermissions = 0700
+const LocalStorageFilePermissions = 0600
 
 type ByJwt struct {
 	UserId      *Id
@@ -34,142 +34,278 @@ type LocalState struct {
 	cancel context.CancelFunc
 
 	localStorageDir string
+	authStateLock   sync.Mutex
+	// In-process publication ownership, guarded by authStateLock. Different
+	// LocalState objects still require their external manager to join teardown.
+	deviceAuthOwner *deviceAuthPublicationGate
+	// Pin publication is independent of JWT ownership: anonymous devices also
+	// replace stores, and must never commit a stale snapshot over durable pins.
+	// Guarded by authStateLock; the private directory has one LocalState owner.
+	peerPinStoreOwner               *boundedPeerClientKeyPinStore
+	peerPinStoreGeneration          uint64
+	peerPinStorePublishedGeneration uint64
+	// Changes on committed auth mutations, including explicit equality no-ops.
+	// Unlike durable Generation, logout must not reset this in-process epoch.
+	deviceAuthGeneration uint64
+	// Tests hold a non-mutating preparation before final API publication.
+	// Installed before constructors start; invoked without either auth lock.
+	testingAfterDeviceAuthPrepare func(*deviceAuthPublicationGate)
+	// Test-only storage barriers, installed before concurrent work. They run
+	// under authStateLock; production never installs callbacks here.
+	testingAfterAuthSnapshotRead  func()
+	testingAfterPairedReset       func()
+	testingAfterPairedResetRemove func(string)
+	// Runs after a complete location record is staged, before its atomic
+	// commit. Used to terminate a child process at the real crash boundary.
+	testingBeforeLocationCommit func(string) error
+	// The same atomic boundary for the closed non-location preference catalog.
+	testingBeforePreferenceCommit func(string) error
+
+	// providerPriorsRetention is stamped into every saved provider-priors
+	// envelope (see persistedProviderPriors.Retention) and defaults to
+	// providerPriorsStaleAfter; 0 means unlimited. Unexported field, not a
+	// gomobile boundary -- there is no exported setter for it in this task.
+	providerPriorsRetention time.Duration
+
+	// The provider extender setting, read from `.provide_extender` once and
+	// cached after (EXTENDER.md N4). Guarded by provideExtenderLock, which also
+	// serializes the file writes so the file and the cache end on one value.
+	provideExtenderLock   sync.Mutex
+	provideExtenderLoaded bool
+	provideExtender       bool
+}
+
+// One immutable read generation of the persisted
+// authentication envelope. Empty distinguishes genuinely absent auth from an
+// incomplete envelope; GetAuthStateSnapshot reports read and decode failures.
+type LocalAuthStateSnapshot struct {
+	instanceId      *Id
+	empty           bool
+	localState      *LocalState
+	state           persistedLocalAuthState
+	localGeneration uint64
+	localOwner      *deviceAuthPublicationGate
+	networkSpace    *NetworkSpace
+	api             *Api
+	apiState        localAuthApiSnapshot
+	resetEligible   bool
+}
+
+// Returns a copy of the stable instance, when present. Id exposes mutable
+// bytes and a writable string to mobile callers; neither may alter a snapshot.
+func (self *LocalAuthStateSnapshot) GetInstanceId() *Id {
+	if self.instanceId == nil {
+		return nil
+	}
+	return newId(self.instanceId.id)
+}
+
+// Reports whether every auth field was absent in this generation.
+func (self *LocalAuthStateSnapshot) GetEmpty() bool {
+	return self.empty
+}
+
+// Seeds only the client credential and stable instance in one generation.
+// ByJwt is the separately stored admin credential and is never synthesized
+// from a client token. Explicit startup may seed empty state; refresh may not.
+func (self *LocalState) setByClientJwtForInstance(byJwt string, instanceId *Id) error {
+	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+		if instanceId == nil {
+			return false, errors.New("cannot persist JWT without a device instance")
+		}
+		instanceIdString := instanceId.String()
+		if state.ByClientJwt == byJwt &&
+			state.InstanceId == instanceIdString {
+			return false, nil
+		}
+		state.ByClientJwt = byJwt
+		state.InstanceId = instanceIdString
+		return true, nil
+	}, func() { self.deviceAuthOwner = nil })
+}
+
+// Compares against the live device's client credential, never the separate
+// admin credential. Missing client auth means logout; a different client or
+// nonempty instance belongs to a newer owner. A missing paired instance is
+// repairable only while the expected client credential remains present.
+func (self *LocalState) replaceRefreshedByJwt(
+	previousByJwt string,
+	byJwt string,
+	instanceId *Id,
+) (bool, error) {
+	return self.replaceOwnedClientJwt(previousByJwt, byJwt, instanceId, nil)
+}
+
+// The device owner is checked in the same critical section as the durable
+// compare-and-swap, including replacement with identical client-token bytes.
+func (self *LocalState) replaceOwnedClientJwt(
+	previousByJwt string,
+	byJwt string,
+	instanceId *Id,
+	owner *deviceAuthPublicationGate,
+) (bool, error) {
+	if previousByJwt == "" || byJwt == "" || instanceId == nil {
+		return false, nil
+	}
+	accepted := false
+	err := self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+		if owner != nil && self.deviceAuthOwner != owner {
+			return false, nil
+		}
+		instanceIdString := instanceId.String()
+		if state.ByClientJwt == byJwt &&
+			state.InstanceId == instanceIdString {
+			accepted = true
+			return false, nil
+		}
+		if state.ByClientJwt != previousByJwt ||
+			(state.InstanceId != "" && state.InstanceId != instanceIdString) {
+			return false, nil
+		}
+		state.ByClientJwt = byJwt
+		state.InstanceId = instanceIdString
+		accepted = true
+		return true, nil
+	})
+	return accepted, err
+}
+
+// Atomically seeds a client credential for an already-established instance.
+// Unlike SetByJwt, this does not install an admin/login credential. It preserves
+// that separate credential and writes only the client JWT and supplied instance.
+//
+// Callers creating a new device identity must continue to use SetByJwt followed
+// by SetByClientJwt so the SDK owns generation of that new instance.
+func (self *LocalState) SetByClientJwtForInstance(byJwt string, instanceId *Id) error {
+	if byJwt == "" {
+		return errors.New("cannot persist an empty JWT for an existing instance")
+	}
+	return self.setByClientJwtForInstance(byJwt, instanceId)
 }
 
 func newLocalState(ctx context.Context, localStorageHome string) *LocalState {
 	// FIXME local storage dir is always a sub dir of the passed dir
 	// localStorageHome/.by
 	localStorageDir := filepath.Join(localStorageHome, ".by")
-	err := os.MkdirAll(localStorageDir, LocalStorageFilePermissions)
+	err := os.MkdirAll(localStorageDir, LocalStorageDirectoryPermissions)
 	if err != nil {
 		panic(err)
 	}
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	return &LocalState{
-		ctx:             cancelCtx,
-		cancel:          cancel,
-		localStorageDir: localStorageDir,
+	localState := &LocalState{
+		ctx:                     cancelCtx,
+		cancel:                  cancel,
+		localStorageDir:         localStorageDir,
+		providerPriorsRetention: providerPriorsStaleAfter,
 	}
+	// Best-effort eager migration. Reads remain compatible with legacy state if
+	// the first write cannot complete (for example, a temporarily read-only
+	// filesystem), and the next authenticated mutation retries the migration.
+	localState.authStateLock.Lock()
+	_, _ = localState.loadAuthStateLocked()
+	localState.authStateLock.Unlock()
+	return localState
 }
 
+// Reads the separately stored admin/login credential, never a provider fallback.
 func (self *LocalState) GetByJwt() string {
-	path := filepath.Join(self.localStorageDir, ".by_jwt")
-	if byJwtBytes, err := os.ReadFile(path); err == nil {
-		return string(byJwtBytes)
+	state, err := self.loadAuthState()
+	if err != nil {
+		return ""
 	}
-	return ""
+	return state.ByJwt
+}
+
+// Reads the atomic auth envelope once and preserves any
+// error for callers making destructive lifecycle decisions.
+func (self *LocalState) GetAuthStateSnapshot() (*LocalAuthStateSnapshot, error) {
+	self.authStateLock.Lock()
+	defer self.authStateLock.Unlock()
+	return self.authStateSnapshotWithLock()
 }
 
 func (self *LocalState) ParseByJwt() (*ByJwt, error) {
-	byJwtStr := self.GetByJwt()
-	if byJwtStr == "" {
-		return nil, errors.New("Not found.")
-	}
-
-	parser := gojwt.NewParser()
-	token, _, err := parser.ParseUnverified(byJwtStr, gojwt.MapClaims{})
-	if err != nil {
-		return nil, err
-	}
-
-	claims := token.Claims.(gojwt.MapClaims)
-
-	byJwt := &ByJwt{}
-
-	if userIdStr, ok := claims["user_id"]; ok {
-		if userId, err := ParseId(userIdStr.(string)); err == nil {
-			byJwt.UserId = userId
-		}
-	}
-	if networkName, ok := claims["network_name"]; ok {
-		byJwt.NetworkName = networkName.(string)
-	}
-	if networkIdStr, ok := claims["network_id"]; ok {
-		if networkId, err := ParseId(networkIdStr.(string)); err == nil {
-			byJwt.NetworkId = networkId
-		}
-	}
-	if guestMode, ok := claims["guest_mode"]; ok {
-		byJwt.GuestMode = guestMode.(bool)
-	}
-
-	if isPro, ok := claims["pro"]; ok {
-		byJwt.Pro = isPro.(bool)
-	}
-
-	return byJwt, nil
+	return parseLocalByJwt(self.GetByJwt())
 }
 
-// clears `byClientJwt` and `instanceId`
+// Installs the admin/login credential and clears paired client auth when the
+// admin changes. Even an equality no-op retires the former device owner.
 func (self *LocalState) SetByJwt(byJwt string) error {
-	path := filepath.Join(self.localStorageDir, ".by_jwt")
-
-	if existingByJwtBytes, err := os.ReadFile(path); err == nil {
-		if string(existingByJwtBytes) == byJwt {
-			// already set, no need to clear state
-			return nil
+	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+		if state.ByJwt == byJwt {
+			return false, nil
 		}
-	}
-
-	self.SetByClientJwt("")
-
-	if byJwt == "" {
-		os.Remove(path)
-		return nil
-	} else {
-		return os.WriteFile(path, []byte(byJwt), LocalStorageFilePermissions)
-	}
+		state.ByJwt = byJwt
+		state.ByClientJwt = ""
+		state.InstanceId = ""
+		return true, nil
+	}, func() { self.deviceAuthOwner = nil })
 }
 
+// Reads the derived provider client credential without falling back to admin.
 func (self *LocalState) GetByClientJwt() string {
-	path := filepath.Join(self.localStorageDir, ".by_client_jwt")
-	if byClientJwtBytes, err := os.ReadFile(path); err == nil {
-		return string(byClientJwtBytes)
+	state, err := self.loadAuthState()
+	if err != nil {
+		return ""
 	}
-	return ""
+	return state.ByClientJwt
 }
 
-// if `byClientJwt` is set, sets a new `instanceId`; othewwise, clears `instanceId`
+// Completes client login, generating a new instance when the client changes or
+// its paired instance is absent. Admin auth stays separate; equality still
+// retires old device callbacks because this is an explicit login operation.
 func (self *LocalState) SetByClientJwt(byClientJwt string) error {
-	path := filepath.Join(self.localStorageDir, ".by_client_jwt")
-
-	if existingByClientJwtBytes, err := os.ReadFile(path); err == nil {
-		if string(existingByClientJwtBytes) == byClientJwt {
-			// already set, no need to clear state
-			return nil
+	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+		// Equality is a no-op only when the paired instance is coherent too. An
+		// interrupted/legacy installation can retain the client JWT while losing
+		// its instance; treating that as unchanged recreates the reconnect bug on
+		// every launch instead of repairing it once.
+		if state.ByClientJwt == byClientJwt &&
+			((byClientJwt == "" && state.InstanceId == "") ||
+				(byClientJwt != "" && state.InstanceId != "")) {
+			return false, nil
 		}
-	}
-
-	if byClientJwt == "" {
-		self.SetInstanceId(nil)
-		os.Remove(path)
-		return nil
-	} else {
-		instanceId := connect.NewId()
-		self.SetInstanceId(newId(instanceId))
-		return os.WriteFile(path, []byte(byClientJwt), LocalStorageFilePermissions)
-	}
+		state.ByClientJwt = byClientJwt
+		if byClientJwt == "" {
+			state.InstanceId = ""
+		} else {
+			state.InstanceId = newId(connect.NewId()).String()
+		}
+		return true, nil
+	}, func() { self.deviceAuthOwner = nil })
 }
 
 func (self *LocalState) GetInstanceId() *Id {
-	path := filepath.Join(self.localStorageDir, ".instance_id")
-	if instanceIdBytes, err := os.ReadFile(path); err == nil {
-		if instanceId, err := connect.IdFromBytes(instanceIdBytes); err == nil {
-			return newId(instanceId)
-		}
+	state, err := self.loadAuthState()
+	if err != nil || state.InstanceId == "" {
+		return nil
 	}
-	return nil
+	instanceId, err := ParseId(state.InstanceId)
+	if err != nil {
+		return nil
+	}
+	return instanceId
 }
 
 func (self *LocalState) SetInstanceId(instanceId *Id) error {
-	path := filepath.Join(self.localStorageDir, ".instance_id")
-	if instanceId == nil {
-		os.Remove(path)
-		return nil
-	} else {
-		return os.WriteFile(path, instanceId.Bytes(), LocalStorageFilePermissions)
-	}
+	instanceChanged := false
+	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+		instanceIdString := ""
+		if instanceId != nil {
+			instanceIdString = instanceId.String()
+		}
+		if state.InstanceId == instanceIdString {
+			return false, nil
+		}
+		instanceChanged = true
+		state.InstanceId = instanceIdString
+		return true, nil
+	}, func() {
+		if instanceChanged && instanceId != nil {
+			self.deviceAuthOwner = nil
+		}
+	})
 }
 
 // auto, always, never
@@ -182,9 +318,8 @@ func (self *LocalState) SetProvideMode(provideMode ProvideMode) error {
 func (self *LocalState) GetProvideMode() ProvideMode {
 	path := filepath.Join(self.localStorageDir, ".provide_mode")
 	if provideModeBytes, err := os.ReadFile(path); err == nil {
-		var provideMode ProvideMode
-		if _, err := fmt.Sscanf(string(provideModeBytes), "%d", &provideMode); err == nil {
-			return provideMode
+		if value, err := decodeLocalPreference("provide-mode", provideModeBytes); err == nil {
+			return ProvideMode(value.(int))
 		}
 	}
 	return ProvideModeNone
@@ -200,9 +335,8 @@ func (self *LocalState) SetProvideNetworkMode(provideNetworkMode ProvideNetworkM
 func (self *LocalState) GetProvideNetworkMode() ProvideNetworkMode {
 	path := filepath.Join(self.localStorageDir, ".provide_network_mode")
 	if provideNetworkModeBytes, err := os.ReadFile(path); err == nil {
-		var provideNetworkMode ProvideNetworkMode
-		if _, err := fmt.Sscanf(string(provideNetworkModeBytes), "%s", &provideNetworkMode); err == nil {
-			return provideNetworkMode
+		if value, err := decodeLocalPreference("provide-network-mode", provideNetworkModeBytes); err == nil {
+			return ProvideNetworkMode(value.(string))
 		}
 	}
 	return ProvideNetworkModeWiFi
@@ -217,12 +351,118 @@ func (self *LocalState) SetRouteLocal(routeLocal bool) error {
 func (self *LocalState) GetRouteLocal() bool {
 	path := filepath.Join(self.localStorageDir, ".route_local-2")
 	if routeLocalBytes, err := os.ReadFile(path); err == nil {
-		var routeLocal bool
-		if _, err := fmt.Sscanf(string(routeLocalBytes), "%t", &routeLocal); err == nil {
-			return routeLocal
+		if value, err := decodeLocalPreference("route-local", routeLocalBytes); err == nil {
+			return value.(bool)
 		}
 	}
 	return true
+}
+
+// SetLogVerbosity persists the glog verbosity the user chose, so a tunnel
+// restart comes back up at it.
+//
+// Without this the workflow the setting exists for does not survive itself:
+// raising the level, reproducing the bug and exporting normally means
+// reconnecting, and a restarted tunnel process re-runs initGlog and resets to
+// 0 -- silently dropping the session being captured back to writing none of
+// the V(1) contract and transport lines.
+//
+// This is PER PROCESS, and is not a channel between processes. It is stored
+// under the network space's local storage, which is the storage path the
+// embedder passed, and on ios each process passes its own Documents
+// container: the app gets Application/<uuid> and the network extension gets
+// PluginKitPlugin/<uuid>. Only the app group container is shared, and this
+// repo uses that solely for the exported logs. So the app writes its own copy
+// and reads its own copy back, and the extension does the same with its own --
+// what carries a newly chosen level ACROSS is the device rpc, not this file.
+// See DeviceRemote.SetLogVerbosity.
+func (self *LocalState) SetLogVerbosity(level int) error {
+	path := filepath.Join(self.localStorageDir, ".log_verbosity")
+	levelBytes := []byte(fmt.Sprintf("%d", clampLogVerbosity(level)))
+	return os.WriteFile(path, levelBytes, LocalStorageFilePermissions)
+}
+
+// GetLogVerbosity reads back the persisted level. Unset or unreadable (fresh
+// install, corrupt file) both read as LogVerbosityDefault, which is the level
+// a process starts at anyway -- restoring must never be what raises logging
+// nobody asked for.
+func (self *LocalState) GetLogVerbosity() int {
+	level, _ := self.logVerbosityIfSet()
+	return level
+}
+
+// logVerbosityIfSet is GetLogVerbosity plus whether a level was ever written.
+//
+// Restoring at construction needs the difference: a persisted 0 is a level the
+// user chose, while nothing persisted is no instruction at all, and applying
+// the default for the second case would silently reset an embedder that set
+// its own level another way -- a server passing -v on the command line would
+// have it cleared by the first device it constructed.
+func (self *LocalState) logVerbosityIfSet() (int, bool) {
+	path := filepath.Join(self.localStorageDir, ".log_verbosity")
+	if levelBytes, err := os.ReadFile(path); err == nil {
+		if value, err := decodeLocalPreference("log-verbosity", levelBytes); err == nil {
+			return clampLogVerbosity(value.(int)), true
+		}
+	}
+	return LogVerbosityDefault, false
+}
+
+// controlIpFamilyPolicyFileName is the persisted control-plane ip family
+// policy, named once rather than inlined at each accessor the way its
+// neighbors here are.
+//
+// The neighbors get away with it because a typo in one of them is loud: a
+// setting that never comes back is noticed. This one fails silently in the
+// worst direction. A user whose ipv6 path is broken forces IPv4, the write
+// succeeds, the menu reads it back from the process rather than the file, and
+// the next launch is stuck on the same login call -- with no error anywhere to
+// say the read went to a different name than the write.
+const controlIpFamilyPolicyFileName = ".control_ip_family_policy"
+
+// SetControlIpFamilyPolicy persists the control-plane address family policy
+// the user chose, so a relaunch comes back up under it.
+//
+// PER PROCESS, and not a channel between processes -- the same as
+// SetLogVerbosity, and for the same reason: this lives under the network
+// space's local storage, and on ios each process passes its own Documents
+// container. What carries a newly chosen policy across is the device rpc.
+//
+// Unlike the log verbosity, this one has to be restored BEFORE any device
+// exists: the login api call is made from the app process with no device, and
+// for the user this setting exists for that is the call that hangs. See
+// applyPersistedControlIpFamilyPolicy, which
+// NetworkSpaceManager.restoreControlIpFamilyPolicyOnce calls -- once, from the
+// active space, while the manager is still being built.
+func (self *LocalState) SetControlIpFamilyPolicy(policy int) error {
+	path := filepath.Join(self.localStorageDir, controlIpFamilyPolicyFileName)
+	policyBytes := []byte(fmt.Sprintf("%d", clampIpFamilyPolicy(policy)))
+	return os.WriteFile(path, policyBytes, LocalStorageFilePermissions)
+}
+
+// GetControlIpFamilyPolicy reads back the persisted policy. Unset or
+// unreadable both read as Auto, which is what a process dials under anyway --
+// restoring must never be what forces a family nobody asked for.
+func (self *LocalState) GetControlIpFamilyPolicy() int {
+	policy, _ := self.controlIpFamilyPolicyIfSet()
+	return policy
+}
+
+// controlIpFamilyPolicyIfSet is GetControlIpFamilyPolicy plus whether a policy
+// was ever written.
+//
+// Restoring at construction needs the difference: a persisted Auto is a policy
+// the user chose (they turned a force back off), while nothing persisted is no
+// instruction at all. Applying Auto for the second case would clear a policy
+// an embedder set some other way.
+func (self *LocalState) controlIpFamilyPolicyIfSet() (int, bool) {
+	path := filepath.Join(self.localStorageDir, controlIpFamilyPolicyFileName)
+	if policyBytes, err := os.ReadFile(path); err == nil {
+		if value, err := decodeLocalPreference("control-ip-family-policy", policyBytes); err == nil {
+			return clampIpFamilyPolicy(value.(int)), true
+		}
+	}
+	return IpFamilyPolicyAuto, false
 }
 
 func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
@@ -234,26 +474,17 @@ func (self *LocalState) SetBlockerEnabled(blockerEnabled bool) error {
 func (self *LocalState) GetBlockerEnabled() bool {
 	path := filepath.Join(self.localStorageDir, ".blocker_enabled")
 	if blockerEnabledBytes, err := os.ReadFile(path); err == nil {
-		var blockerEnabled bool
-		if _, err := fmt.Sscanf(string(blockerEnabledBytes), "%t", &blockerEnabled); err == nil {
-			return blockerEnabled
+		if value, err := decodeLocalPreference("blocker-enabled", blockerEnabledBytes); err == nil {
+			return value.(bool)
 		}
 	}
 	return false
 }
 
 func (self *LocalState) SetConnectLocation(connectLocation *ConnectLocation) error {
-	path := filepath.Join(self.localStorageDir, ".connect_location")
-	if connectLocation == nil {
-		os.Remove(path)
-		return nil
-	} else {
-		connectLocationBytes, err := json.Marshal(connectLocation)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(path, connectLocationBytes, LocalStorageFilePermissions)
-	}
+	self.authStateLock.Lock()
+	defer self.authStateLock.Unlock()
+	return self.setLocationWithLock(localConnectLocationFileName, connectLocation)
 }
 
 func (self *LocalState) GetConnectLocation() *ConnectLocation {
@@ -292,18 +523,98 @@ func (self *LocalState) GetBlockActionOverrides() *BlockActionOverrideList {
 	return nil
 }
 
+// The persisted dns resolver record carries the fallback opt-in version. The host-network
+// fallback ("fast DNS on connect") used to be on by default, and the dns editors save every
+// field, so an unversioned record's EnableFallback=true cannot be told apart from the old
+// default carried along. An unversioned record therefore loads with the fallback off (dns
+// resolves only through the tunnel); a record written at this version keeps the user's choice.
+const dnsResolverSettingsFallbackOptInVersion = 1
+
+type dnsResolverSettingsRecord struct {
+	DnsResolverSettings
+	FallbackOptInVersion int `json:",omitempty"`
+}
+
+func encodeDnsResolverSettingsRecord(dnsResolverSettings *DnsResolverSettings) ([]byte, error) {
+	return json.Marshal(&dnsResolverSettingsRecord{
+		DnsResolverSettings:  *dnsResolverSettings,
+		FallbackOptInVersion: dnsResolverSettingsFallbackOptInVersion,
+	})
+}
+
+// Applies the fallback opt-in migration to records written by older sdks.
+func decodeDnsResolverSettingsRecord(data []byte) (*DnsResolverSettings, error) {
+	var record dnsResolverSettingsRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return nil, err
+	}
+	if record.FallbackOptInVersion < dnsResolverSettingsFallbackOptInVersion {
+		record.EnableFallback = false
+	}
+	dnsResolverSettings := record.DnsResolverSettings
+	return &dnsResolverSettings, nil
+}
+
 func (self *LocalState) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) error {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettings == nil {
 		os.Remove(path)
 		return nil
 	} else {
-		dnsResolverSettingsBytes, err := json.Marshal(dnsResolverSettings)
+		dnsResolverSettingsBytes, err := encodeDnsResolverSettingsRecord(dnsResolverSettings)
 		if err != nil {
 			return err
 		}
 		return os.WriteFile(path, dnsResolverSettingsBytes, LocalStorageFilePermissions)
 	}
+}
+
+func (self *LocalState) setTransportSettings(filename string, settings *TransportSettings, provider bool) error {
+	path := filepath.Join(self.localStorageDir, filename)
+	if settings == nil {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	settingsBytes, err := json.Marshal(normalizeTransportSettings(settings, provider))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, settingsBytes, LocalStorageFilePermissions)
+}
+
+func (self *LocalState) getTransportSettings(filename string, provider bool) *TransportSettings {
+	settingsBytes, err := os.ReadFile(filepath.Join(self.localStorageDir, filename))
+	if err != nil {
+		return nil
+	}
+	var settings TransportSettings
+	if err := json.Unmarshal(settingsBytes, &settings); err != nil {
+		return nil
+	}
+	return normalizeTransportSettings(&settings, provider)
+}
+
+// SetTransportSettings persists the client carrier policy for the next process.
+func (self *LocalState) SetTransportSettings(settings *TransportSettings) error {
+	return self.setTransportSettings(".transport_settings", settings, false)
+}
+
+// GetTransportSettings returns nil when no valid client policy is stored.
+func (self *LocalState) GetTransportSettings() *TransportSettings {
+	return self.getTransportSettings(".transport_settings", false)
+}
+
+// SetProviderTransportSettings persists the provider carrier policy separately
+// so changing one direction never silently changes the other.
+func (self *LocalState) SetProviderTransportSettings(settings *TransportSettings) error {
+	return self.setTransportSettings(".provider_transport_settings", settings, true)
+}
+
+// GetProviderTransportSettings returns nil when no valid provider policy is stored.
+func (self *LocalState) GetProviderTransportSettings() *TransportSettings {
+	return self.getTransportSettings(".provider_transport_settings", true)
 }
 
 // dohServerScoresStaleAfter discards a persisted DoH server score snapshot older than this:
@@ -354,29 +665,124 @@ func (self *LocalState) setDohServerScores(scores map[string]float64) error {
 	return os.WriteFile(path, scoresBytes, LocalStorageFilePermissions)
 }
 
+// providerPriorsStaleAfter discards a persisted provider-priors snapshot
+// (connect.ProviderPriors.Snapshot) older than this by default: provider
+// identities churn over weeks, and a stale snapshot would bias a fresh
+// session's placement toward exits that are no longer representative. The
+// owner chose a 90-day default with an "unlimited" opt-out -- see
+// persistedProviderPriors.Retention, which is what getProviderPriors
+// actually honors (a zero Retention skips the staleness check entirely),
+// so a snapshot's own saved retention survives a later change to this
+// constant.
+const providerPriorsStaleAfter = 90 * 24 * time.Hour
+
+// persistedProviderPriors is the on-disk form of the coarse per-provider
+// routing memory (connect.ProviderPriors.Snapshot), stamped with the save
+// time and the retention window in force at save time.
+type persistedProviderPriors struct {
+	SavedAt   time.Time                        `json:"saved_at"`
+	Retention time.Duration                    `json:"retention"`
+	Priors    map[string]connect.ProviderPrior `json:"priors"`
+}
+
+// getProviderPriors returns the persisted provider priors from the last
+// session (nil if none, unreadable, malformed, or stale), used to seed
+// connect.ProviderPriors so routing bias survives a restart. A zero
+// Retention on the saved envelope means unlimited: the staleness check is
+// skipped entirely.
+func (self *LocalState) getProviderPriors() map[string]connect.ProviderPrior {
+	path := filepath.Join(self.localStorageDir, ".provider_priors")
+	priorsBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var persisted persistedProviderPriors
+	if err := json.Unmarshal(priorsBytes, &persisted); err != nil {
+		return nil
+	}
+	// IsZero is a VALIDITY check on the envelope (was SavedAt even set?),
+	// separate from and evaluated before the retention/age comparison below
+	// -- it does not conflict with "Retention == 0 skips the staleness
+	// check." Without it, syntactically valid but truncated/tampered JSON
+	// missing saved_at reads as SavedAt's zero value, and with Retention
+	// also 0 (unlimited) the staleness comparison never even runs, so
+	// corrupt data would be trusted forever in exactly the configuration
+	// meant to keep real data forever. Mirrors getDohServerScores's
+	// `persisted.SavedAt.IsZero() || <stale>` guard.
+	if persisted.SavedAt.IsZero() {
+		return nil
+	}
+	if persisted.Retention != 0 && persisted.Retention < time.Since(persisted.SavedAt) {
+		return nil
+	}
+	return persisted.Priors
+}
+
+// setProviderPriors persists the coarse per-provider routing memory
+// (nil/empty removes), stamping the envelope with self.providerPriorsRetention
+// (defaults to providerPriorsStaleAfter; 0 means unlimited).
+func (self *LocalState) setProviderPriors(priors map[string]connect.ProviderPrior) error {
+	path := filepath.Join(self.localStorageDir, ".provider_priors")
+	if len(priors) == 0 {
+		os.Remove(path)
+		return nil
+	}
+	priorsBytes, err := json.Marshal(&persistedProviderPriors{
+		SavedAt:   time.Now(),
+		Retention: self.providerPriorsRetention,
+		Priors:    priors,
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, priorsBytes, LocalStorageFilePermissions)
+}
+
+// localStatePriorsStore implements connect.PriorsStore by delegating to the
+// provider-priors dot-file above, so a connect.ProviderPriors instance can
+// persist across restarts. Mirrors localStateWindowIdentityStore's shape
+// (see window_identity_store.go): a thin adapter holding just the LocalState
+// it delegates to.
+type localStatePriorsStore struct {
+	localState *LocalState
+}
+
+func newLocalStatePriorsStore(localState *LocalState) *localStatePriorsStore {
+	return &localStatePriorsStore{localState: localState}
+}
+
+func (self *localStatePriorsStore) Load() map[string]connect.ProviderPrior {
+	return self.localState.getProviderPriors()
+}
+
+func (self *localStatePriorsStore) Save(priors map[string]connect.ProviderPrior) error {
+	return self.localState.setProviderPriors(priors)
+}
+
+// var _ connect.PriorsStore = ... is a compile-time assertion that
+// localStatePriorsStore satisfies connect.PriorsStore. Nothing in shipped
+// code assigns this adapter to the interface yet (its consumer, the multi
+// client wiring, lands in a later task), so without this line the compiler
+// never checks the signatures line up -- only a manual read confirmed it
+// here. Kept even though there is no other precedent for this pattern in
+// the package, specifically because this implementation ships ahead of its
+// consumer.
+var _ connect.PriorsStore = (*localStatePriorsStore)(nil)
+
 func (self *LocalState) GetDnsResolverSettings() *DnsResolverSettings {
 	path := filepath.Join(self.localStorageDir, ".dns_resolver_settings")
 	if dnsResolverSettingsBytes, err := os.ReadFile(path); err == nil {
-		var dnsResolverSettings DnsResolverSettings
-		if err := json.Unmarshal(dnsResolverSettingsBytes, &dnsResolverSettings); err == nil {
-			return &dnsResolverSettings
+		if dnsResolverSettings, err := decodeDnsResolverSettingsRecord(dnsResolverSettingsBytes); err == nil {
+			return dnsResolverSettings
 		}
 	}
 	return nil
 }
 
 func (self *LocalState) SetDefaultLocation(connectLocation *ConnectLocation) error {
-	path := filepath.Join(self.localStorageDir, ".default_location")
-	if connectLocation == nil {
-		os.Remove(path)
-		return nil
-	} else {
-		defaultLocationBytes, err := json.Marshal(connectLocation)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(path, defaultLocationBytes, LocalStorageFilePermissions)
-	}
+	self.authStateLock.Lock()
+	defer self.authStateLock.Unlock()
+	return self.setLocationWithLock(localDefaultLocationFileName, connectLocation)
 }
 
 func (self *LocalState) GetDefaultLocation() *ConnectLocation {
@@ -422,6 +828,14 @@ type deviceLocalKeyMaterialStorage struct {
 }
 
 func (self *LocalState) SetDeviceLocalKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) error {
+	self.authStateLock.Lock()
+	defer self.authStateLock.Unlock()
+	return self.setDeviceLocalKeyMaterialWithLock(keyMaterial)
+}
+
+// Shares serialization with paired auth cleanup without recursive locking.
+// The existing writer's file format, removal and replacement behavior remain.
+func (self *LocalState) setDeviceLocalKeyMaterialWithLock(keyMaterial *DeviceLocalKeyMaterial) error {
 	path := filepath.Join(self.localStorageDir, ".device_local_key_material")
 	if keyMaterial == nil || keyMaterial.IsEmpty() {
 		os.Remove(path)
@@ -615,6 +1029,33 @@ func (self *LocalState) GetPerformanceProfile() *PerformanceProfile {
 	return nil
 }
 
+// SetRoutingTier persists the RoutingTier dial (see routing_tier.go), the
+// same shape as SetPerformanceProfile: a plain JSON-encoded value in its own
+// dotfile under the local storage dir. Stored as a bare int, matching the
+// gomobile-safe type SetRoutingTier takes on DeviceLocal.
+func (self *LocalState) SetRoutingTier(tier int) error {
+	path := filepath.Join(self.localStorageDir, ".routing_tier")
+	tierBytes, err := json.Marshal(tier)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, tierBytes, LocalStorageFilePermissions)
+}
+
+// GetRoutingTier reads back the persisted tier. Unset or unreadable (fresh
+// install, corrupt file) both read as RoutingTierOff -- the fail-safe
+// default that matches RoutingTier's zero value.
+func (self *LocalState) GetRoutingTier() int {
+	path := filepath.Join(self.localStorageDir, ".routing_tier")
+	if tierBytes, err := os.ReadFile(path); err == nil {
+		var tier int
+		if err := json.Unmarshal(tierBytes, &tier); err == nil {
+			return tier
+		}
+	}
+	return int(RoutingTierOff)
+}
+
 func (self *LocalState) SetAllowForeground(allowForeground bool) error {
 	path := filepath.Join(self.localStorageDir, ".allow_foreground")
 	allowForegroundBytes, err := json.Marshal(allowForeground)
@@ -636,10 +1077,23 @@ func (self *LocalState) GetAllowForeground() bool {
 }
 
 // clears all auth tokens
+//
+// This also wipes .provider_priors (RemoveAll on the whole localStorageDir
+// below), so a logout drops the persisted routing memory along with
+// everything else per-space -- no separate deletion needed here.
 func (self *LocalState) Logout() error {
+	self.authStateLock.Lock()
+	defer self.authStateLock.Unlock()
+	return self.logoutWithLock()
+}
+
+// Preserves explicit logout's deliberately destructive whole-store semantics.
+func (self *LocalState) logoutWithLock() error {
+	self.deviceAuthOwner = nil
+	self.deviceAuthGeneration += 1
 	return errors.Join(
 		os.RemoveAll(self.localStorageDir),
-		os.MkdirAll(self.localStorageDir, LocalStorageFilePermissions),
+		os.MkdirAll(self.localStorageDir, LocalStorageDirectoryPermissions),
 	)
 }
 
@@ -678,6 +1132,12 @@ type AsyncLocalState struct {
 	localState *LocalState
 
 	jobs chan *job
+	done chan struct{}
+
+	stateLock  sync.Mutex
+	closed     bool
+	admissions sync.WaitGroup
+	closeOnce  sync.Once
 }
 
 func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
@@ -690,6 +1150,7 @@ func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
 		cancel:     cancel,
 		localState: localState,
 		jobs:       make(chan *job, AsyncQueueSize),
+		done:       make(chan struct{}),
 	}
 	go connect.HandleError(asyncLocalState.run)
 
@@ -698,22 +1159,17 @@ func NewAsyncLocalState(localStorageHome string) *AsyncLocalState {
 
 func (self *AsyncLocalState) run() {
 	defer func() {
-		self.cancel()
-
-		// drain the jobs
-		func() {
-			for {
-				select {
-				case job, ok := <-self.jobs:
-					if !ok {
-						return
-					}
-					for _, callback := range job.callbacks {
-						callback.Complete(false)
-					}
-				}
+		self.stop()
+		self.admissions.Wait()
+		for {
+			select {
+			case job := <-self.jobs:
+				completeCommitCallbacks(job.callbacks, false)
+			default:
+				close(self.done)
+				return
 			}
-		}()
+		}
 	}()
 	for {
 		select {
@@ -746,12 +1202,26 @@ func (self *AsyncLocalState) serialAsync(work func() error, callbacks ...CommitC
 		work:      work,
 		callbacks: callbacks,
 	}
+	self.stateLock.Lock()
+	if self.closed {
+		self.stateLock.Unlock()
+		completeCommitCallbacks(callbacks, false)
+		return
+	}
+	self.admissions.Add(1)
+	self.stateLock.Unlock()
+	defer self.admissions.Done()
+
 	select {
 	case <-self.ctx.Done():
-		for _, callback := range callbacks {
-			callback.Complete(false)
-		}
+		completeCommitCallbacks(callbacks, false)
 	case self.jobs <- job:
+	}
+}
+
+func completeCommitCallbacks(callbacks []CommitCallback, success bool) {
+	for _, callback := range callbacks {
+		callback.Complete(success)
 	}
 }
 
@@ -816,8 +1286,40 @@ func (self *AsyncLocalState) Logout(callback CommitCallback) {
 }
 
 func (self *AsyncLocalState) Close() {
-	self.cancel()
-	close(self.jobs)
+	self.stop()
+}
+
+func (self *AsyncLocalState) stop() {
+	self.closeOnce.Do(func() {
+		self.stateLock.Lock()
+		self.closed = true
+		self.stateLock.Unlock()
+		self.cancel()
+	})
+}
+
+// Joins the local-state worker after rejecting new jobs. Callbacks running on
+// that worker must use Close instead so they do not wait for themselves.
+//
+//gomobile:noexport
+func (self *AsyncLocalState) CloseAndWait(ctx context.Context) error {
+	self.Close()
+	select {
+	case <-self.done:
+		return nil
+	default:
+	}
+	select {
+	case <-self.done:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-self.done:
+			return nil
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 type job struct {

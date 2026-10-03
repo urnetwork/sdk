@@ -37,7 +37,7 @@ type acceptingSilentClient struct {
 	frames int
 }
 
-func (self *acceptingSilentClient) SendWithTimeout(frame *protocol.Frame, destination connect.TransferPath,
+func (self *acceptingSilentClient) SendWithTimeout(frame *protocol.Frame, destination connect.Id,
 	ackCallback connect.AckFunction, timeout time.Duration, opts ...any) bool {
 
 	self.mutex.Lock()
@@ -444,7 +444,7 @@ func (self *answeringClient) AddReceiveCallback(receiveCallback connect.ReceiveF
 	return func() {}
 }
 
-func (self *answeringClient) SendWithTimeout(frame *protocol.Frame, destination connect.TransferPath,
+func (self *answeringClient) SendWithTimeout(frame *protocol.Frame, destination connect.Id,
 	ackCallback connect.AckFunction, timeout time.Duration, opts ...any) bool {
 
 	if frame.GetMessageType() != protocol.MessageType_MessageMessageServerRequest {

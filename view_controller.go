@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 package sdk
 
 import (
@@ -14,6 +16,8 @@ type ViewController interface {
 
 type ViewControllerManager interface {
 	OpenLocationsViewController() *LocationsViewController
+
+	OpenProviderLocationsViewController() *ProviderLocationsViewController
 
 	OpenConnectViewController() *ConnectViewController
 
@@ -35,11 +39,17 @@ type ViewControllerManager interface {
 
 	OpenReferralCodeViewController() *ReferralCodeViewController
 
+	OpenPointsLeaderboardViewController() *PointsLeaderboardViewController
+
 	OpenBlockActionViewController() *BlockActionViewController
 
 	OpenPostQuantumIdentityViewController() *PostQuantumIdentityViewController
 
+	OpenExtenderViewController() *ExtenderViewController
+
 	OpenContractViewController() *ContractViewController
+
+	OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController
 
 	// Deprecated: use the split client/provider entry points below.
 	OpenContractDetailsViewController() *ContractDetailsViewController
@@ -91,6 +101,12 @@ func (self *viewControllerManager) OpenLocationsViewController() *LocationsViewC
 	vm := newLocationsViewController(self.ctx, self.device)
 	self.openViewController(vm)
 	return vm
+}
+
+func (self *viewControllerManager) OpenProviderLocationsViewController() *ProviderLocationsViewController {
+	vc := newProviderLocationsViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
 }
 
 func (self *viewControllerManager) OpenConnectViewController() *ConnectViewController {
@@ -153,6 +169,12 @@ func (self *viewControllerManager) OpenReferralCodeViewController() *ReferralCod
 	return vc
 }
 
+func (self *viewControllerManager) OpenPointsLeaderboardViewController() *PointsLeaderboardViewController {
+	vc := newPointsLeaderboardViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
 func (self *viewControllerManager) OpenBlockActionViewController() *BlockActionViewController {
 	vc := newBlockActionViewController(self.ctx, self.device)
 	self.openViewController(vc)
@@ -165,8 +187,20 @@ func (self *viewControllerManager) OpenPostQuantumIdentityViewController() *Post
 	return vc
 }
 
+func (self *viewControllerManager) OpenExtenderViewController() *ExtenderViewController {
+	vc := newExtenderViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
 func (self *viewControllerManager) OpenContractViewController() *ContractViewController {
 	vc := newContractViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController {
+	vc := newSubscriptionBalanceViewController(self.ctx, self.device.GetApi())
 	self.openViewController(vc)
 	return vc
 }

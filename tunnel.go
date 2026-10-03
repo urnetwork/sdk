@@ -4,23 +4,22 @@ import (
 	"context"
 )
 
-
 type Tunnel struct {
-	ctx context.Context
+	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 func NewTunnel() *Tunnel {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Tunnel{
-		ctx: ctx,
+		ctx:    ctx,
 		cancel: cancel,
 	}
 }
 
 func (self *Tunnel) GetDone() bool {
 	select {
-	case <- self.ctx.Done():
+	case <-self.ctx.Done():
 		return true
 	default:
 		return false

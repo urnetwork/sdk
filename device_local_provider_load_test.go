@@ -2,12 +2,14 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"runtime/metrics"
 	"runtime/pprof"
 	"sync"
 	"sync/atomic"
@@ -36,8 +38,10 @@ import (
 // the provider security policy, the exit nat's per-flow tcp/udp state, and the
 // return-path send sequences all carry real traffic.
 //
-// The test emits one greppable `[provider-mem]` line with the stable
-// measurement set, to compare across provider memory changes:
+// The test always runs a predeclared cohort of three fresh two-core processes.
+// Every process must pass; no failing peak is retried or removed. Each emits a
+// greppable `[provider-mem]` line and an exact `[provider-mem-json]` record with
+// allocator, GC, actual sampling gaps and completed-work telemetry:
 //
 //   - idle: quiesced heap with the device + peers connected, before load
 //   - peakTotal/peakHeap: max sampled Go soft-limit usage / live heap during
@@ -55,7 +59,7 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DeviceLocal provider memory test in -short mode")
 	}
-	if runIsolatedLoadTest(t) {
+	if runProviderMemoryCohort(t) {
 		return
 	}
 
@@ -71,17 +75,55 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		// timeout, so they land in the loaded measurement)
 		udpFlowsPerPeer = 32
 
-		// regression ceilings over the measured baseline (2026-07-18 after
-		// the provider memory reductions: loaded=8.0 MiB, peakTotal=31.2 MiB;
-		// before the scaled nat flow depths/windows/limits it was loaded=23.4,
-		// peakTotal=47.1). The [provider-mem] log line is the instrument for
-		// measuring further reductions; the assertions only catch a
-		// regression. loaded is held to the budget/2 goal; the peak still
-		// carries ~8 MiB of per-flow goroutine stacks (4-5 per flow), the
-		// next reduction candidate.
+		// Regression ceilings over the measured baseline. After making the
+		// receive-buffer rejection tombstones lazy (2026-08-14), 12 fresh
+		// darwin/arm64 processes measured peakTotal=26.0-27.4 MiB and
+		// loaded=7.3-7.4 MiB. On the 2026-08-23 macOS 25.6 / Go 1.26.7 host,
+		// five fresh exact-parent/candidate processes instead measured
+		// 30.2-30.5 MiB with the same 3.9-MiB idle heap, 9.6-9.7-MiB loaded
+		// heap, 179 idle goroutines, and 641 peak goroutines. The exact parent
+		// failed the old ceiling in both control runs, so this is a runtime/OS
+		// accounting baseline shift rather than a candidate regression.
+		// loaded is still held to the budget/2 goal.
 		loadedHeapCeiling = budgetByteCount / 2
-		peakTotalCeiling  = 40 << 20
+
+		// The 0.5 MiB once left above that five-process maximum is gone. On
+		// the 2026-09-23 macOS 26.6 / Go 1.26.7 host, 10 fresh processes each
+		// measured 30.6-31.7 MiB at the commit before H1+ became the default
+		// and 30.7-31.5 MiB after it, over the old 31-MiB ceiling in 3 and 5
+		// runs. Darwin now holds the same line as linux below: do not exceed
+		// the 32-MiB synthetic process budget. This host-side provider test no
+		// longer proves the mobile 28-MiB active goal; physical mobile-policy
+		// runs own that release gate.
+		peakTotalCeilingDarwin = 32 << 20
+
+		// linux/amd64 CARRIES ~4 MiB MORE FOR THE SAME WORK, and it is the
+		// platform CI runs on, so the darwin figure failed every run on main.
+		// Measured 2026-08-19, go1.26.6, 5 fresh linux/amd64 processes at the
+		// merge of #142: peakTotal=30.8, 30.9, 31.2, 31.3, 31.4 MiB — spread
+		// 0.6 MiB, and identical goroutine counts (237 idle / 715 peak / 679
+		// loaded / 457 final) and heap (7.8 MiB loaded) to darwin. Same work,
+		// same object graph, different runtime accounting: allocator arenas,
+		// goroutine stack granularity and GC pacing all differ. It is a
+		// platform delta, not a leak.
+		//
+		// THE HONEST CONSEQUENCE, and it is worth stating rather than hiding
+		// in a number: on linux/amd64 the provider peak sits AT the 32 MiB
+		// budget, not under the 28 MiB target. There is no room left for a
+		// ceiling that is both below budget and far enough above 31.4 MiB to
+		// avoid flaking, so on linux the guard becomes "do not exceed the
+		// budget" rather than "do not exceed the target". That is a weaker
+		// promise, and closing the 4 MiB is real work someone should own —
+		// but a guard that fails on main is worse than a weaker one, because
+		// it trains everyone to ignore the red X that catches the next real
+		// regression.
+		peakTotalCeilingLinux = budgetByteCount
 	)
+
+	peakTotalCeiling := int64(peakTotalCeilingDarwin)
+	if runtime.GOOS == "linux" {
+		peakTotalCeiling = int64(peakTotalCeilingLinux)
+	}
 
 	pinIosGcPacing(t)
 	prevLimit := debug.SetMemoryLimit(-1)
@@ -130,6 +172,15 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	// The measured provider path uses only the bounded in-memory peer routes
+	// below. Retire the unrelated carrier that reconnects to the fake platform
+	// host, whose H3-over-DNS dial cohorts would phase-shift the memory samples.
+	platformTransport := func() migratablePlatformTransport {
+		device.provider.stateLock.Lock()
+		defer device.provider.stateLock.Unlock()
+		return device.provider.platformTransport
+	}()
+	platformTransport.Close()
 
 	// providing creates the RemoteUserNatProvider and its exit LocalUserNat on
 	// the provider client
@@ -151,10 +202,11 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	defer closePeers()
 
 	idleGoroutines, idleHeap := sampleStable()
+	idleStats := GetMemoryStats()
 	t.Logf("idle (device + %d peers connected): goroutines=%d heap=%s",
 		peerCount, idleGoroutines, humanBytes(idleHeap))
 
-	sampler := startPeakSampler()
+	tcpSampler := startPeakSampler()
 
 	// tcp load: every peer churns connections and moves bytes concurrently
 	loadStart := time.Now()
@@ -166,14 +218,17 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	}
 	for range peers {
 		if err := <-loadErrs; err != nil {
-			sampler.stop()
+			tcpSampler.stop()
 			skipOnRaceGvisorWedge(t, "tcp load", err)
 			t.Fatalf("tcp load: %v", err)
 		}
 	}
 	tcpElapsed := time.Since(loadStart)
+	tcpPeakTotal, tcpPeakHeap, tcpPeakGoroutines := tcpSampler.stop()
 
 	// udp burst: scatter short flows into the exit nat's flow table
+	udpSampler := startPeakSampler()
+	udpStart := time.Now()
 	for _, peer := range peers {
 		go func() {
 			loadErrs <- runPeerUdpBurst(ctx, peer.tun, udpEchoAddr, udpFlowsPerPeer)
@@ -181,22 +236,32 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 	}
 	for range peers {
 		if err := <-loadErrs; err != nil {
-			sampler.stop()
+			udpSampler.stop()
 			skipOnRaceGvisorWedge(t, "udp burst", err)
 			t.Fatalf("udp burst: %v", err)
 		}
 	}
-
-	peakTotal, peakHeap, peakGoroutines := sampler.stop()
+	udpElapsed := time.Since(udpStart)
+	udpPeakTotal, udpPeakHeap, udpPeakGoroutines := udpSampler.stop()
+	peakTotal := max(tcpPeakTotal, udpPeakTotal)
+	peakHeap := max(tcpPeakHeap, udpPeakHeap)
+	peakGoroutines := max(tcpPeakGoroutines, udpPeakGoroutines)
 
 	bytesMoved := int64(peerCount) * int64(rounds) * int64(flowsPerPeer) * int64(bytesPerFlow)
 	t.Logf("tcp load: %d peers x %d conns x %s = %.1f MiB in %v (%.1f MiB/s echoed)",
 		peerCount, rounds*flowsPerPeer, humanBytes(bytesPerFlow),
 		float64(bytesMoved)/(1<<20), tcpElapsed.Round(time.Millisecond),
 		float64(bytesMoved)/(1<<20)/tcpElapsed.Seconds())
+	t.Logf("udp load: %d peers x %d flows = %d round trips in %v (%.1f round trips/s)",
+		peerCount, udpFlowsPerPeer, peerCount*udpFlowsPerPeer, udpElapsed.Round(time.Millisecond),
+		float64(peerCount*udpFlowsPerPeer)/udpElapsed.Seconds())
+	t.Logf("phase peaks: tcp runtime=%s heap=%s goroutines=%d; udp runtime=%s heap=%s goroutines=%d",
+		humanBytes(uint64(tcpPeakTotal)), humanBytes(uint64(tcpPeakHeap)), tcpPeakGoroutines,
+		humanBytes(uint64(udpPeakTotal)), humanBytes(uint64(udpPeakHeap)), udpPeakGoroutines)
 
 	loadedGoroutines, loadedHeap := sampleStable()
 	stats := GetMemoryStats()
+	loadedTotal := stats.TotalRuntimeByteCount
 	t.Logf("loaded: goroutines=%d heap=%s pool taken=%d returned=%d created=%d held=%d",
 		loadedGoroutines, humanBytes(loadedHeap),
 		stats.PoolTakenCount, stats.PoolReturnedCount, stats.PoolCreatedCount,
@@ -212,17 +277,67 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 
 	closePeers()
 	finalGoroutines, finalHeap := sampleStable()
+	finalStats := GetMemoryStats()
 	writeProviderMemProfile(t, "provider_mem_final")
 
+	// Retain exact bytes and coincident allocator state, not just rounded
+	// MiB or quiesced HeapAlloc. No JSON allocation occurs during the load.
+	gcPolicy := [...]metrics.Sample{{Name: "/gc/gogc:percent"}}
+	metrics.Read(gcPolicy[:])
+	if gcPolicy[0].Value.Kind() != metrics.KindUint64 || gcPolicy[0].Value.Uint64() != 10 {
+		t.Fatal("provider memory measurement lost its pinned GOGC=10 policy")
+	}
+	measurement := struct {
+		PID           int                    `json:"pid"`
+		GoVersion     string                 `json:"go_version"`
+		GOOS          string                 `json:"goos"`
+		GOARCH        string                 `json:"goarch"`
+		GOMAXPROCS    int                    `json:"gomaxprocs"`
+		HostCPUs      int                    `json:"host_cpus"`
+		ProfileRate   int                    `json:"memory_profile_rate_bytes"`
+		GOGC          uint64                 `json:"gogc"`
+		SoftLimit     int64                  `json:"soft_limit_bytes"`
+		PeakCeiling   int64                  `json:"peak_ceiling_bytes"`
+		Race          bool                   `json:"race"`
+		TCPBytes      int64                  `json:"tcp_bytes_completed"`
+		UDPRoundTrips int                    `json:"udp_round_trips_completed"`
+		TCPDuration   time.Duration          `json:"tcp_duration_ns"`
+		UDPDuration   time.Duration          `json:"udp_duration_ns"`
+		Idle          providerMemorySnapshot `json:"idle"`
+		TCP           peakMemoryTelemetry    `json:"tcp"`
+		UDP           peakMemoryTelemetry    `json:"udp"`
+		Loaded        providerMemorySnapshot `json:"loaded"`
+		Final         providerMemorySnapshot `json:"final"`
+	}{
+		PID: os.Getpid(), GoVersion: runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+		GOMAXPROCS: runtime.GOMAXPROCS(0), HostCPUs: runtime.NumCPU(), ProfileRate: runtime.MemProfileRate,
+		GOGC:      gcPolicy[0].Value.Uint64(),
+		SoftLimit: debug.SetMemoryLimit(-1), PeakCeiling: peakTotalCeiling, Race: raceEnabled,
+		TCPBytes: bytesMoved, UDPRoundTrips: peerCount * udpFlowsPerPeer,
+		TCPDuration: tcpElapsed, UDPDuration: udpElapsed,
+		Idle: providerMemoryValues(idleStats), TCP: tcpSampler.telemetry, UDP: udpSampler.telemetry,
+		Loaded: providerMemoryValues(stats), Final: providerMemoryValues(finalStats),
+	}
+	encoded, err := json.Marshal(measurement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("[provider-mem-json] %s", encoded)
+
 	// the stable measurement line for comparing provider memory changes
-	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d",
+	t.Logf("[provider-mem] budget=%s idle=%s peakTotal=%s peakHeap=%s loaded=%s loadedTotal=%s final=%s goroutines idle=%d peak=%d loaded=%d final=%d tcpMiBps=%.1f udpRps=%.1f tcpPeakTotal=%s udpPeakTotal=%s",
 		humanBytes(budgetByteCount),
 		humanBytes(idleHeap),
 		humanBytes(uint64(peakTotal)),
 		humanBytes(uint64(peakHeap)),
 		humanBytes(loadedHeap),
+		humanBytes(uint64(loadedTotal)),
 		humanBytes(finalHeap),
-		idleGoroutines, peakGoroutines, loadedGoroutines, finalGoroutines)
+		idleGoroutines, peakGoroutines, loadedGoroutines, finalGoroutines,
+		float64(bytesMoved)/(1<<20)/tcpElapsed.Seconds(),
+		float64(peerCount*udpFlowsPerPeer)/udpElapsed.Seconds(),
+		humanBytes(uint64(tcpPeakTotal)),
+		humanBytes(uint64(udpPeakTotal)))
 
 	// regression ceilings (see the constants above). Race instrumentation
 	// inflates both numbers (shadow memory lands in the runtime total), so
@@ -244,21 +359,26 @@ func TestDeviceLocalProviderMemoryUnderLoad(t *testing.T) {
 // routes, with a gvisor tun as its packet source (mirroring connect's
 // testingNewClient wiring).
 type providerLoadPeer struct {
+	t      testing.TB
+	cancel context.CancelFunc
 	client *connect.Client
 	nat    *connect.RemoteUserNatClient
 	tun    *connect.Tun
 
 	providerClient    *connect.Client
 	providerTransport [2]connect.Transport
+	peerTransport     [2]connect.Transport
+	routes            [2]connect.Route
 
 	bridgeWg  sync.WaitGroup
 	closeOnce sync.Once
 }
 
 func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *connect.Client) *providerLoadPeer {
+	peerCtx, peerCancel := context.WithCancel(ctx)
 	peerSettings := connect.DefaultClientSettings()
 	peerSettings.Log = connect.NewNoopLogger()
-	peerClient := connect.NewClient(ctx, connect.NewId(), connect.NewNoContractClientOob(), peerSettings)
+	peerClient := connect.NewClient(peerCtx, connect.NewId(), connect.NewNoContractClientOob(), peerSettings)
 
 	// lossless in-memory routes in both directions, buffered to mirror the
 	// production transports (TransportBufferSize=32 buffered routes). an
@@ -290,8 +410,9 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	tunSettings.Log = connect.NewNoopLogger()
 	tunSettings.TcpSendBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
 	tunSettings.TcpReceiveBuffer = connect.TcpBufferRange{Min: 4 * 1024, Default: 32 * 1024, Max: 64 * 1024}
-	tun, err := connect.CreateTun(ctx, tunSettings)
+	tun, err := connect.CreateTun(peerCtx, tunSettings)
 	if err != nil {
+		peerCancel()
 		t.Fatalf("create peer tun: %v", err)
 	}
 
@@ -307,11 +428,15 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	)
 
 	peer := &providerLoadPeer{
+		t:                 t,
+		cancel:            peerCancel,
 		client:            peerClient,
 		nat:               nat,
 		tun:               tun,
 		providerClient:    providerClient,
 		providerTransport: [2]connect.Transport{providerSend, providerReceive},
+		peerTransport:     [2]connect.Transport{peerSend, peerReceive},
+		routes:            [2]connect.Route{routeToProvider, routeToPeer},
 	}
 
 	// peer tun -> nat. SendPacket consumes the pooled packet on success and
@@ -341,16 +466,60 @@ func newProviderLoadPeer(t *testing.T, ctx context.Context, providerClient *conn
 	return peer
 }
 
+// close retires both route publications, joins the peer client, and returns
+// every pooled frame that remained in the synthetic buffered carrier.
 func (self *providerLoadPeer) close() {
 	self.closeOnce.Do(func() {
-		self.tun.Close() // unblocks ReadBatch -> bridge goroutine exits
+		self.tun.Close()
+		self.cancel()
 		self.bridgeWg.Wait()
 		self.nat.Close()
-		self.client.Close()
+		for _, transport := range self.peerTransport {
+			self.client.RouteManager().RemoveTransport(transport)
+		}
 		for _, transport := range self.providerTransport {
 			self.providerClient.RouteManager().RemoveTransport(transport)
 		}
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer closeCancel()
+		if err := self.client.CloseAndWait(closeCtx); err != nil {
+			self.t.Errorf("close provider-load peer client: %v", err)
+		}
+		drainProviderLoadRoutes(self.routes[:]...)
 	})
+}
+
+// drainProviderLoadRoutes returns carrier ownership left after route retirement.
+func drainProviderLoadRoutes(routes ...connect.Route) int {
+	returned := 0
+	for _, route := range routes {
+		for {
+			select {
+			case message := <-route:
+				if connect.MessagePoolReturn(message) {
+					returned += 1
+				}
+			default:
+				goto nextRoute
+			}
+		}
+	nextRoute:
+	}
+	return returned
+}
+
+// Buffered synthetic carriers must return frames stranded during retirement.
+func TestDrainProviderLoadRoutesReturnsQueuedPoolOwnership(t *testing.T) {
+	routeA := make(connect.Route, 2)
+	routeB := make(connect.Route, 2)
+	routeA <- connect.MessagePoolGet(64)
+	routeB <- connect.MessagePoolGet(64)
+	if returned := drainProviderLoadRoutes(routeA, routeB); returned != 2 {
+		t.Fatalf("returned pooled route frames=%d, want 2", returned)
+	}
+	if len(routeA) != 0 || len(routeB) != 0 {
+		t.Fatalf("routes not drained: len(a)=%d len(b)=%d", len(routeA), len(routeB))
+	}
 }
 
 // runPeerUdpBurst runs `flows` short-lived udp echo flows through the tun,
@@ -407,6 +576,71 @@ func startUdpEchoServer(t *testing.T) (addr string, closeFn func()) {
 	}
 }
 
+// Snapshots keep coincident allocator state: independent maxima cannot explain
+// which allocation classes accounted for the actual total-runtime peak.
+type providerMemorySnapshot struct {
+	RuntimeBytes      int64 `json:"runtime_bytes"`
+	HeapLiveBytes     int64 `json:"heap_live_bytes"`
+	HeapAllocBytes    int64 `json:"heap_alloc_bytes"`
+	HeapInuseBytes    int64 `json:"heap_inuse_bytes"`
+	HeapSysBytes      int64 `json:"heap_sys_bytes"`
+	HeapReleasedBytes int64 `json:"heap_released_bytes"`
+	SysBytes          int64 `json:"sys_bytes"`
+	StackInuseBytes   int64 `json:"stack_inuse_bytes"`
+	MSpanInuseBytes   int64 `json:"mspan_inuse_bytes"`
+	MCacheInuseBytes  int64 `json:"mcache_inuse_bytes"`
+	GCSysBytes        int64 `json:"gc_sys_bytes"`
+	OtherSysBytes     int64 `json:"other_sys_bytes"`
+	ProfilingBytes    int64 `json:"profiling_bucket_bytes"`
+	NumGC             int64 `json:"num_gc"`
+	Goroutines        int   `json:"goroutines"`
+}
+
+func providerMemoryValues(stats *MemoryStats) providerMemorySnapshot {
+	return providerMemorySnapshot{
+		RuntimeBytes: stats.TotalRuntimeByteCount, HeapLiveBytes: stats.HeapLiveByteCount,
+		HeapAllocBytes: stats.HeapAllocByteCount, HeapInuseBytes: stats.HeapInuseByteCount,
+		HeapSysBytes: stats.HeapSystemByteCount, HeapReleasedBytes: stats.HeapReleasedByteCount,
+		SysBytes: stats.SystemByteCount, NumGC: stats.GCCycleCount, Goroutines: stats.GoroutineCount,
+		StackInuseBytes: stats.StackInuseByteCount, MSpanInuseBytes: stats.MSpanInuseByteCount,
+		MCacheInuseBytes: stats.MCacheInuseByteCount, GCSysBytes: stats.GCSystemByteCount,
+		OtherSysBytes: stats.OtherSystemByteCount, ProfilingBytes: stats.ProfilingBucketByteCount,
+	}
+}
+
+const peakMemorySampleCadence = 20 * time.Millisecond
+
+type peakMemoryTelemetry struct {
+	Cadence       time.Duration          `json:"requested_cadence_ns"`
+	Samples       int                    `json:"samples"`
+	Duration      time.Duration          `json:"duration_ns"`
+	MaxGap        time.Duration          `json:"max_gap_ns"`
+	AtPeak        providerMemorySnapshot `json:"at_runtime_peak"`
+	PeakElapsed   time.Duration          `json:"peak_elapsed_ns"`
+	PeakHeapAlloc int64                  `json:"peak_heap_alloc_bytes"`
+	PeakHeapInuse int64                  `json:"peak_heap_inuse_bytes"`
+	PeakSys       int64                  `json:"peak_sys_bytes"`
+	FirstGC       int64                  `json:"first_num_gc"`
+	LastGC        int64                  `json:"last_num_gc"`
+	first, last   time.Time
+}
+
+func (self *peakMemoryTelemetry) record(at time.Time, stats providerMemorySnapshot) {
+	if self.Samples == 0 {
+		self.Cadence, self.first, self.FirstGC = peakMemorySampleCadence, at, stats.NumGC
+	} else {
+		self.MaxGap = max(self.MaxGap, at.Sub(self.last))
+	}
+	self.Samples++
+	self.last, self.LastGC, self.Duration = at, stats.NumGC, at.Sub(self.first)
+	if stats.RuntimeBytes > self.AtPeak.RuntimeBytes {
+		self.AtPeak, self.PeakElapsed = stats, self.Duration
+	}
+	self.PeakHeapAlloc = max(self.PeakHeapAlloc, stats.HeapAllocBytes)
+	self.PeakHeapInuse = max(self.PeakHeapInuse, stats.HeapInuseBytes)
+	self.PeakSys = max(self.PeakSys, stats.SysBytes)
+}
+
 // peakSampler tracks the max Go soft-limit-accounted bytes, live heap, and
 // goroutine count while running. This is runtime-managed memory minus released
 // heap pages, not process RSS or the iOS jetsam footprint.
@@ -417,6 +651,9 @@ type peakSampler struct {
 	totalMax     atomic.Int64
 	heapMax      atomic.Int64
 	goroutineMax atomic.Int64
+	// Written only by the sampler, then by stop after joining the sampler.
+	// Callers inspect telemetry only after stop; no retained sample list grows.
+	telemetry peakMemoryTelemetry
 }
 
 func startPeakSampler() *peakSampler {
@@ -426,7 +663,7 @@ func startPeakSampler() *peakSampler {
 	}
 	go func() {
 		defer close(self.doneCh)
-		ticker := time.NewTicker(20 * time.Millisecond)
+		ticker := time.NewTicker(peakMemorySampleCadence)
 		defer ticker.Stop()
 		for {
 			self.sample()
@@ -441,7 +678,9 @@ func startPeakSampler() *peakSampler {
 }
 
 func (self *peakSampler) sample() {
-	stats := GetMemoryStats()
+	var stats MemoryStats
+	readMemoryStats(&stats)
+	self.telemetry.record(time.Now(), providerMemoryValues(&stats))
 	if self.totalMax.Load() < stats.TotalRuntimeByteCount {
 		self.totalMax.Store(stats.TotalRuntimeByteCount)
 	}

@@ -104,6 +104,15 @@ func TestDeviceLocalMemoryTargetUnderLoad(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	// Every measured path below is in-process. Stop the independent carrier
+	// from reconnecting to the fake platform host so its transient H3-over-DNS
+	// allocations do not consume the target during an unrelated load phase.
+	platformTransport := func() migratablePlatformTransport {
+		device.provider.stateLock.Lock()
+		defer device.provider.stateLock.Unlock()
+		return device.provider.platformTransport
+	}()
+	platformTransport.Close()
 
 	// provider path
 	device.SetProvideMode(ProvideModePublic)

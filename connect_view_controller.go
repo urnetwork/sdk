@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 package sdk
 
 import (
@@ -7,6 +9,8 @@ import (
 	// "fmt"
 	"math"
 	mathrand "math/rand"
+	"net/netip"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +24,12 @@ const (
 	Connecting     ConnectionStatus = "CONNECTING"
 	DestinationSet ConnectionStatus = "DESTINATION_SET"
 	Connected      ConnectionStatus = "CONNECTED"
+	// ConnectFailed is the window honesty layer's terminal outcome: the
+	// connect window hit its outcome deadline twice with zero providers Added
+	// (WindowExpandEvent.Failed / WindowStatus.Failed). The app renders a
+	// failure state with a Retry; the session itself is still standing, so a
+	// provider that lands later flips this back to Connecting/Connected.
+	ConnectFailed ConnectionStatus = "CONNECT_FAILED"
 )
 
 type SelectedLocationListener interface {
@@ -54,6 +64,18 @@ type ConnectViewController struct {
 	connectionStatus ConnectionStatus
 	selectedLocation *ConnectLocation
 	grid             *ConnectGrid
+	// Immutable test producer installed before any connected grid exists.
+	// Production always observes the actual device window monitor.
+	testingWindowMonitor windowMonitor
+	// generation is the D2 gesture-generation gate. Bumped on every explicit
+	// Connect and Disconnect BEFORE the device call, and stamped onto each
+	// grid at creation: window-monitor events reaching a grid whose generation
+	// is no longer current are dropped whole, so an outgoing session's late
+	// events (the owner's grid flashed CONNECTED +424ms and +1.37s AFTER his
+	// disconnect click — monitor events ride an async rpc worker and outlive
+	// the gesture) can never recompute the rendered status. Guarded by
+	// stateLock.
+	generation uint64
 	// providerGridPointList *ProviderGridPointList
 
 	selectedLocationListeners *connect.CallbackList[SelectedLocationListener]
@@ -101,14 +123,43 @@ func newConnectViewController(ctx context.Context, device Device) *ConnectViewCo
 
 // ConnectLocationChangeListener
 func (self *ConnectViewController) ConnectLocationChanged(location *ConnectLocation) {
-	if location == nil {
-		self.setConnected(false)
-		// keep the previous selected location
-	} else {
-		self.setConnected(true)
-		self.setSelectedLocation(location)
+	retainRemoteGrid := false
+	selectedLocationChanged := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+
+		if location == nil {
+			self.connected = false
+			// keep the previous selected location
+			return
+		}
+
+		// DeviceRemote keeps each registered logical window id across a local
+		// destination-generation replacement; DeviceLocalRpc rebinds it and sends
+		// a reset snapshot. Retain that grid when a sync merely replays the same
+		// transport location. Recreating it changes the browser-state listener set,
+		// which requests another sync and otherwise forms an endless resync loop.
+		// A direct DeviceLocal has no rebind layer, so it must still replace its
+		// grid on an explicit same-location reconnect. The generation match makes
+		// the same distinction for an explicit reconnect through DeviceRemote.
+		remote, isRemote := self.device.(*DeviceRemote)
+		browserRemote := isRemote && remote != nil &&
+			remote.settings != nil && remote.settings.BrowserStateOnly
+		if browserRemote && self.connected && self.grid != nil && self.grid.generation == self.generation {
+			retainRemoteGrid = connectLocationTransportEqual(self.selectedLocation, location)
+		}
+		self.connected = true
+		self.selectedLocation = location
+		selectedLocationChanged = true
+	}()
+
+	if selectedLocationChanged {
+		self.selectedLocationChanged(location)
 	}
-	self.setGrid()
+	if !retainRemoteGrid {
+		self.setGrid()
+	}
 }
 
 func (self *ConnectViewController) Start() {}
@@ -260,8 +311,85 @@ func (self *ConnectViewController) setConnected(connected bool) {
 	self.connected = connected
 }
 
+// beginGeneration marks a new user gesture and publishes its non-terminal
+// status in the same critical section. Leaving Connected behind until the
+// asynchronous device callback arrives lets observers combine the outgoing
+// status with the newly selected destination and mistake a switch for a live
+// connection.
+func (self *ConnectViewController) beginGeneration(status ConnectionStatus) {
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.generation += 1
+		if self.connectionStatus != status {
+			self.connectionStatus = status
+			changed = true
+		}
+	}()
+	if changed {
+		self.connectionStatusChanged()
+	}
+}
+
+// generationCurrent reports whether a grid stamped with `generation` may still
+// drive the rendered status.
+func (self *ConnectViewController) generationCurrent(generation uint64) bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.generation == generation
+}
+
+// setConnectionStatusForGeneration is setConnectionStatus with the D2 gate
+// closed all the way: the generation check and the status write happen under
+// the SAME stateLock that beginGeneration takes, so a Disconnect that lands
+// after a monitor event passed the entry gate — but before the event finished
+// computing the grid and reached its status write — can never be overwritten
+// by that event's stale status. The entry gate alone leaves exactly that seam
+// open, and the seam is the original defect in miniature.
+func (self *ConnectViewController) setConnectionStatusForGeneration(status ConnectionStatus, generation uint64) {
+	changed := false
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.generation != generation {
+			return
+		}
+		if self.connectionStatus != status {
+			self.connectionStatus = status
+			changed = true
+		}
+	}()
+	if changed {
+		self.connectionStatusChanged()
+	}
+}
+
 func (self *ConnectViewController) Connect(location *ConnectLocation) {
+	if local, ok := self.device.(*DeviceLocal); ok && local.GetAutoSave() {
+		generation, accepted := self.beginLocalPreferenceGesture()
+		if !accepted {
+			return
+		}
+		// The local owner commits current before a consumer is changed. Its
+		// existing destination path derives Auto providing without persisting
+		// a transient derived provide mode as an explicit user preference.
+		if err := local.ReconnectChecked(location); err != nil {
+			self.setGridForGeneration(&generation)
+			return
+		}
+		if self.generationCurrent(generation) {
+			// Default failure is explicit partial success: current is already
+			// durably selected. Never roll it back or retry destructively.
+			_ = local.SetDefaultLocationChecked(location)
+		}
+		return
+	}
 	// self.setConnected(true)
+
+	// D2: a new gesture starts a new generation, so any event still in flight
+	// from the previous session's monitor is dropped by the grid gate
+	self.beginGeneration(DestinationSet)
 
 	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
 		// enable provider
@@ -272,7 +400,10 @@ func (self *ConnectViewController) Connect(location *ConnectLocation) {
 
 	// persist the connection location for automatic reconnect
 	self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetConnectLocation(location)
-	self.device.SetConnectLocation(location)
+	// Reconnect, not SetConnectLocation: this is the explicit "connect to
+	// this" action, so choosing the location already connected rebuilds it —
+	// a new multi client and a new set of peers — instead of doing nothing.
+	self.device.Reconnect(location)
 
 	// set location as default location
 	// if user disconnects, we still want that location populated when they reload the app
@@ -291,10 +422,33 @@ func (self *ConnectViewController) ConnectBestAvailable() {
 }
 
 func (self *ConnectViewController) Disconnect() {
+	if local, ok := self.device.(*DeviceLocal); ok && local.GetAutoSave() {
+		generation, accepted := self.beginLocalPreferenceGesture()
+		if !accepted {
+			return
+		}
+		if err := local.SetConnectLocationChecked(nil); err != nil {
+			self.setGridForGeneration(&generation)
+		} else {
+			self.setConnectionStatusForGeneration(Disconnected, generation)
+		}
+		return
+	}
+
+	// D2: the disconnect gesture ends the current generation FIRST, before
+	// any device call. From this instant the outgoing session's window-monitor
+	// events must not recompute the grid status — the field capture shows them
+	// arriving (and flipping the grid CONNECTED) hundreds of milliseconds
+	// after the click, because teardown is exactly when the stalled control
+	// plane suddenly completes.
+	self.beginGeneration(Disconnected)
 
 	if self.device.GetProvideControlMode() == ProvideControlModeAuto {
-		// disable provider
-		provideMode := ProvideModeNone
+		// Auto stops providing publicly on disconnect but keeps Network
+		// provide, the same mapping the device enforces for Auto without a
+		// connect location. Setting None here briefly tore down the provider
+		// and persisted a mode the device immediately overrode.
+		provideMode := ProvideModeNetwork
 		self.device.GetNetworkSpace().GetAsyncLocalState().GetLocalState().SetProvideMode(provideMode)
 		self.device.SetProvideMode(provideMode)
 	}
@@ -303,23 +457,48 @@ func (self *ConnectViewController) Disconnect() {
 	self.device.SetConnectLocation(nil)
 }
 
+// Retire outgoing gesture events without claiming a successful write. A failed
+// mutation rebinds the retained live consumer to a new grid for this generation;
+// it never changes an exposed grid's immutable generation or freezes its truth.
+func (self *ConnectViewController) beginLocalPreferenceGesture() (uint64, bool) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.closed {
+		return 0, false
+	}
+	self.generation += 1
+	return self.generation, true
+}
+
 func (self *ConnectViewController) setGrid() {
+	self.setGridForGeneration(nil)
+}
+
+// An expected generation keeps an old failed command from rebinding a newer
+// gesture. All external notifications and monitor calls remain outside locks.
+func (self *ConnectViewController) setGridForGeneration(expected *uint64) {
 	var grid *ConnectGrid
 	var previousGrid *ConnectGrid
+	var generation uint64
 	changed := false
 	closed := false
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 
-		if self.closed {
+		if self.closed || (expected != nil && self.generation != *expected) {
 			closed = true
 			return
 		}
+		generation = self.generation
 
 		if self.connected {
 			previousGrid = self.grid
 			grid = newConnectGridWithDefaults(self.ctx, self)
+			// D2: stamp the grid with the generation it belongs to (under the
+			// same lock that guards the counter). Events reaching a grid from
+			// an older generation are dropped by windowMonitorEventCallback.
+			grid.generation = self.generation
 			self.grid = grid
 			changed = true
 		} else if self.grid != nil {
@@ -338,14 +517,18 @@ func (self *ConnectViewController) setGrid() {
 	}
 
 	if grid != nil {
-		self.setConnectionStatus(DestinationSet)
+		self.setConnectionStatusForGeneration(DestinationSet, generation)
 	} else {
-		self.setConnectionStatus(Disconnected)
+		self.setConnectionStatusForGeneration(Disconnected, generation)
 	}
 
 	if changed {
 		if grid != nil {
-			if windowMonitor := self.device.(device).windowMonitor(); windowMonitor != nil {
+			windowMonitor := self.testingWindowMonitor
+			if windowMonitor == nil {
+				windowMonitor = self.device.(device).windowMonitor()
+			}
+			if windowMonitor != nil {
 				grid.listenToWindow(windowMonitor)
 			}
 		}
@@ -417,6 +600,45 @@ type ProviderGridPoint struct {
 	EndTime *Time
 	// wether the point is active for routing
 	Active bool
+	// IpFamily is the provider's address-family category: IpFamilyDualstack,
+	// IpFamilyV4Only or IpFamilyV6Only. A legacy provider reads as v4-only.
+	IpFamily string
+	// IpFamilyLabel is the short display form of IpFamily: IpFamilyLabelBoth,
+	// IpFamilyLabelV4 or IpFamilyLabelV6. The drawer histogram stacks the dots
+	// under these.
+	IpFamilyLabel string
+	// ExtenderIps are the extender addresses carrying this client's live
+	// platform transports to the exit right now (EXTENDER.md K1), comma
+	// separated in canonical form, because gomobile binds no string slice.
+	// Empty over a direct or p2p route, which is the common case; one address
+	// through an extender, and briefly two across a transport migration. They
+	// are this client's extenders and never the provider's own.
+	ExtenderIps string
+	// ExtenderColorHexes are the colors of those addresses (K3), comma
+	// separated in the SAME order, so an app pairs the two lists by index and
+	// never recomputes a color itself. Six hex digits each, no leading `#`.
+	ExtenderColorHexes string
+}
+
+// The extender addresses of one provider event as a grid point carries them
+// (K1, K3): the canonical addresses and their colors, comma separated in the
+// same order, because gomobile binds no string slice. An invalid address is
+// dropped from both, so the two lists always pair by index.
+func extenderIpsAndColorHexes(extenderIps []netip.Addr) (string, string) {
+	if len(extenderIps) == 0 {
+		return "", ""
+	}
+	ips := make([]string, 0, len(extenderIps))
+	colorHexes := make([]string, 0, len(extenderIps))
+	for _, extenderIp := range extenderIps {
+		if !extenderIp.IsValid() {
+			continue
+		}
+		ip := extenderIp.Unmap().String()
+		ips = append(ips, ip)
+		colorHexes = append(colorHexes, GetExtenderColorHex(ip))
+	}
+	return strings.Join(ips, ","), strings.Join(colorHexes, ",")
 }
 
 type gridPointCoord struct {
@@ -468,6 +690,11 @@ type ConnectGrid struct {
 	// the monitor this grid listens to; the run loop periodically reconciles
 	// the grid against its retained events (see reconcile)
 	windowMonitor windowMonitor
+
+	// generation is the view controller generation this grid was created
+	// under (see ConnectViewController.generation). Written once, before the
+	// grid is exposed; read by windowMonitorEventCallback's gate.
+	generation uint64
 
 	sideLength         int
 	gridPoints         map[gridPointCoord]*gridPoint
@@ -826,8 +1053,58 @@ func (self *ConnectGrid) resize() {
 	self.gridPoints = gridPoints
 }
 
+// gridConnectionStatus is the status shown for a connected grid.
+//
+// A window is Connected when it reaches its minimum size. The minimum (4 for
+// the mobile quality window, 2 for a quality or speed profile) is not capped by
+// the number of providers the selected location has, so in a location with
+// fewer providers than the minimum the window can never be satisfied, and the
+// status stayed Connecting with every provider of the location already active.
+// When the active providers cover the location's provider count, there is no
+// provider left to connect to, and the status is Connected.
+// A location without a provider count (best available, a group, a client id)
+// relies on the window minimum alone.
+func gridConnectionStatus(
+	minSatisfied bool,
+	failed bool,
+	activeProviderCount int,
+	locationProviderCount int32,
+) ConnectionStatus {
+	if minSatisfied {
+		return Connected
+	}
+	if 0 < locationProviderCount && 0 < activeProviderCount &&
+		int(locationProviderCount) <= activeProviderCount {
+		return Connected
+	}
+	if failed {
+		// the window honesty layer's terminal outcome: zero Added past
+		// both deadlines. Checked after the satisfied cases so a recovered
+		// window's satisfied state always wins.
+		return ConnectFailed
+	}
+	return Connecting
+}
+
 // connect.MonitorEventFunction
 func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.WindowExpandEvent, providerEvents map[connect.Id]*connect.ProviderEvent, reset bool) {
+	// D2 generation gate: once the user has issued a disconnect (or a new
+	// connect), this grid's generation is stale and the outgoing session's
+	// monitor events must not recompute the grid or the rendered status. The
+	// events are dropped WHOLE — the grid itself is about to be closed by the
+	// location change that follows the gesture, so there is nothing worth
+	// updating, and a partial update that skipped only the status write would
+	// still flash dots. Checked before any lock: the gate takes the view
+	// controller's stateLock, and the grid's own stateLock is taken below.
+	if !self.connectViewController.generationCurrent(self.generation) {
+		return
+	}
+	// read before the grid lock, like the generation gate above: the view
+	// controller's stateLock is never taken under the grid's
+	locationProviderCount := int32(0)
+	if location := self.connectViewController.GetSelectedLocation(); location != nil {
+		locationProviderCount = location.ProviderCount
+	}
 	done := false
 	windowSizeChanged := false
 	providerGridPointChanged := false
@@ -881,6 +1158,23 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					point.Active = providerEvent.State.IsActive()
 					providerGridPointChanged = true
 				}
+				// the category can change on a live point: a dualstack exit
+				// whose v6 dials keep failing is downgraded locally (IPV6.md B5)
+				if ipFamily := ipFamilyValue(providerEvent.IpFamily); point.IpFamily != ipFamily {
+					point.IpFamily = ipFamily
+					point.IpFamilyLabel = ipFamilyLabel(providerEvent.IpFamily)
+					providerGridPointChanged = true
+				}
+				// the extenders of a live point change whenever a transport
+				// migrates, connects or drops, which is the whole point of the
+				// in-place update (K1)
+				if extenderIps, extenderColorHexes := extenderIpsAndColorHexes(
+					providerEvent.ExtenderIps,
+				); point.ExtenderIps != extenderIps {
+					point.ExtenderIps = extenderIps
+					point.ExtenderColorHexes = extenderColorHexes
+					providerGridPointChanged = true
+				}
 				// point.EventTime = newTime(eventTime)
 			} else {
 				// insert a new provider point
@@ -931,14 +1225,19 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 					// schedule the point to be removed
 					endTime = newTime(time.Now().Add(self.settings.RemoveTimeout))
 				}
+				extenderIps, extenderColorHexes := extenderIpsAndColorHexes(providerEvent.ExtenderIps)
 				point = &ProviderGridPoint{
 					X:        int32(unoccupiedGridPoint.X),
 					Y:        int32(unoccupiedGridPoint.Y),
 					ClientId: newId(clientId),
 					State:    providerState,
 					// EventTime: newTime(eventTime),
-					EndTime: endTime,
-					Active:  providerEvent.State.IsActive(),
+					EndTime:            endTime,
+					Active:             providerEvent.State.IsActive(),
+					IpFamily:           ipFamilyValue(providerEvent.IpFamily),
+					IpFamilyLabel:      ipFamilyLabel(providerEvent.IpFamily),
+					ExtenderIps:        extenderIps,
+					ExtenderColorHexes: extenderColorHexes,
 				}
 				self.providerGridPoints[clientId] = point
 				providerGridPointChanged = true
@@ -960,11 +1259,12 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 		}
 
 		// note the callback is only active while the device is connected
-		if windowExpandEvent.MinSatisfied {
-			connectionStatus = Connected
-		} else {
-			connectionStatus = Connecting
-		}
+		connectionStatus = gridConnectionStatus(
+			windowExpandEvent.MinSatisfied,
+			windowExpandEvent.Failed,
+			windowCurrentSize,
+			locationProviderCount,
+		)
 
 		deviceLog(self.connectViewController.device).Infof(
 			"[grid]%d->%d(%t) points=%d %s (w=%t, p=%t)\n",
@@ -982,11 +1282,19 @@ func (self *ConnectGrid) windowMonitorEventCallback(windowExpandEvent *connect.W
 		return
 	}
 
+	// D2, second look: the entry gate was checked before the grid work above,
+	// and a disconnect can land while that work runs. The dot/grid dispatches
+	// get a best-effort recheck (they only make listeners re-read a grid that
+	// is about to close); the STATUS write is the one that must be airtight,
+	// so it re-checks the generation atomically with the write.
+	if !self.connectViewController.generationCurrent(self.generation) {
+		return
+	}
 	if providerGridPointChanged {
 		self.providerGridPointsMonitor.NotifyAll()
 	}
 	if windowSizeChanged || providerGridPointChanged {
 		self.connectViewController.gridChanged()
 	}
-	self.connectViewController.setConnectionStatus(connectionStatus)
+	self.connectViewController.setConnectionStatusForGeneration(connectionStatus, self.generation)
 }

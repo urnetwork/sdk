@@ -1,0 +1,21 @@
+[package]
+name = "urnetwork-sdk"
+version = "0.0.1-dev.0"
+edition = "2021"
+rust-version = "1.85"
+description = "URnetwork userspace networking SDK over the CGo ABI"
+license = "MPL-2.0"
+repository = "https://github.com/urnetwork/sdk"
+readme = "README.md"
+include = ["src/**", "native/**", "build.rs", "Cargo.toml", "README.md", "LICENSE"]
+
+[build-dependencies]
+ureq = "3"
+sha2 = "0.10"
+serde_json = "1"
+
+[dependencies]
+libloading = "0.8"
+flate2 = "1"
+sha2 = "0.10"
+tempfile = "3"

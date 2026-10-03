@@ -496,7 +496,7 @@ func (self *MessageRouteClient) callbackList() []connect.ReceiveFunction {
 // one route reaches one server.
 func (self *MessageRouteClient) SendWithTimeout(
 	frame *protocol.Frame,
-	destination connect.TransferPath,
+	destination connect.Id,
 	ackCallback connect.AckFunction,
 	timeout time.Duration,
 	opts ...any,

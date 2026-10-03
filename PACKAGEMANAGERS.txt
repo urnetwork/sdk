@@ -1,0 +1,13 @@
+SDK	Registry or package manager	Published package	Required credentials and configuration
+JavaScript and TypeScript	npm	@urnetwork/sdk and @urnetwork/sdk-js alias	NPM_TOKEN or NODE_AUTH_TOKEN; an authenticated .npmrc also works
+Python	PyPI	urnetwork-sdk	PYPI_TOKEN or TWINE_PASSWORD
+C#	NuGet	URnetwork.SDK	NUGET_API_KEY
+Ruby	RubyGems	urnetwork-sdk	GEM_HOST_API_KEY
+Rust	crates.io	urnetwork-sdk	CARGO_REGISTRY_TOKEN
+Java, Kotlin, and Android	Maven Central	io.ur:urnetwork-sdk and io.ur:urnetwork-sdk-android	MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD, and SDK_GPG_KEY_ID; the signing private key must be available to GPG
+Swift	SwiftPM and Carthage Git repository	urnetwork/sdk-swift	SDK_SWIFT_GIT_TOKEN; optional SDK_SWIFT_REPOSITORY
+Swift compatibility	CocoaPods	URnetworkSdk	COCOAPODS_TRUNK_TOKEN
+C and C++	Conan remote	urnetwork-sdk	CONAN_LOGIN_USERNAME and CONAN_PASSWORD; configure SDK_CONAN_REMOTE_URL
+C and C++	vcpkg Git registry	urnetwork-sdk	SDK_VCPKG_GIT_TOKEN; optional SDK_VCPKG_REPOSITORY
+Go	Git tags and Go modules	github.com/urnetwork/sdk/v2026	Existing GitHub Git push credentials, normally SSH; no separate Go registry token
+Shared native artifacts	GitHub Releases	Rust, Swift, and C/C++ binary archives	GITHUB_API_KEY

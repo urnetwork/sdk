@@ -140,3 +140,11 @@ skips files the default build excludes (`inDefaultBuild`) — a `.def` naming a
 symbol the dll lacks is a link error at the consumer — and its scan pattern
 tolerates CRLF, which every Windows clone of this repo has and which used to
 make it find nothing at all.
+## testing
+
+`make smoke` builds a host (macOS) library and runs `smoke/smoke.cpp` against
+it: strings, ids, buffer-out, json, handle lifecycle, and async callbacks.
+
+`make smoke_memory_usage_json` checks the shipped C++ memory snapshot's JSON
+round-trip and legacy defaults without linking the SDK library. It also runs
+as part of `make smoke_hpp`.

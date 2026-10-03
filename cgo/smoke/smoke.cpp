@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <unistd.h>
 
@@ -87,6 +88,20 @@ int main() {
 	CHECK(jwt != nullptr);
 	urnet_free_string(jwt);
 
+	// A real checked snapshot crosses as an owned handle, not an empty JSON
+	// object. Read its immutable getters and release it before closing the store.
+	uint64_t authSnapshot = urnet_local_state_get_auth_state_snapshot(localState, &error);
+	CHECK(authSnapshot != 0 && error == nullptr);
+	CHECK(urnet_local_auth_state_snapshot_get_empty(authSnapshot));
+	char* snapshotClient = urnet_local_auth_state_snapshot_get_by_client_jwt(authSnapshot);
+	CHECK(snapshotClient != nullptr && snapshotClient[0] == '\0');
+	urnet_free_string(snapshotClient);
+	char* snapshotInstance = urnet_local_auth_state_snapshot_get_instance_id(authSnapshot);
+	CHECK(snapshotInstance == nullptr || snapshotInstance[0] == '\0');
+	if (snapshotInstance != nullptr) urnet_free_string(snapshotInstance);
+	CHECK(urnet_release(authSnapshot));
+	CHECK(!urnet_release(authSnapshot));
+
 	std::atomic<int> callbackCount{0};
 	urnet_async_local_state_get_by_jwt(asyncLocalState, onGetByJwt, &callbackCount);
 	for (int i = 0; i < 500 && callbackCount.load() == 0; i += 1) {
@@ -100,6 +115,77 @@ int main() {
 	// a double release reports false
 	CHECK(!urnet_release(asyncLocalState));
 	CHECK(urnet_live_handle_count() == 0);
+
+	// client event queue: a behavioral handle with methods, not a json value.
+	// With no jwt in the space the queue holds events without sending, so the
+	// pending count and the session are observable offline.
+	{
+		uint64_t manager = urnet_new_network_space_manager_no_storage();
+		CHECK(manager != 0);
+		uint64_t space = urnet_network_space_manager_update_network_space_values(
+			manager, "{\"host_name\":\"smoke.test\",\"env_name\":\"test\"}", "{}");
+		CHECK(space != 0);
+		uint64_t queue = urnet_new_client_event_queue(space, "linux", "2026.9.9", "en-US");
+		CHECK(queue != 0);
+		CHECK(urnet_client_event_queue_pending_count(queue) == 0);
+		char* session = urnet_client_event_queue_get_session(queue);
+		CHECK(session != nullptr && session[0] != '\0');
+		std::string firstSession = session;
+		urnet_free_string(session);
+		char* event = urnet_new_connect_first_event();
+		CHECK(event != nullptr);
+		urnet_client_event_queue_add(queue, event);
+		urnet_free_string(event);
+		CHECK(urnet_client_event_queue_pending_count(queue) == 1);
+		urnet_client_event_queue_set_locale(queue, "de");
+		urnet_client_event_queue_set_app_version(queue, "2026.9.10");
+		urnet_client_event_queue_new_session(queue);
+		session = urnet_client_event_queue_get_session(queue);
+		CHECK(session != nullptr);
+		std::string secondSession = session;
+		urnet_free_string(session);
+		CHECK(secondSession != firstSession);
+		urnet_client_event_queue_flush(queue);
+		urnet_client_event_queue_flush_and_wait(queue, 100);
+		urnet_client_event_queue_close(queue);
+		CHECK(urnet_release(queue));
+		CHECK(!urnet_release(queue));
+		CHECK(urnet_release(space));
+		CHECK(urnet_release(manager));
+		CHECK(urnet_live_handle_count() == 0);
+	}
+
+	// payment catalog + checkout envelope (the pure surface the windows and
+	// linux apps replace their hand-rolled copies with)
+	CHECK(std::strcmp(URNET_STRIPE_ITEM_PRO_MONTHLY, "pro_monthly") == 0);
+	CHECK(URNET_BALANCE_CODE_LENGTH == 26);
+
+	char* bridgeUrl = urnet_build_checkout_bridge_url("cs_test_a1+b/2");
+	CHECK(bridgeUrl != nullptr);
+	CHECK(std::strstr(bridgeUrl, "https://ur.io/checkout?") != nullptr);
+	// the client secret must be percent-encoded, never raw
+	CHECK(std::strstr(bridgeUrl, "cs_test_a1+b/2") == nullptr);
+	urnet_free_string(bridgeUrl);
+
+	CHECK(urnet_is_checkout_redirect("urnetwork://checkout?status=complete&session_id=cs_1"));
+	CHECK(!urnet_is_checkout_redirect("https://evil.example/checkout"));
+
+	char* redirectError = nullptr;
+	char* redirect = urnet_parse_checkout_redirect(
+		"urnetwork://checkout?status=complete&session_id=cs_1", &redirectError);
+	CHECK(redirect != nullptr && redirectError == nullptr);
+	CHECK(std::strstr(redirect, "cs_1") != nullptr);
+	urnet_free_string(redirect);
+
+	CHECK(urnet_is_balance_code_format_valid("ABCDEFGHIJKLMNOPQRSTUVWXYZ"));
+	CHECK(!urnet_is_balance_code_format_valid("too-short"));
+
+	char* store = urnet_classify_subscription_store("itunes");
+	CHECK(store != nullptr && std::strcmp(store, "apple") == 0);
+	urnet_free_string(store);
+	store = urnet_classify_subscription_store("play");
+	CHECK(store != nullptr && std::strcmp(store, "google") == 0);
+	urnet_free_string(store);
 
 	std::printf("OK\n");
 	return 0;

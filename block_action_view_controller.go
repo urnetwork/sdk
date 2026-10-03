@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 // view controller for the block/routing activity ui.
 // Stores a time window of the most recent routing decisions (block actions),
 // gated by an adjustable window duration, along with the latest block stats

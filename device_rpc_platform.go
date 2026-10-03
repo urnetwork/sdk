@@ -13,15 +13,15 @@ import (
 // DeviceLocal lives on the proxy host, so there is no connect-service or
 // resident hop.
 //
-// Auth is the device's signed proxy id, passed as the `proxy` query parameter
-// (a browser WebSocket cannot set request headers, but can set query params).
+// Auth is the device's signed proxy id, passed in Authorization natively and as
+// the `proxy` query parameter in a browser (which cannot set request headers).
 // The signed proxy id is an HMAC bearer token — the same credential the wg and
 // https data planes use — so no JWT and no auth handshake are needed. The
 // forward and reverse rpc streams are multiplexed over the single connection by
 // the shared deviceRpcMux.
 //
-// The concrete websocket open is provided per platform by dialDeviceRpcWs:
-// gorilla on native builds, the browser WebSocket on js.
+// The carrier open is provided per platform by dialDeviceRpcWs: native cohorts
+// may prefer urnetwork-framerxl/1 with Gorilla fallback; JS uses browser WS.
 type PlatformDeviceRpcDialer struct {
 	proxyUrl      string
 	signedProxyId string

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -88,12 +89,13 @@ type deviceRpcListener interface {
 	Accept(ctx context.Context) (forward net.Conn, reverse net.Conn, err error)
 }
 
-// DeviceRpcWs is the subset of the websocket connection the mux uses (with
-// deviceRpcWs). Implemented by the gorilla connection natively and by the
+// DeviceRpcWs is the historical name of the gomobile-bindable binary carrier
+// interface (with deviceRpcWs). Implemented by the gorilla connection and by
+// connect.FramedMessageConn for explicitly negotiated FramerXl, and by the
 // browser websocket shim under js (see device_rpc_platform_js.go), where the
 // write-control ping is a zero-length binary message since browsers cannot
-// send protocol pings (the read loop discards zero-length messages, so native
-// peers tolerate it).
+// send protocol pings. The mux uses only binary messages and serialized empty
+// heartbeats on every carrier; it never asks FramerXl to emulate WS controls.
 type DeviceRpcWs interface {
 	WriteMessage(messageType int, data []byte) error
 	Close() error
@@ -104,6 +106,7 @@ type deviceRpcWs interface {
 	DeviceRpcWs
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 	NextReader() (messageType int, r io.Reader, err error)
+	SetReadLimit(limit int64)
 	SetReadDeadline(t time.Time) error
 	SetWriteDeadline(t time.Time) error
 	SetPongHandler(h func(appData string) error)
@@ -120,17 +123,111 @@ type deviceRpcMux struct {
 
 	ws deviceRpcWs
 
-	pingTimeout  time.Duration
-	readTimeout  time.Duration
-	writeTimeout time.Duration
+	pingTimeout   time.Duration
+	readTimeout   time.Duration
+	writeTimeout  time.Duration
+	maxFrameBytes int64
+	sendBytes     *deviceRpcByteBudget
+	receiveBytes  *deviceRpcByteBudget
 
 	// pooled, tag-prefixed frames pending write. drained and returned to the
 	// pool on teardown.
 	send chan []byte
 
+	// Exclusive to writeLoop, like the underlying carrier's writer. Reusing
+	// these descriptors avoids a heap-allocated 32-entry slice array on every
+	// ready flush. Clear every borrowed payload reference before returning its
+	// ownership; neither a completed nor failed flush may retain a message.
+	writeMessages [32][]byte
+
+	// Admission closes before the writer joins producers and drains send.
+	// Only external Write calls register; the write loop never joins itself.
+	stateLock  sync.Mutex
+	sendClosed bool
+	senders    sync.WaitGroup
+
 	conns [deviceRpcStreamCount]*deviceRpcMuxConn
 
 	closeOnce sync.Once
+}
+
+// deviceRpcByteBudget applies byte-level backpressure to one mux direction.
+// Send and receive use separate budgets: sharing one can deadlock when a server
+// must write a response before it consumes already-buffered inbound requests.
+type deviceRpcByteBudget struct {
+	mu       sync.Mutex
+	used     int64
+	max      int64
+	waiters  int
+	released chan struct{}
+}
+
+func newDeviceRpcByteBudget(maxBytes int64) *deviceRpcByteBudget {
+	return &deviceRpcByteBudget{
+		max:      max(int64(1), maxBytes),
+		released: make(chan struct{}),
+	}
+}
+
+func (self *deviceRpcByteBudget) acquire(ctx context.Context, byteCount int) bool {
+	requested := int64(byteCount)
+	if self.max < requested {
+		return false
+	}
+	for {
+		if ctx.Err() != nil {
+			return false
+		}
+		self.mu.Lock()
+		if self.used+requested <= self.max {
+			self.used += requested
+			self.mu.Unlock()
+			return true
+		}
+		released := self.released
+		self.waiters += 1
+		self.mu.Unlock()
+		acquired := false
+		select {
+		case <-ctx.Done():
+		case <-released:
+			acquired = true
+		}
+		self.mu.Lock()
+		self.waiters -= 1
+		self.mu.Unlock()
+		if !acquired {
+			return false
+		}
+	}
+}
+
+// Admits receive-owned bytes without parking the shared websocket reader. A
+// rejected reliable RPC frame cannot be skipped without corrupting its byte
+// stream, so the caller closes the complete mux generation instead.
+func (self *deviceRpcByteBudget) tryAcquire(byteCount int) bool {
+	requested := int64(byteCount)
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.max < requested || self.max-self.used < requested {
+		return false
+	}
+	self.used += requested
+	return true
+}
+
+func (self *deviceRpcByteBudget) release(byteCount int) {
+	self.mu.Lock()
+	self.used -= int64(byteCount)
+	if self.used < 0 {
+		self.mu.Unlock()
+		panic("device rpc queued byte budget released more than acquired")
+	}
+	if 0 < self.waiters {
+		close(self.released)
+		self.released = make(chan struct{})
+	}
+	self.mu.Unlock()
 }
 
 func newDeviceRpcMux(ctx context.Context, ws deviceRpcWs, settings *deviceRpcSettings) *deviceRpcMux {
@@ -140,15 +237,25 @@ func newDeviceRpcMux(ctx context.Context, ws deviceRpcWs, settings *deviceRpcSet
 	readTimeout := settings.KeepAliveTimeout * time.Duration(settings.KeepAliveRetryCount+1)
 
 	mux := &deviceRpcMux{
-		ctx:          cancelCtx,
-		cancel:       cancel,
-		log:          settings.logger(),
-		ws:           ws,
-		pingTimeout:  pingTimeout,
-		readTimeout:  readTimeout,
-		writeTimeout: settings.MuxWriteTimeout,
-		send:         make(chan []byte, settings.MuxSendBufferSize),
+		ctx:           cancelCtx,
+		cancel:        cancel,
+		log:           settings.logger(),
+		ws:            ws,
+		pingTimeout:   pingTimeout,
+		readTimeout:   readTimeout,
+		writeTimeout:  settings.MuxWriteTimeout,
+		maxFrameBytes: settings.maxFrameBytes(),
+		sendBytes: newDeviceRpcByteBudget(max(
+			settings.maxQueuedBytes(),
+			settings.maxFrameBytes(),
+		)),
+		receiveBytes: newDeviceRpcByteBudget(max(
+			settings.maxQueuedBytes(),
+			settings.maxFrameBytes(),
+		)),
+		send: make(chan []byte, settings.MuxSendBufferSize),
 	}
+	ws.SetReadLimit(mux.maxFrameBytes)
 	for i := range mux.conns {
 		mux.conns[i] = newDeviceRpcMuxConn(mux, uint8(i), settings)
 	}
@@ -174,19 +281,30 @@ func (self *deviceRpcMux) close() {
 	})
 }
 
-func (self *deviceRpcMux) writeLoop() {
-	defer func() {
-		self.close()
-		// drain any pooled frames still queued so they return to the pool
-		for {
-			select {
-			case b := <-self.send:
-				connect.MessagePoolReturn(b)
-			default:
-				return
-			}
-		}
+// Cancels blocked producers, closes admission, and joins every admitted Write
+// before the final drain. A canceled select may still enqueue into a ready
+// buffer, so cancellation alone is not a producer-completion barrier.
+func (self *deviceRpcMux) finishSend() {
+	self.close()
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.sendClosed = true
 	}()
+	self.senders.Wait()
+	for {
+		select {
+		case b := <-self.send:
+			connect.MessagePoolReturn(b)
+			self.sendBytes.release(len(b))
+		default:
+			return
+		}
+	}
+}
+
+func (self *deviceRpcMux) writeLoop() {
+	defer self.finishSend()
 
 	var ping <-chan time.Time
 	if 0 < self.pingTimeout {
@@ -200,11 +318,19 @@ func (self *deviceRpcMux) writeLoop() {
 		case <-self.ctx.Done():
 			return
 		case b := <-self.send:
+			if writer, ok := self.ws.(interface{ WriteMessages([][]byte) error }); ok {
+				if err := self.writeReadyMessages(writer, b); err != nil {
+					self.log.Infof("[mux]write done = %s", err)
+					return
+				}
+				continue
+			}
 			if 0 < self.writeTimeout {
 				self.ws.SetWriteDeadline(time.Now().Add(self.writeTimeout))
 			}
 			err := self.ws.WriteMessage(DeviceRpcWsBinary, b)
 			connect.MessagePoolReturn(b)
+			self.sendBytes.release(len(b))
 			if err != nil {
 				self.log.Infof("[mux]write done = %s", err)
 				return
@@ -237,22 +363,19 @@ func (self *deviceRpcMux) readLoop() {
 		self.close()
 		for _, conn := range self.conns {
 			conn.drainReceive()
+			conn.releaseCurrentReceive()
 		}
 	}()
 
 	for {
-		messageType, r, err := self.ws.NextReader()
+		messageType, message, err := self.readMessage()
 		if err != nil {
 			self.log.Infof("[mux]read done = %s", err)
 			return
 		}
 		if messageType != DeviceRpcWsBinary {
+			connect.MessagePoolReturn(message)
 			continue
-		}
-		message, err := connect.MessagePoolReadAll(r)
-		if err != nil {
-			self.log.Infof("[mux]read all done = %s", err)
-			return
 		}
 		if 0 < self.readTimeout {
 			self.ws.SetReadDeadline(time.Now().Add(self.readTimeout))
@@ -266,13 +389,67 @@ func (self *deviceRpcMux) readLoop() {
 			connect.MessagePoolReturn(message)
 			continue
 		}
-		// ownership of message passes to the conn, which returns it to the pool
-		// once fully consumed by Read
-		if !self.conns[tag].pushReceive(message) {
+		if !self.receiveBytes.tryAcquire(len(message)) {
+			self.log.Infof("[mux]receive byte budget full; closing rpc generation")
 			connect.MessagePoolReturn(message)
 			return
 		}
+		// ownership of message passes to the conn, which returns it to the pool
+		// once fully consumed by Read
+		if !self.conns[tag].pushReceive(message) {
+			self.log.Infof("[mux]receive stream queue full; closing rpc generation")
+			connect.MessagePoolReturn(message)
+			self.receiveBytes.release(len(message))
+			return
+		}
 	}
+}
+
+func (self *deviceRpcMux) readMessage() (int, []byte, error) {
+	if reader, ok := self.ws.(interface{ ReadPooledMessage() (int, []byte, error) }); ok {
+		return reader.ReadPooledMessage()
+	}
+	kind, reader, err := self.ws.NextReader()
+	if err != nil || kind != DeviceRpcWsBinary {
+		return kind, nil, err
+	}
+	message, err := connect.MessagePoolReadAllLimit(reader, self.maxFrameBytes)
+	return kind, message, err
+}
+
+func (self *deviceRpcMux) writeReadyMessages(writer interface{ WriteMessages([][]byte) error }, first []byte) error {
+	messages := &self.writeMessages
+	messages[0] = first
+	count, total := 1, len(first)
+	defer func() {
+		for i, message := range messages[:count] {
+			messages[i] = nil
+			connect.MessagePoolReturn(message)
+			self.sendBytes.release(len(message))
+		}
+	}()
+drain:
+	for count < len(messages) && total < 12*1024 {
+		select {
+		case <-self.ctx.Done():
+			return io.ErrClosedPipe
+		case message := <-self.send:
+			messages[count] = message
+			count++
+			total += len(message)
+		default:
+			break drain
+		}
+	}
+	if self.ctx.Err() != nil {
+		return io.ErrClosedPipe
+	}
+	if self.writeTimeout > 0 {
+		if err := self.ws.SetWriteDeadline(time.Now().Add(self.writeTimeout)); err != nil {
+			return err
+		}
+	}
+	return writer.WriteMessages(messages[:count])
 }
 
 // compile check that deviceRpcMuxConn conforms to net.Conn
@@ -297,12 +474,17 @@ func newDeviceRpcMuxConn(mux *deviceRpcMux, tag uint8, settings *deviceRpcSettin
 	}
 }
 
+// Hands one complete reliable-stream fragment to its net/rpc reader without
+// blocking the shared websocket receive loop. Refusal is terminal for the mux:
+// dropping a fragment and continuing would silently corrupt the RPC stream.
 func (self *deviceRpcMuxConn) pushReceive(message []byte) bool {
 	select {
 	case <-self.mux.ctx.Done():
 		return false
 	case self.receive <- message:
 		return true
+	default:
+		return false
 	}
 }
 
@@ -313,10 +495,23 @@ func (self *deviceRpcMuxConn) drainReceive() {
 		select {
 		case message := <-self.receive:
 			connect.MessagePoolReturn(message)
+			self.mux.receiveBytes.release(len(message))
 		default:
 			return
 		}
 	}
+}
+
+func (self *deviceRpcMuxConn) releaseCurrentReceive() {
+	self.readMu.Lock()
+	defer self.readMu.Unlock()
+	if self.readMsg == nil {
+		return
+	}
+	self.mux.receiveBytes.release(len(self.readMsg))
+	connect.MessagePoolReturn(self.readMsg)
+	self.readMsg = nil
+	self.readOff = 0
 }
 
 func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
@@ -325,6 +520,7 @@ func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
 
 	for self.readMsg == nil || self.readOff >= len(self.readMsg) {
 		if self.readMsg != nil {
+			self.mux.receiveBytes.release(len(self.readMsg))
 			connect.MessagePoolReturn(self.readMsg)
 			self.readMsg = nil
 		}
@@ -340,6 +536,7 @@ func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
 	n := copy(p, self.readMsg[self.readOff:])
 	self.readOff += n
 	if self.readOff >= len(self.readMsg) {
+		self.mux.receiveBytes.release(len(self.readMsg))
 		connect.MessagePoolReturn(self.readMsg)
 		self.readMsg = nil
 	}
@@ -347,15 +544,46 @@ func (self *deviceRpcMuxConn) Read(p []byte) (int, error) {
 }
 
 func (self *deviceRpcMuxConn) Write(p []byte) (int, error) {
+	return self.write(p, nil)
+}
+
+// beforeSend is an optional private test barrier borrowing the admitted frame;
+// it runs outside locks at the actual producer-to-queue ownership transition.
+func (self *deviceRpcMuxConn) write(p []byte, beforeSend func([]byte)) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	b := connect.MessagePoolGet(1 + len(p))
+	frameByteCount := 1 + len(p)
+	if self.mux.maxFrameBytes < int64(frameByteCount) {
+		self.mux.close()
+		return 0, fmt.Errorf("device rpc frame exceeds %d-byte limit", self.mux.maxFrameBytes)
+	}
+	admitted := func() bool {
+		self.mux.stateLock.Lock()
+		defer self.mux.stateLock.Unlock()
+		if self.mux.sendClosed {
+			return false
+		}
+		self.mux.senders.Add(1)
+		return true
+	}()
+	if !admitted {
+		return 0, io.ErrClosedPipe
+	}
+	defer self.mux.senders.Done()
+	if !self.mux.sendBytes.acquire(self.mux.ctx, frameByteCount) {
+		return 0, io.ErrClosedPipe
+	}
+	b := connect.MessagePoolGet(frameByteCount)
 	b[0] = self.tag
 	copy(b[1:], p)
+	if beforeSend != nil {
+		beforeSend(b)
+	}
 	select {
 	case <-self.mux.ctx.Done():
 		connect.MessagePoolReturn(b)
+		self.mux.sendBytes.release(len(b))
 		return 0, io.ErrClosedPipe
 	case self.mux.send <- b:
 		return len(p), nil
@@ -569,14 +797,16 @@ func deviceRpcKeepAliveConfig(settings *deviceRpcSettings) net.KeepAliveConfig {
 // compile check that WebsocketDeviceRpcDialer conforms to deviceRpcDialer
 var _ deviceRpcDialer = (*WebsocketDeviceRpcDialer)(nil)
 
+// Concurrent dials share one failure streak, ending at each successful
+// handshake. The address and settings must remain unchanged while dialing.
 type WebsocketDeviceRpcDialer struct {
-	address       *DeviceRemoteAddress
-	tlsConfig     *tls.Config
-	tlsConfigErr  error
-	useMtls       bool
-	lastDialError string
-	settings      *deviceRpcSettings
-	log           connect.Logger
+	address      *DeviceRemoteAddress
+	tlsConfig    *tls.Config
+	tlsConfigErr error
+	useMtls      bool
+	dialFailed   atomic.Bool
+	settings     *deviceRpcSettings
+	log          connect.Logger
 }
 
 // NewWebsocketDeviceRpcDialer dials the device local at address. If
@@ -604,6 +834,7 @@ func NewWebsocketDeviceRpcDialer(address *DeviceRemoteAddress, clientPem string,
 	}
 }
 
+// Opens the websocket over a socket with the configured timeout and keepalive.
 func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.Conn, error) {
 	// dial the raw TCP conn with OS-level keepalive enabled; gorilla wraps this
 	// conn with TLS for wss, so keepalive persists under encryption.
@@ -611,9 +842,15 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 		Timeout:         self.settings.RpcConnectTimeout,
 		KeepAliveConfig: deviceRpcKeepAliveConfig(self.settings),
 	}
+	return self.dial(ctx, netDialer.DialContext)
+}
+
+// Uses the same handshake and mux lifecycle with either a socket connector or
+// an in-memory connector for deterministic transport tests.
+func (self *WebsocketDeviceRpcDialer) dial(ctx context.Context, netDialContext func(context.Context, string, string) (net.Conn, error)) (net.Conn, net.Conn, error) {
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: self.settings.RpcConnectTimeout,
-		NetDialContext:   netDialer.DialContext,
+		NetDialContext:   netDialContext,
 	}
 	if self.tlsConfigErr != nil {
 		return nil, nil, self.tlsConfigErr
@@ -628,18 +865,18 @@ func (self *WebsocketDeviceRpcDialer) Dial(ctx context.Context) (net.Conn, net.C
 	if self.log.V(2).Enabled() {
 		self.log.Infof("[dr]dial %s (mtls=%t)", u.String(), self.useMtls)
 	}
-	ws, _, err := dialer.DialContext(ctx, u.String(), nil)
+	carrier, err := connect.DialH1Messages(ctx, u.String(), nil, dialer, connect.H1FramerXlProtocol, int(self.settings.maxFrameBytes()), self.settings.EnableH1Plus && self.useMtls, self.settings.H1PlusStats)
 	if err != nil {
-		dialError := err.Error()
-		if dialError != self.lastDialError {
+		// Reserve the outage before calling the external logger. Error text
+		// can change without recovery, and another Dial may finish meanwhile.
+		if !self.dialFailed.Swap(true) {
 			self.log.Infof("[dr]dial %s err = %s", u.String(), err)
-			self.lastDialError = dialError
 		}
 		return nil, nil, err
 	}
-	self.lastDialError = ""
+	self.dialFailed.Store(false)
 	self.log.Infof("[dr]dial %s connected", u.String())
-	mux := newDeviceRpcMux(ctx, ws, self.settings)
+	mux := newDeviceRpcMux(ctx, carrier.(deviceRpcWs), self.settings)
 	return mux.conns[deviceRpcStreamForward], mux.conns[deviceRpcStreamReverse], nil
 }
 
@@ -722,7 +959,9 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", self.handle)
 	self.httpServer = &http.Server{
-		Handler: serveMux,
+		Handler:           serveMux,
+		ReadHeaderTimeout: self.settings.RpcConnectTimeout,
+		MaxHeaderBytes:    32 * 1024,
 		// handshake/connection failures on this localhost listener are not
 		// actionable and a misconfigured client should not spam logs
 		ErrorLog: log.New(io.Discard, "", 0),
@@ -769,7 +1008,35 @@ func (self *WebsocketDeviceRpcListener) ensureStarted() error {
 }
 
 func (self *WebsocketDeviceRpcListener) handle(w http.ResponseWriter, r *http.Request) {
-	ws, err := self.upgrader.Upgrade(w, r, nil)
+	var ws deviceRpcWs
+	var err error
+	if connect.IsFramedUpgrade(r, connect.H1FramerXlProtocol) {
+		if !self.settings.EnableH1Plus || !connect.H1PlusAvailable() {
+			http.Error(w, "upgrade unavailable", http.StatusUpgradeRequired)
+			return
+		}
+		// The listener's TLS handshake already verifies the exact client
+		// certificate pin. Never add an unauthenticated raw upgrade locally.
+		if self.clientCertPem == "" || r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if err = connect.ValidateFramedUpgradeRequest(r, connect.H1FramerXlProtocol); err != nil {
+			http.Error(w, "invalid upgrade", http.StatusBadRequest)
+			return
+		}
+		conn, upgradeErr := connect.AcceptFramedUpgrade(w, r, connect.H1FramerXlProtocol, self.settings.RpcConnectTimeout)
+		if upgradeErr != nil {
+			return
+		}
+		ws, err = connect.NewFramedMessageConn(conn, connect.H1FramerXlProtocol, int(self.settings.maxFrameBytes()), self.settings.H1PlusStats)
+		if err != nil {
+			conn.Close()
+			return
+		}
+	} else {
+		ws, err = self.upgrader.Upgrade(w, r, nil)
+	}
 	if err != nil {
 		self.log.Infof("[dlrpc]ws upgrade err = %s", err)
 		return

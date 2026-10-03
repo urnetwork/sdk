@@ -98,7 +98,7 @@ const messageTransportDefaultTimeout = 30 * time.Second
 type messageTransportClient interface {
 	SendWithTimeout(
 		frame *protocol.Frame,
-		destination connect.TransferPath,
+		destinationId connect.Id,
 		ackCallback connect.AckFunction,
 		timeout time.Duration,
 		opts ...any,
@@ -465,7 +465,7 @@ func (self *messageTransport) send(request *protocol.MessageServerRequest) error
 		return err
 	}
 	for index, frame := range frames {
-		if !self.client.SendWithTimeout(frame, connect.DestinationId(self.server), nil, -1) {
+		if !self.client.SendWithTimeout(frame, self.server, nil, -1) {
 			// this frame and every frame after it are on no wire, so their
 			// buffers are ours to give back. The ones already handed over are
 			// connect's now

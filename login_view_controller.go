@@ -1,3 +1,5 @@
+//go:build !ios_extension
+
 package sdk
 
 import (

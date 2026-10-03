@@ -116,6 +116,22 @@ type DnsResolverSettingsChangeListener interface {
 	DnsResolverSettingsChanged(dnsResolverSettings *DnsResolverSettings)
 }
 
+type TransportSettingsChangeListener interface {
+	TransportSettingsChanged(transportSettings *TransportSettings)
+}
+
+type ProviderTransportSettingsChangeListener interface {
+	ProviderTransportSettingsChanged(transportSettings *TransportSettings)
+}
+
+type TransportStatusChangeListener interface {
+	TransportStatusChanged(transportStatus *TransportStatus)
+}
+
+type ProviderTransportStatusChangeListener interface {
+	ProviderTransportStatusChanged(transportStatus *TransportStatus)
+}
+
 type PacketStatsChangeListener interface {
 	PacketStatsChanged(packetStats *PacketStats)
 }
@@ -240,6 +256,59 @@ type BlockAction struct {
 	RouteOverride *RouteOverride
 	PacketCount   int
 	ByteCount     ByteCount
+	// what decided a blocked or locally routed action, one of the
+	// BlockActionReason values; empty for ordinary provider-routed traffic
+	Reason string
+}
+
+// BlockAction reasons. The security reasons mean the URnetwork safety rules kept
+// the traffic off the providers: blocked with the kill switch on, routed from the
+// device's own address with it off.
+const (
+	// looked fully encrypted and matched no recognized protocol
+	BlockActionReasonSecurityEncrypted = connect.BlockActionReasonSecurityEncrypted
+	// a BitTorrent signature; never overridable
+	BlockActionReasonSecurityBittorrent = connect.BlockActionReasonSecurityBittorrent
+	// the destination port is not allowed
+	BlockActionReasonSecurityPort = connect.BlockActionReasonSecurityPort
+	// the destination address is not public or is on the reputation blocklist
+	BlockActionReasonSecurityIp = connect.BlockActionReasonSecurityIp
+	// smtp must be encrypted, and port 25 is routed locally
+	BlockActionReasonSecuritySmtp = connect.BlockActionReasonSecuritySmtp
+	// another security rule
+	BlockActionReasonSecurity = connect.BlockActionReasonSecurity
+	// the ad/tracker blocker matched
+	BlockActionReasonBlocker = connect.BlockActionReasonBlocker
+	// a user block or route override decided
+	BlockActionReasonOverride = connect.BlockActionReasonOverride
+)
+
+// IsSecurity reports whether the URnetwork safety rules decided the action.
+func (self *BlockAction) IsSecurity() bool {
+	switch self.Reason {
+	case BlockActionReasonSecurityEncrypted,
+		BlockActionReasonSecurityBittorrent,
+		BlockActionReasonSecurityPort,
+		BlockActionReasonSecurityIp,
+		BlockActionReasonSecuritySmtp,
+		BlockActionReasonSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
+// RouteLocalOverridable reports whether a route-local override (a host or app
+// rule) can make the blocked traffic work outside the tunnel. BitTorrent and
+// non-public destinations are never overridable, so only the reasons that are
+// always a plain drop qualify.
+func (self *BlockAction) RouteLocalOverridable() bool {
+	switch self.Reason {
+	case BlockActionReasonSecurityEncrypted, BlockActionReasonSecurityPort:
+		return true
+	default:
+		return false
+	}
 }
 
 // cumulative packet counts by route.
@@ -260,6 +329,33 @@ type PacketStats struct {
 	BlockEgressByteCount     ByteCount
 	BlockIngressPacketCount  int64
 	BlockIngressByteCount    ByteCount
+	// TransportStats partitions the remote totals by the physical carrier.
+	// The top-level fields remain the aggregate; local and blocked traffic are
+	// intentionally absent from the carrier breakdown.
+	TransportStats *TransportPacketStatsList
+}
+
+// TransportPacketStats maps one stable transport type to its contribution to
+// the enclosing aggregate PacketStats. Stats.TransportStats is nil so the
+// value does not recursively contain another breakdown.
+type TransportPacketStats struct {
+	TransportType TransportType
+	Stats         *PacketStats
+	// Live negotiated H1 connections, independent of the cumulative byte
+	// counters. Both can be nonzero in a mixed provider window. Zero for other
+	// transport types and older SDK peers. H1+ remains TransportTypeH1.
+	H1WebSocketConnectionCount int64
+	H1PlusConnectionCount      int64
+}
+
+type TransportPacketStatsList struct {
+	exportedList[*TransportPacketStats]
+}
+
+func NewTransportPacketStatsList() *TransportPacketStatsList {
+	return &TransportPacketStatsList{
+		exportedList: *newExportedList[*TransportPacketStats](),
+	}
 }
 
 type ContractStats struct {
@@ -299,6 +395,11 @@ type ContractDetails struct {
 }
 
 type WindowStatus struct {
+	// ConnectionGeneration changes only when the destination transport is
+	// replaced. It distinguishes a new window that is honestly forming from
+	// ordinary readiness churn inside the current window, and lets consumers
+	// discard late events from a retired window.
+	ConnectionGeneration          int64
 	TargetSize                    int
 	MinSatisfied                  bool
 	ProviderStateInEvaluation     int
@@ -306,6 +407,28 @@ type WindowStatus struct {
 	ProviderStateNotAdded         int
 	ProviderStateAdded            int
 	ProviderStateRemoved          int
+	// The Added providers split by address-family category (see ip_family.go).
+	// They sum to ProviderStateAdded. A legacy provider counts as v4-only.
+	ProviderDualstackCount int
+	ProviderV4OnlyCount    int
+	ProviderV6OnlyCount    int
+	// Ipv6Available is true while at least one Added provider can carry IPv6
+	// (dualstack or v6-only). While false after the window has formed, the
+	// tunnel answers AAAA queries empty and refuses v6 flows with an ICMPv6
+	// no-route reply, so apps connect over v4 at once (connect/IPV6.md B6).
+	Ipv6Available bool
+	// StallReason is the machine-readable diagnosis while the window is still
+	// forming: evaluating | platform-unreachable | providers-unresponsive |
+	// rate-limited | auth-failing (the connect WindowStall* constants).
+	// Empty when the source predates the field; treat as evaluating.
+	StallReason string
+	// Failed is the terminal presentation-state latch: the window hit its
+	// outcome deadline twice with zero providers Added (see the connect
+	// package's window honesty layer). It never stops fill, resize, evaluation,
+	// or carrier retry machinery. A provider landing later clears it. The
+	// connect view controller mirrors it as the CONNECT_FAILED connection
+	// status while the retries continue underneath.
+	Failed bool
 }
 
 type NetworkPeers struct {
@@ -331,10 +454,11 @@ type DnsResolverSettings struct {
 	EnableLocalDoh  bool
 	EnableRemoteDns bool
 	EnableLocalDns  bool
-	// EnableFallback races a handicapped resolver over the local host network
-	// when the tunnel resolver is slow, bridging tunnel startup. The fallback
-	// servers are derived as the host-side projection of the resolver settings
-	// above. When false, DNS only ever resolves through the tunnel
+	// EnableFallback ("fast DNS on connect", off by default) races a handicapped
+	// resolver over the local host network when the tunnel resolver is slow,
+	// bridging tunnel startup at the cost of revealing those lookups to the local
+	// network. The fallback servers are derived as the host-side projection of the
+	// resolver settings above. When false, DNS only ever resolves through the tunnel
 	EnableFallback bool
 	// DnsUpgradeMaskAddress is the plain-DNS address advertised to the OS while
 	// the UpgradeMux intercepts UDP/TCP :53. It is a stand-in for the mux, not
@@ -391,8 +515,9 @@ func GetRecommendedDnsResolverSettings(countryCode string) *DnsResolverSettings 
 }
 
 // GetDefaultDnsResolverSettings returns the default, most secure dns settings:
-// encrypted DNS over HTTPS through the tunnel, with the host-side DoH fallback
-// while the tunnel starts. This is what the device uses out of the box
+// encrypted DNS over HTTPS through the tunnel only. The host-side DoH fallback
+// while the tunnel starts is off (an opt-in). This is what the device uses out
+// of the box
 func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	muxSettings := connect.DefaultUpgradeMuxSettings()
 	if muxSettings == nil || muxSettings.Dns == nil || muxSettings.Dns.Resolver == nil {
@@ -403,8 +528,21 @@ func GetDefaultDnsResolverSettings() *DnsResolverSettings {
 	return settings
 }
 
+// GetDefaultTunnelMtu exposes the tunnel interface mtu every native tunnel
+// configures (connect.DefaultTunnelMtu, 1280 so the interface can carry IPv6).
+// Packets written into the tunnel are at most connect.DefaultMtu, which is
+// below this by design (connect/IPV6.md C1).
+func GetDefaultTunnelMtu() int32 {
+	return int32(connect.DefaultTunnelMtu)
+}
+
 // every device must also support the unexported `device` interface
 type Device interface {
+	deviceSocketDialer
+	// OpenSocket is the mobile-compatible socket entry point. Nil TLS options
+	// mean plain TCP/UDP; non-nil options enable TLS/DTLS with verification.
+	OpenSocket(network, address string, timeoutMillis int64, tlsOptions *SocketTLSOptions) (*Socket, error)
+
 	GetClientId() *Id
 	GetInstanceId() *Id
 
@@ -413,6 +551,11 @@ type Device interface {
 	GetApi() *Api
 
 	GetStats() *DeviceStats
+
+	// GetLicenses returns the open source licenses and data attributions the
+	// app must publish, for `app` (one of the LicenseApp* constants). The
+	// list is embedded in the SDK (license.yml) and needs no network.
+	GetLicenses(app string) *LicenseInfoList
 
 	GetShouldShowRatingDialog() bool
 
@@ -494,6 +637,18 @@ type Device interface {
 
 	SetConnectLocation(location *ConnectLocation)
 
+	// Reconnect installs `location` like `SetConnectLocation` but always
+	// rebuilds the connection, even when that location is already the
+	// installed destination: a NEW multi client and a fresh set of peers.
+	//
+	// This is the explicit "connect to this" action — tapping a location in
+	// the chooser, including the one already connected. `SetConnectLocation`
+	// deliberately leaves a live connection alone when nothing about the
+	// destination changed, because it is re-applied implicitly (the device rpc
+	// replays pending state, and apps persist and restore it); reconnecting on
+	// those would drop every flow for no reason.
+	Reconnect(location *ConnectLocation)
+
 	GetConnectLocation() *ConnectLocation
 
 	SetDefaultLocation(location *ConnectLocation)
@@ -561,6 +716,79 @@ type Device interface {
 	AddBlockStatsChangeListener(listener BlockStatsChangeListener) Sub
 	// fires with the full list when the overrides change
 	AddBlockActionOverridesChangeListener(listener BlockActionOverridesChangeListener) Sub
+
+	// transport settings
+
+	SetTransportSettings(transportSettings *TransportSettings)
+
+	GetTransportSettings() *TransportSettings
+
+	AddTransportSettingsChangeListener(listener TransportSettingsChangeListener) Sub
+
+	GetTransportStatus() *TransportStatus
+
+	AddTransportStatusChangeListener(listener TransportStatusChangeListener) Sub
+
+	SetProviderTransportSettings(transportSettings *TransportSettings)
+
+	GetProviderTransportSettings() *TransportSettings
+
+	AddProviderTransportSettingsChangeListener(listener ProviderTransportSettingsChangeListener) Sub
+
+	GetProviderTransportStatus() *TransportStatus
+
+	AddProviderTransportStatusChangeListener(listener ProviderTransportStatusChangeListener) Sub
+
+	// GetProviderFamilyTransportStatus is the per-family readout of the
+	// provider's platform transports (connect/IPV6.md A4): whether the v4 and
+	// v6 pinned transports exist and their states, and the standby. Never
+	// nil; every state is "unknown" when there is no provider or the device
+	// cannot be reached.
+	GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus
+
+	// GetExtenderStatus is the extender network of the device's network space
+	// (EXTENDER.md K5): the role, the gossip state, the counts, the event rate
+	// and every known address. It reads the space the DEVICE runs in -- on ios
+	// the packet tunnel extension, whose directory carries the dials that
+	// matter -- so a remote device reads it through the rpc rather than from
+	// its own process. Never nil; empty when there is no extender network to
+	// describe.
+	GetExtenderStatus() *ExtenderStatus
+
+	// rate limited to one callback per second
+	AddExtenderStatusChangeListener(listener ExtenderStatusChangeListener) Sub
+
+	// GetExtenderProvideStatus is the provider extender role of the process
+	// the DEVICE runs in (EXTENDER.md N2, F3): whether this build carries the
+	// role at all, the state and reason an app renders (N3), and the
+	// underlying listen and activation readout. A remote device reads it
+	// through the rpc with the last value cached; a build with no role, a
+	// device process out of contact and one too old to answer all report
+	// `Supported` false, which is what hides the row. Never nil.
+	GetExtenderProvideStatus() *ExtenderProvideStatus
+
+	// rate limited to one callback per second
+	AddExtenderProvideStatusChangeListener(listener ExtenderProvideStatusChangeListener) Sub
+
+	// GetProvideExtender is the user's provider extender setting, stored per
+	// network space and independent of the provide mode (N4). Default on; a
+	// device that cannot be reached reads the value queued for it, else the
+	// last value read, else the default.
+	GetProvideExtender() bool
+
+	// queued while the device cannot be reached and replayed at the next sync,
+	// as the provide mode is
+	SetProvideExtender(provideExtender bool)
+
+	// GetExtenderStats is the traffic the provider extender role of the
+	// process the DEVICE runs in has relayed (EXTENDER.md O2): bytes and
+	// reads in each direction, operator-centric, cumulative for the life of
+	// the role's server. Nil whenever the role is not running -- unsupported,
+	// off, not providing, unable to start -- which is what tells an app there
+	// is no series to show. A remote device reads it through the rpc with no
+	// cache: nil when the device process is out of contact or too old to
+	// answer.
+	GetExtenderStats() *ExtenderStats
 
 	// packet stats
 
@@ -632,6 +860,78 @@ type Device interface {
 
 	UploadLogs(feedbackId string, callback UploadLogsCallback) error
 
+	// DiagnosticManifestJson returns the device-side state an exported
+	// diagnostic bundle records in its manifest: sdk version, client and
+	// instance id, network space, and whether connect and provide are on.
+	//
+	// It is json rather than a struct because on ios it crosses the device
+	// rpc, from the network extension that holds the state to the app that
+	// writes the zip.
+	DiagnosticManifestJson() string
+
+	// FlushGlog flushes the device process's buffered glog output to disk.
+	//
+	// The exporter can only flush its own process. On ios the device runs in
+	// the network extension and the zip is assembled in the app, so without
+	// this the extension's last buffered output -- up to 256 KiB, and up to
+	// the 30 second flush interval -- is still in the extension's memory when
+	// the app reads the files, and the tail describing the failure the user is
+	// reporting is simply absent from the bundle.
+	FlushGlog()
+
+	// SetLogVerbosity sets the glog verbosity of the device process, which is
+	// where the logs worth raising it for are produced.
+	//
+	// The connect package gates its contract accounting, transport internals
+	// and window diagnostics behind V(1) and V(2), so at the default level
+	// none of them are written and a log uploaded from a live session is rpc
+	// chatter and nothing else. Levels are the sdk-level ones
+	// (LogVerbosityDefault, LogVerbosityVerbose, LogVerbosityTrace), clamped,
+	// never an error.
+	//
+	// On ios the device runs in the network extension, a separate process
+	// with its own glog state, so raising the level in the app alone does
+	// nothing for the logs that matter. DeviceRemote.SetLogVerbosity sets
+	// both.
+	SetLogVerbosity(level int)
+
+	// GetLogVerbosity returns the verbosity of the process this Device is
+	// read from, so a UI can show the level it is offering to change.
+	GetLogVerbosity() int
+
+	// SetControlIpFamilyPolicy sets the address family used for control-plane
+	// dials -- the api, the platform websocket, and the h3 name path -- in the
+	// process this Device runs in, and records it there.
+	//
+	// One of IpFamilyPolicyAuto, IpFamilyPolicyForce4, IpFamilyPolicyForce6.
+	// Anything else is Auto.
+	//
+	// On ios the tunnel process is the one that dials while the tunnel is up,
+	// so DeviceRemote sets BOTH processes -- see its implementation.
+	SetControlIpFamilyPolicy(policy int)
+
+	// GetControlIpFamilyPolicy returns the policy in force in the process this
+	// Device is answering from. The policy alone, never a learned demotion.
+	GetControlIpFamilyPolicy() int
+
+	// GetControlIpFamilyStatus describes any family the DIALING process has
+	// demoted after a proven post-connect failure, and is empty when there is
+	// none. For a developer ui's detail line: without it, Auto reads
+	// identically whether the heuristic has fired or not.
+	//
+	// The learned memory, never the policy -- the two are separate state and
+	// never mix, so a row can still round-trip exactly what was set.
+	//
+	// This is the one member of the family pair that DeviceRemote cannot
+	// answer locally. The policy is set in both processes together, so the
+	// local copy is the answer; a demotion is learned independently in
+	// whichever process dialed, and on ios that is the network extension
+	// whenever the tunnel is up. DeviceRemote therefore asks the device
+	// process and falls back to its own ledger, which is the right answer when
+	// there is no device process to ask: with the tunnel down, this process is
+	// the one dialing.
+	GetControlIpFamilyStatus() string
+
 	RefreshToken(attempt int) error
 
 	SetPerformanceProfile(performanceProfile *PerformanceProfile)
@@ -655,6 +955,24 @@ type Device interface {
 	GetProviderIdentities() *ProviderIdentityList
 
 	AddProviderIdentityChangeListener(listener ProviderIdentityChangeListener) Sub
+
+	// the currently connected (routing-eligible) window providers with their
+	// locations, sorted oldest-connected first. empty (never nil) when
+	// disconnected. A remote device retains the last readable list while its
+	// rpc is down (see `GetRemoteConnected` for the availability signal)
+	GetConnectedProviderLocations() *ConnectedProviderLocationList
+
+	AddConnectedProviderLocationChangeListener(listener ConnectedProviderLocationChangeListener) Sub
+
+	// drop this provider (by its egress client id, as reported by
+	// `GetConnectedProviderLocations`) from the connection and stop it being
+	// re-discovered. The exclusion lasts for the current connection: changing
+	// the destination or reconnecting clears it.
+	//
+	// A connection to fixed destinations only (an explicitly chosen network
+	// peer) is not excluded — there would be nothing left to route through —
+	// so the provider is dropped and redialed instead
+	RemoveConnectedProvider(clientId *Id)
 }
 
 // unexported to gomobile
@@ -694,4 +1012,26 @@ type windowMonitorWithAvailability interface {
 type securityPolicy interface {
 	Stats(reset bool) connect.SecurityPolicyStats
 	// ResetStats()
+}
+
+// securityPolicyReasons is the optional verdict-reason diagnostic of a
+// securityPolicy: per-port counts of the rule that decided each packet. Local
+// only; never sent off the device.
+type securityPolicyReasons interface {
+	Reasons(reset bool) connect.SecurityPolicyReasonStats
+}
+
+// connectSecurityPolicyReasons is implemented by the connect clients and
+// provider that record verdict reasons.
+type connectSecurityPolicyReasons interface {
+	SecurityPolicyReasons(reset bool) connect.SecurityPolicyReasonStats
+}
+
+// ColorHex is the peer's dot color, the stable per-client color every
+// platform derives from the client id.
+func (self *NetworkPeer) ColorHex() string {
+	if self == nil || self.ClientId == nil {
+		return ""
+	}
+	return GetColorHex(self.ClientId.String())
 }

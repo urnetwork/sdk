@@ -100,7 +100,7 @@ func TestTheLoopbackHarnessIsNotInTheShippingLibrarysDef(t *testing.T) {
 	// deleting the `if !inAnyShippedBuild(...)` guard from manualExports leaves every case in this
 	// file green -- which was true of this test until it grew them.
 	t.Chdir(filepath.Join(filepath.Dir(filename), ".."))
-	manual := manualExports()
+	manual := manualExports(".")
 	if len(manual) == 0 {
 		t.Fatal("manualExports found nothing at all, so the two checks below prove nothing")
 	}
@@ -222,7 +222,7 @@ func TestTheDefNamesEveryHandWrittenExportThatShips(t *testing.T) {
 	}
 	def := "\n" + strings.ReplaceAll(string(defBytes), "\r\n", "\n") + "\n"
 	t.Chdir(root)
-	manual := manualExports()
+	manual := manualExports(".")
 	messaging := 0
 	missing := []string{}
 	for _, name := range manual {

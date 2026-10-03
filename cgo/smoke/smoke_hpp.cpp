@@ -44,6 +44,26 @@ int main() {
 	CHECK(decoded && *decoded == data);
 	CHECK(!urnet::decodeBase58("!!! not base58 !!!"));
 
+	// packet-batch app bridge types compile through the generated C++ surface;
+	// the callback receives a borrowed handle and copies only packets the app
+	// actually consumes.
+	urnet::ReceivePackets receivePackets = [](urnet::PacketBatch packetBatch) {
+		for (int64_t packetIndex = 0; packetIndex < packetBatch.len();
+			 packetIndex += 1) {
+			(void)packetBatch.ipVersion(packetIndex);
+			(void)packetBatch.ipProtocol(packetIndex);
+			(void)packetBatch.get(packetIndex);
+		}
+	};
+	CHECK(static_cast<bool>(receivePackets));
+	urnet::ReceivePacketBatch receivePacketBatch = [](
+		const uint8_t* packetBatchBytes,
+		int32_t packetBatchByteCount) {
+		(void)packetBatchBytes;
+		(void)packetBatchByteCount;
+	};
+	CHECK(static_cast<bool>(receivePacketBatch));
+
 	// typed json data structs
 	auto proxyConfig = urnet::defaultProxyConfig();
 	CHECK(proxyConfig);
@@ -78,6 +98,72 @@ int main() {
 		asyncLocalState.close();
 	}
 	// raii released every handle
+	CHECK(urnet::liveHandleCount() == 0);
+
+	// The actual paired snapshot/reset boundary uses only a fresh temporary
+	// NetworkSpace and loopback configuration. No device, RPC, app or VPN starts.
+	char observationDir[] = "/tmp/urnet_observation_hpp_XXXXXX";
+	CHECK(mkdtemp(observationDir) != nullptr);
+	{
+		auto manager = urnet::newNetworkSpaceManager(observationDir);
+		urnet::NetworkSpaceKey key{};
+		key.host_name = "binding-observation.test";
+		key.env_name = "test";
+		urnet::NetworkSpaceValues values{};
+		values.api_url = "http://127.0.0.1:1";
+		values.platform_url = "ws://127.0.0.1:1";
+		auto space = manager.updateNetworkSpaceValues(key, values);
+		CHECK(space);
+		auto state = space.getAsyncLocalState().getLocalState();
+		CHECK(state);
+		auto original = space.getAuthStateSnapshot();
+		CHECK(original && original.getEmpty());
+		CHECK(original.getInstanceId().empty());
+		CHECK(original.getByJwt().empty() && original.getByClientJwt().empty());
+
+		// A disk-only or null snapshot cannot manufacture paired authority.
+		bool wrongOriginThrew = false;
+		try {
+			auto diskOnly = state.getAuthStateSnapshot();
+			(void)space.resetLocalStateIfCurrent(diskOnly);
+		} catch (const urnet::Error&) {
+			wrongOriginThrew = true;
+		}
+		CHECK(wrongOriginThrew);
+		bool nullOriginThrew = false;
+		try {
+			(void)space.resetLocalStateIfCurrent(urnet::LocalAuthStateSnapshot{});
+		} catch (const urnet::Error&) {
+			nullOriginThrew = true;
+		}
+		CHECK(nullOriginThrew);
+
+		const std::vector<uint8_t> seed(32, 0x6f);
+		auto material = urnet::newDeviceLocalKeyMaterial(
+			seed.data(), static_cast<int32_t>(seed.size()), nullptr, 0, nullptr, 0);
+		state.setDeviceLocalKeyMaterial(material);
+		// Synthetic local data only; no API call or credential is involved.
+		state.setByJwt("binding-smoke-admin-marker");
+		CHECK(original.getEmpty() && original.getByJwt().empty());
+		auto superseded = space.resetLocalStateIfCurrent(original);
+		CHECK(superseded && !superseded.getReset());
+		CHECK(!superseded.getDeviceLocalKeyMaterial());
+		CHECK(state.getByJwt() == "binding-smoke-admin-marker");
+
+		auto current = space.getAuthStateSnapshot();
+		CHECK(current && !current.getEmpty());
+		CHECK(current.getByJwt() == "binding-smoke-admin-marker");
+		auto reset = space.resetLocalStateIfCurrent(current);
+		CHECK(reset && reset.getReset());
+		auto kept = reset.getDeviceLocalKeyMaterial();
+		CHECK(kept && kept.getClientKeySeed() == seed);
+		CHECK(kept.getProvideTlsCertificatePem().empty());
+		CHECK(kept.getProvideTlsPrivateKeyPem().empty());
+		CHECK(state.getByJwt().empty());
+		CHECK(space.getAuthStateSnapshot().getEmpty());
+		CHECK(current.getByJwt() == "binding-smoke-admin-marker");
+		manager.close();
+	}
 	CHECK(urnet::liveHandleCount() == 0);
 
 	std::printf("OK\n");

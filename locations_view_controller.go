@@ -1,11 +1,10 @@
+//go:build !ios_extension
+
 package sdk
 
 import (
 	"context"
-	"crypto/md5"
-	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -27,6 +26,75 @@ type FilteredLocations struct {
 	Cities      *ConnectLocationList
 	Regions     *ConnectLocationList
 	Devices     *ConnectLocationList
+	// RegionGroups is Regions and Cities nested for a grouped search result:
+	// each region with the cities in it, in Regions order, then (Region nil)
+	// the cities whose region is not in the result. Set only when searching,
+	// like Regions and Cities; empty otherwise.
+	RegionGroups *RegionGroupList
+}
+
+// RegionGroup is one region of a search result and the cities in it.
+type RegionGroup struct {
+	// nil for the group of cities whose region is not in the result; the app
+	// labels it (e.g. "Other")
+	Region *ConnectLocation
+	Cities *ConnectLocationList
+}
+
+type RegionGroupList struct {
+	exportedList[*RegionGroup]
+}
+
+func NewRegionGroupList() *RegionGroupList {
+	return &RegionGroupList{
+		exportedList: *newExportedList[*RegionGroup](),
+	}
+}
+
+// groupCitiesByRegion nests sorted cities under sorted regions. A city belongs
+// to a region by the region's location id, or by region name when the result
+// carries no id. Every city lands in exactly one group.
+func groupCitiesByRegion(regions []*ConnectLocation, cities []*ConnectLocation) *RegionGroupList {
+	groups := NewRegionGroupList()
+	assigned := map[*ConnectLocation]bool{}
+	for _, region := range regions {
+		var regionId *Id
+		if region.ConnectLocationId != nil {
+			regionId = region.ConnectLocationId.LocationId
+		}
+		regionCities := NewConnectLocationList()
+		for _, city := range cities {
+			if assigned[city] {
+				continue
+			}
+			inRegion := false
+			if regionId != nil && city.RegionLocationId != nil {
+				inRegion = city.RegionLocationId.Cmp(regionId) == 0
+			} else if city.Region != "" && region.Name != "" {
+				inRegion = city.Region == region.Name
+			}
+			if inRegion {
+				assigned[city] = true
+				regionCities.Add(city)
+			}
+		}
+		groups.Add(&RegionGroup{
+			Region: region,
+			Cities: regionCities,
+		})
+	}
+	otherCities := NewConnectLocationList()
+	for _, city := range cities {
+		if !assigned[city] {
+			otherCities.Add(city)
+		}
+	}
+	if 0 < otherCities.Len() {
+		groups.Add(&RegionGroup{
+			Cities: otherCities,
+		})
+	}
+	return groups
 }
 
 // type FilteredLocationsStateListener interface {
@@ -37,18 +105,31 @@ type FilteredLocationsListener interface {
 	FilteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState)
 }
 
+type locationsNotification struct {
+	sequenceNumber int64
+	locations      *FilteredLocations
+	state          FilterLocationsState
+}
+
 type LocationsViewController struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	device Device
+	// an api-only controller (NewLocationsViewControllerWithApi) has no device:
+	// the browse needs nothing but the network space api, so a host without a
+	// device plane (a browser tab before the extension attaches) runs the same
+	// grouping and ordering as every app. Exactly one of device / api is set.
+	api *Api
 
 	stateLock sync.Mutex
 
-	nextFilterSequenceNumber     int64
-	previousFilterSequenceNumber int64
+	nextFilterSequenceNumber int64
+	filterCancel             context.CancelFunc
 
 	filteredLocations     *FilteredLocations
 	filteredLocationState FilterLocationsState
+	notifying             bool
+	pendingNotification   *locationsNotification
 
 	filteredLocationListeners *connect.CallbackList[FilteredLocationsListener]
 	// filteredLocationsStateListeners *connect.CallbackList[FilteredLocationsStateListener]
@@ -62,15 +143,29 @@ func newLocationsViewController(ctx context.Context, device Device) *LocationsVi
 		cancel: cancel,
 		device: device,
 
-		nextFilterSequenceNumber:     0,
-		previousFilterSequenceNumber: 0,
-		filteredLocations:            nil,
-		filteredLocationState:        LocationsError,
+		filteredLocationState: LocationsError,
 
 		filteredLocationListeners: connect.NewCallbackList[FilteredLocationsListener](),
 		// filteredLocationsStateListeners: connect.NewCallbackList[FilteredLocationsStateListener](),
 	}
 	return vc
+}
+
+// NewLocationsViewControllerWithApi opens the location browse over an api with
+// no device. It is the controller every app's location chooser renders, for
+// hosts that have a network member jwt but no device yet; the caller owns it
+// and must Close it.
+func NewLocationsViewControllerWithApi(ctx context.Context, api *Api) *LocationsViewController {
+	vc := newLocationsViewController(ctx, nil)
+	vc.api = api
+	return vc
+}
+
+func (self *LocationsViewController) getApi() *Api {
+	if self.api != nil {
+		return self.api
+	}
+	return self.device.GetApi()
 }
 
 func (self *LocationsViewController) Start() {
@@ -82,7 +177,9 @@ func (self *LocationsViewController) Start() {
 func (self *LocationsViewController) Stop() {}
 
 func (self *LocationsViewController) Close() {
-	deviceLog(self.device).Info("[lcvc]close")
+	if self.device != nil {
+		deviceLog(self.device).Info("[lcvc]close")
+	}
 
 	self.cancel()
 }
@@ -103,12 +200,40 @@ func (self *LocationsViewController) GetFilteredLocationState() FilterLocationsS
 	return self.filteredLocationState
 }
 
-func (self *LocationsViewController) filteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState) {
-	for _, listener := range self.filteredLocationListeners.Get() {
-		connect.HandleError(func() {
-			listener.FilteredLocationsChanged(locations, state)
-		})
+func (self *LocationsViewController) filteredLocationsChanged(sequenceNumber int64, locations *FilteredLocations, state FilterLocationsState) {
+	self.stateLock.Lock()
+	if self.ctx.Err() != nil || self.nextFilterSequenceNumber != sequenceNumber {
+		self.stateLock.Unlock()
+		return
 	}
+	// A slow listener cannot accumulate requests or let a replacement event
+	// overtake the callback already running. Keep only the newest pending
+	// snapshot; a reentrant FilterLocations call enqueues and returns.
+	self.pendingNotification = &locationsNotification{sequenceNumber, locations, state}
+	if self.notifying {
+		self.stateLock.Unlock()
+		return
+	}
+	self.notifying = true
+	for self.pendingNotification != nil {
+		notification := self.pendingNotification
+		self.pendingNotification = nil
+		self.stateLock.Unlock()
+		for _, listener := range self.filteredLocationListeners.Get() {
+			self.stateLock.Lock()
+			current := self.ctx.Err() == nil && self.nextFilterSequenceNumber == notification.sequenceNumber
+			self.stateLock.Unlock()
+			if !current {
+				break
+			}
+			connect.HandleError(func() {
+				listener.FilteredLocationsChanged(notification.locations, notification.state)
+			})
+		}
+		self.stateLock.Lock()
+	}
+	self.notifying = false
+	self.stateLock.Unlock()
 }
 
 func (self *LocationsViewController) AddFilteredLocationsListener(listener FilteredLocationsListener) Sub {
@@ -134,66 +259,64 @@ func (self *LocationsViewController) AddFilteredLocationsListener(listener Filte
 // }
 
 func (self *LocationsViewController) FilterLocations(filter string) {
-	// api call, call callback
 	filter = strings.TrimSpace(filter)
 
-	// locationsVcLog("FILTER LOCATIONS %s", filter)
-	// self.filterLocationsStateChanged(LocationsLoading)
+	self.stateLock.Lock()
+	if self.ctx.Err() != nil {
+		self.stateLock.Unlock()
+		return
+	}
+	previousCancel := self.filterCancel
+	requestCtx, cancel := context.WithCancel(self.ctx)
+	self.filterCancel = cancel
+	self.nextFilterSequenceNumber++
+	filterSequenceNumber := self.nextFilterSequenceNumber
+	self.filteredLocationState = LocationsLoading
+	snapshotLocations := self.filteredLocations
+	self.stateLock.Unlock()
+	if previousCancel != nil {
+		previousCancel()
+	}
 
-	var filterSequenceNumber int64
-	var snapshotLocations *FilteredLocations
-	var snapshotState FilterLocationsState
-	func() {
-		self.stateLock.Lock()
-		defer self.stateLock.Unlock()
-		self.nextFilterSequenceNumber += 1
-		filterSequenceNumber = self.nextFilterSequenceNumber
-
-		self.filteredLocationState = LocationsLoading
-		snapshotLocations = self.filteredLocations
-		snapshotState = self.filteredLocationState
-	}()
-
-	self.filteredLocationsChanged(snapshotLocations, snapshotState)
-
-	// locationsVcLog("POST FILTER LOCATIONS %s", filter)
+	self.filteredLocationsChanged(filterSequenceNumber, snapshotLocations, LocationsLoading)
 
 	callback := FindLocationsCallback(connect.NewApiCallback[*FindLocationsResult](
 		func(result *FindLocationsResult, err error) {
-			// locationsVcLog("FIND LOCATIONS RESULT %s %s", result, err)
-
+			defer cancel()
 			update := false
 			var notifyLocations *FilteredLocations
 			var notifyState FilterLocationsState
 			func() {
 				self.stateLock.Lock()
 				defer self.stateLock.Unlock()
-				if self.previousFilterSequenceNumber < filterSequenceNumber {
-					self.previousFilterSequenceNumber = filterSequenceNumber
+				// A transport can return after cancellation. Only the latest
+				// requested query may change this controller's rows or state.
+				if requestCtx.Err() == nil && self.nextFilterSequenceNumber == filterSequenceNumber {
+					self.filterCancel = nil
 					update = true
-					if err == nil {
+					if err == nil && result != nil {
 						self.setFilteredLocationsFromResult(result, filter)
 					} else {
 						self.filteredLocationState = LocationsError
-						self.filteredLocations = nil
+						// Keep the last successful rows available during an outage.
 					}
 					notifyLocations = self.filteredLocations
 					notifyState = self.filteredLocationState
 				}
 			}()
 			if update {
-				self.filteredLocationsChanged(notifyLocations, notifyState)
+				self.filteredLocationsChanged(filterSequenceNumber, notifyLocations, notifyState)
 			}
 		},
 	))
 
 	if filter == "" {
-		self.device.GetApi().GetProviderLocations(callback)
+		self.getApi().getProviderLocations(requestCtx, callback)
 	} else {
 		findLocations := &FindLocationsArgs{
 			Query: filter,
 		}
-		self.device.GetApi().FindProviderLocations(findLocations, callback)
+		self.getApi().findProviderLocations(requestCtx, findLocations, callback)
 	}
 }
 
@@ -311,12 +434,13 @@ func GetFilteredLocationsFromResult(result *FindLocationsResult, filter string) 
 	exportedDevices.addAll(devices...)
 
 	filteredLocations := &FilteredLocations{
-		BestMatches: exportedBestMatches,
-		Promoted:    exportedPromoted,
-		Countries:   exportedCountries,
-		Cities:      exportedCities,
-		Regions:     exportedRegions,
-		Devices:     exportedDevices,
+		BestMatches:  exportedBestMatches,
+		Promoted:     exportedPromoted,
+		Countries:    exportedCountries,
+		Cities:       exportedCities,
+		Regions:      exportedRegions,
+		Devices:      exportedDevices,
+		RegionGroups: groupCitiesByRegion(regions, cities),
 	}
 
 	return filteredLocations
@@ -376,126 +500,4 @@ func cmpConnectLocations(a *ConnectLocation, b *ConnectLocation) int {
  */
 func (vc *LocationsViewController) GetColorHex(code string) string {
 	return GetColorHex(code)
-}
-
-func GetColorHex(code string) string {
-	if color, exists := countryCodeColorHexes[code]; exists {
-		return color
-	}
-
-	/**
-	 * Fallback if color hex isn't found, generate a new one by mixing two colors together
-	 */
-	keys := make([]string, 0, len(countryCodeColorHexes))
-	for k := range countryCodeColorHexes {
-		keys = append(keys, k)
-	}
-
-	sort.Strings(keys)
-
-	index1 := getHashIndex(code, len(keys))
-	index2 := getHashIndex(code+"salt", len(keys))
-
-	color1 := countryCodeColorHexes[keys[index1]]
-	color2 := countryCodeColorHexes[keys[index2]]
-
-	return mixColors(color1, color2)
-}
-
-// to get a consistent index from the id
-func getHashIndex(id string, mod int) int {
-	hash := md5.Sum([]byte(id))
-	return int(hash[0]) % mod
-}
-
-func mixColors(color1, color2 string) string {
-	r1, g1, b1 := hexToRGB(color1)
-	r2, g2, b2 := hexToRGB(color2)
-
-	// Mix the colors by averaging their RGB components
-	r := (r1 + r2) / 2
-	g := (g1 + g2) / 2
-	b := (b1 + b2) / 2
-
-	return rgbToHex(r, g, b)
-}
-
-func hexToRGB(hex string) (int, int, int) {
-	var r, g, b int
-	fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b)
-	return r, g, b
-}
-
-func rgbToHex(r, g, b int) string {
-	return fmt.Sprintf("%02x%02x%02x", r, g, b)
-}
-
-var countryCodeColorHexes = map[string]string{
-	"is": "639A88",
-	"ee": "78C0E0",
-	"ca": "449DD1",
-	"de": "663F46",
-	"au": "F29E4C",
-	"us": "BAC5B3",
-	"gb": "F1789B",
-	"jp": "CC3363",
-	"ie": "7EE081",
-	"fi": "F56E48",
-	"nl": "F56E48",
-	"se": "A4C4F4",
-	"fr": "A864DC",
-	"it": "F9F871",
-	"dk": "D6E6F4",
-	"no": "BCE5DC",
-	"be": "9B4A91",
-	"at": "FFCB68",
-	"ch": "FFABA0",
-	"nz": "008A64",
-	"pt": "248C89",
-	"es": "B41F43",
-	"lv": "EEE8A9",
-	"lt": "8179E0",
-	"cz": "99E8CE",
-	"si": "FF6C58",
-	"sk": "87FB67",
-	"pl": "D38B5D",
-	"hu": "FF8484",
-	"hr": "99B2DD",
-	"ro": "C6362F",
-	"bg": "A1CDF4",
-	"gr": "C874D9",
-	"cy": "E1BBC9",
-	"mt": "FFC43D",
-	"il": "A9E4EF",
-	"za": "F2B79F",
-	"ar": "8E8DBE",
-	"br": "DCD6F7",
-	"cl": "FA824C",
-	"cr": "E07A5F",
-	"uy": "7FDEFF",
-	"jm": "7B886F",
-	"tt": "0072BB",
-	"gh": "1098F7",
-	"ke": "F2EDEB",
-	"ng": "64113F",
-	"tn": "6B4D57",
-	"sn": "596869",
-	"na": "813405",
-	"bw": "D45113",
-	"mu": "60E1E0",
-	"mg": "F25D72",
-	"in": "F2E2D2",
-	"kr": "C320D9",
-	"tw": "E6EA23",
-	"my": "3A1772",
-	"ph": "B4CEB3",
-	"id": "586189",
-	"mn": "A6A57A",
-	"ge": "679436",
-	"am": "F2B5D4",
-	"ua": "00F28D",
-	"md": "7F675B",
-	"me": "E5FFDE",
-	"rs": "FF495C",
-	"al": "E4B363",
 }

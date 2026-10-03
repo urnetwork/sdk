@@ -13,8 +13,11 @@ import (
 
 	// "math/big"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
+	"sync"
 	"time"
 
 	// "strings"
@@ -43,26 +46,36 @@ import (
 // `warp` environment expectations, which is not compatible with the client lib
 
 func init() {
+	// Version is populated by the linker before package initialization. Stamp
+	// the shared Connect core once so a device acting as an exit publishes the
+	// actual SDK/app build rather than an empty provider identity.
+	stampConnectBuildVersion()
+
 	// gc pacing: the go soft memory limit (see SetMemoryLimit) is the
 	// footprint backstop; gogc paces how often the collector runs below it.
-	// ios keeps the historical 10 (a collection every 10% of heap growth):
-	// the network extension carries ~16 MiB of baseline under a ~50 MiB
-	// jetsam limit, and a higher float measurably regressed throughput there
-	// — the raised heap triggers os memory-pressure events whose FreeMemory
-	// response drains the pools (cold reuse caches), and the footprint
-	// approaches the soft limit where allocation pays gc assist. Android and
-	// desktop/server hosts have real headroom and run mostly off it, with
-	// the soft limit bounding the footprint.
-	switch runtime.GOOS {
-	case "ios":
-		debug.SetGCPercent(10)
-	case "android":
-		debug.SetGCPercent(50)
-	default:
-		debug.SetGCPercent(100)
-	}
+	// The 24-MiB profile uses 25: the measured 20-MiB candidate's value of 10
+	// held more than two MiB of unused headroom while collecting roughly every
+	// 2.5 seconds during a low-throughput transfer, while 50 let a stalled H3
+	// page reach 29.95 MiB. The aggregate packet gate, quiet reclaim, and
+	// 32-MiB soft limit remain the burst backstops. Android and iOS deliberately
+	// use the same value so the measurable Android surrogate does not hide iOS
+	// allocator float. Desktop/server retains the runtime default.
+	debug.SetGCPercent(gcPercentForPlatform(runtime.GOOS))
 
 	initGlog()
+}
+
+func stampConnectBuildVersion() {
+	connect.SetBuildVersion(Version)
+}
+
+func gcPercentForPlatform(goos string) int {
+	switch goos {
+	case "android", "ios":
+		return 25
+	default:
+		return 100
+	}
 }
 
 func initGlog() {
@@ -138,7 +151,27 @@ func clearOldLogs(logDir string) {
 
 }
 
+// currentLogDir is the directory glog was last pointed at, guarded by
+// currentLogDirMu because SetLogDir and GetLogDir are called from whatever
+// thread the embedder happens to be on.
+//
+// glog.SetLogDir mutates only glog's internal logDirs/dirSet, never the
+// log_dir flag, so that flag is not a readback path. Recording the directory
+// here is what makes GetLogDir answerable at all: since the flag write was
+// dropped from SetLogDir, reading the flag returned "" in every process,
+// including the one that had just called SetLogDir.
+var currentLogDirMu sync.Mutex
+var currentLogDir string
+
 func GetLogDir() string {
+	currentLogDirMu.Lock()
+	dir := currentLogDir
+	currentLogDirMu.Unlock()
+	if dir != "" {
+		return dir
+	}
+	// fall back to an explicit --log_dir, for embedders that point glog at a
+	// directory with the flag and never call SetLogDir
 	if f := flag.Lookup("log_dir"); f != nil {
 		return f.Value.String()
 	}
@@ -150,16 +183,319 @@ func FlushGlog() {
 }
 
 func SetLogDir(logDir string) error {
+	// the legacy single-directory configuration: after this call there is no
+	// per-process root, so the recorded one is cleared rather than left naming
+	// a directory glog is no longer writing under. A reader that enumerates
+	// GetLogRoot would otherwise walk per-process directories this process has
+	// abandoned and miss the one it is actually using.
+	return setLogDirWithRoot(logDir, "")
+}
+
+// setLogDirWithRoot points glog at logDir and records logDir and root
+// together, under one lock. They describe the same decision -- GetLogRoot must
+// always name the parent of the directory GetLogDir names -- so nothing may
+// update one without the other.
+func setLogDirWithRoot(logDir string, root string) error {
 
 	glog.SetMaxLogSize(1024 * 1024 * 16)
 	err := glog.SetLogDir(logDir)
 	if err != nil {
 		glog.Infof("SetLogDir to %q failed: %v", logDir, err)
+	} else {
+		// only record a directory glog accepted. glog returns before touching
+		// logDirs when it fails, so it keeps writing wherever it already was,
+		// and GetLogDir has to keep naming that directory rather than this one.
+		currentLogDirMu.Lock()
+		currentLogDir = logDir
+		currentLogRoot = root
+		currentLogDirMu.Unlock()
 	}
 	glog.Infof("New glog initialized")
 	clearOldLogs(logDir)
 
 	return err
+}
+
+// currentLogRoot is the parent of the per-process log directories, recorded so
+// a reader can enumerate every process's logs rather than only this process's.
+// Empty when only the legacy SetLogDir was used. Guarded by currentLogDirMu,
+// and always written together with currentLogDir.
+var currentLogRoot string
+
+// SetLogDirForProcess points glog at <root>/<processName> and records root.
+//
+// Each process gets its own subdirectory because clearOldLogs keeps the 4
+// newest files in whatever directory it is handed: processes sharing one
+// directory delete each other's history. On ios that is the app and the
+// network extension, which both log. The subdirectory name is also a reliable
+// label for which process wrote a file, rather than parsing it back out of
+// glog's <program>.<host>.<user>.log.<SEVERITY>.<time>.<pid> names.
+//
+// When root cannot be used it falls back to a process-local directory under
+// the os temp dir and returns nil -- logging must never be what breaks a
+// launch. It returns a non-nil error only when processName is empty, which is
+// a caller bug rather than an environment failure, or when neither directory
+// can be opened for logging; in the latter case glog keeps its previous
+// destination, and GetLogDir and GetLogRoot keep describing that destination.
+// The directory actually in use is always readable back from GetLogDir.
+func SetLogDirForProcess(root string, processName string) error {
+	if processName == "" {
+		return fmt.Errorf("log process name cannot be empty")
+	}
+
+	if root != "" {
+		dir := filepath.Join(root, processName)
+		if err := os.MkdirAll(dir, LocalStorageDirectoryPermissions); err == nil {
+			if err := setLogDirWithRoot(dir, root); err == nil {
+				return nil
+			}
+		}
+	}
+
+	// fall back to a process-local directory under the os temp dir, and record
+	// its parent as the root so a reader still finds this process's files
+	fallbackRoot := filepath.Join(os.TempDir(), "urnetwork-logs")
+	fallbackDir := filepath.Join(fallbackRoot, processName)
+	if err := os.MkdirAll(fallbackDir, LocalStorageDirectoryPermissions); err != nil {
+		return err
+	}
+	return setLogDirWithRoot(fallbackDir, fallbackRoot)
+}
+
+// GetLogRoot returns the parent of the per-process log directories, or "" when
+// only the legacy SetLogDir was used.
+func GetLogRoot() string {
+	currentLogDirMu.Lock()
+	defer currentLogDirMu.Unlock()
+	return currentLogRoot
+}
+
+// The glog verbosity levels this sdk exposes, named for the labels the apps
+// show beside them: Default, Verbose and Trace at 0, 1 and 2.
+//
+// The names follow the ui rather than the other way round. A bug report
+// quotes the word the user read on the screen, so a constant that disagreed
+// with that label by one level would be read as the level below the one
+// actually running -- exactly the direction that makes a log look emptier
+// than it should.
+//
+// The `connect` package gates its diagnostics at V(1) and V(2) only (see its
+// log.go logging convention), so this is the whole meaningful range -- and it
+// is most of what that package has to say: close to half its log statements
+// (roughly 290 of some 700) sit behind one of the two, and at level 0 none of
+// them are written.
+const (
+	// LogVerbosityDefault is the level every process starts at: Info,
+	// Warning and Error only -- abnormal behavior, backpressure and
+	// connectivity timeouts, recoverable exits.
+	LogVerbosityDefault = 0
+	// LogVerbosityVerbose adds the V(1) key events, which is what a contract or
+	// connection report needs: contract accounting ([contract] add, close,
+	// expire, provide ping), send/receive and stream lifecycle ([s], [r],
+	// [sm], [cr]), transport dial and handshake ([tls], [p2p], [peerconn],
+	// [pt]), and multi-client window formation ([multi]).
+	LogVerbosityVerbose = 1
+	// LogVerbosityTrace adds the V(2) per-use-case detail on top: per-message
+	// transfer and routing ([tr], [mrr], [mrw], [f%d], [r%d]), network and
+	// control traffic ([net], [control]), and rtt samples ([rtt]). High volume
+	// on a busy connection -- it is for reproducing one bug, not for running
+	// on.
+	LogVerbosityTrace = 2
+)
+
+// SetLogVerbosity sets THIS process's glog verbosity, and takes effect on the
+// next log statement -- no restart.
+//
+// glog registers the -v flag as a flag.Value (glog_flags.go, flag.Var over
+// Level), and V() re-reads the value on every call, so setting the flag at
+// runtime is the supported way to change the level in a process that never
+// parses a command line. TestLogVerbosityTakesEffectAtRuntime pins that.
+//
+// The level is clamped to LogVerbosityDefault..LogVerbosityTrace rather than
+// rejected: `connect` only ever asks for V(1) and V(2), so a higher number is
+// volume with nothing to show for it and a negative one is meaningless. The
+// clamped value is what GetLogVerbosity then reports.
+//
+// This reaches only the calling process. On ios the transport runs in the
+// network extension, which has its own glog state -- use
+// Device.SetLogVerbosity, which sets both.
+//
+// Safe to call from any thread. It is exported to gomobile and to the C ABI,
+// and inside the sdk both DeviceRemote.SetLogVerbosity and the restore a
+// device runs at construction reach it off whatever goroutine the caller is
+// on, so concurrent callers are ordinary rather than exotic.
+func SetLogVerbosity(level int) error {
+	return setLogVerbosityFlag(clampLogVerbosity(level))
+}
+
+// logVerbosityMu serializes writes to the -v flag, a sibling of
+// currentLogDirMu and for the same reason: the flag package is not the
+// concurrency-safe store it looks like.
+//
+// flag.Set records the value in flag.CommandLine.actual, an unsynchronized
+// map, so two goroutines setting the level race on a map write -- which the go
+// runtime can report as an unrecoverable fatal error rather than a data race
+// it merely survives. Reads need no lock: GetLogVerbosity goes through glog's
+// Level.String, an atomic load, and flag.Lookup only reads the formal map that
+// registration froze.
+var logVerbosityMu sync.Mutex
+
+// setLogVerbosityFlag is the one write path for the -v flag, taking the level
+// exactly as given. Callers that must honor the sdk's range clamp first -- see
+// SetLogVerbosity. Restoring a level captured from GetLogVerbosity goes
+// through here unclamped, so a -v an embedder set above LogVerbosityTrace on
+// the command line comes back as what it was.
+func setLogVerbosityFlag(level int) error {
+	logVerbosityMu.Lock()
+	defer logVerbosityMu.Unlock()
+	return flag.Set("v", strconv.Itoa(level))
+}
+
+// GetLogVerbosity returns the verbosity THIS process is logging at.
+//
+// It reads the flag rather than a shadow copy, so it also reports a level an
+// embedder set some other way, including a -v on the command line above
+// LogVerbosityTrace -- what is reported is what V() will honor.
+func GetLogVerbosity() int {
+	f := flag.Lookup("v")
+	if f == nil {
+		return LogVerbosityDefault
+	}
+	level, err := strconv.Atoi(f.Value.String())
+	if err != nil {
+		return LogVerbosityDefault
+	}
+	return level
+}
+
+// applyPersistedLogVerbosity restores the level the user last chose into THIS
+// process, and is what makes the setting survive the reconnect that the bug
+// being captured usually needs. Every process that starts a device runs
+// initGlog first, which resets the level to 0.
+//
+// A nil localState (a network space with no local storage), or one with no
+// level ever written, leaves the process at whatever it is already logging at
+// -- restoring is for a level the user chose, and must not clear one an
+// embedder set another way.
+//
+// It reports the restored level and whether one was written at all. The app
+// side needs the difference: this local state is the app process's own, and a
+// level found in it still has to be replayed to the device process, which
+// keeps a separate one. See DeviceRemote.SetLogVerbosity.
+func applyPersistedLogVerbosity(localState *LocalState, log connect.Logger) (int, bool) {
+	if localState == nil {
+		return LogVerbosityDefault, false
+	}
+	level, ok := localState.logVerbosityIfSet()
+	if !ok {
+		return LogVerbosityDefault, false
+	}
+	if err := SetLogVerbosity(level); err != nil && log != nil {
+		log.Infof("[device]restore log verbosity %d err = %s\n", level, err)
+	}
+	return level, true
+}
+
+func clampLogVerbosity(level int) int {
+	if level < LogVerbosityDefault {
+		return LogVerbosityDefault
+	}
+	if LogVerbosityTrace < level {
+		return LogVerbosityTrace
+	}
+	return level
+}
+
+// Control-plane address family policy.
+//
+// Plain ints rather than a named type: gomobile binds these as constants that
+// Swift and Kotlin read directly, and a named Go int type crosses the binding
+// as an opaque wrapper the ui cannot compare against a literal.
+const (
+	// Use whatever the platform's dual-stack resolution and Happy Eyeballs
+	// choose, and route around a family this process has proven fails after
+	// connecting.
+	IpFamilyPolicyAuto = 0
+	// Control-plane dials use IPv4 only.
+	IpFamilyPolicyForce4 = 1
+	// Control-plane dials use IPv6 only.
+	IpFamilyPolicyForce6 = 2
+)
+
+// SetControlIpFamilyPolicy sets the address family THIS process uses for
+// control-plane dials: the api, the platform control websocket, and the h3
+// transport's name resolution. It does not affect tunnelled user traffic,
+// which is dual-stack: each flow carries the family of its own packets, and
+// which families a provider can egress is discovered per provider (see
+// IPV6.md in the connect repo and ip_family.go here).
+//
+// This process only. On ios the api dial happens in the packet tunnel
+// extension whenever the tunnel is up, so a value set here reaches that
+// process through Device.SetControlIpFamilyPolicy -- see device_rpc.go. It is
+// not persisted here either; NetworkSpace.SetControlIpFamilyPolicy is the
+// entry point that both sets and records.
+//
+// An out-of-range value is Auto rather than an error, so a value written by a
+// newer build and read by an older one degrades to the default behavior.
+func SetControlIpFamilyPolicy(policy int) {
+	connect.SetControlIpFamilyPolicy(connect.IpFamilyPolicy(clampIpFamilyPolicy(policy)))
+}
+
+// GetControlIpFamilyPolicy returns the policy THIS process is dialing under.
+//
+// The policy ALONE: a family this process demoted on its own after a proven
+// failure is reported by GetControlIpFamilyStatus and never here, so a ui row
+// round-trips exactly what was set.
+func GetControlIpFamilyPolicy() int {
+	return int(connect.ControlIpFamilyPolicy())
+}
+
+// GetControlIpFamilyStatus describes any family this process has demoted, and
+// is empty when there is none. For the developer ui's detail line: without it
+// Auto looks identical whether the heuristic has fired or not.
+func GetControlIpFamilyStatus() string {
+	return connect.ControlFamilyStatus()
+}
+
+func clampIpFamilyPolicy(policy int) int {
+	switch policy {
+	case IpFamilyPolicyForce4, IpFamilyPolicyForce6:
+		return policy
+	}
+	return IpFamilyPolicyAuto
+}
+
+// applyPersistedControlIpFamilyPolicy restores the policy the user last chose
+// into THIS process, and reports whether there was one.
+//
+// Called from NetworkSpaceManager (see restoreControlIpFamilyPolicyOnce), NOT
+// from the Device constructors where applyPersistedLogVerbosity is called. The
+// login api call is made before any Device exists, and for a user whose ipv6
+// path is broken that is the call they are stuck on -- restoring at Device
+// construction would leave the setting inert for exactly the request it was
+// set to fix.
+//
+// Once per manager, from the space the manager is bound to. The runtime policy
+// is process-global while the persisted copy is per-space, so restoring from
+// every space the manager constructs would let the last one built win over the
+// active one.
+//
+// A nil localState (a network space with no local storage), or one with no
+// policy ever written, leaves the process dialing under whatever it already
+// had.
+func applyPersistedControlIpFamilyPolicy(localState *LocalState, log connect.Logger) (int, bool) {
+	if localState == nil {
+		return IpFamilyPolicyAuto, false
+	}
+	policy, ok := localState.controlIpFamilyPolicyIfSet()
+	if !ok {
+		return IpFamilyPolicyAuto, false
+	}
+	SetControlIpFamilyPolicy(policy)
+	if log != nil {
+		log.Infof("[family]restore policy=%d\n", clampIpFamilyPolicy(policy))
+	}
+	return clampIpFamilyPolicy(policy), true
 }
 
 // memory target ratio: how SetMemoryLimit divides the process budget into
@@ -169,8 +505,9 @@ func SetLogDir(logDir string) error {
 // limit, so oversized pool caps squeeze the collector into assist mode near
 // the limit (measured as an ios throughput regression at 22 MB of caps) —
 // the caps only need to cover the in-flight high-water. The remaining 20
-// parts are the reference per-device 20 MB memory target (split dns 2 :
-// client 14 : provider 4 inside the device) — each device's target is set
+// parts are the reference per-device 20 MB memory target: DNS 2, one shared
+// 13-part transfer/topology root with overlapping client/provider/NAT
+// children, and platform carriers 5. Each device's target is set
 // explicitly where the device is created (see
 // DeviceLocalSettings.MemoryTargetByteCount and
 // NewDeviceLocalWithMemoryTarget), not by this call.
@@ -179,6 +516,28 @@ const (
 	memoryTargetRatioLargeObjectPool = 2
 	memoryTargetRatioParts           = 34
 )
+
+// Derives free-list capacities from the process limit while applying the
+// tighter mobile returned-buffer ceiling. Servers retain the historical
+// proportional sizing; live/in-flight allocations are not governed here.
+func messagePoolMemoryTargetsForPlatform(
+	limit int64,
+	mobile bool,
+) (packetPoolByteCount int64, largeObjectPoolByteCount int64) {
+	packetPoolByteCount = limit * memoryTargetRatioPacketPool / memoryTargetRatioParts
+	largeObjectPoolByteCount = limit * memoryTargetRatioLargeObjectPool / memoryTargetRatioParts
+	if mobile {
+		packetPoolByteCount = min(
+			packetPoolByteCount,
+			int64(mobilePacketPoolCapacityByteCount),
+		)
+		largeObjectPoolByteCount = min(
+			largeObjectPoolByteCount,
+			int64(mobileLargeObjectPoolCapacityByteCount),
+		)
+	}
+	return
+}
 
 // SetMemoryLimit tunes the sdk to a process memory budget. the app-facing
 // process-level knob:
@@ -193,22 +552,28 @@ const (
 // memory: each DeviceLocal's target is passed explicitly where the device
 // is created, so a multi-device process bounds every device independently.
 func SetMemoryLimit(limit int64) {
-	SetMessagePoolMemoryTargets(
-		limit*memoryTargetRatioPacketPool/memoryTargetRatioParts,
-		limit*memoryTargetRatioLargeObjectPool/memoryTargetRatioParts,
-	)
-	// Pre-warm up to 1 MiB (and no more than a quarter of the packet-class
-	// cap) so the first traffic burst skips the cold allocation storm.
+	packetPoolByteCount, largeObjectPoolByteCount :=
+		messagePoolMemoryTargetsForPlatform(limit, mobileRuntime())
+	SetMessagePoolMemoryTargets(packetPoolByteCount, largeObjectPoolByteCount)
+	// Pre-warm a bounded part of the packet class so the first traffic burst
+	// skips the cold allocation storm. Mobile retains 512 KiB; desktop/server
+	// preserve the historical 1 MiB.
 	// Startup only — the pressure path (FreeMemory) deliberately leaves pools
 	// cold.
-	connect.WarmMessagePools()
+	if mobileRuntime() {
+		connect.WarmMessagePoolsTo(mobilePacketPoolWarmByteCount)
+	} else {
+		connect.WarmMessagePools()
+	}
 	connect.SetMemoryBudget(limit)
 	debug.SetMemoryLimit(limit)
+	startMobileIdleMemoryTrimmer()
 }
 
 // SetMessagePoolMemoryTargets bounds the global message pool free lists:
-// packetPoolByteCount bounds the packet (2048) class, and
-// largeObjectPoolByteCount is split evenly among the larger size classes.
+// packetPoolByteCount is split between the 256-byte small/control and 2048-byte
+// full-MTU packet classes, and largeObjectPoolByteCount is split evenly among
+// the larger size classes.
 // The pools are the process-global complement to the per-device memory
 // target (DeviceLocalSettings.MemoryTargetByteCount). Applies live.
 func SetMessagePoolMemoryTargets(
@@ -222,9 +587,9 @@ func SetMessagePoolMemoryTargets(
 // physical network interface indices (IPv4 and IPv6), so that when this process
 // provides a VPN tunnel its own platform and provider connections do not loop
 // back into that tunnel. Pass 0 for a family to leave it unbound. This is the
-// Windows self-exclusion mechanism (R1); it is a no-op on other platforms,
-// where the OS handles self-exclusion (macOS network extension, Android
-// VpnService). The Windows service updates these on every network change.
+// Windows self-exclusion mechanism (R1) and the macOS controlled-peer
+// acceptance mechanism; it is a no-op on other platforms, where the OS handles
+// self-exclusion. The Windows service updates these on every network change.
 func SetEgressInterfaceIndex(index4 int, index6 int) {
 	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
 }
@@ -246,6 +611,62 @@ func FreeMemory() {
 	)
 }
 
+// TrimMemory rebuilds burst-sized message-pool free lists as their warm reuse
+// set and returns the old spans to the OS. Clearing before collection and
+// warming afterward matters: retaining an arbitrary subset of burst buffers
+// can pin sparsely occupied allocator spans even when their byte sum is small.
+// Unlike FreeMemory, this preserves resolver/connection/affinity caches and
+// every pool's configured capacity. Hosts may use it after a verified
+// traffic-quiescent interval; active and in-flight buffers are never affected.
+func TrimMemory() {
+	trimMemory(true)
+}
+
+// A forced collection has a latency and battery cost. Automatic maintenance
+// therefore rebuilds allocator spans only after at least one additional MiB
+// accumulated above the warm set. Smaller idle refills are still pruned from
+// the free lists, but normal GC can reclaim them; explicit host pressure always
+// forces release.
+const automaticIdleMemoryRebuildMinDroppedByteCount ByteCount = 1024 * 1024
+
+// trimMemory returns the bytes dropped by a material pool rebuild. Automatic
+// idle maintenance skips the forced collection when the pools are already warm
+// or only trivially above it; an explicit host request still forces release so
+// it has deterministic pressure semantics.
+func trimMemory(force bool) ByteCount {
+	warmByteCount := ByteCount(1024 * 1024)
+	if mobileRuntime() {
+		warmByteCount = mobilePacketPoolWarmByteCount
+	}
+	return rebuildMessagePools(force, warmByteCount)
+}
+
+func rebuildMessagePools(force bool, warmByteCount ByteCount) ByteCount {
+	startTime := time.Now()
+	totalByteCountBefore := runtimeTotalByteCount()
+	// This first decay is a cheap no-op test for automatic maintenance. If an
+	// idle high-water exists, clear all remaining free-list references so the
+	// collector can release whole spans rather than leaving sparse survivors.
+	droppedByteCount := connect.TrimMessagePoolsTo(warmByteCount)
+	if !force && droppedByteCount < automaticIdleMemoryRebuildMinDroppedByteCount {
+		return 0
+	}
+	retainedBefore := connect.GetMessagePoolAggregateStats().RetainedByteCount
+	connect.ClearMessagePools()
+	debug.FreeOSMemory()
+	connect.WarmMessagePoolsTo(warmByteCount)
+	retainedAfter := connect.GetMessagePoolAggregateStats().RetainedByteCount
+	droppedByteCount += max(ByteCount(0), retainedBefore-retainedAfter)
+	glog.Infof(
+		"[mem]rebuild idle pools %.1fmib -> %.1fmib dropped=%.1fmib (%dms)",
+		float64(totalByteCountBefore)/float64(1024*1024),
+		float64(runtimeTotalByteCount())/float64(1024*1024),
+		float64(droppedByteCount)/float64(1024*1024),
+		time.Since(startTime)/time.Millisecond,
+	)
+	return droppedByteCount
+}
+
 func MessagePoolGet(n int) []byte {
 	b := connect.MessagePoolGet(n)
 	// return b[:cap(b)]
@@ -262,8 +683,27 @@ func MessagePoolReturn(b []byte) {
 }
 
 // this value is set via the linker, e.g.
-// -ldflags "-X sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
-const Version string = ""
+// -ldflags "-X github.com/urnetwork/sdk.Version=$WARP_VERSION-$WARP_VERSION_CODE"
+//
+// MUST stay a `var`. `-X` only sets string *variables* declared uninitialized
+// or initialized to a constant expression — against a `const` it is silently a
+// no-op, and every build reports "". This was a const until 2026-08-05, so
+// `urnet_version()` had always returned the empty string despite the flag being
+// passed. Verified by rebuilding with -X set and reading it back.
+//
+// The var/const distinction also changes the SHAPE of the gomobile binding.
+// gomobile binds a package-level var as an accessor pair rather than a
+// constant, so the bound call sites had to change with it:
+//
+//	as const:  apple `SdkVersion`      · android `Sdk.Version`
+//	as var:    apple `SdkVersion()`    · android `Sdk.getVersion()`
+//
+// Do NOT add a hand-written `func GetVersion()` alongside this — gobind already
+// emits `Java_com_bringyour_sdk_Sdk_getVersion` for the var, and the extra func
+// collides with it ("redefinition of ...Sdk_getVersion") and breaks
+// build_android. The cgo C ABI is unaffected either way: exports_core.go reads
+// the var directly at runtime.
+var Version string = ""
 
 type Id struct {
 	id [16]byte
@@ -666,9 +1106,13 @@ func (self *ConnectLocationId) String() string {
 	return string(jsonBytes)
 }
 
+// One provider-mode secret. JSON preserves binary bytes without changing the
+// existing Go fields or gob representation.
 type ProvideSecretKey struct {
-	ProvideMode      ProvideMode `json:"provide_mode"`
-	ProvideSecretKey string      `json:"provide_secret_key"`
+	ProvideMode ProvideMode `json:"provide_mode"`
+	// Raw bytes, not UTF-8 text. Forward opaque native lists or use the device's
+	// SaveProvideSecretKeys; NSString/jstring extraction can lose these bytes.
+	ProvideSecretKey string `json:"provide_secret_key"`
 }
 
 type WindowType = string
@@ -690,9 +1134,10 @@ type PerformanceProfile struct {
 	WindowSize *WindowSizeSettings `json:"window_size"`
 	// setting this to true exposes the real source IP to the provider
 	AllowDirect bool `json:"allow_direct"`
-	// enable post-quantum e2e encryption to providers that support it.
-	// Opportunistic: providers without support fall back to plaintext at
-	// this layer.
+	// enable the post-quantum e2e sessions to providers. Required when set:
+	// a provider that cannot seal the session is skipped, never used in
+	// plaintext at this layer. Unset, the shipping default, no session is
+	// opened to the provider.
 	PostQuantumEncryption bool `json:"post_quantum_encryption"`
 }
 
@@ -835,4 +1280,30 @@ func GenerateWalletKeyPair() (*WalletKeyPair, error) {
 		PrivateKeyBase58: base58Encode(privateKey[:]),
 		PublicKeyBase58:  base58Encode(publicKey[:]),
 	}, nil
+}
+
+// ColorHex is the location's dot color the way every app derives it: a
+// country by its country code, anything else (a region, a city, a group, a
+// device) by its bare id, so the same location is the same color on every
+// platform. "" for best available and for a location with no id.
+func (self *ConnectLocation) ColorHex() string {
+	if self == nil {
+		return ""
+	}
+	if self.LocationType == LocationTypeCountry && self.CountryCode != "" {
+		return GetColorHex(self.CountryCode)
+	}
+	id := self.ConnectLocationId
+	if id == nil || id.BestAvailable {
+		return ""
+	}
+	switch {
+	case id.LocationId != nil:
+		return GetColorHex(id.LocationId.String())
+	case id.LocationGroupId != nil:
+		return GetColorHex(id.LocationGroupId.String())
+	case id.ClientId != nil:
+		return GetColorHex(id.ClientId.String())
+	}
+	return ""
 }

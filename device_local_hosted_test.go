@@ -122,3 +122,51 @@ func TestHostedSafePerformanceProfile(t *testing.T) {
 	}
 	connect.AssertEqual(t, true, nonDirect == hosted.hostedSafePerformanceProfile(nonDirect))
 }
+
+// A hosted remote must discard every platform-owned mutation before it can be
+// queued for sync or accepted into the last-known cache. The hosted rpc returns
+// success for these deliberate noops, so allowing a call through would make a
+// getter report a value the device never applied.
+func TestDeviceRemoteHostedIncompatibleSettersDoNotChangeState(t *testing.T) {
+	settings := defaultDeviceRpcSettings()
+	settings.DisableHostedIncompatible = true
+	settings.DisableLogging = true
+	deviceRemote := &DeviceRemote{
+		settings: settings,
+		log:      settings.logger(),
+	}
+
+	deviceRemote.SetTunnelStarted(true)
+	deviceRemote.SetRouteLocal(!settings.DefaultRouteLocal)
+	deviceRemote.SetProvideControlMode(ProvideControlModeAlways)
+	deviceRemote.SetProvideMode(ProvideModePublic)
+	deviceRemote.SetProvidePaused(true)
+	deviceRemote.SetProvideNetworkMode(ProvideNetworkModeAll)
+	deviceRemote.SetVpnInterfaceWhileOffline(true)
+	deviceRemote.SetTransportSettings(DefaultTransportSettings())
+	deviceRemote.SetProviderTransportSettings(DefaultProviderTransportSettings())
+
+	fields := []struct {
+		name      string
+		pending   bool
+		lastKnown bool
+	}{
+		{name: "tunnel started", pending: deviceRemote.state.TunnelStarted.IsSet, lastKnown: deviceRemote.lastKnownState.TunnelStarted.IsSet},
+		{name: "route local", pending: deviceRemote.state.RouteLocal.IsSet, lastKnown: deviceRemote.lastKnownState.RouteLocal.IsSet},
+		{name: "provide control mode", pending: deviceRemote.state.ProvideControlMode.IsSet, lastKnown: deviceRemote.lastKnownState.ProvideControlMode.IsSet},
+		{name: "provide mode", pending: deviceRemote.state.ProvideMode.IsSet, lastKnown: deviceRemote.lastKnownState.ProvideMode.IsSet},
+		{name: "provide paused", pending: deviceRemote.state.ProvidePaused.IsSet, lastKnown: deviceRemote.lastKnownState.ProvidePaused.IsSet},
+		{name: "provide network mode", pending: deviceRemote.state.ProvideNetworkMode.IsSet, lastKnown: deviceRemote.lastKnownState.ProvideNetworkMode.IsSet},
+		{name: "vpn interface while offline", pending: deviceRemote.state.VpnInterfaceWhileOffline.IsSet, lastKnown: deviceRemote.lastKnownState.VpnInterfaceWhileOffline.IsSet},
+		{name: "transport settings", pending: deviceRemote.state.TransportSettings.IsSet, lastKnown: deviceRemote.lastKnownState.TransportSettings.IsSet},
+		{name: "provider transport settings", pending: deviceRemote.state.ProviderTransportSettings.IsSet, lastKnown: deviceRemote.lastKnownState.ProviderTransportSettings.IsSet},
+	}
+	for _, field := range fields {
+		if field.pending {
+			t.Errorf("%s was queued for hosted sync", field.name)
+		}
+		if field.lastKnown {
+			t.Errorf("%s poisoned the hosted last-known cache", field.name)
+		}
+	}
+}

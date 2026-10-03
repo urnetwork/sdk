@@ -14,6 +14,7 @@ func TestDeviceClientSettingsInstallsPeerKeyFetcherWithoutMutatingInput(t *testi
 	defer cancel()
 
 	clientStrategy := connect.NewClientStrategy(ctx, connect.DefaultClientStrategySettings())
+	defer clientStrategy.Close()
 	settings := connect.DefaultClientSettings()
 	originalEncryptionSettings := settings.EncryptionSettings
 
@@ -31,6 +32,7 @@ func TestDeviceClientSettingsPreservesConfiguredPeerKeyFetcher(t *testing.T) {
 	defer cancel()
 
 	clientStrategy := connect.NewClientStrategy(ctx, connect.DefaultClientStrategySettings())
+	defer clientStrategy.Close()
 	settings := connect.DefaultClientSettings()
 	settings.EncryptionSettings.NewPeerClientPublicKeyFetcher = func(peerId connect.Id) func(context.Context) ([]byte, error) {
 		return func(context.Context) ([]byte, error) {
@@ -52,6 +54,8 @@ func TestNewDeviceLocalWithKeyMaterialRestoresClientKeySeed(t *testing.T) {
 
 	networkSpace, _, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
+	// Key restoration does not need the automatic network refresh worker.
+	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
 
 	seed := make([]byte, 32)
 	for i := range seed {
@@ -93,6 +97,7 @@ func TestDeviceLocalSetKeyMaterialRestoresClientKeySeedAndNotifies(t *testing.T)
 
 	networkSpace, _, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
 
 	seed := make([]byte, 32)
 	for i := range seed {
@@ -184,6 +189,7 @@ func TestDeviceLocalKeyMaterialIdentityStableAcrossRestart(t *testing.T) {
 
 	networkSpace, _, err := testing_newNetworkSpace(ctx)
 	connect.AssertEqual(t, err, nil)
+	connect.AssertEqual(t, networkSpace.GetApi().CloseAndWait(ctx), nil)
 
 	newDevice := func(keyMaterial *DeviceLocalKeyMaterial) *DeviceLocal {
 		deviceLocal, err := NewDeviceLocalWithKeyMaterial(
@@ -229,6 +235,12 @@ func TestDeviceLocalKeyMaterialIdentityStableAcrossRestart(t *testing.T) {
 
 func testingByJwt(clientId connect.Id) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
-	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"client_id":"%s"}`, clientId)))
+	// Match the server's client/device identity shape without registered
+	// dates, which remain optional for legacy-era clients. No signing claim
+	// is made: these offline tests exercise key material, not server admission.
+	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(
+		`{"client_id":"%s","device_id":"00000000-0000-0000-0000-000000000002","network_id":"00000000-0000-0000-0000-000000000004","user_id":"00000000-0000-0000-0000-000000000003"}`,
+		clientId,
+	)))
 	return fmt.Sprintf("%s.%s.", header, payload)
 }

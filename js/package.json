@@ -1,5 +1,5 @@
 {
-  "name": "@urnetwork/sdk-js",
+  "name": "@urnetwork/sdk",
   "version": "0.0.1-beta.7",
   "description": "JS/TS SDK for URnetwork integration",
   "license": "MPL-2.0",
@@ -25,6 +25,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs",
+      "types": "./dist/client.d.ts"
     },
     "./react": {
       "import": "./dist/react/index.js",

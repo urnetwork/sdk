@@ -52,7 +52,21 @@ func (self *exportedList[T]) UnmarshalJSON(b []byte) error {
 	return json.Unmarshal(b, &self.values)
 }
 
+// An empty list marshals as `[]`, not as `null`.
+//
+// `json.Marshal` renders a nil slice as the document `null`, and every one of
+// these lists starts out with a nil `values`. That is valid json and it is
+// what Go always does, but it makes an empty list indistinguishable from an
+// absent one for consumers that unwrap the document into a typed container:
+// the generated c++ wrapper's `parseJson<T>` fed `null` threw
+// `type_error.302` out of every list getter at session start, because at that
+// moment every list is empty. A list type that cannot render "empty" is the
+// root cause; the wrapper also guards `null` now, but this is the fix that
+// makes the wire correct rather than merely survivable.
 func (self *exportedList[T]) MarshalJSON() ([]byte, error) {
+	if self.values == nil {
+		return []byte("[]"), nil
+	}
 	return json.Marshal(self.values)
 }
 
@@ -67,6 +81,20 @@ func NewStringList() *StringList {
 }
 
 func (self *StringList) Contains(v string) bool {
+	return slices.Contains(self.values, v)
+}
+
+type Int64List struct {
+	exportedList[int64]
+}
+
+func NewInt64List() *Int64List {
+	return &Int64List{
+		exportedList: *newExportedList[int64](),
+	}
+}
+
+func (self *Int64List) Contains(v int64) bool {
 	return slices.Contains(self.values, v)
 }
 
@@ -301,6 +329,16 @@ func NewTransferBalanceList() *TransferBalanceList {
 	}
 }
 
+type SubscriptionList struct {
+	exportedList[*Subscription]
+}
+
+func NewSubscriptionList() *SubscriptionList {
+	return &SubscriptionList{
+		exportedList: *newExportedList[*Subscription](),
+	}
+}
+
 type NetworkSpaceList struct {
 	exportedList[*NetworkSpace]
 }
@@ -385,6 +423,16 @@ type LeaderboardEarnersList struct {
 	exportedList[*LeaderboardEarner]
 }
 
+type PointsLeaderboardRowList struct {
+	exportedList[*PointsLeaderboardRow]
+}
+
+func NewPointsLeaderboardRowList() *PointsLeaderboardRowList {
+	return &PointsLeaderboardRowList{
+		exportedList: *newExportedList[*PointsLeaderboardRow](),
+	}
+}
+
 type AccountPointsList struct {
 	exportedList[*AccountPoint]
 }
@@ -408,6 +456,12 @@ type RedeemedBalanceCode struct {
 
 type RedeemedBalanceCodeList struct {
 	exportedList[*RedeemedBalanceCode]
+}
+
+func NewRedeemedBalanceCodeList() *RedeemedBalanceCodeList {
+	return &RedeemedBalanceCodeList{
+		exportedList: *newExportedList[*RedeemedBalanceCode](),
+	}
 }
 
 type PublicAccountApiKey struct {

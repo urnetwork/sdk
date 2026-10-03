@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"syscall/js"
 
 	"github.com/urnetwork/sdk"
@@ -28,10 +29,7 @@ func jsProxyDevice(proxyDevice *sdk.ProxyDevice) js.Value {
 			return js.Null()
 		}),
 
-		"close": js.FuncOf(func(this js.Value, args []js.Value) any {
-			proxyDevice.Close()
-			return js.Null()
-		}),
+		"close": jsViewControllerClose(proxyDevice.Close),
 
 		"isDone": js.FuncOf(func(this js.Value, args []js.Value) any {
 			return js.ValueOf(proxyDevice.GetDone())
@@ -43,8 +41,16 @@ func jsDevice(device sdk.Device) js.Value {
 	if device == nil {
 		return js.Null()
 	}
-	// Device methods can be added here as needed
-	return js.ValueOf(map[string]any{})
+	if remote, ok := device.(*sdk.DeviceRemote); ok {
+		return jsDeviceRemote(remote)
+	}
+	m := map[string]any{}
+	handles := jsBindSocketDevice(device, m)
+	m["getLicenses"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsLicenses(device.GetLicenses(stringArg(args, 0)))
+	})
+	m["close"] = jsViewControllerClose(device.Close, handles.close)
+	return js.ValueOf(m)
 }
 
 func jsProxyConfigResult(proxyConfigResult *sdk.ProxyConfigResult) js.Value {
@@ -150,6 +156,67 @@ func NewProxyDeviceWithDefaults(this js.Value, args []js.Value) any {
 	return jsProxyDevice(proxyDevice)
 }
 
+// FilteredLocationsFromResult groups and orders a raw
+// /network/find-provider-locations (or /network/provider-locations) response
+// the way every app's location chooser renders it: best matches, promoted,
+// then countries / regions / cities / devices, each ordered by provider count
+// descending and then by name.
+//
+// This is the SAME sdk function the native apps run their own api results
+// through (apple's UrApiService calls GetFilteredLocationsFromResult), exposed
+// so a caller that has a result but no device — the web chooser before the
+// device plane attaches — orders it identically instead of rendering whatever
+// order the server replied in.
+//
+// args: (resultJson string, filter string). Returns null when the json cannot
+// be read, so the caller can fall back.
+func FilteredLocationsFromResult(this js.Value, args []js.Value) any {
+	if len(args) < 1 || args[0].Type() != js.TypeString {
+		return js.Null()
+	}
+	filter := ""
+	if 1 < len(args) && args[1].Type() == js.TypeString {
+		filter = args[1].String()
+	}
+	var result sdk.FindLocationsResult
+	if err := json.Unmarshal([]byte(args[0].String()), &result); err != nil {
+		return js.Null()
+	}
+	return jsFilteredLocations(sdk.GetFilteredLocationsFromResult(&result, filter))
+}
+
+// NewLocationsViewController(apiUrl, platformUrl, byJwt) opens the SAME
+// LocationsViewController a DeviceRemote exposes (openLocationsViewController),
+// over the network space api alone: no device, no device-rpc. It exists so a
+// browser tab that is signed in but has no device plane yet (the extension is
+// not installed or not attached) renders the location chooser from the sdk's
+// grouping and ordering, exactly like android/apple, instead of a REST list in
+// server order. The result has the LocationsViewController shape
+// (getFilteredLocations / filterLocations / addFilteredLocationsListener /
+// start / close); close() releases it.
+func NewLocationsViewController(this js.Value, args []js.Value) any {
+	if len(args) < 3 {
+		return js.ValueOf(map[string]any{
+			"error": "apiUrl, platformUrl and byJwt are required",
+		})
+	}
+	apiUrl := args[0].String()
+	platformUrl := args[1].String()
+	byJwt := args[2].String()
+
+	networkSpace := sdk.NewUrlsNetworkSpace(apiUrl, platformUrl)
+	api := networkSpace.GetApi()
+	api.SetByJwt(byJwt)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	vc := sdk.NewLocationsViewControllerWithApi(ctx, api)
+	return jsLocationsViewController(vc, func() {
+		vc.Close()
+		cancel()
+		networkSpace.Close()
+	})
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -160,6 +227,32 @@ func main() {
 
 	js.Global().Set("URnetworkNewProxyDeviceWithDefaults", js.FuncOf(NewProxyDeviceWithDefaults))
 	js.Global().Set("URnetworkNewPlatformDeviceRemote", js.FuncOf(NewPlatformDeviceRemote))
+	js.Global().Set("URnetworkNewExtensionDeviceRemote", js.FuncOf(NewExtensionDeviceRemote))
+	js.Global().Set("URnetworkFilteredLocationsFromResult", js.FuncOf(FilteredLocationsFromResult))
+	js.Global().Set("URnetworkNewLocationsViewController", js.FuncOf(NewLocationsViewController))
+	js.Global().Set("URnetworkNewAccountHost", js.FuncOf(NewAccountHost))
+	// GetLicenses(app): the licenses and data attributions the app publishes
+	// under Settings -> Licenses (sdk license.yml), for a page with no device
+	js.Global().Set("URnetworkGetLicenses", js.FuncOf(jsGetLicenses))
+	// ColorHex(code): the sdk palette color for a code the page already holds
+	// (a country code, or a bare location / client id), no "#"
+	js.Global().Set("URnetworkColorHex", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) < 1 || args[0].Type() != js.TypeString {
+			return js.ValueOf("")
+		}
+		return js.ValueOf(sdk.GetColorHex(args[0].String()))
+	}))
+	// ValidateEmojiTag(tag): the emoji-tag rules the server enforces, for an
+	// editor with no host or device yet
+	js.Global().Set("URnetworkValidateEmojiTag", js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsJson(sdk.ValidateEmojiTag(stringArg(args, 0)))
+	}))
+	// SuggestEmojiTag(count): a random tag of 1–3 distinct emoji to prefill
+	// the editor with (count 0 or omitted picks the length at random)
+	js.Global().Set("URnetworkSuggestEmojiTag", js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(sdk.SuggestEmojiTag(int(int64Arg(args, 0))))
+	}))
+	registerSnExports()
 
 	select {
 	case <-ctx.Done():

@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"net/netip"
 	"slices"
 	"testing"
 
@@ -23,11 +24,18 @@ func TestTunnelDnsAddresses(t *testing.T) {
 		tunnelDnsAddresses(nil, defaultSetting, false),
 		[]string{"65.49.70.65"},
 	)
+	// the ipv6 default is the ipv6 upgrade-mask stand-in, the counterpart of
+	// the ipv4 mask, so the platform can advertise a tunnel dns for both
+	// families
 	assertAddresses(
 		"nil resolver ipv6",
 		tunnelDnsAddresses(nil, defaultSetting, true),
-		[]string{},
+		[]string{DefaultTunnelDnsAddressIpv6},
 	)
+	connect.AssertEqual(t, GetDefaultTunnelDnsAddressIpv6(), DefaultTunnelDnsAddressIpv6)
+	if addr, err := netip.ParseAddr(DefaultTunnelDnsAddressIpv6); err != nil || !addr.Is6() || !addr.IsGlobalUnicast() {
+		t.Fatalf("the ipv6 tunnel dns stand-in must be a global unicast ipv6 literal: %v", err)
+	}
 
 	// local dns disabled: the addresses are not "set", use the default
 	disabled := &connect.DnsResolverSettings{
@@ -154,7 +162,8 @@ func TestDeviceLocalTunnelDnsAddresses(t *testing.T) {
 	if slices.Contains(device.TunnelDnsAddressesIpv4().getAll(), device.TunnelLocalAddress()) {
 		t.Fatalf("tunnel dns must differ from assigned address %q", device.TunnelLocalAddress())
 	}
-	if addresses := device.TunnelDnsAddressesIpv6().getAll(); len(addresses) != 0 {
+	// the ipv6 default is the ipv6 upgrade-mask stand-in (IPV6.md C2)
+	if addresses := device.TunnelDnsAddressesIpv6().getAll(); !slices.Equal(addresses, []string{DefaultTunnelDnsAddressIpv6}) {
 		t.Fatalf("default tunnel dns ipv6 = %v", addresses)
 	}
 

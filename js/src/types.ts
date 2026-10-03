@@ -1,3 +1,6 @@
+import type { SocketDevice } from "./socket";
+import type { SubprotocolDevice } from "./subprotocol";
+
 /**
  * Configuration for proxy behavior
  */
@@ -34,10 +37,34 @@ export interface ProxyConfigResult {
 }
 
 /**
- * Device interface - placeholder for future device methods
+ * Device socket methods shared by local/proxy and remote device wrappers.
  */
-export interface Device {
-  // Device methods will be added as needed
+export interface Device extends SocketDevice {
+  /** see LicenseInfo */
+  getLicenses(app: LicenseApp): LicenseInfo[];
+}
+
+/** the app a license list is for (sdk LicenseApp* constants) */
+export type LicenseApp = "android" | "apple" | "windows" | "linux" | "web" | "extension";
+
+/**
+ * One component an app includes, and the license and notice that must be
+ * published with it (sdk.LicenseInfo, embedded from sdk/license.yml).
+ */
+export interface LicenseInfo {
+  name: string;
+  version: string;
+  kind: "data" | "software" | "font";
+  /** the collector the entry came from: go, maven, swiftpm, npm-web, npm-extension, extra */
+  origin: string;
+  url: string;
+  /** SPDX expression; empty when the text is not a standard license */
+  spdx: string;
+  /** newline separated */
+  copyright: string;
+  /** a notice that must be shown verbatim (e.g. the MaxMind attribution); usually empty */
+  notice: string;
+  text: string;
 }
 
 /**
@@ -55,7 +82,8 @@ export interface ProxyDevice {
   getDevice(): Device;
   getProxyConfigResult(): ProxyConfigResult | null;
   cancel(): void;
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   isDone(): boolean;
 }
 
@@ -78,10 +106,18 @@ export interface ConnectLocationSpec {
 
 export interface ConnectLocationInfo {
   connectLocationId?: string;
+  /** the bare id, exactly one of these is set (a country/region/city, a
+   * location group, or a device) */
+  locationId?: string;
+  locationGroupId?: string;
+  clientId?: string;
+  bestAvailable?: boolean;
   name: string;
   locationType: string;
   countryCode: string;
   providerCount: number;
+  /** the dot color from the sdk palette (hex, no "#"); "" for best available */
+  colorHex: string;
 }
 
 export interface NetworkPeerInfo {
@@ -91,6 +127,8 @@ export interface NetworkPeerInfo {
   deviceName: string;
   deviceSpec: string;
   roles: string[];
+  /** the stable per-client dot color from the sdk palette (hex, no "#") */
+  colorHex: string;
 }
 
 export interface NetworkPeersInfo {
@@ -98,24 +136,99 @@ export interface NetworkPeersInfo {
   disconnectedCount: number;
 }
 
+/**
+ * One currently connected (routing-eligible) provider and where it is.
+ *
+ * `clientId` is the provider's EGRESS client id — the id that identifies it to
+ * the user, and the one `removeConnectedProvider` takes.
+ *
+ * The `has*` flags are meaningful state, not just null-guards: `hasLocation` is
+ * false for the user's own fixed peers and for restored window identities, and
+ * 0,0 is a valid coordinate. Plot `city*` when `hasCityCoordinates`, else
+ * `region*` when `hasRegionCoordinates`, else do not plot.
+ *
+ * `connectedSinceMillis` is an absolute unix-millis stamp taken on the device
+ * hosting the connection (0 when unknown); derive the duration locally rather
+ * than expecting it to tick.
+ */
+/** the state of one provider platform transport: connecting | connected |
+ * disabled | sleeping (no path of that family) | idle-policy (the control
+ * family policy forbids that family) | unknown */
+export type ProviderFamilyTransportState =
+  | "connecting"
+  | "connected"
+  | "disabled"
+  | "sleeping"
+  | "idle-policy"
+  | "unknown";
+
+/** the per-family readout of the provider's v4-pinned, v6-pinned and
+ * family-agnostic standby platform transports (connect/IPV6.md A4) */
+export interface ProviderFamilyTransportStatus {
+  hasIpv4: boolean;
+  ipv4State: ProviderFamilyTransportState;
+  hasIpv6: boolean;
+  ipv6State: ProviderFamilyTransportState;
+  standbyState: ProviderFamilyTransportState;
+  /** true while the standby is released to dial */
+  standbyActive: boolean;
+}
+
+/** a provider's proven address-family category (connect/IPV6.md) */
+export type IpFamily = "dualstack" | "v4-only" | "v6-only";
+/** the short display form of IpFamily */
+export type IpFamilyLabel = "both" | "v4" | "v6";
+
+export interface ConnectedProviderLocationInfo {
+  clientId?: string;
+  country: string;
+  countryCode: string;
+  region: string;
+  city: string;
+  regionLat: number;
+  regionLon: number;
+  cityLat: number;
+  cityLon: number;
+  hasLocation: boolean;
+  hasRegionCoordinates: boolean;
+  hasCityCoordinates: boolean;
+  connectedSinceMillis: number;
+  /** the provider's proven address-family category, as on ProviderGridPoint */
+  ipFamily: IpFamily;
+  /** the short display form of ipFamily: "both", "v4" or "v6" */
+  ipFamilyLabel: IpFamilyLabel;
+  /** the dot color from the sdk palette (hex, no "#"): the country's when the
+   * location is known, else the stable per-client color */
+  colorHex: string;
+}
+
 /** Listener adders return an unsubscribe function. */
 export type Unsubscribe = () => void;
 
 /**
- * DeviceRemote — the client's handle on a hosted DeviceLocal. It reaches the
- * device over the proxy host's device-rpc websocket (authenticated with the
- * device's signed proxy id) and controls it exactly as the app process controls
- * the device in the native apps.
+ * DeviceRemote — the client's handle on a native DeviceLocal. It reaches the
+ * device through a device-rpc transport and controls it as an app process
+ * controls a local device. Platform remotes use the hosted proxy websocket;
+ * extension remotes use the caller's opaque byte transport.
  *
  * Mirrors the bindings in sdk/js/device_remote.go. Hosted-incompatible setters
  * (route local, provide settings) are accepted but no-op on the hosted device;
  * the getters and listeners still reflect real device state.
  */
-export interface DeviceRemote {
+export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   // lifecycle
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   cancel(): void;
   getRemoteConnected(): boolean;
+  getClientId(): string;
+  getInstanceId(): string;
+  /** see LicenseInfo */
+  getLicenses(app: LicenseApp): LicenseInfo[];
+  /** Last explicit RPC sync refusal; empty while pending or after success. */
+  getSyncError(): string;
+  /** A random tag of 1–3 distinct emoji to prefill the emoji-tag editor with; count 0 or omitted picks the length at random. */
+  suggestEmojiTag(count?: number): string;
 
   // offline / tunnel
   getOffline(): boolean;
@@ -134,16 +247,37 @@ export interface DeviceRemote {
   getProvidePaused(): boolean;
   setProvidePaused(v: boolean): void;
   getProvideEnabled(): boolean;
+  /** the per-family readout of the provider's platform transports
+   * (connect/IPV6.md A4); every state is "unknown" without a provider */
+  getProviderFamilyTransportStatus(): ProviderFamilyTransportStatus | null;
 
   // connect location / destination
   getConnectLocation(): ConnectLocationInfo | null;
   setConnectLocation(location: ConnectLocationSpec | null): void;
+  /**
+   * The explicit "connect to this" action. Unlike setConnectLocation, this
+   * rebuilds the connection even when the location is already the installed
+   * destination — a new multi client and a fresh set of peers — so choosing the
+   * location you are already on reconnects instead of doing nothing.
+   */
+  reconnect(location: ConnectLocationSpec | null): void;
   removeDestination(): void;
   shuffle(): void;
   getConnectEnabled(): boolean;
 
   // peers
   getNetworkPeers(): NetworkPeersInfo | null;
+
+  // connected provider locations, sorted oldest-connected first. The
+  // provider-locations screen renders ProviderLocationsViewController
+  // .getProviderLocations() instead, which is the same window in display order;
+  // this raw order is what an "oldest connected provider" consumer wants. While
+  // the rpc is down the last readable list is retained rather than drained, so
+  // pair an empty result with getRemoteConnected before showing "none".
+  getConnectedProviderLocations(): ConnectedProviderLocationInfo[];
+  // drop a provider and stop it being re-discovered for the rest of this
+  // connection. Takes the egress client id
+  removeConnectedProvider(clientId: string): void;
 
   // listeners
   addRemoteChangeListener(cb: (remoteConnected: boolean) => void): Unsubscribe;
@@ -156,6 +290,8 @@ export interface DeviceRemote {
     cb: (location: ConnectLocationInfo | null) => void,
   ): Unsubscribe;
   addNetworkPeersChangeListener(cb: (peers: NetworkPeersInfo | null) => void): Unsubscribe;
+  /** signal only — re-read getConnectedProviderLocations */
+  addConnectedProviderLocationChangeListener(cb: () => void): Unsubscribe;
 
   // custom DNS resolver settings (over the device-rpc)
   getDnsResolverSettings(): DnsResolverSettings | null;
@@ -176,6 +312,9 @@ export interface DeviceRemote {
   openBlockActionViewController(): BlockActionViewController;
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
+  openPointsLeaderboardViewController(): PointsLeaderboardViewController;
+  openPeerViewController(): PeerViewController;
+  openProviderLocationsViewController(): ProviderLocationsViewController;
 }
 
 // ── view controllers ─────────────────────────────────────────────────────────
@@ -208,6 +347,11 @@ export interface ProviderGridPoint {
   endTimeUnixMillis?: number;
   /** relative time until removal — what an exit animation wants */
   endTimeMillisUntil?: number;
+  /** the provider's proven address-family category: "dualstack", "v4-only"
+   * or "v6-only" (legacy providers read as v4-only) */
+  ipFamily: IpFamily;
+  /** the short display form of ipFamily: "both", "v4" or "v6" */
+  ipFamilyLabel: IpFamilyLabel;
 }
 
 export interface ConnectGrid {
@@ -224,7 +368,8 @@ export interface ConnectGrid {
  * connection status, selected location, the provider grid, connect/disconnect.
  */
 export interface ConnectViewController {
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   start(): void;
   stop(): void;
 
@@ -290,7 +435,8 @@ export interface ContractPeerRow {
  * ordering, and reports rows that exactly match the WASM runtime object.
  */
 export interface ContractDetailsViewController {
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   start(): void;
   stop(): void;
 
@@ -333,13 +479,36 @@ export interface PacketStats {
   blockIngressByteCount: number;
 }
 
+/** Traffic share plus live carrier selection; H1+ retains transportType "h1". */
+export interface TransportShare {
+  transportType: string;
+  h1WebSocketConnectionCount: number;
+  h1PlusConnectionCount: number;
+  egressByteCount: number;
+  ingressByteCount: number;
+  egressPacketCount: number;
+  ingressPacketCount: number;
+  share: number;
+  boundary: number;
+  percent: number;
+  used: boolean;
+  enabled: boolean;
+}
+
+export interface TransportDistribution {
+  shares: TransportShare[];
+  byteCount: number;
+  active: boolean;
+}
+
 /**
  * ContractViewController — throughput over the window, for the client feed and
  * the PROVIDER feed (the account's provider-statistics surface). Listener is
  * signal-only.
  */
 export interface ContractViewController {
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   start(): void;
   stop(): void;
 
@@ -347,6 +516,8 @@ export interface ContractViewController {
   getProviderThroughputPoints(): ThroughputPoint[];
   getPacketStats(): PacketStats | null;
   getProviderPacketStats(): PacketStats | null;
+  getTransportDistribution(): TransportDistribution | null;
+  getProviderTransportDistribution(): TransportDistribution | null;
   getWindowDurationSeconds(): number;
   setWindowDurationSeconds(seconds: number): void;
 
@@ -383,7 +554,8 @@ export interface BlockAction {
  * signal-only: re-read the getters on notify.
  */
 export interface BlockActionViewController {
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   start(): void;
   stop(): void;
 
@@ -413,6 +585,20 @@ export interface FilteredLocations {
   regions: ConnectLocationInfo[];
   cities: ConnectLocationInfo[];
   devices: ConnectLocationInfo[];
+  /**
+   * `regions` and `cities` nested for a search result: each region with the
+   * cities in it, in `regions` order, then one group with `region: null`
+   * holding the cities whose region is not in the result. Set only when
+   * searching (a non-empty filter), like regions and cities; empty otherwise.
+   */
+  regionGroups: RegionGroupInfo[];
+}
+
+/** one region of a search result and the cities in it */
+export interface RegionGroupInfo {
+  /** null for the cities whose region is not in the result (label it e.g. "Other") */
+  region: ConnectLocationInfo | null;
+  cities: ConnectLocationInfo[];
 }
 
 /**
@@ -420,7 +606,8 @@ export interface FilteredLocations {
  * filter and load state.
  */
 export interface LocationsViewController {
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   start(): void;
   stop(): void;
 
@@ -451,11 +638,184 @@ export interface NetworkClientInfo {
  * fired with the current list.
  */
 export interface DevicesViewController {
-  close(): void;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
   start(): void;
   stop(): void;
 
   addNetworkClientsListener(cb: (clients: NetworkClientInfo[]) => void): Unsubscribe;
+}
+
+/**
+ * PointsLeaderboardRow — one ranked network on the all-time points
+ * leaderboard (android/POINTSLEADERBOARD.md), in the server's snake_case with
+ * the sdk's preformatted text beside the raw values. `display_name` is the
+ * network name, or "" when `anonymous` — render your localized "Anonymous";
+ * `emoji_tag` shows either way. Ranks are competition ranks (0 = not ranked).
+ */
+export interface PointsLeaderboardRow {
+  network_id: string;
+  network_name?: string;
+  emoji_tag?: string;
+  anonymous: boolean;
+  total_points: number;
+  blocks_with_points: number;
+  streak: number;
+  longest_streak: number;
+  rank_points: number;
+  rank_blocks: number;
+  rank_streak: number;
+  display_name?: string;
+  total_points_text?: string;
+  blocks_with_points_text?: string;
+  streak_text?: string;
+  longest_streak_text?: string;
+  rank_points_text?: string;
+  rank_blocks_text?: string;
+  rank_streak_text?: string;
+}
+
+/** The caller's own row plus its opt-in state. */
+export interface PointsLeaderboardMe extends PointsLeaderboardRow {
+  points_leaderboard_public: boolean;
+}
+
+export type PointsLeaderboardSort = "points" | "blocks" | "streak";
+
+/**
+ * EmojiTagValidation — validateEmojiTag's verdict: `normalized` is the tag to
+ * send; `reason` is "" | "empty" | "too_many" | "not_emoji" (localize by it,
+ * `message` is the English fallback).
+ */
+export interface EmojiTagValidation {
+  ok: boolean;
+  count: number;
+  normalized: string;
+  reason: "" | "empty" | "too_many" | "not_emoji";
+  message: string;
+}
+
+/**
+ * PointsLeaderboardViewController — the all-time points leaderboard. It owns
+ * the sort, the pages and the paging state; render `getRows()` in order and
+ * call `loadMore()` when the list nears its end. The listener fires on every
+ * state change (a page landed, loading toggled, the sort switched, an error,
+ * `me` updated); read the state back through the getters. `refresh()` keeps
+ * the rows until the new first page lands. Never sort, rank or page yourself.
+ */
+export interface PointsLeaderboardViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  getSort(): PointsLeaderboardSort;
+  setSort(sort: PointsLeaderboardSort): void;
+  /** the page after the loaded window (a no-op while loading or at the end) */
+  loadMore(): void;
+  /** the page before the loaded window (a no-op while loading or at the top) */
+  loadMoreBefore(): void;
+  refresh(): void;
+  /**
+   * Jump the loaded window to the page holding this 1-based position of the
+   * sort's total order (the scroll indicator's rank): cancels an in-flight
+   * page, clears the rows, lands the page as the window; then page backward
+   * with loadMoreBefore and forward with loadMore. The server clamps the rank.
+   */
+  seekToRank(rank: number): void;
+  /** drop the window and load the first page again (rows cleared at once) */
+  reloadFromTop(): void;
+
+  getRows(): PointsLeaderboardRow[];
+  getRowCount(): number;
+  isLoading(): boolean;
+  isEndReached(): boolean;
+  /** ranks above the window remain (the window does not start at 1) */
+  hasMoreBefore(): boolean;
+  /** ranks below the window remain (the negation of isEndReached) */
+  hasMoreAfter(): boolean;
+  /** 1-based position of the first / last loaded row, 0 while empty */
+  firstLoadedPosition(): number;
+  lastLoadedPosition(): number;
+  /** the indicator's label parts at a rank among getTotalRanked() */
+  getScrollLabel(rank: number): PointsLeaderboardScrollLabelParts;
+  getMe(): PointsLeaderboardMe | null;
+  getErrorMessage(): string;
+  getTotalRanked(): number;
+  getLatestEpoch(): number;
+  getSnapshotTime(): string | null;
+
+  addPointsLeaderboardListener(cb: () => void): Unsubscribe;
+}
+
+/**
+ * The tier of a rank among the ranked networks (the scroll indicator's
+ * "#1,240 · Top 5%"): a rank is in a tier when it is within the tier's percent
+ * of the total, rounded up. The app maps the tier to its localized string.
+ */
+export const PointsLeaderboardTier = {
+  Unknown: 0,
+  Top1: 1,
+  Top5: 2,
+  Top10: 3,
+  Top25: 4,
+  Top50: 5,
+  Rest: 6,
+} as const;
+export type PointsLeaderboardTier = (typeof PointsLeaderboardTier)[keyof typeof PointsLeaderboardTier];
+
+/** PointsLeaderboardScrollLabel / getScrollLabel: the indicator label parts. */
+export interface PointsLeaderboardScrollLabelParts {
+  /** the rank, clamped to [1, total] */
+  rank: number;
+  total: number;
+  /** the rank preformatted, "#1240" */
+  rank_text: string;
+  tier: PointsLeaderboardTier;
+  /** 1, 5, 10, 25 or 50; 0 for the rest and the unknown tier */
+  tier_percent: number;
+}
+
+/**
+ * ProviderLocationsViewController — the provider-locations screen's display
+ * order, selection and scroll wheel, shared by every URnetwork app so they all
+ * read and traverse the globe identically.
+ *
+ * `getProviderLocations` is the connected providers in DISPLAY ORDER: the ones
+ * with coordinates west to east relative to their centroid — so a cluster
+ * straddling the antimeridian stays contiguous — then the ones without. It is
+ * the list to render, and it is the order `stepSelection` walks; re-read it on
+ * the device's connectedProviderLocationsChanged. (The device's own
+ * getConnectedProviderLocations is the same window sorted by connected
+ * duration.)
+ *
+ * The wheel is the plottable head of that order, and `stepSelection` CLAMPS at
+ * its ends: stepping past the extreme west or east sticks there rather than
+ * cycling round the globe.
+ *
+ * The selection always points at a connected provider: the longest connected
+ * one by default, and when the selected provider leaves the window (removed,
+ * or rotated out) the NEAREST remaining one. `getSelectedClientId` is "" only
+ * when no providers are connected.
+ */
+export interface ProviderLocationsViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  /** the connected providers in display order (west to east, then unplottable) */
+  getProviderLocations(): ConnectedProviderLocationInfo[];
+  /** the selected provider's egress client id, "" when none are connected */
+  getSelectedClientId(): string;
+  /** select explicitly (a dot tap or a list row); "" falls back to the default */
+  setSelectedClientId(clientId: string): void;
+  /** move `steps` providers along the wheel, positive east, clamped at the ends */
+  stepSelection(steps: number): void;
+  /** drop the provider, moving the selection to the nearest one if it was selected */
+  removeProvider(clientId: string): void;
+
+  addSelectedProviderLocationChangeListener(cb: () => void): Unsubscribe;
 }
 
 /**
@@ -490,7 +850,8 @@ export interface DnsResolverSettings {
  * the sdk converts it to wss and appends /device-rpc. `signedProxyId` is the
  * device's signed proxy id — the device-rpc credential (NOT a jwt), which the
  * platform returns as `auth_token` from /network/auth-client. `byJwt` is the
- * network member jwt used for the network-space api.
+ * network member jwt used for the network-space api. `instanceId` must be the
+ * hosted DeviceLocal instance returned as `instance_id` by /network/auth-client.
  */
 export interface PlatformDeviceRemoteOptions {
   apiUrl: string;
@@ -498,4 +859,328 @@ export interface PlatformDeviceRemoteOptions {
   byJwt: string;
   proxyUrl: string;
   signedProxyId: string;
+  instanceId: string;
+}
+
+/** Callbacks consumed by an SDK device-rpc byte transport. */
+export interface DeviceRpcTransportCallbacks {
+  opened(): void;
+  message(frame: Uint8Array): void;
+  closed(reason?: string): void;
+}
+
+/** One logical connection returned by a device-rpc transport. */
+export interface DeviceRpcTransportConnection {
+  send(frame: Uint8Array): void;
+  close(): void;
+}
+
+/**
+ * Opaque byte transport used by DeviceRemote. The SDK continues to own RPC
+ * framing and all Device behavior; the implementation owns the actual socket.
+ */
+export interface DeviceRpcTransport {
+  open(callbacks: DeviceRpcTransportCallbacks): DeviceRpcTransportConnection;
+}
+
+/** Options for the extension-routed DeviceRemote used by ur.io. */
+/** api-only LocationsViewController: the same browse controller a device
+ * exposes, opened over the network space api for a host with no device yet */
+export interface LocationsViewControllerOptions {
+  apiUrl: string;
+  platformUrl: string;
+  byJwt: string;
+}
+
+/**
+ * PeerViewController — the connectable peers: ONLY the connected peers that
+ * provide (the sdk's filter, shared by every app). `getConnectedCount` is all
+ * connected peers, providing or not ("N devices online"). The listener
+ * delivers the current connectable list.
+ */
+export interface PeerViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  getPeers(): NetworkPeerInfo[];
+  getPeerCount(): number;
+  getConnectedCount(): number;
+
+  addPeersListener(cb: (peers: NetworkPeerInfo[]) => void): Unsubscribe;
+}
+
+/** AccountPreferencesViewController — the product-updates preference. */
+export interface AccountPreferencesViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  getAllowProductUpdates(): boolean;
+  updateAllowProductUpdates(allow: boolean): void;
+  addAllowProductUpdatesListener(cb: (allow: boolean) => void): Unsubscribe;
+}
+
+/** the profile, through the sdk NetworkUser's json tags */
+export interface NetworkUserInfo {
+  userId?: string;
+  user_name: string;
+  user_auth?: string;
+  verified: boolean;
+  auth_type: string;
+  network_name: string;
+  wallet_address?: string;
+  auth_types?: string[];
+}
+
+/**
+ * NetworkUserViewController — the profile: fetch, the cached user, rename with
+ * success / error / in-flight listeners.
+ */
+export interface NetworkUserViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  fetchNetworkUser(): void;
+  getNetworkUser(): NetworkUserInfo | null;
+  updateNetworkUser(networkName: string): void;
+
+  addNetworkUserListener(cb: () => void): Unsubscribe;
+  addIsLoadingListener(cb: (loading: boolean) => void): Unsubscribe;
+  addNetworkUserUpdateErrorListener(cb: (message: string) => void): Unsubscribe;
+  addNetworkUserUpdateSuccessListener(cb: () => void): Unsubscribe;
+  addIsUpdatingListener(cb: (updating: boolean) => void): Unsubscribe;
+}
+
+/** FeedbackViewController — send feedback (message + star count). */
+export interface FeedbackViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  sendFeedback(message: string, starCount: number): void;
+  addIsSendingFeedbackListener(cb: (sending: boolean) => void): Unsubscribe;
+  /** One result per send, delivered before the sending state returns to false. */
+  addFeedbackSendErrorListener(cb: (message: string) => void): Unsubscribe;
+  addFeedbackSendSuccessListener(cb: () => void): Unsubscribe;
+}
+
+/** AccountHost.redeemBalanceCodeOutcome result through its json tags */
+export interface BalanceCodeRedeemOutcome {
+  outcome: "redeemed" | "already_redeemed" | "invalid" | "unknown";
+  transfer_balance?: {
+    transfer_balance_id: string;
+    start_time: string;
+    end_time: string;
+    balance_byte_count: number;
+  };
+  /** the server's rejection, when it answered */
+  error?: { message: string };
+  /** the redeem call's own failure, when it got no answer */
+  transport_error?: { message: string; kind: "http" | "network" | "timeout" | "parse"; is_timeout: boolean };
+}
+
+/** the referral code result through its json tags */
+export interface ReferralCodeInfo {
+  referral_code?: string;
+  total_referrals: number;
+  max_referrals: number;
+  bonus_per_referral_bytes: number;
+  referred_bonus_bytes: number;
+  bonus_period_seconds: number;
+  error?: { message: string };
+}
+
+/**
+ * ReferralCodeViewController — the network's referral code and its terms.
+ * `getReferralCode` is null until the first fetch lands; the listener carries
+ * the code string.
+ */
+export interface ReferralCodeViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  getReferralCode(): ReferralCodeInfo | null;
+  addReferralCodeListener(cb: (code: string) => void): Unsubscribe;
+  /** A fetch ended without a code; `start()` fetches again. */
+  addReferralCodeFetchErrorListener(cb: (message: string) => void): Unsubscribe;
+}
+
+export interface SubscriptionInfo {
+  subscription_id?: string;
+  store: string;
+  plan: string;
+}
+
+export type PurchaseConfirmationState =
+  | "idle"
+  | "waiting_for_confirmation"
+  | "confirmed"
+  | "confirmation_gave_up";
+
+/** Why a confirmation gave up: the server never reflected the purchase, or it could not be reached. */
+export type PurchaseConfirmationGiveUpReason = "not_reflected" | "unreachable";
+
+/**
+ * SubscriptionBalanceViewController — balance, plan and the purchase
+ * confirmation state machine (background poll, confirmation poll with a
+ * budget that pauses while backgrounded, jwt reconciliation). Byte counts
+ * are numbers; the platform owns the jwt refresh and calls `jwtRefreshed`.
+ */
+export interface SubscriptionBalanceViewController {
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+  start(): void;
+  stop(): void;
+
+  getIsPro(): boolean;
+  getIsGuest(): boolean;
+  getIsLoaded(): boolean;
+  getStartBalanceByteCount(): number;
+  getAvailableByteCount(): number;
+  getPendingByteCount(): number;
+  getUsedBalanceByteCount(): number;
+  getCurrentSubscription(): SubscriptionInfo | null;
+  getSubscriptions(): SubscriptionInfo[];
+  getCurrentStore(): string;
+  getPurchaseConfirmationState(): PurchaseConfirmationState;
+  getConfirmationBudgetRemainingMillis(): number;
+  /** Why the confirmation gave up while the state is confirmation_gave_up; "" otherwise. */
+  getPurchaseConfirmationGiveUpReason(): PurchaseConfirmationGiveUpReason | "";
+  /** The last fetch's error when it failed; "" once a fetch succeeds. */
+  getLastFetchError(): string;
+  /** The last successful balance response, whole (price tier, offer, experiments); null before one loads. */
+  getSubscriptionBalanceResult(): any | null;
+
+  refresh(): void;
+  setForeground(foreground: boolean): void;
+  startPurchaseConfirmation(): void;
+  clearPurchaseConfirmation(): void;
+  jwtRefreshed(): void;
+  /** The store's storefront country sent with every fetch; "" lets the server resolve the tier. */
+  setStorefrontCountry(storefrontCountry: string): void;
+
+  getBackgroundPollIntervalMillis(): number;
+  setBackgroundPollIntervalMillis(millis: number): void;
+  getConfirmationPollIntervalMillis(): number;
+  setConfirmationPollIntervalMillis(millis: number): void;
+  getConfirmationBudgetMillis(): number;
+  setConfirmationBudgetMillis(millis: number): void;
+
+  addSubscriptionBalanceChangeListener(cb: () => void): Unsubscribe;
+  addSubscriptionJwtOutOfSyncListener(cb: (serverIsPro: boolean) => void): Unsubscribe;
+  addPurchaseConfirmationListener(cb: (state: PurchaseConfirmationState) => void): Unsubscribe;
+  /** A fetch failed; the last snapshot stays and `refresh()` fetches again. */
+  addSubscriptionBalanceFetchErrorListener(cb: (message: string) => void): Unsubscribe;
+}
+
+export interface AccountHostOptions {
+  apiUrl: string;
+  platformUrl: string;
+  byJwt: string;
+}
+
+/**
+ * AccountHost — the sdk for a signed-in page with no device: the network space
+ * api plus the api-only view controllers the account screens are built on.
+ * Openers return the same objects a DeviceRemote's openers return. The api
+ * methods resolve with the sdk result through its json tags (the API's own
+ * snake_case field names) and reject with an Error carrying the sdk message.
+ * `close()` releases the host; close the controllers it opened first.
+ */
+export interface AccountHost {
+  setByJwt(byJwt: string): void;
+  getByJwt(): string;
+  /** Releases ownership once; await to join teardown without blocking browser events. */
+  close(): Promise<void>;
+
+  openLocationsViewController(): LocationsViewController;
+  openDevicesViewController(): DevicesViewController;
+  openAccountPreferencesViewController(): AccountPreferencesViewController;
+  openNetworkUserViewController(): NetworkUserViewController;
+  openFeedbackViewController(): FeedbackViewController;
+  openReferralCodeViewController(): ReferralCodeViewController;
+  openSubscriptionBalanceViewController(): SubscriptionBalanceViewController;
+  openPointsLeaderboardViewController(): PointsLeaderboardViewController;
+
+  getNetworkClients(): Promise<any>;
+  removeNetworkClient(clientId: string): Promise<any>;
+  getNetworkReferralCode(): Promise<ReferralCodeInfo>;
+  validateReferralCode(code: string): Promise<any>;
+  setNetworkReferral(code: string): Promise<any>;
+  getReferralNetwork(): Promise<any>;
+  unlinkReferralNetwork(): Promise<any>;
+  authCodeCreate(uses: number, durationMinutes: number): Promise<any>;
+  networkDelete(): Promise<any>;
+  getLeaderboard(): Promise<any>;
+  /** One page of the all-time points leaderboard (public; the jwt only adds `me`). */
+  /** cursor pages either direction (next_cursor / prev_cursor); seekRank (no cursor) opens the page at that position */
+  getPointsLeaderboard(sort: PointsLeaderboardSort, cursor?: string, limit?: number, seekRank?: number): Promise<any>;
+  /** synchronous: the scroll indicator's label parts at a rank among total ranked */
+  pointsLeaderboardScrollLabel(rank: number, total: number): PointsLeaderboardScrollLabelParts;
+  setPointsLeaderboardPublic(isPublic: boolean): Promise<any>;
+  /** Validate with validateEmojiTag first and send `normalized`; "" clears the tag. */
+  setEmojiTag(emojiTag: string): Promise<any>;
+  validateEmojiTag(emojiTag: string): EmojiTagValidation;
+  /** A random tag of 1–3 distinct emoji to prefill the editor with; count 0 or omitted picks the length at random. */
+  suggestEmojiTag(count?: number): string;
+  getNetworkLeaderboardRanking(): Promise<any>;
+  setNetworkLeaderboardPublic(isPublic: boolean): Promise<any>;
+  getNetworkReliability(): Promise<any>;
+  getNetworkRedeemedBalanceCodes(): Promise<any>;
+  redeemBalanceCode(secret: string): Promise<any>;
+  /**
+   * Redeem and classify. Never rejects for a failed call (it may still have
+   * credited the code): outcome "already_redeemed" means the code is in this
+   * network's redeemed list, "unknown" that neither the redeem nor the list
+   * answered.
+   */
+  redeemBalanceCodeOutcome(secret: string): Promise<BalanceCodeRedeemOutcome>;
+  checkBalanceCode(secret: string): Promise<any>;
+  subscriptionBalance(): Promise<any>;
+  getNetworkUser(): Promise<any>;
+
+  // ----- onboarding program (mmm/onboarding/PLAN.md) -----
+  /** The plan response (SubscriptionBalanceResult) with price_tier, onboarding_offer and experiments; storefontCountry "" when the page has no store. */
+  subscriptionBalanceForStorefront(storefrontCountry?: string): Promise<any>;
+  /** Issue the welcome offer once (idempotent); surface intro_step | final_screen | account. */
+  onboardingOfferIssue(surface?: string, storefrontCountry?: string): Promise<any>;
+  /** Send a batch (<= 200) of product events: a json array of {name, at?, props?} checked against the closed schema (rejects on an unknown name/prop). Stamped platform "web" plus the given app version, locale and session. */
+  clientEventsSend(eventsJson: string, appVersion?: string, locale?: string, session?: string): Promise<any>;
+  /** The closed list of event names a page may send. */
+  clientEventNames(): string[];
+  /** Prepare an inline Stripe PaymentSheet purchase (plan yearly | monthly). */
+  stripePaymentSheet(plan: string, storefrontCountry?: string, stripeVersion?: string): Promise<any>;
+  /** The caller's tier's Stripe price ids and the welcome coupon when redeemable. */
+  stripePrices(storefrontCountry?: string): Promise<any>;
+  /** The landing page's attribution call for a campaign token (no auth). */
+  onboardingClick(token: string): Promise<any>;
+  /** A feedback link token's pre-filled rating/reason (no auth). */
+  onboardingFeedbackToken(token: string, rating?: number, reason?: string): Promise<any>;
+  /** The per-month sub-line math: yearly / 12 rounded up to the minor unit, saving rounded down, suppressed under one major unit. */
+  computePriceEquivalent(yearly: number, monthly: number, minorUnitDigits: number): PriceEquivalent;
+}
+
+export interface PriceEquivalent {
+  monthly_equivalent: number;
+  monthly_equivalent_minor: number;
+  show_equivalent: boolean;
+  saving_percent: number;
+  yearly_minor: number;
+  monthly_minor: number;
+}
+
+export interface ExtensionDeviceRemoteOptions {
+  apiUrl: string;
+  platformUrl: string;
+  byJwt: string;
+  instanceId: string;
+  transport: DeviceRpcTransport;
 }

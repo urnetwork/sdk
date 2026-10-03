@@ -2,16 +2,19 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	gojwt "github.com/golang-jwt/jwt/v5"
+
 	"github.com/urnetwork/connect"
 )
 
-// deviceTokenManager owns the logout decision, and it must be conservative:
+// Api's token manager owns the logout decision, and it must be conservative:
 // only a confirmed api response that rejects the credential logs out — a 200
 // with an error result (e.g. "client no longer exists") or a 401 from the
 // auth layer. Api outages (5xx, even when the body is a json error payload
@@ -23,25 +26,174 @@ func testingNewTokenManager(
 	apiUrl string,
 	onTokenRefreshed func(string),
 	logout func() error,
-) *deviceTokenManager {
-	cancelCtx, cancel := context.WithCancel(ctx)
-	clientStrategy := connect.NewClientStrategy(cancelCtx, connect.DefaultClientStrategySettings())
-	api := newApi(cancelCtx, clientStrategy, apiUrl)
+) (*apiTokenManager, *Api, func()) {
+	clientStrategy := newTestClientStrategy(ctx)
+	api := newApi(ctx, clientStrategy, apiUrl)
+	api.AddJwtRefreshListener(jwtRefreshListenerFunc(onTokenRefreshed))
+	api.AddAuthLogoutListener(authLogoutListenerFunc(func() {
+		_ = logout()
+	}))
 	api.SetByJwt("test-jwt")
-	// construct directly (no run goroutine) so each case drives refreshToken
-	// deterministically
-	return &deviceTokenManager{
-		ctx:              cancelCtx,
-		cancel:           cancel,
-		log:              connect.DefaultLogger(),
-		api:              api,
-		refreshMonitor:   connect.NewMonitor(),
-		onTokenRefreshed: onTokenRefreshed,
-		logout:           logout,
+	closeFunc := func() {
+		api.Close()
+		_ = api.CloseAndWait(context.Background())
+		clientStrategy.Close()
+	}
+	return api.tokenManager, api, closeFunc
+}
+
+func testingRefreshableJwt(t *testing.T) string {
+	return testingRefreshableJwtWithMarker(t, "default")
+}
+
+func testingRefreshableJwtWithMarker(t *testing.T, marker string) string {
+	t.Helper()
+	token, err := gojwt.NewWithClaims(gojwt.SigningMethodNone, gojwt.MapClaims{
+		"client_id":  "00000000-0000-0000-0000-000000000001",
+		"device_id":  "00000000-0000-0000-0000-000000000002",
+		"network_id": "00000000-0000-0000-0000-000000000004",
+		"exp":        time.Now().Add(30 * 24 * time.Hour).Unix(),
+		"marker":     marker,
+	}).SignedString(gojwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+func TestApiOwnsRefreshLifecycle(t *testing.T) {
+	initialJwt := testingRefreshableJwtWithMarker(t, "initial")
+	firstRefreshJwt := testingRefreshableJwtWithMarker(t, "first")
+	secondRefreshJwt := testingRefreshableJwtWithMarker(t, "second")
+
+	var requestCount atomic.Int64
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request := requestCount.Add(1)
+		var expectedJwt string
+		var responseJwt string
+		switch request {
+		case 1:
+			expectedJwt = initialJwt
+			responseJwt = firstRefreshJwt
+		case 2:
+			expectedJwt = firstRefreshJwt
+			responseJwt = secondRefreshJwt
+		default:
+			t.Errorf("unexpected refresh request %d", request)
+			http.Error(w, "unexpected", http.StatusInternalServerError)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+expectedJwt {
+			t.Errorf("request %d authorization = %q, want refreshed bearer", request, got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"by_jwt":%q}`, responseJwt)
+	})
+	_, api := newTestApi(t, handler)
+	refreshed := make(chan string, 2)
+	api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
+		refreshed <- jwt
+	}))
+	api.SetByJwt(initialJwt)
+	api.StartJwtRefresh()
+
+	select {
+	case got := <-refreshed:
+		connect.AssertEqual(t, got, firstRefreshJwt)
+	case <-time.After(5 * time.Second):
+		t.Fatal("API-owned startup refresh did not run")
+	}
+	connect.AssertEqual(t, api.GetByJwt(), firstRefreshJwt)
+
+	api.RequestJwtRefresh()
+	select {
+	case got := <-refreshed:
+		connect.AssertEqual(t, got, secondRefreshJwt)
+	case <-time.After(5 * time.Second):
+		t.Fatal("API-owned manual refresh did not run")
+	}
+	connect.AssertEqual(t, api.GetByJwt(), secondRefreshJwt)
+	connect.AssertEqual(t, requestCount.Load(), int64(2))
+}
+
+func TestApiDiscardsRefreshForReplacedJwt(t *testing.T) {
+	oldJwt := testingRefreshableJwtWithMarker(t, "old")
+	newLoginJwt := testingRefreshableJwtWithMarker(t, "new-login")
+	staleRefreshJwt := testingRefreshableJwtWithMarker(t, "stale-refresh")
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		<-releaseRequest
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"by_jwt":%q}`, staleRefreshJwt)
+	})
+	_, api := newTestApi(t, handler)
+	api.SetByJwt(oldJwt)
+
+	type refreshOutcome struct {
+		loggedOut bool
+		stale     bool
+		err       error
+	}
+	outcome := make(chan refreshOutcome, 1)
+	go func() {
+		loggedOut, stale, err := api.tokenManager.refreshToken(oldJwt)
+		outcome <- refreshOutcome{loggedOut: loggedOut, stale: stale, err: err}
+	}()
+	<-requestStarted
+	api.SetByJwt(newLoginJwt)
+	close(releaseRequest)
+	got := <-outcome
+	connect.AssertEqual(t, got.loggedOut, false)
+	connect.AssertEqual(t, got.stale, true)
+	connect.AssertEqual(t, got.err, nil)
+	connect.AssertEqual(t, api.GetByJwt(), newLoginJwt)
+}
+
+func TestApiRejectsRefreshThatChangesDeviceIdentity(t *testing.T) {
+	initialJwt := testingClientJwtForIdentity(
+		t,
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000002",
+	)
+	replacementJwt := testingClientJwtForIdentity(
+		t,
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000003",
+	)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"by_jwt":%q}`, replacementJwt)
+	})
+	_, api := newTestApi(t, handler)
+	api.SetByJwt(initialJwt)
+	refreshed := make(chan string, 1)
+	sub := api.AddJwtRefreshListener(jwtRefreshListenerFunc(func(jwt string) {
+		refreshed <- jwt
+	}))
+	defer sub.Close()
+
+	loggedOut, stale, err := api.tokenManager.refreshToken(initialJwt)
+	if err == nil {
+		t.Fatal("identity-changing refresh was accepted")
+	}
+	if loggedOut || stale {
+		t.Fatalf("identity-changing refresh outcome loggedOut=%t stale=%t", loggedOut, stale)
+	}
+	if got := api.GetByJwt(); got != initialJwt {
+		t.Fatalf("identity-changing refresh installed JWT %q", got)
+	}
+	select {
+	case got := <-refreshed:
+		t.Fatalf("identity-changing refresh notified listeners with %q", got)
+	default:
 	}
 }
 
-func TestDeviceTokenManagerRefreshSemantics(t *testing.T) {
+func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -122,12 +274,12 @@ func TestDeviceTokenManagerRefreshSemantics(t *testing.T) {
 
 	for _, c := range cases {
 		func() {
-			ts := httptest.NewServer(c.handler)
+			ts := httptest.NewServer(testApiHandler(c.handler))
 			defer ts.Close()
 
 			logoutCount := 0
 			refreshedJwt := ""
-			manager := testingNewTokenManager(
+			manager, api, closeFunc := testingNewTokenManager(
 				ctx,
 				ts.URL,
 				func(jwt string) {
@@ -138,11 +290,12 @@ func TestDeviceTokenManagerRefreshSemantics(t *testing.T) {
 					return nil
 				},
 			)
-			defer manager.Close()
+			defer closeFunc()
 
-			loggedOut, err := manager.refreshToken()
+			loggedOut, stale, err := manager.refreshToken(api.GetByJwt())
 
 			connect.AssertEqual(t, loggedOut, c.expectLogout)
+			connect.AssertEqual(t, stale, false)
 			if c.expectLogout {
 				connect.AssertEqual(t, logoutCount, 1)
 				connect.AssertEqual(t, err, nil)
@@ -163,7 +316,7 @@ func TestDeviceTokenManagerRefreshSemantics(t *testing.T) {
 // an offline network (nothing listening) is a transient error: retry, no
 // logout, and the attempt respects the manager ctx so it cannot hang past
 // close
-func TestDeviceTokenManagerRefreshOffline(t *testing.T) {
+func TestApiTokenManagerRefreshOffline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -173,7 +326,7 @@ func TestDeviceTokenManagerRefreshOffline(t *testing.T) {
 	ts.Close()
 
 	logoutCount := 0
-	manager := testingNewTokenManager(
+	manager, api, closeFunc := testingNewTokenManager(
 		ctx,
 		deadUrl,
 		func(jwt string) {},
@@ -182,7 +335,7 @@ func TestDeviceTokenManagerRefreshOffline(t *testing.T) {
 			return nil
 		},
 	)
-	defer manager.Close()
+	defer closeFunc()
 
 	// bound the attempt so the test does not wait out the full strategy
 	// timeouts against the dead endpoint
@@ -194,8 +347,9 @@ func TestDeviceTokenManagerRefreshOffline(t *testing.T) {
 		}
 	}()
 
-	loggedOut, err := manager.refreshToken()
+	loggedOut, stale, err := manager.refreshToken(api.GetByJwt())
 	connect.AssertEqual(t, loggedOut, false)
+	connect.AssertEqual(t, stale, false)
 	connect.AssertNotEqual(t, err, nil)
 	connect.AssertEqual(t, logoutCount, 0)
 }
@@ -203,36 +357,35 @@ func TestDeviceTokenManagerRefreshOffline(t *testing.T) {
 // the run loop validates the stored jwt immediately at start, and a confirmed
 // rejection logs out exactly once and stops the loop (no hot loop of
 // refresh->logout against an invalid jwt)
-func TestDeviceTokenManagerRunLogsOutOnceAtStart(t *testing.T) {
+func TestApiTokenManagerRunLogsOutOnceAtStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var requestCount atomic.Int64
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(testApiHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"error":{"message":"Client does not exist"}}`))
-	}))
+	})))
 	defer ts.Close()
 
 	cancelCtx, managerCancel := context.WithCancel(ctx)
 	defer managerCancel()
-	clientStrategy := connect.NewClientStrategy(cancelCtx, connect.DefaultClientStrategySettings())
+	clientStrategy := newTestClientStrategy(cancelCtx)
+	defer clientStrategy.Close()
 	api := newApi(cancelCtx, clientStrategy, ts.URL)
-	api.SetByJwt("test-jwt")
 
 	var logoutCount atomic.Int64
-	manager := newDeviceTokenManager(
-		cancelCtx,
-		connect.DefaultLogger(),
-		api,
-		func(jwt string) {},
-		func() error {
-			logoutCount.Add(1)
-			return nil
-		},
-	)
-	defer manager.Close()
+	api.AddAuthLogoutListener(authLogoutListenerFunc(func() {
+		logoutCount.Add(1)
+	}))
+	api.SetByJwt(testingRefreshableJwt(t))
+	api.StartJwtRefresh()
+	defer func() {
+		api.Close()
+		_ = api.CloseAndWait(context.Background())
+		clientStrategy.Close()
+	}()
 
 	// the startup refresh fires without waiting for the expiration window
 	endTime := time.Now().Add(5 * time.Second)

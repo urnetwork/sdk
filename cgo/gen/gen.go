@@ -25,6 +25,7 @@ import (
 	"go/format"
 	"go/types"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -38,6 +39,18 @@ const sdkPath = "github.com/urnetwork/sdk"
 
 // behavioral types cross the abi as opaque handles
 var behavioralTypes = map[string]bool{
+	"Socket": true,
+	// These immutable observations expose private state through getters.
+	// JSON would erase both their values and their ownership identity.
+	"LocalAuthStateSnapshot":          true,
+	"LocalStateResetResult":           true,
+	"DeviceLocalLoadResult":           true,
+	"DeviceLocalSaveResult":           true,
+	"LocalStateLocationReadResult":    true,
+	"LocalStateKeyMaterialReadResult": true,
+	// Its guarded action must retain the private API owner and generation.
+	"ClientRefreshIntegrityNotice": true,
+
 	"NetworkSpaceManager":        true,
 	"NetworkSpace":               true,
 	"Api":                        true,
@@ -50,20 +63,26 @@ var behavioralTypes = map[string]bool{
 	"ProxyDevice":                true,
 	"Sub":                        true,
 	"IoLoop":                     true,
+	"PacketBatch":                true,
 	"Tunnel":                     true,
 	"ConnectGrid":                true,
 	"DeviceLocalKeyMaterial":     true,
 	"DeviceRpcKeyMaterial":       true,
 	"WebsocketDeviceRpcDialer":   true,
 	"WebsocketDeviceRpcListener": true,
+	// the app-wide client event batcher: a background goroutine and persisted
+	// state, so it must cross as a handle with its methods, not as json
+	"ClientEventQueue": true,
 
 	"AccountPreferencesViewController":    true,
 	"AccountViewController":               true,
 	"BlockActionViewController":           true,
 	"ConnectViewController":               true,
 	"ContractViewController":              true,
+	"SubscriptionBalanceViewController":   true,
 	"ContractDetailsViewController":       true,
 	"DevicesViewController":               true,
+	"ExtenderViewController":              true,
 	"FeedbackViewController":              true,
 	"LocationsViewController":             true,
 	"LoginViewController":                 true,
@@ -72,15 +91,25 @@ var behavioralTypes = map[string]bool{
 	"PeerViewController":                  true,
 	"PostQuantumIdentityViewController":   true,
 	"ProvideViewController":               true,
+	"ProviderLocationsViewController":     true,
 	"ReferralCodeViewController":          true,
+	"PointsLeaderboardViewController":     true,
 	"WalletViewController":                true,
 }
 
 // skipped types are not exported. mirror the gomobile validate exclusions
 // (see build/Makefile): rpc gob internals, testing and platform constructors.
 var skipTypes = map[string]string{
-	"DeviceLocalRpc":  "rpc gob internal (macOS parity: ignored)",
-	"DeviceRemoteRpc": "rpc gob internal (macOS parity: ignored)",
+	"Dialer":                    "native Go socket interface; manual C socket exports",
+	"TLSDialer":                 "native Go TLS interface; manual C socket exports",
+	"Conn":                      "net.Conn alias; manual C socket exports",
+	"DeviceSocketRequest":       "socket RPC internal",
+	"DeviceSocketResponse":      "socket RPC internal",
+	"DeviceSubprotocolRequest":  "subprotocol RPC internal",
+	"DeviceSubprotocolResponse": "subprotocol RPC internal",
+	"RemoteSubprotocol":         "Go/JS RPC session; native bindings use DeviceLocal subprotocol methods",
+	"DeviceLocalRpc":            "rpc gob internal (macOS parity: ignored)",
+	"DeviceRemoteRpc":           "rpc gob internal (macOS parity: ignored)",
 }
 
 var skipTypePatterns = []*regexp.Regexp{
@@ -112,12 +141,20 @@ var skipFuncPatterns = []*regexp.Regexp{
 }
 
 var skipMethods = map[string]string{
+	"Device.Dial":                                    "manual export urnet_device_dial",
+	"Device.DialContext":                             "manual export urnet_device_dial",
+	"Device.DialTls":                                 "manual export urnet_device_dial_tls",
+	"Device.DialTlsContext":                          "manual export urnet_device_dial_tls",
 	"DeviceLocal.Ctx":                                "go context does not cross the abi",
+	"DeviceRemote.Ctx":                               "go context does not cross the abi",
+	"DeviceRemote.OpenSubprotocolContext":            "Go/JS RPC session; native bindings use DeviceLocal subprotocol methods",
 	"DeviceLocal.SetUpgradeMuxSettings":              "connect internal type (macOS parity: ignored)",
 	"DeviceLocal.SetClientSecurityPolicyGenerator":   "func param (macOS parity: ignored)",
 	"DeviceLocal.SetProviderSecurityPolicyGenerator": "func param (macOS parity: ignored)",
 	"DeviceLocal.AddReceivePacketCallback":           "func param (macOS parity: ignored); use urnet_device_local_add_receive_packet",
 	"DeviceLocal.SendPacketNoCopy":                   "pool ownership does not cross the abi; use urnet_device_local_send_packet",
+	"DeviceLocal.SendPacketsNoCopy":                  "pool ownership does not cross the abi; use urnet_device_local_send_packet_batch",
+	"PacketBatch.Get":                                "manual export urnet_packet_batch_get",
 	"WebsocketDeviceRpcDialer.Dial":                  "net.Conn internal; used by DeviceRemote internally",
 	"WebsocketDeviceRpcListener.Accept":              "net.Conn internal; used by DeviceLocal internally",
 
@@ -125,9 +162,11 @@ var skipMethods = map[string]string{
 	"DeviceLocal.GetClientKeySeed":                           "manual export urnet_device_local_get_client_key_seed",
 	"DeviceLocal.GetProvideTlsCertificatePem":                "manual export urnet_device_local_get_provide_tls_certificate_pem",
 	"DeviceLocal.GetProvideTlsPrivateKeyPem":                 "manual export urnet_device_local_get_provide_tls_private_key_pem",
+	"DeviceLocal.GetExtenderKeySeed":                         "manual export urnet_device_local_get_extender_key_seed",
 	"DeviceLocalKeyMaterial.GetClientKeySeed":                "manual export urnet_device_local_key_material_get_client_key_seed",
 	"DeviceLocalKeyMaterial.GetProvideTlsCertificatePem":     "manual export urnet_device_local_key_material_get_provide_tls_certificate_pem",
 	"DeviceLocalKeyMaterial.GetProvideTlsPrivateKeyPem":      "manual export urnet_device_local_key_material_get_provide_tls_private_key_pem",
+	"DeviceLocalKeyMaterial.GetExtenderKeySeed":              "manual export urnet_device_local_key_material_get_extender_key_seed",
 	"RenderIdenticonPng":                                     "manual export urnet_render_identicon_png",
 	"Device.GetPublicIdentityKey":                            "manual export urnet_device_get_public_identity_key",
 	"PostQuantumIdentityViewController.GetPublicIdentityKey": "device-level key; manual export urnet_device_get_public_identity_key",
@@ -143,6 +182,7 @@ var unixOnlySymbols = map[string]bool{
 // c names reserved by hand-written exports in the cgo package
 var reservedCNames = map[string]bool{
 	"urnet_version":           true,
+	"urnet_abi_version":       true,
 	"urnet_free_string":       true,
 	"urnet_release":           true,
 	"urnet_live_handle_count": true,
@@ -163,6 +203,10 @@ func main() {
 type gen struct {
 	pkg   *types.Package
 	scope *types.Scope
+	// Hand-written //export directives are inputs beside the generated files.
+	// Tests can emit into a temporary working directory while retaining this
+	// production source directory.
+	sourceDirectory string
 
 	errorType  types.Type
 	deviceType *types.Named
@@ -233,13 +277,14 @@ func load() (*gen, error) {
 		return nil, fmt.Errorf("expected one package, got %d", len(pkgs))
 	}
 	g := &gen{
-		pkg:           pkgs[0].Types,
-		scope:         pkgs[0].Types.Scope(),
-		errorType:     types.Universe.Lookup("error").Type(),
-		callbacks:     map[string]*types.Named{},
-		dataTypes:     map[string]*types.Named{},
-		cNames:        map[string]string{},
-		deviceDerived: map[string]bool{},
+		pkg:             pkgs[0].Types,
+		scope:           pkgs[0].Types.Scope(),
+		sourceDirectory: ".",
+		errorType:       types.Universe.Lookup("error").Type(),
+		callbacks:       map[string]*types.Named{},
+		dataTypes:       map[string]*types.Named{},
+		cNames:          map[string]string{},
+		deviceDerived:   map[string]bool{},
 	}
 	if obj := g.scope.Lookup("Device"); obj != nil {
 		if named, ok := types.Unalias(obj.Type()).(*types.Named); ok {
@@ -565,7 +610,11 @@ func (g *gen) emitType(obj *types.TypeName) {
 		if deviceIface != nil {
 			if dm := lookupIfaceMethod(deviceIface, m.Name()); dm != nil {
 				if types.Identical(dm.Type(), sel.Type()) {
-					g.skip(qualified, "device interface method: use urnet_device_"+snake(m.Name()))
+					if reason, ok := skipMethods["Device."+m.Name()]; ok {
+						g.skip(qualified, "device interface method: "+reason)
+					} else {
+						g.skip(qualified, "device interface method: use urnet_device_"+snake(m.Name()))
+					}
 					continue
 				}
 			}
@@ -705,10 +754,23 @@ func (g *gen) emitCallable(cName string, symbol string, recv *typeInfo, recvName
 		case kindHandle:
 			goParams = append(goParams, pName+" C.uint64_t")
 			cParams = append(cParams, "uint64_t "+snake(pName))
+			// a zero handle at an argument position is the abi's "no object"
+			// and becomes a nil Go argument, mirroring how null json and null
+			// callback params pass through as nil. Only a nonzero id goes
+			// through resolveHandle (which now answers ok=false for zero, see
+			// handles.go), so a stale id is a clean no-op return while
+			// nil-object argument semantics keep working — e.g.
+			// SetActiveNetworkSpace(nil) clears the active space and
+			// LocalState.SetDeviceLocalKeyMaterial(nil) removes the stored
+			// key material.
 			convert = append(convert,
-				fmt.Sprintf("\t%s_, ok := resolveHandle[%s](uint64(%s), %q)", pName, g.goType(info.t), pName, cName),
-				"\tif !ok {",
-				"\t\treturn"+zeroRet,
+				fmt.Sprintf("\tvar %s_ %s", pName, g.goType(info.t)),
+				fmt.Sprintf("\tif %s != 0 {", pName),
+				"\t\tvar ok bool",
+				fmt.Sprintf("\t\t%s_, ok = resolveHandle[%s](uint64(%s), %q)", pName, g.goType(info.t), pName, cName),
+				"\t\tif !ok {",
+				"\t\t\treturn"+zeroRet,
+				"\t\t}",
 				"\t}",
 			)
 			callArgs = append(callArgs, pName+"_")
@@ -1236,6 +1298,16 @@ func (g *gen) dataDoc(name string, named *types.Named) string {
 	if !ok {
 		return ""
 	}
+	if name == "ProvideSecretKey" {
+		return `/* ProvideSecretKey (json):
+ *   provide_mode: number (integer)
+ *   provide_secret_key?: string (legacy literal UTF-8, never prefix-decoded)
+ *   provide_secret_key_base64?: string (strict standard padded base64 of raw bytes)
+ * Valid UTF-8 emits only the legacy key field; binary emits only the base64 key field.
+ * Base64 rejects whitespace and noncanonical padding. A nonempty legacy key
+ * conflicts with a present base64 key; malformed binary never falls back.
+ */`
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "/* %s (json):\n", name)
 	// embedded list types marshal as a raw json array
@@ -1493,6 +1565,7 @@ func (g *gen) write() error {
 		b.WriteString("/* ----- core ----- */\n\n")
 		b.WriteString("/* the sdk version this library was built from */\n")
 		b.WriteString("char* urnet_version(void);\n")
+		b.WriteString("/* incompatible C ABI revision; additive exports retain this value */\nint32_t urnet_abi_version(void);\n")
 		b.WriteString("void urnet_free_string(char* s);\n")
 		b.WriteString("/* release a handle. returns false if the handle was unknown. */\n")
 		b.WriteString("bool urnet_release(uint64_t handle);\n")
@@ -1619,13 +1692,13 @@ func (g *gen) write() error {
 
 	// ----- include/urnetwork_sdk.def
 	{
-		names := []string{"urnet_version", "urnet_free_string", "urnet_release", "urnet_live_handle_count"}
+		names := []string{"urnet_version", "urnet_abi_version", "urnet_free_string", "urnet_release", "urnet_live_handle_count"}
 		for _, e := range g.exports {
 			if !e.unixOnly {
 				names = append(names, e.cName)
 			}
 		}
-		names = append(names, manualExports()...)
+		names = append(names, manualExports(g.sourceDirectory)...)
 		sort.Strings(names)
 		names = slices.Compact(names)
 		var b strings.Builder
@@ -1678,6 +1751,23 @@ func (g *gen) write() error {
 // hand-written exports (exports_manual.go); keep in sync
 const manualHeaderSection = `/* ----- byte buffer results (hand-written) ----- */
 
+/* Socket calls block: use a worker thread. Timeouts are milliseconds; deadlines
+ * are Unix epoch milliseconds (0 clears). Read consumes bytes/datagrams, and
+ * cannot be used as a size query. A partial result can accompany out_error.
+ * EOF is separate from an empty UDP datagram. Release closes socket handles. */
+uint64_t urnet_device_dial(uint64_t self, const char* network, const char* address, int64_t timeout_millis, char** out_error);
+uint64_t urnet_device_dial_tls(uint64_t self, const char* network, const char* address, int64_t timeout_millis, const char* tls_json, char** out_error);
+int32_t urnet_conn_read(uint64_t self, uint8_t* out, int32_t capacity, bool* eof, char** out_error);
+int32_t urnet_conn_write(uint64_t self, const uint8_t* data, int32_t length, char** out_error);
+bool urnet_conn_set_deadline(uint64_t self, int64_t epoch_millis, char** out_error);
+bool urnet_conn_set_read_deadline(uint64_t self, int64_t epoch_millis, char** out_error);
+bool urnet_conn_set_write_deadline(uint64_t self, int64_t epoch_millis, char** out_error);
+bool urnet_conn_close(uint64_t self, char** out_error);
+bool urnet_conn_close_read(uint64_t self, char** out_error);
+bool urnet_conn_close_write(uint64_t self, char** out_error);
+char* urnet_conn_local_addr(uint64_t self);
+char* urnet_conn_remote_addr(uint64_t self);
+
 /* buffer-out pattern: *inout_len is always set to the needed size. the copy
  * happens and true is returned only when out is non-null and the passed
  * capacity is sufficient. */
@@ -1689,34 +1779,41 @@ bool urnet_generate_shared_secret(const uint8_t* private_key, int32_t private_ke
 bool urnet_device_local_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_client_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_certificate_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
 bool urnet_device_local_key_material_get_provide_tls_private_key_pem(uint64_t self, uint8_t* out, int32_t* inout_len);
+bool urnet_device_local_key_material_get_extender_key_seed(uint64_t self, uint8_t* out, int32_t* inout_len);
 
 /* post quantum identity (canonical identicon raster + raw identity key) */
 bool urnet_render_identicon_png(const uint8_t* input, int32_t input_len, int32_t size, uint8_t* out, int32_t* inout_len, char** out_error);
 bool urnet_device_get_public_identity_key(uint64_t self, uint8_t* out, int32_t* inout_len);
 
+/* one borrowed packet from a receive batch */
+bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t* inout_len);
+
 `
 
-// manualExports scans the hand-written package files for //export directives
-func manualExports() []string {
+// manualExports scans the hand-written package files for //export directives.
+// The source directory is independent of the generator's output directory.
+func manualExports(sourceDirectory string) []string {
 	var names []string
-	entries, err := os.ReadDir(".")
+	entries, err := os.ReadDir(sourceDirectory)
 	if err != nil {
 		return names
 	}
-	// `\r?$` AND NOT `$`. This scans raw file bytes, and a CRLF checkout -- which is what
-	// core.autocrlf=true gives every Windows clone of this repo -- made the pattern match
-	// NOTHING, so every hand-written export silently vanished from the .def. It never bit
-	// because the Makefile runs the generator on a macOS host.
-	re := regexp.MustCompile(`(?m)^//export (\w+)[ \t]*\r?$`)
+	// tolerate CRLF: on a windows checkout the trailing \r sits between the
+	// name and the line end, so an anchored `$` never matches and every
+	// hand-written export silently vanishes from the def -- the import lib
+	// then builds fine and the CONSUMER fails at link time with unresolved
+	// externals, a long way from the cause
+	re := regexp.MustCompile(`(?m)^//export (\w+)[ \t\r]*$`)
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasPrefix(name, "exports_gen") || name == "exports_core.go" {
 			continue
 		}
-		b, err := os.ReadFile(name)
+		b, err := os.ReadFile(filepath.Join(sourceDirectory, name))
 		if err != nil {
 			continue
 		}

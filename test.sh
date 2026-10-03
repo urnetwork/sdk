@@ -1,49 +1,93 @@
 #!/usr/bin/env zsh
 
+sdk_dir=${0:A:h}
+workspace_root=${URNETWORK_ROOT:-${WARP_HOME:-${sdk_dir:h}}}
+network_test_gate="$workspace_root/tests/network-intensive-suite-lock.sh"
+if [[ ! -x "$network_test_gate" ]]; then
+    echo "SDK test suite gate is missing or not executable: $network_test_gate" >&2
+    exit 127
+fi
+if [[ "${URNETWORK_NETWORK_TEST_LOCK_HELD:-}" != 1 ]]; then
+    exec "$network_test_gate" run-all run-all-sdk -- "$sdk_dir/test.sh" "$@"
+fi
+if ! "$network_test_gate" --verify-held run-all; then
+    echo "SDK test suite inherited an invalid network-intensive lock" >&2
+    exit 70
+fi
+
 # root sdk module
+# Run the public-surface smoke on its own so a load/constructor regression is
+# reported before the longer race-enabled suite. The full command below runs it
+# again as part of the complete package test.
+go test -count=1 -timeout 30s -v -race -run '^TestSDKSmoke$'
+if [[ $? != 0 ]]; then
+    exit 1
+fi
 go test -timeout 0 -v -race "$@"
 if [[ $? != 0 ]]; then
     exit 1
 fi
 
-# submodules with their own go.mod (cgo, js, build): run each module's go
-# tests from inside the module, the way server/test.sh iterates its test
-# dirs. Only modules that contain _test.go files are run — the js/build
-# modules target wasm and do not build for the host. Notably cgo/gen holds
-# the ABI baseline test, which must run from the cgo module.
-for mod in `find . -mindepth 2 -maxdepth 2 -name go.mod | xargs -n 1 dirname | sort`; do
-    if [[ -z `find $mod -name '*_test.go' -not -path '*/node_modules/*' -print -quit` ]]; then
-        continue
-    fi
-    # A module whose `replace` targets a directory that is not checked out CANNOT be built, and
-    # `go test` in it fails with "replacement directory ... does not exist" -- which used to
-    # `exit $result` and take the whole sweep down. cp3b requires
-    # github.com/urnetwork/message-server, which is a DIFFERENT REPOSITORY that a checkout of sdk
-    # does not bring with it, so that is not a broken tree: it is the ordinary state of anyone who
-    # has not also cloned the server.
-    #
-    # IT IS SKIPPED WITH A PRINTED LINE AND NEVER SILENTLY. A sweep that quietly dropped a module
-    # would make "cp3b was not run" and "cp3b passed" the same output, which is the exact shape
-    # this project keeps finding in gates.
-    missing=""
-    for target in `grep -E '=>[[:space:]]+\.{1,2}/' $mod/go.mod | sed -E 's|.*=>[[:space:]]+([^[:space:]]+).*|\1|'`; do
-        if [[ ! -d $mod/$target ]]; then
-            missing="$missing $target"
+# Match the test command's package-loading flags. Go applies GOFLAGS itself,
+# including test-only flags that go list correctly ignores. Consume test flag
+# values so a pattern such as `-run -tags` is not mistaken for a build flag.
+list_args=(-race)
+for ((arg_index = 1; arg_index <= $#; arg_index++)); do
+    argument=$argv[arg_index]
+    option=${argument%%=*}
+    option=${option/#--/-}
+    option=${option/#-test./-}
+    case "$option" in
+        -race|-msan|-asan)
+            list_args+=("$argument")
+            ;;
+        -tags|-mod|-modfile|-overlay|-compiler|-buildmode|-installsuffix)
+            list_args+=("$argument")
+            if [[ "$argument" != *=* ]]; then
+                ((arg_index++))
+                list_args+=("$argv[arg_index]")
+            fi
+            ;;
+        -args) break ;;
+        -run|-skip|-list|-bench|-benchtime|-count|-cpu|-parallel|-timeout|-shuffle|\
+        -fuzz|-fuzztime|-fuzzminimizetime|\
+        -blockprofile|-blockprofilerate|-coverprofile|-covermode|-coverpkg|\
+        -cpuprofile|-memprofile|-memprofilerate|-mutexprofile|-mutexprofilefraction|\
+        -outputdir|-trace|-vet|-o|-p|-asmflags|-gcflags|-gccgoflags|-ldflags|-pgo|-toolexec)
+            if [[ "$argument" != *=* ]]; then
+                ((arg_index++))
+            fi
+            ;;
+    esac
+done
+
+# A filename alone does not make a test runnable for this target. Go's package
+# metadata honors platform suffixes, build/race tags, and nested module
+# boundaries. Keep discovery errors fatal and run every package in an admitted
+# module, including build's host contracts and cgo/gen's ABI baseline.
+for mod in "$sdk_dir"/*(N/); do
+    [[ -f "$mod/go.mod" ]] || continue
+    (
+        cd "$mod" || exit $?
+        # A MODULE THAT REPLACES github.com/urnetwork/message-server -- cp3b, URmessage's end-to-end
+        # suite -- needs a different repository beside this one, which an sdk checkout does not bring
+        # with it. Without it the module cannot build, and that is the ordinary state of anyone who has
+        # not cloned the server, so the module is SKIPPED WITH A PRINTED LINE and never silently.
+        # ONLY THAT SIBLING: a missing ../connect, ../glog or ../gvisor is a broken workspace for every
+        # module here, and a sweep that skipped it would print green over nothing tested.
+        server=$(grep -E '^replace github.com/urnetwork/message-server =>' go.mod | sed -E 's|.*=>[[:space:]]+([^[:space:]]+).*|\1|')
+        if [[ -n "$server" && ! -d "$server" ]]; then
+            printf 'SKIPPING SDK Go module %s: it replaces github.com/urnetwork/message-server => %s, which is not checked out beside this repo. NOTHING IN IT WAS TESTED.\n' "${mod:t}" "$server"
+            exit 0
         fi
-    done
-    if [[ -n $missing ]]; then
-        echo "SKIPPING $mod: its go.mod replaces$missing, which is not checked out beside this repo."
-        echo "  Clone it under its own name (github.com/urnetwork/message-server => ../message-server)"
-        echo "  as a sibling of sdk, and this module runs. NOTHING IN $mod WAS TESTED."
-        continue
-    fi
-    pushd $mod
-    go test -timeout 0 -v -race "$@" ./...
-    result=$?
-    popd
-    if [[ $result != 0 ]]; then
-        exit $result
-    fi
+        host_tests=$(go list "${list_args[@]}" \
+            -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...) || exit $?
+        if [[ -z "$host_tests" ]]; then
+            printf 'SDK Go module %s: no tests for the active Go target\n' "${mod:t}"
+            exit 0
+        fi
+        go test -timeout 0 -v -race "$@" ./...
+    ) || exit $?
 done
 
 # js package tests (node --test via the package script): fetch_retry + the

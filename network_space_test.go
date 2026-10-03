@@ -154,6 +154,60 @@ func TestNetworkSpaceUrlResolution(t *testing.T) {
 	overrideNetworkSpace.close()
 }
 
+func TestNetworkSpaceDohDomainsIncludePrimaryAndMigration(t *testing.T) {
+	domains := networkSpaceDohDomains(
+		&NetworkSpaceKey{HostName: "ur.network", EnvName: "main"},
+		&NetworkSpaceValues{MigrationHostName: "bringyour.com"},
+	)
+	connect.AssertEqual(t, domains, []string{"ur.network", "bringyour.com"})
+
+	primaryOnly := networkSpaceDohDomains(
+		&NetworkSpaceKey{HostName: "ur.network", EnvName: "main"},
+		&NetworkSpaceValues{},
+	)
+	connect.AssertEqual(t, primaryOnly, []string{"ur.network"})
+}
+
+func TestNewNetworkSpaceWithUrlsPreservesHeadlessConfiguration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	settings := connect.DefaultClientStrategySettings()
+	settings.ExposeServerIps = false
+	settings.ExposeServerHostNames = true
+
+	networkSpace := NewNetworkSpaceWithUrls(
+		ctx,
+		"http://api.custom.test:8080/",
+		"ws://connect.custom.test:5080/",
+		settings,
+	)
+	defer networkSpace.close()
+
+	connect.AssertEqual(t, networkSpace.GetApiUrl(), "http://api.custom.test:8080")
+	connect.AssertEqual(t, networkSpace.GetPlatformUrl(), "ws://connect.custom.test:5080")
+	connect.AssertEqual(t, networkSpace.GetConfiguredApiUrl(), "http://api.custom.test:8080")
+	connect.AssertEqual(t, networkSpace.GetConfiguredPlatformUrl(), "ws://connect.custom.test:5080")
+	connect.AssertEqual(t, networkSpace.GetHostName(), "custom")
+	connect.AssertEqual(t, networkSpace.GetEnvName(), "custom")
+	connect.AssertEqual(t, networkSpace.GetNetExposeServerIps(), false)
+	connect.AssertEqual(t, networkSpace.GetNetExposeServerHostNames(), true)
+	connect.AssertEqual(t, networkSpace.GetAsyncLocalState(), (*AsyncLocalState)(nil))
+}
+
+func TestNewNetworkSpaceWithUrlsAcceptsDefaultStrategy(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	networkSpace := NewNetworkSpaceWithUrls(ctx, "http://api.test", "ws://connect.test", nil)
+	defer networkSpace.close()
+
+	if networkSpace.clientStrategy == nil {
+		t.Fatal("nil settings did not create a default client strategy")
+	}
+	if networkSpace.GetApi() == nil {
+		t.Fatal("headless NetworkSpace did not create its Api owner")
+	}
+}
+
 func TestNetworkSpaceManagerHostSpecificStoragePath(t *testing.T) {
 	storagePath, err := os.MkdirTemp("", "test_network_space_manager_host_storage")
 	connect.AssertEqual(t, err, nil)
@@ -184,7 +238,7 @@ func TestNetworkSpaceManagerMigratesLegacyEnvOnlyStoragePath(t *testing.T) {
 	// simulate a pre-existing install that predates host-scoped storage:
 	// `network_spaces/<env>` with some local state file already in it.
 	legacyEnvStoragePath := filepath.Join(storagePath, "network_spaces", "main")
-	connect.AssertEqual(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageFilePermissions), nil)
+	connect.AssertEqual(t, os.MkdirAll(legacyEnvStoragePath, LocalStorageDirectoryPermissions), nil)
 	legacyMarkerPath := filepath.Join(legacyEnvStoragePath, "legacy_marker")
 	connect.AssertEqual(t, os.WriteFile(legacyMarkerPath, []byte("legacy state"), LocalStorageFilePermissions), nil)
 

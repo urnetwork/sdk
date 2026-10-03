@@ -1,4 +1,20 @@
 
+# Mobile release libraries disable Go heap-profile sampling before runtime
+# initialization. Set MOBILE_MEMORY_PROFILE_RATE to a positive rate only for a
+# private diagnostic artifact. Preserve any compatibility defaults selected by
+# the module's Go version when adding the mobile-specific setting.
+MOBILE_MEMORY_PROFILE_RATE ?= 0
+MOBILE_RUNTIME_GODEBUG := $(shell mobile_default_godebug="$$(go list -f '{{.DefaultGODEBUG}}' .)"; if [ -n "$$mobile_default_godebug" ]; then printf '%s,memprofilerate=%s' "$$mobile_default_godebug" "$(MOBILE_MEMORY_PROFILE_RATE)"; else printf 'memprofilerate=%s' "$(MOBILE_MEMORY_PROFILE_RATE)"; fi)
+MOBILE_RUNTIME_LDFLAG := -X=runtime.godebugDefault=$(MOBILE_RUNTIME_GODEBUG)
+SDK_BUILD_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
+ANDROID_OUTPUT_GATE := $(dir $(SDK_BUILD_MAKEFILE))sdk-android-output-lock.sh
+GOMOBILE_BIND_RETRY := $(dir $(SDK_BUILD_MAKEFILE))gomobile-bind-retry.sh
+
+# Android SDK staging, publication, cleanup, and input initialization share a
+# nonblocking kernel lock. Waiting would hide overlapping build ownership and
+# let an acceptance attempt claim an artifact whose provenance is ambiguous.
+# The hidden lock file is persistent metadata and is not matched by android*.
+
 # build_windows is not in `all`: the shipped Windows SDK (amd64+arm64) builds
 # inside the Windows VM (build/all/build-windows.sh), which provisions Go +
 # llvm-mingw and copies URnetworkSdkWindows.zip back to ../cgo/build. The
@@ -7,6 +23,12 @@
 all: init clean build_android build_apple build_js build_linux
 
 clean:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-clean -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _clean
+
+.PHONY: _clean
+_clean:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	rm -rf android*
 	rm -rf apple*
 	rm -rf ios*
@@ -18,26 +40,42 @@ clean:
 # see https://github.com/xaionaro/documentation/blob/master/golang/reduce-binary-size.md
 
 build_android:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-build-android -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _build_android
+
+.PHONY: _build_android
+_build_android:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
-	# note android/amd64 is needed for chromebook devices
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	# (still needed as of x/mobile 2026-08-19: bind gengo typeString prints alias names unqualified;
+	# gomobile/gobind must be built with go <= 1.26 -- the go 1.27 runtime fatals when this GODEBUG is set)
+	# note android/amd64 is needed for chromebook devices
 	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
 	# validate that all types could be exported
 	# note the device_rpc types (DeviceLocalRpc, DeviceRemote*, DeviceRpcDialer/Listener, their
 	# Websocket* transports, and the *Rpc gob payload types) should not be included in gomobile
 	# but due to limitations they are and should be ignored
+	# Companion subprotocol RPC types are excluded by sdk_mobile_bind, and the peer
+	# pin-store helper is unexported; neither may appear as an accepted omission
 	# the same applies to the DeviceLocalSettings struct fields, the DeviceLocal security-policy
 	# generator setters, and testing-only constructors whose unsupported field/param types gomobile skips
 	# the Sim* simulation scaffolding (sim_device.go) is a go-embedder surface whose configs
 	# deliberately carry connect types, and CollapseHostNames is the go-side ([]string) variant
 	# of CollapseHostNamesList — both are expected skips, not part of the mobile surface
+	# the extender network's []string surface is the same case: the ExtenderHosts and
+	# ExtenderRootPublicKeys package helpers and the NetworkSpaceValues fields they read are
+	# the go-side variants of the StringList form the mobile ExtenderSettings carries
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
 	# see https://github.com/wlynxg/anet/pull/9
 	# see https://github.com/pion/webrtc/issues/2640
 	set -e; \
+	BUILD_OWNER="$${URNETWORK_ANDROID_SDK_BUILD_OWNER:-unattributed}"; \
+	case "$$BUILD_OWNER" in ''|*[!A-Za-z0-9._:-]*) \
+		echo "invalid Android SDK build owner" >&2; exit 64;; esac; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
@@ -46,12 +84,13 @@ build_android:
 	BUILD_DIR=android.`date +%s`; \
 	test ! -e "$$BUILD_DIR"; \
 	mkdir "$$BUILD_DIR"; \
-	gomobile bind \
+	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
 		-target android/arm64,android/arm,android/amd64 -androidapi 24 \
+		-tags sdk_mobile_bind \
 		-javapkg com.bringyour \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid= -checklinkname=0" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid= -checklinkname=0" \
 		-o "$$BUILD_DIR/URnetworkSdk.aar" \
 		"github.com/urnetwork/sdk"; \
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
@@ -65,15 +104,12 @@ build_android:
 		mkdir validate; \
 		cp URnetworkSdk-sources.jar validate/; \
 		cd validate; \
-			jar -xf URnetworkSdk-sources.jar; \
-			bad_exports=`grep -Ri '// skipped' . | grep -v DeviceLocalRpc | grep -ve 'DeviceRemote[A-Z]' | grep -ve 'DeviceRpcDialer' | grep -ve 'DeviceRpcListener' | grep -ve 'NewPlatformDeviceLocal' | grep -ve 'Proxy' | grep -ve 'DeviceLocal\.AddReceivePacketCallback' | grep -ve 'DeviceLocal\.Ctx' | grep -ve 'DeviceLocal\.Set[A-Za-z]*SecurityPolicyGenerator' | grep -ve 'SetUpgradeMuxSettings' | grep -ve 'DeviceLocalSettings' | grep -ve 'NewPlatformNetworkSpace' | grep -ve 'Testing_NewNetworkSpaceWithUrls' | grep -ve '[A-Za-z]Rpc' | grep -ve 'Sim[A-Z]' | grep -ve 'CollapseHostNames' || true`; \
-			if [ "$$bad_exports" ]; then \
-				echo "Some types could not be exported:"; \
-				echo "$$bad_exports"; \
-				exit 1; \
-			fi;); \
+		jar -xf URnetworkSdk-sources.jar); \
+	go run ./cmd/mobileexports "$$BUILD_DIR/validate"; \
 	rm -rf "$$BUILD_DIR/edit"; \
 	rm -rf "$$BUILD_DIR/validate"; \
+	printf '%s\n' "$$BUILD_OWNER" >"$$BUILD_DIR/.build-owner"; \
+	chmod 600 "$$BUILD_DIR/.build-owner"; \
 	if [ -e "android" ]; then mv android android.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" android;
 
@@ -84,29 +120,60 @@ build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
 	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
+	# (still needed as of x/mobile 2026-08-19: bind gengo typeString prints alias names unqualified;
+	# gomobile/gobind must be built with go <= 1.26 -- the go 1.27 runtime fatals when this GODEBUG is set)
 	set -e; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
+	export GOFIPS140=off; \
 	export MACOSX_DEPLOYMENT_TARGET=13.5; \
 	BUILD_DIR=apple.`date +%s`; \
 	test ! -e "$$BUILD_DIR"; \
 	mkdir "$$BUILD_DIR"; \
-	gomobile bind \
+	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
 		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
+		-tags sdk_mobile_bind \
 		-bundleid network.ur \
 		-trimpath \
 		-gcflags "-dwarf=false" \
-		-ldflags "-s -w -X sdk.Version=$${WARP_VERSION} -compressdwarf=false -buildid=" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \
 		-o "$$BUILD_DIR/URnetworkSdk.xcframework" \
 		"github.com/urnetwork/sdk"; \
 	test -d "$$BUILD_DIR/URnetworkSdk.xcframework"; \
+	"$(GOMOBILE_BIND_RETRY)" gomobile bind \
+		-target ios/arm64,iossimulator/arm64,macos/arm64,macos/amd64 -iosversion 16.0 \
+		-bundleid network.ur \
+		-tags sdk_mobile_bind,ios_extension \
+		-trimpath \
+		-gcflags "-dwarf=false" \
+		-ldflags "-s -w -X github.com/urnetwork/sdk.Version=$${WARP_VERSION} $(MOBILE_RUNTIME_LDFLAG) -compressdwarf=false -buildid=" \
+		-o "$$BUILD_DIR/URnetworkExtensionSdk.xcframework" \
+		"github.com/urnetwork/sdk"; \
+	test -d "$$BUILD_DIR/URnetworkExtensionSdk.xcframework"; \
+	./check_apple_size.sh \
+		--sdk "$$BUILD_DIR/URnetworkSdk.xcframework" \
+		--extension-sdk "$$BUILD_DIR/URnetworkExtensionSdk.xcframework"; \
 	(cd "$$BUILD_DIR" && zip -r URnetworkSdk.xcframework.zip URnetworkSdk.xcframework); \
 	test -s "$$BUILD_DIR/URnetworkSdk.xcframework.zip"; \
 	if [ -e "ios" ]; then mv ios ios.old.`date +%s`; fi; \
 	cp -r "$$BUILD_DIR" ios; \
 	if [ -e "apple" ]; then mv apple apple.old.`date +%s`; fi; \
 	mv "$$BUILD_DIR" apple;
+
+.PHONY: check_mobile_runtime_policy
+check_mobile_runtime_policy:
+	SDK_EXPECT_MEMORY_PROFILE_RATE="$(MOBILE_MEMORY_PROFILE_RATE)" \
+	go test \
+		-ldflags "$(MOBILE_RUNTIME_LDFLAG)" \
+		-run '^TestMobileBuildMemoryProfileRate$$' \
+		..
+
+.PHONY: check_apple_size
+check_apple_size:
+	./check_apple_size.sh \
+		--sdk apple/URnetworkSdk.xcframework \
+		--extension-sdk apple/URnetworkExtensionSdk.xcframework
 
 # Build the JavaScript/WASM version of the SDK in the js dir
 build_js:
@@ -121,15 +188,33 @@ build_linux:
 	$(MAKE) -C ../cgo build_linux
 
 
-init:
+GOMOBILE_VERSION ?= v0.0.0-20260820023541-8e8303b9da6c
+CHECKSEC_VERSION ?= v3.1.0
+
+# Install only the pinned build tools. Platform setup scripts use this target
+# so acceptance builds do not install tools or clean shared Go caches.
+# gomobile init installs gobind@latest, so restore the matching version after it.
+.PHONY: init_tools _init_tools init _init
+init_tools:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-init-android-tools -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init_tools
+
+_init_tools:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
-	GOMOBILE_VERSION=v0.0.0-20260611195102-4dd8f1dbf5d2 && \
-	go install golang.org/x/mobile/cmd/gomobile@$$GOMOBILE_VERSION && \
-	go get golang.org/x/mobile/bind@$$GOMOBILE_VERSION && \
+	go install golang.org/x/mobile/cmd/gomobile@$(GOMOBILE_VERSION) && \
 	gomobile init && \
-	CHECKSEC_VERSION=v3.1.0 && \
-	go install github.com/slimm609/checksec/v3@$$CHECKSEC_VERSION && \
+	go install golang.org/x/mobile/cmd/gobind@$(GOMOBILE_VERSION) && \
+	go install github.com/slimm609/checksec/v3@$(CHECKSEC_VERSION)
+
+init:
+	@"$(ANDROID_OUTPUT_GATE)" sdk-init-android -- \
+		"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init
+
+_init:
+	@"$(ANDROID_OUTPUT_GATE)" --verify-held
+	"$(MAKE)" --no-print-directory -f "$(SDK_BUILD_MAKEFILE)" _init_tools
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
+	go get golang.org/x/mobile/bind@$(GOMOBILE_VERSION) && \
 	go mod download "github.com/urnetwork/sdk" && \
-	go mod download "github.com/urnetwork/connect" && \
-	go clean -cache && \
-	go clean -modcache;
+	go mod download "github.com/urnetwork/connect";

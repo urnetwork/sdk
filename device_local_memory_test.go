@@ -2,7 +2,9 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"math"
+	"net"
 	"runtime/debug"
 	"testing"
 
@@ -32,7 +34,7 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 
 	settings := DefaultDeviceLocalSettings()
 	connect.AssertEqual(t, settings.MemoryTargetByteCount, connect.ByteCount(defaultDeviceLocalMemoryTargetByteCount))
-	// one slot per 16 KiB of the client share (14/20 of the target),
+	// one slot per 16 KiB of the client share (9/20 of the target),
 	// capped at the unscaled default
 	connect.AssertEqual(t, settings.SequenceBufferSize, 256)
 	connect.AssertEqual(t, settings.ClientSettings.SendBufferSize, 256)
@@ -40,9 +42,9 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 	// the per-sequence caps still scale from the process budget: 24/64 of 2 MiB
 	connect.AssertEqual(t, settings.ClientSettings.SendBufferSettings.ResendQueueMaxByteCount, connect.ByteCount(768*1024))
 
-	// the shared transfer queue budget pair is 3:4 of the client share — at
-	// the 20 MB reference the provide-on pair is the historically proven
-	// 6 MiB send / 8 MiB receive
+	// the shared transfer queue budget pair is 3:4 of the client share. The
+	// separate quarter-target carrier share keeps transport reservations from
+	// escaping the DeviceLocal target.
 	sendBudget := settings.ClientSettings.SendBufferSettings.ResendQueueBudget
 	receiveBudget := settings.ClientSettings.ReceiveBufferSettings.ReceiveQueueBudget
 	if sendBudget == nil || receiveBudget == nil {
@@ -50,9 +52,7 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 	}
 	clientShare := connect.ByteCount(defaultDeviceLocalMemoryTargetByteCount) * deviceMemoryRatioClient / deviceMemoryRatioParts
 	connect.AssertEqual(t, sendBudget.TotalByteCount(), clientShare*3/7)
-	connect.AssertEqual(t, sendBudget.TotalByteCount(), connect.ByteCount(6*1024*1024))
 	connect.AssertEqual(t, receiveBudget.TotalByteCount(), clientShare*4/7)
-	connect.AssertEqual(t, receiveBudget.TotalByteCount(), connect.ByteCount(8*1024*1024))
 	// p2p admits against a DEDICATED budget, NOT the shared receive queue: a
 	// shared budget let active transfer starve every peer-connection setup,
 	// pinning peers on the WAN relay (PACKETRESEARCH1 §17). The dedicated
@@ -150,23 +150,187 @@ func TestDeviceLocalSettingsMemoryTarget(t *testing.T) {
 	connect.AssertEqual(t, deviceLocalSequenceBufferSize(0), 96)
 }
 
+// TestDeviceLocalPlatformTransportBudgetOwnership proves that every carrier
+// inside one DeviceLocal shares its quarter-target budget while unrelated
+// DeviceLocals receive different admission state. This is the regression for
+// hosted proxy devices exhausting the process-global sixteen-carrier cap.
+func TestDeviceLocalPlatformTransportBudgetOwnership(t *testing.T) {
+	target := ByteCount(24 * 1024 * 1024)
+	firstBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
+	firstWindow := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "", "")
+	firstProvider := newDeviceLocalPlatformTransportSettings(target, firstBudget, nil, "", "")
+	secondBudget := connect.NewPlatformTransportBudgetForMemoryTarget(target)
+	secondWindow := newDeviceLocalPlatformTransportSettings(target, secondBudget, nil, "", "")
+
+	if firstWindow.PlatformTransportBudget != firstProvider.PlatformTransportBudget {
+		t.Fatal("one DeviceLocal did not share its budget across window and provider carriers")
+	}
+	if firstWindow.PlatformTransportBudget == secondWindow.PlatformTransportBudget {
+		t.Fatal("unrelated DeviceLocals shared one platform transport budget")
+	}
+	settings := DefaultDeviceLocalSettings()
+	settings.MemoryTargetByteCount = target
+	_, _, platformTransportShare, _ := deviceMemoryShares(settings)
+	if got := firstBudget.Stats().TotalByteCount; got != platformTransportShare {
+		t.Fatalf("platform carrier budget = %d, want target share %d", got, platformTransportShare)
+	}
+	if workingSet := firstWindow.H1BudgetByteCount + firstWindow.H3BudgetByteCount; firstBudget.Stats().TotalByteCount < workingSet {
+		t.Fatalf("platform carrier budget cannot fit Auto H1+H3 working set %d", workingSet)
+	}
+}
+
+func TestDeviceLocalMemoryUsageIncludesCarrierPreemptionTelemetry(t *testing.T) {
+	usage := &DeviceLocalMemoryUsage{}
+	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{
+		TotalByteCount:     6 * 1024 * 1024,
+		UsedByteCount:      4 * 1024 * 1024,
+		MaxTransportCount:  16,
+		UsedTransportCount: 16,
+		PendingH1ByteCount: 512 * 1024,
+		PendingH1Count:     1,
+		PreemptedH3Count:   23,
+	})
+	if usage.PlatformTransportBudgetByteCount != 6*1024*1024 ||
+		usage.PlatformTransportUsedByteCount != 4*1024*1024 ||
+		usage.PlatformTransportMaxCount != 16 ||
+		usage.PlatformTransportUsedCount != 16 ||
+		usage.PlatformTransportPendingH1Bytes != 512*1024 ||
+		usage.PlatformTransportPendingH1Count != 1 ||
+		usage.PlatformTransportPreemptedH3Count != 23 {
+		t.Fatalf("platform carrier memory telemetry = %+v", usage)
+	}
+}
+
+// Handoff state comes from the budget sample, not a process-wide policy flag;
+// a new/reset sample overwrites every gauge instead of accumulating history.
+func TestDeviceLocalMemoryUsageIncludesPrivateHandoffSnapshot(t *testing.T) {
+	usage := &DeviceLocalMemoryUsage{}
+	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{
+		PendingH1Count: 2, PendingH1ByteCount: 512 * 1024,
+		PendingHandoffCount: 3, ActiveHandoffCount: 1,
+		ActiveHandoffByteCount: 256 * 1024, ActiveHandoffTransportCount: 1,
+		ReservedByteCount: 768 * 1024, ReleasedByteCount: 256 * 1024,
+		ActiveHandoffID: 17, ActiveHandoffFromClass: "h1", ActiveHandoffToClass: "h3_explicit",
+		ActiveHandoffH1ByteCount: 256 * 1024,
+	})
+	if usage.PlatformTransportPendingH1Count != 2 ||
+		usage.PlatformTransportPendingHandoffCount != 3 ||
+		usage.PlatformTransportActiveHandoffCount != 1 ||
+		usage.PlatformTransportHandoffByteCount != 256*1024 ||
+		usage.PlatformTransportHandoffCount != 1 ||
+		usage.PlatformTransportReservedBytes != 768*1024 || usage.PlatformTransportReleasedBytes != 256*1024 ||
+		usage.PlatformTransportHandoffID != 17 || usage.PlatformTransportHandoffFromClass != "h1" ||
+		usage.PlatformTransportHandoffToClass != "h3_explicit" || usage.PlatformTransportHandoffH1ByteCount != 256*1024 {
+		t.Fatalf("private handoff snapshot = %+v", usage)
+	}
+	applyPlatformTransportMemoryUsage(usage, connect.PlatformTransportBudgetStats{})
+	if usage.PlatformTransportPendingHandoffCount != 0 ||
+		usage.PlatformTransportActiveHandoffCount != 0 ||
+		usage.PlatformTransportHandoffByteCount != 0 || usage.PlatformTransportHandoffCount != 0 ||
+		usage.PlatformTransportReservedBytes != 0 || usage.PlatformTransportReleasedBytes != 0 ||
+		usage.PlatformTransportHandoffID != 0 || usage.PlatformTransportHandoffFromClass != "" ||
+		usage.PlatformTransportHandoffToClass != "" || usage.PlatformTransportHandoffH1ByteCount != 0 {
+		t.Fatalf("reset retained handoff state: %+v", usage)
+	}
+}
+
+func TestDeviceLocalMemoryUsageProviderWindowReadinessAndReset(t *testing.T) {
+	usage := &DeviceLocalMemoryUsage{}
+	for _, test := range []struct {
+		name             string
+		window           *connect.WindowExpandEvent
+		known, satisfied bool
+	}{
+		{"missing", nil, false, false},
+		{"unsatisfied", &connect.WindowExpandEvent{}, true, false},
+		{"satisfied", &connect.WindowExpandEvent{MinSatisfied: true}, true, true},
+		{"reset", nil, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			applyProviderWindowMemoryUsage(usage, test.window)
+			if usage.ProviderWindowKnown != test.known || usage.ProviderWindowMinSatisfied != test.satisfied {
+				t.Fatalf("readiness = known:%t satisfied:%t", usage.ProviderWindowKnown, usage.ProviderWindowMinSatisfied)
+			}
+		})
+	}
+}
+
+// A headless provider's source identity must reach its QUIC packet endpoint,
+// not only the TCP/UDP exit dialers. This reproduces the carrier omission that
+// collapsed a thousand simulated miners onto one server rate-limit identity.
+func TestDeviceLocalPlatformTransportCopiesProviderPacketConnFactory(t *testing.T) {
+	called := 0
+	dialContextSettings := &connect.DialContextSettings{
+		PacketConnFactory: func(ctx context.Context) (net.PacketConn, error) {
+			called++
+			listenConfig := &net.ListenConfig{}
+			return listenConfig.ListenPacket(ctx, "udp4", "127.0.0.1:0")
+		},
+	}
+	settings := newDeviceLocalPlatformTransportSettings(
+		24*1024*1024,
+		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
+		dialContextSettings,
+		"",
+		"127.0.1.7",
+	)
+	if settings.H3PacketConnFactory == nil {
+		t.Fatal("provider packet endpoint was not copied into the H3 carrier")
+	}
+	packetConn, err := settings.H3PacketConnFactory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := packetConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if called != 1 {
+		t.Fatalf("provider packet endpoint called %d times, want one", called)
+	}
+	if settings.DnsPumpHost != "127.0.1.7" {
+		t.Fatalf("provider DNS pump host = %q, want rendered ingress", settings.DnsPumpHost)
+	}
+	ordinary := newDeviceLocalPlatformTransportSettings(
+		24*1024*1024,
+		connect.NewPlatformTransportBudgetForMemoryTarget(24*1024*1024),
+		nil,
+		"",
+		"",
+	)
+	if ordinary.H3PacketConnFactory != nil {
+		t.Fatal("ordinary device unexpectedly installed a custom H3 packet endpoint")
+	}
+	if ordinary.DnsPumpHost != connect.DefaultDnsPumpHost {
+		t.Fatalf("ordinary DNS pump host = %q, want production default", ordinary.DnsPumpHost)
+	}
+}
+
 func TestDeviceLocalMemorySizingDoesNotOverflowHostTarget(t *testing.T) {
 	settings := DefaultDeviceLocalSettings()
 	settings.MemoryTargetByteCount = math.MaxInt64
 
-	dnsShare, clientShare, providerShare := deviceMemoryShares(settings)
+	dnsShare, clientShare, platformTransportShare, providerShare := deviceMemoryShares(settings)
 	target := ByteCount(math.MaxInt64)
 	wantDns := target/deviceMemoryRatioParts*deviceMemoryRatioDns +
 		target%deviceMemoryRatioParts*deviceMemoryRatioDns/deviceMemoryRatioParts
 	wantClient := target/deviceMemoryRatioParts*deviceMemoryRatioClient +
 		target%deviceMemoryRatioParts*deviceMemoryRatioClient/deviceMemoryRatioParts
+	wantPlatformTransport := target/deviceMemoryRatioParts*deviceMemoryRatioPlatformTransport +
+		target%deviceMemoryRatioParts*deviceMemoryRatioPlatformTransport/deviceMemoryRatioParts
 	wantProvider := target/deviceMemoryRatioParts*deviceMemoryRatioProvider +
 		target%deviceMemoryRatioParts*deviceMemoryRatioProvider/deviceMemoryRatioParts
 	connect.AssertEqual(t, dnsShare, wantDns)
 	connect.AssertEqual(t, clientShare, wantClient)
+	connect.AssertEqual(t, platformTransportShare, wantPlatformTransport)
 	connect.AssertEqual(t, providerShare, wantProvider)
-	if dnsShare <= 0 || clientShare <= 0 || providerShare <= 0 {
-		t.Fatalf("overflowed shares dns=%d client=%d provider=%d", dnsShare, clientShare, providerShare)
+	if dnsShare <= 0 || clientShare <= 0 || platformTransportShare <= 0 || providerShare <= 0 {
+		t.Fatalf(
+			"overflowed shares dns=%d client=%d transport=%d provider=%d",
+			dnsShare,
+			clientShare,
+			platformTransportShare,
+			providerShare,
+		)
 	}
 
 	if got := deviceLocalSequenceBufferSize(clientShare); got != 256 {
@@ -191,18 +355,70 @@ func TestDeviceLocalMemorySizingDoesNotOverflowHostTarget(t *testing.T) {
 	connect.AssertEqual(t, providerReceive.TotalByteCount(), wantProviderReceive)
 
 	settings.HostedIncompatible = true
-	_, foldedClientShare, foldedProviderShare := deviceMemoryShares(settings)
+	_, foldedClientShare, foldedPlatformTransportShare, foldedProviderShare :=
+		deviceMemoryShares(settings)
 	connect.AssertEqual(t, foldedClientShare, wantClient+wantProvider)
+	connect.AssertEqual(t, foldedPlatformTransportShare, wantPlatformTransport)
 	connect.AssertEqual(t, foldedProviderShare, ByteCount(0))
 }
 
+func TestProvideOffReallocatesBoundedPackHandoffHeadroom(t *testing.T) {
+	settings := DefaultDeviceLocalSettings()
+	settings.MemoryTargetByteCount = mobileSteadyMemoryTargetByteCount
+	_, clientShare, _, providerShare := deviceMemoryShares(settings)
+	providerOnByteCount := mobilePackQueueBudgetByteCount(clientShare)
+	packBudget := connect.NewTransferMemoryBudget(
+		providerOnByteCount,
+	)
+	settings.ClientSettings.ReceiveBufferSettings.PackQueueBudget = packBudget
+	device := &DeviceLocal{settings: settings}
+
+	device.applyProvideMemorySharesWithLock(false)
+	connect.AssertEqual(
+		t,
+		packBudget.TotalByteCount(),
+		mobilePackQueueBudgetByteCount(clientShare+providerShare),
+	)
+	if packBudget.TotalByteCount() <= providerOnByteCount {
+		t.Fatal("provide-off client did not receive the idle provider headroom")
+	}
+	if mobilePackQueueBudgetMaxByteCount < packBudget.TotalByteCount() {
+		t.Fatal("provide-off pack headroom exceeded its mobile bound")
+	}
+
+	device.applyProvideMemorySharesWithLock(true)
+	connect.AssertEqual(
+		t,
+		packBudget.TotalByteCount(),
+		mobilePackQueueBudgetByteCount(clientShare),
+	)
+	if packBudget.TotalByteCount() >= mobilePackQueueBudgetMaxByteCount {
+		t.Fatal("provide-on client retained the provider-off pack headroom")
+	}
+}
+
 func TestConfigureDeviceLocalProviderMemoryUsesIndependentBoundedP2pPools(t *testing.T) {
-	partial := &connect.ClientSettings{}
+	partial := &connect.ClientSettings{
+		ForwardBufferSettings:   connect.DefaultForwardBufferSettings(),
+		ContractManagerSettings: connect.DefaultContractManagerSettings(),
+	}
+	originalForward := partial.ForwardBufferSettings
+	originalContract := partial.ContractManagerSettings
 	settings := newDeviceClientSettings(partial, "", nil)
 	if partial.SendBufferSettings != nil ||
 		partial.ReceiveBufferSettings != nil ||
 		partial.WebRtcSettings != nil {
 		t.Fatal("completing partial provider settings mutated the caller")
+	}
+	if settings.ForwardBufferSettings == originalForward ||
+		settings.ContractManagerSettings == originalContract {
+		t.Fatal("nested ownership settings were not copied")
+	}
+	settings.ForwardBufferSettings.SequenceBufferSize += 1
+	settings.ContractManagerSettings.SequenceBufferSize += 1
+	if partial.ForwardBufferSettings.SequenceBufferSize != originalForward.SequenceBufferSize ||
+		partial.ContractManagerSettings.SequenceBufferSize != originalContract.SequenceBufferSize {
+		t.Fatal("derived settings mutated caller-owned nested settings")
 	}
 
 	const memoryTarget = ByteCount(8 * 1024 * 1024)
@@ -306,6 +522,20 @@ func TestProviderLocalUserNatSettings(t *testing.T) {
 	connect.AssertEqual(t, settings.TcpBufferSettings.GlobalLimit, 0)
 }
 
+func TestProviderLocalUserNatSettingsAppliesExitDialerOnlyToTCPAndUDP(t *testing.T) {
+	dial := &connect.DialContextSettings{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("test dial")
+	}}
+	settings := providerLocalUserNatSettings(0, connect.NewNoopLogger(), dial)
+	if settings.TcpBufferSettings.DialContextSettings != dial || settings.UdpBufferSettings.DialContextSettings != dial {
+		t.Fatal("provider exit dialer was not applied to TCP and UDP")
+	}
+	plain := providerLocalUserNatSettings(0, connect.NewNoopLogger())
+	if plain.TcpBufferSettings.DialContextSettings != nil || plain.UdpBufferSettings.DialContextSettings != nil {
+		t.Fatal("ordinary provider settings unexpectedly install a custom dialer")
+	}
+}
+
 // TestDeviceLocalProvideMemoryRealloc verifies the provider share of the
 // device memory target follows the provide state: while providing is off it
 // backs the client pair; enabling provide moves it to the provider pair and
@@ -336,6 +566,11 @@ func TestDeviceLocalProvideMemoryRealloc(t *testing.T) {
 		t.Fatalf("new device: %v", err)
 	}
 	defer device.Close()
+	connect.AssertEqual(
+		t,
+		device.provider.platformTransportSettings.PlatformTransportBudgetPriority,
+		connect.PlatformTransportBudgetPriorityBackground,
+	)
 
 	target := connect.ByteCount(defaultDeviceLocalMemoryTargetByteCount)
 	clientShare := target * deviceMemoryRatioClient / deviceMemoryRatioParts

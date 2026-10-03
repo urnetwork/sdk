@@ -335,7 +335,7 @@ func TestEverythingIsRefusedBeforeHello(t *testing.T) {
 // sent, so a client that would never answer is exactly the right shape to prove it.
 type silentClient struct{}
 
-func (silentClient) SendWithTimeout(frame *protocol.Frame, destination connect.TransferPath,
+func (silentClient) SendWithTimeout(frame *protocol.Frame, destination connect.Id,
 	ackCallback connect.AckFunction, timeout time.Duration, opts ...any) bool {
 	return false
 }

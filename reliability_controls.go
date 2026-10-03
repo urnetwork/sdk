@@ -98,16 +98,31 @@ type ReliabilitySettings struct {
 	// and the cap veto was splitting exactly the sites that were busiest.
 	// false restores the veto, the A/B comparison point.
 	AffinityStickyPastCap bool
-	// QuarantineGroupFollow lets a quarantined exit keep inheriting new
-	// flows from sites already living on it, so a bench does not split the
-	// site's egress ip. New sites, races, and rebinds still avoid the exit.
-	// false restores the scatter, the A/B comparison point.
+	// FreshFlowAffinity directly assigns an ordinary new flow to an exit
+	// already used by its IP/domain group. It defaults off: fresh flows instead
+	// reach the health/performance-weighted provider race. Existing tuples and
+	// explicit app/host pins remain fixed. True restores legacy hard affinity
+	// for A/B measurement.
+	FreshFlowAffinity bool
+	// PerformanceAwareAffinity checks a live or recently completed TCP/443
+	// provider's peak inner-TCP ACK rate against its advertised bandwidth prior
+	// when weighting a fresh race. If legacy FreshFlowAffinity is enabled, the
+	// same evidence can veto a slow donor. Established flows and explicit pins
+	// are never moved.
+	PerformanceAwareAffinity bool
+	// MaxStickyFlowsPerExit bounds an exit that grew past MaxFlowsPerExit
+	// through affinity. Only the oldest idle TCP flows are retired, so active
+	// requests keep one egress IP. 0 disables the bound.
+	MaxStickyFlowsPerExit int32
+	// StickyFlowIdleTimeoutMillis is the minimum idle age for that retirement.
+	// 0 disables it even when MaxStickyFlowsPerExit is nonzero.
+	StickyFlowIdleTimeoutMillis int64
+	// QuarantineGroupFollow is retained for settings compatibility. Fresh
+	// flows now always scatter from a quarantined donor; a sustained
+	// no-receive verdict must not attract another H1 handshake.
 	QuarantineGroupFollow bool
-	// GroupFollowWindowMillis is the follow's safety gate: a site follows its
-	// benched exit only through the FIRST this-long of a quarantine episode,
-	// when the verdict is least proven. A bench that sustains toward the
-	// drain-to-conviction execution stops collecting flows first. 0 disables
-	// the follow entirely.
+	// GroupFollowWindowMillis is retained for settings compatibility. Fresh
+	// flows no longer follow a quarantined exit regardless of this value.
 	GroupFollowWindowMillis int64
 	// UplinkStalenessGateMillis is how long the whole tunnel may go without a
 	// single provider-originated ingress packet before the receive-branch
@@ -184,6 +199,12 @@ type ReliabilitySettings struct {
 	// stays traffic-based, and any evidence of life clears the streak. 0 is
 	// off.
 	ProbeSilenceWarnStreak int32
+	// SharedFateMinExits / SharedFateWindowMillis: when at least MinExits
+	// distinct exits develop silence/stall evidence inside one window, the
+	// shared path is the likely cause and destructive verdicts hold while
+	// the correlation stands. 0 for either is off.
+	SharedFateMinExits     int32
+	SharedFateWindowMillis int64
 	// EvaluationPoolMultiple makes window expansion request and ping-evaluate
 	// this multiple of the candidates it needs, admit the needed count
 	// preferring qualified providers, and politely cancel the flowless
@@ -235,6 +256,29 @@ type ReliabilitySettings struct {
 	// of buffer, or speed it up to spot a transition, without a reconnect. 0
 	// disables the heartbeat.
 	HeartbeatIntervalMillis int64
+
+	// Smart routing (Phase 1). These five are what RoutingTier's off/light/full
+	// dial sets (see routing_tier.go); they are included here, in the same
+	// round-trip struct as every other control, so a developer-menu
+	// GetReliabilitySettings -> flip one field -> SetReliabilitySettings cycle
+	// does not silently drop the routing tier's knobs back to zero. All
+	// zero-value-off, so an older stored override applied here keeps today's
+	// placement.
+	ScoredPlacement bool
+	// PlacementHysteresisPct is the percent a candidate must beat the current
+	// pick by before displacing it; 0 is plain greater-than.
+	PlacementHysteresisPct float64
+	// PlacementDemoteConsecutive is how many consecutive worse samples a
+	// candidate needs before it actually demotes; <=1 acts on every sample.
+	PlacementDemoteConsecutive int32
+	// RewardInstrumentation emits reward observability lines; false emits none.
+	RewardInstrumentation bool
+	// QuarantineDampening escalates a quarantine episode's hold time by prior
+	// reconvictions (60s -> 120s -> 240s) instead of the flat hold every
+	// episode gets by default. See the QUARANTINE-DAMPENING CAVEAT in
+	// routing_tier.go: the reconviction counter does not yet decay within a
+	// session.
+	QuarantineDampening bool
 }
 
 func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySettings) *ReliabilitySettings {
@@ -252,11 +296,15 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		SequenceIdleTimeoutMillis:     reliabilitySettings.SequenceIdleTimeout.Milliseconds(),
 		TcpSequenceIdleTimeoutMillis:  reliabilitySettings.TcpSequenceIdleTimeout.Milliseconds(),
 		BlackholeReceiveTimeoutMillis: reliabilitySettings.BlackholeReceiveTimeout.Milliseconds(),
-		MaxFlowsPerExit:                   int32(reliabilitySettings.MaxFlowsPerExit),
-		AffinityStickyPastCap:             reliabilitySettings.AffinityStickyPastCap,
-		QuarantineGroupFollow:             reliabilitySettings.QuarantineGroupFollow,
-		GroupFollowWindowMillis:           reliabilitySettings.GroupFollowWindow.Milliseconds(),
-		UplinkStalenessGateMillis:         reliabilitySettings.UplinkStalenessGate.Milliseconds(),
+		MaxFlowsPerExit:               int32(reliabilitySettings.MaxFlowsPerExit),
+		AffinityStickyPastCap:         reliabilitySettings.AffinityStickyPastCap,
+		FreshFlowAffinity:             reliabilitySettings.FreshFlowAffinity,
+		PerformanceAwareAffinity:      reliabilitySettings.PerformanceAwareAffinity,
+		MaxStickyFlowsPerExit:         int32(reliabilitySettings.MaxStickyFlowsPerExit),
+		StickyFlowIdleTimeoutMillis:   reliabilitySettings.StickyFlowIdleTimeout.Milliseconds(),
+		QuarantineGroupFollow:         reliabilitySettings.QuarantineGroupFollow,
+		GroupFollowWindowMillis:       reliabilitySettings.GroupFollowWindow.Milliseconds(),
+		UplinkStalenessGateMillis:     reliabilitySettings.UplinkStalenessGate.Milliseconds(),
 		SoftVerdictDemote:             reliabilitySettings.SoftVerdictDemote,
 		RemovalBudgetCount:            int32(reliabilitySettings.RemovalBudgetCount),
 		RemovalBudgetWindowMillis:     reliabilitySettings.RemovalBudgetWindow.Milliseconds(),
@@ -268,6 +316,8 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		ProbeTimeoutMillis:            reliabilitySettings.ProbeTimeout.Milliseconds(),
 		ProbeSampleHostCount:          int32(reliabilitySettings.ProbeSampleHostCount),
 		ProbeSilenceWarnStreak:        int32(reliabilitySettings.ProbeSilenceWarnStreak),
+		SharedFateMinExits:            int32(reliabilitySettings.SharedFateMinExits),
+		SharedFateWindowMillis:        reliabilitySettings.SharedFateWindow.Milliseconds(),
 		EvaluationPoolMultiple:        int32(reliabilitySettings.EvaluationPoolMultiple),
 
 		FormationPollTimeoutMillis:               reliabilitySettings.FormationPollTimeout.Milliseconds(),
@@ -277,38 +327,50 @@ func reliabilitySettingsFromConnect(reliabilitySettings *connect.ReliabilitySett
 		SchedulerPauseRecoveryTimeoutMillis:      reliabilitySettings.SchedulerPauseRecoveryTimeout.Milliseconds(),
 		BlackholeConnectComparativeTimeoutMillis: reliabilitySettings.BlackholeConnectComparativeTimeout.Milliseconds(),
 		HeartbeatIntervalMillis:                  reliabilitySettings.HeartbeatInterval.Milliseconds(),
+
+		ScoredPlacement:            reliabilitySettings.ScoredPlacement,
+		PlacementHysteresisPct:     reliabilitySettings.PlacementHysteresisPct,
+		PlacementDemoteConsecutive: int32(reliabilitySettings.PlacementDemoteConsecutive),
+		RewardInstrumentation:      reliabilitySettings.RewardInstrumentation,
+		QuarantineDampening:        reliabilitySettings.QuarantineDampening,
 	}
 }
 
 func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 	return &connect.ReliabilitySettings{
-		UdpTeardownSignal:        self.UdpTeardownSignal,
-		QuicRebindOnExitLoss:     self.QuicRebindOnExitLoss,
-		DialFailureRerace:        self.DialFailureRerace,
-		TcpCollapseMaxHold:       millis(self.TcpCollapseMaxHoldMillis),
-		SendStallTimeout:         millis(self.SendStallTimeoutMillis),
-		ClusterAffinityFallback:  self.ClusterAffinityFallback,
-		ServerNameAffinityBridge: self.ServerNameAffinityBridge,
-		SequenceIdleTimeout:      millis(self.SequenceIdleTimeoutMillis),
-		TcpSequenceIdleTimeout:   millis(self.TcpSequenceIdleTimeoutMillis),
-		BlackholeReceiveTimeout:  millis(self.BlackholeReceiveTimeoutMillis),
-		MaxFlowsPerExit:             int(self.MaxFlowsPerExit),
-		AffinityStickyPastCap:       self.AffinityStickyPastCap,
-		QuarantineGroupFollow:       self.QuarantineGroupFollow,
-		GroupFollowWindow:           millis(self.GroupFollowWindowMillis),
-		UplinkStalenessGate:         millis(self.UplinkStalenessGateMillis),
-		SoftVerdictDemote:        self.SoftVerdictDemote,
-		RemovalBudgetCount:       int(self.RemovalBudgetCount),
-		RemovalBudgetWindow:      millis(self.RemovalBudgetWindowMillis),
-		StandingReserve:          self.StandingReserve,
-		EffectiveTierSelection:   self.EffectiveTierSelection,
+		UdpTeardownSignal:          self.UdpTeardownSignal,
+		QuicRebindOnExitLoss:       self.QuicRebindOnExitLoss,
+		DialFailureRerace:          self.DialFailureRerace,
+		TcpCollapseMaxHold:         millis(self.TcpCollapseMaxHoldMillis),
+		SendStallTimeout:           millis(self.SendStallTimeoutMillis),
+		ClusterAffinityFallback:    self.ClusterAffinityFallback,
+		ServerNameAffinityBridge:   self.ServerNameAffinityBridge,
+		SequenceIdleTimeout:        millis(self.SequenceIdleTimeoutMillis),
+		TcpSequenceIdleTimeout:     millis(self.TcpSequenceIdleTimeoutMillis),
+		BlackholeReceiveTimeout:    millis(self.BlackholeReceiveTimeoutMillis),
+		MaxFlowsPerExit:            int(self.MaxFlowsPerExit),
+		AffinityStickyPastCap:      self.AffinityStickyPastCap,
+		FreshFlowAffinity:          self.FreshFlowAffinity,
+		PerformanceAwareAffinity:   self.PerformanceAwareAffinity,
+		MaxStickyFlowsPerExit:      int(self.MaxStickyFlowsPerExit),
+		StickyFlowIdleTimeout:      millis(self.StickyFlowIdleTimeoutMillis),
+		QuarantineGroupFollow:      self.QuarantineGroupFollow,
+		GroupFollowWindow:          millis(self.GroupFollowWindowMillis),
+		UplinkStalenessGate:        millis(self.UplinkStalenessGateMillis),
+		SoftVerdictDemote:          self.SoftVerdictDemote,
+		RemovalBudgetCount:         int(self.RemovalBudgetCount),
+		RemovalBudgetWindow:        millis(self.RemovalBudgetWindowMillis),
+		StandingReserve:            self.StandingReserve,
+		EffectiveTierSelection:     self.EffectiveTierSelection,
 		MinBlackholeDestinations:   int(self.MinBlackholeDestinations),
 		BlackholeLoadCorroboration: int(self.BlackholeLoadCorroboration),
 		ProviderProbe:              self.ProviderProbe,
-		ProbeTimeout:             millis(self.ProbeTimeoutMillis),
-		ProbeSampleHostCount:     int(self.ProbeSampleHostCount),
-		ProbeSilenceWarnStreak:   int(self.ProbeSilenceWarnStreak),
-		EvaluationPoolMultiple:   int(self.EvaluationPoolMultiple),
+		ProbeTimeout:               millis(self.ProbeTimeoutMillis),
+		ProbeSampleHostCount:       int(self.ProbeSampleHostCount),
+		ProbeSilenceWarnStreak:     int(self.ProbeSilenceWarnStreak),
+		SharedFateMinExits:         int(self.SharedFateMinExits),
+		SharedFateWindow:           millis(self.SharedFateWindowMillis),
+		EvaluationPoolMultiple:     int(self.EvaluationPoolMultiple),
 
 		FormationPollTimeout:               millis(self.FormationPollTimeoutMillis),
 		BusyProbe:                          self.BusyProbe,
@@ -317,6 +379,12 @@ func (self *ReliabilitySettings) toConnect() *connect.ReliabilitySettings {
 		SchedulerPauseRecoveryTimeout:      millis(self.SchedulerPauseRecoveryTimeoutMillis),
 		BlackholeConnectComparativeTimeout: millis(self.BlackholeConnectComparativeTimeoutMillis),
 		HeartbeatInterval:                  millis(self.HeartbeatIntervalMillis),
+
+		ScoredPlacement:            self.ScoredPlacement,
+		PlacementHysteresisPct:     self.PlacementHysteresisPct,
+		PlacementDemoteConsecutive: int(self.PlacementDemoteConsecutive),
+		RewardInstrumentation:      self.RewardInstrumentation,
+		QuarantineDampening:        self.QuarantineDampening,
 	}
 }
 
@@ -365,6 +433,22 @@ type Exit struct {
 	// ProbeAgeSeconds is how long ago the provider was last proven; -1 means
 	// never. Can exceed the qualification window (then Proven is false)
 	ProbeAgeSeconds int64
+	// ProviderDiagnosticsAvailable distinguishes an older provider that has
+	// not published diagnostics from a current provider whose counters are all
+	// legitimately zero.
+	ProviderDiagnosticsAvailable bool
+	// ProviderBuildVersion and ProviderSecurityPolicyHash identify the exact
+	// egress implementation and effective security rules serving this exit.
+	ProviderBuildVersion       string
+	ProviderSecurityPolicyHash string
+	// Provider block counters are source-scoped cumulative values published by
+	// the provider. They complement the local packet counters: a remote policy
+	// drop can now be distinguished from transport loss.
+	ProviderBlockIngressPacketCount int64
+	ProviderBlockIngressByteCount   int64
+	ProviderBlockEgressPacketCount  int64
+	ProviderBlockEgressByteCount    int64
+	ProviderDiagnosticsSequence     int64
 }
 
 type ExitList struct {
@@ -449,31 +533,46 @@ func (self *DeviceLocal) ResetReliabilitySettings() {
 
 // GetExits lists the current provider channels with the flow count pinned to
 // each.
+func exitFromConnect(exit *connect.ExitInfo) *Exit {
+	if exit == nil {
+		return nil
+	}
+	// -1 crosses the boundary as the "never proven" sentinel; any
+	// non-negative age is truncated to whole seconds.
+	probeAgeSeconds := int64(-1)
+	if 0 <= exit.ProbeAge {
+		probeAgeSeconds = int64(exit.ProbeAge / time.Second)
+	}
+	return &Exit{
+		ClientId:                        newId(exit.ClientId),
+		WindowType:                      exit.WindowType.RankMode(),
+		Warning:                         exit.Warning,
+		Quarantined:                     exit.Quarantined,
+		WarningCause:                    exit.WarningCause,
+		Done:                            exit.Done,
+		P2pOnly:                         exit.P2pOnly,
+		FlowCount:                       int32(exit.FlowCount),
+		DialFailureCount:                int32(exit.DialFailureCount),
+		Tier:                            int32(exit.Tier),
+		EffectiveTier:                   int32(exit.EffectiveTier),
+		Proven:                          exit.Proven,
+		ProbeAgeSeconds:                 probeAgeSeconds,
+		ProviderDiagnosticsAvailable:    exit.ProviderDiagnosticsAvailable,
+		ProviderBuildVersion:            exit.ProviderBuildVersion,
+		ProviderSecurityPolicyHash:      exit.ProviderSecurityPolicyHash,
+		ProviderBlockIngressPacketCount: exit.ProviderBlockIngressPackets,
+		ProviderBlockIngressByteCount:   exit.ProviderBlockIngressBytes,
+		ProviderBlockEgressPacketCount:  exit.ProviderBlockEgressPackets,
+		ProviderBlockEgressByteCount:    exit.ProviderBlockEgressBytes,
+		ProviderDiagnosticsSequence:     exit.ProviderDiagnosticsSequence,
+	}
+}
+
 func (self *DeviceLocal) GetExits() *ExitList {
 	exits := NewExitList()
 	if multi, ok := self.multiClient(); ok {
 		for _, exit := range multi.Exits() {
-			// -1 crosses the boundary as the "never proven" sentinel; any
-			// non-negative age is truncated to whole seconds
-			probeAgeSeconds := int64(-1)
-			if 0 <= exit.ProbeAge {
-				probeAgeSeconds = int64(exit.ProbeAge / time.Second)
-			}
-			exits.Add(&Exit{
-				ClientId:         newId(exit.ClientId),
-				WindowType:       exit.WindowType.RankMode(),
-				Warning:          exit.Warning,
-				Quarantined:      exit.Quarantined,
-				WarningCause:     exit.WarningCause,
-				Done:             exit.Done,
-				P2pOnly:          exit.P2pOnly,
-				FlowCount:        int32(exit.FlowCount),
-				DialFailureCount: int32(exit.DialFailureCount),
-				Tier:             int32(exit.Tier),
-				EffectiveTier:    int32(exit.EffectiveTier),
-				Proven:           exit.Proven,
-				ProbeAgeSeconds:  probeAgeSeconds,
-			})
+			exits.Add(exitFromConnect(exit))
 		}
 	}
 	return exits
@@ -626,18 +725,17 @@ func (self *DeviceLocal) ProbeAllExits() int32 {
 func (self *DeviceLocal) SimulateNetworkChange() {
 	if multi, ok := self.multiClient(); ok {
 		multi.SimulateNetworkChange()
+		// SimulateNetworkChange owns the liveness rebase and process kick;
+		// complete the same canonical seam by invalidating pooled DoH state.
+		self.networkChangedUpgradeMux()
 	}
 }
 
-// NotifyNetworkChange is the production entry the android ConnectivityManager
-// callback calls when the OS reports the network changed: it rebases the uplink
-// staleness epoch and kicks every registered platform transport to drop its
-// connection and re-dial immediately over the new path, instead of waiting out
-// ping timeouts. No-op while disconnected.
+// NotifyNetworkChange is the backwards-compatible mobile binding for
+// NetworkChanged. Keep one canonical seam so every caller gets the liveness
+// rebase, platform transport kick, and UpgradeMux/DoH recovery together.
 func (self *DeviceLocal) NotifyNetworkChange() {
-	if multi, ok := self.multiClient(); ok {
-		multi.NotifyNetworkChanged()
-	}
+	self.NetworkChanged()
 }
 
 // ReliabilityMetrics is what the toggles above are judged against.
@@ -711,7 +809,11 @@ type ReliabilityMetrics struct {
 	// these are the executions that did not happen.
 	VerdictsHeldUplinkStale   int64
 	VerdictsHeldTransportDown int64
-	RemovalsDeferred          int64
+	// VerdictsHeldSharedFate counts destructive verdicts held because enough
+	// distinct exits went silent inside one shared-fate window that the
+	// shared path is the likely cause
+	VerdictsHeldSharedFate int64
+	RemovalsDeferred       int64
 
 	// ProbesSent and ProbesAnswered are the provider-qualification probes
 	// asked and answered this session; ProvidersQualified counts providers
@@ -739,45 +841,73 @@ type ReliabilityMetrics struct {
 	// follow enabled means the benched exits were receive-silent.
 	GroupsFollowed  int64
 	GroupsScattered int64
+
+	// QuarantineTcpResets is the number of confirmed-poisoned TCP flows reset
+	// toward the app. QuarantineAffinityInvalidations counts DNS/site/app
+	// affinity records erased at the same transition. StickyFlowsRetired counts
+	// oldest-idle TCP flows retired to enforce the per-exit sticky bound.
+	QuarantineTcpResets             int64
+	QuarantineAffinityInvalidations int64
+	StickyFlowsRetired              int64
+	// AffinityPerformanceSamples counts completed per-site/provider ACK-rate
+	// observations. AffinityPerformanceDonorBypasses counts fresh connections
+	// released from a low-rate live/history donor, and
+	// AffinityPerformanceCandidatesFiltered counts lower-weight exits removed
+	// from their fresh provider races.
+	AffinityPerformanceSamples            int64
+	AffinityPerformanceDonorBypasses      int64
+	AffinityPerformanceCandidatesFiltered int64
 }
 
 // GetReliabilityMetrics reports what provider failures have cost since the
 // last reset. Safe to call while disconnected, which reads back as zeros.
+func reliabilityMetricsFromConnect(s *connect.ReliabilityMetricsSnapshot) *ReliabilityMetrics {
+	if s == nil {
+		return &ReliabilityMetrics{}
+	}
+	return &ReliabilityMetrics{
+		FlowsOpened:                           int64(s.FlowsOpened),
+		ExitLossEvents:                        int64(s.ExitLossEvents),
+		FlowsLostToExit:                       int64(s.FlowsLostToExit),
+		MaxFlowsLostInOneEvent:                int64(s.MaxFlowsLostInOneEvent),
+		MeanFlowsLostPerExitLoss:              s.MeanFlowsLostPerExitLoss,
+		RecoveryCount:                         int64(s.RecoveryCount),
+		RecoveryMissed:                        int64(s.RecoveryMissed),
+		RecoveryMeanMillis:                    s.RecoveryMeanNanos / int64(time.Millisecond),
+		RecoveryMaxMillis:                     s.RecoveryMaxNanos / int64(time.Millisecond),
+		RecoveryPending:                       int32(s.RecoveryPending),
+		DialFailuresIntercepted:               int64(s.DialFailuresIntercepted),
+		FlowsReraced:                          int64(s.FlowsReraced),
+		FlowsRebound:                          int64(s.FlowsRebound),
+		RebindsAccepted:                       int64(s.RebindsAccepted),
+		RebindsRedialed:                       int64(s.RebindsRedialed),
+		VerdictsHeldUplinkStale:               int64(s.VerdictsHeldUplinkStale),
+		VerdictsHeldTransportDown:             int64(s.VerdictsHeldTransportDown),
+		VerdictsHeldSharedFate:                int64(s.VerdictsHeldSharedFate),
+		RemovalsDeferred:                      int64(s.RemovalsDeferred),
+		ProbesSent:                            int64(s.ProbesSent),
+		ProbesAnswered:                        int64(s.ProbesAnswered),
+		ProvidersQualified:                    int64(s.ProvidersQualified),
+		BusyProbesSent:                        int64(s.BusyProbesSent),
+		BusyProbesAcquitted:                   int64(s.BusyProbesAcquitted),
+		SchedulerPausesDetected:               int64(s.SchedulerPausesDetected),
+		GroupsFollowed:                        int64(s.GroupsFollowed),
+		GroupsScattered:                       int64(s.GroupsScattered),
+		QuarantineTcpResets:                   int64(s.QuarantineTcpResets),
+		QuarantineAffinityInvalidations:       int64(s.QuarantineAffinityInvalidations),
+		StickyFlowsRetired:                    int64(s.StickyFlowsRetired),
+		AffinityPerformanceSamples:            int64(s.AffinityPerformanceSamples),
+		AffinityPerformanceDonorBypasses:      int64(s.AffinityPerformanceDonorBypasses),
+		AffinityPerformanceCandidatesFiltered: int64(s.AffinityPerformanceCandidatesFiltered),
+	}
+}
+
 func (self *DeviceLocal) GetReliabilityMetrics() *ReliabilityMetrics {
 	multi, ok := self.multiClient()
 	if !ok {
 		return &ReliabilityMetrics{}
 	}
-
-	s := multi.ReliabilityMetrics()
-	return &ReliabilityMetrics{
-		FlowsOpened:               int64(s.FlowsOpened),
-		ExitLossEvents:            int64(s.ExitLossEvents),
-		FlowsLostToExit:           int64(s.FlowsLostToExit),
-		MaxFlowsLostInOneEvent:    int64(s.MaxFlowsLostInOneEvent),
-		MeanFlowsLostPerExitLoss:  s.MeanFlowsLostPerExitLoss,
-		RecoveryCount:             int64(s.RecoveryCount),
-		RecoveryMissed:            int64(s.RecoveryMissed),
-		RecoveryMeanMillis:        s.RecoveryMeanNanos / int64(time.Millisecond),
-		RecoveryMaxMillis:         s.RecoveryMaxNanos / int64(time.Millisecond),
-		RecoveryPending:           int32(s.RecoveryPending),
-		DialFailuresIntercepted:   int64(s.DialFailuresIntercepted),
-		FlowsReraced:              int64(s.FlowsReraced),
-		FlowsRebound:              int64(s.FlowsRebound),
-		RebindsAccepted:           int64(s.RebindsAccepted),
-		RebindsRedialed:           int64(s.RebindsRedialed),
-		VerdictsHeldUplinkStale:   int64(s.VerdictsHeldUplinkStale),
-		VerdictsHeldTransportDown: int64(s.VerdictsHeldTransportDown),
-		RemovalsDeferred:          int64(s.RemovalsDeferred),
-		ProbesSent:                int64(s.ProbesSent),
-		ProbesAnswered:            int64(s.ProbesAnswered),
-		ProvidersQualified:        int64(s.ProvidersQualified),
-		BusyProbesSent:            int64(s.BusyProbesSent),
-		BusyProbesAcquitted:       int64(s.BusyProbesAcquitted),
-		SchedulerPausesDetected:   int64(s.SchedulerPausesDetected),
-		GroupsFollowed:            int64(s.GroupsFollowed),
-		GroupsScattered:           int64(s.GroupsScattered),
-	}
+	return reliabilityMetricsFromConnect(multi.ReliabilityMetrics())
 }
 
 // ResetReliabilityMetrics zeroes the counters. An A/B run is: reset, set the
