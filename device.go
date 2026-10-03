@@ -256,6 +256,59 @@ type BlockAction struct {
 	RouteOverride *RouteOverride
 	PacketCount   int
 	ByteCount     ByteCount
+	// what decided a blocked or locally routed action, one of the
+	// BlockActionReason values; empty for ordinary provider-routed traffic
+	Reason string
+}
+
+// BlockAction reasons. The security reasons mean the URnetwork safety rules kept
+// the traffic off the providers: blocked with the kill switch on, routed from the
+// device's own address with it off.
+const (
+	// looked fully encrypted and matched no recognized protocol
+	BlockActionReasonSecurityEncrypted = connect.BlockActionReasonSecurityEncrypted
+	// a BitTorrent signature; never overridable
+	BlockActionReasonSecurityBittorrent = connect.BlockActionReasonSecurityBittorrent
+	// the destination port is not allowed
+	BlockActionReasonSecurityPort = connect.BlockActionReasonSecurityPort
+	// the destination address is not public or is on the reputation blocklist
+	BlockActionReasonSecurityIp = connect.BlockActionReasonSecurityIp
+	// smtp must be encrypted, and port 25 is routed locally
+	BlockActionReasonSecuritySmtp = connect.BlockActionReasonSecuritySmtp
+	// another security rule
+	BlockActionReasonSecurity = connect.BlockActionReasonSecurity
+	// the ad/tracker blocker matched
+	BlockActionReasonBlocker = connect.BlockActionReasonBlocker
+	// a user block or route override decided
+	BlockActionReasonOverride = connect.BlockActionReasonOverride
+)
+
+// IsSecurity reports whether the URnetwork safety rules decided the action.
+func (self *BlockAction) IsSecurity() bool {
+	switch self.Reason {
+	case BlockActionReasonSecurityEncrypted,
+		BlockActionReasonSecurityBittorrent,
+		BlockActionReasonSecurityPort,
+		BlockActionReasonSecurityIp,
+		BlockActionReasonSecuritySmtp,
+		BlockActionReasonSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
+// RouteLocalOverridable reports whether a route-local override (a host or app
+// rule) can make the blocked traffic work outside the tunnel. BitTorrent and
+// non-public destinations are never overridable, so only the reasons that are
+// always a plain drop qualify.
+func (self *BlockAction) RouteLocalOverridable() bool {
+	switch self.Reason {
+	case BlockActionReasonSecurityEncrypted, BlockActionReasonSecurityPort:
+		return true
+	default:
+		return false
+	}
 }
 
 // cumulative packet counts by route.
@@ -959,6 +1012,19 @@ type windowMonitorWithAvailability interface {
 type securityPolicy interface {
 	Stats(reset bool) connect.SecurityPolicyStats
 	// ResetStats()
+}
+
+// securityPolicyReasons is the optional verdict-reason diagnostic of a
+// securityPolicy: per-port counts of the rule that decided each packet. Local
+// only; never sent off the device.
+type securityPolicyReasons interface {
+	Reasons(reset bool) connect.SecurityPolicyReasonStats
+}
+
+// connectSecurityPolicyReasons is implemented by the connect clients and
+// provider that record verdict reasons.
+type connectSecurityPolicyReasons interface {
+	SecurityPolicyReasons(reset bool) connect.SecurityPolicyReasonStats
 }
 
 // ColorHex is the peer's dot color, the stable per-client color every

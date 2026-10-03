@@ -150,6 +150,14 @@ inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
 inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
+inline constexpr const char* BlockActionReasonBlocker = "blocker";
+inline constexpr const char* BlockActionReasonOverride = "override";
+inline constexpr const char* BlockActionReasonSecurity = "security";
+inline constexpr const char* BlockActionReasonSecurityBittorrent = "security-bittorrent";
+inline constexpr const char* BlockActionReasonSecurityEncrypted = "security-encrypted";
+inline constexpr const char* BlockActionReasonSecurityIp = "security-ip";
+inline constexpr const char* BlockActionReasonSecurityPort = "security-port";
+inline constexpr const char* BlockActionReasonSecuritySmtp = "security-smtp";
 inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
@@ -1219,6 +1227,7 @@ struct BlockAction {
 	std::optional<RouteOverride> RouteOverride;
 	int64_t PacketCount{};
 	int64_t ByteCount{};
+	std::string Reason{};
 };
 
 struct BlockActionOverride {
@@ -5929,6 +5938,7 @@ inline void to_json(nlohmann::json& j, const BlockAction& v) {
 	}
 	j["PacketCount"] = v.PacketCount;
 	j["ByteCount"] = v.ByteCount;
+	j["Reason"] = v.Reason;
 }
 inline void from_json(const nlohmann::json& j, BlockAction& v) {
 	if (!j.is_object()) {
@@ -5988,6 +5998,9 @@ inline void from_json(const nlohmann::json& j, BlockAction& v) {
 	}
 	if (auto it = j.find("ByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ByteCount);
+	}
+	if (auto it = j.find("Reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Reason);
 	}
 }
 
