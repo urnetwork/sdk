@@ -307,6 +307,14 @@ func jsReferralCodeViewController(
 		}
 		return jsSub(vc.AddReferralCodeListener(&jsReferralCodeListener{cb}))
 	})
+	// a fetch that ended without a code; start() fetches again
+	m["addReferralCodeFetchErrorListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(vc.AddReferralCodeFetchErrorListener(&jsMessageListener{cb}))
+	})
 	return js.ValueOf(m)
 }
 

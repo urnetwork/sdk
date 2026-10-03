@@ -991,6 +991,8 @@ export interface ReferralCodeViewController {
 
   getReferralCode(): ReferralCodeInfo | null;
   addReferralCodeListener(cb: (code: string) => void): Unsubscribe;
+  /** A fetch ended without a code; `start()` fetches again. */
+  addReferralCodeFetchErrorListener(cb: (message: string) => void): Unsubscribe;
 }
 
 export interface SubscriptionInfo {
