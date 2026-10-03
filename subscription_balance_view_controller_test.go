@@ -123,6 +123,8 @@ type balanceFetchStub struct {
 	err     error
 	count   int
 	fetched chan struct{}
+	// the storefront country of each fetch, in order
+	storefrontCountries []string
 }
 
 func newBalanceFetchStub(result *SubscriptionBalanceResult) *balanceFetchStub {
@@ -145,9 +147,10 @@ func (self *balanceFetchStub) fetchCount() int {
 	return self.count
 }
 
-func (self *balanceFetchStub) fetch(callback SubscriptionBalanceCallback) {
+func (self *balanceFetchStub) fetch(storefrontCountry string, callback SubscriptionBalanceCallback) {
 	self.mutex.Lock()
 	self.count += 1
+	self.storefrontCountries = append(self.storefrontCountries, storefrontCountry)
 	result := self.result
 	err := self.err
 	self.mutex.Unlock()

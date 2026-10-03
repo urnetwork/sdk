@@ -197,6 +197,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
+#define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
 #define URNET_OFFER_DECLINE_CONTROL_BACK "back"
 #define URNET_OFFER_DECLINE_CONTROL_FREE_PLAN_LINK "free_plan_link"
 #define URNET_OFFER_DECLINE_CONTROL_SYSTEM_DISMISS "system_dismiss"
@@ -250,6 +251,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PROVIDE_MODE_STREAM 4
 #define URNET_PROVIDE_NETWORK_MODE_ALL "all"
 #define URNET_PROVIDE_NETWORK_MODE_WI_FI "wifi"
+#define URNET_PURCHASE_CONFIRMATION_GIVE_UP_REASON_NOT_REFLECTED "not_reflected"
+#define URNET_PURCHASE_CONFIRMATION_GIVE_UP_REASON_UNREACHABLE "unreachable"
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMATION_GAVE_UP "confirmation_gave_up"
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMED "confirmed"
 #define URNET_PURCHASE_CONFIRMATION_STATE_IDLE "idle"
@@ -393,6 +396,8 @@ typedef void (*urnet_check_balance_code_cb)(void* user_data, const char* result_
 typedef void (*urnet_claim_network_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ClientEventsSendCallback */
 typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_json, const char* err_param);
+/* ClientRefreshIntegrityListener */
+typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, const char* notice_json);
 /* CommitCallback */
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 /* ConnectChangeListener */
@@ -654,6 +659,8 @@ typedef void (*urnet_subprotocols_query_cb)(void* user_data, const char* subprot
 typedef void (*urnet_subscription_balance_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SubscriptionBalanceChangeListener */
 typedef void (*urnet_subscription_balance_change_cb)(void* user_data);
+/* SubscriptionBalanceFetchErrorListener */
+typedef void (*urnet_subscription_balance_fetch_error_cb)(void* user_data, const char* p0);
 /* SubscriptionCreatePaymentIdCallback */
 typedef void (*urnet_subscription_create_payment_id_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SubscriptionJwtOutOfSyncListener */
@@ -726,6 +733,7 @@ void urnet_api_account_preferences_get(uint64_t self, urnet_account_preferences_
 void urnet_api_account_preferences_update(uint64_t self, const char* account_preferences_json, urnet_account_preferences_set_cb callback_result, void* callback_user_data);
 void urnet_api_add_auth(uint64_t self, const char* args_json, urnet_add_auth_cb callback_result, void* callback_user_data);
 uint64_t urnet_api_add_auth_logout_listener(uint64_t self, urnet_auth_logout_cb listener_auth_logout, void* listener_user_data);
+uint64_t urnet_api_add_client_refresh_integrity_listener(uint64_t self, urnet_client_refresh_integrity_cb listener_client_refresh_invalid, void* listener_user_data);
 uint64_t urnet_api_add_jwt_refresh_listener(uint64_t self, urnet_jwt_refresh_cb listener_jwt_refreshed, void* listener_user_data);
 void urnet_api_auth_code_create(uint64_t self, const char* code_create_args_json, urnet_auth_code_create_cb callback_result, void* callback_user_data);
 void urnet_api_auth_code_login(uint64_t self, const char* args_json, urnet_auth_code_login_cb callback_result, void* callback_user_data);
@@ -775,6 +783,7 @@ void urnet_api_get_transfer_stats(uint64_t self, urnet_get_transfer_stats_cb cal
 void urnet_api_list_api_keys(uint64_t self, urnet_list_api_keys_cb callback_result, void* callback_user_data);
 void urnet_api_network_block_location(uint64_t self, const char* args_json, urnet_network_block_location_cb callback_result, void* callback_user_data);
 void urnet_api_network_check(uint64_t self, const char* network_check_json, urnet_network_check_cb callback_result, void* callback_user_data);
+char* urnet_api_network_client_registration_endpoint(uint64_t self, char** out_error);
 void urnet_api_network_create(uint64_t self, const char* network_create_json, urnet_network_create_cb callback_result, void* callback_user_data);
 void urnet_api_network_delete(uint64_t self, urnet_network_delete_cb callback_result, void* callback_user_data);
 void urnet_api_network_unblock_location(uint64_t self, const char* args_json, urnet_network_unblock_location_cb callback_result, void* callback_user_data);
@@ -1658,6 +1667,7 @@ void urnet_sub_close(uint64_t self);
 
 uint64_t urnet_subscription_balance_view_controller_add_purchase_confirmation_listener(uint64_t self, urnet_purchase_confirmation_cb listener_purchase_confirmation_state_changed, void* listener_user_data);
 uint64_t urnet_subscription_balance_view_controller_add_subscription_balance_change_listener(uint64_t self, urnet_subscription_balance_change_cb listener_subscription_balance_changed, void* listener_user_data);
+uint64_t urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener(uint64_t self, urnet_subscription_balance_fetch_error_cb listener_message, void* listener_user_data);
 uint64_t urnet_subscription_balance_view_controller_add_subscription_jwt_out_of_sync_listener(uint64_t self, urnet_subscription_jwt_out_of_sync_cb listener_subscription_jwt_out_of_sync, void* listener_user_data);
 void urnet_subscription_balance_view_controller_clear_purchase_confirmation(uint64_t self);
 void urnet_subscription_balance_view_controller_close(uint64_t self);
@@ -1671,9 +1681,12 @@ char* urnet_subscription_balance_view_controller_get_current_subscription(uint64
 bool urnet_subscription_balance_view_controller_get_is_guest(uint64_t self);
 bool urnet_subscription_balance_view_controller_get_is_loaded(uint64_t self);
 bool urnet_subscription_balance_view_controller_get_is_pro(uint64_t self);
+char* urnet_subscription_balance_view_controller_get_last_fetch_error(uint64_t self);
 int64_t urnet_subscription_balance_view_controller_get_pending_byte_count(uint64_t self);
+char* urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(uint64_t self);
 char* urnet_subscription_balance_view_controller_get_purchase_confirmation_state(uint64_t self);
 int64_t urnet_subscription_balance_view_controller_get_start_balance_byte_count(uint64_t self);
+char* urnet_subscription_balance_view_controller_get_subscription_balance_result(uint64_t self);
 char* urnet_subscription_balance_view_controller_get_subscriptions(uint64_t self);
 int64_t urnet_subscription_balance_view_controller_get_used_balance_byte_count(uint64_t self);
 void urnet_subscription_balance_view_controller_jwt_refreshed(uint64_t self);
@@ -1682,6 +1695,7 @@ void urnet_subscription_balance_view_controller_set_background_poll_interval_mil
 void urnet_subscription_balance_view_controller_set_confirmation_budget_millis(uint64_t self, int64_t millis);
 void urnet_subscription_balance_view_controller_set_confirmation_poll_interval_millis(uint64_t self, int64_t millis);
 void urnet_subscription_balance_view_controller_set_foreground(uint64_t self, bool foreground);
+void urnet_subscription_balance_view_controller_set_storefront_country(uint64_t self, const char* storefront_country);
 void urnet_subscription_balance_view_controller_start(uint64_t self);
 void urnet_subscription_balance_view_controller_start_purchase_confirmation(uint64_t self);
 void urnet_subscription_balance_view_controller_stop(uint64_t self);
@@ -2323,6 +2337,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientEventsSendResult (json):
  *   accepted: number
  *   rejected?: ClientEventRejectionList | null
+ */
+
+/* ClientRefreshIntegrityNotice (json):
  */
 
 /* ConnectLocation (json):

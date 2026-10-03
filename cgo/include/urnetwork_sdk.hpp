@@ -258,6 +258,7 @@ inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
+inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
 inline constexpr const char* OfferDeclineControlBack = "back";
 inline constexpr const char* OfferDeclineControlFreePlanLink = "free_plan_link";
 inline constexpr const char* OfferDeclineControlSystemDismiss = "system_dismiss";
@@ -311,6 +312,8 @@ inline constexpr const char* ProviderStateEvaluationFailed = "EvaluationFailed";
 inline constexpr const char* ProviderStateInEvaluation = "InEvaluation";
 inline constexpr const char* ProviderStateNotAdded = "NotAdded";
 inline constexpr const char* ProviderStateRemoved = "Removed";
+inline constexpr const char* PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected";
+inline constexpr const char* PurchaseConfirmationGiveUpReasonUnreachable = "unreachable";
 inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up";
 inline constexpr const char* PurchaseConfirmationStateConfirmed = "confirmed";
 inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
@@ -519,6 +522,7 @@ struct ClientEvent;
 struct ClientEventRejection;
 struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
+struct ClientRefreshIntegrityNotice;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
 struct TransferPath;
@@ -1341,6 +1345,9 @@ struct ClientEventsSendArgs {
 struct ClientEventsSendResult {
 	int64_t accepted{};
 	std::optional<ClientEventRejectionList> rejected;
+};
+
+struct ClientRefreshIntegrityNotice {
 };
 
 struct ConnectedProviderLocation {
@@ -3515,6 +3522,8 @@ inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendArgs& v);
 inline void to_json(nlohmann::json& j, const ClientEventsSendResult& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v);
+inline void to_json(nlohmann::json& j, const ClientRefreshIntegrityNotice& v);
+inline void from_json(const nlohmann::json& j, ClientRefreshIntegrityNotice& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v);
 inline void to_json(nlohmann::json& j, const ContractClientRow& v);
@@ -6505,6 +6514,15 @@ inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v) {
 		ClientEventRejectionList tmp{};
 		it->get_to(tmp);
 		v.rejected = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientRefreshIntegrityNotice& v) {
+	j = nlohmann::json::object();
+}
+inline void from_json(const nlohmann::json& j, ClientRefreshIntegrityNotice& v) {
+	if (!j.is_object()) {
+		return;
 	}
 }
 
@@ -15614,6 +15632,7 @@ using ChangeNetworkNameCallback = std::function<void(std::optional<ChangeNetwork
 using CheckBalanceCodeCallback = std::function<void(std::optional<CheckBalanceCodeResult> result, std::optional<std::string> err_param)>;
 using ClaimNetworkNameCallback = std::function<void(std::optional<ClaimNetworkNameResult> result, std::optional<std::string> err_param)>;
 using ClientEventsSendCallback = std::function<void(std::optional<ClientEventsSendResult> result, std::optional<std::string> err_param)>;
+using ClientRefreshIntegrityListener = std::function<void(std::optional<ClientRefreshIntegrityNotice> notice)>;
 using CommitCallback = std::function<void(bool success)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
@@ -15748,6 +15767,7 @@ using SubprotocolListener = std::function<void(int64_t subprotocol_id, std::stri
 using SubprotocolsQueryCallback = std::function<void(std::optional<IntList> subprotocol_ids, bool ok_param)>;
 using SubscriptionBalanceCallback = std::function<void(std::optional<SubscriptionBalanceResult> result, std::optional<std::string> err_param)>;
 using SubscriptionBalanceChangeListener = std::function<void()>;
+using SubscriptionBalanceFetchErrorListener = std::function<void(std::string p0)>;
 using SubscriptionCreatePaymentIdCallback = std::function<void(std::optional<SubscriptionCreatePaymentIdResult> result, std::optional<std::string> err_param)>;
 using SubscriptionJwtOutOfSyncListener = std::function<void(bool server_is_pro)>;
 using ThroughputListener = std::function<void()>;
@@ -15981,6 +16001,7 @@ public:
 	void accountPreferencesUpdate(const std::optional<AccountPreferencesSetArgs>& account_preferences, AccountPreferencesSetCallback callback) const;
 	void addAuth(const std::optional<AddAuthArgs>& args, AddAuthCallback callback) const;
 	Sub addAuthLogoutListener(AuthLogoutListener listener) const;
+	Sub addClientRefreshIntegrityListener(ClientRefreshIntegrityListener listener) const;
 	Sub addJwtRefreshListener(JwtRefreshListener listener) const;
 	void authCodeCreate(const std::optional<AuthCodeCreateArgs>& code_create_args, AuthCodeCreateCallback callback) const;
 	void authCodeLogin(const std::optional<AuthCodeLoginArgs>& args, AuthCodeLoginCallback callback) const;
@@ -16030,6 +16051,7 @@ public:
 	void listApiKeys(ListApiKeysCallback callback) const;
 	void networkBlockLocation(const std::optional<NetworkBlockLocationArgs>& args, NetworkBlockLocationCallback callback) const;
 	void networkCheck(const std::optional<NetworkCheckArgs>& network_check, NetworkCheckCallback callback) const;
+	std::string networkClientRegistrationEndpoint() const;
 	void networkCreate(const std::optional<NetworkCreateArgs>& network_create, NetworkCreateCallback callback) const;
 	void networkDelete(NetworkDeleteCallback callback) const;
 	void networkUnblockLocation(const std::optional<NetworkUnblockLocationArgs>& args, NetworkUnblockLocationCallback callback) const;
@@ -16900,6 +16922,7 @@ public:
 	explicit SubscriptionBalanceViewController(uint64_t h) : detail::Handle(h) {}
 	Sub addPurchaseConfirmationListener(PurchaseConfirmationListener listener) const;
 	Sub addSubscriptionBalanceChangeListener(SubscriptionBalanceChangeListener listener) const;
+	Sub addSubscriptionBalanceFetchErrorListener(SubscriptionBalanceFetchErrorListener listener) const;
 	Sub addSubscriptionJwtOutOfSyncListener(SubscriptionJwtOutOfSyncListener listener) const;
 	void clearPurchaseConfirmation() const;
 	void close() const;
@@ -16913,9 +16936,12 @@ public:
 	bool getIsGuest() const;
 	bool getIsLoaded() const;
 	bool getIsPro() const;
+	std::string getLastFetchError() const;
 	int64_t getPendingByteCount() const;
+	std::string getPurchaseConfirmationGiveUpReason() const;
 	std::string getPurchaseConfirmationState() const;
 	int64_t getStartBalanceByteCount() const;
+	std::optional<SubscriptionBalanceResult> getSubscriptionBalanceResult() const;
 	std::optional<SubscriptionList> getSubscriptions() const;
 	int64_t getUsedBalanceByteCount() const;
 	void jwtRefreshed() const;
@@ -16924,6 +16950,7 @@ public:
 	void setConfirmationBudgetMillis(int64_t millis) const;
 	void setConfirmationPollIntervalMillis(int64_t millis) const;
 	void setForeground(bool foreground) const;
+	void setStorefrontCountry(const std::string& storefront_country) const;
 	void start() const;
 	void startPurchaseConfirmation() const;
 	void stop() const;
@@ -17895,6 +17922,34 @@ inline void oneshot_client_events_send(void* user_data, const char* result_json,
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_client_refresh_integrity(void* user_data, const char* notice_json) {
+	auto* f = static_cast<ClientRefreshIntegrityListener*>(user_data);
+	try {
+		std::optional<ClientRefreshIntegrityNotice> notice_v;
+		if (notice_json) {
+			notice_v = parseJson<ClientRefreshIntegrityNotice>(notice_json);
+		}
+		(*f)(std::move(notice_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_client_refresh_integrity(void* user_data, const char* notice_json) {
+	auto* f = static_cast<ClientRefreshIntegrityListener*>(user_data);
+	try {
+		std::optional<ClientRefreshIntegrityNotice> notice_v;
+		if (notice_json) {
+			notice_v = parseJson<ClientRefreshIntegrityNotice>(notice_json);
+		}
+		(*f)(std::move(notice_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -21695,6 +21750,26 @@ inline void oneshot_subscription_balance_change(void* user_data) {
 	delete f;
 }
 
+inline void retained_subscription_balance_fetch_error(void* user_data, const char* p0) {
+	auto* f = static_cast<SubscriptionBalanceFetchErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_subscription_balance_fetch_error(void* user_data, const char* p0) {
+	auto* f = static_cast<SubscriptionBalanceFetchErrorListener*>(user_data);
+	try {
+		(*f)(std::string(p0 ? p0 : ""));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_subscription_create_payment_id(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SubscriptionCreatePaymentIdCallback*>(user_data);
 	try {
@@ -23573,6 +23648,17 @@ inline Sub Api::addAuthLogoutListener(AuthLogoutListener listener) const {
 	}
 	return r;
 }
+inline Sub Api::addClientRefreshIntegrityListener(ClientRefreshIntegrityListener listener) const {
+	std::shared_ptr<ClientRefreshIntegrityListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ClientRefreshIntegrityListener>(std::move(listener));
+	}
+	Sub r(urnet_api_add_client_refresh_integrity_listener(handle(), listener_fn ? &detail::retained_client_refresh_integrity : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Api::addJwtRefreshListener(JwtRefreshListener listener) const {
 	std::shared_ptr<JwtRefreshListener> listener_fn;
 	if (listener) {
@@ -23976,6 +24062,14 @@ inline void Api::networkCheck(const std::optional<NetworkCheckArgs>& network_che
 	}
 	auto* callback_fn = callback ? new NetworkCheckCallback(std::move(callback)) : nullptr;
 	urnet_api_network_check(handle(), network_check_c, callback_fn ? &detail::oneshot_network_check : nullptr, callback_fn);
+}
+inline std::string Api::networkClientRegistrationEndpoint() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_network_client_registration_endpoint(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
 }
 inline void Api::networkCreate(const std::optional<NetworkCreateArgs>& network_create, NetworkCreateCallback callback) const {
 	std::string network_create_json;
@@ -27873,6 +27967,17 @@ inline Sub SubscriptionBalanceViewController::addSubscriptionBalanceChangeListen
 	}
 	return r;
 }
+inline Sub SubscriptionBalanceViewController::addSubscriptionBalanceFetchErrorListener(SubscriptionBalanceFetchErrorListener listener) const {
+	std::shared_ptr<SubscriptionBalanceFetchErrorListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<SubscriptionBalanceFetchErrorListener>(std::move(listener));
+	}
+	Sub r(urnet_subscription_balance_view_controller_add_subscription_balance_fetch_error_listener(handle(), listener_fn ? &detail::retained_subscription_balance_fetch_error : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub SubscriptionBalanceViewController::addSubscriptionJwtOutOfSyncListener(SubscriptionJwtOutOfSyncListener listener) const {
 	std::shared_ptr<SubscriptionJwtOutOfSyncListener> listener_fn;
 	if (listener) {
@@ -27934,9 +28039,17 @@ inline bool SubscriptionBalanceViewController::getIsPro() const {
 	bool r = urnet_subscription_balance_view_controller_get_is_pro(handle());
 	return r;
 }
+inline std::string SubscriptionBalanceViewController::getLastFetchError() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_last_fetch_error(handle());
+	return detail::takeString(r_c);
+}
 inline int64_t SubscriptionBalanceViewController::getPendingByteCount() const {
 	int64_t r = urnet_subscription_balance_view_controller_get_pending_byte_count(handle());
 	return r;
+}
+inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationGiveUpReason() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_purchase_confirmation_give_up_reason(handle());
+	return detail::takeString(r_c);
 }
 inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationState() const {
 	char* r_c = urnet_subscription_balance_view_controller_get_purchase_confirmation_state(handle());
@@ -27945,6 +28058,14 @@ inline std::string SubscriptionBalanceViewController::getPurchaseConfirmationSta
 inline int64_t SubscriptionBalanceViewController::getStartBalanceByteCount() const {
 	int64_t r = urnet_subscription_balance_view_controller_get_start_balance_byte_count(handle());
 	return r;
+}
+inline std::optional<SubscriptionBalanceResult> SubscriptionBalanceViewController::getSubscriptionBalanceResult() const {
+	char* r_c = urnet_subscription_balance_view_controller_get_subscription_balance_result(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SubscriptionBalanceResult>(r_s->c_str());
 }
 inline std::optional<SubscriptionList> SubscriptionBalanceViewController::getSubscriptions() const {
 	char* r_c = urnet_subscription_balance_view_controller_get_subscriptions(handle());
@@ -27975,6 +28096,9 @@ inline void SubscriptionBalanceViewController::setConfirmationPollIntervalMillis
 }
 inline void SubscriptionBalanceViewController::setForeground(bool foreground) const {
 	urnet_subscription_balance_view_controller_set_foreground(handle(), foreground);
+}
+inline void SubscriptionBalanceViewController::setStorefrontCountry(const std::string& storefront_country) const {
+	urnet_subscription_balance_view_controller_set_storefront_country(handle(), storefront_country.c_str());
 }
 inline void SubscriptionBalanceViewController::start() const {
 	urnet_subscription_balance_view_controller_start(handle());

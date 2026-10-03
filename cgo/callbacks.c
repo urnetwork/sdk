@@ -125,6 +125,10 @@ void urnet_invoke_client_events_send(urnet_client_events_send_cb cb, void* user_
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_client_refresh_integrity(urnet_client_refresh_integrity_cb cb, void* user_data, const char* notice_json) {
+	cb(user_data, notice_json);
+}
+
 void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success) {
 	cb(user_data, success);
 }
@@ -655,6 +659,10 @@ void urnet_invoke_subscription_balance(urnet_subscription_balance_cb cb, void* u
 
 void urnet_invoke_subscription_balance_change(urnet_subscription_balance_change_cb cb, void* user_data) {
 	cb(user_data);
+}
+
+void urnet_invoke_subscription_balance_fetch_error(urnet_subscription_balance_fetch_error_cb cb, void* user_data, const char* p0) {
+	cb(user_data, p0);
 }
 
 void urnet_invoke_subscription_create_payment_id(urnet_subscription_create_payment_id_cb cb, void* user_data, const char* result_json, const char* err_param) {

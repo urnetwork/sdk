@@ -67,6 +67,8 @@ typedef void (*urnet_claim_network_name_cb)(void* user_data, const char* result_
 void urnet_invoke_claim_network_name(urnet_claim_network_name_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_client_events_send(urnet_client_events_send_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, const char* notice_json);
+void urnet_invoke_client_refresh_integrity(urnet_client_refresh_integrity_cb cb, void* user_data, const char* notice_json);
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success);
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
@@ -333,6 +335,8 @@ typedef void (*urnet_subscription_balance_cb)(void* user_data, const char* resul
 void urnet_invoke_subscription_balance(urnet_subscription_balance_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_subscription_balance_change_cb)(void* user_data);
 void urnet_invoke_subscription_balance_change(urnet_subscription_balance_change_cb cb, void* user_data);
+typedef void (*urnet_subscription_balance_fetch_error_cb)(void* user_data, const char* p0);
+void urnet_invoke_subscription_balance_fetch_error(urnet_subscription_balance_fetch_error_cb cb, void* user_data, const char* p0);
 typedef void (*urnet_subscription_create_payment_id_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_subscription_create_payment_id(urnet_subscription_create_payment_id_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_subscription_jwt_out_of_sync_cb)(void* user_data, bool server_is_pro);
