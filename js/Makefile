@@ -27,6 +27,14 @@ check_openapi:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	go run gen_openapi.go -spec "$(OPENAPI_SPEC)" -check;
 
+# Tests consume the committed output; they must not repair source drift while
+# another source-pinned SDK/MAIN lane is validating the same checkout.
+check_types:
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	go run gen_types.go -check;
+
+check_generated: check_openapi check_types
+
 # Build the WASM binary and the Go JS runtime support file.
 #
 # wasm_exec.js is ABI-paired with the Go toolchain that compiled the wasm, so
@@ -79,13 +87,20 @@ build: generate_types build_bundle
 	npm ci && \
 	npm run build;
 
-.PHONY: package check-package smoke publish generate_types generate_openapi check_openapi
+# Keep the developer build's explicit generation behavior. The smoke path
+# checks first, then builds only untracked artifacts from the committed inputs.
+build_checked: check_generated
+	$(MAKE) build_bundle
+	npm ci && \
+	npm run build;
+
+.PHONY: package check-package smoke publish generate_types generate_openapi check_openapi check_types check_generated build_checked
 package: build
 	go -C ../packaging run . npm package
 check-package:
 	npm test
 	go -C ../packaging run . npm check
-smoke: build
+smoke: build_checked
 	node --test test/smoke.test.ts
 publish:
 	go -C ../packaging run . publish npm

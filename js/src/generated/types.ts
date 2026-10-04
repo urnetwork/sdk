@@ -426,6 +426,12 @@ export interface AuthVerifyResultNetwork {
   by_jwt: string;
 }
 
+export interface AuthVerifySendError {
+  code: string;
+  message: string;
+  retry_after_seconds?: number;
+}
+
 export interface AuthCodeLoginArgs {
   auth_code: string;
 }
