@@ -32,6 +32,13 @@ jobs:
       - name: Check out goidenticons dependency
         run: git clone --depth 1 https://github.com/urnetwork/goidenticons.git ../goidenticons
 
+      # This go.mod and connect's both have `replace gvisor.dev/gvisor => ../gvisor`:
+      # urnetwork's fork of gvisor, on its `go` branch, beside connect and this
+      # checkout alike. Without it the build stops at "replacement directory
+      # ../gvisor does not exist".
+      - name: Check out gvisor dependency
+        run: git clone --depth 1 --branch go https://github.com/urnetwork/gvisor.git ../gvisor
+
       # Read only by TestSdkApiUrlsMatchServerRoutes, which checks every api url
       # the sdk builds against the server's route table (api/api.go) and fails
       # under CI when the checkout is missing. Only api/ is checked out.
