@@ -148,6 +148,7 @@ EXPORTS
 	urnet_block_action_view_controller_stop
 	urnet_build_checkout_bridge_url
 	urnet_build_checkout_bridge_url_with_redirect
+	urnet_build_inline_checkout_bridge_url
 	urnet_build_solana_payment_url
 	urnet_classify_balance_code_redeem
 	urnet_classify_subscription_store

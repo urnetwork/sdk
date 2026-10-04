@@ -1769,6 +1769,7 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 double urnet_alpha_from_rao(int64_t rao);
 char* urnet_build_checkout_bridge_url(const char* client_secret);
 char* urnet_build_checkout_bridge_url_with_redirect(const char* client_secret, const char* redirect_link);
+char* urnet_build_inline_checkout_bridge_url(const char* client_secret);
 char* urnet_build_solana_payment_url(const char* args_json, char** out_error);
 char* urnet_classify_balance_code_redeem(const char* result_json, const char* redeemed_codes_json, const char* secret);
 char* urnet_classify_subscription_store(const char* store);
