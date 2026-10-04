@@ -91,6 +91,43 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_INVALID "invalid"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
+#define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
+#define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/wallet-connect"
+#define URNET_BITTENSOR_WALLET_DAPP_NAME "URnetwork"
+#define URNET_BITTENSOR_WALLET_ERROR_ADDRESS_MISMATCH "address_mismatch"
+#define URNET_BITTENSOR_WALLET_ERROR_EXPIRED "challenge_expired"
+#define URNET_BITTENSOR_WALLET_ERROR_INVALID_ADDRESS "invalid_ss58_address"
+#define URNET_BITTENSOR_WALLET_ERROR_INVALID_CHALLENGE "invalid_challenge"
+#define URNET_BITTENSOR_WALLET_ERROR_INVALID_SIGNATURE "invalid_signature"
+#define URNET_BITTENSOR_WALLET_ERROR_MESSAGE_MISMATCH "message_mismatch"
+#define URNET_BITTENSOR_WALLET_ERROR_NOT_AWAITING "not_awaiting_wallet"
+#define URNET_BITTENSOR_WALLET_ERROR_NOT_RETURN "not_bittensor_return"
+#define URNET_BITTENSOR_WALLET_ERROR_NO_CHALLENGE "no_challenge"
+#define URNET_BITTENSOR_WALLET_ERROR_PURPOSE_MISMATCH "purpose_mismatch"
+#define URNET_BITTENSOR_WALLET_ERROR_UNSUPPORTED_PLATFORM "unsupported_platform"
+#define URNET_BITTENSOR_WALLET_ERROR_UNSUPPORTED_WALLET "unsupported_wallet"
+#define URNET_BITTENSOR_WALLET_ERROR_WALLET "wallet_error"
+#define URNET_BITTENSOR_WALLET_ERROR_WRONG_TRANSPORT "wrong_transport"
+#define URNET_BITTENSOR_WALLET_PLATFORM_ANDROID "android"
+#define URNET_BITTENSOR_WALLET_PLATFORM_IOS "ios"
+#define URNET_BITTENSOR_WALLET_PLATFORM_LINUX "linux"
+#define URNET_BITTENSOR_WALLET_PLATFORM_MACOS "macos"
+#define URNET_BITTENSOR_WALLET_PLATFORM_WEB "web"
+#define URNET_BITTENSOR_WALLET_PLATFORM_WINDOWS "windows"
+#define URNET_BITTENSOR_WALLET_PURPOSE_CONNECT "connect"
+#define URNET_BITTENSOR_WALLET_PURPOSE_CREATE "create"
+#define URNET_BITTENSOR_WALLET_PURPOSE_LOGIN "login"
+#define URNET_BITTENSOR_WALLET_STATE_AWAITING_WALLET "awaiting_wallet"
+#define URNET_BITTENSOR_WALLET_STATE_CANCELLED "cancelled"
+#define URNET_BITTENSOR_WALLET_STATE_CHALLENGE "challenge"
+#define URNET_BITTENSOR_WALLET_STATE_FAILED "failed"
+#define URNET_BITTENSOR_WALLET_STATE_IDLE "idle"
+#define URNET_BITTENSOR_WALLET_STATE_SIGNED "signed"
+#define URNET_BITTENSOR_WALLET_TALISMAN "talisman"
+#define URNET_BITTENSOR_WALLET_TAO_COM "taocom"
+#define URNET_BITTENSOR_WALLET_TRANSPORT_BROWSER_BRIDGE "browser_bridge"
+#define URNET_BITTENSOR_WALLET_TRANSPORT_EXTENSION "extension"
+#define URNET_BITTENSOR_WALLET_TRANSPORT_MANUAL "manual"
 #define URNET_BLOCK_ACTION_REASON_BLOCKER "blocker"
 #define URNET_BLOCK_ACTION_REASON_OVERRIDE "override"
 #define URNET_BLOCK_ACTION_REASON_SECURITY "security"
@@ -867,6 +904,26 @@ void urnet_async_local_state_logout(uint64_t self, urnet_commit_cb callback_comp
 void urnet_async_local_state_parse_by_jwt(uint64_t self, urnet_parse_by_jwt_cb callback_result, void* callback_user_data);
 void urnet_async_local_state_set_by_client_jwt(uint64_t self, const char* by_client_jwt, urnet_commit_cb callback_complete, void* callback_user_data);
 void urnet_async_local_state_set_by_jwt(uint64_t self, const char* by_jwt, urnet_commit_cb callback_complete, void* callback_user_data);
+
+/* ----- BittensorWalletSession ----- */
+
+char* urnet_bittensor_wallet_session_bridge_url(uint64_t self, char** out_error);
+void urnet_bittensor_wallet_session_cancel(uint64_t self);
+char* urnet_bittensor_wallet_session_challenge_args(uint64_t self, const char* expected_address);
+char* urnet_bittensor_wallet_session_error_code(uint64_t self);
+int64_t urnet_bittensor_wallet_session_expires_at_millis(uint64_t self);
+char* urnet_bittensor_wallet_session_handle_bridge_return(uint64_t self, const char* uri, int64_t now_millis);
+char* urnet_bittensor_wallet_session_handle_signature(uint64_t self, const char* address, const char* signature, int64_t now_millis);
+bool urnet_bittensor_wallet_session_is_return(uint64_t self, const char* uri);
+char* urnet_bittensor_wallet_session_message(uint64_t self);
+char* urnet_bittensor_wallet_session_platform(uint64_t self);
+char* urnet_bittensor_wallet_session_proof(uint64_t self);
+char* urnet_bittensor_wallet_session_purpose(uint64_t self);
+bool urnet_bittensor_wallet_session_set_challenge(uint64_t self, const char* result_json, int64_t now_millis, char** out_error);
+char* urnet_bittensor_wallet_session_sign_request(uint64_t self, char** out_error);
+char* urnet_bittensor_wallet_session_state(uint64_t self);
+char* urnet_bittensor_wallet_session_transport(uint64_t self);
+char* urnet_bittensor_wallet_session_wallet_id(uint64_t self);
 
 /* ----- BlockActionViewController ----- */
 
@@ -1767,6 +1824,11 @@ bool urnet_websocket_device_rpc_listener_close(uint64_t self, char** out_error);
 /* ----- functions ----- */
 
 double urnet_alpha_from_rao(int64_t rao);
+char* urnet_bittensor_sign_raw_data(const char* message);
+char* urnet_bittensor_wallet_display_name(const char* wallet_id);
+char* urnet_bittensor_wallet_id_list(void);
+char* urnet_bittensor_wallet_injected_name(const char* wallet_id);
+char* urnet_bittensor_wallet_transport_for(const char* wallet_id, const char* platform);
 char* urnet_build_checkout_bridge_url(const char* client_secret);
 char* urnet_build_checkout_bridge_url_with_redirect(const char* client_secret, const char* redirect_link);
 char* urnet_build_solana_payment_url(const char* args_json, char** out_error);
@@ -1841,6 +1903,7 @@ double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_
 double urnet_nano_cents_to_usd(int64_t nano_cents);
 double urnet_nano_points_to_points(int64_t nano_points);
 uint64_t urnet_new_async_local_state(const char* local_storage_home);
+uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
 char* urnet_new_connect_first_event(void);
 uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, char** out_error);
@@ -1881,7 +1944,10 @@ char* urnet_new_wallet_circle_transfer_out_args(const char* to_address, int64_t 
 char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_normal_extender_gossip_mode(const char* mode);
+char* urnet_normalize_bittensor_signature(const char* signature);
 char* urnet_order_connected_provider_locations(const char* locations_json);
+char* urnet_parse_bittensor_challenge_message(const char* message, char** out_error);
+char* urnet_parse_bittensor_wallet_return(const char* uri, const char* redirect_link, char** out_error);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
@@ -2211,6 +2277,44 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   expires_in?: number
  *   message_template?: string
  *   error?: ApiError | null
+ */
+
+/* BittensorChallengeMessage (json):
+ *   Challenge: string
+ *   Timestamp: number
+ */
+
+/* BittensorSignRequest (json):
+ *   WalletId: string
+ *   InjectedName: string
+ *   DappName: string
+ *   Address: string
+ *   Data: string
+ *   Type: string
+ */
+
+/* BittensorWalletProof (json):
+ *   WalletId: string
+ *   Purpose: string
+ *   Address: string
+ *   Message: string
+ *   Signature: string
+ */
+
+/* BittensorWalletResult (json):
+ *   Proof: BittensorWalletProof | null
+ *   ErrorCode: string
+ *   ErrorMessage: string
+ */
+
+/* BittensorWalletReturn (json):
+ *   Address: string
+ *   Signature: string
+ *   Message: string
+ *   Purpose: string
+ *   WalletId: string
+ *   ErrorCode: string
+ *   ErrorMessage: string
  */
 
 /* BlockAction (json):
