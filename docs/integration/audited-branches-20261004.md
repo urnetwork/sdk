@@ -14,3 +14,9 @@ mobile build or change the current dependency graph.
   replacement experiment and unconditional stdout redirection are superseded
   by the current dependency and platform implementations. The three merge
   conflicts are resolved to those current implementations, not the old experiment.
+- `device-remote-fixes` (`3cf843d7`): stable patch ID
+  `56f2b105292c7d2bb8fa8ce0f83ef691ae084bb3` exactly equals Main ancestor
+  `86024736`. Retain current RPC ownership, current tests and current build
+  layout when the old patch conflicts; no duplicate older implementation.
+- `fix/locations-request-lifecycle` and `fix/picker-contract-status-rpc-lock`:
+  all nonmerge patches are already equivalent on Main; merge ancestry only.
