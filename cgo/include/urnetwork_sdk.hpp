@@ -152,6 +152,43 @@ inline constexpr const char* BalanceCodeRedeemOutcomeAlreadyRedeemed = "already_
 inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
 inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
+inline constexpr const char* BittensorTalismanInjectedName = "talisman";
+inline constexpr const char* BittensorWalletBridgeUrl = "https://ur.io/bittensor-connect";
+inline constexpr const char* BittensorWalletDappName = "URnetwork";
+inline constexpr const char* BittensorWalletErrorAddressMismatch = "address_mismatch";
+inline constexpr const char* BittensorWalletErrorExpired = "challenge_expired";
+inline constexpr const char* BittensorWalletErrorInvalidAddress = "invalid_ss58_address";
+inline constexpr const char* BittensorWalletErrorInvalidChallenge = "invalid_challenge";
+inline constexpr const char* BittensorWalletErrorInvalidSignature = "invalid_signature";
+inline constexpr const char* BittensorWalletErrorMessageMismatch = "message_mismatch";
+inline constexpr const char* BittensorWalletErrorNoChallenge = "no_challenge";
+inline constexpr const char* BittensorWalletErrorNotAwaiting = "not_awaiting_wallet";
+inline constexpr const char* BittensorWalletErrorNotReturn = "not_bittensor_return";
+inline constexpr const char* BittensorWalletErrorPurposeMismatch = "purpose_mismatch";
+inline constexpr const char* BittensorWalletErrorUnsupportedPlatform = "unsupported_platform";
+inline constexpr const char* BittensorWalletErrorUnsupportedWallet = "unsupported_wallet";
+inline constexpr const char* BittensorWalletErrorWallet = "wallet_error";
+inline constexpr const char* BittensorWalletErrorWrongTransport = "wrong_transport";
+inline constexpr const char* BittensorWalletPlatformAndroid = "android";
+inline constexpr const char* BittensorWalletPlatformIos = "ios";
+inline constexpr const char* BittensorWalletPlatformLinux = "linux";
+inline constexpr const char* BittensorWalletPlatformMacos = "macos";
+inline constexpr const char* BittensorWalletPlatformWeb = "web";
+inline constexpr const char* BittensorWalletPlatformWindows = "windows";
+inline constexpr const char* BittensorWalletPurposeConnect = "connect";
+inline constexpr const char* BittensorWalletPurposeCreate = "create";
+inline constexpr const char* BittensorWalletPurposeLogin = "login";
+inline constexpr const char* BittensorWalletStateAwaitingWallet = "awaiting_wallet";
+inline constexpr const char* BittensorWalletStateCancelled = "cancelled";
+inline constexpr const char* BittensorWalletStateChallenge = "challenge";
+inline constexpr const char* BittensorWalletStateFailed = "failed";
+inline constexpr const char* BittensorWalletStateIdle = "idle";
+inline constexpr const char* BittensorWalletStateSigned = "signed";
+inline constexpr const char* BittensorWalletTalisman = "talisman";
+inline constexpr const char* BittensorWalletTaoCom = "taocom";
+inline constexpr const char* BittensorWalletTransportBrowserBridge = "browser_bridge";
+inline constexpr const char* BittensorWalletTransportExtension = "extension";
+inline constexpr const char* BittensorWalletTransportManual = "manual";
 inline constexpr const char* BlockActionReasonBlocker = "blocker";
 inline constexpr const char* BlockActionReasonOverride = "override";
 inline constexpr const char* BlockActionReasonSecurity = "security";
@@ -414,6 +451,7 @@ class AccountPreferencesViewController;
 class AccountViewController;
 class Api;
 class AsyncLocalState;
+class BittensorWalletSession;
 class BlockActionViewController;
 class ClientEventQueue;
 class ClientRefreshIntegrityNotice;
@@ -512,6 +550,11 @@ struct AuthVerifySendArgs;
 struct AuthVerifySendResult;
 struct AuthWalletChallengeArgs;
 struct AuthWalletChallengeResult;
+struct BittensorChallengeMessage;
+struct BittensorSignRequest;
+struct BittensorWalletProof;
+struct BittensorWalletResult;
+struct BittensorWalletReturn;
 struct BlockOverride;
 struct RouteOverride;
 struct BlockAction;
@@ -1221,6 +1264,44 @@ struct AuthWalletChallengeResult {
 	std::optional<int64_t> expires_in;
 	std::optional<std::string> message_template;
 	std::optional<ApiError> error;
+};
+
+struct BittensorChallengeMessage {
+	std::string Challenge{};
+	int64_t Timestamp{};
+};
+
+struct BittensorSignRequest {
+	std::string WalletId{};
+	std::string InjectedName{};
+	std::string DappName{};
+	std::string Address{};
+	std::string Data{};
+	std::string Type{};
+};
+
+struct BittensorWalletProof {
+	std::string WalletId{};
+	std::string Purpose{};
+	std::string Address{};
+	std::string Message{};
+	std::string Signature{};
+};
+
+struct BittensorWalletResult {
+	std::optional<BittensorWalletProof> Proof;
+	std::string ErrorCode{};
+	std::string ErrorMessage{};
+};
+
+struct BittensorWalletReturn {
+	std::string Address{};
+	std::string Signature{};
+	std::string Message{};
+	std::string Purpose{};
+	std::string WalletId{};
+	std::string ErrorCode{};
+	std::string ErrorMessage{};
 };
 
 struct BlockOverride {
@@ -3509,6 +3590,16 @@ inline void to_json(nlohmann::json& j, const AuthWalletChallengeArgs& v);
 inline void from_json(const nlohmann::json& j, AuthWalletChallengeArgs& v);
 inline void to_json(nlohmann::json& j, const AuthWalletChallengeResult& v);
 inline void from_json(const nlohmann::json& j, AuthWalletChallengeResult& v);
+inline void to_json(nlohmann::json& j, const BittensorChallengeMessage& v);
+inline void from_json(const nlohmann::json& j, BittensorChallengeMessage& v);
+inline void to_json(nlohmann::json& j, const BittensorSignRequest& v);
+inline void from_json(const nlohmann::json& j, BittensorSignRequest& v);
+inline void to_json(nlohmann::json& j, const BittensorWalletProof& v);
+inline void from_json(const nlohmann::json& j, BittensorWalletProof& v);
+inline void to_json(nlohmann::json& j, const BittensorWalletResult& v);
+inline void from_json(const nlohmann::json& j, BittensorWalletResult& v);
+inline void to_json(nlohmann::json& j, const BittensorWalletReturn& v);
+inline void from_json(const nlohmann::json& j, BittensorWalletReturn& v);
 inline void to_json(nlohmann::json& j, const BlockOverride& v);
 inline void from_json(const nlohmann::json& j, BlockOverride& v);
 inline void to_json(nlohmann::json& j, const RouteOverride& v);
@@ -5965,6 +6056,147 @@ inline void from_json(const nlohmann::json& j, AuthWalletChallengeResult& v) {
 		ApiError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorChallengeMessage& v) {
+	j = nlohmann::json::object();
+	j["Challenge"] = v.Challenge;
+	j["Timestamp"] = v.Timestamp;
+}
+inline void from_json(const nlohmann::json& j, BittensorChallengeMessage& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Challenge"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Challenge);
+	}
+	if (auto it = j.find("Timestamp"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Timestamp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorSignRequest& v) {
+	j = nlohmann::json::object();
+	j["WalletId"] = v.WalletId;
+	j["InjectedName"] = v.InjectedName;
+	j["DappName"] = v.DappName;
+	j["Address"] = v.Address;
+	j["Data"] = v.Data;
+	j["Type"] = v.Type;
+}
+inline void from_json(const nlohmann::json& j, BittensorSignRequest& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("WalletId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WalletId);
+	}
+	if (auto it = j.find("InjectedName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.InjectedName);
+	}
+	if (auto it = j.find("DappName"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DappName);
+	}
+	if (auto it = j.find("Address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Address);
+	}
+	if (auto it = j.find("Data"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Data);
+	}
+	if (auto it = j.find("Type"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Type);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorWalletProof& v) {
+	j = nlohmann::json::object();
+	j["WalletId"] = v.WalletId;
+	j["Purpose"] = v.Purpose;
+	j["Address"] = v.Address;
+	j["Message"] = v.Message;
+	j["Signature"] = v.Signature;
+}
+inline void from_json(const nlohmann::json& j, BittensorWalletProof& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("WalletId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WalletId);
+	}
+	if (auto it = j.find("Purpose"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Purpose);
+	}
+	if (auto it = j.find("Address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Address);
+	}
+	if (auto it = j.find("Message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Message);
+	}
+	if (auto it = j.find("Signature"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Signature);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorWalletResult& v) {
+	j = nlohmann::json::object();
+	if (v.Proof) {
+		j["Proof"] = *v.Proof;
+	}
+	j["ErrorCode"] = v.ErrorCode;
+	j["ErrorMessage"] = v.ErrorMessage;
+}
+inline void from_json(const nlohmann::json& j, BittensorWalletResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Proof"); it != j.end() && !it->is_null()) {
+		BittensorWalletProof tmp{};
+		it->get_to(tmp);
+		v.Proof = std::move(tmp);
+	}
+	if (auto it = j.find("ErrorCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorCode);
+	}
+	if (auto it = j.find("ErrorMessage"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorMessage);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const BittensorWalletReturn& v) {
+	j = nlohmann::json::object();
+	j["Address"] = v.Address;
+	j["Signature"] = v.Signature;
+	j["Message"] = v.Message;
+	j["Purpose"] = v.Purpose;
+	j["WalletId"] = v.WalletId;
+	j["ErrorCode"] = v.ErrorCode;
+	j["ErrorMessage"] = v.ErrorMessage;
+}
+inline void from_json(const nlohmann::json& j, BittensorWalletReturn& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Address);
+	}
+	if (auto it = j.find("Signature"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Signature);
+	}
+	if (auto it = j.find("Message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Message);
+	}
+	if (auto it = j.find("Purpose"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Purpose);
+	}
+	if (auto it = j.find("WalletId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.WalletId);
+	}
+	if (auto it = j.find("ErrorCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorCode);
+	}
+	if (auto it = j.find("ErrorMessage"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ErrorMessage);
 	}
 }
 
@@ -16299,6 +16531,29 @@ public:
 	void setByJwt(const std::string& by_jwt, CommitCallback callback) const;
 };
 
+class BittensorWalletSession final : public detail::Handle {
+public:
+	BittensorWalletSession() = default;
+	explicit BittensorWalletSession(uint64_t h) : detail::Handle(h) {}
+	std::string bridgeUrl() const;
+	void cancel() const;
+	std::optional<AuthWalletChallengeArgs> challengeArgs(const std::string& expected_address) const;
+	std::string errorCode() const;
+	int64_t expiresAtMillis() const;
+	std::optional<BittensorWalletResult> handleBridgeReturn(const std::string& uri, int64_t now_millis) const;
+	std::optional<BittensorWalletResult> handleSignature(const std::string& address, const std::string& signature, int64_t now_millis) const;
+	bool isReturn(const std::string& uri) const;
+	std::string message() const;
+	std::string platform() const;
+	std::optional<BittensorWalletProof> proof() const;
+	std::string purpose() const;
+	void setChallenge(const std::optional<AuthWalletChallengeResult>& result, int64_t now_millis) const;
+	std::optional<BittensorSignRequest> signRequest() const;
+	std::string state() const;
+	std::string transport() const;
+	std::string walletId() const;
+};
+
 class BlockActionViewController final : public detail::Handle {
 public:
 	BlockActionViewController() = default;
@@ -24815,6 +25070,113 @@ inline void AsyncLocalState::setByJwt(const std::string& by_jwt, CommitCallback 
 	auto* callback_fn = callback ? new CommitCallback(std::move(callback)) : nullptr;
 	urnet_async_local_state_set_by_jwt(handle(), by_jwt.c_str(), callback_fn ? &detail::oneshot_commit : nullptr, callback_fn);
 }
+inline std::string BittensorWalletSession::bridgeUrl() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_bittensor_wallet_session_bridge_url(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return detail::takeString(r_c);
+}
+inline void BittensorWalletSession::cancel() const {
+	urnet_bittensor_wallet_session_cancel(handle());
+}
+inline std::optional<AuthWalletChallengeArgs> BittensorWalletSession::challengeArgs(const std::string& expected_address) const {
+	char* r_c = urnet_bittensor_wallet_session_challenge_args(handle(), expected_address.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<AuthWalletChallengeArgs>(r_s->c_str());
+}
+inline std::string BittensorWalletSession::errorCode() const {
+	char* r_c = urnet_bittensor_wallet_session_error_code(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t BittensorWalletSession::expiresAtMillis() const {
+	int64_t r = urnet_bittensor_wallet_session_expires_at_millis(handle());
+	return r;
+}
+inline std::optional<BittensorWalletResult> BittensorWalletSession::handleBridgeReturn(const std::string& uri, int64_t now_millis) const {
+	char* r_c = urnet_bittensor_wallet_session_handle_bridge_return(handle(), uri.c_str(), now_millis);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorWalletResult>(r_s->c_str());
+}
+inline std::optional<BittensorWalletResult> BittensorWalletSession::handleSignature(const std::string& address, const std::string& signature, int64_t now_millis) const {
+	char* r_c = urnet_bittensor_wallet_session_handle_signature(handle(), address.c_str(), signature.c_str(), now_millis);
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorWalletResult>(r_s->c_str());
+}
+inline bool BittensorWalletSession::isReturn(const std::string& uri) const {
+	bool r = urnet_bittensor_wallet_session_is_return(handle(), uri.c_str());
+	return r;
+}
+inline std::string BittensorWalletSession::message() const {
+	char* r_c = urnet_bittensor_wallet_session_message(handle());
+	return detail::takeString(r_c);
+}
+inline std::string BittensorWalletSession::platform() const {
+	char* r_c = urnet_bittensor_wallet_session_platform(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<BittensorWalletProof> BittensorWalletSession::proof() const {
+	char* r_c = urnet_bittensor_wallet_session_proof(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorWalletProof>(r_s->c_str());
+}
+inline std::string BittensorWalletSession::purpose() const {
+	char* r_c = urnet_bittensor_wallet_session_purpose(handle());
+	return detail::takeString(r_c);
+}
+inline void BittensorWalletSession::setChallenge(const std::optional<AuthWalletChallengeResult>& result, int64_t now_millis) const {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_bittensor_wallet_session_set_challenge(handle(), result_c, now_millis, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_bittensor_wallet_session_set_challenge failed");
+	}
+}
+inline std::optional<BittensorSignRequest> BittensorWalletSession::signRequest() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_bittensor_wallet_session_sign_request(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorSignRequest>(r_s->c_str());
+}
+inline std::string BittensorWalletSession::state() const {
+	char* r_c = urnet_bittensor_wallet_session_state(handle());
+	return detail::takeString(r_c);
+}
+inline std::string BittensorWalletSession::transport() const {
+	char* r_c = urnet_bittensor_wallet_session_transport(handle());
+	return detail::takeString(r_c);
+}
+inline std::string BittensorWalletSession::walletId() const {
+	char* r_c = urnet_bittensor_wallet_session_wallet_id(handle());
+	return detail::takeString(r_c);
+}
 inline Sub BlockActionViewController::addBlockActionStatsListener(BlockActionStatsListener listener) const {
 	std::shared_ptr<BlockActionStatsListener> listener_fn;
 	if (listener) {
@@ -28574,6 +28936,30 @@ inline double alphaFromRao(int64_t rao) {
 	double r = urnet_alpha_from_rao(rao);
 	return r;
 }
+inline std::string bittensorSignRawData(const std::string& message) {
+	char* r_c = urnet_bittensor_sign_raw_data(message.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string bittensorWalletDisplayName(const std::string& wallet_id) {
+	char* r_c = urnet_bittensor_wallet_display_name(wallet_id.c_str());
+	return detail::takeString(r_c);
+}
+inline std::optional<StringList> bittensorWalletIdList() {
+	char* r_c = urnet_bittensor_wallet_id_list();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::string bittensorWalletInjectedName(const std::string& wallet_id) {
+	char* r_c = urnet_bittensor_wallet_injected_name(wallet_id.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string bittensorWalletTransportFor(const std::string& wallet_id, const std::string& platform) {
+	char* r_c = urnet_bittensor_wallet_transport_for(wallet_id.c_str(), platform.c_str());
+	return detail::takeString(r_c);
+}
 inline std::string buildCheckoutBridgeUrl(const std::string& client_secret) {
 	char* r_c = urnet_build_checkout_bridge_url(client_secret.c_str());
 	return detail::takeString(r_c);
@@ -29115,6 +29501,14 @@ inline AsyncLocalState newAsyncLocalState(const std::string& local_storage_home)
 	AsyncLocalState r(urnet_new_async_local_state(local_storage_home.c_str()));
 	return r;
 }
+inline BittensorWalletSession newBittensorWalletSession(const std::string& wallet_id, const std::string& platform, const std::string& purpose, const std::string& redirect_link) {
+	char* err_c = nullptr;
+	BittensorWalletSession r(urnet_new_bittensor_wallet_session(wallet_id.c_str(), platform.c_str(), purpose.c_str(), redirect_link.c_str(), &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
 inline ClientEventQueue newClientEventQueue(const NetworkSpace& network_space, const std::string& platform, const std::string& app_version, const std::string& locale) {
 	ClientEventQueue r(urnet_new_client_event_queue(network_space.handle(), platform.c_str(), app_version.c_str(), locale.c_str()));
 	return r;
@@ -29411,6 +29805,10 @@ inline std::string normalExtenderGossipMode(const std::string& mode) {
 	char* r_c = urnet_normal_extender_gossip_mode(mode.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string normalizeBittensorSignature(const std::string& signature) {
+	char* r_c = urnet_normalize_bittensor_signature(signature.c_str());
+	return detail::takeString(r_c);
+}
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
 	std::string locations_json;
 	const char* locations_c = nullptr;
@@ -29424,6 +29822,30 @@ inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocati
 		return std::nullopt;
 	}
 	return detail::parseJson<ConnectedProviderLocationList>(r_s->c_str());
+}
+inline std::optional<BittensorChallengeMessage> parseBittensorChallengeMessage(const std::string& message) {
+	char* err_c = nullptr;
+	char* r_c = urnet_parse_bittensor_challenge_message(message.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorChallengeMessage>(r_s->c_str());
+}
+inline std::optional<BittensorWalletReturn> parseBittensorWalletReturn(const std::string& uri, const std::string& redirect_link) {
+	char* err_c = nullptr;
+	char* r_c = urnet_parse_bittensor_wallet_return(uri.c_str(), redirect_link.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<BittensorWalletReturn>(r_s->c_str());
 }
 inline std::optional<CheckoutRedirect> parseCheckoutRedirect(const std::string& uri) {
 	char* err_c = nullptr;
