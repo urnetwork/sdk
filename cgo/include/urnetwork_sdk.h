@@ -92,7 +92,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
-#define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/wallet-connect"
+#define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/bittensor-connect"
 #define URNET_BITTENSOR_WALLET_DAPP_NAME "URnetwork"
 #define URNET_BITTENSOR_WALLET_ERROR_ADDRESS_MISMATCH "address_mismatch"
 #define URNET_BITTENSOR_WALLET_ERROR_EXPIRED "challenge_expired"
