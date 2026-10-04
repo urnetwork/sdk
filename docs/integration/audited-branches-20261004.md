@@ -20,3 +20,4 @@ mobile build or change the current dependency graph.
   layout when the old patch conflicts; no duplicate older implementation.
 - `fix/locations-request-lifecycle` and `fix/picker-contract-status-rpc-lock`:
   all nonmerge patches are already equivalent on Main; merge ancestry only.
+- `pro1` (`f85f79de`): build pin patch ID `1d13050262735f9f3955f2ec97815f37507f2cd5` equals Main ancestor `fbc66a2b1cd3aa55028632318a7622d8c832d0e4`; retain current build tooling and dependency versions.
