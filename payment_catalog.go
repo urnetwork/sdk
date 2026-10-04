@@ -52,8 +52,8 @@ const (
 // checkout_url only, embedded returns client_secret + publishable_key only.
 //
 // Current hardcode sites:
-//   - windows: app/src/App/BalanceSheets.cpp ("embedded" : "hosted")
-//   - linux: app/src/UpgradeSheet.cpp (kUiModeHosted/kUiModeEmbedded)
+//   - windows: app/src/App/CheckoutSessionMode.h (with redirect_on_completion)
+//   - linux: app/src/CheckoutSessionMode.hpp (with redirect_on_completion)
 //   - web: mmm/ur.io react/src/auth/api.js (ui_mode: "embedded")
 const (
 	StripeUiModeHosted   = "hosted"
@@ -63,7 +63,9 @@ const (
 // StripeRedirectOnCompletionNever keeps an EMBEDDED checkout fully inline:
 // Stripe fires the client's onComplete callback instead of redirecting, so the
 // page the customer is on never navigates. Only valid with ui_mode "embedded"
-// (StripeCreateCheckoutSessionArgs.RedirectOnCompletion).
+// (StripeCreateCheckoutSessionArgs.RedirectOnCompletion). The desktop apps
+// pair it with BuildInlineCheckoutBridgeUrl, which tells the bridge page to
+// hand control back from that callback.
 const StripeRedirectOnCompletionNever = "never"
 
 // ---- store classification ----------------------------------------------------
@@ -118,6 +120,15 @@ func ClassifySubscriptionStore(store string) string {
 //	done:  urnetwork://checkout?status=complete&session_id=cs_...
 //	error: urnetwork://checkout?errorCode=-1&errorMessage=...
 //
+// The done hand-back comes from one of two places, by how the session was
+// created:
+//   - redirect_on_completion "never" (BuildInlineCheckoutBridgeUrl): Stripe
+//     fires the bridge's onComplete callback and the page hands back in place,
+//     with no round trip through the server's return_url.
+//   - unset (BuildCheckoutBridgeUrl, older clients): Stripe redirects the
+//     webview to the server's return_url, which points back at the bridge
+//     with ?complete=1, and the bridge hands back from there.
+//
 // There is no cancel url: Stripe's embedded flow never leaves the page, so the
 // checkout chrome's own close control is the only way out.
 //
@@ -131,6 +142,9 @@ const (
 	CheckoutRedirectLink  = "urnetwork://checkout"
 	checkoutRedirectHost  = "checkout"
 	checkoutRedirectProto = "urnetwork"
+	// the bridge page query key that says the session completes through
+	// onComplete (mmm EmbeddedCheckout.jsx reads the same key)
+	checkoutBridgeRedirectOnCompletionKey = "redirect_on_completion"
 )
 
 // BuildCheckoutBridgeUrl builds the ur.io bridge page url for an embedded
@@ -151,6 +165,22 @@ func BuildCheckoutBridgeUrlWithRedirect(clientSecret string, redirectLink string
 		CheckoutBridgeUrl,
 		url.QueryEscape(clientSecret),
 		url.QueryEscape(redirectLink),
+	)
+}
+
+// BuildInlineCheckoutBridgeUrl builds the bridge page url for an embedded
+// session created with RedirectOnCompletion StripeRedirectOnCompletionNever.
+// Stripe never redirects such a session, so the bridge must hand control back
+// from Stripe's onComplete callback; the url carries
+// redirect_on_completion=never to say so. Pairing a "never" session with
+// BuildCheckoutBridgeUrl would leave the webview on a finished checkout with no
+// hand-back.
+func BuildInlineCheckoutBridgeUrl(clientSecret string) string {
+	return fmt.Sprintf(
+		"%s&%s=%s",
+		BuildCheckoutBridgeUrl(clientSecret),
+		checkoutBridgeRedirectOnCompletionKey,
+		url.QueryEscape(StripeRedirectOnCompletionNever),
 	)
 }
 

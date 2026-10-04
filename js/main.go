@@ -253,6 +253,7 @@ func main() {
 		return js.ValueOf(sdk.SuggestEmojiTag(int(int64Arg(args, 0))))
 	}))
 	registerSnExports()
+	registerBittensorWalletExports()
 
 	select {
 	case <-ctx.Done():
