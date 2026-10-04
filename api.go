@@ -3123,6 +3123,9 @@ type StripeCreateCheckoutSessionArgs struct {
 	// redirecting anywhere, so the page the customer is on never navigates.
 	// Only valid with ui_mode "embedded". Empty means the embedded flow
 	// redirects to the configured return_url, and hosted behaves as always.
+	// The desktop apps open a "never" session with
+	// BuildInlineCheckoutBridgeUrl, so the bridge page hands back from
+	// onComplete.
 	RedirectOnCompletion string `json:"redirect_on_completion,omitempty"`
 	// the store's storefront country, when the caller knows it: the Pro items
 	// are priced at the caller's regional tier and the welcome-offer coupon is

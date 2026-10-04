@@ -28582,6 +28582,10 @@ inline std::string buildCheckoutBridgeUrlWithRedirect(const std::string& client_
 	char* r_c = urnet_build_checkout_bridge_url_with_redirect(client_secret.c_str(), redirect_link.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string buildInlineCheckoutBridgeUrl(const std::string& client_secret) {
+	char* r_c = urnet_build_inline_checkout_bridge_url(client_secret.c_str());
+	return detail::takeString(r_c);
+}
 inline std::string buildSolanaPaymentUrl(const std::optional<SolanaPaymentUrlArgs>& args) {
 	std::string args_json;
 	const char* args_c = nullptr;

@@ -5568,6 +5568,13 @@ func urnet_build_checkout_bridge_url_with_redirect(clientSecret *C.char, redirec
 	return cString(string(r0))
 }
 
+//export urnet_build_inline_checkout_bridge_url
+func urnet_build_inline_checkout_bridge_url(clientSecret *C.char) *C.char {
+	defer cgoGuard("urnet_build_inline_checkout_bridge_url")
+	r0 := sdk.BuildInlineCheckoutBridgeUrl(goString(clientSecret))
+	return cString(string(r0))
+}
+
 //export urnet_build_solana_payment_url
 func urnet_build_solana_payment_url(args *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_build_solana_payment_url")
