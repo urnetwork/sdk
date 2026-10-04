@@ -540,6 +540,8 @@ def bind(lib):
     lib.urnet_bittensor_wallet_session_purpose.restype = c_void_p
     lib.urnet_bittensor_wallet_session_set_challenge.argtypes = [c_uint64, c_char_p, c_int64, POINTER(c_void_p)]
     lib.urnet_bittensor_wallet_session_set_challenge.restype = c_bool
+    lib.urnet_bittensor_wallet_session_set_wallet_connect_project_id.argtypes = [c_uint64, c_char_p]
+    lib.urnet_bittensor_wallet_session_set_wallet_connect_project_id.restype = None
     lib.urnet_bittensor_wallet_session_sign_request.argtypes = [c_uint64, POINTER(c_void_p)]
     lib.urnet_bittensor_wallet_session_sign_request.restype = c_void_p
     lib.urnet_bittensor_wallet_session_state.argtypes = [c_uint64]
