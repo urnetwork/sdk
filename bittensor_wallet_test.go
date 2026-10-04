@@ -78,10 +78,10 @@ func TestBittensorSs58KnownVectorsRoundTrip(t *testing.T) {
 
 func TestBittensorWalletCatalog(t *testing.T) {
 	walletIds := BittensorWalletIdList()
-	if walletIds.Len() != 2 || walletIds.Get(0) != BittensorWalletTalisman || walletIds.Get(1) != BittensorWalletTaoCom {
+	if walletIds.Len() != 3 || walletIds.Get(0) != BittensorWalletTalisman || walletIds.Get(1) != BittensorWalletTaoCom || walletIds.Get(2) != BittensorWalletWalletConnect {
 		t.Fatalf("wallets: %v", walletIds.values)
 	}
-	if BittensorWalletDisplayName(BittensorWalletTalisman) != "Talisman" || BittensorWalletDisplayName(BittensorWalletTaoCom) != "TAO.com" {
+	if BittensorWalletDisplayName(BittensorWalletTalisman) != "Talisman" || BittensorWalletDisplayName(BittensorWalletTaoCom) != "TAO.com" || BittensorWalletDisplayName(BittensorWalletWalletConnect) != "WalletConnect" {
 		t.Fatal("display names")
 	}
 	if BittensorWalletInjectedName(BittensorWalletTalisman) != "talisman" {
@@ -97,13 +97,13 @@ func TestBittensorWalletCatalog(t *testing.T) {
 }
 
 func TestBittensorWalletTransportSelection(t *testing.T) {
-	want := map[string][2]string{
-		BittensorWalletPlatformWeb:     {BittensorWalletTransportExtension, BittensorWalletTransportManual},
-		BittensorWalletPlatformMacos:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual},
-		BittensorWalletPlatformWindows: {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual},
-		BittensorWalletPlatformLinux:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual},
-		BittensorWalletPlatformIos:     {BittensorWalletTransportManual, BittensorWalletTransportManual},
-		BittensorWalletPlatformAndroid: {BittensorWalletTransportManual, BittensorWalletTransportManual},
+	want := map[string][3]string{
+		BittensorWalletPlatformWeb:     {BittensorWalletTransportExtension, BittensorWalletTransportManual, BittensorWalletTransportWalletConnect},
+		BittensorWalletPlatformMacos:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformWindows: {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformLinux:   {BittensorWalletTransportBrowserBridge, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformIos:     {BittensorWalletTransportManual, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
+		BittensorWalletPlatformAndroid: {BittensorWalletTransportManual, BittensorWalletTransportManual, BittensorWalletTransportBrowserBridge},
 	}
 	for platform, transports := range want {
 		if got := BittensorWalletTransportFor(BittensorWalletTalisman, platform); got != transports[0] {
@@ -111,6 +111,9 @@ func TestBittensorWalletTransportSelection(t *testing.T) {
 		}
 		if got := BittensorWalletTransportFor(BittensorWalletTaoCom, platform); got != transports[1] {
 			t.Errorf("taocom on %s: %q, want %q", platform, got, transports[1])
+		}
+		if got := BittensorWalletTransportFor(BittensorWalletWalletConnect, platform); got != transports[2] {
+			t.Errorf("walletconnect on %s: %q, want %q", platform, got, transports[2])
 		}
 	}
 	if BittensorWalletTransportFor(BittensorWalletTalisman, "tvos") != "" {
@@ -429,6 +432,92 @@ func TestBittensorWalletManualSession(t *testing.T) {
 	bridge := newBittensorTestSession(t, BittensorWalletTalisman, BittensorWalletPlatformMacos, BittensorWalletPurposeLogin)
 	if r := bridge.HandleSignature(bittensorTestAliceSs58, bittensorTestSignature, bittensorTestNowMillis); r.ErrorCode != BittensorWalletErrorWrongTransport {
 		t.Fatalf("bridge direct: %+v", r)
+	}
+}
+
+func TestBittensorWalletConnectWebSession(t *testing.T) {
+	session := newBittensorTestSession(t, BittensorWalletWalletConnect, BittensorWalletPlatformWeb, BittensorWalletPurposeLogin)
+	if session.Transport() != BittensorWalletTransportWalletConnect {
+		t.Fatalf("transport %s", session.Transport())
+	}
+	if _, err := session.BridgeUrl(); err == nil {
+		t.Fatal("bridge url on the web walletconnect transport")
+	}
+	session.ChallengeArgs("")
+	if err := session.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis); err != nil {
+		t.Fatal(err)
+	}
+	req, err := session.SignRequest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Chain != "polkadot:2f0555cc76fc2840a25a6ea3b9637146" || req.Method != "polkadot_signMessage" || req.Data != BittensorSignRawData(bittensorTestMessage) || req.InjectedName != "" {
+		t.Fatalf("sign request %+v", req)
+	}
+	r := session.HandleSignature(bittensorTestAliceSs58, bittensorTestSignature, bittensorTestNowMillis)
+	if !r.Ok() || r.Proof.WalletId != BittensorWalletWalletConnect {
+		t.Fatalf("walletconnect result: %+v", r)
+	}
+	// the extension transport carries no walletconnect fields
+	talisman := newBittensorTestSession(t, BittensorWalletTalisman, BittensorWalletPlatformWeb, BittensorWalletPurposeLogin)
+	talisman.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis)
+	if req, _ := talisman.SignRequest(); req.Chain != "" || req.Method != "" {
+		t.Fatalf("talisman request %+v", req)
+	}
+}
+
+func TestBittensorWalletConnectBridgeSession(t *testing.T) {
+	for _, platform := range []string{BittensorWalletPlatformIos, BittensorWalletPlatformAndroid, BittensorWalletPlatformWindows} {
+		session := newBittensorTestSession(t, BittensorWalletWalletConnect, platform, BittensorWalletPurposeCreate)
+		if session.Transport() != BittensorWalletTransportBrowserBridge {
+			t.Fatalf("%s: transport %s", platform, session.Transport())
+		}
+		session.SetWalletConnectProjectId(" app-project ")
+		session.ChallengeArgs(bittensorTestAliceSs58)
+		if err := session.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis); err != nil {
+			t.Fatal(err)
+		}
+		bridgeUrl, err := session.BridgeUrl()
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, _ := url.Parse(bridgeUrl)
+		q := u.Query()
+		if u.Scheme+"://"+u.Host+u.Path != "https://ur.io/bittensor-connect" || q.Get("wallet") != "walletconnect" || q.Get("wc_project_id") != "app-project" ||
+			q.Get("purpose") != "create" || q.Get("address") != bittensorTestAliceSs58 || q.Get("message") != bittensorTestMessage {
+			t.Fatalf("%s: bridge url %s", platform, bridgeUrl)
+		}
+		values := url.Values{
+			"address":   {bittensorTestAliceSs58},
+			"signature": {bittensorTestSignature},
+			"message":   {bittensorTestMessage},
+			"purpose":   {"create"},
+		}
+		// a return naming another wallet is not this session's
+		values.Set("wallet", "talisman")
+		if r := session.HandleBridgeReturn(bittensorTestRedirectLink+"?"+values.Encode(), bittensorTestNowMillis); r.ErrorCode != BittensorWalletErrorUnsupportedWallet {
+			t.Fatalf("%s: other wallet: %+v", platform, r)
+		}
+		values.Set("wallet", "walletconnect")
+		r := session.HandleBridgeReturn(bittensorTestRedirectLink+"?"+values.Encode(), bittensorTestNowMillis+1)
+		if !r.Ok() || r.Proof.WalletId != BittensorWalletWalletConnect || r.Proof.Purpose != "create" {
+			t.Fatalf("%s: walletconnect return: %+v", platform, r)
+		}
+	}
+	// the project id is only for the walletconnect page
+	talisman := newBittensorTestSession(t, BittensorWalletTalisman, BittensorWalletPlatformMacos, BittensorWalletPurposeLogin)
+	talisman.SetWalletConnectProjectId("app-project")
+	talisman.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis)
+	bridgeUrl, _ := talisman.BridgeUrl()
+	if u, _ := url.Parse(bridgeUrl); u.Query().Has("wc_project_id") {
+		t.Fatalf("talisman bridge url carries a project id: %s", bridgeUrl)
+	}
+	// no app id: the page uses its own
+	noId := newBittensorTestSession(t, BittensorWalletWalletConnect, BittensorWalletPlatformLinux, BittensorWalletPurposeLogin)
+	noId.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis)
+	bridgeUrl, _ = noId.BridgeUrl()
+	if u, _ := url.Parse(bridgeUrl); u.Query().Has("wc_project_id") || u.Query().Get("wallet") != "walletconnect" {
+		t.Fatalf("no-id bridge url %s", bridgeUrl)
 	}
 }
 

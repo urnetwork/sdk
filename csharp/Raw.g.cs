@@ -368,6 +368,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_proof(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_purpose(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_bittensor_wallet_session_set_challenge(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, out IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_bittensor_wallet_session_set_wallet_connect_project_id(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_sign_request(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_state(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_transport(ulong a0);

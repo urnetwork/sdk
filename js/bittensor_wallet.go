@@ -31,7 +31,8 @@ func BittensorWalletIds(this js.Value, args []js.Value) any {
 	return js.ValueOf(out)
 }
 
-// URnetworkBittensorWalletInfo(walletId, platform) -> {walletId, displayName, injectedName, transport} | null
+// URnetworkBittensorWalletInfo(walletId, platform) -> {walletId, displayName, injectedName, transport, chain, method} | null
+// (chain and method name the WalletConnect request; "" for other wallets)
 func BittensorWalletInfo(this js.Value, args []js.Value) any {
 	walletId := jsStringArg(args, 0)
 	platform := jsStringArg(args, 1)
@@ -47,7 +48,16 @@ func BittensorWalletInfo(this js.Value, args []js.Value) any {
 		"displayName":  sdk.BittensorWalletDisplayName(walletId),
 		"injectedName": sdk.BittensorWalletInjectedName(walletId),
 		"transport":    transport,
+		"chain":        walletConnectField(walletId, sdk.BittensorWalletConnectChain),
+		"method":       walletConnectField(walletId, sdk.BittensorWalletConnectMethod),
 	})
+}
+
+func walletConnectField(walletId string, value string) string {
+	if walletId == sdk.BittensorWalletWalletConnect {
+		return value
+	}
+	return ""
 }
 
 // URnetworkBittensorSignRawData(message) -> "0x…"

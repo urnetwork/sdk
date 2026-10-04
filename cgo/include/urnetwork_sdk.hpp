@@ -154,6 +154,8 @@ inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
 inline constexpr const char* BittensorWalletBridgeUrl = "https://ur.io/bittensor-connect";
+inline constexpr const char* BittensorWalletConnectChain = "polkadot:2f0555cc76fc2840a25a6ea3b9637146";
+inline constexpr const char* BittensorWalletConnectMethod = "polkadot_signMessage";
 inline constexpr const char* BittensorWalletDappName = "URnetwork";
 inline constexpr const char* BittensorWalletErrorAddressMismatch = "address_mismatch";
 inline constexpr const char* BittensorWalletErrorExpired = "challenge_expired";
@@ -190,6 +192,8 @@ inline constexpr const char* BittensorWalletTaoCom = "taocom";
 inline constexpr const char* BittensorWalletTransportBrowserBridge = "browser_bridge";
 inline constexpr const char* BittensorWalletTransportExtension = "extension";
 inline constexpr const char* BittensorWalletTransportManual = "manual";
+inline constexpr const char* BittensorWalletTransportWalletConnect = "walletconnect";
+inline constexpr const char* BittensorWalletWalletConnect = "walletconnect";
 inline constexpr const char* BlockActionReasonBlocker = "blocker";
 inline constexpr const char* BlockActionReasonOverride = "override";
 inline constexpr const char* BlockActionReasonSecurity = "security";
@@ -1276,6 +1280,8 @@ struct BittensorSignRequest {
 	std::string WalletId{};
 	std::string InjectedName{};
 	std::string DappName{};
+	std::string Chain{};
+	std::string Method{};
 	std::string Address{};
 	std::string Data{};
 	std::string Type{};
@@ -6082,6 +6088,8 @@ inline void to_json(nlohmann::json& j, const BittensorSignRequest& v) {
 	j["WalletId"] = v.WalletId;
 	j["InjectedName"] = v.InjectedName;
 	j["DappName"] = v.DappName;
+	j["Chain"] = v.Chain;
+	j["Method"] = v.Method;
 	j["Address"] = v.Address;
 	j["Data"] = v.Data;
 	j["Type"] = v.Type;
@@ -6098,6 +6106,12 @@ inline void from_json(const nlohmann::json& j, BittensorSignRequest& v) {
 	}
 	if (auto it = j.find("DappName"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DappName);
+	}
+	if (auto it = j.find("Chain"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Chain);
+	}
+	if (auto it = j.find("Method"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Method);
 	}
 	if (auto it = j.find("Address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Address);
@@ -16549,6 +16563,7 @@ public:
 	std::optional<BittensorWalletProof> proof() const;
 	std::string purpose() const;
 	void setChallenge(const std::optional<AuthWalletChallengeResult>& result, int64_t now_millis) const;
+	void setWalletConnectProjectId(const std::string& project_id) const;
 	std::optional<BittensorSignRequest> signRequest() const;
 	std::string state() const;
 	std::string transport() const;
@@ -25153,6 +25168,9 @@ inline void BittensorWalletSession::setChallenge(const std::optional<AuthWalletC
 	if (!ok) {
 		throw Error("urnet: urnet_bittensor_wallet_session_set_challenge failed");
 	}
+}
+inline void BittensorWalletSession::setWalletConnectProjectId(const std::string& project_id) const {
+	urnet_bittensor_wallet_session_set_wallet_connect_project_id(handle(), project_id.c_str());
 }
 inline std::optional<BittensorSignRequest> BittensorWalletSession::signRequest() const {
 	char* err_c = nullptr;

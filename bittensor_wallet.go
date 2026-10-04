@@ -16,12 +16,22 @@ package sdk
 //     interface (no injection name, deep link scheme, WalletConnect or SDK in
 //     the official docs or support center), so TAO.com is manual entry: the
 //     user pastes the coldkey address and a signature over the challenge.
+//     The same manual entry serves any other wallet.
+//   - WalletConnect (product decision 2026-10-04): any substrate wallet that
+//     speaks WalletConnect v2 (Nova, Nightly, ...), over the polkadot
+//     namespace (polkadot_signMessage) on the Bittensor finney chain.
 //
 // Transport per platform (BittensorWalletTransportFor):
 //
-//	              web        macos/windows/linux   ios/android
-//	talisman      extension  browser_bridge        manual
-//	taocom        manual     manual                manual
+//	               web            macos/windows/linux   ios/android
+//	talisman       extension      browser_bridge        manual
+//	taocom         manual         manual                manual
+//	walletconnect  walletconnect  browser_bridge        browser_bridge
+//
+// On the apps, WalletConnect runs on the bridge page (a QR on desktop, an
+// "Open wallet" deep link on a phone) with the app's configured
+// WalletConnect project id (SetWalletConnectProjectId), as the pre-helper
+// bridge did.
 //
 // browser_bridge opens https://ur.io/bittensor-connect (the Bittensor-only
 // bridge page; /wallet-connect is the Solana page and keeps a provider=bittensor
@@ -54,6 +64,8 @@ import (
 const (
 	BittensorWalletTalisman = "talisman"
 	BittensorWalletTaoCom   = "taocom"
+	// any WalletConnect v2 substrate wallet (Nova, Nightly, ...)
+	BittensorWalletWalletConnect = "walletconnect"
 )
 
 const (
@@ -64,6 +76,8 @@ const (
 	BittensorWalletTransportBrowserBridge = "browser_bridge"
 	// the user pastes the address and a signature over the challenge
 	BittensorWalletTransportManual = "manual"
+	// a WalletConnect v2 session run by the page itself (web)
+	BittensorWalletTransportWalletConnect = "walletconnect"
 )
 
 const (
@@ -130,11 +144,19 @@ const (
 	bittensorSignatureByteCount = 64
 )
 
+const (
+	// the WalletConnect polkadot-namespace chain id of Bittensor finney
+	// (CAIP-13: the first 32 hex characters of the genesis hash)
+	BittensorWalletConnectChain  = "polkadot:2f0555cc76fc2840a25a6ea3b9637146"
+	BittensorWalletConnectMethod = "polkadot_signMessage"
+)
+
 // BittensorWalletIdList returns the supported wallet ids in display order.
 func BittensorWalletIdList() *StringList {
 	walletIds := NewStringList()
 	walletIds.Add(BittensorWalletTalisman)
 	walletIds.Add(BittensorWalletTaoCom)
+	walletIds.Add(BittensorWalletWalletConnect)
 	return walletIds
 }
 
@@ -146,6 +168,8 @@ func BittensorWalletDisplayName(walletId string) string {
 		return "Talisman"
 	case BittensorWalletTaoCom:
 		return "TAO.com"
+	case BittensorWalletWalletConnect:
+		return "WalletConnect"
 	default:
 		return ""
 	}
@@ -164,23 +188,33 @@ func BittensorWalletInjectedName(walletId string) string {
 // platform. Returns "" for an unknown wallet or platform.
 func BittensorWalletTransportFor(walletId string, platform string) string {
 	switch walletId {
-	case BittensorWalletTalisman, BittensorWalletTaoCom:
+	case BittensorWalletTalisman, BittensorWalletTaoCom, BittensorWalletWalletConnect:
 	default:
 		return ""
 	}
 	switch platform {
 	case BittensorWalletPlatformWeb:
-		if walletId == BittensorWalletTalisman {
+		switch walletId {
+		case BittensorWalletTalisman:
 			return BittensorWalletTransportExtension
+		case BittensorWalletWalletConnect:
+			return BittensorWalletTransportWalletConnect
+		default:
+			return BittensorWalletTransportManual
 		}
-		return BittensorWalletTransportManual
 	case BittensorWalletPlatformMacos, BittensorWalletPlatformWindows, BittensorWalletPlatformLinux:
-		if walletId == BittensorWalletTalisman {
+		switch walletId {
+		case BittensorWalletTalisman, BittensorWalletWalletConnect:
+			return BittensorWalletTransportBrowserBridge
+		default:
+			return BittensorWalletTransportManual
+		}
+	case BittensorWalletPlatformIos, BittensorWalletPlatformAndroid:
+		// Talisman and TAO.com document no mobile deep link; WalletConnect
+		// pairs on the bridge page, which deep links to the wallet app
+		if walletId == BittensorWalletWalletConnect {
 			return BittensorWalletTransportBrowserBridge
 		}
-		return BittensorWalletTransportManual
-	case BittensorWalletPlatformIos, BittensorWalletPlatformAndroid:
-		// neither wallet documents a mobile deep link or WalletConnect
 		return BittensorWalletTransportManual
 	default:
 		return ""
@@ -245,11 +279,16 @@ func NormalizeBittensorSignature(signature string) string {
 }
 
 // BittensorSignRequest is what the extension transport passes to
-// injectedWeb3[InjectedName].enable(DappName) and then signer.signRaw.
+// injectedWeb3[InjectedName].enable(DappName) and then signer.signRaw, or
+// what the web walletconnect transport sends as Method on Chain with params
+// { address, message: Data }.
 type BittensorSignRequest struct {
 	WalletId     string
 	InjectedName string
 	DappName     string
+	// walletconnect transport only
+	Chain  string
+	Method string
 	// the account to sign with; "" = the extension's first account
 	Address string
 	// signRaw { address, data, type }
@@ -362,13 +401,14 @@ type BittensorWalletSession struct {
 	purpose      string
 	redirectLink string
 
-	stateLock       sync.Mutex
-	state           string
-	expectedAddress string
-	message         string
-	expiresAtMillis int64
-	proof           *BittensorWalletProof
-	errorCode       string
+	stateLock              sync.Mutex
+	walletConnectProjectId string
+	state                  string
+	expectedAddress        string
+	message                string
+	expiresAtMillis        int64
+	proof                  *BittensorWalletProof
+	errorCode              string
 }
 
 // NewBittensorWalletSession checks the wallet, platform and purpose.
@@ -498,10 +538,20 @@ func (self *BittensorWalletSession) SetChallenge(result *AuthWalletChallengeResu
 	return nil
 }
 
-// SignRequest is the extension transport's signRaw request. It moves the
+// SetWalletConnectProjectId sets the app's WalletConnect Cloud project id,
+// passed to the bridge page as wc_project_id for the walletconnect wallet
+// ("" = the page's own configured id).
+func (self *BittensorWalletSession) SetWalletConnectProjectId(projectId string) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.walletConnectProjectId = strings.TrimSpace(projectId)
+}
+
+// SignRequest is the extension transport's signRaw request, or the web
+// walletconnect transport's polkadot_signMessage request. It moves the
 // session to awaiting_wallet.
 func (self *BittensorWalletSession) SignRequest() (*BittensorSignRequest, error) {
-	if self.transport != BittensorWalletTransportExtension {
+	if self.transport != BittensorWalletTransportExtension && self.transport != BittensorWalletTransportWalletConnect {
 		return nil, fmt.Errorf("%s: %s", BittensorWalletErrorWrongTransport, self.transport)
 	}
 	self.stateLock.Lock()
@@ -510,21 +560,26 @@ func (self *BittensorWalletSession) SignRequest() (*BittensorSignRequest, error)
 		return nil, fmt.Errorf("%s: no challenge", BittensorWalletErrorNoChallenge)
 	}
 	self.state = BittensorWalletStateAwaitingWallet
-	return &BittensorSignRequest{
+	request := &BittensorSignRequest{
 		WalletId:     self.walletId,
 		InjectedName: BittensorWalletInjectedName(self.walletId),
 		DappName:     BittensorWalletDappName,
 		Address:      self.expectedAddress,
 		Data:         BittensorSignRawData(self.message),
 		Type:         "bytes",
-	}, nil
+	}
+	if self.transport == BittensorWalletTransportWalletConnect {
+		request.Chain = BittensorWalletConnectChain
+		request.Method = BittensorWalletConnectMethod
+	}
+	return request, nil
 }
 
 // BridgeUrl is the ur.io page the browser_bridge transport opens:
 //
 //	https://ur.io/bittensor-connect?provider=bittensor&method=signMessage
 //	  &wallet=<id>&message=<text>&purpose=<purpose>&redirect_link=<link>
-//	  [&address=<expected ss58>]
+//	  [&address=<expected ss58>] [&wc_project_id=<id>, walletconnect only]
 //
 // `wallet` makes the page use only that wallet's extension. It moves the
 // session to awaiting_wallet.
@@ -546,6 +601,9 @@ func (self *BittensorWalletSession) BridgeUrl() (string, error) {
 	values.Set("redirect_link", self.redirectLink)
 	if self.expectedAddress != "" {
 		values.Set("address", self.expectedAddress)
+	}
+	if self.walletId == BittensorWalletWalletConnect && self.walletConnectProjectId != "" {
+		values.Set("wc_project_id", self.walletConnectProjectId)
 	}
 	self.state = BittensorWalletStateAwaitingWallet
 	return BittensorWalletBridgeUrl + "?" + values.Encode(), nil

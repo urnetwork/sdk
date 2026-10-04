@@ -93,6 +93,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
 #define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/bittensor-connect"
+#define URNET_BITTENSOR_WALLET_CONNECT_CHAIN "polkadot:2f0555cc76fc2840a25a6ea3b9637146"
+#define URNET_BITTENSOR_WALLET_CONNECT_METHOD "polkadot_signMessage"
 #define URNET_BITTENSOR_WALLET_DAPP_NAME "URnetwork"
 #define URNET_BITTENSOR_WALLET_ERROR_ADDRESS_MISMATCH "address_mismatch"
 #define URNET_BITTENSOR_WALLET_ERROR_EXPIRED "challenge_expired"
@@ -129,6 +131,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_WALLET_TRANSPORT_BROWSER_BRIDGE "browser_bridge"
 #define URNET_BITTENSOR_WALLET_TRANSPORT_EXTENSION "extension"
 #define URNET_BITTENSOR_WALLET_TRANSPORT_MANUAL "manual"
+#define URNET_BITTENSOR_WALLET_TRANSPORT_WALLET_CONNECT "walletconnect"
+#define URNET_BITTENSOR_WALLET_WALLET_CONNECT "walletconnect"
 #define URNET_BLOCK_ACTION_REASON_BLOCKER "blocker"
 #define URNET_BLOCK_ACTION_REASON_OVERRIDE "override"
 #define URNET_BLOCK_ACTION_REASON_SECURITY "security"
@@ -921,6 +925,7 @@ char* urnet_bittensor_wallet_session_platform(uint64_t self);
 char* urnet_bittensor_wallet_session_proof(uint64_t self);
 char* urnet_bittensor_wallet_session_purpose(uint64_t self);
 bool urnet_bittensor_wallet_session_set_challenge(uint64_t self, const char* result_json, int64_t now_millis, char** out_error);
+void urnet_bittensor_wallet_session_set_wallet_connect_project_id(uint64_t self, const char* project_id);
 char* urnet_bittensor_wallet_session_sign_request(uint64_t self, char** out_error);
 char* urnet_bittensor_wallet_session_state(uint64_t self);
 char* urnet_bittensor_wallet_session_transport(uint64_t self);
@@ -2290,6 +2295,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   WalletId: string
  *   InjectedName: string
  *   DappName: string
+ *   Chain: string
+ *   Method: string
  *   Address: string
  *   Data: string
  *   Type: string

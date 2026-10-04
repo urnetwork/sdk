@@ -14,7 +14,7 @@ func TestBittensorWalletWasmExports(t *testing.T) {
 	g := js.Global()
 
 	ids := g.Call("URnetworkBittensorWalletIds")
-	if ids.Length() != 2 || ids.Index(0).String() != "talisman" || ids.Index(1).String() != "taocom" {
+	if ids.Length() != 3 || ids.Index(0).String() != "talisman" || ids.Index(1).String() != "taocom" || ids.Index(2).String() != "walletconnect" {
 		t.Fatalf("ids: %v", ids)
 	}
 	talisman := g.Call("URnetworkBittensorWalletInfo", "talisman")
@@ -24,6 +24,14 @@ func TestBittensorWalletWasmExports(t *testing.T) {
 	taoCom := g.Call("URnetworkBittensorWalletInfo", "taocom", "web")
 	if taoCom.Get("transport").String() != "manual" || taoCom.Get("injectedName").String() != "" {
 		t.Fatalf("taocom: %v", taoCom)
+	}
+	walletConnect := g.Call("URnetworkBittensorWalletInfo", "walletconnect")
+	if walletConnect.Get("transport").String() != "walletconnect" || walletConnect.Get("displayName").String() != "WalletConnect" ||
+		walletConnect.Get("chain").String() != "polkadot:2f0555cc76fc2840a25a6ea3b9637146" || walletConnect.Get("method").String() != "polkadot_signMessage" {
+		t.Fatalf("walletconnect: %v", walletConnect)
+	}
+	if mobile := g.Call("URnetworkBittensorWalletInfo", "walletconnect", "ios"); mobile.Get("transport").String() != "browser_bridge" {
+		t.Fatalf("walletconnect on ios: %v", mobile)
 	}
 	if !g.Call("URnetworkBittensorWalletInfo", "subwallet-js").IsNull() {
 		t.Fatal("an unsupported wallet resolved")

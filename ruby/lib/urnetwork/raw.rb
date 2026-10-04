@@ -367,6 +367,7 @@ module URnetwork
       attach_function :urnet_bittensor_wallet_session_proof, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_purpose, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_set_challenge, [:uint64, :string, :int64, :pointer], :bool, blocking: true
+      attach_function :urnet_bittensor_wallet_session_set_wallet_connect_project_id, [:uint64, :string], :void, blocking: true
       attach_function :urnet_bittensor_wallet_session_sign_request, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_state, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_transport, [:uint64], :pointer, blocking: true
