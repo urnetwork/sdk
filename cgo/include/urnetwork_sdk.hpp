@@ -175,6 +175,7 @@ inline constexpr const char* BittensorWalletPlatformLinux = "linux";
 inline constexpr const char* BittensorWalletPlatformMacos = "macos";
 inline constexpr const char* BittensorWalletPlatformWeb = "web";
 inline constexpr const char* BittensorWalletPlatformWindows = "windows";
+inline constexpr const char* BittensorWalletPurposeAdd = "add";
 inline constexpr const char* BittensorWalletPurposeConnect = "connect";
 inline constexpr const char* BittensorWalletPurposeCreate = "create";
 inline constexpr const char* BittensorWalletPurposeLogin = "login";

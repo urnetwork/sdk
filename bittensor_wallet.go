@@ -77,11 +77,15 @@ const (
 
 // Purposes, echoed through the bridge so a return reaches the flow that
 // asked. "login" and "create" sign in (create = the second signature for a
-// new network); "connect" proves the subnet payout wallet.
+// new network); "connect" proves the subnet payout wallet; "add" adds the
+// wallet as a sign-in method to the signed-in network (POST /auth/add-auth).
+// An "add" return must never reach a sign-in flow: a login or create session
+// refuses it with purpose_mismatch, so it cannot sign in as the added wallet.
 const (
 	BittensorWalletPurposeLogin   = "login"
 	BittensorWalletPurposeCreate  = "create"
 	BittensorWalletPurposeConnect = "connect"
+	BittensorWalletPurposeAdd     = "add"
 )
 
 const (
@@ -380,7 +384,7 @@ func NewBittensorWalletSession(walletId string, platform string, purpose string,
 		return nil, fmt.Errorf("%s: %s", BittensorWalletErrorUnsupportedPlatform, platform)
 	}
 	switch purpose {
-	case BittensorWalletPurposeLogin, BittensorWalletPurposeCreate, BittensorWalletPurposeConnect:
+	case BittensorWalletPurposeLogin, BittensorWalletPurposeCreate, BittensorWalletPurposeConnect, BittensorWalletPurposeAdd:
 	default:
 		return nil, fmt.Errorf("unknown purpose: %s", purpose)
 	}
