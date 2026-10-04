@@ -5544,6 +5544,16 @@ func urnet_bittensor_wallet_session_set_challenge(self C.uint64_t, result *C.cha
 	return C.bool(true)
 }
 
+//export urnet_bittensor_wallet_session_set_wallet_connect_project_id
+func urnet_bittensor_wallet_session_set_wallet_connect_project_id(self C.uint64_t, projectId *C.char) {
+	defer cgoGuard("urnet_bittensor_wallet_session_set_wallet_connect_project_id")
+	self_, ok := resolveHandle[*sdk.BittensorWalletSession](uint64(self), "urnet_bittensor_wallet_session_set_wallet_connect_project_id")
+	if !ok {
+		return
+	}
+	self_.SetWalletConnectProjectId(goString(projectId))
+}
+
 //export urnet_bittensor_wallet_session_sign_request
 func urnet_bittensor_wallet_session_sign_request(self C.uint64_t, outError **C.char) *C.char {
 	defer cgoGuard("urnet_bittensor_wallet_session_sign_request")
