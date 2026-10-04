@@ -431,3 +431,83 @@ func TestBittensorWalletManualSession(t *testing.T) {
 		t.Fatalf("bridge direct: %+v", r)
 	}
 }
+
+// Adding a Bittensor wallet as a sign-in method (POST /auth/add-auth) runs the
+// same proof under its own purpose. The helper refused any purpose but
+// login, create and connect, so an app could only borrow "login" for it, and
+// an add return was then indistinguishable from a sign-in return. The add
+// purpose is spelled out here ("add", the bridge's wire value) so the test
+// compiles against the helper without it.
+func TestBittensorWalletAddPurposeSession(t *testing.T) {
+	for _, wallet := range []string{BittensorWalletTalisman, BittensorWalletTaoCom} {
+		for _, platform := range []string{
+			BittensorWalletPlatformWeb,
+			BittensorWalletPlatformMacos,
+			BittensorWalletPlatformWindows,
+			BittensorWalletPlatformLinux,
+			BittensorWalletPlatformIos,
+			BittensorWalletPlatformAndroid,
+		} {
+			session, err := NewBittensorWalletSession(wallet, platform, "add", bittensorTestRedirectLink)
+			if err != nil {
+				t.Fatalf("%s on %s: %s", wallet, platform, err)
+			}
+			if session.Purpose() != "add" || session.ChallengeArgs("").Purpose != "add" {
+				t.Fatalf("%s on %s: purpose %q", wallet, platform, session.Purpose())
+			}
+		}
+	}
+}
+
+// An add return must never complete a sign-in, and a sign-in return must
+// never be added: each session refuses the other's bridge return without
+// changing state.
+func TestBittensorWalletAddReturnNeverSignsIn(t *testing.T) {
+	bridgeSession := func(purpose string) *BittensorWalletSession {
+		session, err := NewBittensorWalletSession(BittensorWalletTalisman, BittensorWalletPlatformWindows, purpose, bittensorTestRedirectLink)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session.ChallengeArgs("")
+		if err := session.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.BridgeUrl(); err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	returnFor := func(purpose string) string {
+		values := url.Values{
+			"address":   {bittensorTestAliceSs58},
+			"signature": {bittensorTestSignature},
+			"message":   {bittensorTestMessage},
+			"purpose":   {purpose},
+			"wallet":    {BittensorWalletTalisman},
+		}
+		return bittensorTestRedirectLink + "?" + values.Encode()
+	}
+
+	for _, signIn := range []string{BittensorWalletPurposeLogin, BittensorWalletPurposeCreate} {
+		session := bridgeSession(signIn)
+		if r := session.HandleBridgeReturn(returnFor("add"), bittensorTestNowMillis); r.Ok() || r.ErrorCode != BittensorWalletErrorPurposeMismatch {
+			t.Fatalf("%s session took an add return: %+v", signIn, r)
+		}
+		if session.State() != BittensorWalletStateAwaitingWallet {
+			t.Fatalf("%s session state after an add return: %s", signIn, session.State())
+		}
+	}
+
+	add := bridgeSession("add")
+	if r := add.HandleBridgeReturn(returnFor(BittensorWalletPurposeLogin), bittensorTestNowMillis); r.Ok() || r.ErrorCode != BittensorWalletErrorPurposeMismatch {
+		t.Fatalf("add session took a login return: %+v", r)
+	}
+	r := add.HandleBridgeReturn(returnFor("add"), bittensorTestNowMillis)
+	if !r.Ok() || r.Proof.Purpose != "add" {
+		t.Fatalf("add return: %+v", r)
+	}
+	auth := r.Proof.WalletAuthArgs()
+	if auth.Blockchain != TAO || auth.PublicKey != bittensorTestAliceSs58 || auth.Message != bittensorTestMessage {
+		t.Fatalf("wallet auth %+v", auth)
+	}
+}
