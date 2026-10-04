@@ -249,6 +249,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
+#define URNET_MESSAGE_ROUTE_DIRECT 1
+#define URNET_MESSAGE_ROUTE_URNETWORK 0
 #define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
 #define URNET_OFFER_DECLINE_CONTROL_BACK "back"
 #define URNET_OFFER_DECLINE_CONTROL_FREE_PLAN_LINK "free_plan_link"
@@ -1923,6 +1925,7 @@ char* urnet_new_export_options(void);
 char* urnet_new_feedback_submitted_event(int64_t rating, const char* reason, const char* text);
 char* urnet_new_id(void);
 uint64_t urnet_new_login_view_controller(uint64_t api);
+char* urnet_new_message_transport(const char* config_json, char** out_error);
 uint64_t urnet_new_network_name_validation_view_controller(uint64_t api);
 char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
@@ -1952,12 +1955,14 @@ char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_normal_extender_gossip_mode(const char* mode);
 char* urnet_normalize_bittensor_signature(const char* signature);
+char* urnet_open_stream_store(const char* dir, char** out_error);
 char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_bittensor_challenge_message(const char* message, char** out_error);
 char* urnet_parse_bittensor_wallet_return(const char* uri, const char* redirect_link, char** out_error);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
+int64_t urnet_parse_message_route_mode(const char* value, char** out_error);
 char* urnet_points_leaderboard_key_of(const char* row_json);
 char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
 int64_t urnet_points_to_nano_points(double points);
@@ -3342,6 +3347,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   GCPauseTotalNanoseconds: number
  */
 
+/* MessageTransport (json):
+ */
+
+/* MessageTransportConfig (json):
+ *   Client: any
+ *   Server: any
+ *   ProtocolVersion: number
+ *   Timeout: number (ns)
+ */
+
 /* MultiHopIdList (json):
  *   = IdList | null[]
  */
@@ -4368,6 +4383,9 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   reference: string
  *   label?: string
  *   message?: string
+ */
+
+/* StreamStore (json):
  */
 
 /* StringList (json):

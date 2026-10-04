@@ -54,7 +54,7 @@ build_darwin_amd64 build_darwin_arm64:
 		-o "build/darwin/$$arch/libURnetworkSdk.dylib" . && \
 	install_name_tool -id @rpath/libURnetworkSdk.dylib "build/darwin/$$arch/libURnetworkSdk.dylib" && \
 	codesign --force --sign - "build/darwin/$$arch/libURnetworkSdk.dylib" && \
-	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp "build/darwin/$$arch/"
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_message.h "build/darwin/$$arch/"
 
 build_windows: build_windows_amd64 build_windows_arm64
 	rm -f build/URnetworkSdkWindows.zip && \
@@ -70,7 +70,7 @@ build_windows_amd64:
 		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/windows/amd64/URnetworkSdk.dll . && \
 	rm -f build/windows/amd64/URnetworkSdk.h && \
-	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def build/windows/amd64/;
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def include/urnetwork_message.h build/windows/amd64/;
 
 build_windows_arm64:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
@@ -82,7 +82,7 @@ build_windows_arm64:
 		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/windows/arm64/URnetworkSdk.dll . && \
 	rm -f build/windows/arm64/URnetworkSdk.h && \
-	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def build/windows/arm64/;
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_sdk.def include/urnetwork_message.h build/windows/arm64/;
 
 build_linux: build_linux_amd64 build_linux_arm64
 	rm -f build/URnetworkSdkLinux.zip && \
@@ -98,7 +98,7 @@ build_linux_amd64:
 		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/linux/amd64/libURnetworkSdk.so . && \
 	rm -f build/linux/amd64/libURnetworkSdk.h && \
-	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp build/linux/amd64/;
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_message.h build/linux/amd64/;
 
 build_linux_arm64:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin" && \
@@ -110,7 +110,7 @@ build_linux_arm64:
 		-ldflags "-s -w -X $(SDK_GO_MODULE).Version=$${WARP_VERSION} -buildid=" \
 		-o build/linux/arm64/libURnetworkSdk.so . && \
 	rm -f build/linux/arm64/libURnetworkSdk.h && \
-	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp build/linux/arm64/;
+	cp include/urnetwork_sdk.h include/urnetwork_sdk.hpp include/urnetwork_message.h build/linux/arm64/;
 
 # host (macOS) library, for local development and the smoke test
 build_host:
@@ -130,6 +130,21 @@ NLOHMANN_INCLUDE ?= /opt/homebrew/include
 smoke: build_host
 	clang++ -std=c++17 -Iinclude -o build/host/smoke smoke/smoke.cpp build/host/libURnetworkSdk.dylib && \
 	DYLD_LIBRARY_PATH=build/host ./build/host/smoke;
+
+# THE MESSAGING ABI's OWN TEST, AND IT IS A C PROGRAM RATHER THAN A GO ONE.
+# Builds the library twice -- once as it ships, once with the loopback harness behind
+# `-tags urnet_message_loopback` and `-modfile=loopback.go.mod` -- compiles
+# ctest/message_abi_test.c against include/urnetwork_message.h, and runs it: two devices, one
+# group, octets that are not text, a handle-count check across the whole conversation and a
+# blocking Connect cancelled from a second OS thread. It FAILS if the shipping header declares
+# one urnet_message_loopback_* symbol. See ctest/run.sh and the README.
+# .PHONY BECAUSE `ctest` IS ALSO A DIRECTORY, and without it make answers "'ctest' is up to
+# date" and runs nothing at all -- which is a test target that silently never runs. The
+# `build` target above has the same shape and is left alone here.
+.PHONY: ctest
+ctest:
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	bash ctest/run.sh;
 
 # c++ wrapper (hpp) smoke test against the host library
 smoke_hpp: build_host smoke_memory_usage_json smoke_transport_stats_json smoke_customer_transfer_json

@@ -69,6 +69,17 @@ for mod in "$sdk_dir"/*(N/); do
     [[ -f "$mod/go.mod" ]] || continue
     (
         cd "$mod" || exit $?
+        # A MODULE THAT REPLACES github.com/urnetwork/message-server -- cp3b, URmessage's end-to-end
+        # suite -- needs a different repository beside this one, which an sdk checkout does not bring
+        # with it. Without it the module cannot build, and that is the ordinary state of anyone who has
+        # not cloned the server, so the module is SKIPPED WITH A PRINTED LINE and never silently.
+        # ONLY THAT SIBLING: a missing ../connect, ../glog or ../gvisor is a broken workspace for every
+        # module here, and a sweep that skipped it would print green over nothing tested.
+        server=$(grep -E '^replace github.com/urnetwork/message-server =>' go.mod | sed -E 's|.*=>[[:space:]]+([^[:space:]]+).*|\1|')
+        if [[ -n "$server" && ! -d "$server" ]]; then
+            printf 'SKIPPING SDK Go module %s: it replaces github.com/urnetwork/message-server => %s, which is not checked out beside this repo. NOTHING IN IT WAS TESTED.\n' "${mod:t}" "$server"
+            exit 0
+        fi
         host_tests=$(go list "${list_args[@]}" \
             -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...) || exit $?
         if [[ -z "$host_tests" ]]; then
