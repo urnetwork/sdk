@@ -73,6 +73,8 @@ var behavioralTypes = map[string]bool{
 	// the app-wide client event batcher: a background goroutine and persisted
 	// state, so it must cross as a handle with its methods, not as json
 	"ClientEventQueue": true,
+	// one wallet-connect proof: lock-guarded session state and methods
+	"BittensorWalletSession": true,
 
 	"AccountPreferencesViewController":    true,
 	"AccountViewController":               true,

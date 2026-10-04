@@ -238,9 +238,11 @@ func TestStripeCreateCheckoutSession(t *testing.T) {
 	if r.Result.ClientSecret != "cs_test_secret" || r.Result.SessionId != "cs_test_123" {
 		t.Errorf("result = %+v", r.Result)
 	}
-	// the embedded result feeds straight into the shared envelope
-	bridge := BuildCheckoutBridgeUrl(r.Result.ClientSecret)
-	if !strings.Contains(bridge, "client_secret=cs_test_secret") {
+	// the "never" session feeds straight into the inline bridge envelope,
+	// which tells the bridge to hand back from Stripe's onComplete
+	bridge := BuildInlineCheckoutBridgeUrl(r.Result.ClientSecret)
+	if !strings.Contains(bridge, "client_secret=cs_test_secret") ||
+		!strings.Contains(bridge, "redirect_on_completion=never") {
 		t.Errorf("bridge url = %q", bridge)
 	}
 }

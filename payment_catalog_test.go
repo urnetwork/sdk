@@ -126,6 +126,45 @@ func TestBuildCheckoutBridgeUrlWithRedirect(t *testing.T) {
 	}
 }
 
+// A session created with redirect_on_completion "never" completes through
+// Stripe's onComplete callback only; its bridge url must say so, or the bridge
+// never hands control back to the app.
+func TestBuildInlineCheckoutBridgeUrl(t *testing.T) {
+	secrets := []string{
+		"cs_test_a1B2c3_secret_z9",
+		"cs_test_a&b=c?d#e/f",
+		"cs+plus%25percent",
+	}
+	for _, secret := range secrets {
+		built := BuildInlineCheckoutBridgeUrl(secret)
+		if !strings.HasPrefix(built, CheckoutBridgeUrl+"?") {
+			t.Fatalf("built url %q does not start with the bridge page", built)
+		}
+		u, err := url.Parse(built)
+		if err != nil {
+			t.Fatalf("built url %q does not parse: %v", built, err)
+		}
+		values, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			t.Fatalf("built query %q does not parse: %v", u.RawQuery, err)
+		}
+		if got := values.Get("client_secret"); got != secret {
+			t.Errorf("client_secret round trip: got %q, want %q", got, secret)
+		}
+		if got := values.Get("redirect_link"); got != CheckoutRedirectLink {
+			t.Errorf("redirect_link = %q, want %q", got, CheckoutRedirectLink)
+		}
+		if got := values.Get("redirect_on_completion"); got != StripeRedirectOnCompletionNever {
+			t.Errorf("redirect_on_completion = %q, want %q", got, StripeRedirectOnCompletionNever)
+		}
+	}
+	// the return_url bridge url is unchanged for older clients
+	values, _ := url.ParseQuery(strings.SplitN(BuildCheckoutBridgeUrl("cs_1"), "?", 2)[1])
+	if _, ok := values["redirect_on_completion"]; ok {
+		t.Errorf("BuildCheckoutBridgeUrl carries redirect_on_completion: %v", values)
+	}
+}
+
 func TestParseCheckoutRedirect(t *testing.T) {
 	// success hand-back, exactly as the bridge page emits it
 	redirect, err := ParseCheckoutRedirect("urnetwork://checkout?status=complete&session_id=cs_test_123")
