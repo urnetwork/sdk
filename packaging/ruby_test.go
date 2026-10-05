@@ -49,14 +49,21 @@ func TestRubyFFIExplicitPlatformRejectsOtherDarwinArchitecture(t *testing.T) {
 		t.Run(test.arch, func(t *testing.T) {
 			// Offline reproduction of Apple's universal-platform ambiguity using
 			// the real RubyGems option parser. Never run the install command.
+			// RubyGems 4 removed Gem::Platform.match (deprecated since 3.3); the
+			// installer asks match_gem? for a named gem, which older RubyGems lack.
 			const script = `
+match = if Gem::Platform.respond_to?(:match_gem?)
+  ->(platform) { Gem::Platform.match_gem?(platform, "ffi") }
+else
+  Gem::Platform.method(:match)
+end
 wanted, rejected = ARGV.shift(2).map { |value| Gem::Platform.new(value) }
 Gem::Platform.instance_variable_set(:@local, Gem::Platform.new("universal-darwin-25"))
 Gem.platforms = [Gem::Platform::RUBY, Gem::Platform.local]
-abort "fixture did not reproduce universal ambiguity" unless Gem::Platform.match(wanted) && Gem::Platform.match(rejected)
+abort "fixture did not reproduce universal ambiguity" unless match.(wanted) && match.(rejected)
 Gem::Commands::InstallCommand.new.handle_options(ARGV)
-abort "wrong CPU remains installable" if Gem::Platform.match(rejected)
-abort "correct CPU is not installable" unless Gem::Platform.match(wanted)
+abort "wrong CPU remains installable" if match.(rejected)
+abort "correct CPU is not installable" unless match.(wanted)
 `
 			args := []string{"-rrubygems/commands/install_command", "-e", script, "--", test.wanted, test.rejected}
 			args = append(args, rubyFFIInstallArgs("darwin", test.arch)[1:]...)
