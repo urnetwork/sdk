@@ -1188,6 +1188,8 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"errPeerPinStoreSuperseded":             streamAdapterPackageVarOf(&errPeerPinStoreSuperseded),
 	"errTransferDiagnosticSnapshotTooLarge": streamAdapterPackageVarOf(&errTransferDiagnosticSnapshotTooLarge),
 	"errTransferDiagnosticUnavailable":      streamAdapterPackageVarOf(&errTransferDiagnosticUnavailable),
+	"errUploadLogsRpcClosed":                streamAdapterPackageVarOf(&errUploadLogsRpcClosed),
+	"errUploadLogsUnreported":               streamAdapterPackageVarOf(&errUploadLogsUnreported),
 	"extenderNetworkClientConfigure":        streamAdapterPackageVarOf(&extenderNetworkClientConfigure),
 	"extenderNetworkClientEnabled":          streamAdapterPackageVarOf(&extenderNetworkClientEnabled),
 	"extenderNodeEnabled":                   streamAdapterPackageVarOf(&extenderNodeEnabled),
@@ -1348,6 +1350,8 @@ var streamAdapterNonSentinelRulings = map[string]string{
 	"errPeerPinStoreSuperseded":             "the bounded peer key-pin store's refusal from a superseded owner",
 	"errTransferDiagnosticSnapshotTooLarge": "the transfer diagnostics' refusal of a snapshot over 64 KiB",
 	"errTransferDiagnosticUnavailable":      "the transfer diagnostics' refusal on a device that has not opted in",
+	"errUploadLogsRpcClosed":                "DeviceRemote's report to an UploadLogs callback that the device rpc closed before the upload reported its result",
+	"errUploadLogsUnreported":               "DeviceRemote's report to an UploadLogs callback that the device process does not report the upload's result",
 }
 
 // streamAdapterPredeclaredTypeNames is the set of type names a CONSTANT's declared type can be
