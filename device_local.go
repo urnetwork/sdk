@@ -7652,29 +7652,9 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 
 	logDir := GetLogDir()
 
-	files, err := os.ReadDir(logDir)
+	zipPath, err := zipUploadLogs(logDir)
 	if err != nil {
-		self.log.Errorf("Failed to read log directory %q: %v", logDir, err)
-		return err
-	}
-
-	logPaths := []string{}
-	for _, file := range files {
-		name := file.Name()
-		if !file.IsDir() &&
-			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
-				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
-				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
-				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
-			fullPath := logDir + "/" + name
-			logPaths = append(logPaths, fullPath)
-		}
-	}
-
-	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
-	zipPath := filepath.Join(logDir, zipName)
-
-	if err := zipLogs(logPaths, zipPath); err != nil {
+		self.log.Errorf("Failed to zip log directory %q: %v", logDir, err)
 		return err
 	}
 
@@ -7703,6 +7683,41 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 	}))
 
 	return nil
+}
+
+// zipUploadLogs zips this process's glog files in logDir into a new zip there
+// and returns its path. It flushes glog first: glog buffers its file writes and
+// flushes them only every 30 seconds, so the newest lines, such as an app line
+// written with LogAppInfo just before the user sent feedback, would otherwise
+// be missing from the upload.
+func zipUploadLogs(logDir string) (string, error) {
+	FlushGlog()
+
+	files, err := os.ReadDir(logDir)
+	if err != nil {
+		return "", err
+	}
+
+	logPaths := []string{}
+	for _, file := range files {
+		name := file.Name()
+		if !file.IsDir() &&
+			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
+				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
+				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
+				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
+			fullPath := logDir + "/" + name
+			logPaths = append(logPaths, fullPath)
+		}
+	}
+
+	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
+	zipPath := filepath.Join(logDir, zipName)
+
+	if err := zipLogs(logPaths, zipPath); err != nil {
+		return "", err
+	}
+	return zipPath, nil
 }
 
 // DiagnosticManifestJson returns the device-side half of the exported bundle's

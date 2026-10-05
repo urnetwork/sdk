@@ -806,6 +806,7 @@ EXPORTS
 	urnet_locations_view_controller_get_filtered_locations
 	urnet_locations_view_controller_start
 	urnet_locations_view_controller_stop
+	urnet_log_app_info
 	urnet_log_inventory
 	urnet_login_view_controller_close
 	urnet_login_view_controller_start
