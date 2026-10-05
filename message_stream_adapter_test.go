@@ -1074,6 +1074,7 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"defaultAccountCheckTimeout":               streamAdapterPackageConstOf(defaultAccountCheckTimeout),
 	"defaultBlockActionWindowDuration":         streamAdapterPackageConstOf(defaultBlockActionWindowDuration),
 	"defaultNetworkCheckTimeout":               streamAdapterPackageConstOf(defaultNetworkCheckTimeout),
+	"defaultProviderStatusPollInterval":        streamAdapterPackageConstOf(defaultProviderStatusPollInterval),
 	"defaultThroughputSampleInterval":          streamAdapterPackageConstOf(defaultThroughputSampleInterval),
 	"defaultThroughputWindowDuration":          streamAdapterPackageConstOf(defaultThroughputWindowDuration),
 	"dohServerScoresStaleAfter":                streamAdapterPackageConstOf(dohServerScoresStaleAfter),
