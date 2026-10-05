@@ -101,6 +101,7 @@ EXPORTS
 	urnet_api_sn_set_wallet
 	urnet_api_sn_set_wallet_sync
 	urnet_api_sn_validate_wallet
+	urnet_api_sn_wallet_mapping_challenge_sync
 	urnet_api_start_jwt_refresh
 	urnet_api_stripe_create_customer_portal
 	urnet_api_stripe_payment_sheet

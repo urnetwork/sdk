@@ -830,6 +830,8 @@ struct SnSetWalletError;
 struct SnSetWalletResult;
 struct SnUnsignedTx;
 struct SnValidateWalletResult;
+struct SnWalletMappingChallengeArgs;
+struct SnWalletMappingChallengeResult;
 struct SocketRead;
 struct SocketTLSOptions;
 struct SolanaPaymentIntentArgs;
@@ -3196,6 +3198,8 @@ struct SnSetWalletError {
 struct SnSetWalletResult {
 	std::optional<SnWallet> wallet;
 	std::optional<SnSetWalletError> error;
+	std::optional<std::string> mapping_hash;
+	std::optional<int64_t> mapping_generation;
 };
 
 struct SnUnsignedTx {
@@ -3213,6 +3217,17 @@ struct SnValidateWalletResult {
 	bool banned{};
 	std::optional<std::string> message;
 	std::optional<SnError> error;
+};
+
+struct SnWalletMappingChallengeArgs {
+	std::optional<std::string> client_id;
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
+};
+
+struct SnWalletMappingChallengeResult {
+	std::string message{};
 };
 
 struct SocketRead {
@@ -4230,6 +4245,10 @@ inline void to_json(nlohmann::json& j, const SnUnsignedTx& v);
 inline void from_json(const nlohmann::json& j, SnUnsignedTx& v);
 inline void to_json(nlohmann::json& j, const SnValidateWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v);
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeArgs& v);
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeArgs& v);
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeResult& v);
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeResult& v);
 inline void to_json(nlohmann::json& j, const SocketRead& v);
 inline void from_json(const nlohmann::json& j, SocketRead& v);
 inline void to_json(nlohmann::json& j, const SocketTLSOptions& v);
@@ -14637,6 +14656,12 @@ inline void to_json(nlohmann::json& j, const SnSetWalletResult& v) {
 	if (v.error) {
 		j["error"] = *v.error;
 	}
+	if (v.mapping_hash) {
+		j["mapping_hash"] = *v.mapping_hash;
+	}
+	if (v.mapping_generation) {
+		j["mapping_generation"] = *v.mapping_generation;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnSetWalletResult& v) {
 	if (!j.is_object()) {
@@ -14651,6 +14676,16 @@ inline void from_json(const nlohmann::json& j, SnSetWalletResult& v) {
 		SnSetWalletError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+	if (auto it = j.find("mapping_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.mapping_hash = std::move(tmp);
+	}
+	if (auto it = j.find("mapping_generation"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.mapping_generation = std::move(tmp);
 	}
 }
 
@@ -14721,6 +14756,48 @@ inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v) {
 		SnError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeArgs& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+}
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeResult& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
 	}
 }
 
@@ -17258,6 +17335,7 @@ public:
 	void snSetWallet(const std::optional<SnSetWalletArgs>& args, SnSetWalletCallback callback) const;
 	std::optional<SnSetWalletResult> snSetWalletSync(const std::optional<SnSetWalletArgs>& args) const;
 	void snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const;
+	std::optional<SnWalletMappingChallengeResult> snWalletMappingChallengeSync(const std::optional<SnWalletMappingChallengeArgs>& args) const;
 	void startJwtRefresh() const;
 	void stripeCreateCustomerPortal(const std::optional<StripeCreateCustomerPortalArgs>& args, StripeCreateCustomerPortalCallback callback) const;
 	void stripePaymentSheet(const std::optional<StripePaymentSheetArgs>& args, StripePaymentSheetCallback callback) const;
@@ -25710,6 +25788,24 @@ inline std::optional<SnSetWalletResult> Api::snSetWalletSync(const std::optional
 inline void Api::snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const {
 	auto* callback_fn = callback ? new SnValidateWalletCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_validate_wallet(handle(), address.c_str(), callback_fn ? &detail::oneshot_sn_validate_wallet : nullptr, callback_fn);
+}
+inline std::optional<SnWalletMappingChallengeResult> Api::snWalletMappingChallengeSync(const std::optional<SnWalletMappingChallengeArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_wallet_mapping_challenge_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnWalletMappingChallengeResult>(r_s->c_str());
 }
 inline void Api::startJwtRefresh() const {
 	urnet_api_start_jwt_refresh(handle());

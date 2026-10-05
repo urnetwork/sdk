@@ -924,6 +924,7 @@ char* urnet_api_sn_pool_claim_sync(uint64_t self, const char* args_json, char** 
 void urnet_api_sn_set_wallet(uint64_t self, const char* args_json, urnet_sn_set_wallet_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_set_wallet_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_sn_validate_wallet(uint64_t self, const char* address, urnet_sn_validate_wallet_cb callback_result, void* callback_user_data);
+char* urnet_api_sn_wallet_mapping_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_start_jwt_refresh(uint64_t self);
 void urnet_api_stripe_create_customer_portal(uint64_t self, const char* args_json, urnet_stripe_create_customer_portal_cb callback_result, void* callback_user_data);
 void urnet_api_stripe_payment_sheet(uint64_t self, const char* args_json, urnet_stripe_payment_sheet_cb callback_result, void* callback_user_data);
@@ -4480,6 +4481,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* SnSetWalletResult (json):
  *   wallet?: SnWallet | null
  *   error?: SnSetWalletError | null
+ *   mapping_hash?: string
+ *   mapping_generation?: number
  */
 
 /* SnUnsignedTx (json):
@@ -4512,6 +4515,17 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* SnWalletList (json):
  *   = SnWallet | null[]
+ */
+
+/* SnWalletMappingChallengeArgs (json):
+ *   client_id?: string (uuid) | null
+ *   coldkey_ss58: string
+ *   from_epoch: number
+ *   through_epoch: number
+ */
+
+/* SnWalletMappingChallengeResult (json):
+ *   message: string
  */
 
 /* SocketRead (json):
