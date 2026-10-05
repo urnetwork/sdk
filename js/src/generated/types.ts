@@ -698,6 +698,7 @@ export interface SnSetWalletResult {
 }
 
 export interface SnSetWalletError {
+  code?: string;
   message: string;
 }
 

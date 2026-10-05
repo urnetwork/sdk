@@ -287,7 +287,13 @@ func (self *snDevice) connectSnWallet(ctx context.Context, coldkeySs58 string, s
 		return nil, err
 	}
 	if set.Error != nil {
-		return &SnConnectWalletResult{Error: newSnError(SnErrorCodeServer, set.Error.Message)}, nil
+		// the server's own code passes through when the apps have words for
+		// it; any other refusal stays server_error with the server's message
+		code := SnErrorCodeServer
+		if set.Error.Code == SnErrorCodeSignatureMismatch {
+			code = set.Error.Code
+		}
+		return &SnConnectWalletResult{Error: newSnError(code, set.Error.Message)}, nil
 	}
 	wallet := set.Wallet.Copy()
 	if wallet == nil {

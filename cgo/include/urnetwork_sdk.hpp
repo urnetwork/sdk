@@ -440,6 +440,7 @@ inline constexpr const char* SnErrorCodeNeedsGas = "needs_gas";
 inline constexpr const char* SnErrorCodeNotClaimable = "not_claimable";
 inline constexpr const char* SnErrorCodeProofMismatch = "proof_mismatch";
 inline constexpr const char* SnErrorCodeServer = "server_error";
+inline constexpr const char* SnErrorCodeSignatureMismatch = "signature_mismatch";
 inline constexpr const char* SnErrorCodeWalletBlocked = "wallet_blocked";
 inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
@@ -3199,6 +3200,7 @@ struct SnSetWalletArgs {
 };
 
 struct SnSetWalletError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -14655,11 +14657,19 @@ inline void from_json(const nlohmann::json& j, SnSetWalletArgs& v) {
 
 inline void to_json(nlohmann::json& j, const SnSetWalletError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, SnSetWalletError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
