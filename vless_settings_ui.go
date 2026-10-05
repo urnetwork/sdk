@@ -55,8 +55,8 @@ func VlessSettingsLink(settings *VlessSettings) string {
 
 // The error id of the first problem with the settings, or empty when they can
 // be dialed. Whether they are enabled does not matter here.
-func ValidateVlessSettings(settings *VlessSettings) string {
-	_, errorId := settings.connectConfig()
+func ValidateVlessSettings(settings *VlessSettings) (errorId string) {
+	_, errorId = settings.connectConfig()
 	return errorId
 }
 
@@ -110,10 +110,10 @@ func (self *NetworkSpace) GetVlessSettings() *VlessSettings {
 // On ios this writes the app group values the packet tunnel extension reads
 // at its next start, and the desktop services take them at the next tunnel
 // start, which is what the apps tell the user.
-func (self *NetworkSpace) SetVlessSettings(settings *VlessSettings) string {
+func (self *NetworkSpace) SetVlessSettings(settings *VlessSettings) (errorId string) {
 	stored := settings.normalized()
 	if stored != nil && stored.Enabled {
-		if _, errorId := stored.connectConfig(); errorId != "" {
+		if _, errorId = stored.connectConfig(); errorId != "" {
 			return errorId
 		}
 	}

@@ -11,6 +11,8 @@
  *   your ui thread. do not destroy state captured by a listener while a
  *   callback may be in flight.
  * - functions that can fail throw urnet::Error.
+ * - a std::string result marked "error id" is empty on success, else the id
+ *   of the refusal, or ErrorIdInternal when the call could not run.
  */
 #ifndef URNETWORK_SDK_HPP
 #define URNETWORK_SDK_HPP
@@ -143,6 +145,9 @@ protected:
 } // namespace detail
 
 /* ----- constants ----- */
+
+/* what a function whose result is an error id answers when the call could not run */
+inline constexpr const char* ErrorIdInternal = URNET_ERROR_ID_INTERNAL;
 
 inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
@@ -17950,9 +17955,11 @@ public:
 	bool hasPlatformFamilyUrls() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
+	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 	std::string setControlDohUrls(const std::optional<StringList>& doh_urls) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setExtenderGossipMode(const std::string& mode) const;
+	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 	std::string setVlessSettings(const std::optional<VlessSettings>& settings) const;
 	std::string toJson() const;
 };
@@ -31256,6 +31263,7 @@ inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);
 	return r;
 }
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateControlDohUrl(const std::string& doh_url) {
 	char* r_c = urnet_validate_control_doh_url(doh_url.c_str());
 	return detail::takeString(r_c);
@@ -31272,6 +31280,7 @@ inline bool validateSs58(const std::string& address) {
 	bool r = urnet_validate_ss58(address.c_str());
 	return r;
 }
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateVlessSettings(const std::optional<VlessSettings>& settings) {
 	std::string settings_json;
 	const char* settings_c = nullptr;

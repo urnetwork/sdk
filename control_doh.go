@@ -27,7 +27,8 @@ import (
 )
 
 // The error ids of a bootstrap DoH url. Each is a localization key id, so the
-// apps map them to their own strings.
+// apps map them to their own strings. A function that answers one names its
+// result `errorId`, as the VLESS ones do (vless_settings.go).
 const (
 	ControlDohErrorUrlInvalid    = "control_doh_error_url_invalid"
 	ControlDohErrorHttpsRequired = "control_doh_error_https_required"
