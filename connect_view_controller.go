@@ -20,16 +20,16 @@ import (
 type ConnectionStatus = string
 
 const (
-	Disconnected   ConnectionStatus = "DISCONNECTED"
-	Connecting     ConnectionStatus = "CONNECTING"
-	DestinationSet ConnectionStatus = "DESTINATION_SET"
-	Connected      ConnectionStatus = "CONNECTED"
+	Disconnected   string = "DISCONNECTED"
+	Connecting     string = "CONNECTING"
+	DestinationSet string = "DESTINATION_SET"
+	Connected      string = "CONNECTED"
 	// ConnectFailed is the window honesty layer's terminal outcome: the
 	// connect window hit its outcome deadline twice with zero providers Added
 	// (WindowExpandEvent.Failed / WindowStatus.Failed). The app renders a
 	// failure state with a Retry; the session itself is still standing, so a
 	// provider that lands later flips this back to Connecting/Connected.
-	ConnectFailed ConnectionStatus = "CONNECT_FAILED"
+	ConnectFailed string = "CONNECT_FAILED"
 )
 
 type SelectedLocationListener interface {
@@ -546,11 +546,11 @@ func (self *ConnectViewController) GetGrid() *ConnectGrid {
 type ProviderState = string
 
 const (
-	ProviderStateInEvaluation     ProviderState = "InEvaluation"
-	ProviderStateEvaluationFailed ProviderState = "EvaluationFailed"
-	ProviderStateNotAdded         ProviderState = "NotAdded"
-	ProviderStateAdded            ProviderState = "Added"
-	ProviderStateRemoved          ProviderState = "Removed"
+	ProviderStateInEvaluation     string = "InEvaluation"
+	ProviderStateEvaluationFailed string = "EvaluationFailed"
+	ProviderStateNotAdded         string = "NotAdded"
+	ProviderStateAdded            string = "Added"
+	ProviderStateRemoved          string = "Removed"
 )
 
 func parseProviderState(state connect.ProviderState) (ProviderState, error) {

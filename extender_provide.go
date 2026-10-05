@@ -161,9 +161,9 @@ type ExtenderProvideStatusChangeListener interface {
 // that stops and starts again reports a fresh server's counters from zero.
 // Every field is a gomobile-bindable value.
 type ExtenderStats struct {
-	IngressByteCount ByteCount
+	IngressByteCount int64
 	IngressReadCount int64
-	EgressByteCount  ByteCount
+	EgressByteCount  int64
 	EgressReadCount  int64
 }
 

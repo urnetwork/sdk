@@ -7473,7 +7473,7 @@ type BlockActionRpc struct {
 	BlockOverride *BlockOverride
 	RouteOverride *RouteOverride
 	PacketCount   int
-	ByteCount     ByteCount
+	ByteCount     int64
 	Reason        string
 }
 
@@ -7704,8 +7704,8 @@ func (self *DeviceRemoteTransferPath) toTransferPath() *TransferPath {
 //gomobile:noexport
 type ContractDetailsRpc struct {
 	ContractId            *connect.Id
-	ContractUsedByteCount ByteCount
-	ContractByteCount     ByteCount
+	ContractUsedByteCount int64
+	ContractByteCount     int64
 	ContractBitRate       int
 	ContractTransferPath  *DeviceRemoteTransferPath
 
@@ -7969,17 +7969,17 @@ type TransportPacketStatsRpc struct {
 //gomobile:noexport
 type PacketStatsRpc struct {
 	RemoteEgressPacketCount  int64
-	RemoteEgressByteCount    ByteCount
+	RemoteEgressByteCount    int64
 	RemoteIngressPacketCount int64
-	RemoteIngressByteCount   ByteCount
+	RemoteIngressByteCount   int64
 	LocalEgressPacketCount   int64
-	LocalEgressByteCount     ByteCount
+	LocalEgressByteCount     int64
 	LocalIngressPacketCount  int64
-	LocalIngressByteCount    ByteCount
+	LocalIngressByteCount    int64
 	BlockEgressPacketCount   int64
-	BlockEgressByteCount     ByteCount
+	BlockEgressByteCount     int64
 	BlockIngressPacketCount  int64
-	BlockIngressByteCount    ByteCount
+	BlockIngressByteCount    int64
 	TransportStats           []*TransportPacketStatsRpc
 }
 
