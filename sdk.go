@@ -594,6 +594,28 @@ func SetEgressInterfaceIndex(index4 int, index6 int) {
 	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
 }
 
+// SetNetworkCountryCode reports the country of the mobile network this device
+// is on: Android's TelephonyManager.networkCountryIso while the default network
+// is cellular, and "" on Wi-Fi or any other network whose country the platform
+// does not report. The code is ISO 3166-1 alpha-2 in either case; anything
+// else clears it. Apps call it on every default network change, and once at
+// startup before the network space manager is built, so the first dials of
+// every space already have it.
+//
+// It never leaves the process. It is the fallback for the extender hint's
+// country, which picks the spoof list extender dials front with: while the
+// hint endpoint cannot be reached -- on a whitelist-only mobile network no
+// URnetwork address is routable -- the extender dials still draw their outer
+// names from the list of the country the device is in (connect
+// ExtenderDirectory.SpoofCountryCode). One value for the process, applied in
+// place to every running space from its next extender dial.
+//
+// This process only: on ios the extender dials of a connected tunnel happen
+// in the packet tunnel extension, which this does not reach.
+func SetNetworkCountryCode(countryCode string) {
+	connect.SetNetworkCountryCode(countryCode)
+}
+
 // FreeMemory drops recoverable memory in response to host memory pressure
 func FreeMemory() {
 	startTime := time.Now()

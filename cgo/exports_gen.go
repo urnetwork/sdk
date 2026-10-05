@@ -16982,6 +16982,12 @@ func urnet_set_message_pool_memory_targets(packetPoolByteCount C.int64_t, largeO
 	sdk.SetMessagePoolMemoryTargets(int64(packetPoolByteCount), int64(largeObjectPoolByteCount))
 }
 
+//export urnet_set_network_country_code
+func urnet_set_network_country_code(countryCode *C.char) {
+	defer cgoGuard("urnet_set_network_country_code")
+	sdk.SetNetworkCountryCode(goString(countryCode))
+}
+
 //export urnet_set_transfer_diagnostic_snapshots_enabled
 func urnet_set_transfer_diagnostic_snapshots_enabled(enabled C.bool) C.bool {
 	defer cgoGuard("urnet_set_transfer_diagnostic_snapshots_enabled")

@@ -2065,6 +2065,7 @@ bool urnet_set_log_verbosity(int64_t level, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_memory_profile_rate(int64_t byte_count);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
+void urnet_set_network_country_code(const char* country_code);
 bool urnet_set_transfer_diagnostic_snapshots_enabled(bool enabled);
 char* urnet_short_ss58(const char* address);
 char* urnet_sn_claim_transactions_for(const char* settings_json, const char* coldkey_ss58, const char* epochs_json, char** out_error);
