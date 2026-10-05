@@ -1136,7 +1136,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1168) ==
+== skipped (1170) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1686,6 +1686,8 @@ DeviceRemoteSyncRequest: data: crosses as json
 DeviceRemoteSyncResponse: data: crosses as json
 DeviceRemoteTransferPath: data: crosses as json
 DeviceRemoteTransportSettingsRpc: skipped: rpc gob internal (macOS parity: ignored)
+DeviceRemoteUploadLogsRequest: data: crosses as json
+DeviceRemoteUploadLogsResult: data: crosses as json
 DeviceRemoteWindowListenerId: data: crosses as json
 DeviceRemoteWindowMonitorEvent: data: crosses as json
 DeviceRemoteWindowStatus: data: crosses as json
