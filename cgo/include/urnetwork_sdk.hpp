@@ -211,6 +211,10 @@ inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* ContractStatusClosed = "closed";
 inline constexpr const char* ContractStatusOpen = "open";
+inline constexpr const char* ControlDohErrorHttpsRequired = "control_doh_error_https_required";
+inline constexpr const char* ControlDohErrorIpRequired = "control_doh_error_ip_required";
+inline constexpr const char* ControlDohErrorTooMany = "control_doh_error_too_many";
+inline constexpr const char* ControlDohErrorUrlInvalid = "control_doh_error_url_invalid";
 inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcVersion = 3;
@@ -1884,6 +1888,7 @@ struct ExtenderShareDecodeResult {
 	int64_t Count{};
 	bool HasSettings{};
 	std::string SettingsHost{};
+	std::optional<StringList> ControlDohUrls;
 };
 
 struct ExtenderShareResult {
@@ -2519,6 +2524,8 @@ struct NetworkSpaceValues {
 	std::optional<std::vector<std::string>> extender_root_public_keys;
 	std::optional<std::vector<std::string>> extender_hosts;
 	std::optional<VlessSettings> vless;
+	std::optional<std::vector<std::string>> control_doh_urls_ipv4;
+	std::optional<std::vector<std::string>> control_doh_urls_ipv6;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -8548,6 +8555,9 @@ inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v) {
 	j["Count"] = v.Count;
 	j["HasSettings"] = v.HasSettings;
 	j["SettingsHost"] = v.SettingsHost;
+	if (v.ControlDohUrls) {
+		j["ControlDohUrls"] = *v.ControlDohUrls;
+	}
 }
 inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v) {
 	if (!j.is_object()) {
@@ -8573,6 +8583,11 @@ inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v) {
 	}
 	if (auto it = j.find("SettingsHost"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SettingsHost);
+	}
+	if (auto it = j.find("ControlDohUrls"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.ControlDohUrls = std::move(tmp);
 	}
 }
 
@@ -11516,6 +11531,12 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.vless) {
 		j["vless"] = *v.vless;
 	}
+	if (v.control_doh_urls_ipv4) {
+		j["control_doh_urls_ipv4"] = *v.control_doh_urls_ipv4;
+	}
+	if (v.control_doh_urls_ipv6) {
+		j["control_doh_urls_ipv6"] = *v.control_doh_urls_ipv6;
+	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 	if (!j.is_object()) {
@@ -11615,6 +11636,16 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		VlessSettings tmp{};
 		it->get_to(tmp);
 		v.vless = std::move(tmp);
+	}
+	if (auto it = j.find("control_doh_urls_ipv4"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.control_doh_urls_ipv4 = std::move(tmp);
+	}
+	if (auto it = j.find("control_doh_urls_ipv6"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.control_doh_urls_ipv6 = std::move(tmp);
 	}
 }
 
@@ -17891,6 +17922,9 @@ public:
 	bool getBundled() const;
 	std::string getConfiguredApiUrl() const;
 	std::string getConfiguredPlatformUrl() const;
+	std::optional<StringList> getControlDohUrls() const;
+	std::optional<StringList> getControlDohUrlsIpv4() const;
+	std::optional<StringList> getControlDohUrlsIpv6() const;
 	std::string getEnvName() const;
 	std::string getEnvSecret() const;
 	std::string getExtenderDnsName() const;
@@ -17916,6 +17950,7 @@ public:
 	bool hasPlatformFamilyUrls() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
+	std::string setControlDohUrls(const std::optional<StringList>& doh_urls) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setExtenderGossipMode(const std::string& mode) const;
 	std::string setVlessSettings(const std::optional<VlessSettings>& settings) const;
@@ -28694,6 +28729,30 @@ inline std::string NetworkSpace::getConfiguredPlatformUrl() const {
 	char* r_c = urnet_network_space_get_configured_platform_url(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<StringList> NetworkSpace::getControlDohUrls() const {
+	char* r_c = urnet_network_space_get_control_doh_urls(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> NetworkSpace::getControlDohUrlsIpv4() const {
+	char* r_c = urnet_network_space_get_control_doh_urls_ipv4(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> NetworkSpace::getControlDohUrlsIpv6() const {
+	char* r_c = urnet_network_space_get_control_doh_urls_ipv6(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline std::string NetworkSpace::getEnvName() const {
 	char* r_c = urnet_network_space_get_env_name(handle());
 	return detail::takeString(r_c);
@@ -28820,6 +28879,16 @@ inline LocalStateResetResult NetworkSpace::resetLocalStateIfCurrent(const LocalA
 }
 inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std::string& service) const {
 	char* r_c = urnet_network_space_service_url(handle(), scheme.c_str(), service.c_str());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSpace::setControlDohUrls(const std::optional<StringList>& doh_urls) const {
+	std::string doh_urls_json;
+	const char* doh_urls_c = nullptr;
+	if (doh_urls) {
+		doh_urls_json = nlohmann::json(*doh_urls).dump();
+		doh_urls_c = doh_urls_json.c_str();
+	}
+	char* r_c = urnet_network_space_set_control_doh_urls(handle(), doh_urls_c);
 	return detail::takeString(r_c);
 }
 inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
@@ -30926,6 +30995,14 @@ inline std::string recordTunnelRecoveryStage(const std::string& stage, const std
 	char* r_c = urnet_record_tunnel_recovery_stage(stage.c_str(), result.c_str(), intended, consumer_present, has_location, provider_count, generation);
 	return detail::takeString(r_c);
 }
+inline std::optional<StringList> regionalControlDohUrls(const std::string& country_code) {
+	char* r_c = urnet_regional_control_doh_urls(country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline void reportMemoryTrimLevel(int64_t level) {
 	urnet_report_memory_trim_level(level);
 }
@@ -31178,6 +31255,10 @@ inline void trimMemory() {
 inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);
 	return r;
+}
+inline std::string validateControlDohUrl(const std::string& doh_url) {
+	char* r_c = urnet_validate_control_doh_url(doh_url.c_str());
+	return detail::takeString(r_c);
 }
 inline std::optional<EmojiTagValidation> validateEmojiTag(const std::string& tag) {
 	char* r_c = urnet_validate_emoji_tag(tag.c_str());

@@ -150,6 +150,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CONNECT_FAILED "CONNECT_FAILED"
 #define URNET_CONTRACT_STATUS_CLOSED "closed"
 #define URNET_CONTRACT_STATUS_OPEN "open"
+#define URNET_CONTROL_DOH_ERROR_HTTPS_REQUIRED "control_doh_error_https_required"
+#define URNET_CONTROL_DOH_ERROR_IP_REQUIRED "control_doh_error_ip_required"
+#define URNET_CONTROL_DOH_ERROR_TOO_MANY "control_doh_error_too_many"
+#define URNET_CONTROL_DOH_ERROR_URL_INVALID "control_doh_error_url_invalid"
 #define URNET_DEFAULT_TUNNEL_DNS_ADDRESS_IPV6 "2001:db8::65:49:70:65"
 #define URNET_DESTINATION_SET "DESTINATION_SET"
 #define URNET_DEVICE_RPC_VERSION 3
@@ -1634,6 +1638,9 @@ uint64_t urnet_network_space_get_auth_state_snapshot(uint64_t self, char** out_e
 bool urnet_network_space_get_bundled(uint64_t self);
 char* urnet_network_space_get_configured_api_url(uint64_t self);
 char* urnet_network_space_get_configured_platform_url(uint64_t self);
+char* urnet_network_space_get_control_doh_urls(uint64_t self);
+char* urnet_network_space_get_control_doh_urls_ipv4(uint64_t self);
+char* urnet_network_space_get_control_doh_urls_ipv6(uint64_t self);
 char* urnet_network_space_get_env_name(uint64_t self);
 char* urnet_network_space_get_env_secret(uint64_t self);
 char* urnet_network_space_get_extender_dns_name(uint64_t self);
@@ -1659,6 +1666,7 @@ char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
+char* urnet_network_space_set_control_doh_urls(uint64_t self, const char* doh_urls_json);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
 void urnet_network_space_set_extender_gossip_mode(uint64_t self, const char* mode);
 char* urnet_network_space_set_vless_settings(uint64_t self, const char* settings_json);
@@ -2041,6 +2049,7 @@ int64_t urnet_points_to_nano_points(double points);
 char* urnet_public_identity_key_hash(const uint8_t* public_key, int32_t public_key_len);
 int64_t urnet_purchase_report_backoff_millis(int64_t attempt);
 char* urnet_record_tunnel_recovery_stage(const char* stage, const char* result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation);
+char* urnet_regional_control_doh_urls(const char* country_code);
 void urnet_report_memory_trim_level(int64_t level);
 int64_t urnet_saving_percent(double yearly_amount, double monthly_amount, int64_t minor_unit_digits);
 char* urnet_selectable_transport_modes(void);
@@ -2072,6 +2081,7 @@ char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json,
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 void urnet_trim_memory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
+char* urnet_validate_control_doh_url(const char* doh_url);
 char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
 char* urnet_validate_vless_settings(const char* settings_json);
@@ -3007,6 +3017,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Count: number
  *   HasSettings: boolean
  *   SettingsHost: string
+ *   ControlDohUrls: StringList | null
  */
 
 /* ExtenderShareResult (json):
@@ -3610,6 +3621,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   extender_root_public_keys?: string[]
  *   extender_hosts?: string[]
  *   vless?: VlessSettings | null
+ *   control_doh_urls_ipv4?: string[]
+ *   control_doh_urls_ipv6?: string[]
  */
 
 /* NetworkUnblockLocationArgs (json):

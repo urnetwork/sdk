@@ -68,7 +68,10 @@ type deviceLocalProvider struct {
 
 	clientStrategy *connect.ClientStrategy
 	// clientStrategySettings seeds the direct-only strategies of the
-	// family-pinned transports; nil falls back to the connect defaults
+	// family-pinned transports; nil falls back to the connect defaults. They
+	// carry the space's DoH settings in force when the provider was built, so
+	// a bootstrap DoH change reaches these strategies when the device is next
+	// built.
 	clientStrategySettings *connect.ClientStrategySettings
 	platformUrl            string
 	// platformUrlV4 and platformUrlV6 are the family-pinned urls (IPV6.md
@@ -278,7 +281,7 @@ func newDeviceLocalProviderWithOverrides(
 		networkSpace:              networkSpace,
 		dialContextSettings:       dialContextSettings,
 		clientStrategy:            clientStrategy,
-		clientStrategySettings:    networkSpace.clientStrategySettings,
+		clientStrategySettings:    networkSpace.derivedClientStrategySettings(),
 		platformUrl:               networkSpace.platformUrl,
 		platformUrlV4:             networkSpace.GetPlatformUrlV4(),
 		platformUrlV6:             networkSpace.GetPlatformUrlV6(),

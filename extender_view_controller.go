@@ -9,7 +9,9 @@ package sdk
 // the status the panel renders, the three settings of K6, the share payload
 // of K7, and the import that reads one back. Encoding, decoding, the foreign
 // host rule and the settings write all live here, so android, apple, windows
-// and linux each render a payload they never parse themselves.
+// and linux each render a payload they never parse themselves. The bootstrap
+// DoH servers the same screen edits are the space's (control_doh_ui.go); the
+// share carries them in its settings block.
 //
 // The status reads the DEVICE, not the space: on ios the packet tunnel
 // extension holds the directory whose dials the panel describes, and
@@ -91,6 +93,12 @@ type ExtenderShareDecodeResult struct {
 	// importer is asked to confirm before it replaces this space's. Empty
 	// without a settings block.
 	SettingsHost string
+	// The bootstrap DoH servers the settings block names (control_doh.go), v4
+	// then v6, which replace this space's when the settings are taken. Empty
+	// when it names none, and an import then leaves this space's alone. The
+	// confirmation lists them, since the importer's lookups of the space's
+	// names would go to them.
+	ControlDohUrls *StringList
 }
 
 // The outcome of an import (K7).
@@ -198,7 +206,8 @@ func (self *ExtenderViewController) SetSettings(
 // BuildShare renders this space's addresses as the payload of K7: active
 // first, then the rest of the usable ones, then the manual addresses, at most
 // 48. Keys and records are never shared. `includeSettings` adds the operator
-// block, which an importer applies only when it asks to.
+// block, with this space's bootstrap DoH servers, which an importer applies
+// only when it asks to.
 func (self *ExtenderViewController) BuildShare(includeSettings bool) *ExtenderShareResult {
 	result := &ExtenderShareResult{}
 	networkSpace := self.device.GetNetworkSpace()
@@ -226,6 +235,11 @@ func (self *ExtenderViewController) BuildShare(includeSettings bool) *ExtenderSh
 		includeSettings,
 		connect.ExtenderShareDefaultAddressCount,
 	)
+	if share.Settings != nil {
+		// a setup that works behind a block on the default DoH servers travels
+		// with the rest of the settings
+		share.Settings.ControlDohUrlsIpv4, share.Settings.ControlDohUrlsIpv6 = spaceControlDohUrls(&values)
+	}
 	text, err := connect.EncodeExtenderShare(share)
 	if err != nil {
 		deviceLog(self.device).Infof("[extendervc]share err = %s\n", err)
@@ -245,14 +259,17 @@ func (self *ExtenderViewController) DecodeShare(text string) *ExtenderShareDecod
 		return &ExtenderShareDecodeResult{Error: ExtenderImportErrorInvalid}
 	}
 	result := &ExtenderShareDecodeResult{
-		Ok:          true,
-		NetworkHost: share.NetworkHost,
-		Count:       len(connect.ExtenderShareAddresses(share)),
-		ForeignHost: !self.networkHostAllowed(share.NetworkHost),
+		Ok:             true,
+		NetworkHost:    share.NetworkHost,
+		Count:          len(connect.ExtenderShareAddresses(share)),
+		ForeignHost:    !self.networkHostAllowed(share.NetworkHost),
+		ControlDohUrls: NewStringList(),
 	}
 	if share.Settings != nil {
 		result.HasSettings = true
 		result.SettingsHost = share.Settings.DnsName
+		result.ControlDohUrls.addAll(share.Settings.ControlDohUrlsIpv4...)
+		result.ControlDohUrls.addAll(share.Settings.ControlDohUrlsIpv6...)
 	}
 	return result
 }
@@ -263,8 +280,9 @@ func (self *ExtenderViewController) DecodeShare(text string) *ExtenderShareDecod
 //
 // A payload naming another operator's network is refused unless `useSettings`
 // is chosen, which also replaces this space's extender dns name, gossip url
-// and root keys with the payload's. The first hello over the platform's pinned
-// tls replaces the root keys again.
+// and root keys with the payload's, and its bootstrap DoH servers when the
+// payload names any. The first hello over the platform's pinned tls replaces
+// the root keys again.
 func (self *ExtenderViewController) ImportShare(
 	text string,
 	useSettings bool,
@@ -298,10 +316,19 @@ func (self *ExtenderViewController) ImportShare(
 	// empty one
 	if useSettings && share.Settings != nil {
 		rootPublicKeyHexes := connect.ExtenderShareRootKeyHexes(share)
+		// the decode checked every DoH url; a payload that names none leaves
+		// this space's own servers alone
+		controlDohUrlsIpv4 := share.Settings.ControlDohUrlsIpv4
+		controlDohUrlsIpv6 := share.Settings.ControlDohUrlsIpv6
+		takeControlDohUrls := 0 < len(controlDohUrlsIpv4)+len(controlDohUrlsIpv6)
 		networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 			values.ExtenderDnsName = share.Settings.DnsName
 			values.GossipUrl = share.Settings.GossipUrl
 			values.ExtenderRootPublicKeys = rootPublicKeyHexes
+			if takeControlDohUrls {
+				values.ControlDohUrlsIpv4 = controlDohUrlsIpv4
+				values.ControlDohUrlsIpv6 = controlDohUrlsIpv6
+			}
 		})
 	}
 	return result

@@ -892,6 +892,9 @@ EXPORTS
 	urnet_network_space_get_bundled
 	urnet_network_space_get_configured_api_url
 	urnet_network_space_get_configured_platform_url
+	urnet_network_space_get_control_doh_urls
+	urnet_network_space_get_control_doh_urls_ipv4
+	urnet_network_space_get_control_doh_urls_ipv6
 	urnet_network_space_get_env_name
 	urnet_network_space_get_env_secret
 	urnet_network_space_get_extender_dns_name
@@ -929,6 +932,7 @@ EXPORTS
 	urnet_network_space_manager_update_network_space_values
 	urnet_network_space_reset_local_state_if_current
 	urnet_network_space_service_url
+	urnet_network_space_set_control_doh_urls
 	urnet_network_space_set_control_ip_family_policy
 	urnet_network_space_set_extender_gossip_mode
 	urnet_network_space_set_vless_settings
@@ -1092,6 +1096,7 @@ EXPORTS
 	urnet_referral_code_view_controller_get_referral_code_result
 	urnet_referral_code_view_controller_start
 	urnet_referral_code_view_controller_stop
+	urnet_regional_control_doh_urls
 	urnet_release
 	urnet_render_identicon_png
 	urnet_report_memory_trim_level
@@ -1173,6 +1178,7 @@ EXPORTS
 	urnet_tunnel_close
 	urnet_tunnel_get_done
 	urnet_usd_to_nano_cents
+	urnet_validate_control_doh_url
 	urnet_validate_emoji_tag
 	urnet_validate_ss58
 	urnet_validate_vless_settings

@@ -26,6 +26,8 @@ export interface NetworkSpaceValues {
   extender_root_public_keys?: string[];
   extender_hosts?: string[];
   vless?: VlessSettings | null;
+  control_doh_urls_ipv4?: string[];
+  control_doh_urls_ipv6?: string[];
 }
 
 export interface ExportNetworkSpace {
