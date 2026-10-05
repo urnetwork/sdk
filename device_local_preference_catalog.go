@@ -268,7 +268,7 @@ func decodeLocalPreference(name string, data []byte) (any, error) {
 	case "performance-profile":
 		var value PerformanceProfile
 		err := json.Unmarshal(data, &value)
-		return &value, err
+		return normalizeSavedPerformanceProfile(&value), err
 	case "transport-settings", "provider-transport-settings":
 		var value TransportSettings
 		err := json.Unmarshal(data, &value)
@@ -310,6 +310,17 @@ func (self *DeviceLocal) ownLocalCatalogValue(name string, value any) any {
 		return clampIpFamilyPolicy(value.(int))
 	default:
 		return value
+	}
+}
+
+// Refuses an owned value that no consumer could install. The error is a fixed
+// stage that never carries the refused value; Go callers can unwrap the cause.
+func validateLocalCatalogValue(name string, value any) error {
+	switch name {
+	case "performance-profile":
+		return localStorageStageError("invalid "+name, validatePerformanceProfile(value.(*PerformanceProfile)))
+	default:
+		return nil
 	}
 }
 
@@ -364,6 +375,15 @@ func (self *DeviceLocal) setLocalCatalogPreferenceDeferred(name string, value an
 		return nil, nil
 	}
 	value = self.ownLocalCatalogValue(name, value)
+	// A refused value is neither saved nor applied, so the previous value stays
+	// in force. Callers (an rpc client, a hosted page) supply these values, so
+	// the refusal is theirs to read and its detail is logged only at V(1).
+	if err := validateLocalCatalogValue(name, value); err != nil {
+		if self.log != nil && self.log.V(1).Enabled() {
+			self.log.Infof("[local-state] refused preference=%s: %v", name, errors.Unwrap(err))
+		}
+		return nil, err
+	}
 	return self.mutateLocalPreferenceDeferred(name, func(localState *LocalState) error {
 		return localState.saveCatalogPreferenceWithLock(name, value)
 	}, func() (func(), error) {
