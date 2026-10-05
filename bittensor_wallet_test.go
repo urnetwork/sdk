@@ -354,6 +354,142 @@ func TestBittensorWalletBridgeReturnRefusals(t *testing.T) {
 	}
 }
 
+// The bridge page hands a failure back with its own code and its English
+// text. The session answers wallet_error and passes both on, so the app can
+// show its own translation, or the text for a code it does not know. A page
+// before the codes sends errorCode=-1, which is no code: the text alone.
+func TestBittensorWalletBridgeReturnPassesThePageErrorCode(t *testing.T) {
+	// the codes are a contract with ur.io's BittensorConnect.jsx
+	for code, want := range map[string]string{
+		BittensorWalletBridgeErrorAddressNotInWallet:       "address_not_in_wallet",
+		BittensorWalletBridgeErrorAddressMismatch:          "address_mismatch",
+		BittensorWalletBridgeErrorExtensionNotFound:        "extension_not_found",
+		BittensorWalletBridgeErrorNoAccount:                "no_account",
+		BittensorWalletBridgeErrorUserRejected:             "user_rejected",
+		BittensorWalletBridgeErrorWalletConnectExpired:     "walletconnect_expired",
+		BittensorWalletBridgeErrorWalletConnectUnavailable: "walletconnect_unavailable",
+		BittensorWalletBridgeErrorInvalidRequest:           "invalid_request",
+		BittensorWalletBridgeErrorWallet:                   "wallet_error",
+	} {
+		if code != want {
+			t.Errorf("bridge error code %q, want %q", code, want)
+		}
+	}
+
+	notInWalletMessage := "Your Talisman wallet doesn't have the address you entered. Add or connect that account in the wallet and try again, or enter your address manually."
+	failureUri := func(errorCode string, errorMessage string) string {
+		values := url.Values{"purpose": {"connect"}}
+		if errorCode != "" {
+			values.Set("errorCode", errorCode)
+		}
+		if errorMessage != "" {
+			values.Set("errorMessage", errorMessage)
+		}
+		return bittensorTestRedirectLink + "?" + values.Encode()
+	}
+	for _, c := range []struct {
+		name            string
+		walletId        string
+		errorCode       string
+		errorMessage    string
+		bridgeErrorCode string
+	}{
+		{
+			name:            "not in the wallet",
+			walletId:        BittensorWalletTalisman,
+			errorCode:       "address_not_in_wallet",
+			errorMessage:    notInWalletMessage,
+			bridgeErrorCode: BittensorWalletBridgeErrorAddressNotInWallet,
+		},
+		{
+			name:            "no extension",
+			walletId:        BittensorWalletTalisman,
+			errorCode:       "extension_not_found",
+			errorMessage:    "The Talisman extension was not found in this browser. Install it, or enter your address manually.",
+			bridgeErrorCode: BittensorWalletBridgeErrorExtensionNotFound,
+		},
+		{
+			name:            "declined",
+			walletId:        BittensorWalletWalletConnect,
+			errorCode:       "user_rejected",
+			errorMessage:    "User rejected.",
+			bridgeErrorCode: BittensorWalletBridgeErrorUserRejected,
+		},
+		{
+			name:            "expired pairing",
+			walletId:        BittensorWalletWalletConnect,
+			errorCode:       "walletconnect_expired",
+			errorMessage:    "The wallet did not respond before the pairing expired.",
+			bridgeErrorCode: BittensorWalletBridgeErrorWalletConnectExpired,
+		},
+		{
+			name:            "another failure",
+			walletId:        BittensorWalletWalletConnect,
+			errorCode:       "wallet_error",
+			errorMessage:    "WalletConnect relay: connection failed",
+			bridgeErrorCode: BittensorWalletBridgeErrorWallet,
+		},
+		{
+			name:            "a code this sdk does not know",
+			walletId:        BittensorWalletWalletConnect,
+			errorCode:       "wallet_locked",
+			errorMessage:    "The wallet is locked.",
+			bridgeErrorCode: "wallet_locked",
+		},
+		{
+			name:            "a page before the codes",
+			walletId:        BittensorWalletTalisman,
+			errorCode:       "-1",
+			errorMessage:    notInWalletMessage,
+			bridgeErrorCode: "",
+		},
+		{
+			name:            "a text with no code",
+			walletId:        BittensorWalletTalisman,
+			errorCode:       "",
+			errorMessage:    "Cancelled",
+			bridgeErrorCode: "",
+		},
+	} {
+		session := newBittensorTestSession(t, c.walletId, BittensorWalletPlatformMacos, BittensorWalletPurposeConnect)
+		session.ChallengeArgs(bittensorTestAliceSs58)
+		if err := session.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.BridgeUrl(); err != nil {
+			t.Fatal(err)
+		}
+		r := session.HandleBridgeReturn(failureUri(c.errorCode, c.errorMessage), bittensorTestNowMillis+1000)
+		if r.Ok() || r.ErrorCode != BittensorWalletErrorWallet || r.ErrorMessage != c.errorMessage || r.BridgeErrorCode != c.bridgeErrorCode {
+			t.Errorf("%s: got %+v, want wallet_error %q with %q", c.name, r, c.bridgeErrorCode, c.errorMessage)
+		}
+		if session.State() != BittensorWalletStateFailed || session.ErrorCode() != BittensorWalletErrorWallet {
+			t.Errorf("%s: state %s, code %s", c.name, session.State(), session.ErrorCode())
+		}
+		// a second hand-back of the same failure is not this session's any more
+		replay := session.HandleBridgeReturn(failureUri(c.errorCode, c.errorMessage), bittensorTestNowMillis+2000)
+		if replay.ErrorCode != BittensorWalletErrorNotAwaiting || replay.BridgeErrorCode != "" {
+			t.Errorf("%s: replay %+v", c.name, replay)
+		}
+	}
+
+	// another flow's failure is refused unchanged and carries no page code
+	session := newBittensorTestSession(t, BittensorWalletWalletConnect, BittensorWalletPlatformIos, BittensorWalletPurposeConnect)
+	if err := session.SetChallenge(bittensorTestChallenge(), bittensorTestNowMillis); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.BridgeUrl(); err != nil {
+		t.Fatal(err)
+	}
+	otherFlowValues := url.Values{"purpose": {"login"}, "errorCode": {"user_rejected"}, "errorMessage": {"User rejected."}}
+	if r := session.HandleBridgeReturn(bittensorTestRedirectLink+"?"+otherFlowValues.Encode(), bittensorTestNowMillis); r.ErrorCode != BittensorWalletErrorPurposeMismatch || r.BridgeErrorCode != "" {
+		t.Fatalf("another flow's failure: %+v", r)
+	}
+	if session.State() != BittensorWalletStateAwaitingWallet {
+		t.Fatalf("state after another flow's failure %s", session.State())
+	}
+}
+
 func TestBittensorWalletExtensionSession(t *testing.T) {
 	session := newBittensorTestSession(t, BittensorWalletTalisman, BittensorWalletPlatformWeb, BittensorWalletPurposeLogin)
 	if _, err := session.BridgeUrl(); err == nil {

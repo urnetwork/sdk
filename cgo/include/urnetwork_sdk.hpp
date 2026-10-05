@@ -158,6 +158,15 @@ inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
 inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
+inline constexpr const char* BittensorWalletBridgeErrorAddressMismatch = "address_mismatch";
+inline constexpr const char* BittensorWalletBridgeErrorAddressNotInWallet = "address_not_in_wallet";
+inline constexpr const char* BittensorWalletBridgeErrorExtensionNotFound = "extension_not_found";
+inline constexpr const char* BittensorWalletBridgeErrorInvalidRequest = "invalid_request";
+inline constexpr const char* BittensorWalletBridgeErrorNoAccount = "no_account";
+inline constexpr const char* BittensorWalletBridgeErrorUserRejected = "user_rejected";
+inline constexpr const char* BittensorWalletBridgeErrorWallet = "wallet_error";
+inline constexpr const char* BittensorWalletBridgeErrorWalletConnectExpired = "walletconnect_expired";
+inline constexpr const char* BittensorWalletBridgeErrorWalletConnectUnavailable = "walletconnect_unavailable";
 inline constexpr const char* BittensorWalletBridgeUrl = "https://ur.io/bittensor-connect";
 inline constexpr const char* BittensorWalletConnectChain = "polkadot:2f0555cc76fc2840a25a6ea3b9637146";
 inline constexpr const char* BittensorWalletConnectMethod = "polkadot_signMessage";
@@ -1365,6 +1374,7 @@ struct BittensorWalletResult {
 	std::optional<BittensorWalletProof> Proof;
 	std::string ErrorCode{};
 	std::string ErrorMessage{};
+	std::string BridgeErrorCode{};
 };
 
 struct BittensorWalletReturn {
@@ -6384,6 +6394,7 @@ inline void to_json(nlohmann::json& j, const BittensorWalletResult& v) {
 	}
 	j["ErrorCode"] = v.ErrorCode;
 	j["ErrorMessage"] = v.ErrorMessage;
+	j["BridgeErrorCode"] = v.BridgeErrorCode;
 }
 inline void from_json(const nlohmann::json& j, BittensorWalletResult& v) {
 	if (!j.is_object()) {
@@ -6399,6 +6410,9 @@ inline void from_json(const nlohmann::json& j, BittensorWalletResult& v) {
 	}
 	if (auto it = j.find("ErrorMessage"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ErrorMessage);
+	}
+	if (auto it = j.find("BridgeErrorCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BridgeErrorCode);
 	}
 }
 
