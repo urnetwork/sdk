@@ -163,6 +163,36 @@ type fakeChain struct {
 	claimed      map[string]bool
 	sent         [][]byte
 	receipts     map[string]bool
+	// the coordinator's epoch clock; policyAt reverts while policy is nil
+	epochStart uint64
+	policy     []uint64
+	// the head block's unix time
+	headTime uint64
+}
+
+// snPolicyReturn encodes a PolicySnapshot as policyAt() returns it: the
+// policy hash, then effectiveEpoch, effectiveBlock, epochBlocks,
+// rootCommitWindowBlocks, finalizeOffsetBlocks, closeGraceBlocks,
+// claimTTLEpochs, claimGraceEpochs, maximumBindingValidityEpochs,
+// commitmentMaxAgeBlocks and the two deposit caps.
+func snPolicyReturn(fields []uint64) []byte {
+	out := make([]byte, 32, 13*32)
+	for len(out) < 13*32 {
+		v := uint64(0)
+		if i := len(out)/32 - 1; i < len(fields) {
+			v = fields[i]
+		}
+		w, _ := evm.UintWord(new(big.Int).SetUint64(v))
+		out = append(out, w[:]...)
+	}
+	return out
+}
+
+// the mainnet reference policy (sn/mainnet/MAINNET.md): 50,400-block epochs,
+// 1,200 root commit, 14,400 finalize, 120 close grace, 8 claim epochs plus
+// 1 grace epoch
+func snMainnetTestPolicy(effectiveBlock uint64) []uint64 {
+	return []uint64{0, effectiveBlock, 50_400, 1_200, 14_400, 120, 8, 1, 12, 300}
 }
 
 func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *evm.RpcError) {
@@ -179,6 +209,11 @@ func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *ev
 		return "0x5", nil
 	case "eth_estimateGas":
 		return "0x186a0", nil
+	case "eth_getBlockByNumber":
+		return map[string]any{
+			"number":    evm.HexQuantity(new(big.Int).SetUint64(self.block)),
+			"timestamp": evm.HexQuantity(new(big.Int).SetUint64(self.headTime)),
+		}, nil
 	case "eth_sendRawTransaction":
 		var raw string
 		json.Unmarshal(params[0], &raw)
@@ -206,10 +241,17 @@ func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *ev
 		sel := hex.EncodeToString(data[:4])
 		entitlementSel := evm.Selector("entitlement(uint256,uint256)")
 		leafClaimedSel := evm.Selector("leafClaimed(uint256,bytes32)")
+		epochStartBlockSel := evm.Selector("epochStartBlock(uint256)")
+		policyAtSel := evm.Selector("policyAt(uint256)")
 		switch {
 		case to == self.coordinator && sel == hex.EncodeToString(evm.PackCurrentEpoch()):
 			w, _ := evm.UintWord(big.NewInt(self.currentEpoch))
 			return "0x" + hex.EncodeToString(w[:]), nil
+		case to == self.coordinator && sel == hex.EncodeToString(epochStartBlockSel[:]) && self.policy != nil:
+			w, _ := evm.UintWord(new(big.Int).SetUint64(self.epochStart))
+			return "0x" + hex.EncodeToString(w[:]), nil
+		case to == self.coordinator && sel == hex.EncodeToString(policyAtSel[:]) && self.policy != nil:
+			return "0x" + hex.EncodeToString(snPolicyReturn(self.policy)), nil
 		case to == self.vault && sel == hex.EncodeToString(entitlementSel[:]):
 			epoch := new(big.Int).SetBytes(data[4:36]).Int64()
 			ent := self.entitlements[epoch]
@@ -322,6 +364,11 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 		},
 		claimed:  map[string]bool{fmt.Sprintf("%064x%s", 5, hex.EncodeToString(claimKey5[:])): true},
 		receipts: map[string]bool{},
+		// epoch 9 started at block 950 under the mainnet windows; the head
+		// (block 1000) is at 2026-10-06T00:00:00Z
+		epochStart: 950,
+		policy:     snMainnetTestPolicy(0),
+		headTime:   1_791_244_800,
 	}
 	chainServer := httptest.NewServer(chain)
 	defer chainServer.Close()
@@ -376,6 +423,25 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 	}
 	if result.TotalClaimableRao != 123_400_000 {
 		t.Fatalf("total claimable %d", result.TotalClaimableRao)
+	}
+	// the current epoch's schedule from the coordinator's policy
+	wantSchedule := SnEpochSchedule{
+		Epoch:                 9,
+		EpochBlocks:           50_400,
+		ClaimOpenOffsetBlocks: 14_400,
+		ClaimTtlEpochs:        8,
+		ClaimGraceEpochs:      1,
+		EndBlock:              51_350,
+		ClaimOpenBlock:        65_750,
+		ExpiryBlock:           504_949,
+		HeadBlock:             1000,
+		HeadMillis:            1_791_244_800_000,
+		EndMillis:             1_791_244_800_000 + 50_350*12_000,
+		ClaimOpenMillis:       1_791_244_800_000 + 64_750*12_000,
+		ExpiryMillis:          1_791_244_800_000 + 503_949*12_000,
+	}
+	if result.Schedule == nil || *result.Schedule != wantSchedule {
+		t.Fatalf("schedule %+v, want %+v", result.Schedule, wantSchedule)
 	}
 
 	// unsigned transactions for an external signer
@@ -469,6 +535,109 @@ func (self *recordingClaimCallback) Failed(epoch int64, message string) {
 	}{epoch, message})
 }
 func (self *recordingClaimCallback) Done() { self.done++ }
+
+// The mainnet cadence (sn/README.md epoch lifecycle): an epoch of 50,400
+// blocks, claims open 14,400 blocks (48 hours) after the close, and a share
+// expires at the end of epoch e+9 (8 claim epochs plus 1 grace epoch).
+func TestEpochScheduleAt(t *testing.T) {
+	policy := &evm.Policy{
+		EffectiveEpoch:         0,
+		EffectiveBlock:         4_000_000,
+		EpochBlocks:            50_400,
+		RootCommitWindowBlocks: 1_200,
+		FinalizeOffsetBlocks:   14_400,
+		CloseGraceBlocks:       120,
+		ClaimTTLEpochs:         8,
+		ClaimGraceEpochs:       1,
+	}
+	// epoch 2 starts at 4,100,800; the head is a day into it
+	headMillis := int64(1_791_244_800_000)
+	schedule := snEpochScheduleAt(2, 4_100_800, policy, 4_108_000, headMillis)
+	if schedule.EndBlock != 4_151_200 {
+		t.Fatalf("end block %d", schedule.EndBlock)
+	}
+	if schedule.ClaimOpenBlock != 4_165_600 {
+		t.Fatalf("claim open block %d", schedule.ClaimOpenBlock)
+	}
+	// the block before epoch 12 starts, the last block of epoch 11 = e+9
+	if want := int64(4_000_000 + 12*50_400 - 1); schedule.ExpiryBlock != want {
+		t.Fatalf("expiry block %d, want %d", schedule.ExpiryBlock, want)
+	}
+	if schedule.ClaimOpenOffsetBlocks != 14_400 || schedule.ClaimTtlEpochs != 8 || schedule.ClaimGraceEpochs != 1 || schedule.EpochBlocks != 50_400 {
+		t.Fatalf("windows %+v", schedule)
+	}
+	// six days of blocks to the close, then the 48-hour finalize offset and
+	// the nine-epoch claim window, at 12 s a block
+	hour := int64(60 * 60 * 1000)
+	day := 24 * hour
+	if got := schedule.EndMillis - headMillis; got != 6*day {
+		t.Fatalf("end in %d ms", got)
+	}
+	if got := schedule.ClaimOpenMillis - schedule.EndMillis; got != 48*hour {
+		t.Fatalf("claims open %d ms after the close", got)
+	}
+	if got := schedule.ExpiryMillis - schedule.EndMillis; got != 9*7*day-12_000 {
+		t.Fatalf("expiry %d ms after the close", got)
+	}
+	if schedule.HeadBlock != 4_108_000 || schedule.HeadMillis != headMillis || schedule.Epoch != 2 {
+		t.Fatalf("head %+v", schedule)
+	}
+
+	// a shorter policy moves every time with it
+	short := *policy
+	short.EpochBlocks = 360
+	short.FinalizeOffsetBlocks = 180
+	short.ClaimTTLEpochs = 2
+	short.ClaimGraceEpochs = 0
+	schedule = snEpochScheduleAt(5, 1_800, &short, 1_800, headMillis)
+	if schedule.EndBlock != 2_160 || schedule.ClaimOpenBlock != 2_340 || schedule.ExpiryBlock != 2_879 {
+		t.Fatalf("short policy %+v", schedule)
+	}
+	if schedule.ClaimOpenMillis-schedule.EndMillis != 180*12_000 {
+		t.Fatalf("short policy claim open %+v", schedule)
+	}
+}
+
+// A coordinator without a readable policy leaves the claims as they were.
+func TestClaimsScheduleIsBestEffort(t *testing.T) {
+	alice := testColdkey(1)
+	aliceSs58, err := ss58.Encode(alice, SnSs58Prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vault, _ := evm.ParseAddress("0x2222222222222222222222222222222222222222")
+	coordinator, _ := evm.ParseAddress("0x1111111111111111111111111111111111111111")
+	chain := &fakeChain{
+		t: t, block: 1000, currentEpoch: 9, vault: vault, coordinator: coordinator,
+		entitlements: map[int64]*evm.Entitlement{},
+		claimed:      map[string]bool{},
+		receipts:     map[string]bool{},
+		headTime:     1_791_244_800,
+	}
+	chainServer := httptest.NewServer(chain)
+	defer chainServer.Close()
+
+	settings := SnTestnetChainSettings()
+	settings.SetRpcUrls(nil)
+	settings.AddRpcUrl(chainServer.URL)
+	settings.VaultAddress = "0x2222222222222222222222222222222222222222"
+	settings.CoordinatorAddress = "0x1111111111111111111111111111111111111111"
+	settings.NoId = "3"
+	engine, snErr := newSnClaimEngine(settings, aliceSs58, "http://127.0.0.1:1", nil, nil, nil)
+	if snErr != nil {
+		t.Fatal(snErr.Message)
+	}
+	result := engine.claims(context.Background(), 0)
+	if result.Error != nil {
+		t.Fatalf("claims error: %+v", result.Error)
+	}
+	if result.Schedule != nil {
+		t.Fatalf("schedule without a policy: %+v", result.Schedule)
+	}
+	if result.CurrentEpoch != 9 || result.BlockNumber != 1000 {
+		t.Fatalf("head %+v", result)
+	}
+}
 
 func TestSnUtilities(t *testing.T) {
 	alice := testColdkey(1)

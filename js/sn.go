@@ -146,6 +146,27 @@ func jsSnError(err *sdk.SnError) any {
 	return map[string]any{"Code": err.Code, "Message": err.Message}
 }
 
+func jsSnEpochSchedule(schedule *sdk.SnEpochSchedule) any {
+	if schedule == nil {
+		return nil
+	}
+	return map[string]any{
+		"Epoch":                 schedule.Epoch,
+		"EpochBlocks":           schedule.EpochBlocks,
+		"ClaimOpenOffsetBlocks": schedule.ClaimOpenOffsetBlocks,
+		"ClaimTtlEpochs":        schedule.ClaimTtlEpochs,
+		"ClaimGraceEpochs":      schedule.ClaimGraceEpochs,
+		"EndBlock":              schedule.EndBlock,
+		"ClaimOpenBlock":        schedule.ClaimOpenBlock,
+		"ExpiryBlock":           schedule.ExpiryBlock,
+		"HeadBlock":             schedule.HeadBlock,
+		"HeadMillis":            schedule.HeadMillis,
+		"EndMillis":             schedule.EndMillis,
+		"ClaimOpenMillis":       schedule.ClaimOpenMillis,
+		"ExpiryMillis":          schedule.ExpiryMillis,
+	}
+}
+
 func jsSnClaimsResult(result *sdk.SnClaimsResult) js.Value {
 	claims := []any{}
 	if result.Claims != nil {
@@ -171,6 +192,7 @@ func jsSnClaimsResult(result *sdk.SnClaimsResult) js.Value {
 		"CurrentEpoch":      result.CurrentEpoch,
 		"BlockNumber":       result.BlockNumber,
 		"ColdkeySs58":       result.ColdkeySs58,
+		"Schedule":          jsSnEpochSchedule(result.Schedule),
 		"Error":             jsSnError(result.Error),
 	})
 }

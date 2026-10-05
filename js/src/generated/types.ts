@@ -719,12 +719,29 @@ export interface SnEpochClaim {
   message?: string;
 }
 
+export interface SnEpochSchedule {
+  epoch: number;
+  epoch_blocks: number;
+  claim_open_offset_blocks: number;
+  claim_ttl_epochs: number;
+  claim_grace_epochs: number;
+  end_block: number;
+  claim_open_block: number;
+  expiry_block: number;
+  head_block: number;
+  head_millis: number;
+  end_millis: number;
+  claim_open_millis: number;
+  expiry_millis: number;
+}
+
 export interface SnClaimsResult {
   claims: SnEpochClaim[] | null;
   total_claimable_rao: number;
   current_epoch: number;
   block_number: number;
   coldkey_ss58?: string;
+  schedule?: SnEpochSchedule | null;
   error?: SnError | null;
 }
 
