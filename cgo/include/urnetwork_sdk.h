@@ -393,6 +393,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_ERROR_CODE_NOT_CLAIMABLE "not_claimable"
 #define URNET_SN_ERROR_CODE_PROOF_MISMATCH "proof_mismatch"
 #define URNET_SN_ERROR_CODE_SERVER "server_error"
+#define URNET_SN_ERROR_CODE_SIGNATURE_MISMATCH "signature_mismatch"
 #define URNET_SN_ERROR_CODE_WALLET_BLOCKED "wallet_blocked"
 #define URNET_SN_RAO_PER_ALPHA 1000000000
 #define URNET_SN_SS58_PREFIX 42
@@ -4515,6 +4516,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* SnSetWalletError (json):
+ *   code?: string
  *   message: string
  */
 
