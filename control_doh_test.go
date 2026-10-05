@@ -1,3 +1,6 @@
+// The bootstrap DoH servers of a space (control_doh.go): the values, the url
+// check and its error ids, the in-place save, the share, and a space whose api
+// is reachable only once a working server is named.
 package sdk
 
 import (
@@ -22,19 +25,18 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// The bootstrap DoH servers of a space (control_doh.go): the values, the url
-// check and its error ids, the in-place save, the share, and a space whose api
-// is reachable only once a working server is named.
-
-var testControlDohChinaUrls = []string{
-	"https://223.5.5.5/dns-query",
-	"https://223.6.6.6/dns-query",
-	"https://1.12.12.12/dns-query",
-	"https://120.53.53.53/dns-query",
+// Four v4 bootstrap DoH servers at documentation addresses, as many as a
+// regional preset names.
+var testControlDohUrlsIpv4 = []string{
+	"https://192.0.2.53/dns-query",
+	"https://192.0.2.54/dns-query",
+	"https://198.51.100.53/dns-query",
+	"https://203.0.113.53/dns-query",
 }
 
 const testControlDohIpv6Url = "https://[2001:db8::53]/dns-query"
 
+// A StringList of the values, in order.
 func testStringList(values ...string) *StringList {
 	stringList := NewStringList()
 	stringList.addAll(values...)
@@ -44,14 +46,14 @@ func testStringList(values ...string) *StringList {
 // The servers ride the space's json, and a space without them writes none.
 func TestControlDohUrlsJson(t *testing.T) {
 	values := NetworkSpaceValues{
-		ControlDohUrlsIpv4: testControlDohChinaUrls,
+		ControlDohUrlsIpv4: testControlDohUrlsIpv4,
 		ControlDohUrlsIpv6: []string{testControlDohIpv6Url},
 	}
 	encoded, err := json.Marshal(values)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"control_doh_urls_ipv4":["https://223.5.5.5/dns-query",`) ||
+	if !strings.Contains(string(encoded), `"control_doh_urls_ipv4":["https://192.0.2.53/dns-query",`) ||
 		!strings.Contains(string(encoded), `"control_doh_urls_ipv6":["https://[2001:db8::53]/dns-query"]`) {
 		t.Fatalf("json = %s", encoded)
 	}
@@ -59,7 +61,7 @@ func TestControlDohUrlsJson(t *testing.T) {
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(decoded.ControlDohUrlsIpv4, testControlDohChinaUrls) ||
+	if !slices.Equal(decoded.ControlDohUrlsIpv4, testControlDohUrlsIpv4) ||
 		!slices.Equal(decoded.ControlDohUrlsIpv6, []string{testControlDohIpv6Url}) {
 		t.Fatalf("decoded = %v %v", decoded.ControlDohUrlsIpv4, decoded.ControlDohUrlsIpv6)
 	}
@@ -87,11 +89,11 @@ func TestValidateControlDohUrl(t *testing.T) {
 		dohUrl  string
 		errorId string
 	}{
-		{dohUrl: "https://dns.alidns.com/dns-query", errorId: ControlDohErrorIpRequired},
-		{dohUrl: "http://223.5.5.5/dns-query", errorId: ControlDohErrorHttpsRequired},
-		{dohUrl: "223.5.5.5", errorId: ControlDohErrorHttpsRequired},
-		{dohUrl: "https://223.5.5.5", errorId: ControlDohErrorUrlInvalid},
-		{dohUrl: "https://223.5.5.5/dns-query?dns=1", errorId: ControlDohErrorUrlInvalid},
+		{dohUrl: "https://dns.example/dns-query", errorId: ControlDohErrorIpRequired},
+		{dohUrl: "http://192.0.2.53/dns-query", errorId: ControlDohErrorHttpsRequired},
+		{dohUrl: "192.0.2.53", errorId: ControlDohErrorHttpsRequired},
+		{dohUrl: "https://192.0.2.53", errorId: ControlDohErrorUrlInvalid},
+		{dohUrl: "https://192.0.2.53/dns-query?dns=1", errorId: ControlDohErrorUrlInvalid},
 		{dohUrl: "", errorId: ControlDohErrorUrlInvalid},
 	}
 	for _, c := range cases {
@@ -130,10 +132,11 @@ func TestNetworkSpaceSetControlDohUrls(t *testing.T) {
 	}
 	strategy := networkSpace.clientStrategy
 
-	// the preset with a v6 server mixed in, blank lines, whitespace and a repeat
+	// the v4 servers with a v6 server mixed in, blank lines, whitespace and a
+	// repeat
 	entered := testStringList(append(
 		[]string{" ", testControlDohIpv6Url},
-		append(slices.Clone(testControlDohChinaUrls), " https://223.5.5.5/dns-query ", "")...,
+		append(slices.Clone(testControlDohUrlsIpv4), " https://192.0.2.53/dns-query ", "")...,
 	)...)
 	if errorId := networkSpace.SetControlDohUrls(entered); errorId != "" {
 		t.Fatal(errorId)
@@ -141,16 +144,16 @@ func TestNetworkSpaceSetControlDohUrls(t *testing.T) {
 	if networkSpaceManager.GetNetworkSpace(key) != networkSpace || networkSpace.clientStrategy != strategy {
 		t.Fatal("saving the bootstrap DoH servers replaced the space")
 	}
-	if !slices.Equal(networkSpace.GetControlDohUrlsIpv4().getAll(), testControlDohChinaUrls) {
+	if !slices.Equal(networkSpace.GetControlDohUrlsIpv4().getAll(), testControlDohUrlsIpv4) {
 		t.Fatalf("v4 = %v", networkSpace.GetControlDohUrlsIpv4().getAll())
 	}
 	if !slices.Equal(networkSpace.GetControlDohUrlsIpv6().getAll(), []string{testControlDohIpv6Url}) {
 		t.Fatalf("v6 = %v", networkSpace.GetControlDohUrlsIpv6().getAll())
 	}
-	if !slices.Equal(networkSpace.GetControlDohUrls().getAll(), append(slices.Clone(testControlDohChinaUrls), testControlDohIpv6Url)) {
+	if !slices.Equal(networkSpace.GetControlDohUrls().getAll(), append(slices.Clone(testControlDohUrlsIpv4), testControlDohIpv6Url)) {
 		t.Fatalf("all = %v", networkSpace.GetControlDohUrls().getAll())
 	}
-	expectedIpv4 := append(slices.Clone(testControlDohChinaUrls), defaults.RemoteDohUrlsIpv4...)
+	expectedIpv4 := append(slices.Clone(testControlDohUrlsIpv4), defaults.RemoteDohUrlsIpv4...)
 	expectedIpv6 := append([]string{testControlDohIpv6Url}, defaults.RemoteDohUrlsIpv6...)
 	assertDohUrls := func(what string, dohSettings *connect.DohSettings) {
 		t.Helper()
@@ -171,10 +174,10 @@ func TestNetworkSpaceSetControlDohUrls(t *testing.T) {
 		dohUrl  string
 		errorId string
 	}{
-		{dohUrl: "https://dns.alidns.com/dns-query", errorId: ControlDohErrorIpRequired},
-		{dohUrl: "http://223.5.5.5/dns-query", errorId: ControlDohErrorHttpsRequired},
+		{dohUrl: "https://dns.example/dns-query", errorId: ControlDohErrorIpRequired},
+		{dohUrl: "http://192.0.2.53/dns-query", errorId: ControlDohErrorHttpsRequired},
 	} {
-		if errorId := networkSpace.SetControlDohUrls(testStringList("https://223.5.5.5/dns-query", c.dohUrl)); errorId != c.errorId {
+		if errorId := networkSpace.SetControlDohUrls(testStringList("https://192.0.2.53/dns-query", c.dohUrl)); errorId != c.errorId {
 			t.Fatalf("%s = %q, expected %q", c.dohUrl, errorId, c.errorId)
 		}
 	}
@@ -185,14 +188,14 @@ func TestNetworkSpaceSetControlDohUrls(t *testing.T) {
 	if errorId := networkSpace.SetControlDohUrls(tooMany); errorId != ControlDohErrorTooMany {
 		t.Fatalf("too many = %q", errorId)
 	}
-	if !slices.Equal(networkSpace.GetControlDohUrlsIpv4().getAll(), testControlDohChinaUrls) {
+	if !slices.Equal(networkSpace.GetControlDohUrlsIpv4().getAll(), testControlDohUrlsIpv4) {
 		t.Fatalf("a refused save changed the servers to %v", networkSpace.GetControlDohUrlsIpv4().getAll())
 	}
 	assertDohUrls("the strategy's after refused saves", networkSpace.clientStrategy.DohSettings())
 
 	// the same list again, spelled differently, is no change
 	if networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
-		values.ControlDohUrlsIpv4 = []string{" HTTPS://223.5.5.5/dns-query", "https://223.6.6.6/dns-query", "https://1.12.12.12/dns-query", "https://120.53.53.53/dns-query"}
+		values.ControlDohUrlsIpv4 = []string{" HTTPS://192.0.2.53/dns-query", "https://192.0.2.54/dns-query", "https://198.51.100.53/dns-query", "https://203.0.113.53/dns-query"}
 		values.ControlDohUrlsIpv6 = []string{testControlDohIpv6Url, ""}
 	}) {
 		t.Fatal("an unchanged list reported a change")
@@ -230,7 +233,7 @@ func TestOnlyInPlaceValuesChangedIncludesControlDoh(t *testing.T) {
 	key := NewNetworkSpaceKey("space.example", "main")
 	previous := NetworkSpaceValues{ApiUrl: "https://api.space.example"}
 	next := previous
-	next.ControlDohUrlsIpv4 = testControlDohChinaUrls
+	next.ControlDohUrlsIpv4 = testControlDohUrlsIpv4
 	if !onlyInPlaceValuesChanged(key, &previous, &next) {
 		t.Fatal("a bootstrap DoH change alone must apply in place")
 	}
@@ -249,12 +252,29 @@ func TestOnlyInPlaceValuesChangedIncludesControlDoh(t *testing.T) {
 	}
 }
 
-// A DoH server for the sdk tests: https on the v4 loopback, which its
-// certificate names, answering every address query with one address. Returns
-// its url and the address the DoH client dials.
-func newTestControlDohServer(t *testing.T, answer net.IP, queried chan<- string) (string, *x509.CertPool, string) {
-	t.Helper()
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// A space whose api name resolves only over DoH, on a network that
+// black-holes every default DoH server, cannot reach its api until a working
+// bootstrap DoH server is saved. It then reaches it through the running
+// space, with no rebuild.
+func TestNetworkSpaceControlDohUrlsReachTheApiInPlace(t *testing.T) {
+	// the api answers for example.com, which its certificate names
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello api"))
+	}))
+	defer api.Close()
+	apiRoots := x509.NewCertPool()
+	apiRoots.AddCert(api.Certificate())
+	apiUrl, err := url.Parse(api.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// a DoH server: https on the v4 loopback, which its certificate names,
+	// answering every address query with the loopback and passing on each
+	// name it is asked for
+	answer := net.ParseIP("127.0.0.1")
+	queried := make(chan string, 64)
+	dohServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/dns-query" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -295,31 +315,12 @@ func newTestControlDohServer(t *testing.T, answer net.IP, queried chan<- string)
 		w.Header().Set("Content-Type", "application/dns-message")
 		w.Write(response)
 	}))
-	t.Cleanup(server.Close)
-	roots := x509.NewCertPool()
-	roots.AddCert(server.Certificate())
-	return server.URL + "/dns-query", roots, server.Listener.Addr().String()
-}
-
-// A space whose api name resolves only over DoH, on a network that
-// black-holes every default DoH server, cannot reach its api until a working
-// bootstrap DoH server is saved. It then reaches it through the running
-// space, with no rebuild.
-func TestNetworkSpaceControlDohUrlsReachTheApiInPlace(t *testing.T) {
-	// the api answers for example.com, which its certificate names
-	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello api"))
-	}))
-	defer api.Close()
-	apiRoots := x509.NewCertPool()
-	apiRoots.AddCert(api.Certificate())
-	apiUrl, err := url.Parse(api.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	queried := make(chan string, 64)
-	dohUrl, dohRoots, dohAddress := newTestControlDohServer(t, net.ParseIP("127.0.0.1"), queried)
+	t.Cleanup(dohServer.Close)
+	dohRoots := x509.NewCertPool()
+	dohRoots.AddCert(dohServer.Certificate())
+	// the url, and the address the DoH client dials
+	dohUrl := dohServer.URL + "/dns-query"
+	dohAddress := dohServer.Listener.Addr().String()
 	controlDohSettingsConfigure = func(settings *connect.DohSettings) {
 		settings.RequestTimeout = time.Second
 		settings.DnsResolverSettings.TlsConfig = &tls.Config{RootCAs: dohRoots}
@@ -396,14 +397,14 @@ func TestNetworkSpaceControlDohUrlsReachTheApiInPlace(t *testing.T) {
 // none leaves the importer's own.
 func TestExtenderViewControllerShareCarriesControlDohUrls(t *testing.T) {
 	vc, networkSpace, _ := testExtenderViewController(t)
-	if errorId := networkSpace.SetControlDohUrls(RegionalControlDohUrls("cn")); errorId != "" {
+	if errorId := networkSpace.SetControlDohUrls(testStringList(testControlDohUrlsIpv4...)); errorId != "" {
 		t.Fatal(errorId)
 	}
 
 	withSettings := vc.BuildShare(true)
 	decoded := vc.DecodeShare(withSettings.Text)
 	connect.AssertEqual(t, decoded.Ok, true)
-	if !slices.Equal(decoded.ControlDohUrls.getAll(), testControlDohChinaUrls) {
+	if !slices.Equal(decoded.ControlDohUrls.getAll(), testControlDohUrlsIpv4) {
 		t.Fatalf("decoded servers = %v", decoded.ControlDohUrls.getAll())
 	}
 	plain := vc.BuildShare(false)
@@ -418,10 +419,10 @@ func TestExtenderViewControllerShareCarriesControlDohUrls(t *testing.T) {
 		t.Fatalf("an import without the settings took %v", servers.getAll())
 	}
 	connect.AssertEqual(t, otherVc.ImportShare(withSettings.Text, true).Ok, true)
-	if !slices.Equal(otherSpace.GetControlDohUrls().getAll(), testControlDohChinaUrls) {
+	if !slices.Equal(otherSpace.GetControlDohUrls().getAll(), testControlDohUrlsIpv4) {
 		t.Fatalf("imported servers = %v", otherSpace.GetControlDohUrls().getAll())
 	}
-	if dohUrls := otherSpace.clientStrategy.DohSettings().DnsResolverSettings.RemoteDohUrlsIpv4; !slices.Equal(dohUrls[:len(testControlDohChinaUrls)], testControlDohChinaUrls) {
+	if dohUrls := otherSpace.clientStrategy.DohSettings().DnsResolverSettings.RemoteDohUrlsIpv4; !slices.Equal(dohUrls[:len(testControlDohUrlsIpv4)], testControlDohUrlsIpv4) {
 		t.Fatalf("the importer's strategy servers = %v", dohUrls)
 	}
 	if otherManager.GetNetworkSpace(otherSpace.GetKey()) != otherSpace || otherSpace.clientStrategy != otherStrategy {
@@ -433,7 +434,7 @@ func TestExtenderViewControllerShareCarriesControlDohUrls(t *testing.T) {
 		t.Fatal(errorId)
 	}
 	connect.AssertEqual(t, otherVc.ImportShare(vc.BuildShare(true).Text, true).Ok, true)
-	if !slices.Equal(otherSpace.GetControlDohUrls().getAll(), testControlDohChinaUrls) {
+	if !slices.Equal(otherSpace.GetControlDohUrls().getAll(), testControlDohUrlsIpv4) {
 		t.Fatalf("a block without servers changed the importer's to %v", otherSpace.GetControlDohUrls().getAll())
 	}
 }

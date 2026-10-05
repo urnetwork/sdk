@@ -502,49 +502,49 @@ func TestPurchaseRefusalKeepsGuestSignInRequiredCode(t *testing.T) {
 	}
 	want := `"code":"` + PurchaseErrorCodeGuestSignInRequired + `"`
 
-	checkout, checkoutC := connect.NewBlockingApiCallback[*StripeCreateCheckoutSessionResult](context.Background())
-	api.CreateStripeCheckoutSession(&StripeCreateCheckoutSessionArgs{ItemId: StripeItemProYearly}, checkout)
-	checkoutR := awaitApiResult(t, checkoutC, "CreateStripeCheckoutSession never returned")
-	if checkoutR.Error != nil || checkoutR.Result.Error == nil {
-		t.Fatalf("checkout session: %+v", checkoutR)
+	checkoutCallback, checkoutC := connect.NewBlockingApiCallback[*StripeCreateCheckoutSessionResult](context.Background())
+	api.CreateStripeCheckoutSession(&StripeCreateCheckoutSessionArgs{ItemId: StripeItemProYearly}, checkoutCallback)
+	checkout := awaitApiResult(t, checkoutC, "CreateStripeCheckoutSession never returned")
+	if checkout.Error != nil || checkout.Result.Error == nil {
+		t.Fatalf("checkout session: %+v", checkout)
 	}
-	if got := encoded(t, checkoutR.Result.Error); !strings.Contains(got, want) {
+	if got := encoded(t, checkout.Result.Error); !strings.Contains(got, want) {
 		t.Errorf("checkout session dropped the code: %s", got)
 	}
 
-	intent, intentC := connect.NewBlockingApiCallback[*StripeCreatePaymentIntentResult](context.Background())
-	api.CreateStripePaymentIntent(&StripeCreatePaymentIntentArgs{}, intent)
-	intentR := awaitApiResult(t, intentC, "CreateStripePaymentIntent never returned")
-	if intentR.Error != nil || intentR.Result.Error == nil {
-		t.Fatalf("payment intent: %+v", intentR)
+	intentCallback, intentC := connect.NewBlockingApiCallback[*StripeCreatePaymentIntentResult](context.Background())
+	api.CreateStripePaymentIntent(&StripeCreatePaymentIntentArgs{}, intentCallback)
+	intent := awaitApiResult(t, intentC, "CreateStripePaymentIntent never returned")
+	if intent.Error != nil || intent.Result.Error == nil {
+		t.Fatalf("payment intent: %+v", intent)
 	}
-	if got := encoded(t, intentR.Result.Error); !strings.Contains(got, want) {
+	if got := encoded(t, intent.Result.Error); !strings.Contains(got, want) {
 		t.Errorf("payment intent dropped the code: %s", got)
 	}
 
-	sheet, sheetC := connect.NewBlockingApiCallback[*StripePaymentSheetResult](context.Background())
-	api.StripePaymentSheet(&StripePaymentSheetArgs{Plan: PlanYearly}, sheet)
-	sheetR := awaitApiResult(t, sheetC, "StripePaymentSheet never returned")
-	if sheetR.Error != nil || sheetR.Result.Error == nil {
-		t.Fatalf("payment sheet: %+v", sheetR)
+	sheetCallback, sheetC := connect.NewBlockingApiCallback[*StripePaymentSheetResult](context.Background())
+	api.StripePaymentSheet(&StripePaymentSheetArgs{Plan: PlanYearly}, sheetCallback)
+	sheet := awaitApiResult(t, sheetC, "StripePaymentSheet never returned")
+	if sheet.Error != nil || sheet.Result.Error == nil {
+		t.Fatalf("payment sheet: %+v", sheet)
 	}
-	if got := encoded(t, sheetR.Result.Error); !strings.Contains(got, want) {
+	if got := encoded(t, sheet.Result.Error); !strings.Contains(got, want) {
 		t.Errorf("payment sheet dropped the code: %s", got)
 	}
 
-	solana, solanaC := connect.NewBlockingApiCallback[*SolanaPaymentIntentResult](context.Background())
-	api.CreateSolanaPaymentIntent(&SolanaPaymentIntentArgs{Reference: "ref", Plan: PlanYearly}, solana)
-	solanaR := awaitApiResult(t, solanaC, "CreateSolanaPaymentIntent never returned")
-	if solanaR.Error != nil || solanaR.Result.Error == nil {
-		t.Fatalf("solana intent: %+v", solanaR)
+	solanaCallback, solanaC := connect.NewBlockingApiCallback[*SolanaPaymentIntentResult](context.Background())
+	api.CreateSolanaPaymentIntent(&SolanaPaymentIntentArgs{Reference: "ref", Plan: PlanYearly}, solanaCallback)
+	solana := awaitApiResult(t, solanaC, "CreateSolanaPaymentIntent never returned")
+	if solana.Error != nil || solana.Result.Error == nil {
+		t.Fatalf("solana intent: %+v", solana)
 	}
-	if got := encoded(t, solanaR.Result.Error); !strings.Contains(got, want) {
+	if got := encoded(t, solana.Result.Error); !strings.Contains(got, want) {
 		t.Errorf("solana intent dropped the code: %s", got)
 	}
 
 	// the message stays the fallback
-	if checkoutR.Result.Error.Message != "Add a sign-in to your account before buying a plan." {
-		t.Errorf("message = %q", checkoutR.Result.Error.Message)
+	if checkout.Result.Error.Message != "Add a sign-in to your account before buying a plan." {
+		t.Errorf("message = %q", checkout.Result.Error.Message)
 	}
 }
 

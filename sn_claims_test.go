@@ -170,31 +170,6 @@ type fakeChain struct {
 	headTime uint64
 }
 
-// snPolicyReturn encodes a PolicySnapshot as policyAt() returns it: the
-// policy hash, then effectiveEpoch, effectiveBlock, epochBlocks,
-// rootCommitWindowBlocks, finalizeOffsetBlocks, closeGraceBlocks,
-// claimTTLEpochs, claimGraceEpochs, maximumBindingValidityEpochs,
-// commitmentMaxAgeBlocks and the two deposit caps.
-func snPolicyReturn(fields []uint64) []byte {
-	out := make([]byte, 32, 13*32)
-	for len(out) < 13*32 {
-		v := uint64(0)
-		if i := len(out)/32 - 1; i < len(fields) {
-			v = fields[i]
-		}
-		w, _ := evm.UintWord(new(big.Int).SetUint64(v))
-		out = append(out, w[:]...)
-	}
-	return out
-}
-
-// the mainnet reference policy (sn/mainnet/MAINNET.md): 50,400-block epochs,
-// 1,200 root commit, 14,400 finalize, 120 close grace, 8 claim epochs plus
-// 1 grace epoch
-func snMainnetTestPolicy(effectiveBlock uint64) []uint64 {
-	return []uint64{0, effectiveBlock, 50_400, 1_200, 14_400, 120, 8, 1, 12, 300}
-}
-
 func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *evm.RpcError) {
 	switch method {
 	case "eth_blockNumber":
@@ -251,7 +226,21 @@ func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *ev
 			w, _ := evm.UintWord(new(big.Int).SetUint64(self.epochStart))
 			return "0x" + hex.EncodeToString(w[:]), nil
 		case to == self.coordinator && sel == hex.EncodeToString(policyAtSel[:]) && self.policy != nil:
-			return "0x" + hex.EncodeToString(snPolicyReturn(self.policy)), nil
+			// the PolicySnapshot tuple: the policy hash, then effectiveEpoch,
+			// effectiveBlock, epochBlocks, rootCommitWindowBlocks,
+			// finalizeOffsetBlocks, closeGraceBlocks, claimTTLEpochs,
+			// claimGraceEpochs, maximumBindingValidityEpochs,
+			// commitmentMaxAgeBlocks and the two deposit caps
+			out := make([]byte, 32, 13*32)
+			for len(out) < 13*32 {
+				v := uint64(0)
+				if i := len(out)/32 - 1; i < len(self.policy) {
+					v = self.policy[i]
+				}
+				w, _ := evm.UintWord(new(big.Int).SetUint64(v))
+				out = append(out, w[:]...)
+			}
+			return "0x" + hex.EncodeToString(out), nil
 		case to == self.vault && sel == hex.EncodeToString(entitlementSel[:]):
 			epoch := new(big.Int).SetBytes(data[4:36]).Int64()
 			ent := self.entitlements[epoch]
@@ -367,8 +356,11 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 		// epoch 9 started at block 950 under the mainnet windows; the head
 		// (block 1000) is at 2026-10-06T00:00:00Z
 		epochStart: 950,
-		policy:     snMainnetTestPolicy(0),
-		headTime:   1_791_244_800,
+		// the mainnet reference policy (sn/mainnet/MAINNET.md): 50,400-block
+		// epochs, 1,200 root commit, 14,400 finalize, 120 close grace, 8 claim
+		// epochs plus 1 grace epoch
+		policy:   []uint64{0, 0, 50_400, 1_200, 14_400, 120, 8, 1, 12, 300},
+		headTime: 1_791_244_800,
 	}
 	chainServer := httptest.NewServer(chain)
 	defer chainServer.Close()
@@ -547,7 +539,7 @@ func TestEpochScheduleAt(t *testing.T) {
 		RootCommitWindowBlocks: 1_200,
 		FinalizeOffsetBlocks:   14_400,
 		CloseGraceBlocks:       120,
-		ClaimTTLEpochs:         8,
+		ClaimTtlEpochs:         8,
 		ClaimGraceEpochs:       1,
 	}
 	// epoch 2 starts at 4,100,800; the head is a day into it
@@ -587,7 +579,7 @@ func TestEpochScheduleAt(t *testing.T) {
 	short := *policy
 	short.EpochBlocks = 360
 	short.FinalizeOffsetBlocks = 180
-	short.ClaimTTLEpochs = 2
+	short.ClaimTtlEpochs = 2
 	short.ClaimGraceEpochs = 0
 	schedule = snEpochScheduleAt(5, 1_800, &short, 1_800, headMillis)
 	if schedule.EndBlock != 2_160 || schedule.ClaimOpenBlock != 2_340 || schedule.ExpiryBlock != 2_879 {

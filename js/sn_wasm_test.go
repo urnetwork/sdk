@@ -1,5 +1,6 @@
 //go:build js
 
+// The settlement schedule on the wasm claims result.
 package main
 
 import (

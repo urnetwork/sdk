@@ -207,6 +207,7 @@ func (self *viewControllerManager) OpenSubscriptionBalanceViewController() *Subs
 	return vc
 }
 
+// Opens the provider status controller, owned by this manager until closed.
 func (self *viewControllerManager) OpenProviderStatusViewController() *ProviderStatusViewController {
 	vc := newProviderStatusViewController(self.ctx, self.device)
 	self.openViewController(vc)

@@ -185,11 +185,11 @@ var unixOnlySymbols = map[string]bool{
 	"IoLoopDoneCallback": true,
 }
 
-// errorIdInternal is what an export whose result is an error id answers when
-// the call could not run: an unknown handle, json that does not decode, or a
-// recovered panic. NULL would be wrong there: the c++ wrapper takes it as "",
-// which every caller reads as success. It is one id for every family of ids,
-// so an app maps it like any id it does not know, to a generic message.
+// What an export whose result is an error id answers when the call could not
+// run: an unknown handle, json that does not decode, or a recovered panic.
+// NULL would be wrong there: the c++ wrapper takes it as "", which every
+// caller reads as success. It is one id for every family of ids, so an app
+// maps it like any id it does not know, to a generic message.
 const errorIdInternal = "internal_error"
 
 // c names reserved by hand-written exports in the cgo package
@@ -950,11 +950,11 @@ func (g *gen) emitCallable(cName string, symbol string, recv *typeInfo, recvName
 	})
 }
 
-// errorIdResult reports whether a function's result is an error id: a lone
-// string result named errorId, "" when the call succeeded and otherwise the id
-// of the refusal (the sdk's VlessError* and ControlDohError* setters and
-// checks). The name is the marker, declared where the function is, so a new
-// function of the kind is mapped like its siblings without a list here.
+// Reports whether a function's result is an error id: a lone string result
+// named errorId, "" when the call succeeded and otherwise the id of the
+// refusal (the sdk's VlessError* and ControlDohError* setters and checks).
+// The name is the marker, declared where the function is, so a new function
+// of the kind is mapped like its siblings without a list here.
 func errorIdResult(sig *types.Signature) bool {
 	results := sig.Results()
 	if results.Len() != 1 || results.At(0).Name() != "errorId" {

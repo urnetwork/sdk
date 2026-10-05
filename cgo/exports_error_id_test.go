@@ -1,3 +1,5 @@
+// The real error-id exports: the sdk's verdict passes through, and every call
+// that cannot run answers the internal id rather than NULL.
 package main
 
 import (
@@ -13,8 +15,8 @@ import (
 // apps mirror the literal (gen/gen.go errorIdInternal).
 const testingErrorIdInternal = "internal_error"
 
-// errorIdAnswer calls an error-id export with callExportNil's arguments and
-// reads its answer.
+// Calls an error-id export with callExportNil's arguments and reads its
+// answer.
 func errorIdAnswer(t *testing.T, fn any, args ...any) string {
 	t.Helper()
 	answer := callExportNil(t, fn, args...)[0]
@@ -33,8 +35,8 @@ func TestErrorIdExportAnswersTheSdkVerdict(t *testing.T) {
 		dohUrl  string
 		errorId string
 	}{
-		{dohUrl: "https://223.5.5.5/dns-query", errorId: ""},
-		{dohUrl: "http://223.5.5.5/dns-query", errorId: sdk.ControlDohErrorHttpsRequired},
+		{dohUrl: "https://192.0.2.53/dns-query", errorId: ""},
+		{dohUrl: "http://192.0.2.53/dns-query", errorId: sdk.ControlDohErrorHttpsRequired},
 	} {
 		dohUrl := cString(row.dohUrl)
 		got := errorIdAnswer(t, urnet_validate_control_doh_url, dohUrl)
@@ -59,7 +61,7 @@ func TestErrorIdExportAnswersInternalErrorForJsonThatDoesNotDecode(t *testing.T)
 	if got := errorIdAnswer(t, urnet_network_space_set_vless_settings, space, settings); got != testingErrorIdInternal {
 		t.Errorf("set_vless_settings answered %q for json that does not decode", got)
 	}
-	dohUrls := cString(`["https://223.5.5.5/dns-query"`)
+	dohUrls := cString(`["https://192.0.2.53/dns-query"`)
 	defer cStringFree(dohUrls)
 	if got := errorIdAnswer(t, urnet_network_space_set_control_doh_urls, space, dohUrls); got != testingErrorIdInternal {
 		t.Errorf("set_control_doh_urls answered %q for json that does not decode", got)

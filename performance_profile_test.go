@@ -274,14 +274,14 @@ func TestDeviceLocalEquivalentBehaviorPreservesStoredProfileValue(t *testing.T) 
 	})
 }
 
+// A profile the device refuses, named for the test's messages.
 type testingRefusedPerformanceProfile struct {
 	name    string
 	profile *PerformanceProfile
 }
 
-// testingRefusedPerformanceProfiles are profiles any caller can send (a
-// device-rpc client, a page, a native app) whose window the multi client
-// cannot install.
+// Profiles any caller can send (a device-rpc client, a page, a native app)
+// whose window the multi client cannot install.
 func testingRefusedPerformanceProfiles() []testingRefusedPerformanceProfile {
 	fixed := func(windowSize *WindowSizeSettings) *PerformanceProfile {
 		return &PerformanceProfile{
@@ -291,32 +291,32 @@ func testingRefusedPerformanceProfiles() []testingRefusedPerformanceProfile {
 		}
 	}
 	return []testingRefusedPerformanceProfile{
-		{"max below min", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 1})},
-		{"negative max", fixed(&WindowSizeSettings{WindowSizeMin: 0, WindowSizeMax: -1})},
-		{"negative window", fixed(&WindowSizeSettings{WindowSizeMin: -1, WindowSizeMax: -1})},
-		{"negative min", fixed(&WindowSizeSettings{WindowSizeMin: -3, WindowSizeMax: 2})},
-		{"negative min p2p only", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeMinP2pOnly: -1})},
-		{"negative hard max", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeHardMax: -1})},
-		{"negative keep healthiest count", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, KeepHealthiestCount: -1})},
-		{"negative ulimit", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, Ulimit: -1})},
-		{"negative reconnect scale", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeReconnectScale: -1})},
-		{"nan reconnect scale", fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeReconnectScale: math.NaN()})},
-		{"fixed window with no exit", fixed(&WindowSizeSettings{})},
-		{"speed max below min", &PerformanceProfile{
+		{name: "max below min", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 1})},
+		{name: "negative max", profile: fixed(&WindowSizeSettings{WindowSizeMin: 0, WindowSizeMax: -1})},
+		{name: "negative window", profile: fixed(&WindowSizeSettings{WindowSizeMin: -1, WindowSizeMax: -1})},
+		{name: "negative min", profile: fixed(&WindowSizeSettings{WindowSizeMin: -3, WindowSizeMax: 2})},
+		{name: "negative min p2p only", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeMinP2pOnly: -1})},
+		{name: "negative hard max", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeHardMax: -1})},
+		{name: "negative keep healthiest count", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, KeepHealthiestCount: -1})},
+		{name: "negative ulimit", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, Ulimit: -1})},
+		{name: "negative reconnect scale", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeReconnectScale: -1})},
+		{name: "nan reconnect scale", profile: fixed(&WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 4, WindowSizeReconnectScale: math.NaN()})},
+		{name: "fixed window with no exit", profile: fixed(&WindowSizeSettings{})},
+		{name: "speed max below min", profile: &PerformanceProfile{
 			WindowType: WindowTypeSpeed,
 			WindowSize: &WindowSizeSettings{WindowSizeMin: 4, WindowSizeMax: 2},
 		}},
-		{"auto with an invalid window", &PerformanceProfile{
+		{name: "auto with an invalid window", profile: &PerformanceProfile{
 			WindowType: WindowTypeAuto,
 			WindowSize: &WindowSizeSettings{WindowSizeMin: 2, WindowSizeMax: 1},
 		}},
 	}
 }
 
-// TestValidatePerformanceProfile pins what the device accepts: nil and the
-// profiles the apps send (auto; Fixed IP, a window of exactly one exit; a
-// window of two to four; a fixed type with the default window) are valid,
-// and every profile in testingRefusedPerformanceProfiles is refused.
+// Pins what the device accepts: nil and the profiles the apps send (auto;
+// Fixed IP, a window of exactly one exit; a window of two to four; a fixed
+// type with the default window) are valid, and every profile in
+// testingRefusedPerformanceProfiles is refused.
 func TestValidatePerformanceProfile(t *testing.T) {
 	valid := []*PerformanceProfile{
 		nil,
@@ -338,9 +338,9 @@ func TestValidatePerformanceProfile(t *testing.T) {
 	}
 }
 
-// TestNormalizeSavedPerformanceProfile pins how a saved profile reads back: a
-// valid one is unchanged, and one whose window the multi client cannot
-// install reads back in auto mode with its direct and post-quantum choices.
+// Pins how a saved profile reads back: a valid one is unchanged, and one
+// whose window the multi client cannot install reads back in auto mode with
+// its direct and post-quantum choices.
 func TestNormalizeSavedPerformanceProfile(t *testing.T) {
 	valid := &PerformanceProfile{
 		WindowType: WindowTypeQuality,
@@ -360,8 +360,8 @@ func TestNormalizeSavedPerformanceProfile(t *testing.T) {
 	}
 }
 
-// testingPerformanceProfileDevice is an accepted device with autosave on, a
-// live multi client, and a valid profile in force and saved.
+// An accepted device with autosave on, a live multi client, and a valid
+// profile in force and saved.
 func testingPerformanceProfileDevice(t *testing.T) (*DeviceLocal, string, *PerformanceProfile) {
 	t.Helper()
 	_, fixture := testingPreferenceSpaceAt(t, t.TempDir())
@@ -386,12 +386,12 @@ func testingPerformanceProfileDevice(t *testing.T) (*DeviceLocal, string, *Perfo
 	return device, path, previous
 }
 
-// TestDeviceLocalRefusesInvalidPerformanceProfile is the direct API path (the
-// mobile and C APIs). With a multi client, an invalid window panicked in the
-// caller's goroutine after the device had stored the profile, and with
-// autosave saved it, so a later re-apply of it panicked again. The device now
-// refuses it without a panic, and the previous profile stays in force: in the
-// getter, in the saved record, and with no change notification.
+// The direct API path (the mobile and C APIs). With a multi client, an
+// invalid window panicked in the caller's goroutine after the device had
+// stored the profile, and with autosave saved it, so a later re-apply of it
+// panicked again. The device now refuses it without a panic, and the previous
+// profile stays in force: in the getter, in the saved record, and with no
+// change notification.
 func TestDeviceLocalRefusesInvalidPerformanceProfile(t *testing.T) {
 	device, path, previous := testingPerformanceProfileDevice(t)
 	savedBefore, err := os.ReadFile(path)
@@ -434,10 +434,10 @@ func TestDeviceLocalRefusesInvalidPerformanceProfile(t *testing.T) {
 	}
 }
 
-// TestDeviceLocalRefusesInvalidInitialPerformanceProfile mirrors the hosted
-// proxy, which sets the initial profile a client sent (saved on the server)
-// before the device connects: an invalid one is refused, so the device
-// starts in auto instead of building its multi client from it.
+// Mirrors the hosted proxy, which sets the initial profile a client sent
+// (saved on the server) before the device connects: an invalid one is
+// refused, so the device starts in auto instead of building its multi client
+// from it.
 func TestDeviceLocalRefusesInvalidInitialPerformanceProfile(t *testing.T) {
 	settings := DefaultDeviceLocalSettings()
 	settings.HostedIncompatible = true
@@ -453,13 +453,13 @@ func TestDeviceLocalRefusesInvalidInitialPerformanceProfile(t *testing.T) {
 	}
 }
 
-// TestDeviceLocalRpcRefusesInvalidPerformanceProfile is the device-rpc path,
-// for any rpc client. The handler panicked inside the multi client; the rpc
-// recovered it but never answered, and the device had already stored and
-// saved the profile. The rpc now answers with the fixed refusal and the
-// previous profile stays in force. A sync that carries an invalid profile (one
-// a remote from before the refusal queued) completes and reports the profile
-// in force, instead of failing that sync and every later one.
+// The device-rpc path, for any rpc client. The handler panicked inside the
+// multi client; the rpc recovered it but never answered, and the device had
+// already stored and saved the profile. The rpc now answers with the fixed
+// refusal and the previous profile stays in force. A sync that carries an
+// invalid profile (one a remote from before the refusal queued) completes and
+// reports the profile in force, instead of failing that sync and every later
+// one.
 func TestDeviceLocalRpcRefusesInvalidPerformanceProfile(t *testing.T) {
 	device, path, previous := testingPerformanceProfileDevice(t)
 	savedBefore, err := os.ReadFile(path)
@@ -513,9 +513,8 @@ func TestDeviceLocalRpcRefusesInvalidPerformanceProfile(t *testing.T) {
 	}
 }
 
-// TestDeviceRemoteRefusesInvalidPerformanceProfile keeps a profile the device
-// would refuse out of the remote's sync queue, and leaves the previous
-// profile in force in the remote's getter.
+// A profile the device would refuse stays out of the remote's sync queue, and
+// the previous profile stays in force in the remote's getter.
 func TestDeviceRemoteRefusesInvalidPerformanceProfile(t *testing.T) {
 	previous := &PerformanceProfile{
 		WindowType: WindowTypeQuality,
@@ -534,10 +533,9 @@ func TestDeviceRemoteRefusesInvalidPerformanceProfile(t *testing.T) {
 	}
 }
 
-// TestDeviceLocalLoadsInvalidSavedPerformanceProfileAsAuto covers a profile an
-// older build saved from any caller. Load adopted it, the next connect built
-// its multi client from it, and a later re-apply of it with one option
-// changed panicked. It now reads back in auto mode with its direct and
+// A profile an older build saved from any caller. Load adopted it, the next
+// connect built its multi client from it, and a later re-apply of it with one
+// option changed panicked. It now reads back in auto mode with its direct and
 // post-quantum choices, through Load and through the LocalState getter the
 // apps restore from, and neither rewrites the saved record. The LocalState
 // setter refuses such a profile and keeps the saved one.

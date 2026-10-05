@@ -1,5 +1,8 @@
 //go:build !ios_extension
 
+// The wallet view controller's removal path against a fake wallet api: a
+// removal refetches the payout wallet, and a failed one ends the removing
+// state.
 package sdk
 
 import (
@@ -12,36 +15,41 @@ import (
 	"time"
 )
 
-// testing_walletDevice is a minimal Device for the wallet view controller: it
-// embeds the Device interface and answers only GetApi, the one method the
-// removal path reaches. Any other method would panic if called.
+// A minimal Device for the wallet view controller: it embeds the Device
+// interface and answers only GetApi, the one method the removal path reaches.
+// Any other method would panic if called.
 type testing_walletDevice struct {
 	Device
 	api *Api
 }
 
+// The fake wallet api.
 func (self *testing_walletDevice) GetApi() *Api {
 	return self.api
 }
 
+// Hands each payout wallet change to the test.
 type testing_payoutWalletListener struct {
 	changed chan *Id
 }
 
+// Sends the new payout wallet id to the test.
 func (self *testing_payoutWalletListener) PayoutWalletChanged(id *Id) {
 	self.changed <- id
 }
 
+// Hands each removing state change to the test.
 type testing_isRemovingWalletListener struct {
 	changed chan bool
 }
 
+// Sends the new removing state to the test.
 func (self *testing_isRemovingWalletListener) StateChanged(isRemoving bool) {
 	self.changed <- isRemoving
 }
 
-// newTestWalletViewController answers the wallet api from the raw post and
-// get functions, keyed by path.
+// A wallet view controller whose wallet api answers from the raw post and get
+// functions, keyed by path.
 func newTestWalletViewController(
 	t *testing.T,
 	post func(path string) ([]byte, error),
@@ -113,42 +121,52 @@ func TestWalletViewControllerRemoveWalletRefetchesPayoutWallet(t *testing.T) {
 // a null result was dereferenced in the callback, so the removing state never
 // cleared and every later removal was ignored.
 func TestWalletViewControllerRemoveWalletWithoutResult(t *testing.T) {
-	for name, response := range map[string]func() ([]byte, error){
-		"null result": func() ([]byte, error) {
-			return []byte("null"), nil
+	for _, c := range []struct {
+		name     string
+		response func() ([]byte, error)
+	}{
+		{
+			name: "null result",
+			response: func() ([]byte, error) {
+				return []byte("null"), nil
+			},
 		},
-		"api error": func() ([]byte, error) {
-			return nil, errors.New("synthetic failure")
+		{
+			name: "api error",
+			response: func() ([]byte, error) {
+				return nil, errors.New("synthetic failure")
+			},
 		},
-		"refused": func() ([]byte, error) {
-			return []byte(`{"success":false,"error":{"message":"synthetic refusal"}}`), nil
+		{
+			name: "refused",
+			response: func() ([]byte, error) {
+				return []byte(`{"success":false,"error":{"message":"synthetic refusal"}}`), nil
+			},
 		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			vc := newTestWalletViewController(
-				t,
-				func(path string) ([]byte, error) {
-					return response()
-				},
-				func(path string) ([]byte, error) {
-					return nil, fmt.Errorf("unexpected get %s after a failed removal", path)
-				},
-			)
-			listener := &testing_isRemovingWalletListener{changed: make(chan bool, 4)}
-			vc.AddIsRemovingWalletListener(listener)
+		vc := newTestWalletViewController(
+			t,
+			func(path string) ([]byte, error) {
+				return c.response()
+			},
+			func(path string) ([]byte, error) {
+				return nil, fmt.Errorf("unexpected get %s after a failed removal", path)
+			},
+		)
+		listener := &testing_isRemovingWalletListener{changed: make(chan bool, 4)}
+		vc.AddIsRemovingWalletListener(listener)
 
-			vc.RemoveWallet(NewId())
+		vc.RemoveWallet(NewId())
 
-			for _, want := range []bool{true, false} {
-				select {
-				case isRemoving := <-listener.changed:
-					if isRemoving != want {
-						t.Fatalf("removing state %v, want %v", isRemoving, want)
-					}
-				case <-time.After(5 * time.Second):
-					t.Fatalf("removing state did not change to %v", want)
+		for _, want := range []bool{true, false} {
+			select {
+			case isRemoving := <-listener.changed:
+				if isRemoving != want {
+					t.Fatalf("%s: removing state %v, want %v", c.name, isRemoving, want)
 				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s: removing state did not change to %v", c.name, want)
 			}
-		})
+		}
 	}
 }

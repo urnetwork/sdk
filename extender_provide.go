@@ -344,9 +344,9 @@ type deviceLocalExtenderSettings struct {
 	// The operator patterns this extender may forward to (A5): `<host>` and
 	// `*.<host>` of the space host and the migration host.
 	AllowedHosts []string
-	// SpoofDomains, when set, replaces the bundled lists in the whitelist (A5,
-	// A10). Nil takes connect.AllSpoofDomains(), the production global list
-	// and every country list.
+	// When set, replaces the bundled lists in the whitelist (A5, A10). Nil
+	// takes connect.AllSpoofDomains(), the production global list and every
+	// country list.
 	SpoofDomains []string
 
 	// The identity this extender is activated under (B1), the space's

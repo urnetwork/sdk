@@ -146,6 +146,7 @@ func jsSnError(err *sdk.SnError) any {
 	return map[string]any{"Code": err.Code, "Message": err.Message}
 }
 
+// The schedule as a page reads it, with the Go field names; nil without one.
 func jsSnEpochSchedule(schedule *sdk.SnEpochSchedule) any {
 	if schedule == nil {
 		return nil

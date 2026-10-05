@@ -594,13 +594,13 @@ func SetEgressInterfaceIndex(index4 int, index6 int) {
 	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
 }
 
-// SetNetworkCountryCode reports the country of the mobile network this device
-// is on: Android's TelephonyManager.networkCountryIso while the default network
-// is cellular, and "" on Wi-Fi or any other network whose country the platform
-// does not report. The code is ISO 3166-1 alpha-2 in either case; anything
-// else clears it. Apps call it on every default network change, and once at
-// startup before the network space manager is built, so the first dials of
-// every space already have it.
+// Reports the country of the mobile network this device is on: Android's
+// TelephonyManager.networkCountryIso while the default network is cellular,
+// and "" on Wi-Fi or any other network whose country the platform does not
+// report. The code is ISO 3166-1 alpha-2 in either case; anything else clears
+// it. Apps call it on every default network change, and once at startup
+// before the network space manager is built, so the first dials of every space
+// already have it.
 //
 // It never leaves the process. It is the fallback for the extender hint's
 // country, which picks the spoof list extender dials front with: while the

@@ -176,7 +176,7 @@ func PackEpochStartBlock(epoch *big.Int) ([]byte, error) {
 	return out, nil
 }
 
-// PackPolicyAt encodes STCoordinator.policyAt(epoch).
+// Encodes STCoordinator.policyAt(epoch).
 func PackPolicyAt(epoch *big.Int) ([]byte, error) {
 	e, err := UintWord(epoch)
 	if err != nil {
@@ -296,8 +296,8 @@ func DecodeRootCommitment(ret []byte) (*RootCommitment, error) {
 	return c, nil
 }
 
-// Policy is the settlement cadence of STCoordinator.PolicySnapshot: the
-// epoch length and the windows that follow an epoch's close.
+// The settlement cadence of STCoordinator.PolicySnapshot: the epoch length
+// and the windows that follow an epoch's close.
 type Policy struct {
 	EffectiveEpoch         uint64
 	EffectiveBlock         uint64
@@ -306,13 +306,13 @@ type Policy struct {
 	// claims open this many blocks after the close (finalizeOperatorEpoch)
 	FinalizeOffsetBlocks uint64
 	CloseGraceBlocks     uint64
-	// an unclaimed share expires at the end of epoch + ClaimTTLEpochs + ClaimGraceEpochs
-	ClaimTTLEpochs   uint64
+	// an unclaimed share expires at the end of epoch + ClaimTtlEpochs + ClaimGraceEpochs
+	ClaimTtlEpochs   uint64
 	ClaimGraceEpochs uint64
 }
 
-// DecodePolicy decodes the static PolicySnapshot tuple returned by
-// policyAt(): policyHash, effectiveEpoch, effectiveBlock, epochBlocks,
+// Decodes the static PolicySnapshot tuple returned by policyAt():
+// policyHash, effectiveEpoch, effectiveBlock, epochBlocks,
 // rootCommitWindowBlocks, finalizeOffsetBlocks, closeGraceBlocks,
 // claimTTLEpochs, claimGraceEpochs, maximumBindingValidityEpochs,
 // commitmentMaxAgeBlocks, epochDepositCapRao, campaignDepositCapRao.
@@ -335,7 +335,7 @@ func DecodePolicy(ret []byte) (*Policy, error) {
 		RootCommitWindowBlocks: words[3],
 		FinalizeOffsetBlocks:   words[4],
 		CloseGraceBlocks:       words[5],
-		ClaimTTLEpochs:         words[6],
+		ClaimTtlEpochs:         words[6],
 		ClaimGraceEpochs:       words[7],
 	}
 	if p.EpochBlocks == 0 {

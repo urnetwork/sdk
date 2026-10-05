@@ -1,3 +1,5 @@
+// App diagnostic lines in the sdk's own glog files, which are the logs a user
+// uploads with feedback.
 package sdk
 
 import (
@@ -9,10 +11,12 @@ import (
 )
 
 // The bounds of one app log line (see LogAppInfo), in bytes.
-const appLogTagMaxLength = 32
-const appLogMessageMaxLength = 1024
+const (
+	appLogTagMaxLength     = 32
+	appLogMessageMaxLength = 1024
+)
 
-// LogAppInfo writes one line from the app into this process's glog INFO log.
+// Writes one line from the app into this process's glog INFO log.
 //
 // The apps log to the platform log (android logcat, apple os_log), but the log
 // files the sdk uploads when the user sends feedback with logs
@@ -35,29 +39,20 @@ func LogAppInfo(tag string, message string) {
 	glog.Info(appLogLine(tag, message))
 }
 
-// appLogLine is the line LogAppInfo writes.
+// The line LogAppInfo writes.
 func appLogLine(tag string, message string) string {
-	tag = sanitizeAppLogTag(tag)
-	message = sanitizeAppLogMessage(message)
-	if tag == "" {
-		return "[app] " + message
-	}
-	return "[app][" + tag + "] " + message
-}
-
-func sanitizeAppLogTag(tag string) string {
-	var b strings.Builder
-	for i := 0; i < len(tag) && b.Len() < appLogTagMaxLength; i += 1 {
+	// the tag keeps only ascii letters, digits, '.', '_' and '-', at most
+	// appLogTagMaxLength of them
+	var tagBuilder strings.Builder
+	for i := 0; i < len(tag) && tagBuilder.Len() < appLogTagMaxLength; i += 1 {
 		c := tag[i]
 		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' ||
 			c == '.' || c == '_' || c == '-' {
-			b.WriteByte(c)
+			tagBuilder.WriteByte(c)
 		}
 	}
-	return b.String()
-}
+	tag = tagBuilder.String()
 
-func sanitizeAppLogMessage(message string) string {
 	message = strings.Map(func(r rune) rune {
 		// U+2028 and U+2029 are not control characters, but viewers break
 		// lines on them
@@ -66,13 +61,17 @@ func sanitizeAppLogMessage(message string) string {
 		}
 		return r
 	}, strings.ToValidUTF8(message, string(utf8.RuneError)))
-	if len(message) <= appLogMessageMaxLength {
-		return message
+	if appLogMessageMaxLength < len(message) {
+		// cut on a rune boundary, leaving room for the marker
+		cut := appLogMessageMaxLength - len("…")
+		for 0 < cut && !utf8.RuneStart(message[cut]) {
+			cut -= 1
+		}
+		message = message[:cut] + "…"
 	}
-	// cut on a rune boundary, leaving room for the marker
-	cut := appLogMessageMaxLength - len("…")
-	for 0 < cut && !utf8.RuneStart(message[cut]) {
-		cut -= 1
+
+	if tag == "" {
+		return "[app] " + message
 	}
-	return message[:cut] + "…"
+	return "[app][" + tag + "] " + message
 }
