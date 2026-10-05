@@ -31111,6 +31111,9 @@ inline void setMemoryProfileRate(int64_t byte_count) {
 inline void setMessagePoolMemoryTargets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count) {
 	urnet_set_message_pool_memory_targets(packet_pool_byte_count, large_object_pool_byte_count);
 }
+inline void setNetworkCountryCode(const std::string& country_code) {
+	urnet_set_network_country_code(country_code.c_str());
+}
 inline bool setTransferDiagnosticSnapshotsEnabled(bool enabled) {
 	bool r = urnet_set_transfer_diagnostic_snapshots_enabled(enabled);
 	return r;

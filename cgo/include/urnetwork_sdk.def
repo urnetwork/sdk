@@ -1115,6 +1115,7 @@ EXPORTS
 	urnet_set_memory_limit
 	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets
+	urnet_set_network_country_code
 	urnet_set_transfer_diagnostic_snapshots_enabled
 	urnet_short_ss58
 	urnet_sn_claim_transactions_for

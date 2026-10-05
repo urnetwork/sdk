@@ -1029,6 +1029,7 @@ urnet_set_log_verbosity <- SetLogVerbosity
 urnet_set_memory_limit <- SetMemoryLimit
 urnet_set_memory_profile_rate <- SetMemoryProfileRate
 urnet_set_message_pool_memory_targets <- SetMessagePoolMemoryTargets
+urnet_set_network_country_code <- SetNetworkCountryCode
 urnet_set_transfer_diagnostic_snapshots_enabled <- SetTransferDiagnosticSnapshotsEnabled
 urnet_short_ss58 <- ShortSs58
 urnet_sn_claim_transactions_for <- SnClaimTransactionsFor
