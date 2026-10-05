@@ -290,3 +290,36 @@ test("filteredLocations declarations match the WASM runtime", () => {
     assert.match(info, new RegExp(`\\b${key}\\??: `), key);
   }
 });
+
+// The web's connect options (mode, Fixed IP, post quantum encryption) reach the
+// hosted device only through these bindings; a declaration without its runtime
+// key would leave ur.io's Fixed IP toggle storing a choice nothing applies.
+test("performance-profile declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const runtime = source("../device_remote.go");
+  const deviceRemote = declarations.match(/export interface DeviceRemote extends[\s\S]*?\n}/)?.[0] || "";
+  assert.match(deviceRemote, /getPerformanceProfile\(\): PerformanceProfile \| null;/);
+  assert.match(deviceRemote, /setPerformanceProfile\(profile: PerformanceProfile \| null\): void;/);
+  assert.match(deviceRemote, /addPerformanceProfileChangeListener\(\s*cb: \(profile: PerformanceProfile \| null\) => void,?\s*\): Unsubscribe;/);
+  for (const method of ["getPerformanceProfile", "setPerformanceProfile", "addPerformanceProfileChangeListener"]) {
+    assert.match(runtime, new RegExp(`m\\["${method}"\\] = js.FuncOf\\(`), method);
+  }
+
+  // every key jsPerformanceProfile emits is declared, and parsed back
+  const emitted = runtime.match(/func jsPerformanceProfile\([\s\S]*?\n}/)?.[0] || "";
+  const parsed = runtime.match(/func parsePerformanceProfile\([\s\S]*?\n}/)?.[0] || "";
+  const profile = declarations.match(/export interface PerformanceProfile \{[\s\S]*?\n}/)?.[0] || "";
+  const windowSize = declarations.match(/export interface WindowSizeSettings \{[\s\S]*?\n}/)?.[0] || "";
+  for (const key of ["windowType", "windowSize", "allowDirect", "postQuantumEncryption"]) {
+    assert.match(emitted, new RegExp(`"${key}":`), key);
+    assert.match(parsed, new RegExp(`"${key}"`), key);
+    assert.match(profile, new RegExp(`\\b${key}: `), key);
+  }
+  for (const key of ["windowSizeMin", "windowSizeMax", "windowSizeMinP2pOnly", "windowSizeHardMax",
+    "windowSizeReconnectScale", "keepHealthiestCount", "ulimit"]) {
+    assert.match(emitted, new RegExp(`"${key}":`), key);
+    assert.match(parsed, new RegExp(`"${key}"`), key);
+    assert.match(windowSize, new RegExp(`\\b${key}\\??: number;`), key);
+  }
+  assert.match(declarations, /export type WindowType = "auto" \| "quality" \| "speed";/);
+});
