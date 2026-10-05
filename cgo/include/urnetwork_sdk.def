@@ -848,6 +848,7 @@ EXPORTS
 	urnet_network_space_get_platform_url_v6
 	urnet_network_space_get_sso_google
 	urnet_network_space_get_store
+	urnet_network_space_get_vless_settings
 	urnet_network_space_get_wallet
 	urnet_network_space_has_platform_family_urls
 	urnet_network_space_manager_add_active_network_space_change_listener
@@ -866,6 +867,7 @@ EXPORTS
 	urnet_network_space_service_url
 	urnet_network_space_set_control_ip_family_policy
 	urnet_network_space_set_extender_gossip_mode
+	urnet_network_space_set_vless_settings
 	urnet_network_space_to_json
 	urnet_network_user_view_controller_add_is_loading_listener
 	urnet_network_user_view_controller_add_is_updating_listener
@@ -916,6 +918,7 @@ EXPORTS
 	urnet_new_transfer_path
 	urnet_new_tunnel
 	urnet_new_urls_network_space
+	urnet_new_vless_settings
 	urnet_new_wallet_circle_transfer_out_args
 	urnet_new_widget_added_event
 	urnet_normal_env_name
@@ -931,6 +934,7 @@ EXPORTS
 	urnet_parse_checkout_redirect
 	urnet_parse_client_events_json
 	urnet_parse_id
+	urnet_parse_vless_link
 	urnet_peer_view_controller_add_peers_listener
 	urnet_peer_view_controller_close
 	urnet_peer_view_controller_get_connected_count
@@ -1085,8 +1089,14 @@ EXPORTS
 	urnet_usd_to_nano_cents
 	urnet_validate_emoji_tag
 	urnet_validate_ss58
+	urnet_validate_vless_settings
 	urnet_verify_payout_proof_hex
 	urnet_version
+	urnet_vless_fingerprints
+	urnet_vless_flows
+	urnet_vless_networks
+	urnet_vless_securities
+	urnet_vless_settings_link
 	urnet_wallet_view_controller_add_account_wallets_listener
 	urnet_wallet_view_controller_add_external_wallet
 	urnet_wallet_view_controller_add_is_creating_external_wallet_listener

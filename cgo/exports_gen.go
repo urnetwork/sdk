@@ -14422,6 +14422,20 @@ func urnet_network_space_get_store(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_vless_settings
+func urnet_network_space_get_vless_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_vless_settings")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_vless_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetVlessSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_vless_settings")
+}
+
 //export urnet_network_space_get_wallet
 func urnet_network_space_get_wallet(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_wallet")
@@ -14499,6 +14513,24 @@ func urnet_network_space_set_extender_gossip_mode(self C.uint64_t, mode *C.char)
 		return
 	}
 	self_.SetExtenderGossipMode(goString(mode))
+}
+
+//export urnet_network_space_set_vless_settings
+func urnet_network_space_set_vless_settings(self C.uint64_t, settings *C.char) *C.char {
+	defer cgoGuard("urnet_network_space_set_vless_settings")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_vless_settings")
+	if !ok {
+		return nil
+	}
+	var settings_ *sdk.VlessSettings
+	if settings != nil {
+		settings_ = &sdk.VlessSettings{}
+		if !goJson(settings, settings_, "urnet_network_space_set_vless_settings") {
+			return nil
+		}
+	}
+	r0 := self_.SetVlessSettings(settings_)
+	return cString(string(r0))
 }
 
 //export urnet_network_space_to_json
@@ -15393,6 +15425,16 @@ func urnet_new_urls_network_space(apiUrl *C.char, platformUrl *C.char) C.uint64_
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_vless_settings
+func urnet_new_vless_settings() *C.char {
+	defer cgoGuard("urnet_new_vless_settings")
+	r0 := sdk.NewVlessSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_vless_settings")
+}
+
 //export urnet_new_wallet_circle_transfer_out_args
 func urnet_new_wallet_circle_transfer_out_args(toAddress *C.char, amountUsdcNanoCents C.int64_t, terms C.bool) *C.char {
 	defer cgoGuard("urnet_new_wallet_circle_transfer_out_args")
@@ -15549,6 +15591,16 @@ func urnet_parse_id(src *C.char, outError **C.char) *C.char {
 		return nil
 	}
 	return cId(r0)
+}
+
+//export urnet_parse_vless_link
+func urnet_parse_vless_link(link *C.char) *C.char {
+	defer cgoGuard("urnet_parse_vless_link")
+	r0 := sdk.ParseVlessLink(goString(link))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_parse_vless_link")
 }
 
 //export urnet_peer_view_controller_add_peers_listener
@@ -17281,6 +17333,20 @@ func urnet_validate_ss58(address *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_validate_vless_settings
+func urnet_validate_vless_settings(settings *C.char) *C.char {
+	defer cgoGuard("urnet_validate_vless_settings")
+	var settings_ *sdk.VlessSettings
+	if settings != nil {
+		settings_ = &sdk.VlessSettings{}
+		if !goJson(settings, settings_, "urnet_validate_vless_settings") {
+			return nil
+		}
+	}
+	r0 := sdk.ValidateVlessSettings(settings_)
+	return cString(string(r0))
+}
+
 //export urnet_verify_payout_proof_hex
 func urnet_verify_payout_proof_hex(rootHex *C.char, leafHex *C.char, proofHex *C.char) C.bool {
 	defer cgoGuard("urnet_verify_payout_proof_hex")
@@ -17293,6 +17359,60 @@ func urnet_verify_payout_proof_hex(rootHex *C.char, leafHex *C.char, proofHex *C
 	}
 	r0 := sdk.VerifyPayoutProofHex(goString(rootHex), goString(leafHex), proofHex_)
 	return C.bool(r0)
+}
+
+//export urnet_vless_fingerprints
+func urnet_vless_fingerprints() *C.char {
+	defer cgoGuard("urnet_vless_fingerprints")
+	r0 := sdk.VlessFingerprints()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_fingerprints")
+}
+
+//export urnet_vless_flows
+func urnet_vless_flows() *C.char {
+	defer cgoGuard("urnet_vless_flows")
+	r0 := sdk.VlessFlows()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_flows")
+}
+
+//export urnet_vless_networks
+func urnet_vless_networks() *C.char {
+	defer cgoGuard("urnet_vless_networks")
+	r0 := sdk.VlessNetworks()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_networks")
+}
+
+//export urnet_vless_securities
+func urnet_vless_securities() *C.char {
+	defer cgoGuard("urnet_vless_securities")
+	r0 := sdk.VlessSecurities()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_securities")
+}
+
+//export urnet_vless_settings_link
+func urnet_vless_settings_link(settings *C.char) *C.char {
+	defer cgoGuard("urnet_vless_settings_link")
+	var settings_ *sdk.VlessSettings
+	if settings != nil {
+		settings_ = &sdk.VlessSettings{}
+		if !goJson(settings, settings_, "urnet_vless_settings_link") {
+			return nil
+		}
+	}
+	r0 := sdk.VlessSettingsLink(settings_)
+	return cString(string(r0))
 }
 
 //export urnet_wallet_view_controller_add_account_wallets_listener

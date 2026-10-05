@@ -187,7 +187,7 @@ func (self *ExtenderViewController) SetSettings(
 	// trimmed here rather than only where they are read, so a field a user
 	// blanked out is stored as empty -- which is what "the default" is -- and
 	// the persisted document never carries whitespace
-	networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderDnsName = strings.TrimSpace(dnsName)
 		values.GossipUrl = strings.TrimSpace(gossipUrl)
 		values.ExtenderHosts = extenderHosts
@@ -298,7 +298,7 @@ func (self *ExtenderViewController) ImportShare(
 	// empty one
 	if useSettings && share.Settings != nil {
 		rootPublicKeyHexes := connect.ExtenderShareRootKeyHexes(share)
-		networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+		networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 			values.ExtenderDnsName = share.Settings.DnsName
 			values.GossipUrl = share.Settings.GossipUrl
 			values.ExtenderRootPublicKeys = rootPublicKeyHexes

@@ -377,7 +377,7 @@ func TestExtenderValuesApplyWithoutANetworkSpaceManager(t *testing.T) {
 	if previousNetworkClient == nil {
 		t.Fatal("the space ran no extender network client")
 	}
-	if !networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	if !networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{"192.0.2.1"}
 	}) {
 		t.Fatal("a real change reported none")
@@ -395,7 +395,7 @@ func TestExtenderValuesApplyWithoutANetworkSpaceManager(t *testing.T) {
 	// and an edit that resolves to the same values restarts nothing
 	previousNetworkClient = networkSpace.getExtenderNetworkClient()
 	previousBuilds := recorder.count()
-	if networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	if networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{" 192.0.2.1 ", ""}
 	}) {
 		t.Fatal("a whitespace-only edit reported a change")
@@ -599,7 +599,7 @@ func TestDeviceLocalProviderInstallsItsProbeAttestor(t *testing.T) {
 
 	// a settings change replaces the client in place, and the replacement
 	// attests exactly as the one it replaced did (K6)
-	if !networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	if !networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{"192.0.2.9"}
 	}) {
 		t.Fatal("the settings change changed nothing")
@@ -876,7 +876,7 @@ func testApplyProbeAttestorRecord(t *testing.T, networkSpace *NetworkSpace, root
 func testReplaceProbeAttestorClient(t *testing.T, networkSpace *NetworkSpace, manualHost string) *connect.ExtenderNetworkClient {
 	t.Helper()
 	previous := networkSpace.getExtenderNetworkClient()
-	if !networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	if !networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{manualHost}
 	}) {
 		t.Fatal("the settings change changed nothing")
