@@ -13,8 +13,11 @@ import {
 // shipped, and none of them threw at the time -- a Solana Pay payment that cannot
 // be credited looks exactly like a successful one from the client's side.
 
+// USDC on Solana mainnet, pinned on purpose: the mint every quote names
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const RECIPIENT = "4Fj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM";
+// a fixture key (sha256 of "urnetwork test merchant" as a public key), not a
+// wallet: the sdk pays whatever recipient the caller's quote names
+const RECIPIENT = "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ";
 
 const validArgs = () => ({
   recipient: RECIPIENT,
@@ -91,8 +94,8 @@ test("malformed references are rejected", () => {
     "abc",
     encodeBase58(new Uint8Array(31)),
     encodeBase58(new Uint8Array(33)),
-    "0Fj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM",
-    "OFj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM",
+    "0" + RECIPIENT.slice(1),
+    "O" + RECIPIENT.slice(1),
     " " + RECIPIENT,
   ]) {
     assert.equal(isValidPaymentReference(ref), false, `accepted ${JSON.stringify(ref)}`);

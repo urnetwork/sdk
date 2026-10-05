@@ -1,8 +1,15 @@
 package sdk
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,9 +21,14 @@ import (
 // like a successful one from the client's side.
 
 const (
-	// A real mainnet USDC mint and a real merchant address, used as valid fixtures.
-	testUsdcMint  = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-	testRecipient = "4Fj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM"
+	// USDC on Solana mainnet, pinned on purpose: the mint every quote names
+	testUsdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+	// a fixture key (sha256 of "urnetwork test merchant" as a public key), not
+	// a wallet: the sdk pays whatever recipient the caller's quote names
+	testRecipient = "4wsaez5pzZPytskrQgV4TEc7mBqhT4WStJXfvMKRc2tQ"
+	// the official merchant's address by its sha256 (hex), so the address
+	// itself stays out of test data
+	officialMerchantSha256 = "b6fed7b0a3462afeda2f9703ecc17076b664bb8b1129bb0b62c70304bd50ab2c"
 )
 
 func validArgs() *SolanaPaymentUrlArgs {
@@ -97,10 +109,10 @@ func TestIsValidPaymentReferenceRejectsMalformed(t *testing.T) {
 		"too short":          "abc",
 		"31 bytes":           base58Encode(make([]byte, 31)),
 		"33 bytes":           base58Encode(make([]byte, 33)),
-		"zero char":          "0Fj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM",
-		"capital o":          "OFj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM",
-		"lowercase l":        "lFj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM",
-		"capital i":          "IFj9RCwJqHLdLNK28DwWHunHqWapxKbbzeYZLmreSYCM",
+		"zero char":          "0" + testRecipient[1:],
+		"capital o":          "O" + testRecipient[1:],
+		"lowercase l":        "l" + testRecipient[1:],
+		"capital i":          "I" + testRecipient[1:],
 		"whitespace":         " " + testRecipient,
 		"url encoded spaces": strings.ReplaceAll(testRecipient, "R", "%52"),
 	}
@@ -111,11 +123,11 @@ func TestIsValidPaymentReferenceRejectsMalformed(t *testing.T) {
 	}
 }
 
-// A 32-byte value IS a valid reference even though it is also a real address --
+// A 32-byte value IS a valid reference even though it is also an address --
 // they are the same type. This documents that the check is structural.
 func TestValidAddressIsAValidReferenceShape(t *testing.T) {
 	if !IsValidPaymentReference(testRecipient) {
-		t.Fatalf("a real 32-byte address should satisfy the reference shape")
+		t.Fatalf("a 32-byte address should satisfy the reference shape")
 	}
 }
 
@@ -414,4 +426,52 @@ func TestUnquotedPlanCannotProduceAUrl(t *testing.T) {
 // mirrors the formatting rule in BuildSolanaPaymentUrl
 func trimFloat(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+// The sdk builds a payment for the recipient its caller's quote names, so no
+// sdk source carries the official merchant, test data included: the Go
+// package and the JS sdk's sources and tests are read for it, by its sha256.
+func TestSolanaPaySourcesCarryNoOfficialMerchant(t *testing.T) {
+	base58Token := regexp.MustCompile(`[1-9A-HJ-NP-Za-km-z]{32,44}`)
+	foundLines := []string{}
+	scan := func(path string) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for lineIndex, line := range strings.Split(string(data), "\n") {
+			for _, token := range base58Token.FindAllString(line, -1) {
+				sum := sha256.Sum256([]byte(token))
+				if hex.EncodeToString(sum[:]) == officialMerchantSha256 {
+					foundLines = append(foundLines, fmt.Sprintf("%s:%d", filepath.ToSlash(path), lineIndex+1))
+				}
+			}
+		}
+	}
+	goPaths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range goPaths {
+		scan(path)
+	}
+	for _, dir := range []string{"js/src", "js/test"} {
+		err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case entry.IsDir() && entry.Name() == "node_modules":
+				return filepath.SkipDir
+			case !entry.IsDir():
+				scan(path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("read %s: %v", dir, err)
+		}
+	}
+	if len(foundLines) != 0 {
+		t.Fatalf("the official merchant address is in the sdk sources at %v; use a fixture key", foundLines)
+	}
 }
