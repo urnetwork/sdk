@@ -7,6 +7,8 @@
 package main
 
 import (
+	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"reflect"
@@ -16,14 +18,32 @@ import (
 )
 
 func main() {
-	if err := generateTypes(); err != nil {
+	check := flag.Bool("check", false, "compare against committed output without writing it")
+	flag.Parse()
+	output, err := generateTypes()
+	if err == nil {
+		const outputPath = "src/generated/types.ts"
+		if *check {
+			current, readErr := os.ReadFile(outputPath)
+			if readErr != nil || !bytes.Equal(current, output) {
+				err = fmt.Errorf("%s is stale; run `make generate_types` and commit the result", outputPath)
+			}
+		} else if err = os.MkdirAll("src/generated", 0755); err == nil {
+			err = os.WriteFile(outputPath, output, 0644)
+		}
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating types: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("Generated TypeScript types successfully")
+	if *check {
+		fmt.Println("Generated TypeScript types are up to date")
+	} else {
+		fmt.Println("Generated TypeScript types successfully")
+	}
 }
 
-func generateTypes() error {
+func generateTypes() ([]byte, error) {
 	var output strings.Builder
 
 	output.WriteString("// Auto-generated TypeScript types from Go structs\n")
@@ -95,6 +115,7 @@ func generateTypes() error {
 		sdk.AuthVerifyArgs{},
 		sdk.AuthVerifyResult{},
 		sdk.AuthVerifyResultNetwork{},
+		sdk.AuthVerifySendError{},
 		sdk.AuthCodeLoginArgs{},
 		sdk.AuthCodeLoginResult{},
 		sdk.AuthNetworkClientResult{},
@@ -148,16 +169,13 @@ func generateTypes() error {
 	for _, t := range types {
 		ts, err := generateTypeScriptInterface(t)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		output.WriteString(ts)
 		output.WriteString("\n\n")
 	}
 
-	// Write to src/generated/types.ts
-	outputPath := "src/generated/types.ts"
-	os.MkdirAll("src/generated", 0755)
-	return os.WriteFile(outputPath, []byte(output.String()), 0644)
+	return []byte(output.String()), nil
 }
 
 func generateTypeScriptInterface(v interface{}) (string, error) {

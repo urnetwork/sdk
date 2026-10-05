@@ -88,6 +88,12 @@ authenticated numeric-loopback native companion.
 
 ## Build, check and publish
 
+`make smoke` and `make build_checked` first validate the committed Go-derived
+types and OpenAPI client without rewriting them. Stale output fails the test
+build before WASM or npm work. Use `make generate_types` to refresh both generated
+surfaces deliberately, then commit the changes. `make check_generated` checks
+them without building; developer `make build` still generates before building.
+
 From this directory:
 
 ```sh
