@@ -401,6 +401,7 @@ inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "conf
 inline constexpr const char* PurchaseConfirmationStateConfirmed = "confirmed";
 inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
 inline constexpr const char* PurchaseConfirmationStateWaitingForConfirmation = "waiting_for_confirmation";
+inline constexpr const char* PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required";
 inline constexpr const char* PurchaseReportStatusAlreadyCredited = "already_credited";
 inline constexpr const char* PurchaseReportStatusCredited = "credited";
 inline constexpr const char* PurchaseReportStatusInvalid = "invalid";
@@ -2564,6 +2565,7 @@ struct OnboardingClickResult {
 };
 
 struct OnboardingError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3232,6 +3234,7 @@ struct SolanaPaymentIntentArgs {
 };
 
 struct SolanaPaymentIntentError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3267,6 +3270,7 @@ struct StripeCreateCheckoutSessionArgs {
 };
 
 struct StripeCreateCheckoutSessionError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3295,6 +3299,7 @@ struct StripeCreatePaymentIntentArgs {
 };
 
 struct StripeCreatePaymentIntentErr {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -11791,11 +11796,19 @@ inline void from_json(const nlohmann::json& j, OnboardingClickResult& v) {
 
 inline void to_json(nlohmann::json& j, const OnboardingError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, OnboardingError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -14792,11 +14805,19 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentArgs& v) {
 
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -14973,11 +14994,19 @@ inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& 
 
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -15099,11 +15128,19 @@ inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentArgs& v)
 
 inline void to_json(nlohmann::json& j, const StripeCreatePaymentIntentErr& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentErr& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
