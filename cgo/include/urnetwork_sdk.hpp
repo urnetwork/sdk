@@ -3159,6 +3159,7 @@ struct SnHeadResult {
 
 struct SnPoolClaimArgs {
 	int64_t epoch{};
+	std::optional<std::string> legacy_coldkey;
 };
 
 struct SnPoolClaimError {
@@ -14470,6 +14471,9 @@ inline void from_json(const nlohmann::json& j, SnHeadResult& v) {
 inline void to_json(nlohmann::json& j, const SnPoolClaimArgs& v) {
 	j = nlohmann::json::object();
 	j["epoch"] = v.epoch;
+	if (v.legacy_coldkey) {
+		j["legacy_coldkey"] = *v.legacy_coldkey;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v) {
 	if (!j.is_object()) {
@@ -14477,6 +14481,11 @@ inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v) {
 	}
 	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
 		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("legacy_coldkey"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.legacy_coldkey = std::move(tmp);
 	}
 }
 

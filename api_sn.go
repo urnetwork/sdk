@@ -7,6 +7,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/urnetwork/connect"
 )
@@ -128,7 +129,7 @@ func (self *Api) SnSetWalletSync(args *SnSetWalletArgs) (*SnSetWalletResult, err
 	return self.SnSetWalletSyncWithContext(self.ctx, args)
 }
 
-// SnPoolClaimArgs selects the epoch to claim.
+// Selects the epoch and, optionally, its original legacy proof coldkey.
 //
 // int64, not uint64: gomobile cannot bind uint64, and as uint64 this class
 // bound as an empty shell that could not express a claim at all. An epoch
@@ -136,6 +137,9 @@ func (self *Api) SnSetWalletSync(args *SnSetWalletArgs) (*SnSetWalletResult, err
 // wire format is unchanged.
 type SnPoolClaimArgs struct {
 	Epoch int64 `json:"epoch"`
+	// Original coldkey ss58 for a legacy network-only epoch's proof. This
+	// selector does not confer ownership or authorization.
+	LegacyColdkey string `json:"legacy_coldkey,omitempty"`
 }
 
 type SnPoolClaimError struct {
@@ -194,10 +198,14 @@ func (self *Api) SnPoolClaimSyncWithContext(ctx context.Context, args *SnPoolCla
 	if args == nil {
 		return nil, fmt.Errorf("pool claim args are required")
 	}
+	requestUrl := fmt.Sprintf("%s/sn/pool/claim?epoch=%d", self.apiUrl, args.Epoch)
+	if args.LegacyColdkey != "" {
+		requestUrl += "&legacy_coldkey=" + url.QueryEscape(args.LegacyColdkey)
+	}
 	return connect.HttpGetWithRawFunction(
 		ctx,
 		self.getHttpGetRaw(),
-		fmt.Sprintf("%s/sn/pool/claim?epoch=%d", self.apiUrl, args.Epoch),
+		requestUrl,
 		self.GetByJwt(),
 		&SnPoolClaimResult{},
 		connect.NewNoopApiCallback[*SnPoolClaimResult](),
