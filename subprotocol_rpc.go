@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/urnetwork/connect"
-	"github.com/urnetwork/sdk/internal/subprotocolrpc"
 )
 
 const subprotocolRPCMaxBytes = 65535
@@ -28,9 +27,9 @@ type subprotocolRpcEntry struct {
 	sub         Sub
 	closed      bool
 	err         error
-	queue       []subprotocolrpc.Response
+	queue       []subprotocolRpcResponse
 	queuedBytes int
-	query       *subprotocolrpc.Response
+	query       *subprotocolRpcResponse
 }
 
 func (e *subprotocolRpcEntry) SubprotocolMessage(_ int32, source *Id, data []byte) {
@@ -46,7 +45,7 @@ func (e *subprotocolRpcEntry) SubprotocolMessage(_ int32, source *Id, data []byt
 		return
 	}
 	// The native callback owns ephemeral input; copy before returning to it.
-	e.queue = append(e.queue, subprotocolrpc.Response{Source: source.toConnectId(), Data: append([]byte{}, data...)})
+	e.queue = append(e.queue, subprotocolRpcResponse{Source: source.toConnectId(), Data: append([]byte{}, data...)})
 	e.queuedBytes += len(data)
 }
 
@@ -76,7 +75,7 @@ func (s *subprotocolRpcRegistry) close() {
 
 type subprotocolRpcQuery struct {
 	entry    *subprotocolRpcEntry
-	response *subprotocolrpc.Response
+	response *subprotocolRpcResponse
 }
 
 func (q *subprotocolRpcQuery) Result(ids *IntList, ok bool) {
@@ -97,14 +96,14 @@ func (q *subprotocolRpcQuery) Result(ids *IntList, ok bool) {
 // Subprotocol is an optional additive RPC capability. Hosted proxies remain
 // ineligible: only an explicitly provider-capable, visible DeviceLocal serves
 // application messages. Closing an RPC session removes all its registrations.
-func (d *DeviceLocalRpc) Subprotocol(req *subprotocolrpc.Request, reply *subprotocolrpc.Response) error {
+func (d *DeviceLocalRpc) Subprotocol(req *subprotocolRpcRequest, reply *subprotocolRpcResponse) error {
 	if err := d.subprotocolRequest(req, reply); err != nil {
 		reply.Error = err.Error()
 	}
 	return nil
 }
 
-func (d *DeviceLocalRpc) subprotocolRequest(req *subprotocolrpc.Request, reply *subprotocolrpc.Response) error {
+func (d *DeviceLocalRpc) subprotocolRequest(req *subprotocolRpcRequest, reply *subprotocolRpcResponse) error {
 	if d.deviceLocal == nil || d.deviceLocal.settings == nil || d.deviceLocal.settings.HostedIncompatible || !d.deviceLocal.settings.AllowProvider {
 		return errors.New("subprotocol RPC requires a provider-capable native DeviceLocal; hosted proxy devices do not support messaging")
 	}
@@ -184,7 +183,7 @@ func (d *DeviceLocalRpc) subprotocolRequest(req *subprotocolrpc.Request, reply *
 			return nil
 		}
 		*reply = e.queue[0]
-		e.queue[0] = subprotocolrpc.Response{}
+		e.queue[0] = subprotocolRpcResponse{}
 		e.queue = e.queue[1:]
 		e.queuedBytes -= len(reply.Data)
 		return nil
@@ -206,7 +205,7 @@ func (d *DeviceLocalRpc) subprotocolRequest(req *subprotocolrpc.Request, reply *
 				e.mu.Unlock()
 				return errors.New("invalid or concurrent subprotocol query")
 			}
-			q := &subprotocolrpc.Response{Pending: true}
+			q := &subprotocolRpcResponse{Pending: true}
 			e.query = q
 			e.mu.Unlock()
 			d.deviceLocal.QuerySubprotocols(newId(req.Destination), req.TimeoutMillis, &subprotocolRpcQuery{e, q})
