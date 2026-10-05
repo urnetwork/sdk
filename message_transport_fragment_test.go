@@ -1181,10 +1181,10 @@ func TestThePartSizeHasExactlyOneDeclarationInPackageSdk(t *testing.T) {
 	excused := []string{}
 	unexcused := []messageFragmentCopy{}
 	matched := map[string]bool{}
-	rulings := messageFragmentPartSizeRulings()
+	rulings := messageFragmentPartSizeRulings(os.O_EXCL)
 	for _, copied := range outside {
-		key := copied.file + " " + copied.where
-		if _, ruled := rulings[key]; !ruled {
+		key, ruled := messageFragmentPartSizeRulingKey(copied, rulings)
+		if !ruled {
 			unexcused = append(unexcused, copied)
 			continue
 		}
@@ -1255,17 +1255,20 @@ func copiesOf(copies []messageFragmentCopy) []string {
 // time and by name.
 //
 // Every entry is a sentence saying why that value is not §4.6's part size. The
-// key is the FILE and the DECLARATION the copy sits inside, so an excuse covers
-// one function rather than a file forever, and it survives the line moving.
+// key is the FILE and the DECLARATION the copy sits inside, optionally followed
+// by the exact EXPRESSION when only that expression has been audited. An excuse
+// survives the line moving without covering a whole file or, for an expression
+// ruling, every other value in the same declaration.
 // Every entry is also asserted to MATCH something — an excuse for a copy that is
 // gone is an excuse nothing checks any more.
 //
 // It holds no entry in the binding's own files and cannot: a copy there is
 // refused before this table is consulted. This is a table for values that are
 // not this bound, never a second home for this bound.
-// messageFragmentPartSizeRulings is the table below merged with this platform's half, which is
-// message_transport_fragment_rulings_linux_test.go on linux and its empty twin everywhere else.
-func messageFragmentPartSizeRulings() map[string]string {
+// messageFragmentPartSizeRulings merges the table below with the existing linux
+// half and the imported os.O_EXCL value on the current target. Taking that value
+// as an argument lets the regression exercise both platform outcomes on one host.
+func messageFragmentPartSizeRulings(exclusiveFlag int) map[string]string {
 	merged := map[string]string{}
 	for key, ruling := range messageFragmentPartSizeCopyRulings {
 		merged[key] = ruling
@@ -1273,7 +1276,95 @@ func messageFragmentPartSizeRulings() map[string]string {
 	for key, ruling := range messageFragmentPartSizePlatformCopyRulings {
 		merged[key] = ruling
 	}
+	if exclusiveFlag == messageFragmentPartBytes {
+		merged["memory_owner_census.go DeviceLocal.WriteMemoryOwnerCensus os.O_EXCL"] =
+			"os.O_EXCL -- the exclusive-create flag in os.OpenFile's flag argument. It is 0x800 " +
+				"on Darwin, so its value equals the part size there; on Linux and Windows it is " +
+				"0x80 and is outside this gate's class. The census writer requires a fresh diagnostic " +
+				"file, not a fragment byte budget. Only this expression is ruled: a literal or " +
+				"arithmetic copy in the same method still requires its own ruling"
+	}
 	return merged
+}
+
+func messageFragmentPartSizeRulingKey(copied messageFragmentCopy, rulings map[string]string) (string, bool) {
+	declaration := copied.file + " " + copied.where
+	expression := declaration + " " + copied.text
+	if _, ruled := rulings[expression]; ruled {
+		return expression, true
+	}
+	_, ruled := rulings[declaration]
+	return declaration, ruled
+}
+
+func TestPartSizeExclusiveFlagRulingTracksPlatformValue(t *testing.T) {
+	copy := messageFragmentCopy{file: "memory_owner_census.go", where: "DeviceLocal.WriteMemoryOwnerCensus", text: "os.O_EXCL"}
+	for _, test := range []struct {
+		name string
+		flag int
+		want bool
+	}{
+		{"darwin-collision", 0x800, true},
+		{"linux-windows-no-collision", 0x80, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rulings := messageFragmentPartSizeRulings(test.flag)
+			key, ruled := messageFragmentPartSizeRulingKey(copy, rulings)
+			if ruled != test.want {
+				t.Fatalf("flag %#x: ruled=%t, want %t", test.flag, ruled, test.want)
+			}
+			if ruled && key != "memory_owner_census.go DeviceLocal.WriteMemoryOwnerCensus os.O_EXCL" {
+				t.Fatalf("exclusive-create ruling covers more than its audited expression: %q", key)
+			}
+		})
+	}
+}
+
+func TestPartSizeExclusiveFlagRulingDoesNotExcuseFragmentCopies(t *testing.T) {
+	// Plant value-equivalent copies in the very method whose imported flag has
+	// a ruling. Type-check the fixture so arithmetic mutations enter the same
+	// evaluated-value class as the package-wide gate, without editing production.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "memory_owner_census.go", `package sdk
+type DeviceLocal struct{}
+func (*DeviceLocal) WriteMemoryOwnerCensus() {
+	_ = 2048
+	_ = 1 << 11
+	_ = 2 * 1024
+}
+`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
+	if _, err := (&types.Config{}).Check("fragment-ruling-fixture", fset, []*ast.File{file}, info); err != nil {
+		t.Fatal(err)
+	}
+	rulings := messageFragmentPartSizeRulings(messageFragmentPartBytes)
+	copies := 0
+	for expr, value := range info.Types {
+		number, exact := messageFragmentIntValue(value.Value)
+		if !exact || number != messageFragmentPartBytes {
+			continue
+		}
+		copies++
+		copied := messageFragmentCopy{file: "memory_owner_census.go",
+			where: messageFragmentEnclosing(file, expr.Pos()), text: types.ExprString(expr)}
+		if key, ruled := messageFragmentPartSizeRulingKey(copied, rulings); ruled {
+			t.Errorf("fragment-size mutation %s was excused by %q", copied.text, key)
+		}
+	}
+	if copies != 3 {
+		t.Fatalf("measured %d planted fragment-size copies, want 3", copies)
+	}
+	for _, copied := range []messageFragmentCopy{
+		{file: "memory_owner_census.go", where: "DeviceLocal.otherMethod", text: "os.O_EXCL"},
+		{file: "other.go", where: "DeviceLocal.WriteMemoryOwnerCensus", text: "os.O_EXCL"},
+	} {
+		if key, ruled := messageFragmentPartSizeRulingKey(copied, rulings); ruled {
+			t.Errorf("exclusive-create ruling escaped its audited declaration: %+v via %q", copied, key)
+		}
+	}
 }
 
 var messageFragmentPartSizeCopyRulings = map[string]string{
