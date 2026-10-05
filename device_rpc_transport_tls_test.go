@@ -214,6 +214,9 @@ func testingDeviceRpcDialerLogRecovery(t *testing.T, useTls bool) {
 	runDeviceRpcSendDrainSynctest(t, func(t *testing.T) {
 		settings := defaultDeviceRpcSettings()
 		settings.DisableLogging = true
+		// This peer implements WebSocket; H1+ negotiation and TLS fallback are
+		// covered by TestDeviceRpcH1PlusLocalMutualTlsAndFallback.
+		settings.EnableH1Plus = false
 		var clientPem, serverCertPem string
 		var serverConfig *tls.Config
 		if useTls {
@@ -248,6 +251,10 @@ func testingDeviceRpcDialerLogRecovery(t *testing.T, useTls bool) {
 					return
 				}
 				defer request.Body.Close()
+				if request.Header.Get("Upgrade") != "websocket" {
+					t.Errorf("unexpected upgrade protocol %q", request.Header.Get("Upgrade"))
+					return
+				}
 				// The standard websocket accept hash completes the real dialer's
 				// upgrade before the synthetic peer closes its connection.
 				accept := sha1.Sum([]byte(request.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
