@@ -1077,6 +1077,7 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"defaultProviderStatusPollInterval":        streamAdapterPackageConstOf(defaultProviderStatusPollInterval),
 	"defaultThroughputSampleInterval":          streamAdapterPackageConstOf(defaultThroughputSampleInterval),
 	"defaultThroughputWindowDuration":          streamAdapterPackageConstOf(defaultThroughputWindowDuration),
+	"DefaultTunnelDnsAddressIpv6":              streamAdapterPackageConstOf(DefaultTunnelDnsAddressIpv6),
 	"dohServerScoresStaleAfter":                streamAdapterPackageConstOf(dohServerScoresStaleAfter),
 	"platformTransportMigrateConnectTimeout":   streamAdapterPackageConstOf(platformTransportMigrateConnectTimeout),
 	"platformTransportMigrateMaxScheduleDelay": streamAdapterPackageConstOf(platformTransportMigrateMaxScheduleDelay),
