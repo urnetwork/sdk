@@ -458,6 +458,8 @@ def bind(lib):
     lib.urnet_api_sn_set_wallet_sync.restype = c_void_p
     lib.urnet_api_sn_validate_wallet.argtypes = [c_uint64, c_char_p, urnet_sn_validate_wallet_cb, c_void_p]
     lib.urnet_api_sn_validate_wallet.restype = None
+    lib.urnet_api_sn_wallet_mapping_challenge_sync.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_api_sn_wallet_mapping_challenge_sync.restype = c_void_p
     lib.urnet_api_start_jwt_refresh.argtypes = [c_uint64]
     lib.urnet_api_start_jwt_refresh.restype = None
     lib.urnet_api_stripe_create_customer_portal.argtypes = [c_uint64, c_char_p, urnet_stripe_create_customer_portal_cb, c_void_p]

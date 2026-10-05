@@ -327,6 +327,7 @@ module URnetwork
       attach_function :urnet_api_sn_set_wallet, [:uint64, :string, :urnet_sn_set_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_set_wallet_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_validate_wallet, [:uint64, :string, :urnet_sn_validate_wallet_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_wallet_mapping_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_start_jwt_refresh, [:uint64], :void, blocking: true
       attach_function :urnet_api_stripe_create_customer_portal, [:uint64, :string, :urnet_stripe_create_customer_portal_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_stripe_payment_sheet, [:uint64, :string, :urnet_stripe_payment_sheet_cb, :pointer], :void, blocking: true

@@ -328,6 +328,7 @@ public interface Raw extends Library {
   void urnet_api_sn_set_wallet(long a0, String a1, urnet_sn_set_wallet_cb a2, Pointer a3);
   Pointer urnet_api_sn_set_wallet_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_sn_validate_wallet(long a0, String a1, urnet_sn_validate_wallet_cb a2, Pointer a3);
+  Pointer urnet_api_sn_wallet_mapping_challenge_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_start_jwt_refresh(long a0);
   void urnet_api_stripe_create_customer_portal(long a0, String a1, urnet_stripe_create_customer_portal_cb a2, Pointer a3);
   void urnet_api_stripe_payment_sheet(long a0, String a1, urnet_stripe_payment_sheet_cb a2, Pointer a3);

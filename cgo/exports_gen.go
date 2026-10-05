@@ -4877,6 +4877,31 @@ func urnet_api_sn_validate_wallet(self C.uint64_t, address *C.char, callback_res
 	self_.SnValidateWallet(goString(address), callback_)
 }
 
+//export urnet_api_sn_wallet_mapping_challenge_sync
+func urnet_api_sn_wallet_mapping_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_wallet_mapping_challenge_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_wallet_mapping_challenge_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.SnWalletMappingChallengeArgs
+	if args != nil {
+		args_ = &sdk.SnWalletMappingChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_sn_wallet_mapping_challenge_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.SnWalletMappingChallengeSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_wallet_mapping_challenge_sync")
+}
+
 //export urnet_api_start_jwt_refresh
 func urnet_api_start_jwt_refresh(self C.uint64_t) {
 	defer cgoGuard("urnet_api_start_jwt_refresh")
