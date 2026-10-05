@@ -241,3 +241,22 @@ func TestDefaultTunnelDnsAddressIpv4UsesUpgradeMaskIdentity(t *testing.T) {
 		)
 	}
 }
+
+// The ipv6 address the platform advertises is the ipv6 stand-in the
+// UpgradeMux knows, where it also refuses DoT with a local reset (P021).
+func TestDefaultTunnelDnsAddressIpv6UsesUpgradeMaskIdentity(t *testing.T) {
+	if address := GetDefaultTunnelDnsAddressIpv6(); address != connect.DefaultDnsUpgradeMaskAddressIpv6 {
+		t.Fatalf(
+			"default tunnel dns address ipv6 = %q; want upgrade mask identity %q",
+			address,
+			connect.DefaultDnsUpgradeMaskAddressIpv6,
+		)
+	}
+	if addresses := defaultTunnelDnsServers(true); !slices.Equal(addresses, []string{connect.DefaultDnsUpgradeMaskAddressIpv6}) {
+		t.Fatalf(
+			"default tunnel dns servers ipv6 = %v; want upgrade mask identity %q",
+			addresses,
+			connect.DefaultDnsUpgradeMaskAddressIpv6,
+		)
+	}
+}
