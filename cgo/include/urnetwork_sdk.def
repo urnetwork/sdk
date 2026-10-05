@@ -807,6 +807,7 @@ EXPORTS
 	urnet_locations_view_controller_get_filtered_locations
 	urnet_locations_view_controller_start
 	urnet_locations_view_controller_stop
+	urnet_log_app_info
 	urnet_log_inventory
 	urnet_login_view_controller_close
 	urnet_login_view_controller_start
@@ -1115,6 +1116,7 @@ EXPORTS
 	urnet_set_memory_limit
 	urnet_set_memory_profile_rate
 	urnet_set_message_pool_memory_targets
+	urnet_set_network_country_code
 	urnet_set_transfer_diagnostic_snapshots_enabled
 	urnet_short_ss58
 	urnet_sn_claim_transactions_for

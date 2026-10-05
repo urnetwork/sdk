@@ -17,6 +17,9 @@ import (
 
 var _ = unsafe.Pointer(nil)
 
+// what an export whose result is an error id answers when the call could not run
+const errorIdInternal = "internal_error"
+
 type cAdapterAccountEpochsCallback struct {
 	cbResult C.urnet_account_epochs_cb
 	userData unsafe.Pointer
@@ -14028,6 +14031,12 @@ func urnet_locations_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_log_app_info
+func urnet_log_app_info(tag *C.char, message *C.char) {
+	defer cgoGuard("urnet_log_app_info")
+	sdk.LogAppInfo(goString(tag), goString(message))
+}
+
 //export urnet_log_inventory
 func urnet_log_inventory() *C.char {
 	defer cgoGuard("urnet_log_inventory")
@@ -14672,17 +14681,22 @@ func urnet_network_space_service_url(self C.uint64_t, scheme *C.char, service *C
 }
 
 //export urnet_network_space_set_control_doh_urls
-func urnet_network_space_set_control_doh_urls(self C.uint64_t, dohUrls *C.char) *C.char {
-	defer cgoGuard("urnet_network_space_set_control_doh_urls")
+func urnet_network_space_set_control_doh_urls(self C.uint64_t, dohUrls *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_network_space_set_control_doh_urls", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
 	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_control_doh_urls")
 	if !ok {
-		return nil
+		return cString(errorIdInternal)
 	}
 	var dohUrls_ *sdk.StringList
 	if dohUrls != nil {
 		dohUrls_ = &sdk.StringList{}
 		if !goJson(dohUrls, dohUrls_, "urnet_network_space_set_control_doh_urls") {
-			return nil
+			return cString(errorIdInternal)
 		}
 	}
 	r0 := self_.SetControlDohUrls(dohUrls_)
@@ -14710,17 +14724,22 @@ func urnet_network_space_set_extender_gossip_mode(self C.uint64_t, mode *C.char)
 }
 
 //export urnet_network_space_set_vless_settings
-func urnet_network_space_set_vless_settings(self C.uint64_t, settings *C.char) *C.char {
-	defer cgoGuard("urnet_network_space_set_vless_settings")
+func urnet_network_space_set_vless_settings(self C.uint64_t, settings *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_network_space_set_vless_settings", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
 	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_vless_settings")
 	if !ok {
-		return nil
+		return cString(errorIdInternal)
 	}
 	var settings_ *sdk.VlessSettings
 	if settings != nil {
 		settings_ = &sdk.VlessSettings{}
 		if !goJson(settings, settings_, "urnet_network_space_set_vless_settings") {
-			return nil
+			return cString(errorIdInternal)
 		}
 	}
 	r0 := self_.SetVlessSettings(settings_)
@@ -17007,6 +17026,12 @@ func urnet_set_message_pool_memory_targets(packetPoolByteCount C.int64_t, largeO
 	sdk.SetMessagePoolMemoryTargets(int64(packetPoolByteCount), int64(largeObjectPoolByteCount))
 }
 
+//export urnet_set_network_country_code
+func urnet_set_network_country_code(countryCode *C.char) {
+	defer cgoGuard("urnet_set_network_country_code")
+	sdk.SetNetworkCountryCode(goString(countryCode))
+}
+
 //export urnet_set_transfer_diagnostic_snapshots_enabled
 func urnet_set_transfer_diagnostic_snapshots_enabled(enabled C.bool) C.bool {
 	defer cgoGuard("urnet_set_transfer_diagnostic_snapshots_enabled")
@@ -17794,8 +17819,13 @@ func urnet_usd_to_nano_cents(usd C.double) C.int64_t {
 }
 
 //export urnet_validate_control_doh_url
-func urnet_validate_control_doh_url(dohUrl *C.char) *C.char {
-	defer cgoGuard("urnet_validate_control_doh_url")
+func urnet_validate_control_doh_url(dohUrl *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_validate_control_doh_url", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
 	r0 := sdk.ValidateControlDohUrl(goString(dohUrl))
 	return cString(string(r0))
 }
@@ -17818,13 +17848,18 @@ func urnet_validate_ss58(address *C.char) C.bool {
 }
 
 //export urnet_validate_vless_settings
-func urnet_validate_vless_settings(settings *C.char) *C.char {
-	defer cgoGuard("urnet_validate_vless_settings")
+func urnet_validate_vless_settings(settings *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_validate_vless_settings", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
 	var settings_ *sdk.VlessSettings
 	if settings != nil {
 		settings_ = &sdk.VlessSettings{}
 		if !goJson(settings, settings_, "urnet_validate_vless_settings") {
-			return nil
+			return cString(errorIdInternal)
 		}
 	}
 	r0 := sdk.ValidateVlessSettings(settings_)

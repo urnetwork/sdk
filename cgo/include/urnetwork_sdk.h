@@ -15,6 +15,10 @@
  *   to callbacks are owned by the receiver and must be released.
  * - functions with a char** out_error parameter set a malloc'd error message on
  *   failure (free with urnet_free_string). pass NULL to ignore the error text.
+ * - a char* result marked "error id" is "" on success, else the id of the
+ *   refusal (the URNET_*_ERROR_* defines), or URNET_ERROR_ID_INTERNAL when the
+ *   call could not run (an unknown handle, json that does not decode, a
+ *   recovered panic). never NULL.
  */
 #ifndef URNETWORK_SDK_H
 #define URNETWORK_SDK_H
@@ -37,6 +41,9 @@ void urnet_free_string(char* s);
 bool urnet_release(uint64_t handle);
 /* number of live handles, for leak checks */
 int64_t urnet_live_handle_count(void);
+
+/* what a function whose result is an error id answers when the call could not run */
+#define URNET_ERROR_ID_INTERNAL "internal_error"
 
 /* ----- byte buffer results (hand-written) ----- */
 
@@ -340,6 +347,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMED "confirmed"
 #define URNET_PURCHASE_CONFIRMATION_STATE_IDLE "idle"
 #define URNET_PURCHASE_CONFIRMATION_STATE_WAITING_FOR_CONFIRMATION "waiting_for_confirmation"
+#define URNET_PURCHASE_ERROR_CODE_GUEST_SIGN_IN_REQUIRED "guest_sign_in_required"
 #define URNET_PURCHASE_REPORT_STATUS_ALREADY_CREDITED "already_credited"
 #define URNET_PURCHASE_REPORT_STATUS_CREDITED "credited"
 #define URNET_PURCHASE_REPORT_STATUS_INVALID "invalid"
@@ -1667,9 +1675,11 @@ char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_network_space_set_control_doh_urls(uint64_t self, const char* doh_urls_json);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
 void urnet_network_space_set_extender_gossip_mode(uint64_t self, const char* mode);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_network_space_set_vless_settings(uint64_t self, const char* settings_json);
 char* urnet_network_space_to_json(uint64_t self, char** out_error);
 
@@ -1985,6 +1995,7 @@ bool urnet_is_checkout_redirect(const char* uri);
 bool urnet_is_points_leaderboard_sort(const char* sort);
 bool urnet_is_purchase_report_terminal(const char* status);
 bool urnet_is_valid_payment_reference(const char* s);
+void urnet_log_app_info(const char* tag, const char* message);
 char* urnet_log_inventory(void);
 char* urnet_memory_classes_json_for_diag(void);
 double urnet_monthly_equivalent_amount(double yearly_amount, int64_t minor_unit_digits);
@@ -2066,6 +2077,7 @@ bool urnet_set_log_verbosity(int64_t level, char** out_error);
 void urnet_set_memory_limit(int64_t limit);
 void urnet_set_memory_profile_rate(int64_t byte_count);
 void urnet_set_message_pool_memory_targets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count);
+void urnet_set_network_country_code(const char* country_code);
 bool urnet_set_transfer_diagnostic_snapshots_enabled(bool enabled);
 char* urnet_short_ss58(const char* address);
 char* urnet_sn_claim_transactions_for(const char* settings_json, const char* coldkey_ss58, const char* epochs_json, char** out_error);
@@ -2082,9 +2094,11 @@ char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json,
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 void urnet_trim_memory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_control_doh_url(const char* doh_url);
 char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_vless_settings(const char* settings_json);
 bool urnet_verify_payout_proof_hex(const char* root_hex, const char* leaf_hex, const char* proof_hex_json);
 char* urnet_vless_fingerprints(void);
@@ -3673,6 +3687,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* OnboardingError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -4546,6 +4561,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* SolanaPaymentIntentError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -4585,6 +4601,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* StripeCreateCheckoutSessionError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -4613,6 +4630,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* StripeCreatePaymentIntentErr (json):
+ *   code?: string
  *   message: string
  */
 

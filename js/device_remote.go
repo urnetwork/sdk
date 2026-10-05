@@ -312,6 +312,33 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		return jsDnsResolverSettings(sdk.GetDefaultDnsResolverSettings())
 	})
 
+	// performance profile (over the device-rpc): the connect options the
+	// native apps write -- the window type, the window size (Fixed IP is a
+	// window of exactly one exit), direct mode and post quantum encryption.
+	// The device applies a change to the live connection, as it does for the
+	// native apps. A hosted device forces allowDirect off (see
+	// sdk.DeviceLocal.hostedSafePerformanceProfile); the getter and the
+	// listener report what the device holds
+	m["getPerformanceProfile"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsPerformanceProfile(device.GetPerformanceProfile())
+	})
+	m["setPerformanceProfile"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if 0 < len(args) {
+			if performanceProfile, ok := parsePerformanceProfile(args[0]); ok {
+				device.SetPerformanceProfile(performanceProfile)
+				device.Sync()
+			}
+		}
+		return js.Null()
+	})
+	m["addPerformanceProfileChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddPerformanceProfileChangeListener(&jsPerformanceProfileChangeListener{cb}))
+	})
+
 	// transport policy (over the device-rpc): one carrier or Auto over the
 	// enabled carriers. see sdk.TransportSettings. A hosted device (the web's
 	// cloud proxy) is pinned to h1 and ignores the setters; the getters and
@@ -781,6 +808,92 @@ type jsDnsResolverSettingsChangeListener struct{ cb js.Value }
 
 func (self *jsDnsResolverSettingsChangeListener) DnsResolverSettingsChanged(s *sdk.DnsResolverSettings) {
 	self.cb.Invoke(jsDnsResolverSettings(s))
+}
+
+// ── performance profile ──────────────────────────────────────────────────────
+
+// jsPerformanceProfile mirrors sdk.PerformanceProfile. null for a nil profile,
+// which the sdk reads as auto with every flag off; windowSize is null when the
+// profile carries none (auto)
+func jsPerformanceProfile(performanceProfile *sdk.PerformanceProfile) js.Value {
+	if performanceProfile == nil {
+		return js.Null()
+	}
+	var windowSize any
+	if s := performanceProfile.WindowSize; s != nil {
+		windowSize = map[string]any{
+			"windowSizeMin":            s.WindowSizeMin,
+			"windowSizeMinP2pOnly":     s.WindowSizeMinP2pOnly,
+			"windowSizeMax":            s.WindowSizeMax,
+			"windowSizeHardMax":        s.WindowSizeHardMax,
+			"windowSizeReconnectScale": s.WindowSizeReconnectScale,
+			"keepHealthiestCount":      s.KeepHealthiestCount,
+			"ulimit":                   s.Ulimit,
+		}
+	}
+	return js.ValueOf(map[string]any{
+		"windowType":            performanceProfile.WindowType,
+		"windowSize":            windowSize,
+		"allowDirect":           performanceProfile.AllowDirect,
+		"postQuantumEncryption": performanceProfile.PostQuantumEncryption,
+	})
+}
+
+// parsePerformanceProfile reads a profile from a JS object ({windowType,
+// windowSize: {windowSizeMin, windowSizeMax, ...} | null, allowDirect,
+// postQuantumEncryption}); null reads as nil, the sdk's auto profile. As in
+// the sdk, a window with min == max is a fixed window of that many exits (the
+// apps' Fixed IP is 1..1). A window the multi client would refuse (a negative
+// size, or max below min) is rejected (ok false) instead of reaching the device
+func parsePerformanceProfile(v js.Value) (*sdk.PerformanceProfile, bool) {
+	if v.IsNull() || v.IsUndefined() {
+		return nil, true
+	}
+	if v.Type() != js.TypeObject {
+		return nil, false
+	}
+	performanceProfile := &sdk.PerformanceProfile{
+		WindowType: sdk.WindowTypeAuto,
+	}
+	if x := v.Get("windowType"); x.Type() == js.TypeString {
+		performanceProfile.WindowType = x.String()
+	}
+	if x := v.Get("allowDirect"); x.Type() == js.TypeBoolean {
+		performanceProfile.AllowDirect = x.Bool()
+	}
+	if x := v.Get("postQuantumEncryption"); x.Type() == js.TypeBoolean {
+		performanceProfile.PostQuantumEncryption = x.Bool()
+	}
+	if w := v.Get("windowSize"); w.Type() == js.TypeObject {
+		intValue := func(key string) int {
+			if x := w.Get(key); x.Type() == js.TypeNumber {
+				return x.Int()
+			}
+			return 0
+		}
+		windowSize := &sdk.WindowSizeSettings{
+			WindowSizeMin:        intValue("windowSizeMin"),
+			WindowSizeMinP2pOnly: intValue("windowSizeMinP2pOnly"),
+			WindowSizeMax:        intValue("windowSizeMax"),
+			WindowSizeHardMax:    intValue("windowSizeHardMax"),
+			KeepHealthiestCount:  intValue("keepHealthiestCount"),
+			Ulimit:               intValue("ulimit"),
+		}
+		if x := w.Get("windowSizeReconnectScale"); x.Type() == js.TypeNumber {
+			windowSize.WindowSizeReconnectScale = x.Float()
+		}
+		if windowSize.WindowSizeMin < 0 || windowSize.WindowSizeMax < windowSize.WindowSizeMin {
+			return nil, false
+		}
+		performanceProfile.WindowSize = windowSize
+	}
+	return performanceProfile, true
+}
+
+type jsPerformanceProfileChangeListener struct{ cb js.Value }
+
+func (self *jsPerformanceProfileChangeListener) PerformanceProfileChanged(performanceProfile *sdk.PerformanceProfile) {
+	self.cb.Invoke(jsPerformanceProfile(performanceProfile))
 }
 
 // parseConnectLocation builds a ConnectLocation from a JS object with a

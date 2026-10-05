@@ -26,7 +26,10 @@ import (
 )
 
 // The error ids of a VLESS form. Each is a localization key id, so the apps
-// map them to their own strings.
+// map them to their own strings. A function that answers one names its result
+// `errorId`, empty on success, which tells the C ABI to answer
+// URNET_ERROR_ID_INTERNAL rather than empty when a call cannot run there
+// (cgo/gen/gen.go errorIdResult).
 const (
 	VlessErrorLinkInvalid            = "vless_error_link_invalid"
 	VlessErrorLinkUnsupported        = "vless_error_link_unsupported"

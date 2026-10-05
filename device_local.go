@@ -2229,7 +2229,9 @@ func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *Per
 				v.SetAllowDirect(false)
 			}
 		case *connect.RemoteUserNatMultiClient:
-			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
+			// every stored profile passed validatePerformanceProfile, the
+			// multi client's own validation, so the multi client takes it
+			_ = v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
 		}
 	}
 	// Preserve the public value contract even when this was only a
@@ -7652,29 +7654,9 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 
 	logDir := GetLogDir()
 
-	files, err := os.ReadDir(logDir)
+	zipPath, err := zipUploadLogs(logDir)
 	if err != nil {
-		self.log.Errorf("Failed to read log directory %q: %v", logDir, err)
-		return err
-	}
-
-	logPaths := []string{}
-	for _, file := range files {
-		name := file.Name()
-		if !file.IsDir() &&
-			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
-				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
-				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
-				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
-			fullPath := logDir + "/" + name
-			logPaths = append(logPaths, fullPath)
-		}
-	}
-
-	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
-	zipPath := filepath.Join(logDir, zipName)
-
-	if err := zipLogs(logPaths, zipPath); err != nil {
+		self.log.Errorf("Failed to zip log directory %q: %v", logDir, err)
 		return err
 	}
 
@@ -7703,6 +7685,41 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 	}))
 
 	return nil
+}
+
+// zipUploadLogs zips this process's glog files in logDir into a new zip there
+// and returns its path. It flushes glog first: glog buffers its file writes and
+// flushes them only every 30 seconds, so the newest lines, such as an app line
+// written with LogAppInfo just before the user sent feedback, would otherwise
+// be missing from the upload.
+func zipUploadLogs(logDir string) (string, error) {
+	FlushGlog()
+
+	files, err := os.ReadDir(logDir)
+	if err != nil {
+		return "", err
+	}
+
+	logPaths := []string{}
+	for _, file := range files {
+		name := file.Name()
+		if !file.IsDir() &&
+			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
+				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
+				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
+				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
+			fullPath := logDir + "/" + name
+			logPaths = append(logPaths, fullPath)
+		}
+	}
+
+	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
+	zipPath := filepath.Join(logDir, zipName)
+
+	if err := zipLogs(logPaths, zipPath); err != nil {
+		return "", err
+	}
+	return zipPath, nil
 }
 
 // DiagnosticManifestJson returns the device-side half of the exported bundle's
@@ -7926,5 +7943,33 @@ func toConnectWindowSize(windowSize *WindowSizeSettings) connect.WindowSizeSetti
 		WindowSizeReconnectScale: windowSize.WindowSizeReconnectScale,
 		KeepHealthiestCount:      windowSize.KeepHealthiestCount,
 		Ulimit:                   windowSize.Ulimit,
+	}
+}
+
+// validatePerformanceProfile is the multi client's own check of the profile
+// it would receive: no window size or count below zero, max at least min, and
+// a fixed window with room for an exit. The device refuses any other profile
+// before saving or applying it, so a caller's window size never reaches the
+// connection. nil, the auto default, is valid.
+func validatePerformanceProfile(performanceProfile *PerformanceProfile) error {
+	if performanceProfile == nil {
+		return nil
+	}
+	return toConnectPerformanceProfile(performanceProfile).Validate()
+}
+
+// normalizeSavedPerformanceProfile reads back a saved profile. Before the
+// device refused them, a profile whose window the multi client cannot install
+// could be saved from any caller. It reads back in auto mode, keeping its
+// direct and post-quantum choices, instead of failing the load or reaching
+// the connection.
+func normalizeSavedPerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if validatePerformanceProfile(performanceProfile) == nil {
+		return performanceProfile
+	}
+	return &PerformanceProfile{
+		WindowType:            WindowTypeAuto,
+		AllowDirect:           performanceProfile.AllowDirect,
+		PostQuantumEncryption: performanceProfile.PostQuantumEncryption,
 	}
 }

@@ -19,7 +19,7 @@ import (
 // ValidateControlDohUrl returns the error id of one bootstrap DoH url, one of
 // the ControlDohError ids, or empty when the space can query it. A form checks
 // each line with this as it is typed.
-func ValidateControlDohUrl(dohUrl string) string {
+func ValidateControlDohUrl(dohUrl string) (errorId string) {
 	if _, _, err := connect.ParseControlDohUrl(dohUrl); err != nil {
 		return controlDohErrorId(err)
 	}
@@ -79,7 +79,7 @@ func (self *NetworkSpace) GetControlDohUrlsIpv6() *StringList {
 // family, else empty. On ios this writes the app group values the packet
 // tunnel extension reads at its next start, and the desktop services take
 // them at the next tunnel start, which is what the apps tell the user.
-func (self *NetworkSpace) SetControlDohUrls(dohUrls *StringList) string {
+func (self *NetworkSpace) SetControlDohUrls(dohUrls *StringList) (errorId string) {
 	var dohUrlsIpv4 []string
 	var dohUrlsIpv6 []string
 	if dohUrls != nil {

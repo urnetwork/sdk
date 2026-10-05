@@ -11,6 +11,8 @@
  *   your ui thread. do not destroy state captured by a listener while a
  *   callback may be in flight.
  * - functions that can fail throw urnet::Error.
+ * - a std::string result marked "error id" is empty on success, else the id
+ *   of the refusal, or ErrorIdInternal when the call could not run.
  */
 #ifndef URNETWORK_SDK_HPP
 #define URNETWORK_SDK_HPP
@@ -143,6 +145,9 @@ protected:
 } // namespace detail
 
 /* ----- constants ----- */
+
+/* what a function whose result is an error id answers when the call could not run */
+inline constexpr const char* ErrorIdInternal = URNET_ERROR_ID_INTERNAL;
 
 inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
@@ -401,6 +406,7 @@ inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "conf
 inline constexpr const char* PurchaseConfirmationStateConfirmed = "confirmed";
 inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
 inline constexpr const char* PurchaseConfirmationStateWaitingForConfirmation = "waiting_for_confirmation";
+inline constexpr const char* PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required";
 inline constexpr const char* PurchaseReportStatusAlreadyCredited = "already_credited";
 inline constexpr const char* PurchaseReportStatusCredited = "credited";
 inline constexpr const char* PurchaseReportStatusInvalid = "invalid";
@@ -2566,6 +2572,7 @@ struct OnboardingClickResult {
 };
 
 struct OnboardingError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3248,6 +3255,7 @@ struct SolanaPaymentIntentArgs {
 };
 
 struct SolanaPaymentIntentError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3283,6 +3291,7 @@ struct StripeCreateCheckoutSessionArgs {
 };
 
 struct StripeCreateCheckoutSessionError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3311,6 +3320,7 @@ struct StripeCreatePaymentIntentArgs {
 };
 
 struct StripeCreatePaymentIntentErr {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -11811,11 +11821,19 @@ inline void from_json(const nlohmann::json& j, OnboardingClickResult& v) {
 
 inline void to_json(nlohmann::json& j, const OnboardingError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, OnboardingError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -14878,11 +14896,19 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentArgs& v) {
 
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -15059,11 +15085,19 @@ inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& 
 
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -15185,11 +15219,19 @@ inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentArgs& v)
 
 inline void to_json(nlohmann::json& j, const StripeCreatePaymentIntentErr& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentErr& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -18037,9 +18079,11 @@ public:
 	bool hasPlatformFamilyUrls() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
+	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 	std::string setControlDohUrls(const std::optional<StringList>& doh_urls) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setExtenderGossipMode(const std::string& mode) const;
+	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 	std::string setVlessSettings(const std::optional<VlessSettings>& settings) const;
 	std::string toJson() const;
 };
@@ -30602,6 +30646,9 @@ inline bool isValidPaymentReference(const std::string& s) {
 	bool r = urnet_is_valid_payment_reference(s.c_str());
 	return r;
 }
+inline void logAppInfo(const std::string& tag, const std::string& message) {
+	urnet_log_app_info(tag.c_str(), message.c_str());
+}
 inline std::optional<LogFileInfoList> logInventory() {
 	char* r_c = urnet_log_inventory();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -31206,6 +31253,9 @@ inline void setMemoryProfileRate(int64_t byte_count) {
 inline void setMessagePoolMemoryTargets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count) {
 	urnet_set_message_pool_memory_targets(packet_pool_byte_count, large_object_pool_byte_count);
 }
+inline void setNetworkCountryCode(const std::string& country_code) {
+	urnet_set_network_country_code(country_code.c_str());
+}
 inline bool setTransferDiagnosticSnapshotsEnabled(bool enabled) {
 	bool r = urnet_set_transfer_diagnostic_snapshots_enabled(enabled);
 	return r;
@@ -31361,6 +31411,7 @@ inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);
 	return r;
 }
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateControlDohUrl(const std::string& doh_url) {
 	char* r_c = urnet_validate_control_doh_url(doh_url.c_str());
 	return detail::takeString(r_c);
@@ -31377,6 +31428,7 @@ inline bool validateSs58(const std::string& address) {
 	bool r = urnet_validate_ss58(address.c_str());
 	return r;
 }
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 inline std::string validateVlessSettings(const std::optional<VlessSettings>& settings) {
 	std::string settings_json;
 	const char* settings_c = nullptr;

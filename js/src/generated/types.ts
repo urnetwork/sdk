@@ -287,6 +287,7 @@ export interface ExperimentAssignment {
 }
 
 export interface OnboardingError {
+  code?: string;
   message: string;
 }
 
@@ -692,6 +693,8 @@ export interface SnSetWalletArgs {
 export interface SnSetWalletResult {
   wallet?: SnWallet | null;
   error?: SnSetWalletError | null;
+  mapping_hash?: string;
+  mapping_generation?: number;
 }
 
 export interface SnSetWalletError {
