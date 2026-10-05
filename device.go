@@ -17,7 +17,7 @@ type ProvideChangeListener interface {
 }
 
 type ProvideModeChangeListener interface {
-	ProvideModeChanged(provideMode ProvideMode)
+	ProvideModeChanged(provideMode int)
 }
 
 type ProvidePausedChangeListener interface {
@@ -25,11 +25,11 @@ type ProvidePausedChangeListener interface {
 }
 
 type ProvideNetworkModeChangeListener interface {
-	ProvideNetworkModeChanged(provideNetworkMode ProvideNetworkMode)
+	ProvideNetworkModeChanged(provideNetworkMode string)
 }
 
 type ProvideControlModeChangeListener interface {
-	ProvideControlModeChanged(provideControlMode ProvideControlMode)
+	ProvideControlModeChanged(provideControlMode string)
 }
 
 type PerformanceProfileChangeListener interface {
@@ -142,7 +142,7 @@ type NetworkPeersChangeListener interface {
 
 // receive a packet into the local raw socket
 type ReceivePacket interface {
-	ReceivePacket(ipVersion int, ipProtocol IpProtocol, packet []byte)
+	ReceivePacket(ipVersion int, ipProtocol int, packet []byte)
 }
 
 type TunnelChangeListener interface {
@@ -176,9 +176,9 @@ type AuthLogoutListener interface {
 type IpProtocol = int
 
 const (
-	IpProtocolUnknown IpProtocol = 0
-	IpProtocolUdp     IpProtocol = 1
-	IpProtocolTcp     IpProtocol = 2
+	IpProtocolUnknown int = 0
+	IpProtocolUdp     int = 1
+	IpProtocolTcp     int = 2
 )
 
 type ContractStatus struct {
@@ -255,7 +255,7 @@ type BlockAction struct {
 	BlockOverride *BlockOverride
 	RouteOverride *RouteOverride
 	PacketCount   int
-	ByteCount     ByteCount
+	ByteCount     int64
 	// what decided a blocked or locally routed action, one of the
 	// BlockActionReason values; empty for ordinary provider-routed traffic
 	Reason string
@@ -318,17 +318,17 @@ func (self *BlockAction) RouteLocalOverridable() bool {
 // egress is blocked on the way out, ingress on the way in
 type PacketStats struct {
 	RemoteEgressPacketCount  int64
-	RemoteEgressByteCount    ByteCount
+	RemoteEgressByteCount    int64
 	RemoteIngressPacketCount int64
-	RemoteIngressByteCount   ByteCount
+	RemoteIngressByteCount   int64
 	LocalEgressPacketCount   int64
-	LocalEgressByteCount     ByteCount
+	LocalEgressByteCount     int64
 	LocalIngressPacketCount  int64
-	LocalIngressByteCount    ByteCount
+	LocalIngressByteCount    int64
 	BlockEgressPacketCount   int64
-	BlockEgressByteCount     ByteCount
+	BlockEgressByteCount     int64
 	BlockIngressPacketCount  int64
-	BlockIngressByteCount    ByteCount
+	BlockIngressByteCount    int64
 	// TransportStats partitions the remote totals by the physical carrier.
 	// The top-level fields remain the aggregate; local and blocked traffic are
 	// intentionally absent from the carrier breakdown.
@@ -359,12 +359,12 @@ func NewTransportPacketStatsList() *TransportPacketStatsList {
 }
 
 type ContractStats struct {
-	ContractUsedByteCount ByteCount
-	ContractByteCount     ByteCount
+	ContractUsedByteCount int64
+	ContractByteCount     int64
 	ContractBitRate       int
 
-	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount     ByteCount
+	CompanionContractUsedByteCount int64
+	CompanionContractByteCount     int64
 	CompanionContractBitRate       int
 }
 
@@ -384,8 +384,8 @@ const (
 // send and receive contracts of a peer are fundamentally many-to-many.
 type ContractDetails struct {
 	ContractId            *Id
-	ContractUsedByteCount ByteCount
-	ContractByteCount     ByteCount
+	ContractUsedByteCount int64
+	ContractByteCount     int64
 	ContractBitRate       int
 	ContractTransferPath  *TransferPath
 
@@ -577,15 +577,15 @@ type Device interface {
 
 	AddAllowForegroundChangeListener(listener AllowForegroundChangeListener) Sub
 
-	GetProvideControlMode() ProvideControlMode // auto, always, never
+	GetProvideControlMode() string // auto, always, never
 
-	SetProvideControlMode(mode ProvideControlMode)
+	SetProvideControlMode(mode string)
 
 	AddProvideControlModeChangeListener(listener ProvideControlModeChangeListener) Sub
 
-	GetProvideNetworkMode() ProvideNetworkMode // wifi, cellular, etc.
+	GetProvideNetworkMode() string // wifi, cellular, etc.
 
-	SetProvideNetworkMode(mode ProvideNetworkMode)
+	SetProvideNetworkMode(mode string)
 
 	AddProvideNetworkModeChangeListener(listener ProvideNetworkModeChangeListener) Sub
 
@@ -611,9 +611,9 @@ type Device interface {
 
 	GetConnectEnabled() bool
 
-	SetProvideMode(provideMode ProvideMode)
+	SetProvideMode(provideMode int)
 
-	GetProvideMode() ProvideMode
+	GetProvideMode() int
 
 	AddProvideModeChangeListener(listener ProvideModeChangeListener) Sub
 

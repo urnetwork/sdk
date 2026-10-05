@@ -594,6 +594,28 @@ func SetEgressInterfaceIndex(index4 int, index6 int) {
 	connect.SetEgressInterfaceIndex(uint32(index4), uint32(index6))
 }
 
+// SetNetworkCountryCode reports the country of the mobile network this device
+// is on: Android's TelephonyManager.networkCountryIso while the default network
+// is cellular, and "" on Wi-Fi or any other network whose country the platform
+// does not report. The code is ISO 3166-1 alpha-2 in either case; anything
+// else clears it. Apps call it on every default network change, and once at
+// startup before the network space manager is built, so the first dials of
+// every space already have it.
+//
+// It never leaves the process. It is the fallback for the extender hint's
+// country, which picks the spoof list extender dials front with: while the
+// hint endpoint cannot be reached -- on a whitelist-only mobile network no
+// URnetwork address is routable -- the extender dials still draw their outer
+// names from the list of the country the device is in (connect
+// ExtenderDirectory.SpoofCountryCode). One value for the process, applied in
+// place to every running space from its next extender dial.
+//
+// This process only: on ios the extender dials of a connected tunnel happen
+// in the packet tunnel extension, which this does not reach.
+func SetNetworkCountryCode(countryCode string) {
+	connect.SetNetworkCountryCode(countryCode)
+}
+
 // FreeMemory drops recoverable memory in response to host memory pressure
 func FreeMemory() {
 	startTime := time.Now()
@@ -884,38 +906,38 @@ func (self *TransferPath) toConnect() connect.TransferPath {
 type ProvideMode = int
 
 const (
-	ProvideModeNone             ProvideMode = ProvideMode(protocol.ProvideMode_None)
-	ProvideModeNetwork          ProvideMode = ProvideMode(protocol.ProvideMode_Network)
-	ProvideModeFriendsAndFamily ProvideMode = ProvideMode(protocol.ProvideMode_FriendsAndFamily)
-	ProvideModePublic           ProvideMode = ProvideMode(protocol.ProvideMode_Public)
-	ProvideModeStream           ProvideMode = ProvideMode(protocol.ProvideMode_Stream)
+	ProvideModeNone             int = int(protocol.ProvideMode_None)
+	ProvideModeNetwork          int = int(protocol.ProvideMode_Network)
+	ProvideModeFriendsAndFamily int = int(protocol.ProvideMode_FriendsAndFamily)
+	ProvideModePublic           int = int(protocol.ProvideMode_Public)
+	ProvideModeStream           int = int(protocol.ProvideMode_Stream)
 )
 
 type LocationType = string
 
 const (
-	LocationTypeCountry LocationType = "country"
-	LocationTypeRegion  LocationType = "region"
-	LocationTypeCity    LocationType = "city"
+	LocationTypeCountry string = "country"
+	LocationTypeRegion  string = "region"
+	LocationTypeCity    string = "city"
 )
 
 type ProvideControlMode = string
 
 const (
-	ProvideControlModeNever  ProvideControlMode = "never"
-	ProvideControlModeAlways ProvideControlMode = "always"
-	ProvideControlModeAuto   ProvideControlMode = "auto"
-	ProvideControlModeManual ProvideControlMode = "manual"
+	ProvideControlModeNever  string = "never"
+	ProvideControlModeAlways string = "always"
+	ProvideControlModeAuto   string = "auto"
+	ProvideControlModeManual string = "manual"
 	// the private provider: the provider is always on, but provides ONLY to
 	// same-network peers (Network provide mode) — never publicly
-	ProvideControlModeNetwork ProvideControlMode = "network"
+	ProvideControlModeNetwork string = "network"
 )
 
 type ProvideNetworkMode = string
 
 const (
-	ProvideNetworkModeWiFi ProvideNetworkMode = "wifi"
-	ProvideNetworkModeAll  ProvideNetworkMode = "all" // allow providing on wifi and cell networks
+	ProvideNetworkModeWiFi string = "wifi"
+	ProvideNetworkModeAll  string = "all" // allow providing on wifi and cell networks
 )
 
 type ByteCount = int64
@@ -1109,7 +1131,7 @@ func (self *ConnectLocationId) String() string {
 // One provider-mode secret. JSON preserves binary bytes without changing the
 // existing Go fields or gob representation.
 type ProvideSecretKey struct {
-	ProvideMode ProvideMode `json:"provide_mode"`
+	ProvideMode int `json:"provide_mode"`
 	// Raw bytes, not UTF-8 text. Forward opaque native lists or use the device's
 	// SaveProvideSecretKeys; NSString/jstring extraction can lose these bytes.
 	ProvideSecretKey string `json:"provide_secret_key"`
@@ -1121,9 +1143,9 @@ const (
 	// no fixed window type. A nil performance profile and window type auto
 	// mean the same thing: traffic balances across the window types and the
 	// window size settings are ignored.
-	WindowTypeAuto    WindowType = "auto"
-	WindowTypeQuality WindowType = "quality"
-	WindowTypeSpeed   WindowType = "speed"
+	WindowTypeAuto    string = "auto"
+	WindowTypeQuality string = "quality"
+	WindowTypeSpeed   string = "speed"
 )
 
 // a nil profile, or a profile with window type auto (or unset), uses the

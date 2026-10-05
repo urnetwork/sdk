@@ -918,7 +918,7 @@ type NetworkClientInfo struct {
 	Roles     *StringList `json:"roles,omitempty"`
 	Principal string      `json:"principal,omitempty"`
 
-	ProvideMode ProvideMode `json:"provide_mode"`
+	ProvideMode int `json:"provide_mode"`
 	// ProxyClient carries the hosted proxy device's credentials; only the
 	// /network/proxies listing fills it, /network/clients never does
 	ProxyClient *ProxyClient                 `json:"proxy_client,omitempty"`
@@ -1438,19 +1438,19 @@ func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddr
 type WalletType = string
 
 const (
-	WalletTypeCircleUserControlled WalletType = "circle_uc"
-	WalletTypeXch                  WalletType = "xch"
-	WalletTypeSol                  WalletType = "sol"
+	WalletTypeCircleUserControlled string = "circle_uc"
+	WalletTypeXch                  string = "xch"
+	WalletTypeSol                  string = "sol"
 )
 
 type Blockchain = string
 
 const (
-	SOL   Blockchain = "SOL"
-	MATIC Blockchain = "MATIC"
+	SOL   string = "SOL"
+	MATIC string = "MATIC"
 	// TAO (bittensor) wallets are recorded for future use only: they cannot
 	// be the payout wallet (payouts are USDC on Solana/Polygon)
-	TAO Blockchain = "TAO"
+	TAO string = "TAO"
 )
 
 type CreateAccountWalletArgs struct {
@@ -1550,12 +1550,12 @@ type CircleUserToken struct {
 }
 
 type CircleWalletInfo struct {
-	WalletId             string    `json:"wallet_id"`
-	TokenId              string    `json:"token_id"`
-	Blockchain           string    `json:"blockchain"`
-	BlockchainSymbol     string    `json:"blockchain_symbol"`
-	CreateDate           string    `json:"create_date"`
-	BalanceUsdcNanoCents NanoCents `json:"balance_usdc_nano_cents"`
+	WalletId             string `json:"wallet_id"`
+	TokenId              string `json:"token_id"`
+	Blockchain           string `json:"blockchain"`
+	BlockchainSymbol     string `json:"blockchain_symbol"`
+	CreateDate           string `json:"create_date"`
+	BalanceUsdcNanoCents int64  `json:"balance_usdc_nano_cents"`
 	// Address is the wallet's on-chain address
 	Address string `json:"address"`
 }
@@ -1608,10 +1608,10 @@ type WalletCircleTransferOutCallback connect.ApiCallback[*WalletCircleTransferOu
 type WalletCircleTransferOutArgs struct {
 	// Persist this id with the intent before calling the API; reuse it on every
 	// retry/restart. A distinct intended transfer needs a distinct id.
-	RequestId           *Id       `json:"request_id"`
-	ToAddress           string    `json:"to_address"`
-	AmountUsdcNanoCents NanoCents `json:"amount_usdc_nano_cents"`
-	Terms               bool      `json:"terms"`
+	RequestId           *Id    `json:"request_id"`
+	ToAddress           string `json:"to_address"`
+	AmountUsdcNanoCents int64  `json:"amount_usdc_nano_cents"`
+	Terms               bool   `json:"terms"`
 }
 
 type WalletCircleTransferOutResult struct {
@@ -1664,18 +1664,18 @@ type Subscription struct {
 }
 
 type TransferBalance struct {
-	BalanceId             *Id       `json:"balance_id"`
-	NetworkId             *Id       `json:"network_id"`
-	StartTime             string    `json:"start_time"`
-	EndTime               string    `json:"end_time"`
-	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
+	BalanceId             *Id    `json:"balance_id"`
+	NetworkId             *Id    `json:"network_id"`
+	StartTime             string `json:"start_time"`
+	EndTime               string `json:"end_time"`
+	StartBalanceByteCount int64  `json:"start_balance_byte_count"`
 	// how much money the platform made after subtracting fees. The wire name
 	// is `net_revenue_nano_cents` (an earlier tag, `net_revenue`, never
 	// matched the server and left this 0 in every app).
-	NetRevenue NanoCents `json:"net_revenue_nano_cents"`
+	NetRevenue int64 `json:"net_revenue_nano_cents"`
 	// the subsidized part of NetRevenue
-	SubsidyNetRevenue NanoCents `json:"subsidy_net_revenue_nano_cents,omitempty"`
-	BalanceByteCount  ByteCount `json:"balance_byte_count"`
+	SubsidyNetRevenue int64 `json:"subsidy_net_revenue_nano_cents,omitempty"`
+	BalanceByteCount  int64 `json:"balance_byte_count"`
 	// PurchaseToken is the store purchase the balance came from, when any
 	PurchaseToken string `json:"purchase_token,omitempty"`
 	// Paid means the balance carries revenue. It is NOT the same as Pro: a
@@ -1692,15 +1692,15 @@ type SubscriptionBalanceResult struct {
 	/*
 	 * StartBalanceByteCount - The available balance the user starts the day with
 	 */
-	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
+	StartBalanceByteCount int64 `json:"start_balance_byte_count"`
 	/**
 	 * BalanceByteCount - The remaining balance the user has available
 	 */
-	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	BalanceByteCount int64 `json:"balance_byte_count"`
 	/**
 	 * OpenTransferByteCount - The total number of bytes tied up in open transfers
 	 */
-	OpenTransferByteCount ByteCount `json:"open_transfer_byte_count"`
+	OpenTransferByteCount int64 `json:"open_transfer_byte_count"`
 	/**
 	 * CurrentSubscription - ONE of the active subscriptions, or nil. Shipped apps
 	 * read this as the plan indicator, so it keeps its exact single-value meaning;
@@ -1717,7 +1717,7 @@ type SubscriptionBalanceResult struct {
 	 */
 	Subscriptions             *SubscriptionList    `json:"subscriptions,omitempty"`
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
-	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
+	PendingPayoutUsdNanoCents int64                `json:"pending_payout_usd_nano_cents"`
 	UpdateTime                string               `json:"update_time"`
 	/**
 	 * Guest - the network has no login method (a legacy guest network). The
@@ -2222,8 +2222,8 @@ func (self *Api) AccountPreferencesGet(callback AccountPreferencesGetCallback) {
  **/
 
 type TransferStatsResult struct {
-	PaidBytesProvided   ByteCount `json:"paid_bytes_provided"`
-	UnpaidBytesProvided ByteCount `json:"unpaid_bytes_provided"`
+	PaidBytesProvided   int64 `json:"paid_bytes_provided"`
+	UnpaidBytesProvided int64 `json:"unpaid_bytes_provided"`
 }
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
@@ -2817,14 +2817,14 @@ func (self *Api) SetEmojiTag(args *SetEmojiTagArgs, callback SetEmojiTagCallback
  */
 
 type AccountPoint struct {
-	AccountPointId   *Id        `json:"account_point_id"`
-	NetworkId        *Id        `json:"network_id"`
-	Event            string     `json:"event"`
-	PointValue       NanoPoints `json:"point_value"`
-	AccountPaymentId *Id        `json:"account_payment_id"`
-	PaymentPlanId    *Id        `json:"payment_plan_id,omitempty"`
-	LinkedNetworkId  *Id        `json:"linked_network_id,omitempty"`
-	CreateTime       *Time      `json:"create_time"`
+	AccountPointId   *Id    `json:"account_point_id"`
+	NetworkId        *Id    `json:"network_id"`
+	Event            string `json:"event"`
+	PointValue       int64  `json:"point_value"`
+	AccountPaymentId *Id    `json:"account_payment_id"`
+	PaymentPlanId    *Id    `json:"payment_plan_id,omitempty"`
+	LinkedNetworkId  *Id    `json:"linked_network_id,omitempty"`
+	CreateTime       *Time  `json:"create_time"`
 }
 
 type AccountPointsResult struct {
@@ -2982,6 +2982,159 @@ func (self *Api) GetNetworkReliability(callback GetNetworkReliabilityCallback) {
 }
 
 /**
+ * Provider status
+ */
+
+// The first reason a provider is not offered to clients (ProviderStatus.Reason),
+// in the order the server's selection applies them.
+const (
+	ProviderStatusReasonNotProviding         = "not_providing"
+	ProviderStatusReasonNotConnected         = "not_connected"
+	ProviderStatusReasonLocationInvalid      = "location_invalid"
+	ProviderStatusReasonNetworkOnly          = "network_only"
+	ProviderStatusReasonReliabilityWarmingUp = "reliability_warming_up"
+	ProviderStatusReasonReliabilityLow       = "reliability_low"
+	// every anti-abuse check, never which
+	ProviderStatusReasonNotEligible      = "not_eligible"
+	ProviderStatusReasonEgressUnprobed   = "egress_unprobed"
+	ProviderStatusReasonEgressFailing    = "egress_failing"
+	ProviderStatusReasonSpeedTestMissing = "speed_test_missing"
+	ProviderStatusReasonSlow             = "slow"
+	ProviderStatusReasonNone             = "none"
+)
+
+// The names of ProviderRankingNumber, in the order a status lists them.
+const (
+	ProviderStatusNumberReliability5m  = "reliability_5m"
+	ProviderStatusNumberReliability1h  = "reliability_1h"
+	ProviderStatusNumberReliability12h = "reliability_12h"
+	ProviderStatusNumberUrlChecks      = "url_checks"
+	ProviderStatusNumberSpeedTest      = "speed_test"
+	ProviderStatusNumberLatency        = "latency"
+	ProviderStatusNumberWeightQuality  = "weight_quality"
+	ProviderStatusNumberTierQuality    = "tier_quality"
+	ProviderStatusNumberWeightSpeed    = "weight_speed"
+	ProviderStatusNumberTierSpeed      = "tier_speed"
+)
+
+// ProviderAdmission.Egress
+const (
+	ProviderEgressPass     = "pass"
+	ProviderEgressFail     = "fail"
+	ProviderEgressUnprobed = "unprobed"
+)
+
+// How many times the server's provider search returned a provider in each
+// minute of the last hour.
+type ProviderAppearanceHistogram struct {
+	// the unix minute (unix seconds / 60) of the first, oldest bucket
+	StartMinute   int64 `json:"start_minute"`
+	BucketSeconds int   `json:"bucket_seconds"`
+	// 60 counts, oldest first; the last is the current, partial minute
+	AppearancesPerMinute *Int64List `json:"appearances_per_minute"`
+}
+
+// Which gates of the provider search a provider passes.
+type ProviderAdmission struct {
+	Connected     bool `json:"connected"`
+	LocationValid bool `json:"location_valid"`
+	ProvidePublic bool `json:"provide_public"`
+	ReliabilityOk bool `json:"reliability_ok"`
+	SpeedTestDone bool `json:"speed_test_done"`
+	// ProviderEgressPass, ProviderEgressFail or ProviderEgressUnprobed
+	Egress string `json:"egress"`
+	// nil when unprobed
+	EgressMeasuredAt *Time `json:"egress_measured_at,omitempty"`
+}
+
+// One number the provider search admits or orders a provider by. The unit
+// follows the name: reliability_* a share of steady uptime (0 to 1),
+// url_checks a share of loaded test sites with Count of Total, speed_test
+// bytes per second, latency milliseconds above the expected delay, weight_*
+// the relative selection weight, tier_* a tier (0 best, 3 past the cutoff).
+type ProviderRankingNumber struct {
+	Name        string  `json:"name"`
+	HasValue    bool    `json:"has_value"`
+	Value       float64 `json:"value"`
+	HasMinimum  bool    `json:"has_minimum"`
+	Minimum     float64 `json:"minimum"`
+	HasMaximum  bool    `json:"has_maximum"`
+	Maximum     float64 `json:"maximum"`
+	Passes      bool    `json:"passes"`
+	Count       int     `json:"count"`
+	Total       int     `json:"total"`
+	Explanation string  `json:"explanation"`
+}
+
+type ProviderRankingNumberList struct {
+	exportedList[*ProviderRankingNumber]
+}
+
+func NewProviderRankingNumberList() *ProviderRankingNumberList {
+	return &ProviderRankingNumberList{
+		exportedList: *newExportedList[*ProviderRankingNumber](),
+	}
+}
+
+// Where clients find the provider.
+type ProviderStatusCountry struct {
+	CountryCode string `json:"country_code"`
+	Country     string `json:"country"`
+	// "" when no fresh network check saw the exit
+	ObservedCountryCode string `json:"observed_country_code"`
+	Explanation         string `json:"explanation"`
+}
+
+type ProviderStatus struct {
+	ClientId *Id `json:"client_id"`
+	// one of the ProviderStatusReason* values, and its English text
+	Reason     string                     `json:"reason"`
+	ReasonText string                     `json:"reason_text"`
+	Admission  *ProviderAdmission         `json:"admission"`
+	Ranking    *ProviderRankingNumberList `json:"ranking"`
+	// nil when the provider has no known location
+	Country      *ProviderStatusCountry `json:"country,omitempty"`
+	EvaluateTime *Time                  `json:"evaluate_time"`
+	// nil when the server could not read the histogram
+	Appearances *ProviderAppearanceHistogram `json:"appearances,omitempty"`
+}
+
+type ProviderStatusList struct {
+	exportedList[*ProviderStatus]
+}
+
+func NewProviderStatusList() *ProviderStatusList {
+	return &ProviderStatusList{
+		exportedList: *newExportedList[*ProviderStatus](),
+	}
+}
+
+type GetProviderStatusResult struct {
+	// the caller's own client first when it is a provider
+	Providers *ProviderStatusList `json:"providers"`
+	// the network has more provider clients than one answer covers
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+type GetProviderStatusCallback connect.ApiCallback[*GetProviderStatusResult]
+
+// GetProviderStatus reads, for each of the network's own provider clients,
+// how often the provider search returned it per minute over the last hour,
+// the numbers it was ranked by and the first reason holding it back.
+func (self *Api) GetProviderStatus(callback GetProviderStatusCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/network/provider-status", self.apiUrl),
+			self.GetByJwt(),
+			&GetProviderStatusResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Solana Payment Intents
  */
 
@@ -3021,7 +3174,21 @@ type SolanaPaymentIntentResult struct {
 	SplTokenMint string `json:"spl_token_mint,omitempty"`
 }
 
+// Stable codes for a refused checkout or payment intent (the server's
+// PurchaseErrorCode*): CreateSolanaPaymentIntent, CreateStripePaymentIntent,
+// CreateStripeCheckoutSession and StripePaymentSheet. Apps pick a flow or a
+// localized message from the code and fall back to `Message`.
+const (
+	// The network is a legacy guest network (no sign-in method): nothing
+	// could sign back in to a plan bought on it. Add a sign-in method
+	// (AddAuth) first; the apps open their add-sign-in sheet.
+	PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required"
+)
+
 type SolanaPaymentIntentError struct {
+	// one of the `PurchaseErrorCode*` values, when the refusal has one; empty
+	// from an older server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -3048,6 +3215,9 @@ func (self *Api) CreateSolanaPaymentIntent(args *SolanaPaymentIntentArgs, callba
 type StripeCreatePaymentIntentArgs struct{}
 
 type StripeCreatePaymentIntentErr struct {
+	// one of the `PurchaseErrorCode*` values, when the refusal has one; empty
+	// from an older server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -3134,6 +3304,9 @@ type StripeCreateCheckoutSessionArgs struct {
 }
 
 type StripeCreateCheckoutSessionError struct {
+	// one of the `PurchaseErrorCode*` values, when the refusal has one; empty
+	// from an older server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -3276,10 +3449,10 @@ type RedeemBalanceCodeResult struct {
 }
 
 type RedeemBalanceCodeTransferBalance struct {
-	TransferBalanceId *Id       `json:"transfer_balance_id"`
-	StartTime         *Time     `json:"start_time"`
-	EndTime           *Time     `json:"end_time"`
-	BalanceByteCount  ByteCount `json:"balance_byte_count"`
+	TransferBalanceId *Id   `json:"transfer_balance_id"`
+	StartTime         *Time `json:"start_time"`
+	EndTime           *Time `json:"end_time"`
+	BalanceByteCount  int64 `json:"balance_byte_count"`
 }
 
 type RedeemBalanceCodeError struct {
@@ -3317,9 +3490,9 @@ type CheckBalanceCodeArgs struct {
 }
 
 type CheckBalanceCodeBalance struct {
-	StartTime        *Time     `json:"start_time"`
-	EndTime          *Time     `json:"end_time"`
-	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	StartTime        *Time `json:"start_time"`
+	EndTime          *Time `json:"end_time"`
+	BalanceByteCount int64 `json:"balance_byte_count"`
 }
 
 type CheckBalanceCodeError struct {

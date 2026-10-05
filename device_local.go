@@ -521,7 +521,7 @@ type DeviceLocalSettings struct {
 	// per-device target (legacy process-budget scaling). Hosts set this
 	// explicitly where the device is created; the default keeps a plain
 	// construction bounded.
-	MemoryTargetByteCount ByteCount
+	MemoryTargetByteCount int64
 
 	// time to give up (drop) sending a packet to a destination
 	//
@@ -1978,50 +1978,50 @@ type DeviceLocalMemoryUsage struct {
 	// additive to TotalByteCount. Counts/rejections contain no peer identities.
 	// Logical pin counters are a separately sampled diagnostic;
 	// root/child byte fields below remain one coherent admission snapshot.
-	PeerKeyPinBudgetByteCount     ByteCount
-	PeerKeyPinUsedByteCount       ByteCount
-	PeerKeyPinReservedByteCount   ByteCount
-	PeerKeyPinReleasedByteCount   ByteCount
+	PeerKeyPinBudgetByteCount     int64
+	PeerKeyPinUsedByteCount       int64
+	PeerKeyPinReservedByteCount   int64
+	PeerKeyPinReleasedByteCount   int64
 	PeerKeyPinCount               int
 	PeerKeyPinCapacityRefusals    int64
 	PeerKeyPinPersistenceFailures int64
 	PeerKeyPinRollbackRefusals    int64
 	PeerKeyPinStateFailures       int64
-	TargetByteCount               ByteCount
-	DnsByteCount                  ByteCount
-	ClientSendByteCount           ByteCount
-	ClientReceiveByteCount        ByteCount
+	TargetByteCount               int64
+	DnsByteCount                  int64
+	ClientSendByteCount           int64
+	ClientReceiveByteCount        int64
 	// PackQueue* isolates the device-wide aggregate decoded-pack handoff
 	// budget already included in ClientReceiveByteCount. It is shared by the
 	// control client, window clients, and provider so diagnostics can distinguish
 	// active queue pressure from allocator or message-pool retention.
-	PackQueueUsedByteCount     ByteCount
-	PackQueueCapacityByteCount ByteCount
-	ProviderSendByteCount      ByteCount
-	ProviderReceiveByteCount   ByteCount
+	PackQueueUsedByteCount     int64
+	PackQueueCapacityByteCount int64
+	ProviderSendByteCount      int64
+	ProviderReceiveByteCount   int64
 	// The root includes client/provider queues, the shared Pack queue once,
 	// all P2P generations, and both NATs. Child samples are diagnostic subsets,
 	// not additional memory. Root and group fields share one coherent snapshot.
-	TransferRootBudgetByteCount      ByteCount
-	TransferRootUsedByteCount        ByteCount
-	TransferRootReservedByteCount    ByteCount
-	TransferRootReleasedByteCount    ByteCount
-	ClientTransferBudgetByteCount    ByteCount
-	ClientTransferUsedByteCount      ByteCount
-	ProviderTransferBudgetByteCount  ByteCount
-	ProviderTransferUsedByteCount    ByteCount
-	NatBudgetByteCount               ByteCount
-	NatUsedByteCount                 ByteCount
-	NatReservedByteCount             ByteCount
-	NatReleasedByteCount             ByteCount
-	PlatformTransportBudgetByteCount ByteCount
-	PlatformTransportUsedByteCount   ByteCount
+	TransferRootBudgetByteCount      int64
+	TransferRootUsedByteCount        int64
+	TransferRootReservedByteCount    int64
+	TransferRootReleasedByteCount    int64
+	ClientTransferBudgetByteCount    int64
+	ClientTransferUsedByteCount      int64
+	ProviderTransferBudgetByteCount  int64
+	ProviderTransferUsedByteCount    int64
+	NatBudgetByteCount               int64
+	NatUsedByteCount                 int64
+	NatReservedByteCount             int64
+	NatReleasedByteCount             int64
+	PlatformTransportBudgetByteCount int64
+	PlatformTransportUsedByteCount   int64
 	PlatformTransportMaxCount        int
 	PlatformTransportUsedCount       int
 	PlatformTransportPendingH1Count  int
-	PlatformTransportPendingH1Bytes  ByteCount
-	PlatformTransportReservedBytes   ByteCount
-	PlatformTransportReleasedBytes   ByteCount
+	PlatformTransportPendingH1Bytes  int64
+	PlatformTransportReservedBytes   int64
+	PlatformTransportReleasedBytes   int64
 	// Handoff fields come from the same private-budget Stats call as pending
 	// admission. Window readiness is sampled from this DeviceLocal's current
 	// client under stateLock, not from a process-wide ingress readiness flag.
@@ -2029,12 +2029,12 @@ type DeviceLocalMemoryUsage struct {
 	// not proof of event-time ordering or of one reservation's lifetime.
 	PlatformTransportPendingHandoffCount int
 	PlatformTransportActiveHandoffCount  int
-	PlatformTransportHandoffByteCount    ByteCount
+	PlatformTransportHandoffByteCount    int64
 	PlatformTransportHandoffCount        int
 	PlatformTransportHandoffID           int64
 	PlatformTransportHandoffFromClass    string
 	PlatformTransportHandoffToClass      string
-	PlatformTransportHandoffH1ByteCount  ByteCount
+	PlatformTransportHandoffH1ByteCount  int64
 	ProviderWindowKnown                  bool
 	ProviderWindowMinSatisfied           bool
 	// PlatformTransportPreemptedH3Count is the lifetime count for this
@@ -2042,7 +2042,7 @@ type DeviceLocalMemoryUsage struct {
 	// exporting device identity so a repeated H1/H3 handoff loop remains
 	// observable without customer labels.
 	PlatformTransportPreemptedH3Count int64
-	TotalByteCount                    ByteCount
+	TotalByteCount                    int64
 }
 
 // MemoryUsed samples the tracked memory accounting of this device's areas
@@ -2229,7 +2229,9 @@ func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *Per
 				v.SetAllowDirect(false)
 			}
 		case *connect.RemoteUserNatMultiClient:
-			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
+			// every stored profile passed validatePerformanceProfile, the
+			// multi client's own validation, so the multi client takes it
+			_ = v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
 		}
 	}
 	// Preserve the public value contract even when this was only a
@@ -7652,29 +7654,9 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 
 	logDir := GetLogDir()
 
-	files, err := os.ReadDir(logDir)
+	zipPath, err := zipUploadLogs(logDir)
 	if err != nil {
-		self.log.Errorf("Failed to read log directory %q: %v", logDir, err)
-		return err
-	}
-
-	logPaths := []string{}
-	for _, file := range files {
-		name := file.Name()
-		if !file.IsDir() &&
-			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
-				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
-				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
-				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
-			fullPath := logDir + "/" + name
-			logPaths = append(logPaths, fullPath)
-		}
-	}
-
-	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
-	zipPath := filepath.Join(logDir, zipName)
-
-	if err := zipLogs(logPaths, zipPath); err != nil {
+		self.log.Errorf("Failed to zip log directory %q: %v", logDir, err)
 		return err
 	}
 
@@ -7703,6 +7685,41 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 	}))
 
 	return nil
+}
+
+// zipUploadLogs zips this process's glog files in logDir into a new zip there
+// and returns its path. It flushes glog first: glog buffers its file writes and
+// flushes them only every 30 seconds, so the newest lines, such as an app line
+// written with LogAppInfo just before the user sent feedback, would otherwise
+// be missing from the upload.
+func zipUploadLogs(logDir string) (string, error) {
+	FlushGlog()
+
+	files, err := os.ReadDir(logDir)
+	if err != nil {
+		return "", err
+	}
+
+	logPaths := []string{}
+	for _, file := range files {
+		name := file.Name()
+		if !file.IsDir() &&
+			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
+				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
+				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
+				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
+			fullPath := logDir + "/" + name
+			logPaths = append(logPaths, fullPath)
+		}
+	}
+
+	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
+	zipPath := filepath.Join(logDir, zipName)
+
+	if err := zipLogs(logPaths, zipPath); err != nil {
+		return "", err
+	}
+	return zipPath, nil
 }
 
 // DiagnosticManifestJson returns the device-side half of the exported bundle's
@@ -7926,5 +7943,33 @@ func toConnectWindowSize(windowSize *WindowSizeSettings) connect.WindowSizeSetti
 		WindowSizeReconnectScale: windowSize.WindowSizeReconnectScale,
 		KeepHealthiestCount:      windowSize.KeepHealthiestCount,
 		Ulimit:                   windowSize.Ulimit,
+	}
+}
+
+// validatePerformanceProfile is the multi client's own check of the profile
+// it would receive: no window size or count below zero, max at least min, and
+// a fixed window with room for an exit. The device refuses any other profile
+// before saving or applying it, so a caller's window size never reaches the
+// connection. nil, the auto default, is valid.
+func validatePerformanceProfile(performanceProfile *PerformanceProfile) error {
+	if performanceProfile == nil {
+		return nil
+	}
+	return toConnectPerformanceProfile(performanceProfile).Validate()
+}
+
+// normalizeSavedPerformanceProfile reads back a saved profile. Before the
+// device refused them, a profile whose window the multi client cannot install
+// could be saved from any caller. It reads back in auto mode, keeping its
+// direct and post-quantum choices, instead of failing the load or reaching
+// the connection.
+func normalizeSavedPerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if validatePerformanceProfile(performanceProfile) == nil {
+		return performanceProfile
+	}
+	return &PerformanceProfile{
+		WindowType:            WindowTypeAuto,
+		AllowDirect:           performanceProfile.AllowDirect,
+		PostQuantumEncryption: performanceProfile.PostQuantumEncryption,
 	}
 }

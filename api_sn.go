@@ -7,6 +7,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/urnetwork/connect"
 )
@@ -91,11 +92,53 @@ func (self *Api) VerifyKeysSync() (*VerifyKeysResult, error) {
 	return self.VerifyKeysSyncWithContext(self.ctx)
 }
 
+// Selects the provider and explicit earning interval for a wallet consent.
+// Signed int64 epochs preserve mobile bindings and serialize as json numbers.
+type SnWalletMappingChallengeArgs struct {
+	ClientId     *Id    `json:"client_id,omitempty"`
+	ColdkeySs58  string `json:"coldkey_ss58"`
+	FromEpoch    int64  `json:"from_epoch"`
+	ThroughEpoch int64  `json:"through_epoch"`
+}
+
+// The caller signs these exact server-issued bytes after verifying their domain.
+type SnWalletMappingChallengeResult struct {
+	Message string `json:"message"`
+}
+
+// Requests a consent challenge through the api's authenticated post transport.
+//
+//gomobile:noexport
+func (self *Api) SnWalletMappingChallengeSyncWithContext(ctx context.Context, args *SnWalletMappingChallengeArgs) (*SnWalletMappingChallengeResult, error) {
+	if args == nil {
+		return nil, fmt.Errorf("wallet mapping challenge args are required")
+	}
+	if args.FromEpoch < 0 || args.ThroughEpoch < 0 || args.ThroughEpoch < args.FromEpoch {
+		return nil, fmt.Errorf("wallet mapping epoch interval must be nonnegative and ordered")
+	}
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/sn/wallet/consent", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&SnWalletMappingChallengeResult{},
+		connect.NewNoopApiCallback[*SnWalletMappingChallengeResult](),
+	)
+}
+
+// Uses the api lifetime for the challenge request.
+//
+//gomobile:noexport
+func (self *Api) SnWalletMappingChallengeSync(args *SnWalletMappingChallengeArgs) (*SnWalletMappingChallengeResult, error) {
+	return self.SnWalletMappingChallengeSyncWithContext(self.ctx, args)
+}
+
 type SnSetWalletArgs struct {
 	ColdkeySs58 string `json:"coldkey_ss58"`
 	ClientId    *Id    `json:"client_id,omitempty"`
-	// sr25519 signature by the coldkey over Message (hex), from the ur.io
-	// wallet bridge challenge with purpose "connect"; required for app sets
+	// Coldkey sr25519 signature (hex) over the exact consent or wallet-login
+	// challenge message issued by the server.
 	Signature string `json:"signature,omitempty"`
 	Message   string `json:"message,omitempty"`
 }
@@ -108,6 +151,9 @@ type SnSetWalletResult struct {
 	// the stored wallet (with its first effective epoch) when the server returns it
 	Wallet *SnWallet         `json:"wallet,omitempty"`
 	Error  *SnSetWalletError `json:"error,omitempty"`
+	// Accepted consent identity for callers verifying the mapping publication.
+	MappingHash       string `json:"mapping_hash,omitempty"`
+	MappingGeneration int64  `json:"mapping_generation,omitempty"`
 }
 
 //gomobile:noexport
@@ -128,7 +174,7 @@ func (self *Api) SnSetWalletSync(args *SnSetWalletArgs) (*SnSetWalletResult, err
 	return self.SnSetWalletSyncWithContext(self.ctx, args)
 }
 
-// SnPoolClaimArgs selects the epoch to claim.
+// Selects the epoch and, optionally, its original legacy proof coldkey.
 //
 // int64, not uint64: gomobile cannot bind uint64, and as uint64 this class
 // bound as an empty shell that could not express a claim at all. An epoch
@@ -136,6 +182,9 @@ func (self *Api) SnSetWalletSync(args *SnSetWalletArgs) (*SnSetWalletResult, err
 // wire format is unchanged.
 type SnPoolClaimArgs struct {
 	Epoch int64 `json:"epoch"`
+	// Original coldkey ss58 for a legacy network-only epoch's proof. This
+	// selector does not confer ownership or authorization.
+	LegacyColdkey string `json:"legacy_coldkey,omitempty"`
 }
 
 type SnPoolClaimError struct {
@@ -194,10 +243,14 @@ func (self *Api) SnPoolClaimSyncWithContext(ctx context.Context, args *SnPoolCla
 	if args == nil {
 		return nil, fmt.Errorf("pool claim args are required")
 	}
+	requestUrl := fmt.Sprintf("%s/sn/pool/claim?epoch=%d", self.apiUrl, args.Epoch)
+	if args.LegacyColdkey != "" {
+		requestUrl += "&legacy_coldkey=" + url.QueryEscape(args.LegacyColdkey)
+	}
 	return connect.HttpGetWithRawFunction(
 		ctx,
 		self.getHttpGetRaw(),
-		fmt.Sprintf("%s/sn/pool/claim?epoch=%d", self.apiUrl, args.Epoch),
+		requestUrl,
 		self.GetByJwt(),
 		&SnPoolClaimResult{},
 		connect.NewNoopApiCallback[*SnPoolClaimResult](),
@@ -214,8 +267,8 @@ func (self *Api) SnPoolClaimSync(args *SnPoolClaimArgs) (*SnPoolClaimResult, err
 // int64 throughout rather than uint64: gomobile cannot bind uint64, and as
 // uint64 this class shipped with ContractAddress as its only usable field —
 // the schedule itself was invisible to apps. Block heights, epoch numbers and
-// chain ids are all far below 2^63, and json carries a bare number either
-// way, so the wire format is unchanged.
+// chain ids are all far below 2^63. Numeric json encoding is retained; no_id
+// also accepts the server's decimal-string encoding when decoded.
 type SnEpochResult struct {
 	Epoch               int64  `json:"epoch"`
 	StartBlock          int64  `json:"start_block"`

@@ -161,9 +161,9 @@ type ExtenderProvideStatusChangeListener interface {
 // that stops and starts again reports a fresh server's counters from zero.
 // Every field is a gomobile-bindable value.
 type ExtenderStats struct {
-	IngressByteCount ByteCount
+	IngressByteCount int64
 	IngressReadCount int64
-	EgressByteCount  ByteCount
+	EgressByteCount  int64
 	EgressReadCount  int64
 }
 
@@ -344,8 +344,9 @@ type deviceLocalExtenderSettings struct {
 	// The operator patterns this extender may forward to (A5): `<host>` and
 	// `*.<host>` of the space host and the migration host.
 	AllowedHosts []string
-	// SpoofDomains, when set, replaces the bundled list in the whitelist (A5,
-	// A10). Nil takes connect.SpoofDomains(), which is the production list.
+	// SpoofDomains, when set, replaces the bundled lists in the whitelist (A5,
+	// A10). Nil takes connect.AllSpoofDomains(), the production global list
+	// and every country list.
 	SpoofDomains []string
 
 	// The identity this extender is activated under (B1), the space's

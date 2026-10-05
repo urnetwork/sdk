@@ -97,8 +97,15 @@ func resolveHandle[T any](id uint64, name string) (T, bool) {
 
 // cgoGuard must be deferred at the top of every exported function.
 // a panic must never unwind into C, which would abort the host process.
+// An export whose result is an error id defers its own recover instead, which
+// answers errorIdInternal rather than the zero result (gen/gen.go errorIdResult).
 func cgoGuard(name string) {
 	if r := recover(); r != nil {
-		glog.Errorf("[cgo]%s panicked: %v\n%s", name, r, string(debug.Stack()))
+		cgoPanicked(name, r)
 	}
+}
+
+// cgoPanicked logs a panic an exported function recovered.
+func cgoPanicked(name string, r any) {
+	glog.Errorf("[cgo]%s panicked: %v\n%s", name, r, string(debug.Stack()))
 }

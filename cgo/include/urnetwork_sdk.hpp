@@ -11,6 +11,8 @@
  *   your ui thread. do not destroy state captured by a listener while a
  *   callback may be in flight.
  * - functions that can fail throw urnet::Error.
+ * - a std::string result marked "error id" is empty on success, else the id
+ *   of the refusal, or ErrorIdInternal when the call could not run.
  */
 #ifndef URNETWORK_SDK_HPP
 #define URNETWORK_SDK_HPP
@@ -144,6 +146,9 @@ protected:
 
 /* ----- constants ----- */
 
+/* what a function whose result is an error id answers when the call could not run */
+inline constexpr const char* ErrorIdInternal = URNET_ERROR_ID_INTERNAL;
+
 inline constexpr int64_t AsyncQueueSize = 32;
 inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
 inline constexpr const char* AuthVerifySendErrorCodeSendFailed = "verify_send_failed";
@@ -211,6 +216,10 @@ inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
 inline constexpr const char* ContractStatusClosed = "closed";
 inline constexpr const char* ContractStatusOpen = "open";
+inline constexpr const char* ControlDohErrorHttpsRequired = "control_doh_error_https_required";
+inline constexpr const char* ControlDohErrorIpRequired = "control_doh_error_ip_required";
+inline constexpr const char* ControlDohErrorTooMany = "control_doh_error_too_many";
+inline constexpr const char* ControlDohErrorUrlInvalid = "control_doh_error_url_invalid";
 inline constexpr const char* DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65";
 inline constexpr const char* DestinationSet = "DESTINATION_SET";
 inline constexpr int64_t DeviceRpcVersion = 3;
@@ -360,18 +369,44 @@ inline constexpr int64_t ProvideModePublic = 3;
 inline constexpr int64_t ProvideModeStream = 4;
 inline constexpr const char* ProvideNetworkModeAll = "all";
 inline constexpr const char* ProvideNetworkModeWiFi = "wifi";
+inline constexpr const char* ProviderEgressFail = "fail";
+inline constexpr const char* ProviderEgressPass = "pass";
+inline constexpr const char* ProviderEgressUnprobed = "unprobed";
 inline constexpr const char* ProviderFamilyTransportStateUnknown = "unknown";
 inline constexpr const char* ProviderStateAdded = "Added";
 inline constexpr const char* ProviderStateEvaluationFailed = "EvaluationFailed";
 inline constexpr const char* ProviderStateInEvaluation = "InEvaluation";
 inline constexpr const char* ProviderStateNotAdded = "NotAdded";
 inline constexpr const char* ProviderStateRemoved = "Removed";
+inline constexpr const char* ProviderStatusNumberLatency = "latency";
+inline constexpr const char* ProviderStatusNumberReliability12h = "reliability_12h";
+inline constexpr const char* ProviderStatusNumberReliability1h = "reliability_1h";
+inline constexpr const char* ProviderStatusNumberReliability5m = "reliability_5m";
+inline constexpr const char* ProviderStatusNumberSpeedTest = "speed_test";
+inline constexpr const char* ProviderStatusNumberTierQuality = "tier_quality";
+inline constexpr const char* ProviderStatusNumberTierSpeed = "tier_speed";
+inline constexpr const char* ProviderStatusNumberUrlChecks = "url_checks";
+inline constexpr const char* ProviderStatusNumberWeightQuality = "weight_quality";
+inline constexpr const char* ProviderStatusNumberWeightSpeed = "weight_speed";
+inline constexpr const char* ProviderStatusReasonEgressFailing = "egress_failing";
+inline constexpr const char* ProviderStatusReasonEgressUnprobed = "egress_unprobed";
+inline constexpr const char* ProviderStatusReasonLocationInvalid = "location_invalid";
+inline constexpr const char* ProviderStatusReasonNetworkOnly = "network_only";
+inline constexpr const char* ProviderStatusReasonNone = "none";
+inline constexpr const char* ProviderStatusReasonNotConnected = "not_connected";
+inline constexpr const char* ProviderStatusReasonNotEligible = "not_eligible";
+inline constexpr const char* ProviderStatusReasonNotProviding = "not_providing";
+inline constexpr const char* ProviderStatusReasonReliabilityLow = "reliability_low";
+inline constexpr const char* ProviderStatusReasonReliabilityWarmingUp = "reliability_warming_up";
+inline constexpr const char* ProviderStatusReasonSlow = "slow";
+inline constexpr const char* ProviderStatusReasonSpeedTestMissing = "speed_test_missing";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonUnreachable = "unreachable";
 inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up";
 inline constexpr const char* PurchaseConfirmationStateConfirmed = "confirmed";
 inline constexpr const char* PurchaseConfirmationStateIdle = "idle";
 inline constexpr const char* PurchaseConfirmationStateWaitingForConfirmation = "waiting_for_confirmation";
+inline constexpr const char* PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required";
 inline constexpr const char* PurchaseReportStatusAlreadyCredited = "already_credited";
 inline constexpr const char* PurchaseReportStatusCredited = "credited";
 inline constexpr const char* PurchaseReportStatusInvalid = "invalid";
@@ -443,6 +478,18 @@ inline constexpr int64_t TunnelLocalPrefixLengthIpv6 = 64;
 inline constexpr const char* VerifySeekerNftHolderErrorCodeInvalidSignature = "seeker_invalid_signature";
 inline constexpr const char* VerifySeekerNftHolderErrorCodeLookupFailed = "seeker_lookup_failed";
 inline constexpr const char* VerifySeekerNftHolderErrorCodeTokenNotFound = "seeker_token_not_found";
+inline constexpr const char* VlessErrorAddressInvalid = "vless_error_address_invalid";
+inline constexpr const char* VlessErrorFingerprintUnsupported = "vless_error_fingerprint_unsupported";
+inline constexpr const char* VlessErrorFlowInvalid = "vless_error_flow_invalid";
+inline constexpr const char* VlessErrorIdInvalid = "vless_error_id_invalid";
+inline constexpr const char* VlessErrorLinkInvalid = "vless_error_link_invalid";
+inline constexpr const char* VlessErrorLinkUnsupported = "vless_error_link_unsupported";
+inline constexpr const char* VlessErrorNetworkUnsupported = "vless_error_network_unsupported";
+inline constexpr const char* VlessErrorPortInvalid = "vless_error_port_invalid";
+inline constexpr const char* VlessErrorPublicKeyInvalid = "vless_error_public_key_invalid";
+inline constexpr const char* VlessErrorSecurityUnsupported = "vless_error_security_unsupported";
+inline constexpr const char* VlessErrorServerNameRequired = "vless_error_server_name_required";
+inline constexpr const char* VlessErrorShortIdInvalid = "vless_error_short_id_invalid";
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
@@ -493,6 +540,7 @@ class PointsLeaderboardViewController;
 class PostQuantumIdentityViewController;
 class ProvideViewController;
 class ProviderLocationsViewController;
+class ProviderStatusViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
 class Socket;
@@ -659,6 +707,7 @@ struct NetworkUser;
 struct GetNetworkUserResult;
 struct GetPayoutWalletIdResult;
 struct GetPointsLeaderboardArgs;
+struct GetProviderStatusResult;
 struct GetReferralNetworkError;
 struct ReferralNetwork;
 struct GetReferralNetworkResult;
@@ -695,6 +744,7 @@ struct NetworkPeer;
 struct NetworkPeers;
 struct NetworkSpaceKey;
 struct SnChainSettings;
+struct VlessSettings;
 struct NetworkSpaceValues;
 struct NetworkUnblockLocationArgs;
 struct NetworkUnblockLocationError;
@@ -722,10 +772,15 @@ struct PriceTier;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
+struct ProviderAdmission;
+struct ProviderAppearanceHistogram;
 struct ProviderFamilyTransportStatus;
 struct ProviderGridPoint;
 struct ProviderIdentity;
+struct ProviderRankingNumber;
 struct ProviderSpec;
+struct ProviderStatusCountry;
+struct ProviderStatus;
 struct ProxyDeviceSettings;
 struct PublicAccountApiKey;
 struct RedeemBalanceCodeArgs;
@@ -763,6 +818,7 @@ struct SetPayoutWalletResult;
 struct SetPointsLeaderboardPublicArgs;
 struct SetPointsLeaderboardPublicError;
 struct SetPointsLeaderboardPublicResult;
+struct SnEpochSchedule;
 struct SnClaimsResult;
 struct SnWallet;
 struct SnConnectWalletResult;
@@ -780,6 +836,8 @@ struct SnSetWalletError;
 struct SnSetWalletResult;
 struct SnUnsignedTx;
 struct SnValidateWalletResult;
+struct SnWalletMappingChallengeArgs;
+struct SnWalletMappingChallengeResult;
 struct SocketRead;
 struct SocketTLSOptions;
 struct SolanaPaymentIntentArgs;
@@ -841,6 +899,7 @@ struct VerifySeekerNftHolderError;
 struct VerifySeekerNftHolderResult;
 struct VerifyServerKey;
 struct VerifyStorePurchaseResult;
+struct VlessLinkResult;
 struct WalletBalanceResult;
 struct WalletCircleInitError;
 struct WalletCircleInitResult;
@@ -893,7 +952,9 @@ using ProbeResultList = std::vector<ProbeResult>;
 using ProvideSecretKeyList = std::vector<ProvideSecretKey>;
 using ProviderGridPointList = std::vector<ProviderGridPoint>;
 using ProviderIdentityList = std::vector<ProviderIdentity>;
+using ProviderRankingNumberList = std::vector<ProviderRankingNumber>;
 using ProviderSpecList = std::vector<ProviderSpec>;
+using ProviderStatusList = std::vector<ProviderStatus>;
 using PublicAccountApiKeyList = std::vector<PublicAccountApiKey>;
 using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
@@ -1835,6 +1896,7 @@ struct ExtenderShareDecodeResult {
 	int64_t Count{};
 	bool HasSettings{};
 	std::string SettingsHost{};
+	std::optional<StringList> ControlDohUrls;
 };
 
 struct ExtenderShareResult {
@@ -2110,6 +2172,11 @@ struct GetPointsLeaderboardArgs {
 	std::optional<std::string> cursor;
 	std::optional<int64_t> seek_rank;
 	std::optional<int64_t> limit;
+};
+
+struct GetProviderStatusResult {
+	std::optional<ProviderStatusList> providers;
+	std::optional<bool> truncated;
 };
 
 struct GetReferralNetworkError {
@@ -2425,6 +2492,26 @@ struct SnChainSettings {
 	int64_t lookback_epochs{};
 };
 
+struct VlessSettings {
+	std::optional<bool> enabled;
+	std::optional<std::string> name;
+	std::optional<std::string> address;
+	std::optional<int64_t> port;
+	std::optional<std::string> id;
+	std::optional<std::string> flow;
+	std::optional<std::string> network;
+	std::optional<std::string> security;
+	std::optional<std::string> server_name;
+	std::optional<std::string> fingerprint;
+	std::optional<std::string> alpn;
+	std::optional<bool> allow_insecure;
+	std::optional<std::string> public_key;
+	std::optional<std::string> short_id;
+	std::optional<std::string> spider_x;
+	std::optional<std::string> path;
+	std::optional<std::string> host;
+};
+
 struct NetworkSpaceValues {
 	std::optional<std::string> env_secret;
 	std::optional<bool> bundled;
@@ -2444,6 +2531,9 @@ struct NetworkSpaceValues {
 	std::optional<std::string> gossip_url;
 	std::optional<std::vector<std::string>> extender_root_public_keys;
 	std::optional<std::vector<std::string>> extender_hosts;
+	std::optional<VlessSettings> vless;
+	std::optional<std::vector<std::string>> control_doh_urls_ipv4;
+	std::optional<std::vector<std::string>> control_doh_urls_ipv6;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -2482,6 +2572,7 @@ struct OnboardingClickResult {
 };
 
 struct OnboardingError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -2650,6 +2741,22 @@ struct ProvideSecretKey {
 	std::string provide_secret_key{};
 };
 
+struct ProviderAdmission {
+	bool connected{};
+	bool location_valid{};
+	bool provide_public{};
+	bool reliability_ok{};
+	bool speed_test_done{};
+	std::string egress{};
+	std::optional<std::string> egress_measured_at;
+};
+
+struct ProviderAppearanceHistogram {
+	int64_t start_minute{};
+	int64_t bucket_seconds{};
+	std::optional<Int64List> appearances_per_minute;
+};
+
 struct ProviderFamilyTransportStatus {
 	bool HasIpv4{};
 	std::string Ipv4State{};
@@ -2677,11 +2784,43 @@ struct ProviderIdentity {
 	std::string PublicKey{};
 };
 
+struct ProviderRankingNumber {
+	std::string name{};
+	bool has_value{};
+	double value{};
+	bool has_minimum{};
+	double minimum{};
+	bool has_maximum{};
+	double maximum{};
+	bool passes{};
+	int64_t count{};
+	int64_t total{};
+	std::string explanation{};
+};
+
 struct ProviderSpec {
 	std::optional<std::string> location_id;
 	std::optional<std::string> location_group_id;
 	std::optional<std::string> client_id;
 	std::optional<bool> best_available;
+};
+
+struct ProviderStatusCountry {
+	std::string country_code{};
+	std::string country{};
+	std::string observed_country_code{};
+	std::string explanation{};
+};
+
+struct ProviderStatus {
+	std::optional<std::string> client_id;
+	std::string reason{};
+	std::string reason_text{};
+	std::optional<ProviderAdmission> admission;
+	std::optional<ProviderRankingNumberList> ranking;
+	std::optional<ProviderStatusCountry> country;
+	std::optional<std::string> evaluate_time;
+	std::optional<ProviderAppearanceHistogram> appearances;
 };
 
 struct ProxyDeviceSettings {
@@ -2925,12 +3064,29 @@ struct SetPointsLeaderboardPublicResult {
 	std::optional<SetPointsLeaderboardPublicError> error;
 };
 
+struct SnEpochSchedule {
+	int64_t epoch{};
+	int64_t epoch_blocks{};
+	int64_t claim_open_offset_blocks{};
+	int64_t claim_ttl_epochs{};
+	int64_t claim_grace_epochs{};
+	int64_t end_block{};
+	int64_t claim_open_block{};
+	int64_t expiry_block{};
+	int64_t head_block{};
+	int64_t head_millis{};
+	int64_t end_millis{};
+	int64_t claim_open_millis{};
+	int64_t expiry_millis{};
+};
+
 struct SnClaimsResult {
 	std::optional<SnEpochClaimList> claims;
 	int64_t total_claimable_rao{};
 	int64_t current_epoch{};
 	int64_t block_number{};
 	std::optional<std::string> coldkey_ss58;
+	std::optional<SnEpochSchedule> schedule;
 	std::optional<SnError> error;
 };
 
@@ -3012,6 +3168,7 @@ struct SnHeadResult {
 
 struct SnPoolClaimArgs {
 	int64_t epoch{};
+	std::optional<std::string> legacy_coldkey;
 };
 
 struct SnPoolClaimError {
@@ -3048,6 +3205,8 @@ struct SnSetWalletError {
 struct SnSetWalletResult {
 	std::optional<SnWallet> wallet;
 	std::optional<SnSetWalletError> error;
+	std::optional<std::string> mapping_hash;
+	std::optional<int64_t> mapping_generation;
 };
 
 struct SnUnsignedTx {
@@ -3065,6 +3224,17 @@ struct SnValidateWalletResult {
 	bool banned{};
 	std::optional<std::string> message;
 	std::optional<SnError> error;
+};
+
+struct SnWalletMappingChallengeArgs {
+	std::optional<std::string> client_id;
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
+};
+
+struct SnWalletMappingChallengeResult {
+	std::string message{};
 };
 
 struct SocketRead {
@@ -3085,6 +3255,7 @@ struct SolanaPaymentIntentArgs {
 };
 
 struct SolanaPaymentIntentError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3120,6 +3291,7 @@ struct StripeCreateCheckoutSessionArgs {
 };
 
 struct StripeCreateCheckoutSessionError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3148,6 +3320,7 @@ struct StripeCreatePaymentIntentArgs {
 };
 
 struct StripeCreatePaymentIntentErr {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -3449,6 +3622,11 @@ struct VerifyServerKey {
 struct VerifyStorePurchaseResult {
 	std::string status{};
 	std::optional<std::string> expiry_time;
+};
+
+struct VlessLinkResult {
+	std::optional<VlessSettings> Settings;
+	std::string Error{};
 };
 
 struct WalletBalanceResult {
@@ -3819,6 +3997,8 @@ inline void to_json(nlohmann::json& j, const GetPayoutWalletIdResult& v);
 inline void from_json(const nlohmann::json& j, GetPayoutWalletIdResult& v);
 inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v);
 inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v);
+inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v);
+inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v);
 inline void to_json(nlohmann::json& j, const GetReferralNetworkError& v);
 inline void from_json(const nlohmann::json& j, GetReferralNetworkError& v);
 inline void to_json(nlohmann::json& j, const ReferralNetwork& v);
@@ -3891,6 +4071,8 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceKey& v);
 inline void from_json(const nlohmann::json& j, NetworkSpaceKey& v);
 inline void to_json(nlohmann::json& j, const SnChainSettings& v);
 inline void from_json(const nlohmann::json& j, SnChainSettings& v);
+inline void to_json(nlohmann::json& j, const VlessSettings& v);
+inline void from_json(const nlohmann::json& j, VlessSettings& v);
 inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v);
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v);
 inline void to_json(nlohmann::json& j, const NetworkUnblockLocationArgs& v);
@@ -3945,14 +4127,24 @@ inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
 inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v);
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v);
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v);
+inline void to_json(nlohmann::json& j, const ProviderAdmission& v);
+inline void from_json(const nlohmann::json& j, ProviderAdmission& v);
+inline void to_json(nlohmann::json& j, const ProviderAppearanceHistogram& v);
+inline void from_json(const nlohmann::json& j, ProviderAppearanceHistogram& v);
 inline void to_json(nlohmann::json& j, const ProviderFamilyTransportStatus& v);
 inline void from_json(const nlohmann::json& j, ProviderFamilyTransportStatus& v);
 inline void to_json(nlohmann::json& j, const ProviderGridPoint& v);
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v);
 inline void to_json(nlohmann::json& j, const ProviderIdentity& v);
 inline void from_json(const nlohmann::json& j, ProviderIdentity& v);
+inline void to_json(nlohmann::json& j, const ProviderRankingNumber& v);
+inline void from_json(const nlohmann::json& j, ProviderRankingNumber& v);
 inline void to_json(nlohmann::json& j, const ProviderSpec& v);
 inline void from_json(const nlohmann::json& j, ProviderSpec& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v);
+inline void to_json(nlohmann::json& j, const ProviderStatus& v);
+inline void from_json(const nlohmann::json& j, ProviderStatus& v);
 inline void to_json(nlohmann::json& j, const ProxyDeviceSettings& v);
 inline void from_json(const nlohmann::json& j, ProxyDeviceSettings& v);
 inline void to_json(nlohmann::json& j, const PublicAccountApiKey& v);
@@ -4027,6 +4219,8 @@ inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicError& v)
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicError& v);
 inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicResult& v);
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult& v);
+inline void to_json(nlohmann::json& j, const SnEpochSchedule& v);
+inline void from_json(const nlohmann::json& j, SnEpochSchedule& v);
 inline void to_json(nlohmann::json& j, const SnClaimsResult& v);
 inline void from_json(const nlohmann::json& j, SnClaimsResult& v);
 inline void to_json(nlohmann::json& j, const SnWallet& v);
@@ -4061,6 +4255,10 @@ inline void to_json(nlohmann::json& j, const SnUnsignedTx& v);
 inline void from_json(const nlohmann::json& j, SnUnsignedTx& v);
 inline void to_json(nlohmann::json& j, const SnValidateWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v);
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeArgs& v);
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeArgs& v);
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeResult& v);
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeResult& v);
 inline void to_json(nlohmann::json& j, const SocketRead& v);
 inline void from_json(const nlohmann::json& j, SocketRead& v);
 inline void to_json(nlohmann::json& j, const SocketTLSOptions& v);
@@ -4183,6 +4381,8 @@ inline void to_json(nlohmann::json& j, const VerifyServerKey& v);
 inline void from_json(const nlohmann::json& j, VerifyServerKey& v);
 inline void to_json(nlohmann::json& j, const VerifyStorePurchaseResult& v);
 inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v);
+inline void to_json(nlohmann::json& j, const VlessLinkResult& v);
+inline void from_json(const nlohmann::json& j, VlessLinkResult& v);
 inline void to_json(nlohmann::json& j, const WalletBalanceResult& v);
 inline void from_json(const nlohmann::json& j, WalletBalanceResult& v);
 inline void to_json(nlohmann::json& j, const WalletCircleInitError& v);
@@ -8385,6 +8585,9 @@ inline void to_json(nlohmann::json& j, const ExtenderShareDecodeResult& v) {
 	j["Count"] = v.Count;
 	j["HasSettings"] = v.HasSettings;
 	j["SettingsHost"] = v.SettingsHost;
+	if (v.ControlDohUrls) {
+		j["ControlDohUrls"] = *v.ControlDohUrls;
+	}
 }
 inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v) {
 	if (!j.is_object()) {
@@ -8410,6 +8613,11 @@ inline void from_json(const nlohmann::json& j, ExtenderShareDecodeResult& v) {
 	}
 	if (auto it = j.find("SettingsHost"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SettingsHost);
+	}
+	if (auto it = j.find("ControlDohUrls"); it != j.end() && !it->is_null()) {
+		StringList tmp{};
+		it->get_to(tmp);
+		v.ControlDohUrls = std::move(tmp);
 	}
 }
 
@@ -9685,6 +9893,31 @@ inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v) {
 		int64_t tmp{};
 		it->get_to(tmp);
 		v.limit = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v) {
+	j = nlohmann::json::object();
+	if (v.providers) {
+		j["providers"] = *v.providers;
+	}
+	if (v.truncated) {
+		j["truncated"] = *v.truncated;
+	}
+}
+inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("providers"); it != j.end() && !it->is_null()) {
+		ProviderStatusList tmp{};
+		it->get_to(tmp);
+		v.providers = std::move(tmp);
+	}
+	if (auto it = j.find("truncated"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.truncated = std::move(tmp);
 	}
 }
 
@@ -11124,6 +11357,151 @@ inline void from_json(const nlohmann::json& j, SnChainSettings& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const VlessSettings& v) {
+	j = nlohmann::json::object();
+	if (v.enabled) {
+		j["enabled"] = *v.enabled;
+	}
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+	if (v.port) {
+		j["port"] = *v.port;
+	}
+	if (v.id) {
+		j["id"] = *v.id;
+	}
+	if (v.flow) {
+		j["flow"] = *v.flow;
+	}
+	if (v.network) {
+		j["network"] = *v.network;
+	}
+	if (v.security) {
+		j["security"] = *v.security;
+	}
+	if (v.server_name) {
+		j["server_name"] = *v.server_name;
+	}
+	if (v.fingerprint) {
+		j["fingerprint"] = *v.fingerprint;
+	}
+	if (v.alpn) {
+		j["alpn"] = *v.alpn;
+	}
+	if (v.allow_insecure) {
+		j["allow_insecure"] = *v.allow_insecure;
+	}
+	if (v.public_key) {
+		j["public_key"] = *v.public_key;
+	}
+	if (v.short_id) {
+		j["short_id"] = *v.short_id;
+	}
+	if (v.spider_x) {
+		j["spider_x"] = *v.spider_x;
+	}
+	if (v.path) {
+		j["path"] = *v.path;
+	}
+	if (v.host) {
+		j["host"] = *v.host;
+	}
+}
+inline void from_json(const nlohmann::json& j, VlessSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.enabled = std::move(tmp);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+	if (auto it = j.find("port"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.port = std::move(tmp);
+	}
+	if (auto it = j.find("id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.id = std::move(tmp);
+	}
+	if (auto it = j.find("flow"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.flow = std::move(tmp);
+	}
+	if (auto it = j.find("network"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network = std::move(tmp);
+	}
+	if (auto it = j.find("security"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.security = std::move(tmp);
+	}
+	if (auto it = j.find("server_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.server_name = std::move(tmp);
+	}
+	if (auto it = j.find("fingerprint"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.fingerprint = std::move(tmp);
+	}
+	if (auto it = j.find("alpn"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.alpn = std::move(tmp);
+	}
+	if (auto it = j.find("allow_insecure"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.allow_insecure = std::move(tmp);
+	}
+	if (auto it = j.find("public_key"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.public_key = std::move(tmp);
+	}
+	if (auto it = j.find("short_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.short_id = std::move(tmp);
+	}
+	if (auto it = j.find("spider_x"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.spider_x = std::move(tmp);
+	}
+	if (auto it = j.find("path"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.path = std::move(tmp);
+	}
+	if (auto it = j.find("host"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.host = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	j = nlohmann::json::object();
 	if (v.env_secret) {
@@ -11179,6 +11557,15 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	}
 	if (v.extender_hosts) {
 		j["extender_hosts"] = *v.extender_hosts;
+	}
+	if (v.vless) {
+		j["vless"] = *v.vless;
+	}
+	if (v.control_doh_urls_ipv4) {
+		j["control_doh_urls_ipv4"] = *v.control_doh_urls_ipv4;
+	}
+	if (v.control_doh_urls_ipv6) {
+		j["control_doh_urls_ipv6"] = *v.control_doh_urls_ipv6;
 	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
@@ -11274,6 +11661,21 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::vector<std::string> tmp{};
 		it->get_to(tmp);
 		v.extender_hosts = std::move(tmp);
+	}
+	if (auto it = j.find("vless"); it != j.end() && !it->is_null()) {
+		VlessSettings tmp{};
+		it->get_to(tmp);
+		v.vless = std::move(tmp);
+	}
+	if (auto it = j.find("control_doh_urls_ipv4"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.control_doh_urls_ipv4 = std::move(tmp);
+	}
+	if (auto it = j.find("control_doh_urls_ipv6"); it != j.end() && !it->is_null()) {
+		std::vector<std::string> tmp{};
+		it->get_to(tmp);
+		v.control_doh_urls_ipv6 = std::move(tmp);
 	}
 }
 
@@ -11419,11 +11821,19 @@ inline void from_json(const nlohmann::json& j, OnboardingClickResult& v) {
 
 inline void to_json(nlohmann::json& j, const OnboardingError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, OnboardingError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -12303,6 +12713,72 @@ inline void from_json(const nlohmann::json& j, ProvideSecretKey& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderAdmission& v) {
+	j = nlohmann::json::object();
+	j["connected"] = v.connected;
+	j["location_valid"] = v.location_valid;
+	j["provide_public"] = v.provide_public;
+	j["reliability_ok"] = v.reliability_ok;
+	j["speed_test_done"] = v.speed_test_done;
+	j["egress"] = v.egress;
+	if (v.egress_measured_at) {
+		j["egress_measured_at"] = *v.egress_measured_at;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderAdmission& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("connected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.connected);
+	}
+	if (auto it = j.find("location_valid"); it != j.end() && !it->is_null()) {
+		it->get_to(v.location_valid);
+	}
+	if (auto it = j.find("provide_public"); it != j.end() && !it->is_null()) {
+		it->get_to(v.provide_public);
+	}
+	if (auto it = j.find("reliability_ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reliability_ok);
+	}
+	if (auto it = j.find("speed_test_done"); it != j.end() && !it->is_null()) {
+		it->get_to(v.speed_test_done);
+	}
+	if (auto it = j.find("egress"); it != j.end() && !it->is_null()) {
+		it->get_to(v.egress);
+	}
+	if (auto it = j.find("egress_measured_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.egress_measured_at = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderAppearanceHistogram& v) {
+	j = nlohmann::json::object();
+	j["start_minute"] = v.start_minute;
+	j["bucket_seconds"] = v.bucket_seconds;
+	if (v.appearances_per_minute) {
+		j["appearances_per_minute"] = *v.appearances_per_minute;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderAppearanceHistogram& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("start_minute"); it != j.end() && !it->is_null()) {
+		it->get_to(v.start_minute);
+	}
+	if (auto it = j.find("bucket_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.bucket_seconds);
+	}
+	if (auto it = j.find("appearances_per_minute"); it != j.end() && !it->is_null()) {
+		Int64List tmp{};
+		it->get_to(tmp);
+		v.appearances_per_minute = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderFamilyTransportStatus& v) {
 	j = nlohmann::json::object();
 	j["HasIpv4"] = v.HasIpv4;
@@ -12414,6 +12890,59 @@ inline void from_json(const nlohmann::json& j, ProviderIdentity& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderRankingNumber& v) {
+	j = nlohmann::json::object();
+	j["name"] = v.name;
+	j["has_value"] = v.has_value;
+	j["value"] = v.value;
+	j["has_minimum"] = v.has_minimum;
+	j["minimum"] = v.minimum;
+	j["has_maximum"] = v.has_maximum;
+	j["maximum"] = v.maximum;
+	j["passes"] = v.passes;
+	j["count"] = v.count;
+	j["total"] = v.total;
+	j["explanation"] = v.explanation;
+}
+inline void from_json(const nlohmann::json& j, ProviderRankingNumber& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.name);
+	}
+	if (auto it = j.find("has_value"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_value);
+	}
+	if (auto it = j.find("value"); it != j.end() && !it->is_null()) {
+		it->get_to(v.value);
+	}
+	if (auto it = j.find("has_minimum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_minimum);
+	}
+	if (auto it = j.find("minimum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.minimum);
+	}
+	if (auto it = j.find("has_maximum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_maximum);
+	}
+	if (auto it = j.find("maximum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.maximum);
+	}
+	if (auto it = j.find("passes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.passes);
+	}
+	if (auto it = j.find("count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.count);
+	}
+	if (auto it = j.find("total"); it != j.end() && !it->is_null()) {
+		it->get_to(v.total);
+	}
+	if (auto it = j.find("explanation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.explanation);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderSpec& v) {
 	j = nlohmann::json::object();
 	if (v.location_id) {
@@ -12452,6 +12981,96 @@ inline void from_json(const nlohmann::json& j, ProviderSpec& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.best_available = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v) {
+	j = nlohmann::json::object();
+	j["country_code"] = v.country_code;
+	j["country"] = v.country;
+	j["observed_country_code"] = v.observed_country_code;
+	j["explanation"] = v.explanation;
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("country_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.country_code);
+	}
+	if (auto it = j.find("country"); it != j.end() && !it->is_null()) {
+		it->get_to(v.country);
+	}
+	if (auto it = j.find("observed_country_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.observed_country_code);
+	}
+	if (auto it = j.find("explanation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.explanation);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderStatus& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+	j["reason"] = v.reason;
+	j["reason_text"] = v.reason_text;
+	if (v.admission) {
+		j["admission"] = *v.admission;
+	}
+	if (v.ranking) {
+		j["ranking"] = *v.ranking;
+	}
+	if (v.country) {
+		j["country"] = *v.country;
+	}
+	if (v.evaluate_time) {
+		j["evaluate_time"] = *v.evaluate_time;
+	}
+	if (v.appearances) {
+		j["appearances"] = *v.appearances;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason);
+	}
+	if (auto it = j.find("reason_text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason_text);
+	}
+	if (auto it = j.find("admission"); it != j.end() && !it->is_null()) {
+		ProviderAdmission tmp{};
+		it->get_to(tmp);
+		v.admission = std::move(tmp);
+	}
+	if (auto it = j.find("ranking"); it != j.end() && !it->is_null()) {
+		ProviderRankingNumberList tmp{};
+		it->get_to(tmp);
+		v.ranking = std::move(tmp);
+	}
+	if (auto it = j.find("country"); it != j.end() && !it->is_null()) {
+		ProviderStatusCountry tmp{};
+		it->get_to(tmp);
+		v.country = std::move(tmp);
+	}
+	if (auto it = j.find("evaluate_time"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.evaluate_time = std::move(tmp);
+	}
+	if (auto it = j.find("appearances"); it != j.end() && !it->is_null()) {
+		ProviderAppearanceHistogram tmp{};
+		it->get_to(tmp);
+		v.appearances = std::move(tmp);
 	}
 }
 
@@ -13408,6 +14027,67 @@ inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult&
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnEpochSchedule& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["epoch_blocks"] = v.epoch_blocks;
+	j["claim_open_offset_blocks"] = v.claim_open_offset_blocks;
+	j["claim_ttl_epochs"] = v.claim_ttl_epochs;
+	j["claim_grace_epochs"] = v.claim_grace_epochs;
+	j["end_block"] = v.end_block;
+	j["claim_open_block"] = v.claim_open_block;
+	j["expiry_block"] = v.expiry_block;
+	j["head_block"] = v.head_block;
+	j["head_millis"] = v.head_millis;
+	j["end_millis"] = v.end_millis;
+	j["claim_open_millis"] = v.claim_open_millis;
+	j["expiry_millis"] = v.expiry_millis;
+}
+inline void from_json(const nlohmann::json& j, SnEpochSchedule& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("epoch_blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch_blocks);
+	}
+	if (auto it = j.find("claim_open_offset_blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_open_offset_blocks);
+	}
+	if (auto it = j.find("claim_ttl_epochs"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_ttl_epochs);
+	}
+	if (auto it = j.find("claim_grace_epochs"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_grace_epochs);
+	}
+	if (auto it = j.find("end_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.end_block);
+	}
+	if (auto it = j.find("claim_open_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_open_block);
+	}
+	if (auto it = j.find("expiry_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expiry_block);
+	}
+	if (auto it = j.find("head_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.head_block);
+	}
+	if (auto it = j.find("head_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.head_millis);
+	}
+	if (auto it = j.find("end_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.end_millis);
+	}
+	if (auto it = j.find("claim_open_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_open_millis);
+	}
+	if (auto it = j.find("expiry_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expiry_millis);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnClaimsResult& v) {
 	j = nlohmann::json::object();
 	if (v.claims) {
@@ -13418,6 +14098,9 @@ inline void to_json(nlohmann::json& j, const SnClaimsResult& v) {
 	j["block_number"] = v.block_number;
 	if (v.coldkey_ss58) {
 		j["coldkey_ss58"] = *v.coldkey_ss58;
+	}
+	if (v.schedule) {
+		j["schedule"] = *v.schedule;
 	}
 	if (v.error) {
 		j["error"] = *v.error;
@@ -13445,6 +14128,11 @@ inline void from_json(const nlohmann::json& j, SnClaimsResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.coldkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("schedule"); it != j.end() && !it->is_null()) {
+		SnEpochSchedule tmp{};
+		it->get_to(tmp);
+		v.schedule = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};
@@ -13820,6 +14508,9 @@ inline void from_json(const nlohmann::json& j, SnHeadResult& v) {
 inline void to_json(nlohmann::json& j, const SnPoolClaimArgs& v) {
 	j = nlohmann::json::object();
 	j["epoch"] = v.epoch;
+	if (v.legacy_coldkey) {
+		j["legacy_coldkey"] = *v.legacy_coldkey;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v) {
 	if (!j.is_object()) {
@@ -13827,6 +14518,11 @@ inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v) {
 	}
 	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
 		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("legacy_coldkey"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.legacy_coldkey = std::move(tmp);
 	}
 }
 
@@ -13978,6 +14674,12 @@ inline void to_json(nlohmann::json& j, const SnSetWalletResult& v) {
 	if (v.error) {
 		j["error"] = *v.error;
 	}
+	if (v.mapping_hash) {
+		j["mapping_hash"] = *v.mapping_hash;
+	}
+	if (v.mapping_generation) {
+		j["mapping_generation"] = *v.mapping_generation;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnSetWalletResult& v) {
 	if (!j.is_object()) {
@@ -13992,6 +14694,16 @@ inline void from_json(const nlohmann::json& j, SnSetWalletResult& v) {
 		SnSetWalletError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+	if (auto it = j.find("mapping_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.mapping_hash = std::move(tmp);
+	}
+	if (auto it = j.find("mapping_generation"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.mapping_generation = std::move(tmp);
 	}
 }
 
@@ -14062,6 +14774,48 @@ inline void from_json(const nlohmann::json& j, SnValidateWalletResult& v) {
 		SnError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeArgs& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+}
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnWalletMappingChallengeResult& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+}
+inline void from_json(const nlohmann::json& j, SnWalletMappingChallengeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
 	}
 }
 
@@ -14142,11 +14896,19 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentIntentArgs& v) {
 
 inline void to_json(nlohmann::json& j, const SolanaPaymentIntentError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -14323,11 +15085,19 @@ inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& 
 
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -14449,11 +15219,19 @@ inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentArgs& v)
 
 inline void to_json(nlohmann::json& j, const StripeCreatePaymentIntentErr& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreatePaymentIntentErr& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -15810,6 +16588,27 @@ inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const VlessLinkResult& v) {
+	j = nlohmann::json::object();
+	if (v.Settings) {
+		j["Settings"] = *v.Settings;
+	}
+	j["Error"] = v.Error;
+}
+inline void from_json(const nlohmann::json& j, VlessLinkResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Settings"); it != j.end() && !it->is_null()) {
+		VlessSettings tmp{};
+		it->get_to(tmp);
+		v.Settings = std::move(tmp);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const WalletBalanceResult& v) {
 	j = nlohmann::json::object();
 	if (v.wallet_info) {
@@ -16165,6 +16964,7 @@ using GetNetworkReliabilityCallback = std::function<void(std::optional<GetNetwor
 using GetNetworkUserCallback = std::function<void(std::optional<GetNetworkUserResult> result, std::optional<std::string> err_param)>;
 using GetPayoutWalletCallback = std::function<void(std::optional<GetPayoutWalletIdResult> result, std::optional<std::string> err_param)>;
 using GetPointsLeaderboardCallback = std::function<void(std::optional<PointsLeaderboardResult> result, std::optional<std::string> err_param)>;
+using GetProviderStatusCallback = std::function<void(std::optional<GetProviderStatusResult> result, std::optional<std::string> err_param)>;
 using GetReferralNetworkCallback = std::function<void(std::optional<GetReferralNetworkResult> result, std::optional<std::string> err_param)>;
 using GetTransferStatsCallback = std::function<void(std::optional<TransferStatsResult> result, std::optional<std::string> err_param)>;
 using GridListener = std::function<void()>;
@@ -16209,6 +17009,7 @@ using ProvideNetworkModeChangeListener = std::function<void(std::string provide_
 using ProvidePausedChangeListener = std::function<void(bool provide_paused)>;
 using ProvideSecretKeysListener = std::function<void(std::optional<ProvideSecretKeyList> provide_secret_key_list)>;
 using ProviderIdentityChangeListener = std::function<void()>;
+using ProviderStatusListener = std::function<void()>;
 using ProviderTransportSettingsChangeListener = std::function<void(std::optional<TransportSettings> transport_settings)>;
 using ProviderTransportStatusChangeListener = std::function<void(std::optional<TransportStatus> transport_status)>;
 using PurchaseConfirmationListener = std::function<void(std::string state)>;
@@ -16538,6 +17339,7 @@ public:
 	void getPayoutWallet(GetPayoutWalletCallback callback) const;
 	void getPointsLeaderboard(const std::optional<GetPointsLeaderboardArgs>& args, GetPointsLeaderboardCallback callback) const;
 	void getProviderLocations(FindLocationsCallback callback) const;
+	void getProviderStatus(GetProviderStatusCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
 	void listApiKeys(ListApiKeysCallback callback) const;
@@ -16575,6 +17377,7 @@ public:
 	void snSetWallet(const std::optional<SnSetWalletArgs>& args, SnSetWalletCallback callback) const;
 	std::optional<SnSetWalletResult> snSetWalletSync(const std::optional<SnSetWalletArgs>& args) const;
 	void snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const;
+	std::optional<SnWalletMappingChallengeResult> snWalletMappingChallengeSync(const std::optional<SnWalletMappingChallengeArgs>& args) const;
 	void startJwtRefresh() const;
 	void stripeCreateCustomerPortal(const std::optional<StripeCreateCustomerPortalArgs>& args, StripeCreateCustomerPortalCallback callback) const;
 	void stripePaymentSheet(const std::optional<StripePaymentSheetArgs>& args, StripePaymentSheetCallback callback) const;
@@ -16770,6 +17573,7 @@ public:
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
+	void closeProviderStatusViewController(const ProviderStatusViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	void disableSubprotocol(int64_t subprotocol_id) const;
@@ -16821,6 +17625,7 @@ public:
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ProviderLocationsViewController openProviderLocationsViewController() const;
+	ProviderStatusViewController openProviderStatusViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -16937,6 +17742,7 @@ public:
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
+	void closeProviderStatusViewController(const ProviderStatusViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	bool dropExit(const std::string& exit_client_id) const;
@@ -16972,6 +17778,7 @@ public:
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ProviderLocationsViewController openProviderLocationsViewController() const;
+	ProviderStatusViewController openProviderStatusViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -17244,6 +18051,9 @@ public:
 	bool getBundled() const;
 	std::string getConfiguredApiUrl() const;
 	std::string getConfiguredPlatformUrl() const;
+	std::optional<StringList> getControlDohUrls() const;
+	std::optional<StringList> getControlDohUrlsIpv4() const;
+	std::optional<StringList> getControlDohUrlsIpv6() const;
 	std::string getEnvName() const;
 	std::string getEnvSecret() const;
 	std::string getExtenderDnsName() const;
@@ -17264,12 +18074,17 @@ public:
 	std::string getPlatformUrlV6() const;
 	bool getSsoGoogle() const;
 	std::string getStore() const;
+	std::optional<VlessSettings> getVlessSettings() const;
 	std::string getWallet() const;
 	bool hasPlatformFamilyUrls() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
+	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+	std::string setControlDohUrls(const std::optional<StringList>& doh_urls) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setExtenderGossipMode(const std::string& mode) const;
+	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+	std::string setVlessSettings(const std::optional<VlessSettings>& settings) const;
 	std::string toJson() const;
 };
 
@@ -17400,6 +18215,31 @@ public:
 	void setSelectedClientId(const std::string& client_id) const;
 	void start() const;
 	void stepSelection(int64_t steps) const;
+	void stop() const;
+};
+
+class ProviderStatusViewController final : public detail::Handle {
+public:
+	ProviderStatusViewController() = default;
+	explicit ProviderStatusViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addProviderStatusListener(ProviderStatusListener listener) const;
+	void close() const;
+	std::optional<ProviderAdmission> getAdmission() const;
+	int64_t getAppearanceMaxCount() const;
+	int64_t getAppearanceTotal() const;
+	std::optional<ProviderAppearanceHistogram> getAppearances() const;
+	std::optional<Int64List> getAppearancesPerMinute() const;
+	bool getIsLoaded() const;
+	bool getIsLoading() const;
+	std::string getLastFetchError() const;
+	std::optional<ProviderStatus> getProviderStatus() const;
+	std::optional<ProviderStatusList> getProviderStatuses() const;
+	std::optional<ProviderRankingNumberList> getRankingNumbers() const;
+	std::string getReason() const;
+	std::string getReasonText() const;
+	bool getTruncated() const;
+	void refresh() const;
+	void start() const;
 	void stop() const;
 };
 
@@ -19757,6 +20597,42 @@ inline void oneshot_get_points_leaderboard(void* user_data, const char* result_j
 	delete f;
 }
 
+inline void retained_get_provider_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<GetProviderStatusCallback*>(user_data);
+	try {
+		std::optional<GetProviderStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<GetProviderStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_get_provider_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<GetProviderStatusCallback*>(user_data);
+	try {
+		std::optional<GetProviderStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<GetProviderStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_get_referral_network(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<GetReferralNetworkCallback*>(user_data);
 	try {
@@ -20908,6 +21784,26 @@ inline void retained_provider_identity_change(void* user_data) {
 }
 inline void oneshot_provider_identity_change(void* user_data) {
 	auto* f = static_cast<ProviderIdentityChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_provider_status(void* user_data) {
+	auto* f = static_cast<ProviderStatusListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_provider_status(void* user_data) {
+	auto* f = static_cast<ProviderStatusListener*>(user_data);
 	try {
 		(*f)();
 	} catch (const std::exception& e) {
@@ -24611,6 +25507,10 @@ inline void Api::getProviderLocations(FindLocationsCallback callback) const {
 	auto* callback_fn = callback ? new FindLocationsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_provider_locations(handle(), callback_fn ? &detail::oneshot_find_locations : nullptr, callback_fn);
 }
+inline void Api::getProviderStatus(GetProviderStatusCallback callback) const {
+	auto* callback_fn = callback ? new GetProviderStatusCallback(std::move(callback)) : nullptr;
+	urnet_api_get_provider_status(handle(), callback_fn ? &detail::oneshot_get_provider_status : nullptr, callback_fn);
+}
 inline void Api::getReferralNetwork(GetReferralNetworkCallback callback) const {
 	auto* callback_fn = callback ? new GetReferralNetworkCallback(std::move(callback)) : nullptr;
 	urnet_api_get_referral_network(handle(), callback_fn ? &detail::oneshot_get_referral_network : nullptr, callback_fn);
@@ -24932,6 +25832,24 @@ inline std::optional<SnSetWalletResult> Api::snSetWalletSync(const std::optional
 inline void Api::snValidateWallet(const std::string& address, SnValidateWalletCallback callback) const {
 	auto* callback_fn = callback ? new SnValidateWalletCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_validate_wallet(handle(), address.c_str(), callback_fn ? &detail::oneshot_sn_validate_wallet : nullptr, callback_fn);
+}
+inline std::optional<SnWalletMappingChallengeResult> Api::snWalletMappingChallengeSync(const std::optional<SnWalletMappingChallengeArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_wallet_mapping_challenge_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnWalletMappingChallengeResult>(r_s->c_str());
 }
 inline void Api::startJwtRefresh() const {
 	urnet_api_start_jwt_refresh(handle());
@@ -25775,6 +26693,9 @@ inline void DeviceLocal::closePostQuantumIdentityViewController(const PostQuantu
 inline void DeviceLocal::closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const {
 	urnet_device_local_close_provider_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceLocal::closeProviderStatusViewController(const ProviderStatusViewController& vc) const {
+	urnet_device_local_close_provider_status_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -26046,6 +26967,10 @@ inline ContractDetailsViewController DeviceLocal::openProviderContractDetailsVie
 }
 inline ProviderLocationsViewController DeviceLocal::openProviderLocationsViewController() const {
 	ProviderLocationsViewController r(urnet_device_local_open_provider_locations_view_controller(handle()));
+	return r;
+}
+inline ProviderStatusViewController DeviceLocal::openProviderStatusViewController() const {
+	ProviderStatusViewController r(urnet_device_local_open_provider_status_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceLocal::openReferralCodeViewController() const {
@@ -26519,6 +27444,9 @@ inline void DeviceRemote::closePostQuantumIdentityViewController(const PostQuant
 inline void DeviceRemote::closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const {
 	urnet_device_remote_close_provider_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closeProviderStatusViewController(const ProviderStatusViewController& vc) const {
+	urnet_device_remote_close_provider_status_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -26703,6 +27631,10 @@ inline ContractDetailsViewController DeviceRemote::openProviderContractDetailsVi
 }
 inline ProviderLocationsViewController DeviceRemote::openProviderLocationsViewController() const {
 	ProviderLocationsViewController r(urnet_device_remote_open_provider_locations_view_controller(handle()));
+	return r;
+}
+inline ProviderStatusViewController DeviceRemote::openProviderStatusViewController() const {
+	ProviderStatusViewController r(urnet_device_remote_open_provider_status_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceRemote::openReferralCodeViewController() const {
@@ -27946,6 +28878,30 @@ inline std::string NetworkSpace::getConfiguredPlatformUrl() const {
 	char* r_c = urnet_network_space_get_configured_platform_url(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<StringList> NetworkSpace::getControlDohUrls() const {
+	char* r_c = urnet_network_space_get_control_doh_urls(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> NetworkSpace::getControlDohUrlsIpv4() const {
+	char* r_c = urnet_network_space_get_control_doh_urls_ipv4(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> NetworkSpace::getControlDohUrlsIpv6() const {
+	char* r_c = urnet_network_space_get_control_doh_urls_ipv6(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
 inline std::string NetworkSpace::getEnvName() const {
 	char* r_c = urnet_network_space_get_env_name(handle());
 	return detail::takeString(r_c);
@@ -28046,6 +29002,14 @@ inline std::string NetworkSpace::getStore() const {
 	char* r_c = urnet_network_space_get_store(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<VlessSettings> NetworkSpace::getVlessSettings() const {
+	char* r_c = urnet_network_space_get_vless_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<VlessSettings>(r_s->c_str());
+}
 inline std::string NetworkSpace::getWallet() const {
 	char* r_c = urnet_network_space_get_wallet(handle());
 	return detail::takeString(r_c);
@@ -28066,11 +29030,31 @@ inline std::string NetworkSpace::serviceUrl(const std::string& scheme, const std
 	char* r_c = urnet_network_space_service_url(handle(), scheme.c_str(), service.c_str());
 	return detail::takeString(r_c);
 }
+inline std::string NetworkSpace::setControlDohUrls(const std::optional<StringList>& doh_urls) const {
+	std::string doh_urls_json;
+	const char* doh_urls_c = nullptr;
+	if (doh_urls) {
+		doh_urls_json = nlohmann::json(*doh_urls).dump();
+		doh_urls_c = doh_urls_json.c_str();
+	}
+	char* r_c = urnet_network_space_set_control_doh_urls(handle(), doh_urls_c);
+	return detail::takeString(r_c);
+}
 inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
 	urnet_network_space_set_control_ip_family_policy(handle(), policy);
 }
 inline void NetworkSpace::setExtenderGossipMode(const std::string& mode) const {
 	urnet_network_space_set_extender_gossip_mode(handle(), mode.c_str());
+}
+inline std::string NetworkSpace::setVlessSettings(const std::optional<VlessSettings>& settings) const {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_network_space_set_vless_settings(handle(), settings_c);
+	return detail::takeString(r_c);
 }
 inline std::string NetworkSpace::toJson() const {
 	char* err_c = nullptr;
@@ -28522,6 +29506,109 @@ inline void ProviderLocationsViewController::stepSelection(int64_t steps) const 
 }
 inline void ProviderLocationsViewController::stop() const {
 	urnet_provider_locations_view_controller_stop(handle());
+}
+inline Sub ProviderStatusViewController::addProviderStatusListener(ProviderStatusListener listener) const {
+	std::shared_ptr<ProviderStatusListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ProviderStatusListener>(std::move(listener));
+	}
+	Sub r(urnet_provider_status_view_controller_add_provider_status_listener(handle(), listener_fn ? &detail::retained_provider_status : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ProviderStatusViewController::close() const {
+	urnet_provider_status_view_controller_close(handle());
+}
+inline std::optional<ProviderAdmission> ProviderStatusViewController::getAdmission() const {
+	char* r_c = urnet_provider_status_view_controller_get_admission(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderAdmission>(r_s->c_str());
+}
+inline int64_t ProviderStatusViewController::getAppearanceMaxCount() const {
+	int64_t r = urnet_provider_status_view_controller_get_appearance_max_count(handle());
+	return r;
+}
+inline int64_t ProviderStatusViewController::getAppearanceTotal() const {
+	int64_t r = urnet_provider_status_view_controller_get_appearance_total(handle());
+	return r;
+}
+inline std::optional<ProviderAppearanceHistogram> ProviderStatusViewController::getAppearances() const {
+	char* r_c = urnet_provider_status_view_controller_get_appearances(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderAppearanceHistogram>(r_s->c_str());
+}
+inline std::optional<Int64List> ProviderStatusViewController::getAppearancesPerMinute() const {
+	char* r_c = urnet_provider_status_view_controller_get_appearances_per_minute(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<Int64List>(r_s->c_str());
+}
+inline bool ProviderStatusViewController::getIsLoaded() const {
+	bool r = urnet_provider_status_view_controller_get_is_loaded(handle());
+	return r;
+}
+inline bool ProviderStatusViewController::getIsLoading() const {
+	bool r = urnet_provider_status_view_controller_get_is_loading(handle());
+	return r;
+}
+inline std::string ProviderStatusViewController::getLastFetchError() const {
+	char* r_c = urnet_provider_status_view_controller_get_last_fetch_error(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<ProviderStatus> ProviderStatusViewController::getProviderStatus() const {
+	char* r_c = urnet_provider_status_view_controller_get_provider_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderStatus>(r_s->c_str());
+}
+inline std::optional<ProviderStatusList> ProviderStatusViewController::getProviderStatuses() const {
+	char* r_c = urnet_provider_status_view_controller_get_provider_statuses(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderStatusList>(r_s->c_str());
+}
+inline std::optional<ProviderRankingNumberList> ProviderStatusViewController::getRankingNumbers() const {
+	char* r_c = urnet_provider_status_view_controller_get_ranking_numbers(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderRankingNumberList>(r_s->c_str());
+}
+inline std::string ProviderStatusViewController::getReason() const {
+	char* r_c = urnet_provider_status_view_controller_get_reason(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ProviderStatusViewController::getReasonText() const {
+	char* r_c = urnet_provider_status_view_controller_get_reason_text(handle());
+	return detail::takeString(r_c);
+}
+inline bool ProviderStatusViewController::getTruncated() const {
+	bool r = urnet_provider_status_view_controller_get_truncated(handle());
+	return r;
+}
+inline void ProviderStatusViewController::refresh() const {
+	urnet_provider_status_view_controller_refresh(handle());
+}
+inline void ProviderStatusViewController::start() const {
+	urnet_provider_status_view_controller_start(handle());
+}
+inline void ProviderStatusViewController::stop() const {
+	urnet_provider_status_view_controller_stop(handle());
 }
 inline void ProxyDevice::cancel() const {
 	urnet_proxy_device_cancel(handle());
@@ -29559,6 +30646,9 @@ inline bool isValidPaymentReference(const std::string& s) {
 	bool r = urnet_is_valid_payment_reference(s.c_str());
 	return r;
 }
+inline void logAppInfo(const std::string& tag, const std::string& message) {
+	urnet_log_app_info(tag.c_str(), message.c_str());
+}
 inline std::optional<LogFileInfoList> logInventory() {
 	char* r_c = urnet_log_inventory();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -29885,6 +30975,14 @@ inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::s
 	NetworkSpace r(urnet_new_urls_network_space(api_url.c_str(), platform_url.c_str()));
 	return r;
 }
+inline std::optional<VlessSettings> newVlessSettings() {
+	char* r_c = urnet_new_vless_settings();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<VlessSettings>(r_s->c_str());
+}
 inline std::optional<WalletCircleTransferOutArgs> newWalletCircleTransferOutArgs(const std::string& to_address, int64_t amount_usdc_nano_cents, bool terms) {
 	char* r_c = urnet_new_wallet_circle_transfer_out_args(to_address.c_str(), amount_usdc_nano_cents, terms);
 	auto r_s = detail::takeStringOpt(r_c);
@@ -30003,6 +31101,14 @@ inline int64_t parseMessageRouteMode(const std::string& value) {
 	}
 	return r;
 }
+inline std::optional<VlessLinkResult> parseVlessLink(const std::string& link) {
+	char* r_c = urnet_parse_vless_link(link.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<VlessLinkResult>(r_s->c_str());
+}
 inline std::optional<PointsLeaderboardKey> pointsLeaderboardKeyOf(const std::optional<PointsLeaderboardRow>& row) {
 	std::string row_json;
 	const char* row_c = nullptr;
@@ -30040,6 +31146,14 @@ inline int64_t purchaseReportBackoffMillis(int64_t attempt) {
 inline std::string recordTunnelRecoveryStage(const std::string& stage, const std::string& result, bool intended, bool consumer_present, bool has_location, int64_t provider_count, int64_t generation) {
 	char* r_c = urnet_record_tunnel_recovery_stage(stage.c_str(), result.c_str(), intended, consumer_present, has_location, provider_count, generation);
 	return detail::takeString(r_c);
+}
+inline std::optional<StringList> regionalControlDohUrls(const std::string& country_code) {
+	char* r_c = urnet_regional_control_doh_urls(country_code.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
 }
 inline void reportMemoryTrimLevel(int64_t level) {
 	urnet_report_memory_trim_level(level);
@@ -30138,6 +31252,9 @@ inline void setMemoryProfileRate(int64_t byte_count) {
 }
 inline void setMessagePoolMemoryTargets(int64_t packet_pool_byte_count, int64_t large_object_pool_byte_count) {
 	urnet_set_message_pool_memory_targets(packet_pool_byte_count, large_object_pool_byte_count);
+}
+inline void setNetworkCountryCode(const std::string& country_code) {
+	urnet_set_network_country_code(country_code.c_str());
 }
 inline bool setTransferDiagnosticSnapshotsEnabled(bool enabled) {
 	bool r = urnet_set_transfer_diagnostic_snapshots_enabled(enabled);
@@ -30294,6 +31411,11 @@ inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);
 	return r;
 }
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+inline std::string validateControlDohUrl(const std::string& doh_url) {
+	char* r_c = urnet_validate_control_doh_url(doh_url.c_str());
+	return detail::takeString(r_c);
+}
 inline std::optional<EmojiTagValidation> validateEmojiTag(const std::string& tag) {
 	char* r_c = urnet_validate_emoji_tag(tag.c_str());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -30306,6 +31428,17 @@ inline bool validateSs58(const std::string& address) {
 	bool r = urnet_validate_ss58(address.c_str());
 	return r;
 }
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
+inline std::string validateVlessSettings(const std::optional<VlessSettings>& settings) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_validate_vless_settings(settings_c);
+	return detail::takeString(r_c);
+}
 inline bool verifyPayoutProofHex(const std::string& root_hex, const std::string& leaf_hex, const std::optional<StringList>& proof_hex) {
 	std::string proof_hex_json;
 	const char* proof_hex_c = nullptr;
@@ -30315,6 +31448,48 @@ inline bool verifyPayoutProofHex(const std::string& root_hex, const std::string&
 	}
 	bool r = urnet_verify_payout_proof_hex(root_hex.c_str(), leaf_hex.c_str(), proof_hex_c);
 	return r;
+}
+inline std::optional<StringList> vlessFingerprints() {
+	char* r_c = urnet_vless_fingerprints();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> vlessFlows() {
+	char* r_c = urnet_vless_flows();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> vlessNetworks() {
+	char* r_c = urnet_vless_networks();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> vlessSecurities() {
+	char* r_c = urnet_vless_securities();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::string vlessSettingsLink(const std::optional<VlessSettings>& settings) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_vless_settings_link(settings_c);
+	return detail::takeString(r_c);
 }
 inline void writeHeapProfile(const std::string& path) {
 	char* err_c = nullptr;

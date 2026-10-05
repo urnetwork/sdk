@@ -111,6 +111,19 @@ type NetworkSpaceValues struct {
 	// the mesh deliver -- which is what separates them from the legacy
 	// `NetExtender`, whose single address overrides everything.
 	ExtenderHosts []string `json:"extender_hosts,omitempty"`
+
+	// A VLESS server the client strategy also dials through (vless_settings.go).
+	// Nil, off or invalid is a space without VLESS. Applied in place like the
+	// extender values.
+	Vless *VlessSettings `json:"vless,omitempty"`
+
+	// Bootstrap DoH servers for the space's own names (control_doh.go):
+	// `https://<ip literal>/<path>` urls of each family, tried ahead of the
+	// default DoH servers by the internal DoH resolution and the extender
+	// bootstrap. Empty is the defaults alone. Applied in place like the
+	// extender values.
+	ControlDohUrlsIpv4 []string `json:"control_doh_urls_ipv4,omitempty"`
+	ControlDohUrlsIpv6 []string `json:"control_doh_urls_ipv6,omitempty"`
 }
 
 // The configured manual hosts of a space, trimmed and without the blanks a ui
@@ -216,7 +229,9 @@ type NetworkSpace struct {
 	// provider's family-pinned transports seed their direct-only strategies
 	// from it (connect.NewDirectClientStrategy), so a pinned dial carries the
 	// same tls, resolver and logging configuration as the shared strategy
-	// minus the extenders and proxy.
+	// minus the extenders and proxy. A strategy derived from it takes the DoH
+	// settings in force instead of the ones here, which a bootstrap DoH
+	// change replaces (see derivedClientStrategySettings).
 	clientStrategySettings *connect.ClientStrategySettings
 	asyncLocalState        *AsyncLocalState
 	api                    *Api
@@ -235,8 +250,9 @@ type NetworkSpace struct {
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
 	// change restarts in place (K6), the attestor installed on that client,
-	// and the extender fields of `values`, which that change rewrites. Every
-	// other field of `values` is written once at construction.
+	// and the extender, VLESS and bootstrap DoH fields of `values`, which a
+	// settings change rewrites. Every other field of `values` is written once
+	// at construction.
 	stateLock sync.Mutex
 	closed    bool
 	// The attesting provider of the device that provides in this space, and
@@ -284,14 +300,16 @@ func (self *NetworkSpace) getNetworkSpaceManager() *NetworkSpaceManager {
 	return self.networkSpaceManager
 }
 
-// updateExtenderValues is the one write path for the extender settings (K6,
-// K7). It runs the change through the owning manager, which persists the whole
-// value set and routes it back here in place, so the space -- and every device
-// and view controller bound to it -- survives the save. A space with no
-// manager applies the change to itself; there is nothing to persist it to.
+// updateInPlaceValues is the one write path for the values a running space
+// takes in place: the extender settings (K6, K7), the VLESS server and the
+// bootstrap DoH servers. It runs the change through the owning manager, which
+// persists the whole value set and routes it back here in place, so the space
+// -- and every device and view controller bound to it -- survives the save. A
+// space with no manager applies the change to itself; there is nothing to
+// persist it to.
 //
 // Returns whether anything changed.
-func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceValues)) bool {
+func (self *NetworkSpace) updateInPlaceValues(apply func(values *NetworkSpaceValues)) bool {
 	// A change that resolves to nothing stops here. `updateNetworkSpace`
 	// produces a new space generation whatever it is handed -- the manager's
 	// stale-generation rules depend on it -- and a settings screen saving an
@@ -299,7 +317,7 @@ func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceVa
 	previousValues := self.valuesCopy()
 	values := previousValues
 	apply(&values)
-	if !extenderValuesChanged(&self.key, &previousValues, &values) {
+	if !inPlaceValuesChanged(&self.key, &previousValues, &values) {
 		return false
 	}
 	if networkSpaceManager := self.getNetworkSpaceManager(); networkSpaceManager != nil {
@@ -310,7 +328,59 @@ func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceVa
 		key := self.key
 		return networkSpaceManager.updateNetworkSpace(&key, apply) != nil
 	}
-	return self.applyExtenderValues(&values)
+	return self.applyInPlaceValues(&values)
+}
+
+// Applies the values a running space takes in place, each part only when it
+// changed. Returns whether anything changed. The DoH servers go first, so an
+// extender network client the extender values restart bootstraps over them.
+func (self *NetworkSpace) applyInPlaceValues(values *NetworkSpaceValues) bool {
+	controlDohChanged := self.applyControlDohValues(values)
+	vlessChanged := self.applyVlessValues(values)
+	extenderChanged := self.applyExtenderValues(values)
+	return controlDohChanged || vlessChanged || extenderChanged
+}
+
+// Replaces the space's bootstrap DoH servers and the client strategy's DoH
+// settings in place: the internal DoH cache is swapped and the extender
+// bootstrap queries the new servers from its next pass. Returns whether the
+// servers changed.
+func (self *NetworkSpace) applyControlDohValues(values *NetworkSpaceValues) bool {
+	changed, closed := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !controlDohValuesChanged(&self.values, values) {
+			return false, self.closed
+		}
+		self.values.ControlDohUrlsIpv4 = slices.Clone(values.ControlDohUrlsIpv4)
+		self.values.ControlDohUrlsIpv6 = slices.Clone(values.ControlDohUrlsIpv6)
+		return true, self.closed
+	}()
+	if !changed || closed {
+		return changed
+	}
+	current := self.valuesCopy()
+	self.clientStrategy.SetInternalDohSettings(spaceControlDohSettings(&current))
+	return true
+}
+
+// Replaces the space's VLESS settings and the client strategy's VLESS dialer
+// in place. Returns whether the settings changed.
+func (self *NetworkSpace) applyVlessValues(values *NetworkSpaceValues) bool {
+	changed, closed := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !vlessValuesChanged(&self.values, values) {
+			return false, self.closed
+		}
+		self.values.Vless = values.Vless.copy()
+		return true, self.closed
+	}()
+	if !changed || closed {
+		return changed
+	}
+	self.clientStrategy.SetVlessConfigs(spaceVlessConfigs(self.valuesCopy().Vless))
+	return true
 }
 
 // The node this space runs right now, nil when it runs none (D5, G2).
@@ -487,6 +557,10 @@ func newNetworkSpaceWithConnectSettings(
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	clientStrategySettings.AltUrl = altUrl
+	// the VLESS server, when the space names one that is on and valid
+	clientStrategySettings.VlessConfigs = spaceVlessConfigs(values.Vless)
+	// the bootstrap DoH servers ahead of the defaults, when the space names any
+	clientStrategySettings.DohSettings = spaceControlDohSettings(&values)
 
 	var asyncLocalState *AsyncLocalState
 	if storagePath != "" {
@@ -871,7 +945,7 @@ func NewPlatformNetworkSpace(
 // DeviceLocal explicitly closes this private strategy after those joins. It
 // reuses only immutable settings and the shared read-only extender directory.
 func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.MemoryTarget) *connect.ClientStrategy {
-	settings := *self.clientStrategySettings
+	settings := *self.derivedClientStrategySettings()
 	dohSettings := settings.DohSettings
 	if dohSettings == nil {
 		dohSettings = connect.DefaultDohSettings()
@@ -883,7 +957,20 @@ func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.Memor
 	if customExtenders := self.clientStrategy.CustomExtenders(); len(customExtenders) > 0 {
 		strategy.SetCustomExtenders(customExtenders)
 	}
+	// the VLESS server in force now, which a settings change may have
+	// replaced since the shared strategy was built
+	strategy.SetVlessConfigs(self.clientStrategy.VlessConfigs())
 	return strategy
+}
+
+// The settings a strategy derived from the space's is built from: a hosted
+// device's private strategy and a provider's direct ones. They are what the
+// space's strategy was built from, with the DoH settings that strategy has in
+// force now, which a bootstrap DoH change replaces in place.
+func (self *NetworkSpace) derivedClientStrategySettings() *connect.ClientStrategySettings {
+	settings := *self.clientStrategySettings
+	settings.DohSettings = self.clientStrategy.DohSettings()
+	return &settings
 }
 
 func testing_newNetworkSpace(ctx context.Context) (networkSpace *NetworkSpace, byJwt string, returnErr error) {
@@ -1837,35 +1924,49 @@ func (self *NetworkSpaceManager) UpdateNetworkSpaceValues(key *NetworkSpaceKey, 
 	})
 }
 
-// Reports whether a value change is an extender value change and nothing else,
-// which is the change a running space can take in place (K6). Everything
-// outside the extender values is compared as a whole, so a value added to
-// `NetworkSpaceValues` later is covered by the rebuild until it is
-// deliberately named here.
+// Reports whether a value change is confined to the values a running space
+// takes in place -- the extender values (K6), the VLESS server and the
+// bootstrap DoH servers -- and changes one of them. Everything else is
+// compared as a whole, so a value added to `NetworkSpaceValues` later is
+// covered by the rebuild until it is deliberately named here.
 //
 // A change that alters nothing at all is NOT this case: `updateNetworkSpace`
 // produces a new space generation whatever it is handed, and the manager's
 // stale-generation rules are pinned on that. The one caller that must never
-// see a rebuild -- the settings screen saving an unchanged form -- does not
-// reach the manager at all (see `updateExtenderValues`).
-func onlyExtenderValuesChanged(
+// see a rebuild -- a settings screen saving an unchanged form -- does not
+// reach the manager at all (see `updateInPlaceValues`).
+func onlyInPlaceValuesChanged(
 	key *NetworkSpaceKey,
 	previous *NetworkSpaceValues,
 	next *NetworkSpaceValues,
 ) bool {
-	withoutExtenderValues := func(values *NetworkSpaceValues) NetworkSpaceValues {
+	withoutInPlaceValues := func(values *NetworkSpaceValues) NetworkSpaceValues {
 		other := *values
 		other.NetExtender = nil
 		other.ExtenderDnsName = ""
 		other.GossipUrl = ""
 		other.ExtenderRootPublicKeys = nil
 		other.ExtenderHosts = nil
+		other.Vless = nil
+		other.ControlDohUrlsIpv4 = nil
+		other.ControlDohUrlsIpv6 = nil
 		return other
 	}
-	if !reflect.DeepEqual(withoutExtenderValues(previous), withoutExtenderValues(next)) {
+	if !reflect.DeepEqual(withoutInPlaceValues(previous), withoutInPlaceValues(next)) {
 		return false
 	}
-	return extenderValuesChanged(key, previous, next)
+	return inPlaceValuesChanged(key, previous, next)
+}
+
+// Reports whether any value a running space takes in place differs.
+func inPlaceValuesChanged(
+	key *NetworkSpaceKey,
+	previous *NetworkSpaceValues,
+	next *NetworkSpaceValues,
+) bool {
+	return extenderValuesChanged(key, previous, next) ||
+		vlessValuesChanged(previous, next) ||
+		controlDohValuesChanged(previous, next)
 }
 
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {
@@ -1885,14 +1986,16 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 	previousValues := copyValues
 	callback(&copyValues)
 
-	// A change confined to the extender values restarts the space's network
-	// client and node in place rather than rebuilding the space (K6). The
-	// extender settings screen saves while a device is bound to the space and
-	// while the view controller that saved holds it, and a rebuild would hand
-	// both a closed space. Every other change keeps the rebuild below, which
-	// is what a changed api host or env secret needs.
-	if existingNetworkSpace != nil && onlyExtenderValuesChanged(key, &previousValues, &copyValues) {
-		existingNetworkSpace.applyExtenderValues(&copyValues)
+	// A change confined to the in-place values -- the extender values, which
+	// restart the space's network client and node (K6), the VLESS server,
+	// which replaces a strategy dialer, and the bootstrap DoH servers, which
+	// replace the strategy's DoH cache -- is applied in place rather than by
+	// rebuilding the space. The settings screens save while a device is bound
+	// to the space and while the view controller that saved holds it, and a
+	// rebuild would hand both a closed space. Every other change keeps the
+	// rebuild below, which is what a changed api host or env secret needs.
+	if existingNetworkSpace != nil && onlyInPlaceValuesChanged(key, &previousValues, &copyValues) {
+		existingNetworkSpace.applyInPlaceValues(&copyValues)
 		func() {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()

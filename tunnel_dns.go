@@ -43,7 +43,10 @@ var defaultTunnelDnsServersIpv4 = []string{connect.DefaultDnsUpgradeMaskAddress}
 // tunnel's own address. The documentation prefix (RFC 3849) satisfies both
 // and can never reach a real host if a query ever escapes the tunnel; the
 // host part mirrors the IPv4 mask digits so the two are recognizable together.
-const DefaultTunnelDnsAddressIpv6 = "2001:db8::65:49:70:65"
+// It is connect's own constant, as the IPv4 default is, so the address the
+// platform advertises cannot drift from the stand-in the UpgradeMux knows,
+// which is also where it refuses DoT (TCP/853) with a local reset.
+const DefaultTunnelDnsAddressIpv6 = connect.DefaultDnsUpgradeMaskAddressIpv6
 
 // defaultTunnelDnsServersIpv6 is the IPv6 counterpart of the IPv4 default: the
 // IPv6 upgrade-mask stand-in.

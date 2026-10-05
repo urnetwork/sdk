@@ -48,9 +48,11 @@ _build_android:
 	@"$(ANDROID_OUTPUT_GATE)" --verify-held
 	# *important* gradle does not handle symbolic links consistently
 	# the build dir swap is non-atomic
-	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
-	# (still needed as of x/mobile 2026-08-19: bind gengo typeString prints alias names unqualified;
-	# gomobile/gobind must be built with go <= 1.26 -- the go 1.27 runtime fatals when this GODEBUG is set)
+	# note the recipe sets no GODEBUG: go 1.27 removed gotypesalias, and a go 1.27 program exits at startup
+	# when the environment sets it to 0. gobind therefore sees type aliases, and x/mobile still mishandles an
+	# alias as a const's type, a struct field's bool or numeric type or an interface method's type
+	# (https://github.com/golang/go/issues/71827), so the mobile api spells the basic type in those places,
+	# which the cmd/mobileexports tests enforce
 	# note android/amd64 is needed for chromebook devices
 	# FIXME edit the built aar to remove platform-specific comments, for reproducibility across platforms
 	# validate that all types could be exported
@@ -69,6 +71,9 @@ _build_android:
 	# the go-side variants of the StringList form the mobile ExtenderSettings carries
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
+	# note llvm-objcopy and checksec take one library per call (objcopy reads a second path as its output file).
+	# find's -exec ... \; form ignores their exit status, so each runs in a loop that stops at the first failure,
+	# and find's -exec ... + form fails when the loop does
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
 	# see https://github.com/wlynxg/anet/pull/9
 	# see https://github.com/pion/webrtc/issues/2640
@@ -77,7 +82,6 @@ _build_android:
 	case "$$BUILD_OWNER" in ''|*[!A-Za-z0-9._:-]*) \
 		echo "invalid Android SDK build owner" >&2; exit 64;; esac; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
 	OBJCOPY=`find "$$ANDROID_NDK_HOME" -type f -iname 'llvm-objcopy' -print -quit`; \
 	test -n "$$OBJCOPY"; \
@@ -96,8 +100,12 @@ _build_android:
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
 	test -s "$$BUILD_DIR/URnetworkSdk-sources.jar"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
-	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
-	find "$$BUILD_DIR/edit" -iname '*.so' -exec checksec file {} --output json \; ; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec sh -c \
+		'objcopy="$$1"; shift; for so in "$$@"; do "$$objcopy" --remove-section .comment "$$so" || exit; done' \
+		sh "$$OBJCOPY" {} +; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec sh -c \
+		'for so in "$$@"; do checksec file "$$so" --output json || exit; done' \
+		sh {} +; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
 	(cd "$$BUILD_DIR"; \
 		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
@@ -119,12 +127,10 @@ build_ios:
 build_apple:
 	# *important* Xcode does not handle symbolic links consistently
 	# the build dir swap is non-atomic
-	# FIXME remove this GODEBUG setting per https://github.com/golang/go/issues/71827; see https://pkg.go.dev/go/types#Alias
-	# (still needed as of x/mobile 2026-08-19: bind gengo typeString prints alias names unqualified;
-	# gomobile/gobind must be built with go <= 1.26 -- the go 1.27 runtime fatals when this GODEBUG is set)
+	# note the recipe sets no GODEBUG, and the mobile api spells basic types where gobind mishandles
+	# type aliases; see _build_android
 	set -e; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
-	export GODEBUG=gotypesalias=0; \
 	export GOEXPERIMENT=greenteagc; \
 	export GOFIPS140=off; \
 	export MACOSX_DEPLOYMENT_TARGET=13.5; \

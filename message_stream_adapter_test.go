@@ -1074,8 +1074,10 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"defaultAccountCheckTimeout":               streamAdapterPackageConstOf(defaultAccountCheckTimeout),
 	"defaultBlockActionWindowDuration":         streamAdapterPackageConstOf(defaultBlockActionWindowDuration),
 	"defaultNetworkCheckTimeout":               streamAdapterPackageConstOf(defaultNetworkCheckTimeout),
+	"defaultProviderStatusPollInterval":        streamAdapterPackageConstOf(defaultProviderStatusPollInterval),
 	"defaultThroughputSampleInterval":          streamAdapterPackageConstOf(defaultThroughputSampleInterval),
 	"defaultThroughputWindowDuration":          streamAdapterPackageConstOf(defaultThroughputWindowDuration),
+	"DefaultTunnelDnsAddressIpv6":              streamAdapterPackageConstOf(DefaultTunnelDnsAddressIpv6),
 	"dohServerScoresStaleAfter":                streamAdapterPackageConstOf(dohServerScoresStaleAfter),
 	"platformTransportMigrateConnectTimeout":   streamAdapterPackageConstOf(platformTransportMigrateConnectTimeout),
 	"platformTransportMigrateMaxScheduleDelay": streamAdapterPackageConstOf(platformTransportMigrateMaxScheduleDelay),
@@ -1088,6 +1090,7 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"base58BigRadix":                           streamAdapterPackageVarOf(&base58BigRadix),
 	"base58BigZero":                            streamAdapterPackageVarOf(&base58BigZero),
 	"base58Table":                              streamAdapterPackageVarOf(&base58Table),
+	"controlDohSettingsConfigure":              streamAdapterPackageVarOf(&controlDohSettingsConfigure),
 	"countryCodeColorHexes":                    streamAdapterPackageVarOf(&countryCodeColorHexes),
 	"defaultTunnelDnsServersIpv4":              streamAdapterPackageVarOf(&defaultTunnelDnsServersIpv4),
 	"defaultTunnelDnsServersIpv6":              streamAdapterPackageVarOf(&defaultTunnelDnsServersIpv6),
@@ -1188,7 +1191,6 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"extenderNetworkClientConfigure":        streamAdapterPackageVarOf(&extenderNetworkClientConfigure),
 	"extenderNetworkClientEnabled":          streamAdapterPackageVarOf(&extenderNetworkClientEnabled),
 	"extenderNodeEnabled":                   streamAdapterPackageVarOf(&extenderNodeEnabled),
-	"extenderProvideListenTimeout":          streamAdapterPackageConstOf(extenderProvideListenTimeout),
 	"extenderProvideRoleEnabled":            streamAdapterPackageVarOf(&extenderProvideRoleEnabled),
 	"extenderProvideStatusEpoch":            streamAdapterPackageConstOf(extenderProvideStatusEpoch),
 	"extenderStatusEpoch":                   streamAdapterPackageConstOf(extenderStatusEpoch),
@@ -1267,7 +1269,8 @@ func streamAdapterPackageConstOf[T any](value T) streamAdapterPackageVar {
 	}
 }
 
-// streamAdapterCensus merges the portable census with this platform's fragment. The fragment
+// streamAdapterCensus merges the portable census with this platform's fragment and the native
+// extender's fragment (message_stream_adapter_census_extender_*_test.go). The fragment
 // exists because a package-level value declared in a build-constrained file can only be NAMED by
 // source this build compiles: streamAdapterPlatformValueCensus lives beside the production
 // exclusion files' own constraints, and the scope check below is go/build's answer rather than a
@@ -1276,6 +1279,7 @@ func streamAdapterCensus() map[string]streamAdapterPackageVar {
 	merged := map[string]streamAdapterPackageVar{}
 	maps.Copy(merged, streamAdapterPackageValueCensus)
 	maps.Copy(merged, streamAdapterPlatformValueCensus)
+	maps.Copy(merged, streamAdapterExtenderNativeValueCensus)
 	return merged
 }
 

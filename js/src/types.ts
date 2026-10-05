@@ -301,6 +301,16 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
     cb: (settings: DnsResolverSettings | null) => void,
   ): Unsubscribe;
 
+  // performance profile (over the device-rpc): the connect options as the
+  // native apps write them. The device applies a change to the live
+  // connection. null is the sdk's auto profile. A profile whose window size the
+  // multi client would refuse (negative, or max below min) is ignored.
+  getPerformanceProfile(): PerformanceProfile | null;
+  setPerformanceProfile(profile: PerformanceProfile | null): void;
+  addPerformanceProfileChangeListener(
+    cb: (profile: PerformanceProfile | null) => void,
+  ): Unsubscribe;
+
   // view controllers — the same layer the native app screens use. The caller
   // owns each returned controller and must close() it.
   openConnectViewController(): ConnectViewController;
@@ -841,6 +851,39 @@ export interface DnsResolverSettings {
   remoteDnsIpv6: string[];
   localDnsIpv4: string[];
   localDnsIpv6: string[];
+}
+
+/** the connection mode: "auto", "quality" (Web) or "speed" (Streaming) */
+export type WindowType = "auto" | "quality" | "speed";
+
+/**
+ * The provider window size of a quality or speed profile. A window with
+ * `windowSizeMin` equal to `windowSizeMax` is a fixed window of that many
+ * exits: the apps' Fixed IP is 1..1, which keeps one exit for the session.
+ * The other fields default to 0 (use the sdk default).
+ */
+export interface WindowSizeSettings {
+  windowSizeMin: number;
+  windowSizeMax: number;
+  windowSizeMinP2pOnly?: number;
+  windowSizeHardMax?: number;
+  windowSizeReconnectScale?: number;
+  keepHealthiestCount?: number;
+  ulimit?: number;
+}
+
+/**
+ * The connect options as one profile, the camelCase wasm projection of
+ * sdk.PerformanceProfile (js/device_remote.go jsPerformanceProfile) — the REST
+ * /network/auth-client `initial_device_state` carries the snake_case generated
+ * shape instead. Auto takes no window size. A hosted device forces
+ * `allowDirect` off.
+ */
+export interface PerformanceProfile {
+  windowType: WindowType;
+  windowSize: WindowSizeSettings | null;
+  allowDirect: boolean;
+  postQuantumEncryption: boolean;
 }
 
 /**

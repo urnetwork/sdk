@@ -16,6 +16,9 @@
 //   - sdk.Id crosses as a uuid string; sdk.Time as unix epoch milliseconds (0 = none)
 //   - listener/callback interfaces cross as c function pointers + user_data
 //   - []byte parameters cross as (const uint8_t*, int32_t)
+//   - a lone string result named errorId is an error id, "" on success: when
+//     the call cannot run the export answers errorIdInternal, never NULL
+//     (see errorIdResult)
 package main
 
 import (
@@ -96,6 +99,7 @@ var behavioralTypes = map[string]bool{
 	"ProviderLocationsViewController":     true,
 	"ReferralCodeViewController":          true,
 	"PointsLeaderboardViewController":     true,
+	"ProviderStatusViewController":        true,
 	"WalletViewController":                true,
 }
 
@@ -181,6 +185,13 @@ var unixOnlySymbols = map[string]bool{
 	"IoLoopDoneCallback": true,
 }
 
+// errorIdInternal is what an export whose result is an error id answers when
+// the call could not run: an unknown handle, json that does not decode, or a
+// recovered panic. NULL would be wrong there: the c++ wrapper takes it as "",
+// which every caller reads as success. It is one id for every family of ids,
+// so an app maps it like any id it does not know, to a generic message.
+const errorIdInternal = "internal_error"
+
 // c names reserved by hand-written exports in the cgo package
 var reservedCNames = map[string]bool{
 	"urnet_version":           true,
@@ -245,6 +256,8 @@ type exportSig struct {
 	params   []paramInfo
 	result   *typeInfo
 	hasError bool
+	// the string result is an error id (see errorIdResult)
+	errorId bool
 }
 
 type paramInfo struct {
@@ -510,6 +523,10 @@ func (g *gen) emitConst(obj *types.Const) {
 		}
 	}
 	name := "URNET_" + strings.ToUpper(snake(obj.Name()))
+	if name == "URNET_ERROR_ID_INTERNAL" {
+		fmt.Fprintf(os.Stderr, "c name collision with core define: %s\n", name)
+		os.Exit(1)
+	}
 	val := obj.Val()
 	switch val.Kind() {
 	case constant.Int:
@@ -700,6 +717,13 @@ func (g *gen) emitCallable(cName string, symbol string, recv *typeInfo, recvName
 	}
 
 	cRet, goRet, zeroRet := g.returnForms(resultInfo, hasError)
+	// an error id is "" on success, so every exit where the call cannot run
+	// answers errorIdInternal, and the result is named for the panic guard
+	errorId := errorIdResult(sig)
+	if errorId {
+		goRet = " (errorId *C.char)"
+		zeroRet = " cString(errorIdInternal)"
+	}
 
 	if recv != nil {
 		goParams = append(goParams, "self C.uint64_t")
@@ -848,7 +872,19 @@ func (g *gen) emitCallable(cName string, symbol string, recv *typeInfo, recvName
 	}
 
 	var body []string
-	body = append(body, fmt.Sprintf("\tdefer cgoGuard(%q)", cName))
+	if errorId {
+		// cgoGuard, answering errorIdInternal rather than the zero result
+		body = append(body,
+			"\tdefer func() {",
+			"\t\tif r := recover(); r != nil {",
+			fmt.Sprintf("\t\t\tcgoPanicked(%q, r)", cName),
+			"\t\t\terrorId = cString(errorIdInternal)",
+			"\t\t}",
+			"\t}()",
+		)
+	} else {
+		body = append(body, fmt.Sprintf("\tdefer cgoGuard(%q)", cName))
+	}
 	body = append(body, convert...)
 
 	switch {
@@ -909,9 +945,27 @@ func (g *gen) emitCallable(cName string, symbol string, recv *typeInfo, recvName
 			params:   sigParams,
 			result:   resultInfo,
 			hasError: hasError,
+			errorId:  errorId,
 		},
 	})
 }
+
+// errorIdResult reports whether a function's result is an error id: a lone
+// string result named errorId, "" when the call succeeded and otherwise the id
+// of the refusal (the sdk's VlessError* and ControlDohError* setters and
+// checks). The name is the marker, declared where the function is, so a new
+// function of the kind is mapped like its siblings without a list here.
+func errorIdResult(sig *types.Signature) bool {
+	results := sig.Results()
+	if results.Len() != 1 || results.At(0).Name() != "errorId" {
+		return false
+	}
+	basic, ok := types.Unalias(results.At(0).Type()).(*types.Basic)
+	return ok && basic.Kind() == types.String
+}
+
+// the c and c++ header comment on a function whose result is an error id
+const errorIdHeaderDoc = `/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */`
 
 // returnForms computes the c return type, go return type, and the go zero return
 func (g *gen) returnForms(resultInfo *typeInfo, hasError bool) (cRet string, goRet string, zeroRet string) {
@@ -1468,6 +1522,10 @@ func (g *gen) write() error {
 		b.WriteString("/*\n#include <stdint.h>\n#include <stdbool.h>\n#include \"callbacks.h\"\n*/\nimport \"C\"\n\n")
 		b.WriteString("import (\n\t\"unsafe\"\n\n\t\"github.com/urnetwork/sdk\"\n)\n\n")
 		b.WriteString("var _ = unsafe.Pointer(nil)\n\n")
+		if !unix {
+			b.WriteString("// what an export whose result is an error id answers when the call could not run\n")
+			fmt.Fprintf(&b, "const errorIdInternal = %q\n\n", errorIdInternal)
+		}
 
 		// callback adapters
 		for _, name := range sortedCallbacks {
@@ -1559,6 +1617,10 @@ func (g *gen) write() error {
 		b.WriteString(" *   to callbacks are owned by the receiver and must be released.\n")
 		b.WriteString(" * - functions with a char** out_error parameter set a malloc'd error message on\n")
 		b.WriteString(" *   failure (free with urnet_free_string). pass NULL to ignore the error text.\n")
+		b.WriteString(" * - a char* result marked \"error id\" is \"\" on success, else the id of the\n")
+		b.WriteString(" *   refusal (the URNET_*_ERROR_* defines), or URNET_ERROR_ID_INTERNAL when the\n")
+		b.WriteString(" *   call could not run (an unknown handle, json that does not decode, a\n")
+		b.WriteString(" *   recovered panic). never NULL.\n")
 		b.WriteString(" */\n")
 		b.WriteString("#ifndef URNETWORK_SDK_H\n#define URNETWORK_SDK_H\n\n")
 		b.WriteString("#include <stdint.h>\n#include <stdbool.h>\n\n")
@@ -1573,6 +1635,8 @@ func (g *gen) write() error {
 		b.WriteString("bool urnet_release(uint64_t handle);\n")
 		b.WriteString("/* number of live handles, for leak checks */\n")
 		b.WriteString("int64_t urnet_live_handle_count(void);\n\n")
+		b.WriteString("/* what a function whose result is an error id answers when the call could not run */\n")
+		fmt.Fprintf(&b, "#define URNET_ERROR_ID_INTERNAL %q\n\n", errorIdInternal)
 		b.WriteString(manualHeaderSection)
 
 		if 0 < len(g.constants) {
@@ -1617,6 +1681,10 @@ func (g *gen) write() error {
 		for _, group := range groupNames {
 			fmt.Fprintf(&b, "/* ----- %s ----- */\n\n", group)
 			for _, e := range groups[group] {
+				if e.sig.errorId {
+					b.WriteString(errorIdHeaderDoc)
+					b.WriteString("\n")
+				}
 				b.WriteString(e.cDecl)
 				b.WriteString("\n")
 			}
@@ -1642,6 +1710,10 @@ func (g *gen) write() error {
 			for _, e := range g.exports {
 				if !e.unixOnly {
 					continue
+				}
+				if e.sig.errorId {
+					b.WriteString(errorIdHeaderDoc)
+					b.WriteString("\n")
 				}
 				b.WriteString(e.cDecl)
 				b.WriteString("\n")
@@ -1727,7 +1799,10 @@ func (g *gen) write() error {
 		for _, e := range sortedExports {
 			suffix := ""
 			if e.unixOnly {
-				suffix = " (unix only)"
+				suffix += " (unix only)"
+			}
+			if e.sig.errorId {
+				suffix += " (error id)"
 			}
 			fmt.Fprintf(&b, "%s <- %s%s\n", e.cName, g.cNames[e.cName], suffix)
 		}

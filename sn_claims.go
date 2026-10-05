@@ -49,6 +49,9 @@ const (
 	// artifacts are served by the URnetwork api host by convention when no
 	// ArtifactBaseUrl is configured and no network space is available
 	snDefaultArtifactBaseUrl = "https://api.bringyour.com"
+	// the subtensor block cadence (the server's st block_seconds default); the
+	// epoch schedule dates its block heights from the head block at this rate
+	snBlockSeconds = 12
 )
 
 // SnEpochClaim is one epoch's entitlement for the connected coldkey.
@@ -78,13 +81,39 @@ func NewSnEpochClaimList() *SnEpochClaimList {
 	}
 }
 
+// SnEpochSchedule is when the current epoch settles, read from the
+// coordinator's policy for it (policyAt) so it follows the chain's cadence
+// (WHITEPAPER §5.2): the epoch ends, its claims open the finalize offset
+// after the close, and a share left unclaimed expires at the end of epoch
+// + claim TTL + grace. The heights are exact; the millis date them from the
+// head block's timestamp at snBlockSeconds per block.
+type SnEpochSchedule struct {
+	Epoch       int64 `json:"epoch"`
+	EpochBlocks int64 `json:"epoch_blocks"`
+	// blocks from an epoch's close until its claims open
+	ClaimOpenOffsetBlocks int64 `json:"claim_open_offset_blocks"`
+	// epochs a share stays claimable after its own, then the grace epochs
+	ClaimTtlEpochs   int64 `json:"claim_ttl_epochs"`
+	ClaimGraceEpochs int64 `json:"claim_grace_epochs"`
+	EndBlock         int64 `json:"end_block"`
+	ClaimOpenBlock   int64 `json:"claim_open_block"`
+	ExpiryBlock      int64 `json:"expiry_block"`
+	HeadBlock        int64 `json:"head_block"`
+	HeadMillis       int64 `json:"head_millis"`
+	EndMillis        int64 `json:"end_millis"`
+	ClaimOpenMillis  int64 `json:"claim_open_millis"`
+	ExpiryMillis     int64 `json:"expiry_millis"`
+}
+
 type SnClaimsResult struct {
 	Claims            *SnEpochClaimList `json:"claims"`
 	TotalClaimableRao int64             `json:"total_claimable_rao"`
 	CurrentEpoch      int64             `json:"current_epoch"`
 	BlockNumber       int64             `json:"block_number"`
 	ColdkeySs58       string            `json:"coldkey_ss58,omitempty"`
-	Error             *SnError          `json:"error,omitempty"`
+	// the current epoch's schedule; nil when the policy could not be read
+	Schedule *SnEpochSchedule `json:"schedule,omitempty"`
+	Error    *SnError         `json:"error,omitempty"`
 }
 
 type SnClaimsCallback connect.ApiCallback[*SnClaimsResult]
@@ -650,6 +679,72 @@ func (self *snClaimEngine) chainHead(ctx context.Context) (uint64, int64, error)
 	return block, currentEpoch, nil
 }
 
+// snEpochScheduleAt lays the policy's windows on the epoch's start block, as
+// STCoordinator.epochEndBlock and finalizeOperatorEpoch do, and dates the
+// heights from the head block.
+func snEpochScheduleAt(epoch int64, startBlock uint64, policy *evm.Policy, headBlock uint64, headMillis int64) *SnEpochSchedule {
+	end := startBlock + policy.EpochBlocks
+	claimOpen := end + policy.FinalizeOffsetBlocks
+	// the block before the start of epoch + TTL + grace + 1
+	expiry := end + (policy.ClaimTTLEpochs+policy.ClaimGraceEpochs)*policy.EpochBlocks - 1
+	millis := func(block uint64) int64 {
+		return headMillis + (int64(block)-int64(headBlock))*snBlockSeconds*1000
+	}
+	return &SnEpochSchedule{
+		Epoch:                 epoch,
+		EpochBlocks:           int64(policy.EpochBlocks),
+		ClaimOpenOffsetBlocks: int64(policy.FinalizeOffsetBlocks),
+		ClaimTtlEpochs:        int64(policy.ClaimTTLEpochs),
+		ClaimGraceEpochs:      int64(policy.ClaimGraceEpochs),
+		EndBlock:              int64(end),
+		ClaimOpenBlock:        int64(claimOpen),
+		ExpiryBlock:           int64(expiry),
+		HeadBlock:             int64(headBlock),
+		HeadMillis:            headMillis,
+		EndMillis:             millis(end),
+		ClaimOpenMillis:       millis(claimOpen),
+		ExpiryMillis:          millis(expiry),
+	}
+}
+
+// schedule reads the epoch's start block and policy from the coordinator,
+// and the head block's time.
+func (self *snClaimEngine) schedule(ctx context.Context, epoch int64) (*SnEpochSchedule, error) {
+	startData, err := evm.PackEpochStartBlock(big.NewInt(epoch))
+	if err != nil {
+		return nil, err
+	}
+	policyData, err := evm.PackPolicyAt(big.NewInt(epoch))
+	if err != nil {
+		return nil, err
+	}
+	rets, errs, err := self.client.EthCallBatch(ctx, self.coordinator, [][]byte{startData, policyData})
+	if err != nil {
+		return nil, err
+	}
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	start, err := evm.DecodeUint(rets[0])
+	if err != nil {
+		return nil, err
+	}
+	if !start.IsUint64() {
+		return nil, errors.New("epoch start block overflows uint64")
+	}
+	policy, err := evm.DecodePolicy(rets[1])
+	if err != nil {
+		return nil, err
+	}
+	headBlock, headTime, err := self.client.LatestHeader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return snEpochScheduleAt(epoch, start.Uint64(), policy, headBlock, int64(headTime)*1000), nil
+}
+
 // claims scans from max(fromEpoch, current - lookback) to the current epoch.
 func (self *snClaimEngine) claims(ctx context.Context, fromEpoch int64) *SnClaimsResult {
 	result := &SnClaimsResult{Claims: NewSnEpochClaimList(), ColdkeySs58: self.coldkeySs58}
@@ -660,6 +755,10 @@ func (self *snClaimEngine) claims(ctx context.Context, fromEpoch int64) *SnClaim
 	}
 	result.BlockNumber = int64(block)
 	result.CurrentEpoch = currentEpoch
+	// best effort: the claims stand without it
+	if schedule, err := self.schedule(ctx, currentEpoch); err == nil {
+		result.Schedule = schedule
+	}
 	start := max(currentEpoch-self.settings.lookback(), 0)
 	if fromEpoch > start {
 		start = fromEpoch

@@ -25,6 +25,9 @@ export interface NetworkSpaceValues {
   gossip_url?: string;
   extender_root_public_keys?: string[];
   extender_hosts?: string[];
+  vless?: VlessSettings | null;
+  control_doh_urls_ipv4?: string[];
+  control_doh_urls_ipv6?: string[];
 }
 
 export interface ExportNetworkSpace {
@@ -35,6 +38,26 @@ export interface ExportNetworkSpace {
 export interface NetExtender {
   ip: string;
   secret: string;
+}
+
+export interface VlessSettings {
+  enabled?: boolean;
+  name?: string;
+  address?: string;
+  port?: number;
+  id?: string;
+  flow?: string;
+  network?: string;
+  security?: string;
+  server_name?: string;
+  fingerprint?: string;
+  alpn?: string;
+  allow_insecure?: boolean;
+  public_key?: string;
+  short_id?: string;
+  spider_x?: string;
+  path?: string;
+  host?: string;
 }
 
 export interface ProxyAuthResult {
@@ -264,6 +287,7 @@ export interface ExperimentAssignment {
 }
 
 export interface OnboardingError {
+  code?: string;
   message: string;
 }
 
@@ -669,6 +693,8 @@ export interface SnSetWalletArgs {
 export interface SnSetWalletResult {
   wallet?: SnWallet | null;
   error?: SnSetWalletError | null;
+  mapping_hash?: string;
+  mapping_generation?: number;
 }
 
 export interface SnSetWalletError {
@@ -725,12 +751,29 @@ export interface SnEpochClaim {
   message?: string;
 }
 
+export interface SnEpochSchedule {
+  epoch: number;
+  epoch_blocks: number;
+  claim_open_offset_blocks: number;
+  claim_ttl_epochs: number;
+  claim_grace_epochs: number;
+  end_block: number;
+  claim_open_block: number;
+  expiry_block: number;
+  head_block: number;
+  head_millis: number;
+  end_millis: number;
+  claim_open_millis: number;
+  expiry_millis: number;
+}
+
 export interface SnClaimsResult {
   claims: SnEpochClaim[] | null;
   total_claimable_rao: number;
   current_epoch: number;
   block_number: number;
   coldkey_ss58?: string;
+  schedule?: SnEpochSchedule | null;
   error?: SnError | null;
 }
 

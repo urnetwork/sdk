@@ -29,7 +29,7 @@ type IsRemovingWalletListener interface {
 }
 
 type UnpaidByteCountListener interface {
-	StateChanged(ByteCount)
+	StateChanged(int64)
 }
 
 type PayoutWalletListener interface {
@@ -50,17 +50,17 @@ type AccountWallet struct {
 }
 
 type AccountPayment struct {
-	PaymentId       *Id       `json:"payment_id"`
-	PaymentPlanId   *Id       `json:"payment_plan_id"`
-	WalletId        *Id       `json:"wallet_id"`
-	NetworkId       *Id       `json:"network_id"`
-	PayoutByteCount ByteCount `json:"payout_byte_count"`
-	Payout          NanoCents `json:"payout_nano_cents"`
+	PaymentId       *Id   `json:"payment_id"`
+	PaymentPlanId   *Id   `json:"payment_plan_id"`
+	WalletId        *Id   `json:"wallet_id"`
+	NetworkId       *Id   `json:"network_id"`
+	PayoutByteCount int64 `json:"payout_byte_count"`
+	Payout          int64 `json:"payout_nano_cents"`
 	// the subsidized parts of Payout
-	SubsidyPayout      NanoCents `json:"subsidy_payout_nano_cents"`
-	ReliabilitySubsidy NanoCents `json:"reliability_subsidy_nano_cents"`
-	MinSweepTime       *Time     `json:"min_sweep_time"`
-	CreateTime         *Time     `json:"create_time"`
+	SubsidyPayout      int64 `json:"subsidy_payout_nano_cents"`
+	ReliabilitySubsidy int64 `json:"reliability_subsidy_nano_cents"`
+	MinSweepTime       *Time `json:"min_sweep_time"`
+	CreateTime         *Time `json:"create_time"`
 
 	PaymentRecord  string  `json:"payment_record,omitempty"`
 	TokenType      string  `json:"token_type"`
@@ -671,13 +671,15 @@ func (vc *WalletViewController) RemoveWallet(walletId *Id) {
 		RemoveWalletCallback(connect.NewApiCallback[*RemoveWalletResult](
 			func(result *RemoveWalletResult, err error) {
 
-				if err != nil || !result.Success {
+				if err != nil || result == nil || !result.Success {
 					vc.setIsRemovingWallet(false)
+					return
 				}
 
-				if result.Success {
-					vc.FetchAccountWallets()
-				}
+				vc.FetchAccountWallets()
+				// removing the payout wallet can make another wallet the
+				// payout wallet
+				vc.FetchPayoutWallet()
 
 			}),
 		),

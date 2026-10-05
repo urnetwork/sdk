@@ -157,7 +157,7 @@ func TestExtenderHostsReachTheNetworkClientAndRestartIt(t *testing.T) {
 	// that -- so saving an unchanged form has to stop before it, not inside it.
 	previousNetworkClient = networkSpace.getExtenderNetworkClient()
 	previousCount = recorder.count()
-	if networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	if networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{" 192.0.2.1 ", "bootstrap.example", ""}
 	}) {
 		t.Fatal("a whitespace-only edit reported a change")
@@ -172,7 +172,7 @@ func TestExtenderHostsReachTheNetworkClientAndRestartIt(t *testing.T) {
 		t.Fatal("a whitespace-only edit replaced the space")
 	}
 	// a real change through the same path does restart it
-	if !networkSpace.updateExtenderValues(func(values *NetworkSpaceValues) {
+	if !networkSpace.updateInPlaceValues(func(values *NetworkSpaceValues) {
 		values.ExtenderHosts = []string{"192.0.2.1", "bootstrap.example", "198.51.100.7"}
 	}) {
 		t.Fatal("a real change reported none")

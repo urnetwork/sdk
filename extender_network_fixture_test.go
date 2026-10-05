@@ -25,8 +25,8 @@ func testConfigureInProcessExtenderNetworkClient(settings *connect.ExtenderNetwo
 	settings.Hello = func(ctx context.Context) (*connect.ExtenderHelloResult, error) {
 		return &connect.ExtenderHelloResult{}, nil
 	}
-	settings.Hint = func(ctx context.Context) (string, error) {
-		return "", nil
+	settings.Hint = func(ctx context.Context) (*connect.ExtenderHintResult, error) {
+		return &connect.ExtenderHintResult{}, nil
 	}
 	settings.IpVersionSupported = func(ipVersion int) bool { return false }
 	settings.ProbeWindowCount = 0

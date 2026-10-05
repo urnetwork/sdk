@@ -1124,6 +1124,15 @@ func (self *DeviceRemote) RefreshToken(attempt int) error {
 }
 
 func (self *DeviceRemote) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
+	// The device refuses a profile it cannot install (see
+	// validatePerformanceProfile). Refuse it here too, so it is never sent or
+	// queued for the next sync, and the previous profile stays in force.
+	if err := validatePerformanceProfile(performanceProfile); err != nil {
+		if self.log != nil && self.log.V(1).Enabled() {
+			self.log.Infof("[dr]refused performance profile: %v", err)
+		}
+		return
+	}
 	performanceProfile = clonePerformanceProfile(performanceProfile)
 	func() {
 		self.stateLock.Lock()
@@ -7464,7 +7473,7 @@ type BlockActionRpc struct {
 	BlockOverride *BlockOverride
 	RouteOverride *RouteOverride
 	PacketCount   int
-	ByteCount     ByteCount
+	ByteCount     int64
 	Reason        string
 }
 
@@ -7695,8 +7704,8 @@ func (self *DeviceRemoteTransferPath) toTransferPath() *TransferPath {
 //gomobile:noexport
 type ContractDetailsRpc struct {
 	ContractId            *connect.Id
-	ContractUsedByteCount ByteCount
-	ContractByteCount     ByteCount
+	ContractUsedByteCount int64
+	ContractByteCount     int64
 	ContractBitRate       int
 	ContractTransferPath  *DeviceRemoteTransferPath
 
@@ -7960,17 +7969,17 @@ type TransportPacketStatsRpc struct {
 //gomobile:noexport
 type PacketStatsRpc struct {
 	RemoteEgressPacketCount  int64
-	RemoteEgressByteCount    ByteCount
+	RemoteEgressByteCount    int64
 	RemoteIngressPacketCount int64
-	RemoteIngressByteCount   ByteCount
+	RemoteIngressByteCount   int64
 	LocalEgressPacketCount   int64
-	LocalEgressByteCount     ByteCount
+	LocalEgressByteCount     int64
 	LocalIngressPacketCount  int64
-	LocalIngressByteCount    ByteCount
+	LocalIngressByteCount    int64
 	BlockEgressPacketCount   int64
-	BlockEgressByteCount     ByteCount
+	BlockEgressByteCount     int64
 	BlockIngressPacketCount  int64
-	BlockIngressByteCount    ByteCount
+	BlockIngressByteCount    int64
 	TransportStats           []*TransportPacketStatsRpc
 }
 
@@ -9735,7 +9744,15 @@ func (self *DeviceLocalRpc) Sync(
 		}
 	}
 	if state.PerformanceProfile.IsSet {
-		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("performance-profile", state.PerformanceProfile.Value)); err != nil {
+		// A profile the device refuses (see validatePerformanceProfile) keeps
+		// the previous one in force and does not fail the sync. The remote
+		// queues a failed sync's state again, so failing here would fail every
+		// later sync too. The response reports the profile in force.
+		if err := validatePerformanceProfile(state.PerformanceProfile.Value); err != nil {
+			if self.deviceLocal.log.V(1).Enabled() {
+				self.deviceLocal.log.Infof("[dlrpc]sync refused performance profile: %v", err)
+			}
+		} else if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("performance-profile", state.PerformanceProfile.Value)); err != nil {
 			return err
 		}
 	}

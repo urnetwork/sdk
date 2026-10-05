@@ -17,6 +17,9 @@ import (
 
 var _ = unsafe.Pointer(nil)
 
+// what an export whose result is an error id answers when the call could not run
+const errorIdInternal = "internal_error"
+
 type cAdapterAccountEpochsCallback struct {
 	cbResult C.urnet_account_epochs_cb
 	userData unsafe.Pointer
@@ -835,7 +838,7 @@ type cAdapterFilteredLocationsListener struct {
 	userData                   unsafe.Pointer
 }
 
-func (self *cAdapterFilteredLocationsListener) FilteredLocationsChanged(locations *sdk.FilteredLocations, state sdk.FilterLocationsState) {
+func (self *cAdapterFilteredLocationsListener) FilteredLocationsChanged(locations *sdk.FilteredLocations, state string) {
 	defer cgoGuard("urnet_filtered_locations_cb")
 	locations_ := cJson(locations, "urnet_filtered_locations_cb")
 	state_ := cString(string(state))
@@ -1252,6 +1255,27 @@ func (self *cAdapterGetPointsLeaderboardCallback) Result(result *sdk.PointsLeade
 		errParam_ = cString(errParam.Error())
 	}
 	C.urnet_invoke_get_points_leaderboard(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterGetProviderStatusCallback struct {
+	cbResult C.urnet_get_provider_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterGetProviderStatusCallback) Result(result *sdk.GetProviderStatusResult, errParam error) {
+	defer cgoGuard("urnet_get_provider_status_cb")
+	result_ := cJson(result, "urnet_get_provider_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_get_provider_status(self.cbResult, self.userData, result_, errParam_)
 	if result_ != nil {
 		cStringFree(result_)
 	}
@@ -1814,7 +1838,7 @@ type cAdapterProvideControlModeChangeListener struct {
 	userData                    unsafe.Pointer
 }
 
-func (self *cAdapterProvideControlModeChangeListener) ProvideControlModeChanged(provideControlMode sdk.ProvideControlMode) {
+func (self *cAdapterProvideControlModeChangeListener) ProvideControlModeChanged(provideControlMode string) {
 	defer cgoGuard("urnet_provide_control_mode_change_cb")
 	provideControlMode_ := cString(string(provideControlMode))
 	C.urnet_invoke_provide_control_mode_change(self.cbProvideControlModeChanged, self.userData, provideControlMode_)
@@ -1826,7 +1850,7 @@ type cAdapterProvideModeChangeListener struct {
 	userData             unsafe.Pointer
 }
 
-func (self *cAdapterProvideModeChangeListener) ProvideModeChanged(provideMode sdk.ProvideMode) {
+func (self *cAdapterProvideModeChangeListener) ProvideModeChanged(provideMode int) {
 	defer cgoGuard("urnet_provide_mode_change_cb")
 	C.urnet_invoke_provide_mode_change(self.cbProvideModeChanged, self.userData, C.int64_t(int64(provideMode)))
 }
@@ -1836,7 +1860,7 @@ type cAdapterProvideNetworkModeChangeListener struct {
 	userData                    unsafe.Pointer
 }
 
-func (self *cAdapterProvideNetworkModeChangeListener) ProvideNetworkModeChanged(provideNetworkMode sdk.ProvideNetworkMode) {
+func (self *cAdapterProvideNetworkModeChangeListener) ProvideNetworkModeChanged(provideNetworkMode string) {
 	defer cgoGuard("urnet_provide_network_mode_change_cb")
 	provideNetworkMode_ := cString(string(provideNetworkMode))
 	C.urnet_invoke_provide_network_mode_change(self.cbProvideNetworkModeChanged, self.userData, provideNetworkMode_)
@@ -1875,6 +1899,16 @@ type cAdapterProviderIdentityChangeListener struct {
 func (self *cAdapterProviderIdentityChangeListener) ProviderIdentitiesChanged() {
 	defer cgoGuard("urnet_provider_identity_change_cb")
 	C.urnet_invoke_provider_identity_change(self.cbProviderIdentitiesChanged, self.userData)
+}
+
+type cAdapterProviderStatusListener struct {
+	cbProviderStatusChanged C.urnet_provider_status_cb
+	userData                unsafe.Pointer
+}
+
+func (self *cAdapterProviderStatusListener) ProviderStatusChanged() {
+	defer cgoGuard("urnet_provider_status_cb")
+	C.urnet_invoke_provider_status(self.cbProviderStatusChanged, self.userData)
 }
 
 type cAdapterProviderTransportSettingsChangeListener struct {
@@ -1922,7 +1956,7 @@ type cAdapterReceivePacket struct {
 	userData        unsafe.Pointer
 }
 
-func (self *cAdapterReceivePacket) ReceivePacket(ipVersion int, ipProtocol sdk.IpProtocol, packet []byte) {
+func (self *cAdapterReceivePacket) ReceivePacket(ipVersion int, ipProtocol int, packet []byte) {
 	defer cgoGuard("urnet_receive_packet_cb")
 	var packet_ *C.uint8_t
 	if 0 < len(packet) {
@@ -2814,7 +2848,7 @@ type cAdapterUnpaidByteCountListener struct {
 	userData       unsafe.Pointer
 }
 
-func (self *cAdapterUnpaidByteCountListener) StateChanged(p0 sdk.ByteCount) {
+func (self *cAdapterUnpaidByteCountListener) StateChanged(p0 int64) {
 	defer cgoGuard("urnet_unpaid_byte_count_cb")
 	C.urnet_invoke_unpaid_byte_count(self.cbStateChanged, self.userData, C.int64_t(int64(p0)))
 }
@@ -4144,6 +4178,20 @@ func urnet_api_get_provider_locations(self C.uint64_t, callback_result C.urnet_f
 	self_.GetProviderLocations(callback_)
 }
 
+//export urnet_api_get_provider_status
+func urnet_api_get_provider_status(self C.uint64_t, callback_result C.urnet_get_provider_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_get_provider_status")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_provider_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.GetProviderStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterGetProviderStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.GetProviderStatus(callback_)
+}
+
 //export urnet_api_get_referral_network
 func urnet_api_get_referral_network(self C.uint64_t, callback_result C.urnet_get_referral_network_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_get_referral_network")
@@ -4827,6 +4875,31 @@ func urnet_api_sn_validate_wallet(self C.uint64_t, address *C.char, callback_res
 		callback_ = &cAdapterSnValidateWalletCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SnValidateWallet(goString(address), callback_)
+}
+
+//export urnet_api_sn_wallet_mapping_challenge_sync
+func urnet_api_sn_wallet_mapping_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_wallet_mapping_challenge_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_wallet_mapping_challenge_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.SnWalletMappingChallengeArgs
+	if args != nil {
+		args_ = &sdk.SnWalletMappingChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_sn_wallet_mapping_challenge_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.SnWalletMappingChallengeSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_wallet_mapping_challenge_sync")
 }
 
 //export urnet_api_start_jwt_refresh
@@ -8999,6 +9072,24 @@ func urnet_device_local_close_provider_locations_view_controller(self C.uint64_t
 	self_.CloseProviderLocationsViewController(vc_)
 }
 
+//export urnet_device_local_close_provider_status_view_controller
+func urnet_device_local_close_provider_status_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_local_close_provider_status_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_close_provider_status_view_controller")
+	if !ok {
+		return
+	}
+	var vc_ *sdk.ProviderStatusViewController
+	if vc != 0 {
+		var ok bool
+		vc_, ok = resolveHandle[*sdk.ProviderStatusViewController](uint64(vc), "urnet_device_local_close_provider_status_view_controller")
+		if !ok {
+			return
+		}
+	}
+	self_.CloseProviderStatusViewController(vc_)
+}
+
 //export urnet_device_local_close_view_controller
 func urnet_device_local_close_view_controller(self C.uint64_t, vc_close C.urnet_view_controller_close_cb, vc_start C.urnet_view_controller_start_cb, vc_stop C.urnet_view_controller_stop_cb, vc_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_local_close_view_controller")
@@ -9670,6 +9761,20 @@ func urnet_device_local_open_provider_locations_view_controller(self C.uint64_t)
 		return 0
 	}
 	r0 := self_.OpenProviderLocationsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_open_provider_status_view_controller
+func urnet_device_local_open_provider_status_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_local_open_provider_status_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_open_provider_status_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProviderStatusViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -10797,6 +10902,24 @@ func urnet_device_remote_close_provider_locations_view_controller(self C.uint64_
 	self_.CloseProviderLocationsViewController(vc_)
 }
 
+//export urnet_device_remote_close_provider_status_view_controller
+func urnet_device_remote_close_provider_status_view_controller(self C.uint64_t, vc C.uint64_t) {
+	defer cgoGuard("urnet_device_remote_close_provider_status_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_close_provider_status_view_controller")
+	if !ok {
+		return
+	}
+	var vc_ *sdk.ProviderStatusViewController
+	if vc != 0 {
+		var ok bool
+		vc_, ok = resolveHandle[*sdk.ProviderStatusViewController](uint64(vc), "urnet_device_remote_close_provider_status_view_controller")
+		if !ok {
+			return
+		}
+	}
+	self_.CloseProviderStatusViewController(vc_)
+}
+
 //export urnet_device_remote_close_view_controller
 func urnet_device_remote_close_view_controller(self C.uint64_t, vc_close C.urnet_view_controller_close_cb, vc_start C.urnet_view_controller_start_cb, vc_stop C.urnet_view_controller_stop_cb, vc_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_device_remote_close_view_controller")
@@ -11267,6 +11390,20 @@ func urnet_device_remote_open_provider_locations_view_controller(self C.uint64_t
 		return 0
 	}
 	r0 := self_.OpenProviderLocationsViewController()
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_remote_open_provider_status_view_controller
+func urnet_device_remote_open_provider_status_view_controller(self C.uint64_t) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_open_provider_status_view_controller")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_open_provider_status_view_controller")
+	if !ok {
+		return 0
+	}
+	r0 := self_.OpenProviderStatusViewController()
 	if r0 == nil {
 		return 0
 	}
@@ -13894,6 +14031,12 @@ func urnet_locations_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_log_app_info
+func urnet_log_app_info(tag *C.char, message *C.char) {
+	defer cgoGuard("urnet_log_app_info")
+	sdk.LogAppInfo(goString(tag), goString(message))
+}
+
 //export urnet_log_inventory
 func urnet_log_inventory() *C.char {
 	defer cgoGuard("urnet_log_inventory")
@@ -14187,6 +14330,48 @@ func urnet_network_space_get_configured_platform_url(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_control_doh_urls
+func urnet_network_space_get_control_doh_urls(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_control_doh_urls")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_control_doh_urls")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlDohUrls()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_control_doh_urls")
+}
+
+//export urnet_network_space_get_control_doh_urls_ipv4
+func urnet_network_space_get_control_doh_urls_ipv4(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_control_doh_urls_ipv4")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_control_doh_urls_ipv4")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlDohUrlsIpv4()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_control_doh_urls_ipv4")
+}
+
+//export urnet_network_space_get_control_doh_urls_ipv6
+func urnet_network_space_get_control_doh_urls_ipv6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_control_doh_urls_ipv6")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_control_doh_urls_ipv6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlDohUrlsIpv6()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_control_doh_urls_ipv6")
+}
+
 //export urnet_network_space_get_env_name
 func urnet_network_space_get_env_name(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_env_name")
@@ -14422,6 +14607,20 @@ func urnet_network_space_get_store(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_vless_settings
+func urnet_network_space_get_vless_settings(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_vless_settings")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_vless_settings")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetVlessSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_vless_settings")
+}
+
 //export urnet_network_space_get_wallet
 func urnet_network_space_get_wallet(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_wallet")
@@ -14481,6 +14680,29 @@ func urnet_network_space_service_url(self C.uint64_t, scheme *C.char, service *C
 	return cString(string(r0))
 }
 
+//export urnet_network_space_set_control_doh_urls
+func urnet_network_space_set_control_doh_urls(self C.uint64_t, dohUrls *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_network_space_set_control_doh_urls", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_control_doh_urls")
+	if !ok {
+		return cString(errorIdInternal)
+	}
+	var dohUrls_ *sdk.StringList
+	if dohUrls != nil {
+		dohUrls_ = &sdk.StringList{}
+		if !goJson(dohUrls, dohUrls_, "urnet_network_space_set_control_doh_urls") {
+			return cString(errorIdInternal)
+		}
+	}
+	r0 := self_.SetControlDohUrls(dohUrls_)
+	return cString(string(r0))
+}
+
 //export urnet_network_space_set_control_ip_family_policy
 func urnet_network_space_set_control_ip_family_policy(self C.uint64_t, policy C.int64_t) {
 	defer cgoGuard("urnet_network_space_set_control_ip_family_policy")
@@ -14499,6 +14721,29 @@ func urnet_network_space_set_extender_gossip_mode(self C.uint64_t, mode *C.char)
 		return
 	}
 	self_.SetExtenderGossipMode(goString(mode))
+}
+
+//export urnet_network_space_set_vless_settings
+func urnet_network_space_set_vless_settings(self C.uint64_t, settings *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_network_space_set_vless_settings", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_vless_settings")
+	if !ok {
+		return cString(errorIdInternal)
+	}
+	var settings_ *sdk.VlessSettings
+	if settings != nil {
+		settings_ = &sdk.VlessSettings{}
+		if !goJson(settings, settings_, "urnet_network_space_set_vless_settings") {
+			return cString(errorIdInternal)
+		}
+	}
+	r0 := self_.SetVlessSettings(settings_)
+	return cString(string(r0))
 }
 
 //export urnet_network_space_to_json
@@ -15414,6 +15659,16 @@ func urnet_new_urls_network_space(apiUrl *C.char, platformUrl *C.char) C.uint64_
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_vless_settings
+func urnet_new_vless_settings() *C.char {
+	defer cgoGuard("urnet_new_vless_settings")
+	r0 := sdk.NewVlessSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_new_vless_settings")
+}
+
 //export urnet_new_wallet_circle_transfer_out_args
 func urnet_new_wallet_circle_transfer_out_args(toAddress *C.char, amountUsdcNanoCents C.int64_t, terms C.bool) *C.char {
 	defer cgoGuard("urnet_new_wallet_circle_transfer_out_args")
@@ -15595,6 +15850,16 @@ func urnet_parse_message_route_mode(value *C.char, outError **C.char) C.int64_t 
 		return 0
 	}
 	return C.int64_t(r0)
+}
+
+//export urnet_parse_vless_link
+func urnet_parse_vless_link(link *C.char) *C.char {
+	defer cgoGuard("urnet_parse_vless_link")
+	r0 := sdk.ParseVlessLink(goString(link))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_parse_vless_link")
 }
 
 //export urnet_peer_view_controller_add_peers_listener
@@ -16233,6 +16498,233 @@ func urnet_provider_locations_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_provider_status_view_controller_add_provider_status_listener
+func urnet_provider_status_view_controller_add_provider_status_listener(self C.uint64_t, listener_provider_status_changed C.urnet_provider_status_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_add_provider_status_listener")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_add_provider_status_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ProviderStatusListener
+	if listener_provider_status_changed != nil {
+		listener_ = &cAdapterProviderStatusListener{cbProviderStatusChanged: listener_provider_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddProviderStatusListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_provider_status_view_controller_close
+func urnet_provider_status_view_controller_close(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_status_view_controller_close")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_close")
+	if !ok {
+		return
+	}
+	self_.Close()
+}
+
+//export urnet_provider_status_view_controller_get_admission
+func urnet_provider_status_view_controller_get_admission(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_admission")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_admission")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAdmission()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_admission")
+}
+
+//export urnet_provider_status_view_controller_get_appearance_max_count
+func urnet_provider_status_view_controller_get_appearance_max_count(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_get_appearance_max_count")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_appearance_max_count")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetAppearanceMaxCount()
+	return C.int64_t(r0)
+}
+
+//export urnet_provider_status_view_controller_get_appearance_total
+func urnet_provider_status_view_controller_get_appearance_total(self C.uint64_t) C.int64_t {
+	defer cgoGuard("urnet_provider_status_view_controller_get_appearance_total")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_appearance_total")
+	if !ok {
+		return 0
+	}
+	r0 := self_.GetAppearanceTotal()
+	return C.int64_t(r0)
+}
+
+//export urnet_provider_status_view_controller_get_appearances
+func urnet_provider_status_view_controller_get_appearances(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_appearances")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_appearances")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAppearances()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_appearances")
+}
+
+//export urnet_provider_status_view_controller_get_appearances_per_minute
+func urnet_provider_status_view_controller_get_appearances_per_minute(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_appearances_per_minute")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_appearances_per_minute")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAppearancesPerMinute()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_appearances_per_minute")
+}
+
+//export urnet_provider_status_view_controller_get_is_loaded
+func urnet_provider_status_view_controller_get_is_loaded(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_provider_status_view_controller_get_is_loaded")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_is_loaded")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetIsLoaded()
+	return C.bool(r0)
+}
+
+//export urnet_provider_status_view_controller_get_is_loading
+func urnet_provider_status_view_controller_get_is_loading(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_provider_status_view_controller_get_is_loading")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_is_loading")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetIsLoading()
+	return C.bool(r0)
+}
+
+//export urnet_provider_status_view_controller_get_last_fetch_error
+func urnet_provider_status_view_controller_get_last_fetch_error(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_last_fetch_error")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_last_fetch_error")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetLastFetchError()
+	return cString(string(r0))
+}
+
+//export urnet_provider_status_view_controller_get_provider_status
+func urnet_provider_status_view_controller_get_provider_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_provider_status")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_provider_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_provider_status")
+}
+
+//export urnet_provider_status_view_controller_get_provider_statuses
+func urnet_provider_status_view_controller_get_provider_statuses(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_provider_statuses")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_provider_statuses")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetProviderStatuses()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_provider_statuses")
+}
+
+//export urnet_provider_status_view_controller_get_ranking_numbers
+func urnet_provider_status_view_controller_get_ranking_numbers(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_ranking_numbers")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_ranking_numbers")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetRankingNumbers()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_provider_status_view_controller_get_ranking_numbers")
+}
+
+//export urnet_provider_status_view_controller_get_reason
+func urnet_provider_status_view_controller_get_reason(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_reason")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_reason")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReason()
+	return cString(string(r0))
+}
+
+//export urnet_provider_status_view_controller_get_reason_text
+func urnet_provider_status_view_controller_get_reason_text(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_provider_status_view_controller_get_reason_text")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_reason_text")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetReasonText()
+	return cString(string(r0))
+}
+
+//export urnet_provider_status_view_controller_get_truncated
+func urnet_provider_status_view_controller_get_truncated(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_provider_status_view_controller_get_truncated")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_get_truncated")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetTruncated()
+	return C.bool(r0)
+}
+
+//export urnet_provider_status_view_controller_refresh
+func urnet_provider_status_view_controller_refresh(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_status_view_controller_refresh")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_refresh")
+	if !ok {
+		return
+	}
+	self_.Refresh()
+}
+
+//export urnet_provider_status_view_controller_start
+func urnet_provider_status_view_controller_start(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_status_view_controller_start")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_start")
+	if !ok {
+		return
+	}
+	self_.Start()
+}
+
+//export urnet_provider_status_view_controller_stop
+func urnet_provider_status_view_controller_stop(self C.uint64_t) {
+	defer cgoGuard("urnet_provider_status_view_controller_stop")
+	self_, ok := resolveHandle[*sdk.ProviderStatusViewController](uint64(self), "urnet_provider_status_view_controller_stop")
+	if !ok {
+		return
+	}
+	self_.Stop()
+}
+
 //export urnet_proxy_device_cancel
 func urnet_proxy_device_cancel(self C.uint64_t) {
 	defer cgoGuard("urnet_proxy_device_cancel")
@@ -16384,6 +16876,16 @@ func urnet_referral_code_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_regional_control_doh_urls
+func urnet_regional_control_doh_urls(countryCode *C.char) *C.char {
+	defer cgoGuard("urnet_regional_control_doh_urls")
+	r0 := sdk.RegionalControlDohUrls(goString(countryCode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_regional_control_doh_urls")
+}
+
 //export urnet_report_memory_trim_level
 func urnet_report_memory_trim_level(level C.int64_t) {
 	defer cgoGuard("urnet_report_memory_trim_level")
@@ -16522,6 +17024,12 @@ func urnet_set_memory_profile_rate(byteCount C.int64_t) {
 func urnet_set_message_pool_memory_targets(packetPoolByteCount C.int64_t, largeObjectPoolByteCount C.int64_t) {
 	defer cgoGuard("urnet_set_message_pool_memory_targets")
 	sdk.SetMessagePoolMemoryTargets(int64(packetPoolByteCount), int64(largeObjectPoolByteCount))
+}
+
+//export urnet_set_network_country_code
+func urnet_set_network_country_code(countryCode *C.char) {
+	defer cgoGuard("urnet_set_network_country_code")
+	sdk.SetNetworkCountryCode(goString(countryCode))
 }
 
 //export urnet_set_transfer_diagnostic_snapshots_enabled
@@ -17310,6 +17818,18 @@ func urnet_usd_to_nano_cents(usd C.double) C.int64_t {
 	return C.int64_t(r0)
 }
 
+//export urnet_validate_control_doh_url
+func urnet_validate_control_doh_url(dohUrl *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_validate_control_doh_url", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
+	r0 := sdk.ValidateControlDohUrl(goString(dohUrl))
+	return cString(string(r0))
+}
+
 //export urnet_validate_emoji_tag
 func urnet_validate_emoji_tag(tag *C.char) *C.char {
 	defer cgoGuard("urnet_validate_emoji_tag")
@@ -17327,6 +17847,25 @@ func urnet_validate_ss58(address *C.char) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_validate_vless_settings
+func urnet_validate_vless_settings(settings *C.char) (errorId *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			cgoPanicked("urnet_validate_vless_settings", r)
+			errorId = cString(errorIdInternal)
+		}
+	}()
+	var settings_ *sdk.VlessSettings
+	if settings != nil {
+		settings_ = &sdk.VlessSettings{}
+		if !goJson(settings, settings_, "urnet_validate_vless_settings") {
+			return cString(errorIdInternal)
+		}
+	}
+	r0 := sdk.ValidateVlessSettings(settings_)
+	return cString(string(r0))
+}
+
 //export urnet_verify_payout_proof_hex
 func urnet_verify_payout_proof_hex(rootHex *C.char, leafHex *C.char, proofHex *C.char) C.bool {
 	defer cgoGuard("urnet_verify_payout_proof_hex")
@@ -17339,6 +17878,60 @@ func urnet_verify_payout_proof_hex(rootHex *C.char, leafHex *C.char, proofHex *C
 	}
 	r0 := sdk.VerifyPayoutProofHex(goString(rootHex), goString(leafHex), proofHex_)
 	return C.bool(r0)
+}
+
+//export urnet_vless_fingerprints
+func urnet_vless_fingerprints() *C.char {
+	defer cgoGuard("urnet_vless_fingerprints")
+	r0 := sdk.VlessFingerprints()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_fingerprints")
+}
+
+//export urnet_vless_flows
+func urnet_vless_flows() *C.char {
+	defer cgoGuard("urnet_vless_flows")
+	r0 := sdk.VlessFlows()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_flows")
+}
+
+//export urnet_vless_networks
+func urnet_vless_networks() *C.char {
+	defer cgoGuard("urnet_vless_networks")
+	r0 := sdk.VlessNetworks()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_networks")
+}
+
+//export urnet_vless_securities
+func urnet_vless_securities() *C.char {
+	defer cgoGuard("urnet_vless_securities")
+	r0 := sdk.VlessSecurities()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_vless_securities")
+}
+
+//export urnet_vless_settings_link
+func urnet_vless_settings_link(settings *C.char) *C.char {
+	defer cgoGuard("urnet_vless_settings_link")
+	var settings_ *sdk.VlessSettings
+	if settings != nil {
+		settings_ = &sdk.VlessSettings{}
+		if !goJson(settings, settings_, "urnet_vless_settings_link") {
+			return nil
+		}
+	}
+	r0 := sdk.VlessSettingsLink(settings_)
+	return cString(string(r0))
 }
 
 //export urnet_wallet_view_controller_add_account_wallets_listener

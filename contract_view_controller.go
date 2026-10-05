@@ -44,8 +44,8 @@ type ThroughputListener interface {
 // the byte and packet counts are deltas over the interval,
 // and the bit rates are normalized to bits per second
 type ThroughputSample struct {
-	EgressByteCount    ByteCount
-	IngressByteCount   ByteCount
+	EgressByteCount    int64
+	IngressByteCount   int64
 	EgressPacketCount  int64
 	IngressPacketCount int64
 	EgressBitRate      int
@@ -95,8 +95,8 @@ type TransportShare struct {
 	// A fallback or disconnect removes the H1+ indication on the next sample.
 	H1WebSocketConnectionCount int64
 	H1PlusConnectionCount      int64
-	EgressByteCount            ByteCount
-	IngressByteCount           ByteCount
+	EgressByteCount            int64
+	IngressByteCount           int64
 	EgressPacketCount          int64
 	IngressPacketCount         int64
 	// the transport's fraction of the window's remote bytes (both directions),
@@ -137,7 +137,7 @@ func NewTransportShareList() *TransportShareList {
 type TransportDistribution struct {
 	Shares *TransportShareList
 	// the window's remote bytes, both directions
-	ByteCount ByteCount
+	ByteCount int64
 	// whether any transport carried traffic in the window
 	Active bool
 }
