@@ -15,6 +15,10 @@
  *   to callbacks are owned by the receiver and must be released.
  * - functions with a char** out_error parameter set a malloc'd error message on
  *   failure (free with urnet_free_string). pass NULL to ignore the error text.
+ * - a char* result marked "error id" is "" on success, else the id of the
+ *   refusal (the URNET_*_ERROR_* defines), or URNET_ERROR_ID_INTERNAL when the
+ *   call could not run (an unknown handle, json that does not decode, a
+ *   recovered panic). never NULL.
  */
 #ifndef URNETWORK_SDK_H
 #define URNETWORK_SDK_H
@@ -37,6 +41,9 @@ void urnet_free_string(char* s);
 bool urnet_release(uint64_t handle);
 /* number of live handles, for leak checks */
 int64_t urnet_live_handle_count(void);
+
+/* what a function whose result is an error id answers when the call could not run */
+#define URNET_ERROR_ID_INTERNAL "internal_error"
 
 /* ----- byte buffer results (hand-written) ----- */
 
@@ -1666,9 +1673,11 @@ char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_network_space_set_control_doh_urls(uint64_t self, const char* doh_urls_json);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
 void urnet_network_space_set_extender_gossip_mode(uint64_t self, const char* mode);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_network_space_set_vless_settings(uint64_t self, const char* settings_json);
 char* urnet_network_space_to_json(uint64_t self, char** out_error);
 
@@ -2081,9 +2090,11 @@ char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json,
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 void urnet_trim_memory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_control_doh_url(const char* doh_url);
 char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
+/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_vless_settings(const char* settings_json);
 bool urnet_verify_payout_proof_hex(const char* root_hex, const char* leaf_hex, const char* proof_hex_json);
 char* urnet_vless_fingerprints(void);

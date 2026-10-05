@@ -28,6 +28,10 @@ See the header comment in `include/urnetwork_sdk.h`. In short:
   `urnet_release`. Releasing does not close/stop the object — call the object's
   `*_close`/`*_stop` first where one exists.
 - returned `char*` are owned by the caller; free with `urnet_free_string`.
+- a `char*` result the header marks "error id" is `""` on success, else the
+  id of the refusal, and `URNET_ERROR_ID_INTERNAL` (never NULL, which the c++
+  wrapper would read as `""`) when the call could not run. The sdk marks such
+  a function by naming its string result `errorId`.
 - structured data crosses as utf-8 json. Ids are uuid strings; times are unix
   epoch milliseconds (0 = none).
 - callbacks fire on arbitrary threads and their arguments are only valid during
