@@ -347,6 +347,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_PURCHASE_CONFIRMATION_STATE_CONFIRMED "confirmed"
 #define URNET_PURCHASE_CONFIRMATION_STATE_IDLE "idle"
 #define URNET_PURCHASE_CONFIRMATION_STATE_WAITING_FOR_CONFIRMATION "waiting_for_confirmation"
+#define URNET_PURCHASE_ERROR_CODE_GUEST_SIGN_IN_REQUIRED "guest_sign_in_required"
 #define URNET_PURCHASE_REPORT_STATUS_ALREADY_CREDITED "already_credited"
 #define URNET_PURCHASE_REPORT_STATUS_CREDITED "credited"
 #define URNET_PURCHASE_REPORT_STATUS_INVALID "invalid"
@@ -3685,6 +3686,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* OnboardingError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -4544,6 +4546,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* SolanaPaymentIntentError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -4583,6 +4586,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* StripeCreateCheckoutSessionError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -4611,6 +4615,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* StripeCreatePaymentIntentErr (json):
+ *   code?: string
  *   message: string
  */
 

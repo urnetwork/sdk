@@ -3174,7 +3174,21 @@ type SolanaPaymentIntentResult struct {
 	SplTokenMint string `json:"spl_token_mint,omitempty"`
 }
 
+// Stable codes for a refused checkout or payment intent (the server's
+// PurchaseErrorCode*): CreateSolanaPaymentIntent, CreateStripePaymentIntent,
+// CreateStripeCheckoutSession and StripePaymentSheet. Apps pick a flow or a
+// localized message from the code and fall back to `Message`.
+const (
+	// The network is a legacy guest network (no sign-in method): nothing
+	// could sign back in to a plan bought on it. Add a sign-in method
+	// (AddAuth) first; the apps open their add-sign-in sheet.
+	PurchaseErrorCodeGuestSignInRequired = "guest_sign_in_required"
+)
+
 type SolanaPaymentIntentError struct {
+	// one of the `PurchaseErrorCode*` values, when the refusal has one; empty
+	// from an older server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -3201,6 +3215,9 @@ func (self *Api) CreateSolanaPaymentIntent(args *SolanaPaymentIntentArgs, callba
 type StripeCreatePaymentIntentArgs struct{}
 
 type StripeCreatePaymentIntentErr struct {
+	// one of the `PurchaseErrorCode*` values, when the refusal has one; empty
+	// from an older server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -3287,6 +3304,9 @@ type StripeCreateCheckoutSessionArgs struct {
 }
 
 type StripeCreateCheckoutSessionError struct {
+	// one of the `PurchaseErrorCode*` values, when the refusal has one; empty
+	// from an older server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 

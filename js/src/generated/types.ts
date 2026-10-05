@@ -287,6 +287,7 @@ export interface ExperimentAssignment {
 }
 
 export interface OnboardingError {
+  code?: string;
   message: string;
 }
 
