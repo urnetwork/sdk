@@ -480,6 +480,8 @@ def bind(lib):
     lib.urnet_api_upgrade_guest.restype = None
     lib.urnet_api_upgrade_guest_existing.argtypes = [c_uint64, c_char_p, urnet_upgrade_guest_existing_cb, c_void_p]
     lib.urnet_api_upgrade_guest_existing.restype = None
+    lib.urnet_api_upload_logs.argtypes = [c_uint64, c_char_p, urnet_upload_logs_cb, c_void_p, POINTER(c_void_p)]
+    lib.urnet_api_upload_logs.restype = c_bool
     lib.urnet_api_validate_referral_code.argtypes = [c_uint64, c_char_p, urnet_validate_referral_code_cb, c_void_p]
     lib.urnet_api_validate_referral_code.restype = None
     lib.urnet_api_verify_apple_transaction.argtypes = [c_uint64, c_char_p, urnet_verify_apple_transaction_cb, c_void_p]
@@ -2494,6 +2496,8 @@ def bind(lib):
     lib.urnet_transport_settings_with_mode.restype = c_void_p
     lib.urnet_trim_memory.argtypes = []
     lib.urnet_trim_memory.restype = None
+    lib.urnet_upload_logs_inventory.argtypes = []
+    lib.urnet_upload_logs_inventory.restype = c_void_p
     lib.urnet_usd_to_nano_cents.argtypes = [c_double]
     lib.urnet_usd_to_nano_cents.restype = c_int64
     lib.urnet_validate_control_doh_url.argtypes = [c_char_p]

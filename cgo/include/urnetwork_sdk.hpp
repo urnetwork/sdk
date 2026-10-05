@@ -17388,6 +17388,7 @@ public:
 	void unlinkReferralNetwork(UnlinkReferralNetworkCallback callback) const;
 	void upgradeGuest(const std::optional<UpgradeGuestArgs>& upgrade_guest, UpgradeGuestCallback callback) const;
 	void upgradeGuestExisting(const std::optional<UpgradeGuestExistingArgs>& upgrade_guest, UpgradeGuestExistingCallback callback) const;
+	void uploadLogs(const std::string& feedback_id, UploadLogsCallback callback) const;
 	void validateReferralCode(const std::optional<ValidateReferralCodeArgs>& validate_referral_code, ValidateReferralCodeCallback callback) const;
 	void verifyAppleTransaction(const std::optional<VerifyAppleTransactionArgs>& args, VerifyAppleTransactionCallback callback) const;
 	std::optional<VerifyStorePurchaseResult> verifyAppleTransactionSync(const std::optional<VerifyAppleTransactionArgs>& args) const;
@@ -25920,6 +25921,17 @@ inline void Api::upgradeGuestExisting(const std::optional<UpgradeGuestExistingAr
 	auto* callback_fn = callback ? new UpgradeGuestExistingCallback(std::move(callback)) : nullptr;
 	urnet_api_upgrade_guest_existing(handle(), upgrade_guest_c, callback_fn ? &detail::oneshot_upgrade_guest_existing : nullptr, callback_fn);
 }
+inline void Api::uploadLogs(const std::string& feedback_id, UploadLogsCallback callback) const {
+	auto* callback_fn = callback ? new UploadLogsCallback(std::move(callback)) : nullptr;
+	char* err_c = nullptr;
+	bool ok = urnet_api_upload_logs(handle(), feedback_id.c_str(), callback_fn ? &detail::oneshot_upload_logs : nullptr, callback_fn, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_api_upload_logs failed");
+	}
+}
 inline void Api::validateReferralCode(const std::optional<ValidateReferralCodeArgs>& validate_referral_code, ValidateReferralCodeCallback callback) const {
 	std::string validate_referral_code_json;
 	const char* validate_referral_code_c = nullptr;
@@ -31406,6 +31418,14 @@ inline std::optional<TransportSettings> transportSettingsWithMode(const std::opt
 }
 inline void trimMemory() {
 	urnet_trim_memory();
+}
+inline std::optional<LogFileInfoList> uploadLogsInventory() {
+	char* r_c = urnet_upload_logs_inventory();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<LogFileInfoList>(r_s->c_str());
 }
 inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);

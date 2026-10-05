@@ -943,6 +943,7 @@ void urnet_api_subscription_create_payment_id(uint64_t self, const char* create_
 void urnet_api_unlink_referral_network(uint64_t self, urnet_unlink_referral_network_cb callback_result, void* callback_user_data);
 void urnet_api_upgrade_guest(uint64_t self, const char* upgrade_guest_json, urnet_upgrade_guest_cb callback_result, void* callback_user_data);
 void urnet_api_upgrade_guest_existing(uint64_t self, const char* upgrade_guest_json, urnet_upgrade_guest_existing_cb callback_result, void* callback_user_data);
+bool urnet_api_upload_logs(uint64_t self, const char* feedback_id, urnet_upload_logs_cb callback_result, void* callback_user_data, char** out_error);
 void urnet_api_validate_referral_code(uint64_t self, const char* validate_referral_code_json, urnet_validate_referral_code_cb callback_result, void* callback_user_data);
 void urnet_api_verify_apple_transaction(uint64_t self, const char* args_json, urnet_verify_apple_transaction_cb callback_result, void* callback_user_data);
 char* urnet_api_verify_apple_transaction_sync(uint64_t self, const char* args_json, char** out_error);
@@ -2093,6 +2094,7 @@ bool urnet_transport_settings_equal(const char* a_json, const char* b_json);
 char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json, const char* mode, bool enabled);
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 void urnet_trim_memory(void);
+char* urnet_upload_logs_inventory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_control_doh_url(const char* doh_url);

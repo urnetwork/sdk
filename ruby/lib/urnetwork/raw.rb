@@ -338,6 +338,7 @@ module URnetwork
       attach_function :urnet_api_unlink_referral_network, [:uint64, :urnet_unlink_referral_network_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_upgrade_guest, [:uint64, :string, :urnet_upgrade_guest_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_upgrade_guest_existing, [:uint64, :string, :urnet_upgrade_guest_existing_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_upload_logs, [:uint64, :string, :urnet_upload_logs_cb, :pointer, :pointer], :bool, blocking: true
       attach_function :urnet_api_validate_referral_code, [:uint64, :string, :urnet_validate_referral_code_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_verify_apple_transaction, [:uint64, :string, :urnet_verify_apple_transaction_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_verify_apple_transaction_sync, [:uint64, :string, :pointer], :pointer, blocking: true
@@ -1345,6 +1346,7 @@ module URnetwork
       attach_function :urnet_transport_settings_with_auto_mode_enabled, [:string, :string, :bool], :pointer, blocking: true
       attach_function :urnet_transport_settings_with_mode, [:string, :string], :pointer, blocking: true
       attach_function :urnet_trim_memory, [], :void, blocking: true
+      attach_function :urnet_upload_logs_inventory, [], :pointer, blocking: true
       attach_function :urnet_usd_to_nano_cents, [:double], :int64, blocking: true
       attach_function :urnet_validate_control_doh_url, [:string], :pointer, blocking: true
       attach_function :urnet_validate_emoji_tag, [:string], :pointer, blocking: true

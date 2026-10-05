@@ -5073,6 +5073,25 @@ func urnet_api_upgrade_guest_existing(self C.uint64_t, upgradeGuest *C.char, cal
 	self_.UpgradeGuestExisting(upgradeGuest_, callback_)
 }
 
+//export urnet_api_upload_logs
+func urnet_api_upload_logs(self C.uint64_t, feedbackId *C.char, callback_result C.urnet_upload_logs_cb, callback_user_data unsafe.Pointer, outError **C.char) C.bool {
+	defer cgoGuard("urnet_api_upload_logs")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_upload_logs")
+	if !ok {
+		return C.bool(false)
+	}
+	var callback_ sdk.UploadLogsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterUploadLogsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	err := self_.UploadLogs(goString(feedbackId), callback_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_api_validate_referral_code
 func urnet_api_validate_referral_code(self C.uint64_t, validateReferralCode *C.char, callback_result C.urnet_validate_referral_code_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_validate_referral_code")
@@ -17809,6 +17828,16 @@ func urnet_tunnel_get_done(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetDone()
 	return C.bool(r0)
+}
+
+//export urnet_upload_logs_inventory
+func urnet_upload_logs_inventory() *C.char {
+	defer cgoGuard("urnet_upload_logs_inventory")
+	r0 := sdk.UploadLogsInventory()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_upload_logs_inventory")
 }
 
 //export urnet_usd_to_nano_cents

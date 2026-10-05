@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/urnetwork/connect"
 )
 
 // An app line is one bounded line that cannot split itself or forge another
@@ -112,7 +114,7 @@ func TestLogAppInfoLineIsInTheUploadedLogs(t *testing.T) {
 	LogAppInfo("service", "private dns mode=strict(dns.example)")
 	LogAppInfo("whitelist-probe", "  [fail] api-reachable: SocketTimeoutException after 5001ms\nI0101 00:00:00.000000 1 forged.go:1] forged")
 
-	zipPath, err := zipUploadLogs(GetLogDir())
+	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, connect.DefaultLogger())
 	if err != nil {
 		t.Fatalf("zipUploadLogs = %v, want nil", err)
 	}
