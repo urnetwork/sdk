@@ -14003,6 +14003,12 @@ func urnet_locations_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_log_app_info
+func urnet_log_app_info(tag *C.char, message *C.char) {
+	defer cgoGuard("urnet_log_app_info")
+	sdk.LogAppInfo(goString(tag), goString(message))
+}
+
 //export urnet_log_inventory
 func urnet_log_inventory() *C.char {
 	defer cgoGuard("urnet_log_inventory")

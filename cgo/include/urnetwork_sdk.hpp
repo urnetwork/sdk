@@ -30497,6 +30497,9 @@ inline bool isValidPaymentReference(const std::string& s) {
 	bool r = urnet_is_valid_payment_reference(s.c_str());
 	return r;
 }
+inline void logAppInfo(const std::string& tag, const std::string& message) {
+	urnet_log_app_info(tag.c_str(), message.c_str());
+}
 inline std::optional<LogFileInfoList> logInventory() {
 	char* r_c = urnet_log_inventory();
 	auto r_s = detail::takeStringOpt(r_c);
