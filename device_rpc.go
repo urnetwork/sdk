@@ -1124,6 +1124,15 @@ func (self *DeviceRemote) RefreshToken(attempt int) error {
 }
 
 func (self *DeviceRemote) SetPerformanceProfile(performanceProfile *PerformanceProfile) {
+	// The device refuses a profile it cannot install (see
+	// validatePerformanceProfile). Refuse it here too, so it is never sent or
+	// queued for the next sync, and the previous profile stays in force.
+	if err := validatePerformanceProfile(performanceProfile); err != nil {
+		if self.log != nil && self.log.V(1).Enabled() {
+			self.log.Infof("[dr]refused performance profile: %v", err)
+		}
+		return
+	}
 	performanceProfile = clonePerformanceProfile(performanceProfile)
 	func() {
 		self.stateLock.Lock()
@@ -9735,7 +9744,15 @@ func (self *DeviceLocalRpc) Sync(
 		}
 	}
 	if state.PerformanceProfile.IsSet {
-		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("performance-profile", state.PerformanceProfile.Value)); err != nil {
+		// A profile the device refuses (see validatePerformanceProfile) keeps
+		// the previous one in force and does not fail the sync. The remote
+		// queues a failed sync's state again, so failing here would fail every
+		// later sync too. The response reports the profile in force.
+		if err := validatePerformanceProfile(state.PerformanceProfile.Value); err != nil {
+			if self.deviceLocal.log.V(1).Enabled() {
+				self.deviceLocal.log.Infof("[dlrpc]sync refused performance profile: %v", err)
+			}
+		} else if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("performance-profile", state.PerformanceProfile.Value)); err != nil {
 			return err
 		}
 	}

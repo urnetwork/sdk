@@ -1002,6 +1002,11 @@ func (self *LocalState) SetPerformanceProfile(profile *PerformanceProfile) error
 		os.Remove(path)
 		return nil
 	} else {
+		// a profile the device would refuse is not saved; the saved profile
+		// stays as it was
+		if err := validatePerformanceProfile(profile); err != nil {
+			return localStorageStageError("invalid performance-profile", err)
+		}
 		profileBytes, err := json.Marshal(profile)
 		if err != nil {
 			return err
@@ -1023,7 +1028,7 @@ func (self *LocalState) GetPerformanceProfile() *PerformanceProfile {
 	if performanceProfileBytes, err := os.ReadFile(path); err == nil {
 		var performanceProfile PerformanceProfile
 		if err := json.Unmarshal(performanceProfileBytes, &performanceProfile); err == nil {
-			return &performanceProfile
+			return normalizeSavedPerformanceProfile(&performanceProfile)
 		}
 	}
 	return nil

@@ -2229,7 +2229,9 @@ func (self *DeviceLocal) applyPerformanceProfileWithLock(performanceProfile *Per
 				v.SetAllowDirect(false)
 			}
 		case *connect.RemoteUserNatMultiClient:
-			v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
+			// every stored profile passed validatePerformanceProfile, the
+			// multi client's own validation, so the multi client takes it
+			_ = v.SetPerformanceProfile(toConnectPerformanceProfile(performanceProfile))
 		}
 	}
 	// Preserve the public value contract even when this was only a
@@ -7941,5 +7943,33 @@ func toConnectWindowSize(windowSize *WindowSizeSettings) connect.WindowSizeSetti
 		WindowSizeReconnectScale: windowSize.WindowSizeReconnectScale,
 		KeepHealthiestCount:      windowSize.KeepHealthiestCount,
 		Ulimit:                   windowSize.Ulimit,
+	}
+}
+
+// validatePerformanceProfile is the multi client's own check of the profile
+// it would receive: no window size or count below zero, max at least min, and
+// a fixed window with room for an exit. The device refuses any other profile
+// before saving or applying it, so a caller's window size never reaches the
+// connection. nil, the auto default, is valid.
+func validatePerformanceProfile(performanceProfile *PerformanceProfile) error {
+	if performanceProfile == nil {
+		return nil
+	}
+	return toConnectPerformanceProfile(performanceProfile).Validate()
+}
+
+// normalizeSavedPerformanceProfile reads back a saved profile. Before the
+// device refused them, a profile whose window the multi client cannot install
+// could be saved from any caller. It reads back in auto mode, keeping its
+// direct and post-quantum choices, instead of failing the load or reaching
+// the connection.
+func normalizeSavedPerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
+	if validatePerformanceProfile(performanceProfile) == nil {
+		return performanceProfile
+	}
+	return &PerformanceProfile{
+		WindowType:            WindowTypeAuto,
+		AllowDirect:           performanceProfile.AllowDirect,
+		PostQuantumEncryption: performanceProfile.PostQuantumEncryption,
 	}
 }
