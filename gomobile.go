@@ -447,11 +447,11 @@ type StripePaymentIntentList struct {
 }
 
 type RedeemedBalanceCode struct {
-	BalanceCodeId    *Id       `json:"balance_code_id"`
-	BalanceByteCount ByteCount `json:"balance_byte_count"`
-	RedeemTime       *Time     `json:"redeem_time"`
-	EndTime          *Time     `json:"end_time"`
-	Secret           string    `json:"secret"`
+	BalanceCodeId    *Id    `json:"balance_code_id"`
+	BalanceByteCount int64  `json:"balance_byte_count"`
+	RedeemTime       *Time  `json:"redeem_time"`
+	EndTime          *Time  `json:"end_time"`
+	Secret           string `json:"secret"`
 }
 
 type RedeemedBalanceCodeList struct {

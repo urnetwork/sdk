@@ -918,7 +918,7 @@ type NetworkClientInfo struct {
 	Roles     *StringList `json:"roles,omitempty"`
 	Principal string      `json:"principal,omitempty"`
 
-	ProvideMode ProvideMode `json:"provide_mode"`
+	ProvideMode int `json:"provide_mode"`
 	// ProxyClient carries the hosted proxy device's credentials; only the
 	// /network/proxies listing fills it, /network/clients never does
 	ProxyClient *ProxyClient                 `json:"proxy_client,omitempty"`
@@ -1438,19 +1438,19 @@ func (self *Api) WalletValidateAddress(walletValidateAddress *WalletValidateAddr
 type WalletType = string
 
 const (
-	WalletTypeCircleUserControlled WalletType = "circle_uc"
-	WalletTypeXch                  WalletType = "xch"
-	WalletTypeSol                  WalletType = "sol"
+	WalletTypeCircleUserControlled string = "circle_uc"
+	WalletTypeXch                  string = "xch"
+	WalletTypeSol                  string = "sol"
 )
 
 type Blockchain = string
 
 const (
-	SOL   Blockchain = "SOL"
-	MATIC Blockchain = "MATIC"
+	SOL   string = "SOL"
+	MATIC string = "MATIC"
 	// TAO (bittensor) wallets are recorded for future use only: they cannot
 	// be the payout wallet (payouts are USDC on Solana/Polygon)
-	TAO Blockchain = "TAO"
+	TAO string = "TAO"
 )
 
 type CreateAccountWalletArgs struct {
@@ -1550,12 +1550,12 @@ type CircleUserToken struct {
 }
 
 type CircleWalletInfo struct {
-	WalletId             string    `json:"wallet_id"`
-	TokenId              string    `json:"token_id"`
-	Blockchain           string    `json:"blockchain"`
-	BlockchainSymbol     string    `json:"blockchain_symbol"`
-	CreateDate           string    `json:"create_date"`
-	BalanceUsdcNanoCents NanoCents `json:"balance_usdc_nano_cents"`
+	WalletId             string `json:"wallet_id"`
+	TokenId              string `json:"token_id"`
+	Blockchain           string `json:"blockchain"`
+	BlockchainSymbol     string `json:"blockchain_symbol"`
+	CreateDate           string `json:"create_date"`
+	BalanceUsdcNanoCents int64  `json:"balance_usdc_nano_cents"`
 	// Address is the wallet's on-chain address
 	Address string `json:"address"`
 }
@@ -1608,10 +1608,10 @@ type WalletCircleTransferOutCallback connect.ApiCallback[*WalletCircleTransferOu
 type WalletCircleTransferOutArgs struct {
 	// Persist this id with the intent before calling the API; reuse it on every
 	// retry/restart. A distinct intended transfer needs a distinct id.
-	RequestId           *Id       `json:"request_id"`
-	ToAddress           string    `json:"to_address"`
-	AmountUsdcNanoCents NanoCents `json:"amount_usdc_nano_cents"`
-	Terms               bool      `json:"terms"`
+	RequestId           *Id    `json:"request_id"`
+	ToAddress           string `json:"to_address"`
+	AmountUsdcNanoCents int64  `json:"amount_usdc_nano_cents"`
+	Terms               bool   `json:"terms"`
 }
 
 type WalletCircleTransferOutResult struct {
@@ -1664,18 +1664,18 @@ type Subscription struct {
 }
 
 type TransferBalance struct {
-	BalanceId             *Id       `json:"balance_id"`
-	NetworkId             *Id       `json:"network_id"`
-	StartTime             string    `json:"start_time"`
-	EndTime               string    `json:"end_time"`
-	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
+	BalanceId             *Id    `json:"balance_id"`
+	NetworkId             *Id    `json:"network_id"`
+	StartTime             string `json:"start_time"`
+	EndTime               string `json:"end_time"`
+	StartBalanceByteCount int64  `json:"start_balance_byte_count"`
 	// how much money the platform made after subtracting fees. The wire name
 	// is `net_revenue_nano_cents` (an earlier tag, `net_revenue`, never
 	// matched the server and left this 0 in every app).
-	NetRevenue NanoCents `json:"net_revenue_nano_cents"`
+	NetRevenue int64 `json:"net_revenue_nano_cents"`
 	// the subsidized part of NetRevenue
-	SubsidyNetRevenue NanoCents `json:"subsidy_net_revenue_nano_cents,omitempty"`
-	BalanceByteCount  ByteCount `json:"balance_byte_count"`
+	SubsidyNetRevenue int64 `json:"subsidy_net_revenue_nano_cents,omitempty"`
+	BalanceByteCount  int64 `json:"balance_byte_count"`
 	// PurchaseToken is the store purchase the balance came from, when any
 	PurchaseToken string `json:"purchase_token,omitempty"`
 	// Paid means the balance carries revenue. It is NOT the same as Pro: a
@@ -1692,15 +1692,15 @@ type SubscriptionBalanceResult struct {
 	/*
 	 * StartBalanceByteCount - The available balance the user starts the day with
 	 */
-	StartBalanceByteCount ByteCount `json:"start_balance_byte_count"`
+	StartBalanceByteCount int64 `json:"start_balance_byte_count"`
 	/**
 	 * BalanceByteCount - The remaining balance the user has available
 	 */
-	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	BalanceByteCount int64 `json:"balance_byte_count"`
 	/**
 	 * OpenTransferByteCount - The total number of bytes tied up in open transfers
 	 */
-	OpenTransferByteCount ByteCount `json:"open_transfer_byte_count"`
+	OpenTransferByteCount int64 `json:"open_transfer_byte_count"`
 	/**
 	 * CurrentSubscription - ONE of the active subscriptions, or nil. Shipped apps
 	 * read this as the plan indicator, so it keeps its exact single-value meaning;
@@ -1717,7 +1717,7 @@ type SubscriptionBalanceResult struct {
 	 */
 	Subscriptions             *SubscriptionList    `json:"subscriptions,omitempty"`
 	ActiveTransferBalances    *TransferBalanceList `json:"active_transfer_balances,omitempty"`
-	PendingPayoutUsdNanoCents NanoCents            `json:"pending_payout_usd_nano_cents"`
+	PendingPayoutUsdNanoCents int64                `json:"pending_payout_usd_nano_cents"`
 	UpdateTime                string               `json:"update_time"`
 	/**
 	 * Guest - the network has no login method (a legacy guest network). The
@@ -2222,8 +2222,8 @@ func (self *Api) AccountPreferencesGet(callback AccountPreferencesGetCallback) {
  **/
 
 type TransferStatsResult struct {
-	PaidBytesProvided   ByteCount `json:"paid_bytes_provided"`
-	UnpaidBytesProvided ByteCount `json:"unpaid_bytes_provided"`
+	PaidBytesProvided   int64 `json:"paid_bytes_provided"`
+	UnpaidBytesProvided int64 `json:"unpaid_bytes_provided"`
 }
 
 type GetTransferStatsCallback connect.ApiCallback[*TransferStatsResult]
@@ -2817,14 +2817,14 @@ func (self *Api) SetEmojiTag(args *SetEmojiTagArgs, callback SetEmojiTagCallback
  */
 
 type AccountPoint struct {
-	AccountPointId   *Id        `json:"account_point_id"`
-	NetworkId        *Id        `json:"network_id"`
-	Event            string     `json:"event"`
-	PointValue       NanoPoints `json:"point_value"`
-	AccountPaymentId *Id        `json:"account_payment_id"`
-	PaymentPlanId    *Id        `json:"payment_plan_id,omitempty"`
-	LinkedNetworkId  *Id        `json:"linked_network_id,omitempty"`
-	CreateTime       *Time      `json:"create_time"`
+	AccountPointId   *Id    `json:"account_point_id"`
+	NetworkId        *Id    `json:"network_id"`
+	Event            string `json:"event"`
+	PointValue       int64  `json:"point_value"`
+	AccountPaymentId *Id    `json:"account_payment_id"`
+	PaymentPlanId    *Id    `json:"payment_plan_id,omitempty"`
+	LinkedNetworkId  *Id    `json:"linked_network_id,omitempty"`
+	CreateTime       *Time  `json:"create_time"`
 }
 
 type AccountPointsResult struct {
@@ -3449,10 +3449,10 @@ type RedeemBalanceCodeResult struct {
 }
 
 type RedeemBalanceCodeTransferBalance struct {
-	TransferBalanceId *Id       `json:"transfer_balance_id"`
-	StartTime         *Time     `json:"start_time"`
-	EndTime           *Time     `json:"end_time"`
-	BalanceByteCount  ByteCount `json:"balance_byte_count"`
+	TransferBalanceId *Id   `json:"transfer_balance_id"`
+	StartTime         *Time `json:"start_time"`
+	EndTime           *Time `json:"end_time"`
+	BalanceByteCount  int64 `json:"balance_byte_count"`
 }
 
 type RedeemBalanceCodeError struct {
@@ -3490,9 +3490,9 @@ type CheckBalanceCodeArgs struct {
 }
 
 type CheckBalanceCodeBalance struct {
-	StartTime        *Time     `json:"start_time"`
-	EndTime          *Time     `json:"end_time"`
-	BalanceByteCount ByteCount `json:"balance_byte_count"`
+	StartTime        *Time `json:"start_time"`
+	EndTime          *Time `json:"end_time"`
+	BalanceByteCount int64 `json:"balance_byte_count"`
 }
 
 type CheckBalanceCodeError struct {

@@ -838,7 +838,7 @@ type cAdapterFilteredLocationsListener struct {
 	userData                   unsafe.Pointer
 }
 
-func (self *cAdapterFilteredLocationsListener) FilteredLocationsChanged(locations *sdk.FilteredLocations, state sdk.FilterLocationsState) {
+func (self *cAdapterFilteredLocationsListener) FilteredLocationsChanged(locations *sdk.FilteredLocations, state string) {
 	defer cgoGuard("urnet_filtered_locations_cb")
 	locations_ := cJson(locations, "urnet_filtered_locations_cb")
 	state_ := cString(string(state))
@@ -1838,7 +1838,7 @@ type cAdapterProvideControlModeChangeListener struct {
 	userData                    unsafe.Pointer
 }
 
-func (self *cAdapterProvideControlModeChangeListener) ProvideControlModeChanged(provideControlMode sdk.ProvideControlMode) {
+func (self *cAdapterProvideControlModeChangeListener) ProvideControlModeChanged(provideControlMode string) {
 	defer cgoGuard("urnet_provide_control_mode_change_cb")
 	provideControlMode_ := cString(string(provideControlMode))
 	C.urnet_invoke_provide_control_mode_change(self.cbProvideControlModeChanged, self.userData, provideControlMode_)
@@ -1850,7 +1850,7 @@ type cAdapterProvideModeChangeListener struct {
 	userData             unsafe.Pointer
 }
 
-func (self *cAdapterProvideModeChangeListener) ProvideModeChanged(provideMode sdk.ProvideMode) {
+func (self *cAdapterProvideModeChangeListener) ProvideModeChanged(provideMode int) {
 	defer cgoGuard("urnet_provide_mode_change_cb")
 	C.urnet_invoke_provide_mode_change(self.cbProvideModeChanged, self.userData, C.int64_t(int64(provideMode)))
 }
@@ -1860,7 +1860,7 @@ type cAdapterProvideNetworkModeChangeListener struct {
 	userData                    unsafe.Pointer
 }
 
-func (self *cAdapterProvideNetworkModeChangeListener) ProvideNetworkModeChanged(provideNetworkMode sdk.ProvideNetworkMode) {
+func (self *cAdapterProvideNetworkModeChangeListener) ProvideNetworkModeChanged(provideNetworkMode string) {
 	defer cgoGuard("urnet_provide_network_mode_change_cb")
 	provideNetworkMode_ := cString(string(provideNetworkMode))
 	C.urnet_invoke_provide_network_mode_change(self.cbProvideNetworkModeChanged, self.userData, provideNetworkMode_)
@@ -1956,7 +1956,7 @@ type cAdapterReceivePacket struct {
 	userData        unsafe.Pointer
 }
 
-func (self *cAdapterReceivePacket) ReceivePacket(ipVersion int, ipProtocol sdk.IpProtocol, packet []byte) {
+func (self *cAdapterReceivePacket) ReceivePacket(ipVersion int, ipProtocol int, packet []byte) {
 	defer cgoGuard("urnet_receive_packet_cb")
 	var packet_ *C.uint8_t
 	if 0 < len(packet) {
@@ -2848,7 +2848,7 @@ type cAdapterUnpaidByteCountListener struct {
 	userData       unsafe.Pointer
 }
 
-func (self *cAdapterUnpaidByteCountListener) StateChanged(p0 sdk.ByteCount) {
+func (self *cAdapterUnpaidByteCountListener) StateChanged(p0 int64) {
 	defer cgoGuard("urnet_unpaid_byte_count_cb")
 	C.urnet_invoke_unpaid_byte_count(self.cbStateChanged, self.userData, C.int64_t(int64(p0)))
 }

@@ -55,8 +55,8 @@ type ContractRowsListener interface {
 // a peer are fundamentally many-to-many, so each is presented on its own.
 type ContractEntry struct {
 	ContractId     string
-	UsedByteCount  ByteCount
-	TotalByteCount ByteCount
+	UsedByteCount  int64
+	TotalByteCount int64
 	BitRate        int
 
 	// HasStream is true when the contract carries a (non-zero) stream id in its
@@ -93,8 +93,8 @@ type ContractPeerRow struct {
 	// goes idle (no throughput for the activity window). This shows "how much did
 	// this run move", which is far more useful at a glance than the instantaneous
 	// rate it replaces.
-	SendByteCount    ByteCount
-	ReceiveByteCount ByteCount
+	SendByteCount    int64
+	ReceiveByteCount int64
 
 	// LastActivityMillis is the unix-millis time this peer's contracts last moved
 	// bytes (any contract in either stack had a positive bit rate). 0 if the peer
@@ -130,12 +130,12 @@ type ContractClientRow struct {
 	ContractId          string
 	CompanionContractId string
 
-	ContractUsedByteCount ByteCount
-	ContractByteCount     ByteCount
+	ContractUsedByteCount int64
+	ContractByteCount     int64
 	ContractBitRate       int
 
-	CompanionContractUsedByteCount ByteCount
-	CompanionContractByteCount     ByteCount
+	CompanionContractUsedByteCount int64
+	CompanionContractByteCount     int64
 	CompanionContractBitRate       int
 
 	PairCount int

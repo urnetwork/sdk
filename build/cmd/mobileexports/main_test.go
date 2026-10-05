@@ -26,7 +26,6 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 			command.Dir = "../.."
 			command.Env = append(
 				os.Environ(),
-				"GODEBUG=gotypesalias=0",
 				"GOEXPERIMENT=greenteagc",
 				"GOPROXY=off",
 				"GOSUMDB=off",
@@ -62,9 +61,16 @@ func TestSubprotocolRpcInternalsStayOutsideMobileBindings(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				for _, name := range forbidden {
-					if strings.Contains(string(contents), name) {
-						t.Errorf("%s binding leaked Go-only implementation type %s in %s", language, name, path)
+				for _, line := range strings.Split(string(contents), "\n") {
+					// gobind names the alias type of a field it omits, so the omitted
+					// local api field's note names localDeviceApi without binding it
+					if strings.Contains(line, "// skipped ") && strings.HasSuffix(line, " github.com/urnetwork/sdk.localDeviceApi") {
+						continue
+					}
+					for _, name := range forbidden {
+						if strings.Contains(line, name) {
+							t.Errorf("%s binding leaked Go-only implementation type %s in %s: %s", language, name, path, strings.TrimSpace(line))
+						}
 					}
 				}
 				return nil

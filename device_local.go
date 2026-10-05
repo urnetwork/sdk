@@ -521,7 +521,7 @@ type DeviceLocalSettings struct {
 	// per-device target (legacy process-budget scaling). Hosts set this
 	// explicitly where the device is created; the default keeps a plain
 	// construction bounded.
-	MemoryTargetByteCount ByteCount
+	MemoryTargetByteCount int64
 
 	// time to give up (drop) sending a packet to a destination
 	//
@@ -1978,50 +1978,50 @@ type DeviceLocalMemoryUsage struct {
 	// additive to TotalByteCount. Counts/rejections contain no peer identities.
 	// Logical pin counters are a separately sampled diagnostic;
 	// root/child byte fields below remain one coherent admission snapshot.
-	PeerKeyPinBudgetByteCount     ByteCount
-	PeerKeyPinUsedByteCount       ByteCount
-	PeerKeyPinReservedByteCount   ByteCount
-	PeerKeyPinReleasedByteCount   ByteCount
+	PeerKeyPinBudgetByteCount     int64
+	PeerKeyPinUsedByteCount       int64
+	PeerKeyPinReservedByteCount   int64
+	PeerKeyPinReleasedByteCount   int64
 	PeerKeyPinCount               int
 	PeerKeyPinCapacityRefusals    int64
 	PeerKeyPinPersistenceFailures int64
 	PeerKeyPinRollbackRefusals    int64
 	PeerKeyPinStateFailures       int64
-	TargetByteCount               ByteCount
-	DnsByteCount                  ByteCount
-	ClientSendByteCount           ByteCount
-	ClientReceiveByteCount        ByteCount
+	TargetByteCount               int64
+	DnsByteCount                  int64
+	ClientSendByteCount           int64
+	ClientReceiveByteCount        int64
 	// PackQueue* isolates the device-wide aggregate decoded-pack handoff
 	// budget already included in ClientReceiveByteCount. It is shared by the
 	// control client, window clients, and provider so diagnostics can distinguish
 	// active queue pressure from allocator or message-pool retention.
-	PackQueueUsedByteCount     ByteCount
-	PackQueueCapacityByteCount ByteCount
-	ProviderSendByteCount      ByteCount
-	ProviderReceiveByteCount   ByteCount
+	PackQueueUsedByteCount     int64
+	PackQueueCapacityByteCount int64
+	ProviderSendByteCount      int64
+	ProviderReceiveByteCount   int64
 	// The root includes client/provider queues, the shared Pack queue once,
 	// all P2P generations, and both NATs. Child samples are diagnostic subsets,
 	// not additional memory. Root and group fields share one coherent snapshot.
-	TransferRootBudgetByteCount      ByteCount
-	TransferRootUsedByteCount        ByteCount
-	TransferRootReservedByteCount    ByteCount
-	TransferRootReleasedByteCount    ByteCount
-	ClientTransferBudgetByteCount    ByteCount
-	ClientTransferUsedByteCount      ByteCount
-	ProviderTransferBudgetByteCount  ByteCount
-	ProviderTransferUsedByteCount    ByteCount
-	NatBudgetByteCount               ByteCount
-	NatUsedByteCount                 ByteCount
-	NatReservedByteCount             ByteCount
-	NatReleasedByteCount             ByteCount
-	PlatformTransportBudgetByteCount ByteCount
-	PlatformTransportUsedByteCount   ByteCount
+	TransferRootBudgetByteCount      int64
+	TransferRootUsedByteCount        int64
+	TransferRootReservedByteCount    int64
+	TransferRootReleasedByteCount    int64
+	ClientTransferBudgetByteCount    int64
+	ClientTransferUsedByteCount      int64
+	ProviderTransferBudgetByteCount  int64
+	ProviderTransferUsedByteCount    int64
+	NatBudgetByteCount               int64
+	NatUsedByteCount                 int64
+	NatReservedByteCount             int64
+	NatReleasedByteCount             int64
+	PlatformTransportBudgetByteCount int64
+	PlatformTransportUsedByteCount   int64
 	PlatformTransportMaxCount        int
 	PlatformTransportUsedCount       int
 	PlatformTransportPendingH1Count  int
-	PlatformTransportPendingH1Bytes  ByteCount
-	PlatformTransportReservedBytes   ByteCount
-	PlatformTransportReleasedBytes   ByteCount
+	PlatformTransportPendingH1Bytes  int64
+	PlatformTransportReservedBytes   int64
+	PlatformTransportReleasedBytes   int64
 	// Handoff fields come from the same private-budget Stats call as pending
 	// admission. Window readiness is sampled from this DeviceLocal's current
 	// client under stateLock, not from a process-wide ingress readiness flag.
@@ -2029,12 +2029,12 @@ type DeviceLocalMemoryUsage struct {
 	// not proof of event-time ordering or of one reservation's lifetime.
 	PlatformTransportPendingHandoffCount int
 	PlatformTransportActiveHandoffCount  int
-	PlatformTransportHandoffByteCount    ByteCount
+	PlatformTransportHandoffByteCount    int64
 	PlatformTransportHandoffCount        int
 	PlatformTransportHandoffID           int64
 	PlatformTransportHandoffFromClass    string
 	PlatformTransportHandoffToClass      string
-	PlatformTransportHandoffH1ByteCount  ByteCount
+	PlatformTransportHandoffH1ByteCount  int64
 	ProviderWindowKnown                  bool
 	ProviderWindowMinSatisfied           bool
 	// PlatformTransportPreemptedH3Count is the lifetime count for this
@@ -2042,7 +2042,7 @@ type DeviceLocalMemoryUsage struct {
 	// exporting device identity so a repeated H1/H3 handoff loop remains
 	// observable without customer labels.
 	PlatformTransportPreemptedH3Count int64
-	TotalByteCount                    ByteCount
+	TotalByteCount                    int64
 }
 
 // MemoryUsed samples the tracked memory accounting of this device's areas

@@ -16,21 +16,21 @@ import (
 
 type MemoryStats struct {
 	// the gc live set
-	HeapLiveByteCount ByteCount
+	HeapLiveByteCount int64
 	// the gc heap goal; the steady state heap cycles up to this
-	HeapGoalByteCount ByteCount
+	HeapGoalByteCount int64
 	// memory counted against the Go soft limit: all runtime-managed mapped
 	// memory less heap pages released to the OS. This is
 	// runtime.MemStats.Sys - runtime.MemStats.HeapReleased, not process RSS;
 	// binary mappings, C allocations, and kernel memory are excluded.
-	TotalRuntimeByteCount ByteCount
+	TotalRuntimeByteCount int64
 	// the soft memory limit (see `SetMemoryLimit`). MaxInt64 when unset
-	MemoryLimitByteCount ByteCount
+	MemoryLimitByteCount int64
 	GoroutineCount       int
 	// Latest/peak iOS TASK_VM_INFO.phys_footprint supplied by the extension
 	// host. Zero on other platforms or before the host records a sample.
-	PhysicalFootprintByteCount     ByteCount
-	PhysicalFootprintPeakByteCount ByteCount
+	PhysicalFootprintByteCount     int64
+	PhysicalFootprintPeakByteCount int64
 	PhysicalFootprintPressureCount int64
 	// cumulative message pool counters. taken minus returned is the number
 	// of pool buffers currently held by consumers
@@ -41,64 +41,64 @@ type MemoryStats struct {
 	// reachable on bounded free lists for reuse. Report that retention
 	// separately from Taken-Returned.
 	PoolRetainedCount                int64
-	PoolRetainedByteCount            ByteCount
-	PoolCapacityByteCount            ByteCount
+	PoolRetainedByteCount            int64
+	PoolCapacityByteCount            int64
 	PacketPoolRetainedCount          int64
-	PacketPoolRetainedByteCount      ByteCount
+	PacketPoolRetainedByteCount      int64
 	LargeObjectPoolRetainedCount     int64
-	LargeObjectPoolRetainedByteCount ByteCount
+	LargeObjectPoolRetainedByteCount int64
 	// DeviceTunEgressOutstandingByteCount is the subset of packet-root
 	// ownership admitted from the device TUN. Mobile pressure gating uses this
 	// directional value so downloaded roots cannot crowd out TCP ACKs.
-	DeviceTunEgressOutstandingByteCount ByteCount
+	DeviceTunEgressOutstandingByteCount int64
 	// Automatic idle trimming runs at most once per quiet traffic epoch. These
 	// counters make a footprint drop attributable without parsing host logs.
 	IdleMemoryTrimCount                int64
-	LastIdleMemoryTrimDroppedByteCount ByteCount
+	LastIdleMemoryTrimDroppedByteCount int64
 	IdleMemoryTrimDeferredCount        int64
 	IdleMemoryTrimBelowTargetCount     int64
 	IdleMemoryTrimCooldownCount        int64
-	LastIdleMemoryTrimBeforeByteCount  ByteCount
-	LastIdleMemoryTrimAfterByteCount   ByteCount
+	LastIdleMemoryTrimBeforeByteCount  int64
+	LastIdleMemoryTrimAfterByteCount   int64
 	// Host platform trim levels (ReportMemoryTrimLevel): the latest level, how
 	// many reports arrived, how many acted, and the bytes the latest trim pass
 	// dropped.
 	TrimLevelLast                 int64
 	TrimLevelCount                int64
 	TrimLevelActionCount          int64
-	LastTrimLevelDroppedByteCount ByteCount
+	LastTrimLevelDroppedByteCount int64
 
 	// Carrier reservations for one DeviceLocal owner, populated by
 	// DeviceLocal.GetMemoryStats. Package-level GetMemoryStats leaves these
 	// fields zero because there is no shared process admission budget.
-	PlatformTransportBudgetTotalByteCount     ByteCount
-	PlatformTransportBudgetUsedByteCount      ByteCount
+	PlatformTransportBudgetTotalByteCount     int64
+	PlatformTransportBudgetUsedByteCount      int64
 	PlatformTransportBudgetUsedCount          int
 	PlatformTransportBudgetPendingH1Count     int
-	PlatformTransportBudgetPendingH1ByteCount ByteCount
+	PlatformTransportBudgetPendingH1ByteCount int64
 
 	// Allocator detail used to distinguish reachable objects from idle spans
 	// retained after a burst. HeapIdleByteCount-HeapReleasedByteCount is heap
 	// memory the runtime could return to the OS; HeapInuseByteCount-
 	// HeapAllocByteCount is an upper bound on size-class fragmentation.
-	HeapAllocByteCount         ByteCount
-	HeapSystemByteCount        ByteCount
-	HeapInuseByteCount         ByteCount
-	HeapIdleByteCount          ByteCount
-	HeapReleasedByteCount      ByteCount
+	HeapAllocByteCount         int64
+	HeapSystemByteCount        int64
+	HeapInuseByteCount         int64
+	HeapIdleByteCount          int64
+	HeapReleasedByteCount      int64
 	HeapObjectCount            int64
-	StackInuseByteCount        ByteCount
-	MSpanInuseByteCount        ByteCount
-	MCacheInuseByteCount       ByteCount
-	GCSystemByteCount          ByteCount
-	OtherSystemByteCount       ByteCount
-	ProfilingBucketByteCount   ByteCount
-	SystemByteCount            ByteCount
+	StackInuseByteCount        int64
+	MSpanInuseByteCount        int64
+	MCacheInuseByteCount       int64
+	GCSystemByteCount          int64
+	OtherSystemByteCount       int64
+	ProfilingBucketByteCount   int64
+	SystemByteCount            int64
 	MemoryProfileRateByteCount int64
 
 	// Cumulative allocation and GC counters let a host correlate traffic
 	// phases with churn without retaining packet contents or destinations.
-	TotalAllocatedByteCount ByteCount
+	TotalAllocatedByteCount int64
 	MallocCount             int64
 	FreeCount               int64
 	GCCycleCount            int64

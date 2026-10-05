@@ -14,9 +14,9 @@ import (
 type FilterLocationsState = string
 
 const (
-	LocationsLoading FilterLocationsState = "LOCATIONS_LOADING"
-	LocationsLoaded  FilterLocationsState = "LOCATIONS_LOADED"
-	LocationsError   FilterLocationsState = "LOCATIONS_ERROR"
+	LocationsLoading string = "LOCATIONS_LOADING"
+	LocationsLoaded  string = "LOCATIONS_LOADED"
+	LocationsError   string = "LOCATIONS_ERROR"
 )
 
 type FilteredLocations struct {
@@ -102,7 +102,7 @@ func groupCitiesByRegion(regions []*ConnectLocation, cities []*ConnectLocation) 
 // }
 
 type FilteredLocationsListener interface {
-	FilteredLocationsChanged(locations *FilteredLocations, state FilterLocationsState)
+	FilteredLocationsChanged(locations *FilteredLocations, state string)
 }
 
 type locationsNotification struct {

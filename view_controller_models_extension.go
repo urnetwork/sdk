@@ -32,17 +32,17 @@ type AccountWallet struct {
 }
 
 type AccountPayment struct {
-	PaymentId       *Id       `json:"payment_id"`
-	PaymentPlanId   *Id       `json:"payment_plan_id"`
-	WalletId        *Id       `json:"wallet_id"`
-	NetworkId       *Id       `json:"network_id"`
-	PayoutByteCount ByteCount `json:"payout_byte_count"`
-	Payout          NanoCents `json:"payout_nano_cents"`
+	PaymentId       *Id   `json:"payment_id"`
+	PaymentPlanId   *Id   `json:"payment_plan_id"`
+	WalletId        *Id   `json:"wallet_id"`
+	NetworkId       *Id   `json:"network_id"`
+	PayoutByteCount int64 `json:"payout_byte_count"`
+	Payout          int64 `json:"payout_nano_cents"`
 	// the subsidized parts of Payout
-	SubsidyPayout      NanoCents `json:"subsidy_payout_nano_cents"`
-	ReliabilitySubsidy NanoCents `json:"reliability_subsidy_nano_cents"`
-	MinSweepTime       *Time     `json:"min_sweep_time"`
-	CreateTime         *Time     `json:"create_time"`
+	SubsidyPayout      int64 `json:"subsidy_payout_nano_cents"`
+	ReliabilitySubsidy int64 `json:"reliability_subsidy_nano_cents"`
+	MinSweepTime       *Time `json:"min_sweep_time"`
+	CreateTime         *Time `json:"create_time"`
 
 	PaymentRecord  string  `json:"payment_record,omitempty"`
 	TokenType      string  `json:"token_type"`
@@ -62,11 +62,11 @@ type AccountPayment struct {
 type ProviderState = string
 
 const (
-	ProviderStateInEvaluation     ProviderState = "InEvaluation"
-	ProviderStateEvaluationFailed ProviderState = "EvaluationFailed"
-	ProviderStateNotAdded         ProviderState = "NotAdded"
-	ProviderStateAdded            ProviderState = "Added"
-	ProviderStateRemoved          ProviderState = "Removed"
+	ProviderStateInEvaluation     string = "InEvaluation"
+	ProviderStateEvaluationFailed string = "EvaluationFailed"
+	ProviderStateNotAdded         string = "NotAdded"
+	ProviderStateAdded            string = "Added"
+	ProviderStateRemoved          string = "Removed"
 )
 
 type ProviderGridPoint struct {
@@ -82,8 +82,8 @@ type ProviderGridPoint struct {
 }
 
 type ThroughputSample struct {
-	EgressByteCount    ByteCount
-	IngressByteCount   ByteCount
+	EgressByteCount    int64
+	IngressByteCount   int64
 	EgressPacketCount  int64
 	IngressPacketCount int64
 	EgressBitRate      int
