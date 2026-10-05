@@ -14,14 +14,13 @@ import (
 	"github.com/urnetwork/sdk"
 )
 
-// The binding has the three methods, and a set queues the profile a page
-// sends (the web's Fixed IP is a window of exactly one exit) unless the multi
-// client would refuse it; null queues the auto profile.
-func TestPerformanceProfileWasmSetQueuesTheFixedIpProfile(t *testing.T) {
-	// an extension transport that never opens: the remote's rpc stays down, so
-	// a set is held as pending state for the next sync, as a browser remote
-	// does before its first sync and between syncs. The callbacks are never
-	// released: the remote's run loop may dial again while it closes.
+// A remote over an extension transport that never opens, with its binding:
+// the remote's rpc stays down, so a set is held as pending state for the next
+// sync, as a browser remote does before its first sync and between syncs. The
+// transport's callbacks are never released: the remote's run loop may dial
+// again while it closes.
+func newUnopenedExtensionDeviceRemote(t *testing.T) (*sdk.DeviceRemote, js.Value) {
+	t.Helper()
 	noop := js.FuncOf(func(this js.Value, args []js.Value) any { return nil })
 	connection := js.Global().Get("Object").New()
 	connection.Set("send", noop)
@@ -36,7 +35,14 @@ func TestPerformanceProfileWasmSetQueuesTheFixedIpProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(remote.Close)
-	device := jsDeviceRemote(remote)
+	return remote, jsDeviceRemote(remote)
+}
+
+// The binding has the three methods, and a set queues the profile a page
+// sends (the web's Fixed IP is a window of exactly one exit) unless the multi
+// client would refuse it; null queues the auto profile.
+func TestPerformanceProfileWasmSetQueuesTheFixedIpProfile(t *testing.T) {
+	remote, device := newUnopenedExtensionDeviceRemote(t)
 	for _, method := range []string{"getPerformanceProfile", "setPerformanceProfile", "addPerformanceProfileChangeListener"} {
 		if device.Get(method).Type() != js.TypeFunction {
 			t.Fatalf("the DeviceRemote binding has no %s", method)
