@@ -60,7 +60,17 @@ func TestSdkClientReceiveRegistrationsAreAudited(t *testing.T) {
 		t.Fatalf("parse SDK production Go: %v", err)
 	}
 	sort.Strings(registrations)
-	expected := []string{"device_local_provider.go:provider.handleControlFrames"}
+	expected := []string{
+		"device_local_provider.go:provider.handleControlFrames",
+		// URmessage. MessageClient.AddReceiveCallback registers nothing of its own: it forwards the
+		// callback it is handed to the connect.Client it wraps, and the one it is handed is the next.
+		"message_client.go:receiveCallback",
+		// URmessage's message-server binding. It never sends. A response goes to a capacity-1 channel
+		// with one sender, the waiter having left the map under the mutex first; a fragment is
+		// reassembled in memory under that mutex; a push runs the OnPush callbacks, which must not block,
+		// and the one in production (urmessage pushInbox.wake) is a select with a default.
+		"message_transport.go:self.receive",
+	}
 	if len(registrations) != len(expected) {
 		t.Fatalf("SDK receive registrations = %v, want %v; audit the new boundary", registrations, expected)
 	}

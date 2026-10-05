@@ -1,0 +1,39 @@
+# core.autocrlf=true is set at SYSTEM scope on the Windows boxes that build this repo
+# (file:C:/Program Files/Git/etc/gitconfig), so a plain checkout writes CRLF into every
+# file git touches, and until this line sdk was protected by nothing else: connect has
+# carried `*.go text eol=lf` since 2026-09-05 and msgrepo the same, and this repository
+# — which both of them are built against — had no .gitattributes at all.
+#
+# TWO THINGS BREAK WITHOUT IT, AND BOTH WERE MEASURED HERE RATHER THAN ARGUED.
+#
+# gofmt stops distinguishing a real formatting error from a fresh clone. Before this
+# line, `gofmt -l` over this module listed TEN files — convert.go, cstrings.go,
+# exports_core.go, exports_gen.go, exports_gen_unix.go, exports_manual.go, handles.go,
+# loopback_test_world.go, gen/hpp.go, gen/abi_baseline_test.go — every one of them for
+# its line endings and nothing else. A gate whose clean run is unreachable is a gate that
+# stops being run.
+#
+# And an EXACT-STRING EDIT over source, which is how every repair in these packages is
+# made, matches nothing at all in a file using the other ending: the edit lands nowhere,
+# the suite then passes, and that reads as "the change was made and was harmless". It has
+# already happened on this project once, to 84 source anchors that passed vacuously on
+# Windows. The same fact is why four gates in this module already fold "\r\n" to "\n" by
+# hand before they match (cgo/exports_message_test.go twice, cgo/gen/abi_baseline_test.go,
+# cgo/gen/manual_exports_test.go) — the hazard was being paid for one gate at a time.
+#
+# WHAT IT COSTS IN GIT OBJECTS: nothing. autocrlf cleans on the way in, so every one of
+# this repository's 137 .go blobs was already LF when this line was added — measured with
+# `git add --renormalize .` after it, which staged nothing. What it rewrites is the
+# WORKING TREE, which is the only place the drift was ever visible and the only place an
+# anchored edit reads. cgo/loopback_test_world.go was the standing example: `i/lf w/crlf`,
+# one checkout away from being committed verbatim as a whole-file rewrite by any machine
+# whose autocrlf is off.
+#
+# EOL=LF ACTS ONLY AT CHECKOUT, so this line governs what the NEXT checkout writes and not
+# what the tree carries now. The tree was normalised in the same commit that added it.
+#
+# SCOPE: the Go source, which is connect's scope and what the gates read. The .c, .h, .sh
+# and .md files are deliberately left to autocrlf — the C compiler does not care, and the
+# two gates that read the header fold the endings themselves. A pin is easy to widen and a
+# widening is a rewrite of files nothing here has a property about.
+*.go text eol=lf

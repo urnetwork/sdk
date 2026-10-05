@@ -1234,6 +1234,7 @@ public interface Raw extends Library {
   Pointer urnet_new_feedback_submitted_event(long a0, String a1, String a2);
   Pointer urnet_new_id();
   long urnet_new_login_view_controller(long a0);
+  Pointer urnet_new_message_transport(String a0, PointerByReference a1);
   long urnet_new_network_name_validation_view_controller(long a0);
   Pointer urnet_new_network_space_key(String a0, String a1);
   long urnet_new_network_space_manager(String a0);
@@ -1263,12 +1264,14 @@ public interface Raw extends Library {
   Pointer urnet_normal_env_name(String a0);
   Pointer urnet_normal_extender_gossip_mode(String a0);
   Pointer urnet_normalize_bittensor_signature(String a0);
+  Pointer urnet_open_stream_store(String a0, PointerByReference a1);
   Pointer urnet_order_connected_provider_locations(String a0);
   Pointer urnet_parse_bittensor_challenge_message(String a0, PointerByReference a1);
   Pointer urnet_parse_bittensor_wallet_return(String a0, String a1, PointerByReference a2);
   Pointer urnet_parse_checkout_redirect(String a0, PointerByReference a1);
   Pointer urnet_parse_client_events_json(String a0, PointerByReference a1);
   Pointer urnet_parse_id(String a0, PointerByReference a1);
+  long urnet_parse_message_route_mode(String a0, PointerByReference a1);
   Pointer urnet_points_leaderboard_key_of(String a0);
   Pointer urnet_points_leaderboard_scroll_label(long a0, long a1);
   long urnet_points_to_nano_points(double a0);

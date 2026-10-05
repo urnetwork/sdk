@@ -24,7 +24,13 @@ func TestExportedSymbolCompatibilityBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exports := "\n" + string(defBytes) + "\n"
+	// THE \r STRIP IS LOAD BEARING AND IT IS A FIX. The anchor below is "\n\t" + symbol + "\n",
+	// and on a CRLF checkout -- which is what core.autocrlf=true gives every Windows clone of
+	// this repo -- the octet after the symbol is \r, so NOT ONE of this file's symbols matched
+	// and every assertion here failed. It was invisible because the gen package did not compile
+	// on Windows at all: golang.org/x/tools was missing its go.sum h1 line, so `go test ./gen`
+	// answered "setup failed" before reaching this.
+	exports := "\n" + strings.ReplaceAll(string(defBytes), "\r\n", "\n") + "\n"
 	scanner := bufio.NewScanner(baselineFile)
 	for scanner.Scan() {
 		symbol := strings.TrimSpace(scanner.Text())
