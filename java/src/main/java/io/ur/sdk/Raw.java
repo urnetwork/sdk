@@ -1247,6 +1247,7 @@ public interface Raw extends Library {
   byte urnet_is_points_leaderboard_sort(String a0);
   byte urnet_is_purchase_report_terminal(String a0);
   byte urnet_is_valid_payment_reference(String a0);
+  void urnet_log_app_info(String a0, String a1);
   Pointer urnet_log_inventory();
   Pointer urnet_memory_classes_json_for_diag();
   double urnet_monthly_equivalent_amount(double a0, long a1);
@@ -1328,6 +1329,7 @@ public interface Raw extends Library {
   void urnet_set_memory_limit(long a0);
   void urnet_set_memory_profile_rate(long a0);
   void urnet_set_message_pool_memory_targets(long a0, long a1);
+  void urnet_set_network_country_code(String a0);
   byte urnet_set_transfer_diagnostic_snapshots_enabled(byte a0);
   Pointer urnet_short_ss58(String a0);
   Pointer urnet_sn_claim_transactions_for(String a0, String a1, String a2, PointerByReference a3);

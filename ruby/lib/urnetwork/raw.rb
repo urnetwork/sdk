@@ -1246,6 +1246,7 @@ module URnetwork
       attach_function :urnet_is_points_leaderboard_sort, [:string], :bool, blocking: true
       attach_function :urnet_is_purchase_report_terminal, [:string], :bool, blocking: true
       attach_function :urnet_is_valid_payment_reference, [:string], :bool, blocking: true
+      attach_function :urnet_log_app_info, [:string, :string], :void, blocking: true
       attach_function :urnet_log_inventory, [], :pointer, blocking: true
       attach_function :urnet_memory_classes_json_for_diag, [], :pointer, blocking: true
       attach_function :urnet_monthly_equivalent_amount, [:double, :int64], :double, blocking: true
@@ -1327,6 +1328,7 @@ module URnetwork
       attach_function :urnet_set_memory_limit, [:int64], :void, blocking: true
       attach_function :urnet_set_memory_profile_rate, [:int64], :void, blocking: true
       attach_function :urnet_set_message_pool_memory_targets, [:int64, :int64], :void, blocking: true
+      attach_function :urnet_set_network_country_code, [:string], :void, blocking: true
       attach_function :urnet_set_transfer_diagnostic_snapshots_enabled, [:bool], :bool, blocking: true
       attach_function :urnet_short_ss58, [:string], :pointer, blocking: true
       attach_function :urnet_sn_claim_transactions_for, [:string, :string, :string, :pointer], :pointer, blocking: true

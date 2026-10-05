@@ -2296,6 +2296,8 @@ def bind(lib):
     lib.urnet_is_purchase_report_terminal.restype = c_bool
     lib.urnet_is_valid_payment_reference.argtypes = [c_char_p]
     lib.urnet_is_valid_payment_reference.restype = c_bool
+    lib.urnet_log_app_info.argtypes = [c_char_p, c_char_p]
+    lib.urnet_log_app_info.restype = None
     lib.urnet_log_inventory.argtypes = []
     lib.urnet_log_inventory.restype = c_void_p
     lib.urnet_memory_classes_json_for_diag.argtypes = []
@@ -2458,6 +2460,8 @@ def bind(lib):
     lib.urnet_set_memory_profile_rate.restype = None
     lib.urnet_set_message_pool_memory_targets.argtypes = [c_int64, c_int64]
     lib.urnet_set_message_pool_memory_targets.restype = None
+    lib.urnet_set_network_country_code.argtypes = [c_char_p]
+    lib.urnet_set_network_country_code.restype = None
     lib.urnet_set_transfer_diagnostic_snapshots_enabled.argtypes = [c_bool]
     lib.urnet_set_transfer_diagnostic_snapshots_enabled.restype = c_bool
     lib.urnet_short_ss58.argtypes = [c_char_p]
