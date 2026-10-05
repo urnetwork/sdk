@@ -671,13 +671,15 @@ func (vc *WalletViewController) RemoveWallet(walletId *Id) {
 		RemoveWalletCallback(connect.NewApiCallback[*RemoveWalletResult](
 			func(result *RemoveWalletResult, err error) {
 
-				if err != nil || !result.Success {
+				if err != nil || result == nil || !result.Success {
 					vc.setIsRemovingWallet(false)
+					return
 				}
 
-				if result.Success {
-					vc.FetchAccountWallets()
-				}
+				vc.FetchAccountWallets()
+				// removing the payout wallet can make another wallet the
+				// payout wallet
+				vc.FetchPayoutWallet()
 
 			}),
 		),
