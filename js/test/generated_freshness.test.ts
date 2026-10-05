@@ -1,6 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -130,8 +130,23 @@ esac
 
 test("developer build still explicitly generates while smoke only checks", { skip }, () => {
   for (const target of ["build", "smoke"]) {
-    const result = spawnSync("make", ["-n", target], { cwd: jsDir, env, encoding: "utf8", timeout: 10000 });
+    // `make -n` still executes any recipe line that names $(MAKE). Dry-run a
+    // private copy with a go and npm that fail, so such a line can neither
+    // build the wasm nor write into the checkout, and fails this test instead.
+    const dir = mkdtempSync(join(privateRoot, "dry-run-"));
+    copyFileSync(join(jsDir, "Makefile"), join(dir, "Makefile"));
+    mkdirSync(join(dir, "bin"));
+    writeFileSync(join(dir, "bin/go"), "#!/bin/sh\necho unexpected-go >&2\nexit 91\n", { mode: 0o700 });
+    writeFileSync(join(dir, "bin/npm"), "#!/bin/sh\necho unexpected-npm >&2\nexit 92\n", { mode: 0o700 });
+    const files = readdirSync(dir, { recursive: true }).sort();
+    const result = spawnSync("make", ["-n", target], {
+      cwd: dir, env: { ...env, PATH: join(dir, "bin") + ":" + process.env.PATH },
+      encoding: "utf8", timeout: 10000,
+    });
     assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stderr, /unexpected-(go|npm)/, "the dry run executed a recipe command");
+    assert.deepEqual(readdirSync(dir, { recursive: true }).sort(), files, "the dry run wrote files");
+    assert.match(result.stdout, /GOOS=js GOARCH=wasm go build/, "the dry run must still list the wasm build");
     const commands = result.stdout.split("\n").filter(line => /go run gen_(types|openapi)\.go/.test(line));
     assert.equal(commands.length, 2, "both generated surfaces must be covered");
     for (const command of commands) assert.equal(command.includes("-check"), target === "smoke", command);

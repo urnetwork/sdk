@@ -42,6 +42,10 @@ check_generated: check_openapi check_types
 # from `go env GOROOT` (which honors the toolchain directive in go.mod), not a
 # hardcoded path. Go >= 1.24 keeps it under lib/wasm; older toolchains under
 # misc/wasm. `check_wasm` then gates on the pairing.
+#
+# `$(MAKE) check_wasm` stays on its own recipe line: make executes any line that
+# names $(MAKE) even under `make -n`, so joined to the commands above it would
+# make a dry run compile the wasm and write wasm/.
 build_wasm:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GOEXPERIMENT=greenteagc; \
@@ -54,7 +58,7 @@ build_wasm:
 		cp "$$GOROOT/lib/wasm/wasm_exec.js" wasm/; \
 	else \
 		cp "$$GOROOT/misc/wasm/wasm_exec.js" wasm/; \
-	fi; \
+	fi
 	$(MAKE) check_wasm
 
 # Verify the packaged wasm_exec.js is byte-identical to the building toolchain's
