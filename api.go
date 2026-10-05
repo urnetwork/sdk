@@ -3353,7 +3353,9 @@ type UploadLogsResult struct {
 
 type UploadLogsCallback connect.ApiCallback[*UploadLogsResult]
 
-func (self *Api) uploadLogs(
+// Posts one zip of log files to the feedback with feedbackId. uploadLogs builds
+// the zip (Api.UploadLogs, DeviceLocal.UploadLogs).
+func (self *Api) postLogsZip(
 	feedbackId string,
 	body io.Reader,
 	callback UploadLogsCallback,

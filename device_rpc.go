@@ -6241,7 +6241,17 @@ func (self *DeviceRemote) SimulateNetworkChange() {
 	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.SimulateNetworkChange", self.closeService)
 }
 
+// Asks the device's process to upload the log files it can read
+// (DeviceLocal.UploadLogs). It fails when the rpc cannot carry the request (on
+// ios while the network extension is not running), and then the caller can
+// upload from this process with Api.UploadLogs.
+//
+// This process's glog is flushed first: where the two processes share a log
+// root (on ios the app group's Logs), the device's zip holds this process's
+// files too, and glog flushes them only every 30 seconds.
 func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
+	FlushGlog()
+
 	logsUploaded := false
 	func() {
 		self.stateLock.Lock()
@@ -11571,8 +11581,17 @@ func (self *DeviceLocalRpc) canShowRatingDialogChanged(canShowRatingDialog bool)
 	self.reverseNotify("DeviceRemoteRpc.CanShowRatingDialogChanged", canShowRatingDialog)
 }
 
+// Starts the upload and answers at once. The zip reads up to the upload's cap
+// from disk, while this server serves one request at a time and the remote
+// holds its state lock across the call, so answering after the zip stalled
+// every other call of the remote for that long. The remote never got the
+// upload's result, only whether the request reached this process.
 func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
-	self.deviceLocal.UploadLogs(feedbackId, nil)
+	self.workers.Add(1)
+	go connect.HandleError(func() {
+		defer self.workers.Done()
+		self.deviceLocal.UploadLogs(feedbackId, nil)
+	})
 	return nil
 }
 
