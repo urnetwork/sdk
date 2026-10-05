@@ -267,8 +267,8 @@ func (self *Api) SnPoolClaimSync(args *SnPoolClaimArgs) (*SnPoolClaimResult, err
 // int64 throughout rather than uint64: gomobile cannot bind uint64, and as
 // uint64 this class shipped with ContractAddress as its only usable field —
 // the schedule itself was invisible to apps. Block heights, epoch numbers and
-// chain ids are all far below 2^63, and json carries a bare number either
-// way, so the wire format is unchanged.
+// chain ids are all far below 2^63. Numeric json encoding is retained; no_id
+// also accepts the server's decimal-string encoding when decoded.
 type SnEpochResult struct {
 	Epoch               int64  `json:"epoch"`
 	StartBlock          int64  `json:"start_block"`
