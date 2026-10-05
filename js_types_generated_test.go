@@ -16,9 +16,9 @@ import (
 // repository.
 //
 // This pins the network space values, which the extender settings extended
-// (EXTENDER.md F1, K6) and the VLESS settings extended again, and the shapes
-// beside them, by rebuilding the emitted block from the live struct and
-// comparing it to the committed file.
+// (EXTENDER.md F1, K6) and the VLESS settings and the bootstrap DoH servers
+// extended again, and the shapes beside them, by rebuilding the emitted block
+// from the live struct and comparing it to the committed file.
 
 const jsGeneratedTypesPath = "js/src/generated/types.ts"
 

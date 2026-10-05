@@ -14187,6 +14187,48 @@ func urnet_network_space_get_configured_platform_url(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_network_space_get_control_doh_urls
+func urnet_network_space_get_control_doh_urls(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_control_doh_urls")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_control_doh_urls")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlDohUrls()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_control_doh_urls")
+}
+
+//export urnet_network_space_get_control_doh_urls_ipv4
+func urnet_network_space_get_control_doh_urls_ipv4(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_control_doh_urls_ipv4")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_control_doh_urls_ipv4")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlDohUrlsIpv4()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_control_doh_urls_ipv4")
+}
+
+//export urnet_network_space_get_control_doh_urls_ipv6
+func urnet_network_space_get_control_doh_urls_ipv6(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_control_doh_urls_ipv6")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_control_doh_urls_ipv6")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetControlDohUrlsIpv6()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_network_space_get_control_doh_urls_ipv6")
+}
+
 //export urnet_network_space_get_env_name
 func urnet_network_space_get_env_name(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_env_name")
@@ -14492,6 +14534,24 @@ func urnet_network_space_service_url(self C.uint64_t, scheme *C.char, service *C
 		return nil
 	}
 	r0 := self_.ServiceUrl(goString(scheme), goString(service))
+	return cString(string(r0))
+}
+
+//export urnet_network_space_set_control_doh_urls
+func urnet_network_space_set_control_doh_urls(self C.uint64_t, dohUrls *C.char) *C.char {
+	defer cgoGuard("urnet_network_space_set_control_doh_urls")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_set_control_doh_urls")
+	if !ok {
+		return nil
+	}
+	var dohUrls_ *sdk.StringList
+	if dohUrls != nil {
+		dohUrls_ = &sdk.StringList{}
+		if !goJson(dohUrls, dohUrls_, "urnet_network_space_set_control_doh_urls") {
+			return nil
+		}
+	}
+	r0 := self_.SetControlDohUrls(dohUrls_)
 	return cString(string(r0))
 }
 
@@ -16390,6 +16450,16 @@ func urnet_referral_code_view_controller_stop(self C.uint64_t) {
 	self_.Stop()
 }
 
+//export urnet_regional_control_doh_urls
+func urnet_regional_control_doh_urls(countryCode *C.char) *C.char {
+	defer cgoGuard("urnet_regional_control_doh_urls")
+	r0 := sdk.RegionalControlDohUrls(goString(countryCode))
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_regional_control_doh_urls")
+}
+
 //export urnet_report_memory_trim_level
 func urnet_report_memory_trim_level(level C.int64_t) {
 	defer cgoGuard("urnet_report_memory_trim_level")
@@ -17314,6 +17384,13 @@ func urnet_usd_to_nano_cents(usd C.double) C.int64_t {
 	defer cgoGuard("urnet_usd_to_nano_cents")
 	r0 := sdk.UsdToNanoCents(float64(usd))
 	return C.int64_t(r0)
+}
+
+//export urnet_validate_control_doh_url
+func urnet_validate_control_doh_url(dohUrl *C.char) *C.char {
+	defer cgoGuard("urnet_validate_control_doh_url")
+	r0 := sdk.ValidateControlDohUrl(goString(dohUrl))
+	return cString(string(r0))
 }
 
 //export urnet_validate_emoji_tag
