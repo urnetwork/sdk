@@ -51,6 +51,8 @@ type ViewControllerManager interface {
 
 	OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController
 
+	OpenProviderStatusViewController() *ProviderStatusViewController
+
 	// Deprecated: use the split client/provider entry points below.
 	OpenContractDetailsViewController() *ContractDetailsViewController
 	OpenClientContractDetailsViewController() *ContractDetailsViewController
@@ -201,6 +203,12 @@ func (self *viewControllerManager) OpenContractViewController() *ContractViewCon
 
 func (self *viewControllerManager) OpenSubscriptionBalanceViewController() *SubscriptionBalanceViewController {
 	vc := newSubscriptionBalanceViewController(self.ctx, self.device.GetApi())
+	self.openViewController(vc)
+	return vc
+}
+
+func (self *viewControllerManager) OpenProviderStatusViewController() *ProviderStatusViewController {
+	vc := newProviderStatusViewController(self.ctx, self.device)
 	self.openViewController(vc)
 	return vc
 }

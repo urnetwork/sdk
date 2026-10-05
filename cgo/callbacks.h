@@ -155,6 +155,8 @@ typedef void (*urnet_get_payout_wallet_cb)(void* user_data, const char* result_j
 void urnet_invoke_get_payout_wallet(urnet_get_payout_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_points_leaderboard_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_get_points_leaderboard(urnet_get_points_leaderboard_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_get_provider_status_cb)(void* user_data, const char* result_json, const char* err_param);
+void urnet_invoke_get_provider_status(urnet_get_provider_status_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_referral_network_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_get_referral_network(urnet_get_referral_network_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_transfer_stats_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -245,6 +247,8 @@ typedef void (*urnet_provide_secret_keys_cb)(void* user_data, const char* provid
 void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* user_data, const char* provide_secret_key_list_json);
 typedef void (*urnet_provider_identity_change_cb)(void* user_data);
 void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data);
+typedef void (*urnet_provider_status_cb)(void* user_data);
+void urnet_invoke_provider_status(urnet_provider_status_cb cb, void* user_data);
 typedef void (*urnet_provider_transport_settings_change_cb)(void* user_data, const char* transport_settings_json);
 void urnet_invoke_provider_transport_settings_change(urnet_provider_transport_settings_change_cb cb, void* user_data, const char* transport_settings_json);
 typedef void (*urnet_provider_transport_status_change_cb)(void* user_data, const char* transport_status_json);

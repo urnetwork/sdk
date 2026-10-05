@@ -358,12 +358,37 @@ inline constexpr int64_t ProvideModePublic = 3;
 inline constexpr int64_t ProvideModeStream = 4;
 inline constexpr const char* ProvideNetworkModeAll = "all";
 inline constexpr const char* ProvideNetworkModeWiFi = "wifi";
+inline constexpr const char* ProviderEgressFail = "fail";
+inline constexpr const char* ProviderEgressPass = "pass";
+inline constexpr const char* ProviderEgressUnprobed = "unprobed";
 inline constexpr const char* ProviderFamilyTransportStateUnknown = "unknown";
 inline constexpr const char* ProviderStateAdded = "Added";
 inline constexpr const char* ProviderStateEvaluationFailed = "EvaluationFailed";
 inline constexpr const char* ProviderStateInEvaluation = "InEvaluation";
 inline constexpr const char* ProviderStateNotAdded = "NotAdded";
 inline constexpr const char* ProviderStateRemoved = "Removed";
+inline constexpr const char* ProviderStatusNumberLatency = "latency";
+inline constexpr const char* ProviderStatusNumberReliability12h = "reliability_12h";
+inline constexpr const char* ProviderStatusNumberReliability1h = "reliability_1h";
+inline constexpr const char* ProviderStatusNumberReliability5m = "reliability_5m";
+inline constexpr const char* ProviderStatusNumberSpeedTest = "speed_test";
+inline constexpr const char* ProviderStatusNumberTierQuality = "tier_quality";
+inline constexpr const char* ProviderStatusNumberTierSpeed = "tier_speed";
+inline constexpr const char* ProviderStatusNumberUrlChecks = "url_checks";
+inline constexpr const char* ProviderStatusNumberWeightQuality = "weight_quality";
+inline constexpr const char* ProviderStatusNumberWeightSpeed = "weight_speed";
+inline constexpr const char* ProviderStatusReasonEgressFailing = "egress_failing";
+inline constexpr const char* ProviderStatusReasonEgressUnprobed = "egress_unprobed";
+inline constexpr const char* ProviderStatusReasonLocationInvalid = "location_invalid";
+inline constexpr const char* ProviderStatusReasonNetworkOnly = "network_only";
+inline constexpr const char* ProviderStatusReasonNone = "none";
+inline constexpr const char* ProviderStatusReasonNotConnected = "not_connected";
+inline constexpr const char* ProviderStatusReasonNotEligible = "not_eligible";
+inline constexpr const char* ProviderStatusReasonNotProviding = "not_providing";
+inline constexpr const char* ProviderStatusReasonReliabilityLow = "reliability_low";
+inline constexpr const char* ProviderStatusReasonReliabilityWarmingUp = "reliability_warming_up";
+inline constexpr const char* ProviderStatusReasonSlow = "slow";
+inline constexpr const char* ProviderStatusReasonSpeedTestMissing = "speed_test_missing";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonNotReflected = "not_reflected";
 inline constexpr const char* PurchaseConfirmationGiveUpReasonUnreachable = "unreachable";
 inline constexpr const char* PurchaseConfirmationStateConfirmationGaveUp = "confirmation_gave_up";
@@ -491,6 +516,7 @@ class PointsLeaderboardViewController;
 class PostQuantumIdentityViewController;
 class ProvideViewController;
 class ProviderLocationsViewController;
+class ProviderStatusViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
 class Socket;
@@ -657,6 +683,7 @@ struct NetworkUser;
 struct GetNetworkUserResult;
 struct GetPayoutWalletIdResult;
 struct GetPointsLeaderboardArgs;
+struct GetProviderStatusResult;
 struct GetReferralNetworkError;
 struct ReferralNetwork;
 struct GetReferralNetworkResult;
@@ -718,10 +745,15 @@ struct PriceTier;
 struct ProbeResult;
 struct ProbeSuiteConfig;
 struct ProvideSecretKey;
+struct ProviderAdmission;
+struct ProviderAppearanceHistogram;
 struct ProviderFamilyTransportStatus;
 struct ProviderGridPoint;
 struct ProviderIdentity;
+struct ProviderRankingNumber;
 struct ProviderSpec;
+struct ProviderStatusCountry;
+struct ProviderStatus;
 struct ProxyDeviceSettings;
 struct PublicAccountApiKey;
 struct RedeemBalanceCodeArgs;
@@ -888,7 +920,9 @@ using ProbeResultList = std::vector<ProbeResult>;
 using ProvideSecretKeyList = std::vector<ProvideSecretKey>;
 using ProviderGridPointList = std::vector<ProviderGridPoint>;
 using ProviderIdentityList = std::vector<ProviderIdentity>;
+using ProviderRankingNumberList = std::vector<ProviderRankingNumber>;
 using ProviderSpecList = std::vector<ProviderSpec>;
+using ProviderStatusList = std::vector<ProviderStatus>;
 using PublicAccountApiKeyList = std::vector<PublicAccountApiKey>;
 using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
@@ -2107,6 +2141,11 @@ struct GetPointsLeaderboardArgs {
 	std::optional<int64_t> limit;
 };
 
+struct GetProviderStatusResult {
+	std::optional<ProviderStatusList> providers;
+	std::optional<bool> truncated;
+};
+
 struct GetReferralNetworkError {
 	std::string message{};
 };
@@ -2635,6 +2674,22 @@ struct ProvideSecretKey {
 	std::string provide_secret_key{};
 };
 
+struct ProviderAdmission {
+	bool connected{};
+	bool location_valid{};
+	bool provide_public{};
+	bool reliability_ok{};
+	bool speed_test_done{};
+	std::string egress{};
+	std::optional<std::string> egress_measured_at;
+};
+
+struct ProviderAppearanceHistogram {
+	int64_t start_minute{};
+	int64_t bucket_seconds{};
+	std::optional<Int64List> appearances_per_minute;
+};
+
 struct ProviderFamilyTransportStatus {
 	bool HasIpv4{};
 	std::string Ipv4State{};
@@ -2662,11 +2717,43 @@ struct ProviderIdentity {
 	std::string PublicKey{};
 };
 
+struct ProviderRankingNumber {
+	std::string name{};
+	bool has_value{};
+	double value{};
+	bool has_minimum{};
+	double minimum{};
+	bool has_maximum{};
+	double maximum{};
+	bool passes{};
+	int64_t count{};
+	int64_t total{};
+	std::string explanation{};
+};
+
 struct ProviderSpec {
 	std::optional<std::string> location_id;
 	std::optional<std::string> location_group_id;
 	std::optional<std::string> client_id;
 	std::optional<bool> best_available;
+};
+
+struct ProviderStatusCountry {
+	std::string country_code{};
+	std::string country{};
+	std::string observed_country_code{};
+	std::string explanation{};
+};
+
+struct ProviderStatus {
+	std::optional<std::string> client_id;
+	std::string reason{};
+	std::string reason_text{};
+	std::optional<ProviderAdmission> admission;
+	std::optional<ProviderRankingNumberList> ranking;
+	std::optional<ProviderStatusCountry> country;
+	std::optional<std::string> evaluate_time;
+	std::optional<ProviderAppearanceHistogram> appearances;
 };
 
 struct ProxyDeviceSettings {
@@ -3801,6 +3888,8 @@ inline void to_json(nlohmann::json& j, const GetPayoutWalletIdResult& v);
 inline void from_json(const nlohmann::json& j, GetPayoutWalletIdResult& v);
 inline void to_json(nlohmann::json& j, const GetPointsLeaderboardArgs& v);
 inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v);
+inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v);
+inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v);
 inline void to_json(nlohmann::json& j, const GetReferralNetworkError& v);
 inline void from_json(const nlohmann::json& j, GetReferralNetworkError& v);
 inline void to_json(nlohmann::json& j, const ReferralNetwork& v);
@@ -3923,14 +4012,24 @@ inline void to_json(nlohmann::json& j, const ProbeSuiteConfig& v);
 inline void from_json(const nlohmann::json& j, ProbeSuiteConfig& v);
 inline void to_json(nlohmann::json& j, const ProvideSecretKey& v);
 inline void from_json(const nlohmann::json& j, ProvideSecretKey& v);
+inline void to_json(nlohmann::json& j, const ProviderAdmission& v);
+inline void from_json(const nlohmann::json& j, ProviderAdmission& v);
+inline void to_json(nlohmann::json& j, const ProviderAppearanceHistogram& v);
+inline void from_json(const nlohmann::json& j, ProviderAppearanceHistogram& v);
 inline void to_json(nlohmann::json& j, const ProviderFamilyTransportStatus& v);
 inline void from_json(const nlohmann::json& j, ProviderFamilyTransportStatus& v);
 inline void to_json(nlohmann::json& j, const ProviderGridPoint& v);
 inline void from_json(const nlohmann::json& j, ProviderGridPoint& v);
 inline void to_json(nlohmann::json& j, const ProviderIdentity& v);
 inline void from_json(const nlohmann::json& j, ProviderIdentity& v);
+inline void to_json(nlohmann::json& j, const ProviderRankingNumber& v);
+inline void from_json(const nlohmann::json& j, ProviderRankingNumber& v);
 inline void to_json(nlohmann::json& j, const ProviderSpec& v);
 inline void from_json(const nlohmann::json& j, ProviderSpec& v);
+inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v);
+inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v);
+inline void to_json(nlohmann::json& j, const ProviderStatus& v);
+inline void from_json(const nlohmann::json& j, ProviderStatus& v);
 inline void to_json(nlohmann::json& j, const ProxyDeviceSettings& v);
 inline void from_json(const nlohmann::json& j, ProxyDeviceSettings& v);
 inline void to_json(nlohmann::json& j, const PublicAccountApiKey& v);
@@ -9664,6 +9763,31 @@ inline void from_json(const nlohmann::json& j, GetPointsLeaderboardArgs& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const GetProviderStatusResult& v) {
+	j = nlohmann::json::object();
+	if (v.providers) {
+		j["providers"] = *v.providers;
+	}
+	if (v.truncated) {
+		j["truncated"] = *v.truncated;
+	}
+}
+inline void from_json(const nlohmann::json& j, GetProviderStatusResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("providers"); it != j.end() && !it->is_null()) {
+		ProviderStatusList tmp{};
+		it->get_to(tmp);
+		v.providers = std::move(tmp);
+	}
+	if (auto it = j.find("truncated"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.truncated = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const GetReferralNetworkError& v) {
 	j = nlohmann::json::object();
 	j["message"] = v.message;
@@ -12245,6 +12369,72 @@ inline void from_json(const nlohmann::json& j, ProvideSecretKey& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderAdmission& v) {
+	j = nlohmann::json::object();
+	j["connected"] = v.connected;
+	j["location_valid"] = v.location_valid;
+	j["provide_public"] = v.provide_public;
+	j["reliability_ok"] = v.reliability_ok;
+	j["speed_test_done"] = v.speed_test_done;
+	j["egress"] = v.egress;
+	if (v.egress_measured_at) {
+		j["egress_measured_at"] = *v.egress_measured_at;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderAdmission& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("connected"); it != j.end() && !it->is_null()) {
+		it->get_to(v.connected);
+	}
+	if (auto it = j.find("location_valid"); it != j.end() && !it->is_null()) {
+		it->get_to(v.location_valid);
+	}
+	if (auto it = j.find("provide_public"); it != j.end() && !it->is_null()) {
+		it->get_to(v.provide_public);
+	}
+	if (auto it = j.find("reliability_ok"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reliability_ok);
+	}
+	if (auto it = j.find("speed_test_done"); it != j.end() && !it->is_null()) {
+		it->get_to(v.speed_test_done);
+	}
+	if (auto it = j.find("egress"); it != j.end() && !it->is_null()) {
+		it->get_to(v.egress);
+	}
+	if (auto it = j.find("egress_measured_at"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.egress_measured_at = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderAppearanceHistogram& v) {
+	j = nlohmann::json::object();
+	j["start_minute"] = v.start_minute;
+	j["bucket_seconds"] = v.bucket_seconds;
+	if (v.appearances_per_minute) {
+		j["appearances_per_minute"] = *v.appearances_per_minute;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderAppearanceHistogram& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("start_minute"); it != j.end() && !it->is_null()) {
+		it->get_to(v.start_minute);
+	}
+	if (auto it = j.find("bucket_seconds"); it != j.end() && !it->is_null()) {
+		it->get_to(v.bucket_seconds);
+	}
+	if (auto it = j.find("appearances_per_minute"); it != j.end() && !it->is_null()) {
+		Int64List tmp{};
+		it->get_to(tmp);
+		v.appearances_per_minute = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderFamilyTransportStatus& v) {
 	j = nlohmann::json::object();
 	j["HasIpv4"] = v.HasIpv4;
@@ -12356,6 +12546,59 @@ inline void from_json(const nlohmann::json& j, ProviderIdentity& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const ProviderRankingNumber& v) {
+	j = nlohmann::json::object();
+	j["name"] = v.name;
+	j["has_value"] = v.has_value;
+	j["value"] = v.value;
+	j["has_minimum"] = v.has_minimum;
+	j["minimum"] = v.minimum;
+	j["has_maximum"] = v.has_maximum;
+	j["maximum"] = v.maximum;
+	j["passes"] = v.passes;
+	j["count"] = v.count;
+	j["total"] = v.total;
+	j["explanation"] = v.explanation;
+}
+inline void from_json(const nlohmann::json& j, ProviderRankingNumber& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.name);
+	}
+	if (auto it = j.find("has_value"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_value);
+	}
+	if (auto it = j.find("value"); it != j.end() && !it->is_null()) {
+		it->get_to(v.value);
+	}
+	if (auto it = j.find("has_minimum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_minimum);
+	}
+	if (auto it = j.find("minimum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.minimum);
+	}
+	if (auto it = j.find("has_maximum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.has_maximum);
+	}
+	if (auto it = j.find("maximum"); it != j.end() && !it->is_null()) {
+		it->get_to(v.maximum);
+	}
+	if (auto it = j.find("passes"); it != j.end() && !it->is_null()) {
+		it->get_to(v.passes);
+	}
+	if (auto it = j.find("count"); it != j.end() && !it->is_null()) {
+		it->get_to(v.count);
+	}
+	if (auto it = j.find("total"); it != j.end() && !it->is_null()) {
+		it->get_to(v.total);
+	}
+	if (auto it = j.find("explanation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.explanation);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const ProviderSpec& v) {
 	j = nlohmann::json::object();
 	if (v.location_id) {
@@ -12394,6 +12637,96 @@ inline void from_json(const nlohmann::json& j, ProviderSpec& v) {
 		bool tmp{};
 		it->get_to(tmp);
 		v.best_available = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderStatusCountry& v) {
+	j = nlohmann::json::object();
+	j["country_code"] = v.country_code;
+	j["country"] = v.country;
+	j["observed_country_code"] = v.observed_country_code;
+	j["explanation"] = v.explanation;
+}
+inline void from_json(const nlohmann::json& j, ProviderStatusCountry& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("country_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.country_code);
+	}
+	if (auto it = j.find("country"); it != j.end() && !it->is_null()) {
+		it->get_to(v.country);
+	}
+	if (auto it = j.find("observed_country_code"); it != j.end() && !it->is_null()) {
+		it->get_to(v.observed_country_code);
+	}
+	if (auto it = j.find("explanation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.explanation);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ProviderStatus& v) {
+	j = nlohmann::json::object();
+	if (v.client_id) {
+		j["client_id"] = *v.client_id;
+	}
+	j["reason"] = v.reason;
+	j["reason_text"] = v.reason_text;
+	if (v.admission) {
+		j["admission"] = *v.admission;
+	}
+	if (v.ranking) {
+		j["ranking"] = *v.ranking;
+	}
+	if (v.country) {
+		j["country"] = *v.country;
+	}
+	if (v.evaluate_time) {
+		j["evaluate_time"] = *v.evaluate_time;
+	}
+	if (v.appearances) {
+		j["appearances"] = *v.appearances;
+	}
+}
+inline void from_json(const nlohmann::json& j, ProviderStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.client_id = std::move(tmp);
+	}
+	if (auto it = j.find("reason"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason);
+	}
+	if (auto it = j.find("reason_text"); it != j.end() && !it->is_null()) {
+		it->get_to(v.reason_text);
+	}
+	if (auto it = j.find("admission"); it != j.end() && !it->is_null()) {
+		ProviderAdmission tmp{};
+		it->get_to(tmp);
+		v.admission = std::move(tmp);
+	}
+	if (auto it = j.find("ranking"); it != j.end() && !it->is_null()) {
+		ProviderRankingNumberList tmp{};
+		it->get_to(tmp);
+		v.ranking = std::move(tmp);
+	}
+	if (auto it = j.find("country"); it != j.end() && !it->is_null()) {
+		ProviderStatusCountry tmp{};
+		it->get_to(tmp);
+		v.country = std::move(tmp);
+	}
+	if (auto it = j.find("evaluate_time"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.evaluate_time = std::move(tmp);
+	}
+	if (auto it = j.find("appearances"); it != j.end() && !it->is_null()) {
+		ProviderAppearanceHistogram tmp{};
+		it->get_to(tmp);
+		v.appearances = std::move(tmp);
 	}
 }
 
@@ -16098,6 +16431,7 @@ using GetNetworkReliabilityCallback = std::function<void(std::optional<GetNetwor
 using GetNetworkUserCallback = std::function<void(std::optional<GetNetworkUserResult> result, std::optional<std::string> err_param)>;
 using GetPayoutWalletCallback = std::function<void(std::optional<GetPayoutWalletIdResult> result, std::optional<std::string> err_param)>;
 using GetPointsLeaderboardCallback = std::function<void(std::optional<PointsLeaderboardResult> result, std::optional<std::string> err_param)>;
+using GetProviderStatusCallback = std::function<void(std::optional<GetProviderStatusResult> result, std::optional<std::string> err_param)>;
 using GetReferralNetworkCallback = std::function<void(std::optional<GetReferralNetworkResult> result, std::optional<std::string> err_param)>;
 using GetTransferStatsCallback = std::function<void(std::optional<TransferStatsResult> result, std::optional<std::string> err_param)>;
 using GridListener = std::function<void()>;
@@ -16142,6 +16476,7 @@ using ProvideNetworkModeChangeListener = std::function<void(std::string provide_
 using ProvidePausedChangeListener = std::function<void(bool provide_paused)>;
 using ProvideSecretKeysListener = std::function<void(std::optional<ProvideSecretKeyList> provide_secret_key_list)>;
 using ProviderIdentityChangeListener = std::function<void()>;
+using ProviderStatusListener = std::function<void()>;
 using ProviderTransportSettingsChangeListener = std::function<void(std::optional<TransportSettings> transport_settings)>;
 using ProviderTransportStatusChangeListener = std::function<void(std::optional<TransportStatus> transport_status)>;
 using PurchaseConfirmationListener = std::function<void(std::string state)>;
@@ -16471,6 +16806,7 @@ public:
 	void getPayoutWallet(GetPayoutWalletCallback callback) const;
 	void getPointsLeaderboard(const std::optional<GetPointsLeaderboardArgs>& args, GetPointsLeaderboardCallback callback) const;
 	void getProviderLocations(FindLocationsCallback callback) const;
+	void getProviderStatus(GetProviderStatusCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
 	void listApiKeys(ListApiKeysCallback callback) const;
@@ -16703,6 +17039,7 @@ public:
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
+	void closeProviderStatusViewController(const ProviderStatusViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	void disableSubprotocol(int64_t subprotocol_id) const;
@@ -16754,6 +17091,7 @@ public:
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ProviderLocationsViewController openProviderLocationsViewController() const;
+	ProviderStatusViewController openProviderStatusViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -16870,6 +17208,7 @@ public:
 	void closePointsLeaderboardViewController(const PointsLeaderboardViewController& vc) const;
 	void closePostQuantumIdentityViewController(const PostQuantumIdentityViewController& vc) const;
 	void closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const;
+	void closeProviderStatusViewController(const ProviderStatusViewController& vc) const;
 	void closeViewController(ViewController vc) const;
 	void connectSnWallet(const std::string& coldkey_ss58, const std::string& signature, const std::string& message, SnConnectWalletCallback callback) const;
 	bool dropExit(const std::string& exit_client_id) const;
@@ -16905,6 +17244,7 @@ public:
 	ProvideViewController openProvideViewController() const;
 	ContractDetailsViewController openProviderContractDetailsViewController() const;
 	ProviderLocationsViewController openProviderLocationsViewController() const;
+	ProviderStatusViewController openProviderStatusViewController() const;
 	ReferralCodeViewController openReferralCodeViewController() const;
 	SubscriptionBalanceViewController openSubscriptionBalanceViewController() const;
 	WalletViewController openWalletViewController() const;
@@ -17333,6 +17673,31 @@ public:
 	void setSelectedClientId(const std::string& client_id) const;
 	void start() const;
 	void stepSelection(int64_t steps) const;
+	void stop() const;
+};
+
+class ProviderStatusViewController final : public detail::Handle {
+public:
+	ProviderStatusViewController() = default;
+	explicit ProviderStatusViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addProviderStatusListener(ProviderStatusListener listener) const;
+	void close() const;
+	std::optional<ProviderAdmission> getAdmission() const;
+	int64_t getAppearanceMaxCount() const;
+	int64_t getAppearanceTotal() const;
+	std::optional<ProviderAppearanceHistogram> getAppearances() const;
+	std::optional<Int64List> getAppearancesPerMinute() const;
+	bool getIsLoaded() const;
+	bool getIsLoading() const;
+	std::string getLastFetchError() const;
+	std::optional<ProviderStatus> getProviderStatus() const;
+	std::optional<ProviderStatusList> getProviderStatuses() const;
+	std::optional<ProviderRankingNumberList> getRankingNumbers() const;
+	std::string getReason() const;
+	std::string getReasonText() const;
+	bool getTruncated() const;
+	void refresh() const;
+	void start() const;
 	void stop() const;
 };
 
@@ -19690,6 +20055,42 @@ inline void oneshot_get_points_leaderboard(void* user_data, const char* result_j
 	delete f;
 }
 
+inline void retained_get_provider_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<GetProviderStatusCallback*>(user_data);
+	try {
+		std::optional<GetProviderStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<GetProviderStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_get_provider_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<GetProviderStatusCallback*>(user_data);
+	try {
+		std::optional<GetProviderStatusResult> result_v;
+		if (result_json) {
+			result_v = parseJson<GetProviderStatusResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_get_referral_network(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<GetReferralNetworkCallback*>(user_data);
 	try {
@@ -20841,6 +21242,26 @@ inline void retained_provider_identity_change(void* user_data) {
 }
 inline void oneshot_provider_identity_change(void* user_data) {
 	auto* f = static_cast<ProviderIdentityChangeListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_provider_status(void* user_data) {
+	auto* f = static_cast<ProviderStatusListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_provider_status(void* user_data) {
+	auto* f = static_cast<ProviderStatusListener*>(user_data);
 	try {
 		(*f)();
 	} catch (const std::exception& e) {
@@ -24544,6 +24965,10 @@ inline void Api::getProviderLocations(FindLocationsCallback callback) const {
 	auto* callback_fn = callback ? new FindLocationsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_provider_locations(handle(), callback_fn ? &detail::oneshot_find_locations : nullptr, callback_fn);
 }
+inline void Api::getProviderStatus(GetProviderStatusCallback callback) const {
+	auto* callback_fn = callback ? new GetProviderStatusCallback(std::move(callback)) : nullptr;
+	urnet_api_get_provider_status(handle(), callback_fn ? &detail::oneshot_get_provider_status : nullptr, callback_fn);
+}
 inline void Api::getReferralNetwork(GetReferralNetworkCallback callback) const {
 	auto* callback_fn = callback ? new GetReferralNetworkCallback(std::move(callback)) : nullptr;
 	urnet_api_get_referral_network(handle(), callback_fn ? &detail::oneshot_get_referral_network : nullptr, callback_fn);
@@ -25708,6 +26133,9 @@ inline void DeviceLocal::closePostQuantumIdentityViewController(const PostQuantu
 inline void DeviceLocal::closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const {
 	urnet_device_local_close_provider_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceLocal::closeProviderStatusViewController(const ProviderStatusViewController& vc) const {
+	urnet_device_local_close_provider_status_view_controller(handle(), vc.handle());
+}
 inline void DeviceLocal::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -25979,6 +26407,10 @@ inline ContractDetailsViewController DeviceLocal::openProviderContractDetailsVie
 }
 inline ProviderLocationsViewController DeviceLocal::openProviderLocationsViewController() const {
 	ProviderLocationsViewController r(urnet_device_local_open_provider_locations_view_controller(handle()));
+	return r;
+}
+inline ProviderStatusViewController DeviceLocal::openProviderStatusViewController() const {
+	ProviderStatusViewController r(urnet_device_local_open_provider_status_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceLocal::openReferralCodeViewController() const {
@@ -26452,6 +26884,9 @@ inline void DeviceRemote::closePostQuantumIdentityViewController(const PostQuant
 inline void DeviceRemote::closeProviderLocationsViewController(const ProviderLocationsViewController& vc) const {
 	urnet_device_remote_close_provider_locations_view_controller(handle(), vc.handle());
 }
+inline void DeviceRemote::closeProviderStatusViewController(const ProviderStatusViewController& vc) const {
+	urnet_device_remote_close_provider_status_view_controller(handle(), vc.handle());
+}
 inline void DeviceRemote::closeViewController(ViewController vc) const {
 	std::shared_ptr<ViewController> vc_fn;
 	if ((static_cast<bool>(vc.close) || static_cast<bool>(vc.start) || static_cast<bool>(vc.stop))) {
@@ -26636,6 +27071,10 @@ inline ContractDetailsViewController DeviceRemote::openProviderContractDetailsVi
 }
 inline ProviderLocationsViewController DeviceRemote::openProviderLocationsViewController() const {
 	ProviderLocationsViewController r(urnet_device_remote_open_provider_locations_view_controller(handle()));
+	return r;
+}
+inline ProviderStatusViewController DeviceRemote::openProviderStatusViewController() const {
+	ProviderStatusViewController r(urnet_device_remote_open_provider_status_view_controller(handle()));
 	return r;
 }
 inline ReferralCodeViewController DeviceRemote::openReferralCodeViewController() const {
@@ -28455,6 +28894,109 @@ inline void ProviderLocationsViewController::stepSelection(int64_t steps) const 
 }
 inline void ProviderLocationsViewController::stop() const {
 	urnet_provider_locations_view_controller_stop(handle());
+}
+inline Sub ProviderStatusViewController::addProviderStatusListener(ProviderStatusListener listener) const {
+	std::shared_ptr<ProviderStatusListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ProviderStatusListener>(std::move(listener));
+	}
+	Sub r(urnet_provider_status_view_controller_add_provider_status_listener(handle(), listener_fn ? &detail::retained_provider_status : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ProviderStatusViewController::close() const {
+	urnet_provider_status_view_controller_close(handle());
+}
+inline std::optional<ProviderAdmission> ProviderStatusViewController::getAdmission() const {
+	char* r_c = urnet_provider_status_view_controller_get_admission(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderAdmission>(r_s->c_str());
+}
+inline int64_t ProviderStatusViewController::getAppearanceMaxCount() const {
+	int64_t r = urnet_provider_status_view_controller_get_appearance_max_count(handle());
+	return r;
+}
+inline int64_t ProviderStatusViewController::getAppearanceTotal() const {
+	int64_t r = urnet_provider_status_view_controller_get_appearance_total(handle());
+	return r;
+}
+inline std::optional<ProviderAppearanceHistogram> ProviderStatusViewController::getAppearances() const {
+	char* r_c = urnet_provider_status_view_controller_get_appearances(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderAppearanceHistogram>(r_s->c_str());
+}
+inline std::optional<Int64List> ProviderStatusViewController::getAppearancesPerMinute() const {
+	char* r_c = urnet_provider_status_view_controller_get_appearances_per_minute(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<Int64List>(r_s->c_str());
+}
+inline bool ProviderStatusViewController::getIsLoaded() const {
+	bool r = urnet_provider_status_view_controller_get_is_loaded(handle());
+	return r;
+}
+inline bool ProviderStatusViewController::getIsLoading() const {
+	bool r = urnet_provider_status_view_controller_get_is_loading(handle());
+	return r;
+}
+inline std::string ProviderStatusViewController::getLastFetchError() const {
+	char* r_c = urnet_provider_status_view_controller_get_last_fetch_error(handle());
+	return detail::takeString(r_c);
+}
+inline std::optional<ProviderStatus> ProviderStatusViewController::getProviderStatus() const {
+	char* r_c = urnet_provider_status_view_controller_get_provider_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderStatus>(r_s->c_str());
+}
+inline std::optional<ProviderStatusList> ProviderStatusViewController::getProviderStatuses() const {
+	char* r_c = urnet_provider_status_view_controller_get_provider_statuses(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderStatusList>(r_s->c_str());
+}
+inline std::optional<ProviderRankingNumberList> ProviderStatusViewController::getRankingNumbers() const {
+	char* r_c = urnet_provider_status_view_controller_get_ranking_numbers(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ProviderRankingNumberList>(r_s->c_str());
+}
+inline std::string ProviderStatusViewController::getReason() const {
+	char* r_c = urnet_provider_status_view_controller_get_reason(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ProviderStatusViewController::getReasonText() const {
+	char* r_c = urnet_provider_status_view_controller_get_reason_text(handle());
+	return detail::takeString(r_c);
+}
+inline bool ProviderStatusViewController::getTruncated() const {
+	bool r = urnet_provider_status_view_controller_get_truncated(handle());
+	return r;
+}
+inline void ProviderStatusViewController::refresh() const {
+	urnet_provider_status_view_controller_refresh(handle());
+}
+inline void ProviderStatusViewController::start() const {
+	urnet_provider_status_view_controller_start(handle());
+}
+inline void ProviderStatusViewController::stop() const {
+	urnet_provider_status_view_controller_stop(handle());
 }
 inline void ProxyDevice::cancel() const {
 	urnet_proxy_device_cancel(handle());
