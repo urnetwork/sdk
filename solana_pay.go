@@ -26,9 +26,12 @@ import (
 //   - Android also hardcoded the merchant address, with the previous one left in a
 //     comment above it -- the address has rotated at least once already.
 //
-// The rule these encode: the client never names its own price. Call
-// CreateSolanaPaymentIntent with the plan, take AmountUsd from the result, and pass
-// that to BuildSolanaPaymentUrl. See solana_pay_test.go.
+// The rule these encode: the client never names its own price or its own merchant.
+// Call CreateSolanaPaymentIntent with the plan, take AmountUsd, Recipient and
+// SplTokenMint from the result, and pass those to BuildSolanaPaymentUrl. A result
+// without Recipient (from a server that predates it) has nowhere to pay, and
+// BuildSolanaPaymentUrl refuses it rather than fall back to an address the server
+// may no longer watch. See solana_pay_test.go.
 
 // SolanaPayReferenceBytes is the length of a Solana public key, which is what the
 // Solana Pay `reference` parameter must be.
