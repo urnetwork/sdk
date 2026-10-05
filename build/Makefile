@@ -69,6 +69,9 @@ _build_android:
 	# the go-side variants of the StringList form the mobile ExtenderSettings carries
 	# note the .comment section is stripped from the build library for cross-platform build reproducibility, see
 	# https://f-droid.org/en/docs/Reproducible_Builds/#ndk-clang-version-string-in-comment-section
+	# note llvm-objcopy and checksec take one library per call (objcopy reads a second path as its output file).
+	# find's -exec ... \; form ignores their exit status, so each runs in a loop that stops at the first failure,
+	# and find's -exec ... + form fails when the loop does
 	# note the 1.26 linker on android needs to use an additional -checklinkname=0 parameter, which is fixed in a pending PR to the anet lib
 	# see https://github.com/wlynxg/anet/pull/9
 	# see https://github.com/pion/webrtc/issues/2640
@@ -96,8 +99,12 @@ _build_android:
 	test -s "$$BUILD_DIR/URnetworkSdk.aar"; \
 	test -s "$$BUILD_DIR/URnetworkSdk-sources.jar"; \
 	unzip "$$BUILD_DIR/URnetworkSdk.aar" -d "$$BUILD_DIR/edit"; \
-	find "$$BUILD_DIR/edit" -iname '*.so' -exec "$$OBJCOPY" --remove-section .comment {} \; ; \
-	find "$$BUILD_DIR/edit" -iname '*.so' -exec checksec file {} --output json \; ; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec sh -c \
+		'objcopy="$$1"; shift; for so in "$$@"; do "$$objcopy" --remove-section .comment "$$so" || exit; done' \
+		sh "$$OBJCOPY" {} +; \
+	find "$$BUILD_DIR/edit" -iname '*.so' -exec sh -c \
+		'for so in "$$@"; do checksec file "$$so" --output json || exit; done' \
+		sh {} +; \
 	jar cvf "$$BUILD_DIR/URnetworkSdk.aar" -C "$$BUILD_DIR/edit" .; \
 	(cd "$$BUILD_DIR"; \
 		if [ -e validate ]; then mv validate validate.$$(date +%s); fi; \
