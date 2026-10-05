@@ -25,6 +25,7 @@ export interface NetworkSpaceValues {
   gossip_url?: string;
   extender_root_public_keys?: string[];
   extender_hosts?: string[];
+  vless?: VlessSettings | null;
 }
 
 export interface ExportNetworkSpace {
@@ -35,6 +36,26 @@ export interface ExportNetworkSpace {
 export interface NetExtender {
   ip: string;
   secret: string;
+}
+
+export interface VlessSettings {
+  enabled?: boolean;
+  name?: string;
+  address?: string;
+  port?: number;
+  id?: string;
+  flow?: string;
+  network?: string;
+  security?: string;
+  server_name?: string;
+  fingerprint?: string;
+  alpn?: string;
+  allow_insecure?: boolean;
+  public_key?: string;
+  short_id?: string;
+  spider_x?: string;
+  path?: string;
+  host?: string;
 }
 
 export interface ProxyAuthResult {

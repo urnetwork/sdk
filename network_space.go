@@ -111,6 +111,11 @@ type NetworkSpaceValues struct {
 	// the mesh deliver -- which is what separates them from the legacy
 	// `NetExtender`, whose single address overrides everything.
 	ExtenderHosts []string `json:"extender_hosts,omitempty"`
+
+	// A VLESS server the client strategy also dials through (vless_settings.go).
+	// Nil, off or invalid is a space without VLESS. Applied in place like the
+	// extender values.
+	Vless *VlessSettings `json:"vless,omitempty"`
 }
 
 // The configured manual hosts of a space, trimmed and without the blanks a ui
@@ -235,8 +240,8 @@ type NetworkSpace struct {
 	// while the space is running (G2), the extender identity seed of a space
 	// that keeps no local state, the extender network client, which a settings
 	// change restarts in place (K6), the attestor installed on that client,
-	// and the extender fields of `values`, which that change rewrites. Every
-	// other field of `values` is written once at construction.
+	// and the extender and VLESS fields of `values`, which a settings change
+	// rewrites. Every other field of `values` is written once at construction.
 	stateLock sync.Mutex
 	closed    bool
 	// The attesting provider of the device that provides in this space, and
@@ -284,14 +289,15 @@ func (self *NetworkSpace) getNetworkSpaceManager() *NetworkSpaceManager {
 	return self.networkSpaceManager
 }
 
-// updateExtenderValues is the one write path for the extender settings (K6,
-// K7). It runs the change through the owning manager, which persists the whole
-// value set and routes it back here in place, so the space -- and every device
-// and view controller bound to it -- survives the save. A space with no
-// manager applies the change to itself; there is nothing to persist it to.
+// updateInPlaceValues is the one write path for the values a running space
+// takes in place: the extender settings (K6, K7) and the VLESS server. It runs
+// the change through the owning manager, which persists the whole value set
+// and routes it back here in place, so the space -- and every device and view
+// controller bound to it -- survives the save. A space with no manager applies
+// the change to itself; there is nothing to persist it to.
 //
 // Returns whether anything changed.
-func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceValues)) bool {
+func (self *NetworkSpace) updateInPlaceValues(apply func(values *NetworkSpaceValues)) bool {
 	// A change that resolves to nothing stops here. `updateNetworkSpace`
 	// produces a new space generation whatever it is handed -- the manager's
 	// stale-generation rules depend on it -- and a settings screen saving an
@@ -299,7 +305,7 @@ func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceVa
 	previousValues := self.valuesCopy()
 	values := previousValues
 	apply(&values)
-	if !extenderValuesChanged(&self.key, &previousValues, &values) {
+	if !inPlaceValuesChanged(&self.key, &previousValues, &values) {
 		return false
 	}
 	if networkSpaceManager := self.getNetworkSpaceManager(); networkSpaceManager != nil {
@@ -310,7 +316,34 @@ func (self *NetworkSpace) updateExtenderValues(apply func(values *NetworkSpaceVa
 		key := self.key
 		return networkSpaceManager.updateNetworkSpace(&key, apply) != nil
 	}
-	return self.applyExtenderValues(&values)
+	return self.applyInPlaceValues(&values)
+}
+
+// Applies the values a running space takes in place, each part only when it
+// changed. Returns whether anything changed.
+func (self *NetworkSpace) applyInPlaceValues(values *NetworkSpaceValues) bool {
+	vlessChanged := self.applyVlessValues(values)
+	extenderChanged := self.applyExtenderValues(values)
+	return vlessChanged || extenderChanged
+}
+
+// Replaces the space's VLESS settings and the client strategy's VLESS dialer
+// in place. Returns whether the settings changed.
+func (self *NetworkSpace) applyVlessValues(values *NetworkSpaceValues) bool {
+	changed, closed := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if !vlessValuesChanged(&self.values, values) {
+			return false, self.closed
+		}
+		self.values.Vless = values.Vless.copy()
+		return true, self.closed
+	}()
+	if !changed || closed {
+		return changed
+	}
+	self.clientStrategy.SetVlessConfigs(spaceVlessConfigs(self.valuesCopy().Vless))
+	return true
 }
 
 // The node this space runs right now, nil when it runs none (D5, G2).
@@ -487,6 +520,8 @@ func newNetworkSpaceWithConnectSettings(
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	clientStrategySettings.AltUrl = altUrl
+	// the VLESS server, when the space names one that is on and valid
+	clientStrategySettings.VlessConfigs = spaceVlessConfigs(values.Vless)
 
 	var asyncLocalState *AsyncLocalState
 	if storagePath != "" {
@@ -883,6 +918,9 @@ func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.Memor
 	if customExtenders := self.clientStrategy.CustomExtenders(); len(customExtenders) > 0 {
 		strategy.SetCustomExtenders(customExtenders)
 	}
+	// the VLESS server in force now, which a settings change may have
+	// replaced since the shared strategy was built
+	strategy.SetVlessConfigs(self.clientStrategy.VlessConfigs())
 	return strategy
 }
 
@@ -1837,35 +1875,45 @@ func (self *NetworkSpaceManager) UpdateNetworkSpaceValues(key *NetworkSpaceKey, 
 	})
 }
 
-// Reports whether a value change is an extender value change and nothing else,
-// which is the change a running space can take in place (K6). Everything
-// outside the extender values is compared as a whole, so a value added to
-// `NetworkSpaceValues` later is covered by the rebuild until it is
+// Reports whether a value change is confined to the values a running space
+// takes in place -- the extender values (K6) and the VLESS server -- and
+// changes one of them. Everything else is compared as a whole, so a value
+// added to `NetworkSpaceValues` later is covered by the rebuild until it is
 // deliberately named here.
 //
 // A change that alters nothing at all is NOT this case: `updateNetworkSpace`
 // produces a new space generation whatever it is handed, and the manager's
 // stale-generation rules are pinned on that. The one caller that must never
-// see a rebuild -- the settings screen saving an unchanged form -- does not
-// reach the manager at all (see `updateExtenderValues`).
-func onlyExtenderValuesChanged(
+// see a rebuild -- a settings screen saving an unchanged form -- does not
+// reach the manager at all (see `updateInPlaceValues`).
+func onlyInPlaceValuesChanged(
 	key *NetworkSpaceKey,
 	previous *NetworkSpaceValues,
 	next *NetworkSpaceValues,
 ) bool {
-	withoutExtenderValues := func(values *NetworkSpaceValues) NetworkSpaceValues {
+	withoutInPlaceValues := func(values *NetworkSpaceValues) NetworkSpaceValues {
 		other := *values
 		other.NetExtender = nil
 		other.ExtenderDnsName = ""
 		other.GossipUrl = ""
 		other.ExtenderRootPublicKeys = nil
 		other.ExtenderHosts = nil
+		other.Vless = nil
 		return other
 	}
-	if !reflect.DeepEqual(withoutExtenderValues(previous), withoutExtenderValues(next)) {
+	if !reflect.DeepEqual(withoutInPlaceValues(previous), withoutInPlaceValues(next)) {
 		return false
 	}
-	return extenderValuesChanged(key, previous, next)
+	return inPlaceValuesChanged(key, previous, next)
+}
+
+// Reports whether any value a running space takes in place differs.
+func inPlaceValuesChanged(
+	key *NetworkSpaceKey,
+	previous *NetworkSpaceValues,
+	next *NetworkSpaceValues,
+) bool {
+	return extenderValuesChanged(key, previous, next) || vlessValuesChanged(previous, next)
 }
 
 func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callback func(values *NetworkSpaceValues)) *NetworkSpace {
@@ -1885,14 +1933,15 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 	previousValues := copyValues
 	callback(&copyValues)
 
-	// A change confined to the extender values restarts the space's network
-	// client and node in place rather than rebuilding the space (K6). The
-	// extender settings screen saves while a device is bound to the space and
-	// while the view controller that saved holds it, and a rebuild would hand
-	// both a closed space. Every other change keeps the rebuild below, which
-	// is what a changed api host or env secret needs.
-	if existingNetworkSpace != nil && onlyExtenderValuesChanged(key, &previousValues, &copyValues) {
-		existingNetworkSpace.applyExtenderValues(&copyValues)
+	// A change confined to the in-place values -- the extender values, which
+	// restart the space's network client and node (K6), and the VLESS server,
+	// which replaces a strategy dialer -- is applied in place rather than by
+	// rebuilding the space. The settings screens save while a device is bound
+	// to the space and while the view controller that saved holds it, and a
+	// rebuild would hand both a closed space. Every other change keeps the
+	// rebuild below, which is what a changed api host or env secret needs.
+	if existingNetworkSpace != nil && onlyInPlaceValuesChanged(key, &previousValues, &copyValues) {
+		existingNetworkSpace.applyInPlaceValues(&copyValues)
 		func() {
 			self.stateLock.Lock()
 			defer self.stateLock.Unlock()

@@ -382,6 +382,18 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_VERIFY_SEEKER_NFT_HOLDER_ERROR_CODE_INVALID_SIGNATURE "seeker_invalid_signature"
 #define URNET_VERIFY_SEEKER_NFT_HOLDER_ERROR_CODE_LOOKUP_FAILED "seeker_lookup_failed"
 #define URNET_VERIFY_SEEKER_NFT_HOLDER_ERROR_CODE_TOKEN_NOT_FOUND "seeker_token_not_found"
+#define URNET_VLESS_ERROR_ADDRESS_INVALID "vless_error_address_invalid"
+#define URNET_VLESS_ERROR_FINGERPRINT_UNSUPPORTED "vless_error_fingerprint_unsupported"
+#define URNET_VLESS_ERROR_FLOW_INVALID "vless_error_flow_invalid"
+#define URNET_VLESS_ERROR_ID_INVALID "vless_error_id_invalid"
+#define URNET_VLESS_ERROR_LINK_INVALID "vless_error_link_invalid"
+#define URNET_VLESS_ERROR_LINK_UNSUPPORTED "vless_error_link_unsupported"
+#define URNET_VLESS_ERROR_NETWORK_UNSUPPORTED "vless_error_network_unsupported"
+#define URNET_VLESS_ERROR_PORT_INVALID "vless_error_port_invalid"
+#define URNET_VLESS_ERROR_PUBLIC_KEY_INVALID "vless_error_public_key_invalid"
+#define URNET_VLESS_ERROR_SECURITY_UNSUPPORTED "vless_error_security_unsupported"
+#define URNET_VLESS_ERROR_SERVER_NAME_REQUIRED "vless_error_server_name_required"
+#define URNET_VLESS_ERROR_SHORT_ID_INVALID "vless_error_short_id_invalid"
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -1608,12 +1620,14 @@ char* urnet_network_space_get_platform_url_v4(uint64_t self);
 char* urnet_network_space_get_platform_url_v6(uint64_t self);
 bool urnet_network_space_get_sso_google(uint64_t self);
 char* urnet_network_space_get_store(uint64_t self);
+char* urnet_network_space_get_vless_settings(uint64_t self);
 char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
 void urnet_network_space_set_control_ip_family_policy(uint64_t self, int64_t policy);
 void urnet_network_space_set_extender_gossip_mode(uint64_t self, const char* mode);
+char* urnet_network_space_set_vless_settings(uint64_t self, const char* settings_json);
 char* urnet_network_space_to_json(uint64_t self, char** out_error);
 
 /* ----- NetworkSpaceManager ----- */
@@ -1950,6 +1964,7 @@ int64_t urnet_new_time_unix_milli(int64_t unix_milli);
 char* urnet_new_transfer_path(const char* source_id, const char* destination_id, const char* stream_id);
 uint64_t urnet_new_tunnel(void);
 uint64_t urnet_new_urls_network_space(const char* api_url, const char* platform_url);
+char* urnet_new_vless_settings(void);
 char* urnet_new_wallet_circle_transfer_out_args(const char* to_address, int64_t amount_usdc_nano_cents, bool terms);
 char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
@@ -1963,6 +1978,7 @@ char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
 int64_t urnet_parse_message_route_mode(const char* value, char** out_error);
+char* urnet_parse_vless_link(const char* link);
 char* urnet_points_leaderboard_key_of(const char* row_json);
 char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
 int64_t urnet_points_to_nano_points(double points);
@@ -2002,7 +2018,13 @@ void urnet_trim_memory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
 char* urnet_validate_emoji_tag(const char* tag);
 bool urnet_validate_ss58(const char* address);
+char* urnet_validate_vless_settings(const char* settings_json);
 bool urnet_verify_payout_proof_hex(const char* root_hex, const char* leaf_hex, const char* proof_hex_json);
+char* urnet_vless_fingerprints(void);
+char* urnet_vless_flows(void);
+char* urnet_vless_networks(void);
+char* urnet_vless_securities(void);
+char* urnet_vless_settings_link(const char* settings_json);
 bool urnet_write_heap_profile(const char* path, char** out_error);
 char* urnet_write_heap_profile_for_diag(const char* path, char** out_error);
 
@@ -3526,6 +3548,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   gossip_url?: string
  *   extender_root_public_keys?: string[]
  *   extender_hosts?: string[]
+ *   vless?: VlessSettings | null
  */
 
 /* NetworkUnblockLocationArgs (json):
@@ -4763,6 +4786,31 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* VerifyStorePurchaseResult (json):
  *   status: string
  *   expiry_time?: string (rfc3339) | null
+ */
+
+/* VlessLinkResult (json):
+ *   Settings: VlessSettings | null
+ *   Error: string
+ */
+
+/* VlessSettings (json):
+ *   enabled?: boolean
+ *   name?: string
+ *   address?: string
+ *   port?: number
+ *   id?: string
+ *   flow?: string
+ *   network?: string
+ *   security?: string
+ *   server_name?: string
+ *   fingerprint?: string
+ *   alpn?: string
+ *   allow_insecure?: boolean
+ *   public_key?: string
+ *   short_id?: string
+ *   spider_x?: string
+ *   path?: string
+ *   host?: string
  */
 
 /* WalletAuthArgs (json):

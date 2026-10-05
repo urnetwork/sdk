@@ -443,6 +443,18 @@ inline constexpr int64_t TunnelLocalPrefixLengthIpv6 = 64;
 inline constexpr const char* VerifySeekerNftHolderErrorCodeInvalidSignature = "seeker_invalid_signature";
 inline constexpr const char* VerifySeekerNftHolderErrorCodeLookupFailed = "seeker_lookup_failed";
 inline constexpr const char* VerifySeekerNftHolderErrorCodeTokenNotFound = "seeker_token_not_found";
+inline constexpr const char* VlessErrorAddressInvalid = "vless_error_address_invalid";
+inline constexpr const char* VlessErrorFingerprintUnsupported = "vless_error_fingerprint_unsupported";
+inline constexpr const char* VlessErrorFlowInvalid = "vless_error_flow_invalid";
+inline constexpr const char* VlessErrorIdInvalid = "vless_error_id_invalid";
+inline constexpr const char* VlessErrorLinkInvalid = "vless_error_link_invalid";
+inline constexpr const char* VlessErrorLinkUnsupported = "vless_error_link_unsupported";
+inline constexpr const char* VlessErrorNetworkUnsupported = "vless_error_network_unsupported";
+inline constexpr const char* VlessErrorPortInvalid = "vless_error_port_invalid";
+inline constexpr const char* VlessErrorPublicKeyInvalid = "vless_error_public_key_invalid";
+inline constexpr const char* VlessErrorSecurityUnsupported = "vless_error_security_unsupported";
+inline constexpr const char* VlessErrorServerNameRequired = "vless_error_server_name_required";
+inline constexpr const char* VlessErrorShortIdInvalid = "vless_error_short_id_invalid";
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
@@ -695,6 +707,7 @@ struct NetworkPeer;
 struct NetworkPeers;
 struct NetworkSpaceKey;
 struct SnChainSettings;
+struct VlessSettings;
 struct NetworkSpaceValues;
 struct NetworkUnblockLocationArgs;
 struct NetworkUnblockLocationError;
@@ -841,6 +854,7 @@ struct VerifySeekerNftHolderError;
 struct VerifySeekerNftHolderResult;
 struct VerifyServerKey;
 struct VerifyStorePurchaseResult;
+struct VlessLinkResult;
 struct WalletBalanceResult;
 struct WalletCircleInitError;
 struct WalletCircleInitResult;
@@ -2425,6 +2439,26 @@ struct SnChainSettings {
 	int64_t lookback_epochs{};
 };
 
+struct VlessSettings {
+	std::optional<bool> enabled;
+	std::optional<std::string> name;
+	std::optional<std::string> address;
+	std::optional<int64_t> port;
+	std::optional<std::string> id;
+	std::optional<std::string> flow;
+	std::optional<std::string> network;
+	std::optional<std::string> security;
+	std::optional<std::string> server_name;
+	std::optional<std::string> fingerprint;
+	std::optional<std::string> alpn;
+	std::optional<bool> allow_insecure;
+	std::optional<std::string> public_key;
+	std::optional<std::string> short_id;
+	std::optional<std::string> spider_x;
+	std::optional<std::string> path;
+	std::optional<std::string> host;
+};
+
 struct NetworkSpaceValues {
 	std::optional<std::string> env_secret;
 	std::optional<bool> bundled;
@@ -2444,6 +2478,7 @@ struct NetworkSpaceValues {
 	std::optional<std::string> gossip_url;
 	std::optional<std::vector<std::string>> extender_root_public_keys;
 	std::optional<std::vector<std::string>> extender_hosts;
+	std::optional<VlessSettings> vless;
 };
 
 struct NetworkUnblockLocationArgs {
@@ -3451,6 +3486,11 @@ struct VerifyStorePurchaseResult {
 	std::optional<std::string> expiry_time;
 };
 
+struct VlessLinkResult {
+	std::optional<VlessSettings> Settings;
+	std::string Error{};
+};
+
 struct WalletBalanceResult {
 	std::optional<CircleWalletInfo> wallet_info;
 };
@@ -3891,6 +3931,8 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceKey& v);
 inline void from_json(const nlohmann::json& j, NetworkSpaceKey& v);
 inline void to_json(nlohmann::json& j, const SnChainSettings& v);
 inline void from_json(const nlohmann::json& j, SnChainSettings& v);
+inline void to_json(nlohmann::json& j, const VlessSettings& v);
+inline void from_json(const nlohmann::json& j, VlessSettings& v);
 inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v);
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v);
 inline void to_json(nlohmann::json& j, const NetworkUnblockLocationArgs& v);
@@ -4183,6 +4225,8 @@ inline void to_json(nlohmann::json& j, const VerifyServerKey& v);
 inline void from_json(const nlohmann::json& j, VerifyServerKey& v);
 inline void to_json(nlohmann::json& j, const VerifyStorePurchaseResult& v);
 inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v);
+inline void to_json(nlohmann::json& j, const VlessLinkResult& v);
+inline void from_json(const nlohmann::json& j, VlessLinkResult& v);
 inline void to_json(nlohmann::json& j, const WalletBalanceResult& v);
 inline void from_json(const nlohmann::json& j, WalletBalanceResult& v);
 inline void to_json(nlohmann::json& j, const WalletCircleInitError& v);
@@ -11124,6 +11168,151 @@ inline void from_json(const nlohmann::json& j, SnChainSettings& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const VlessSettings& v) {
+	j = nlohmann::json::object();
+	if (v.enabled) {
+		j["enabled"] = *v.enabled;
+	}
+	if (v.name) {
+		j["name"] = *v.name;
+	}
+	if (v.address) {
+		j["address"] = *v.address;
+	}
+	if (v.port) {
+		j["port"] = *v.port;
+	}
+	if (v.id) {
+		j["id"] = *v.id;
+	}
+	if (v.flow) {
+		j["flow"] = *v.flow;
+	}
+	if (v.network) {
+		j["network"] = *v.network;
+	}
+	if (v.security) {
+		j["security"] = *v.security;
+	}
+	if (v.server_name) {
+		j["server_name"] = *v.server_name;
+	}
+	if (v.fingerprint) {
+		j["fingerprint"] = *v.fingerprint;
+	}
+	if (v.alpn) {
+		j["alpn"] = *v.alpn;
+	}
+	if (v.allow_insecure) {
+		j["allow_insecure"] = *v.allow_insecure;
+	}
+	if (v.public_key) {
+		j["public_key"] = *v.public_key;
+	}
+	if (v.short_id) {
+		j["short_id"] = *v.short_id;
+	}
+	if (v.spider_x) {
+		j["spider_x"] = *v.spider_x;
+	}
+	if (v.path) {
+		j["path"] = *v.path;
+	}
+	if (v.host) {
+		j["host"] = *v.host;
+	}
+}
+inline void from_json(const nlohmann::json& j, VlessSettings& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.enabled = std::move(tmp);
+	}
+	if (auto it = j.find("name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.name = std::move(tmp);
+	}
+	if (auto it = j.find("address"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.address = std::move(tmp);
+	}
+	if (auto it = j.find("port"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.port = std::move(tmp);
+	}
+	if (auto it = j.find("id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.id = std::move(tmp);
+	}
+	if (auto it = j.find("flow"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.flow = std::move(tmp);
+	}
+	if (auto it = j.find("network"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.network = std::move(tmp);
+	}
+	if (auto it = j.find("security"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.security = std::move(tmp);
+	}
+	if (auto it = j.find("server_name"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.server_name = std::move(tmp);
+	}
+	if (auto it = j.find("fingerprint"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.fingerprint = std::move(tmp);
+	}
+	if (auto it = j.find("alpn"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.alpn = std::move(tmp);
+	}
+	if (auto it = j.find("allow_insecure"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.allow_insecure = std::move(tmp);
+	}
+	if (auto it = j.find("public_key"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.public_key = std::move(tmp);
+	}
+	if (auto it = j.find("short_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.short_id = std::move(tmp);
+	}
+	if (auto it = j.find("spider_x"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.spider_x = std::move(tmp);
+	}
+	if (auto it = j.find("path"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.path = std::move(tmp);
+	}
+	if (auto it = j.find("host"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.host = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	j = nlohmann::json::object();
 	if (v.env_secret) {
@@ -11179,6 +11368,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	}
 	if (v.extender_hosts) {
 		j["extender_hosts"] = *v.extender_hosts;
+	}
+	if (v.vless) {
+		j["vless"] = *v.vless;
 	}
 }
 inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
@@ -11274,6 +11466,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::vector<std::string> tmp{};
 		it->get_to(tmp);
 		v.extender_hosts = std::move(tmp);
+	}
+	if (auto it = j.find("vless"); it != j.end() && !it->is_null()) {
+		VlessSettings tmp{};
+		it->get_to(tmp);
+		v.vless = std::move(tmp);
 	}
 }
 
@@ -15810,6 +16007,27 @@ inline void from_json(const nlohmann::json& j, VerifyStorePurchaseResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const VlessLinkResult& v) {
+	j = nlohmann::json::object();
+	if (v.Settings) {
+		j["Settings"] = *v.Settings;
+	}
+	j["Error"] = v.Error;
+}
+inline void from_json(const nlohmann::json& j, VlessLinkResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Settings"); it != j.end() && !it->is_null()) {
+		VlessSettings tmp{};
+		it->get_to(tmp);
+		v.Settings = std::move(tmp);
+	}
+	if (auto it = j.find("Error"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Error);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const WalletBalanceResult& v) {
 	j = nlohmann::json::object();
 	if (v.wallet_info) {
@@ -17264,12 +17482,14 @@ public:
 	std::string getPlatformUrlV6() const;
 	bool getSsoGoogle() const;
 	std::string getStore() const;
+	std::optional<VlessSettings> getVlessSettings() const;
 	std::string getWallet() const;
 	bool hasPlatformFamilyUrls() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	void setControlIpFamilyPolicy(int64_t policy) const;
 	void setExtenderGossipMode(const std::string& mode) const;
+	std::string setVlessSettings(const std::optional<VlessSettings>& settings) const;
 	std::string toJson() const;
 };
 
@@ -28046,6 +28266,14 @@ inline std::string NetworkSpace::getStore() const {
 	char* r_c = urnet_network_space_get_store(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<VlessSettings> NetworkSpace::getVlessSettings() const {
+	char* r_c = urnet_network_space_get_vless_settings(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<VlessSettings>(r_s->c_str());
+}
 inline std::string NetworkSpace::getWallet() const {
 	char* r_c = urnet_network_space_get_wallet(handle());
 	return detail::takeString(r_c);
@@ -28071,6 +28299,16 @@ inline void NetworkSpace::setControlIpFamilyPolicy(int64_t policy) const {
 }
 inline void NetworkSpace::setExtenderGossipMode(const std::string& mode) const {
 	urnet_network_space_set_extender_gossip_mode(handle(), mode.c_str());
+}
+inline std::string NetworkSpace::setVlessSettings(const std::optional<VlessSettings>& settings) const {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_network_space_set_vless_settings(handle(), settings_c);
+	return detail::takeString(r_c);
 }
 inline std::string NetworkSpace::toJson() const {
 	char* err_c = nullptr;
@@ -29885,6 +30123,14 @@ inline NetworkSpace newUrlsNetworkSpace(const std::string& api_url, const std::s
 	NetworkSpace r(urnet_new_urls_network_space(api_url.c_str(), platform_url.c_str()));
 	return r;
 }
+inline std::optional<VlessSettings> newVlessSettings() {
+	char* r_c = urnet_new_vless_settings();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<VlessSettings>(r_s->c_str());
+}
 inline std::optional<WalletCircleTransferOutArgs> newWalletCircleTransferOutArgs(const std::string& to_address, int64_t amount_usdc_nano_cents, bool terms) {
 	char* r_c = urnet_new_wallet_circle_transfer_out_args(to_address.c_str(), amount_usdc_nano_cents, terms);
 	auto r_s = detail::takeStringOpt(r_c);
@@ -30002,6 +30248,14 @@ inline int64_t parseMessageRouteMode(const std::string& value) {
 		detail::throwError(err_c);
 	}
 	return r;
+}
+inline std::optional<VlessLinkResult> parseVlessLink(const std::string& link) {
+	char* r_c = urnet_parse_vless_link(link.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<VlessLinkResult>(r_s->c_str());
 }
 inline std::optional<PointsLeaderboardKey> pointsLeaderboardKeyOf(const std::optional<PointsLeaderboardRow>& row) {
 	std::string row_json;
@@ -30306,6 +30560,16 @@ inline bool validateSs58(const std::string& address) {
 	bool r = urnet_validate_ss58(address.c_str());
 	return r;
 }
+inline std::string validateVlessSettings(const std::optional<VlessSettings>& settings) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_validate_vless_settings(settings_c);
+	return detail::takeString(r_c);
+}
 inline bool verifyPayoutProofHex(const std::string& root_hex, const std::string& leaf_hex, const std::optional<StringList>& proof_hex) {
 	std::string proof_hex_json;
 	const char* proof_hex_c = nullptr;
@@ -30315,6 +30579,48 @@ inline bool verifyPayoutProofHex(const std::string& root_hex, const std::string&
 	}
 	bool r = urnet_verify_payout_proof_hex(root_hex.c_str(), leaf_hex.c_str(), proof_hex_c);
 	return r;
+}
+inline std::optional<StringList> vlessFingerprints() {
+	char* r_c = urnet_vless_fingerprints();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> vlessFlows() {
+	char* r_c = urnet_vless_flows();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> vlessNetworks() {
+	char* r_c = urnet_vless_networks();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::optional<StringList> vlessSecurities() {
+	char* r_c = urnet_vless_securities();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<StringList>(r_s->c_str());
+}
+inline std::string vlessSettingsLink(const std::optional<VlessSettings>& settings) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* r_c = urnet_vless_settings_link(settings_c);
+	return detail::takeString(r_c);
 }
 inline void writeHeapProfile(const std::string& path) {
 	char* err_c = nullptr;
