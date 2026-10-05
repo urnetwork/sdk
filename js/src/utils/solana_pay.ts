@@ -14,8 +14,12 @@
  *   - Android built the url with a hardcoded amount and message, so it could not
  *     sell the monthly plan and its price no longer had to agree with the server's.
  *
- * The rule: the client never names its own price. Register the intent with the
- * plan, take `amount_usd` from the response, and pass THAT to buildSolanaPaymentUrl.
+ * The rule: the client never names its own price or its own merchant. Register the
+ * intent with the plan, take `amount_usd`, `recipient` and `spl_token_mint` from the
+ * response (both /solana/payment-intent and /pay/data/solana-intent return them), and
+ * pass THOSE to buildSolanaPaymentUrl. A response without `recipient` (from a server
+ * that predates it) has nowhere to pay: buildSolanaPaymentUrl refuses it rather than
+ * fall back to an address the server may no longer watch.
  */
 
 /** A Solana public key is 32 bytes; that is what the `reference` must be. */

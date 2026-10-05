@@ -118,7 +118,10 @@ func ClassifySubscriptionStore(store string) string {
 // control back by navigating to the redirect_link:
 //
 //	done:  urnetwork://checkout?status=complete&session_id=cs_...
-//	error: urnetwork://checkout?errorCode=-1&errorMessage=...
+//	error: urnetwork://checkout?errorCode=<code>&errorMessage=...
+//
+// The error's code is one of CheckoutBridgeError* (-1 from pages before the
+// codes) and its message the page's English text, or Stripe's.
 //
 // The done hand-back comes from one of two places, by how the session was
 // created:
@@ -145,6 +148,21 @@ const (
 	// the bridge page query key that says the session completes through
 	// onComplete (mmm EmbeddedCheckout.jsx reads the same key)
 	checkoutBridgeRedirectOnCompletionKey = "redirect_on_completion"
+)
+
+// The bridge page's codes for a failure it hands back, in
+// CheckoutRedirect.ErrorCode. An app shows its own words for a code it knows
+// and ErrorMessage for any other, as it does for the -1 of pages before these
+// codes.
+const (
+	// the page was opened without a checkout session (client_secret)
+	CheckoutBridgeErrorInvalidRequest = "invalid_request"
+	// the page has no Stripe publishable key (a misconfigured site build)
+	CheckoutBridgeErrorUnavailable = "checkout_unavailable"
+	// Stripe.js did not load (offline, or blocked)
+	CheckoutBridgeErrorStripeUnavailable = "stripe_unavailable"
+	// Stripe could not start the session; ErrorMessage says why
+	CheckoutBridgeErrorCheckout = "checkout_error"
 )
 
 // BuildCheckoutBridgeUrl builds the ur.io bridge page url for an embedded
@@ -196,7 +214,9 @@ type CheckoutRedirect struct {
 	Complete bool
 	// SessionId is the Stripe checkout session id (cs_...), when present.
 	SessionId string
-	// ErrorCode is the bridge's raw errorCode value ("-1"), empty on success.
+	// the bridge page's code for the failure, as sent: one of
+	// CheckoutBridgeError*, or "-1" from pages before the codes; empty on
+	// success
 	ErrorCode string
 	// ErrorMessage is the bridge's human-readable error, empty on success.
 	ErrorMessage string

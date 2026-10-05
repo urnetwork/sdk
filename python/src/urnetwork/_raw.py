@@ -47,6 +47,7 @@ urnet_create_account_wallet_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_create_api_key_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_default_location_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_delete_api_key_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_device_configuration_changed_cb = CFUNCTYPE(None, c_void_p)
 urnet_device_recreated_cb = CFUNCTYPE(None, c_void_p)
 urnet_device_set_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_dns_resolver_settings_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -480,6 +481,8 @@ def bind(lib):
     lib.urnet_api_upgrade_guest.restype = None
     lib.urnet_api_upgrade_guest_existing.argtypes = [c_uint64, c_char_p, urnet_upgrade_guest_existing_cb, c_void_p]
     lib.urnet_api_upgrade_guest_existing.restype = None
+    lib.urnet_api_upload_logs.argtypes = [c_uint64, c_char_p, urnet_upload_logs_cb, c_void_p, POINTER(c_void_p)]
+    lib.urnet_api_upload_logs.restype = c_bool
     lib.urnet_api_validate_referral_code.argtypes = [c_uint64, c_char_p, urnet_validate_referral_code_cb, c_void_p]
     lib.urnet_api_validate_referral_code.restype = None
     lib.urnet_api_verify_apple_transaction.argtypes = [c_uint64, c_char_p, urnet_verify_apple_transaction_cb, c_void_p]
@@ -1258,6 +1261,8 @@ def bind(lib):
     lib.urnet_device_local_save_result_get_saved.restype = c_bool
     lib.urnet_device_local_save_result_get_sequence.argtypes = [c_uint64]
     lib.urnet_device_local_save_result_get_sequence.restype = c_int64
+    lib.urnet_device_remote_add_device_configuration_changed_listener.argtypes = [c_uint64, urnet_device_configuration_changed_cb, c_void_p]
+    lib.urnet_device_remote_add_device_configuration_changed_listener.restype = c_uint64
     lib.urnet_device_remote_add_device_recreated_listener.argtypes = [c_uint64, urnet_device_recreated_cb, c_void_p]
     lib.urnet_device_remote_add_device_recreated_listener.restype = c_uint64
     lib.urnet_device_remote_add_remote_change_listener.argtypes = [c_uint64, urnet_remote_change_cb, c_void_p]
@@ -2494,6 +2499,8 @@ def bind(lib):
     lib.urnet_transport_settings_with_mode.restype = c_void_p
     lib.urnet_trim_memory.argtypes = []
     lib.urnet_trim_memory.restype = None
+    lib.urnet_upload_logs_inventory.argtypes = []
+    lib.urnet_upload_logs_inventory.restype = c_void_p
     lib.urnet_usd_to_nano_cents.argtypes = [c_double]
     lib.urnet_usd_to_nano_cents.restype = c_int64
     lib.urnet_validate_control_doh_url.argtypes = [c_char_p]

@@ -32,6 +32,8 @@ var testingErrorIdFunctions = []struct {
 	{method: "ValidateControlDohUrl", exits: 0},
 }
 
+// The sdk symbol of an error-id function: `Receiver.Method`, or the bare name
+// of a package function.
 func testingErrorIdSymbol(receiver string, method string) string {
 	if receiver == "" {
 		return method
@@ -145,7 +147,7 @@ func TestErrorIdResultsAreNamedWhereTheSdkDeclaresThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	fileSet := token.NewFileSet()
-	named := map[string]bool{}
+	namedSymbols := map[string]bool{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -198,7 +200,7 @@ func TestErrorIdResultsAreNamedWhereTheSdkDeclaresThem(t *testing.T) {
 				continue
 			}
 			if resultName == "errorId" {
-				named[symbol] = true
+				namedSymbols[symbol] = true
 			}
 			if strings.Contains(strings.ToLower(function.Doc.Text()), "error id") && resultName != "errorId" {
 				t.Errorf("%s (%s) answers an error id and does not name its result errorId", symbol, name)
@@ -207,11 +209,11 @@ func TestErrorIdResultsAreNamedWhereTheSdkDeclaresThem(t *testing.T) {
 	}
 	for _, expected := range testingErrorIdFunctions {
 		symbol := testingErrorIdSymbol(expected.receiver, expected.method)
-		if !named[symbol] {
+		if !namedSymbols[symbol] {
 			t.Errorf("%s does not name its result errorId", symbol)
 		}
 	}
-	if len(named) != len(testingErrorIdFunctions) {
-		t.Errorf("the sdk names %d error-id results %v, the pinned set is %d", len(named), named, len(testingErrorIdFunctions))
+	if len(namedSymbols) != len(testingErrorIdFunctions) {
+		t.Errorf("the sdk names %d error-id results %v, the pinned set is %d", len(namedSymbols), namedSymbols, len(testingErrorIdFunctions))
 	}
 }

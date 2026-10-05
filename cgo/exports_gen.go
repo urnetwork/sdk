@@ -724,6 +724,16 @@ func (self *cAdapterDeleteApiKeyCallback) Result(result *sdk.DeleteApiKeyResult,
 	}
 }
 
+type cAdapterDeviceConfigurationChangedListener struct {
+	cbDeviceConfigurationChanged C.urnet_device_configuration_changed_cb
+	userData                     unsafe.Pointer
+}
+
+func (self *cAdapterDeviceConfigurationChangedListener) DeviceConfigurationChanged() {
+	defer cgoGuard("urnet_device_configuration_changed_cb")
+	C.urnet_invoke_device_configuration_changed(self.cbDeviceConfigurationChanged, self.userData)
+}
+
 type cAdapterDeviceRecreatedListener struct {
 	cbDeviceRecreated C.urnet_device_recreated_cb
 	userData          unsafe.Pointer
@@ -5071,6 +5081,25 @@ func urnet_api_upgrade_guest_existing(self C.uint64_t, upgradeGuest *C.char, cal
 		callback_ = &cAdapterUpgradeGuestExistingCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.UpgradeGuestExisting(upgradeGuest_, callback_)
+}
+
+//export urnet_api_upload_logs
+func urnet_api_upload_logs(self C.uint64_t, feedbackId *C.char, callback_result C.urnet_upload_logs_cb, callback_user_data unsafe.Pointer, outError **C.char) C.bool {
+	defer cgoGuard("urnet_api_upload_logs")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_upload_logs")
+	if !ok {
+		return C.bool(false)
+	}
+	var callback_ sdk.UploadLogsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterUploadLogsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	err := self_.UploadLogs(goString(feedbackId), callback_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
 }
 
 //export urnet_api_validate_referral_code
@@ -10665,6 +10694,21 @@ func urnet_device_local_save_result_get_sequence(self C.uint64_t) C.int64_t {
 	}
 	r0 := self_.GetSequence()
 	return C.int64_t(r0)
+}
+
+//export urnet_device_remote_add_device_configuration_changed_listener
+func urnet_device_remote_add_device_configuration_changed_listener(self C.uint64_t, listener_device_configuration_changed C.urnet_device_configuration_changed_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_add_device_configuration_changed_listener")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_add_device_configuration_changed_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.DeviceConfigurationChangedListener
+	if listener_device_configuration_changed != nil {
+		listener_ = &cAdapterDeviceConfigurationChangedListener{cbDeviceConfigurationChanged: listener_device_configuration_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddDeviceConfigurationChangedListener(listener_)
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_device_remote_add_device_recreated_listener
@@ -17809,6 +17853,16 @@ func urnet_tunnel_get_done(self C.uint64_t) C.bool {
 	}
 	r0 := self_.GetDone()
 	return C.bool(r0)
+}
+
+//export urnet_upload_logs_inventory
+func urnet_upload_logs_inventory() *C.char {
+	defer cgoGuard("urnet_upload_logs_inventory")
+	r0 := sdk.UploadLogsInventory()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_upload_logs_inventory")
 }
 
 //export urnet_usd_to_nano_cents

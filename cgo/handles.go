@@ -105,7 +105,7 @@ func cgoGuard(name string) {
 	}
 }
 
-// cgoPanicked logs a panic an exported function recovered.
+// Logs a panic an exported function recovered.
 func cgoPanicked(name string, r any) {
 	glog.Errorf("[cgo]%s panicked: %v\n%s", name, r, string(debug.Stack()))
 }

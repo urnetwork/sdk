@@ -99,6 +99,15 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_MISMATCH "address_mismatch"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_NOT_IN_WALLET "address_not_in_wallet"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_NO_ACCOUNT "no_account"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_USER_REJECTED "user_rejected"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET_CONNECT_EXPIRED "walletconnect_expired"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET_CONNECT_UNAVAILABLE "walletconnect_unavailable"
 #define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/bittensor-connect"
 #define URNET_BITTENSOR_WALLET_CONNECT_CHAIN "polkadot:2f0555cc76fc2840a25a6ea3b9637146"
 #define URNET_BITTENSOR_WALLET_CONNECT_METHOD "polkadot_signMessage"
@@ -148,6 +157,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BLOCK_ACTION_REASON_SECURITY_IP "security-ip"
 #define URNET_BLOCK_ACTION_REASON_SECURITY_PORT "security-port"
 #define URNET_BLOCK_ACTION_REASON_SECURITY_SMTP "security-smtp"
+#define URNET_CHECKOUT_BRIDGE_ERROR_CHECKOUT "checkout_error"
+#define URNET_CHECKOUT_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
+#define URNET_CHECKOUT_BRIDGE_ERROR_STRIPE_UNAVAILABLE "stripe_unavailable"
+#define URNET_CHECKOUT_BRIDGE_ERROR_UNAVAILABLE "checkout_unavailable"
 #define URNET_CHECKOUT_BRIDGE_URL "https://ur.io/checkout"
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
@@ -380,6 +393,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_ERROR_CODE_NOT_CLAIMABLE "not_claimable"
 #define URNET_SN_ERROR_CODE_PROOF_MISMATCH "proof_mismatch"
 #define URNET_SN_ERROR_CODE_SERVER "server_error"
+#define URNET_SN_ERROR_CODE_SIGNATURE_MISMATCH "signature_mismatch"
 #define URNET_SN_ERROR_CODE_WALLET_BLOCKED "wallet_blocked"
 #define URNET_SN_RAO_PER_ALPHA 1000000000
 #define URNET_SN_SS58_PREFIX 42
@@ -387,6 +401,12 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_TX_TYPE_LEGACY "legacy"
 #define URNET_SOL "SOL"
 #define URNET_SOLANA_PAY_REFERENCE_BYTES 32
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_NO_ACCOUNT "no_account"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_SESSION_NOT_FOUND "session_not_found"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_USER_REJECTED "user_rejected"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
 #define URNET_STRIPE_INTENT_TYPE_PAYMENT "payment"
 #define URNET_STRIPE_INTENT_TYPE_SETUP "setup"
 #define URNET_STRIPE_ITEM_DATA10_TIB "data_10tib"
@@ -530,6 +550,8 @@ typedef void (*urnet_create_api_key_cb)(void* user_data, const char* result_json
 typedef void (*urnet_default_location_change_cb)(void* user_data, const char* location_json);
 /* DeleteApiKeyCallback */
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
+/* DeviceConfigurationChangedListener */
+typedef void (*urnet_device_configuration_changed_cb)(void* user_data);
 /* DeviceRecreatedListener */
 typedef void (*urnet_device_recreated_cb)(void* user_data);
 /* DeviceSetNameCallback */
@@ -943,6 +965,7 @@ void urnet_api_subscription_create_payment_id(uint64_t self, const char* create_
 void urnet_api_unlink_referral_network(uint64_t self, urnet_unlink_referral_network_cb callback_result, void* callback_user_data);
 void urnet_api_upgrade_guest(uint64_t self, const char* upgrade_guest_json, urnet_upgrade_guest_cb callback_result, void* callback_user_data);
 void urnet_api_upgrade_guest_existing(uint64_t self, const char* upgrade_guest_json, urnet_upgrade_guest_existing_cb callback_result, void* callback_user_data);
+bool urnet_api_upload_logs(uint64_t self, const char* feedback_id, urnet_upload_logs_cb callback_result, void* callback_user_data, char** out_error);
 void urnet_api_validate_referral_code(uint64_t self, const char* validate_referral_code_json, urnet_validate_referral_code_cb callback_result, void* callback_user_data);
 void urnet_api_verify_apple_transaction(uint64_t self, const char* args_json, urnet_verify_apple_transaction_cb callback_result, void* callback_user_data);
 char* urnet_api_verify_apple_transaction_sync(uint64_t self, const char* args_json, char** out_error);
@@ -1377,6 +1400,7 @@ int64_t urnet_device_local_save_result_get_sequence(uint64_t self);
 
 /* ----- DeviceRemote ----- */
 
+uint64_t urnet_device_remote_add_device_configuration_changed_listener(uint64_t self, urnet_device_configuration_changed_cb listener_device_configuration_changed, void* listener_user_data);
 uint64_t urnet_device_remote_add_device_recreated_listener(uint64_t self, urnet_device_recreated_cb listener_device_recreated, void* listener_user_data);
 uint64_t urnet_device_remote_add_remote_change_listener(uint64_t self, urnet_remote_change_cb listener_remote_changed, void* listener_user_data);
 uint64_t urnet_device_remote_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);
@@ -2093,6 +2117,7 @@ bool urnet_transport_settings_equal(const char* a_json, const char* b_json);
 char* urnet_transport_settings_with_auto_mode_enabled(const char* settings_json, const char* mode, bool enabled);
 char* urnet_transport_settings_with_mode(const char* settings_json, const char* mode);
 void urnet_trim_memory(void);
+char* urnet_upload_logs_inventory(void);
 int64_t urnet_usd_to_nano_cents(double usd);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
 char* urnet_validate_control_doh_url(const char* doh_url);
@@ -2422,6 +2447,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Proof: BittensorWalletProof | null
  *   ErrorCode: string
  *   ErrorMessage: string
+ *   BridgeErrorCode: string
  */
 
 /* BittensorWalletReturn (json):
@@ -4490,6 +4516,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* SnSetWalletError (json):
+ *   code?: string
  *   message: string
  */
 

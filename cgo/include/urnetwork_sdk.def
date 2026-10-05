@@ -112,6 +112,7 @@ EXPORTS
 	urnet_api_unlink_referral_network
 	urnet_api_upgrade_guest
 	urnet_api_upgrade_guest_existing
+	urnet_api_upload_logs
 	urnet_api_validate_referral_code
 	urnet_api_verify_apple_transaction
 	urnet_api_verify_apple_transaction_sync
@@ -523,6 +524,7 @@ EXPORTS
 	urnet_device_open_socket
 	urnet_device_reconnect
 	urnet_device_refresh_token
+	urnet_device_remote_add_device_configuration_changed_listener
 	urnet_device_remote_add_device_recreated_listener
 	urnet_device_remote_add_remote_change_listener
 	urnet_device_remote_add_sn_wallet_change_listener
@@ -1180,6 +1182,7 @@ EXPORTS
 	urnet_tunnel_cancel
 	urnet_tunnel_close
 	urnet_tunnel_get_done
+	urnet_upload_logs_inventory
 	urnet_usd_to_nano_cents
 	urnet_validate_control_doh_url
 	urnet_validate_emoji_tag

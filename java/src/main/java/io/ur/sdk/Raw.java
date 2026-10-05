@@ -48,6 +48,7 @@ public interface Raw extends Library {
   interface urnet_create_api_key_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_default_location_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_delete_api_key_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_device_configuration_changed_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_device_recreated_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_device_set_name_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_dns_resolver_settings_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -339,6 +340,7 @@ public interface Raw extends Library {
   void urnet_api_unlink_referral_network(long a0, urnet_unlink_referral_network_cb a1, Pointer a2);
   void urnet_api_upgrade_guest(long a0, String a1, urnet_upgrade_guest_cb a2, Pointer a3);
   void urnet_api_upgrade_guest_existing(long a0, String a1, urnet_upgrade_guest_existing_cb a2, Pointer a3);
+  byte urnet_api_upload_logs(long a0, String a1, urnet_upload_logs_cb a2, Pointer a3, PointerByReference a4);
   void urnet_api_validate_referral_code(long a0, String a1, urnet_validate_referral_code_cb a2, Pointer a3);
   void urnet_api_verify_apple_transaction(long a0, String a1, urnet_verify_apple_transaction_cb a2, Pointer a3);
   Pointer urnet_api_verify_apple_transaction_sync(long a0, String a1, PointerByReference a2);
@@ -728,6 +730,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_save_result_get_preference(long a0);
   byte urnet_device_local_save_result_get_saved(long a0);
   long urnet_device_local_save_result_get_sequence(long a0);
+  long urnet_device_remote_add_device_configuration_changed_listener(long a0, urnet_device_configuration_changed_cb a1, Pointer a2);
   long urnet_device_remote_add_device_recreated_listener(long a0, urnet_device_recreated_cb a1, Pointer a2);
   long urnet_device_remote_add_remote_change_listener(long a0, urnet_remote_change_cb a1, Pointer a2);
   long urnet_device_remote_add_sn_wallet_change_listener(long a0, urnet_sn_wallet_change_cb a1, Pointer a2);
@@ -1346,6 +1349,7 @@ public interface Raw extends Library {
   Pointer urnet_transport_settings_with_auto_mode_enabled(String a0, String a1, byte a2);
   Pointer urnet_transport_settings_with_mode(String a0, String a1);
   void urnet_trim_memory();
+  Pointer urnet_upload_logs_inventory();
   long urnet_usd_to_nano_cents(double a0);
   Pointer urnet_validate_control_doh_url(String a0);
   Pointer urnet_validate_emoji_tag(String a0);

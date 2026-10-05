@@ -339,10 +339,9 @@ func (c *Client) LatestBaseFee(ctx context.Context) (*big.Int, error) {
 	return ParseUint256(block.BaseFeePerGas)
 }
 
-// LatestHeader returns the latest block's number and timestamp (unix
-// seconds).
-func (c *Client) LatestHeader(ctx context.Context) (uint64, uint64, error) {
-	raw, err := c.Call(ctx, "eth_getBlockByNumber", "latest", false)
+// The latest block's number and timestamp (unix seconds).
+func (self *Client) LatestHeader(ctx context.Context) (uint64, uint64, error) {
+	raw, err := self.Call(ctx, "eth_getBlockByNumber", "latest", false)
 	if err != nil {
 		return 0, 0, err
 	}

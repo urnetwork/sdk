@@ -14,11 +14,13 @@ import (
 	"github.com/urnetwork/sdk"
 )
 
-// An extension transport that never opens: the remote's rpc stays down, so a
-// set is held as pending state for the next sync, as a browser remote does
-// before its first sync and between syncs. The callbacks are never released:
-// the remote's run loop may dial again while it closes.
-func newUnopenedExtensionTransport() js.Value {
+// A remote over an extension transport that never opens, with its binding:
+// the remote's rpc stays down, so a set is held as pending state for the next
+// sync, as a browser remote does before its first sync and between syncs. The
+// transport's callbacks are never released: the remote's run loop may dial
+// again while it closes.
+func newUnopenedExtensionDeviceRemote(t *testing.T) (*sdk.DeviceRemote, js.Value) {
+	t.Helper()
 	noop := js.FuncOf(func(this js.Value, args []js.Value) any { return nil })
 	connection := js.Global().Get("Object").New()
 	connection.Set("send", noop)
@@ -26,13 +28,9 @@ func newUnopenedExtensionTransport() js.Value {
 	open := js.FuncOf(func(this js.Value, args []js.Value) any { return connection })
 	transport := js.Global().Get("Object").New()
 	transport.Set("open", open)
-	return transport
-}
 
-func newUnopenedExtensionDeviceRemote(t *testing.T) (*sdk.DeviceRemote, js.Value) {
-	t.Helper()
 	networkSpace := sdk.NewUrlsNetworkSpace("https://api.invalid", "wss://connect.invalid")
-	remote, err := sdk.NewExtensionDeviceRemote(networkSpace, "", sdk.NewId(), newUnopenedExtensionTransport())
+	remote, err := sdk.NewExtensionDeviceRemote(networkSpace, "", sdk.NewId(), transport)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +38,9 @@ func newUnopenedExtensionDeviceRemote(t *testing.T) (*sdk.DeviceRemote, js.Value
 	return remote, jsDeviceRemote(remote)
 }
 
+// The binding has the three methods, and a set queues the profile a page
+// sends (the web's Fixed IP is a window of exactly one exit) unless the multi
+// client would refuse it; null queues the auto profile.
 func TestPerformanceProfileWasmSetQueuesTheFixedIpProfile(t *testing.T) {
 	remote, device := newUnopenedExtensionDeviceRemote(t)
 	for _, method := range []string{"getPerformanceProfile", "setPerformanceProfile", "addPerformanceProfileChangeListener"} {
@@ -99,6 +100,8 @@ func TestPerformanceProfileWasmSetQueuesTheFixedIpProfile(t *testing.T) {
 	unsubscribe.Invoke()
 }
 
+// A profile rendered for a page parses back to the same profile, and nil
+// renders as null.
 func TestPerformanceProfileWasmRoundTrip(t *testing.T) {
 	if !jsPerformanceProfile(nil).IsNull() {
 		t.Fatal("a nil profile is not null")

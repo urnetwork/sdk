@@ -144,6 +144,10 @@ type SnSetWalletArgs struct {
 }
 
 type SnSetWalletError struct {
+	// the server's stable code for the refusal, when it has one
+	// (SnErrorCodeSignatureMismatch); "" from older servers and for other
+	// refusals
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 

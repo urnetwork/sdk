@@ -46,6 +46,7 @@ pub type urnet_create_account_wallet_cb = Option<unsafe extern "C" fn(*mut c_voi
 pub type urnet_create_api_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_default_location_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_delete_api_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_device_configuration_changed_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_device_recreated_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_device_set_name_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_dns_resolver_settings_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -339,6 +340,7 @@ pub struct Raw {
     pub urnet_api_unlink_referral_network: unsafe extern "C" fn(u64, urnet_unlink_referral_network_cb, *mut c_void) -> (),
     pub urnet_api_upgrade_guest: unsafe extern "C" fn(u64, *const c_char, urnet_upgrade_guest_cb, *mut c_void) -> (),
     pub urnet_api_upgrade_guest_existing: unsafe extern "C" fn(u64, *const c_char, urnet_upgrade_guest_existing_cb, *mut c_void) -> (),
+    pub urnet_api_upload_logs: unsafe extern "C" fn(u64, *const c_char, urnet_upload_logs_cb, *mut c_void, *mut *mut c_char) -> bool,
     pub urnet_api_validate_referral_code: unsafe extern "C" fn(u64, *const c_char, urnet_validate_referral_code_cb, *mut c_void) -> (),
     pub urnet_api_verify_apple_transaction: unsafe extern "C" fn(u64, *const c_char, urnet_verify_apple_transaction_cb, *mut c_void) -> (),
     pub urnet_api_verify_apple_transaction_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
@@ -728,6 +730,7 @@ pub struct Raw {
     pub urnet_device_local_save_result_get_preference: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_local_save_result_get_saved: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_local_save_result_get_sequence: unsafe extern "C" fn(u64) -> i64,
+    pub urnet_device_remote_add_device_configuration_changed_listener: unsafe extern "C" fn(u64, urnet_device_configuration_changed_cb, *mut c_void) -> u64,
     pub urnet_device_remote_add_device_recreated_listener: unsafe extern "C" fn(u64, urnet_device_recreated_cb, *mut c_void) -> u64,
     pub urnet_device_remote_add_remote_change_listener: unsafe extern "C" fn(u64, urnet_remote_change_cb, *mut c_void) -> u64,
     pub urnet_device_remote_add_sn_wallet_change_listener: unsafe extern "C" fn(u64, urnet_sn_wallet_change_cb, *mut c_void) -> u64,
@@ -1346,6 +1349,7 @@ pub struct Raw {
     pub urnet_transport_settings_with_auto_mode_enabled: unsafe extern "C" fn(*const c_char, *const c_char, bool) -> *mut c_char,
     pub urnet_transport_settings_with_mode: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char,
     pub urnet_trim_memory: unsafe extern "C" fn() -> (),
+    pub urnet_upload_logs_inventory: unsafe extern "C" fn() -> *mut c_char,
     pub urnet_usd_to_nano_cents: unsafe extern "C" fn(f64) -> i64,
     pub urnet_validate_control_doh_url: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     pub urnet_validate_emoji_tag: unsafe extern "C" fn(*const c_char) -> *mut c_char,
@@ -1510,6 +1514,7 @@ impl Raw {
             urnet_api_unlink_referral_network: unsafe { *library.get(b"urnet_api_unlink_referral_network\0")? },
             urnet_api_upgrade_guest: unsafe { *library.get(b"urnet_api_upgrade_guest\0")? },
             urnet_api_upgrade_guest_existing: unsafe { *library.get(b"urnet_api_upgrade_guest_existing\0")? },
+            urnet_api_upload_logs: unsafe { *library.get(b"urnet_api_upload_logs\0")? },
             urnet_api_validate_referral_code: unsafe { *library.get(b"urnet_api_validate_referral_code\0")? },
             urnet_api_verify_apple_transaction: unsafe { *library.get(b"urnet_api_verify_apple_transaction\0")? },
             urnet_api_verify_apple_transaction_sync: unsafe { *library.get(b"urnet_api_verify_apple_transaction_sync\0")? },
@@ -1899,6 +1904,7 @@ impl Raw {
             urnet_device_local_save_result_get_preference: unsafe { *library.get(b"urnet_device_local_save_result_get_preference\0")? },
             urnet_device_local_save_result_get_saved: unsafe { *library.get(b"urnet_device_local_save_result_get_saved\0")? },
             urnet_device_local_save_result_get_sequence: unsafe { *library.get(b"urnet_device_local_save_result_get_sequence\0")? },
+            urnet_device_remote_add_device_configuration_changed_listener: unsafe { *library.get(b"urnet_device_remote_add_device_configuration_changed_listener\0")? },
             urnet_device_remote_add_device_recreated_listener: unsafe { *library.get(b"urnet_device_remote_add_device_recreated_listener\0")? },
             urnet_device_remote_add_remote_change_listener: unsafe { *library.get(b"urnet_device_remote_add_remote_change_listener\0")? },
             urnet_device_remote_add_sn_wallet_change_listener: unsafe { *library.get(b"urnet_device_remote_add_sn_wallet_change_listener\0")? },
@@ -2517,6 +2523,7 @@ impl Raw {
             urnet_transport_settings_with_auto_mode_enabled: unsafe { *library.get(b"urnet_transport_settings_with_auto_mode_enabled\0")? },
             urnet_transport_settings_with_mode: unsafe { *library.get(b"urnet_transport_settings_with_mode\0")? },
             urnet_trim_memory: unsafe { *library.get(b"urnet_trim_memory\0")? },
+            urnet_upload_logs_inventory: unsafe { *library.get(b"urnet_upload_logs_inventory\0")? },
             urnet_usd_to_nano_cents: unsafe { *library.get(b"urnet_usd_to_nano_cents\0")? },
             urnet_validate_control_doh_url: unsafe { *library.get(b"urnet_validate_control_doh_url\0")? },
             urnet_validate_emoji_tag: unsafe { *library.get(b"urnet_validate_emoji_tag\0")? },

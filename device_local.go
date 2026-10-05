@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"net/netip"
 	"net/url"
@@ -711,6 +710,8 @@ type DeviceLocal struct {
 	testingBeforePreferenceApply func()
 	// Holds only the shared scalar publication before its final owner check.
 	testingBeforeGlobalPreferenceApply func(string)
+	// Holds an upload before it zips the log files.
+	testingBeforeUploadLogs func()
 	// platformUrl string
 	// apiUrl      string
 
@@ -7650,76 +7651,17 @@ func (self *DeviceLocal) networkPeersChanged(networkPeers *NetworkPeers) {
 	}
 }
 
+// Uploads the log files this process can read to the feedback with feedbackId,
+// through the device's api: one zip of the glog files of every process under
+// the log root, else of this process's log directory, newest first up to the
+// upload's cap (log_upload.go). On ios this runs in the network extension,
+// whose sockets stay outside the tunnel, and the root is the app group's Logs,
+// so the zip holds the app's logs as well as the extension's.
 func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
-
-	logDir := GetLogDir()
-
-	zipPath, err := zipUploadLogs(logDir)
-	if err != nil {
-		self.log.Errorf("Failed to zip log directory %q: %v", logDir, err)
-		return err
+	if self.testingBeforeUploadLogs != nil {
+		self.testingBeforeUploadLogs()
 	}
-
-	zipFile, err := os.Open(zipPath)
-	if err != nil {
-		return err
-	}
-
-	fileInfo, err := zipFile.Stat()
-	if err != nil {
-		zipFile.Close()
-		return err
-	}
-	fileSize := fileInfo.Size()
-	self.log.Infof("Uploading log file %q (%d bytes)", zipPath, fileSize)
-
-	self.GetApi().uploadLogs(feedbackId, zipFile, connect.NewApiCallback[*UploadLogsResult](func(res *UploadLogsResult, err error) {
-		// Ensure resources are cleaned up after upload completes (success or error)
-		zipFile.Close()
-		os.Remove(zipPath)
-
-		// Forward result to the original callback
-		if callback != nil {
-			callback.Result(res, err)
-		}
-	}))
-
-	return nil
-}
-
-// zipUploadLogs zips this process's glog files in logDir into a new zip there
-// and returns its path. It flushes glog first: glog buffers its file writes and
-// flushes them only every 30 seconds, so the newest lines, such as an app line
-// written with LogAppInfo just before the user sent feedback, would otherwise
-// be missing from the upload.
-func zipUploadLogs(logDir string) (string, error) {
-	FlushGlog()
-
-	files, err := os.ReadDir(logDir)
-	if err != nil {
-		return "", err
-	}
-
-	logPaths := []string{}
-	for _, file := range files {
-		name := file.Name()
-		if !file.IsDir() &&
-			(bytes.Contains([]byte(name), []byte(".log.INFO")) ||
-				bytes.Contains([]byte(name), []byte(".log.WARNING")) ||
-				bytes.Contains([]byte(name), []byte(".log.ERROR")) ||
-				bytes.Contains([]byte(name), []byte(".log.FATAL"))) {
-			fullPath := logDir + "/" + name
-			logPaths = append(logPaths, fullPath)
-		}
-	}
-
-	zipName := fmt.Sprintf("logs-%s.zip", time.Now().Format("20060102-150405"))
-	zipPath := filepath.Join(logDir, zipName)
-
-	if err := zipLogs(logPaths, zipPath); err != nil {
-		return "", err
-	}
-	return zipPath, nil
+	return uploadLogs(self.GetApi(), self.log, feedbackId, callback)
 }
 
 // DiagnosticManifestJson returns the device-side half of the exported bundle's
@@ -7869,38 +7811,6 @@ func zipWriteEntry(zipWriter *zip.Writer, name string, r io.Reader, fi os.FileIn
 	return scanner.Err()
 }
 
-func zipLogs(
-	logFiles []string,
-	zipPath string,
-) error {
-	zipFile, err := os.Create(zipPath)
-	if err != nil {
-		return err
-	}
-	defer zipFile.Close()
-
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	for _, path := range logFiles {
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		fi, err := f.Stat()
-		if err != nil {
-			f.Close()
-			return err
-		}
-		if err := zipWriteEntry(zipWriter, filepath.Base(path), f, fi, nil); err != nil {
-			f.Close()
-			return err
-		}
-		f.Close()
-	}
-	return nil
-}
-
 func toConnectPerformanceProfile(performanceProfile *PerformanceProfile) *connect.PerformanceProfile {
 	if performanceProfile == nil {
 		return nil
@@ -7946,11 +7856,11 @@ func toConnectWindowSize(windowSize *WindowSizeSettings) connect.WindowSizeSetti
 	}
 }
 
-// validatePerformanceProfile is the multi client's own check of the profile
-// it would receive: no window size or count below zero, max at least min, and
-// a fixed window with room for an exit. The device refuses any other profile
-// before saving or applying it, so a caller's window size never reaches the
-// connection. nil, the auto default, is valid.
+// The multi client's own check of the profile it would receive: no window
+// size or count below zero, max at least min, and a fixed window with room for
+// an exit. The device refuses any other profile before saving or applying it,
+// so a caller's window size never reaches the connection. nil, the auto
+// default, is valid.
 func validatePerformanceProfile(performanceProfile *PerformanceProfile) error {
 	if performanceProfile == nil {
 		return nil
@@ -7958,11 +7868,10 @@ func validatePerformanceProfile(performanceProfile *PerformanceProfile) error {
 	return toConnectPerformanceProfile(performanceProfile).Validate()
 }
 
-// normalizeSavedPerformanceProfile reads back a saved profile. Before the
-// device refused them, a profile whose window the multi client cannot install
-// could be saved from any caller. It reads back in auto mode, keeping its
-// direct and post-quantum choices, instead of failing the load or reaching
-// the connection.
+// Reads back a saved profile. Before the device refused them, a profile whose
+// window the multi client cannot install could be saved from any caller. It
+// reads back in auto mode, keeping its direct and post-quantum choices,
+// instead of failing the load or reaching the connection.
 func normalizeSavedPerformanceProfile(performanceProfile *PerformanceProfile) *PerformanceProfile {
 	if validatePerformanceProfile(performanceProfile) == nil {
 		return performanceProfile

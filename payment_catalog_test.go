@@ -220,6 +220,45 @@ func TestParseCheckoutRedirect(t *testing.T) {
 	}
 }
 
+// The bridge page hands a failure back with its own code next to its English
+// text, and the parsed hand-back carries both as sent: an app shows its own
+// words for a code it knows and the text for any other, which includes the -1
+// of pages before the codes.
+func TestParseCheckoutRedirectPassesThePageErrorCode(t *testing.T) {
+	// the codes are a contract with ur.io's EmbeddedCheckout.jsx
+	for code, want := range map[string]string{
+		CheckoutBridgeErrorInvalidRequest:    "invalid_request",
+		CheckoutBridgeErrorUnavailable:       "checkout_unavailable",
+		CheckoutBridgeErrorStripeUnavailable: "stripe_unavailable",
+		CheckoutBridgeErrorCheckout:          "checkout_error",
+	} {
+		if code != want {
+			t.Errorf("checkout bridge error code %q, want %q", code, want)
+		}
+	}
+
+	for _, c := range []struct {
+		errorCode    string
+		errorMessage string
+	}{
+		{errorCode: CheckoutBridgeErrorInvalidRequest, errorMessage: "This page was opened without a checkout session."},
+		{errorCode: CheckoutBridgeErrorUnavailable, errorMessage: "Checkout is not configured."},
+		{errorCode: CheckoutBridgeErrorStripeUnavailable, errorMessage: "Could not load Stripe."},
+		{errorCode: CheckoutBridgeErrorCheckout, errorMessage: "The checkout session cs_test_a1B2 is not valid."},
+		{errorCode: "checkout_paused", errorMessage: "Checkout is paused."},
+		{errorCode: "-1", errorMessage: "Could not start checkout. Please try again."},
+	} {
+		values := url.Values{"errorCode": {c.errorCode}, "errorMessage": {c.errorMessage}}
+		redirect, err := ParseCheckoutRedirect(CheckoutRedirectLink + "?" + values.Encode())
+		if err != nil {
+			t.Fatalf("%s: %v", c.errorCode, err)
+		}
+		if redirect.Complete || redirect.SessionId != "" || redirect.ErrorCode != c.errorCode || redirect.ErrorMessage != c.errorMessage {
+			t.Errorf("%s: got %+v, want the code and %q", c.errorCode, redirect, c.errorMessage)
+		}
+	}
+}
+
 func TestIsBalanceCodeFormatValid(t *testing.T) {
 	valid26 := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	if len(valid26) != BalanceCodeLength {

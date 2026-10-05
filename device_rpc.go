@@ -62,6 +62,20 @@ type DeviceRecreatedListener interface {
 	DeviceRecreated()
 }
 
+// Fires when the device behind the remote may not hold the configuration the
+// client applied to it, so the client should apply its own source of truth for
+// the device settings again. The remote reports this after its first sync with
+// a device, after a later sync that reaches a different device generation (the
+// host recreated the device from its stored initial state, as after an idle
+// reap, an egress death or a host restart), and after every sync with a device
+// that reports no generation, where a recreation cannot be ruled out. A
+// reconnect to the same generation does not fire. When it fires, the getters
+// already read the state of the device that was just synced, so a client that
+// writes only the values that differ converges instead of resyncing forever.
+type DeviceConfigurationChangedListener interface {
+	DeviceConfigurationChanged()
+}
+
 type deviceRpcSettings struct {
 	// Native custom RPC framing, on by default (SetDeviceRpcH1PlusEnabled).
 	// Browsers ignore this setting and always use WebSocket.
@@ -131,8 +145,10 @@ type deviceRpcSettings struct {
 	// device (e.g. after an idle reap or egress-death recreate). The
 	// DeviceRemote reads it from the sync response and fires
 	// DeviceRecreatedListener when it changes across reconnects, so the client
-	// can re-run its setup. Empty on non-hosted (localhost) rpc, where the
-	// device is not recreated under the remote.
+	// can re-run its setup. It also fires DeviceConfigurationChangedListener on
+	// a change, on its first sync, and on every sync without a generation.
+	// Empty on non-hosted (localhost) rpc, where the device is not recreated
+	// under the remote.
 	DeviceGeneration string
 
 	DeviceLocalSettings
@@ -251,11 +267,13 @@ type DeviceRemote struct {
 	instanceId     connect.Id
 	clientStrategy *connect.ClientStrategy
 
-	remoteChangeListeners    *connect.CallbackList[RemoteChangeListener]
-	deviceRecreatedListeners *connect.CallbackList[DeviceRecreatedListener]
+	remoteChangeListeners               *connect.CallbackList[RemoteChangeListener]
+	deviceRecreatedListeners            *connect.CallbackList[DeviceRecreatedListener]
+	deviceConfigurationChangedListeners *connect.CallbackList[DeviceConfigurationChangedListener]
 
 	// the device generation observed on the last successful sync; a change
-	// signals the host recreated the device. Guarded by stateLock.
+	// signals the host recreated the device. hasDeviceGeneration is false until
+	// the first successful sync. Guarded by stateLock.
 	deviceGeneration    string
 	hasDeviceGeneration bool
 
@@ -557,6 +575,7 @@ func newDeviceRemoteWithOverrides(
 		networkPeersChangeListeners:              map[connect.Id]NetworkPeersChangeListener{},
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		connectedProviderLocationChangeListeners: connect.NewCallbackList[ConnectedProviderLocationChangeListener](),
+		deviceConfigurationChangedListeners:      connect.NewCallbackList[DeviceConfigurationChangedListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
 		authPublication:                          authPublication,
 		httpResponseChannels:                     map[connect.Id]chan *DeviceRemoteHttpResponse{},
@@ -939,6 +958,7 @@ func (self *DeviceRemote) run() {
 			}
 
 			deviceRecreated := false
+			deviceConfigurationChanged := false
 			pendingState := false
 			func() {
 				self.stateLock.Lock()
@@ -956,6 +976,11 @@ func (self *DeviceRemote) run() {
 				if self.hasDeviceGeneration && self.deviceGeneration != syncResponse.DeviceGeneration {
 					deviceRecreated = true
 				}
+				// the first sync, a recreated device, or a device that reports no
+				// generation, which may have been recreated unseen
+				deviceConfigurationChanged = !self.hasDeviceGeneration ||
+					deviceRecreated ||
+					syncResponse.DeviceGeneration == ""
 				self.deviceGeneration = syncResponse.DeviceGeneration
 				self.hasDeviceGeneration = true
 				pendingState = self.state.hasPendingSyncState()
@@ -981,6 +1006,9 @@ func (self *DeviceRemote) run() {
 			self.remoteChanged(true)
 			if deviceRecreated {
 				self.deviceRecreated()
+			}
+			if deviceConfigurationChanged {
+				self.deviceConfigurationChanged()
 			}
 			logDeviceRpcAttempt(self.log, "active", "ok")
 			self.log.Infof("[dr]sync done")
@@ -4909,6 +4937,25 @@ func (self *DeviceRemote) deviceRecreated() {
 	}
 }
 
+// See DeviceConfigurationChangedListener. The remote starts syncing when it is
+// constructed, so a listener added later can miss the first sync's event; a
+// client that cannot add it first applies its configuration once itself when
+// it sees the remote connected.
+func (self *DeviceRemote) AddDeviceConfigurationChangedListener(listener DeviceConfigurationChangedListener) Sub {
+	listenerId := self.deviceConfigurationChangedListeners.Add(listener)
+	return newSub(func() {
+		self.deviceConfigurationChangedListeners.Remove(listenerId)
+	})
+}
+
+// Called by the run loop after a sync is published, outside the state lock,
+// so a listener may call the setters.
+func (self *DeviceRemote) deviceConfigurationChanged() {
+	for _, listener := range self.deviceConfigurationChangedListeners.Get() {
+		listener.DeviceConfigurationChanged()
+	}
+}
+
 // privacy block
 
 func (self *DeviceRemote) GetBlockStats() *BlockStats {
@@ -6241,7 +6288,17 @@ func (self *DeviceRemote) SimulateNetworkChange() {
 	rpcCallNoArgVoid(self.service, "DeviceLocalRpc.SimulateNetworkChange", self.closeService)
 }
 
+// Asks the device's process to upload the log files it can read
+// (DeviceLocal.UploadLogs). It fails when the rpc cannot carry the request (on
+// ios while the network extension is not running), and then the caller can
+// upload from this process with Api.UploadLogs.
+//
+// This process's glog is flushed first: where the two processes share a log
+// root (on ios the app group's Logs), the device's zip holds this process's
+// files too, and glog flushes them only every 30 seconds.
 func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
+	FlushGlog()
+
 	logsUploaded := false
 	func() {
 		self.stateLock.Lock()
@@ -11571,8 +11628,17 @@ func (self *DeviceLocalRpc) canShowRatingDialogChanged(canShowRatingDialog bool)
 	self.reverseNotify("DeviceRemoteRpc.CanShowRatingDialogChanged", canShowRatingDialog)
 }
 
+// Starts the upload and answers at once. The zip reads up to the upload's cap
+// from disk, while this server serves one request at a time and the remote
+// holds its state lock across the call, so answering after the zip stalled
+// every other call of the remote for that long. The remote never got the
+// upload's result, only whether the request reached this process.
 func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
-	self.deviceLocal.UploadLogs(feedbackId, nil)
+	self.workers.Add(1)
+	go connect.HandleError(func() {
+		defer self.workers.Done()
+		self.deviceLocal.UploadLogs(feedbackId, nil)
+	})
 	return nil
 }
 

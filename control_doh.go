@@ -1,6 +1,4 @@
-package sdk
-
-// control_doh.go — the bootstrap DoH servers of a network space (connect
+// The bootstrap DoH servers of a network space (connect
 // net_http_doh_control.go).
 //
 // The space resolves its own names (api, connect, extender) only over DoH,
@@ -19,6 +17,7 @@ package sdk
 // at the next tunnel start.
 //
 // The app-facing helpers are in control_doh_ui.go.
+package sdk
 
 import (
 	"slices"
@@ -36,10 +35,10 @@ const (
 	ControlDohErrorTooMany       = "control_doh_error_too_many"
 )
 
-// controlDohSettingsConfigure, when set, adjusts the DoH settings a space's
-// strategy is given. Production never sets it; the tests install the trust of
-// an in-process DoH server and a dial that black-holes the default servers
-// through it, so nothing resolves for real.
+// When set, adjusts the DoH settings a space's strategy is given. Production
+// never sets it; the tests install the trust of an in-process DoH server and a
+// dial that black-holes the default servers through it, so nothing resolves
+// for real.
 var controlDohSettingsConfigure func(settings *connect.DohSettings)
 
 // The error id of a connect bootstrap DoH url error.
@@ -85,7 +84,7 @@ func spaceControlDohSettings(values *NetworkSpaceValues) *connect.DohSettings {
 // comparison is of the urls the rule reads, so an edit that only adds
 // whitespace, a blank line or a repeat changes nothing.
 func controlDohValuesChanged(previous *NetworkSpaceValues, next *NetworkSpaceValues) bool {
-	previousIpv4, previousIpv6 := spaceControlDohUrls(previous)
-	nextIpv4, nextIpv6 := spaceControlDohUrls(next)
-	return !slices.Equal(previousIpv4, nextIpv4) || !slices.Equal(previousIpv6, nextIpv6)
+	previousDohUrlsIpv4, previousDohUrlsIpv6 := spaceControlDohUrls(previous)
+	nextDohUrlsIpv4, nextDohUrlsIpv6 := spaceControlDohUrls(next)
+	return !slices.Equal(previousDohUrlsIpv4, nextDohUrlsIpv4) || !slices.Equal(previousDohUrlsIpv6, nextDohUrlsIpv6)
 }

@@ -336,7 +336,7 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		if !ok {
 			return js.Null()
 		}
-		return jsSub(device.AddPerformanceProfileChangeListener(&jsPerformanceProfileChangeListener{cb}))
+		return jsSub(device.AddPerformanceProfileChangeListener(&jsPerformanceProfileChangeListener{cb: cb}))
 	})
 
 	// transport policy (over the device-rpc): one carrier or Auto over the
@@ -518,6 +518,18 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		}
 		return jsSub(device.AddDeviceRecreatedListener(&jsDeviceRecreatedListener{cb}))
 	})
+	// signal only: the device may not hold what the page applied to it (the
+	// first sync, a recreated device, or a device without a generation), so
+	// the page applies its own settings again. Add it right after creating the
+	// remote; the remote's first sync waits for the transport to open, which
+	// takes a later JavaScript task
+	m["addDeviceConfigurationChangedListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddDeviceConfigurationChangedListener(&jsDeviceConfigurationChangedListener{cb: cb}))
+	})
 	m["addConnectChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		cb, ok := funcArg(args)
 		if !ok {
@@ -572,6 +584,13 @@ func (self *jsRemoteChangeListener) RemoteChanged(remoteConnected bool) {
 type jsDeviceRecreatedListener struct{ cb js.Value }
 
 func (self *jsDeviceRecreatedListener) DeviceRecreated() {
+	self.cb.Invoke()
+}
+
+// Invokes the page's callback with no arguments; the page re-reads the getters.
+type jsDeviceConfigurationChangedListener struct{ cb js.Value }
+
+func (self *jsDeviceConfigurationChangedListener) DeviceConfigurationChanged() {
 	self.cb.Invoke()
 }
 
@@ -812,9 +831,9 @@ func (self *jsDnsResolverSettingsChangeListener) DnsResolverSettingsChanged(s *s
 
 // ── performance profile ──────────────────────────────────────────────────────
 
-// jsPerformanceProfile mirrors sdk.PerformanceProfile. null for a nil profile,
-// which the sdk reads as auto with every flag off; windowSize is null when the
-// profile carries none (auto)
+// Mirrors sdk.PerformanceProfile. null for a nil profile, which the sdk reads
+// as auto with every flag off; windowSize is null when the profile carries
+// none (auto)
 func jsPerformanceProfile(performanceProfile *sdk.PerformanceProfile) js.Value {
 	if performanceProfile == nil {
 		return js.Null()
@@ -839,12 +858,12 @@ func jsPerformanceProfile(performanceProfile *sdk.PerformanceProfile) js.Value {
 	})
 }
 
-// parsePerformanceProfile reads a profile from a JS object ({windowType,
-// windowSize: {windowSizeMin, windowSizeMax, ...} | null, allowDirect,
-// postQuantumEncryption}); null reads as nil, the sdk's auto profile. As in
-// the sdk, a window with min == max is a fixed window of that many exits (the
-// apps' Fixed IP is 1..1). A window the multi client would refuse (a negative
-// size, or max below min) is rejected (ok false) instead of reaching the device
+// Reads a profile from a JS object ({windowType, windowSize: {windowSizeMin,
+// windowSizeMax, ...} | null, allowDirect, postQuantumEncryption}); null reads
+// as nil, the sdk's auto profile. As in the sdk, a window with min == max is a
+// fixed window of that many exits (the apps' Fixed IP is 1..1). A window the
+// multi client would refuse (a negative size, or max below min) is rejected
+// (ok false) instead of reaching the device
 func parsePerformanceProfile(v js.Value) (*sdk.PerformanceProfile, bool) {
 	if v.IsNull() || v.IsUndefined() {
 		return nil, true
@@ -890,8 +909,10 @@ func parsePerformanceProfile(v js.Value) (*sdk.PerformanceProfile, bool) {
 	return performanceProfile, true
 }
 
+// Hands each performance profile change to a page callback.
 type jsPerformanceProfileChangeListener struct{ cb js.Value }
 
+// Calls the page with the profile in force, as jsPerformanceProfile renders it.
 func (self *jsPerformanceProfileChangeListener) PerformanceProfileChanged(performanceProfile *sdk.PerformanceProfile) {
 	self.cb.Invoke(jsPerformanceProfile(performanceProfile))
 }

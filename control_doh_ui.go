@@ -1,13 +1,11 @@
 //go:build !ios_extension
 
+// What the extender settings screens call for the bootstrap DoH servers
+// (control_doh.go): the url check a form runs on each line, the presets, and
+// the getters and setter of the space's list, which persists through the
+// space's manager like the extender settings (K6). Excluded from the ios
+// packet tunnel extension, which only reads the stored values.
 package sdk
-
-// control_doh_ui.go — what the extender settings screens call for the
-// bootstrap DoH servers (control_doh.go): the url check a form runs on each
-// line, the presets, and the getters and setter of the space's list, which
-// persists through the space's manager like the extender settings (K6).
-// Excluded from the ios packet tunnel extension, which only reads the stored
-// values.
 
 import (
 	"slices"
@@ -16,9 +14,9 @@ import (
 	"github.com/urnetwork/connect"
 )
 
-// ValidateControlDohUrl returns the error id of one bootstrap DoH url, one of
-// the ControlDohError ids, or empty when the space can query it. A form checks
-// each line with this as it is typed.
+// Returns the error id of one bootstrap DoH url, one of the ControlDohError
+// ids, or empty when the space can query it. A form checks each line with this
+// as it is typed.
 func ValidateControlDohUrl(dohUrl string) (errorId string) {
 	if _, _, err := connect.ParseControlDohUrl(dohUrl); err != nil {
 		return controlDohErrorId(err)
@@ -26,9 +24,9 @@ func ValidateControlDohUrl(dohUrl string) (errorId string) {
 	return ""
 }
 
-// RegionalControlDohUrls is the preset list of bootstrap DoH servers for a
-// country, v4 first, ready for `SetControlDohUrls`. "cn" is the "Use China
-// resolvers" preset. Empty when the country has none.
+// The preset list of bootstrap DoH servers for a country, v4 first, ready for
+// `SetControlDohUrls`. "cn" is the "Use China resolvers" preset. Empty when
+// the country has none.
 func RegionalControlDohUrls(countryCode string) *StringList {
 	dohUrls := NewStringList()
 	dohUrlsIpv4, dohUrlsIpv6 := connect.RegionalControlDohUrls(countryCode)
@@ -66,13 +64,13 @@ func (self *NetworkSpace) GetControlDohUrlsIpv6() *StringList {
 	return dohUrls
 }
 
-// SetControlDohUrls saves the space's bootstrap DoH servers and replaces the
-// client strategy's DoH settings in place: the space, a device bound to it and
-// the screen that saved all stay valid. The urls are one per entry, of either
-// family, in the order they should be tried. Blank entries and repeats are
-// dropped and each url goes in the list of its family. Every url must
-// validate, and nothing is saved when one does not. Nil or empty clears the
-// list, which leaves the default servers alone.
+// Saves the space's bootstrap DoH servers and replaces the client strategy's
+// DoH settings in place: the space, a device bound to it and the screen that
+// saved all stay valid. The urls are one per entry, of either family, in the
+// order they should be tried. Blank entries and repeats are dropped and each
+// url goes in the list of its family. Every url must validate, and nothing is
+// saved when one does not. Nil or empty clears the list, which leaves the
+// default servers alone.
 //
 // Returns the error id of the first url that does not validate, or
 // `ControlDohErrorTooMany` for more than `connect.ControlDohMaxUrlCount` of one

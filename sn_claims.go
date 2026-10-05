@@ -81,12 +81,12 @@ func NewSnEpochClaimList() *SnEpochClaimList {
 	}
 }
 
-// SnEpochSchedule is when the current epoch settles, read from the
-// coordinator's policy for it (policyAt) so it follows the chain's cadence
-// (WHITEPAPER §5.2): the epoch ends, its claims open the finalize offset
-// after the close, and a share left unclaimed expires at the end of epoch
-// + claim TTL + grace. The heights are exact; the millis date them from the
-// head block's timestamp at snBlockSeconds per block.
+// When the current epoch settles, read from the coordinator's policy for it
+// (policyAt) so it follows the chain's cadence (WHITEPAPER §5.2): the epoch
+// ends, its claims open the finalize offset after the close, and a share left
+// unclaimed expires at the end of epoch + claim TTL + grace. The heights are
+// exact; the millis date them from the head block's timestamp at
+// snBlockSeconds per block.
 type SnEpochSchedule struct {
 	Epoch       int64 `json:"epoch"`
 	EpochBlocks int64 `json:"epoch_blocks"`
@@ -679,14 +679,14 @@ func (self *snClaimEngine) chainHead(ctx context.Context) (uint64, int64, error)
 	return block, currentEpoch, nil
 }
 
-// snEpochScheduleAt lays the policy's windows on the epoch's start block, as
+// Lays the policy's windows on the epoch's start block, as
 // STCoordinator.epochEndBlock and finalizeOperatorEpoch do, and dates the
 // heights from the head block.
 func snEpochScheduleAt(epoch int64, startBlock uint64, policy *evm.Policy, headBlock uint64, headMillis int64) *SnEpochSchedule {
 	end := startBlock + policy.EpochBlocks
 	claimOpen := end + policy.FinalizeOffsetBlocks
 	// the block before the start of epoch + TTL + grace + 1
-	expiry := end + (policy.ClaimTTLEpochs+policy.ClaimGraceEpochs)*policy.EpochBlocks - 1
+	expiry := end + (policy.ClaimTtlEpochs+policy.ClaimGraceEpochs)*policy.EpochBlocks - 1
 	millis := func(block uint64) int64 {
 		return headMillis + (int64(block)-int64(headBlock))*snBlockSeconds*1000
 	}
@@ -694,7 +694,7 @@ func snEpochScheduleAt(epoch int64, startBlock uint64, policy *evm.Policy, headB
 		Epoch:                 epoch,
 		EpochBlocks:           int64(policy.EpochBlocks),
 		ClaimOpenOffsetBlocks: int64(policy.FinalizeOffsetBlocks),
-		ClaimTtlEpochs:        int64(policy.ClaimTTLEpochs),
+		ClaimTtlEpochs:        int64(policy.ClaimTtlEpochs),
 		ClaimGraceEpochs:      int64(policy.ClaimGraceEpochs),
 		EndBlock:              int64(end),
 		ClaimOpenBlock:        int64(claimOpen),
@@ -707,8 +707,8 @@ func snEpochScheduleAt(epoch int64, startBlock uint64, policy *evm.Policy, headB
 	}
 }
 
-// schedule reads the epoch's start block and policy from the coordinator,
-// and the head block's time.
+// Reads the epoch's start block and policy from the coordinator, and the
+// head block's time.
 func (self *snClaimEngine) schedule(ctx context.Context, epoch int64) (*SnEpochSchedule, error) {
 	startData, err := evm.PackEpochStartBlock(big.NewInt(epoch))
 	if err != nil {

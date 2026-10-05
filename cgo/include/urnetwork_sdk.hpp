@@ -158,6 +158,15 @@ inline constexpr const char* BalanceCodeRedeemOutcomeInvalid = "invalid";
 inline constexpr const char* BalanceCodeRedeemOutcomeRedeemed = "redeemed";
 inline constexpr const char* BalanceCodeRedeemOutcomeUnknown = "unknown";
 inline constexpr const char* BittensorTalismanInjectedName = "talisman";
+inline constexpr const char* BittensorWalletBridgeErrorAddressMismatch = "address_mismatch";
+inline constexpr const char* BittensorWalletBridgeErrorAddressNotInWallet = "address_not_in_wallet";
+inline constexpr const char* BittensorWalletBridgeErrorExtensionNotFound = "extension_not_found";
+inline constexpr const char* BittensorWalletBridgeErrorInvalidRequest = "invalid_request";
+inline constexpr const char* BittensorWalletBridgeErrorNoAccount = "no_account";
+inline constexpr const char* BittensorWalletBridgeErrorUserRejected = "user_rejected";
+inline constexpr const char* BittensorWalletBridgeErrorWallet = "wallet_error";
+inline constexpr const char* BittensorWalletBridgeErrorWalletConnectExpired = "walletconnect_expired";
+inline constexpr const char* BittensorWalletBridgeErrorWalletConnectUnavailable = "walletconnect_unavailable";
 inline constexpr const char* BittensorWalletBridgeUrl = "https://ur.io/bittensor-connect";
 inline constexpr const char* BittensorWalletConnectChain = "polkadot:2f0555cc76fc2840a25a6ea3b9637146";
 inline constexpr const char* BittensorWalletConnectMethod = "polkadot_signMessage";
@@ -207,6 +216,10 @@ inline constexpr const char* BlockActionReasonSecurityEncrypted = "security-encr
 inline constexpr const char* BlockActionReasonSecurityIp = "security-ip";
 inline constexpr const char* BlockActionReasonSecurityPort = "security-port";
 inline constexpr const char* BlockActionReasonSecuritySmtp = "security-smtp";
+inline constexpr const char* CheckoutBridgeErrorCheckout = "checkout_error";
+inline constexpr const char* CheckoutBridgeErrorInvalidRequest = "invalid_request";
+inline constexpr const char* CheckoutBridgeErrorStripeUnavailable = "stripe_unavailable";
+inline constexpr const char* CheckoutBridgeErrorUnavailable = "checkout_unavailable";
 inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
@@ -440,12 +453,19 @@ inline constexpr const char* SnErrorCodeNeedsGas = "needs_gas";
 inline constexpr const char* SnErrorCodeNotClaimable = "not_claimable";
 inline constexpr const char* SnErrorCodeProofMismatch = "proof_mismatch";
 inline constexpr const char* SnErrorCodeServer = "server_error";
+inline constexpr const char* SnErrorCodeSignatureMismatch = "signature_mismatch";
 inline constexpr const char* SnErrorCodeWalletBlocked = "wallet_blocked";
 inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
 inline constexpr const char* SnTxTypeEip1559 = "eip1559";
 inline constexpr const char* SnTxTypeLegacy = "legacy";
 inline constexpr int64_t SolanaPayReferenceBytes = 32;
+inline constexpr const char* SolanaWalletBridgeErrorExtensionNotFound = "extension_not_found";
+inline constexpr const char* SolanaWalletBridgeErrorInvalidRequest = "invalid_request";
+inline constexpr const char* SolanaWalletBridgeErrorNoAccount = "no_account";
+inline constexpr const char* SolanaWalletBridgeErrorSessionNotFound = "session_not_found";
+inline constexpr const char* SolanaWalletBridgeErrorUserRejected = "user_rejected";
+inline constexpr const char* SolanaWalletBridgeErrorWallet = "wallet_error";
 inline constexpr const char* StripeIntentTypePayment = "payment";
 inline constexpr const char* StripeIntentTypeSetup = "setup";
 inline constexpr const char* StripeItemData10Tib = "data_10tib";
@@ -1365,6 +1385,7 @@ struct BittensorWalletResult {
 	std::optional<BittensorWalletProof> Proof;
 	std::string ErrorCode{};
 	std::string ErrorMessage{};
+	std::string BridgeErrorCode{};
 };
 
 struct BittensorWalletReturn {
@@ -3199,6 +3220,7 @@ struct SnSetWalletArgs {
 };
 
 struct SnSetWalletError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -6384,6 +6406,7 @@ inline void to_json(nlohmann::json& j, const BittensorWalletResult& v) {
 	}
 	j["ErrorCode"] = v.ErrorCode;
 	j["ErrorMessage"] = v.ErrorMessage;
+	j["BridgeErrorCode"] = v.BridgeErrorCode;
 }
 inline void from_json(const nlohmann::json& j, BittensorWalletResult& v) {
 	if (!j.is_object()) {
@@ -6399,6 +6422,9 @@ inline void from_json(const nlohmann::json& j, BittensorWalletResult& v) {
 	}
 	if (auto it = j.find("ErrorMessage"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ErrorMessage);
+	}
+	if (auto it = j.find("BridgeErrorCode"); it != j.end() && !it->is_null()) {
+		it->get_to(v.BridgeErrorCode);
 	}
 }
 
@@ -14655,11 +14681,19 @@ inline void from_json(const nlohmann::json& j, SnSetWalletArgs& v) {
 
 inline void to_json(nlohmann::json& j, const SnSetWalletError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, SnSetWalletError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -16934,6 +16968,7 @@ using CreateAccountWalletCallback = std::function<void(std::optional<CreateAccou
 using CreateApiKeyCallback = std::function<void(std::optional<CreateApiKeyResult> result, std::optional<std::string> err_param)>;
 using DefaultLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult> result, std::optional<std::string> err_param)>;
+using DeviceConfigurationChangedListener = std::function<void()>;
 using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
@@ -17388,6 +17423,7 @@ public:
 	void unlinkReferralNetwork(UnlinkReferralNetworkCallback callback) const;
 	void upgradeGuest(const std::optional<UpgradeGuestArgs>& upgrade_guest, UpgradeGuestCallback callback) const;
 	void upgradeGuestExisting(const std::optional<UpgradeGuestExistingArgs>& upgrade_guest, UpgradeGuestExistingCallback callback) const;
+	void uploadLogs(const std::string& feedback_id, UploadLogsCallback callback) const;
 	void validateReferralCode(const std::optional<ValidateReferralCodeArgs>& validate_referral_code, ValidateReferralCodeCallback callback) const;
 	void verifyAppleTransaction(const std::optional<VerifyAppleTransactionArgs>& args, VerifyAppleTransactionCallback callback) const;
 	std::optional<VerifyStorePurchaseResult> verifyAppleTransactionSync(const std::optional<VerifyAppleTransactionArgs>& args) const;
@@ -17728,6 +17764,7 @@ class DeviceRemote final : public Device {
 public:
 	DeviceRemote() = default;
 	explicit DeviceRemote(uint64_t h) : Device(h) {}
+	Sub addDeviceConfigurationChangedListener(DeviceConfigurationChangedListener listener) const;
 	Sub addDeviceRecreatedListener(DeviceRecreatedListener listener) const;
 	Sub addRemoteChangeListener(RemoteChangeListener listener) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
@@ -19658,6 +19695,26 @@ inline void oneshot_delete_api_key(void* user_data, const char* result_json, con
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_device_configuration_changed(void* user_data) {
+	auto* f = static_cast<DeviceConfigurationChangedListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_device_configuration_changed(void* user_data) {
+	auto* f = static_cast<DeviceConfigurationChangedListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -25920,6 +25977,17 @@ inline void Api::upgradeGuestExisting(const std::optional<UpgradeGuestExistingAr
 	auto* callback_fn = callback ? new UpgradeGuestExistingCallback(std::move(callback)) : nullptr;
 	urnet_api_upgrade_guest_existing(handle(), upgrade_guest_c, callback_fn ? &detail::oneshot_upgrade_guest_existing : nullptr, callback_fn);
 }
+inline void Api::uploadLogs(const std::string& feedback_id, UploadLogsCallback callback) const {
+	auto* callback_fn = callback ? new UploadLogsCallback(std::move(callback)) : nullptr;
+	char* err_c = nullptr;
+	bool ok = urnet_api_upload_logs(handle(), feedback_id.c_str(), callback_fn ? &detail::oneshot_upload_logs : nullptr, callback_fn, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_api_upload_logs failed");
+	}
+}
 inline void Api::validateReferralCode(const std::optional<ValidateReferralCodeArgs>& validate_referral_code, ValidateReferralCodeCallback callback) const {
 	std::string validate_referral_code_json;
 	const char* validate_referral_code_c = nullptr;
@@ -27376,6 +27444,17 @@ inline bool DeviceLocalSaveResult::getSaved() const {
 }
 inline int64_t DeviceLocalSaveResult::getSequence() const {
 	int64_t r = urnet_device_local_save_result_get_sequence(handle());
+	return r;
+}
+inline Sub DeviceRemote::addDeviceConfigurationChangedListener(DeviceConfigurationChangedListener listener) const {
+	std::shared_ptr<DeviceConfigurationChangedListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<DeviceConfigurationChangedListener>(std::move(listener));
+	}
+	Sub r(urnet_device_remote_add_device_configuration_changed_listener(handle(), listener_fn ? &detail::retained_device_configuration_changed : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
 	return r;
 }
 inline Sub DeviceRemote::addDeviceRecreatedListener(DeviceRecreatedListener listener) const {
@@ -31406,6 +31485,14 @@ inline std::optional<TransportSettings> transportSettingsWithMode(const std::opt
 }
 inline void trimMemory() {
 	urnet_trim_memory();
+}
+inline std::optional<LogFileInfoList> uploadLogsInventory() {
+	char* r_c = urnet_upload_logs_inventory();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<LogFileInfoList>(r_s->c_str());
 }
 inline int64_t usdToNanoCents(double usd) {
 	int64_t r = urnet_usd_to_nano_cents(usd);

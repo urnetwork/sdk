@@ -36,8 +36,8 @@ func TestSelectors(t *testing.T) {
 	}
 }
 
-// policyWords encodes a PolicySnapshot the way policyAt() returns it: one
-// static tuple of thirteen words.
+// Encodes a PolicySnapshot the way policyAt() returns it: one static tuple of
+// thirteen words.
 func policyWords(fields ...uint64) []byte {
 	out := make([]byte, 0, 13*32)
 	var hash [32]byte
@@ -54,6 +54,7 @@ func policyWords(fields ...uint64) []byte {
 	return out
 }
 
+// policyAt(epoch) calldata is the selector and the epoch word.
 func TestPackPolicyAt(t *testing.T) {
 	got, err := PackPolicyAt(big.NewInt(42))
 	if err != nil {
@@ -65,6 +66,8 @@ func TestPackPolicyAt(t *testing.T) {
 	}
 }
 
+// The snapshot's windows decode in order; a short return and a zero-length
+// epoch are refused.
 func TestDecodePolicy(t *testing.T) {
 	// the mainnet reference windows (sn/mainnet/MAINNET.md): 50,400-block
 	// epochs, 1,200 root commit, 14,400 finalize, 120 close grace, 8 claim
@@ -81,7 +84,7 @@ func TestDecodePolicy(t *testing.T) {
 		RootCommitWindowBlocks: 1_200,
 		FinalizeOffsetBlocks:   14_400,
 		CloseGraceBlocks:       120,
-		ClaimTTLEpochs:         8,
+		ClaimTtlEpochs:         8,
 		ClaimGraceEpochs:       1,
 	}
 	if *p != want {

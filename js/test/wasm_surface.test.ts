@@ -323,3 +323,15 @@ test("performance-profile declarations match WASM runtime keys", () => {
   }
   assert.match(declarations, /export type WindowType = "auto" \| "quality" \| "speed";/);
 });
+
+// A page re-applies its own device settings on this event (the first connect,
+// a recreated hosted device), so a rename on either side would leave every
+// recreated device on its provisioned settings without an error anywhere.
+test("device configuration changed declaration matches the WASM runtime key", () => {
+  const declarations = source("../src/types.ts");
+  const runtime = source("../device_remote.go");
+  const deviceRemote = declarations.match(/export interface DeviceRemote extends[\s\S]*?\n}/)?.[0] || "";
+  assert.match(deviceRemote, /addDeviceConfigurationChangedListener\(cb: \(\) => void\): Unsubscribe;/);
+  assert.match(runtime, /m\["addDeviceConfigurationChangedListener"\] = js.FuncOf\(/);
+  assert.match(runtime, /device\.AddDeviceConfigurationChangedListener\(&jsDeviceConfigurationChangedListener\{cb: cb\}\)/);
+});

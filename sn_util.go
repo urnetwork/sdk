@@ -42,6 +42,10 @@ const (
 	SnErrorCodeClaimFailed         = "claim_failed"
 	SnErrorCodeLocalState          = "local_state_unavailable"
 	SnErrorCodeServer              = "server_error"
+	// POST /sn/wallet refused a well-formed coldkey signature that does not
+	// verify for the address over the challenge: the wallet signed with
+	// another account (or other text). The server cannot name that account.
+	SnErrorCodeSignatureMismatch = "signature_mismatch"
 )
 
 // SnError is the error shape of every sn result in this package.
