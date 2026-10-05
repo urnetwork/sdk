@@ -177,32 +177,32 @@ func (self *androidNativeEditFixture) published(t *testing.T) (string, bool) {
 // whose library kept its .comment section, and a library checksec could not
 // read as ELF ship unnoticed. Failing each ABI in turn puts the failure before
 // the last library at least once, where a loop that kept only its last status
-// would also pass.
+// would also pass. Each case builds in a fixture of its own.
 func TestAndroidBuildStopsWhenAnyNativeLibraryEditFails(t *testing.T) {
 	for _, tool := range []string{"objcopy", "checksec"} {
 		for _, abi := range androidNativeEditAbis {
-			t.Run(tool+"/"+abi, func(t *testing.T) {
-				fixture := newAndroidNativeEditFixture(t)
-				output, err := fixture.build(t, tool, abi)
-				if err == nil {
-					aar, _ := fixture.published(t)
-					t.Fatalf("build succeeded although %s failed on the %s library; it published an AAR with:\n%s", tool, abi, aar)
+			fixture := newAndroidNativeEditFixture(t)
+			output, err := fixture.build(t, tool, abi)
+			if err == nil {
+				aar, _ := fixture.published(t)
+				t.Errorf("build succeeded although %s failed on the %s library; it published an AAR with:\n%s", tool, abi, aar)
+				continue
+			}
+			if !strings.Contains(output, "stub: injected failure on ") || !strings.Contains(output, "/jni/"+abi+"/libgojni.so") {
+				t.Errorf("build failed, but not at the injected %s failure on %s:\n%s", tool, abi, output)
+				continue
+			}
+			if aar, ok := fixture.published(t); ok {
+				t.Errorf("build published an AAR after %s failed on %s:\n%s", tool, abi, aar)
+			}
+			if jarCalls := fixture.calls(t, "jar"); len(jarCalls) != 0 {
+				t.Errorf("build repacked the AAR after %s failed on %s: %q", tool, abi, jarCalls)
+			}
+			for _, call := range fixture.calls(t, "go") {
+				if strings.HasPrefix(call, "run ./cmd/mobileexports ") {
+					t.Errorf("build validated the AAR after %s failed on %s: %q", tool, abi, call)
 				}
-				if !strings.Contains(output, "stub: injected failure on ") || !strings.Contains(output, "/jni/"+abi+"/libgojni.so") {
-					t.Fatalf("build failed, but not at the injected %s failure on %s:\n%s", tool, abi, output)
-				}
-				if aar, ok := fixture.published(t); ok {
-					t.Fatalf("build published an AAR after %s failed on %s:\n%s", tool, abi, aar)
-				}
-				if jar := fixture.calls(t, "jar"); len(jar) != 0 {
-					t.Fatalf("build repacked the AAR after %s failed on %s: %q", tool, abi, jar)
-				}
-				for _, call := range fixture.calls(t, "go") {
-					if strings.HasPrefix(call, "run ./cmd/mobileexports ") {
-						t.Fatalf("build validated the AAR after %s failed on %s: %q", tool, abi, call)
-					}
-				}
-			})
+			}
 		}
 	}
 }
@@ -218,10 +218,10 @@ func TestAndroidBuildEditsEachNativeLibraryOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build failed with every tool succeeding: %v\n%s", err, output)
 	}
-	objcopy := fixture.calls(t, "objcopy")
-	checksec := fixture.calls(t, "checksec")
-	if len(objcopy) != len(androidNativeEditAbis) || len(checksec) != len(androidNativeEditAbis) {
-		t.Fatalf("want one llvm-objcopy and one checksec call per library, got:\n%q\n%q", objcopy, checksec)
+	objcopyCalls := fixture.calls(t, "objcopy")
+	checksecCalls := fixture.calls(t, "checksec")
+	if len(objcopyCalls) != len(androidNativeEditAbis) || len(checksecCalls) != len(androidNativeEditAbis) {
+		t.Fatalf("want one llvm-objcopy and one checksec call per library, got:\n%q\n%q", objcopyCalls, checksecCalls)
 	}
 	aar, ok := fixture.published(t)
 	if !ok {
@@ -229,15 +229,15 @@ func TestAndroidBuildEditsEachNativeLibraryOnce(t *testing.T) {
 	}
 	for _, abi := range androidNativeEditAbis {
 		library := "/jni/" + abi + "/libgojni.so"
-		if want := "--remove-section .comment "; !slices.ContainsFunc(objcopy, func(call string) bool {
+		if want := "--remove-section .comment "; !slices.ContainsFunc(objcopyCalls, func(call string) bool {
 			return strings.HasPrefix(call, want) && strings.HasSuffix(call, library)
 		}) {
-			t.Errorf("llvm-objcopy did not edit the %s library on its own: %q", abi, objcopy)
+			t.Errorf("llvm-objcopy did not edit the %s library on its own: %q", abi, objcopyCalls)
 		}
-		if !slices.ContainsFunc(checksec, func(call string) bool {
+		if !slices.ContainsFunc(checksecCalls, func(call string) bool {
 			return strings.HasPrefix(call, "file ") && strings.HasSuffix(call, library+" --output json")
 		}) {
-			t.Errorf("checksec did not report the %s library: %q", abi, checksec)
+			t.Errorf("checksec did not report the %s library: %q", abi, checksecCalls)
 		}
 		if want := "jni/" + abi + "/libgojni.so: .comment removed\n"; !strings.Contains(aar, want) {
 			t.Errorf("published AAR lacks %q:\n%s", want, aar)
