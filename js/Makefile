@@ -46,10 +46,16 @@ check_generated: check_openapi check_types
 # `$(MAKE) check_wasm` stays on its own recipe line: make executes any line that
 # names $(MAKE) even under `make -n`, so joined to the commands above it would
 # make a dry run compile the wasm and write wasm/.
+#
+# The recipe stops at the first failed step (set -e), and it removes the
+# previous pair before compiling, so a failed build leaves no stale sdk.wasm for
+# build_bundle or an npm publish to ship as this build's output.
 build_wasm:
+	set -e; \
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	export GOEXPERIMENT=greenteagc; \
 	mkdir -p wasm; \
+	rm -f wasm/sdk.wasm wasm/wasm_exec.js; \
 	GOOS=js GOARCH=wasm go build \
 		-ldflags "-X github.com/urnetwork/sdk.Version=$${WARP_VERSION}" \
 		-o wasm/sdk.wasm .; \
@@ -79,8 +85,10 @@ check_wasm:
 	fi; \
 	echo "wasm_exec.js paired with $$toolchain_version"
 
-# Package the standalone browser bundle (wasm + sample loader) for release
+# Package the standalone browser bundle (wasm + sample loader) for release.
+# set -e stops at a failed copy, before the zip: a partial bundle is never zipped.
 build_bundle: build_wasm
+	set -e; \
 	rm -rf build; \
 	mkdir -p build/URnetworkSdkJs; \
 	cp wasm/sdk.wasm wasm/wasm_exec.js index.js index.html build/URnetworkSdkJs/; \
