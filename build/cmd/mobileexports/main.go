@@ -52,6 +52,11 @@ var mobileExtenderStringSliceIds = map[string]bool{
 	"ExtenderRootPublicKeys":                    true,
 	"NetworkSpaceValues.ExtenderHosts":          true,
 	"NetworkSpaceValues.ExtenderRootPublicKeys": true,
+	// the bootstrap DoH lists (control_doh_urls_ipv4/_ipv6): apps read and
+	// write them through NetworkSpace's StringList getters and
+	// SetControlDohUrls, and the []string fields stay for go embedders
+	"NetworkSpaceValues.ControlDohUrlsIpv4": true,
+	"NetworkSpaceValues.ControlDohUrlsIpv6": true,
 }
 
 // The exact lifecycle joins take context.Context and are for Go owners. Mobile

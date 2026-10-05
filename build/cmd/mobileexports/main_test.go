@@ -192,6 +192,20 @@ func TestMobileExtenderStringSliceOmissionsAreExplicit(t *testing.T) {
 	}
 }
 
+func TestMobileControlDohStringSliceOmissionsAreExplicit(t *testing.T) {
+	root := t.TempDir()
+	source := strings.Join([]string{
+		"// skipped field NetworkSpaceValues.ControlDohUrlsIpv4 with unsupported type: []string",
+		"// skipped field NetworkSpaceValues.ControlDohUrlsIpv6 with unsupported type: []string",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "NetworkSpaceValues.java"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMobileExports(root); err != nil {
+		t.Fatalf("the go-side bootstrap DoH string slices were not accepted: %v", err)
+	}
+}
+
 func TestMobileExtenderStringSlicePolicyDoesNotPrefixMatch(t *testing.T) {
 	root := t.TempDir()
 	source := "// skipped field NetworkSpaceValues.ExtenderHostsAndMore with unsupported type\n"
