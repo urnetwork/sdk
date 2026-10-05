@@ -808,3 +808,65 @@ func TestFetchErrorOfStaleGenerationNotReported(t *testing.T) {
 		t.Fatalf("stale fetch reported: %v", errorMessages)
 	}
 }
+
+func TestBackgroundPollingContinuesUntilSupporterPendingClears(t *testing.T) {
+	stub := newBalanceFetchStub(testBalanceResult(100, 50, 20, "stripe"))
+	vc, closeVc := newTestSubscriptionBalanceVc(t, testSubscriptionJwt(t, true, false), stub)
+	defer closeVc()
+
+	vc.Start()
+	awaitCondition(t, "supporter pending snapshot never loaded", func() bool {
+		return vc.GetIsLoaded() && vc.GetPendingByteCount() == 20
+	})
+	initial := stub.fetchCount()
+	awaitCondition(t, "positive pending stopped ordinary supporter polling", func() bool {
+		return stub.fetchCount() >= initial+2
+	})
+
+	stub.set(testBalanceResult(100, 50, 0, "stripe"), nil)
+	awaitCondition(t, "ordinary poll did not clear pending", func() bool {
+		return vc.GetPendingByteCount() == 0
+	})
+	stable := stub.fetchCount()
+	time.Sleep(250 * time.Millisecond)
+	if got := stub.fetchCount(); got != stable {
+		t.Fatalf("supporter polling continued after pending cleared: %d -> %d", stable, got)
+	}
+}
+
+func TestSupporterPendingPollingRetainsSnapshotAndPauses(t *testing.T) {
+	stub := newBalanceFetchStub(testBalanceResult(100, 50, 20, "stripe"))
+	vc, closeVc := newTestSubscriptionBalanceVc(t, testSubscriptionJwt(t, true, false), stub)
+	defer closeVc()
+
+	vc.Start()
+	awaitCondition(t, "supporter pending snapshot never loaded", vc.GetIsLoaded)
+	stub.set(nil, context.DeadlineExceeded)
+	beforeErrors := stub.fetchCount()
+	awaitCondition(t, "supporter pending poll did not retry after errors", func() bool {
+		return stub.fetchCount() >= beforeErrors+2
+	})
+	if vc.GetPendingByteCount() != 20 || vc.GetAvailableByteCount() != 50 {
+		t.Fatal("failed pending poll discarded the last snapshot")
+	}
+
+	vc.SetForeground(false)
+	time.Sleep(100 * time.Millisecond) // let an already dispatched fetch finish
+	paused := stub.fetchCount()
+	time.Sleep(150 * time.Millisecond)
+	if stub.fetchCount() != paused {
+		t.Fatal("pending poll continued in the background")
+	}
+	stub.set(testBalanceResult(100, 50, 20, "stripe"), nil)
+	vc.SetForeground(true)
+	awaitCondition(t, "foreground did not resume pending poll", func() bool {
+		return stub.fetchCount() > paused
+	})
+	vc.Stop()
+	time.Sleep(100 * time.Millisecond)
+	stopped := stub.fetchCount()
+	time.Sleep(150 * time.Millisecond)
+	if stub.fetchCount() != stopped || vc.GetIsLoaded() {
+		t.Fatal("Stop did not halt pending polling and clear the snapshot")
+	}
+}

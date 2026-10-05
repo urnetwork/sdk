@@ -175,7 +175,7 @@ func (self *confirmationBudgetTracker) expiredAt(now time.Time) bool {
 //     platform refreshes the jwt and reports back via JwtRefreshed.
 //
 //   - The polling state machine: idle / background (default 30 s, stops once
-//     the network is a supporter with a positive balance) / confirmation
+//     the network is a supporter with a positive balance and no pending transfers) / confirmation
 //     (default 5 s, with a 120 s polling BUDGET). SetForeground(false)
 //     pauses the poll timer AND the budget clock together, so time the user
 //     spends off in a browser typing card details does not burn the budget;
@@ -875,8 +875,8 @@ func (self *SubscriptionBalanceViewController) step() (delay time.Duration, arm 
 	}
 
 	// the background poll stops once the network is a supporter with a
-	// positive balance: there is nothing left to poll for. Confirmation and
-	// forced (Refresh) polls always run.
+	// positive balance and no pending transfers. Confirmation and forced
+	// (Refresh) polls always run.
 	pollEligible := self.confirming || self.forcePoll || !self.supporterWithBalanceLocked()
 
 	pollDue := self.forcePoll || !now.Before(self.nextPollAt)
@@ -923,7 +923,7 @@ func (self *SubscriptionBalanceViewController) step() (delay time.Duration, arm 
 
 // caller must hold stateLock
 func (self *SubscriptionBalanceViewController) supporterWithBalanceLocked() bool {
-	return self.loaded && self.serverIsPro && self.available > 0
+	return self.loaded && self.serverIsPro && self.available > 0 && self.pending == 0
 }
 
 func (self *SubscriptionBalanceViewController) fetchDone(generation int, result *SubscriptionBalanceResult, err error) {
@@ -999,8 +999,8 @@ func (self *SubscriptionBalanceViewController) fetchDone(generation int, result 
 		self.confirmationStateChanged(PurchaseConfirmationStateConfirmed)
 	}
 	self.balanceChanged()
-	// re-arm: the mode may have changed (confirmation ended, supporter with
-	// balance stops the background poll)
+	// re-arm: the mode may have changed (confirmation ended, or supporter
+	// pending transfers cleared and the background poll can stop)
 	self.scheduleWake()
 }
 
