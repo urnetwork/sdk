@@ -46,6 +46,7 @@ pub type urnet_create_account_wallet_cb = Option<unsafe extern "C" fn(*mut c_voi
 pub type urnet_create_api_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_default_location_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_delete_api_key_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_device_configuration_changed_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_device_recreated_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_device_set_name_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_dns_resolver_settings_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -728,6 +729,7 @@ pub struct Raw {
     pub urnet_device_local_save_result_get_preference: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_local_save_result_get_saved: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_local_save_result_get_sequence: unsafe extern "C" fn(u64) -> i64,
+    pub urnet_device_remote_add_device_configuration_changed_listener: unsafe extern "C" fn(u64, urnet_device_configuration_changed_cb, *mut c_void) -> u64,
     pub urnet_device_remote_add_device_recreated_listener: unsafe extern "C" fn(u64, urnet_device_recreated_cb, *mut c_void) -> u64,
     pub urnet_device_remote_add_remote_change_listener: unsafe extern "C" fn(u64, urnet_remote_change_cb, *mut c_void) -> u64,
     pub urnet_device_remote_add_sn_wallet_change_listener: unsafe extern "C" fn(u64, urnet_sn_wallet_change_cb, *mut c_void) -> u64,
@@ -1899,6 +1901,7 @@ impl Raw {
             urnet_device_local_save_result_get_preference: unsafe { *library.get(b"urnet_device_local_save_result_get_preference\0")? },
             urnet_device_local_save_result_get_saved: unsafe { *library.get(b"urnet_device_local_save_result_get_saved\0")? },
             urnet_device_local_save_result_get_sequence: unsafe { *library.get(b"urnet_device_local_save_result_get_sequence\0")? },
+            urnet_device_remote_add_device_configuration_changed_listener: unsafe { *library.get(b"urnet_device_remote_add_device_configuration_changed_listener\0")? },
             urnet_device_remote_add_device_recreated_listener: unsafe { *library.get(b"urnet_device_remote_add_device_recreated_listener\0")? },
             urnet_device_remote_add_remote_change_listener: unsafe { *library.get(b"urnet_device_remote_add_remote_change_listener\0")? },
             urnet_device_remote_add_sn_wallet_change_listener: unsafe { *library.get(b"urnet_device_remote_add_sn_wallet_change_listener\0")? },

@@ -86,6 +86,31 @@ API because they do not have a visible peer identity. The executable
 includes live peer updates, support queries, TEXT/ACK framing, and an
 authenticated numeric-loopback native companion.
 
+## Hosted device configuration
+
+A hosted Device starts from the settings its session was provisioned with,
+and the host can recreate it under the remote (an idle reap, an egress death,
+a host restart). `addDeviceConfigurationChangedListener` fires when the Device
+may not hold the settings the app applied: after the remote's first sync with
+it (treat a first connect as a change), after a sync that reaches a recreated
+Device, and after every sync with a Device that reports no generation. A
+reconnect to the same Device does not fire. Apply your own settings again
+there:
+
+```js
+const device = sdk.createExtensionDeviceRemote(options);
+device.addDeviceConfigurationChangedListener(() => {
+  const want = mySettings();
+  if (device.getBlockerEnabled() !== want.blockerEnabled) {
+    device.setBlockerEnabled(want.blockerEnabled);
+  }
+});
+```
+
+Add the listener right after creating the remote. The getters already read the
+synced Device when it fires. Write only the values that differ: every write
+resyncs the remote, and a Device without a generation fires on each sync.
+
 ## Build, check and publish
 
 `make smoke` and `make build_checked` first validate the committed Go-derived

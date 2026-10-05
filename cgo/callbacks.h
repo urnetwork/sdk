@@ -95,6 +95,8 @@ typedef void (*urnet_default_location_change_cb)(void* user_data, const char* lo
 void urnet_invoke_default_location_change(urnet_default_location_change_cb cb, void* user_data, const char* location_json);
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_delete_api_key(urnet_delete_api_key_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_device_configuration_changed_cb)(void* user_data);
+void urnet_invoke_device_configuration_changed(urnet_device_configuration_changed_cb cb, void* user_data);
 typedef void (*urnet_device_recreated_cb)(void* user_data);
 void urnet_invoke_device_recreated(urnet_device_recreated_cb cb, void* user_data);
 typedef void (*urnet_device_set_name_cb)(void* user_data, const char* result_json, const char* err_param);

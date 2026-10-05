@@ -282,6 +282,20 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   // listeners
   addRemoteChangeListener(cb: (remoteConnected: boolean) => void): Unsubscribe;
   addDeviceRecreatedListener(cb: () => void): Unsubscribe;
+  /**
+   * Device configuration changed: the device behind this remote may not hold
+   * the settings the caller applied to it, so apply your own source of truth
+   * again (the connect options, the location, the blocker). Fires after the
+   * first sync with a device (treat the first connect as a change), after a
+   * sync that reaches a recreated device (a new device generation: the host
+   * rebuilt it from the session's provisioning after an idle reap, an egress
+   * death or a restart), and after every sync with a device that reports no
+   * generation. A reconnect to the same device does not fire. The getters
+   * already read the synced device, so write only the values that differ:
+   * every setter resyncs, and a device without a generation fires on each
+   * sync. Add the listener right after creating the remote. Signal only.
+   */
+  addDeviceConfigurationChangedListener(cb: () => void): Unsubscribe;
   addConnectChangeListener(cb: (connectEnabled: boolean) => void): Unsubscribe;
   addOfflineChangeListener(
     cb: (offline: boolean, vpnInterfaceWhileOffline: boolean) => void,

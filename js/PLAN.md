@@ -97,6 +97,13 @@ rpc endpoint.
   a device generation id; `DeviceRemote` fires a `DeviceRecreatedListener` when the
   generation changes across reconnects; the JS client re-configures. Initial device state
   always comes from `proxy_device_config`. No write-through persistence of rpc-set state.
+- Device configuration changed (2026-10-05): the client's own settings are the source of
+  truth, and a first connect counts as a configuration change. `DeviceRemote` fires a
+  `DeviceConfigurationChangedListener` (JS `addDeviceConfigurationChangedListener`) after
+  its first sync with a device, after a sync with a new generation, and after every sync
+  with a device that reports no generation (an absent id is unknown). A reconnect to the
+  same generation does not fire. The client re-applies its settings on each, writing only
+  the values that differ, since every browser write resyncs the remote.
 - `HostedIncompatible`: under no situation can the hosted device change route local or
   provide settings. Guarded at BOTH layers: a `DeviceLocalSettings` hard guard in
   `DeviceLocal`, and `DeviceLocalRpc.DisableHostedIncompatible = true` which noops the rpc
@@ -169,7 +176,8 @@ directly.
   shim (`device_rpc_platform_js.go`); `HostedDeviceRpcListener` (`device_rpc_hosted.go`);
   `DeviceLocalSettings.HostedIncompatible` + `DeviceLocalRpc.DisableHostedIncompatible`
   guards on the agreed setter set; device generation id in the sync handshake +
-  `DeviceRecreatedListener`; zero-length binary mux keepalive.
+  `DeviceRecreatedListener` and `DeviceConfigurationChangedListener`; zero-length binary
+  mux keepalive.
   `NewPlatformDeviceRemote(networkSpace, byJwt, proxyUrl, signedProxyId, instanceId)`.
 - **server/proxy**: `deviceRpcHandler` (`device_rpc_handler.go`) wired as a `GET
   /device-rpc` route on the api TLS listener (`proxy_api.go`), signed-proxy-id auth;

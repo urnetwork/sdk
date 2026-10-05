@@ -724,6 +724,16 @@ func (self *cAdapterDeleteApiKeyCallback) Result(result *sdk.DeleteApiKeyResult,
 	}
 }
 
+type cAdapterDeviceConfigurationChangedListener struct {
+	cbDeviceConfigurationChanged C.urnet_device_configuration_changed_cb
+	userData                     unsafe.Pointer
+}
+
+func (self *cAdapterDeviceConfigurationChangedListener) DeviceConfigurationChanged() {
+	defer cgoGuard("urnet_device_configuration_changed_cb")
+	C.urnet_invoke_device_configuration_changed(self.cbDeviceConfigurationChanged, self.userData)
+}
+
 type cAdapterDeviceRecreatedListener struct {
 	cbDeviceRecreated C.urnet_device_recreated_cb
 	userData          unsafe.Pointer
@@ -10665,6 +10675,21 @@ func urnet_device_local_save_result_get_sequence(self C.uint64_t) C.int64_t {
 	}
 	r0 := self_.GetSequence()
 	return C.int64_t(r0)
+}
+
+//export urnet_device_remote_add_device_configuration_changed_listener
+func urnet_device_remote_add_device_configuration_changed_listener(self C.uint64_t, listener_device_configuration_changed C.urnet_device_configuration_changed_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_remote_add_device_configuration_changed_listener")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_add_device_configuration_changed_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.DeviceConfigurationChangedListener
+	if listener_device_configuration_changed != nil {
+		listener_ = &cAdapterDeviceConfigurationChangedListener{cbDeviceConfigurationChanged: listener_device_configuration_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddDeviceConfigurationChangedListener(listener_)
+	return C.uint64_t(newHandle(r0))
 }
 
 //export urnet_device_remote_add_device_recreated_listener

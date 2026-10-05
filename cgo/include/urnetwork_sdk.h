@@ -530,6 +530,8 @@ typedef void (*urnet_create_api_key_cb)(void* user_data, const char* result_json
 typedef void (*urnet_default_location_change_cb)(void* user_data, const char* location_json);
 /* DeleteApiKeyCallback */
 typedef void (*urnet_delete_api_key_cb)(void* user_data, const char* result_json, const char* err_param);
+/* DeviceConfigurationChangedListener */
+typedef void (*urnet_device_configuration_changed_cb)(void* user_data);
 /* DeviceRecreatedListener */
 typedef void (*urnet_device_recreated_cb)(void* user_data);
 /* DeviceSetNameCallback */
@@ -1377,6 +1379,7 @@ int64_t urnet_device_local_save_result_get_sequence(uint64_t self);
 
 /* ----- DeviceRemote ----- */
 
+uint64_t urnet_device_remote_add_device_configuration_changed_listener(uint64_t self, urnet_device_configuration_changed_cb listener_device_configuration_changed, void* listener_user_data);
 uint64_t urnet_device_remote_add_device_recreated_listener(uint64_t self, urnet_device_recreated_cb listener_device_recreated, void* listener_user_data);
 uint64_t urnet_device_remote_add_remote_change_listener(uint64_t self, urnet_remote_change_cb listener_remote_changed, void* listener_user_data);
 uint64_t urnet_device_remote_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);

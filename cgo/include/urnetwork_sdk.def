@@ -523,6 +523,7 @@ EXPORTS
 	urnet_device_open_socket
 	urnet_device_reconnect
 	urnet_device_refresh_token
+	urnet_device_remote_add_device_configuration_changed_listener
 	urnet_device_remote_add_device_recreated_listener
 	urnet_device_remote_add_remote_change_listener
 	urnet_device_remote_add_sn_wallet_change_listener
