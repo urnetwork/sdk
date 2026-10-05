@@ -1306,6 +1306,9 @@ func TestPartSizeExclusiveFlagRulingTracksPlatformValue(t *testing.T) {
 	}{
 		{"darwin-collision", 0x800, true},
 		{"linux-windows-no-collision", 0x80, false},
+		{"zero-no-collision", 0, false},
+		{"below-part-size", messageFragmentPartBytes - 1, false},
+		{"above-part-size", messageFragmentPartBytes + 1, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			rulings := messageFragmentPartSizeRulings(test.flag)
@@ -1358,11 +1361,13 @@ func (*DeviceLocal) WriteMemoryOwnerCensus() {
 		t.Fatalf("measured %d planted fragment-size copies, want 3", copies)
 	}
 	for _, copied := range []messageFragmentCopy{
+		{file: "memory_owner_census.go", where: "DeviceLocal.WriteMemoryOwnerCensus", text: "os.O_EXCL | 0"},
+		{file: "memory_owner_census.go", where: "DeviceLocal.WriteMemoryOwnerCensus", text: "os.O_EXCL + 0"},
 		{file: "memory_owner_census.go", where: "DeviceLocal.otherMethod", text: "os.O_EXCL"},
 		{file: "other.go", where: "DeviceLocal.WriteMemoryOwnerCensus", text: "os.O_EXCL"},
 	} {
 		if key, ruled := messageFragmentPartSizeRulingKey(copied, rulings); ruled {
-			t.Errorf("exclusive-create ruling escaped its audited declaration: %+v via %q", copied, key)
+			t.Errorf("exclusive-create ruling escaped its audited expression: %+v via %q", copied, key)
 		}
 	}
 }

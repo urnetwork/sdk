@@ -4,5 +4,6 @@ package sdk
 
 // The non-linux, non-darwin part of messageFragmentPartSizePlatformCopyRulings, EMPTY because no
 // copy of the part size is visible to such a build alone today. Its linux twin says why the split
-// exists, and the darwin one holds the copy only darwin's flag values make.
+// exists. Imported os.O_EXCL collisions are ruled by their exact expression in
+// messageFragmentPartSizeRulings.
 var messageFragmentPartSizePlatformCopyRulings = map[string]string{}
