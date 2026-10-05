@@ -99,6 +99,15 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_REDEEMED "redeemed"
 #define URNET_BALANCE_CODE_REDEEM_OUTCOME_UNKNOWN "unknown"
 #define URNET_BITTENSOR_TALISMAN_INJECTED_NAME "talisman"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_MISMATCH "address_mismatch"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_ADDRESS_NOT_IN_WALLET "address_not_in_wallet"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_NO_ACCOUNT "no_account"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_USER_REJECTED "user_rejected"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET_CONNECT_EXPIRED "walletconnect_expired"
+#define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET_CONNECT_UNAVAILABLE "walletconnect_unavailable"
 #define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/bittensor-connect"
 #define URNET_BITTENSOR_WALLET_CONNECT_CHAIN "polkadot:2f0555cc76fc2840a25a6ea3b9637146"
 #define URNET_BITTENSOR_WALLET_CONNECT_METHOD "polkadot_signMessage"
@@ -2422,6 +2431,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Proof: BittensorWalletProof | null
  *   ErrorCode: string
  *   ErrorMessage: string
+ *   BridgeErrorCode: string
  */
 
 /* BittensorWalletReturn (json):

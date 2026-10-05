@@ -129,6 +129,37 @@ const (
 	BittensorWalletErrorNotAwaiting         = "not_awaiting_wallet"
 )
 
+// The bridge page's own codes for a failure it hands back
+// (?errorCode=<code>&errorMessage=<its English text>). HandleBridgeReturn
+// answers such a return with ErrorCode wallet_error and passes the page's code
+// on in BittensorWalletResult.BridgeErrorCode, so an app can show its own
+// translation; for a code it does not know, an app shows ErrorMessage. Pages
+// before these codes send errorCode=-1, which is passed on as "".
+const (
+	// the wallet does not offer the account of the typed address, so
+	// nothing was signed
+	BittensorWalletBridgeErrorAddressNotInWallet = "address_not_in_wallet"
+	// a signature came back from another account than the typed one
+	BittensorWalletBridgeErrorAddressMismatch = BittensorWalletErrorAddressMismatch
+	// the wallet's extension (Talisman) is not in the browser
+	BittensorWalletBridgeErrorExtensionNotFound = "extension_not_found"
+	// the wallet shared no account with the page
+	BittensorWalletBridgeErrorNoAccount = "no_account"
+	// the user declined the connection or the signature in the wallet
+	BittensorWalletBridgeErrorUserRejected = "user_rejected"
+	// the WalletConnect pairing or request expired before the wallet answered
+	BittensorWalletBridgeErrorWalletConnectExpired = "walletconnect_expired"
+	// the page has no WalletConnect project id
+	BittensorWalletBridgeErrorWalletConnectUnavailable = "walletconnect_unavailable"
+	// the page was opened without the parameters it needs
+	BittensorWalletBridgeErrorInvalidRequest = "invalid_request"
+	// any other failure; the page's text says what
+	BittensorWalletBridgeErrorWallet = BittensorWalletErrorWallet
+
+	// the errorCode of pages before these codes: no code
+	bittensorWalletBridgeErrorLegacy = "-1"
+)
+
 const (
 	BittensorWalletBridgeUrl = "https://ur.io/bittensor-connect"
 	// the Polkadot.js extension api name Talisman injects under
@@ -326,6 +357,9 @@ type BittensorWalletResult struct {
 	Proof        *BittensorWalletProof
 	ErrorCode    string
 	ErrorMessage string
+	// for a wallet_error from the bridge page, the page's code for the
+	// failure (BittensorWalletBridgeError*); "" when the page sent none
+	BridgeErrorCode string
 }
 
 func (self *BittensorWalletResult) Ok() bool {
@@ -334,7 +368,8 @@ func (self *BittensorWalletResult) Ok() bool {
 
 // BittensorWalletReturn is the parsed query of a bridge hand-back:
 // ?address&signature&message&purpose&wallet on success,
-// ?errorCode&errorMessage[&purpose] on failure.
+// ?errorCode&errorMessage[&purpose] on failure, where errorCode is a
+// BittensorWalletBridgeError* code (-1 from pages before the codes).
 type BittensorWalletReturn struct {
 	Address      string
 	Signature    string
@@ -621,7 +656,8 @@ func (self *BittensorWalletSession) IsReturn(uri string) bool {
 
 // HandleBridgeReturn checks a browser_bridge hand-back. A return for
 // another purpose is refused without changing the session (it belongs to
-// another flow).
+// another flow). A failure the page hands back is wallet_error, with the
+// page's text and its BittensorWalletBridgeError* code.
 func (self *BittensorWalletSession) HandleBridgeReturn(uri string, nowMillis int64) *BittensorWalletResult {
 	r, err := ParseBittensorWalletReturn(uri, self.redirectLink)
 	if err != nil {
@@ -637,7 +673,15 @@ func (self *BittensorWalletSession) HandleBridgeReturn(uri string, nowMillis int
 			return &BittensorWalletResult{ErrorCode: BittensorWalletErrorNotAwaiting}
 		}
 		self.failWithLock(BittensorWalletErrorWallet)
-		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorWallet, ErrorMessage: r.ErrorMessage}
+		bridgeErrorCode := r.ErrorCode
+		if bridgeErrorCode == bittensorWalletBridgeErrorLegacy {
+			bridgeErrorCode = ""
+		}
+		return &BittensorWalletResult{
+			ErrorCode:       BittensorWalletErrorWallet,
+			ErrorMessage:    r.ErrorMessage,
+			BridgeErrorCode: bridgeErrorCode,
+		}
 	}
 	if r.Purpose == "" {
 		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorPurposeMismatch}
