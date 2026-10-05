@@ -90,12 +90,18 @@ for mod in "$sdk_dir"/*(N/); do
     ) || exit $?
 done
 
-# js package tests (node --test via the package script): fetch_retry + the
-# wasm surface guard
+# js package: the committed OpenAPI client and TypeScript types must match the
+# connect spec beside the sdk and the sdk's Go types (check_generated), then the
+# package tests (node --test via the package script): fetch_retry + the wasm
+# surface guard
 if [[ -f js/package.json ]]; then
     pushd js
-    npm test
+    make check_generated
     result=$?
+    if [[ $result == 0 ]]; then
+        npm test
+        result=$?
+    fi
     popd
     if [[ $result != 0 ]]; then
         exit $result
