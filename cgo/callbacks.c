@@ -301,6 +301,10 @@ void urnet_invoke_get_points_leaderboard(urnet_get_points_leaderboard_cb cb, voi
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_get_provider_status(urnet_get_provider_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_get_referral_network(urnet_get_referral_network_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
@@ -478,6 +482,10 @@ void urnet_invoke_provide_secret_keys(urnet_provide_secret_keys_cb cb, void* use
 }
 
 void urnet_invoke_provider_identity_change(urnet_provider_identity_change_cb cb, void* user_data) {
+	cb(user_data);
+}
+
+void urnet_invoke_provider_status(urnet_provider_status_cb cb, void* user_data) {
 	cb(user_data);
 }
 

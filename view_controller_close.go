@@ -70,3 +70,9 @@ func (self *viewControllerManager) ClosePointsLeaderboardViewController(vc *Poin
 		self.CloseViewController(vc)
 	}
 }
+
+func (self *viewControllerManager) CloseProviderStatusViewController(vc *ProviderStatusViewController) {
+	if vc != nil {
+		self.CloseViewController(vc)
+	}
+}

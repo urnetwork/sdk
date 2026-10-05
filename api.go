@@ -2982,6 +2982,159 @@ func (self *Api) GetNetworkReliability(callback GetNetworkReliabilityCallback) {
 }
 
 /**
+ * Provider status
+ */
+
+// The first reason a provider is not offered to clients (ProviderStatus.Reason),
+// in the order the server's selection applies them.
+const (
+	ProviderStatusReasonNotProviding         = "not_providing"
+	ProviderStatusReasonNotConnected         = "not_connected"
+	ProviderStatusReasonLocationInvalid      = "location_invalid"
+	ProviderStatusReasonNetworkOnly          = "network_only"
+	ProviderStatusReasonReliabilityWarmingUp = "reliability_warming_up"
+	ProviderStatusReasonReliabilityLow       = "reliability_low"
+	// every anti-abuse check, never which
+	ProviderStatusReasonNotEligible      = "not_eligible"
+	ProviderStatusReasonEgressUnprobed   = "egress_unprobed"
+	ProviderStatusReasonEgressFailing    = "egress_failing"
+	ProviderStatusReasonSpeedTestMissing = "speed_test_missing"
+	ProviderStatusReasonSlow             = "slow"
+	ProviderStatusReasonNone             = "none"
+)
+
+// The names of ProviderRankingNumber, in the order a status lists them.
+const (
+	ProviderStatusNumberReliability5m  = "reliability_5m"
+	ProviderStatusNumberReliability1h  = "reliability_1h"
+	ProviderStatusNumberReliability12h = "reliability_12h"
+	ProviderStatusNumberUrlChecks      = "url_checks"
+	ProviderStatusNumberSpeedTest      = "speed_test"
+	ProviderStatusNumberLatency        = "latency"
+	ProviderStatusNumberWeightQuality  = "weight_quality"
+	ProviderStatusNumberTierQuality    = "tier_quality"
+	ProviderStatusNumberWeightSpeed    = "weight_speed"
+	ProviderStatusNumberTierSpeed      = "tier_speed"
+)
+
+// ProviderAdmission.Egress
+const (
+	ProviderEgressPass     = "pass"
+	ProviderEgressFail     = "fail"
+	ProviderEgressUnprobed = "unprobed"
+)
+
+// How many times the server's provider search returned a provider in each
+// minute of the last hour.
+type ProviderAppearanceHistogram struct {
+	// the unix minute (unix seconds / 60) of the first, oldest bucket
+	StartMinute   int64 `json:"start_minute"`
+	BucketSeconds int   `json:"bucket_seconds"`
+	// 60 counts, oldest first; the last is the current, partial minute
+	AppearancesPerMinute *Int64List `json:"appearances_per_minute"`
+}
+
+// Which gates of the provider search a provider passes.
+type ProviderAdmission struct {
+	Connected     bool `json:"connected"`
+	LocationValid bool `json:"location_valid"`
+	ProvidePublic bool `json:"provide_public"`
+	ReliabilityOk bool `json:"reliability_ok"`
+	SpeedTestDone bool `json:"speed_test_done"`
+	// ProviderEgressPass, ProviderEgressFail or ProviderEgressUnprobed
+	Egress string `json:"egress"`
+	// nil when unprobed
+	EgressMeasuredAt *Time `json:"egress_measured_at,omitempty"`
+}
+
+// One number the provider search admits or orders a provider by. The unit
+// follows the name: reliability_* a share of steady uptime (0 to 1),
+// url_checks a share of loaded test sites with Count of Total, speed_test
+// bytes per second, latency milliseconds above the expected delay, weight_*
+// the relative selection weight, tier_* a tier (0 best, 3 past the cutoff).
+type ProviderRankingNumber struct {
+	Name        string  `json:"name"`
+	HasValue    bool    `json:"has_value"`
+	Value       float64 `json:"value"`
+	HasMinimum  bool    `json:"has_minimum"`
+	Minimum     float64 `json:"minimum"`
+	HasMaximum  bool    `json:"has_maximum"`
+	Maximum     float64 `json:"maximum"`
+	Passes      bool    `json:"passes"`
+	Count       int     `json:"count"`
+	Total       int     `json:"total"`
+	Explanation string  `json:"explanation"`
+}
+
+type ProviderRankingNumberList struct {
+	exportedList[*ProviderRankingNumber]
+}
+
+func NewProviderRankingNumberList() *ProviderRankingNumberList {
+	return &ProviderRankingNumberList{
+		exportedList: *newExportedList[*ProviderRankingNumber](),
+	}
+}
+
+// Where clients find the provider.
+type ProviderStatusCountry struct {
+	CountryCode string `json:"country_code"`
+	Country     string `json:"country"`
+	// "" when no fresh network check saw the exit
+	ObservedCountryCode string `json:"observed_country_code"`
+	Explanation         string `json:"explanation"`
+}
+
+type ProviderStatus struct {
+	ClientId *Id `json:"client_id"`
+	// one of the ProviderStatusReason* values, and its English text
+	Reason     string                     `json:"reason"`
+	ReasonText string                     `json:"reason_text"`
+	Admission  *ProviderAdmission         `json:"admission"`
+	Ranking    *ProviderRankingNumberList `json:"ranking"`
+	// nil when the provider has no known location
+	Country      *ProviderStatusCountry `json:"country,omitempty"`
+	EvaluateTime *Time                  `json:"evaluate_time"`
+	// nil when the server could not read the histogram
+	Appearances *ProviderAppearanceHistogram `json:"appearances,omitempty"`
+}
+
+type ProviderStatusList struct {
+	exportedList[*ProviderStatus]
+}
+
+func NewProviderStatusList() *ProviderStatusList {
+	return &ProviderStatusList{
+		exportedList: *newExportedList[*ProviderStatus](),
+	}
+}
+
+type GetProviderStatusResult struct {
+	// the caller's own client first when it is a provider
+	Providers *ProviderStatusList `json:"providers"`
+	// the network has more provider clients than one answer covers
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+type GetProviderStatusCallback connect.ApiCallback[*GetProviderStatusResult]
+
+// GetProviderStatus reads, for each of the network's own provider clients,
+// how often the provider search returned it per minute over the last hour,
+// the numbers it was ranked by and the first reason holding it back.
+func (self *Api) GetProviderStatus(callback GetProviderStatusCallback) {
+	go connect.HandleError(func() {
+		connect.HttpGetWithRawFunction(
+			self.ctx,
+			self.getHttpGetRaw(),
+			fmt.Sprintf("%s/network/provider-status", self.apiUrl),
+			self.GetByJwt(),
+			&GetProviderStatusResult{},
+			callback,
+		)
+	})
+}
+
+/**
  * Solana Payment Intents
  */
 
