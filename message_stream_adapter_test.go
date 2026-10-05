@@ -1089,6 +1089,7 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"base58BigRadix":                           streamAdapterPackageVarOf(&base58BigRadix),
 	"base58BigZero":                            streamAdapterPackageVarOf(&base58BigZero),
 	"base58Table":                              streamAdapterPackageVarOf(&base58Table),
+	"controlDohSettingsConfigure":              streamAdapterPackageVarOf(&controlDohSettingsConfigure),
 	"countryCodeColorHexes":                    streamAdapterPackageVarOf(&countryCodeColorHexes),
 	"defaultTunnelDnsServersIpv4":              streamAdapterPackageVarOf(&defaultTunnelDnsServersIpv4),
 	"defaultTunnelDnsServersIpv6":              streamAdapterPackageVarOf(&defaultTunnelDnsServersIpv6),
