@@ -518,6 +518,18 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		}
 		return jsSub(device.AddDeviceRecreatedListener(&jsDeviceRecreatedListener{cb}))
 	})
+	// signal only: the device may not hold what the page applied to it (the
+	// first sync, a recreated device, or a device without a generation), so
+	// the page applies its own settings again. Add it right after creating the
+	// remote; the remote's first sync waits for the transport to open, which
+	// takes a later JavaScript task
+	m["addDeviceConfigurationChangedListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddDeviceConfigurationChangedListener(&jsDeviceConfigurationChangedListener{cb: cb}))
+	})
 	m["addConnectChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		cb, ok := funcArg(args)
 		if !ok {
@@ -572,6 +584,13 @@ func (self *jsRemoteChangeListener) RemoteChanged(remoteConnected bool) {
 type jsDeviceRecreatedListener struct{ cb js.Value }
 
 func (self *jsDeviceRecreatedListener) DeviceRecreated() {
+	self.cb.Invoke()
+}
+
+// Invokes the page's callback with no arguments; the page re-reads the getters.
+type jsDeviceConfigurationChangedListener struct{ cb js.Value }
+
+func (self *jsDeviceConfigurationChangedListener) DeviceConfigurationChanged() {
 	self.cb.Invoke()
 }
 

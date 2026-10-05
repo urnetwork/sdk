@@ -181,6 +181,10 @@ void urnet_invoke_delete_api_key(urnet_delete_api_key_cb cb, void* user_data, co
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_device_configuration_changed(urnet_device_configuration_changed_cb cb, void* user_data) {
+	cb(user_data);
+}
+
 void urnet_invoke_device_recreated(urnet_device_recreated_cb cb, void* user_data) {
 	cb(user_data);
 }

@@ -16934,6 +16934,7 @@ using CreateAccountWalletCallback = std::function<void(std::optional<CreateAccou
 using CreateApiKeyCallback = std::function<void(std::optional<CreateApiKeyResult> result, std::optional<std::string> err_param)>;
 using DefaultLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
 using DeleteApiKeyCallback = std::function<void(std::optional<DeleteApiKeyResult> result, std::optional<std::string> err_param)>;
+using DeviceConfigurationChangedListener = std::function<void()>;
 using DeviceRecreatedListener = std::function<void()>;
 using DeviceSetNameCallback = std::function<void(std::optional<DeviceSetNameResult> result, std::optional<std::string> err_param)>;
 using DnsResolverSettingsChangeListener = std::function<void(std::optional<DnsResolverSettings> dns_resolver_settings)>;
@@ -17729,6 +17730,7 @@ class DeviceRemote final : public Device {
 public:
 	DeviceRemote() = default;
 	explicit DeviceRemote(uint64_t h) : Device(h) {}
+	Sub addDeviceConfigurationChangedListener(DeviceConfigurationChangedListener listener) const;
 	Sub addDeviceRecreatedListener(DeviceRecreatedListener listener) const;
 	Sub addRemoteChangeListener(RemoteChangeListener listener) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
@@ -19659,6 +19661,26 @@ inline void oneshot_delete_api_key(void* user_data, const char* result_json, con
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_device_configuration_changed(void* user_data) {
+	auto* f = static_cast<DeviceConfigurationChangedListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_device_configuration_changed(void* user_data) {
+	auto* f = static_cast<DeviceConfigurationChangedListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -27388,6 +27410,17 @@ inline bool DeviceLocalSaveResult::getSaved() const {
 }
 inline int64_t DeviceLocalSaveResult::getSequence() const {
 	int64_t r = urnet_device_local_save_result_get_sequence(handle());
+	return r;
+}
+inline Sub DeviceRemote::addDeviceConfigurationChangedListener(DeviceConfigurationChangedListener listener) const {
+	std::shared_ptr<DeviceConfigurationChangedListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<DeviceConfigurationChangedListener>(std::move(listener));
+	}
+	Sub r(urnet_device_remote_add_device_configuration_changed_listener(handle(), listener_fn ? &detail::retained_device_configuration_changed : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
 	return r;
 }
 inline Sub DeviceRemote::addDeviceRecreatedListener(DeviceRecreatedListener listener) const {

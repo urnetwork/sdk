@@ -47,6 +47,7 @@ module URnetwork
       callback :urnet_create_api_key_cb, [:pointer, :string, :string], :void
       callback :urnet_default_location_change_cb, [:pointer, :string], :void
       callback :urnet_delete_api_key_cb, [:pointer, :string, :string], :void
+      callback :urnet_device_configuration_changed_cb, [:pointer], :void
       callback :urnet_device_recreated_cb, [:pointer], :void
       callback :urnet_device_set_name_cb, [:pointer, :string, :string], :void
       callback :urnet_dns_resolver_settings_change_cb, [:pointer, :string], :void
@@ -728,6 +729,7 @@ module URnetwork
       attach_function :urnet_device_local_save_result_get_preference, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_save_result_get_saved, [:uint64], :bool, blocking: true
       attach_function :urnet_device_local_save_result_get_sequence, [:uint64], :int64, blocking: true
+      attach_function :urnet_device_remote_add_device_configuration_changed_listener, [:uint64, :urnet_device_configuration_changed_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_remote_add_device_recreated_listener, [:uint64, :urnet_device_recreated_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_remote_add_remote_change_listener, [:uint64, :urnet_remote_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_remote_add_sn_wallet_change_listener, [:uint64, :urnet_sn_wallet_change_cb, :pointer], :uint64, blocking: true

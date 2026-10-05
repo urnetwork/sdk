@@ -47,6 +47,7 @@ urnet_create_account_wallet_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_create_api_key_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_default_location_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_delete_api_key_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_device_configuration_changed_cb = CFUNCTYPE(None, c_void_p)
 urnet_device_recreated_cb = CFUNCTYPE(None, c_void_p)
 urnet_device_set_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_dns_resolver_settings_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -1260,6 +1261,8 @@ def bind(lib):
     lib.urnet_device_local_save_result_get_saved.restype = c_bool
     lib.urnet_device_local_save_result_get_sequence.argtypes = [c_uint64]
     lib.urnet_device_local_save_result_get_sequence.restype = c_int64
+    lib.urnet_device_remote_add_device_configuration_changed_listener.argtypes = [c_uint64, urnet_device_configuration_changed_cb, c_void_p]
+    lib.urnet_device_remote_add_device_configuration_changed_listener.restype = c_uint64
     lib.urnet_device_remote_add_device_recreated_listener.argtypes = [c_uint64, urnet_device_recreated_cb, c_void_p]
     lib.urnet_device_remote_add_device_recreated_listener.restype = c_uint64
     lib.urnet_device_remote_add_remote_change_listener.argtypes = [c_uint64, urnet_remote_change_cb, c_void_p]

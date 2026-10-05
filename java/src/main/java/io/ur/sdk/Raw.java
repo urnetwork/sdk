@@ -48,6 +48,7 @@ public interface Raw extends Library {
   interface urnet_create_api_key_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_default_location_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_delete_api_key_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_device_configuration_changed_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_device_recreated_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_device_set_name_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_dns_resolver_settings_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -729,6 +730,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_save_result_get_preference(long a0);
   byte urnet_device_local_save_result_get_saved(long a0);
   long urnet_device_local_save_result_get_sequence(long a0);
+  long urnet_device_remote_add_device_configuration_changed_listener(long a0, urnet_device_configuration_changed_cb a1, Pointer a2);
   long urnet_device_remote_add_device_recreated_listener(long a0, urnet_device_recreated_cb a1, Pointer a2);
   long urnet_device_remote_add_remote_change_listener(long a0, urnet_remote_change_cb a1, Pointer a2);
   long urnet_device_remote_add_sn_wallet_change_listener(long a0, urnet_sn_wallet_change_cb a1, Pointer a2);
