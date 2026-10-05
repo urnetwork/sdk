@@ -1,3 +1,5 @@
+// The mobile network's country, which the extender dials fall back to for
+// their spoof list (sdk.go SetNetworkCountryCode).
 package sdk
 
 import (

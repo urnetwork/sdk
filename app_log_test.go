@@ -1,3 +1,5 @@
+// The app log line: its bounds and sanitizing, and that it reaches the logs a
+// user uploads with feedback.
 package sdk
 
 import (

@@ -1,5 +1,6 @@
 //go:build darwin && !sdk_mobile_bind
 
+// The part-size gate's ruling that only a darwin build needs.
 package sdk
 
 // The darwin part of messageFragmentPartSizePlatformCopyRulings, for a copy of the part size only a

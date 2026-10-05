@@ -1,5 +1,9 @@
 //go:build !ios_extension
 
+// The provider status screen's controller: it polls GET
+// /network/provider-status while started and publishes this device's status
+// and the network's other provider clients to the app (api.go
+// GetProviderStatus).
 package sdk
 
 import (
@@ -15,20 +19,18 @@ import (
 // five minutes, so a faster poll shows nothing new.
 const defaultProviderStatusPollInterval = 60 * time.Second
 
-// ProviderStatusListener fires whenever the published status changes: a poll
-// succeeded or failed, or the controller stopped. The app re-reads the
-// getters.
+// Fires whenever the published status changes: a poll succeeded or failed,
+// or the controller stopped. The app re-reads the getters.
 type ProviderStatusListener interface {
 	ProviderStatusChanged()
 }
 
-// ProviderStatusViewController reads GET /network/provider-status about once
-// a minute while started and publishes this device's provider status: how
-// often the server's provider search offered the device per minute over the
-// last hour (60 buckets, oldest first), the numbers it was ranked by with
-// what each means, the gates it passes, and the first reason holding it back
-// (ProviderStatusReason*). The network's other provider clients are in
-// GetProviderStatuses.
+// Reads GET /network/provider-status about once a minute while started and
+// publishes this device's provider status: how often the server's provider
+// search offered the device per minute over the last hour (60 buckets, oldest
+// first), the numbers it was ranked by with what each means, the gates it
+// passes, and the first reason holding it back (ProviderStatusReason*). The
+// network's other provider clients are in GetProviderStatuses.
 //
 // Stop pauses polling and keeps the last snapshot, so a screen that comes
 // back shows it at once while the next poll runs; Close ends the controller.
@@ -66,8 +68,11 @@ type ProviderStatusViewController struct {
 	// test seams (unexported; not bound)
 	nowFunc   func() time.Time
 	fetchFunc func(callback GetProviderStatusCallback)
+	// the wait for the next poll, time.After outside tests
+	afterFunc func(delay time.Duration) <-chan time.Time
 }
 
+// The controller with its polling loop running.
 func newProviderStatusViewController(ctx context.Context, device Device) *ProviderStatusViewController {
 	vc := newProviderStatusViewControllerWithoutRun(ctx, device.GetApi(), device.GetClientId())
 	go connect.HandleError(vc.run)
@@ -86,6 +91,7 @@ func newProviderStatusViewControllerWithoutRun(ctx context.Context, api *Api, cl
 		statuses:     NewProviderStatusList(),
 		listeners:    connect.NewCallbackList[ProviderStatusListener](),
 		nowFunc:      time.Now,
+		afterFunc:    time.After,
 	}
 	vc.fetchFunc = func(callback GetProviderStatusCallback) {
 		api.GetProviderStatus(callback)
@@ -93,7 +99,7 @@ func newProviderStatusViewControllerWithoutRun(ctx context.Context, api *Api, cl
 	return vc
 }
 
-// Start polls at once and then about once a minute.
+// Polls at once and then about once a minute.
 func (self *ProviderStatusViewController) Start() {
 	func() {
 		self.stateLock.Lock()
@@ -108,7 +114,7 @@ func (self *ProviderStatusViewController) Start() {
 	self.scheduleWake()
 }
 
-// Stop pauses polling and drops the poll in flight; the last snapshot stays
+// Pauses polling and drops the poll in flight; the last snapshot stays
 // published.
 func (self *ProviderStatusViewController) Stop() {
 	changed := false
@@ -129,11 +135,12 @@ func (self *ProviderStatusViewController) Stop() {
 	self.scheduleWake()
 }
 
+// Ends the controller and its polling loop.
 func (self *ProviderStatusViewController) Close() {
 	self.cancel()
 }
 
-// Refresh polls now, if started.
+// Polls now, if started.
 func (self *ProviderStatusViewController) Refresh() {
 	func() {
 		self.stateLock.Lock()
@@ -143,45 +150,24 @@ func (self *ProviderStatusViewController) Refresh() {
 	self.scheduleWake()
 }
 
+// Steps on every wake and when the next poll is due, until Close. Each step
+// replaces the wait: none while stopped or while a poll is in flight, whose
+// completion wakes the loop.
 func (self *ProviderStatusViewController) run() {
-	var timer *time.Timer
-	var timerC <-chan time.Time
-	defer func() {
-		if timer != nil {
-			timer.Stop()
-		}
-	}()
-	armTimer := func(delay time.Duration, arm bool) {
-		if timer != nil && !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		if !arm {
-			timerC = nil
-			return
-		}
-		if delay < 0 {
-			delay = 0
-		}
-		if timer == nil {
-			timer = time.NewTimer(delay)
-		} else {
-			timer.Reset(delay)
-		}
-		timerC = timer.C
-	}
-
+	// nil while no poll is scheduled
+	var pollDue <-chan time.Time
 	for {
 		select {
 		case <-self.ctx.Done():
 			return
 		case <-self.wake:
-		case <-timerC:
+		case <-pollDue:
 		}
-		delay, arm := self.step()
-		armTimer(delay, arm)
+		if delay, arm := self.step(); arm {
+			pollDue = self.afterFunc(max(delay, 0))
+		} else {
+			pollDue = nil
+		}
 	}
 }
 
@@ -220,6 +206,8 @@ func (self *ProviderStatusViewController) step() (delay time.Duration, arm bool)
 	return
 }
 
+// Publishes a poll's answer unless Stop dropped the poll, and wakes the loop
+// to schedule the next one.
 func (self *ProviderStatusViewController) fetchDone(generation int, result *GetProviderStatusResult, err error) {
 	applied := false
 	func() {
@@ -261,6 +249,7 @@ func (self *ProviderStatusViewController) fetchDone(generation int, result *GetP
 	}
 }
 
+// Wakes the loop without blocking; a wake already pending covers this one.
 func (self *ProviderStatusViewController) scheduleWake() {
 	select {
 	case self.wake <- struct{}{}:
@@ -268,53 +257,50 @@ func (self *ProviderStatusViewController) scheduleWake() {
 	}
 }
 
-// GetIsLoaded is true once a poll has succeeded.
+// True once a poll has succeeded.
 func (self *ProviderStatusViewController) GetIsLoaded() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.loaded
 }
 
-// GetIsLoading is true while a poll is in flight.
+// True while a poll is in flight.
 func (self *ProviderStatusViewController) GetIsLoading() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.fetchInFlight
 }
 
-// GetLastFetchError is the last failed poll's error, "" once a poll succeeds.
+// The last failed poll's error, "" once a poll succeeds.
 func (self *ProviderStatusViewController) GetLastFetchError() string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.lastFetchError
 }
 
-// GetProviderStatus is this device's status, nil when the device is not one
-// of the network's provider clients (or nothing has loaded yet).
+// This device's status, nil when the device is not one of the network's
+// provider clients (or nothing has loaded yet).
 func (self *ProviderStatusViewController) GetProviderStatus() *ProviderStatus {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.status
 }
 
-// GetProviderStatuses is every provider client the last poll covered, this
-// device first.
+// Every provider client the last poll covered, this device first.
 func (self *ProviderStatusViewController) GetProviderStatuses() *ProviderStatusList {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.statuses
 }
 
-// GetTruncated is true when the network has more provider clients than one
-// answer covers.
+// True when the network has more provider clients than one answer covers.
 func (self *ProviderStatusViewController) GetTruncated() bool {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.truncated
 }
 
-// GetReason is this device's reason code (ProviderStatusReason*), "" without
-// a status.
+// This device's reason code (ProviderStatusReason*), "" without a status.
 func (self *ProviderStatusViewController) GetReason() string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -324,7 +310,7 @@ func (self *ProviderStatusViewController) GetReason() string {
 	return self.status.Reason
 }
 
-// GetReasonText is the server's English text for GetReason.
+// The server's English text for GetReason.
 func (self *ProviderStatusViewController) GetReasonText() string {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -334,7 +320,7 @@ func (self *ProviderStatusViewController) GetReasonText() string {
 	return self.status.ReasonText
 }
 
-// GetAdmission is this device's gates, nil without a status.
+// This device's gates, nil without a status.
 func (self *ProviderStatusViewController) GetAdmission() *ProviderAdmission {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -344,8 +330,7 @@ func (self *ProviderStatusViewController) GetAdmission() *ProviderAdmission {
 	return self.status.Admission
 }
 
-// GetRankingNumbers is this device's ranking numbers in display order, empty
-// without a status.
+// This device's ranking numbers in display order, empty without a status.
 func (self *ProviderStatusViewController) GetRankingNumbers() *ProviderRankingNumberList {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -355,8 +340,8 @@ func (self *ProviderStatusViewController) GetRankingNumbers() *ProviderRankingNu
 	return self.status.Ranking
 }
 
-// GetAppearances is this device's histogram, nil when there is none (no
-// status, or the server could not read it).
+// This device's histogram, nil when there is none (no status, or the server
+// could not read it).
 func (self *ProviderStatusViewController) GetAppearances() *ProviderAppearanceHistogram {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -366,8 +351,7 @@ func (self *ProviderStatusViewController) GetAppearances() *ProviderAppearanceHi
 	return self.status.Appearances
 }
 
-// GetAppearancesPerMinute is the histogram's 60 counts, oldest first, empty
-// when there is no histogram.
+// The histogram's 60 counts, oldest first, empty when there is no histogram.
 func (self *ProviderStatusViewController) GetAppearancesPerMinute() *Int64List {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
@@ -377,7 +361,7 @@ func (self *ProviderStatusViewController) GetAppearancesPerMinute() *Int64List {
 	return self.status.Appearances.AppearancesPerMinute
 }
 
-// GetAppearanceTotal is the sum of the histogram's counts.
+// The sum of the histogram's counts.
 func (self *ProviderStatusViewController) GetAppearanceTotal() int64 {
 	total := int64(0)
 	for _, count := range self.GetAppearancesPerMinute().getAll() {
@@ -386,7 +370,7 @@ func (self *ProviderStatusViewController) GetAppearanceTotal() int64 {
 	return total
 }
 
-// GetAppearanceMaxCount is the largest bucket, for scaling the bars.
+// The largest bucket, for scaling the bars.
 func (self *ProviderStatusViewController) GetAppearanceMaxCount() int64 {
 	maxCount := int64(0)
 	for _, count := range self.GetAppearancesPerMinute().getAll() {
@@ -395,6 +379,7 @@ func (self *ProviderStatusViewController) GetAppearanceMaxCount() int64 {
 	return maxCount
 }
 
+// Adds a listener for status changes; closing the returned sub removes it.
 func (self *ProviderStatusViewController) AddProviderStatusListener(listener ProviderStatusListener) Sub {
 	callbackId := self.listeners.Add(listener)
 	return newSub(func() {
@@ -402,6 +387,7 @@ func (self *ProviderStatusViewController) AddProviderStatusListener(listener Pro
 	})
 }
 
+// Notifies the listeners, each recovered on its own.
 func (self *ProviderStatusViewController) statusChanged() {
 	for _, listener := range self.listeners.Get() {
 		connect.HandleError(func() {

@@ -198,12 +198,13 @@ func TestMobileExtenderStringSliceOmissionsAreExplicit(t *testing.T) {
 	}
 }
 
+// The check accepts gomobile skipping the go-side []string bootstrap DoH lists
+// of the network space values; apps reach them through NetworkSpace's
+// StringList getters and SetControlDohUrls.
 func TestMobileControlDohStringSliceOmissionsAreExplicit(t *testing.T) {
 	root := t.TempDir()
-	source := strings.Join([]string{
-		"// skipped field NetworkSpaceValues.ControlDohUrlsIpv4 with unsupported type: []string",
-		"// skipped field NetworkSpaceValues.ControlDohUrlsIpv6 with unsupported type: []string",
-	}, "\n")
+	source := `// skipped field NetworkSpaceValues.ControlDohUrlsIpv4 with unsupported type: []string
+// skipped field NetworkSpaceValues.ControlDohUrlsIpv6 with unsupported type: []string`
 	if err := os.WriteFile(filepath.Join(root, "NetworkSpaceValues.java"), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}

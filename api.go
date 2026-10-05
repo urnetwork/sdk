@@ -3066,10 +3066,12 @@ type ProviderRankingNumber struct {
 	Explanation string  `json:"explanation"`
 }
 
+// The bound form of []*ProviderRankingNumber, in the order a status lists them.
 type ProviderRankingNumberList struct {
 	exportedList[*ProviderRankingNumber]
 }
 
+// An empty list.
 func NewProviderRankingNumberList() *ProviderRankingNumberList {
 	return &ProviderRankingNumberList{
 		exportedList: *newExportedList[*ProviderRankingNumber](),
@@ -3085,6 +3087,9 @@ type ProviderStatusCountry struct {
 	Explanation         string `json:"explanation"`
 }
 
+// One provider client's status: the first reason it is not offered, the gates
+// and numbers the provider search weighs, where clients find it, and how often
+// the search returned it over the last hour.
 type ProviderStatus struct {
 	ClientId *Id `json:"client_id"`
 	// one of the ProviderStatusReason* values, and its English text
@@ -3099,16 +3104,19 @@ type ProviderStatus struct {
 	Appearances *ProviderAppearanceHistogram `json:"appearances,omitempty"`
 }
 
+// The bound form of []*ProviderStatus.
 type ProviderStatusList struct {
 	exportedList[*ProviderStatus]
 }
 
+// An empty list.
 func NewProviderStatusList() *ProviderStatusList {
 	return &ProviderStatusList{
 		exportedList: *newExportedList[*ProviderStatus](),
 	}
 }
 
+// The answer of GET /network/provider-status.
 type GetProviderStatusResult struct {
 	// the caller's own client first when it is a provider
 	Providers *ProviderStatusList `json:"providers"`
@@ -3116,11 +3124,12 @@ type GetProviderStatusResult struct {
 	Truncated bool `json:"truncated,omitempty"`
 }
 
+// Receives the GetProviderStatus answer.
 type GetProviderStatusCallback connect.ApiCallback[*GetProviderStatusResult]
 
-// GetProviderStatus reads, for each of the network's own provider clients,
-// how often the provider search returned it per minute over the last hour,
-// the numbers it was ranked by and the first reason holding it back.
+// Reads, for each of the network's own provider clients, how often the
+// provider search returned it per minute over the last hour, the numbers it
+// was ranked by and the first reason holding it back.
 func (self *Api) GetProviderStatus(callback GetProviderStatusCallback) {
 	go connect.HandleError(func() {
 		connect.HttpGetWithRawFunction(

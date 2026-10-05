@@ -1,3 +1,5 @@
+// The provider status binding and view controller against a fake api: the
+// wire shape, polling, stop, listener updates and failed polls.
 package sdk
 
 import (
@@ -14,9 +16,6 @@ import (
 
 	"github.com/urnetwork/connect"
 )
-
-// The provider status binding and view controller against a fake api: the
-// wire shape, polling, stop, listener updates and failed polls.
 
 const providerStatusTestOwnClientId = "00000000-0000-0000-0000-0000000000a1"
 const providerStatusTestOtherClientId = "00000000-0000-0000-0000-0000000000a2"
@@ -67,6 +66,8 @@ func providerStatusTestJson(ownReason string, ownCount int) string {
 	}`, providerStatusTestOwnClientId, ownReason, strings.Join(counts, ","), providerStatusTestOtherClientId)
 }
 
+// The binding decodes the server's answer field for field: both providers,
+// the gates, the ranking numbers, the country and the histogram.
 func TestGetProviderStatusDecodeMatchesServer(t *testing.T) {
 	_, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/network/provider-status" {
@@ -126,32 +127,38 @@ type providerStatusTestFetches struct {
 	callbacks []GetProviderStatusCallback
 }
 
+// Records a poll; the test answers it through callback(i).
 func (self *providerStatusTestFetches) fetch(callback GetProviderStatusCallback) {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	self.callbacks = append(self.callbacks, callback)
 }
 
+// How many polls were made.
 func (self *providerStatusTestFetches) count() int {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return len(self.callbacks)
 }
 
+// The callback of the i-th poll, from 0.
 func (self *providerStatusTestFetches) callback(i int) GetProviderStatusCallback {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.callbacks[i]
 }
 
+// Counts the controller's change notifications.
 type providerStatusTestListener struct {
 	changes atomic.Int32
 }
 
+// Counts one notification.
 func (self *providerStatusTestListener) ProviderStatusChanged() {
 	self.changes.Add(1)
 }
 
+// The decoded answer of providerStatusTestJson.
 func newProviderStatusTestResult(t *testing.T, ownReason string, ownCount int) *GetProviderStatusResult {
 	t.Helper()
 	result := &GetProviderStatusResult{}
@@ -161,6 +168,9 @@ func newProviderStatusTestResult(t *testing.T, ownReason string, ownCount int) *
 	return result
 }
 
+// A controller without its loop, on a clock that moves only by the returned
+// advance function. Its polls go to the returned fake api and the returned
+// listener counts its changes.
 func newProviderStatusTestController(t *testing.T) (*ProviderStatusViewController, *providerStatusTestFetches, *providerStatusTestListener, func(time.Duration)) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -321,45 +331,94 @@ func TestProviderStatusViewControllerWithoutOwnStatus(t *testing.T) {
 	}
 }
 
-// The real loop against a fake api server: it polls at the interval while
-// started, stops polling on Stop and ends on Close.
+// One wait the run loop armed for its next poll: the delay it asked for, and
+// the channel that fires it.
+type providerStatusTestWait struct {
+	delay time.Duration
+	fire  chan time.Time
+}
+
+// The real loop, with its clock, polls and waits in the test's hands: Start
+// wakes it into a poll, the answer arms a wait of one interval, the wait polls
+// again once the interval has passed, a stopped controller arms no wait, and
+// Close ends the loop. Each step is awaited on the loop's own poll or wait,
+// never on a sleep; the tests above cover each decision step makes.
 func TestProviderStatusViewControllerRunLoop(t *testing.T) {
-	var requests atomic.Int32
-	ctx, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, providerStatusTestJson(ProviderStatusReasonNone, 5))
-	}))
-	vc := newProviderStatusViewControllerWithoutRun(ctx, api, mustParseTestId(t, providerStatusTestOwnClientId))
-	vc.pollInterval = 30 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newProviderStatusViewControllerWithoutRun(ctx, nil, mustParseTestId(t, providerStatusTestOwnClientId))
+	var nowUnixNano atomic.Int64
+	nowUnixNano.Store(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC).UnixNano())
+	vc.nowFunc = func() time.Time {
+		return time.Unix(0, nowUnixNano.Load())
+	}
+	fetchCallbacks := make(chan GetProviderStatusCallback, 8)
+	vc.fetchFunc = func(callback GetProviderStatusCallback) {
+		fetchCallbacks <- callback
+	}
+	waits := make(chan providerStatusTestWait, 8)
+	vc.afterFunc = func(delay time.Duration) <-chan time.Time {
+		wait := providerStatusTestWait{
+			delay: delay,
+			fire:  make(chan time.Time, 1),
+		}
+		waits <- wait
+		return wait.fire
+	}
 	loopDone := make(chan struct{})
 	go func() {
 		defer close(loopDone)
 		vc.run()
 	}()
 
-	waitFor := func(message string, condition func() bool) {
+	nextFetch := func(message string) GetProviderStatusCallback {
 		t.Helper()
-		deadline := time.Now().Add(10 * time.Second)
-		for !condition() {
-			if time.Now().After(deadline) {
-				t.Fatal(message)
-			}
-			time.Sleep(5 * time.Millisecond)
+		select {
+		case callback := <-fetchCallbacks:
+			return callback
+		case <-time.After(10 * time.Second):
+			t.Fatal(message)
+			return nil
 		}
 	}
-	if time.Sleep(100 * time.Millisecond); requests.Load() != 0 {
-		t.Fatal("polled before Start")
+	nextWait := func(message string) providerStatusTestWait {
+		t.Helper()
+		select {
+		case wait := <-waits:
+			return wait
+		case <-time.After(10 * time.Second):
+			t.Fatal(message)
+			return providerStatusTestWait{}
+		}
 	}
-	vc.Start()
-	waitFor("did not poll repeatedly while started", func() bool { return 3 <= requests.Load() })
-	waitFor("did not publish", func() bool { return vc.GetAppearanceTotal() == 9 })
 
+	vc.Start()
+	nextFetch("Start did not poll").Result(newProviderStatusTestResult(t, ProviderStatusReasonNone, 5), nil)
+	if vc.GetAppearanceTotal() != 9 {
+		t.Fatalf("the answer was not published: total %d", vc.GetAppearanceTotal())
+	}
+	wait := nextWait("the answer armed no wait for the next poll")
+	if wait.delay != defaultProviderStatusPollInterval {
+		t.Fatalf("the next poll waits %s, want %s", wait.delay, defaultProviderStatusPollInterval)
+	}
+
+	nowUnixNano.Add(int64(defaultProviderStatusPollInterval))
+	wait.fire <- time.Unix(0, nowUnixNano.Load())
+	inFlight := nextFetch("the due wait did not poll")
+
+	// stopped, the late answer is dropped and nothing waits; Start polls at
+	// once, and a wait armed while stopped would be queued ahead of that poll
 	vc.Stop()
-	time.Sleep(50 * time.Millisecond)
-	stopped := requests.Load()
-	if time.Sleep(200 * time.Millisecond); requests.Load() != stopped {
-		t.Fatalf("polled while stopped: %d after %d", requests.Load(), stopped)
+	inFlight.Result(newProviderStatusTestResult(t, ProviderStatusReasonSlow, 1), nil)
+	vc.Start()
+	nextFetch("Start after Stop did not poll")
+	select {
+	case wait := <-waits:
+		t.Fatalf("a wait of %s was armed while stopped", wait.delay)
+	default:
+	}
+	if vc.GetReason() != ProviderStatusReasonNone {
+		t.Fatal("the answer to a dropped poll was published")
 	}
 
 	vc.Close()
@@ -370,6 +429,8 @@ func TestProviderStatusViewControllerRunLoop(t *testing.T) {
 	}
 }
 
+// Closing the controller through the device releases the device's ownership
+// of it.
 func TestCloseConcreteProviderStatusViewControllerReleasesOwnership(t *testing.T) {
 	device := newViewControllerCloseTestDevice(t)
 
