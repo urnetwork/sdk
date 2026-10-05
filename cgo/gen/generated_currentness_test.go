@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,6 +56,23 @@ func TestGeneratedArtifactsMatchCurrentSDKSurface(t *testing.T) {
 		if err := generatedArtifactMismatch(path, tracked, generated); err != nil {
 			t.Error(err)
 		}
+	}
+}
+
+// The Python, Java, C#, Rust and Ruby packages bind include/urnetwork_sdk.h
+// through their own generator (packaging/generate.go), and nothing in this
+// module reads what it writes. A header regenerated here and not there leaves
+// those bindings without the new functions until a package build refuses them
+// at release time. Run the packaging module's read-only freshness check, so
+// this test and the one above check the sdk surface through to every binding.
+func TestLanguageBindingsMatchTrackedHeader(t *testing.T) {
+	sdkDirectory := filepath.Dir(filepath.Dir(testingGenDir(t)))
+	command := exec.Command(
+		"go", "-C", filepath.Join(sdkDirectory, "packaging"),
+		"run", ".", "check-generated",
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("packaging check-generated: %v\n%s", err, output)
 	}
 }
 

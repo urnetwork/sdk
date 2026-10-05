@@ -135,6 +135,11 @@ files. Review the `coverage_report.txt` diff to confirm surface changes are
 intentional. The generator fails on c name collisions and warns on data types
 with empty json shapes (usually a type that should be classified behavioral).
 
+The Python, Java, C#, Rust and Ruby packages bind `include/urnetwork_sdk.h`
+through `../packaging/generate.go`. When the header changes, also run
+`go -C ../packaging run . generate` and commit those five files. `go test ./gen`
+fails until both the header and the bindings are current.
+
 `manualExports()` publishes the hand-written `//export`s into the `.def`. It
 skips files the default build excludes (`inDefaultBuild`) — a `.def` naming a
 symbol the dll lacks is a link error at the consumer — and its scan pattern
