@@ -416,7 +416,18 @@ type AuthLoginArgs struct {
 	AuthJwt     string          `json:"auth_jwt,omitempty"`
 	WalletAuth  *WalletAuthArgs `json:"wallet_auth,omitempty"`
 	Seedphrase  string          `json:"seedphrase,omitempty"`
+	// ask the server to answer a coded refusal (a wallet signature from
+	// another account, WalletAuthErrorCodeSignatureMismatch) in the result
+	// `Error` instead of an HTTP 401 error, so the apps can read the code
+	ResultErrors bool `json:"result_errors,omitempty"`
 }
+
+// The `Code` of a wallet sign-in, network create or add-auth refusal for a
+// well-formed signature that does not verify for the wallet address over the
+// challenge: with manual entry (TAO.com) the wallet signed with another account
+// than the address entered. The server cannot name that account. The same
+// value as SnErrorCodeSignatureMismatch.
+const WalletAuthErrorCodeSignatureMismatch = "signature_mismatch"
 
 type WalletAuthArgs struct {
 	PublicKey  string `json:"wallet_address,omitempty"`
@@ -443,7 +454,9 @@ type AuthLoginResult struct {
 // `model.AuthLoginResultError`
 type AuthLoginResultError struct {
 	SuggestedUserAuth string `json:"suggested_user_auth,omitempty"`
-	Message           string `json:"message"`
+	// WalletAuthErrorCodeSignatureMismatch (with `ResultErrors`), else ""
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message"`
 }
 
 // `model.AuthLoginResultNetwork`
@@ -737,6 +750,12 @@ type NetworkCreateArgs struct {
 	// onboarding_api.go): false here sends product_updates true, so the zero
 	// value keeps the preference on, as the form ships.
 	ProductUpdatesOptOut bool `json:"-"`
+	// ask the server to answer a coded refusal (a wallet signature from
+	// another account, WalletAuthErrorCodeSignatureMismatch) with the result
+	// as the body of its HTTP 401, which NetworkCreate reads as the result, so
+	// the apps can read the code in `Error`. The status stays a refusal: the
+	// server's signup monitor counts every 2xx create as a created network.
+	ResultErrors bool `json:"result_errors,omitempty"`
 }
 
 type NetworkCreateResult struct {
@@ -765,14 +784,22 @@ type NetworkCreateResultVerification struct {
 }
 
 type NetworkCreateResultError struct {
+	// WalletAuthErrorCodeSignatureMismatch (with `ResultErrors`, from the body
+	// of the refusal's 401), else ""
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
 func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback NetworkCreateCallback) {
 	runAsyncApiRequest[*NetworkCreateResult](callback, func(callback connect.ApiCallback[*NetworkCreateResult]) {
+		httpPostRaw := self.getHttpPostRaw()
+		if networkCreate != nil && networkCreate.ResultErrors {
+			// a coded refusal keeps its 401, with the result as the body
+			httpPostRaw = codedRefusalResult(httpPostRaw)
+		}
 		connect.HttpPostWithRawFunction(
 			self.ctx,
-			self.getHttpPostRaw(),
+			httpPostRaw,
 			fmt.Sprintf("%s/auth/network-create", self.apiUrl),
 			networkCreate,
 			self.GetByJwt(),
@@ -780,6 +807,30 @@ func (self *Api) NetworkCreate(networkCreate *NetworkCreateArgs, callback Networ
 			callback,
 		)
 	})
+}
+
+// Wraps a raw POST so that a refusal the server sent as its 4xx status with the
+// result as the JSON body (network create's coded refusal, for a request with
+// `ResultErrors`) answers with that body, and the caller reads `Error.Code` in
+// the result. Every other failure, and a refusal body without a code, stays an
+// error.
+func codedRefusalResult(httpPostRaw connect.HttpPostRawFunction) connect.HttpPostRawFunction {
+	return func(ctx context.Context, requestUrl string, requestBodyBytes []byte, byJwt string) ([]byte, error) {
+		bodyBytes, err := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		var statusErr *connect.HttpStatusError
+		if err == nil || !errors.As(err, &statusErr) || statusErr.StatusCode/100 != 4 {
+			return bodyBytes, err
+		}
+		var refusal struct {
+			Error *struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(statusErr.Body, &refusal) != nil || refusal.Error == nil || refusal.Error.Code == "" {
+			return bodyBytes, err
+		}
+		return statusErr.Body, nil
+	}
 }
 
 /**
@@ -3899,6 +3950,8 @@ type AddAuthResult struct {
 }
 
 type AddAuthError struct {
+	// WalletAuthErrorCodeSignatureMismatch, else ""; "" from older servers
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 

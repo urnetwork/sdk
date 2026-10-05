@@ -432,6 +432,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_VLESS_ERROR_SECURITY_UNSUPPORTED "vless_error_security_unsupported"
 #define URNET_VLESS_ERROR_SERVER_NAME_REQUIRED "vless_error_server_name_required"
 #define URNET_VLESS_ERROR_SHORT_ID_INVALID "vless_error_short_id_invalid"
+#define URNET_WALLET_AUTH_ERROR_CODE_SIGNATURE_MISMATCH "signature_mismatch"
 #define URNET_WALLET_TYPE_CIRCLE_USER_CONTROLLED "circle_uc"
 #define URNET_WALLET_TYPE_SOL "sol"
 #define URNET_WALLET_TYPE_XCH "xch"
@@ -2228,6 +2229,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* AddAuthError (json):
+ *   code?: string
  *   message: string
  */
 
@@ -2273,6 +2275,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   auth_jwt?: string
  *   wallet_auth?: WalletAuthArgs | null
  *   seedphrase?: string
+ *   result_errors?: boolean
  */
 
 /* AuthLoginResult (json):
@@ -2286,6 +2289,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* AuthLoginResultError (json):
  *   suggested_user_auth?: string
+ *   code?: string
  *   message: string
  */
 
@@ -3548,6 +3552,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   referral_code?: string
  *   balance_code?: string
  *   wallet_auth?: WalletAuthArgs | null
+ *   result_errors?: boolean
  */
 
 /* NetworkCreateResult (json):
@@ -3560,6 +3565,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* NetworkCreateResultError (json):
+ *   code?: string
  *   message: string
  */
 
