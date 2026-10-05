@@ -36,8 +36,11 @@ import (
 //
 //   - [MessageRouteUrnetwork], the default: the TCP connection is dialled through
 //     [messageTunnel], which sends it out of a URnetwork exit provider. The server sees the exit's
-//     address and never this device's. The operator relays sealed packets to the exit and learns
-//     that this device uses the mesh, how much and when, and nothing about where it goes.
+//     address and never this device's. The operator relays the packets to the exit: sealed once
+//     that exit has answered connect's per-peer handshake, and readable at that layer before then
+//     and when it never does ([messageTunnel] has when, and why that is the owner's choice).
+//     Sealed, the operator learns that this device uses the mesh, how much and when, and nothing
+//     about where it goes.
 //   - [MessageRouteDirect], the fallback the owner asked for: an ordinary TCP connection, which
 //     shows this device's address to the message server. It exists for when the mesh is the
 //     problem.
