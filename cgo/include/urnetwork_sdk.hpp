@@ -808,6 +808,7 @@ struct SetPayoutWalletResult;
 struct SetPointsLeaderboardPublicArgs;
 struct SetPointsLeaderboardPublicError;
 struct SetPointsLeaderboardPublicResult;
+struct SnEpochSchedule;
 struct SnClaimsResult;
 struct SnWallet;
 struct SnConnectWalletResult;
@@ -3047,12 +3048,29 @@ struct SetPointsLeaderboardPublicResult {
 	std::optional<SetPointsLeaderboardPublicError> error;
 };
 
+struct SnEpochSchedule {
+	int64_t epoch{};
+	int64_t epoch_blocks{};
+	int64_t claim_open_offset_blocks{};
+	int64_t claim_ttl_epochs{};
+	int64_t claim_grace_epochs{};
+	int64_t end_block{};
+	int64_t claim_open_block{};
+	int64_t expiry_block{};
+	int64_t head_block{};
+	int64_t head_millis{};
+	int64_t end_millis{};
+	int64_t claim_open_millis{};
+	int64_t expiry_millis{};
+};
+
 struct SnClaimsResult {
 	std::optional<SnEpochClaimList> claims;
 	int64_t total_claimable_rao{};
 	int64_t current_epoch{};
 	int64_t block_number{};
 	std::optional<std::string> coldkey_ss58;
+	std::optional<SnEpochSchedule> schedule;
 	std::optional<SnError> error;
 };
 
@@ -4168,6 +4186,8 @@ inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicError& v)
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicError& v);
 inline void to_json(nlohmann::json& j, const SetPointsLeaderboardPublicResult& v);
 inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult& v);
+inline void to_json(nlohmann::json& j, const SnEpochSchedule& v);
+inline void from_json(const nlohmann::json& j, SnEpochSchedule& v);
 inline void to_json(nlohmann::json& j, const SnClaimsResult& v);
 inline void from_json(const nlohmann::json& j, SnClaimsResult& v);
 inline void to_json(nlohmann::json& j, const SnWallet& v);
@@ -13938,6 +13958,67 @@ inline void from_json(const nlohmann::json& j, SetPointsLeaderboardPublicResult&
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnEpochSchedule& v) {
+	j = nlohmann::json::object();
+	j["epoch"] = v.epoch;
+	j["epoch_blocks"] = v.epoch_blocks;
+	j["claim_open_offset_blocks"] = v.claim_open_offset_blocks;
+	j["claim_ttl_epochs"] = v.claim_ttl_epochs;
+	j["claim_grace_epochs"] = v.claim_grace_epochs;
+	j["end_block"] = v.end_block;
+	j["claim_open_block"] = v.claim_open_block;
+	j["expiry_block"] = v.expiry_block;
+	j["head_block"] = v.head_block;
+	j["head_millis"] = v.head_millis;
+	j["end_millis"] = v.end_millis;
+	j["claim_open_millis"] = v.claim_open_millis;
+	j["expiry_millis"] = v.expiry_millis;
+}
+inline void from_json(const nlohmann::json& j, SnEpochSchedule& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch);
+	}
+	if (auto it = j.find("epoch_blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.epoch_blocks);
+	}
+	if (auto it = j.find("claim_open_offset_blocks"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_open_offset_blocks);
+	}
+	if (auto it = j.find("claim_ttl_epochs"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_ttl_epochs);
+	}
+	if (auto it = j.find("claim_grace_epochs"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_grace_epochs);
+	}
+	if (auto it = j.find("end_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.end_block);
+	}
+	if (auto it = j.find("claim_open_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_open_block);
+	}
+	if (auto it = j.find("expiry_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expiry_block);
+	}
+	if (auto it = j.find("head_block"); it != j.end() && !it->is_null()) {
+		it->get_to(v.head_block);
+	}
+	if (auto it = j.find("head_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.head_millis);
+	}
+	if (auto it = j.find("end_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.end_millis);
+	}
+	if (auto it = j.find("claim_open_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claim_open_millis);
+	}
+	if (auto it = j.find("expiry_millis"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expiry_millis);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnClaimsResult& v) {
 	j = nlohmann::json::object();
 	if (v.claims) {
@@ -13948,6 +14029,9 @@ inline void to_json(nlohmann::json& j, const SnClaimsResult& v) {
 	j["block_number"] = v.block_number;
 	if (v.coldkey_ss58) {
 		j["coldkey_ss58"] = *v.coldkey_ss58;
+	}
+	if (v.schedule) {
+		j["schedule"] = *v.schedule;
 	}
 	if (v.error) {
 		j["error"] = *v.error;
@@ -13975,6 +14059,11 @@ inline void from_json(const nlohmann::json& j, SnClaimsResult& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.coldkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("schedule"); it != j.end() && !it->is_null()) {
+		SnEpochSchedule tmp{};
+		it->get_to(tmp);
+		v.schedule = std::move(tmp);
 	}
 	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
 		SnError tmp{};

@@ -28,6 +28,7 @@ var (
 	leafClaimedSelector     = selector("leafClaimed(uint256,bytes32)")
 	currentEpochSelector    = selector("currentEpoch()")
 	epochStartBlockSelector = selector("epochStartBlock(uint256)")
+	policyAtSelector        = selector("policyAt(uint256)")
 	rootCommitmentsSelector = selector("rootCommitments(uint256,uint256)")
 	errorStringSelector     = selector("Error(string)")
 )
@@ -175,6 +176,18 @@ func PackEpochStartBlock(epoch *big.Int) ([]byte, error) {
 	return out, nil
 }
 
+// PackPolicyAt encodes STCoordinator.policyAt(epoch).
+func PackPolicyAt(epoch *big.Int) ([]byte, error) {
+	e, err := UintWord(epoch)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, 4+32)
+	out = append(out, policyAtSelector[:]...)
+	out = append(out, e[:]...)
+	return out, nil
+}
+
 // ClaimKey is the vault's per-coldkey claim slot: keccak256(abi.encode(noId, coldkey)).
 func ClaimKey(noId *big.Int, coldkey [32]byte) ([32]byte, error) {
 	n, err := UintWord(noId)
@@ -281,6 +294,54 @@ func DecodeRootCommitment(ret []byte) (*RootCommitment, error) {
 	}
 	c.CommitBlock = block.Uint64()
 	return c, nil
+}
+
+// Policy is the settlement cadence of STCoordinator.PolicySnapshot: the
+// epoch length and the windows that follow an epoch's close.
+type Policy struct {
+	EffectiveEpoch         uint64
+	EffectiveBlock         uint64
+	EpochBlocks            uint64
+	RootCommitWindowBlocks uint64
+	// claims open this many blocks after the close (finalizeOperatorEpoch)
+	FinalizeOffsetBlocks uint64
+	CloseGraceBlocks     uint64
+	// an unclaimed share expires at the end of epoch + ClaimTTLEpochs + ClaimGraceEpochs
+	ClaimTTLEpochs   uint64
+	ClaimGraceEpochs uint64
+}
+
+// DecodePolicy decodes the static PolicySnapshot tuple returned by
+// policyAt(): policyHash, effectiveEpoch, effectiveBlock, epochBlocks,
+// rootCommitWindowBlocks, finalizeOffsetBlocks, closeGraceBlocks,
+// claimTTLEpochs, claimGraceEpochs, maximumBindingValidityEpochs,
+// commitmentMaxAgeBlocks, epochDepositCapRao, campaignDepositCapRao.
+func DecodePolicy(ret []byte) (*Policy, error) {
+	if len(ret) < 13*32 {
+		return nil, fmt.Errorf("policyAt return too short: %d bytes", len(ret))
+	}
+	words := make([]uint64, 8)
+	for i := range words {
+		v := new(big.Int).SetBytes(ret[(i+1)*32 : (i+2)*32])
+		if !v.IsUint64() {
+			return nil, errors.New("policy field overflows uint64")
+		}
+		words[i] = v.Uint64()
+	}
+	p := &Policy{
+		EffectiveEpoch:         words[0],
+		EffectiveBlock:         words[1],
+		EpochBlocks:            words[2],
+		RootCommitWindowBlocks: words[3],
+		FinalizeOffsetBlocks:   words[4],
+		CloseGraceBlocks:       words[5],
+		ClaimTTLEpochs:         words[6],
+		ClaimGraceEpochs:       words[7],
+	}
+	if p.EpochBlocks == 0 {
+		return nil, errors.New("policy epoch length is zero")
+	}
+	return p, nil
 }
 
 // DecodeBool decodes a single bool word.

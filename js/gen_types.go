@@ -136,6 +136,7 @@ func generateTypes() error {
 		sdk.SnGasKey{},
 		sdk.SnGasBalanceResult{},
 		sdk.SnEpochClaim{},
+		sdk.SnEpochSchedule{},
 		sdk.SnClaimsResult{},
 		sdk.SnUnsignedTx{},
 		sdk.SnEpochResult{},

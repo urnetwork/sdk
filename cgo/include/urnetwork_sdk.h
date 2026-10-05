@@ -4330,6 +4330,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   current_epoch: number
  *   block_number: number
  *   coldkey_ss58?: string
+ *   schedule?: SnEpochSchedule | null
  *   error?: SnError | null
  */
 
@@ -4370,6 +4371,22 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   no_id?: number
  *   netuid?: number
  *   rpc_url?: string
+ */
+
+/* SnEpochSchedule (json):
+ *   epoch: number
+ *   epoch_blocks: number
+ *   claim_open_offset_blocks: number
+ *   claim_ttl_epochs: number
+ *   claim_grace_epochs: number
+ *   end_block: number
+ *   claim_open_block: number
+ *   expiry_block: number
+ *   head_block: number
+ *   head_millis: number
+ *   end_millis: number
+ *   claim_open_millis: number
+ *   expiry_millis: number
  */
 
 /* SnError (json):
