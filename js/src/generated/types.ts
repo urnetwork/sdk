@@ -220,6 +220,7 @@ export interface AuthLoginArgs {
   auth_jwt?: string;
   wallet_auth?: WalletAuthArgs | null;
   seedphrase?: string;
+  result_errors?: boolean;
 }
 
 export interface NetworkCheckArgs {
@@ -243,6 +244,7 @@ export interface NetworkCreateArgs {
   referral_code?: string;
   balance_code?: string;
   wallet_auth?: WalletAuthArgs | null;
+  result_errors?: boolean;
 }
 
 export interface NetworkCreateResult {
@@ -392,6 +394,7 @@ export interface PriceEquivalent {
 }
 
 export interface NetworkCreateResultError {
+  code?: string;
   message: string;
 }
 
@@ -429,6 +432,7 @@ export interface AuthLoginResult {
 
 export interface AuthLoginResultError {
   suggested_user_auth?: string;
+  code?: string;
   message: string;
 }
 

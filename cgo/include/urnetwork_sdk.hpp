@@ -510,6 +510,7 @@ inline constexpr const char* VlessErrorPublicKeyInvalid = "vless_error_public_ke
 inline constexpr const char* VlessErrorSecurityUnsupported = "vless_error_security_unsupported";
 inline constexpr const char* VlessErrorServerNameRequired = "vless_error_server_name_required";
 inline constexpr const char* VlessErrorShortIdInvalid = "vless_error_short_id_invalid";
+inline constexpr const char* WalletAuthErrorCodeSignatureMismatch = "signature_mismatch";
 inline constexpr const char* WalletTypeCircleUserControlled = "circle_uc";
 inline constexpr const char* WalletTypeSol = "sol";
 inline constexpr const char* WalletTypeXch = "xch";
@@ -1092,6 +1093,7 @@ struct AddAuthArgs {
 };
 
 struct AddAuthError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -1137,10 +1139,12 @@ struct AuthLoginArgs {
 	std::optional<std::string> auth_jwt;
 	std::optional<WalletAuthArgs> wallet_auth;
 	std::optional<std::string> seedphrase;
+	std::optional<bool> result_errors;
 };
 
 struct AuthLoginResultError {
 	std::optional<std::string> suggested_user_auth;
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -2450,10 +2454,12 @@ struct NetworkCreateArgs {
 	std::optional<std::string> referral_code;
 	std::optional<std::string> balance_code;
 	std::optional<WalletAuthArgs> wallet_auth;
+	std::optional<bool> result_errors;
 	std::optional<bool> product_updates;
 };
 
 struct NetworkCreateResultError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -4960,11 +4966,19 @@ inline void from_json(const nlohmann::json& j, AddAuthArgs& v) {
 
 inline void to_json(nlohmann::json& j, const AddAuthError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, AddAuthError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -5159,6 +5173,9 @@ inline void to_json(nlohmann::json& j, const AuthLoginArgs& v) {
 	if (v.seedphrase) {
 		j["seedphrase"] = *v.seedphrase;
 	}
+	if (v.result_errors) {
+		j["result_errors"] = *v.result_errors;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 	if (!j.is_object()) {
@@ -5189,12 +5206,20 @@ inline void from_json(const nlohmann::json& j, AuthLoginArgs& v) {
 		it->get_to(tmp);
 		v.seedphrase = std::move(tmp);
 	}
+	if (auto it = j.find("result_errors"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.result_errors = std::move(tmp);
+	}
 }
 
 inline void to_json(nlohmann::json& j, const AuthLoginResultError& v) {
 	j = nlohmann::json::object();
 	if (v.suggested_user_auth) {
 		j["suggested_user_auth"] = *v.suggested_user_auth;
+	}
+	if (v.code) {
+		j["code"] = *v.code;
 	}
 	j["message"] = v.message;
 }
@@ -5206,6 +5231,11 @@ inline void from_json(const nlohmann::json& j, AuthLoginResultError& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.suggested_user_auth = std::move(tmp);
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
@@ -11031,6 +11061,9 @@ inline void to_json(nlohmann::json& j, const NetworkCreateArgs& v) {
 	if (v.wallet_auth) {
 		j["wallet_auth"] = *v.wallet_auth;
 	}
+	if (v.result_errors) {
+		j["result_errors"] = *v.result_errors;
+	}
 	if (v.product_updates) {
 		j["product_updates"] = *v.product_updates;
 	}
@@ -11095,6 +11128,11 @@ inline void from_json(const nlohmann::json& j, NetworkCreateArgs& v) {
 		it->get_to(tmp);
 		v.wallet_auth = std::move(tmp);
 	}
+	if (auto it = j.find("result_errors"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.result_errors = std::move(tmp);
+	}
 	if (auto it = j.find("product_updates"); it != j.end() && !it->is_null()) {
 		bool tmp{};
 		it->get_to(tmp);
@@ -11104,11 +11142,19 @@ inline void from_json(const nlohmann::json& j, NetworkCreateArgs& v) {
 
 inline void to_json(nlohmann::json& j, const NetworkCreateResultError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, NetworkCreateResultError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
