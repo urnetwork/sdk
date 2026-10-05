@@ -157,6 +157,10 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BLOCK_ACTION_REASON_SECURITY_IP "security-ip"
 #define URNET_BLOCK_ACTION_REASON_SECURITY_PORT "security-port"
 #define URNET_BLOCK_ACTION_REASON_SECURITY_SMTP "security-smtp"
+#define URNET_CHECKOUT_BRIDGE_ERROR_CHECKOUT "checkout_error"
+#define URNET_CHECKOUT_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
+#define URNET_CHECKOUT_BRIDGE_ERROR_STRIPE_UNAVAILABLE "stripe_unavailable"
+#define URNET_CHECKOUT_BRIDGE_ERROR_UNAVAILABLE "checkout_unavailable"
 #define URNET_CHECKOUT_BRIDGE_URL "https://ur.io/checkout"
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
@@ -396,6 +400,12 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_TX_TYPE_LEGACY "legacy"
 #define URNET_SOL "SOL"
 #define URNET_SOLANA_PAY_REFERENCE_BYTES 32
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_INVALID_REQUEST "invalid_request"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_NO_ACCOUNT "no_account"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_SESSION_NOT_FOUND "session_not_found"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_USER_REJECTED "user_rejected"
+#define URNET_SOLANA_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
 #define URNET_STRIPE_INTENT_TYPE_PAYMENT "payment"
 #define URNET_STRIPE_INTENT_TYPE_SETUP "setup"
 #define URNET_STRIPE_ITEM_DATA10_TIB "data_10tib"
