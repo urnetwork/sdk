@@ -350,7 +350,7 @@ func TestFixture(t *testing.T) {
 				if err != nil {
 					t.Fatalf("passing subpackage stopped the suite: %v\n%s", err, output)
 				}
-				expected = append(expected, "go-test:build", "npm:js")
+				expected = append(expected, "go-test:build", "make:js", "npm:js")
 			}
 			if !slices.Equal(trace, expected) {
 				t.Fatalf("subpackage commands = %q, want %q", trace, expected)
@@ -392,7 +392,7 @@ func TestFixture(t *testing.T) { t.Log(server.Marker()) }
 				if err != nil || !strings.Contains(output, "server fixture executed") {
 					t.Fatalf("available server dependency was not tested: %v\n%s", err, output)
 				}
-				expected = append(expected, "npm:js")
+				expected = append(expected, "make:js", "npm:js")
 			} else {
 				var exitError *exec.ExitError
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output, "replacement directory ../../message-server does not exist") {
