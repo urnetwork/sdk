@@ -362,6 +362,13 @@ type DeviceRemote struct {
 	connectedProviderLocationChangeListeners *connect.CallbackList[ConnectedProviderLocationChangeListener]
 
 	httpResponseChannels map[connect.Id]chan *DeviceRemoteHttpResponse
+	// The uploads asked for with a callback (UploadLogs), until the device
+	// process reports the result or the rpc generation that carried the request
+	// ends. Each is taken out before its callback is called, so it is called once.
+	requestIdPendingUploadLogs map[connect.Id]*pendingUploadLogs
+	// When set, the name UploadLogs asks the device process for a reported upload
+	// under, so a test can stand in for a device process that predates it.
+	testingUploadLogsWithResultMethodName string
 	// Admission control is taken before an HTTP request is encoded onto the RPC
 	// stream. This bounds the response-channel map and prevents the extension
 	// from decoding more requests than it can actively service.
@@ -579,6 +586,7 @@ func newDeviceRemoteWithOverrides(
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
 		authPublication:                          authPublication,
 		httpResponseChannels:                     map[connect.Id]chan *DeviceRemoteHttpResponse{},
+		requestIdPendingUploadLogs:               map[connect.Id]*pendingUploadLogs{},
 
 		providerPacketStatsChangeListeners:            map[connect.Id]PacketStatsChangeListener{},
 		providerEgressContractStatsChangeListeners:    map[connect.Id]ContractStatsChangeListener{},
@@ -1041,6 +1049,8 @@ func (self *DeviceRemote) run() {
 				}
 				clear(self.httpResponseChannels)
 			}()
+			// an upload this generation carried can no longer report back through it
+			self.endPendingUploadLogs(service)
 
 			self.remoteChanged(false)
 			self.tunnelChanged(false)
@@ -6296,9 +6306,82 @@ func (self *DeviceRemote) SimulateNetworkChange() {
 // This process's glog is flushed first: where the two processes share a log
 // root (on ios the app group's Logs), the device's zip holds this process's
 // files too, and glog flushes them only every 30 seconds.
+//
+// A callback gets the upload's result, as DeviceLocal.UploadLogs's does, once,
+// and only when this returns nil: the device process reports it back over the
+// rpc (DeviceLocalRpc.UploadLogsWithResult). When the rpc generation that
+// carried the request ends first, the callback gets errUploadLogsRpcClosed,
+// though the upload may still finish. A device process that predates the
+// report uploads all the same, and the callback gets errUploadLogsUnreported.
 func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
 	FlushGlog()
 
+	if callback == nil {
+		return self.uploadLogsUnreported(feedbackId)
+	}
+
+	requestId := connect.NewId()
+	service := func() *rpcClient {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.service == nil {
+			return nil
+		}
+		// before the request, so a report that overtakes the reply finds it
+		self.requestIdPendingUploadLogs[requestId] = &pendingUploadLogs{
+			callback: callback,
+			service:  self.service,
+		}
+		return self.service
+	}()
+	if service == nil {
+		self.log.Infof("Failed to upload logs: the device rpc is not connected")
+		return fmt.Errorf("Failed to upload logs")
+	}
+
+	methodName := "DeviceLocalRpc.UploadLogsWithResult"
+	if self.testingUploadLogsWithResultMethodName != "" {
+		methodName = self.testingUploadLogsWithResultMethodName
+	}
+	err := rpcCallVoidAllowMissingMethod(
+		service,
+		methodName,
+		&DeviceRemoteUploadLogsRequest{
+			RequestId:  requestId,
+			FeedbackId: feedbackId,
+		},
+		func() { self.closeServiceInstance(service) },
+	)
+	if err != nil && rpcMissingMethodError(err) {
+		// a device process that predates the report: the upload as before,
+		// with no result to come
+		err = rpcCallVoid(service, "DeviceLocalRpc.UploadLogs", feedbackId, func() { self.closeServiceInstance(service) })
+		if err == nil {
+			if pending := self.takePendingUploadLogs(requestId); pending != nil {
+				// never on the caller's goroutine, which may hold what the
+				// callback takes
+				go connect.HandleError(func() {
+					pending.callback.Result(nil, errUploadLogsUnreported)
+				})
+			}
+			return nil
+		}
+	}
+	if err != nil {
+		if self.takePendingUploadLogs(requestId) == nil {
+			// the report, or the end of the generation, got to the callback
+			// first: it has been called, so this is not an error
+			return nil
+		}
+		self.log.Infof("Failed to upload logs: %v", err)
+		return fmt.Errorf("Failed to upload logs")
+	}
+	return nil
+}
+
+// The upload as it was before the device process could report its result: the
+// request alone, for a caller that wants no result.
+func (self *DeviceRemote) uploadLogsUnreported(feedbackId string) error {
 	logsUploaded := false
 	func() {
 		self.stateLock.Lock()
@@ -6327,6 +6410,50 @@ func (self *DeviceRemote) UploadLogs(feedbackId string, callback UploadLogsCallb
 	}
 
 	return nil
+}
+
+// Takes the upload asked for under requestId out of the pending ones, nil when
+// its callback has been called already.
+func (self *DeviceRemote) takePendingUploadLogs(requestId connect.Id) *pendingUploadLogs {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	pending, ok := self.requestIdPendingUploadLogs[requestId]
+	if !ok {
+		return nil
+	}
+	delete(self.requestIdPendingUploadLogs, requestId)
+	return pending
+}
+
+// The device process's report of an upload asked for with a callback.
+func (self *DeviceRemote) uploadLogsResult(result *DeviceRemoteUploadLogsResult) {
+	pending := self.takePendingUploadLogs(result.RequestId)
+	if pending == nil {
+		return
+	}
+	pending.callback.Result(result.uploadLogsResult())
+}
+
+// Ends the uploads that the rpc generation `service` carried: their reports
+// cannot come back once it is gone. Each callback runs on its own goroutine, so
+// none holds up the reconnect.
+func (self *DeviceRemote) endPendingUploadLogs(service *rpcClient) {
+	endedPendingUploadLogs := []*pendingUploadLogs{}
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		for requestId, pending := range self.requestIdPendingUploadLogs {
+			if pending.service == service {
+				endedPendingUploadLogs = append(endedPendingUploadLogs, pending)
+				delete(self.requestIdPendingUploadLogs, requestId)
+			}
+		}
+	}()
+	for _, pending := range endedPendingUploadLogs {
+		go connect.HandleError(func() {
+			pending.callback.Result(nil, errUploadLogsRpcClosed)
+		})
+	}
 }
 
 func (self *DeviceRemote) DiagnosticManifestJson() string {
@@ -8707,6 +8834,61 @@ func rpcCall[T any](service *rpcClient, name string, arg any, cleanup func()) (T
 		cleanup()
 	}
 	return r, err
+}
+
+// An upload the remote asked for with a callback (DeviceRemote.UploadLogs).
+type pendingUploadLogs struct {
+	callback UploadLogsCallback
+	// the rpc generation that carried the request, whose end ends the wait
+	service *rpcClient
+}
+
+// The callback's error when the rpc generation that carried the request ended
+// before the device process reported the upload.
+var errUploadLogsRpcClosed = errors.New("the device rpc closed before the upload reported its result; the upload may still finish")
+
+// The callback's error when the device process predates the report: it started
+// the upload, whose result it does not send back.
+var errUploadLogsUnreported = errors.New("the device process started the upload but does not report its result")
+
+// The request of DeviceLocalRpc.UploadLogsWithResult: the feedback to upload
+// the logs for, and the id the result comes back under.
+//
+//gomobile:noexport
+type DeviceRemoteUploadLogsRequest struct {
+	RequestId  connect.Id
+	FeedbackId string
+}
+
+// The device process's report of an upload (DeviceRemoteRpc.UploadLogsResult):
+// the server's answer, or the error that kept the upload from reaching it.
+//
+//gomobile:noexport
+type DeviceRemoteUploadLogsResult struct {
+	RequestId connect.Id
+	// nil when Error is set
+	Result *UploadLogsResult
+	Error  string
+}
+
+func newDeviceRemoteUploadLogsResult(requestId connect.Id, result *UploadLogsResult, err error) *DeviceRemoteUploadLogsResult {
+	uploadLogsResult := &DeviceRemoteUploadLogsResult{
+		RequestId: requestId,
+		Result:    result,
+	}
+	if err != nil {
+		uploadLogsResult.Result = nil
+		uploadLogsResult.Error = err.Error()
+	}
+	return uploadLogsResult
+}
+
+// The result and error as the callback takes them.
+func (self *DeviceRemoteUploadLogsResult) uploadLogsResult() (*UploadLogsResult, error) {
+	if self.Error != "" {
+		return nil, errors.New(self.Error)
+	}
+	return self.Result, nil
 }
 
 //gomobile:noexport
@@ -11642,6 +11824,33 @@ func (self *DeviceLocalRpc) UploadLogs(feedbackId string, _ RpcVoid) error {
 	return nil
 }
 
+// Starts the upload and answers at once, as UploadLogs does, then reports its
+// result to the remote that asked (DeviceRemoteRpc.UploadLogsResult): the
+// server's answer, or the error that kept the upload from reaching it. The
+// report goes from the upload's own goroutine, like an http response, not
+// through the coalescing state queue.
+func (self *DeviceLocalRpc) UploadLogsWithResult(request *DeviceRemoteUploadLogsRequest, _ RpcVoid) error {
+	self.workers.Add(1)
+	go connect.HandleError(func() {
+		defer self.workers.Done()
+		report := func(result *UploadLogsResult, err error) {
+			self.reverseCall(
+				"DeviceRemoteRpc.UploadLogsResult",
+				newDeviceRemoteUploadLogsResult(request.RequestId, result, err),
+			)
+		}
+		err := self.deviceLocal.UploadLogs(
+			request.FeedbackId,
+			connect.NewApiCallback[*UploadLogsResult](report),
+		)
+		if err != nil {
+			// the upload never reached its post, so its callback will not run
+			report(nil, err)
+		}
+	})
+	return nil
+}
+
 func (self *DeviceLocalRpc) DiagnosticManifestJson(_ RpcNoArg, manifestJson *string) error {
 	*manifestJson = self.deviceLocal.DiagnosticManifestJson()
 	return nil
@@ -13473,6 +13682,16 @@ func (self *DeviceRemoteRpc) HttpResponse(httpResponse *DeviceRemoteHttpResponse
 	self.deviceRemote.log.Infof("[drrpc]HttpResponse")
 	self.dispatch(func() {
 		self.deviceRemote.httpResponse(httpResponse)
+	})
+	return nil
+}
+
+// The device process's report of an upload this remote asked for with a
+// callback (DeviceLocalRpc.UploadLogsWithResult).
+func (self *DeviceRemoteRpc) UploadLogsResult(result *DeviceRemoteUploadLogsResult, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]UploadLogsResult")
+	self.dispatch(func() {
+		self.deviceRemote.uploadLogsResult(result)
 	})
 	return nil
 }
