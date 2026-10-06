@@ -33,6 +33,7 @@ urnet_change_network_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_check_balance_code_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_claim_network_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_client_events_send_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_client_limit_status_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_client_refresh_integrity_cb = CFUNCTYPE(None, c_void_p, c_uint64)
 urnet_commit_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_connect_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
@@ -723,6 +724,8 @@ def bind(lib):
     lib.urnet_device_add_can_refer_change_listener.restype = c_uint64
     lib.urnet_device_add_can_show_rating_dialog_change_listener.argtypes = [c_uint64, urnet_can_show_rating_dialog_change_cb, c_void_p]
     lib.urnet_device_add_can_show_rating_dialog_change_listener.restype = c_uint64
+    lib.urnet_device_add_client_limit_status_change_listener.argtypes = [c_uint64, urnet_client_limit_status_change_cb, c_void_p]
+    lib.urnet_device_add_client_limit_status_change_listener.restype = c_uint64
     lib.urnet_device_add_connect_change_listener.argtypes = [c_uint64, urnet_connect_change_cb, c_void_p]
     lib.urnet_device_add_connect_change_listener.restype = c_uint64
     lib.urnet_device_add_connect_location_change_listener.argtypes = [c_uint64, urnet_connect_location_change_cb, c_void_p]
@@ -825,6 +828,8 @@ def bind(lib):
     lib.urnet_device_get_can_show_rating_dialog.restype = c_bool
     lib.urnet_device_get_client_id.argtypes = [c_uint64]
     lib.urnet_device_get_client_id.restype = c_void_p
+    lib.urnet_device_get_client_limit_status.argtypes = [c_uint64]
+    lib.urnet_device_get_client_limit_status.restype = c_void_p
     lib.urnet_device_get_connect_enabled.argtypes = [c_uint64]
     lib.urnet_device_get_connect_enabled.restype = c_bool
     lib.urnet_device_get_connect_location.argtypes = [c_uint64]

@@ -165,6 +165,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
 #define URNET_CLIENT_EVENT_MAX_ATTEMPTS 3
+#define URNET_CLIENT_LIMIT_STATUS_EXCEEDED "client_limit_exceeded"
+#define URNET_CLIENT_LIMIT_STATUS_NONE ""
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
 #define URNET_CONNECT_FAILED "CONNECT_FAILED"
@@ -525,6 +527,8 @@ typedef void (*urnet_check_balance_code_cb)(void* user_data, const char* result_
 typedef void (*urnet_claim_network_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ClientEventsSendCallback */
 typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_json, const char* err_param);
+/* ClientLimitStatusChangeListener */
+typedef void (*urnet_client_limit_status_change_cb)(void* user_data, const char* status_json);
 /* ClientRefreshIntegrityListener */
 typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t notice);
 /* CommitCallback */
@@ -1119,6 +1123,7 @@ uint64_t urnet_device_add_blocker_enabled_change_listener(uint64_t self, urnet_b
 uint64_t urnet_device_add_can_prompt_intro_funnel_change_listener(uint64_t self, urnet_can_prompt_intro_funnel_change_cb listener_can_prompt_intro_funnel_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_refer_change_listener(uint64_t self, urnet_can_refer_change_cb listener_can_refer_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_show_rating_dialog_change_listener(uint64_t self, urnet_can_show_rating_dialog_change_cb listener_can_show_rating_dialog_changed, void* listener_user_data);
+uint64_t urnet_device_add_client_limit_status_change_listener(uint64_t self, urnet_client_limit_status_change_cb listener_client_limit_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_connect_change_listener(uint64_t self, urnet_connect_change_cb listener_connect_changed, void* listener_user_data);
 uint64_t urnet_device_add_connect_location_change_listener(uint64_t self, urnet_connect_location_change_cb listener_connect_location_changed, void* listener_user_data);
 uint64_t urnet_device_add_connected_provider_location_change_listener(uint64_t self, urnet_connected_provider_location_change_cb listener_connected_provider_locations_changed, void* listener_user_data);
@@ -1170,6 +1175,7 @@ bool urnet_device_get_can_prompt_intro_funnel(uint64_t self);
 bool urnet_device_get_can_refer(uint64_t self);
 bool urnet_device_get_can_show_rating_dialog(uint64_t self);
 char* urnet_device_get_client_id(uint64_t self);
+char* urnet_device_get_client_limit_status(uint64_t self);
 bool urnet_device_get_connect_enabled(uint64_t self);
 char* urnet_device_get_connect_location(uint64_t self);
 char* urnet_device_get_connected_provider_locations(uint64_t self);
@@ -2362,6 +2368,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   proxy_config?: ProxyConfig | null
  *   time_zone?: string
  *   locale?: string
+ *   provide_intent?: boolean
  */
 
 /* AuthNetworkClientError (json):
@@ -2636,6 +2643,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientEventsSendResult (json):
  *   accepted: number
  *   rejected?: ClientEventRejectionList | null
+ */
+
+/* ClientLimitStatus (json):
+ *   Status: string
+ *   RetryTime: number
  */
 
 /* ConnectLocation (json):

@@ -885,6 +885,18 @@ type AuthNetworkClientArgs struct {
 	// (mmm/onboarding/PLAN.md). Optional; the apps set both on every call.
 	TimeZone string `json:"time_zone,omitempty"`
 	Locale   string `json:"locale,omitempty"`
+
+	// Creates a provider install: a client that only provides publicly, such
+	// as an embedded provider. A new top-level client created with it is
+	// exempt from the network's top-level client cap and the concurrent
+	// connected client check, and is never a network peer (not in the peer
+	// list and not subscribed to it). The platform then judges it as a
+	// provider when it connects declaring provide intent, which a device does
+	// by itself while its provide mode includes public
+	// (client_limit_status.go). Leave it unset for a person's device that also
+	// provides: that device declares intent on its connections and stays a
+	// network peer. Ignored with ClientId or SourceClientId.
+	ProvideIntent bool `json:"provide_intent,omitempty"`
 }
 
 type AuthNetworkClientResult struct {

@@ -530,6 +530,20 @@ func (self *cAdapterClientEventsSendCallback) Result(result *sdk.ClientEventsSen
 	}
 }
 
+type cAdapterClientLimitStatusChangeListener struct {
+	cbClientLimitStatusChanged C.urnet_client_limit_status_change_cb
+	userData                   unsafe.Pointer
+}
+
+func (self *cAdapterClientLimitStatusChangeListener) ClientLimitStatusChanged(status *sdk.ClientLimitStatus) {
+	defer cgoGuard("urnet_client_limit_status_change_cb")
+	status_ := cJson(status, "urnet_client_limit_status_change_cb")
+	C.urnet_invoke_client_limit_status_change(self.cbClientLimitStatusChanged, self.userData, status_)
+	if status_ != nil {
+		cStringFree(status_)
+	}
+}
+
 type cAdapterClientRefreshIntegrityListener struct {
 	cbClientRefreshInvalid C.urnet_client_refresh_integrity_cb
 	userData               unsafe.Pointer
@@ -7065,6 +7079,21 @@ func urnet_device_add_can_show_rating_dialog_change_listener(self C.uint64_t, li
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_client_limit_status_change_listener
+func urnet_device_add_client_limit_status_change_listener(self C.uint64_t, listener_client_limit_status_changed C.urnet_client_limit_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_client_limit_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_client_limit_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ClientLimitStatusChangeListener
+	if listener_client_limit_status_changed != nil {
+		listener_ = &cAdapterClientLimitStatusChangeListener{cbClientLimitStatusChanged: listener_client_limit_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddClientLimitStatusChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_connect_change_listener
 func urnet_device_add_connect_change_listener(self C.uint64_t, listener_connect_changed C.urnet_connect_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_connect_change_listener")
@@ -7781,6 +7810,20 @@ func urnet_device_get_client_id(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetClientId()
 	return cId(r0)
+}
+
+//export urnet_device_get_client_limit_status
+func urnet_device_get_client_limit_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_client_limit_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_client_limit_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetClientLimitStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_client_limit_status")
 }
 
 //export urnet_device_get_connect_enabled

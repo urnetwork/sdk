@@ -32,6 +32,7 @@ pub type urnet_change_network_name_cb = Option<unsafe extern "C" fn(*mut c_void,
 pub type urnet_check_balance_code_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_claim_network_name_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_client_events_send_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_client_limit_status_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_client_refresh_integrity_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
 pub type urnet_commit_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_connect_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
@@ -461,6 +462,7 @@ pub struct Raw {
     pub urnet_device_add_can_prompt_intro_funnel_change_listener: unsafe extern "C" fn(u64, urnet_can_prompt_intro_funnel_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_can_refer_change_listener: unsafe extern "C" fn(u64, urnet_can_refer_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_can_show_rating_dialog_change_listener: unsafe extern "C" fn(u64, urnet_can_show_rating_dialog_change_cb, *mut c_void) -> u64,
+    pub urnet_device_add_client_limit_status_change_listener: unsafe extern "C" fn(u64, urnet_client_limit_status_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_connect_change_listener: unsafe extern "C" fn(u64, urnet_connect_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_connect_location_change_listener: unsafe extern "C" fn(u64, urnet_connect_location_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_connected_provider_location_change_listener: unsafe extern "C" fn(u64, urnet_connected_provider_location_change_cb, *mut c_void) -> u64,
@@ -512,6 +514,7 @@ pub struct Raw {
     pub urnet_device_get_can_refer: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_can_show_rating_dialog: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_client_id: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_device_get_client_limit_status: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_connect_enabled: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_connect_location: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_connected_provider_locations: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -1642,6 +1645,7 @@ impl Raw {
             urnet_device_add_can_prompt_intro_funnel_change_listener: unsafe { *library.get(b"urnet_device_add_can_prompt_intro_funnel_change_listener\0")? },
             urnet_device_add_can_refer_change_listener: unsafe { *library.get(b"urnet_device_add_can_refer_change_listener\0")? },
             urnet_device_add_can_show_rating_dialog_change_listener: unsafe { *library.get(b"urnet_device_add_can_show_rating_dialog_change_listener\0")? },
+            urnet_device_add_client_limit_status_change_listener: unsafe { *library.get(b"urnet_device_add_client_limit_status_change_listener\0")? },
             urnet_device_add_connect_change_listener: unsafe { *library.get(b"urnet_device_add_connect_change_listener\0")? },
             urnet_device_add_connect_location_change_listener: unsafe { *library.get(b"urnet_device_add_connect_location_change_listener\0")? },
             urnet_device_add_connected_provider_location_change_listener: unsafe { *library.get(b"urnet_device_add_connected_provider_location_change_listener\0")? },
@@ -1693,6 +1697,7 @@ impl Raw {
             urnet_device_get_can_refer: unsafe { *library.get(b"urnet_device_get_can_refer\0")? },
             urnet_device_get_can_show_rating_dialog: unsafe { *library.get(b"urnet_device_get_can_show_rating_dialog\0")? },
             urnet_device_get_client_id: unsafe { *library.get(b"urnet_device_get_client_id\0")? },
+            urnet_device_get_client_limit_status: unsafe { *library.get(b"urnet_device_get_client_limit_status\0")? },
             urnet_device_get_connect_enabled: unsafe { *library.get(b"urnet_device_get_connect_enabled\0")? },
             urnet_device_get_connect_location: unsafe { *library.get(b"urnet_device_get_connect_location\0")? },
             urnet_device_get_connected_provider_locations: unsafe { *library.get(b"urnet_device_get_connected_provider_locations\0")? },

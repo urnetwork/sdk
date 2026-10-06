@@ -125,6 +125,10 @@ void urnet_invoke_client_events_send(urnet_client_events_send_cb cb, void* user_
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_client_limit_status_change(urnet_client_limit_status_change_cb cb, void* user_data, const char* status_json) {
+	cb(user_data, status_json);
+}
+
 void urnet_invoke_client_refresh_integrity(urnet_client_refresh_integrity_cb cb, void* user_data, uint64_t notice) {
 	cb(user_data, notice);
 }
