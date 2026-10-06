@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -60,15 +61,16 @@ func TestRpcMirrorExitComplete(t *testing.T) {
 func TestExitFromConnectPublishesProviderDiagnostics(t *testing.T) {
 	clientId := connect.NewId()
 	exit := exitFromConnect(&connect.ExitInfo{
-		ClientId:                     clientId,
-		ProviderDiagnosticsAvailable: true,
-		ProviderBuildVersion:         "provider-build-27",
-		ProviderSecurityPolicyHash:   "policy-hash-27",
-		ProviderBlockIngressPackets:  11,
-		ProviderBlockIngressBytes:    1100,
-		ProviderBlockEgressPackets:   7,
-		ProviderBlockEgressBytes:     700,
-		ProviderDiagnosticsSequence:  27,
+		ClientId:                         clientId,
+		ProviderDiagnosticsAvailable:     true,
+		ProviderBuildVersion:             "provider-build-27",
+		ProviderSecurityPolicyHash:       "policy-hash-27",
+		ProviderSecurityPolicyGeneration: 2,
+		ProviderBlockIngressPackets:      11,
+		ProviderBlockIngressBytes:        1100,
+		ProviderBlockEgressPackets:       7,
+		ProviderBlockEgressBytes:         700,
+		ProviderDiagnosticsSequence:      27,
 	})
 	if exit == nil || exit.ClientId == nil || exit.ClientId.toConnectId() != clientId {
 		t.Fatal("connect exit identity did not cross the SDK boundary")
@@ -76,12 +78,96 @@ func TestExitFromConnectPublishesProviderDiagnostics(t *testing.T) {
 	if !exit.ProviderDiagnosticsAvailable ||
 		exit.ProviderBuildVersion != "provider-build-27" ||
 		exit.ProviderSecurityPolicyHash != "policy-hash-27" ||
+		exit.ProviderSecurityPolicyGeneration != 2 ||
 		exit.ProviderBlockIngressPacketCount != 11 ||
 		exit.ProviderBlockIngressByteCount != 1100 ||
 		exit.ProviderBlockEgressPacketCount != 7 ||
 		exit.ProviderBlockEgressByteCount != 700 ||
 		exit.ProviderDiagnosticsSequence != 27 {
 		t.Fatalf("provider diagnostics were not preserved: %+v", exit)
+	}
+}
+
+// The provider's generation arrives as any uint64 off the wire and crosses as
+// an int64. A value past int64 must stay the newest generation, not wrap to a
+// negative one that would read as older than every real generation.
+func TestExitFromConnectSaturatesProviderSecurityPolicyGeneration(t *testing.T) {
+	cases := []struct {
+		providerSecurityPolicyGeneration uint64
+		want                             int64
+	}{
+		{providerSecurityPolicyGeneration: 0, want: 0},
+		{providerSecurityPolicyGeneration: 2, want: 2},
+		{providerSecurityPolicyGeneration: math.MaxInt64, want: math.MaxInt64},
+		{providerSecurityPolicyGeneration: math.MaxInt64 + 1, want: math.MaxInt64},
+		{providerSecurityPolicyGeneration: math.MaxUint64, want: math.MaxInt64},
+	}
+	for _, c := range cases {
+		exit := exitFromConnect(&connect.ExitInfo{
+			ProviderDiagnosticsAvailable:     true,
+			ProviderSecurityPolicyGeneration: c.providerSecurityPolicyGeneration,
+		})
+		if exit.ProviderSecurityPolicyGeneration != c.want {
+			t.Errorf("generation %d crossed as %d, want %d", c.providerSecurityPolicyGeneration, exit.ProviderSecurityPolicyGeneration, c.want)
+		}
+	}
+}
+
+// Every connect ExitInfo field reaches the sdk Exit, or is named in
+// leftOutFieldReasons with the reason it stays behind. exitFromConnect copies
+// the fields one by one, so a field connect adds later is dropped without a
+// trace until this fails: ProviderSecurityPolicyGeneration never reached a
+// developer readout that way. Each field is set alone to a non-zero value, and
+// the Exit it gives must differ from the one an all-zero ExitInfo gives.
+func TestExitFromConnectCarriesEveryExitInfoField(t *testing.T) {
+	leftOutFieldReasons := map[string]string{
+		"IpFamily": "the sdk shows the address family per provider (grid points, connected-provider rows, window status counts; connect IPV6.md D1), not per exit",
+	}
+
+	zeroExit := exitFromConnect(&connect.ExitInfo{})
+	exitInfoType := reflect.TypeOf(connect.ExitInfo{})
+	for i := 0; i < exitInfoType.NumField(); i += 1 {
+		field := exitInfoType.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		exitInfo := &connect.ExitInfo{}
+		value := reflect.ValueOf(exitInfo).Elem().Field(i)
+		switch field.Type {
+		case reflect.TypeOf(connect.Id{}):
+			value.Set(reflect.ValueOf(connect.NewId()))
+		case reflect.TypeOf(connect.WindowTypeAuto):
+			value.Set(reflect.ValueOf(connect.WindowTypeQuality))
+		case reflect.TypeOf(time.Duration(0)):
+			// the sdk carries whole seconds
+			value.Set(reflect.ValueOf(time.Second))
+		default:
+			switch value.Kind() {
+			case reflect.Bool:
+				value.SetBool(true)
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				value.SetInt(1)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				value.SetUint(1)
+			case reflect.String:
+				value.SetString("v")
+			default:
+				t.Fatalf("ExitInfo.%s: no non-zero value for %s here, add one", field.Name, field.Type)
+			}
+		}
+
+		carried := !reflect.DeepEqual(exitFromConnect(exitInfo), zeroExit)
+		reason, leftOut := leftOutFieldReasons[field.Name]
+		if leftOut && carried {
+			t.Errorf("connect ExitInfo.%s reaches the sdk Exit now: remove it from leftOutFieldReasons (%s)", field.Name, reason)
+		} else if !leftOut && !carried {
+			t.Errorf("connect ExitInfo.%s does not reach the sdk Exit: carry it in exitFromConnect and the rpc mirror, or name it in leftOutFieldReasons", field.Name)
+		}
+	}
+	for name := range leftOutFieldReasons {
+		if _, ok := exitInfoType.FieldByName(name); !ok {
+			t.Errorf("leftOutFieldReasons names %s, which connect ExitInfo no longer has", name)
+		}
 	}
 }
 
