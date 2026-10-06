@@ -6,6 +6,7 @@ import (
 	"context"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"testing"
 )
 
@@ -216,5 +217,85 @@ func testProvideExtenderHardSwitchWins(
 	status := fixture.device.GetExtenderProvideStatus()
 	if status.State != ExtenderProvideStateNotProviding || status.Enabled || status.Listening {
 		t.Fatalf("status = %+v, expected not providing", status)
+	}
+}
+
+// A newer change of the setting is never undone by an older one that read the
+// setting first and applied it last (G2): turning the setting off reads off,
+// the newer change turns it back on and runs to the end before the off is
+// applied, and the role must be running at the end.
+func TestDeviceLocalProviderExtenderNewerOnIsAppliedLast(t *testing.T) {
+	testProvideExtenderNewerChangeIsAppliedLast(t, true)
+}
+
+// And turning the setting on must not start the role over a newer off, which
+// would leave the carriers open after the user turned the role off.
+func TestDeviceLocalProviderExtenderNewerOffIsAppliedLast(t *testing.T) {
+	testProvideExtenderNewerChangeIsAppliedLast(t, false)
+}
+
+// The older change sets the opposite of newerProvideExtender. The apply hook
+// lands the newer change between the older change's read and its apply, in the
+// older change's own goroutine, so the order is forced and nothing waits.
+func testProvideExtenderNewerChangeIsAppliedLast(t *testing.T, newerProvideExtender bool) {
+	t.Helper()
+	var fixture *testProvideExtenderFixture
+	// armed by the test right before the older change; the hook fires once
+	var armed atomic.Bool
+	var landed atomic.Bool
+	fixture = newTestProvideExtenderFixtureWithSpace(
+		t,
+		newTestProvideExtenderUrlSpace,
+		func(settings *DeviceLocalSettings) {
+			// the older change starts from the newer change's state
+			settings.DefaultProvideExtender = newerProvideExtender
+			settings.testingBeforeExtenderProvideApply = func(enabled bool) {
+				if enabled == newerProvideExtender || !armed.CompareAndSwap(true, false) {
+					return
+				}
+				fixture.device.SetProvideExtender(newerProvideExtender)
+				landed.Store(true)
+			}
+		},
+		nil,
+	)
+	if !fixture.device.GetProvideEnabled() {
+		t.Fatal("the device is not providing")
+	}
+	if running := fixture.extender() != nil; running != newerProvideExtender {
+		t.Fatalf("role running = %t before the changes, expected %t", running, newerProvideExtender)
+	}
+
+	armed.Store(true)
+	fixture.device.SetProvideExtender(!newerProvideExtender)
+	if !landed.Load() {
+		t.Fatal("the newer change did not land between the older change's read and its apply")
+	}
+
+	if provideExtender := fixture.device.GetProvideExtender(); provideExtender != newerProvideExtender {
+		t.Fatalf("setting = %t, expected the newer %t", provideExtender, newerProvideExtender)
+	}
+	if running := fixture.extender() != nil; running != newerProvideExtender {
+		t.Fatalf("role running = %t after the older change applied, expected %t from the newer setting",
+			running, newerProvideExtender)
+	}
+	status := fixture.device.GetExtenderProvideStatus()
+	if newerProvideExtender {
+		if !status.Enabled {
+			t.Fatalf("status = %+v, expected the role running", status)
+		}
+		fixture.waitStatus("listening", func(status *ExtenderProvideStatus) bool {
+			return status.Enabled && status.Listening
+		})
+	} else {
+		if status.Enabled || status.State != ExtenderProvideStateOff {
+			t.Fatalf("status = %+v, expected off", status)
+		}
+		// the carriers are released, so the port binds again
+		listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(fixture.tcpPort)))
+		if err != nil {
+			t.Fatalf("the role kept the tcp carrier: %v", err)
+		}
+		listener.Close()
 	}
 }

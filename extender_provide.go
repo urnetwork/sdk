@@ -602,6 +602,14 @@ func (self *DeviceLocal) extenderProvideStatusChanged() {
 // Starts or stops the extender role for the current provide state and setting
 // (G2). Called after every provide change and after the setting changes, never
 // with the device lock held.
+//
+// The wanted state is read, handed to the provider, and read again until it
+// stands. A change that lands between one call's read and its hand-over runs
+// its own call, which can hand its newer state over first; the older call then
+// finds the state moved and hands the newer one over again, rather than
+// leaving its own in force. The provider takes one hand-over at a time, so the
+// state handed over last is the state wanted last, without a lock held across
+// the read and the hand-over.
 func (self *DeviceLocal) updateExtenderProvide() {
 	self.stateLock.Lock()
 	provider := self.provider
@@ -614,7 +622,21 @@ func (self *DeviceLocal) updateExtenderProvide() {
 		// either, so this is defense in depth beside the hosted provide guard.
 		// The same two halves are what N3's off and not_providing states
 		// report.
-		provider.setExtenderEnabled(self.extenderProvideProviding() && self.GetProvideExtender())
+		wanted := func() bool {
+			return self.extenderProvideProviding() && self.GetProvideExtender()
+		}
+		enabled := wanted()
+		for {
+			if hook := self.settings.testingBeforeExtenderProvideApply; hook != nil {
+				hook(enabled)
+			}
+			provider.setExtenderEnabled(enabled)
+			current := wanted()
+			if current == enabled {
+				break
+			}
+			enabled = current
+		}
 	}
 	// the watch is woken whether or not there is a provider: the state of N3
 	// follows the setting and the provide state, so a device with no provider

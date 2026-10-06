@@ -613,6 +613,12 @@ type DeviceLocalSettings struct {
 	// test holds it to land a change before the watch runs; production never
 	// sets it.
 	testingBeforeExtenderProvideWatch func()
+	// testingBeforeExtenderProvideApply, when set, runs each time the
+	// provider extender role's wanted state is about to be handed to the
+	// provider, with that state, in the goroutine that hands it over. A test
+	// lands a newer change inside that window through it; production never
+	// sets it.
+	testingBeforeExtenderProvideApply func(enabled bool)
 	// Verbose opts into periodic, summarized security-policy diagnostics. It
 	// is disabled by default because a DeviceRemote poll performs RPC and app
 	// foreground/background polling belongs to view controllers.
