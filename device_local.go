@@ -1041,6 +1041,8 @@ type DeviceLocal struct {
 	extenderProvideMonitor *connect.Monitor
 	jwtRefreshListeners    *connect.CallbackList[JwtRefreshListener]
 	authLogoutListeners    *connect.CallbackList[AuthLogoutListener]
+	// fed by watchClientLimitStatus from the provider's client limit hold
+	clientLimitStatusChangeListeners *connect.CallbackList[ClientLimitStatusChangeListener]
 
 	blockActionWindowChangeListeners         *connect.CallbackList[BlockActionWindowChangeListener]
 	blockStatsChangeListeners                *connect.CallbackList[BlockStatsChangeListener]
@@ -1614,6 +1616,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		windowStatusChangeListeners:              connect.NewCallbackList[WindowStatusChangeListener](),
 		extenderProvideStatusChangeListeners:     connect.NewCallbackList[ExtenderProvideStatusChangeListener](),
 		extenderProvideMonitor:                   connect.NewMonitor(),
+		clientLimitStatusChangeListeners:         connect.NewCallbackList[ClientLimitStatusChangeListener](),
 		jwtRefreshListeners:                      connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:                      connect.NewCallbackList[AuthLogoutListener](),
 		authPublication:                          authPublication,
@@ -1738,6 +1741,14 @@ func newDeviceLocalWithOverridesForPlatform(
 		go connect.HandleError(func() {
 			defer deviceLocal.lifecycleWorkers.Done()
 			deviceLocal.watchNetworkPeers(networkPeersNotify)
+		})
+		// the client limit hold of the provider's transports, armed here for
+		// the same reason
+		_, clientLimitUpdate := provider.clientLimitStatus()
+		deviceLocal.lifecycleWorkers.Add(1)
+		go connect.HandleError(func() {
+			defer deviceLocal.lifecycleWorkers.Done()
+			deviceLocal.watchClientLimitStatus(provider, clientLimitUpdate)
 		})
 	}
 

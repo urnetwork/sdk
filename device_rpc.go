@@ -333,6 +333,7 @@ type DeviceRemote struct {
 	windowStatusChangeListeners              map[connect.Id]WindowStatusChangeListener
 	extenderStatusChangeListeners            map[connect.Id]ExtenderStatusChangeListener
 	extenderProvideStatusChangeListeners     map[connect.Id]ExtenderProvideStatusChangeListener
+	clientLimitStatusChangeListeners         map[connect.Id]ClientLimitStatusChangeListener
 	blockActionWindowChangeListeners         map[connect.Id]BlockActionWindowChangeListener
 	blockStatsChangeListeners                map[connect.Id]BlockStatsChangeListener
 	blockActionOverridesChangeListeners      map[connect.Id]BlockActionOverridesChangeListener
@@ -401,6 +402,10 @@ type DeviceRemote struct {
 	// down instead of flipping to unsupported and disappearing (N2)
 	lastExtenderProvideStatus *ExtenderProvideStatus
 	lastNetworkPeers          *NetworkPeers
+
+	// the last client limit status the local device answered or pushed, so
+	// a status read while the rpc is down still says when the device retries
+	lastClientLimitStatus *ClientLimitStatus
 
 	// providerLocationsMonitor is a lazily created, internally subscribed
 	// window monitor: registration is what makes windowMonitorEvents readable,
@@ -568,6 +573,7 @@ func newDeviceRemoteWithOverrides(
 		windowStatusChangeListeners:              map[connect.Id]WindowStatusChangeListener{},
 		extenderStatusChangeListeners:            map[connect.Id]ExtenderStatusChangeListener{},
 		extenderProvideStatusChangeListeners:     map[connect.Id]ExtenderProvideStatusChangeListener{},
+		clientLimitStatusChangeListeners:         map[connect.Id]ClientLimitStatusChangeListener{},
 		blockActionWindowChangeListeners:         map[connect.Id]BlockActionWindowChangeListener{},
 		blockStatsChangeListeners:                map[connect.Id]BlockStatsChangeListener{},
 		blockActionOverridesChangeListeners:      map[connect.Id]BlockActionOverridesChangeListener{},
@@ -753,6 +759,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		WindowStatusChangeListenerIds:             slices.Collect(maps.Keys(self.windowStatusChangeListeners)),
 		ExtenderStatusChangeListenerIds:           slices.Collect(maps.Keys(self.extenderStatusChangeListeners)),
 		ExtenderProvideStatusChangeListenerIds:    slices.Collect(maps.Keys(self.extenderProvideStatusChangeListeners)),
+		ClientLimitStatusChangeListenerIds:        slices.Collect(maps.Keys(self.clientLimitStatusChangeListeners)),
 		BlockActionWindowChangeListenerIds:        slices.Collect(maps.Keys(self.blockActionWindowChangeListeners)),
 		BlockStatsChangeListenerIds:               slices.Collect(maps.Keys(self.blockStatsChangeListeners)),
 		BlockActionOverridesChangeListenerIds:     slices.Collect(maps.Keys(self.blockActionOverridesChangeListeners)),
@@ -1376,6 +1383,39 @@ func (self *DeviceRemote) GetExtenderProvideStatus() *ExtenderProvideStatus {
 		return cloneExtenderProvideStatus(self.lastExtenderProvideStatus)
 	}
 	return unsupportedExtenderProvideStatus()
+}
+
+// GetClientLimitStatus reads through to the local device, whose provider holds
+// the platform connection (on ios that is the packet tunnel extension). With no
+// service it degrades to the last known readout, and to no hold when there has
+// never been one. A device process too old to answer keeps its rpc session and
+// reads no hold.
+func (self *DeviceRemote) GetClientLimitStatus() *ClientLimitStatus {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	status, success := func() (*ClientLimitStatus, bool) {
+		if self.service == nil {
+			return nil, false
+		}
+		status, err := rpcCallNoArgAllowMissingMethod[*ClientLimitStatus](
+			self.service,
+			"DeviceLocalRpc.GetClientLimitStatus",
+			self.closeService,
+		)
+		if err != nil || status == nil {
+			return nil, false
+		}
+		self.lastClientLimitStatus = cloneClientLimitStatus(status)
+		return status, true
+	}()
+	if success {
+		return status
+	}
+	if self.lastClientLimitStatus != nil {
+		return cloneClientLimitStatus(self.lastClientLimitStatus)
+	}
+	return noneClientLimitStatus()
 }
 
 // GetProvideExtender reads the setting through to the local device, which owns
@@ -2586,6 +2626,20 @@ func (self *DeviceRemote) AddExtenderProvideStatusChangeListener(
 		self.extenderProvideStatusChangeListeners,
 		"DeviceLocalRpc.AddExtenderProvideStatusChangeListener",
 		"DeviceLocalRpc.RemoveExtenderProvideStatusChangeListener",
+	)
+}
+
+// The client limit status mirrors the same way: the local device's callback is
+// forwarded over the reverse rpc and re-emitted here. Compatible, so an app
+// attached to a device process that does not have the listener yet keeps its
+// session and degrades to the getter.
+func (self *DeviceRemote) AddClientLimitStatusChangeListener(listener ClientLimitStatusChangeListener) Sub {
+	return addCompatibleListener(
+		self,
+		listener,
+		self.clientLimitStatusChangeListeners,
+		"DeviceLocalRpc.AddClientLimitStatusChangeListener",
+		"DeviceLocalRpc.RemoveClientLimitStatusChangeListener",
 	)
 }
 
@@ -4395,6 +4449,30 @@ func (self *DeviceRemote) extenderProvideStatusChanged(status *ExtenderProvideSt
 	for _, extenderProvideStatusChangeListener := range listenerList {
 		connect.HandleError(func() {
 			extenderProvideStatusChangeListener.ExtenderProvideStatusChanged(published)
+		})
+	}
+}
+
+// The pushed client limit status refreshes the cached last value as the
+// extender status above does, so a getter called right after a disconnect
+// still answers when the device retries.
+func (self *DeviceRemote) clientLimitStatusChanged(status *ClientLimitStatus) {
+	listenerList := func() []ClientLimitStatusChangeListener {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if status != nil {
+			self.lastClientLimitStatus = cloneClientLimitStatus(status)
+		}
+		return listenerList(self.clientLimitStatusChangeListeners)
+	}()
+	// a listener is handed the published value, never nil
+	published := cloneClientLimitStatus(status)
+	if published == nil {
+		published = noneClientLimitStatus()
+	}
+	for _, clientLimitStatusChangeListener := range listenerList {
+		connect.HandleError(func() {
+			clientLimitStatusChangeListener.ClientLimitStatusChanged(cloneClientLimitStatus(published))
 		})
 	}
 }
@@ -7351,6 +7429,7 @@ type DeviceRemoteSyncRequest struct {
 	WindowStatusChangeListenerIds              []connect.Id
 	ExtenderStatusChangeListenerIds            []connect.Id
 	ExtenderProvideStatusChangeListenerIds     []connect.Id
+	ClientLimitStatusChangeListenerIds         []connect.Id
 	BlockActionWindowChangeListenerIds         []connect.Id
 	BlockStatsChangeListenerIds                []connect.Id
 	BlockActionOverridesChangeListenerIds      []connect.Id
@@ -9185,6 +9264,7 @@ type DeviceLocalRpc struct {
 	windowStatusChangeListenerIds              map[connect.Id]bool
 	extenderStatusChangeListenerIds            map[connect.Id]bool
 	extenderProvideStatusChangeListenerIds     map[connect.Id]bool
+	clientLimitStatusChangeListenerIds         map[connect.Id]bool
 	blockActionWindowChangeListenerIds         map[connect.Id]bool
 	blockStatsChangeListenerIds                map[connect.Id]bool
 	blockActionOverridesChangeListenerIds      map[connect.Id]bool
@@ -9236,6 +9316,7 @@ type DeviceLocalRpc struct {
 	windowStatusChangeListenerSub              Sub
 	extenderStatusChangeListenerSub            Sub
 	extenderProvideStatusChangeListenerSub     Sub
+	clientLimitStatusChangeListenerSub         Sub
 	blockActionWindowChangeListenerSub         Sub
 	blockStatsChangeListenerSub                Sub
 	blockActionOverridesChangeListenerSub      Sub
@@ -9317,6 +9398,7 @@ func newDeviceLocalRpc(
 		windowStatusChangeListenerIds:              map[connect.Id]bool{},
 		extenderStatusChangeListenerIds:            map[connect.Id]bool{},
 		extenderProvideStatusChangeListenerIds:     map[connect.Id]bool{},
+		clientLimitStatusChangeListenerIds:         map[connect.Id]bool{},
 		blockActionWindowChangeListenerIds:         map[connect.Id]bool{},
 		blockStatsChangeListenerIds:                map[connect.Id]bool{},
 		blockActionOverridesChangeListenerIds:      map[connect.Id]bool{},
@@ -9546,6 +9628,9 @@ func (self *DeviceLocalRpc) closeService() {
 	}
 	for extenderProvideStatusChangeListenerId, _ := range self.extenderProvideStatusChangeListenerIds {
 		self.removeExtenderProvideStatusChangeListener(extenderProvideStatusChangeListenerId)
+	}
+	for clientLimitStatusChangeListenerId := range self.clientLimitStatusChangeListenerIds {
+		self.removeClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
 	}
 	for blockActionWindowChangeListenerId, _ := range self.blockActionWindowChangeListenerIds {
 		self.removeBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
@@ -10180,6 +10265,9 @@ func (self *DeviceLocalRpc) Sync(
 	for _, extenderProvideStatusChangeListenerId := range syncRequest.ExtenderProvideStatusChangeListenerIds {
 		self.addExtenderProvideStatusChangeListener(extenderProvideStatusChangeListenerId)
 	}
+	for _, clientLimitStatusChangeListenerId := range syncRequest.ClientLimitStatusChangeListenerIds {
+		self.addClientLimitStatusChangeListenerWithLock(clientLimitStatusChangeListenerId)
+	}
 	for _, blockActionWindowChangeListenerId := range syncRequest.BlockActionWindowChangeListenerIds {
 		self.addBlockActionWindowChangeListener(blockActionWindowChangeListenerId)
 	}
@@ -10347,6 +10435,9 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 	}
 	if self.extenderProvideStatusChangeListenerSub != nil {
 		self.extenderProvideStatusChanged(self.deviceLocal.GetExtenderProvideStatus())
+	}
+	if self.clientLimitStatusChangeListenerSub != nil {
+		self.clientLimitStatusChangedWithLock(self.deviceLocal.GetClientLimitStatus())
 	}
 	if self.blockActionWindowChangeListenerSub != nil {
 		self.blockActionWindowChanged(self.deviceLocal.GetBlockActions())
@@ -10623,6 +10714,43 @@ func (self *DeviceLocalRpc) RemoveExtenderProvideStatusChangeListener(listenerId
 	return nil
 }
 
+// AddClientLimitStatusChangeListener forwards the device's client limit status
+// to the remote listener listenerId.
+func (self *DeviceLocalRpc) AddClientLimitStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.addClientLimitStatusChangeListenerWithLock(listenerId)
+	return nil
+}
+
+// addClientLimitStatusChangeListenerWithLock subscribes to the device once,
+// for the first remote listener.
+func (self *DeviceLocalRpc) addClientLimitStatusChangeListenerWithLock(listenerId connect.Id) {
+	self.clientLimitStatusChangeListenerIds[listenerId] = true
+	if self.clientLimitStatusChangeListenerSub == nil {
+		self.clientLimitStatusChangeListenerSub = self.deviceLocal.AddClientLimitStatusChangeListener(self)
+	}
+}
+
+// removeClientLimitStatusChangeListenerWithLock unsubscribes from the device
+// with the last remote listener.
+func (self *DeviceLocalRpc) removeClientLimitStatusChangeListenerWithLock(listenerId connect.Id) {
+	delete(self.clientLimitStatusChangeListenerIds, listenerId)
+	if len(self.clientLimitStatusChangeListenerIds) == 0 && self.clientLimitStatusChangeListenerSub != nil {
+		self.clientLimitStatusChangeListenerSub.Close()
+		self.clientLimitStatusChangeListenerSub = nil
+	}
+}
+
+// RemoveClientLimitStatusChangeListener stops forwarding to the remote listener
+// listenerId.
+func (self *DeviceLocalRpc) RemoveClientLimitStatusChangeListener(listenerId connect.Id, _ RpcVoid) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.removeClientLimitStatusChangeListenerWithLock(listenerId)
+	return nil
+}
+
 // TunnelChangeListener
 func (self *DeviceLocalRpc) TunnelChanged(tunnelStarted bool) {
 	self.stateLock.Lock()
@@ -10695,6 +10823,23 @@ func (self *DeviceLocalRpc) extenderProvideStatusChanged(status *ExtenderProvide
 		status = unsupportedExtenderProvideStatus()
 	}
 	self.reverseNotify("DeviceRemoteRpc.ExtenderProvideStatusChanged", status)
+}
+
+// ClientLimitStatusChanged is the device's ClientLimitStatusChangeListener.
+func (self *DeviceLocalRpc) ClientLimitStatusChanged(status *ClientLimitStatus) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	self.clientLimitStatusChangedWithLock(status)
+}
+
+// clientLimitStatusChangedWithLock enqueues an async, coalescing reverse
+// notification (see sendLoop). Every field is a plain value, so the status
+// crosses as it stands.
+func (self *DeviceLocalRpc) clientLimitStatusChangedWithLock(status *ClientLimitStatus) {
+	if status == nil {
+		status = noneClientLimitStatus()
+	}
+	self.reverseNotify("DeviceRemoteRpc.ClientLimitStatusChanged", status)
 }
 
 // privacy block
@@ -12163,6 +12308,12 @@ func (self *DeviceLocalRpc) GetExtenderProvideStatus(_ RpcNoArg, status **Extend
 	return nil
 }
 
+// GetClientLimitStatus answers the device's client limit status.
+func (self *DeviceLocalRpc) GetClientLimitStatus(_ RpcNoArg, status **ClientLimitStatus) error {
+	*status = self.deviceLocal.GetClientLimitStatus()
+	return nil
+}
+
 func (self *DeviceLocalRpc) GetProvideExtender(_ RpcNoArg, provideExtender *bool) error {
 	*provideExtender = self.deviceLocal.GetProvideExtender()
 	return nil
@@ -13611,6 +13762,15 @@ func (self *DeviceRemoteRpc) ExtenderProvideStatusChanged(status *ExtenderProvid
 	self.deviceRemote.log.Infof("[drrpc]ExtenderProvideStatusChanged")
 	self.dispatch(func() {
 		self.deviceRemote.extenderProvideStatusChanged(status)
+	})
+	return nil
+}
+
+// ClientLimitStatusChanged re-emits a status the device process pushed.
+func (self *DeviceRemoteRpc) ClientLimitStatusChanged(status *ClientLimitStatus, _ RpcVoid) error {
+	self.deviceRemote.log.Infof("[drrpc]ClientLimitStatusChanged")
+	self.dispatch(func() {
+		self.deviceRemote.clientLimitStatusChanged(status)
 	})
 	return nil
 }
