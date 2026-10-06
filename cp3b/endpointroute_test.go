@@ -18,14 +18,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/protocol"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/connect/v2026/protocol"
 	"github.com/urnetwork/message-server/api"
 	"github.com/urnetwork/message-server/endpoint"
 	"github.com/urnetwork/message-server/peer"
 	"github.com/urnetwork/message-server/store"
-	"github.com/urnetwork/sdk"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE SERVER AS ITS OWN HOST: THE SAME EXCHANGE, CARRIED BY A PINNED TLS SESSION INSTEAD OF THE

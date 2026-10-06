@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/urnetwork/connect/protocol"
+	"github.com/urnetwork/connect/v2026/protocol"
 	"github.com/urnetwork/message-server/store"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // A CONVERSATION LONGER THAN ONE FETCH PAGE COMES BACK WHOLE, AND ONE Receive IS WHAT DOES IT.

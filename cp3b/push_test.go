@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // §4.3.5 PUSH, END TO END: THE SERVER TELLS A SUBSCRIBER THE MOMENT A RECORD LANDS, AND THE DEVICE
