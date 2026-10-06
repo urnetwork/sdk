@@ -213,7 +213,9 @@ export type Unsubscribe = () => void;
  *
  * Mirrors the bindings in sdk/js/device_remote.go. Hosted-incompatible setters
  * (route local, provide settings) are accepted but no-op on the hosted device;
- * the getters and listeners still reflect real device state.
+ * the getters and listeners still reflect real device state. A hosted device
+ * never takes VLESS, which is not cloud safe: there is no VLESS setter here,
+ * and the host refuses VLESS on every path.
  */
 export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   // lifecycle

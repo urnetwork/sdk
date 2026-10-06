@@ -138,6 +138,7 @@ type deviceRpcSettings struct {
 	// working. Hosted transport is pinned to H1. Set by the platform hosted rpc.
 	// This is the rpc layer of the same guard
 	// `DeviceLocalSettings.HostedIncompatible` enforces inside DeviceLocal.
+	// No rpc carries VLESS, which a hosted device refuses on every path.
 	DisableHostedIncompatible bool
 
 	// DeviceGeneration identifies the specific hosted DeviceLocal instance an

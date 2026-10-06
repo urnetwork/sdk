@@ -642,6 +642,10 @@ type DeviceLocalSettings struct {
 	// `DeviceLocalRpc.DisableHostedIncompatible`, which stops the
 	// same operations at the rpc layer — either alone is sufficient, both
 	// together mean nothing reachable can flip these on a hosted device.
+	// A hosted device also refuses VLESS, which is not cloud safe (a VLESS
+	// server is dialed from the host): its private client strategy takes none
+	// of the space's VLESS settings and refuses any added later, and no rpc
+	// carries VLESS.
 	HostedIncompatible bool
 
 	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
@@ -1333,6 +1337,10 @@ func newDeviceLocalWithOverridesForPlatform(
 		// Proxy devices share immutable network metadata, not mutable API
 		// credentials or control-plane dial/DoH admission limits.
 		clientStrategy = networkSpace.newHostedClientStrategy(dnsMemoryTarget)
+		// the private strategy refuses the space's VLESS server
+		if 0 < len(networkSpace.clientStrategy.VlessConfigs()) {
+			log.Infof("[device]hosted incompatible: VLESS ignored\n")
+		}
 		api = api.newSessionWithStrategy(ctx, clientStrategy)
 		if settings.LocalApi != nil {
 			api.setHttpGetRaw(settings.LocalApi.Get)

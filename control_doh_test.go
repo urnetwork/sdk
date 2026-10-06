@@ -353,6 +353,7 @@ func TestNetworkSpaceControlDohUrlsReachTheApiInPlace(t *testing.T) {
 		},
 		"",
 		connectSettings,
+		false,
 	)
 	defer networkSpace.close()
 	strategy := networkSpace.clientStrategy

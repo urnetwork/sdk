@@ -238,6 +238,11 @@ type NetworkSpace struct {
 	// the space's dial logger, carried so the manager's one-time control ip
 	// family restore lands on the same log as the dials it governs
 	log connect.Logger
+	// The space a cloud host shares among its hosted devices
+	// (NewPlatformNetworkSpace). It refuses VLESS, which is not cloud safe:
+	// its strategy is built with `DisableVless`, and `SetVlessSettings` saves
+	// nothing. Set at construction.
+	hostedIncompatible bool
 
 	// The extender directory of this space (EXTENDER.md E1, F1). Nil for a
 	// url-only space, which names its endpoints outright and has nothing to
@@ -521,15 +526,19 @@ func newNetworkSpace(
 	values NetworkSpaceValues,
 	storagePath string,
 ) *NetworkSpace {
-	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings())
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings(), false)
 }
 
+// Builds a space from its key and values. A hosted-incompatible space is the
+// one a cloud host shares among its hosted devices, which refuses VLESS (see
+// `NetworkSpace.hostedIncompatible`).
 func newNetworkSpaceWithConnectSettings(
 	ctx context.Context,
 	key NetworkSpaceKey,
 	values NetworkSpaceValues,
 	storagePath string,
 	connectSettings *connect.ConnectSettings,
+	hostedIncompatible bool,
 ) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -557,7 +566,12 @@ func newNetworkSpaceWithConnectSettings(
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	clientStrategySettings.AltUrl = altUrl
-	// the VLESS server, when the space names one that is on and valid
+	// the VLESS server, when the space names one that is on and valid. A
+	// space that hosts cloud devices never dials one.
+	if hostedIncompatible {
+		values.Vless = nil
+		clientStrategySettings.DisableVless = true
+	}
 	clientStrategySettings.VlessConfigs = spaceVlessConfigs(values.Vless)
 	// the bootstrap DoH servers ahead of the defaults, when the space names any
 	clientStrategySettings.DohSettings = spaceControlDohSettings(&values)
@@ -598,6 +612,7 @@ func newNetworkSpaceWithConnectSettings(
 
 		clientStrategy:                clientStrategy,
 		clientStrategySettings:        clientStrategySettings,
+		hostedIncompatible:            hostedIncompatible,
 		asyncLocalState:               asyncLocalState,
 		api:                           api,
 		log:                           clientStrategySettings.ConnectSettings.Log,
@@ -920,6 +935,11 @@ func isDottedHostName(hostName string) bool {
 	return true
 }
 
+// The space a cloud host (server/proxy) shares among its hosted devices. It
+// refuses VLESS, which is not cloud safe: the space never dials a VLESS server
+// and `SetVlessSettings` saves nothing. Each hosted device's own strategy
+// refuses VLESS too (newHostedClientStrategy).
+//
 //gomobile:noexport
 func NewPlatformNetworkSpace(
 	ctx context.Context,
@@ -935,7 +955,7 @@ func NewPlatformNetworkSpace(
 		NetExposeServerIps:       true,
 		NetExposeServerHostNames: true,
 	}
-	return newNetworkSpaceWithConnectSettings(ctx, key, values, "", connectSettings)
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, "", connectSettings, true)
 }
 
 // newHostedClientStrategy gives one hosted DeviceLocal its own control-plane
@@ -944,8 +964,15 @@ func NewPlatformNetworkSpace(
 // data flow before generated clients finish their final contract retirement.
 // DeviceLocal explicitly closes this private strategy after those joins. It
 // reuses only immutable settings and the shared read-only extender directory.
+//
+// The strategy refuses VLESS whatever path the configurations arrive by
+// (`connect.ClientStrategySettings.DisableVless`): a VLESS server is dialed
+// from the host, which is not cloud safe. The space's own VLESS settings never
+// reach a hosted device, and nothing can add a VLESS dialer to it later.
 func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.MemoryTarget) *connect.ClientStrategy {
 	settings := *self.derivedClientStrategySettings()
+	settings.VlessConfigs = nil
+	settings.DisableVless = true
 	dohSettings := settings.DohSettings
 	if dohSettings == nil {
 		dohSettings = connect.DefaultDohSettings()
@@ -957,9 +984,6 @@ func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.Memor
 	if customExtenders := self.clientStrategy.CustomExtenders(); len(customExtenders) > 0 {
 		strategy.SetCustomExtenders(customExtenders)
 	}
-	// the VLESS server in force now, which a settings change may have
-	// replaced since the shared strategy was built
-	strategy.SetVlessConfigs(self.clientStrategy.VlessConfigs())
 	return strategy
 }
 
