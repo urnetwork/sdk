@@ -63,3 +63,91 @@ jobs:
       # invisible to gomobile builds by construction.
       - name: Test
         run: go test -count=1 -timeout 20m ./...
+
+  # The checks `./...` above cannot reach, because each lives in its own Go
+  # module (or in js/): the committed C ABI, language bindings and JS sources
+  # must equal a fresh generation, gomobile's omissions must match the mobile
+  # export policy, and cp3b, livepeer and liveprobe must still compile. A
+  # separate job keeps them off the go test job's critical path.
+  generated:
+    name: generated code and side modules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sdk
+        uses: actions/checkout@v4
+
+      # The go test job's siblings, for the same replace directives.
+      - name: Check out connect dependency
+        run: git clone --depth 1 https://github.com/urnetwork/connect.git ../connect
+
+      - name: Check out glog dependency
+        run: git clone --depth 1 https://github.com/urnetwork/glog.git ../glog
+
+      - name: Check out goidenticons dependency
+        run: git clone --depth 1 https://github.com/urnetwork/goidenticons.git ../goidenticons
+
+      - name: Check out gvisor dependency
+        run: git clone --depth 1 --branch go https://github.com/urnetwork/gvisor.git ../gvisor
+
+      # cp3b, URmessage's end-to-end suite, also replaces
+      # github.com/urnetwork/message-server => ../../message-server. Only the
+      # cp3b build below reads it.
+      - name: Check out message-server dependency
+        run: git clone --depth 1 https://github.com/urnetwork/message-server.git ../message-server
+
+      # Not `stable`: build/cmd/mobileexports runs gobind with
+      # GODEBUG=gotypesalias=0, which gomobile still needs and which go 1.27
+      # rejects at startup ("removed GODEBUG"). The mobile SDK builds use go
+      # 1.26 for the same reason (see build/Makefile).
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # The js tests run the TypeScript sources directly, which needs node's
+      # type stripping and module.registerHooks.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Regenerates the C ABI (exports, callbacks, headers, .def, coverage
+      # report) in a temporary directory and compares it with the committed
+      # files, then runs the packaging module's check-generated against the
+      # committed header.
+      - name: Check C ABI is current
+        working-directory: cgo
+        run: go test -count=1 ./gen
+
+      # Includes TestGeneratedBindingsMatchCurrentABI: the committed Python,
+      # Java, C#, Rust and Ruby bindings must equal a generation from the
+      # committed header.
+      - name: Test language packaging
+        run: go -C packaging test -count=1 ./...
+
+      # src/generated: the API client from connect's api/bringyour.yml and the
+      # types from the sdk's Go structs.
+      - name: Check JS generated sources
+        run: make -C js check_generated
+
+      - name: Test JS
+        working-directory: js
+        run: npm test
+
+      # The tests run gobind with GOPROXY=off, and the test package imports
+      # only the standard library, so download x/mobile and the sdk's
+      # dependencies first.
+      - name: Test mobile export policy
+        working-directory: build
+        run: |
+          go mod download
+          go test -count=1 ./cmd/mobileexports
+
+      # cp3b is test files only, so `go build` compiles nothing there: vet
+      # compiles it, tests included, without running the suite. livepeer and
+      # liveprobe are operator commands with no tests.
+      - name: Build cp3b, livepeer and liveprobe
+        run: |
+          go -C cp3b vet ./...
+          go -C livepeer build ./...
+          go -C liveprobe build ./...
