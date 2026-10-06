@@ -55,82 +55,26 @@ To consume from MSVC, generate an import library from the def file:
 `lib /def:urnetwork_sdk.def /machine:x64 /out:URnetworkSdk.lib` (or link the
 dll directly with lld). On linux, link with `-lURnetworkSdk`.
 
-## the messaging abi
-
-`exports_message.go` + `include/urnetwork_message.h` are the messaging surface:
-**38** exports over `sdk/urmessage` and `sdk`'s own message client, hand-written
-rather than generated. The query, so the number is checkable rather than quoted:
-`bash ctest/run.sh` prints it, and it is
-`grep -cE '^extern .*urnet_message_' build/host/URnetworkSdk.h`. The reason
-is at the top of `exports_message.go` and in short it is that the generator
-walks package `sdk` and the messenger is not in it. The header is independent of
-`urnetwork_sdk.h`; both ship, and the cgo-emitted header beside the library
-declares both.
-
-Three decisions a reader should not have to reverse-engineer, each argued at the
-line in `exports_message.go`:
-
-- **blocking, on your own thread, with a cancel handle.** `Connect`, `Open`,
-  `Send` and `Receive` block. `Connect`'s budget is **90 seconds**, because a
-  reconnecting client is not routed to by the operator for about sixty. Pass a
-  `urnet_message_context` handle and cancel it from any thread.
-- **a body is counted octets, never a `char*` and never inside json.** A Go
-  string here is not text: the seal path takes `[]byte` and the open path hands
-  `[]byte` back, unvalidated. On the C test's own 21-octet body a `char*` loses
-  9 octets and json turns it into 27 carrying three U+FFFD — measured in
-  `exports_message_test.go`.
-- **nothing is stubbed.** No receipts, reactions, replies, edit, delete or
-  media. They are not built underneath this, and an export answering a plausible
-  empty result would be worse than no export.
-
-`urnet_message_transport_new` takes a connect client handle, and **this abi now
-produces one**: `urnet_message_client_new` dials `wss://connect.<host>` with an
-operator-minted `by_client_jwt` and sets the provide modes the message server's
-replies need. Until it existed, a C caller could reach an in-process loopback
-server and nothing else. What is still open of S2-7 is the **credential** and
-only the credential — minting a `network_client` `ByJwt` is an operator-admin
-action nothing in connect, sdk or this binding performs.
-
-**That path is unexercised against a real operator.** No test here or in `sdk`
-can reach one, and a `ByJwt` cannot be forged. What is under test is the shape:
-which arguments are refused, what the platform url derives to, that the client
-carries the credential's own `client_id`, that the provide modes are set, and
-that a transport binds over it. Not that a frame crossed.
+## the def
 
 `include/urnetwork_sdk.def` names every hand-written export that ships, and
 `gen.TestTheDefNamesEveryHandWrittenExportThatShips` is what keeps it that way —
 it used to name 0 of the messaging surface while a test logged the gap and
 passed. Nothing at runtime reads the def; it builds MSVC import libraries.
 
+The messaging abi (`urnet_message_*` and `include/urnetwork_message.h`) is not
+part of this library. It moved to github.com/urnetwork/message with the rest of
+messaging, and that repository builds its own native composition.
+
 ## testing
 
 `make smoke` builds a host (macOS) library and runs `smoke/smoke.cpp` against
 it: strings, ids, buffer-out, json, handle lifecycle, and async callbacks.
 
-`make ctest` (or `bash ctest/run.sh`) is the messaging one, and it is a **C**
-program: `ctest/message_abi_test.c` opens two devices, founds a group, joins it,
-sends octets, reads them back one at a time, holds `urnet_live_handle_count`
-across the whole conversation, and cancels a blocking `Connect` from a second OS
-thread. It builds the library **twice** — once as it ships, once with
-`-tags urnet_message_loopback -modfile=loopback.go.mod`, which adds
-`loopback_test_world.go`: a real in-process message server, wired the way
-`sdk/cp3b` wires one, because there is no operator here for the shipping
-`urnet_message_client_new` to dial and the conversation has to be a real one.
-The script **fails if the shipping header declares one
-`urnet_message_loopback_*` symbol**, and the harness's dependency lives only in
-`loopback.go.mod`, so deleting its build tag breaks the build rather than
-shipping it.
-
-It also fails on the word `panicked` anywhere in the run. `cgoGuard` recovers a
-panic so it cannot unwind into C, which means an out-of-range index and a
-deliberate refusal are indistinguishable from the C side — both answer false —
-so a bounds check can be deleted with every assertion still green. The panic
-line is the only thing that sees it.
-
 `go test ./... ` in this module holds the rest, including `-race` over the
 handle registry. On Windows the `-race` **c-shared** library builds but cannot
 load — ThreadSanitizer cannot map its shadow memory into an already-running
-process — and `ctest/run.sh` prints that where it tries rather than skipping it.
+process.
 
 ## regenerating
 
