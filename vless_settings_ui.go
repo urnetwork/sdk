@@ -115,8 +115,7 @@ func (self *NetworkSpace) GetVlessSettings() *VlessSettings {
 // (NewPlatformNetworkSpace) refuses VLESS, which is not cloud safe: it saves
 // nothing and returns empty, the hosted-incompatible no-op.
 func (self *NetworkSpace) SetVlessSettings(settings *VlessSettings) (errorId string) {
-	if self.hostedIncompatible {
-		self.logger().Infof("[ns]hosted incompatible: SetVlessSettings ignored\n")
+	if self.hostedIncompatibleGuarded("SetVlessSettings") {
 		return ""
 	}
 	stored := settings.normalized()

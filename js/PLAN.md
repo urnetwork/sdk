@@ -110,20 +110,32 @@ rpc endpoint.
   setters while getters and listeners keep working. The set: `SetRouteLocal`,
   `SetProvideMode`, `SetProvidePaused`, `SetProvideControlMode`, `SetProvideNetworkMode`,
   `SetTunnelStarted`, `SetVpnInterfaceWhileOffline`, `SetRpcServer`, `SetByJwt`,
-  `SetKeyMaterial`. `SetDestination` / `SetConnectLocation` are allowed (the point of a
-  proxy device).
-- VLESS (2026-10-05): a hosted device never takes VLESS settings. VLESS is not cloud
-  safe: the host would dial a server the user names. VLESS is a network-space setting
-  (`NetworkSpace.SetVlessSettings`), not a device setter, so it is refused on every path
-  that could reach a hosted device. The hosted device's private client strategy takes none
-  of its space's VLESS settings and refuses any added later
-  (`connect.ClientStrategySettings.DisableVless`). The space the proxy host shares among
-  its hosted devices (`NewPlatformNetworkSpace`) refuses `SetVlessSettings` with the
-  hosted-incompatible no-op, and its own strategy never dials VLESS. No device rpc
-  carries VLESS (`DeviceRemote` has no VLESS setter, and a test walks every
-  `DeviceLocalRpc` argument). A VLESS setter added to the rpc later must be
-  hosted-incompatible at both layers. `proxy_device_config` / `initial_device_state` has
-  no VLESS field, so the server has nothing to refuse.
+  `SetKeyMaterial`, `SetDnsResolverSettings`. `SetDestination` / `SetConnectLocation` are
+  allowed (the point of a proxy device).
+- User-named endpoints (2026-10-05): a hosted device never dials a server a user names,
+  since the host would dial it. That covers the VLESS server, the custom extender
+  (`NetExtender`), the manual extender hosts and share imports (and the other extender
+  settings: dns name, gossip url, root keys), the bootstrap DoH servers (`ControlDohUrls*`)
+  and the servers of the device's dns resolver settings. The first four are network-space
+  settings, not device setters, so they are refused on every path that could reach a
+  hosted device:
+  - The hosted device's private client strategy takes none of its space's and refuses any
+    added later (`connect.ClientStrategySettings`: `DisableVless`,
+    `DisableManualExtenders`, `DisableCustomDohServers`).
+  - The space the proxy host shares among its hosted devices (`NewPlatformNetworkSpace`)
+    starts with none, its own strategy refuses them the same way, and their setters
+    (`SetVlessSettings`, `SetControlDohUrls`, `ExtenderViewController.SetSettings` and
+    `ImportShare`) are hosted-incompatible no-ops that log.
+  - No device rpc carries them (`DeviceRemote` has no setter for any; a test walks every
+    `DeviceLocalRpc` argument). A setter added to the rpc later must be
+    hosted-incompatible at both layers.
+  - What a hosted device still uses is built in: the default DoH servers, and the
+    extenders the shared directory learned that a signed record verifies (a manual
+    address is the one kind otherwise dialed unverified).
+  - `SetDnsResolverSettings` is in the set above. A hosted device starts from the resolver
+    its session was provisioned with (`initial_device_state.dns_resolver_settings`), which
+    the proxy host builds its tun from.
+  `proxy_device_config` / `initial_device_state` has no field for the first four.
 - Peers and quota: proxy clients count toward the network's client quota but never appear
   in peers. `peer_model` meta carries a category (`client` | `proxy`);
   `GetNetworkPeerProfile` detects proxy clients via a `proxy_device_config` existence
@@ -187,8 +199,8 @@ directly.
   `wss://<proxyHost>/device-rpc?proxy=<signed>` with **no auth frame**; browser websocket
   shim (`device_rpc_platform_js.go`); `HostedDeviceRpcListener` (`device_rpc_hosted.go`);
   `DeviceLocalSettings.HostedIncompatible` + `DeviceLocalRpc.DisableHostedIncompatible`
-  guards on the agreed setter set; the hosted VLESS refusal; device generation id in the
-  sync handshake +
+  guards on the agreed setter set; the hosted refusal of user-named endpoints; device
+  generation id in the sync handshake +
   `DeviceRecreatedListener` and `DeviceConfigurationChangedListener`; zero-length binary
   mux keepalive.
   `NewPlatformDeviceRemote(networkSpace, byJwt, proxyUrl, signedProxyId, instanceId)`.

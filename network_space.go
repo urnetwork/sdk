@@ -239,9 +239,13 @@ type NetworkSpace struct {
 	// family restore lands on the same log as the dials it governs
 	log connect.Logger
 	// The space a cloud host shares among its hosted devices
-	// (NewPlatformNetworkSpace). It refuses VLESS, which is not cloud safe:
-	// its strategy is built with `DisableVless`, and `SetVlessSettings` saves
-	// nothing. Set at construction.
+	// (NewPlatformNetworkSpace). It refuses every endpoint a user names, which
+	// a cloud host must never dial: the VLESS server, the custom extender, the
+	// manual extender hosts and imports, the other extender settings, and the
+	// bootstrap DoH servers. Its strategy is built refusing them
+	// (`DisableVless`, `DisableManualExtenders`, `DisableCustomDohServers`),
+	// and their setters save nothing (`hostedIncompatibleGuarded`). Set at
+	// construction.
 	hostedIncompatible bool
 
 	// The extender directory of this space (EXTENDER.md E1, F1). Nil for a
@@ -303,6 +307,18 @@ func (self *NetworkSpace) getNetworkSpaceManager() *NetworkSpaceManager {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.networkSpaceManager
+}
+
+// Reports whether a setter of an endpoint a user names must be skipped, which
+// the space a cloud host shares among its hosted devices does
+// (`hostedIncompatible`). It logs the skip for visibility, as the device's own
+// guard does.
+func (self *NetworkSpace) hostedIncompatibleGuarded(name string) bool {
+	if self.hostedIncompatible {
+		self.logger().Infof("[ns]hosted incompatible: %s ignored\n", name)
+		return true
+	}
+	return false
 }
 
 // updateInPlaceValues is the one write path for the values a running space
@@ -566,12 +582,23 @@ func newNetworkSpaceWithConnectSettings(
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	clientStrategySettings.AltUrl = altUrl
-	// the VLESS server, when the space names one that is on and valid. A
-	// space that hosts cloud devices never dials one.
+	// a space that hosts cloud devices names no endpoint of a user's and
+	// dials none: it keeps the built-in DoH servers and the extenders a signed
+	// record verifies
 	if hostedIncompatible {
 		values.Vless = nil
+		values.NetExtender = nil
+		values.ExtenderDnsName = ""
+		values.GossipUrl = ""
+		values.ExtenderRootPublicKeys = nil
+		values.ExtenderHosts = nil
+		values.ControlDohUrlsIpv4 = nil
+		values.ControlDohUrlsIpv6 = nil
 		clientStrategySettings.DisableVless = true
+		clientStrategySettings.DisableManualExtenders = true
+		clientStrategySettings.DisableCustomDohServers = true
 	}
+	// the VLESS server, when the space names one that is on and valid
 	clientStrategySettings.VlessConfigs = spaceVlessConfigs(values.Vless)
 	// the bootstrap DoH servers ahead of the defaults, when the space names any
 	clientStrategySettings.DohSettings = spaceControlDohSettings(&values)
@@ -936,9 +963,11 @@ func isDottedHostName(hostName string) bool {
 }
 
 // The space a cloud host (server/proxy) shares among its hosted devices. It
-// refuses VLESS, which is not cloud safe: the space never dials a VLESS server
-// and `SetVlessSettings` saves nothing. Each hosted device's own strategy
-// refuses VLESS too (newHostedClientStrategy).
+// refuses every endpoint a user names, which a cloud host must never dial:
+// the space never dials a VLESS server, a custom or manual extender or a
+// bootstrap DoH server of a user's, and the setters of those settings save
+// nothing (`NetworkSpace.hostedIncompatible`). Each hosted device's own
+// strategy refuses them too (newHostedClientStrategy).
 //
 //gomobile:noexport
 func NewPlatformNetworkSpace(
@@ -965,26 +994,28 @@ func NewPlatformNetworkSpace(
 // DeviceLocal explicitly closes this private strategy after those joins. It
 // reuses only immutable settings and the shared read-only extender directory.
 //
-// The strategy refuses VLESS whatever path the configurations arrive by
-// (`connect.ClientStrategySettings.DisableVless`): a VLESS server is dialed
-// from the host, which is not cloud safe. The space's own VLESS settings never
-// reach a hosted device, and nothing can add a VLESS dialer to it later.
+// The strategy refuses every endpoint a user names, whatever path it arrives
+// by, because each is dialed from the host and a cloud host must never dial a
+// server a user names: VLESS servers (`DisableVless`), extenders configured by
+// hand (`DisableManualExtenders`: the configured and custom extenders, and the
+// manual addresses of the directory that no signed record verifies) and DoH
+// servers other than the built-in ones (`DisableCustomDohServers`). None of
+// the space's settings of these reach a hosted device, and nothing can add
+// one to it later. What it keeps is built in: the default DoH servers, and the
+// extenders the shared directory learned that a signed record verifies.
 func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.MemoryTarget) *connect.ClientStrategy {
 	settings := *self.derivedClientStrategySettings()
 	settings.VlessConfigs = nil
 	settings.DisableVless = true
-	dohSettings := settings.DohSettings
-	if dohSettings == nil {
-		dohSettings = connect.DefaultDohSettings()
-	}
-	privateDohSettings := *dohSettings
-	privateDohSettings.MemoryTarget = dnsMemoryTarget
-	settings.DohSettings = &privateDohSettings
-	strategy := connect.NewClientStrategy(self.ctx, &settings)
-	if customExtenders := self.clientStrategy.CustomExtenders(); len(customExtenders) > 0 {
-		strategy.SetCustomExtenders(customExtenders)
-	}
-	return strategy
+	settings.ExtenderConfigs = nil
+	settings.DisableManualExtenders = true
+	// the built-in DoH servers, never the space's bootstrap ones, on a fresh
+	// value that takes the device's own memory target
+	dohSettings := spaceControlDohSettings(&NetworkSpaceValues{})
+	dohSettings.MemoryTarget = dnsMemoryTarget
+	settings.DohSettings = dohSettings
+	settings.DisableCustomDohServers = true
+	return connect.NewClientStrategy(self.ctx, &settings)
 }
 
 // The settings a strategy derived from the space's is built from: a hosted

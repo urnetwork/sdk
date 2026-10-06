@@ -145,6 +145,7 @@ func TestDeviceRemoteHostedIncompatibleSettersDoNotChangeState(t *testing.T) {
 	deviceRemote.SetVpnInterfaceWhileOffline(true)
 	deviceRemote.SetTransportSettings(DefaultTransportSettings())
 	deviceRemote.SetProviderTransportSettings(DefaultProviderTransportSettings())
+	deviceRemote.SetDnsResolverSettings(&DnsResolverSettings{EnableRemoteDoh: true})
 
 	fields := []struct {
 		name      string
@@ -160,6 +161,7 @@ func TestDeviceRemoteHostedIncompatibleSettersDoNotChangeState(t *testing.T) {
 		{name: "vpn interface while offline", pending: deviceRemote.state.VpnInterfaceWhileOffline.IsSet, lastKnown: deviceRemote.lastKnownState.VpnInterfaceWhileOffline.IsSet},
 		{name: "transport settings", pending: deviceRemote.state.TransportSettings.IsSet, lastKnown: deviceRemote.lastKnownState.TransportSettings.IsSet},
 		{name: "provider transport settings", pending: deviceRemote.state.ProviderTransportSettings.IsSet, lastKnown: deviceRemote.lastKnownState.ProviderTransportSettings.IsSet},
+		{name: "dns resolver settings", pending: deviceRemote.state.DnsResolverSettings.IsSet, lastKnown: deviceRemote.lastKnownState.DnsResolverSettings.IsSet},
 	}
 	for _, field := range fields {
 		if field.pending {

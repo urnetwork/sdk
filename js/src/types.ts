@@ -212,10 +212,12 @@ export type Unsubscribe = () => void;
  * extension remotes use the caller's opaque byte transport.
  *
  * Mirrors the bindings in sdk/js/device_remote.go. Hosted-incompatible setters
- * (route local, provide settings) are accepted but no-op on the hosted device;
- * the getters and listeners still reflect real device state. A hosted device
- * never takes VLESS, which is not cloud safe: there is no VLESS setter here,
- * and the host refuses VLESS on every path.
+ * (route local, provide settings, dns resolver settings) are accepted but no-op
+ * on the hosted device; the getters and listeners still reflect real device
+ * state. A hosted device never dials a server a user names: there is no setter
+ * here for a VLESS server, a custom or manual extender or a bootstrap DoH
+ * server, and the host refuses them on every path. It keeps the built-in DoH
+ * servers and the extenders a signed record verifies.
  */
 export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   // lifecycle

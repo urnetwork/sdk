@@ -2,8 +2,10 @@ package sdk
 
 // A hosted (cloud) device never takes VLESS, which is not cloud safe: a VLESS
 // server would be dialed from the host. These tests cover each path by which
-// VLESS could reach one: the space it is built on, its own strategy, the space
-// a cloud host shares among its hosted devices, and the device rpc.
+// VLESS could reach one: the space it is built on, its own strategy, and the
+// space a cloud host shares among its hosted devices. The device rpc, which
+// carries no VLESS, is pinned with the other user-named endpoints
+// (hosted_user_endpoints_test.go).
 
 import (
 	"context"
@@ -11,7 +13,6 @@ import (
 	"crypto/x509"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
 
@@ -164,70 +165,5 @@ func TestPlatformNetworkSpaceRefusesVlessSettings(t *testing.T) {
 	}
 	if vlessConfigs := urlsSpace.clientStrategy.VlessConfigs(); len(vlessConfigs) != 1 {
 		t.Fatalf("a space that hosts no cloud devices dials %d VLESS servers, expected 1", len(vlessConfigs))
-	}
-}
-
-// No device rpc carries VLESS settings to a hosted device: no argument of a
-// `DeviceLocalRpc` method, the sync state included, holds a type that
-// configures VLESS. An rpc that carries one must be added as hosted
-// incompatible, at the rpc layer (`hostedIncompatibleRpcGuarded`) and in the
-// device, and then allowed here. Only exported fields are walked, since gob
-// sends nothing else; an interface field cannot be checked statically.
-func TestHostedDeviceRpcCarriesNoVless(t *testing.T) {
-	vlessTypes := map[reflect.Type]bool{
-		reflect.TypeOf(VlessSettings{}):                  true,
-		reflect.TypeOf(NetworkSpaceValues{}):             true,
-		reflect.TypeOf(connect.VlessConfig{}):            true,
-		reflect.TypeOf(connect.ClientStrategySettings{}): true,
-	}
-	// walks one type, with the types on the current path to stop at a cycle
-	var carriesVless func(valueType reflect.Type, pathTypes map[reflect.Type]bool) bool
-	carriesVless = func(valueType reflect.Type, pathTypes map[reflect.Type]bool) bool {
-		if vlessTypes[valueType] {
-			return true
-		}
-		if pathTypes[valueType] {
-			return false
-		}
-		pathTypes[valueType] = true
-		defer delete(pathTypes, valueType)
-		switch valueType.Kind() {
-		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Chan:
-			return carriesVless(valueType.Elem(), pathTypes)
-		case reflect.Map:
-			return carriesVless(valueType.Key(), pathTypes) || carriesVless(valueType.Elem(), pathTypes)
-		case reflect.Struct:
-			for i := 0; i < valueType.NumField(); i += 1 {
-				field := valueType.Field(i)
-				if field.IsExported() && carriesVless(field.Type, pathTypes) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-
-	// the walk finds VLESS settings inside a struct, so a pass is not vacuous
-	if !carriesVless(reflect.TypeOf(&ExportNetworkSpace{}), map[reflect.Type]bool{}) {
-		t.Fatal("the walk misses the VLESS settings inside a network space export")
-	}
-
-	rpcType := reflect.TypeOf(&DeviceLocalRpc{})
-	walkedMethodNames := map[string]bool{}
-	for i := 0; i < rpcType.NumMethod(); i += 1 {
-		method := rpcType.Method(i)
-		// the net/rpc method shape: receiver, argument, reply; an error
-		if method.Type.NumIn() != 3 || method.Type.NumOut() != 1 {
-			continue
-		}
-		walkedMethodNames[method.Name] = true
-		if argumentType := method.Type.In(1); carriesVless(argumentType, map[reflect.Type]bool{}) {
-			t.Errorf("DeviceLocalRpc.%s carries VLESS settings in its %s argument", method.Name, argumentType)
-		}
-	}
-	for _, methodName := range []string{"Sync", "SetTransportSettings", "SetPerformanceProfile", "SetDnsResolverSettings"} {
-		if !walkedMethodNames[methodName] {
-			t.Errorf("the walk did not reach DeviceLocalRpc.%s", methodName)
-		}
 	}
 }

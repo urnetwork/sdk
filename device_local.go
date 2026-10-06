@@ -642,10 +642,14 @@ type DeviceLocalSettings struct {
 	// `DeviceLocalRpc.DisableHostedIncompatible`, which stops the
 	// same operations at the rpc layer — either alone is sufficient, both
 	// together mean nothing reachable can flip these on a hosted device.
-	// A hosted device also refuses VLESS, which is not cloud safe (a VLESS
-	// server is dialed from the host): its private client strategy takes none
-	// of the space's VLESS settings and refuses any added later, and no rpc
-	// carries VLESS.
+	// A hosted device also refuses every endpoint a user names, since each is
+	// dialed from the host and a cloud host must never dial a server a user
+	// names: its private client strategy takes none of the space's VLESS
+	// server, custom extender, manual extender addresses or bootstrap DoH
+	// servers and refuses any added later (newHostedClientStrategy), no rpc
+	// carries them, and its dns resolver settings, whose servers the host would
+	// query, are guarded like the setters above. It keeps the built-in DoH
+	// servers and the extenders a signed record verifies.
 	HostedIncompatible bool
 
 	// UseExperimentalTunnelAddress, when set, assigns the TUN interface a random
@@ -1337,9 +1341,17 @@ func newDeviceLocalWithOverridesForPlatform(
 		// Proxy devices share immutable network metadata, not mutable API
 		// credentials or control-plane dial/DoH admission limits.
 		clientStrategy = networkSpace.newHostedClientStrategy(dnsMemoryTarget)
-		// the private strategy refuses the space's VLESS server
+		// the private strategy refuses the endpoints the space's user named
+		spaceValues := networkSpace.valuesCopy()
+		spaceControlDohUrlsIpv4, spaceControlDohUrlsIpv6 := spaceControlDohUrls(&spaceValues)
 		if 0 < len(networkSpace.clientStrategy.VlessConfigs()) {
 			log.Infof("[device]hosted incompatible: VLESS ignored\n")
+		}
+		if spaceValues.NetExtender != nil || 0 < len(ExtenderHosts(&spaceValues)) {
+			log.Infof("[device]hosted incompatible: manual extenders ignored\n")
+		}
+		if 0 < len(spaceControlDohUrlsIpv4)+len(spaceControlDohUrlsIpv6) {
+			log.Infof("[device]hosted incompatible: bootstrap DoH servers ignored\n")
 		}
 		api = api.newSessionWithStrategy(ctx, clientStrategy)
 		if settings.LocalApi != nil {
@@ -7449,8 +7461,13 @@ func (self *DeviceLocal) SetDnsResolverSettings(dnsResolverSettings *DnsResolver
 	_ = self.setLocalCatalogPreference("dns-resolver-settings", dnsResolverSettings)
 }
 
-// Applies without saving; its owning operation publishes notifications after unlock.
+// Applies without saving; its owning operation publishes notifications after
+// unlock. A hosted device takes no resolver settings: the servers they name
+// would be queried from its host.
 func (self *DeviceLocal) applyDnsResolverSettingsWithLock(dnsResolverSettings *DnsResolverSettings) (func(), error) {
+	if self.hostedIncompatibleGuarded("SetDnsResolverSettings") {
+		return nil, nil
+	}
 	if dnsResolverSettings == nil {
 		return nil, nil
 	}
