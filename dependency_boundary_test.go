@@ -4,7 +4,9 @@
 //   - every module file names no messaging module, and every .go file, whatever its build
 //     constraints, imports no messaging package. This reads files no build compiles.
 //   - for every build this repository ships, the package closure `go list -deps` resolves holds no
-//     messaging package. This reads what a file pulls in transitively.
+//     messaging package. This reads what a file pulls in transitively. A module no leg builds is
+//     disposed of by a property its own files hold: it holds no package, or its module file
+//     requires nothing.
 //
 // Until connect's own removal lands, connect/protocol still carries the messaging schema, so a
 // core binary still links it; that package is generic transport and is not on the list.
@@ -16,8 +18,10 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -70,8 +74,9 @@ type messagingBoundaryLeg struct {
 }
 
 // Every build this repository ships. The root module on each desktop platform, the browser build,
-// the c library on each desktop platform, the gomobile binding on each mobile target, and the two
-// tool modules. A module that holds no package is disposed of in messagingBoundaryModulesWithoutABuild.
+// the c library on each desktop platform, the gomobile binding on each mobile target, and the build
+// tools module. A module no leg builds is disposed of below, by a property `go list` or its own
+// module file holds.
 var messagingBoundaryLegs = []messagingBoundaryLeg{
 	{name: "root linux/amd64", moduleDirectory: ".", environment: []string{"GOOS=linux", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "root windows/amd64", moduleDirectory: ".", environment: []string{"GOOS=windows", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
@@ -85,18 +90,31 @@ var messagingBoundaryLegs = []messagingBoundaryLeg{
 	{name: "gomobile ios/arm64 extension", moduleDirectory: ".", environment: []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind,ios_extension", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "gomobile macos/arm64", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, tags: "sdk_mobile_bind", patterns: []string{"."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "build tools linux/amd64", moduleDirectory: "build", environment: []string{"GOOS=linux", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
-	{name: "packaging linux/amd64", moduleDirectory: "packaging", environment: []string{"GOOS=linux", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk/packaging"},
 }
 
-// Modules that hold no package, so no build of theirs can link anything, with why.
-var messagingBoundaryModulesWithoutABuild = map[string]string{
+// Modules that hold no package, so no build of theirs links anything, with why. Held by `go list`
+// matching no package there: a .go file added to one fails here until the module gets a leg.
+var messagingBoundaryModulesWithoutAPackage = map[string]string{
 	"cgo/build": "an empty module that keeps the cgo library's build output out of the cgo module",
 }
 
-// Every go.mod-shaped file under root, and what each names that is under a messaging root.
-// go.mod-shaped is a file named go.mod or ending in .go.mod, the shape of an alternate modfile. The
-// file is read by `go mod edit -json`, the go command's own parser.
-func messagingBoundaryModuleFileFindings(t *testing.T, walkRoot string) (moduleFiles []string, findings []string) {
+// Modules whose module file requires nothing, with why each has no leg. Such a module's closure is
+// the standard library and its own packages, and the import scan reads every one of its files.
+// Held by its module file having no require, replace or tool entry: one added fails here until
+// the module gets its leg back.
+var messagingBoundaryModulesRequiringNothing = map[string]string{
+	"packaging": "the binding generator and the packaging tools. Its go.mod asks for go 1.26.7, " +
+		"newer than the root module's go 1.26.5, so `go list` there needs that toolchain, and a leg " +
+		"would make the root module's own tests need it too",
+}
+
+// Every go.mod-shaped file under root, the dependency entries each declares, and what each names
+// that is under a messaging root. go.mod-shaped is a file named go.mod or ending in .go.mod, the
+// shape of an alternate modfile. The file is read by `go mod edit -json`, the go command's own
+// parser. A dependency entry is a require, replace or tool line, the entries that can put a
+// package other than the standard library's and the module's own into its builds.
+func messagingBoundaryModuleFileFindings(t *testing.T, walkRoot string) (moduleFiles []string, dependencies map[string][]string, findings []string) {
+	dependencies = map[string][]string{}
 	err := filepath.Walk(walkRoot, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -148,8 +166,10 @@ func messagingBoundaryModuleFileFindings(t *testing.T, walkRoot string) (moduleF
 			return fmt.Errorf("decoding go mod edit -json %s: %w", rel, err)
 		}
 		named := map[string]string{"module": parsed.Module.Path}
+		entries := []string{}
 		for _, require := range parsed.Require {
 			named["require "+require.Path] = require.Path
+			entries = append(entries, "require "+require.Path)
 		}
 		for _, exclude := range parsed.Exclude {
 			named["exclude "+exclude.Path] = exclude.Path
@@ -157,10 +177,14 @@ func messagingBoundaryModuleFileFindings(t *testing.T, walkRoot string) (moduleF
 		for _, replace := range parsed.Replace {
 			named["replace "+replace.Old.Path] = replace.Old.Path
 			named["replace => "+replace.New.Path] = replace.New.Path
+			entries = append(entries, "replace "+replace.Old.Path+" => "+replace.New.Path)
 		}
 		for _, tool := range parsed.Tool {
 			named["tool "+tool.Path] = tool.Path
+			entries = append(entries, "tool "+tool.Path)
 		}
+		sort.Strings(entries)
+		dependencies[rel] = entries
 		for entry, namedPath := range named {
 			if boundaryRoot, under := messagingBoundaryRootOf(namedPath); under {
 				findings = append(findings, fmt.Sprintf("%s: %s is under %s", rel, entry, boundaryRoot))
@@ -173,7 +197,7 @@ func messagingBoundaryModuleFileFindings(t *testing.T, walkRoot string) (moduleF
 	}
 	sort.Strings(moduleFiles)
 	sort.Strings(findings)
-	return moduleFiles, findings
+	return moduleFiles, dependencies, findings
 }
 
 // Every import of every .go file under root that is under a messaging root, read off the syntax so
@@ -318,24 +342,44 @@ func TestMessagingBoundaryMatchesWholePathElements(t *testing.T) {
 
 // The two syntactic scans find exactly what a fixture plants: a require, a replace and a tool
 // entry in two module files, an aliased import behind a constraint no build passes, and a dot
-// import in a test file; and nothing for paths that only share a prefix with a root.
+// import in a test file; and nothing for paths that only share a prefix with a root. The module
+// file scan lists each file's dependency entries, messaging or not, and none for a module file
+// that requires nothing, which is the reading a disposition of a module as requiring nothing
+// rests on.
 func TestTheMessagingBoundaryScansFindWhatAFixturePlants(t *testing.T) {
 	fixture := t.TempDir()
 	fixtureFiles := map[string]string{
-		"go.mod":       "module fixture.example/core\n\ngo 1.26\n\nrequire github.com/urnetwork/message v0.0.0\n\nreplace github.com/urnetwork/message-server => ../server\n",
+		"go.mod":       "module fixture.example/core\n\ngo 1.26\n\nrequire github.com/urnetwork/message v0.0.0\n\nrequire example.com/plain v1.0.0\n\nreplace github.com/urnetwork/message-server => ../server\n",
 		"alt.go.mod":   "module fixture.example/alt\n\ngo 1.26\n\ntool github.com/urnetwork/message/cmd/fixture\n",
+		"bare/go.mod":  "module fixture.example/bare\n\ngo 1.26\n\nexclude example.com/plain v0.9.0\n",
 		"never.go":     "//go:build urnet_fixture_never\n\npackage core\n\nimport group \"github.com/urnetwork/connect/messagegroup\"\n\nvar _ = group.Fixture\n",
 		"core.go":      "package core\n\nimport (\n\t_ \"github.com/urnetwork/messagex\"\n\t_ \"github.com/urnetwork/connect/messages\"\n\t_ \"github.com/urnetwork/message-serverx\"\n)\n",
 		"core_test.go": "package core\n\nimport . \"github.com/urnetwork/sdk/urmessage\"\n",
 	}
 	for name, content := range fixtureFiles {
-		if err := os.WriteFile(filepath.Join(fixture, name), []byte(content), 0o600); err != nil {
+		fixturePath := filepath.Join(fixture, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(fixturePath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fixturePath, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	moduleFiles, moduleFindings := messagingBoundaryModuleFileFindings(t, fixture)
-	if !slices.Equal(moduleFiles, []string{"alt.go.mod", "go.mod"}) {
-		t.Errorf("module files found: %v, want alt.go.mod and go.mod", moduleFiles)
+	moduleFiles, dependencies, moduleFindings := messagingBoundaryModuleFileFindings(t, fixture)
+	if !slices.Equal(moduleFiles, []string{"alt.go.mod", "bare/go.mod", "go.mod"}) {
+		t.Errorf("module files found: %v, want alt.go.mod, bare/go.mod and go.mod", moduleFiles)
+	}
+	wantDependencies := map[string][]string{
+		"alt.go.mod":  {"tool github.com/urnetwork/message/cmd/fixture"},
+		"bare/go.mod": {},
+		"go.mod": {
+			"replace github.com/urnetwork/message-server => ../server",
+			"require example.com/plain",
+			"require github.com/urnetwork/message",
+		},
+	}
+	if !maps.EqualFunc(dependencies, wantDependencies, slices.Equal[[]string]) {
+		t.Errorf("dependency entries: %v, want %v", dependencies, wantDependencies)
 	}
 	wantModuleFindings := []string{
 		"alt.go.mod: tool github.com/urnetwork/message/cmd/fixture is under github.com/urnetwork/message",
@@ -361,7 +405,7 @@ func TestTheMessagingBoundaryScansFindWhatAFixturePlants(t *testing.T) {
 // No module file in this repository names a messaging module, and no .go file imports a messaging
 // package, whatever its build constraints.
 func TestNoModuleFileOrImportInThisRepositoryNamesMessaging(t *testing.T) {
-	moduleFiles, moduleFindings := messagingBoundaryModuleFileFindings(t, ".")
+	moduleFiles, _, moduleFindings := messagingBoundaryModuleFileFindings(t, ".")
 	if !slices.Contains(moduleFiles, "go.mod") || !slices.Contains(moduleFiles, "cgo/go.mod") {
 		t.Fatalf("CONTROL FAILED: the module files found are %v, which lacks this repository's own", moduleFiles)
 	}
@@ -385,10 +429,11 @@ func TestNoModuleFileOrImportInThisRepositoryNamesMessaging(t *testing.T) {
 }
 
 // No build this repository ships links a messaging package. Every module file is either a leg's
-// module or disposed of as holding no package, both ways, so a module added later is either
-// checked or written down.
+// module or disposed of, once, both ways, so a module added later is either checked or written
+// down. Each disposition is held by what it says: a module said to hold no package matches none
+// under `go list`, and a module said to require nothing has no require, replace or tool entry.
 func TestNoShippedBuildLinksAMessagingPackage(t *testing.T) {
-	moduleFiles, _ := messagingBoundaryModuleFileFindings(t, ".")
+	moduleFiles, dependencies, _ := messagingBoundaryModuleFileFindings(t, ".")
 	moduleDirectories := map[string]bool{}
 	for _, moduleFile := range moduleFiles {
 		if filepath.Base(moduleFile) != "go.mod" {
@@ -398,25 +443,52 @@ func TestNoShippedBuildLinksAMessagingPackage(t *testing.T) {
 		directory := filepath.ToSlash(filepath.Dir(filepath.FromSlash(moduleFile)))
 		moduleDirectories[directory] = true
 	}
-	covered := map[string]bool{}
+	// module directory -> what covers it, which must be exactly one thing
+	coveredBy := map[string][]string{}
 	for _, leg := range messagingBoundaryLegs {
-		covered[leg.moduleDirectory] = true
-	}
-	for directory, why := range messagingBoundaryModulesWithoutABuild {
-		if covered[directory] {
-			t.Errorf("%s is disposed of as holding no package (%s) and a leg builds it", directory, why)
-		}
-		covered[directory] = true
-	}
-	for directory := range moduleDirectories {
-		if !covered[directory] {
-			t.Errorf("the module in %s has no leg and no disposition", directory)
+		if !slices.Contains(coveredBy[leg.moduleDirectory], "legs") {
+			coveredBy[leg.moduleDirectory] = append(coveredBy[leg.moduleDirectory], "legs")
 		}
 	}
-	for directory := range covered {
+	for directory := range messagingBoundaryModulesWithoutAPackage {
+		coveredBy[directory] = append(coveredBy[directory], "holds no package")
+	}
+	for directory := range messagingBoundaryModulesRequiringNothing {
+		coveredBy[directory] = append(coveredBy[directory], "requires nothing")
+	}
+	for directory, by := range coveredBy {
+		if len(by) != 1 {
+			t.Errorf("%s is covered %d ways (%s); a module is a leg's or disposed of, once", directory, len(by), strings.Join(by, ", "))
+		}
 		if !moduleDirectories[directory] {
 			t.Errorf("a leg or disposition names %s, which holds no go.mod", directory)
 		}
+	}
+	for directory := range moduleDirectories {
+		if len(coveredBy[directory]) == 0 {
+			t.Errorf("the module in %s has no leg and no disposition", directory)
+		}
+	}
+
+	// each disposition, held by what it says
+	for directory, why := range messagingBoundaryModulesWithoutAPackage {
+		packages, _ := messagingBoundaryLegPackages(t, ".", messagingBoundaryLeg{
+			name:            directory + ", disposed of as holding no package",
+			moduleDirectory: directory,
+			patterns:        []string{"./..."},
+		})
+		if len(packages) != 0 {
+			t.Errorf("%s is disposed of as holding no package (%s) and go list resolves %v there; give it a leg", directory, why, packages)
+		}
+		t.Logf("%s holds no package (%s): go list -deps ./... resolves %d packages", directory, why, len(packages))
+	}
+	for directory, why := range messagingBoundaryModulesRequiringNothing {
+		entries := dependencies[path.Join(directory, "go.mod")]
+		if len(entries) != 0 {
+			t.Errorf("%s is disposed of as requiring nothing (%s) and its module file declares %v, so its closure is no "+
+				"longer the standard library and its own packages; give it a leg", directory, why, entries)
+		}
+		t.Logf("%s requires nothing (%s): %d require, replace or tool entries", directory, why, len(entries))
 	}
 
 	for _, leg := range messagingBoundaryLegs {
