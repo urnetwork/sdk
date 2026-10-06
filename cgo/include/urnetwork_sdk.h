@@ -401,6 +401,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_SS58_PREFIX 42
 #define URNET_SN_TX_TYPE_EIP1559 "eip1559"
 #define URNET_SN_TX_TYPE_LEGACY "legacy"
+#define URNET_SN_WALLET_CONSENT_SCOPE_HOTKEY "hotkey"
 #define URNET_SN_WALLET_CONSENT_SCOPE_NETWORK "network"
 #define URNET_SN_WALLET_CONSENT_SCOPE_PROVIDER "provider"
 #define URNET_SOL "SOL"
@@ -4586,6 +4587,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   from_epoch?: number
  *   consent_scope?: string
  *   through_epoch?: number
+ *   hotkey_ss58?: string
+ *   consent_head_hash?: string
+ *   consent_generation?: number
+ *   mapping_hash?: string
+ *   mapping_generation?: number
  */
 
 /* SnWalletList (json):

@@ -689,6 +689,11 @@ export interface SnWallet {
   from_epoch?: number;
   consent_scope?: string;
   through_epoch?: number;
+  hotkey_ss58?: string;
+  consent_head_hash?: string;
+  consent_generation?: number;
+  mapping_hash?: string;
+  mapping_generation?: number;
 }
 
 export interface SnSetWalletArgs {

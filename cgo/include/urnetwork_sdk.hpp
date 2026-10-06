@@ -461,6 +461,7 @@ inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
 inline constexpr const char* SnTxTypeEip1559 = "eip1559";
 inline constexpr const char* SnTxTypeLegacy = "legacy";
+inline constexpr const char* SnWalletConsentScopeHotkey = "hotkey";
 inline constexpr const char* SnWalletConsentScopeNetwork = "network";
 inline constexpr const char* SnWalletConsentScopeProvider = "provider";
 inline constexpr int64_t SolanaPayReferenceBytes = 32;
@@ -3131,6 +3132,11 @@ struct SnWallet {
 	std::optional<int64_t> from_epoch;
 	std::optional<std::string> consent_scope;
 	std::optional<int64_t> through_epoch;
+	std::optional<std::string> hotkey_ss58;
+	std::optional<std::string> consent_head_hash;
+	std::optional<int64_t> consent_generation;
+	std::optional<std::string> mapping_hash;
+	std::optional<int64_t> mapping_generation;
 };
 
 struct SnConnectWalletResult {
@@ -14250,6 +14256,21 @@ inline void to_json(nlohmann::json& j, const SnWallet& v) {
 	if (v.through_epoch) {
 		j["through_epoch"] = *v.through_epoch;
 	}
+	if (v.hotkey_ss58) {
+		j["hotkey_ss58"] = *v.hotkey_ss58;
+	}
+	if (v.consent_head_hash) {
+		j["consent_head_hash"] = *v.consent_head_hash;
+	}
+	if (v.consent_generation) {
+		j["consent_generation"] = *v.consent_generation;
+	}
+	if (v.mapping_hash) {
+		j["mapping_hash"] = *v.mapping_hash;
+	}
+	if (v.mapping_generation) {
+		j["mapping_generation"] = *v.mapping_generation;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnWallet& v) {
 	if (!j.is_object()) {
@@ -14280,6 +14301,31 @@ inline void from_json(const nlohmann::json& j, SnWallet& v) {
 		int64_t tmp{};
 		it->get_to(tmp);
 		v.through_epoch = std::move(tmp);
+	}
+	if (auto it = j.find("hotkey_ss58"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.hotkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("consent_head_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.consent_head_hash = std::move(tmp);
+	}
+	if (auto it = j.find("consent_generation"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.consent_generation = std::move(tmp);
+	}
+	if (auto it = j.find("mapping_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.mapping_hash = std::move(tmp);
+	}
+	if (auto it = j.find("mapping_generation"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.mapping_generation = std::move(tmp);
 	}
 }
 
