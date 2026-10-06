@@ -548,6 +548,77 @@ func TestPurchaseRefusalKeepsGuestSignInRequiredCode(t *testing.T) {
 	}
 }
 
+// The server refuses the billing portal with error.code no_customer or
+// store_unavailable (controller.StripeCreateCustomerPortal,
+// SubscriptionErrorCode*), and the Windows and Linux apps show a translated
+// line for each. The portal error carried only the message before, so the json
+// decode dropped the code and the apps could only show the English message.
+func TestCustomerPortalRefusalKeepsCode(t *testing.T) {
+	// the server's exact payloads for the two refusals
+	refusals := []struct {
+		code    string
+		message string
+	}{
+		{code: "no_customer", message: "No stripe customer found"},
+		{code: "store_unavailable", message: "Could not open the billing portal. Please try again."},
+	}
+	for _, refusal := range refusals {
+		t.Run(refusal.code, func(t *testing.T) {
+			var path atomic.Value
+			api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+				path.Store(r.URL.Path)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"error":{"code":%q,"message":%q}}`, refusal.code, refusal.message)
+			})
+
+			callback, c := connect.NewBlockingApiCallback[*StripeCreateCustomerPortalResult](context.Background())
+			api.StripeCreateCustomerPortal(&StripeCreateCustomerPortalArgs{}, callback)
+			r := awaitApiResult(t, c, "StripeCreateCustomerPortal never returned")
+			if r.Error != nil || r.Result.Error == nil {
+				t.Fatalf("portal: %+v", r)
+			}
+			if got := path.Load().(string); got != "/stripe/customer-portal" {
+				t.Errorf("path = %q", got)
+			}
+			if r.Result.Url != "" {
+				t.Errorf("refusal carried a url: %q", r.Result.Url)
+			}
+
+			// the decoded error, re-encoded: the code must have survived the
+			// decode, and the message stays the fallback
+			b, err := json.Marshal(r.Result.Error)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := fmt.Sprintf(`"code":%q`, refusal.code); !strings.Contains(string(b), want) {
+				t.Errorf("portal dropped the code: %s", b)
+			}
+			if r.Result.Error.Message != refusal.message {
+				t.Errorf("message = %q", r.Result.Error.Message)
+			}
+		})
+	}
+
+	// an older server sends no code, and nothing is invented for it
+	api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"error":{"message":"No stripe customer found"}}`)
+	})
+	callback, c := connect.NewBlockingApiCallback[*StripeCreateCustomerPortalResult](context.Background())
+	api.StripeCreateCustomerPortal(&StripeCreateCustomerPortalArgs{}, callback)
+	r := awaitApiResult(t, c, "StripeCreateCustomerPortal never returned")
+	if r.Error != nil || r.Result.Error == nil {
+		t.Fatalf("portal: %+v", r)
+	}
+	b, err := json.Marshal(r.Result.Error)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `{"message":"No stripe customer found"}` {
+		t.Errorf("older refusal = %s", got)
+	}
+}
+
 // TestStripePrices pins the price lookup the Stripe-billed apps make before
 // showing the pay sheet: a GET with the storefront as a query parameter
 // (the server reads ?storefront_country), and every field of the server's
