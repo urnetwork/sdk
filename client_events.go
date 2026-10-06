@@ -597,7 +597,9 @@ func (self *ClientEventQueue) Add(event *ClientEvent) {
 	}
 	self.pending = append(self.pending, &queuedClientEvent{Event: event})
 	if clientEventQueueCapacity < len(self.pending) {
-		self.pending = self.pending[len(self.pending)-clientEventQueueCapacity:]
+		dropCount := len(self.pending) - clientEventQueueCapacity
+		clear(self.pending[:dropCount])
+		self.pending = self.pending[dropCount:]
 	}
 	self.saveLocked()
 	self.mutex.Unlock()
@@ -713,20 +715,28 @@ func (self *ClientEventQueue) flushOnce() {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	self.sending = false
-	if err == nil {
-		// the batch is the head of pending, unchanged while sending
-		self.pending = self.pending[len(batch):]
-	} else {
-		kept := self.pending[len(batch):]
-		retry := make([]*queuedClientEvent, 0, len(batch))
-		for _, q := range batch {
+	// Add may evict the batch prefix while sending. Match queued owners
+	// in order so completion cannot retire or retry their replacements.
+	batchIndex := 0
+	pending := self.pending[:0]
+	for _, q := range self.pending {
+		for batchIndex < len(batch) && batch[batchIndex] != q {
+			batchIndex += 1
+		}
+		if batchIndex < len(batch) {
+			batchIndex += 1
+			if err == nil {
+				continue
+			}
 			q.Attempts += 1
-			if q.Attempts < ClientEventMaxAttempts {
-				retry = append(retry, q)
+			if ClientEventMaxAttempts <= q.Attempts {
+				continue
 			}
 		}
-		self.pending = append(retry, kept...)
+		pending = append(pending, q)
 	}
+	clear(self.pending[len(pending):])
+	self.pending = pending
 	self.saveLocked()
 }
 
@@ -749,6 +759,11 @@ func (self *ClientEventQueue) load() {
 		if q != nil && q.Event != nil && q.Event.Name != "" {
 			self.pending = append(self.pending, q)
 		}
+	}
+	if clientEventQueueCapacity < len(self.pending) {
+		dropCount := len(self.pending) - clientEventQueueCapacity
+		clear(self.pending[:dropCount])
+		self.pending = self.pending[dropCount:]
 	}
 }
 
