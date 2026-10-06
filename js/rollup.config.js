@@ -1,6 +1,6 @@
 import typescript from "@rollup/plugin-typescript";
 import resolve from "@rollup/plugin-node-resolve";
-import copy from "rollup-plugin-copy";
+import { readFile } from "node:fs/promises";
 
 export default [
   // Main entry point (core SDK)
@@ -25,9 +25,17 @@ export default [
         tsconfig: "./tsconfig.json",
         declaration: false, // handled by build:types script
       }),
-      copy({
-        targets: [{ src: "wasm/*", dest: "dist/wasm" }],
-      }),
+      {
+        name: "wasm-assets",
+        async buildStart() {
+          // The runtime is a fixed pair; no glob expansion is needed.
+          for (const name of ["sdk.wasm", "wasm_exec.js"]) {
+            const fileName = `wasm/${name}`;
+            this.addWatchFile(fileName);
+            this.emitFile({ type: "asset", fileName, source: await readFile(fileName) });
+          }
+        },
+      },
     ],
   },
   // The api client alone (no wasm, no DOM): for service workers and other
