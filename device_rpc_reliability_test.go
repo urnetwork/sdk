@@ -19,7 +19,7 @@ import (
 // end to end: remote -> rpc -> DeviceLocal -> connect multi client -> back.
 //
 // These are ordinary build-tag-free tests in the default compile set, and
-// run on Windows as well as in the Linux sdk CI.
+// run on Windows as well as on Linux.
 
 // gob wire fidelity for the whole-struct payloads
 
