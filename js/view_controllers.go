@@ -204,7 +204,8 @@ func (self *jsGridListener) GridChanged() {
 // ── ContractDetailsViewController ────────────────────────────────────────────
 
 // jsContractEntry converts one un-aggregated contract: its own used/total byte
-// counts and bit rate. Contracts are never paired across directions.
+// counts and bit rate, and the stream it rides ("" for a direct contract).
+// Contracts are never paired across directions.
 func jsContractEntry(entry *sdk.ContractEntry) js.Value {
 	if entry == nil {
 		return js.Null()
@@ -215,6 +216,7 @@ func jsContractEntry(entry *sdk.ContractEntry) js.Value {
 		"totalByteCount": entry.TotalByteCount,
 		"bitRate":        entry.BitRate,
 		"hasStream":      entry.HasStream,
+		"streamId":       entry.StreamId,
 	})
 }
 
