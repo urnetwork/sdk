@@ -47,16 +47,13 @@ type LocalStateKeyMaterialReadResult struct {
 	keyMaterial *DeviceLocalKeyMaterial
 }
 
-// A successful missing or legacy-empty record has no key material.
+// A successful missing or legacy-empty record has no key material. The copy
+// keeps the network the identity belongs to, which a device checks.
 func (self *LocalStateKeyMaterialReadResult) GetKeyMaterial() *DeviceLocalKeyMaterial {
 	if self.keyMaterial == nil {
 		return nil
 	}
-	return NewDeviceLocalKeyMaterial(
-		self.keyMaterial.GetClientKeySeed(),
-		self.keyMaterial.GetProvideTlsCertificatePem(),
-		self.keyMaterial.GetProvideTlsPrivateKeyPem(),
-	)
+	return self.keyMaterial.clone()
 }
 
 // Native callers distinguish an absent identity from every checked failure.

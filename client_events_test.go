@@ -152,7 +152,7 @@ func TestClientEventQueue(t *testing.T) {
 	hasJwt := true
 	ctx := context.Background()
 
-	q := newClientEventQueue(ctx, sender.send, func() bool { return hasJwt }, statePath, EventPlatformAndroid, "2026.9.1", "en-US", time.Hour)
+	q := newClientEventQueue(ctx, sender.send, func() bool { return hasJwt }, nil, statePath, EventPlatformAndroid, "2026.9.1", "en-US", time.Hour)
 	for i := 0; i < 450; i++ {
 		q.Add(NewOnboardingStepShownEvent("plan", i, -1))
 	}
@@ -182,7 +182,7 @@ func TestClientEventQueue(t *testing.T) {
 	// held without a jwt, then persisted and reloaded by a new queue
 	hasJwt = false
 	sender = &fakeEventSender{}
-	q = newClientEventQueue(ctx, sender.send, func() bool { return hasJwt }, statePath, EventPlatformIos, "1", "de", time.Hour)
+	q = newClientEventQueue(ctx, sender.send, func() bool { return hasJwt }, nil, statePath, EventPlatformIos, "1", "de", time.Hour)
 	q.Add(NewConnectFirstEvent())
 	q.Add(NewWidgetAddedEvent("globe"))
 	q.FlushAndWait(200)
@@ -191,7 +191,7 @@ func TestClientEventQueue(t *testing.T) {
 	q.Close()
 
 	hasJwt = true
-	q = newClientEventQueue(ctx, sender.send, func() bool { return hasJwt }, statePath, EventPlatformIos, "1", "de", time.Hour)
+	q = newClientEventQueue(ctx, sender.send, func() bool { return hasJwt }, nil, statePath, EventPlatformIos, "1", "de", time.Hour)
 	connect.AssertEqual(t, 2, q.PendingCount())
 	q.FlushAndWait(5000)
 	connect.AssertEqual(t, 0, q.PendingCount())
@@ -202,7 +202,7 @@ func TestClientEventQueue(t *testing.T) {
 
 	// three failed calls drop the batch; a later success sends the rest
 	sender = &fakeEventSender{fail: 3}
-	q = newClientEventQueue(ctx, sender.send, func() bool { return true }, statePath, EventPlatformWeb, "1", "en", time.Hour)
+	q = newClientEventQueue(ctx, sender.send, func() bool { return true }, nil, statePath, EventPlatformWeb, "1", "en", time.Hour)
 	q.Add(NewOfferCardTappedEvent(PlanYearly))
 	q.flushOnce()
 	connect.AssertEqual(t, 1, q.PendingCount())
@@ -219,7 +219,7 @@ func TestClientEventQueue(t *testing.T) {
 
 	// a corrupt state file is discarded
 	connect.AssertEqual(t, nil, os.WriteFile(statePath, []byte("{not json"), 0600))
-	q = newClientEventQueue(ctx, sender.send, func() bool { return true }, statePath, EventPlatformWeb, "1", "en", time.Hour)
+	q = newClientEventQueue(ctx, sender.send, func() bool { return true }, nil, statePath, EventPlatformWeb, "1", "en", time.Hour)
 	connect.AssertEqual(t, 0, q.PendingCount())
 	q.Close()
 }

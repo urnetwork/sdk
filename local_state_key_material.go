@@ -58,13 +58,11 @@ func (self *LocalState) loadDeviceLocalKeyMaterialWithLock() (*DeviceLocalKeyMat
 		// identify the stage without exposing stored identity bytes.
 		return nil, errors.New("decode device key material")
 	}
-	material := NewDeviceLocalKeyMaterial(
-		stored.ClientKeySeed,
-		stored.ProvideTlsCertificatePem,
-		stored.ProvideTlsPrivateKeyPem,
-	)
-	if material.IsEmpty() {
-		return nil, nil
+	// The credential read only names the network of a record that keeps none;
+	// a failed read leaves that network unknown rather than failing the load.
+	var state *persistedLocalAuthState
+	if loaded, err := self.loadAuthStateLocked(); err == nil {
+		state = &loaded
 	}
-	return material, nil
+	return storedDeviceLocalKeyMaterial(stored, state), nil
 }

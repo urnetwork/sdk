@@ -691,7 +691,11 @@ type DeviceLocal struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	byJwt            string
+	byJwt string
+	// The network of the client this device was built for, empty when its
+	// credential names none. Fixed at construction: the identity the device
+	// makes belongs to this network (DeviceLocalKeyMaterial).
+	networkId        string
 	apiJwtRefreshSub Sub
 	apiAuthLogoutSub Sub
 	authPublication  *deviceAuthPublicationGate
@@ -1303,6 +1307,16 @@ func newDeviceLocalWithOverridesForPlatform(
 	if settings.LocalApi != nil && settings.AllowProvider {
 		return nil, errors.New("local device API supports hosted source devices only")
 	}
+	// resolve the device logger. all nested components and clients follow it.
+	log := settings.logger()
+	settings.ClientSettings.Log = log
+
+	if settings.KeyMaterial != nil && !settings.KeyMaterial.belongsToNetworkOf(byJwt) {
+		// another network's identity, kept across a sign-out: this network
+		// starts on a new one (DeviceLocalKeyMaterial)
+		log.Infof("[device]the stored identity belongs to another network, so this device starts on a new identity\n")
+		settings.KeyMaterial = nil
+	}
 	if settings.KeyMaterial != nil {
 		applyDeviceLocalKeyMaterial(&settings.ClientSettings, settings.KeyMaterial)
 		// the extender identity belongs to the space, not to the client
@@ -1310,10 +1324,6 @@ func newDeviceLocalWithOverridesForPlatform(
 		// both present it (B1, G2)
 		networkSpace.setExtenderKeySeed(settings.KeyMaterial.GetExtenderKeySeed())
 	}
-
-	// resolve the device logger. all nested components and clients follow it.
-	log := settings.logger()
-	settings.ClientSettings.Log = log
 	dnsShareByteCount, _, _, providerShareByteCount := deviceMemoryShares(settings)
 	dnsMemoryTarget := connect.NewMemoryTarget(dnsShareByteCount)
 
@@ -1517,6 +1527,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		ctx:                ctx,
 		cancel:             cancel,
 		byJwt:              byJwt,
+		networkId:          byJwtNetworkId(byJwt),
 		subprotocols:       newDeviceLocalSubprotocols(ctx, log),
 		// apiUrl:            apiUrl,
 		deviceDescription:      deviceDescription,
@@ -3909,6 +3920,9 @@ func (self *DeviceLocal) GetExtenderKeySeed() []byte {
 // GetKeyMaterial returns the provider client's persisted identity
 // material. Persist it in caller-owned local storage and pass it back to
 // NewDeviceLocalWithKeyMaterial on the next process start.
+//
+// The material names this device's network, so a device for another network's
+// client never takes it.
 func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
 	keyMaterial := NewDeviceLocalKeyMaterial(
 		self.GetClientKeySeed(),
@@ -3916,6 +3930,7 @@ func (self *DeviceLocal) GetKeyMaterial() *DeviceLocalKeyMaterial {
 		self.GetProvideTlsPrivateKeyPem(),
 	)
 	keyMaterial.SetExtenderKeySeed(self.GetExtenderKeySeed())
+	keyMaterial.networkId = self.networkId
 	return keyMaterial
 }
 
@@ -3927,6 +3942,11 @@ func (self *DeviceLocal) SetKeyMaterial(keyMaterial *DeviceLocalKeyMaterial) {
 		return
 	}
 	if keyMaterial == nil || keyMaterial.IsEmpty() {
+		return
+	}
+	if keyMaterial.networkId != "" && self.networkId != "" && keyMaterial.networkId != self.networkId {
+		// another network's identity: this device keeps its own
+		self.log.Infof("[device]refused a stored identity that belongs to another network\n")
 		return
 	}
 

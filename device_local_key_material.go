@@ -3,6 +3,8 @@ package sdk
 import (
 	"bytes"
 
+	gojwt "github.com/golang-jwt/jwt/v5"
+
 	"github.com/urnetwork/connect"
 )
 
@@ -10,6 +12,14 @@ import (
 // material. Pass a value returned by DeviceLocal.GetKeyMaterial back to
 // NewDeviceLocalWithKeyMaterial on the next process start to keep the
 // provider ClientKey, TLS cert commitment and extender identity stable.
+//
+// An identity belongs to the network it was made for (owner decision
+// 2026-10-05: logout must not cross contaminate other networks; each network
+// starts fresh). Material that came from a device or from local state records
+// that network, and a device for another network's client never takes it: it
+// starts on a new identity instead, so peers never see one key under two
+// networks' clients. Material an embedder builds itself records none and is
+// taken as before; such embedders delete their stored identity at sign-out.
 type DeviceLocalKeyMaterial struct {
 	clientKeySeed            []byte
 	provideTlsCertificatePem []byte
@@ -19,6 +29,8 @@ type DeviceLocalKeyMaterial struct {
 	// space with local state keeps `.extender_key` and that always wins, so
 	// this is empty there.
 	extenderKeySeed []byte
+	// The network the identity was made for, empty when unknown.
+	networkId string
 }
 
 func NewDeviceLocalKeyMaterial(clientKeySeed []byte, provideTlsCertificatePem []byte, provideTlsPrivateKeyPem []byte) *DeviceLocalKeyMaterial {
@@ -80,6 +92,53 @@ func (self *DeviceLocalKeyMaterial) IsEmpty() bool {
 		len(self.provideTlsCertificatePem) == 0 &&
 		len(self.provideTlsPrivateKeyPem) == 0 &&
 		len(self.extenderKeySeed) == 0)
+}
+
+// An independent copy, including the network the identity belongs to.
+func (self *DeviceLocalKeyMaterial) clone() *DeviceLocalKeyMaterial {
+	if self == nil {
+		return nil
+	}
+	keyMaterial := NewDeviceLocalKeyMaterial(
+		self.clientKeySeed,
+		self.provideTlsCertificatePem,
+		self.provideTlsPrivateKeyPem,
+	)
+	keyMaterial.extenderKeySeed = bytes.Clone(self.extenderKeySeed)
+	keyMaterial.networkId = self.networkId
+	return keyMaterial
+}
+
+// Whether a device for the client `byJwt` may take this identity: false only
+// when both the identity and the credential name a network and they differ.
+func (self *DeviceLocalKeyMaterial) belongsToNetworkOf(byJwt string) bool {
+	if self == nil || self.networkId == "" {
+		return true
+	}
+	networkId := byJwtNetworkId(byJwt)
+	return networkId == "" || networkId == self.networkId
+}
+
+// The network a credential (a client or an admin jwt) names, in canonical
+// form, or empty when it names none or cannot be read. Unverified: it only
+// decides which stored identity a device may take, never any admission.
+func byJwtNetworkId(byJwt string) string {
+	if byJwt == "" {
+		return ""
+	}
+	claims := gojwt.MapClaims{}
+	if _, _, err := gojwt.NewParser().ParseUnverified(byJwt, claims); err != nil {
+		return ""
+	}
+	text, ok := claims["network_id"].(string)
+	if !ok {
+		return ""
+	}
+	networkId, err := ParseId(text)
+	if err != nil {
+		return ""
+	}
+	return networkId.String()
 }
 
 func applyDeviceLocalKeyMaterial(settings *connect.ClientSettings, keyMaterial *DeviceLocalKeyMaterial) {
