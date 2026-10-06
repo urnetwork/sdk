@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "loopback_test_world.go": "ctest/testdata/loopback_test_world.go"
+  }
+}

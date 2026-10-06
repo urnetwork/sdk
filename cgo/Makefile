@@ -133,7 +133,8 @@ smoke: build_host
 
 # THE MESSAGING ABI's OWN TEST, AND IT IS A C PROGRAM RATHER THAN A GO ONE.
 # Builds the library twice -- once as it ships, once with the loopback harness behind
-# `-tags urnet_message_loopback` and `-modfile=loopback.go.mod` -- compiles
+# `-overlay=ctest/loopback-overlay.json`, `-tags urnet_message_loopback`, and
+# `-modfile=loopback.go.mod` -- compiles
 # ctest/message_abi_test.c against include/urnetwork_message.h, and runs it: two devices, one
 # group, octets that are not text, a handle-count check across the whole conversation and a
 # blocking Connect cancelled from a second OS thread. It FAILS if the shipping header declares

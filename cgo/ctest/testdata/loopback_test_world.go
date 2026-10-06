@@ -26,11 +26,11 @@ import (
 
 // A RUNNING MESSAGE SERVER AND ITS CLIENTS, FOR THE C CONSUMER TEST AND FOR NOTHING ELSE.
 //
-// IT IS NOT IN THE SHIPPING LIBRARY. This file is behind `//go:build urnet_message_loopback`, so
-// `go build`, `go vet` and every Makefile target compile it out entirely; only
-// ctest/run.sh passes the tag, and it builds a SECOND library into build/ctest/ that nothing
-// ships. The measurement that says so is in ctest/run.sh: it counts urnet_message_loopback_*
-// in both headers and requires 0 in the shipping one.
+// IT IS NOT IN THE SHIPPING LIBRARY. This file lives under testdata, outside normal package
+// discovery, and retains the urnet_message_loopback build tag. Only ctest/run.sh overlays it
+// into the cgo package and passes the tag to build a SECOND library into build/ctest/ that
+// nothing ships. The script counts urnet_message_loopback_* in both headers and requires 0
+// in the shipping one.
 //
 // WHY IT HAS TO EXIST AT ALL, AND THE REASON IS NOT THE ONE IT USED TO BE. A connect.Client
 // receives a frame only through an in-process connect.Route or through a PlatformTransport
@@ -47,13 +47,12 @@ import (
 // api.Handler runs §5.1's pipeline, store.MemoryStore holds the rows, and the client half is
 // entirely the shipping abi.
 //
-// WHY IT IS HERE AND NOT IN A MODULE OF ITS OWN. It must be in package main, because the handles
-// it hands back have to land in this package's own registry (handles.go) -- a second module is a
-// second registry and urnet_release could not reach across. And it must NOT be in cgo/go.mod,
-// because a `require github.com/urnetwork/message-server` there would make the whole cgo module
-// unbuildable from an sdk checkout that has no message-server beside it, which sdk/test.sh
-// already has to skip cp3b for. The dependency lives in loopback.go.mod instead, passed with
-// `-modfile`, and cgo/go.mod is untouched.
+// WHY THE OVERLAY. The handles must land in the shipping package main's registry (handles.go)
+// so urnet_release can reach them. The overlay compiles this file into that same package without
+// copying it into the source tree. A build tag alone does not isolate its dependencies: go mod
+// tidy considers custom tags and would pull message-server into the shipping module, whose
+// release uses versioned connect/sdk modules. Keeping the source under testdata excludes it from
+// tidy; the test library explicitly uses the overlay, tag, and loopback.go.mod together.
 
 // loopbackWorld is one server and the clients routed to it.
 type loopbackWorld struct {

@@ -6,9 +6,9 @@
 # TWO LIBRARIES, AND THE DIFFERENCE BETWEEN THEM IS THE POINT:
 #
 #   build/host/URnetworkSdk.dll   what SHIPS. no build tag, no alternate modfile, no harness.
-#   build/ctest/URnetworkSdk.dll  the same code plus loopback_test_world.go, which is behind
-#                                 `//go:build urnet_message_loopback` and pulls in the real
-#                                 message server through loopback.go.mod. NOTHING SHIPS IT.
+#   build/ctest/URnetworkSdk.dll  the same package plus the testdata loopback fixture, added
+#                                 by -overlay and -tags urnet_message_loopback. Its message
+#                                 server dependency lives in loopback.go.mod. NOTHING SHIPS IT.
 #
 # The script FAILS if the shipping header declares a single urnet_message_loopback_* symbol,
 # because a harness that leaked into the product is worse than no harness. It also prints the
@@ -25,9 +25,9 @@ note "the shipping library: no tag, cgo/go.mod untouched"
 rm -rf build/host && mkdir -p build/host
 CGO_ENABLED=1 go build -buildmode=c-shared -o build/host/URnetworkSdk.dll . || exit 1
 
-note "the test library: -tags urnet_message_loopback, -modfile=loopback.go.mod"
+note "the test library: loopback overlay, -tags urnet_message_loopback, -modfile=loopback.go.mod"
 rm -rf build/ctest && mkdir -p build/ctest
-CGO_ENABLED=1 go build -modfile=loopback.go.mod \
+CGO_ENABLED=1 go build -overlay=ctest/loopback-overlay.json -modfile=loopback.go.mod \
   -tags urnet_message_loopback -buildmode=c-shared \
   -o build/ctest/URnetworkSdk.dll . || exit 1
 
@@ -94,7 +94,7 @@ fi
 # registry and the same context handles -- see exports_message_test.go, which names this.
 note "the same program again, against a -race build"
 rm -rf build/ctest_race && mkdir -p build/ctest_race
-CGO_ENABLED=1 go build -race -modfile=loopback.go.mod \
+CGO_ENABLED=1 go build -race -overlay=ctest/loopback-overlay.json -modfile=loopback.go.mod \
   -tags urnet_message_loopback -buildmode=c-shared \
   -o build/ctest_race/URnetworkSdk.dll . || exit 1
 "${CC:-gcc}" -std=c11 -Wall -Wextra -Werror -O1 \

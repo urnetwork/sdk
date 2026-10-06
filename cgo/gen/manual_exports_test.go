@@ -52,8 +52,8 @@ func TestAFileNoShippedBuildCompilesContributesNoExportedSymbol(t *testing.T) {
 }
 
 // And the same property held against the REAL file rather than against a string written here: the
-// loopback world is the only build-tag-gated file in this package today, it really does carry
-// //export directives, and not one of them may reach the .def.
+// loopback world carries //export directives and can be overlaid into this package, but not
+// one of them may reach the .def.
 //
 // The second half of this -- that the file HAS exports -- is what keeps the first half from
 // passing vacuously if the harness is ever deleted or renamed.
@@ -62,7 +62,7 @@ func TestTheLoopbackHarnessIsNotInTheShippingLibrarysDef(t *testing.T) {
 	if !ok {
 		t.Fatal("could not resolve test path")
 	}
-	path := filepath.Join(filepath.Dir(filename), "..", "loopback_test_world.go")
+	path := filepath.Join(filepath.Dir(filename), "..", "ctest", "testdata", "loopback_test_world.go")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("the loopback harness is not where this test expects it: %v", err)
@@ -95,10 +95,21 @@ func TestTheLoopbackHarnessIsNotInTheShippingLibrarysDef(t *testing.T) {
 		}
 	}
 
-	// THROUGH manualExports ITSELF, not only through inAnyShippedBuild. The generator runs from the
-	// cgo module root, so this goes there and calls the real function. Without these lines,
-	// deleting the `if !inAnyShippedBuild(...)` guard from manualExports leaves every case in this
-	// file green -- which was true of this test until it grew them.
+	// Exercise the build-tag guard even though the real fixture is now under testdata. Place
+	// it beside a shipping export in an isolated directory and run the actual scanner there.
+	fixtureDirectory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixtureDirectory, "loopback_test_world.go"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shippingSource := []byte("package main\n\n//export urnet_shipping_control\nfunc urnet_shipping_control() {}\n")
+	if err := os.WriteFile(filepath.Join(fixtureDirectory, "shipping.go"), shippingSource, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if names := manualExports(fixtureDirectory); len(names) != 1 || names[0] != "urnet_shipping_control" {
+		t.Fatalf("manualExports admitted a tagged test export: %v", names)
+	}
+
+	// Also check discovery from the real cgo module root.
 	t.Chdir(filepath.Join(filepath.Dir(filename), ".."))
 	manual := manualExports(".")
 	if len(manual) == 0 {

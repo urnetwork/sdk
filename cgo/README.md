@@ -112,14 +112,16 @@ program: `ctest/message_abi_test.c` opens two devices, founds a group, joins it,
 sends octets, reads them back one at a time, holds `urnet_live_handle_count`
 across the whole conversation, and cancels a blocking `Connect` from a second OS
 thread. It builds the library **twice** — once as it ships, once with
-`-tags urnet_message_loopback -modfile=loopback.go.mod`, which adds
-`loopback_test_world.go`: a real in-process message server, wired the way
-`sdk/cp3b` wires one, because there is no operator here for the shipping
-`urnet_message_client_new` to dial and the conversation has to be a real one.
+`-overlay=ctest/loopback-overlay.json -tags urnet_message_loopback -modfile=loopback.go.mod`,
+which adds `ctest/testdata/loopback_test_world.go` to the same cgo package: a real
+in-process message server, wired the way `sdk/cp3b` wires one, because there is no
+operator here for the shipping `urnet_message_client_new` to dial and the
+conversation has to be a real one.
 The script **fails if the shipping header declares one
-`urnet_message_loopback_*` symbol**, and the harness's dependency lives only in
-`loopback.go.mod`, so deleting its build tag breaks the build rather than
-shipping it.
+`urnet_message_loopback_*` symbol**. The fixture stays under `testdata` because
+`go mod tidy` considers custom build tags even when a normal build excludes
+them. Its dependency lives only in `loopback.go.mod`; the overlay and build tag
+add it only to the test library, using the shipping package's handle registry.
 
 It also fails on the word `panicked` anywhere in the run. `cgoGuard` recovers a
 panic so it cannot unwind into C, which means an out-of-range index and a
