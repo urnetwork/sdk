@@ -406,6 +406,17 @@ type DeviceRemote struct {
 	// the last client limit status the local device answered or pushed, so
 	// a status read while the rpc is down still says when the device retries
 	lastClientLimitStatus *ClientLimitStatus
+	// the last provider connected state the local device answered or pushed
+	lastProviderConnected bool
+	// the provider state the local device last pushed or answered in a sync
+	// reply, which the provider getters of a browser-state remote read
+	// (device_rpc_provider_state.go). nil before the first, and while synced
+	// with a device that pushes none. Guarded by stateLock
+	lastProviderState *DeviceRemoteProviderState
+	// whether the device pushed the provider state on the current connection
+	// yet; until it does, the connection's sync reply holds the newest state.
+	// Guarded by stateLock
+	providerStatePushed bool
 
 	// providerLocationsMonitor is a lazily created, internally subscribed
 	// window monitor: registration is what makes windowMonitorEvents readable,
@@ -783,6 +794,7 @@ func (self *DeviceRemote) takeSyncRequest() *DeviceRemoteSyncRequest {
 		ProviderEgressContractDetailsChangeListenerIds:  slices.Collect(maps.Keys(self.providerEgressContractDetailsChangeListeners)),
 		ProviderIngressContractStatsChangeListenerIds:   slices.Collect(maps.Keys(self.providerIngressContractStatsChangeListeners)),
 		ProviderIngressContractDetailsChangeListenerIds: slices.Collect(maps.Keys(self.providerIngressContractDetailsChangeListeners)),
+		ProviderStateListener:                           self.settings.BrowserStateOnly,
 		WindowMonitorEventListenerIds:                   windowMonitorListenerIds,
 		State:                                           syncState,
 	}
@@ -935,6 +947,14 @@ func (self *DeviceRemote) run() {
 				}()
 				return
 			}
+			// a new connection, whose pushes of the provider state start after
+			// the reverse sync below; the previous connection's reverse rpc is
+			// joined, so none of its pushes can land after this
+			func() {
+				self.stateLock.Lock()
+				defer self.stateLock.Unlock()
+				self.providerStatePushed = false
+			}()
 
 			self.log.Info("[dr]start device remote rpc")
 			deviceRemoteRpc := newDeviceRemoteRpc(handleCtx, self)
@@ -982,6 +1002,7 @@ func (self *DeviceRemote) run() {
 				defer self.stateLock.Unlock()
 
 				self.lastKnownState = syncResponse.State
+				self.syncProviderStateWithLock(syncResponse.ProviderState)
 				self.contractStatusRevision++
 				self.syncError = ""
 				self.remoteConnected = true
@@ -2802,6 +2823,11 @@ func (self *DeviceRemote) GetProvideEnabled() bool {
 	if success {
 		return provideEnabled
 	} else {
+		if self.lastProviderState != nil && !self.provideQueuedWithLock() {
+			// a browser-state remote holds what the device pushed, which a
+			// derivation from its last control mode would only guess at
+			return self.lastProviderState.ProvideEnabled
+		}
 		provideControlMode := self.state.ProvideControlMode.Get(
 			self.lastKnownState.ProvideControlMode.Get(self.settings.DefaultProvideControlMode),
 		)
@@ -2926,6 +2952,12 @@ func (self *DeviceRemote) GetProvideMode() ProvideMode {
 	if success {
 		return provideMode
 	} else {
+		if self.lastProviderState != nil && !self.provideQueuedWithLock() {
+			// a browser-state remote holds the mode the device pushed. The
+			// derivation below would read a control mode and a connect state
+			// that no push refreshes
+			return self.lastProviderState.ProvideMode
+		}
 		// derive the EFFECTIVE mode from the queued/last-known control mode,
 		// mirroring DeviceLocal's control-mode mapping (and GetProvideEnabled
 		// below): the raw queued provide mode can be stale relative to a
@@ -5523,7 +5555,8 @@ func (self *DeviceRemote) GetProviderPacketStats() *PacketStats {
 	if success {
 		return packetStats
 	} else {
-		return nil
+		// a browser-state remote reads the state the device pushed
+		return self.lastProviderState.packetStats()
 	}
 }
 
@@ -5557,7 +5590,8 @@ func (self *DeviceRemote) GetProviderEgressContractStats() *ContractStats {
 	if success {
 		return contractStats
 	} else {
-		return nil
+		// a browser-state remote reads the state the device pushed
+		return self.lastProviderState.contractStats(false)
 	}
 }
 
@@ -5582,7 +5616,8 @@ func (self *DeviceRemote) GetProviderEgressContractDetails() *ContractDetailsLis
 	if success {
 		return contractDetailsList
 	} else {
-		return nil
+		// a browser-state remote reads the state the device pushed
+		return self.lastProviderState.contractDetails(false)
 	}
 }
 
@@ -5604,7 +5639,8 @@ func (self *DeviceRemote) GetProviderIngressContractStats() *ContractStats {
 	if success {
 		return contractStats
 	} else {
-		return nil
+		// a browser-state remote reads the state the device pushed
+		return self.lastProviderState.contractStats(true)
 	}
 }
 
@@ -5629,7 +5665,8 @@ func (self *DeviceRemote) GetProviderIngressContractDetails() *ContractDetailsLi
 	if success {
 		return contractDetailsList
 	} else {
-		return nil
+		// a browser-state remote reads the state the device pushed
+		return self.lastProviderState.contractDetails(true)
 	}
 }
 
@@ -7450,6 +7487,15 @@ type DeviceRemoteSyncRequest struct {
 	ProviderEgressContractDetailsChangeListenerIds  []connect.Id
 	ProviderIngressContractStatsChangeListenerIds   []connect.Id
 	ProviderIngressContractDetailsChangeListenerIds []connect.Id
+
+	// asks the device for its provider state in the sync reply and in a push
+	// after every change, whatever listeners the remote's app holds
+	// (DeviceRemoteProviderState). A browser-state remote asks, since its
+	// getters read only what was synchronized. The provider contract details
+	// then reach the remote's listeners through the state, so the device does
+	// not register their listener ids row by row. A device that predates it
+	// ignores it and answers no state.
+	ProviderStateListener bool
 }
 
 //gomobile:noexport
@@ -7460,6 +7506,10 @@ type DeviceRemoteSyncResponse struct {
 	// across reconnects means the host recreated the device (see
 	// deviceRpcSettings.DeviceGeneration).
 	DeviceGeneration string
+	// the device's provider state, when the request asked for it
+	// (DeviceRemoteSyncRequest.ProviderStateListener). nil from a device that
+	// does not push it.
+	ProviderState *DeviceRemoteProviderState
 }
 
 //gomobile:noexport
@@ -9336,6 +9386,11 @@ type DeviceLocalRpc struct {
 	providerIngressContractStatsChangeListenerSub   Sub
 	providerIngressContractDetailsChangeListenerSub Sub
 
+	// the subscriptions that push the provider state to a remote that asked
+	// for it (DeviceRemoteSyncRequest.ProviderStateListener), nil while it
+	// has not
+	providerStateSubs []Sub
+
 	service *rpcClient
 
 	// reverse notification delivery (see sendLoop). producers enqueue and
@@ -9555,6 +9610,8 @@ func (self *DeviceLocalRpc) closeService() {
 		self.service.Close()
 		self.service = nil
 	}
+
+	self.removeProviderStateListenerWithLock()
 
 	// remove listeners
 	for canShowRatingDialogChangeListenerId := range self.canShowRatingDialogChangeListenerIds {
@@ -10192,6 +10249,12 @@ func (self *DeviceLocalRpc) Sync(
 	// 	self.deviceLocal.RefreshToken(state.RefreshToken.Value)
 	// }
 
+	// before the listeners, so that for a change both hear, the push of the
+	// provider state is queued first (see addProviderStateListenerWithLock)
+	if syncRequest.ProviderStateListener {
+		self.addProviderStateListenerWithLock()
+	}
+
 	// add listeners
 	for _, canShowRatingDialogChangeListenerId := range syncRequest.CanShowRatingDialogChangeListenerIds {
 		self.addCanShowRatingDialogChangeListener(canShowRatingDialogChangeListenerId)
@@ -10304,14 +10367,20 @@ func (self *DeviceLocalRpc) Sync(
 	for _, providerEgressContractStatsChangeListenerId := range syncRequest.ProviderEgressContractStatsChangeListenerIds {
 		self.addProviderEgressContractStatsChangeListener(providerEgressContractStatsChangeListenerId)
 	}
-	for _, providerEgressContractDetailsChangeListenerId := range syncRequest.ProviderEgressContractDetailsChangeListenerIds {
-		self.addProviderEgressContractDetailsChangeListener(providerEgressContractDetailsChangeListenerId)
+	// a remote that holds the provider state fans its contract rows out to
+	// these listeners itself (DeviceRemote.providerStateChanged)
+	if !syncRequest.ProviderStateListener {
+		for _, providerEgressContractDetailsChangeListenerId := range syncRequest.ProviderEgressContractDetailsChangeListenerIds {
+			self.addProviderEgressContractDetailsChangeListener(providerEgressContractDetailsChangeListenerId)
+		}
 	}
 	for _, providerIngressContractStatsChangeListenerId := range syncRequest.ProviderIngressContractStatsChangeListenerIds {
 		self.addProviderIngressContractStatsChangeListener(providerIngressContractStatsChangeListenerId)
 	}
-	for _, providerIngressContractDetailsChangeListenerId := range syncRequest.ProviderIngressContractDetailsChangeListenerIds {
-		self.addProviderIngressContractDetailsChangeListener(providerIngressContractDetailsChangeListenerId)
+	if !syncRequest.ProviderStateListener {
+		for _, providerIngressContractDetailsChangeListenerId := range syncRequest.ProviderIngressContractDetailsChangeListenerIds {
+			self.addProviderIngressContractDetailsChangeListener(providerIngressContractDetailsChangeListenerId)
+		}
 	}
 	for _, dnsResolverSettingsChangeListenerId := range syncRequest.DnsResolverSettingsChangeListenerIds {
 		self.addDnsResolverSettingsChangeListener(dnsResolverSettingsChangeListenerId)
@@ -10329,11 +10398,16 @@ func (self *DeviceLocalRpc) Sync(
 		}
 	}
 
+	var providerState *DeviceRemoteProviderState
+	if syncRequest.ProviderStateListener {
+		providerState = self.providerState()
+	}
 	*syncResponse = &DeviceRemoteSyncResponse{
 		// WindowIds: self.windowIds(),
 		// RpcPublicKey: "test",
 		State:            self.state(),
 		DeviceGeneration: self.settings.DeviceGeneration,
+		ProviderState:    providerState,
 	}
 	return nil
 }
@@ -10364,6 +10438,11 @@ func (self *DeviceLocalRpc) SyncReverse(_ RpcNoArg, _ RpcVoid) error {
 
 	// fire listeners with the current state
 
+	// the provider state first, so the remote holds it before the listeners
+	// below hear the current state
+	if self.providerStateSubs != nil {
+		self.providerStateChanged()
+	}
 	if self.canShowRatingDialogChangeListenerSub != nil {
 		self.canShowRatingDialogChanged(self.deviceLocal.GetCanShowRatingDialog())
 	}

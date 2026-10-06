@@ -441,6 +441,50 @@ func TestContractPeerAggregatorHasStream(t *testing.T) {
 	}
 }
 
+// Defect 4: each contract entry carries its stream id. A stream can hide the
+// client's end of the path, which then reads as the all-zero id and puts the
+// stream contracts of every such client in one row; the entry's stream id is
+// what still tells those clients apart (the provider examples' clients served
+// count keys them as stream:<StreamId>). A direct contract carries none.
+func TestContractPeerAggregatorEntriesCarryTheStreamId(t *testing.T) {
+	agg := newContractPeerAggregator(5 * time.Second)
+	now := time.Now()
+	provider := connect.NewId()
+	client := connect.NewId()
+	firstStream := connect.NewId()
+	secondStream := connect.NewId()
+
+	firstContract := connect.NewId()
+	secondContract := connect.NewId()
+	directContract := connect.NewId()
+	ingress := NewContractDetailsList()
+	// two streams that hide their sources
+	ingress.Add(testing_peerContractDetails(firstContract, connect.Id{}, provider, firstStream, 1000, 10000, 100, ContractStatusOpen))
+	ingress.Add(testing_peerContractDetails(secondContract, connect.Id{}, provider, secondStream, 1000, 10000, 100, ContractStatusOpen))
+	ingress.Add(testing_peerContractDetails(directContract, client, provider, connect.Id{}, 2000, 20000, 200, ContractStatusOpen))
+
+	rows := agg.update(NewContractDetailsList(), ingress, now)
+	hidden := testing_rowForClient(rows, connect.Id{}.String())
+	if hidden == nil || hidden.ReceiveContracts.Len() != 2 {
+		t.Fatalf("expected the hidden sources' 2 receive contracts in one row")
+	}
+	contractIdStreamIds := map[string]string{}
+	for i := 0; i < hidden.ReceiveContracts.Len(); i += 1 {
+		entry := hidden.ReceiveContracts.Get(i)
+		contractIdStreamIds[entry.ContractId] = entry.StreamId
+	}
+	connect.AssertEqual(t, contractIdStreamIds, map[string]string{
+		firstContract.String():  firstStream.String(),
+		secondContract.String(): secondStream.String(),
+	})
+
+	direct := testing_rowForClient(rows, client.String())
+	if direct == nil || direct.ReceiveContracts.Len() != 1 {
+		t.Fatalf("expected the client's direct contract")
+	}
+	connect.AssertEqual(t, direct.ReceiveContracts.Get(0).StreamId, "")
+}
+
 // TestContractPeerAggregatorRunTotalAccumulates pins the basic run total: while a
 // peer stays active, the row's Send/ReceiveByteCount climb with the actual bytes
 // moved (the used-count deltas), not the instantaneous rate. For a single contract

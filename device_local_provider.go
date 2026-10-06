@@ -171,6 +171,12 @@ type deviceLocalProvider struct {
 	// device client budgets (no target).
 	resendQueueBudget  *connect.TransferMemoryBudget
 	receiveQueueBudget *connect.TransferMemoryBudget
+
+	// notified in the locked scope of each install of another transport
+	// generation and of the close, so a watch of the connected state
+	// (platformTransportNotify) moves to the generation that carries it. nil
+	// on a provider built without one (a test seam), which never notifies
+	platformTransportMonitor *connect.Monitor
 }
 
 // transferBudgets returns the provider client's own budget pair, or nils
@@ -314,6 +320,7 @@ func newDeviceLocalProviderWithOverrides(
 		auth:                      auth,
 		resendQueueBudget:         resendQueueBudget,
 		receiveQueueBudget:        receiveQueueBudget,
+		platformTransportMonitor:  connect.NewMonitor(),
 	}
 	// the provider proves both address families through its family-pinned
 	// transports (IPV6.md A1, A4); nothing else runs on the provider yet, so
@@ -702,6 +709,7 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		}
 		previous := self.platformTransport
 		self.platformTransport = next
+		self.platformTransportChangedWithLock()
 		return previous, true
 	}
 
@@ -786,6 +794,29 @@ func (self *deviceLocalProvider) IsConnected() bool {
 	return platformTransport != nil && platformTransport.IsConnected()
 }
 
+// Reads the current transport generation and whether the provider is closed,
+// with a channel that closes on the next install of another generation or on
+// the close. The three are read in one locked scope, so no install or close
+// can slip between the read and a wait on the channel. The channel is nil on a
+// provider built without a monitor.
+func (self *deviceLocalProvider) platformTransportNotify() (migratablePlatformTransport, bool, <-chan struct{}) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	var notify <-chan struct{}
+	if self.platformTransportMonitor != nil {
+		notify = self.platformTransportMonitor.NotifyChannel()
+	}
+	return self.platformTransport, self.closed, notify
+}
+
+// Wakes the watches of the connected state after an install or the close.
+// Must be called with stateLock, in the scope of the change.
+func (self *deviceLocalProvider) platformTransportChangedWithLock() {
+	if self.platformTransportMonitor != nil {
+		self.platformTransportMonitor.NotifyAll()
+	}
+}
+
 func (self *deviceLocalProvider) LocalUserNat() *connect.LocalUserNat {
 	return self.localUserNat
 }
@@ -837,6 +868,7 @@ func (self *deviceLocalProvider) Close() {
 	self.closeOnce.Do(func() {
 		self.stateLock.Lock()
 		self.closed = true
+		self.platformTransportChangedWithLock()
 		platformTransport := self.platformTransport
 		// the role is joined by the asynchronous close below, since it closes
 		// a libp2p host and a listening server
