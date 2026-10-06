@@ -5,17 +5,21 @@ package sdk
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/urnetwork/connect"
+	"github.com/urnetwork/connect/gossip"
 )
 
-// The two provider extender role states the activation tests never reach
+// The provider extender role states the activation tests never reach
 // (EXTENDER.md G2, A8, L2): the app the user put in the feed-only gossip mode,
 // which serves the feed without a node and refuses the gossip service, and the
-// host where no carrier bound at all.
+// carrier binds -- tcp 443, the one port an extender requires, which another
+// process holds, and an optional udp carrier that cannot bind.
 
 // A role whose app is in the feed-only mode runs the server and the feed
 // service without a node, and refuses the gossip service rather than accepting
@@ -82,82 +86,177 @@ func TestDeviceLocalProviderExtenderFeedModeRunsNoNode(t *testing.T) {
 	}
 }
 
-// A host where every carrier bind failed has nothing to activate: the failure
-// stands in the status, no activation is posted, and no mesh address is
-// advertised (G2, G3, F3).
-func TestDeviceLocalProviderExtenderWithNoCarriersNeverActivates(t *testing.T) {
-	// hold all three carrier ports before the role reaches them
+// Holds a tcp port on loopback the way another process of this host would, so
+// the role cannot bind it. Returns the release.
+func testHoldTcpPort(t *testing.T, port int) func() {
+	t.Helper()
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	return func() { listener.Close() }
+}
+
+// The retry seam of a test role: every wait the role asks for is recorded,
+// and the retry fires only when the test sends on `retry`.
+func testTcpRetry(settings *deviceLocalExtenderSettings, waits chan time.Duration, retry chan time.Time) {
+	settings.TcpRetryAfter = func(wait time.Duration) <-chan time.Time {
+		waits <- wait
+		return retry
+	}
+}
+
+// Another process holding tcp 443, the one port an extender requires, turns
+// the role off (G2): it binds no udp carrier, activates nothing and runs no
+// extender node, the status says why, and it waits to bind the port again
+// after extenderProvideTcpRetryTimeout.
+func TestDeviceLocalProviderExtenderWithTcpTakenStartsNoCarrier(t *testing.T) {
 	tcpPort := testFreeTcpPort(t)
-	tcpListener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(tcpPort)))
-	if err != nil {
-		t.Fatal(err)
+	testHoldTcpPort(t, tcpPort)
+	udpBinds := make(chan int, 64)
+	waits := make(chan time.Duration, 16)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.TcpPort = tcpPort
+		testRecordUdpBinds(settings, udpBinds)
+		testTcpRetry(settings, waits, make(chan time.Time))
+	})
+
+	status := fixture.waitStatus("off for want of tcp", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorTcpUnavailable
+	})
+	if status.State != ExtenderProvideStateError || status.Reason == "" ||
+		status.Reason != status.TcpUnavailableError {
+		t.Fatalf("status = %+v, expected the error state with the tcp bind error as its reason", status)
 	}
-	t.Cleanup(func() { tcpListener.Close() })
-	udpPort := testFreeUdpPort(t)
-	udpConn, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(udpPort)))
-	if err != nil {
-		t.Fatal(err)
+	if status.Enabled || status.Listening {
+		t.Fatalf("status = %+v, expected the role off", status)
 	}
-	t.Cleanup(func() { udpConn.Close() })
+	if !strings.HasPrefix(status.ListenError, connect.ExtenderCarrierTcp+": ") {
+		t.Fatalf("listen error = %q, expected the tcp carrier named", status.ListenError)
+	}
+	if status.DnsPorts != "" || status.ActivatedV4 || status.ActivatedV6 {
+		t.Fatalf("status = %+v, expected nothing bound or activated", status)
+	}
+	select {
+	case wait := <-waits:
+		connect.AssertEqual(t, wait, extenderProvideTcpRetryTimeout)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the role does not try the tcp port again")
+	}
+
+	// the status is published before the role builds anything, so the barrier
+	// above proves none of it exists rather than waiting for it not to appear
+	if udpPorts := testDrainUdpBinds(udpBinds); 0 < len(udpPorts) {
+		t.Fatalf("the role bound udp %v without tcp 443", udpPorts)
+	}
+	extender := fixture.extender()
+	if extender == nil {
+		t.Fatal("the role is not waiting for its tcp port")
+	}
+	if extender.currentServer() != nil || extender.currentActivator() != nil {
+		t.Fatal("the role started its server or its activation without tcp 443")
+	}
+	if extenderNode := fixture.networkSpace.getExtenderNode(); extenderNode.role() == gossip.NodeRoleExtender {
+		t.Fatal("the role became an extender node without tcp 443")
+	}
+	if stats := fixture.device.GetExtenderStats(); stats != nil {
+		t.Fatalf("stats = %+v, expected none from a role that is off", stats)
+	}
+	if posts := fixture.operator.postCount(4) + fixture.operator.postCount(6); posts != 0 {
+		t.Fatalf("activations = %d, expected none", posts)
+	}
+}
+
+// A role off for want of tcp 443 starts once the port is free: the next retry
+// binds it, then the udp carriers, and the role activates as any other. This
+// is how the role moves to another provider process of the host when the one
+// that held the port exits (G2).
+func TestDeviceLocalProviderExtenderStartsWhenTheTcpPortFrees(t *testing.T) {
+	tcpPort := testFreeTcpPort(t)
+	releaseTcpPort := testHoldTcpPort(t, tcpPort)
+	udpBinds := make(chan int, 64)
+	waits := make(chan time.Duration, 16)
+	retry := make(chan time.Time)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		settings.TcpPort = tcpPort
+		testRecordUdpBinds(settings, udpBinds)
+		testTcpRetry(settings, waits, retry)
+	})
+
+	fixture.waitStatus("off for want of tcp", func(status *ExtenderProvideStatus) bool {
+		return status.ErrorCase == ExtenderProvideErrorTcpUnavailable
+	})
+	<-waits
+	if udpPorts := testDrainUdpBinds(udpBinds); 0 < len(udpPorts) {
+		t.Fatalf("the role bound udp %v without tcp 443", udpPorts)
+	}
+
+	// the holder exits, and the next retry takes the port
+	releaseTcpPort()
+	retry <- time.Time{}
+
+	fixture.waitPass()
+	expectedCarriers := []string{
+		connect.ExtenderCarrierTcp,
+		connect.ExtenderCarrierQuic,
+		connect.ExtenderCarrierDns,
+	}
+	for range 2 {
+		post := fixture.waitPost()
+		if !slices.Equal(post.args.Carriers, expectedCarriers) {
+			t.Fatalf("v%d carriers = %v, expected %v", post.ipVersion, post.args.Carriers, expectedCarriers)
+		}
+		if post.args.TcpPort != tcpPort {
+			t.Fatalf("v%d tcp port = %d, expected %d", post.ipVersion, post.args.TcpPort, tcpPort)
+		}
+	}
+	status := fixture.waitStatus("running on the freed port", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening && status.ActivatedV4
+	})
+	if status.TcpUnavailableError != "" || status.ListenError != "" || status.ErrorCase != "" {
+		t.Fatalf("status = %+v, expected the tcp failure cleared", status)
+	}
+	udpPorts := testDrainUdpBinds(udpBinds)
+	for _, port := range []int{fixture.udpPort, fixture.dnsPort} {
+		if !slices.Contains(udpPorts, port) {
+			t.Fatalf("udp binds = %v, expected %d once the role held tcp 443", udpPorts, port)
+		}
+	}
+}
+
+// With tcp 443 held, an optional carrier that cannot bind is left out and the
+// role runs without it (G2): udp 4053 held by another process leaves the
+// extender on tcp and udp 443, advertising no dns carrier.
+func TestDeviceLocalProviderExtenderRunsWithoutATakenDnsPort(t *testing.T) {
 	dnsPort := testFreeUdpPort(t)
 	dnsConn, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(dnsPort)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { dnsConn.Close() })
-
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
-		settings.TcpPort = tcpPort
-		settings.UdpPort = udpPort
 		settings.DnsPort = dnsPort
 	})
 
-	status := fixture.waitStatus("no carrier bound", func(status *ExtenderProvideStatus) bool {
-		return status.Enabled && !status.Listening && status.ListenError != ""
-	})
-	for _, carrier := range []string{
-		connect.ExtenderCarrierTcp,
-		connect.ExtenderCarrierQuic,
-		connect.ExtenderCarrierDns,
-	} {
-		if !strings.Contains(status.ListenError, carrier+": ") {
-			t.Errorf("listen error = %q, expected the %s carrier named", status.ListenError, carrier)
+	fixture.waitPass()
+	expectedCarriers := []string{connect.ExtenderCarrierTcp, connect.ExtenderCarrierQuic}
+	for range 2 {
+		post := fixture.waitPost()
+		if !slices.Equal(post.args.Carriers, expectedCarriers) {
+			t.Fatalf("v%d carriers = %v, expected %v", post.ipVersion, post.args.Carriers, expectedCarriers)
+		}
+		if 0 < len(post.args.DnsPorts) {
+			t.Fatalf("v%d dns ports = %v, expected none", post.ipVersion, post.args.DnsPorts)
 		}
 	}
-	if status.DnsPorts != "" {
-		t.Fatalf("dns ports = %q, expected none", status.DnsPorts)
-	}
-	if status.ActivatedV4 || status.ActivatedV6 {
-		t.Fatalf("status = %+v, expected nothing activated", status)
-	}
-
-	// the status is published before the loop would start an activator, so the
-	// barrier above proves there is none rather than waiting for one not to
-	// appear
-	if activator := fixture.extender().currentActivator(); activator != nil {
-		t.Fatal("a host with no carrier started an activation loop")
-	}
-	if posts := fixture.operator.postCount(4) + fixture.operator.postCount(6); posts != 0 {
-		t.Fatalf("activations = %d, expected none", posts)
-	}
-	// the node is the role's, and it advertises nothing: only the tcp carrier
-	// carries the mesh (D2)
-	extenderNode := fixture.networkSpace.getExtenderNode()
-	if extenderNode == nil {
-		t.Fatal("the role ran no node")
-	}
-	if listenAddrs := extenderNode.node.ListenAddrs(); 0 < len(listenAddrs) {
-		t.Fatalf("mesh addresses = %v, expected none", listenAddrs)
-	}
-
-	// releasing the ports and restarting the role binds them, so the failure
-	// above is the ports and not the fixture
-	tcpListener.Close()
-	udpConn.Close()
-	dnsConn.Close()
-	fixture.device.SetProvideExtender(false)
-	fixture.device.SetProvideExtender(true)
-	fixture.waitStatus("bound after the ports were released", func(status *ExtenderProvideStatus) bool {
-		return status.Listening && status.ListenError == ""
+	status := fixture.waitStatus("running without the dns carrier", func(status *ExtenderProvideStatus) bool {
+		return status.Enabled && status.Listening && status.ActivatedV4
 	})
+	if !strings.Contains(status.ListenError, connect.ExtenderCarrierDns+": ") {
+		t.Fatalf("listen error = %q, expected the dns carrier named", status.ListenError)
+	}
+	if status.DnsPorts != "" || status.TcpUnavailableError != "" {
+		t.Fatalf("status = %+v, expected no dns port and the tcp port held", status)
+	}
 }

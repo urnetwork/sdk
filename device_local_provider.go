@@ -71,6 +71,9 @@ type deviceLocalProvider struct {
 	// the device's egress-aware dial, which is also the extender relay's
 	// forward dial so the relay never enters the device's own tunnel (G2)
 	dialContextSettings *connect.DialContextSettings
+	// whether the extender role also binds its dns carrier on 53, the
+	// device's ProvideExtenderDnsPrivilegedPort (L2)
+	extenderDnsPrivilegedPort bool
 	// extenderSettingsConfigure, when set, adjusts the extender role's
 	// settings before it is built. Tests bind ephemeral carrier ports and
 	// point the activation at an in-process operator through it.
@@ -1152,7 +1155,7 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		TcpPort:                connect.ExtenderTcpPort,
 		UdpPort:                connect.ExtenderQuicPort,
 		DnsPort:                connect.ExtenderDnsPort,
-		DnsPrivilegedPort:      extenderDnsPrivilegedPort(),
+		DnsPrivilegedPort:      self.extenderDnsPrivilegedPort,
 		DnsTld:                 connect.DefaultExtenderDnsTld,
 		ApiUrlV4:               networkSpace.GetApiUrlV4(),
 		ApiUrlV6:               networkSpace.GetApiUrlV6(),

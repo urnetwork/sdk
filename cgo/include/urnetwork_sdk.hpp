@@ -291,6 +291,7 @@ inline constexpr const char* ExtenderProvideErrorActivationRefused = "activation
 inline constexpr const char* ExtenderProvideErrorListen = "listen";
 inline constexpr const char* ExtenderProvideErrorRevoked = "revoked";
 inline constexpr const char* ExtenderProvideErrorStart = "start";
+inline constexpr const char* ExtenderProvideErrorTcpUnavailable = "tcp_unavailable";
 inline constexpr const char* ExtenderProvideStateActive = "active";
 inline constexpr const char* ExtenderProvideStateError = "error";
 inline constexpr const char* ExtenderProvideStateNotProviding = "not_providing";
@@ -1762,6 +1763,7 @@ struct DeviceLocalSettings {
 	bool AllowProvider{};
 	bool ProvideExtenderEnabled{};
 	bool DefaultProvideExtender{};
+	bool ProvideExtenderDnsPrivilegedPort{};
 	bool Verbose{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -1887,6 +1889,7 @@ struct ExtenderProvideStatus {
 	std::string Reason{};
 	bool Enabled{};
 	std::string StartError{};
+	std::string TcpUnavailableError{};
 	bool Listening{};
 	std::string ListenError{};
 	bool ActivatedV4{};
@@ -7931,6 +7934,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["AllowProvider"] = v.AllowProvider;
 	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
+	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
 	j["Verbose"] = v.Verbose;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -8010,6 +8014,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("DefaultProvideExtender"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultProvideExtender);
+	}
+	if (auto it = j.find("ProvideExtenderDnsPrivilegedPort"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideExtenderDnsPrivilegedPort);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -8495,6 +8502,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["Reason"] = v.Reason;
 	j["Enabled"] = v.Enabled;
 	j["StartError"] = v.StartError;
+	j["TcpUnavailableError"] = v.TcpUnavailableError;
 	j["Listening"] = v.Listening;
 	j["ListenError"] = v.ListenError;
 	j["ActivatedV4"] = v.ActivatedV4;
@@ -8536,6 +8544,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("StartError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StartError);
+	}
+	if (auto it = j.find("TcpUnavailableError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TcpUnavailableError);
 	}
 	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Listening);

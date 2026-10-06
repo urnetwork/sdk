@@ -51,6 +51,11 @@ func TestDeviceLocalSettingsJsonThroughTheAbi(t *testing.T) {
 			t.Fatalf("the default settings json has %s = %v, expected true", key, defaults[key])
 		}
 	}
+	// every app binds the extender's dns carrier on 4053 alone (L2)
+	if value, ok := defaults["ProvideExtenderDnsPrivilegedPort"]; !ok || value != false {
+		t.Fatalf("the default settings json has ProvideExtenderDnsPrivilegedPort = %v (present %t), expected false",
+			value, ok)
+	}
 
 	// builds a device from settings json, nil for a NULL json
 	newDevice := func(settingsJson *string) uint64 {
@@ -146,6 +151,16 @@ func TestDeviceLocalSettingsJsonThroughTheAbi(t *testing.T) {
 	}
 	if state, _ := providingState(switchOffDevice); state != sdk.ExtenderProvideStateNotProviding {
 		t.Fatalf("state = %q with the hard switch edited off, expected not providing", state)
+	}
+
+	// the 53 opt-in edited on, as a host that runs where it can take 53
+	// would: the device builds, and the setting stays independent of the
+	// role's other controls
+	dnsPrivilegedPort := readDefaults()
+	dnsPrivilegedPort["ProvideExtenderDnsPrivilegedPort"] = true
+	dnsPrivilegedPortDevice := newDevice(edit(dnsPrivilegedPort))
+	if !getProvideExtender(dnsPrivilegedPortDevice) {
+		t.Fatal("the setting read off with only the 53 opt-in edited on")
 	}
 
 	// a json that names one field keeps the defaults for the rest
