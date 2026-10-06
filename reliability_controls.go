@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"math"
 	"time"
 
 	"github.com/urnetwork/connect"
@@ -441,6 +442,12 @@ type Exit struct {
 	// egress implementation and effective security rules serving this exit.
 	ProviderBuildVersion       string
 	ProviderSecurityPolicyHash string
+	// The built-in security rules generation the provider enforces (connect
+	// SecurityPolicyRulesGeneration). Connect raises it with every reviewed
+	// rules change, so a lower value than the client's own is a provider with
+	// older rules. 0 is unknown: a provider from before the field, or one with
+	// a custom policy. Read it only with ProviderDiagnosticsAvailable.
+	ProviderSecurityPolicyGeneration int64
 	// Provider block counters are source-scoped cumulative values published by
 	// the provider. They complement the local packet counters: a remote policy
 	// drop can now be distinguished from transport loss.
@@ -531,8 +538,9 @@ func (self *DeviceLocal) ResetReliabilitySettings() {
 	}
 }
 
-// GetExits lists the current provider channels with the flow count pinned to
-// each.
+// The developer readout of one connect exit. The fields are copied one by one,
+// so every connect ExitInfo field must be carried here or named as left out in
+// TestExitFromConnectCarriesEveryExitInfoField.
 func exitFromConnect(exit *connect.ExitInfo) *Exit {
 	if exit == nil {
 		return nil
@@ -543,31 +551,37 @@ func exitFromConnect(exit *connect.ExitInfo) *Exit {
 	if 0 <= exit.ProbeAge {
 		probeAgeSeconds = int64(exit.ProbeAge / time.Second)
 	}
+	// the provider sends any uint64 and gomobile binds no unsigned type, so a
+	// value past int64 saturates: still the newest, never negative
+	providerSecurityPolicyGeneration := int64(min(exit.ProviderSecurityPolicyGeneration, math.MaxInt64))
 	return &Exit{
-		ClientId:                        newId(exit.ClientId),
-		WindowType:                      exit.WindowType.RankMode(),
-		Warning:                         exit.Warning,
-		Quarantined:                     exit.Quarantined,
-		WarningCause:                    exit.WarningCause,
-		Done:                            exit.Done,
-		P2pOnly:                         exit.P2pOnly,
-		FlowCount:                       int32(exit.FlowCount),
-		DialFailureCount:                int32(exit.DialFailureCount),
-		Tier:                            int32(exit.Tier),
-		EffectiveTier:                   int32(exit.EffectiveTier),
-		Proven:                          exit.Proven,
-		ProbeAgeSeconds:                 probeAgeSeconds,
-		ProviderDiagnosticsAvailable:    exit.ProviderDiagnosticsAvailable,
-		ProviderBuildVersion:            exit.ProviderBuildVersion,
-		ProviderSecurityPolicyHash:      exit.ProviderSecurityPolicyHash,
-		ProviderBlockIngressPacketCount: exit.ProviderBlockIngressPackets,
-		ProviderBlockIngressByteCount:   exit.ProviderBlockIngressBytes,
-		ProviderBlockEgressPacketCount:  exit.ProviderBlockEgressPackets,
-		ProviderBlockEgressByteCount:    exit.ProviderBlockEgressBytes,
-		ProviderDiagnosticsSequence:     exit.ProviderDiagnosticsSequence,
+		ClientId:                         newId(exit.ClientId),
+		WindowType:                       exit.WindowType.RankMode(),
+		Warning:                          exit.Warning,
+		Quarantined:                      exit.Quarantined,
+		WarningCause:                     exit.WarningCause,
+		Done:                             exit.Done,
+		P2pOnly:                          exit.P2pOnly,
+		FlowCount:                        int32(exit.FlowCount),
+		DialFailureCount:                 int32(exit.DialFailureCount),
+		Tier:                             int32(exit.Tier),
+		EffectiveTier:                    int32(exit.EffectiveTier),
+		Proven:                           exit.Proven,
+		ProbeAgeSeconds:                  probeAgeSeconds,
+		ProviderDiagnosticsAvailable:     exit.ProviderDiagnosticsAvailable,
+		ProviderBuildVersion:             exit.ProviderBuildVersion,
+		ProviderSecurityPolicyHash:       exit.ProviderSecurityPolicyHash,
+		ProviderSecurityPolicyGeneration: providerSecurityPolicyGeneration,
+		ProviderBlockIngressPacketCount:  exit.ProviderBlockIngressPackets,
+		ProviderBlockIngressByteCount:    exit.ProviderBlockIngressBytes,
+		ProviderBlockEgressPacketCount:   exit.ProviderBlockEgressPackets,
+		ProviderBlockEgressByteCount:     exit.ProviderBlockEgressBytes,
+		ProviderDiagnosticsSequence:      exit.ProviderDiagnosticsSequence,
 	}
 }
 
+// Lists the current provider channels with the flow count pinned to each.
+// Empty while disconnected.
 func (self *DeviceLocal) GetExits() *ExitList {
 	exits := NewExitList()
 	if multi, ok := self.multiClient(); ok {
