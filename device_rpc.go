@@ -8384,27 +8384,28 @@ type DeviceRemoteReliabilityMetricsRpc struct {
 
 //gomobile:noexport
 type ExitRpc struct {
-	ClientId                        connect.Id
-	WindowType                      string
-	Warning                         bool
-	Quarantined                     bool
-	WarningCause                    string
-	Done                            bool
-	P2pOnly                         bool
-	FlowCount                       int32
-	DialFailureCount                int32
-	Tier                            int32
-	EffectiveTier                   int32
-	Proven                          bool
-	ProbeAgeSeconds                 int64
-	ProviderDiagnosticsAvailable    bool
-	ProviderBuildVersion            string
-	ProviderSecurityPolicyHash      string
-	ProviderBlockIngressPacketCount int64
-	ProviderBlockIngressByteCount   int64
-	ProviderBlockEgressPacketCount  int64
-	ProviderBlockEgressByteCount    int64
-	ProviderDiagnosticsSequence     int64
+	ClientId                         connect.Id
+	WindowType                       string
+	Warning                          bool
+	Quarantined                      bool
+	WarningCause                     string
+	Done                             bool
+	P2pOnly                          bool
+	FlowCount                        int32
+	DialFailureCount                 int32
+	Tier                             int32
+	EffectiveTier                    int32
+	Proven                           bool
+	ProbeAgeSeconds                  int64
+	ProviderDiagnosticsAvailable     bool
+	ProviderBuildVersion             string
+	ProviderSecurityPolicyHash       string
+	ProviderSecurityPolicyGeneration int64
+	ProviderBlockIngressPacketCount  int64
+	ProviderBlockIngressByteCount    int64
+	ProviderBlockEgressPacketCount   int64
+	ProviderBlockEgressByteCount     int64
+	ProviderDiagnosticsSequence      int64
 }
 
 func newExitRpc(exit *Exit) *ExitRpc {
@@ -8412,26 +8413,27 @@ func newExitRpc(exit *Exit) *ExitRpc {
 		return nil
 	}
 	exitRpc := &ExitRpc{
-		WindowType:                      exit.WindowType,
-		Warning:                         exit.Warning,
-		Quarantined:                     exit.Quarantined,
-		WarningCause:                    exit.WarningCause,
-		Done:                            exit.Done,
-		P2pOnly:                         exit.P2pOnly,
-		FlowCount:                       exit.FlowCount,
-		DialFailureCount:                exit.DialFailureCount,
-		Tier:                            exit.Tier,
-		EffectiveTier:                   exit.EffectiveTier,
-		Proven:                          exit.Proven,
-		ProbeAgeSeconds:                 exit.ProbeAgeSeconds,
-		ProviderDiagnosticsAvailable:    exit.ProviderDiagnosticsAvailable,
-		ProviderBuildVersion:            exit.ProviderBuildVersion,
-		ProviderSecurityPolicyHash:      exit.ProviderSecurityPolicyHash,
-		ProviderBlockIngressPacketCount: exit.ProviderBlockIngressPacketCount,
-		ProviderBlockIngressByteCount:   exit.ProviderBlockIngressByteCount,
-		ProviderBlockEgressPacketCount:  exit.ProviderBlockEgressPacketCount,
-		ProviderBlockEgressByteCount:    exit.ProviderBlockEgressByteCount,
-		ProviderDiagnosticsSequence:     exit.ProviderDiagnosticsSequence,
+		WindowType:                       exit.WindowType,
+		Warning:                          exit.Warning,
+		Quarantined:                      exit.Quarantined,
+		WarningCause:                     exit.WarningCause,
+		Done:                             exit.Done,
+		P2pOnly:                          exit.P2pOnly,
+		FlowCount:                        exit.FlowCount,
+		DialFailureCount:                 exit.DialFailureCount,
+		Tier:                             exit.Tier,
+		EffectiveTier:                    exit.EffectiveTier,
+		Proven:                           exit.Proven,
+		ProbeAgeSeconds:                  exit.ProbeAgeSeconds,
+		ProviderDiagnosticsAvailable:     exit.ProviderDiagnosticsAvailable,
+		ProviderBuildVersion:             exit.ProviderBuildVersion,
+		ProviderSecurityPolicyHash:       exit.ProviderSecurityPolicyHash,
+		ProviderSecurityPolicyGeneration: exit.ProviderSecurityPolicyGeneration,
+		ProviderBlockIngressPacketCount:  exit.ProviderBlockIngressPacketCount,
+		ProviderBlockIngressByteCount:    exit.ProviderBlockIngressByteCount,
+		ProviderBlockEgressPacketCount:   exit.ProviderBlockEgressPacketCount,
+		ProviderBlockEgressByteCount:     exit.ProviderBlockEgressByteCount,
+		ProviderDiagnosticsSequence:      exit.ProviderDiagnosticsSequence,
 	}
 	if exit.ClientId != nil {
 		exitRpc.ClientId = exit.ClientId.toConnectId()
@@ -8444,27 +8446,28 @@ func (self *ExitRpc) toExit() *Exit {
 		return nil
 	}
 	return &Exit{
-		ClientId:                        newId(self.ClientId),
-		WindowType:                      self.WindowType,
-		Warning:                         self.Warning,
-		Quarantined:                     self.Quarantined,
-		WarningCause:                    self.WarningCause,
-		Done:                            self.Done,
-		P2pOnly:                         self.P2pOnly,
-		FlowCount:                       self.FlowCount,
-		DialFailureCount:                self.DialFailureCount,
-		Tier:                            self.Tier,
-		EffectiveTier:                   self.EffectiveTier,
-		Proven:                          self.Proven,
-		ProbeAgeSeconds:                 self.ProbeAgeSeconds,
-		ProviderDiagnosticsAvailable:    self.ProviderDiagnosticsAvailable,
-		ProviderBuildVersion:            self.ProviderBuildVersion,
-		ProviderSecurityPolicyHash:      self.ProviderSecurityPolicyHash,
-		ProviderBlockIngressPacketCount: self.ProviderBlockIngressPacketCount,
-		ProviderBlockIngressByteCount:   self.ProviderBlockIngressByteCount,
-		ProviderBlockEgressPacketCount:  self.ProviderBlockEgressPacketCount,
-		ProviderBlockEgressByteCount:    self.ProviderBlockEgressByteCount,
-		ProviderDiagnosticsSequence:     self.ProviderDiagnosticsSequence,
+		ClientId:                         newId(self.ClientId),
+		WindowType:                       self.WindowType,
+		Warning:                          self.Warning,
+		Quarantined:                      self.Quarantined,
+		WarningCause:                     self.WarningCause,
+		Done:                             self.Done,
+		P2pOnly:                          self.P2pOnly,
+		FlowCount:                        self.FlowCount,
+		DialFailureCount:                 self.DialFailureCount,
+		Tier:                             self.Tier,
+		EffectiveTier:                    self.EffectiveTier,
+		Proven:                           self.Proven,
+		ProbeAgeSeconds:                  self.ProbeAgeSeconds,
+		ProviderDiagnosticsAvailable:     self.ProviderDiagnosticsAvailable,
+		ProviderBuildVersion:             self.ProviderBuildVersion,
+		ProviderSecurityPolicyHash:       self.ProviderSecurityPolicyHash,
+		ProviderSecurityPolicyGeneration: self.ProviderSecurityPolicyGeneration,
+		ProviderBlockIngressPacketCount:  self.ProviderBlockIngressPacketCount,
+		ProviderBlockIngressByteCount:    self.ProviderBlockIngressByteCount,
+		ProviderBlockEgressPacketCount:   self.ProviderBlockEgressPacketCount,
+		ProviderBlockEgressByteCount:     self.ProviderBlockEgressByteCount,
+		ProviderDiagnosticsSequence:      self.ProviderDiagnosticsSequence,
 	}
 }
 

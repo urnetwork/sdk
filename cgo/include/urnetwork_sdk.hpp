@@ -1825,6 +1825,7 @@ struct Exit {
 	bool ProviderDiagnosticsAvailable{};
 	std::string ProviderBuildVersion{};
 	std::string ProviderSecurityPolicyHash{};
+	int64_t ProviderSecurityPolicyGeneration{};
 	int64_t ProviderBlockIngressPacketCount{};
 	int64_t ProviderBlockIngressByteCount{};
 	int64_t ProviderBlockEgressPacketCount{};
@@ -8236,6 +8237,7 @@ inline void to_json(nlohmann::json& j, const Exit& v) {
 	j["ProviderDiagnosticsAvailable"] = v.ProviderDiagnosticsAvailable;
 	j["ProviderBuildVersion"] = v.ProviderBuildVersion;
 	j["ProviderSecurityPolicyHash"] = v.ProviderSecurityPolicyHash;
+	j["ProviderSecurityPolicyGeneration"] = v.ProviderSecurityPolicyGeneration;
 	j["ProviderBlockIngressPacketCount"] = v.ProviderBlockIngressPacketCount;
 	j["ProviderBlockIngressByteCount"] = v.ProviderBlockIngressByteCount;
 	j["ProviderBlockEgressPacketCount"] = v.ProviderBlockEgressPacketCount;
@@ -8295,6 +8297,9 @@ inline void from_json(const nlohmann::json& j, Exit& v) {
 	}
 	if (auto it = j.find("ProviderSecurityPolicyHash"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderSecurityPolicyHash);
+	}
+	if (auto it = j.find("ProviderSecurityPolicyGeneration"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProviderSecurityPolicyGeneration);
 	}
 	if (auto it = j.find("ProviderBlockIngressPacketCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProviderBlockIngressPacketCount);
