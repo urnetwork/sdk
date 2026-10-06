@@ -500,6 +500,7 @@ export interface AuthNetworkClientArgs {
   proxy_config?: ProxyConfig | null;
   time_zone?: string;
   locale?: string;
+  provide_intent?: boolean;
 }
 
 export interface ProxyConfig {

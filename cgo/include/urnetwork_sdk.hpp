@@ -224,6 +224,8 @@ inline constexpr const char* CheckoutBridgeUrl = "https://ur.io/checkout";
 inline constexpr const char* CheckoutRedirectLink = "urnetwork://checkout";
 inline constexpr int64_t ClientEventFlushIntervalMillis = 30000;
 inline constexpr int64_t ClientEventMaxAttempts = 3;
+inline constexpr const char* ClientLimitStatusExceeded = "client_limit_exceeded";
+inline constexpr const char* ClientLimitStatusNone = "";
 inline constexpr const char* ConnectFailed = "CONNECT_FAILED";
 inline constexpr const char* Connected = "CONNECTED";
 inline constexpr const char* Connecting = "CONNECTING";
@@ -656,6 +658,7 @@ struct ClientEvent;
 struct ClientEventRejection;
 struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
+struct ClientLimitStatus;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
 struct TransferPath;
@@ -1259,6 +1262,7 @@ struct AuthNetworkClientArgs {
 	std::optional<ProxyConfig> proxy_config;
 	std::optional<std::string> time_zone;
 	std::optional<std::string> locale;
+	std::optional<bool> provide_intent;
 };
 
 struct AuthNetworkClientError {
@@ -1550,6 +1554,11 @@ struct ClientEventsSendArgs {
 struct ClientEventsSendResult {
 	int64_t accepted{};
 	std::optional<ClientEventRejectionList> rejected;
+};
+
+struct ClientLimitStatus {
+	std::string Status{};
+	int64_t RetryTime{};
 };
 
 struct ConnectedProviderLocation {
@@ -3884,6 +3893,8 @@ inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendArgs& v);
 inline void to_json(nlohmann::json& j, const ClientEventsSendResult& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v);
+inline void to_json(nlohmann::json& j, const ClientLimitStatus& v);
+inline void from_json(const nlohmann::json& j, ClientLimitStatus& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
 inline void from_json(const nlohmann::json& j, ConnectedProviderLocation& v);
 inline void to_json(nlohmann::json& j, const ContractClientRow& v);
@@ -5783,6 +5794,9 @@ inline void to_json(nlohmann::json& j, const AuthNetworkClientArgs& v) {
 	if (v.locale) {
 		j["locale"] = *v.locale;
 	}
+	if (v.provide_intent) {
+		j["provide_intent"] = *v.provide_intent;
+	}
 }
 inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 	if (!j.is_object()) {
@@ -5828,6 +5842,11 @@ inline void from_json(const nlohmann::json& j, AuthNetworkClientArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.locale = std::move(tmp);
+	}
+	if (auto it = j.find("provide_intent"); it != j.end() && !it->is_null()) {
+		bool tmp{};
+		it->get_to(tmp);
+		v.provide_intent = std::move(tmp);
 	}
 }
 
@@ -7148,6 +7167,23 @@ inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v) {
 		ClientEventRejectionList tmp{};
 		it->get_to(tmp);
 		v.rejected = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientLimitStatus& v) {
+	j = nlohmann::json::object();
+	j["Status"] = v.Status;
+	j["RetryTime"] = v.RetryTime;
+}
+inline void from_json(const nlohmann::json& j, ClientLimitStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Status"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Status);
+	}
+	if (auto it = j.find("RetryTime"); it != j.end() && !it->is_null()) {
+		it->get_to(v.RetryTime);
 	}
 }
 
@@ -17023,6 +17059,7 @@ using ChangeNetworkNameCallback = std::function<void(std::optional<ChangeNetwork
 using CheckBalanceCodeCallback = std::function<void(std::optional<CheckBalanceCodeResult> result, std::optional<std::string> err_param)>;
 using ClaimNetworkNameCallback = std::function<void(std::optional<ClaimNetworkNameResult> result, std::optional<std::string> err_param)>;
 using ClientEventsSendCallback = std::function<void(std::optional<ClientEventsSendResult> result, std::optional<std::string> err_param)>;
+using ClientLimitStatusChangeListener = std::function<void(std::optional<ClientLimitStatus> status)>;
 using ClientRefreshIntegrityListener = std::function<void(ClientRefreshIntegrityNotice notice)>;
 using CommitCallback = std::function<void(bool success)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
@@ -17231,6 +17268,7 @@ public:
 	Sub addCanPromptIntroFunnelChangeListener(CanPromptIntroFunnelChangeListener listener) const;
 	Sub addCanReferChangeListener(CanReferChangeListener listener) const;
 	Sub addCanShowRatingDialogChangeListener(CanShowRatingDialogChangeListener listener) const;
+	Sub addClientLimitStatusChangeListener(ClientLimitStatusChangeListener listener) const;
 	Sub addConnectChangeListener(ConnectChangeListener listener) const;
 	Sub addConnectLocationChangeListener(ConnectLocationChangeListener listener) const;
 	Sub addConnectedProviderLocationChangeListener(ConnectedProviderLocationChangeListener listener) const;
@@ -17282,6 +17320,7 @@ public:
 	bool getCanRefer() const;
 	bool getCanShowRatingDialog() const;
 	std::string getClientId() const;
+	std::optional<ClientLimitStatus> getClientLimitStatus() const;
 	bool getConnectEnabled() const;
 	std::optional<ConnectLocation> getConnectLocation() const;
 	std::optional<ConnectedProviderLocationList> getConnectedProviderLocations() const;
@@ -19399,6 +19438,34 @@ inline void oneshot_client_events_send(void* user_data, const char* result_json,
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_client_limit_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ClientLimitStatusChangeListener*>(user_data);
+	try {
+		std::optional<ClientLimitStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ClientLimitStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_client_limit_status_change(void* user_data, const char* status_json) {
+	auto* f = static_cast<ClientLimitStatusChangeListener*>(user_data);
+	try {
+		std::optional<ClientLimitStatus> status_v;
+		if (status_json) {
+			status_v = parseJson<ClientLimitStatus>(status_json);
+		}
+		(*f)(std::move(status_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -24198,6 +24265,17 @@ inline Sub Device::addCanShowRatingDialogChangeListener(CanShowRatingDialogChang
 	}
 	return r;
 }
+inline Sub Device::addClientLimitStatusChangeListener(ClientLimitStatusChangeListener listener) const {
+	std::shared_ptr<ClientLimitStatusChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ClientLimitStatusChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_device_add_client_limit_status_change_listener(handle(), listener_fn ? &detail::retained_client_limit_status_change : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline Sub Device::addConnectChangeListener(ConnectChangeListener listener) const {
 	std::shared_ptr<ConnectChangeListener> listener_fn;
 	if (listener) {
@@ -24669,6 +24747,14 @@ inline bool Device::getCanShowRatingDialog() const {
 inline std::string Device::getClientId() const {
 	char* r_c = urnet_device_get_client_id(handle());
 	return detail::takeString(r_c);
+}
+inline std::optional<ClientLimitStatus> Device::getClientLimitStatus() const {
+	char* r_c = urnet_device_get_client_limit_status(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientLimitStatus>(r_s->c_str());
 }
 inline bool Device::getConnectEnabled() const {
 	bool r = urnet_device_get_connect_enabled(handle());

@@ -33,6 +33,7 @@ module URnetwork
       callback :urnet_check_balance_code_cb, [:pointer, :string, :string], :void
       callback :urnet_claim_network_name_cb, [:pointer, :string, :string], :void
       callback :urnet_client_events_send_cb, [:pointer, :string, :string], :void
+      callback :urnet_client_limit_status_change_cb, [:pointer, :string], :void
       callback :urnet_client_refresh_integrity_cb, [:pointer, :uint64], :void
       callback :urnet_commit_cb, [:pointer, :bool], :void
       callback :urnet_connect_change_cb, [:pointer, :bool], :void
@@ -459,6 +460,7 @@ module URnetwork
       attach_function :urnet_device_add_can_prompt_intro_funnel_change_listener, [:uint64, :urnet_can_prompt_intro_funnel_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_refer_change_listener, [:uint64, :urnet_can_refer_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_show_rating_dialog_change_listener, [:uint64, :urnet_can_show_rating_dialog_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_client_limit_status_change_listener, [:uint64, :urnet_client_limit_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_connect_change_listener, [:uint64, :urnet_connect_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_connect_location_change_listener, [:uint64, :urnet_connect_location_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_connected_provider_location_change_listener, [:uint64, :urnet_connected_provider_location_change_cb, :pointer], :uint64, blocking: true
@@ -510,6 +512,7 @@ module URnetwork
       attach_function :urnet_device_get_can_refer, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_can_show_rating_dialog, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_client_id, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_client_limit_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_connect_enabled, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_connect_location, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_connected_provider_locations, [:uint64], :pointer, blocking: true

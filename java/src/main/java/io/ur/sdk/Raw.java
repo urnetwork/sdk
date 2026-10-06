@@ -34,6 +34,7 @@ public interface Raw extends Library {
   interface urnet_check_balance_code_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_claim_network_name_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_client_events_send_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_client_limit_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_client_refresh_integrity_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_commit_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_connect_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
@@ -460,6 +461,7 @@ public interface Raw extends Library {
   long urnet_device_add_can_prompt_intro_funnel_change_listener(long a0, urnet_can_prompt_intro_funnel_change_cb a1, Pointer a2);
   long urnet_device_add_can_refer_change_listener(long a0, urnet_can_refer_change_cb a1, Pointer a2);
   long urnet_device_add_can_show_rating_dialog_change_listener(long a0, urnet_can_show_rating_dialog_change_cb a1, Pointer a2);
+  long urnet_device_add_client_limit_status_change_listener(long a0, urnet_client_limit_status_change_cb a1, Pointer a2);
   long urnet_device_add_connect_change_listener(long a0, urnet_connect_change_cb a1, Pointer a2);
   long urnet_device_add_connect_location_change_listener(long a0, urnet_connect_location_change_cb a1, Pointer a2);
   long urnet_device_add_connected_provider_location_change_listener(long a0, urnet_connected_provider_location_change_cb a1, Pointer a2);
@@ -511,6 +513,7 @@ public interface Raw extends Library {
   byte urnet_device_get_can_refer(long a0);
   byte urnet_device_get_can_show_rating_dialog(long a0);
   Pointer urnet_device_get_client_id(long a0);
+  Pointer urnet_device_get_client_limit_status(long a0);
   byte urnet_device_get_connect_enabled(long a0);
   Pointer urnet_device_get_connect_location(long a0);
   Pointer urnet_device_get_connected_provider_locations(long a0);
