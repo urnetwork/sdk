@@ -808,6 +808,7 @@ export interface SnEpochResult {
   finalize_block: number;
   t_epoch_blocks: number;
   chain_id: number;
+  genesis_hash?: string;
   contract_address: string;
   settlement_vault_address?: string;
   no_id?: number;

@@ -4447,6 +4447,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   finalize_block: number
  *   t_epoch_blocks: number
  *   chain_id: number
+ *   genesis_hash?: string
  *   contract_address: string
  *   settlement_vault_address?: string
  *   no_id?: number

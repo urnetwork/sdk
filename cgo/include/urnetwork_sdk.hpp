@@ -3167,6 +3167,7 @@ struct SnEpochResult {
 	int64_t finalize_block{};
 	int64_t t_epoch_blocks{};
 	int64_t chain_id{};
+	std::optional<std::string> genesis_hash;
 	std::string contract_address{};
 	std::optional<std::string> settlement_vault_address;
 	std::optional<int64_t> no_id;
@@ -14440,6 +14441,9 @@ inline void to_json(nlohmann::json& j, const SnEpochResult& v) {
 	j["finalize_block"] = v.finalize_block;
 	j["t_epoch_blocks"] = v.t_epoch_blocks;
 	j["chain_id"] = v.chain_id;
+	if (v.genesis_hash) {
+		j["genesis_hash"] = *v.genesis_hash;
+	}
 	j["contract_address"] = v.contract_address;
 	if (v.settlement_vault_address) {
 		j["settlement_vault_address"] = *v.settlement_vault_address;
@@ -14478,6 +14482,11 @@ inline void from_json(const nlohmann::json& j, SnEpochResult& v) {
 	}
 	if (auto it = j.find("chain_id"); it != j.end() && !it->is_null()) {
 		it->get_to(v.chain_id);
+	}
+	if (auto it = j.find("genesis_hash"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.genesis_hash = std::move(tmp);
 	}
 	if (auto it = j.find("contract_address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.contract_address);

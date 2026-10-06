@@ -312,6 +312,10 @@ func (self *Api) SnPoolClaimSync(args *SnPoolClaimArgs) (*SnPoolClaimResult, err
 // the schedule itself was invisible to apps. Block heights, epoch numbers and
 // chain ids are all far below 2^63. Numeric json encoding is retained; no_id
 // also accepts the server's decimal-string encoding when decoded.
+//
+// The genesis hash is the subnet chain's genesis block hash, "0x" and 64
+// lowercase hex digits; with the chain id and netuid it names the subnet. It
+// is empty from a server that predates it.
 type SnEpochResult struct {
 	Epoch               int64  `json:"epoch"`
 	StartBlock          int64  `json:"start_block"`
@@ -320,6 +324,7 @@ type SnEpochResult struct {
 	FinalizeBlock       int64  `json:"finalize_block"`
 	TEpochBlocks        int64  `json:"t_epoch_blocks"`
 	ChainId             int64  `json:"chain_id"`
+	GenesisHash         string `json:"genesis_hash,omitempty"`
 	ContractAddress     string `json:"contract_address"`
 	// optional release configuration for the direct claim path
 	SettlementVaultAddress string `json:"settlement_vault_address,omitempty"`
