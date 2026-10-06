@@ -72,9 +72,7 @@ messaging, and that repository builds its own native composition.
 it: strings, ids, buffer-out, json, handle lifecycle, and async callbacks.
 
 `go test ./... ` in this module holds the rest, including `-race` over the
-handle registry. On Windows the `-race` **c-shared** library builds but cannot
-load — ThreadSanitizer cannot map its shadow memory into an already-running
-process.
+handle registry.
 
 ## regenerating
 

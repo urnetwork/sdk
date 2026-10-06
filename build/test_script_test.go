@@ -392,7 +392,7 @@ func TestFixture(t *testing.T) {
 // claim a passing SDK suite; an available checkout must actually be exercised.
 // The fixture keeps the shape of cp3b and its message-server sibling, which
 // moved to github.com/urnetwork/message with the rest of messaging.
-func TestSdkTestScriptMessageServerDependency(t *testing.T) {
+func TestSdkTestScriptNestedModuleSiblingDependency(t *testing.T) {
 	for _, available := range []bool{false, true} {
 		t.Run(fmt.Sprintf("available=%t", available), func(t *testing.T) {
 			fixture := newSdkTestScriptFixture(t)
