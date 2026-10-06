@@ -400,8 +400,10 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		UseExperimentalTunnelAddress: true,
 
 		AllowProvider: true,
-		// the provider extender role follows providing by default (G1)
+		// the provider extender role follows providing by default (G1), and
+		// the setting is on until the user turns it off (F3)
 		ProvideExtenderEnabled: true,
+		DefaultProvideExtender: true,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
@@ -573,10 +575,20 @@ type DeviceLocalSettings struct {
 	// role while it provides (EXTENDER.md G1, G2). Default on, which is what
 	// DefaultDeviceLocalSettings sets; an embedder that runs many providers in
 	// one process turns it off, since one host can hold only one extender
-	// identity and bind the carrier ports once. It is the embedder's switch,
-	// independent of the user's persisted `.provide_extender` setting of F3:
-	// the role runs only when both allow it.
+	// identity and bind the carrier ports once. It is the embedder's hard
+	// switch: off, the role never runs, whatever the user's provider extender
+	// setting of F3 says (DefaultProvideExtender has the whole order).
 	ProvideExtenderEnabled bool
+	// DefaultProvideExtender is the provider extender setting of F3 this
+	// device uses until the user sets one: while the space's local state
+	// stores no `.provide_extender`, and, on a space that keeps no local
+	// state, until SetProvideExtender sets a value the device then holds for
+	// its life. Default on, which is what DefaultDeviceLocalSettings sets; an
+	// embedder that wants the role only on the user's explicit opt-in turns
+	// it off. While the device provides, the role runs in this order of
+	// precedence: never with ProvideExtenderEnabled off; else as the user's
+	// setting says, when there is one; else as this default says.
+	DefaultProvideExtender bool
 	// providerExtenderSettings, when set, adjusts the provider extender role's
 	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
 	// carrier ports and point the activation at an in-process operator through
@@ -935,6 +947,12 @@ type DeviceLocal struct {
 	offline                  bool
 	vpnInterfaceWhileOffline bool
 	tunnelStarted            bool
+	// The provider extender setting on a space that keeps no local state
+	// (F3): set by SetProvideExtender and held for the life of the device,
+	// with settings.DefaultProvideExtender in force until it is set. A space
+	// with local state stores the setting there instead.
+	provideExtenderSet bool
+	provideExtender    bool
 
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
@@ -1150,10 +1168,52 @@ func NewDeviceLocalWithMemoryTarget(
 	)
 }
 
-// NewDeviceLocal creates a device with all options carried on `settings`
-// (see `DeviceLocalSettings`).
+// NewDeviceLocalWithProvideExtender creates a device with the two device
+// controls of the provider extender role (EXTENDER.md G1, F3):
+// provideExtenderEnabled is the embedder's hard switch
+// (DeviceLocalSettings.ProvideExtenderEnabled), and defaultProvideExtender the
+// setting the device uses until the user sets one
+// (DeviceLocalSettings.DefaultProvideExtender). NewDeviceLocalWithKeyMaterial
+// is this with both on. keyMaterial may be nil.
 //
-//gomobile:noexport
+// This is the host-facing constructor for the two controls where a host cannot
+// build a DeviceLocalSettings: the c abi and the language bindings over it,
+// whose settings json carries neither the key material nor the client
+// settings. Go and gomobile hosts may set the same fields on the settings of
+// NewDeviceLocal instead.
+func NewDeviceLocalWithProvideExtender(
+	networkSpace *NetworkSpace,
+	byJwt string,
+	deviceDescription string,
+	deviceSpec string,
+	appVersion string,
+	instanceId *Id,
+	enableRpc bool,
+	keyMaterial *DeviceLocalKeyMaterial,
+	provideExtenderEnabled bool,
+	defaultProvideExtender bool,
+) (*DeviceLocal, error) {
+	settings := DefaultDeviceLocalSettings()
+	settings.EnableRpc = enableRpc
+	settings.KeyMaterial = keyMaterial
+	settings.ProvideExtenderEnabled = provideExtenderEnabled
+	settings.DefaultProvideExtender = defaultProvideExtender
+	return NewDeviceLocal(
+		networkSpace,
+		byJwt,
+		deviceDescription,
+		deviceSpec,
+		appVersion,
+		instanceId,
+		settings,
+	)
+}
+
+// NewDeviceLocal creates a device with all options carried on `settings`
+// (see `DeviceLocalSettings`). Construct the settings with
+// DefaultDeviceLocalSettings and override fields. gomobile binds this
+// (Sdk.newDeviceLocal), so a mobile host reaches every bound settings field
+// through it.
 func NewDeviceLocal(
 	networkSpace *NetworkSpace,
 	byJwt string,

@@ -1753,6 +1753,7 @@ struct DeviceLocalSettings {
 	bool DefaultTunnelStarted{};
 	bool AllowProvider{};
 	bool ProvideExtenderEnabled{};
+	bool DefaultProvideExtender{};
 	bool Verbose{};
 	nlohmann::json GeneratorFunc{};
 	nlohmann::json MultiClientIdentityStore{};
@@ -7892,6 +7893,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["DefaultTunnelStarted"] = v.DefaultTunnelStarted;
 	j["AllowProvider"] = v.AllowProvider;
 	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
+	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
 	j["Verbose"] = v.Verbose;
 	j["GeneratorFunc"] = v.GeneratorFunc;
 	j["MultiClientIdentityStore"] = v.MultiClientIdentityStore;
@@ -7988,6 +7990,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("ProvideExtenderEnabled"); it != j.end() && !it->is_null()) {
 		it->get_to(v.ProvideExtenderEnabled);
+	}
+	if (auto it = j.find("DefaultProvideExtender"); it != j.end() && !it->is_null()) {
+		it->get_to(v.DefaultProvideExtender);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -30910,6 +30915,14 @@ inline DeviceLocal newDeviceLocalWithKeyMaterial(const NetworkSpace& network_spa
 inline DeviceLocal newDeviceLocalWithMemoryTarget(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& device_description, const std::string& device_spec, const std::string& app_version, const std::string& instance_id, bool enable_rpc, const DeviceLocalKeyMaterial& key_material, int64_t memory_target_byte_count) {
 	char* err_c = nullptr;
 	DeviceLocal r(urnet_new_device_local_with_memory_target(network_space.handle(), by_jwt.c_str(), device_description.c_str(), device_spec.c_str(), app_version.c_str(), instance_id.c_str(), enable_rpc, key_material.handle(), memory_target_byte_count, &err_c));
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	return r;
+}
+inline DeviceLocal newDeviceLocalWithProvideExtender(const NetworkSpace& network_space, const std::string& by_jwt, const std::string& device_description, const std::string& device_spec, const std::string& app_version, const std::string& instance_id, bool enable_rpc, const DeviceLocalKeyMaterial& key_material, bool provide_extender_enabled, bool default_provide_extender) {
+	char* err_c = nullptr;
+	DeviceLocal r(urnet_new_device_local_with_provide_extender(network_space.handle(), by_jwt.c_str(), device_description.c_str(), device_spec.c_str(), app_version.c_str(), instance_id.c_str(), enable_rpc, key_material.handle(), provide_extender_enabled, default_provide_extender, &err_c));
 	if (err_c) {
 		detail::throwError(err_c);
 	}

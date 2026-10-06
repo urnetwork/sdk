@@ -771,9 +771,12 @@ type Device interface {
 	AddExtenderProvideStatusChangeListener(listener ExtenderProvideStatusChangeListener) Sub
 
 	// GetProvideExtender is the user's provider extender setting, stored per
-	// network space and independent of the provide mode (N4). Default on; a
-	// device that cannot be reached reads the value queued for it, else the
-	// last value read, else the default.
+	// network space, or held by the device for its life on a space that keeps
+	// no local state, and independent of the provide mode (N4). Until the user
+	// sets it, the device default applies, which is
+	// DeviceLocalSettings.DefaultProvideExtender, on unless the embedder turned
+	// it off; a device that cannot be reached reads the value queued for it,
+	// else the last value read, else the default.
 	GetProvideExtender() bool
 
 	// queued while the device cannot be reached and replayed at the next sync,

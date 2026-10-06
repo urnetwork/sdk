@@ -68,10 +68,12 @@ type LocalState struct {
 	providerPriorsRetention time.Duration
 
 	// The provider extender setting, read from `.provide_extender` once and
-	// cached after (EXTENDER.md N4). Guarded by provideExtenderLock, which also
-	// serializes the file writes so the file and the cache end on one value.
+	// cached after (EXTENDER.md N4), and whether the space stores one at all.
+	// Guarded by provideExtenderLock, which also serializes the file writes so
+	// the file and the cache end on one value.
 	provideExtenderLock   sync.Mutex
 	provideExtenderLoaded bool
+	provideExtenderStored bool
 	provideExtender       bool
 }
 

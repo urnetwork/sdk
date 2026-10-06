@@ -966,6 +966,7 @@ EXPORTS
 	urnet_new_device_local_with_defaults
 	urnet_new_device_local_with_key_material
 	urnet_new_device_local_with_memory_target
+	urnet_new_device_local_with_provide_extender
 	urnet_new_device_remote_with_defaults
 	urnet_new_export_options
 	urnet_new_feedback_submitted_event

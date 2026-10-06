@@ -70,3 +70,19 @@ An application can speak its own protocol between two devices' clients through t
 The registrations live on the device: they are applied to the device's own client when the device starts and re-applied when that client is replaced.
 
 `DeviceRemote.OpenSubprotocolContext` carries the same discrete messages over a device-RPC session. The JavaScript wrapper exposes this as `await device.enableSubprotocol(id, listener)`; the returned subscription provides `send`, `querySubprotocols`, `close`, and a `closed` promise. It requires a provider-capable native `DeviceLocal`, such as an extension-owned device or the examples repository's authenticated loopback companion. Hosted proxy devices reject this capability because their non-visible proxy identity cannot participate in peer messaging. Subscriptions belong to one RPC generation and must be reopened after a disconnect.
+
+# Provider extender
+
+A providing desktop device also runs the provider extender role (`connect/EXTENDER.md` G1, F3): it listens on TCP 443 and UDP 443, 53 and 4053 so that clients that cannot reach the platform directly can connect through it. Mobile builds carry no role. Two device controls and the user's setting decide whether the role runs while the device provides, in this order:
+
+1. `DeviceLocalSettings.ProvideExtenderEnabled`, the embedder's hard switch, default on. Off, the role never runs, whatever the setting says; the status reports `not_providing`.
+2. The user's setting, `SetProvideExtender`. A space with local state stores it as `.provide_extender`, which every later device on the space reads; on a space that keeps no local state (for example one from `NewNetworkSpaceManagerNoStorage`) the device holds it for its own life.
+3. `DeviceLocalSettings.DefaultProvideExtender`, the setting the device uses until the user sets one, default on. An embedder that wants the role only after the user opts in turns it off.
+
+`GetProvideExtender` reads the setting (2, else 3), and the status and its listener follow it. Every constructor keeps both controls on unless told otherwise. Where to set them:
+
+| Surface | Controls |
+| --- | --- |
+| Go | the fields on `DefaultDeviceLocalSettings()` passed to `NewDeviceLocal`, or `NewDeviceLocalWithProvideExtender(..., keyMaterial, provideExtenderEnabled, defaultProvideExtender)` |
+| gomobile (Android, iOS, macOS) | `Sdk.defaultDeviceLocalSettings()` with `setProvideExtenderEnabled` and `setDefaultProvideExtender`, then `Sdk.newDeviceLocal`; or `Sdk.newDeviceLocalWithProvideExtender` (Swift `SdkNewDeviceLocalWithProvideExtender`) |
+| C ABI, C++ and the Python, Java, C#, Rust and Ruby packages | `urnet_new_device_local_with_provide_extender` (C++ `urnet::newDeviceLocalWithProvideExtender`); the settings json of `urnet_new_device_local` cannot carry key material |

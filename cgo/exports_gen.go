@@ -15396,6 +15396,36 @@ func urnet_new_device_local_with_memory_target(networkSpace C.uint64_t, byJwt *C
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_new_device_local_with_provide_extender
+func urnet_new_device_local_with_provide_extender(networkSpace C.uint64_t, byJwt *C.char, deviceDescription *C.char, deviceSpec *C.char, appVersion *C.char, instanceId *C.char, enableRpc C.bool, keyMaterial C.uint64_t, provideExtenderEnabled C.bool, defaultProvideExtender C.bool, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_device_local_with_provide_extender")
+	var networkSpace_ *sdk.NetworkSpace
+	if networkSpace != 0 {
+		var ok bool
+		networkSpace_, ok = resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_device_local_with_provide_extender")
+		if !ok {
+			return 0
+		}
+	}
+	var keyMaterial_ *sdk.DeviceLocalKeyMaterial
+	if keyMaterial != 0 {
+		var ok bool
+		keyMaterial_, ok = resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(keyMaterial), "urnet_new_device_local_with_provide_extender")
+		if !ok {
+			return 0
+		}
+	}
+	r0, err := sdk.NewDeviceLocalWithProvideExtender(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local_with_provide_extender"), bool(enableRpc), keyMaterial_, bool(provideExtenderEnabled), bool(defaultProvideExtender))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_new_device_remote_with_defaults
 func urnet_new_device_remote_with_defaults(networkSpace C.uint64_t, byJwt *C.char, instanceId *C.char, outError **C.char) C.uint64_t {
 	defer cgoGuard("urnet_new_device_remote_with_defaults")
