@@ -20,7 +20,9 @@ import (
 // on the platform.
 //
 // The setting is persisted per network space as `.provide_extender`, beside
-// the other dot files, and defaults to on (G1).
+// the other dot files; a space that keeps no local state leaves it with the
+// device for the device's life. Until the user sets it, the device default
+// applies (DeviceLocalSettings.DefaultProvideExtender), which is on (G1).
 
 // At most one status callback per second (F3), which is the epoch the space's
 // extender status already uses.
@@ -476,21 +478,37 @@ func extenderListenErrorText(carrierErrs map[string]error) string {
 	return strings.Join(parts, "; ")
 }
 
-// The provider extender setting of this device's space (F3). A device with no
-// storage always reads the default, which is on.
+// The provider extender setting of this device (F3): the value the space's
+// local state stores; else, on a space that keeps no local state, the value
+// SetProvideExtender set for the life of this device; else the device default,
+// DeviceLocalSettings.DefaultProvideExtender. The embedder's switch is not part
+// of the setting: with ProvideExtenderEnabled off the role never runs, whatever
+// this reads (G1), and the status reports not_providing.
 func (self *DeviceLocal) GetProvideExtender() bool {
-	asyncLocalState := self.networkSpaceAsyncLocalState()
-	if asyncLocalState == nil {
-		return true
+	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
+		if provideExtender, stored := asyncLocalState.GetLocalState().getStoredProvideExtender(); stored {
+			return provideExtender
+		}
+		return self.settings.DefaultProvideExtender
 	}
-	return asyncLocalState.GetLocalState().GetProvideExtender()
+	provideExtender, set := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.provideExtender, self.provideExtenderSet
+	}()
+	if set {
+		return provideExtender
+	}
+	return self.settings.DefaultProvideExtender
 }
 
-// Persists the provider extender setting and applies it at once (F3, G2).
-// Turning it off stops the extender server, the activation loop and the
-// extender node together; turning it on starts them again while the device is
-// providing. A hosted device never runs the role (G1), so the setter is
-// guarded there as SetProvideMode is.
+// Sets the provider extender setting and applies it at once (F3, G2): stored
+// in the space's local state, which keeps it across restarts, or held by this
+// device for its life on a space that keeps no local state. Turning it off
+// stops the extender server, the activation loop and the extender node
+// together; turning it on starts them again while the device is providing. A
+// hosted device never runs the role (G1), so the setter is guarded there as
+// SetProvideMode is.
 func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 	if self.hostedIncompatibleGuarded("SetProvideExtender") {
 		return
@@ -499,6 +517,13 @@ func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 		if err := asyncLocalState.GetLocalState().SetProvideExtender(provideExtender); err != nil {
 			self.log.Infof("[device]provide extender err = %s\n", err)
 		}
+	} else {
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.provideExtender = provideExtender
+			self.provideExtenderSet = true
+		}()
 	}
 	self.log.Infof("[device]provide extender = %t\n", provideExtender)
 	self.updateExtenderProvide()
@@ -577,6 +602,14 @@ func (self *DeviceLocal) extenderProvideStatusChanged() {
 // Starts or stops the extender role for the current provide state and setting
 // (G2). Called after every provide change and after the setting changes, never
 // with the device lock held.
+//
+// The wanted state is read, handed to the provider, and read again until it
+// stands. A change that lands between one call's read and its hand-over runs
+// its own call, which can hand its newer state over first; the older call then
+// finds the state moved and hands the newer one over again, rather than
+// leaving its own in force. The provider takes one hand-over at a time, so the
+// state handed over last is the state wanted last, without a lock held across
+// the read and the hand-over.
 func (self *DeviceLocal) updateExtenderProvide() {
 	self.stateLock.Lock()
 	provider := self.provider
@@ -589,7 +622,21 @@ func (self *DeviceLocal) updateExtenderProvide() {
 		// either, so this is defense in depth beside the hosted provide guard.
 		// The same two halves are what N3's off and not_providing states
 		// report.
-		provider.setExtenderEnabled(self.extenderProvideProviding() && self.GetProvideExtender())
+		wanted := func() bool {
+			return self.extenderProvideProviding() && self.GetProvideExtender()
+		}
+		enabled := wanted()
+		for {
+			if hook := self.settings.testingBeforeExtenderProvideApply; hook != nil {
+				hook(enabled)
+			}
+			provider.setExtenderEnabled(enabled)
+			current := wanted()
+			if current == enabled {
+				break
+			}
+			enabled = current
+		}
 	}
 	// the watch is woken whether or not there is a provider: the state of N3
 	// follows the setting and the provide state, so a device with no provider

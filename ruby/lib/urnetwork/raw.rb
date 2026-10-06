@@ -1271,6 +1271,7 @@ module URnetwork
       attach_function :urnet_new_device_local_with_defaults, [:uint64, :string, :string, :string, :string, :string, :bool, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_key_material, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_memory_target, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :int64, :pointer], :uint64, blocking: true
+      attach_function :urnet_new_device_local_with_provide_extender, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :bool, :bool, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_remote_with_defaults, [:uint64, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_export_options, [], :pointer, blocking: true
       attach_function :urnet_new_feedback_submitted_event, [:int64, :string, :string], :pointer, blocking: true

@@ -2345,6 +2345,8 @@ def bind(lib):
     lib.urnet_new_device_local_with_key_material.restype = c_uint64
     lib.urnet_new_device_local_with_memory_target.argtypes = [c_uint64, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_bool, c_uint64, c_int64, POINTER(c_void_p)]
     lib.urnet_new_device_local_with_memory_target.restype = c_uint64
+    lib.urnet_new_device_local_with_provide_extender.argtypes = [c_uint64, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_bool, c_uint64, c_bool, c_bool, POINTER(c_void_p)]
+    lib.urnet_new_device_local_with_provide_extender.restype = c_uint64
     lib.urnet_new_device_remote_with_defaults.argtypes = [c_uint64, c_char_p, c_char_p, POINTER(c_void_p)]
     lib.urnet_new_device_remote_with_defaults.restype = c_uint64
     lib.urnet_new_export_options.argtypes = []

@@ -1272,6 +1272,7 @@ public interface Raw extends Library {
   long urnet_new_device_local_with_defaults(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, PointerByReference a7);
   long urnet_new_device_local_with_key_material(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, PointerByReference a8);
   long urnet_new_device_local_with_memory_target(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, long a8, PointerByReference a9);
+  long urnet_new_device_local_with_provide_extender(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, byte a8, byte a9, PointerByReference a10);
   long urnet_new_device_remote_with_defaults(long a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_new_export_options();
   Pointer urnet_new_feedback_submitted_event(long a0, String a1, String a2);

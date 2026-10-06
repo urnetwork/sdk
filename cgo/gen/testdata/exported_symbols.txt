@@ -20,3 +20,7 @@ urnet_client_event_queue_set_locale
 # network space key migration: the desktop apps call this on every launch
 # to move the bundled space from ur.network/main to bringyour.com/main
 urnet_network_space_manager_migrate_network_space
+
+# provider integrations: the provider extender role's two device controls
+# (EXTENDER.md G1, F3); third-party provider apps build their device with it
+urnet_new_device_local_with_provide_extender
