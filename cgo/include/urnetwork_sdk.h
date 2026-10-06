@@ -2862,10 +2862,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* DeviceLocalSettings (json):
- *   ClientCredentials: any
- *   ClientControl: any
- *   ProviderDiscovery: any
- *   LocalApi: any
  *   MemoryTargetByteCount: number
  *   SendTimeout: number (ns)
  *   SequenceBufferSize: number
@@ -2890,15 +2886,14 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   ProvideExtenderEnabled: boolean
  *   DefaultProvideExtender: boolean
  *   Verbose: boolean
- *   GeneratorFunc: any
- *   MultiClientIdentityStore: any
- *   ProviderDialContextSettings: any | null
  *   DnsPumpHost: string
  *   EnableRpc: boolean
- *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
  *   HostedIncompatible: boolean
  *   UseExperimentalTunnelAddress: boolean
+ * A DeviceLocalSettings argument is decoded over
+ * urnet_default_device_local_settings(): a field it omits keeps its default,
+ * and NULL is the defaults.
  */
 
 /* DeviceRemoteAddress (json):

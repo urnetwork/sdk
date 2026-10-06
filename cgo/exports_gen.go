@@ -15286,12 +15286,9 @@ func urnet_new_device_local(networkSpace C.uint64_t, byJwt *C.char, deviceDescri
 			return 0
 		}
 	}
-	var settings_ *sdk.DeviceLocalSettings
-	if settings != nil {
-		settings_ = &sdk.DeviceLocalSettings{}
-		if !goJson(settings, settings_, "urnet_new_device_local") {
-			return 0
-		}
+	settings_ := sdk.DefaultDeviceLocalSettings()
+	if !goJson(settings, settings_, "urnet_new_device_local") {
+		return 0
 	}
 	r0, err := sdk.NewDeviceLocal(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local"), settings_)
 	if err != nil {

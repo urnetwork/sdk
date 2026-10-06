@@ -1727,10 +1727,6 @@ struct DeviceLocalMemoryUsage {
 };
 
 struct DeviceLocalSettings {
-	nlohmann::json ClientCredentials{};
-	nlohmann::json ClientControl{};
-	nlohmann::json ProviderDiscovery{};
-	nlohmann::json LocalApi{};
 	int64_t MemoryTargetByteCount{};
 	int64_t SendTimeout{};
 	int64_t SequenceBufferSize{};
@@ -1755,12 +1751,8 @@ struct DeviceLocalSettings {
 	bool ProvideExtenderEnabled{};
 	bool DefaultProvideExtender{};
 	bool Verbose{};
-	nlohmann::json GeneratorFunc{};
-	nlohmann::json MultiClientIdentityStore{};
-	std::optional<nlohmann::json> ProviderDialContextSettings;
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
-	std::optional<nlohmann::json> KeyMaterial;
 	bool DisableLogging{};
 	bool HostedIncompatible{};
 	bool UseExperimentalTunnelAddress{};
@@ -7867,10 +7859,6 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 
 inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j = nlohmann::json::object();
-	j["ClientCredentials"] = v.ClientCredentials;
-	j["ClientControl"] = v.ClientControl;
-	j["ProviderDiscovery"] = v.ProviderDiscovery;
-	j["LocalApi"] = v.LocalApi;
 	j["MemoryTargetByteCount"] = v.MemoryTargetByteCount;
 	j["SendTimeout"] = v.SendTimeout;
 	j["SequenceBufferSize"] = v.SequenceBufferSize;
@@ -7895,16 +7883,8 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
 	j["Verbose"] = v.Verbose;
-	j["GeneratorFunc"] = v.GeneratorFunc;
-	j["MultiClientIdentityStore"] = v.MultiClientIdentityStore;
-	if (v.ProviderDialContextSettings) {
-		j["ProviderDialContextSettings"] = *v.ProviderDialContextSettings;
-	}
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
-	if (v.KeyMaterial) {
-		j["KeyMaterial"] = *v.KeyMaterial;
-	}
 	j["DisableLogging"] = v.DisableLogging;
 	j["HostedIncompatible"] = v.HostedIncompatible;
 	j["UseExperimentalTunnelAddress"] = v.UseExperimentalTunnelAddress;
@@ -7912,18 +7892,6 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (!j.is_object()) {
 		return;
-	}
-	if (auto it = j.find("ClientCredentials"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ClientCredentials);
-	}
-	if (auto it = j.find("ClientControl"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ClientControl);
-	}
-	if (auto it = j.find("ProviderDiscovery"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ProviderDiscovery);
-	}
-	if (auto it = j.find("LocalApi"); it != j.end() && !it->is_null()) {
-		it->get_to(v.LocalApi);
 	}
 	if (auto it = j.find("MemoryTargetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.MemoryTargetByteCount);
@@ -7997,27 +7965,11 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
 	}
-	if (auto it = j.find("GeneratorFunc"); it != j.end() && !it->is_null()) {
-		it->get_to(v.GeneratorFunc);
-	}
-	if (auto it = j.find("MultiClientIdentityStore"); it != j.end() && !it->is_null()) {
-		it->get_to(v.MultiClientIdentityStore);
-	}
-	if (auto it = j.find("ProviderDialContextSettings"); it != j.end() && !it->is_null()) {
-		nlohmann::json tmp{};
-		it->get_to(tmp);
-		v.ProviderDialContextSettings = std::move(tmp);
-	}
 	if (auto it = j.find("DnsPumpHost"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DnsPumpHost);
 	}
 	if (auto it = j.find("EnableRpc"); it != j.end() && !it->is_null()) {
 		it->get_to(v.EnableRpc);
-	}
-	if (auto it = j.find("KeyMaterial"); it != j.end() && !it->is_null()) {
-		nlohmann::json tmp{};
-		it->get_to(tmp);
-		v.KeyMaterial = std::move(tmp);
 	}
 	if (auto it = j.find("DisableLogging"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DisableLogging);

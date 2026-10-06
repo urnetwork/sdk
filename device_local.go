@@ -493,17 +493,26 @@ func (self *DeviceLocalSettings) SetNetworkPeersEpochMillis(millis int64) {
 // tunables. Those carry their own field-level markers below. The durations
 // are reachable through the *Millis accessor pairs at the end of this file,
 // so an app can set them; the other three are Go-construction only.
+//
+// The c abi carries the settings as json (urnet_default_device_local_settings
+// and urnet_new_device_local). The json form is every field below but the ones
+// tagged `json:"-"`: the Go-only authorities and seams, which json cannot
+// encode, the key material, which crosses the c abi as a handle
+// (urnet_new_device_local_with_provide_extender), and the embedded client
+// settings. A duration is its integer count of nanoseconds. The c abi decodes
+// a settings json over DefaultDeviceLocalSettings, so a field the json omits
+// keeps its default and a NULL json is the defaults.
 type DeviceLocalSettings struct {
 	// Explicit platform-owned authorities. Nil retains the application HTTP
 	// path. These are captured per device and never installed on a shared API.
 	//gomobile:noexport Go-only local control authorities.
-	ClientCredentials connect.NetworkClientCredentials
+	ClientCredentials connect.NetworkClientCredentials `json:"-"`
 	//gomobile:noexport Go-only local control authority.
-	ClientControl connect.NetworkClientControl
+	ClientControl connect.NetworkClientControl `json:"-"`
 	//gomobile:noexport Go-only local discovery authority.
-	ProviderDiscovery connect.NetworkProviderDiscovery
+	ProviderDiscovery connect.NetworkProviderDiscovery `json:"-"`
 	//gomobile:noexport Go-only private API authority.
-	LocalApi localDeviceApi
+	LocalApi localDeviceApi `json:"-"`
 	// Diagnostic-only injection of the existing allocator-error return path.
 	testingTakeLocalAddress func() (netip.Addr, bool)
 	// Constructor seams observe admission ordering without creating a client.
@@ -613,7 +622,7 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport func value — gomobile cannot bind funcs (only interfaces).
 	// Go/headless hosts only; apps get the default api generator.
-	GeneratorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator
+	GeneratorFunc func(specs []*connect.ProviderSpec) connect.MultiClientGenerator `json:"-"`
 	// MultiClientIdentityStore, when set, persists the api generator's
 	// window client identities so a process restart reuses them against the
 	// same destinations — keeping provider-side NAT flows resumable
@@ -621,7 +630,7 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport connect.MultiClientIdentityStore is an interface from
 	// another package, which gomobile does not bind. Go/headless hosts only.
-	MultiClientIdentityStore connect.MultiClientIdentityStore
+	MultiClientIdentityStore connect.MultiClientIdentityStore `json:"-"`
 	// ProviderDialContextSettings, when set, is applied to the provider carrier
 	// and the exit NAT's TCP and UDP sockets. Headless integration harnesses use
 	// it to bind every path of each provider to one distinct loopback source
@@ -629,7 +638,7 @@ type DeviceLocalSettings struct {
 	// applications leave it nil.
 	//
 	//gomobile:noexport Go-only network dial seam.
-	ProviderDialContextSettings *connect.DialContextSettings
+	ProviderDialContextSettings *connect.DialContextSettings `json:"-"`
 	// DnsPumpHost overrides the public UDP/53 destination used by the DNS-pump
 	// carrier. Integration hosts with a private or loopback Connect endpoint
 	// must set this to their provisioned pump ingress; sending that endpoint's
@@ -639,7 +648,7 @@ type DeviceLocalSettings struct {
 	// FIXME remove EnableRpc. Turn on RPC when RPC connections are set (receive net.Conn, send net.Conn)
 	EnableRpc bool
 	// KeyMaterial, when set, is applied to `ClientSettings` at construction
-	KeyMaterial *DeviceLocalKeyMaterial
+	KeyMaterial *DeviceLocalKeyMaterial `json:"-"`
 	// DisableLogging silences the device and all nested components and
 	// clients, for hosts embedding many devices in one process.
 	// It overrides `ClientSettings.Log`.
@@ -675,7 +684,7 @@ type DeviceLocalSettings struct {
 	// which gomobile does not bind — the whole embedded block (and every
 	// field promoted from it) is absent on android/apple. Apps configure the
 	// client through the constructors and the setters on DeviceLocal instead.
-	connect.ClientSettings
+	connect.ClientSettings `json:"-"`
 }
 
 // compile check that DeviceLocal conforms to Device, device, and ViewControllerManager
