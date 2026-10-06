@@ -1,5 +1,11 @@
 **/bin
 
+# liveprobe/ and livepeer/ moved to github.com/urnetwork/message. A clone that built them before
+# the move still holds their binaries there (liveprobe, liveprobe-arm64 and each one's .exe, 34 to
+# 50 MB apiece), and the rules that hid them left with the directories, so the first `git add -A`
+# would stage them. Both directories stay ignored until no known clone holds one.
+/liveprobe/
+/livepeer/
 build/apple*
 build/ios*
 build/android*
