@@ -32,15 +32,13 @@ func (self *LocalStateResetResult) GetReset() bool {
 
 // Returns the material actually preserved by this completed reset, including
 // a genuine nil identity. A later separate storage read is not this result.
+// The copy keeps the network the identity belongs to: a device for the client
+// of another network than the reset one does not take it.
 func (self *LocalStateResetResult) GetDeviceLocalKeyMaterial() *DeviceLocalKeyMaterial {
 	if self.keyMaterial == nil {
 		return nil
 	}
-	return NewDeviceLocalKeyMaterial(
-		self.keyMaterial.GetClientKeySeed(),
-		self.keyMaterial.GetProvideTlsCertificatePem(),
-		self.keyMaterial.GetProvideTlsPrivateKeyPem(),
-	)
+	return self.keyMaterial.clone()
 }
 
 // Reads one envelope and its API/LocalState ownership under the existing lock
@@ -207,8 +205,9 @@ func (self *NetworkSpace) authSnapshotCurrentWithLock(snapshot *LocalAuthStateSn
 	return state == snapshot.state, nil
 }
 
-// Removes only enumerated children, never the storage root or the exact
-// checked identity file. Clear routing before auth, so interruption does not
+// Removes only enumerated children, never the storage root, the exact checked
+// identity file or the device-level extender files a sign-out keeps
+// (keptAcrossSignOut). Clear routing before auth, so interruption does not
 // erase the account boundary while an old private-peer destination remains.
 // Errors can leave partial effects; publishers stay retired in every case.
 func (self *LocalState) resetPreservingKeysWithLock(entries []os.DirEntry) error {
@@ -222,7 +221,7 @@ func (self *LocalState) resetPreservingKeysWithLock(entries []os.DirEntry) error
 		}
 	}
 	for _, entry := range entries {
-		if name := entry.Name(); name != ".device_local_key_material" && name != localAuthStateFileName {
+		if name := entry.Name(); name != ".device_local_key_material" && name != localAuthStateFileName && !keptAcrossSignOut(name) {
 			remove(name)
 		}
 	}
