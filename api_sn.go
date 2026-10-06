@@ -134,6 +134,45 @@ func (self *Api) SnWalletMappingChallengeSync(args *SnWalletMappingChallengeArgs
 	return self.SnWalletMappingChallengeSyncWithContext(self.ctx, args)
 }
 
+// Selects the explicit earning interval of a network wallet consent: the
+// coldkey signs once for every provider client of the session's network. Only
+// the network owner's session (a network JWT) may request it; submit the
+// signed message through SnSetWallet without a client id.
+type SnNetworkWalletMappingChallengeArgs struct {
+	ColdkeySs58  string `json:"coldkey_ss58"`
+	FromEpoch    int64  `json:"from_epoch"`
+	ThroughEpoch int64  `json:"through_epoch"`
+}
+
+// Requests a network consent challenge through the api's authenticated post
+// transport.
+//
+//gomobile:noexport
+func (self *Api) SnNetworkWalletMappingChallengeSyncWithContext(ctx context.Context, args *SnNetworkWalletMappingChallengeArgs) (*SnWalletMappingChallengeResult, error) {
+	if args == nil {
+		return nil, fmt.Errorf("network wallet mapping challenge args are required")
+	}
+	if args.FromEpoch < 0 || args.ThroughEpoch < 0 || args.ThroughEpoch < args.FromEpoch {
+		return nil, fmt.Errorf("wallet mapping epoch interval must be nonnegative and ordered")
+	}
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/sn/wallet/network-consent", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&SnWalletMappingChallengeResult{},
+		connect.NewNoopApiCallback[*SnWalletMappingChallengeResult](),
+	)
+}
+
+// Uses the api lifetime for the network challenge request.
+//
+//gomobile:noexport
+func (self *Api) SnNetworkWalletMappingChallengeSync(args *SnNetworkWalletMappingChallengeArgs) (*SnWalletMappingChallengeResult, error) {
+	return self.SnNetworkWalletMappingChallengeSyncWithContext(self.ctx, args)
+}
+
 type SnSetWalletArgs struct {
 	ColdkeySs58 string `json:"coldkey_ss58"`
 	ClientId    *Id    `json:"client_id,omitempty"`

@@ -97,6 +97,7 @@ EXPORTS
 	urnet_api_sn_epoch_sync
 	urnet_api_sn_get_wallet
 	urnet_api_sn_head
+	urnet_api_sn_network_wallet_mapping_challenge_sync
 	urnet_api_sn_pool_claim_sync
 	urnet_api_sn_set_wallet
 	urnet_api_sn_set_wallet_sync

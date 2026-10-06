@@ -11,6 +11,15 @@ import (
 	"github.com/urnetwork/connect"
 )
 
+// The consent kinds a wallet can come from (SnWallet.ConsentScope).
+const (
+	// a provider client's own wallet mapping consent
+	SnWalletConsentScopeProvider = "provider"
+	// the network consent: one signature for every provider client of the
+	// network that has no provider consent of its own
+	SnWalletConsentScopeNetwork = "network"
+)
+
 // The Bittensor coldkey where the network's UR protocol entitlements settle.
 // A wallet is an account setting kept by the server (POST/GET /sn/wallet)
 // and cached on the device in local state so the earnings screens can gate
@@ -23,6 +32,11 @@ type SnWallet struct {
 	// first epoch the wallet is effective for (0 = unknown); alpha is never
 	// retroactive, so claims are scanned from here
 	FromEpoch int64 `json:"from_epoch,omitempty"`
+	// SnWalletConsentScope*, or "" for a wallet that is not a consent (a
+	// login-proof wallet or the network-level copy, or an older server)
+	ConsentScope string `json:"consent_scope,omitempty"`
+	// for a consent, the last epoch it pays (0 = unknown)
+	ThroughEpoch int64 `json:"through_epoch,omitempty"`
 }
 
 func (self *SnWallet) Copy() *SnWallet {
@@ -340,40 +354,48 @@ func (self *snDevice) SyncSnWallet(callback SnGetWalletCallback) {
 	})
 }
 
-// snPickWallet prefers the wallet attached to this client, then the
-// network-level wallet, then the first one.
+// The wallet to show, in settlement's precedence: this client's own provider
+// consent, else the network consent, else this client's other wallet, else
+// the network-level wallet, else the first one. Wallets from servers without
+// consent scopes keep the earlier order: this client's, then network-level.
 func snPickWallet(result *SnGetWalletResult, clientId string) *SnWallet {
-	var networkLevel *SnWallet
-	var first *SnWallet
-	if result.Wallets != nil {
-		for _, wallet := range result.Wallets.values {
-			if wallet == nil || wallet.ColdkeySs58 == "" {
-				continue
+	var ownConsent, networkConsent, own, networkLevel, first *SnWallet
+	consider := func(wallet *SnWallet) {
+		if wallet == nil || wallet.ColdkeySs58 == "" {
+			return
+		}
+		switch {
+		case wallet.ClientId == clientId && wallet.ConsentScope == SnWalletConsentScopeProvider:
+			if ownConsent == nil {
+				ownConsent = wallet
 			}
-			if wallet.ClientId == clientId {
-				return wallet.Copy()
+		case wallet.ClientId == "" && wallet.ConsentScope == SnWalletConsentScopeNetwork:
+			if networkConsent == nil {
+				networkConsent = wallet
 			}
-			if wallet.ClientId == "" && networkLevel == nil {
+		case wallet.ClientId == clientId:
+			if own == nil {
+				own = wallet
+			}
+		case wallet.ClientId == "":
+			if networkLevel == nil {
 				networkLevel = wallet
 			}
-			if first == nil {
-				first = wallet
-			}
-		}
-	}
-	if result.Wallet != nil && result.Wallet.ColdkeySs58 != "" {
-		if result.Wallet.ClientId == clientId {
-			return result.Wallet.Copy()
-		}
-		if networkLevel == nil && result.Wallet.ClientId == "" {
-			networkLevel = result.Wallet
 		}
 		if first == nil {
-			first = result.Wallet
+			first = wallet
 		}
 	}
-	if networkLevel != nil {
-		return networkLevel.Copy()
+	if result.Wallets != nil {
+		for _, wallet := range result.Wallets.values {
+			consider(wallet)
+		}
 	}
-	return first.Copy()
+	consider(result.Wallet)
+	for _, wallet := range []*SnWallet{ownConsent, networkConsent, own, networkLevel, first} {
+		if wallet != nil {
+			return wallet.Copy()
+		}
+	}
+	return nil
 }

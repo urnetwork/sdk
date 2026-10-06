@@ -459,6 +459,8 @@ inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
 inline constexpr const char* SnTxTypeEip1559 = "eip1559";
 inline constexpr const char* SnTxTypeLegacy = "legacy";
+inline constexpr const char* SnWalletConsentScopeNetwork = "network";
+inline constexpr const char* SnWalletConsentScopeProvider = "provider";
 inline constexpr int64_t SolanaPayReferenceBytes = 32;
 inline constexpr const char* SolanaWalletBridgeErrorExtensionNotFound = "extension_not_found";
 inline constexpr const char* SolanaWalletBridgeErrorInvalidRequest = "invalid_request";
@@ -849,6 +851,7 @@ struct SnGasBalanceResult;
 struct SnGasKey;
 struct SnGetWalletResult;
 struct SnHeadResult;
+struct SnNetworkWalletMappingChallengeArgs;
 struct SnPoolClaimArgs;
 struct SnPoolClaimError;
 struct SnPoolClaimResult;
@@ -3124,6 +3127,8 @@ struct SnWallet {
 	std::optional<std::string> client_id;
 	int64_t set_at_millis{};
 	std::optional<int64_t> from_epoch;
+	std::optional<std::string> consent_scope;
+	std::optional<int64_t> through_epoch;
 };
 
 struct SnConnectWalletResult {
@@ -3193,6 +3198,12 @@ struct SnHeadResult {
 	int64_t netuid{};
 	std::string source{};
 	std::optional<SnError> error;
+};
+
+struct SnNetworkWalletMappingChallengeArgs {
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
 };
 
 struct SnPoolClaimArgs {
@@ -4270,6 +4281,8 @@ inline void to_json(nlohmann::json& j, const SnGetWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnGetWalletResult& v);
 inline void to_json(nlohmann::json& j, const SnHeadResult& v);
 inline void from_json(const nlohmann::json& j, SnHeadResult& v);
+inline void to_json(nlohmann::json& j, const SnNetworkWalletMappingChallengeArgs& v);
+inline void from_json(const nlohmann::json& j, SnNetworkWalletMappingChallengeArgs& v);
 inline void to_json(nlohmann::json& j, const SnPoolClaimArgs& v);
 inline void from_json(const nlohmann::json& j, SnPoolClaimArgs& v);
 inline void to_json(nlohmann::json& j, const SnPoolClaimError& v);
@@ -14238,6 +14251,12 @@ inline void to_json(nlohmann::json& j, const SnWallet& v) {
 	if (v.from_epoch) {
 		j["from_epoch"] = *v.from_epoch;
 	}
+	if (v.consent_scope) {
+		j["consent_scope"] = *v.consent_scope;
+	}
+	if (v.through_epoch) {
+		j["through_epoch"] = *v.through_epoch;
+	}
 }
 inline void from_json(const nlohmann::json& j, SnWallet& v) {
 	if (!j.is_object()) {
@@ -14258,6 +14277,16 @@ inline void from_json(const nlohmann::json& j, SnWallet& v) {
 		int64_t tmp{};
 		it->get_to(tmp);
 		v.from_epoch = std::move(tmp);
+	}
+	if (auto it = j.find("consent_scope"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.consent_scope = std::move(tmp);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		int64_t tmp{};
+		it->get_to(tmp);
+		v.through_epoch = std::move(tmp);
 	}
 }
 
@@ -14589,6 +14618,27 @@ inline void from_json(const nlohmann::json& j, SnHeadResult& v) {
 		SnError tmp{};
 		it->get_to(tmp);
 		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnNetworkWalletMappingChallengeArgs& v) {
+	j = nlohmann::json::object();
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+}
+inline void from_json(const nlohmann::json& j, SnNetworkWalletMappingChallengeArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
 	}
 }
 
@@ -17478,6 +17528,7 @@ public:
 	std::optional<SnEpochResult> snEpochSync() const;
 	void snGetWallet(SnGetWalletCallback callback) const;
 	void snHead(SnHeadCallback callback) const;
+	std::optional<SnWalletMappingChallengeResult> snNetworkWalletMappingChallengeSync(const std::optional<SnNetworkWalletMappingChallengeArgs>& args) const;
 	std::optional<SnPoolClaimResult> snPoolClaimSync(const std::optional<SnPoolClaimArgs>& args) const;
 	void snSetWallet(const std::optional<SnSetWalletArgs>& args, SnSetWalletCallback callback) const;
 	std::optional<SnSetWalletResult> snSetWalletSync(const std::optional<SnSetWalletArgs>& args) const;
@@ -25916,6 +25967,24 @@ inline void Api::snGetWallet(SnGetWalletCallback callback) const {
 inline void Api::snHead(SnHeadCallback callback) const {
 	auto* callback_fn = callback ? new SnHeadCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_head(handle(), callback_fn ? &detail::oneshot_sn_head : nullptr, callback_fn);
+}
+inline std::optional<SnWalletMappingChallengeResult> Api::snNetworkWalletMappingChallengeSync(const std::optional<SnNetworkWalletMappingChallengeArgs>& args) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_wallet_mapping_challenge_sync(handle(), args_c, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnWalletMappingChallengeResult>(r_s->c_str());
 }
 inline std::optional<SnPoolClaimResult> Api::snPoolClaimSync(const std::optional<SnPoolClaimArgs>& args) const {
 	std::string args_json;

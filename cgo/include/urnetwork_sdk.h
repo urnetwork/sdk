@@ -399,6 +399,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_SS58_PREFIX 42
 #define URNET_SN_TX_TYPE_EIP1559 "eip1559"
 #define URNET_SN_TX_TYPE_LEGACY "legacy"
+#define URNET_SN_WALLET_CONSENT_SCOPE_NETWORK "network"
+#define URNET_SN_WALLET_CONSENT_SCOPE_PROVIDER "provider"
 #define URNET_SOL "SOL"
 #define URNET_SOLANA_PAY_REFERENCE_BYTES 32
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
@@ -951,6 +953,7 @@ void urnet_api_sn_epoch(uint64_t self, urnet_sn_epoch_cb callback_result, void* 
 char* urnet_api_sn_epoch_sync(uint64_t self, char** out_error);
 void urnet_api_sn_get_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_sn_head(uint64_t self, urnet_sn_head_cb callback_result, void* callback_user_data);
+char* urnet_api_sn_network_wallet_mapping_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 char* urnet_api_sn_pool_claim_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_sn_set_wallet(uint64_t self, const char* args_json, urnet_sn_set_wallet_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_set_wallet_sync(uint64_t self, const char* args_json, char** out_error);
@@ -4496,6 +4499,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: SnError | null
  */
 
+/* SnNetworkWalletMappingChallengeArgs (json):
+ *   coldkey_ss58: string
+ *   from_epoch: number
+ *   through_epoch: number
+ */
+
 /* SnPoolClaimArgs (json):
  *   epoch: number
  *   legacy_coldkey?: string
@@ -4566,6 +4575,8 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   client_id?: string
  *   set_at_millis: number
  *   from_epoch?: number
+ *   consent_scope?: string
+ *   through_epoch?: number
  */
 
 /* SnWalletList (json):

@@ -686,6 +686,8 @@ export interface SnWallet {
   client_id?: string;
   set_at_millis: number;
   from_epoch?: number;
+  consent_scope?: string;
+  through_epoch?: number;
 }
 
 export interface SnSetWalletArgs {
