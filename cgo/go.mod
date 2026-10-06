@@ -74,7 +74,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/urnetwork/connect/v2026 v2026.10.6-1065192460
 	github.com/urnetwork/glog/v2026 v2026.10.6-1065192460
-	github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065192460
+	github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065192460 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.10.6-1065192460
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
