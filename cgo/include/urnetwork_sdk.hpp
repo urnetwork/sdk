@@ -3337,6 +3337,7 @@ struct StripeCreateCustomerPortalArgs {
 };
 
 struct StripeCreateCustomerPortalError {
+	std::optional<std::string> code;
 	std::string message{};
 };
 
@@ -15257,11 +15258,19 @@ inline void from_json(const nlohmann::json& j, StripeCreateCustomerPortalArgs& v
 
 inline void to_json(nlohmann::json& j, const StripeCreateCustomerPortalError& v) {
 	j = nlohmann::json::object();
+	if (v.code) {
+		j["code"] = *v.code;
+	}
 	j["message"] = v.message;
 }
 inline void from_json(const nlohmann::json& j, StripeCreateCustomerPortalError& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("code"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.code = std::move(tmp);
 	}
 	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
 		it->get_to(v.message);
