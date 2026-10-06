@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // AN ERASE STOPPED BY A FILE ANOTHER PROCESS HOLDS OPEN (msgrepo ledger §7, 2026-10-03, review H1;

@@ -23,12 +23,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/messagegroup"
-	"github.com/urnetwork/connect/mls"
-	"github.com/urnetwork/connect/protocol"
-	"github.com/urnetwork/sdk"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/connect/v2026/messagegroup"
+	"github.com/urnetwork/connect/v2026/mls"
+	"github.com/urnetwork/connect/v2026/protocol"
+	"github.com/urnetwork/sdk/v2026"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 type party struct {
