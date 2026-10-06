@@ -1617,6 +1617,7 @@ struct ContractEntry {
 	int64_t TotalByteCount{};
 	int64_t BitRate{};
 	bool HasStream{};
+	std::string StreamId{};
 };
 
 struct ContractPeerRow {
@@ -7400,6 +7401,7 @@ inline void to_json(nlohmann::json& j, const ContractEntry& v) {
 	j["TotalByteCount"] = v.TotalByteCount;
 	j["BitRate"] = v.BitRate;
 	j["HasStream"] = v.HasStream;
+	j["StreamId"] = v.StreamId;
 }
 inline void from_json(const nlohmann::json& j, ContractEntry& v) {
 	if (!j.is_object()) {
@@ -7419,6 +7421,9 @@ inline void from_json(const nlohmann::json& j, ContractEntry& v) {
 	}
 	if (auto it = j.find("HasStream"); it != j.end() && !it->is_null()) {
 		it->get_to(v.HasStream);
+	}
+	if (auto it = j.find("StreamId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StreamId);
 	}
 }
 
@@ -17905,6 +17910,7 @@ public:
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
 	std::optional<ProbeResultList> getProbeResults() const;
+	bool getProviderConnected() const;
 	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
 	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	bool getRemoteConnected() const;
@@ -27772,6 +27778,10 @@ inline std::optional<ProbeResultList> DeviceRemote::getProbeResults() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ProbeResultList>(r_s->c_str());
+}
+inline bool DeviceRemote::getProviderConnected() const {
+	bool r = urnet_device_remote_get_provider_connected(handle());
+	return r;
 }
 inline std::optional<ReliabilityMetrics> DeviceRemote::getReliabilityMetrics() const {
 	char* r_c = urnet_device_remote_get_reliability_metrics(handle());

@@ -1435,6 +1435,7 @@ char* urnet_device_remote_get_connect_location_checked(uint64_t self, char** out
 char* urnet_device_remote_get_destination_exits(uint64_t self);
 char* urnet_device_remote_get_exits(uint64_t self);
 char* urnet_device_remote_get_probe_results(uint64_t self);
+bool urnet_device_remote_get_provider_connected(uint64_t self);
 char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -2739,6 +2740,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TotalByteCount: number
  *   BitRate: number
  *   HasStream: boolean
+ *   StreamId: string
  */
 
 /* ContractEntryList (json):
