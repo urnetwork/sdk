@@ -937,6 +937,8 @@ def bind(lib):
     lib.urnet_device_remove_connected_provider.restype = None
     lib.urnet_device_remove_destination.argtypes = [c_uint64]
     lib.urnet_device_remove_destination.restype = None
+    lib.urnet_device_reset_extenders.argtypes = [c_uint64]
+    lib.urnet_device_reset_extenders.restype = None
     lib.urnet_device_set_allow_foreground.argtypes = [c_uint64, c_bool]
     lib.urnet_device_set_allow_foreground.restype = None
     lib.urnet_device_set_block_action_overrides.argtypes = [c_uint64, c_char_p]
@@ -1465,6 +1467,8 @@ def bind(lib):
     lib.urnet_extender_view_controller_get_status.restype = c_void_p
     lib.urnet_extender_view_controller_import_share.argtypes = [c_uint64, c_char_p, c_bool]
     lib.urnet_extender_view_controller_import_share.restype = c_void_p
+    lib.urnet_extender_view_controller_reset_extenders.argtypes = [c_uint64]
+    lib.urnet_extender_view_controller_reset_extenders.restype = c_void_p
     lib.urnet_extender_view_controller_set_settings.argtypes = [c_uint64, c_char_p, c_char_p, c_char_p]
     lib.urnet_extender_view_controller_set_settings.restype = c_void_p
     lib.urnet_extender_view_controller_start.argtypes = [c_uint64]
@@ -1691,6 +1695,8 @@ def bind(lib):
     lib.urnet_network_name_validation_view_controller_stop.restype = None
     lib.urnet_network_space_add_extender_status_change_listener.argtypes = [c_uint64, urnet_extender_status_change_cb, c_void_p]
     lib.urnet_network_space_add_extender_status_change_listener.restype = c_uint64
+    lib.urnet_network_space_apply_extender_reset.argtypes = [c_uint64, c_char_p]
+    lib.urnet_network_space_apply_extender_reset.restype = c_bool
     lib.urnet_network_space_close.argtypes = [c_uint64]
     lib.urnet_network_space_close.restype = None
     lib.urnet_network_space_connect_link_url.argtypes = [c_uint64, c_char_p]
@@ -1735,6 +1741,8 @@ def bind(lib):
     lib.urnet_network_space_get_extender_gossip_mode.restype = c_void_p
     lib.urnet_network_space_get_extender_hosts.argtypes = [c_uint64]
     lib.urnet_network_space_get_extender_hosts.restype = c_void_p
+    lib.urnet_network_space_get_extender_reset_id.argtypes = [c_uint64]
+    lib.urnet_network_space_get_extender_reset_id.restype = c_void_p
     lib.urnet_network_space_get_extender_root_public_keys.argtypes = [c_uint64]
     lib.urnet_network_space_get_extender_root_public_keys.restype = c_void_p
     lib.urnet_network_space_get_extender_status.argtypes = [c_uint64]
@@ -1771,6 +1779,8 @@ def bind(lib):
     lib.urnet_network_space_get_wallet.restype = c_void_p
     lib.urnet_network_space_has_platform_family_urls.argtypes = [c_uint64]
     lib.urnet_network_space_has_platform_family_urls.restype = c_bool
+    lib.urnet_network_space_reset_extenders.argtypes = [c_uint64]
+    lib.urnet_network_space_reset_extenders.restype = c_void_p
     lib.urnet_network_space_reset_local_state_if_current.argtypes = [c_uint64, c_uint64, POINTER(c_void_p)]
     lib.urnet_network_space_reset_local_state_if_current.restype = c_uint64
     lib.urnet_network_space_service_url.argtypes = [c_uint64, c_char_p, c_char_p]

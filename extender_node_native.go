@@ -295,6 +295,31 @@ func (self *NetworkSpace) rebuildExtenderNode() {
 	self.restoreExtenderNodeRole()
 }
 
+// Stops this space's node, which applies what the mesh carries to the
+// directory, ahead of a reset of that directory (E7), and returns what builds
+// it again in the role it was in once the directory is fresh: a node the
+// provider extender role installed comes back listening on the same addresses,
+// a member node comes back a member, and a space that ran none gets one only
+// if its role calls for one, as in rebuildExtenderNode.
+func (self *NetworkSpace) stopExtenderNode() (restart func()) {
+	previous := self.getExtenderNode()
+	extenderRole := previous.role() == gossip.NodeRoleExtender
+	var listener *gossip.InProcessListener
+	var listenAddrs []ma.Multiaddr
+	if extenderRole {
+		listener = previous.listener
+		listenAddrs = previous.listenAddrs
+	}
+	self.swapExtenderNode(func() *spaceExtenderNode { return nil })
+	return func() {
+		if extenderRole {
+			self.setExtenderNodeRole(listener, listenAddrs)
+			return
+		}
+		self.restoreExtenderNodeRole()
+	}
+}
+
 // rebuildExtenderMemberNode rebuilds a member node on the identity the space
 // now carries (B1). An embedder that supplies the extender identity through
 // the device's key material arrives after the space is built, and the mesh

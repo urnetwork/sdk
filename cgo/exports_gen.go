@@ -8504,6 +8504,16 @@ func urnet_device_remove_destination(self C.uint64_t) {
 	self_.RemoveDestination()
 }
 
+//export urnet_device_reset_extenders
+func urnet_device_reset_extenders(self C.uint64_t) {
+	defer cgoGuard("urnet_device_reset_extenders")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_reset_extenders")
+	if !ok {
+		return
+	}
+	self_.ResetExtenders()
+}
+
 //export urnet_device_set_allow_foreground
 func urnet_device_set_allow_foreground(self C.uint64_t, allowForeground C.bool) {
 	defer cgoGuard("urnet_device_set_allow_foreground")
@@ -12199,6 +12209,20 @@ func urnet_extender_view_controller_import_share(self C.uint64_t, text *C.char, 
 	return cJson(r0, "urnet_extender_view_controller_import_share")
 }
 
+//export urnet_extender_view_controller_reset_extenders
+func urnet_extender_view_controller_reset_extenders(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_extender_view_controller_reset_extenders")
+	self_, ok := resolveHandle[*sdk.ExtenderViewController](uint64(self), "urnet_extender_view_controller_reset_extenders")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ResetExtenders()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_extender_view_controller_reset_extenders")
+}
+
 //export urnet_extender_view_controller_set_settings
 func urnet_extender_view_controller_set_settings(self C.uint64_t, dnsName *C.char, gossipUrl *C.char, hosts *C.char) *C.char {
 	defer cgoGuard("urnet_extender_view_controller_set_settings")
@@ -14208,6 +14232,17 @@ func urnet_network_space_add_extender_status_change_listener(self C.uint64_t, li
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_network_space_apply_extender_reset
+func urnet_network_space_apply_extender_reset(self C.uint64_t, resetId *C.char) C.bool {
+	defer cgoGuard("urnet_network_space_apply_extender_reset")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_apply_extender_reset")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.ApplyExtenderReset(goString(resetId))
+	return C.bool(r0)
+}
+
 //export urnet_network_space_close
 func urnet_network_space_close(self C.uint64_t) {
 	defer cgoGuard("urnet_network_space_close")
@@ -14474,6 +14509,17 @@ func urnet_network_space_get_extender_hosts(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_network_space_get_extender_hosts")
 }
 
+//export urnet_network_space_get_extender_reset_id
+func urnet_network_space_get_extender_reset_id(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_get_extender_reset_id")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_get_extender_reset_id")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetExtenderResetId()
+	return cString(string(r0))
+}
+
 //export urnet_network_space_get_extender_root_public_keys
 func urnet_network_space_get_extender_root_public_keys(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_network_space_get_extender_root_public_keys")
@@ -14685,6 +14731,17 @@ func urnet_network_space_has_platform_family_urls(self C.uint64_t) C.bool {
 	}
 	r0 := self_.HasPlatformFamilyUrls()
 	return C.bool(r0)
+}
+
+//export urnet_network_space_reset_extenders
+func urnet_network_space_reset_extenders(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_network_space_reset_extenders")
+	self_, ok := resolveHandle[*sdk.NetworkSpace](uint64(self), "urnet_network_space_reset_extenders")
+	if !ok {
+		return nil
+	}
+	r0 := self_.ResetExtenders()
+	return cString(string(r0))
 }
 
 //export urnet_network_space_reset_local_state_if_current

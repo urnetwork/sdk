@@ -42,6 +42,11 @@ func (self *NetworkSpace) rebuildExtenderMemberNode() {
 func (self *NetworkSpace) rebuildExtenderNode() {
 }
 
+// There is no node to stop ahead of a reset, nor one to start after it.
+func (self *NetworkSpace) stopExtenderNode() (restart func()) {
+	return func() {}
+}
+
 func (self *spaceExtenderNode) role() string {
 	return ""
 }

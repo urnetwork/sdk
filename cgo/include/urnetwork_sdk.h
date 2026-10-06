@@ -1224,6 +1224,7 @@ bool urnet_device_refresh_token(uint64_t self, int64_t attempt, char** out_error
 void urnet_device_remove_block_action_override(uint64_t self, const char* override_id);
 void urnet_device_remove_connected_provider(uint64_t self, const char* client_id);
 void urnet_device_remove_destination(uint64_t self);
+void urnet_device_reset_extenders(uint64_t self);
 void urnet_device_set_allow_foreground(uint64_t self, bool allow_foreground);
 void urnet_device_set_block_action_overrides(uint64_t self, const char* overrides_json);
 void urnet_device_set_blocker_enabled(uint64_t self, bool blocker_enabled);
@@ -1515,6 +1516,7 @@ void urnet_extender_view_controller_extender_status_changed(uint64_t self, const
 char* urnet_extender_view_controller_get_settings(uint64_t self);
 char* urnet_extender_view_controller_get_status(uint64_t self);
 char* urnet_extender_view_controller_import_share(uint64_t self, const char* text, bool use_settings);
+char* urnet_extender_view_controller_reset_extenders(uint64_t self);
 char* urnet_extender_view_controller_set_settings(uint64_t self, const char* dns_name, const char* gossip_url, const char* hosts_json);
 void urnet_extender_view_controller_start(uint64_t self);
 void urnet_extender_view_controller_stop(uint64_t self);
@@ -1658,6 +1660,7 @@ void urnet_network_name_validation_view_controller_stop(uint64_t self);
 /* ----- NetworkSpace ----- */
 
 uint64_t urnet_network_space_add_extender_status_change_listener(uint64_t self, urnet_extender_status_change_cb listener_extender_status_changed, void* listener_user_data);
+bool urnet_network_space_apply_extender_reset(uint64_t self, const char* reset_id);
 void urnet_network_space_close(uint64_t self);
 char* urnet_network_space_connect_link_url(uint64_t self, const char* target);
 char* urnet_network_space_get_alt_url(uint64_t self);
@@ -1680,6 +1683,7 @@ char* urnet_network_space_get_env_secret(uint64_t self);
 char* urnet_network_space_get_extender_dns_name(uint64_t self);
 char* urnet_network_space_get_extender_gossip_mode(uint64_t self);
 char* urnet_network_space_get_extender_hosts(uint64_t self);
+char* urnet_network_space_get_extender_reset_id(uint64_t self);
 char* urnet_network_space_get_extender_root_public_keys(uint64_t self);
 char* urnet_network_space_get_extender_status(uint64_t self);
 char* urnet_network_space_get_gossip_url(uint64_t self);
@@ -1698,6 +1702,7 @@ char* urnet_network_space_get_store(uint64_t self);
 char* urnet_network_space_get_vless_settings(uint64_t self);
 char* urnet_network_space_get_wallet(uint64_t self);
 bool urnet_network_space_has_platform_family_urls(uint64_t self);
+char* urnet_network_space_reset_extenders(uint64_t self);
 uint64_t urnet_network_space_reset_local_state_if_current(uint64_t self, uint64_t snapshot, char** out_error);
 char* urnet_network_space_service_url(uint64_t self, const char* scheme, const char* service);
 /* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
@@ -3668,6 +3673,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   gossip_url?: string
  *   extender_root_public_keys?: string[]
  *   extender_hosts?: string[]
+ *   extender_reset_id?: string
  *   vless?: VlessSettings | null
  *   control_doh_urls_ipv4?: string[]
  *   control_doh_urls_ipv6?: string[]
