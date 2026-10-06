@@ -15,6 +15,36 @@ if ! "$network_test_gate" --verify-held run-all; then
     exit 70
 fi
 
+# Formatting gate, ahead of every test: each tracked Go file must be
+# gofmt-clean, checked with the gofmt of the toolchain the go commands below
+# use. A file whose header carries the generated-code line ("// Code generated
+# ... DO NOT EDIT." before the package clause) is its generator's output and is
+# skipped. The sdk tracks no vendored code. Untracked files are not checked.
+(
+    cd "$sdk_dir" || exit $?
+    tracked_go_files=$(git ls-files -z -- '*.go')
+    if [[ $? != 0 ]]; then
+        echo "SDK gofmt gate could not list the tracked Go files" >&2
+        exit 1
+    fi
+    go_files=(${(0)tracked_go_files})
+    go_files=(./${^go_files})
+    generated_go_files=()
+    if (( $#go_files )); then
+        generated_go_files=(${(f)"$(awk '/^package /{nextfile} /^\/\/ Code generated .* DO NOT EDIT\.$/{print FILENAME; nextfile}' $go_files)"})
+    fi
+    checked_go_files=(${go_files:|generated_go_files})
+    if (( $#checked_go_files )); then
+        gofmt_path="$(go env GOROOT)/bin/gofmt" || exit $?
+        unformatted=$("$gofmt_path" -l $checked_go_files) || exit $?
+        if [[ -n "$unformatted" ]]; then
+            printf 'SDK gofmt gate: run gofmt -w on these tracked Go files:\n%s\n' "$unformatted" >&2
+            exit 1
+        fi
+    fi
+    printf 'SDK gofmt gate: %d tracked Go files are gofmt-clean, %d generated skipped\n' $#checked_go_files $#generated_go_files
+) || exit $?
+
 # root sdk module
 # Run the public-surface smoke on its own so a load/constructor regression is
 # reported before the longer race-enabled suite. The full command below runs it
