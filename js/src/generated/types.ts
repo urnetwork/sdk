@@ -25,6 +25,7 @@ export interface NetworkSpaceValues {
   gossip_url?: string;
   extender_root_public_keys?: string[];
   extender_hosts?: string[];
+  extender_reset_id?: string;
   vless?: VlessSettings | null;
   control_doh_urls_ipv4?: string[];
   control_doh_urls_ipv6?: string[];

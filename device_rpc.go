@@ -1439,6 +1439,49 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	}
 }
 
+// ResetExtenders resets the extender state of this process's space and of the
+// space the device runs in (E7). This process mints the reset and applies it
+// to its own space, whose values it persists with the reset's id, then hands
+// the id to the device process, which applies it at once. While that process
+// cannot be reached the id is queued and replayed at the next sync, and a
+// process without the method drops it rather than queueing it forever: the
+// next import of the space carries the reset there in either case. A hosted
+// device never resets, since its space is not this customer's.
+func (self *DeviceRemote) ResetExtenders() {
+	if self.hostedIncompatibleGuarded("ResetExtenders") {
+		return
+	}
+	// the space restarts its extender network, so it is reset with no device
+	// lock held; a remote built without a space still resets the device's
+	resetId := connect.NewId().String()
+	if self.networkSpace != nil {
+		resetId = self.networkSpace.ResetExtenders()
+	}
+
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		self.state.ExtenderReset.Set(resetId)
+		return
+	}
+	err := rpcCallVoidAllowMissingMethod(
+		self.service,
+		"DeviceLocalRpc.ApplyExtenderReset",
+		resetId,
+		self.closeService,
+	)
+	switch {
+	case err == nil:
+		self.state.ExtenderReset.Unset()
+	case rpcMissingMethodError(err):
+		self.state.ExtenderReset.Unset()
+		self.log.Infof("[dr]extender reset dropped: the device process has no reset")
+	default:
+		self.state.ExtenderReset.Set(resetId)
+	}
+}
+
 // GetExtenderStats reads through to the local device, where the role runs
 // (O2), with the semantics of GetProviderPacketStats: no cache, nil when there
 // is no service or the call fails. Unlike that read, a device process from
@@ -7001,7 +7044,11 @@ type DeviceRemoteState struct {
 	ProvideNetworkMode    deviceRemoteValue[ProvideNetworkMode] // wifi or cellular + wifi
 	// the provider extender setting, stored independently of the provide mode
 	// (N4) and queued while the device process cannot be reached (N2)
-	ProvideExtender          deviceRemoteValue[bool]
+	ProvideExtender deviceRemoteValue[bool]
+	// the id of a reset of the extender state (EXTENDER.md E7) queued for the
+	// device process, a one-shot command applied during sync; a newer reset
+	// replaces an older one, which it covers
+	ExtenderReset            deviceRemoteValue[string]
 	ProvidePaused            deviceRemoteValue[bool]
 	Offline                  deviceRemoteValue[bool]
 	VpnInterfaceWhileOffline deviceRemoteValue[bool]
@@ -7079,6 +7126,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.ProvideMode.Merge(update.ProvideMode)
 	self.ProvideNetworkMode.Merge(update.ProvideNetworkMode)
 	self.ProvideExtender.Merge(update.ProvideExtender)
+	self.ExtenderReset.Merge(update.ExtenderReset)
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
 	self.VpnInterfaceWhileOffline.Merge(update.VpnInterfaceWhileOffline)
@@ -7126,6 +7174,7 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.ProvideMode.IsSet ||
 		self.ProvideNetworkMode.IsSet ||
 		self.ProvideExtender.IsSet ||
+		self.ExtenderReset.IsSet ||
 		self.ProvidePaused.IsSet ||
 		self.Offline.IsSet ||
 		self.VpnInterfaceWhileOffline.IsSet ||
@@ -9761,9 +9810,9 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.WindowStatus.Set(self.deviceLocal.GetWindowStatus())
 
 	// InitProvideSecretKeys, RemoveDestination, Destination, Shuffle,
-	// ResetEgressSecurityPolicyStats, and ResetIngressSecurityPolicyStats are
-	// one-shot commands applied during sync, not queryable local state, so they
-	// stay unset. The current connect location is reported via Location.
+	// ResetEgressSecurityPolicyStats, ResetIngressSecurityPolicyStats and
+	// ExtenderReset are one-shot commands applied during sync, not queryable
+	// local state, so they stay unset. The current connect location is reported via Location.
 
 	return state
 }
@@ -9936,6 +9985,10 @@ func (self *DeviceLocalRpc) Sync(
 	// provide mode and of the control mode order above (N4)
 	if state.ProvideExtender.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideExtender(state.ProvideExtender.Value)
+	}
+	// a reset the app made while this process could not be reached (E7)
+	if state.ExtenderReset.IsSet && !hostedIncompatible {
+		self.deviceLocal.applyExtenderReset(state.ExtenderReset.Value)
 	}
 	if state.ProvideNetworkMode.IsSet && !hostedIncompatible {
 		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("provide-network-mode", state.ProvideNetworkMode.Value)); err != nil {
@@ -12109,6 +12162,15 @@ func (self *DeviceLocalRpc) SetProvideExtender(provideExtender bool, _ RpcVoid) 
 		return nil
 	}
 	self.deviceLocal.SetProvideExtender(provideExtender)
+	return nil
+}
+
+// Applies a reset of the extender state the app minted (E7).
+func (self *DeviceLocalRpc) ApplyExtenderReset(resetId string, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("ApplyExtenderReset") {
+		return nil
+	}
+	self.deviceLocal.applyExtenderReset(resetId)
 	return nil
 }
 

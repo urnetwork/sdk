@@ -203,6 +203,20 @@ func (self *ExtenderViewController) SetSettings(
 	return extenderSettings(self.device.GetNetworkSpace())
 }
 
+// ResetExtenders returns the device's extender state to a fresh install's and
+// returns the settings it leaves, every one of them the default (E7): the
+// manual hosts and the legacy private extender are removed, the dns name, the
+// gossip url and the root keys go back to their defaults, and everything
+// learned -- the directory, holds and limits, latency samples, the hints -- is
+// cleared in this process's space and in the one the device runs in
+// (Device.ResetExtenders), which then relearn as on a first run. A live
+// extender path keeps running; every dial after the reset draws from the fresh
+// directory. The apps confirm before they call it.
+func (self *ExtenderViewController) ResetExtenders() *ExtenderSettings {
+	self.device.ResetExtenders()
+	return extenderSettings(self.device.GetNetworkSpace())
+}
+
 // BuildShare renders this space's addresses as the payload of K7: active
 // first, then the rest of the usable ones, then the manual addresses, at most
 // 48. Keys and records are never shared. `includeSettings` adds the operator

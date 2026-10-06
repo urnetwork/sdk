@@ -2558,6 +2558,7 @@ struct NetworkSpaceValues {
 	std::optional<std::string> gossip_url;
 	std::optional<std::vector<std::string>> extender_root_public_keys;
 	std::optional<std::vector<std::string>> extender_hosts;
+	std::optional<std::string> extender_reset_id;
 	std::optional<VlessSettings> vless;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv4;
 	std::optional<std::vector<std::string>> control_doh_urls_ipv6;
@@ -11630,6 +11631,9 @@ inline void to_json(nlohmann::json& j, const NetworkSpaceValues& v) {
 	if (v.extender_hosts) {
 		j["extender_hosts"] = *v.extender_hosts;
 	}
+	if (v.extender_reset_id) {
+		j["extender_reset_id"] = *v.extender_reset_id;
+	}
 	if (v.vless) {
 		j["vless"] = *v.vless;
 	}
@@ -11733,6 +11737,11 @@ inline void from_json(const nlohmann::json& j, NetworkSpaceValues& v) {
 		std::vector<std::string> tmp{};
 		it->get_to(tmp);
 		v.extender_hosts = std::move(tmp);
+	}
+	if (auto it = j.find("extender_reset_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.extender_reset_id = std::move(tmp);
 	}
 	if (auto it = j.find("vless"); it != j.end() && !it->is_null()) {
 		VlessSettings tmp{};
@@ -17316,6 +17325,7 @@ public:
 	void removeBlockActionOverride(const std::string& override_id) const;
 	void removeConnectedProvider(const std::string& client_id) const;
 	void removeDestination() const;
+	void resetExtenders() const;
 	void setAllowForeground(bool allow_foreground) const;
 	void setBlockActionOverrides(const std::optional<BlockActionOverrideList>& overrides) const;
 	void setBlockerEnabled(bool blocker_enabled) const;
@@ -17938,6 +17948,7 @@ public:
 	std::optional<ExtenderSettings> getSettings() const;
 	std::optional<ExtenderStatus> getStatus() const;
 	std::optional<ExtenderImportResult> importShare(const std::string& text, bool use_settings) const;
+	std::optional<ExtenderSettings> resetExtenders() const;
 	std::optional<ExtenderSettings> setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const;
 	void start() const;
 	void stop() const;
@@ -18120,6 +18131,7 @@ public:
 	NetworkSpace() = default;
 	explicit NetworkSpace(uint64_t h) : detail::Handle(h) {}
 	Sub addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const;
+	bool applyExtenderReset(const std::string& reset_id) const;
 	void close() const;
 	std::string connectLinkUrl(const std::string& target) const;
 	std::string getAltUrl() const;
@@ -18142,6 +18154,7 @@ public:
 	std::string getExtenderDnsName() const;
 	std::string getExtenderGossipMode() const;
 	std::optional<StringList> getExtenderHosts() const;
+	std::string getExtenderResetId() const;
 	std::optional<StringList> getExtenderRootPublicKeys() const;
 	std::optional<ExtenderStatus> getExtenderStatus() const;
 	std::string getGossipUrl() const;
@@ -18160,6 +18173,7 @@ public:
 	std::optional<VlessSettings> getVlessSettings() const;
 	std::string getWallet() const;
 	bool hasPlatformFamilyUrls() const;
+	std::string resetExtenders() const;
 	LocalStateResetResult resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const;
 	std::string serviceUrl(const std::string& scheme, const std::string& service) const;
 	/* error id: "" on success, else the refusal's id or URNET_ERROR_ID_INTERNAL */
@@ -25008,6 +25022,9 @@ inline void Device::removeConnectedProvider(const std::string& client_id) const 
 inline void Device::removeDestination() const {
 	urnet_device_remove_destination(handle());
 }
+inline void Device::resetExtenders() const {
+	urnet_device_reset_extenders(handle());
+}
 inline void Device::setAllowForeground(bool allow_foreground) const {
 	urnet_device_set_allow_foreground(handle(), allow_foreground);
 }
@@ -28047,6 +28064,14 @@ inline std::optional<ExtenderImportResult> ExtenderViewController::importShare(c
 	}
 	return detail::parseJson<ExtenderImportResult>(r_s->c_str());
 }
+inline std::optional<ExtenderSettings> ExtenderViewController::resetExtenders() const {
+	char* r_c = urnet_extender_view_controller_reset_extenders(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ExtenderSettings>(r_s->c_str());
+}
 inline std::optional<ExtenderSettings> ExtenderViewController::setSettings(const std::string& dns_name, const std::string& gossip_url, const std::optional<StringList>& hosts) const {
 	std::string hosts_json;
 	const char* hosts_c = nullptr;
@@ -28944,6 +28969,10 @@ inline Sub NetworkSpace::addExtenderStatusChangeListener(ExtenderStatusChangeLis
 	}
 	return r;
 }
+inline bool NetworkSpace::applyExtenderReset(const std::string& reset_id) const {
+	bool r = urnet_network_space_apply_extender_reset(handle(), reset_id.c_str());
+	return r;
+}
 inline void NetworkSpace::close() const {
 	urnet_network_space_close(handle());
 }
@@ -29051,6 +29080,10 @@ inline std::optional<StringList> NetworkSpace::getExtenderHosts() const {
 	}
 	return detail::parseJson<StringList>(r_s->c_str());
 }
+inline std::string NetworkSpace::getExtenderResetId() const {
+	char* r_c = urnet_network_space_get_extender_reset_id(handle());
+	return detail::takeString(r_c);
+}
 inline std::optional<StringList> NetworkSpace::getExtenderRootPublicKeys() const {
 	char* r_c = urnet_network_space_get_extender_root_public_keys(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -29142,6 +29175,10 @@ inline std::string NetworkSpace::getWallet() const {
 inline bool NetworkSpace::hasPlatformFamilyUrls() const {
 	bool r = urnet_network_space_has_platform_family_urls(handle());
 	return r;
+}
+inline std::string NetworkSpace::resetExtenders() const {
+	char* r_c = urnet_network_space_reset_extenders(handle());
+	return detail::takeString(r_c);
 }
 inline LocalStateResetResult NetworkSpace::resetLocalStateIfCurrent(const LocalAuthStateSnapshot& snapshot) const {
 	char* err_c = nullptr;

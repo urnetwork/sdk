@@ -568,6 +568,7 @@ public interface Raw extends Library {
   void urnet_device_remove_block_action_override(long a0, String a1);
   void urnet_device_remove_connected_provider(long a0, String a1);
   void urnet_device_remove_destination(long a0);
+  void urnet_device_reset_extenders(long a0);
   void urnet_device_set_allow_foreground(long a0, byte a1);
   void urnet_device_set_block_action_overrides(long a0, String a1);
   void urnet_device_set_blocker_enabled(long a0, byte a1);
@@ -832,6 +833,7 @@ public interface Raw extends Library {
   Pointer urnet_extender_view_controller_get_settings(long a0);
   Pointer urnet_extender_view_controller_get_status(long a0);
   Pointer urnet_extender_view_controller_import_share(long a0, String a1, byte a2);
+  Pointer urnet_extender_view_controller_reset_extenders(long a0);
   Pointer urnet_extender_view_controller_set_settings(long a0, String a1, String a2, String a3);
   void urnet_extender_view_controller_start(long a0);
   void urnet_extender_view_controller_stop(long a0);
@@ -945,6 +947,7 @@ public interface Raw extends Library {
   void urnet_network_name_validation_view_controller_start(long a0);
   void urnet_network_name_validation_view_controller_stop(long a0);
   long urnet_network_space_add_extender_status_change_listener(long a0, urnet_extender_status_change_cb a1, Pointer a2);
+  byte urnet_network_space_apply_extender_reset(long a0, String a1);
   void urnet_network_space_close(long a0);
   Pointer urnet_network_space_connect_link_url(long a0, String a1);
   Pointer urnet_network_space_get_alt_url(long a0);
@@ -967,6 +970,7 @@ public interface Raw extends Library {
   Pointer urnet_network_space_get_extender_dns_name(long a0);
   Pointer urnet_network_space_get_extender_gossip_mode(long a0);
   Pointer urnet_network_space_get_extender_hosts(long a0);
+  Pointer urnet_network_space_get_extender_reset_id(long a0);
   Pointer urnet_network_space_get_extender_root_public_keys(long a0);
   Pointer urnet_network_space_get_extender_status(long a0);
   Pointer urnet_network_space_get_gossip_url(long a0);
@@ -985,6 +989,7 @@ public interface Raw extends Library {
   Pointer urnet_network_space_get_vless_settings(long a0);
   Pointer urnet_network_space_get_wallet(long a0);
   byte urnet_network_space_has_platform_family_urls(long a0);
+  Pointer urnet_network_space_reset_extenders(long a0);
   long urnet_network_space_reset_local_state_if_current(long a0, long a1, PointerByReference a2);
   Pointer urnet_network_space_service_url(long a0, String a1, String a2);
   Pointer urnet_network_space_set_control_doh_urls(long a0, String a1);

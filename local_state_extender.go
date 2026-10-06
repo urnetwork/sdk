@@ -11,12 +11,12 @@ import (
 )
 
 // local_state_extender.go — the persisted extender state (EXTENDER.md E1, D5,
-// F3).
+// E7, F3).
 //
-// Four dot files, all following the shape of the other local-state files: the
+// Five dot files, all following the shape of the other local-state files: the
 // directory envelope, written by connect through the store adapter below, the
-// gossip mode the user chose, the identity key, and the provider extender
-// opt-out.
+// latest reset the directory has applied, the gossip mode the user chose, the
+// identity key, and the provider extender opt-out.
 //
 // The directory is a cache. Every read failure -- missing, unreadable, corrupt
 // -- reads as no directory at all, and the client rediscovers, so nothing here
@@ -27,6 +27,33 @@ const extenderStoreFileName = ".extenders"
 
 // The persisted gossip role override (D5).
 const extenderGossipModeFileName = ".extender_gossip_mode"
+
+// The latest reset the directory above has applied (E7).
+const extenderResetIdFileName = ".extender_reset_id"
+
+// The id of the latest reset the stored directory has applied, empty when it
+// has applied none or the file cannot be read: a reset the values bring is
+// then applied again, which costs a rediscovery and nothing else.
+func (self *LocalState) getExtenderResetId() string {
+	path := filepath.Join(self.localStorageDir, extenderResetIdFileName)
+	resetIdBytes, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(resetIdBytes))
+}
+
+// Records the latest reset the stored directory has applied. Never written by
+// a process whose extender store is read-only (K5), for the reason the store
+// is not: the file sits beside the directory it describes, and only the
+// process that writes the directory may say what it has applied.
+func (self *LocalState) setExtenderResetId(resetId string) error {
+	if GetExtenderStoreReadOnly() {
+		return nil
+	}
+	path := filepath.Join(self.localStorageDir, extenderResetIdFileName)
+	return os.WriteFile(path, []byte(resetId), LocalStorageFilePermissions)
+}
 
 // The stored directory envelope, or nil when there is none.
 func (self *LocalState) getExtenders() ([]byte, error) {

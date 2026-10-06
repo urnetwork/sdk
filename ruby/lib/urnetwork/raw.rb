@@ -567,6 +567,7 @@ module URnetwork
       attach_function :urnet_device_remove_block_action_override, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_remove_connected_provider, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_remove_destination, [:uint64], :void, blocking: true
+      attach_function :urnet_device_reset_extenders, [:uint64], :void, blocking: true
       attach_function :urnet_device_set_allow_foreground, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_block_action_overrides, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_blocker_enabled, [:uint64, :bool], :void, blocking: true
@@ -831,6 +832,7 @@ module URnetwork
       attach_function :urnet_extender_view_controller_get_settings, [:uint64], :pointer, blocking: true
       attach_function :urnet_extender_view_controller_get_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_extender_view_controller_import_share, [:uint64, :string, :bool], :pointer, blocking: true
+      attach_function :urnet_extender_view_controller_reset_extenders, [:uint64], :pointer, blocking: true
       attach_function :urnet_extender_view_controller_set_settings, [:uint64, :string, :string, :string], :pointer, blocking: true
       attach_function :urnet_extender_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_extender_view_controller_stop, [:uint64], :void, blocking: true
@@ -944,6 +946,7 @@ module URnetwork
       attach_function :urnet_network_name_validation_view_controller_start, [:uint64], :void, blocking: true
       attach_function :urnet_network_name_validation_view_controller_stop, [:uint64], :void, blocking: true
       attach_function :urnet_network_space_add_extender_status_change_listener, [:uint64, :urnet_extender_status_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_network_space_apply_extender_reset, [:uint64, :string], :bool, blocking: true
       attach_function :urnet_network_space_close, [:uint64], :void, blocking: true
       attach_function :urnet_network_space_connect_link_url, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_network_space_get_alt_url, [:uint64], :pointer, blocking: true
@@ -966,6 +969,7 @@ module URnetwork
       attach_function :urnet_network_space_get_extender_dns_name, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_extender_gossip_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_extender_hosts, [:uint64], :pointer, blocking: true
+      attach_function :urnet_network_space_get_extender_reset_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_extender_root_public_keys, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_extender_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_gossip_url, [:uint64], :pointer, blocking: true
@@ -984,6 +988,7 @@ module URnetwork
       attach_function :urnet_network_space_get_vless_settings, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_get_wallet, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_has_platform_family_urls, [:uint64], :bool, blocking: true
+      attach_function :urnet_network_space_reset_extenders, [:uint64], :pointer, blocking: true
       attach_function :urnet_network_space_reset_local_state_if_current, [:uint64, :uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_network_space_service_url, [:uint64, :string, :string], :pointer, blocking: true
       attach_function :urnet_network_space_set_control_doh_urls, [:uint64, :string], :pointer, blocking: true
