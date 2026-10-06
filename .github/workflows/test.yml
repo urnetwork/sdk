@@ -66,9 +66,9 @@ jobs:
 
   # The checks `./...` above cannot reach, because each lives in its own Go
   # module (or in js/): the committed C ABI, language bindings and JS sources
-  # must equal a fresh generation, gomobile's omissions must match the mobile
-  # export policy, and cp3b, livepeer and liveprobe must still compile. A
-  # separate job keeps them off the go test job's critical path.
+  # must equal a fresh generation, and gomobile's omissions must match the
+  # mobile export policy. A separate job keeps them off the go test job's
+  # critical path.
   generated:
     name: generated code and side modules
     runs-on: ubuntu-latest
@@ -88,12 +88,6 @@ jobs:
 
       - name: Check out gvisor dependency
         run: git clone --depth 1 --branch go https://github.com/urnetwork/gvisor.git ../gvisor
-
-      # cp3b, URmessage's end-to-end suite, also replaces
-      # github.com/urnetwork/message-server => ../../message-server. Only the
-      # cp3b build below reads it.
-      - name: Check out message-server dependency
-        run: git clone --depth 1 https://github.com/urnetwork/message-server.git ../message-server
 
       # The Go the release host builds the mobile SDKs with: build/all/run.sh
       # requires exactly 1.27.1. Pinned rather than `stable`, so a new Go
@@ -144,12 +138,3 @@ jobs:
         run: |
           go mod download
           go test -count=1 ./cmd/mobileexports
-
-      # cp3b is test files only, so `go build` compiles nothing there: vet
-      # compiles it, tests included, without running the suite. livepeer and
-      # liveprobe are operator commands with no tests.
-      - name: Build cp3b, livepeer and liveprobe
-        run: |
-          go -C cp3b vet ./...
-          go -C livepeer build ./...
-          go -C liveprobe build ./...

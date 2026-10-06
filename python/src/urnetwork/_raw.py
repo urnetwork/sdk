@@ -2343,8 +2343,6 @@ def bind(lib):
     lib.urnet_new_id.restype = c_void_p
     lib.urnet_new_login_view_controller.argtypes = [c_uint64]
     lib.urnet_new_login_view_controller.restype = c_uint64
-    lib.urnet_new_message_transport.argtypes = [c_char_p, POINTER(c_void_p)]
-    lib.urnet_new_message_transport.restype = c_void_p
     lib.urnet_new_network_name_validation_view_controller.argtypes = [c_uint64]
     lib.urnet_new_network_name_validation_view_controller.restype = c_uint64
     lib.urnet_new_network_space_key.argtypes = [c_char_p, c_char_p]
@@ -2405,8 +2403,6 @@ def bind(lib):
     lib.urnet_normal_extender_gossip_mode.restype = c_void_p
     lib.urnet_normalize_bittensor_signature.argtypes = [c_char_p]
     lib.urnet_normalize_bittensor_signature.restype = c_void_p
-    lib.urnet_open_stream_store.argtypes = [c_char_p, POINTER(c_void_p)]
-    lib.urnet_open_stream_store.restype = c_void_p
     lib.urnet_order_connected_provider_locations.argtypes = [c_char_p]
     lib.urnet_order_connected_provider_locations.restype = c_void_p
     lib.urnet_parse_bittensor_challenge_message.argtypes = [c_char_p, POINTER(c_void_p)]
@@ -2419,8 +2415,6 @@ def bind(lib):
     lib.urnet_parse_client_events_json.restype = c_void_p
     lib.urnet_parse_id.argtypes = [c_char_p, POINTER(c_void_p)]
     lib.urnet_parse_id.restype = c_void_p
-    lib.urnet_parse_message_route_mode.argtypes = [c_char_p, POINTER(c_void_p)]
-    lib.urnet_parse_message_route_mode.restype = c_int64
     lib.urnet_parse_vless_link.argtypes = [c_char_p]
     lib.urnet_parse_vless_link.restype = c_void_p
     lib.urnet_points_leaderboard_key_of.argtypes = [c_char_p]

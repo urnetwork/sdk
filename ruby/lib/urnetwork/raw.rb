@@ -1270,7 +1270,6 @@ module URnetwork
       attach_function :urnet_new_feedback_submitted_event, [:int64, :string, :string], :pointer, blocking: true
       attach_function :urnet_new_id, [], :pointer, blocking: true
       attach_function :urnet_new_login_view_controller, [:uint64], :uint64, blocking: true
-      attach_function :urnet_new_message_transport, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_new_network_name_validation_view_controller, [:uint64], :uint64, blocking: true
       attach_function :urnet_new_network_space_key, [:string, :string], :pointer, blocking: true
       attach_function :urnet_new_network_space_manager, [:string], :uint64, blocking: true
@@ -1301,14 +1300,12 @@ module URnetwork
       attach_function :urnet_normal_env_name, [:string], :pointer, blocking: true
       attach_function :urnet_normal_extender_gossip_mode, [:string], :pointer, blocking: true
       attach_function :urnet_normalize_bittensor_signature, [:string], :pointer, blocking: true
-      attach_function :urnet_open_stream_store, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_order_connected_provider_locations, [:string], :pointer, blocking: true
       attach_function :urnet_parse_bittensor_challenge_message, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_parse_bittensor_wallet_return, [:string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_parse_checkout_redirect, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_parse_client_events_json, [:string, :pointer], :pointer, blocking: true
       attach_function :urnet_parse_id, [:string, :pointer], :pointer, blocking: true
-      attach_function :urnet_parse_message_route_mode, [:string, :pointer], :int64, blocking: true
       attach_function :urnet_parse_vless_link, [:string], :pointer, blocking: true
       attach_function :urnet_points_leaderboard_key_of, [:string], :pointer, blocking: true
       attach_function :urnet_points_leaderboard_scroll_label, [:int64, :int64], :pointer, blocking: true
