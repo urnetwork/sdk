@@ -17,10 +17,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/urnetwork/connect"
-	"github.com/urnetwork/connect/messagegroup"
-	"github.com/urnetwork/sdk"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/connect/v2026"
+	"github.com/urnetwork/connect/v2026/messagegroup"
+	"github.com/urnetwork/sdk/v2026"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE MESSAGING C ABI, AND IT IS HAND-WRITTEN ON PURPOSE.
