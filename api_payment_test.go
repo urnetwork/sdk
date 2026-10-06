@@ -563,40 +563,38 @@ func TestCustomerPortalRefusalKeepsCode(t *testing.T) {
 		{code: "store_unavailable", message: "Could not open the billing portal. Please try again."},
 	}
 	for _, refusal := range refusals {
-		t.Run(refusal.code, func(t *testing.T) {
-			var path atomic.Value
-			api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
-				path.Store(r.URL.Path)
-				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprintf(w, `{"error":{"code":%q,"message":%q}}`, refusal.code, refusal.message)
-			})
-
-			callback, c := connect.NewBlockingApiCallback[*StripeCreateCustomerPortalResult](context.Background())
-			api.StripeCreateCustomerPortal(&StripeCreateCustomerPortalArgs{}, callback)
-			r := awaitApiResult(t, c, "StripeCreateCustomerPortal never returned")
-			if r.Error != nil || r.Result.Error == nil {
-				t.Fatalf("portal: %+v", r)
-			}
-			if got := path.Load().(string); got != "/stripe/customer-portal" {
-				t.Errorf("path = %q", got)
-			}
-			if r.Result.Url != "" {
-				t.Errorf("refusal carried a url: %q", r.Result.Url)
-			}
-
-			// the decoded error, re-encoded: the code must have survived the
-			// decode, and the message stays the fallback
-			b, err := json.Marshal(r.Result.Error)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if want := fmt.Sprintf(`"code":%q`, refusal.code); !strings.Contains(string(b), want) {
-				t.Errorf("portal dropped the code: %s", b)
-			}
-			if r.Result.Error.Message != refusal.message {
-				t.Errorf("message = %q", r.Result.Error.Message)
-			}
+		var path atomic.Value
+		api := newTestPaymentApi(t, func(w http.ResponseWriter, r *http.Request) {
+			path.Store(r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"error":{"code":%q,"message":%q}}`, refusal.code, refusal.message)
 		})
+
+		callback, c := connect.NewBlockingApiCallback[*StripeCreateCustomerPortalResult](context.Background())
+		api.StripeCreateCustomerPortal(&StripeCreateCustomerPortalArgs{}, callback)
+		r := awaitApiResult(t, c, "StripeCreateCustomerPortal never returned")
+		if r.Error != nil || r.Result.Error == nil {
+			t.Fatalf("%s: portal: %+v", refusal.code, r)
+		}
+		if got := path.Load().(string); got != "/stripe/customer-portal" {
+			t.Errorf("%s: path = %q", refusal.code, got)
+		}
+		if r.Result.Url != "" {
+			t.Errorf("%s: refusal carried a url: %q", refusal.code, r.Result.Url)
+		}
+
+		// the decoded error, re-encoded: the code must have survived the
+		// decode, and the message stays the fallback
+		b, err := json.Marshal(r.Result.Error)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf(`"code":%q`, refusal.code); !strings.Contains(string(b), want) {
+			t.Errorf("%s: portal dropped the code: %s", refusal.code, b)
+		}
+		if r.Result.Error.Message != refusal.message {
+			t.Errorf("%s: message = %q", refusal.code, r.Result.Error.Message)
+		}
 	}
 
 	// an older server sends no code, and nothing is invented for it
