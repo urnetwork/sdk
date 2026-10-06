@@ -4802,6 +4802,31 @@ func urnet_api_sn_head(self C.uint64_t, callback_result C.urnet_sn_head_cb, call
 	self_.SnHead(callback_)
 }
 
+//export urnet_api_sn_network_wallet_mapping_challenge_sync
+func urnet_api_sn_network_wallet_mapping_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_network_wallet_mapping_challenge_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_wallet_mapping_challenge_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.SnNetworkWalletMappingChallengeArgs
+	if args != nil {
+		args_ = &sdk.SnNetworkWalletMappingChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_sn_network_wallet_mapping_challenge_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.SnNetworkWalletMappingChallengeSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_network_wallet_mapping_challenge_sync")
+}
+
 //export urnet_api_sn_pool_claim_sync
 func urnet_api_sn_pool_claim_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_api_sn_pool_claim_sync")

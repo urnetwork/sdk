@@ -451,6 +451,8 @@ def bind(lib):
     lib.urnet_api_sn_get_wallet.restype = None
     lib.urnet_api_sn_head.argtypes = [c_uint64, urnet_sn_head_cb, c_void_p]
     lib.urnet_api_sn_head.restype = None
+    lib.urnet_api_sn_network_wallet_mapping_challenge_sync.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_api_sn_network_wallet_mapping_challenge_sync.restype = c_void_p
     lib.urnet_api_sn_pool_claim_sync.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_api_sn_pool_claim_sync.restype = c_void_p
     lib.urnet_api_sn_set_wallet.argtypes = [c_uint64, c_char_p, urnet_sn_set_wallet_cb, c_void_p]

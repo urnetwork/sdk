@@ -325,6 +325,7 @@ public interface Raw extends Library {
   Pointer urnet_api_sn_epoch_sync(long a0, PointerByReference a1);
   void urnet_api_sn_get_wallet(long a0, urnet_sn_get_wallet_cb a1, Pointer a2);
   void urnet_api_sn_head(long a0, urnet_sn_head_cb a1, Pointer a2);
+  Pointer urnet_api_sn_network_wallet_mapping_challenge_sync(long a0, String a1, PointerByReference a2);
   Pointer urnet_api_sn_pool_claim_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_sn_set_wallet(long a0, String a1, urnet_sn_set_wallet_cb a2, Pointer a3);
   Pointer urnet_api_sn_set_wallet_sync(long a0, String a1, PointerByReference a2);

@@ -256,3 +256,40 @@ func requireSnWalletMappingBody(t *testing.T, body []byte, expectedBody string) 
 		t.Errorf("wallet consent body = %s, want %s", body, expectedBody)
 	}
 }
+
+// The network consent is requested from its own route with the session's
+// credential and no client, and an invalid interval never reaches the server.
+func TestApiSnNetworkWalletMappingChallengeSendsNoClient(t *testing.T) {
+	const bearerJwt = "synthetic-network-token"
+	const message = "Approve URnetwork network wallet mapping\nsynthetic original"
+	var requestCount atomic.Int64
+	bodyBytes := make(chan []byte, 1)
+	ctx, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		if r.Method != http.MethodPost || r.RequestURI != "/sn/wallet/network-consent" {
+			t.Errorf("network consent request = %s %s, want POST /sn/wallet/network-consent", r.Method, r.RequestURI)
+		}
+		requireRequestBearer(t, r, bearerJwt)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read network consent body: %v", err)
+		}
+		bodyBytes <- body
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"message":%q}`, message)
+	}))
+	api.SetByJwt(bearerJwt)
+	result, err := api.SnNetworkWalletMappingChallengeSyncWithContext(ctx, &SnNetworkWalletMappingChallengeArgs{ColdkeySs58: "synthetic-coldkey", FromEpoch: 7, ThroughEpoch: 107})
+	if err != nil || result == nil || result.Message != message {
+		t.Fatalf("network consent result = %+v, %v, want exact server message", result, err)
+	}
+	requireSnWalletMappingBody(t, <-bodyBytes, `{"coldkey_ss58":"synthetic-coldkey","from_epoch":7,"through_epoch":107}`)
+	for _, args := range []*SnNetworkWalletMappingChallengeArgs{nil, {ColdkeySs58: "synthetic-coldkey", FromEpoch: -1, ThroughEpoch: 1}, {ColdkeySs58: "synthetic-coldkey", FromEpoch: 9, ThroughEpoch: 8}} {
+		if result, err := api.SnNetworkWalletMappingChallengeSyncWithContext(ctx, args); result != nil || err == nil {
+			t.Fatalf("invalid network consent interval %+v was sent", args)
+		}
+	}
+	if requestCount.Load() != 1 {
+		t.Fatalf("network consent sent %d requests, want 1", requestCount.Load())
+	}
+}

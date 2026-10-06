@@ -324,6 +324,7 @@ module URnetwork
       attach_function :urnet_api_sn_epoch_sync, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_get_wallet, [:uint64, :urnet_sn_get_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_head, [:uint64, :urnet_sn_head_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_network_wallet_mapping_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_pool_claim_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_set_wallet, [:uint64, :string, :urnet_sn_set_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_set_wallet_sync, [:uint64, :string, :pointer], :pointer, blocking: true
