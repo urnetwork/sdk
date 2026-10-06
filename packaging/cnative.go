@@ -131,7 +131,7 @@ target_link_libraries(consumer PRIVATE urnetwork::sdk)
 `)
 		textFile(filepath.Join(temp, "main.c"), `#include <urnetwork_sdk.h>
 #include <stdio.h>
-int main(void) { if (urnet_abi_version()!=1) return 1; char* v=urnet_version(); puts(v); urnet_free_string(v); return 0; }
+int main(void) { if (urnet_abi_version()!=2) return 1; char* v=urnet_version(); puts(v); urnet_free_string(v); return 0; }
 `)
 		command(temp, nil, "cmake", "-S", ".", "-B", "build", "-DCMAKE_PREFIX_PATH="+prefix)
 		command(temp, nil, "cmake", "--build", "build", "--config", "Release")
