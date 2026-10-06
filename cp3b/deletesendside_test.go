@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urnetwork/connect/message"
-	"github.com/urnetwork/connect/protocol"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/connect/v2026/message"
+	"github.com/urnetwork/connect/v2026/protocol"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE SEND SIDE OF T-b, ASKED OF A MEMBER THAT IS NOT AT LEAF 0 (the 2026-10-03 diff review's probe,
