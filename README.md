@@ -73,7 +73,7 @@ The registrations live on the device: they are applied to the device's own clien
 
 # Provider extender
 
-A providing desktop device also runs the provider extender role (`connect/EXTENDER.md` G1, F3): it listens on TCP 443 and UDP 443, 53 and 4053 so that clients that cannot reach the platform directly can connect through it. Mobile builds carry no role. Two device controls and the user's setting decide whether the role runs while the device provides, in this order:
+A providing desktop device also runs the provider extender role (`connect/EXTENDER.md` G1, F3): it needs TCP 443 and also listens on UDP 443 and 4053 when it can bind them, so that clients that cannot reach the platform directly can connect through it. Without TCP 443 the role does not start: the extender status reports the `tcp_unavailable` error and the device tries TCP 443 again every 3 minutes. A UDP port that fails to bind turns off only that carrier. UDP 53 is bound only when `DeviceLocalSettings.ProvideExtenderDnsPrivilegedPort` is set, which the subnet miner does; clients try both UDP 53 and 4053. Mobile builds carry no role. Two device controls and the user's setting decide whether the role runs while the device provides, in this order:
 
 1. `DeviceLocalSettings.ProvideExtenderEnabled`, the embedder's hard switch, default on. Off, the role never runs, whatever the setting says; the status reports `not_providing`.
 2. The user's setting, `SetProvideExtender`. A space with local state stores it as `.provide_extender`, which every later device on the space reads; on a space that keeps no local state (for example one from `NewNetworkSpaceManagerNoStorage`) the device holds it for its own life.
