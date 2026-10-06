@@ -133,11 +133,13 @@ type deviceRpcSettings struct {
 
 	// DisableHostedIncompatible, when true, drops remote setters and makes the
 	// DeviceLocalRpc noop setters that must never change on a hosted device
-	// (route local, provide settings, transport settings, tunnel/vpn,
-	// identity/rpc); the corresponding getters and change listeners keep
-	// working. Hosted transport is pinned to H1. Set by the platform hosted rpc.
-	// This is the rpc layer of the same guard
-	// `DeviceLocalSettings.HostedIncompatible` enforces inside DeviceLocal.
+	// (route local, provide settings, transport settings, dns resolver
+	// settings, tunnel/vpn, identity/rpc); the corresponding getters and change
+	// listeners keep working. Hosted transport is pinned to H1. Set by the
+	// platform hosted rpc. This is the rpc layer of the same guard
+	// `DeviceLocalSettings.HostedIncompatible` enforces inside DeviceLocal. No
+	// rpc carries a VLESS server, a custom or manual extender or a bootstrap
+	// DoH server, which a hosted device refuses on every path.
 	DisableHostedIncompatible bool
 
 	// DeviceGeneration identifies the specific hosted DeviceLocal instance an
@@ -5553,6 +5555,9 @@ func (self *DeviceRemote) AddProviderIngressContractDetailsChangeListener(listen
 // dns
 
 func (self *DeviceRemote) SetDnsResolverSettings(dnsResolverSettings *DnsResolverSettings) {
+	if self.hostedIncompatibleGuarded("SetDnsResolverSettings") {
+		return
+	}
 	// mirror the `DeviceLocal` guard
 	if dnsResolverSettings == nil {
 		return
@@ -9858,10 +9863,10 @@ func (self *DeviceLocalRpc) Sync(
 	state := syncRequest.State
 
 	// the hosted-incompatible fields (route local, provide settings, transport
-	// settings, tunnel/vpn) are guarded: skipped here at the rpc layer, and
-	// hard-guarded again inside DeviceLocal. The remote's getters/listeners still
-	// see the real device state, so a hosted device keeps its platform-owned
-	// values.
+	// settings, dns resolver settings, tunnel/vpn) are guarded: skipped here at
+	// the rpc layer, and hard-guarded again inside DeviceLocal. The remote's
+	// getters/listeners still see the real device state, so a hosted device
+	// keeps its platform-owned values.
 	hostedIncompatible := self.settings.DisableHostedIncompatible
 
 	if state.CanShowRatingDialog.IsSet {
@@ -10028,7 +10033,7 @@ func (self *DeviceLocalRpc) Sync(
 			return err
 		}
 	}
-	if state.DnsResolverSettings.IsSet {
+	if state.DnsResolverSettings.IsSet && !hostedIncompatible {
 		if err := applyPreference(self.deviceLocal.setLocalCatalogPreferenceDeferred("dns-resolver-settings", state.DnsResolverSettings.Value.toDnsResolverSettings())); err != nil {
 			return err
 		}
@@ -11388,6 +11393,9 @@ func (self *DeviceLocalRpc) providerIngressContractDetailsChanged(contractDetail
 // dns
 
 func (self *DeviceLocalRpc) SetDnsResolverSettings(deviceSettings *DeviceRemoteDnsResolverSettings, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetDnsResolverSettings") {
+		return nil
+	}
 	return self.deviceLocal.setLocalCatalogPreference("dns-resolver-settings", deviceSettings.DnsResolverSettings.toDnsResolverSettings())
 }
 

@@ -110,7 +110,14 @@ func (self *NetworkSpace) GetVlessSettings() *VlessSettings {
 // On ios this writes the app group values the packet tunnel extension reads
 // at its next start, and the desktop services take them at the next tunnel
 // start, which is what the apps tell the user.
+//
+// The space a cloud host shares among its hosted devices
+// (NewPlatformNetworkSpace) refuses VLESS, which is not cloud safe: it saves
+// nothing and returns empty, the hosted-incompatible no-op.
 func (self *NetworkSpace) SetVlessSettings(settings *VlessSettings) (errorId string) {
+	if self.hostedIncompatibleGuarded("SetVlessSettings") {
+		return ""
+	}
 	stored := settings.normalized()
 	if stored != nil && stored.Enabled {
 		if _, errorId = stored.connectConfig(); errorId != "" {
