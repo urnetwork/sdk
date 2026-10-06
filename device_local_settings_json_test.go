@@ -47,6 +47,10 @@ func TestDeviceLocalSettingsJsonRoundTrip(t *testing.T) {
 			t.Errorf("the settings json has %s = %v, expected true", key, values[key])
 		}
 	}
+	// every app binds the extender's dns carrier on 4053 alone (L2)
+	if value, ok := values["ProvideExtenderDnsPrivilegedPort"]; !ok || value != false {
+		t.Errorf("the settings json has ProvideExtenderDnsPrivilegedPort = %v (present %t), expected false", value, ok)
+	}
 	// a duration is its count of nanoseconds
 	if sendTimeout, ok := values["SendTimeout"].(float64); !ok || time.Duration(sendTimeout) != 5*time.Second {
 		t.Errorf("the settings json has SendTimeout = %v, expected the nanoseconds of 5s", values["SendTimeout"])
@@ -85,5 +89,33 @@ func TestDeviceLocalSettingsJsonDecodesOverTheDefaults(t *testing.T) {
 	}
 	if settings.ClientSettings.SendBufferSettings == nil {
 		t.Error("the json cleared the client settings")
+	}
+}
+
+// The extender's 53 opt-in crosses as json like the other device controls: a
+// c host that names it on decodes it over the defaults, which the sn miner's
+// equivalent does in Go (L2), and the rest keep their defaults.
+func TestDeviceLocalSettingsJsonCarriesTheExtenderDnsPrivilegedPort(t *testing.T) {
+	settings := DefaultDeviceLocalSettings()
+	if err := json.Unmarshal([]byte(`{"ProvideExtenderDnsPrivilegedPort": true}`), settings); err != nil {
+		t.Fatal(err)
+	}
+	if !settings.ProvideExtenderDnsPrivilegedPort {
+		t.Fatal("the json did not opt the device in to 53")
+	}
+	if !settings.ProvideExtenderEnabled || !settings.DefaultProvideExtender {
+		t.Error("a field the json omits lost its default")
+	}
+	settingsBytes, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]any{}
+	if err := json.Unmarshal(settingsBytes, &values); err != nil {
+		t.Fatal(err)
+	}
+	if values["ProvideExtenderDnsPrivilegedPort"] != true {
+		t.Fatalf("the settings json has ProvideExtenderDnsPrivilegedPort = %v, expected true",
+			values["ProvideExtenderDnsPrivilegedPort"])
 	}
 }

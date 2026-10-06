@@ -212,6 +212,53 @@ func TestExtenderProvideStateRule(t *testing.T) {
 			providing:       true,
 			expectState:     ExtenderProvideStateSettingUp,
 		},
+		// error, tcp_unavailable
+		{
+			name: "the role is off for want of tcp 443",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				ListenError:         "tcp: listen tcp :443: bind: address already in use",
+				TcpUnavailableError: "listen tcp :443: bind: address already in use",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorTcpUnavailable,
+			expectReason:    "listen tcp :443: bind: address already in use",
+		},
+		{
+			name: "a start error beats the tcp port",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				StartError:          "the network space has no extender directory",
+				TcpUnavailableError: "listen tcp :443: bind: address already in use",
+			},
+			provideExtender: true,
+			providing:       true,
+			expectState:     ExtenderProvideStateError,
+			expectErrorCase: ExtenderProvideErrorStart,
+			expectReason:    "the network space has no extender directory",
+		},
+		{
+			name: "not providing beats the tcp port",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				TcpUnavailableError: "listen tcp :443: bind: address already in use",
+			},
+			provideExtender: true,
+			providing:       false,
+			expectState:     ExtenderProvideStateNotProviding,
+		},
+		{
+			name: "the setting off beats the tcp port",
+			status: &ExtenderProvideStatus{
+				Supported:           true,
+				TcpUnavailableError: "listen tcp :443: bind: address already in use",
+			},
+			provideExtender: false,
+			providing:       true,
+			expectState:     ExtenderProvideStateOff,
+		},
 		// error, revoked
 		{
 			name: "the operator revoked the key",

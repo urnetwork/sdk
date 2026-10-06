@@ -1,8 +1,10 @@
-// Keeps the provider extender's two device controls on the gomobile surface
-// (EXTENDER.md G1, F3) for the android and apple apps and any third-party
-// mobile host: the settings fields a host sets before Sdk.newDeviceLocal, and
-// the host-facing constructor that takes both. Each control crosses as a plain
-// boolean, which is the form gobind binds (golang/go#71827).
+// Keeps the provider extender's device controls on the gomobile surface
+// (EXTENDER.md G1, F3, L2) for the android and apple apps and any third-party
+// mobile host: the settings fields a host sets before Sdk.newDeviceLocal --
+// the two that decide whether the role runs and the opt-in to bind its dns
+// carrier on 53 -- and the host-facing constructor that takes the first two.
+// Each control crosses as a plain boolean, which is the form gobind binds
+// (golang/go#71827).
 package main
 
 import (
@@ -55,6 +57,8 @@ func TestMobileProvideExtenderControlsAreBound(t *testing.T) {
 				"public final native void setProvideExtenderEnabled(boolean v);",
 				"public final native boolean getDefaultProvideExtender();",
 				"public final native void setDefaultProvideExtender(boolean v);",
+				"public final native boolean getProvideExtenderDnsPrivilegedPort();",
+				"public final native void setProvideExtenderDnsPrivilegedPort(boolean v);",
 			},
 		},
 		{
@@ -70,6 +74,7 @@ func TestMobileProvideExtenderControlsAreBound(t *testing.T) {
 			texts: []string{
 				"@property (nonatomic) BOOL provideExtenderEnabled;",
 				"@property (nonatomic) BOOL defaultProvideExtender;",
+				"@property (nonatomic) BOOL provideExtenderDnsPrivilegedPort;",
 				"FOUNDATION_EXPORT SdkDeviceLocalSettings* _Nullable SdkDefaultDeviceLocalSettings(void);",
 				"FOUNDATION_EXPORT SdkDeviceLocal* _Nullable SdkNewDeviceLocal(SdkNetworkSpace* _Nullable networkSpace, NSString* _Nullable byJwt, NSString* _Nullable deviceDescription, NSString* _Nullable deviceSpec, NSString* _Nullable appVersion, SdkId* _Nullable instanceId, SdkDeviceLocalSettings* _Nullable settings, NSError* _Nullable* _Nullable error);",
 				"FOUNDATION_EXPORT SdkDeviceLocal* _Nullable SdkNewDeviceLocalWithProvideExtender(SdkNetworkSpace* _Nullable networkSpace, NSString* _Nullable byJwt, NSString* _Nullable deviceDescription, NSString* _Nullable deviceSpec, NSString* _Nullable appVersion, SdkId* _Nullable instanceId, BOOL enableRpc, SdkDeviceLocalKeyMaterial* _Nullable keyMaterial, BOOL provideExtenderEnabled, BOOL defaultProvideExtender, NSError* _Nullable* _Nullable error);",

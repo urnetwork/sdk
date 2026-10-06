@@ -404,6 +404,9 @@ func DefaultDeviceLocalSettings() *DeviceLocalSettings {
 		// the setting is on until the user turns it off (F3)
 		ProvideExtenderEnabled: true,
 		DefaultProvideExtender: true,
+		// every app binds the extender's dns carrier on 4053 alone; the sn
+		// miner opts in to 53 (L2)
+		ProvideExtenderDnsPrivilegedPort: false,
 		// Security-policy monitoring clones diagnostic maps and, for a
 		// DeviceRemote, performs synchronous RPC. Keep it opt-in so an app
 		// object never owns background polling.
@@ -598,6 +601,15 @@ type DeviceLocalSettings struct {
 	// precedence: never with ProvideExtenderEnabled off; else as the user's
 	// setting says, when there is one; else as this default says.
 	DefaultProvideExtender bool
+	// ProvideExtenderDnsPrivilegedPort also binds the provider extender
+	// role's dns carrier on udp 53, beside the udp 4053 every extender binds
+	// (EXTENDER.md L2). Default off, which is what every app runs with on
+	// every platform; the sn miner, a service that can take 53, turns it on.
+	// The 53 bind is never required: a failure leaves the carrier serving on
+	// 4053, and the status's DnsPorts lists what bound. A client tries both
+	// ports on every extender whatever this is. A plain boolean, so gomobile
+	// binds it and the c abi settings json carries it.
+	ProvideExtenderDnsPrivilegedPort bool
 	// providerExtenderSettings, when set, adjusts the provider extender role's
 	// settings before it is built (EXTENDER.md G2). Tests bind ephemeral
 	// carrier ports and point the activation at an in-process operator through
@@ -1804,7 +1816,9 @@ func newDeviceLocalWithOverridesForPlatform(
 	// set up with nil destination
 	if provider != nil {
 		// the extender role is built on the first provide change, which is
-		// after this device exists, so the test seam is installed here (G2)
+		// after this device exists, so its device setting and the test seam
+		// are installed here (G2, L2)
+		provider.extenderDnsPrivilegedPort = settings.ProvideExtenderDnsPrivilegedPort
 		provider.extenderSettingsConfigure = settings.providerExtenderSettings
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
