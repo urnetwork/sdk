@@ -281,8 +281,9 @@ func TestOnlyInPlaceValuesChangedIncludesVless(t *testing.T) {
 	}
 }
 
-// A hosted device's private strategy takes the VLESS server in force.
-func TestHostedClientStrategyTakesVless(t *testing.T) {
+// A hosted device's private strategy refuses the VLESS server in force, and
+// one set on it later: VLESS is not cloud safe.
+func TestHostedClientStrategyRefusesVless(t *testing.T) {
 	networkSpaceManager := NewNetworkSpaceManagerNoStorage()
 	t.Cleanup(networkSpaceManager.Close)
 	key := NewNetworkSpaceKey("space.example", "main")
@@ -290,9 +291,16 @@ func TestHostedClientStrategyTakesVless(t *testing.T) {
 	if errorId := networkSpace.SetVlessSettings(testVlessSettings()); errorId != "" {
 		t.Fatal(errorId)
 	}
+	if n := len(networkSpace.clientStrategy.VlessConfigs()); n != 1 {
+		t.Fatalf("space strategy dialers = %d", n)
+	}
 	strategy := networkSpace.newHostedClientStrategy(nil)
 	defer strategy.Close()
-	if n := len(strategy.VlessConfigs()); n != 1 {
+	if n := len(strategy.VlessConfigs()); n != 0 {
 		t.Fatalf("hosted strategy dialers = %d", n)
+	}
+	strategy.SetVlessConfigs(spaceVlessConfigs(testVlessSettings()))
+	if n := len(strategy.VlessConfigs()); n != 0 {
+		t.Fatalf("hosted strategy dialers after a set = %d", n)
 	}
 }

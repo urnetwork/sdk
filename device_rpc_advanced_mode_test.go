@@ -25,7 +25,7 @@ import (
 //     to drop on the floor.
 //
 // These are ordinary build-tag-free tests in the default compile set, and run
-// on Windows as well as in the Linux sdk CI.
+// on Windows as well as on Linux.
 
 // gob wire fidelity for the new payloads
 

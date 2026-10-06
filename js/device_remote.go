@@ -21,9 +21,9 @@ import (
 //   - getters return JS values (bool/string/number/object) or null
 //   - setters take a single JS argument and return null
 //   - listener adders take a JS callback and return an unsubscribe function
-//   - the hosted-incompatible setters (route local, provide settings) are
-//     accepted here but no-op on the hosted device by design; the getters and
-//     listeners still reflect the real device state
+//   - the hosted-incompatible setters (route local, provide settings, dns
+//     resolver settings) are accepted here but no-op on the hosted device by
+//     design; the getters and listeners still reflect the real device state
 
 // jsSub wraps an sdk.Sub as a JS unsubscribe function.
 func jsSub(sub sdk.Sub) js.Value {

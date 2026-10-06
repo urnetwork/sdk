@@ -163,11 +163,15 @@ func TestNetworkSpaceSetControlDohUrls(t *testing.T) {
 		}
 	}
 	assertDohUrls("the strategy's", networkSpace.clientStrategy.DohSettings())
-	// a hosted device's strategy and a provider's direct ones, built after
-	hostedStrategy := networkSpace.newHostedClientStrategy(nil)
-	assertDohUrls("a hosted strategy's", hostedStrategy.DohSettings())
-	hostedStrategy.Close()
+	// a provider's direct strategies, built after, take them; a hosted
+	// device's strategy keeps the built-in servers, since its host would query
+	// them (TestHostedClientStrategyRefusesBootstrapDohServers)
 	assertDohUrls("the derived", networkSpace.derivedClientStrategySettings().DohSettings)
+	hostedStrategy := networkSpace.newHostedClientStrategy(nil)
+	if dohUrls := hostedStrategy.DohSettings().DnsResolverSettings.RemoteDohUrlsIpv4; !slices.Equal(dohUrls, defaults.RemoteDohUrlsIpv4) {
+		t.Fatalf("a hosted strategy's servers = %v, expected the built-in ones", dohUrls)
+	}
+	hostedStrategy.Close()
 
 	// invalid urls save nothing
 	for _, c := range []struct {
@@ -353,6 +357,7 @@ func TestNetworkSpaceControlDohUrlsReachTheApiInPlace(t *testing.T) {
 		},
 		"",
 		connectSettings,
+		false,
 	)
 	defer networkSpace.close()
 	strategy := networkSpace.clientStrategy

@@ -77,7 +77,15 @@ func (self *NetworkSpace) GetControlDohUrlsIpv6() *StringList {
 // family, else empty. On ios this writes the app group values the packet
 // tunnel extension reads at its next start, and the desktop services take
 // them at the next tunnel start, which is what the apps tell the user.
+//
+// The space a cloud host shares among its hosted devices
+// (NewPlatformNetworkSpace) refuses bootstrap DoH servers, which its host
+// would query: it saves nothing and returns empty, the hosted-incompatible
+// no-op.
 func (self *NetworkSpace) SetControlDohUrls(dohUrls *StringList) (errorId string) {
+	if self.hostedIncompatibleGuarded("SetControlDohUrls") {
+		return ""
+	}
 	var dohUrlsIpv4 []string
 	var dohUrlsIpv6 []string
 	if dohUrls != nil {

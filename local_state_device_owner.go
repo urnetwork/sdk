@@ -2,11 +2,6 @@
 // Native owners must still join before replacing the LocalState object itself.
 package sdk
 
-import (
-	"errors"
-	"os"
-)
-
 // Invalidates delayed device writes without waiting for unrelated callbacks.
 // A constructor claiming the same store is ordered by the same lock.
 func (self *LocalState) closeDeviceAuthOwner(owner *deviceAuthPublicationGate) {
@@ -59,8 +54,5 @@ func (self *LocalState) logoutRejectedClient(byJwt string, instanceId *Id, owner
 	}
 	self.deviceAuthOwner = nil
 	self.deviceAuthGeneration += 1
-	return true, errors.Join(
-		os.RemoveAll(self.localStorageDir),
-		os.MkdirAll(self.localStorageDir, LocalStorageDirectoryPermissions),
-	)
+	return true, self.removeAccountStateWithLock()
 }

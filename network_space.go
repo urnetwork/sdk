@@ -111,6 +111,14 @@ type NetworkSpaceValues struct {
 	// the mesh deliver -- which is what separates them from the legacy
 	// `NetExtender`, whose single address overrides everything.
 	ExtenderHosts []string `json:"extender_hosts,omitempty"`
+	// ExtenderResetId is the latest reset of this space's extender state
+	// (EXTENDER.md E7), a ULID. `ResetExtenders` sets it with the extender
+	// values above cleared, and every process that holds the space resets its
+	// directory when the values bring a reset it has not applied yet -- a newer
+	// id than its own storage last applied -- so a reset made in the app reaches
+	// the tunnel process that imports the space at its next start, whether or
+	// not that process could be told at once. Empty is a space never reset.
+	ExtenderResetId string `json:"extender_reset_id,omitempty"`
 
 	// A VLESS server the client strategy also dials through (vless_settings.go).
 	// Nil, off or invalid is a space without VLESS. Applied in place like the
@@ -238,6 +246,15 @@ type NetworkSpace struct {
 	// the space's dial logger, carried so the manager's one-time control ip
 	// family restore lands on the same log as the dials it governs
 	log connect.Logger
+	// The space a cloud host shares among its hosted devices
+	// (NewPlatformNetworkSpace). It refuses every endpoint a user names, which
+	// a cloud host must never dial: the VLESS server, the custom extender, the
+	// manual extender hosts and imports, the other extender settings, and the
+	// bootstrap DoH servers. Its strategy is built refusing them
+	// (`DisableVless`, `DisableManualExtenders`, `DisableCustomDohServers`),
+	// and their setters save nothing (`hostedIncompatibleGuarded`). Set at
+	// construction.
+	hostedIncompatible bool
 
 	// The extender directory of this space (EXTENDER.md E1, F1). Nil for a
 	// url-only space, which names its endpoints outright and has nothing to
@@ -255,6 +272,15 @@ type NetworkSpace struct {
 	// at construction.
 	stateLock sync.Mutex
 	closed    bool
+	// The latest extender reset this space has applied (E7), which a values
+	// `ExtenderResetId` is compared with: what its storage recorded at
+	// construction, empty without one, and every reset applied since.
+	appliedExtenderResetId string
+	// Orders the restarts of the extender network (restartExtenderNetwork): a
+	// settings change and a reset each stop the client and the node and start
+	// new ones, and two interleaved would leave a client nobody closes. Taken
+	// before the state lock, never inside it.
+	extenderRestartLock sync.Mutex
 	// The attesting provider of the device that provides in this space, and
 	// the reporter its probes go to (connect/DESIGNNOTES4.md §1, GEOMAP §2.5).
 	// Nil while no device in the space provides: a provider installs the pair
@@ -298,6 +324,18 @@ func (self *NetworkSpace) getNetworkSpaceManager() *NetworkSpaceManager {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	return self.networkSpaceManager
+}
+
+// Reports whether a setter of an endpoint a user names must be skipped, which
+// the space a cloud host shares among its hosted devices does
+// (`hostedIncompatible`). It logs the skip for visibility, as the device's own
+// guard does.
+func (self *NetworkSpace) hostedIncompatibleGuarded(name string) bool {
+	if self.hostedIncompatible {
+		self.logger().Infof("[ns]hosted incompatible: %s ignored\n", name)
+		return true
+	}
+	return false
 }
 
 // updateInPlaceValues is the one write path for the values a running space
@@ -521,15 +559,19 @@ func newNetworkSpace(
 	values NetworkSpaceValues,
 	storagePath string,
 ) *NetworkSpace {
-	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings())
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings(), false)
 }
 
+// Builds a space from its key and values. A hosted-incompatible space is the
+// one a cloud host shares among its hosted devices, which refuses VLESS (see
+// `NetworkSpace.hostedIncompatible`).
 func newNetworkSpaceWithConnectSettings(
 	ctx context.Context,
 	key NetworkSpaceKey,
 	values NetworkSpaceValues,
 	storagePath string,
 	connectSettings *connect.ConnectSettings,
+	hostedIncompatible bool,
 ) *NetworkSpace {
 	cancelCtx, cancel := context.WithCancel(ctx)
 
@@ -557,6 +599,22 @@ func newNetworkSpaceWithConnectSettings(
 	// the api's alt h3 and alt whodis dialers (L4); empty leaves the strategy
 	// with its tcp and extender dialers alone
 	clientStrategySettings.AltUrl = altUrl
+	// a space that hosts cloud devices names no endpoint of a user's and
+	// dials none: it keeps the built-in DoH servers and the extenders a signed
+	// record verifies
+	if hostedIncompatible {
+		values.Vless = nil
+		values.NetExtender = nil
+		values.ExtenderDnsName = ""
+		values.GossipUrl = ""
+		values.ExtenderRootPublicKeys = nil
+		values.ExtenderHosts = nil
+		values.ControlDohUrlsIpv4 = nil
+		values.ControlDohUrlsIpv6 = nil
+		clientStrategySettings.DisableVless = true
+		clientStrategySettings.DisableManualExtenders = true
+		clientStrategySettings.DisableCustomDohServers = true
+	}
 	// the VLESS server, when the space names one that is on and valid
 	clientStrategySettings.VlessConfigs = spaceVlessConfigs(values.Vless)
 	// the bootstrap DoH servers ahead of the defaults, when the space names any
@@ -598,6 +656,7 @@ func newNetworkSpaceWithConnectSettings(
 
 		clientStrategy:                clientStrategy,
 		clientStrategySettings:        clientStrategySettings,
+		hostedIncompatible:            hostedIncompatible,
 		asyncLocalState:               asyncLocalState,
 		api:                           api,
 		log:                           clientStrategySettings.ConnectSettings.Log,
@@ -605,6 +664,11 @@ func newNetworkSpaceWithConnectSettings(
 		extenderNodeMonitor:           connect.NewMonitor(),
 		extenderStatusChangeListeners: connect.NewCallbackList[ExtenderStatusChangeListener](),
 	}
+	// a reset the values bring that this storage has not applied -- one made
+	// in the app, for the space a tunnel process imports -- is applied before
+	// the network client and the node read the directory, and before any dial
+	// draws from it (E7)
+	networkSpace.applyStoredExtenderReset()
 	// the role decides what fills the directory: the feed role holds the
 	// subscribe stream, the member role runs the node instead (D5)
 	role := extenderRole(extenderGossipMode(asyncLocalState))
@@ -650,12 +714,26 @@ func newSpaceExtenderDirectory(
 		settings.Store = newLocalStateExtenderStore(asyncLocalState.GetLocalState())
 	}
 	directory := connect.NewExtenderDirectory(ctx, settings)
-	if rootPublicKeyHexes := ExtenderRootPublicKeys(key, values); 0 < len(rootPublicKeyHexes) {
-		if keySet, err := connect.NewExtenderRootKeySetFromHex(rootPublicKeyHexes...); err == nil {
-			directory.SetRootKeys(keySet)
-		}
+	if rootKeySet := spaceExtenderRootKeySet(key, values); rootKeySet != nil {
+		directory.SetRootKeys(rootKeySet)
 	}
 	return directory
+}
+
+// The trust anchor one space's values resolve to (B4): the configured keys,
+// else the bundled table's for the host. Nil when they resolve to no key -- a
+// host the table does not name, or keys that do not parse -- which is not an
+// anchor: installed, it would refuse every record until the first hello.
+func spaceExtenderRootKeySet(key *NetworkSpaceKey, values *NetworkSpaceValues) *connect.ExtenderRootKeySet {
+	rootPublicKeyHexes := ExtenderRootPublicKeys(key, values)
+	if len(rootPublicKeyHexes) == 0 {
+		return nil
+	}
+	rootKeySet, err := connect.NewExtenderRootKeySetFromHex(rootPublicKeyHexes...)
+	if err != nil || rootKeySet.Len() == 0 {
+		return nil
+	}
+	return rootKeySet
 }
 
 // extenderNetworkClientEnabled is a process-wide switch for the extender
@@ -737,38 +815,98 @@ func extenderNetworkClientRuns(key *NetworkSpaceKey, values *NetworkSpaceValues)
 // whole reason the extender settings are applied here rather than by rebuilding
 // the space the way every other value change is.
 //
+// Values that bring a reset this space has not applied (E7) reset the
+// directory in the same restart, between the old client and node stopping and
+// the new ones starting; the other values are taken as they come, since a host
+// added after the reset belongs to the space after it.
+//
 // Returns whether anything changed. Values outside the extender set are
 // ignored: only a rebuilt space may change those.
 func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
-	changed, closed := func() (bool, bool) {
+	changed, resetId, closed := func() (bool, string, bool) {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		if !extenderValuesChanged(&self.key, &self.values, values) {
-			return false, self.closed
+			return false, "", self.closed
 		}
 		self.values.NetExtender = values.NetExtender
 		self.values.ExtenderDnsName = values.ExtenderDnsName
 		self.values.GossipUrl = values.GossipUrl
 		self.values.ExtenderRootPublicKeys = slices.Clone(values.ExtenderRootPublicKeys)
 		self.values.ExtenderHosts = slices.Clone(values.ExtenderHosts)
-		return true, self.closed
+		self.values.ExtenderResetId = values.ExtenderResetId
+		resetId := ""
+		if extenderResetIdNewer(values.ExtenderResetId, self.appliedExtenderResetId) {
+			// claimed here, in the scope that read it, so of two applies of
+			// one reset only one resets
+			resetId = values.ExtenderResetId
+			self.appliedExtenderResetId = resetId
+		}
+		return true, resetId, self.closed
 	}()
 	if !changed || closed {
 		return changed
 	}
-	current := self.valuesCopy()
+	self.restartExtenderNetwork(resetId)
+	return true
+}
 
-	// The anchor is replaced only by a set that resolves to a key. An empty or
-	// unparseable one is not an anchor: installing it would refuse every
-	// record until the next hello, so what is in force is left alone.
+// Applies the extender values in force to everything they configure (K6):
+// the directory's trust anchor, the legacy custom extender, the refresh loop
+// and the gossip node. One restart runs at a time (extenderRestartLock).
+//
+// A `resetId` resets the directory (E7). The node and the client are stopped
+// and joined first, so nothing they learned lands after the reset; the
+// directory is reset to the anchor the values resolve to -- the bundled
+// table's once the user's keys are cleared, or none, which waits for the first
+// hello -- and the reset is recorded beside it, after the directory's own
+// write, so a process that ends in between resets again rather than not at
+// all. The custom extenders are set after the reset, which drops every
+// extender dialer drawn from the old directory. The new client reads hello
+// and bootstraps as on a first run, and the node comes back in the role it
+// was in.
+func (self *NetworkSpace) restartExtenderNetwork(resetId string) {
+	self.extenderRestartLock.Lock()
+	defer self.extenderRestartLock.Unlock()
+
+	current := self.valuesCopy()
+	rootKeySet := spaceExtenderRootKeySet(&self.key, &current)
+	// Outside a reset the anchor is replaced only by a set that resolves to a
+	// key. An empty or unparseable one is not an anchor: installing it would
+	// refuse every record until the next hello, so what is in force is left
+	// alone.
+	if resetId == "" && self.extenderDirectory != nil && rootKeySet != nil {
+		self.extenderDirectory.SetRootKeys(rootKeySet)
+	}
+	// the node watches the client for the operator address, so it is rebuilt
+	// on the replacement rather than left watching a closed one; for a reset
+	// it stops first, since it writes the directory too
+	restartNode := self.rebuildExtenderNode
+	if resetId != "" {
+		restartNode = self.stopExtenderNode()
+	}
+
 	if self.extenderDirectory != nil {
-		if rootPublicKeyHexes := ExtenderRootPublicKeys(&self.key, &current); 0 < len(rootPublicKeyHexes) {
-			if keySet, err := connect.NewExtenderRootKeySetFromHex(rootPublicKeyHexes...); err == nil &&
-				0 < keySet.Len() {
-				self.extenderDirectory.SetRootKeys(keySet)
-			}
+		previousNetworkClient := func() *connect.ExtenderNetworkClient {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			previousNetworkClient := self.extenderNetworkClient
+			self.extenderNetworkClient = nil
+			return previousNetworkClient
+		}()
+		if previousNetworkClient != nil {
+			previousNetworkClient.Close()
+		}
+		if resetId != "" {
+			self.extenderDirectory.Reset(rootKeySet)
 		}
 	}
+	if resetId != "" && self.asyncLocalState != nil {
+		if err := self.asyncLocalState.GetLocalState().setExtenderResetId(resetId); err != nil {
+			self.logger().Infof("[extender]reset id err = %s\n", err)
+		}
+	}
+
 	// the legacy single extender overrides discovery outright, so a cleared
 	// one has to clear the strategy rather than leave the last address in force
 	extenderIpSecrets := map[netip.Addr]string{}
@@ -781,16 +919,6 @@ func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
 
 	if self.extenderDirectory != nil {
 		role := extenderRole(extenderGossipMode(self.asyncLocalState))
-		previousNetworkClient := func() *connect.ExtenderNetworkClient {
-			self.stateLock.Lock()
-			defer self.stateLock.Unlock()
-			previousNetworkClient := self.extenderNetworkClient
-			self.extenderNetworkClient = nil
-			return previousNetworkClient
-		}()
-		if previousNetworkClient != nil {
-			previousNetworkClient.Close()
-		}
 		networkClient := newSpaceExtenderNetworkClient(
 			self.ctx,
 			&self.key,
@@ -819,22 +947,20 @@ func (self *NetworkSpace) applyExtenderValues(values *NetworkSpaceValues) bool {
 			networkClient.Close()
 		}
 	}
-	// the node watches the client for the operator address, so it is rebuilt
-	// on the replacement rather than left watching a closed one
-	self.rebuildExtenderNode()
+	restartNode()
 	// the status watch waits on this monitor for the node swap; the client
 	// swap is the same kind of edge and the js build rebuilds no node at all,
 	// so it is published here too
 	self.extenderNodeMonitor.NotifyAll()
 	self.extenderStatusChanged()
-	return true
 }
 
 // Reports whether two value sets differ in anything the extender network is
 // built from (K6): the dns name, the gossip url, the root keys, the manual
-// hosts and the legacy custom extender. The comparison is of the EFFECTIVE
-// values, so an edit that only adds whitespace, or that spells out the derived
-// default a blank field already means, restarts nothing.
+// hosts, the legacy custom extender and the latest reset (E7). The comparison
+// is of the EFFECTIVE values, so an edit that only adds whitespace, or that
+// spells out the derived default a blank field already means, restarts
+// nothing.
 func extenderValuesChanged(
 	key *NetworkSpaceKey,
 	previous *NetworkSpaceValues,
@@ -848,6 +974,8 @@ func extenderValuesChanged(
 	case !slices.Equal(ExtenderRootPublicKeys(key, previous), ExtenderRootPublicKeys(key, next)):
 		return true
 	case !slices.Equal(ExtenderHosts(previous), ExtenderHosts(next)):
+		return true
+	case previous.ExtenderResetId != next.ExtenderResetId:
 		return true
 	}
 	return !netExtenderEqual(previous.NetExtender, next.NetExtender)
@@ -920,6 +1048,13 @@ func isDottedHostName(hostName string) bool {
 	return true
 }
 
+// The space a cloud host (server/proxy) shares among its hosted devices. It
+// refuses every endpoint a user names, which a cloud host must never dial:
+// the space never dials a VLESS server, a custom or manual extender or a
+// bootstrap DoH server of a user's, and the setters of those settings save
+// nothing (`NetworkSpace.hostedIncompatible`). Each hosted device's own
+// strategy refuses them too (newHostedClientStrategy).
+//
 //gomobile:noexport
 func NewPlatformNetworkSpace(
 	ctx context.Context,
@@ -935,7 +1070,7 @@ func NewPlatformNetworkSpace(
 		NetExposeServerIps:       true,
 		NetExposeServerHostNames: true,
 	}
-	return newNetworkSpaceWithConnectSettings(ctx, key, values, "", connectSettings)
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, "", connectSettings, true)
 }
 
 // newHostedClientStrategy gives one hosted DeviceLocal its own control-plane
@@ -944,23 +1079,29 @@ func NewPlatformNetworkSpace(
 // data flow before generated clients finish their final contract retirement.
 // DeviceLocal explicitly closes this private strategy after those joins. It
 // reuses only immutable settings and the shared read-only extender directory.
+//
+// The strategy refuses every endpoint a user names, whatever path it arrives
+// by, because each is dialed from the host and a cloud host must never dial a
+// server a user names: VLESS servers (`DisableVless`), extenders configured by
+// hand (`DisableManualExtenders`: the configured and custom extenders, and the
+// manual addresses of the directory that no signed record verifies) and DoH
+// servers other than the built-in ones (`DisableCustomDohServers`). None of
+// the space's settings of these reach a hosted device, and nothing can add
+// one to it later. What it keeps is built in: the default DoH servers, and the
+// extenders the shared directory learned that a signed record verifies.
 func (self *NetworkSpace) newHostedClientStrategy(dnsMemoryTarget *connect.MemoryTarget) *connect.ClientStrategy {
 	settings := *self.derivedClientStrategySettings()
-	dohSettings := settings.DohSettings
-	if dohSettings == nil {
-		dohSettings = connect.DefaultDohSettings()
-	}
-	privateDohSettings := *dohSettings
-	privateDohSettings.MemoryTarget = dnsMemoryTarget
-	settings.DohSettings = &privateDohSettings
-	strategy := connect.NewClientStrategy(self.ctx, &settings)
-	if customExtenders := self.clientStrategy.CustomExtenders(); len(customExtenders) > 0 {
-		strategy.SetCustomExtenders(customExtenders)
-	}
-	// the VLESS server in force now, which a settings change may have
-	// replaced since the shared strategy was built
-	strategy.SetVlessConfigs(self.clientStrategy.VlessConfigs())
-	return strategy
+	settings.VlessConfigs = nil
+	settings.DisableVless = true
+	settings.ExtenderConfigs = nil
+	settings.DisableManualExtenders = true
+	// the built-in DoH servers, never the space's bootstrap ones, on a fresh
+	// value that takes the device's own memory target
+	dohSettings := spaceControlDohSettings(&NetworkSpaceValues{})
+	dohSettings.MemoryTarget = dnsMemoryTarget
+	settings.DohSettings = dohSettings
+	settings.DisableCustomDohServers = true
+	return connect.NewClientStrategy(self.ctx, &settings)
 }
 
 // The settings a strategy derived from the space's is built from: a hosted
@@ -1947,6 +2088,7 @@ func onlyInPlaceValuesChanged(
 		other.GossipUrl = ""
 		other.ExtenderRootPublicKeys = nil
 		other.ExtenderHosts = nil
+		other.ExtenderResetId = ""
 		other.Vless = nil
 		other.ControlDohUrlsIpv4 = nil
 		other.ControlDohUrlsIpv6 = nil
@@ -2011,6 +2153,12 @@ func (self *NetworkSpaceManager) updateNetworkSpace(key *NetworkSpaceKey, callba
 		return self.GetNetworkSpace(key)
 	}
 
+	// a reset the new values bring is applied to the space they replace first
+	// (EXTENDER.md E7): both directories use one store, and the one closing
+	// last must not write back what the reset cleared
+	if existingNetworkSpace != nil {
+		existingNetworkSpace.applyExtenderResetForRebuild(copyValues.ExtenderResetId)
+	}
 	copyNetworkSpace := newNetworkSpace(self.ctx, *key, copyValues, self.envStoragePath(key))
 	copyNetworkSpace.setNetworkSpaceManager(self)
 	activeSet := false

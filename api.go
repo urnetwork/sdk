@@ -3312,6 +3312,10 @@ func (self *Api) CreateStripePaymentIntent(args *StripeCreatePaymentIntentArgs, 
 type StripeCreateCustomerPortalArgs struct{}
 
 type StripeCreateCustomerPortalError struct {
+	// the server's `SubscriptionErrorCode*` value (`no_customer` or
+	// `store_unavailable`), when the refusal has one; empty from an older
+	// server
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 

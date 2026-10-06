@@ -25,6 +25,14 @@ import (
 // Flush (at most 200 per call), retries a failed call three times, then drops
 // the events, and persists the pending events to the local state dir so a
 // killed app loses nothing.
+//
+// Events belong to the network signed in when they were added (owner decision
+// 2026-10-05: logout must not cross contaminate other networks). An event
+// queued under one network is never sent under another network's credential:
+// what a signed-out network left unsent is dropped once another network is
+// signed in. A session never spans two networks either: the session id
+// changes when events stop coming from the network the session started under,
+// so a signed-out stretch, and the sign-in that follows it, start a new one.
 
 // Event names.
 const (
@@ -448,6 +456,9 @@ const (
 type queuedClientEvent struct {
 	Event    *ClientEvent `json:"event"`
 	Attempts int          `json:"attempts"`
+	// The network signed in when the event was added, empty when none was or
+	// its credential names none. Absent in a queue an older sdk saved.
+	NetworkId string `json:"network_id,omitempty"`
 }
 
 // clientEventSender is the queue's send seam (the Api in production).
@@ -461,8 +472,11 @@ type ClientEventQueue struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	send      clientEventSender
-	hasJwt    func() bool
+	send   clientEventSender
+	hasJwt func() bool
+	// The network of the credential in force, empty when there is none or it
+	// names none.
+	networkId func() string
 	statePath string
 
 	mutex      sync.Mutex
@@ -471,7 +485,10 @@ type ClientEventQueue struct {
 	appVersion string
 	locale     string
 	session    string
-	sending    bool
+	// The network the current session's events came from, empty while none
+	// has (signed out, or a credential that names no network).
+	sessionNetworkId string
+	sending          bool
 
 	flushTrigger chan struct{}
 	done         chan struct{}
@@ -495,6 +512,7 @@ func NewClientEventQueue(networkSpace *NetworkSpace, platform string, appVersion
 			api.ClientEventsSend(&ClientEventsSendArgs{Events: list}, connect.NewApiCallback[*ClientEventsSendResult](callback))
 		},
 		func() bool { return api.GetByJwt() != "" },
+		func() string { return byJwtNetworkId(api.GetByJwt()) },
 		statePath,
 		platform,
 		appVersion,
@@ -507,6 +525,7 @@ func newClientEventQueue(
 	ctx context.Context,
 	send clientEventSender,
 	hasJwt func() bool,
+	networkId func() string,
 	statePath string,
 	platform string,
 	appVersion string,
@@ -519,6 +538,7 @@ func newClientEventQueue(
 		cancel:       cancel,
 		send:         send,
 		hasJwt:       hasJwt,
+		networkId:    networkId,
 		statePath:    statePath,
 		platform:     platform,
 		appVersion:   appVersion,
@@ -562,6 +582,7 @@ func (self *ClientEventQueue) NewSession() {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	self.session = newEventSessionId()
+	self.sessionNetworkId = ""
 }
 
 // GetSession is the current app session id stamped on events.
@@ -576,7 +597,14 @@ func (self *ClientEventQueue) Add(event *ClientEvent) {
 	if event == nil || event.Name == "" {
 		return
 	}
+	// read before the lock: it asks the Api for its credential
+	networkId := self.currentNetworkId()
 	self.mutex.Lock()
+	// a session does not outlive the network it started under
+	if self.sessionNetworkId != "" && networkId != self.sessionNetworkId {
+		self.session = newEventSessionId()
+	}
+	self.sessionNetworkId = networkId
 	if event.Platform == "" {
 		event.Platform = self.platform
 	}
@@ -595,7 +623,7 @@ func (self *ClientEventQueue) Add(event *ClientEvent) {
 	if event.props == nil {
 		event.props = map[string]any{}
 	}
-	self.pending = append(self.pending, &queuedClientEvent{Event: event})
+	self.pending = append(self.pending, &queuedClientEvent{Event: event, NetworkId: networkId})
 	if clientEventQueueCapacity < len(self.pending) {
 		dropCount := len(self.pending) - clientEventQueueCapacity
 		clear(self.pending[:dropCount])
@@ -678,10 +706,32 @@ func (self *ClientEventQueue) run(flushInterval time.Duration) {
 // applies the outcome: success removes the batch; a call failure counts an
 // attempt on every event of the batch and drops the ones past the limit.
 func (self *ClientEventQueue) flushOnce() {
+	// read before the lock: both ask the Api for its credential
+	signedIn := self.hasJwt != nil && self.hasJwt()
+	networkId := self.currentNetworkId()
 	self.mutex.Lock()
-	if self.sending || len(self.pending) == 0 || self.hasJwt == nil || !self.hasJwt() {
+	if self.sending || len(self.pending) == 0 || !signedIn {
 		self.mutex.Unlock()
 		return
+	}
+	if networkId != "" {
+		// what another network queued is never sent under this one's
+		// credential; dropped, as its sign-out ended it
+		kept := self.pending[:0]
+		for _, q := range self.pending {
+			if q.NetworkId == "" || q.NetworkId == networkId {
+				kept = append(kept, q)
+			}
+		}
+		if len(kept) < len(self.pending) {
+			clear(self.pending[len(kept):])
+			self.pending = kept
+			self.saveLocked()
+		}
+		if len(self.pending) == 0 {
+			self.mutex.Unlock()
+			return
+		}
 	}
 	n := len(self.pending)
 	if MaxClientEventsPerCall < n {
@@ -738,6 +788,15 @@ func (self *ClientEventQueue) flushOnce() {
 	clear(self.pending[len(pending):])
 	self.pending = pending
 	self.saveLocked()
+}
+
+// The network of the credential in force, empty when there is none or it names
+// none. Must not be called with the mutex held.
+func (self *ClientEventQueue) currentNetworkId() string {
+	if self.networkId == nil {
+		return ""
+	}
+	return self.networkId()
 }
 
 // load reads the persisted queue; a corrupt file is discarded.

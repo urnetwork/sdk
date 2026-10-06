@@ -179,6 +179,11 @@ func (self *ExtenderViewController) GetSettings() *ExtenderSettings {
 //
 // On ios this writes the app group values the packet tunnel extension reads at
 // its next start, which is what the app tells the user.
+//
+// The space a cloud host shares among its hosted devices
+// (NewPlatformNetworkSpace) refuses them, since its host would dial what they
+// name: nothing is saved and the settings in force are returned, the
+// hosted-incompatible no-op.
 func (self *ExtenderViewController) SetSettings(
 	dnsName string,
 	gossipUrl string,
@@ -187,6 +192,9 @@ func (self *ExtenderViewController) SetSettings(
 	networkSpace := self.device.GetNetworkSpace()
 	if networkSpace == nil {
 		return extenderSettings(nil)
+	}
+	if networkSpace.hostedIncompatibleGuarded("SetExtenderSettings") {
+		return extenderSettings(networkSpace)
 	}
 	var extenderHosts []string
 	if hosts != nil {
@@ -200,6 +208,20 @@ func (self *ExtenderViewController) SetSettings(
 		values.GossipUrl = strings.TrimSpace(gossipUrl)
 		values.ExtenderHosts = extenderHosts
 	})
+	return extenderSettings(self.device.GetNetworkSpace())
+}
+
+// ResetExtenders returns the device's extender state to a fresh install's and
+// returns the settings it leaves, every one of them the default (E7): the
+// manual hosts and the legacy private extender are removed, the dns name, the
+// gossip url and the root keys go back to their defaults, and everything
+// learned -- the directory, holds and limits, latency samples, the hints -- is
+// cleared in this process's space and in the one the device runs in
+// (Device.ResetExtenders), which then relearn as on a first run. A live
+// extender path keeps running; every dial after the reset draws from the fresh
+// directory. The apps confirm before they call it.
+func (self *ExtenderViewController) ResetExtenders() *ExtenderSettings {
+	self.device.ResetExtenders()
 	return extenderSettings(self.device.GetNetworkSpace())
 }
 
@@ -283,10 +305,19 @@ func (self *ExtenderViewController) DecodeShare(text string) *ExtenderShareDecod
 // and root keys with the payload's, and its bootstrap DoH servers when the
 // payload names any. The first hello over the platform's pinned tls replaces
 // the root keys again.
+//
+// The space a cloud host shares among its hosted devices
+// (NewPlatformNetworkSpace) refuses an import, since its host would dial what
+// it names: nothing is applied and an empty success is returned, the
+// hosted-incompatible no-op.
 func (self *ExtenderViewController) ImportShare(
 	text string,
 	useSettings bool,
 ) *ExtenderImportResult {
+	if networkSpace := self.device.GetNetworkSpace(); networkSpace != nil &&
+		networkSpace.hostedIncompatibleGuarded("ImportExtenderShare") {
+		return &ExtenderImportResult{Ok: true}
+	}
 	share, err := connect.DecodeExtenderShare(text)
 	if err != nil {
 		return &ExtenderImportResult{Error: ExtenderImportErrorInvalid}

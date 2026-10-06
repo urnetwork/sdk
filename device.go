@@ -780,6 +780,15 @@ type Device interface {
 	// as the provide mode is
 	SetProvideExtender(provideExtender bool)
 
+	// ResetExtenders returns the extender state of the device's network space
+	// to a fresh install's (EXTENDER.md E7): everything learned about extenders
+	// is cleared and every extender a user added is removed, then the
+	// extender network relearns as on a first run. A remote device resets the
+	// space of its own process and hands the reset to the device process,
+	// queued while that process cannot be reached; the next import of the
+	// space carries it there either way. A hosted device ignores it.
+	ResetExtenders()
+
 	// GetExtenderStats is the traffic the provider extender role of the
 	// process the DEVICE runs in has relayed (EXTENDER.md O2): bytes and
 	// reads in each direction, operator-centric, cumulative for the life of
