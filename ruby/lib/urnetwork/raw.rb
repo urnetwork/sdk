@@ -758,6 +758,7 @@ module URnetwork
       attach_function :urnet_device_remote_get_destination_exits, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_exits, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_probe_results, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_remote_get_provider_connected, [:uint64], :bool, blocking: true
       attach_function :urnet_device_remote_get_reliability_metrics, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_reliability_settings, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_remote_connected, [:uint64], :bool, blocking: true

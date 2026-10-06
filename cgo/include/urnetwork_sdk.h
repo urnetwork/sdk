@@ -232,6 +232,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_PROVIDE_ERROR_LISTEN "listen"
 #define URNET_EXTENDER_PROVIDE_ERROR_REVOKED "revoked"
 #define URNET_EXTENDER_PROVIDE_ERROR_START "start"
+#define URNET_EXTENDER_PROVIDE_ERROR_TCP_UNAVAILABLE "tcp_unavailable"
 #define URNET_EXTENDER_PROVIDE_STATE_ACTIVE "active"
 #define URNET_EXTENDER_PROVIDE_STATE_ERROR "error"
 #define URNET_EXTENDER_PROVIDE_STATE_NOT_PROVIDING "not_providing"
@@ -1436,6 +1437,7 @@ char* urnet_device_remote_get_connect_location_checked(uint64_t self, char** out
 char* urnet_device_remote_get_destination_exits(uint64_t self);
 char* urnet_device_remote_get_exits(uint64_t self);
 char* urnet_device_remote_get_probe_results(uint64_t self);
+bool urnet_device_remote_get_provider_connected(uint64_t self);
 char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -2740,6 +2742,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TotalByteCount: number
  *   BitRate: number
  *   HasStream: boolean
+ *   StreamId: string
  */
 
 /* ContractEntryList (json):
@@ -2901,6 +2904,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   AllowProvider: boolean
  *   ProvideExtenderEnabled: boolean
  *   DefaultProvideExtender: boolean
+ *   ProvideExtenderDnsPrivilegedPort: boolean
  *   Verbose: boolean
  *   DnsPumpHost: string
  *   EnableRpc: boolean
@@ -3041,6 +3045,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Reason: string
  *   Enabled: boolean
  *   StartError: string
+ *   TcpUnavailableError: string
  *   Listening: boolean
  *   ListenError: string
  *   ActivatedV4: boolean

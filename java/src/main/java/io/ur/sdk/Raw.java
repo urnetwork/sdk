@@ -759,6 +759,7 @@ public interface Raw extends Library {
   Pointer urnet_device_remote_get_destination_exits(long a0);
   Pointer urnet_device_remote_get_exits(long a0);
   Pointer urnet_device_remote_get_probe_results(long a0);
+  byte urnet_device_remote_get_provider_connected(long a0);
   Pointer urnet_device_remote_get_reliability_metrics(long a0);
   Pointer urnet_device_remote_get_reliability_settings(long a0);
   byte urnet_device_remote_get_remote_connected(long a0);

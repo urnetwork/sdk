@@ -68,6 +68,55 @@ test("contract-details declarations match WASM runtime keys", () => {
   }
 });
 
+// The provider status a JavaScript provider shows reads these bindings
+// (device_remote.go): the provide state, the provider's connected state and
+// client limit status, and the provider traffic with its contract rows.
+test("provider status declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const deviceRuntime = source("../device_remote.go");
+  const controllerRuntime = source("../view_controllers.go");
+
+  for (const method of [
+    "addProvidePausedChangeListener",
+    "getProvideMode",
+    "setProvideMode",
+    "addProvideModeChangeListener",
+    "addProvideChangeListener",
+    "getProviderConnected",
+    "getClientLimitStatus",
+    "addClientLimitStatusChangeListener",
+    "getProviderPacketStats",
+    "addProviderPacketStatsChangeListener",
+    "getProviderEgressContractDetails",
+    "getProviderIngressContractDetails",
+    "addProviderEgressContractDetailsChangeListener",
+    "addProviderIngressContractDetailsChangeListener",
+  ]) {
+    assert.match(declarations, new RegExp(`\\b${method}\\s*\\(`), method);
+    assert.match(deviceRuntime, new RegExp(`m\\["${method}"\\]`), method);
+  }
+
+  for (const field of [
+    "retryTime",
+    "contractId",
+    "contractUsedByteCount",
+    "contractByteCount",
+    "contractBitRate",
+    "contractTransferPath",
+    "sourceId",
+    "destinationId",
+    "streamId",
+  ]) {
+    assert.match(declarations, new RegExp(`\\b${field}\\s*:`), field);
+    assert.match(deviceRuntime, new RegExp(`"${field}"\\s*:`), field);
+  }
+
+  // the contract details controller's entries carry the stream id too
+  const entry = declarations.match(/export interface ContractEntry\b[\s\S]*?\n}/)?.[0];
+  assert.match(entry || "", /\bstreamId\s*:/);
+  assert.match(controllerRuntime, /"streamId"\s*:/);
+});
+
 // Same guard for the block-action surface, whose runtime lives in
 // view_controllers2.go.
 test("block-action declarations match WASM runtime keys", () => {

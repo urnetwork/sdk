@@ -1318,6 +1318,8 @@ def bind(lib):
     lib.urnet_device_remote_get_exits.restype = c_void_p
     lib.urnet_device_remote_get_probe_results.argtypes = [c_uint64]
     lib.urnet_device_remote_get_probe_results.restype = c_void_p
+    lib.urnet_device_remote_get_provider_connected.argtypes = [c_uint64]
+    lib.urnet_device_remote_get_provider_connected.restype = c_bool
     lib.urnet_device_remote_get_reliability_metrics.argtypes = [c_uint64]
     lib.urnet_device_remote_get_reliability_metrics.restype = c_void_p
     lib.urnet_device_remote_get_reliability_settings.argtypes = [c_uint64]

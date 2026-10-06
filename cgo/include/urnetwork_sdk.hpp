@@ -291,6 +291,7 @@ inline constexpr const char* ExtenderProvideErrorActivationRefused = "activation
 inline constexpr const char* ExtenderProvideErrorListen = "listen";
 inline constexpr const char* ExtenderProvideErrorRevoked = "revoked";
 inline constexpr const char* ExtenderProvideErrorStart = "start";
+inline constexpr const char* ExtenderProvideErrorTcpUnavailable = "tcp_unavailable";
 inline constexpr const char* ExtenderProvideStateActive = "active";
 inline constexpr const char* ExtenderProvideStateError = "error";
 inline constexpr const char* ExtenderProvideStateNotProviding = "not_providing";
@@ -1618,6 +1619,7 @@ struct ContractEntry {
 	int64_t TotalByteCount{};
 	int64_t BitRate{};
 	bool HasStream{};
+	std::string StreamId{};
 };
 
 struct ContractPeerRow {
@@ -1763,6 +1765,7 @@ struct DeviceLocalSettings {
 	bool AllowProvider{};
 	bool ProvideExtenderEnabled{};
 	bool DefaultProvideExtender{};
+	bool ProvideExtenderDnsPrivilegedPort{};
 	bool Verbose{};
 	std::string DnsPumpHost{};
 	bool EnableRpc{};
@@ -1888,6 +1891,7 @@ struct ExtenderProvideStatus {
 	std::string Reason{};
 	bool Enabled{};
 	std::string StartError{};
+	std::string TcpUnavailableError{};
 	bool Listening{};
 	std::string ListenError{};
 	bool ActivatedV4{};
@@ -7407,6 +7411,7 @@ inline void to_json(nlohmann::json& j, const ContractEntry& v) {
 	j["TotalByteCount"] = v.TotalByteCount;
 	j["BitRate"] = v.BitRate;
 	j["HasStream"] = v.HasStream;
+	j["StreamId"] = v.StreamId;
 }
 inline void from_json(const nlohmann::json& j, ContractEntry& v) {
 	if (!j.is_object()) {
@@ -7426,6 +7431,9 @@ inline void from_json(const nlohmann::json& j, ContractEntry& v) {
 	}
 	if (auto it = j.find("HasStream"); it != j.end() && !it->is_null()) {
 		it->get_to(v.HasStream);
+	}
+	if (auto it = j.find("StreamId"); it != j.end() && !it->is_null()) {
+		it->get_to(v.StreamId);
 	}
 }
 
@@ -7938,6 +7946,7 @@ inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j["AllowProvider"] = v.AllowProvider;
 	j["ProvideExtenderEnabled"] = v.ProvideExtenderEnabled;
 	j["DefaultProvideExtender"] = v.DefaultProvideExtender;
+	j["ProvideExtenderDnsPrivilegedPort"] = v.ProvideExtenderDnsPrivilegedPort;
 	j["Verbose"] = v.Verbose;
 	j["DnsPumpHost"] = v.DnsPumpHost;
 	j["EnableRpc"] = v.EnableRpc;
@@ -8017,6 +8026,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("DefaultProvideExtender"); it != j.end() && !it->is_null()) {
 		it->get_to(v.DefaultProvideExtender);
+	}
+	if (auto it = j.find("ProvideExtenderDnsPrivilegedPort"); it != j.end() && !it->is_null()) {
+		it->get_to(v.ProvideExtenderDnsPrivilegedPort);
 	}
 	if (auto it = j.find("Verbose"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Verbose);
@@ -8502,6 +8514,7 @@ inline void to_json(nlohmann::json& j, const ExtenderProvideStatus& v) {
 	j["Reason"] = v.Reason;
 	j["Enabled"] = v.Enabled;
 	j["StartError"] = v.StartError;
+	j["TcpUnavailableError"] = v.TcpUnavailableError;
 	j["Listening"] = v.Listening;
 	j["ListenError"] = v.ListenError;
 	j["ActivatedV4"] = v.ActivatedV4;
@@ -8543,6 +8556,9 @@ inline void from_json(const nlohmann::json& j, ExtenderProvideStatus& v) {
 	}
 	if (auto it = j.find("StartError"); it != j.end() && !it->is_null()) {
 		it->get_to(v.StartError);
+	}
+	if (auto it = j.find("TcpUnavailableError"); it != j.end() && !it->is_null()) {
+		it->get_to(v.TcpUnavailableError);
 	}
 	if (auto it = j.find("Listening"); it != j.end() && !it->is_null()) {
 		it->get_to(v.Listening);
@@ -17960,6 +17976,7 @@ public:
 	std::optional<DestinationExitList> getDestinationExits() const;
 	std::optional<ExitList> getExits() const;
 	std::optional<ProbeResultList> getProbeResults() const;
+	bool getProviderConnected() const;
 	std::optional<ReliabilityMetrics> getReliabilityMetrics() const;
 	std::optional<ReliabilitySettings> getReliabilitySettings() const;
 	bool getRemoteConnected() const;
@@ -27827,6 +27844,10 @@ inline std::optional<ProbeResultList> DeviceRemote::getProbeResults() const {
 		return std::nullopt;
 	}
 	return detail::parseJson<ProbeResultList>(r_s->c_str());
+}
+inline bool DeviceRemote::getProviderConnected() const {
+	bool r = urnet_device_remote_get_provider_connected(handle());
+	return r;
 }
 inline std::optional<ReliabilityMetrics> DeviceRemote::getReliabilityMetrics() const {
 	char* r_c = urnet_device_remote_get_reliability_metrics(handle());
