@@ -17,7 +17,7 @@ export function useCheckNetwork(options?: {
   const debounceMs = options?.debounceMs ?? 300;
   const minLength = options?.minLength ?? 6;
 
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkNetwork = useCallback(
     async (params: { network_name: string }) => {
