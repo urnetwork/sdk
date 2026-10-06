@@ -86,6 +86,36 @@ API because they do not have a visible peer identity. The executable
 includes live peer updates, support queries, TEXT/ACK framing, and an
 authenticated numeric-loopback native companion.
 
+## Provider status
+
+A `DeviceRemote` of a providing native Device (an extension/companion
+transport) reads the provider's state directly. The device pushes it to the
+remote after every change, so the getters stay current without a listener:
+
+```js
+const status = {
+  provideMode: device.getProvideMode(), // 3 is public
+  providePaused: device.getProvidePaused(),
+  provideEnabled: device.getProvideEnabled(),
+  providerConnected: device.getProviderConnected(),
+  clientLimitStatus: device.getClientLimitStatus(), // {status, retryTime}
+};
+const stats = device.getProviderPacketStats(); // null without a provider
+const dataProvided = stats
+  ? stats.remoteEgressByteCount + stats.remoteIngressByteCount
+  : 0;
+const rows = [
+  ...(device.getProviderIngressContractDetails() ?? []),
+  ...(device.getProviderEgressContractDetails() ?? []),
+];
+```
+
+Each contract row carries its `contractTransferPath` (`sourceId`,
+`destinationId`, `streamId`); the peer of an ingress contract is its source,
+of an egress contract its destination. The `add...ChangeListener` methods
+report the same values as they change, one contract row per call, and the
+provider contract details controller's entries carry the `streamId` too.
+
 ## Hosted device configuration
 
 A hosted Device starts from the settings its session was provisioned with,

@@ -11152,6 +11152,17 @@ func urnet_device_remote_get_probe_results(self C.uint64_t) *C.char {
 	return cJson(r0, "urnet_device_remote_get_probe_results")
 }
 
+//export urnet_device_remote_get_provider_connected
+func urnet_device_remote_get_provider_connected(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_remote_get_provider_connected")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_provider_connected")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProviderConnected()
+	return C.bool(r0)
+}
+
 //export urnet_device_remote_get_reliability_metrics
 func urnet_device_remote_get_reliability_metrics(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_remote_get_reliability_metrics")

@@ -551,6 +551,7 @@ EXPORTS
 	urnet_device_remote_get_destination_exits
 	urnet_device_remote_get_exits
 	urnet_device_remote_get_probe_results
+	urnet_device_remote_get_provider_connected
 	urnet_device_remote_get_reliability_metrics
 	urnet_device_remote_get_reliability_settings
 	urnet_device_remote_get_remote_connected

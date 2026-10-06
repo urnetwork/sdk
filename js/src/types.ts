@@ -205,6 +205,42 @@ export interface ConnectedProviderLocationInfo {
 /** Listener adders return an unsubscribe function. */
 export type Unsubscribe = () => void;
 
+/** The provide mode: 0 none, 1 network, 2 friends and family, 3 public. */
+export type ProvideMode = number;
+
+/**
+ * The client limit status of the device's platform connection. `status` is
+ * "" (no hold) or "client_limit_exceeded": the platform closed the device for
+ * its network's concurrent client limit, and the device holds off
+ * reconnecting until `retryTime` (unix milliseconds; 0 with no hold).
+ */
+export interface ClientLimitStatus {
+  status: "" | "client_limit_exceeded";
+  retryTime: number;
+}
+
+/**
+ * A contract's transfer path. An id the path does not carry is null; an end
+ * the device does not know, and the stream of a direct contract, read as the
+ * all-zero id.
+ */
+export interface TransferPath {
+  sourceId: string | null;
+  destinationId: string | null;
+  streamId: string | null;
+}
+
+/** One contract of one direction, as the device reports it. */
+export interface ContractDetails {
+  contractId: string | null;
+  contractUsedByteCount: number;
+  contractByteCount: number;
+  contractBitRate: number;
+  contractTransferPath: TransferPath | null;
+  /** "open", or "closed" once with the final counts */
+  status: "open" | "closed";
+}
+
 /**
  * DeviceRemote — the client's handle on a native DeviceLocal. It reaches the
  * device through a device-rpc transport and controls it as an app process
@@ -247,13 +283,44 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   getBlockerEnabled(): boolean;
   setBlockerEnabled(v: boolean): void;
 
-  // provide
+  // provide. The provide getters, the provider getters below and the client
+  // limit status read the provider state the device pushes to the remote
+  // after every change, so they stay current without a listener.
   getProvidePaused(): boolean;
   setProvidePaused(v: boolean): void;
+  addProvidePausedChangeListener(cb: (providePaused: boolean) => void): Unsubscribe;
   getProvideEnabled(): boolean;
+  addProvideChangeListener(cb: (provideEnabled: boolean) => void): Unsubscribe;
+  /** see ProvideMode */
+  getProvideMode(): ProvideMode;
+  /** hosted-incompatible: a no-op on a hosted or extension device */
+  setProvideMode(provideMode: ProvideMode): void;
+  addProvideModeChangeListener(cb: (provideMode: ProvideMode) => void): Unsubscribe;
   /** the per-family readout of the provider's platform transports
    * (connect/IPV6.md A4); every state is "unknown" without a provider */
   getProviderFamilyTransportStatus(): ProviderFamilyTransportStatus | null;
+  /** whether the provider has a platform transport with a registered route:
+   * the readiness a provider shows as providing (with getProvideEnabled).
+   * The last value the device reported while the rpc is down */
+  getProviderConnected(): boolean;
+  /** see ClientLimitStatus; never null from the device */
+  getClientLimitStatus(): ClientLimitStatus;
+  addClientLimitStatusChangeListener(cb: (status: ClientLimitStatus) => void): Unsubscribe;
+
+  // provider traffic: what the device's provider relayed for clients. null
+  // when the device has no provider. Contract rows arrive one per listener
+  // call; a closed contract is reported once with status "closed" and its
+  // final counts, then leaves the lists.
+  /** cumulative for the life of the device; data provided is
+   * remoteEgressByteCount + remoteIngressByteCount */
+  getProviderPacketStats(): PacketStats | null;
+  addProviderPacketStatsChangeListener(cb: (stats: PacketStats | null) => void): Unsubscribe;
+  /** the contracts sending to clients (the peer is the path's destinationId) */
+  getProviderEgressContractDetails(): ContractDetails[] | null;
+  /** the contracts receiving from clients (the peer is the path's sourceId) */
+  getProviderIngressContractDetails(): ContractDetails[] | null;
+  addProviderEgressContractDetailsChangeListener(cb: (details: ContractDetails) => void): Unsubscribe;
+  addProviderIngressContractDetailsChangeListener(cb: (details: ContractDetails) => void): Unsubscribe;
 
   // connect location / destination
   getConnectLocation(): ConnectLocationInfo | null;
@@ -444,6 +511,10 @@ export interface ContractEntry {
   totalByteCount: number;
   bitRate: number;
   hasStream: boolean;
+  /** the stream the contract rides, "" for a direct contract. A stream can
+   * hide the client's end of the path, which then puts every such contract in
+   * the row of the all-zero client id; the stream id still tells them apart */
+  streamId: string;
 }
 
 /** The runtime row returned by getContractRows(). */
