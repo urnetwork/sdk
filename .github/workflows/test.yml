@@ -95,14 +95,16 @@ jobs:
       - name: Check out message-server dependency
         run: git clone --depth 1 https://github.com/urnetwork/message-server.git ../message-server
 
-      # Not `stable`: build/cmd/mobileexports runs gobind with
-      # GODEBUG=gotypesalias=0, which gomobile still needs and which go 1.27
-      # rejects at startup ("removed GODEBUG"). The mobile SDK builds use go
-      # 1.26 for the same reason (see build/Makefile).
+      # The Go the release host builds the mobile SDKs with: build/all/run.sh
+      # requires exactly 1.27.1. Pinned rather than `stable`, so a new Go
+      # release cannot change it without a commit here. go 1.27 runs the
+      # mobileexports tests' gobind since f36da2ab, which stopped setting
+      # GODEBUG=gotypesalias=0 (go 1.27 removed that setting and exits at
+      # startup while it is set).
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.27.1'
 
       # The js tests run the TypeScript sources directly, which needs node's
       # type stripping and module.registerHooks.
