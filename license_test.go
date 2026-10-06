@@ -91,8 +91,8 @@ func TestGetLicensesFiltersByApp(t *testing.T) {
 }
 
 // license.yml must match the SDK's Go modules and licenses/extra.yml. The
-// app repos' entries are checked only when that sibling is checked out (the
-// sdk CI has only the sdk), and each app's build runs its own check.
+// app repos' entries are checked only when that sibling is checked out, and
+// each app's build runs its own check.
 func TestLicenseYmlUpToDate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs go list for every SDK build target")
