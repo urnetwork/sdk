@@ -33,10 +33,12 @@ package sdk
 // WalletConnect project id (SetWalletConnectProjectId), as the pre-helper
 // bridge did.
 //
-// browser_bridge opens https://ur.io/bittensor-connect (the Bittensor-only
-// bridge page; /wallet-connect is the Solana page and keeps a provider=bittensor
-// path for app versions before this helper) in the system browser, where the
-// page drives the Talisman extension and returns to the app on the
+// browser_bridge opens https://ur.io/wallet-connect with provider=bittensor,
+// the same bridge page the Solana flow opens (solana_wallet_bridge.go), in the
+// system browser. One page serves both chains: it signs the text it is handed
+// and calls no backend, so it works for whichever server issued the challenge.
+// The page drives the wallet (an extension, or a WalletConnect pairing) and
+// returns to the app on the
 // app's own registered redirect link (the caller passes it: the apps keep
 // their existing schemes, e.g. urnetwork://bittensor-sign-message on apple
 // and the desktop apps, ur://bittensor-sign-message on android).
@@ -161,7 +163,8 @@ const (
 )
 
 const (
-	BittensorWalletBridgeUrl = "https://ur.io/bittensor-connect"
+	// The page both chains' bridges open; provider=bittensor selects this flow.
+	BittensorWalletBridgeUrl = "https://ur.io/wallet-connect"
 	// the Polkadot.js extension api name Talisman injects under
 	// window.injectedWeb3
 	BittensorTalismanInjectedName = "talisman"
@@ -612,7 +615,7 @@ func (self *BittensorWalletSession) SignRequest() (*BittensorSignRequest, error)
 
 // BridgeUrl is the ur.io page the browser_bridge transport opens:
 //
-//	https://ur.io/bittensor-connect?provider=bittensor&method=signMessage
+//	https://ur.io/wallet-connect?provider=bittensor&method=signMessage
 //	  &wallet=<id>&message=<text>&purpose=<purpose>&redirect_link=<link>
 //	  [&address=<expected ss58>] [&wc_project_id=<id>, walletconnect only]
 //
