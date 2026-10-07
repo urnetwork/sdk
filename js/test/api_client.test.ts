@@ -159,7 +159,7 @@ test("a non-2xx maps to URNetworkApiError with the server's message and body", a
     assert.equal(error.statusText, "Bad Request");
     assert.equal(error.message, "bad name");
     assert.deepEqual(error.body, { error: { message: "bad name" } });
-    assert.equal(error.operationId, "Account Create API Key");
+    assert.equal(error.operationId, "accountCreateApiKey");
     assert.equal(error.method, "POST");
     assert.equal(error.url, "https://api.bringyour.com/account/api-key");
     return true;
