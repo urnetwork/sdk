@@ -72,9 +72,9 @@ require (
 	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.10.6-1065359600
-	github.com/urnetwork/glog/v2026 v2026.10.6-1065359600
-	github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065359600
+	github.com/urnetwork/connect/v2026 v2026.10.6-1065359600 // indirect
+	github.com/urnetwork/glog/v2026 v2026.10.6-1065359600 // indirect
+	github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065359600 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.10.6-1065359600
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
@@ -88,7 +88,6 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
