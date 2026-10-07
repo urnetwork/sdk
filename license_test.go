@@ -4,10 +4,49 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+// Compare every field and text, including entry order, against the catalog
+// previously embedded as YAML. The conversion must not omit or alter notices.
+func TestLicenseRuntimeCatalogMatchesYml(t *testing.T) {
+	data, err := os.ReadFile("license.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected licenseFile
+	if err := yaml.Unmarshal(data, &expected); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := loadLicenseFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(*actual, expected) {
+		t.Fatal("runtime catalog differs from license.yml; regenerate and commit both catalogs")
+	}
+}
+
+func TestLicenseRuntimeDoesNotImportYAML(t *testing.T) {
+	for _, tags := range []string{"sdk_mobile_bind", "sdk_mobile_bind,ios_extension"} {
+		t.Run(tags, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "-tags="+tags, "-f", "{{.ImportPath}}", ".")
+			cmd.Env = append(os.Environ(), "GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1", "GOWORK=off")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("list runtime dependencies: %v\n%s", err, out)
+			}
+			if slices.Contains(strings.Fields(string(out)), "gopkg.in/yaml.v3") {
+				t.Fatal("Apple SDK still links a YAML parser for generated license data")
+			}
+		})
+	}
+}
 
 var licenseApps = []string{
 	LicenseAppAndroid,
@@ -18,13 +57,13 @@ var licenseApps = []string{
 	LicenseAppExtension,
 }
 
-func TestLicenseYmlParses(t *testing.T) {
+func TestLicenseCatalogParses(t *testing.T) {
 	f, err := loadLicenseFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(f.Entries) == 0 {
-		t.Fatal("license.yml has no entries")
+		t.Fatal("runtime license catalog has no entries")
 	}
 	for _, entry := range f.Entries {
 		if entry.Name == "" {

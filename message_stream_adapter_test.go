@@ -1197,7 +1197,7 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"extenderProvideStatusEpoch":            streamAdapterPackageConstOf(extenderProvideStatusEpoch),
 	"extenderStatusEpoch":                   streamAdapterPackageConstOf(extenderStatusEpoch),
 	"extenderStoreReadOnly":                 streamAdapterPackageVarOf(&extenderStoreReadOnly),
-	"licenseYml":                            streamAdapterPackageVarOf(&licenseYml),
+	"licenseJSON":                           streamAdapterPackageVarOf(&licenseJSON),
 	"loadLicenseFile":                       streamAdapterPackageVarOf(&loadLicenseFile),
 	"localPreferenceCatalog":                streamAdapterPackageVarOf(&localPreferenceCatalog),
 	"logSeverities":                         streamAdapterPackageVarOf(&logSeverities),
