@@ -21,7 +21,7 @@ import (
 	"unicode"
 	"unsafe"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE GO-LEVEL HALF, AND IT IS THE SMALLER HALF ON PURPOSE.

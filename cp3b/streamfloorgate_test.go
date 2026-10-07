@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // A JOINER ADMITTED ABOVE EPOCH ONE MAY NOT SEND UNTIL IT HAS HELD ITS OWN STREAM FLOOR, AND ONE
