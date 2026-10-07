@@ -72,9 +72,9 @@ require (
 	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/urnetwork/connect/v2026 v2026.10.6-1065321000
-	github.com/urnetwork/glog/v2026 v2026.10.6-1065321000
-	github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065321000
+	github.com/urnetwork/connect/v2026 v2026.10.6-1065321000 // indirect
+	github.com/urnetwork/glog/v2026 v2026.10.6-1065321000 // indirect
+	github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065321000 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.10.6-1065321000
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
