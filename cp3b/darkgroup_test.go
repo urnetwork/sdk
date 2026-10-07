@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/urnetwork/message-server/store"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // A DARK GROUP NAMES ITS WRAP ON **EVERY LATER** Receive, AND NOT THE SERVER'S REFUSAL.
