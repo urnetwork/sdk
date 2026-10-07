@@ -39,9 +39,15 @@ var citationSkippedDirectoryNames = map[string]string{
 
 // The walk starts at this repository's root, which is this package's directory; go.mod saying so
 // is the control that the walk is not reading a subtree. The controls run over the same maps as
-// the property: a name declared nowhere must answer zero, and three tests core prose cites must
-// answer exactly one declaration and at least one citation each. A walk that read no files would
-// answer zero for all of them.
+// the property: a name declared nowhere must answer zero, this gate's own name must answer exactly
+// one declaration, and the prose must cite at least one test. A walk that read no files would
+// answer zero for all three.
+//
+// What must be present is taken from the run, never from a list of test names kept here. The gate
+// once pinned three tests that core prose cites, and within a day sdk main renamed one of them
+// with its citation (06f33802): the citation was sound and the pin failed. A rename that carries
+// its citation along is not this gate's business; a rename that leaves the citation behind is,
+// and the property below reports it.
 func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclaration(t *testing.T) {
 	const root = "."
 	goMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
@@ -134,19 +140,14 @@ func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclarat
 			"dangling and no repository declares it; a non-zero answer means the net is matching "+
 			"something that is not a declaration", absent, found)
 	}
-	for _, present := range []string{
-		"TestRpcGobExtenderStatsComplete",
-		"TestLicenseCatalogParses",
-		"TestLogVerbosityTakesEffectAtRuntime",
-	} {
-		if found := len(declaredPaths[present]); found != 1 {
-			t.Fatalf("CONTROL FAILED: %s resolves to %d declaration(s), want 1. Without this the zero "+
-				"above is satisfied by a walk that read no test files at all", present, found)
-		}
-		if len(citedSites[present]) == 0 {
-			t.Fatalf("CONTROL FAILED: no production comment cites %s, which core prose cites; a walk "+
-				"that read no production prose would answer the same", present)
-		}
+	if found := len(declaredPaths[t.Name()]); found != 1 {
+		t.Fatalf("CONTROL FAILED: %s, this gate itself, resolves to %d declaration(s), want 1. Without "+
+			"this the zero above is satisfied by a walk that read no test files at all", t.Name(), found)
+	}
+	if len(citedSites) == 0 {
+		t.Fatalf("CONTROL FAILED: no production comment cites any test, across %d production files, "+
+			"and core prose does cite tests; a walk that read no production prose would answer the same",
+			production)
 	}
 	if production == 0 || total == production {
 		t.Fatalf("CONTROL FAILED: the walk saw %d .go files of which %d are production; a run with "+
