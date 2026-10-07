@@ -14,7 +14,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 var _ = unsafe.Pointer(nil)

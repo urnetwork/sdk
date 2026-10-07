@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // AN HONEST COMMITTER THAT LOSES THE EPOCH RACE STAYS WHERE IT WAS, FOLLOWS THE WINNER, AND

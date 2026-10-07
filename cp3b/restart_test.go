@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // The two strings the restart case turns on. They are typed here and nowhere else, and the second

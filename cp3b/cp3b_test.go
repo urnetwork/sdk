@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/urnetwork/message-server/peer"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE STRING. It is typed here and nowhere else, it is not derivable from anything on the wire,

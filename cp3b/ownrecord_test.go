@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/urnetwork/sdk"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // ── this device's own records, after connect 4c030dc ────────────────────────────────────────────
