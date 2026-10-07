@@ -10,11 +10,13 @@ import (
 	"testing"
 )
 
-// The server emits no_id as a decimal string beside numeric schedule fields.
-// An id above the exact float64 range catches lossy intermediary decoding.
+// The server emits no_id as a decimal string beside numeric schedule fields
+// and the 0x-hex genesis hash. An id above the exact float64 range catches
+// lossy intermediary decoding.
 func TestApiSnEpochDecodesServerStringNoId(t *testing.T) {
 	const bearerJwt = "synthetic-epoch-token"
-	const response = `{"epoch":43,"start_block":10,"commit_deadline_block":20,"trails_deadline_block":30,"finalize_block":40,"t_epoch_blocks":50,"chain_id":9,"contract_address":"0x0000000000000000000000000000000000000007","settlement_vault_address":"0x0000000000000000000000000000000000000008","no_id":"9007199254740993","netuid":17,"rpc_url":"https://rpc.example"}`
+	const genesisHash = "0xabababababababababababababababababababababababababababababababab"
+	const response = `{"epoch":43,"start_block":10,"commit_deadline_block":20,"trails_deadline_block":30,"finalize_block":40,"t_epoch_blocks":50,"chain_id":9,"genesis_hash":"` + genesisHash + `","contract_address":"0x0000000000000000000000000000000000000007","settlement_vault_address":"0x0000000000000000000000000000000000000008","no_id":"9007199254740993","netuid":17,"rpc_url":"https://rpc.example"}`
 	var requestCount atomic.Int64
 	ctx, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
@@ -29,6 +31,7 @@ func TestApiSnEpochDecodesServerStringNoId(t *testing.T) {
 	expected := SnEpochResult{
 		Epoch: 43, StartBlock: 10, CommitDeadlineBlock: 20, TrailsDeadlineBlock: 30,
 		FinalizeBlock: 40, TEpochBlocks: 50, ChainId: 9,
+		GenesisHash:            genesisHash,
 		ContractAddress:        "0x0000000000000000000000000000000000000007",
 		SettlementVaultAddress: "0x0000000000000000000000000000000000000008",
 		NoId:                   9007199254740993,
@@ -50,6 +53,9 @@ func TestApiSnEpochDecodesServerStringNoId(t *testing.T) {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(encoded, &fields); err != nil || string(fields["no_id"]) != "9007199254740993" {
 			t.Fatalf("sdk no_id encoding = %s, %v, want unchanged exact numeric encoding", fields["no_id"], err)
+		}
+		if string(fields["genesis_hash"]) != `"`+genesisHash+`"` {
+			t.Fatalf("sdk genesis_hash encoding = %s, want %q", fields["genesis_hash"], genesisHash)
 		}
 	}
 	if requestCount.Load() != 2 || api.GetByJwt() != bearerJwt {

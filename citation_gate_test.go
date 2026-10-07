@@ -136,7 +136,7 @@ func TestEveryTestNameCitedInThisRepositorysProductionProseResolvesToOneDeclarat
 	}
 	for _, present := range []string{
 		"TestRpcGobExtenderStatsComplete",
-		"TestLicenseYmlParses",
+		"TestLicenseCatalogParses",
 		"TestLogVerbosityTakesEffectAtRuntime",
 	} {
 		if found := len(declaredPaths[present]); found != 1 {

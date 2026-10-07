@@ -134,6 +134,45 @@ func (self *Api) SnWalletMappingChallengeSync(args *SnWalletMappingChallengeArgs
 	return self.SnWalletMappingChallengeSyncWithContext(self.ctx, args)
 }
 
+// Selects the explicit earning interval of a network wallet consent: the
+// coldkey signs once for every provider client of the session's network. Only
+// the network owner's session (a network JWT) may request it; submit the
+// signed message through SnSetWallet without a client id.
+type SnNetworkWalletMappingChallengeArgs struct {
+	ColdkeySs58  string `json:"coldkey_ss58"`
+	FromEpoch    int64  `json:"from_epoch"`
+	ThroughEpoch int64  `json:"through_epoch"`
+}
+
+// Requests a network consent challenge through the api's authenticated post
+// transport.
+//
+//gomobile:noexport
+func (self *Api) SnNetworkWalletMappingChallengeSyncWithContext(ctx context.Context, args *SnNetworkWalletMappingChallengeArgs) (*SnWalletMappingChallengeResult, error) {
+	if args == nil {
+		return nil, fmt.Errorf("network wallet mapping challenge args are required")
+	}
+	if args.FromEpoch < 0 || args.ThroughEpoch < 0 || args.ThroughEpoch < args.FromEpoch {
+		return nil, fmt.Errorf("wallet mapping epoch interval must be nonnegative and ordered")
+	}
+	return connect.HttpPostWithRawFunction(
+		ctx,
+		self.getHttpPostRaw(),
+		fmt.Sprintf("%s/sn/wallet/network-consent", self.apiUrl),
+		args,
+		self.GetByJwt(),
+		&SnWalletMappingChallengeResult{},
+		connect.NewNoopApiCallback[*SnWalletMappingChallengeResult](),
+	)
+}
+
+// Uses the api lifetime for the network challenge request.
+//
+//gomobile:noexport
+func (self *Api) SnNetworkWalletMappingChallengeSync(args *SnNetworkWalletMappingChallengeArgs) (*SnWalletMappingChallengeResult, error) {
+	return self.SnNetworkWalletMappingChallengeSyncWithContext(self.ctx, args)
+}
+
 type SnSetWalletArgs struct {
 	ColdkeySs58 string `json:"coldkey_ss58"`
 	ClientId    *Id    `json:"client_id,omitempty"`
@@ -273,6 +312,10 @@ func (self *Api) SnPoolClaimSync(args *SnPoolClaimArgs) (*SnPoolClaimResult, err
 // the schedule itself was invisible to apps. Block heights, epoch numbers and
 // chain ids are all far below 2^63. Numeric json encoding is retained; no_id
 // also accepts the server's decimal-string encoding when decoded.
+//
+// The genesis hash is the subnet chain's genesis block hash, "0x" and 64
+// lowercase hex digits; with the chain id and netuid it names the subnet. It
+// is empty from a server that predates it.
 type SnEpochResult struct {
 	Epoch               int64  `json:"epoch"`
 	StartBlock          int64  `json:"start_block"`
@@ -281,6 +324,7 @@ type SnEpochResult struct {
 	FinalizeBlock       int64  `json:"finalize_block"`
 	TEpochBlocks        int64  `json:"t_epoch_blocks"`
 	ChainId             int64  `json:"chain_id"`
+	GenesisHash         string `json:"genesis_hash,omitempty"`
 	ContractAddress     string `json:"contract_address"`
 	// optional release configuration for the direct claim path
 	SettlementVaultAddress string `json:"settlement_vault_address,omitempty"`

@@ -33,6 +33,7 @@ module URnetwork
       callback :urnet_check_balance_code_cb, [:pointer, :string, :string], :void
       callback :urnet_claim_network_name_cb, [:pointer, :string, :string], :void
       callback :urnet_client_events_send_cb, [:pointer, :string, :string], :void
+      callback :urnet_client_limit_status_change_cb, [:pointer, :string], :void
       callback :urnet_client_refresh_integrity_cb, [:pointer, :uint64], :void
       callback :urnet_commit_cb, [:pointer, :bool], :void
       callback :urnet_connect_change_cb, [:pointer, :bool], :void
@@ -324,6 +325,7 @@ module URnetwork
       attach_function :urnet_api_sn_epoch_sync, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_get_wallet, [:uint64, :urnet_sn_get_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_head, [:uint64, :urnet_sn_head_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_network_wallet_mapping_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_pool_claim_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_set_wallet, [:uint64, :string, :urnet_sn_set_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_set_wallet_sync, [:uint64, :string, :pointer], :pointer, blocking: true
@@ -459,6 +461,7 @@ module URnetwork
       attach_function :urnet_device_add_can_prompt_intro_funnel_change_listener, [:uint64, :urnet_can_prompt_intro_funnel_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_refer_change_listener, [:uint64, :urnet_can_refer_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_can_show_rating_dialog_change_listener, [:uint64, :urnet_can_show_rating_dialog_change_cb, :pointer], :uint64, blocking: true
+      attach_function :urnet_device_add_client_limit_status_change_listener, [:uint64, :urnet_client_limit_status_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_connect_change_listener, [:uint64, :urnet_connect_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_connect_location_change_listener, [:uint64, :urnet_connect_location_change_cb, :pointer], :uint64, blocking: true
       attach_function :urnet_device_add_connected_provider_location_change_listener, [:uint64, :urnet_connected_provider_location_change_cb, :pointer], :uint64, blocking: true
@@ -510,6 +513,7 @@ module URnetwork
       attach_function :urnet_device_get_can_refer, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_can_show_rating_dialog, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_client_id, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_get_client_limit_status, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_connect_enabled, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_connect_location, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_connected_provider_locations, [:uint64], :pointer, blocking: true
@@ -754,6 +758,7 @@ module URnetwork
       attach_function :urnet_device_remote_get_destination_exits, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_exits, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_probe_results, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_remote_get_provider_connected, [:uint64], :bool, blocking: true
       attach_function :urnet_device_remote_get_reliability_metrics, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_reliability_settings, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_remote_get_remote_connected, [:uint64], :bool, blocking: true
@@ -1270,6 +1275,7 @@ module URnetwork
       attach_function :urnet_new_device_local_with_defaults, [:uint64, :string, :string, :string, :string, :string, :bool, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_key_material, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_local_with_memory_target, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :int64, :pointer], :uint64, blocking: true
+      attach_function :urnet_new_device_local_with_provide_extender, [:uint64, :string, :string, :string, :string, :string, :bool, :uint64, :bool, :bool, :pointer], :uint64, blocking: true
       attach_function :urnet_new_device_remote_with_defaults, [:uint64, :string, :string, :pointer], :uint64, blocking: true
       attach_function :urnet_new_export_options, [], :pointer, blocking: true
       attach_function :urnet_new_feedback_submitted_event, [:int64, :string, :string], :pointer, blocking: true

@@ -17,7 +17,6 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -480,9 +479,6 @@ func (self *testProvideExtenderFixture) configureExtender(settings *deviceLocalE
 	settings.TcpPort = self.tcpPort
 	settings.UdpPort = self.udpPort
 	settings.DnsPort = self.dnsPort
-	// the ephemeral carrier is the only dns port here, on every host: a linux
-	// build would otherwise also try 53 through the loopback listen seam (L2)
-	settings.DnsPrivilegedPort = false
 	settings.DnsTld = testProvideExtenderDnsTld
 	settings.Listen = func(network string, address string) (net.Listener, error) {
 		return net.Listen(network, testLoopbackAddress(address))
@@ -1085,7 +1081,7 @@ func TestDeviceLocalProviderExtenderStatsFollowTheRelay(t *testing.T) {
 		EgressReadCount:  chunkCount,
 	}
 	connect.AssertEqual(t, fixture.device.GetExtenderStats(), expected)
-	serverStats := fixture.extender().server.Stats()
+	serverStats := fixture.extender().currentServer().Stats()
 	connect.AssertEqual(t, serverStats.IngressByteCount, expected.IngressByteCount)
 	connect.AssertEqual(t, serverStats.IngressReadCount, expected.IngressReadCount)
 	connect.AssertEqual(t, serverStats.EgressByteCount, expected.EgressByteCount)
@@ -1156,23 +1152,25 @@ func TestDeviceLocalProviderExtenderOptOut(t *testing.T) {
 	}
 }
 
-// A carrier whose port is taken disables only that carrier: the others are
-// activated, and the status names the one that failed (G2, F3).
+// An optional carrier whose port is taken disables only that carrier (G2, F3):
+// udp 443 held by another process leaves the extender on tcp 443, which it
+// requires, and the dns carrier, activated, with the status naming the one
+// that failed. The mesh rides tcp, so the node still advertises it (D2).
 func TestDeviceLocalProviderExtenderSkipsAFailedCarrier(t *testing.T) {
-	occupiedPort := testFreeTcpPort(t)
-	occupied, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", occupiedPort)))
+	occupiedPort := testFreeUdpPort(t)
+	occupied, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", occupiedPort)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { occupied.Close() })
 
 	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
-		settings.TcpPort = occupiedPort
+		settings.UdpPort = occupiedPort
 	})
 
 	fixture.waitPass()
 	post := fixture.waitPost()
-	expectedCarriers := []string{connect.ExtenderCarrierQuic, connect.ExtenderCarrierDns}
+	expectedCarriers := []string{connect.ExtenderCarrierTcp, connect.ExtenderCarrierDns}
 	if !slices.Equal(post.args.Carriers, expectedCarriers) {
 		t.Fatalf("carriers = %v, expected the carriers that bound", post.args.Carriers)
 	}
@@ -1183,20 +1181,23 @@ func TestDeviceLocalProviderExtenderSkipsAFailedCarrier(t *testing.T) {
 	if !status.Listening {
 		t.Fatalf("status = %+v, expected the remaining carriers to be listening", status)
 	}
-	if !strings.HasPrefix(status.ListenError, connect.ExtenderCarrierTcp+": ") {
-		t.Fatalf("listen error = %q, expected the tcp carrier", status.ListenError)
+	if !strings.HasPrefix(status.ListenError, connect.ExtenderCarrierQuic+": ") {
+		t.Fatalf("listen error = %q, expected the quic carrier", status.ListenError)
+	}
+	if status.TcpUnavailableError != "" {
+		t.Fatalf("tcp unavailable = %q, expected the role to hold tcp 443", status.TcpUnavailableError)
 	}
 	// one carrier down while another is activated is still active (N3)
 	if status.State != ExtenderProvideStateActive {
 		t.Fatalf("state = %q, expected active", status.State)
 	}
 
-	// only the tcp carrier carries the mesh, so nothing is advertised (D2)
-	if extenderNode := fixture.networkSpace.getExtenderNode(); extenderNode != nil {
-		if listenAddrs := extenderNode.node.ListenAddrs(); 0 < len(listenAddrs) {
-			t.Fatalf("mesh addresses = %v, expected none without the tcp carrier", listenAddrs)
-		}
-	}
+	// the tcp carrier carries the mesh, so the activated address is
+	// advertised (D2)
+	fixture.waitNodeListenAddrs([]string{
+		fmt.Sprintf("/ip4/%s/tcp/%d", testProvideExtenderIpv4, fixture.tcpPort),
+		fmt.Sprintf("/ip6/%s/tcp/%d", testProvideExtenderIpv6, fixture.tcpPort),
+	})
 }
 
 // An operator with no family api hosts is activated through the plain api url,
@@ -1252,7 +1253,7 @@ func TestDeviceLocalProviderExtenderReusesTheMemberNodeKey(t *testing.T) {
 	if !slices.Equal(fixture.extender().publicKey, publicKey) {
 		t.Fatal("the role did not take the stored identity key")
 	}
-	if !slices.Equal(fixture.extender().server.PublicKey(), publicKey) {
+	if !slices.Equal(fixture.extender().currentServer().PublicKey(), publicKey) {
 		t.Fatal("the extender server did not take the stored identity key")
 	}
 
@@ -1840,64 +1841,133 @@ func newTestProvideExtenderUrlSpace(ctx context.Context) *NetworkSpace {
 	)
 }
 
-// The dns carrier also binds 53 where the platform takes it without privilege
-// (L2): the linux daemon runs as root and the windows service as LocalSystem.
-// Everything else, macOS included, binds its unprivileged port alone. The rule
-// is parameterized so it is pinned on whatever host runs this.
-func TestExtenderDnsPrivilegedPortForPlatform(t *testing.T) {
-	for _, goos := range []string{"linux", "windows"} {
-		if !extenderDnsPrivilegedPortForPlatform(goos) {
-			t.Errorf("%s does not take the privileged dns port", goos)
-		}
-	}
-	for _, goos := range []string{"darwin", "ios", "android", "js", "freebsd", "openbsd"} {
-		if extenderDnsPrivilegedPortForPlatform(goos) {
-			t.Errorf("%s takes the privileged dns port", goos)
-		}
-	}
-	connect.AssertEqual(t,
-		extenderDnsPrivilegedPort(), extenderDnsPrivilegedPortForPlatform(runtime.GOOS))
-}
-
-// The role's dns carrier is the extender's unprivileged 4053 and the
-// privileged bind follows the platform rule (L2). The ports are what an
-// activation advertises, so a production default that drifted would publish a
-// port no client dials.
+// The role's dns carrier is the extender's unprivileged 4053, and it binds 53
+// beside it only when the device opts in (L2): off by default, which every app
+// runs with on every platform, and on where the sn miner sets it. The device
+// setting is what reaches the role, whatever host runs this. The ports are
+// what an activation advertises, so a default that drifted would publish a
+// port no client expects an app to bind.
 func TestDeviceLocalProviderExtenderSettingsDnsPorts(t *testing.T) {
-	networkSpace := newNetworkSpace(
-		context.Background(),
-		*NewNetworkSpaceKey(testProvideExtenderHost, "main"),
-		NetworkSpaceValues{},
-		"",
-	)
-	defer networkSpace.close()
-
-	provider := &deviceLocalProvider{networkSpace: networkSpace}
-	settings, err := provider.extenderSettings()
-	if err != nil {
-		t.Fatalf("the space has no identity to activate under: %s", err)
+	if DefaultDeviceLocalSettings().ProvideExtenderDnsPrivilegedPort {
+		t.Fatal("the device default binds 53")
 	}
-	connect.AssertEqual(t, settings.DnsPort, connect.ExtenderDnsPort)
-	connect.AssertEqual(t, settings.DnsPort, connect.DefaultWhodisPort)
-	connect.AssertEqual(t, settings.DnsPrivilegedPort, extenderDnsPrivilegedPort())
+	cases := []struct {
+		name              string
+		configure         func(settings *DeviceLocalSettings)
+		dnsPrivilegedPort bool
+	}{
+		{name: "the device default", dnsPrivilegedPort: false},
+		{
+			name: "a device that opts in",
+			configure: func(settings *DeviceLocalSettings) {
+				settings.ProvideExtenderDnsPrivilegedPort = true
+			},
+			dnsPrivilegedPort: true,
+		},
+	}
+	for _, c := range cases {
+		ctx, cancel := context.WithCancel(context.Background())
+		networkSpace := newTestProvideExtenderUrlSpace(ctx)
+		settings := testExtenderStatusDeviceSettings()
+		if c.configure != nil {
+			c.configure(settings)
+		}
+		device, err := newDeviceLocalWithOverrides(
+			networkSpace, "", "", "", "", NewId(), settings, connect.NewId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		extenderSettings, err := device.provider.extenderSettings()
+		if err != nil {
+			t.Fatalf("%s: the space has no identity to activate under: %s", c.name, err)
+		}
+		connect.AssertEqual(t, extenderSettings.DnsPort, connect.ExtenderDnsPort)
+		connect.AssertEqual(t, extenderSettings.DnsPort, connect.DefaultWhodisPort)
+		if extenderSettings.DnsPrivilegedPort != c.dnsPrivilegedPort {
+			t.Errorf("%s: the role binds 53 = %t, expected %t",
+				c.name, extenderSettings.DnsPrivilegedPort, c.dnsPrivilegedPort)
+		}
+		_ = device.CloseAndWait(context.Background())
+		networkSpace.Close()
+		cancel()
+	}
 }
 
-// A host that can take 53 activates on both dns ports, and the activation
-// advertises them in dial order, 53 first (L2). The privileged bind is served
-// by an ephemeral socket here, so nothing on this machine needs privilege.
-func TestDeviceLocalProviderExtenderActivatesEveryDnsPort(t *testing.T) {
-	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
-		settings.DnsPrivilegedPort = true
-		settings.ListenPacket = func(network string, address string) (net.PacketConn, error) {
-			if _, port, err := net.SplitHostPort(address); err == nil &&
-				port == strconv.Itoa(connect.DefaultDnsPort) {
-				// the privileged bind without the privilege: the advertised
-				// port is the configured one, not the socket's
-				return net.ListenPacket(network, "127.0.0.1:0")
+// The listen seam of a test role that also records every udp port it is asked
+// to bind, the loopback seam the fixture installed answering each.
+func testRecordUdpBinds(settings *deviceLocalExtenderSettings, udpBinds chan int) {
+	listenPacket := settings.ListenPacket
+	settings.ListenPacket = func(network string, address string) (net.PacketConn, error) {
+		if _, portText, err := net.SplitHostPort(address); err == nil {
+			if port, err := strconv.Atoi(portText); err == nil {
+				udpBinds <- port
 			}
-			return net.ListenPacket(network, testLoopbackAddress(address))
 		}
+		return listenPacket(network, address)
+	}
+}
+
+// The udp ports a test role has been asked to bind so far.
+func testDrainUdpBinds(udpBinds chan int) []int {
+	ports := []int{}
+	for {
+		select {
+		case port := <-udpBinds:
+			ports = append(ports, port)
+		default:
+			return ports
+		}
+	}
+}
+
+// A device that does not opt in binds its dns carrier on the configured port
+// alone and never asks for 53, on whatever host runs this, and advertises the
+// one port (L2).
+func TestDeviceLocalProviderExtenderBindsTheDnsCarrierOnItsPortAloneByDefault(t *testing.T) {
+	udpBinds := make(chan int, 64)
+	fixture := newTestProvideExtenderFixture(t, func(settings *deviceLocalExtenderSettings) {
+		testRecordUdpBinds(settings, udpBinds)
 	})
+
+	fixture.waitPass()
+	for range 2 {
+		post := fixture.waitPost()
+		if !slices.Equal(post.args.DnsPorts, []int{fixture.dnsPort}) {
+			t.Fatalf("v%d dns ports = %v, expected the configured port %d alone",
+				post.ipVersion, post.args.DnsPorts, fixture.dnsPort)
+		}
+	}
+	fixture.waitStatus("the configured dns port alone", func(status *ExtenderProvideStatus) bool {
+		return status.DnsPorts == strconv.Itoa(fixture.dnsPort)
+	})
+	// the activation offers what bound, so every bind was attempted by now
+	if slices.Contains(testDrainUdpBinds(udpBinds), connect.DefaultDnsPort) {
+		t.Fatal("a device that did not opt in asked to bind 53")
+	}
+}
+
+// A device that opts in, as the sn miner does, activates on both dns ports,
+// and the activation advertises them ascending, 53 first (L2). The privileged
+// bind is served by an ephemeral socket here, so nothing on this machine needs
+// privilege.
+func TestDeviceLocalProviderExtenderActivatesEveryDnsPort(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithDevice(
+		t,
+		func(settings *DeviceLocalSettings) {
+			settings.ProvideExtenderDnsPrivilegedPort = true
+		},
+		func(settings *deviceLocalExtenderSettings) {
+			settings.ListenPacket = func(network string, address string) (net.PacketConn, error) {
+				if _, port, err := net.SplitHostPort(address); err == nil &&
+					port == strconv.Itoa(connect.DefaultDnsPort) {
+					// the privileged bind without the privilege: the advertised
+					// port is the configured one, not the socket's
+					return net.ListenPacket(network, "127.0.0.1:0")
+				}
+				return net.ListenPacket(network, testLoopbackAddress(address))
+			}
+		},
+	)
 
 	fixture.waitPass()
 	expectedDnsPorts := []int{connect.DefaultDnsPort, fixture.dnsPort}
@@ -1920,6 +1990,45 @@ func TestDeviceLocalProviderExtenderActivatesEveryDnsPort(t *testing.T) {
 	})
 	if status.ListenError != "" {
 		t.Fatalf("listen error = %q, expected every carrier to bind", status.ListenError)
+	}
+}
+
+// A device that opts in on a host that refuses 53 keeps the dns carrier on its
+// configured port: the refused bind never stops the carrier, which serves and
+// is advertised on the one port that bound (L2).
+func TestDeviceLocalProviderExtenderKeepsTheDnsCarrierWhen53IsRefused(t *testing.T) {
+	fixture := newTestProvideExtenderFixtureWithDevice(
+		t,
+		func(settings *DeviceLocalSettings) {
+			settings.ProvideExtenderDnsPrivilegedPort = true
+		},
+		func(settings *deviceLocalExtenderSettings) {
+			settings.ListenPacket = func(network string, address string) (net.PacketConn, error) {
+				if _, port, err := net.SplitHostPort(address); err == nil &&
+					port == strconv.Itoa(connect.DefaultDnsPort) {
+					return nil, fmt.Errorf("listen udp %s: bind: permission denied", address)
+				}
+				return net.ListenPacket(network, testLoopbackAddress(address))
+			}
+		},
+	)
+
+	fixture.waitPass()
+	for range 2 {
+		post := fixture.waitPost()
+		if !slices.Contains(post.args.Carriers, connect.ExtenderCarrierDns) {
+			t.Fatalf("v%d carriers = %v, expected the dns carrier to serve", post.ipVersion, post.args.Carriers)
+		}
+		if !slices.Equal(post.args.DnsPorts, []int{fixture.dnsPort}) {
+			t.Fatalf("v%d dns ports = %v, expected the port that bound", post.ipVersion, post.args.DnsPorts)
+		}
+	}
+	status := fixture.waitStatus("the dns carrier on its port", func(status *ExtenderProvideStatus) bool {
+		return status.Listening && status.DnsPorts == strconv.Itoa(fixture.dnsPort)
+	})
+	// a carrier that serves has no standing bind failure to render
+	if status.ListenError != "" {
+		t.Fatalf("listen error = %q, expected none for a serving carrier", status.ListenError)
 	}
 }
 

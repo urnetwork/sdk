@@ -63,6 +63,13 @@ func TestWebLicenseCheckSelectsMMMCheckout(t *testing.T) {
 texts:
   mit: "MIT License\nPermission is hereby granted"
 `)
+					catalog, err := readLicenseFile(filepath.Join(sdk, "license.yml"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := catalog.writeRuntimeFile(filepath.Join(sdk, "license_data.json")); err != nil {
+						t.Fatal(err)
+					}
 					lock := func(name, version string) string {
 						return fmt.Sprintf(`{"packages":{"":{"dependencies":{%q:%q}},"node_modules/%s":{"version":%q,"license":"MIT"}}}`, name, version, name, version)
 					}
@@ -89,7 +96,7 @@ texts:
 						}
 					}
 					t.Chdir(sdk)
-					err := run("web", "", checkout)
+					err = run("web", "", checkout)
 					if test.absent {
 						if !errors.Is(err, os.ErrNotExist) {
 							t.Fatalf("missing explicit checkout error = %v, want os.ErrNotExist", err)
@@ -104,6 +111,13 @@ texts:
 					// The site override must not redirect the other app repositories.
 					if err := run("extension", "", checkout); err != nil {
 						t.Fatalf("site override changed the extension checkout: %v", err)
+					}
+					write(filepath.Join(sdk, "license_data.json"), "{}\n")
+					if err := run("extension", "", checkout); err == nil || !strings.Contains(err.Error(), "license_data.json is out of date") {
+						t.Fatalf("runtime catalog drift must fail the app license gate: %v", err)
+					}
+					if err := catalog.writeRuntimeFile(filepath.Join(sdk, "license_data.json")); err != nil {
+						t.Fatal(err)
 					}
 					write(filepath.Join(root, "build", "extension", "package-lock.json"), lock("fixture-extension", "2.0.0"))
 					if err := run("extension", "", checkout); err == nil || !strings.Contains(err.Error(), "missing npm-extension fixture-extension 2.0.0") {

@@ -34,6 +34,15 @@ import (
 // of that post, and the signed record that comes back names the address this
 // host is published under. Nothing here announces an address of its own.
 //
+// Tcp 443 is the one port an extender requires (G2): the role binds it before
+// anything else, and while that bind fails the role is off -- no udp carrier,
+// no node, no activation, no peer pings -- with the bind error in the status,
+// and it binds again every extenderProvideTcpRetryTimeout, starting the moment
+// it holds the port. So of several provider processes on one host the first
+// to take tcp 443 serves the extender, and the role moves to another when that
+// one exits. Udp 443, udp 4053 and, when the device opts in, udp 53 are
+// optional: each that fails to bind disables that carrier alone.
+//
 // The parts are the ones connectctl's standalone extender wires (G4): the
 // in-process gossip listener and the feed server behind the reserved services
 // (A8), the space's node rebuilt in the extender role (D2), the extender
@@ -52,6 +61,12 @@ const extenderProvideSupported = true
 // going to.
 const extenderProvideListenTimeout = 60 * time.Second
 
+// How long the role waits to bind tcp 443 again while another process holds it
+// (G2). A host can run several provider processes, such as the miner's
+// per-operator children; the role moves to another of them within this of
+// the holder exiting.
+const extenderProvideTcpRetryTimeout = 3 * time.Minute
+
 type deviceLocalExtender struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -59,13 +74,22 @@ type deviceLocalExtender struct {
 	done      chan struct{}
 	log       connect.Logger
 
-	settings  *deviceLocalExtenderSettings
-	publicKey ed25519.PublicKey
+	settings   *deviceLocalExtenderSettings
+	privateKey ed25519.PrivateKey
+	publicKey  ed25519.PublicKey
 
+	// What the role serves with, built by startServing once it holds tcp 443
+	// and nil before: in the constructor when the port is free, else in the
+	// loop that waited for it, before anything that reads them starts. Close
+	// reads them after joining that loop. The server is also read by the
+	// status and the stats, so it is set under the state lock (currentServer).
 	clientStrategy *connect.ClientStrategy
 	listener       *gossip.InProcessListener
 	feedServer     *gossip.FeedServer
 	server         *extender.ExtenderServer
+	// the tcp 443 listener the role bound before its server existed, until the
+	// server takes it
+	heldTcpListener *extenderHeldListener
 	// what this extender measures of its peers, and the reporter those
 	// measurements are posted to the operator through (GEOMAP §2.1, §2.5)
 	pingReporter *connect.ExtenderPingReporter
@@ -95,10 +119,12 @@ type deviceLocalExtender struct {
 	maxActiveRecordCountReplaced bool
 }
 
-// The role is running when this returns: the server is binding its carriers,
-// the node is up, and the loop that activates and publishes the status has
-// started. When this space cannot run one, the error says why, and the
-// provider reports it as the start error of N3.
+// The role has started when this returns. When tcp 443 is free the server is
+// binding its other carriers, the node is up, and the loop that activates and
+// publishes the status has started; when it is not, the role is off with the
+// bind error in its status and the loop binds it again every
+// extenderProvideTcpRetryTimeout (G2). When this space cannot run one, the
+// error says why, and the provider reports it as the start error of N3.
 func newDeviceLocalExtender(
 	ctx context.Context,
 	settings *deviceLocalExtenderSettings,
@@ -132,10 +158,34 @@ func newDeviceLocalExtender(
 		done:          make(chan struct{}),
 		log:           log,
 		settings:      settings,
+		privateKey:    privateKey,
 		publicKey:     publicKey,
 		statusMonitor: connect.NewMonitorValue(extenderProvideState{Enabled: true}),
 		wakeMonitor:   connect.NewMonitor(),
 	}
+
+	// tcp 443 first, the one port an extender requires (G2)
+	if tcpListener, err := self.listenTcp(); err == nil {
+		self.startServing(tcpListener)
+	} else {
+		self.publishTcpUnavailable(err)
+	}
+
+	go connect.HandleError(func() {
+		defer close(self.done)
+		self.run()
+	}, cancel)
+	return self, nil
+}
+
+// Builds and starts what the role serves with, on the tcp 443 listener it
+// already holds (G2): the direct strategy, the gossip listener and feed
+// server, the space's node in the extender role, the server on the held tcp
+// listener and the optional udp carriers, the ping reporter and the peer
+// pinger, and the directory's cap on active records. Runs once, before
+// anything that reads these parts starts.
+func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
+	settings := self.settings
 
 	// direct only: an activation that crossed an extender would tell the
 	// operator that extender's address, not this host's (C2)
@@ -143,13 +193,13 @@ func newDeviceLocalExtender(
 	if strategySettings == nil {
 		strategySettings = connect.DefaultClientStrategySettings()
 	}
-	self.clientStrategy = connect.NewDirectClientStrategy(cancelCtx, strategySettings, 0)
+	self.clientStrategy = connect.NewDirectClientStrategy(self.ctx, strategySettings, 0)
 
-	self.listener = gossip.NewInProcessListener(cancelCtx, gossip.DefaultInProcessListenerSettings())
+	self.listener = gossip.NewInProcessListener(self.ctx, gossip.DefaultInProcessListenerSettings())
 	self.feedServer = gossip.NewFeedServer(
-		cancelCtx,
+		self.ctx,
 		settings.NetworkSpace.extenderDirectory,
-		publicKey,
+		self.publicKey,
 		gossip.DefaultFeedServerSettings(),
 	)
 	// the node is built before the server, because an extender with no node
@@ -157,8 +207,9 @@ func newDeviceLocalExtender(
 	nodeRuns := settings.NetworkSpace.setExtenderNodeRole(self.listener, nil) != nil
 	self.setNodeRuns(nodeRuns)
 
-	self.server = extender.NewExtenderServer(
-		cancelCtx,
+	self.heldTcpListener = &extenderHeldListener{listener: tcpListener}
+	server := extender.NewExtenderServer(
+		self.ctx,
 		// an operator activated extender is open: it accepts every header and
 		// forwards only to the whitelist (A4, A5)
 		nil,
@@ -167,38 +218,43 @@ func newDeviceLocalExtender(
 		&net.Dialer{},
 		self.serverSettings(nodeRuns),
 	)
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.server = server
+	}()
 	go connect.HandleError(func() {
-		if err := self.server.ListenAndServe(); err != nil {
+		if err := server.ListenAndServe(); err != nil {
 			// every carrier failed to bind; the status carries which and why
 			self.log.Infof("[extender]provide listen err = %s\n", err)
 		}
 		self.wakeMonitor.NotifyAll()
-	}, cancel)
+	}, self.cancel)
 
 	// what this extender measures of its peers goes to the operator in
 	// batches, under the same client credential the activation uses. The
 	// pinger reports; what a provider measures of this extender that provider
 	// reports itself (GEOMAP §2.5)
 	reporterSettings := connect.DefaultExtenderPingReporterSettings()
-	reporterSettings.Log = log
+	reporterSettings.Log = self.log
 	reporterSettings.ApiUrl = extenderReporterApiUrl(settings)
 	reporterSettings.ByJwt = settings.ByJwt
 	reporterSettings.ClientStrategy = self.clientStrategy
 	if settings.ConfigurePingReporter != nil {
 		settings.ConfigurePingReporter(reporterSettings)
 	}
-	self.pingReporter = connect.NewExtenderPingReporter(cancelCtx, reporterSettings)
+	self.pingReporter = connect.NewExtenderPingReporter(self.ctx, reporterSettings)
 
 	// a peer judges this extender's pings by the same records this server
 	// judges the peer's by, so they are signed as this extender, with the
 	// identity key and under the peer probe domain only, and they start once
 	// this extender's own record is active (GEOMAP §2.1, §2.4)
 	pingerSettings := connect.DefaultExtenderPeerPingerSettings()
-	pingerSettings.Log = log
-	pingerSettings.OwnPublicKey = publicKey
+	pingerSettings.Log = self.log
+	pingerSettings.OwnPublicKey = self.publicKey
 	pingerSettings.Attestor = connect.NewExtenderProbeExtenderAttestor(
-		publicKey,
-		connect.NewExtenderPeerProbeSigner(privateKey),
+		self.publicKey,
+		connect.NewExtenderPeerProbeSigner(self.privateKey),
 	)
 	pingerSettings.Reporter = self.pingReporter
 	if settings.Now != nil {
@@ -217,7 +273,7 @@ func newDeviceLocalExtender(
 		settings.ConfigurePeerPinger(pingerSettings)
 	}
 	self.peerPinger = connect.NewExtenderPeerPinger(
-		cancelCtx,
+		self.ctx,
 		self.clientStrategy,
 		self.directory(),
 		pingerSettings,
@@ -232,12 +288,110 @@ func newDeviceLocalExtender(
 		self.maxActiveRecordCountReplaced = true
 		directory.SetMaxActiveRecordCount(max(0, settings.MaxActiveRecordCount))
 	}
+}
 
-	go connect.HandleError(func() {
-		defer close(self.done)
-		self.run()
-	}, cancel)
-	return self, nil
+// Binds tcp 443, the one port an extender requires (G2), through the same seam
+// and on the same address the server binds its tcp carrier on, so the server
+// can take the listener as its own (serverSettings).
+func (self *deviceLocalExtender) listenTcp() (net.Listener, error) {
+	listen := net.Listen
+	if self.settings.Listen != nil {
+		listen = self.settings.Listen
+	}
+	listener, err := listen("tcp", extenderTcpListenAddress(self.settings.TcpPort))
+	if err != nil {
+		// ownership transfers for every non-nil result, even with an error
+		if listener != nil {
+			listener.Close()
+		}
+		return nil, err
+	}
+	if listener == nil {
+		return nil, errors.New("the tcp listener factory returned nil")
+	}
+	return listener, nil
+}
+
+// Waits for tcp 443 while another process holds it (G2): binds it again every
+// extenderProvideTcpRetryTimeout, publishing each failure, until it holds the
+// port. Nil when the role closed first.
+func (self *deviceLocalExtender) waitForTcp() net.Listener {
+	tcpRetryAfter := time.After
+	if self.settings.TcpRetryAfter != nil {
+		tcpRetryAfter = self.settings.TcpRetryAfter
+	}
+	for {
+		select {
+		case <-self.ctx.Done():
+			return nil
+		case <-tcpRetryAfter(extenderProvideTcpRetryTimeout):
+		}
+		listener, err := self.listenTcp()
+		if err == nil {
+			return listener
+		}
+		self.publishTcpUnavailable(err)
+	}
+}
+
+// Publishes the role off for want of tcp 443 (G2, N3): nothing else is bound
+// or running, the tcp carrier is the one bind failure, and the bind error is
+// the reason. Logged when the error changes, not at every retry.
+func (self *deviceLocalExtender) publishTcpUnavailable(err error) {
+	state := extenderProvideState{
+		ListenError:         extenderListenErrorText(map[string]error{connect.ExtenderCarrierTcp: err}),
+		TcpUnavailableError: err.Error(),
+	}
+	if self.statusMonitor.Value().TcpUnavailableError != state.TcpUnavailableError {
+		self.log.Infof(
+			"[extender]provide tcp %d unavailable, the role is off and binds again every %s = %s\n",
+			self.settings.TcpPort,
+			extenderProvideTcpRetryTimeout,
+			err,
+		)
+	}
+	self.statusMonitor.Set(state)
+}
+
+// The server, nil while the role waits for tcp 443.
+func (self *deviceLocalExtender) currentServer() *extender.ExtenderServer {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.server
+}
+
+// The address a tcp carrier on `port` is bound on, the one connect/extender
+// binds its carriers on.
+func extenderTcpListenAddress(port int) string {
+	return fmt.Sprintf(":%d", port)
+}
+
+// The tcp 443 listener the role bound before its server existed (G2). The
+// server takes it the first time it binds its tcp carrier, and the role closes
+// it when the server never did. Safe for concurrent use.
+type extenderHeldListener struct {
+	stateLock sync.Mutex
+	listener  net.Listener
+}
+
+// Hands the listener over once; nil after the first call.
+func (self *extenderHeldListener) take() net.Listener {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	listener := self.listener
+	self.listener = nil
+	return listener
+}
+
+// Closes the listener unless it was handed over. Nil-safe, for a role that
+// never held the port.
+func (self *extenderHeldListener) release() {
+	if self == nil {
+		return
+	}
+	if listener := self.take(); listener != nil {
+		listener.Close()
+	}
 }
 
 // The carrier ports (A1). tcp and udp share port 443 in production, which is
@@ -277,11 +431,25 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings := extender.DefaultExtenderSettings()
 	settings.IdentityKeySeed = self.settings.IdentityKeySeed
 	settings.SpoofDomains = self.settings.SpoofDomains
-	// 53 beside the configured unprivileged port where the platform allows it
+	// 53 beside the configured unprivileged port when the device opts in
 	// (L2); a failure of that bind disables the one port, not the carrier
 	settings.DnsPrivilegedPort = self.settings.DnsPrivilegedPort
 	settings.DialContext = self.settings.DialContext
-	settings.Listen = self.settings.Listen
+	// the tcp carrier is the listener the role already holds (G2); every
+	// other bind goes through the configured seam
+	listen := self.settings.Listen
+	tcpListenAddress := extenderTcpListenAddress(self.settings.TcpPort)
+	settings.Listen = func(network string, address string) (net.Listener, error) {
+		if network == "tcp" && address == tcpListenAddress {
+			if listener := self.heldTcpListener.take(); listener != nil {
+				return listener, nil
+			}
+		}
+		if listen != nil {
+			return listen(network, address)
+		}
+		return net.Listen(network, address)
+	}
 	settings.ListenPacket = self.settings.ListenPacket
 	// the admission limits of this instance (A12): zero keeps the connect
 	// default and a negative value disables the limit
@@ -327,8 +495,19 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 
 // The loop that activates and publishes the status. Everything it waits on is
 // a monitor, and every pass reads the whole state, so a change that lands
-// while a pass runs is carried into the next wait rather than lost.
+// while a pass runs is carried into the next wait rather than lost. A role
+// that could not take tcp 443 waits for it here first (G2).
 func (self *deviceLocalExtender) run() {
+	if self.currentServer() == nil {
+		tcpListener := self.waitForTcp()
+		if tcpListener == nil {
+			return
+		}
+		self.startServing(tcpListener)
+		// the role runs from here, with no outcome yet (N3)
+		self.statusMonitor.Set(extenderProvideState{Enabled: true})
+	}
+
 	// the activation offers the carriers that bound, so it waits for the binds
 	// to settle rather than announcing a list still being assembled (G2, G3)
 	select {
@@ -607,16 +786,25 @@ func (self *deviceLocalExtender) status() *ExtenderProvideStatus {
 	if self == nil {
 		return disabledExtenderProvideStatus()
 	}
-	return self.statusMonitor.Value().status(self.server.ConnectionCount())
+	connectionCount := 0
+	if server := self.currentServer(); server != nil {
+		connectionCount = server.ConnectionCount()
+	}
+	return self.statusMonitor.Value().status(connectionCount)
 }
 
 // The relayed traffic of this role's server (O2): read off the server's
-// atomics, so no lock is taken and a server that has closed still answers.
+// atomics, so a server that has closed still answers. Nil while the role is
+// off for want of tcp 443, since it runs no server to relay through.
 func (self *deviceLocalExtender) stats() *ExtenderStats {
 	if self == nil {
 		return nil
 	}
-	stats := self.server.Stats()
+	server := self.currentServer()
+	if server == nil {
+		return nil
+	}
+	stats := server.Stats()
 	return &ExtenderStats{
 		IngressByteCount: stats.IngressByteCount,
 		IngressReadCount: stats.IngressReadCount,
@@ -636,7 +824,8 @@ func (self *deviceLocalExtender) statusUpdate() chan struct{} {
 }
 
 // Releases every part in the reverse order it was built, and restores the
-// member node the role replaced (G2).
+// member node the role replaced (G2). A role that never held tcp 443 built
+// none of them.
 func (self *deviceLocalExtender) Close() {
 	if self == nil {
 		return
@@ -647,12 +836,18 @@ func (self *deviceLocalExtender) Close() {
 		if activator := self.currentActivator(); activator != nil {
 			activator.Close()
 		}
+		if self.listener == nil {
+			// off for want of tcp 443 to the end: nothing else was built
+			return
+		}
 		// a ping in flight reports into the reporter, and both post and dial
 		// through the strategy, so the pinger is joined first and the strategy
 		// last
 		self.peerPinger.Close()
 		self.pingReporter.Close()
-		self.server.CloseAndWait()
+		self.currentServer().CloseAndWait()
+		// a server closed before it bound never took the tcp listener
+		self.heldTcpListener.release()
 		// the node holds the listener, so it goes before the listener does
 		self.settings.NetworkSpace.restoreExtenderNodeRole()
 		self.feedServer.Close()

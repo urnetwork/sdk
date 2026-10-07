@@ -44,6 +44,16 @@ type migratablePlatformTransport interface {
 // otherwise, since a network or friends-and-family provider carries no
 // location metadata and may keep using extenders. A mode change that flips
 // that rebuilds the transports through the migration path.
+//
+// The same flip decides the provide intent every transport declares on its
+// connect handshake (connect/transport_provide_intent.go): declared while the
+// mode includes public, never otherwise, so the platform exempts the client
+// from the network's client limit only while it provides publicly. The
+// rebuild is what puts the new declaration on the wire.
+//
+// Every generation of the transports shares one client limit hold
+// (connect/transport_client_limit.go): the platform's client limit close of
+// any transport holds all of them, and a migration cannot dial through it.
 type deviceLocalProvider struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -61,6 +71,9 @@ type deviceLocalProvider struct {
 	// the device's egress-aware dial, which is also the extender relay's
 	// forward dial so the relay never enters the device's own tunnel (G2)
 	dialContextSettings *connect.DialContextSettings
+	// whether the extender role also binds its dns carrier on 53, the
+	// device's ProvideExtenderDnsPrivilegedPort (L2)
+	extenderDnsPrivilegedPort bool
 	// extenderSettingsConfigure, when set, adjusts the extender role's
 	// settings before it is built. Tests bind ephemeral carrier ports and
 	// point the activation at an in-process operator through it.
@@ -83,6 +96,9 @@ type deviceLocalProvider struct {
 	targetMode                connect.TransportMode
 	modePreferences           map[connect.TransportMode]int
 	transportPolicyVersion    uint64
+	// the client limit hold every transport generation shares, carried to
+	// each through its settings. Immutable after construction.
+	clientLimitBackoff *connect.ClientLimitBackoff
 
 	// a migrate frame spawns at most one in-flight migration
 	migrating atomic.Bool
@@ -158,6 +174,12 @@ type deviceLocalProvider struct {
 	// device client budgets (no target).
 	resendQueueBudget  *connect.TransferMemoryBudget
 	receiveQueueBudget *connect.TransferMemoryBudget
+
+	// notified in the locked scope of each install of another transport
+	// generation and of the close, so a watch of the connected state
+	// (platformTransportNotify) moves to the generation that carries it. nil
+	// on a provider built without one (a test seam), which never notifies
+	platformTransportMonitor *connect.Monitor
 }
 
 // transferBudgets returns the provider client's own budget pair, or nils
@@ -247,6 +269,9 @@ func newDeviceLocalProviderWithOverrides(
 		clientSettings,
 	)
 
+	// the provider starts at provide mode none and declares no provide intent.
+	// The device hands over its mode next (setProvideMode), and a mode that
+	// includes public rebuilds the transports with the declaration
 	auth := &connect.ClientAuth{
 		ByJwt:      byJwt,
 		InstanceId: instanceId,
@@ -267,6 +292,9 @@ func newDeviceLocalProviderWithOverrides(
 	// Explicit provider H3 is a required reservation and ignores this priority.
 	platformTransportSettings.PlatformTransportBudgetPriority =
 		connect.PlatformTransportBudgetPriorityBackground
+	// one hold for every generation: a migration copies these settings
+	clientLimitBackoff := connect.NewClientLimitBackoff()
+	platformTransportSettings.ClientLimitBackoff = clientLimitBackoff
 
 	provider := &deviceLocalProvider{
 		ctx:          providerCtx,
@@ -289,11 +317,13 @@ func newDeviceLocalProviderWithOverrides(
 		targetMode:                targetMode,
 		modePreferences:           maps.Clone(modePreferences),
 		transportPolicyVersion:    1,
+		clientLimitBackoff:        clientLimitBackoff,
 		migrateConnectTimeout:     platformTransportMigrateConnectTimeout,
 		migrateMaxScheduleDelay:   platformTransportMigrateMaxScheduleDelay,
 		auth:                      auth,
 		resendQueueBudget:         resendQueueBudget,
 		receiveQueueBudget:        receiveQueueBudget,
+		platformTransportMonitor:  connect.NewMonitor(),
 	}
 	// the provider proves both address families through its family-pinned
 	// transports (IPV6.md A1, A4); nothing else runs on the provider yet, so
@@ -364,11 +394,20 @@ func (self *deviceLocalProvider) standbyClientStrategy(
 
 // Records the device's effective provide mode. When the public flag flips, the
 // transports are rebuilt make-before-break so the new generation's standby
-// carries the right strategy (J4); a change that leaves the flag alone only
-// records the mode. The policy version is bumped for the
+// carries the right strategy (J4) and the new generation declares the provide
+// intent the flag calls for; a change that leaves the flag alone only records
+// the mode. The policy version is bumped for the
 // same reason SetTransportPolicy bumps it: a migration already in flight then
 // sees the change and repeats with the new mode instead of installing a
 // generation built for the old one.
+//
+// The current generation takes the new declaration too, so a redial before the
+// rebuild completes, or after a rebuild that timed out, declares it. The client
+// limit hold is reset first: a hold in force judged the old declaration, the
+// platform has not judged the new one, and a close of a connection dialed
+// before the reset starts no hold (connect/transport_client_limit.go). Reset
+// before the new auth, so no connection dials with the new declaration under
+// the old reset generation.
 func (self *deviceLocalProvider) setProvideMode(provideMode ProvideMode) {
 	changed := false
 	flipped := func() bool {
@@ -383,6 +422,16 @@ func (self *deviceLocalProvider) setProvideMode(provideMode ProvideMode) {
 		self.provideMode = provideMode
 		if flipped {
 			self.transportPolicyVersion += 1
+			if self.clientLimitBackoff != nil {
+				self.clientLimitBackoff.Reset()
+			}
+			auth := *self.auth
+			auth.ProvideIntent = provideModeIncludesPublic(provideMode)
+			self.auth = &auth
+			self.authVersion += 1
+			if self.platformTransport != nil {
+				self.platformTransport.SetAuth(&auth)
+			}
 		}
 		return flipped
 	}()
@@ -394,6 +443,17 @@ func (self *deviceLocalProvider) setProvideMode(provideMode ProvideMode) {
 	if flipped {
 		self.requestPlatformTransportMigration(time.Now())
 	}
+}
+
+// clientLimitStatus is the readout of the client limit hold every transport
+// generation shares, and a channel that closes on its next change. A provider
+// built without a hold (a test seam) reads none and a channel that never
+// closes.
+func (self *deviceLocalProvider) clientLimitStatus() (connect.ClientLimitStatus, chan struct{}) {
+	if self.clientLimitBackoff == nil {
+		return connect.ClientLimitStatus{}, nil
+	}
+	return self.clientLimitBackoff.Get()
 }
 
 // newProviderPlatformTransport builds the provider's transport group: the
@@ -601,6 +661,10 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		if self.platformTransportSettings != nil {
 			settings = *self.platformTransportSettings
 		}
+		if self.clientLimitBackoff != nil {
+			// the replacement holds where its predecessor holds
+			settings.ClientLimitBackoff = self.clientLimitBackoff
+		}
 		settings.ModePreferences = maps.Clone(self.modePreferences)
 		targetMode := self.targetMode
 		if targetMode == connect.TransportModeNone {
@@ -648,6 +712,7 @@ func (self *deviceLocalProvider) migratePlatformTransportWithPolicy(migrateTime 
 		}
 		previous := self.platformTransport
 		self.platformTransport = next
+		self.platformTransportChangedWithLock()
 		return previous, true
 	}
 
@@ -732,20 +797,45 @@ func (self *deviceLocalProvider) IsConnected() bool {
 	return platformTransport != nil && platformTransport.IsConnected()
 }
 
+// Reads the current transport generation and whether the provider is closed,
+// with a channel that closes on the next install of another generation or on
+// the close. The three are read in one locked scope, so no install or close
+// can slip between the read and a wait on the channel. The channel is nil on a
+// provider built without a monitor.
+func (self *deviceLocalProvider) platformTransportNotify() (migratablePlatformTransport, bool, <-chan struct{}) {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	var notify <-chan struct{}
+	if self.platformTransportMonitor != nil {
+		notify = self.platformTransportMonitor.NotifyChannel()
+	}
+	return self.platformTransport, self.closed, notify
+}
+
+// Wakes the watches of the connected state after an install or the close.
+// Must be called with stateLock, in the scope of the change.
+func (self *deviceLocalProvider) platformTransportChangedWithLock() {
+	if self.platformTransportMonitor != nil {
+		self.platformTransportMonitor.NotifyAll()
+	}
+}
+
 func (self *deviceLocalProvider) LocalUserNat() *connect.LocalUserNat {
 	return self.localUserNat
 }
 
 func (self *deviceLocalProvider) SetByJwt(byJwt string) {
-	auth := &connect.ClientAuth{
-		ByJwt:      byJwt,
-		InstanceId: self.instanceId,
-		AppVersion: self.appVersion,
-	}
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
 	if self.closed {
 		return
+	}
+	auth := &connect.ClientAuth{
+		ByJwt:      byJwt,
+		InstanceId: self.instanceId,
+		AppVersion: self.appVersion,
+		// the declaration follows the provide mode, never the token
+		ProvideIntent: provideModeIncludesPublic(self.provideMode),
 	}
 	self.auth = auth
 	self.authVersion += 1
@@ -781,6 +871,7 @@ func (self *deviceLocalProvider) Close() {
 	self.closeOnce.Do(func() {
 		self.stateLock.Lock()
 		self.closed = true
+		self.platformTransportChangedWithLock()
 		platformTransport := self.platformTransport
 		// the role is joined by the asynchronous close below, since it closes
 		// a libp2p host and a listening server
@@ -1096,7 +1187,7 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		TcpPort:                connect.ExtenderTcpPort,
 		UdpPort:                connect.ExtenderQuicPort,
 		DnsPort:                connect.ExtenderDnsPort,
-		DnsPrivilegedPort:      extenderDnsPrivilegedPort(),
+		DnsPrivilegedPort:      self.extenderDnsPrivilegedPort,
 		DnsTld:                 connect.DefaultExtenderDnsTld,
 		ApiUrlV4:               networkSpace.GetApiUrlV4(),
 		ApiUrlV6:               networkSpace.GetApiUrlV6(),

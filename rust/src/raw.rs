@@ -32,6 +32,7 @@ pub type urnet_change_network_name_cb = Option<unsafe extern "C" fn(*mut c_void,
 pub type urnet_check_balance_code_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_claim_network_name_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_client_events_send_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_client_limit_status_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
 pub type urnet_client_refresh_integrity_cb = Option<unsafe extern "C" fn(*mut c_void, u64) -> ()>;
 pub type urnet_commit_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
 pub type urnet_connect_change_cb = Option<unsafe extern "C" fn(*mut c_void, bool) -> ()>;
@@ -325,6 +326,7 @@ pub struct Raw {
     pub urnet_api_sn_epoch_sync: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_get_wallet: unsafe extern "C" fn(u64, urnet_sn_get_wallet_cb, *mut c_void) -> (),
     pub urnet_api_sn_head: unsafe extern "C" fn(u64, urnet_sn_head_cb, *mut c_void) -> (),
+    pub urnet_api_sn_network_wallet_mapping_challenge_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_pool_claim_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_set_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_sn_set_wallet_cb, *mut c_void) -> (),
     pub urnet_api_sn_set_wallet_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
@@ -460,6 +462,7 @@ pub struct Raw {
     pub urnet_device_add_can_prompt_intro_funnel_change_listener: unsafe extern "C" fn(u64, urnet_can_prompt_intro_funnel_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_can_refer_change_listener: unsafe extern "C" fn(u64, urnet_can_refer_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_can_show_rating_dialog_change_listener: unsafe extern "C" fn(u64, urnet_can_show_rating_dialog_change_cb, *mut c_void) -> u64,
+    pub urnet_device_add_client_limit_status_change_listener: unsafe extern "C" fn(u64, urnet_client_limit_status_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_connect_change_listener: unsafe extern "C" fn(u64, urnet_connect_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_connect_location_change_listener: unsafe extern "C" fn(u64, urnet_connect_location_change_cb, *mut c_void) -> u64,
     pub urnet_device_add_connected_provider_location_change_listener: unsafe extern "C" fn(u64, urnet_connected_provider_location_change_cb, *mut c_void) -> u64,
@@ -511,6 +514,7 @@ pub struct Raw {
     pub urnet_device_get_can_refer: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_can_show_rating_dialog: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_client_id: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_device_get_client_limit_status: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_connect_enabled: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_get_connect_location: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_get_connected_provider_locations: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -755,6 +759,7 @@ pub struct Raw {
     pub urnet_device_remote_get_destination_exits: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_remote_get_exits: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_remote_get_probe_results: unsafe extern "C" fn(u64) -> *mut c_char,
+    pub urnet_device_remote_get_provider_connected: unsafe extern "C" fn(u64) -> bool,
     pub urnet_device_remote_get_reliability_metrics: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_remote_get_reliability_settings: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_device_remote_get_remote_connected: unsafe extern "C" fn(u64) -> bool,
@@ -1271,6 +1276,7 @@ pub struct Raw {
     pub urnet_new_device_local_with_defaults: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, *mut *mut c_char) -> u64,
     pub urnet_new_device_local_with_key_material: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, u64, *mut *mut c_char) -> u64,
     pub urnet_new_device_local_with_memory_target: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, u64, i64, *mut *mut c_char) -> u64,
+    pub urnet_new_device_local_with_provide_extender: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *const c_char, *const c_char, bool, u64, bool, bool, *mut *mut c_char) -> u64,
     pub urnet_new_device_remote_with_defaults: unsafe extern "C" fn(u64, *const c_char, *const c_char, *mut *mut c_char) -> u64,
     pub urnet_new_export_options: unsafe extern "C" fn() -> *mut c_char,
     pub urnet_new_feedback_submitted_event: unsafe extern "C" fn(i64, *const c_char, *const c_char) -> *mut c_char,
@@ -1501,6 +1507,7 @@ impl Raw {
             urnet_api_sn_epoch_sync: unsafe { *library.get(b"urnet_api_sn_epoch_sync\0")? },
             urnet_api_sn_get_wallet: unsafe { *library.get(b"urnet_api_sn_get_wallet\0")? },
             urnet_api_sn_head: unsafe { *library.get(b"urnet_api_sn_head\0")? },
+            urnet_api_sn_network_wallet_mapping_challenge_sync: unsafe { *library.get(b"urnet_api_sn_network_wallet_mapping_challenge_sync\0")? },
             urnet_api_sn_pool_claim_sync: unsafe { *library.get(b"urnet_api_sn_pool_claim_sync\0")? },
             urnet_api_sn_set_wallet: unsafe { *library.get(b"urnet_api_sn_set_wallet\0")? },
             urnet_api_sn_set_wallet_sync: unsafe { *library.get(b"urnet_api_sn_set_wallet_sync\0")? },
@@ -1636,6 +1643,7 @@ impl Raw {
             urnet_device_add_can_prompt_intro_funnel_change_listener: unsafe { *library.get(b"urnet_device_add_can_prompt_intro_funnel_change_listener\0")? },
             urnet_device_add_can_refer_change_listener: unsafe { *library.get(b"urnet_device_add_can_refer_change_listener\0")? },
             urnet_device_add_can_show_rating_dialog_change_listener: unsafe { *library.get(b"urnet_device_add_can_show_rating_dialog_change_listener\0")? },
+            urnet_device_add_client_limit_status_change_listener: unsafe { *library.get(b"urnet_device_add_client_limit_status_change_listener\0")? },
             urnet_device_add_connect_change_listener: unsafe { *library.get(b"urnet_device_add_connect_change_listener\0")? },
             urnet_device_add_connect_location_change_listener: unsafe { *library.get(b"urnet_device_add_connect_location_change_listener\0")? },
             urnet_device_add_connected_provider_location_change_listener: unsafe { *library.get(b"urnet_device_add_connected_provider_location_change_listener\0")? },
@@ -1687,6 +1695,7 @@ impl Raw {
             urnet_device_get_can_refer: unsafe { *library.get(b"urnet_device_get_can_refer\0")? },
             urnet_device_get_can_show_rating_dialog: unsafe { *library.get(b"urnet_device_get_can_show_rating_dialog\0")? },
             urnet_device_get_client_id: unsafe { *library.get(b"urnet_device_get_client_id\0")? },
+            urnet_device_get_client_limit_status: unsafe { *library.get(b"urnet_device_get_client_limit_status\0")? },
             urnet_device_get_connect_enabled: unsafe { *library.get(b"urnet_device_get_connect_enabled\0")? },
             urnet_device_get_connect_location: unsafe { *library.get(b"urnet_device_get_connect_location\0")? },
             urnet_device_get_connected_provider_locations: unsafe { *library.get(b"urnet_device_get_connected_provider_locations\0")? },
@@ -1931,6 +1940,7 @@ impl Raw {
             urnet_device_remote_get_destination_exits: unsafe { *library.get(b"urnet_device_remote_get_destination_exits\0")? },
             urnet_device_remote_get_exits: unsafe { *library.get(b"urnet_device_remote_get_exits\0")? },
             urnet_device_remote_get_probe_results: unsafe { *library.get(b"urnet_device_remote_get_probe_results\0")? },
+            urnet_device_remote_get_provider_connected: unsafe { *library.get(b"urnet_device_remote_get_provider_connected\0")? },
             urnet_device_remote_get_reliability_metrics: unsafe { *library.get(b"urnet_device_remote_get_reliability_metrics\0")? },
             urnet_device_remote_get_reliability_settings: unsafe { *library.get(b"urnet_device_remote_get_reliability_settings\0")? },
             urnet_device_remote_get_remote_connected: unsafe { *library.get(b"urnet_device_remote_get_remote_connected\0")? },
@@ -2447,6 +2457,7 @@ impl Raw {
             urnet_new_device_local_with_defaults: unsafe { *library.get(b"urnet_new_device_local_with_defaults\0")? },
             urnet_new_device_local_with_key_material: unsafe { *library.get(b"urnet_new_device_local_with_key_material\0")? },
             urnet_new_device_local_with_memory_target: unsafe { *library.get(b"urnet_new_device_local_with_memory_target\0")? },
+            urnet_new_device_local_with_provide_extender: unsafe { *library.get(b"urnet_new_device_local_with_provide_extender\0")? },
             urnet_new_device_remote_with_defaults: unsafe { *library.get(b"urnet_new_device_remote_with_defaults\0")? },
             urnet_new_export_options: unsafe { *library.get(b"urnet_new_export_options\0")? },
             urnet_new_feedback_submitted_event: unsafe { *library.get(b"urnet_new_feedback_submitted_event\0")? },

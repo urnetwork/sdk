@@ -165,6 +165,8 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_CHECKOUT_REDIRECT_LINK "urnetwork://checkout"
 #define URNET_CLIENT_EVENT_FLUSH_INTERVAL_MILLIS 30000
 #define URNET_CLIENT_EVENT_MAX_ATTEMPTS 3
+#define URNET_CLIENT_LIMIT_STATUS_EXCEEDED "client_limit_exceeded"
+#define URNET_CLIENT_LIMIT_STATUS_NONE ""
 #define URNET_CONNECTED "CONNECTED"
 #define URNET_CONNECTING "CONNECTING"
 #define URNET_CONNECT_FAILED "CONNECT_FAILED"
@@ -230,6 +232,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_EXTENDER_PROVIDE_ERROR_LISTEN "listen"
 #define URNET_EXTENDER_PROVIDE_ERROR_REVOKED "revoked"
 #define URNET_EXTENDER_PROVIDE_ERROR_START "start"
+#define URNET_EXTENDER_PROVIDE_ERROR_TCP_UNAVAILABLE "tcp_unavailable"
 #define URNET_EXTENDER_PROVIDE_STATE_ACTIVE "active"
 #define URNET_EXTENDER_PROVIDE_STATE_ERROR "error"
 #define URNET_EXTENDER_PROVIDE_STATE_NOT_PROVIDING "not_providing"
@@ -397,6 +400,9 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_SS58_PREFIX 42
 #define URNET_SN_TX_TYPE_EIP1559 "eip1559"
 #define URNET_SN_TX_TYPE_LEGACY "legacy"
+#define URNET_SN_WALLET_CONSENT_SCOPE_HOTKEY "hotkey"
+#define URNET_SN_WALLET_CONSENT_SCOPE_NETWORK "network"
+#define URNET_SN_WALLET_CONSENT_SCOPE_PROVIDER "provider"
 #define URNET_SOL "SOL"
 #define URNET_SOLANA_PAY_REFERENCE_BYTES 32
 #define URNET_SOLANA_WALLET_BRIDGE_ERROR_EXTENSION_NOT_FOUND "extension_not_found"
@@ -521,6 +527,8 @@ typedef void (*urnet_check_balance_code_cb)(void* user_data, const char* result_
 typedef void (*urnet_claim_network_name_cb)(void* user_data, const char* result_json, const char* err_param);
 /* ClientEventsSendCallback */
 typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_json, const char* err_param);
+/* ClientLimitStatusChangeListener */
+typedef void (*urnet_client_limit_status_change_cb)(void* user_data, const char* status_json);
 /* ClientRefreshIntegrityListener */
 typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t notice);
 /* CommitCallback */
@@ -949,6 +957,7 @@ void urnet_api_sn_epoch(uint64_t self, urnet_sn_epoch_cb callback_result, void* 
 char* urnet_api_sn_epoch_sync(uint64_t self, char** out_error);
 void urnet_api_sn_get_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_sn_head(uint64_t self, urnet_sn_head_cb callback_result, void* callback_user_data);
+char* urnet_api_sn_network_wallet_mapping_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 char* urnet_api_sn_pool_claim_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_sn_set_wallet(uint64_t self, const char* args_json, urnet_sn_set_wallet_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_set_wallet_sync(uint64_t self, const char* args_json, char** out_error);
@@ -1114,6 +1123,7 @@ uint64_t urnet_device_add_blocker_enabled_change_listener(uint64_t self, urnet_b
 uint64_t urnet_device_add_can_prompt_intro_funnel_change_listener(uint64_t self, urnet_can_prompt_intro_funnel_change_cb listener_can_prompt_intro_funnel_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_refer_change_listener(uint64_t self, urnet_can_refer_change_cb listener_can_refer_changed, void* listener_user_data);
 uint64_t urnet_device_add_can_show_rating_dialog_change_listener(uint64_t self, urnet_can_show_rating_dialog_change_cb listener_can_show_rating_dialog_changed, void* listener_user_data);
+uint64_t urnet_device_add_client_limit_status_change_listener(uint64_t self, urnet_client_limit_status_change_cb listener_client_limit_status_changed, void* listener_user_data);
 uint64_t urnet_device_add_connect_change_listener(uint64_t self, urnet_connect_change_cb listener_connect_changed, void* listener_user_data);
 uint64_t urnet_device_add_connect_location_change_listener(uint64_t self, urnet_connect_location_change_cb listener_connect_location_changed, void* listener_user_data);
 uint64_t urnet_device_add_connected_provider_location_change_listener(uint64_t self, urnet_connected_provider_location_change_cb listener_connected_provider_locations_changed, void* listener_user_data);
@@ -1165,6 +1175,7 @@ bool urnet_device_get_can_prompt_intro_funnel(uint64_t self);
 bool urnet_device_get_can_refer(uint64_t self);
 bool urnet_device_get_can_show_rating_dialog(uint64_t self);
 char* urnet_device_get_client_id(uint64_t self);
+char* urnet_device_get_client_limit_status(uint64_t self);
 bool urnet_device_get_connect_enabled(uint64_t self);
 char* urnet_device_get_connect_location(uint64_t self);
 char* urnet_device_get_connected_provider_locations(uint64_t self);
@@ -1424,6 +1435,7 @@ char* urnet_device_remote_get_connect_location_checked(uint64_t self, char** out
 char* urnet_device_remote_get_destination_exits(uint64_t self);
 char* urnet_device_remote_get_exits(uint64_t self);
 char* urnet_device_remote_get_probe_results(uint64_t self);
+bool urnet_device_remote_get_provider_connected(uint64_t self);
 char* urnet_device_remote_get_reliability_metrics(uint64_t self);
 char* urnet_device_remote_get_reliability_settings(uint64_t self);
 bool urnet_device_remote_get_remote_connected(uint64_t self);
@@ -2038,6 +2050,7 @@ uint64_t urnet_new_device_local_key_material(const uint8_t* client_key_seed, int
 uint64_t urnet_new_device_local_with_defaults(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, char** out_error);
 uint64_t urnet_new_device_local_with_key_material(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, char** out_error);
 uint64_t urnet_new_device_local_with_memory_target(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, int64_t memory_target_byte_count, char** out_error);
+uint64_t urnet_new_device_local_with_provide_extender(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, bool enable_rpc, uint64_t key_material, bool provide_extender_enabled, bool default_provide_extender, char** out_error);
 uint64_t urnet_new_device_remote_with_defaults(uint64_t network_space, const char* by_jwt, const char* instance_id, char** out_error);
 char* urnet_new_export_options(void);
 char* urnet_new_feedback_submitted_event(int64_t rating, const char* reason, const char* text);
@@ -2353,6 +2366,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   proxy_config?: ProxyConfig | null
  *   time_zone?: string
  *   locale?: string
+ *   provide_intent?: boolean
  */
 
 /* AuthNetworkClientError (json):
@@ -2629,6 +2643,11 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   rejected?: ClientEventRejectionList | null
  */
 
+/* ClientLimitStatus (json):
+ *   Status: string
+ *   RetryTime: number
+ */
+
 /* ConnectLocation (json):
  *   connect_location_id?: ConnectLocationId | null
  *   name?: string
@@ -2718,6 +2737,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   TotalByteCount: number
  *   BitRate: number
  *   HasStream: boolean
+ *   StreamId: string
  */
 
 /* ContractEntryList (json):
@@ -2856,10 +2876,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* DeviceLocalSettings (json):
- *   ClientCredentials: any
- *   ClientControl: any
- *   ProviderDiscovery: any
- *   LocalApi: any
  *   MemoryTargetByteCount: number
  *   SendTimeout: number (ns)
  *   SequenceBufferSize: number
@@ -2882,16 +2898,17 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   DefaultTunnelStarted: boolean
  *   AllowProvider: boolean
  *   ProvideExtenderEnabled: boolean
+ *   DefaultProvideExtender: boolean
+ *   ProvideExtenderDnsPrivilegedPort: boolean
  *   Verbose: boolean
- *   GeneratorFunc: any
- *   MultiClientIdentityStore: any
- *   ProviderDialContextSettings: any | null
  *   DnsPumpHost: string
  *   EnableRpc: boolean
- *   KeyMaterial: DeviceLocalKeyMaterial | null
  *   DisableLogging: boolean
  *   HostedIncompatible: boolean
  *   UseExperimentalTunnelAddress: boolean
+ * A DeviceLocalSettings argument is decoded over
+ * urnet_default_device_local_settings(): a field it omits keeps its default,
+ * and NULL is the defaults.
  */
 
 /* DeviceRemoteAddress (json):
@@ -3023,6 +3040,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   Reason: string
  *   Enabled: boolean
  *   StartError: string
+ *   TcpUnavailableError: string
  *   Listening: boolean
  *   ListenError: string
  *   ActivatedV4: boolean
@@ -4419,6 +4437,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   finalize_block: number
  *   t_epoch_blocks: number
  *   chain_id: number
+ *   genesis_hash?: string
  *   contract_address: string
  *   settlement_vault_address?: string
  *   no_id?: number
@@ -4479,6 +4498,12 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   netuid: number
  *   source: string
  *   error?: SnError | null
+ */
+
+/* SnNetworkWalletMappingChallengeArgs (json):
+ *   coldkey_ss58: string
+ *   from_epoch: number
+ *   through_epoch: number
  */
 
 /* SnPoolClaimArgs (json):
@@ -4551,6 +4576,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   client_id?: string
  *   set_at_millis: number
  *   from_epoch?: number
+ *   consent_scope?: string
+ *   through_epoch?: number
+ *   hotkey_ss58?: string
+ *   consent_head_hash?: string
+ *   consent_generation?: number
+ *   mapping_hash?: string
+ *   mapping_generation?: number
  */
 
 /* SnWalletList (json):

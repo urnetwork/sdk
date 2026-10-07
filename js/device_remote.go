@@ -222,6 +222,90 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 		device.Sync()
 		return js.Null()
 	})
+	m["addProvidePausedChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProvidePausedChangeListener(&jsProvidePausedChangeListener{cb: cb}))
+	})
+
+	// provide mode (hosted-incompatible setter): 0 none, 1 network, 2 friends
+	// and family, 3 public
+	m["getProvideMode"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.GetProvideMode())
+	})
+	m["setProvideMode"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) == 0 || args[0].Type() != js.TypeNumber {
+			return js.Null()
+		}
+		device.SetProvideMode(args[0].Int())
+		device.Sync()
+		return js.Null()
+	})
+	m["addProvideModeChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProvideModeChangeListener(&jsProvideModeChangeListener{cb: cb}))
+	})
+	m["addProvideChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProvideChangeListener(&jsProvideChangeListener{cb: cb}))
+	})
+
+	// the provider of the device process: whether it has a platform transport
+	// with a registered route, the platform's client limit hold, and the
+	// traffic it relays. The getters read the provider state the device
+	// pushes to the remote after every change, so they need no listener to
+	// stay current
+	m["getProviderConnected"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(device.GetProviderConnected())
+	})
+	m["getClientLimitStatus"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsClientLimitStatus(device.GetClientLimitStatus())
+	})
+	m["addClientLimitStatusChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddClientLimitStatusChangeListener(&jsClientLimitStatusChangeListener{cb: cb}))
+	})
+	m["getProviderPacketStats"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsPacketStats(device.GetProviderPacketStats())
+	})
+	m["addProviderPacketStatsChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProviderPacketStatsChangeListener(&jsPacketStatsChangeListener{cb: cb}))
+	})
+	m["getProviderEgressContractDetails"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractDetailsList(device.GetProviderEgressContractDetails())
+	})
+	m["getProviderIngressContractDetails"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return jsContractDetailsList(device.GetProviderIngressContractDetails())
+	})
+	m["addProviderEgressContractDetailsChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProviderEgressContractDetailsChangeListener(&jsContractDetailsChangeListener{cb: cb}))
+	})
+	m["addProviderIngressContractDetailsChangeListener"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		cb, ok := funcArg(args)
+		if !ok {
+			return js.Null()
+		}
+		return jsSub(device.AddProviderIngressContractDetailsChangeListener(&jsContractDetailsChangeListener{cb: cb}))
+	})
 
 	// connect location / destination
 	m["getConnectLocation"] = js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -622,6 +706,117 @@ type jsConnectedProviderLocationChangeListener struct{ cb js.Value }
 
 func (self *jsConnectedProviderLocationChangeListener) ConnectedProviderLocationsChanged() {
 	self.cb.Invoke()
+}
+
+// Calls the page with the provide enabled state.
+type jsProvideChangeListener struct{ cb js.Value }
+
+func (self *jsProvideChangeListener) ProvideChanged(provideEnabled bool) {
+	self.cb.Invoke(provideEnabled)
+}
+
+// Calls the page with the provide paused state.
+type jsProvidePausedChangeListener struct{ cb js.Value }
+
+func (self *jsProvidePausedChangeListener) ProvidePausedChanged(providePaused bool) {
+	self.cb.Invoke(providePaused)
+}
+
+// Calls the page with the provide mode.
+type jsProvideModeChangeListener struct{ cb js.Value }
+
+func (self *jsProvideModeChangeListener) ProvideModeChanged(provideMode int) {
+	self.cb.Invoke(provideMode)
+}
+
+// Calls the page with the client limit status, as jsClientLimitStatus renders it.
+type jsClientLimitStatusChangeListener struct{ cb js.Value }
+
+func (self *jsClientLimitStatusChangeListener) ClientLimitStatusChanged(status *sdk.ClientLimitStatus) {
+	self.cb.Invoke(jsClientLimitStatus(status))
+}
+
+// Calls the page with the packet stats, as jsPacketStats renders them.
+type jsPacketStatsChangeListener struct{ cb js.Value }
+
+func (self *jsPacketStatsChangeListener) PacketStatsChanged(packetStats *sdk.PacketStats) {
+	self.cb.Invoke(jsPacketStats(packetStats))
+}
+
+// Calls the page with one contract row, as jsContractDetails renders it.
+type jsContractDetailsChangeListener struct{ cb js.Value }
+
+func (self *jsContractDetailsChangeListener) ContractDetailsChanged(contractDetails *sdk.ContractDetails) {
+	self.cb.Invoke(jsContractDetails(contractDetails))
+}
+
+// ── provider status ──────────────────────────────────────────────────────────
+
+// Mirrors sdk.ClientLimitStatus ({status, retryTime}):
+// status is "" or "client_limit_exceeded", and retryTime the unix millisecond
+// time the device reconnects, 0 with no hold
+func jsClientLimitStatus(status *sdk.ClientLimitStatus) js.Value {
+	if status == nil {
+		return js.Null()
+	}
+	return js.ValueOf(map[string]any{
+		"status":    status.Status,
+		"retryTime": status.RetryTime,
+	})
+}
+
+// Mirrors sdk.TransferPath ({sourceId, destinationId,
+// streamId}). An id the path does not carry is null; the sdk reports an end it
+// does not know, and the stream of a direct contract, as the all-zero id
+func jsTransferPath(path *sdk.TransferPath) js.Value {
+	if path == nil {
+		return js.Null()
+	}
+	id := func(id *sdk.Id) any {
+		if id == nil {
+			return nil
+		}
+		return id.String()
+	}
+	return js.ValueOf(map[string]any{
+		"sourceId":      id(path.SourceId),
+		"destinationId": id(path.DestinationId),
+		"streamId":      id(path.StreamId),
+	})
+}
+
+// Mirrors sdk.ContractDetails, one contract of one
+// direction: its id, used and total bytes, bit rate, transfer path and status
+// ("open", or "closed" once with the final counts)
+func jsContractDetails(contractDetails *sdk.ContractDetails) js.Value {
+	if contractDetails == nil {
+		return js.Null()
+	}
+	var contractId any
+	if contractDetails.ContractId != nil {
+		contractId = contractDetails.ContractId.String()
+	}
+	return js.ValueOf(map[string]any{
+		"contractId":            contractId,
+		"contractUsedByteCount": contractDetails.ContractUsedByteCount,
+		"contractByteCount":     contractDetails.ContractByteCount,
+		"contractBitRate":       contractDetails.ContractBitRate,
+		"contractTransferPath":  jsTransferPath(contractDetails.ContractTransferPath),
+		"status":                contractDetails.Status,
+	})
+}
+
+// Mirrors a contract details list: null when the device
+// has no provider, else an array of rows in no particular order
+func jsContractDetailsList(contractDetailsList *sdk.ContractDetailsList) js.Value {
+	if contractDetailsList == nil {
+		return js.Null()
+	}
+	rows := []any{}
+	for i := 0; i < contractDetailsList.Len(); i += 1 {
+		rows = append(rows, jsContractDetails(contractDetailsList.Get(i)))
+	}
+	return js.ValueOf(rows)
 }
 
 // ── DNS resolver settings ────────────────────────────────────────────────────

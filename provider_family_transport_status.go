@@ -8,7 +8,9 @@ package sdk
 // platform transport as one group (connect.FamilyPlatformTransportGroup). The
 // states here are connect.PlatformTransportState strings: "connecting",
 // "connected", "disabled", "sleeping" (the device has no path of that
-// family), "idle-policy" (the control family policy forbids that family).
+// family), "idle-policy" (the control family policy forbids that family),
+// "client-limit" (the platform closed the client for its network's client
+// limit and the transport holds its dials; see Device.GetClientLimitStatus).
 // "unknown" is reported when the device cannot be reached.
 //
 // Not to be confused with TransportStatus, which is the memory-budget

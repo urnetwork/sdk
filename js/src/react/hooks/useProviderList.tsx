@@ -27,7 +27,7 @@ export function useProviderList() {
   const [query, setQuery] = useState("");
 
   const debounceMs = 500;
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestRef = useRef<number>(0);
 
   const filterLocations = (result: FindLocationsResult): FilteredLocations => {

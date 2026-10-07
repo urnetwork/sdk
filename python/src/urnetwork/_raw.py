@@ -33,6 +33,7 @@ urnet_change_network_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_check_balance_code_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_claim_network_name_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_client_events_send_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_client_limit_status_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
 urnet_client_refresh_integrity_cb = CFUNCTYPE(None, c_void_p, c_uint64)
 urnet_commit_cb = CFUNCTYPE(None, c_void_p, c_bool)
 urnet_connect_change_cb = CFUNCTYPE(None, c_void_p, c_bool)
@@ -451,6 +452,8 @@ def bind(lib):
     lib.urnet_api_sn_get_wallet.restype = None
     lib.urnet_api_sn_head.argtypes = [c_uint64, urnet_sn_head_cb, c_void_p]
     lib.urnet_api_sn_head.restype = None
+    lib.urnet_api_sn_network_wallet_mapping_challenge_sync.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
+    lib.urnet_api_sn_network_wallet_mapping_challenge_sync.restype = c_void_p
     lib.urnet_api_sn_pool_claim_sync.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_api_sn_pool_claim_sync.restype = c_void_p
     lib.urnet_api_sn_set_wallet.argtypes = [c_uint64, c_char_p, urnet_sn_set_wallet_cb, c_void_p]
@@ -721,6 +724,8 @@ def bind(lib):
     lib.urnet_device_add_can_refer_change_listener.restype = c_uint64
     lib.urnet_device_add_can_show_rating_dialog_change_listener.argtypes = [c_uint64, urnet_can_show_rating_dialog_change_cb, c_void_p]
     lib.urnet_device_add_can_show_rating_dialog_change_listener.restype = c_uint64
+    lib.urnet_device_add_client_limit_status_change_listener.argtypes = [c_uint64, urnet_client_limit_status_change_cb, c_void_p]
+    lib.urnet_device_add_client_limit_status_change_listener.restype = c_uint64
     lib.urnet_device_add_connect_change_listener.argtypes = [c_uint64, urnet_connect_change_cb, c_void_p]
     lib.urnet_device_add_connect_change_listener.restype = c_uint64
     lib.urnet_device_add_connect_location_change_listener.argtypes = [c_uint64, urnet_connect_location_change_cb, c_void_p]
@@ -823,6 +828,8 @@ def bind(lib):
     lib.urnet_device_get_can_show_rating_dialog.restype = c_bool
     lib.urnet_device_get_client_id.argtypes = [c_uint64]
     lib.urnet_device_get_client_id.restype = c_void_p
+    lib.urnet_device_get_client_limit_status.argtypes = [c_uint64]
+    lib.urnet_device_get_client_limit_status.restype = c_void_p
     lib.urnet_device_get_connect_enabled.argtypes = [c_uint64]
     lib.urnet_device_get_connect_enabled.restype = c_bool
     lib.urnet_device_get_connect_location.argtypes = [c_uint64]
@@ -1311,6 +1318,8 @@ def bind(lib):
     lib.urnet_device_remote_get_exits.restype = c_void_p
     lib.urnet_device_remote_get_probe_results.argtypes = [c_uint64]
     lib.urnet_device_remote_get_probe_results.restype = c_void_p
+    lib.urnet_device_remote_get_provider_connected.argtypes = [c_uint64]
+    lib.urnet_device_remote_get_provider_connected.restype = c_bool
     lib.urnet_device_remote_get_reliability_metrics.argtypes = [c_uint64]
     lib.urnet_device_remote_get_reliability_metrics.restype = c_void_p
     lib.urnet_device_remote_get_reliability_settings.argtypes = [c_uint64]
@@ -2343,6 +2352,8 @@ def bind(lib):
     lib.urnet_new_device_local_with_key_material.restype = c_uint64
     lib.urnet_new_device_local_with_memory_target.argtypes = [c_uint64, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_bool, c_uint64, c_int64, POINTER(c_void_p)]
     lib.urnet_new_device_local_with_memory_target.restype = c_uint64
+    lib.urnet_new_device_local_with_provide_extender.argtypes = [c_uint64, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_bool, c_uint64, c_bool, c_bool, POINTER(c_void_p)]
+    lib.urnet_new_device_local_with_provide_extender.restype = c_uint64
     lib.urnet_new_device_remote_with_defaults.argtypes = [c_uint64, c_char_p, c_char_p, POINTER(c_void_p)]
     lib.urnet_new_device_remote_with_defaults.restype = c_uint64
     lib.urnet_new_export_options.argtypes = []

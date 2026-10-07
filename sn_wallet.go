@@ -11,6 +11,18 @@ import (
 	"github.com/urnetwork/connect"
 )
 
+// The consent kinds a wallet can come from (SnWallet.ConsentScope).
+const (
+	// a provider client's own wallet mapping consent
+	SnWalletConsentScopeProvider = "provider"
+	// the network consent: one signature for every provider client of the
+	// network that has no provider consent of its own
+	SnWalletConsentScopeNetwork = "network"
+	// the network's delegation to a hotkey, whose wallet consent the coldkey
+	// signed once for every operator; it pays where neither consent above does
+	SnWalletConsentScopeHotkey = "hotkey"
+)
+
 // The Bittensor coldkey where the network's UR protocol entitlements settle.
 // A wallet is an account setting kept by the server (POST/GET /sn/wallet)
 // and cached on the device in local state so the earnings screens can gate
@@ -23,6 +35,22 @@ type SnWallet struct {
 	// first epoch the wallet is effective for (0 = unknown); alpha is never
 	// retroactive, so claims are scanned from here
 	FromEpoch int64 `json:"from_epoch,omitempty"`
+	// SnWalletConsentScope*, or "" for a wallet that is not a consent (a
+	// login-proof wallet or the network-level copy, or an older server)
+	ConsentScope string `json:"consent_scope,omitempty"`
+	// for a consent, the last epoch it pays (0 = unknown)
+	ThroughEpoch int64 `json:"through_epoch,omitempty"`
+	// The fields below describe a hotkey entry and are empty for the other
+	// scopes. In a hotkey entry ColdkeySs58 is the coldkey of the hotkey's
+	// wallet consent effective now (else of its head generation), and the
+	// epochs are the delegation's.
+	HotkeySs58 string `json:"hotkey_ss58,omitempty"`
+	// the wallet consent head the delegation adopts ("0x" and 64 hex)
+	ConsentHeadHash   string `json:"consent_head_hash,omitempty"`
+	ConsentGeneration int64  `json:"consent_generation,omitempty"`
+	// the delegation's own chain head ("0x" and 64 hex)
+	MappingHash       string `json:"mapping_hash,omitempty"`
+	MappingGeneration int64  `json:"mapping_generation,omitempty"`
 }
 
 func (self *SnWallet) Copy() *SnWallet {
@@ -340,40 +368,59 @@ func (self *snDevice) SyncSnWallet(callback SnGetWalletCallback) {
 	})
 }
 
-// snPickWallet prefers the wallet attached to this client, then the
-// network-level wallet, then the first one.
+// The wallet to show, in settlement's precedence. For a client session: this
+// client's own provider consent, else the network consent, else the network's
+// hotkey entry, else this client's other wallet, else the network-level copy.
+// For a network session (clientId ""): the network consent, else the hotkey
+// entry, else the network-level copy. Else the first one. A listed entry is
+// never passed over for a lower one: the pick reads no epochs and no
+// verification, so it falls back from a mode only when that mode is not
+// listed. Wallets from servers without consent scopes keep the earlier order:
+// this client's, then network-level.
 func snPickWallet(result *SnGetWalletResult, clientId string) *SnWallet {
-	var networkLevel *SnWallet
-	var first *SnWallet
-	if result.Wallets != nil {
-		for _, wallet := range result.Wallets.values {
-			if wallet == nil || wallet.ColdkeySs58 == "" {
-				continue
+	var ownConsent, networkConsent, hotkey, own, networkLevel, first *SnWallet
+	consider := func(wallet *SnWallet) {
+		if wallet == nil || wallet.ColdkeySs58 == "" {
+			return
+		}
+		// a network session has no wallet of its own client
+		owned := clientId != "" && wallet.ClientId == clientId
+		switch {
+		case owned && wallet.ConsentScope == SnWalletConsentScopeProvider:
+			if ownConsent == nil {
+				ownConsent = wallet
 			}
-			if wallet.ClientId == clientId {
-				return wallet.Copy()
+		case wallet.ClientId == "" && wallet.ConsentScope == SnWalletConsentScopeNetwork:
+			if networkConsent == nil {
+				networkConsent = wallet
 			}
-			if wallet.ClientId == "" && networkLevel == nil {
+		case wallet.ClientId == "" && wallet.ConsentScope == SnWalletConsentScopeHotkey:
+			if hotkey == nil {
+				hotkey = wallet
+			}
+		case owned:
+			if own == nil {
+				own = wallet
+			}
+		case wallet.ClientId == "":
+			if networkLevel == nil {
 				networkLevel = wallet
 			}
-			if first == nil {
-				first = wallet
-			}
-		}
-	}
-	if result.Wallet != nil && result.Wallet.ColdkeySs58 != "" {
-		if result.Wallet.ClientId == clientId {
-			return result.Wallet.Copy()
-		}
-		if networkLevel == nil && result.Wallet.ClientId == "" {
-			networkLevel = result.Wallet
 		}
 		if first == nil {
-			first = result.Wallet
+			first = wallet
 		}
 	}
-	if networkLevel != nil {
-		return networkLevel.Copy()
+	if result.Wallets != nil {
+		for _, wallet := range result.Wallets.values {
+			consider(wallet)
+		}
 	}
-	return first.Copy()
+	consider(result.Wallet)
+	for _, wallet := range []*SnWallet{ownConsent, networkConsent, hotkey, own, networkLevel, first} {
+		if wallet != nil {
+			return wallet.Copy()
+		}
+	}
+	return nil
 }

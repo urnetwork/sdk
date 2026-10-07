@@ -191,7 +191,7 @@ func TestDeviceLocalProviderExtenderReportsAdmissionLimits(t *testing.T) {
 			defaults.AdmissionRetryAfterMax,
 		)
 	}
-	connect.AssertEqual(t, fixture.extender().server.AdmissionStats(), extender.ExtenderAdmissionStats{
+	connect.AssertEqual(t, fixture.extender().currentServer().AdmissionStats(), extender.ExtenderAdmissionStats{
 		LimitedBySourceCount: 1,
 	})
 
@@ -211,5 +211,5 @@ func TestDeviceLocalProviderExtenderReportsAdmissionLimits(t *testing.T) {
 		return status.Enabled && status.Listening && status.LimitedBySourceCount == 0
 	})
 	connect.AssertEqual(t, restarted.LimitedBySubnetsCount, 0)
-	connect.AssertEqual(t, fixture.extender().server.AdmissionStats(), extender.ExtenderAdmissionStats{})
+	connect.AssertEqual(t, fixture.extender().currentServer().AdmissionStats(), extender.ExtenderAdmissionStats{})
 }

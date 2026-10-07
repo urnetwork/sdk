@@ -63,6 +63,11 @@ type ContractEntry struct {
 	// transfer path, i.e. it is a stream contract rather than a direct one. The
 	// app renders stream contracts distinctly (a double concentric outer ring).
 	HasStream bool
+	// the stream id of a stream contract, empty for a direct one.
+	// A stream can hide the peer's end of the path, which then reads as the
+	// all-zero id and puts every such contract in one row, so an app that
+	// tells peers apart keys these contracts by their stream.
+	StreamId string
 }
 
 type ContractEntryList struct {
@@ -828,6 +833,9 @@ func (self *contractPeerAggregator) update(
 				TotalByteCount: details.ContractByteCount,
 				BitRate:        details.ContractBitRate,
 				HasStream:      contractHasStream(details),
+			}
+			if entry.HasStream {
+				entry.StreamId = details.ContractTransferPath.StreamId.String()
 			}
 			if receive {
 				s.receive = append(s.receive, entry)

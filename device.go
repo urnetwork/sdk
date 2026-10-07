@@ -746,6 +746,18 @@ type Device interface {
 	// cannot be reached.
 	GetProviderFamilyTransportStatus() *ProviderFamilyTransportStatus
 
+	// GetClientLimitStatus is the client limit status of the device's platform
+	// connection (client_limit_status.go): ClientLimitStatusExceeded, with the
+	// unix millisecond time the device reconnects, while the platform has
+	// closed the device for its network's concurrent client limit and the
+	// device holds off reconnecting; ClientLimitStatusNone otherwise. Never
+	// nil. A remote device reads through to the device process, with the last
+	// value cached while it cannot be reached.
+	GetClientLimitStatus() *ClientLimitStatus
+
+	// fires on every change of the client limit status
+	AddClientLimitStatusChangeListener(listener ClientLimitStatusChangeListener) Sub
+
 	// GetExtenderStatus is the extender network of the device's network space
 	// (EXTENDER.md K5): the role, the gossip state, the counts, the event rate
 	// and every known address. It reads the space the DEVICE runs in -- on ios
@@ -771,9 +783,12 @@ type Device interface {
 	AddExtenderProvideStatusChangeListener(listener ExtenderProvideStatusChangeListener) Sub
 
 	// GetProvideExtender is the user's provider extender setting, stored per
-	// network space and independent of the provide mode (N4). Default on; a
-	// device that cannot be reached reads the value queued for it, else the
-	// last value read, else the default.
+	// network space, or held by the device for its life on a space that keeps
+	// no local state, and independent of the provide mode (N4). Until the user
+	// sets it, the device default applies, which is
+	// DeviceLocalSettings.DefaultProvideExtender, on unless the embedder turned
+	// it off; a device that cannot be reached reads the value queued for it,
+	// else the last value read, else the default.
 	GetProvideExtender() bool
 
 	// queued while the device cannot be reached and replayed at the next sync,

@@ -34,6 +34,7 @@ public interface Raw extends Library {
   interface urnet_check_balance_code_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_claim_network_name_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_client_events_send_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_client_limit_status_change_cb extends Callback { void invoke(Pointer a0, String a1); }
   interface urnet_client_refresh_integrity_cb extends Callback { void invoke(Pointer a0, long a1); }
   interface urnet_commit_cb extends Callback { void invoke(Pointer a0, byte a1); }
   interface urnet_connect_change_cb extends Callback { void invoke(Pointer a0, byte a1); }
@@ -325,6 +326,7 @@ public interface Raw extends Library {
   Pointer urnet_api_sn_epoch_sync(long a0, PointerByReference a1);
   void urnet_api_sn_get_wallet(long a0, urnet_sn_get_wallet_cb a1, Pointer a2);
   void urnet_api_sn_head(long a0, urnet_sn_head_cb a1, Pointer a2);
+  Pointer urnet_api_sn_network_wallet_mapping_challenge_sync(long a0, String a1, PointerByReference a2);
   Pointer urnet_api_sn_pool_claim_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_sn_set_wallet(long a0, String a1, urnet_sn_set_wallet_cb a2, Pointer a3);
   Pointer urnet_api_sn_set_wallet_sync(long a0, String a1, PointerByReference a2);
@@ -460,6 +462,7 @@ public interface Raw extends Library {
   long urnet_device_add_can_prompt_intro_funnel_change_listener(long a0, urnet_can_prompt_intro_funnel_change_cb a1, Pointer a2);
   long urnet_device_add_can_refer_change_listener(long a0, urnet_can_refer_change_cb a1, Pointer a2);
   long urnet_device_add_can_show_rating_dialog_change_listener(long a0, urnet_can_show_rating_dialog_change_cb a1, Pointer a2);
+  long urnet_device_add_client_limit_status_change_listener(long a0, urnet_client_limit_status_change_cb a1, Pointer a2);
   long urnet_device_add_connect_change_listener(long a0, urnet_connect_change_cb a1, Pointer a2);
   long urnet_device_add_connect_location_change_listener(long a0, urnet_connect_location_change_cb a1, Pointer a2);
   long urnet_device_add_connected_provider_location_change_listener(long a0, urnet_connected_provider_location_change_cb a1, Pointer a2);
@@ -511,6 +514,7 @@ public interface Raw extends Library {
   byte urnet_device_get_can_refer(long a0);
   byte urnet_device_get_can_show_rating_dialog(long a0);
   Pointer urnet_device_get_client_id(long a0);
+  Pointer urnet_device_get_client_limit_status(long a0);
   byte urnet_device_get_connect_enabled(long a0);
   Pointer urnet_device_get_connect_location(long a0);
   Pointer urnet_device_get_connected_provider_locations(long a0);
@@ -755,6 +759,7 @@ public interface Raw extends Library {
   Pointer urnet_device_remote_get_destination_exits(long a0);
   Pointer urnet_device_remote_get_exits(long a0);
   Pointer urnet_device_remote_get_probe_results(long a0);
+  byte urnet_device_remote_get_provider_connected(long a0);
   Pointer urnet_device_remote_get_reliability_metrics(long a0);
   Pointer urnet_device_remote_get_reliability_settings(long a0);
   byte urnet_device_remote_get_remote_connected(long a0);
@@ -1271,6 +1276,7 @@ public interface Raw extends Library {
   long urnet_new_device_local_with_defaults(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, PointerByReference a7);
   long urnet_new_device_local_with_key_material(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, PointerByReference a8);
   long urnet_new_device_local_with_memory_target(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, long a8, PointerByReference a9);
+  long urnet_new_device_local_with_provide_extender(long a0, String a1, String a2, String a3, String a4, String a5, byte a6, long a7, byte a8, byte a9, PointerByReference a10);
   long urnet_new_device_remote_with_defaults(long a0, String a1, String a2, PointerByReference a3);
   Pointer urnet_new_export_options();
   Pointer urnet_new_feedback_submitted_event(long a0, String a1, String a2);

@@ -16,7 +16,7 @@ import (
 // Five dot files, all following the shape of the other local-state files: the
 // directory envelope, written by connect through the store adapter below, the
 // latest reset the directory has applied, the gossip mode the user chose, the
-// identity key, and the provider extender opt-out.
+// identity key, and the provider extender setting the user chose.
 //
 // The directory is a cache. Every read failure -- missing, unreadable, corrupt
 // -- reads as no directory at all, and the client rediscovers, so nothing here
@@ -102,37 +102,59 @@ func (self *LocalState) SetExtenderGossipMode(mode string) error {
 	)
 }
 
-// The provider extender opt-out (F3, G1). Default on: a file that is not there
-// is a provider that has never been asked, and the role is on by default.
+// The provider extender setting (F3, G1). A file that is not there is a
+// provider that has never been asked, and the device default applies
+// (DeviceLocalSettings.DefaultProvideExtender, on unless the embedder turned
+// it off).
 const provideExtenderFileName = ".provide_extender"
 
-// The persisted provider extender setting. Unset or unreadable reads as on,
-// which is the default of F3; only an explicit off is stored as off.
+// The persisted provider extender setting. A space that stores none reads as
+// on, the sdk default of F3. A device reads the stored value itself instead,
+// so that its own default applies where there is none, which is what
+// DeviceLocal.GetProvideExtender answers.
+func (self *LocalState) GetProvideExtender() bool {
+	if provideExtender, stored := self.getStoredProvideExtender(); stored {
+		return provideExtender
+	}
+	return true
+}
+
+// The stored provider extender setting, and whether the space stores one at
+// all.
 //
 // Read from its file once and cached after. There is one LocalState per space
 // and every writer goes through SetProvideExtender, so the cache is the setting
 // for the life of the process, shared by every device on the space (the miner
 // swarm runs many), and the status, which reads it on every derivation, never
 // touches the disk (N4).
-func (self *LocalState) GetProvideExtender() bool {
+func (self *LocalState) getStoredProvideExtender() (provideExtender bool, stored bool) {
 	self.provideExtenderLock.Lock()
 	defer self.provideExtenderLock.Unlock()
 	if !self.provideExtenderLoaded {
-		self.provideExtender = self.readProvideExtender()
+		self.provideExtender, self.provideExtenderStored = self.readProvideExtender()
 		self.provideExtenderLoaded = true
 	}
-	return self.provideExtender
+	return self.provideExtender, self.provideExtenderStored
 }
 
-// Anything that is not an explicit off is on, so a missing, unreadable or
-// corrupt file never silently opts a provider out.
-func (self *LocalState) readProvideExtender() bool {
+// Only an explicit true or false is a stored value. A missing, unreadable or
+// corrupt file stores none, so the device default applies rather than a value
+// nobody chose: a corrupt file never silently opts a provider out of a default
+// that is on, nor in where the embedder's default is off.
+func (self *LocalState) readProvideExtender() (provideExtender bool, stored bool) {
 	path := filepath.Join(self.localStorageDir, provideExtenderFileName)
 	stateBytes, err := os.ReadFile(path)
 	if err != nil {
-		return true
+		return false, false
 	}
-	return strings.TrimSpace(string(stateBytes)) != "false"
+	switch strings.TrimSpace(string(stateBytes)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // Persists the provider extender setting. The cache takes the value whether or
@@ -142,6 +164,7 @@ func (self *LocalState) SetProvideExtender(provideExtender bool) error {
 	self.provideExtenderLock.Lock()
 	defer self.provideExtenderLock.Unlock()
 	self.provideExtender = provideExtender
+	self.provideExtenderStored = true
 	self.provideExtenderLoaded = true
 
 	path := filepath.Join(self.localStorageDir, provideExtenderFileName)

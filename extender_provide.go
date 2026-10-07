@@ -3,7 +3,6 @@ package sdk
 import (
 	"net"
 	"net/netip"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +19,9 @@ import (
 // on the platform.
 //
 // The setting is persisted per network space as `.provide_extender`, beside
-// the other dot files, and defaults to on (G1).
+// the other dot files; a space that keeps no local state leaves it with the
+// device for the device's life. Until the user sets it, the device default
+// applies (DeviceLocalSettings.DefaultProvideExtender), which is on (G1).
 
 // At most one status callback per second (F3), which is the epoch the space's
 // extender status already uses.
@@ -60,6 +61,12 @@ const (
 	ExtenderProvideErrorRevoked = "revoked"
 	// The role was asked to run and could not start in this space.
 	ExtenderProvideErrorStart = "start"
+	// The role is off because tcp 443, the one port an extender requires,
+	// could not be bound: another process holds it, such as another provider
+	// process of this host, or the host refuses the bind. The role binds no
+	// other carrier and tries the port again every few minutes (EXTENDER.md
+	// G2). The reason is the bind error.
+	ExtenderProvideErrorTcpUnavailable = "tcp_unavailable"
 	// No carrier bound. The reason is the bind failures.
 	ExtenderProvideErrorListen = "listen"
 	// The last activation failed and no family is active.
@@ -88,13 +95,22 @@ type ExtenderProvideStatus struct {
 	// The raw error text behind the state, empty when it has none. The app
 	// prefixes the localized case label (N3, N5).
 	Reason string
-	// True while the role is running: this build carries it, the setting is on
-	// and the device is providing.
+	// True while the role is running: this build carries it, the setting is on,
+	// the device is providing, and the role holds tcp 443 (TcpUnavailableError).
 	Enabled bool
 	// Why the role could not start while it was asked to: the space has no
 	// extender directory or no identity. Empty while the role runs or was not
 	// asked to.
 	StartError string
+	// The tcp 443 bind error while the role is off for want of that port, the
+	// one an extender requires (G2): another process holds it or the host
+	// refuses the bind. The role binds no other carrier, runs no node and
+	// activates nothing, ListenError names the tcp carrier, and the bind is
+	// tried again every few minutes, the role starting the moment it holds the
+	// port. On a host with several provider processes the first to take the
+	// port serves the extender and the others report this. Empty while the
+	// role holds the port or is not asked to run.
+	TcpUnavailableError string
 	// True while at least one carrier is bound.
 	Listening bool
 	// The carriers that failed to bind, as "<carrier>: <error>" joined by
@@ -119,10 +135,11 @@ type ExtenderProvideStatus struct {
 	// Unix milliseconds of when this extender's key was first seen revoked in
 	// the directory, 0 while it is not revoked.
 	RevokedTime int64
-	// The dns carrier ports that bound, ascending and comma separated, which
-	// is also the order a client dials them in (L2): "4053" on a host that
-	// cannot take 53, "53,4053" on one that can. Empty when the dns carrier is
-	// not listening.
+	// The dns carrier ports that bound, ascending and comma separated (L2):
+	// "4053" on every app, "53,4053" on a device that opts in to 53
+	// (DeviceLocalSettings.ProvideExtenderDnsPrivilegedPort, the sn miner)
+	// and took it. A client tries both ports whichever this lists. Empty when
+	// the dns carrier is not listening.
 	DnsPorts string
 	// The pings this extender made of the other extenders in its directory,
 	// one per peer address family, for the life of the role (GEOMAP §2.1), and
@@ -176,6 +193,7 @@ type extenderProvideState struct {
 	Enabled               bool
 	Listening             bool
 	ListenError           string
+	TcpUnavailableError   string
 	ActivatedV4           bool
 	ActivatedV6           bool
 	Ipv4                  string
@@ -199,6 +217,7 @@ func (self extenderProvideState) status(connectionCount int) *ExtenderProvideSta
 		Enabled:               self.Enabled,
 		Listening:             self.Listening,
 		ListenError:           self.ListenError,
+		TcpUnavailableError:   self.TcpUnavailableError,
 		ActivatedV4:           self.ActivatedV4,
 		ActivatedV6:           self.ActivatedV6,
 		Ipv4:                  self.Ipv4,
@@ -255,6 +274,9 @@ func cloneExtenderProvideStatus(status *ExtenderProvideStatus) *ExtenderProvideS
 //   - error, start: the role was asked to run and could not start in this
 //     space. A role that never started has no revocation, family or bind to
 //     report, and an outcome exists, so it is not setting up.
+//   - error, tcp_unavailable: the role is off because tcp 443, the one port
+//     an extender requires, could not be bound, and it retries the port. It
+//     has no revocation, family or other carrier to report either.
 //   - error, revoked: the operator revoked this extender's key. The case is
 //     the whole message, so there is no reason text.
 //   - active: at least one family is activated, with the other family's last
@@ -284,6 +306,8 @@ func extenderProvideStateRule(
 		return ExtenderProvideStateNotProviding, "", ""
 	case !status.Enabled && status.StartError != "":
 		return ExtenderProvideStateError, ExtenderProvideErrorStart, status.StartError
+	case status.TcpUnavailableError != "":
+		return ExtenderProvideStateError, ExtenderProvideErrorTcpUnavailable, status.TcpUnavailableError
 	case status.RevokedTime != 0:
 		return ExtenderProvideStateError, ExtenderProvideErrorRevoked, ""
 	case status.ActivatedV4 || status.ActivatedV6:
@@ -359,9 +383,14 @@ type deviceLocalExtenderSettings struct {
 	DnsPort int
 	DnsTld  string
 	// DnsPrivilegedPort also binds the dns carrier on 53 beside DnsPort (L2).
-	// The provider fills it from the platform rule; a test pins it off so its
-	// ephemeral carrier is the only dns port on any host.
+	// The provider fills it from the device setting
+	// (DeviceLocalSettings.ProvideExtenderDnsPrivilegedPort), off on every app
+	// and on in the sn miner. A failed 53 bind leaves the carrier on DnsPort.
 	DnsPrivilegedPort bool
+	// When set, replaces time.After as the wait between attempts to bind tcp
+	// 443 while another process holds it (G2). Tests fire the retry through
+	// it, and hold the role without a sleep.
+	TcpRetryAfter func(wait time.Duration) <-chan time.Time
 
 	// The admission limits of this extender (EXTENDER.md A12), each a rate
 	// per minute: the distinct source subnets it admits, and the actions of
@@ -426,29 +455,8 @@ type deviceLocalExtenderSettings struct {
 	ConfigurePingReporter func(settings *connect.ExtenderPingReporterSettings)
 }
 
-// Whether the dns carrier also binds 53 beside its unprivileged port (L2).
-// Only the platforms that can take 53 without privilege do: the linux daemon
-// runs as root and the windows service as LocalSystem, while macOS and every
-// other host binds 4053 alone. The bind is never required -- a failure
-// disables that one port and the carrier keeps serving.
-func extenderDnsPrivilegedPort() bool {
-	return extenderDnsPrivilegedPortForPlatform(runtime.GOOS)
-}
-
-// The rule itself, parameterized by the platform so it is pinned by a test on
-// any host.
-func extenderDnsPrivilegedPortForPlatform(goos string) bool {
-	switch goos {
-	case "linux", "windows":
-		return true
-	default:
-		return false
-	}
-}
-
-// The bound dns ports of one extender as one string (F3, L2), ascending, which
-// is the order a client dials them in. Empty when the dns carrier is not
-// listening.
+// The bound dns ports of one extender as one string (F3, L2), ascending.
+// Empty when the dns carrier is not listening.
 func extenderDnsPortsText(dnsPorts []int) string {
 	parts := []string{}
 	for _, dnsPort := range dnsPorts {
@@ -476,21 +484,37 @@ func extenderListenErrorText(carrierErrs map[string]error) string {
 	return strings.Join(parts, "; ")
 }
 
-// The provider extender setting of this device's space (F3). A device with no
-// storage always reads the default, which is on.
+// The provider extender setting of this device (F3): the value the space's
+// local state stores; else, on a space that keeps no local state, the value
+// SetProvideExtender set for the life of this device; else the device default,
+// DeviceLocalSettings.DefaultProvideExtender. The embedder's switch is not part
+// of the setting: with ProvideExtenderEnabled off the role never runs, whatever
+// this reads (G1), and the status reports not_providing.
 func (self *DeviceLocal) GetProvideExtender() bool {
-	asyncLocalState := self.networkSpaceAsyncLocalState()
-	if asyncLocalState == nil {
-		return true
+	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
+		if provideExtender, stored := asyncLocalState.GetLocalState().getStoredProvideExtender(); stored {
+			return provideExtender
+		}
+		return self.settings.DefaultProvideExtender
 	}
-	return asyncLocalState.GetLocalState().GetProvideExtender()
+	provideExtender, set := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.provideExtender, self.provideExtenderSet
+	}()
+	if set {
+		return provideExtender
+	}
+	return self.settings.DefaultProvideExtender
 }
 
-// Persists the provider extender setting and applies it at once (F3, G2).
-// Turning it off stops the extender server, the activation loop and the
-// extender node together; turning it on starts them again while the device is
-// providing. A hosted device never runs the role (G1), so the setter is
-// guarded there as SetProvideMode is.
+// Sets the provider extender setting and applies it at once (F3, G2): stored
+// in the space's local state, which keeps it across restarts, or held by this
+// device for its life on a space that keeps no local state. Turning it off
+// stops the extender server, the activation loop and the extender node
+// together; turning it on starts them again while the device is providing. A
+// hosted device never runs the role (G1), so the setter is guarded there as
+// SetProvideMode is.
 func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 	if self.hostedIncompatibleGuarded("SetProvideExtender") {
 		return
@@ -499,6 +523,13 @@ func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 		if err := asyncLocalState.GetLocalState().SetProvideExtender(provideExtender); err != nil {
 			self.log.Infof("[device]provide extender err = %s\n", err)
 		}
+	} else {
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.provideExtender = provideExtender
+			self.provideExtenderSet = true
+		}()
 	}
 	self.log.Infof("[device]provide extender = %t\n", provideExtender)
 	self.updateExtenderProvide()
@@ -577,6 +608,14 @@ func (self *DeviceLocal) extenderProvideStatusChanged() {
 // Starts or stops the extender role for the current provide state and setting
 // (G2). Called after every provide change and after the setting changes, never
 // with the device lock held.
+//
+// The wanted state is read, handed to the provider, and read again until it
+// stands. A change that lands between one call's read and its hand-over runs
+// its own call, which can hand its newer state over first; the older call then
+// finds the state moved and hands the newer one over again, rather than
+// leaving its own in force. The provider takes one hand-over at a time, so the
+// state handed over last is the state wanted last, without a lock held across
+// the read and the hand-over.
 func (self *DeviceLocal) updateExtenderProvide() {
 	self.stateLock.Lock()
 	provider := self.provider
@@ -589,7 +628,21 @@ func (self *DeviceLocal) updateExtenderProvide() {
 		// either, so this is defense in depth beside the hosted provide guard.
 		// The same two halves are what N3's off and not_providing states
 		// report.
-		provider.setExtenderEnabled(self.extenderProvideProviding() && self.GetProvideExtender())
+		wanted := func() bool {
+			return self.extenderProvideProviding() && self.GetProvideExtender()
+		}
+		enabled := wanted()
+		for {
+			if hook := self.settings.testingBeforeExtenderProvideApply; hook != nil {
+				hook(enabled)
+			}
+			provider.setExtenderEnabled(enabled)
+			current := wanted()
+			if current == enabled {
+				break
+			}
+			enabled = current
+		}
 	}
 	// the watch is woken whether or not there is a provider: the state of N3
 	// follows the setting and the provide state, so a device with no provider

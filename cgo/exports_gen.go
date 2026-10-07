@@ -530,6 +530,20 @@ func (self *cAdapterClientEventsSendCallback) Result(result *sdk.ClientEventsSen
 	}
 }
 
+type cAdapterClientLimitStatusChangeListener struct {
+	cbClientLimitStatusChanged C.urnet_client_limit_status_change_cb
+	userData                   unsafe.Pointer
+}
+
+func (self *cAdapterClientLimitStatusChangeListener) ClientLimitStatusChanged(status *sdk.ClientLimitStatus) {
+	defer cgoGuard("urnet_client_limit_status_change_cb")
+	status_ := cJson(status, "urnet_client_limit_status_change_cb")
+	C.urnet_invoke_client_limit_status_change(self.cbClientLimitStatusChanged, self.userData, status_)
+	if status_ != nil {
+		cStringFree(status_)
+	}
+}
+
 type cAdapterClientRefreshIntegrityListener struct {
 	cbClientRefreshInvalid C.urnet_client_refresh_integrity_cb
 	userData               unsafe.Pointer
@@ -4802,6 +4816,31 @@ func urnet_api_sn_head(self C.uint64_t, callback_result C.urnet_sn_head_cb, call
 	self_.SnHead(callback_)
 }
 
+//export urnet_api_sn_network_wallet_mapping_challenge_sync
+func urnet_api_sn_network_wallet_mapping_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_network_wallet_mapping_challenge_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_wallet_mapping_challenge_sync")
+	if !ok {
+		return nil
+	}
+	var args_ *sdk.SnNetworkWalletMappingChallengeArgs
+	if args != nil {
+		args_ = &sdk.SnNetworkWalletMappingChallengeArgs{}
+		if !goJson(args, args_, "urnet_api_sn_network_wallet_mapping_challenge_sync") {
+			return nil
+		}
+	}
+	r0, err := self_.SnNetworkWalletMappingChallengeSync(args_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_network_wallet_mapping_challenge_sync")
+}
+
 //export urnet_api_sn_pool_claim_sync
 func urnet_api_sn_pool_claim_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_api_sn_pool_claim_sync")
@@ -7040,6 +7079,21 @@ func urnet_device_add_can_show_rating_dialog_change_listener(self C.uint64_t, li
 	return C.uint64_t(newHandle(r0))
 }
 
+//export urnet_device_add_client_limit_status_change_listener
+func urnet_device_add_client_limit_status_change_listener(self C.uint64_t, listener_client_limit_status_changed C.urnet_client_limit_status_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
+	defer cgoGuard("urnet_device_add_client_limit_status_change_listener")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_add_client_limit_status_change_listener")
+	if !ok {
+		return 0
+	}
+	var listener_ sdk.ClientLimitStatusChangeListener
+	if listener_client_limit_status_changed != nil {
+		listener_ = &cAdapterClientLimitStatusChangeListener{cbClientLimitStatusChanged: listener_client_limit_status_changed, userData: listener_user_data}
+	}
+	r0 := self_.AddClientLimitStatusChangeListener(listener_)
+	return C.uint64_t(newHandle(r0))
+}
+
 //export urnet_device_add_connect_change_listener
 func urnet_device_add_connect_change_listener(self C.uint64_t, listener_connect_changed C.urnet_connect_change_cb, listener_user_data unsafe.Pointer) C.uint64_t {
 	defer cgoGuard("urnet_device_add_connect_change_listener")
@@ -7756,6 +7810,20 @@ func urnet_device_get_client_id(self C.uint64_t) *C.char {
 	}
 	r0 := self_.GetClientId()
 	return cId(r0)
+}
+
+//export urnet_device_get_client_limit_status
+func urnet_device_get_client_limit_status(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_client_limit_status")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_client_limit_status")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetClientLimitStatus()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_get_client_limit_status")
 }
 
 //export urnet_device_get_connect_enabled
@@ -11082,6 +11150,17 @@ func urnet_device_remote_get_probe_results(self C.uint64_t) *C.char {
 		return nil
 	}
 	return cJson(r0, "urnet_device_remote_get_probe_results")
+}
+
+//export urnet_device_remote_get_provider_connected
+func urnet_device_remote_get_provider_connected(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_remote_get_provider_connected")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_get_provider_connected")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetProviderConnected()
+	return C.bool(r0)
 }
 
 //export urnet_device_remote_get_reliability_metrics
@@ -15286,12 +15365,9 @@ func urnet_new_device_local(networkSpace C.uint64_t, byJwt *C.char, deviceDescri
 			return 0
 		}
 	}
-	var settings_ *sdk.DeviceLocalSettings
-	if settings != nil {
-		settings_ = &sdk.DeviceLocalSettings{}
-		if !goJson(settings, settings_, "urnet_new_device_local") {
-			return 0
-		}
+	settings_ := sdk.DefaultDeviceLocalSettings()
+	if !goJson(settings, settings_, "urnet_new_device_local") {
+		return 0
 	}
 	r0, err := sdk.NewDeviceLocal(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local"), settings_)
 	if err != nil {
@@ -15386,6 +15462,36 @@ func urnet_new_device_local_with_memory_target(networkSpace C.uint64_t, byJwt *C
 		}
 	}
 	r0, err := sdk.NewDeviceLocalWithMemoryTarget(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local_with_memory_target"), bool(enableRpc), keyMaterial_, int64(memoryTargetByteCount))
+	if err != nil {
+		setErrorOut(outError, err)
+		return 0
+	}
+	if r0 == nil {
+		return 0
+	}
+	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_new_device_local_with_provide_extender
+func urnet_new_device_local_with_provide_extender(networkSpace C.uint64_t, byJwt *C.char, deviceDescription *C.char, deviceSpec *C.char, appVersion *C.char, instanceId *C.char, enableRpc C.bool, keyMaterial C.uint64_t, provideExtenderEnabled C.bool, defaultProvideExtender C.bool, outError **C.char) C.uint64_t {
+	defer cgoGuard("urnet_new_device_local_with_provide_extender")
+	var networkSpace_ *sdk.NetworkSpace
+	if networkSpace != 0 {
+		var ok bool
+		networkSpace_, ok = resolveHandle[*sdk.NetworkSpace](uint64(networkSpace), "urnet_new_device_local_with_provide_extender")
+		if !ok {
+			return 0
+		}
+	}
+	var keyMaterial_ *sdk.DeviceLocalKeyMaterial
+	if keyMaterial != 0 {
+		var ok bool
+		keyMaterial_, ok = resolveHandle[*sdk.DeviceLocalKeyMaterial](uint64(keyMaterial), "urnet_new_device_local_with_provide_extender")
+		if !ok {
+			return 0
+		}
+	}
+	r0, err := sdk.NewDeviceLocalWithProvideExtender(networkSpace_, goString(byJwt), goString(deviceDescription), goString(deviceSpec), goString(appVersion), goId(instanceId, "urnet_new_device_local_with_provide_extender"), bool(enableRpc), keyMaterial_, bool(provideExtenderEnabled), bool(defaultProvideExtender))
 	if err != nil {
 		setErrorOut(outError, err)
 		return 0
