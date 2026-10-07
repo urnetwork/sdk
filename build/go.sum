@@ -182,6 +182,16 @@ github.com/spaolacci/murmur3 v1.1.0 h1:7c1g84S4BPRrfL5Xrdp6fOJ206sU9y293DDHaoy0b
 github.com/spaolacci/murmur3 v1.1.0/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/urnetwork/connect/v2026 v2026.10.6-1065407930 h1:ulXz6N2M27a66Tzqbpr6ZuOFbxVQ8r+fsCylXxxGe4g=
+github.com/urnetwork/connect/v2026 v2026.10.6-1065407930/go.mod h1:YujTj0eVbPGB5S5DSLYG9H6J4WN4lnY5KsgwvazuCiw=
+github.com/urnetwork/glog/v2026 v2026.10.6-1065407930 h1:zA4a/1xtUD+/ijb0c7vw0YYFyGNTDRorAJklRncS9zo=
+github.com/urnetwork/glog/v2026 v2026.10.6-1065407930/go.mod h1:uSTI+aZPsaTYPQFKMq4d7S9vEi6uz408iURoTudkyYA=
+github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065407930 h1:L3cAouirMPsX03nIGMyzub2le/Z0o8+ShMBNoAU97Cs=
+github.com/urnetwork/goidenticons/v2026 v2026.10.6-1065407930/go.mod h1:jcVbosYda85kM0GKspZlvLoTp+ziEhqj+fhsqOAgPqY=
+github.com/urnetwork/gvisor v0.0.0-20261004152605-c0783dba2eef h1:5o+/eARHbukXt1AkZW8MqCJ/o8hfuhYOllPaZv1Zdts=
+github.com/urnetwork/gvisor v0.0.0-20261004152605-c0783dba2eef/go.mod h1:We1Jh3kDvpcx13qPcI0LTjx3U6pHpis/KFoU/UtJTkM=
+github.com/urnetwork/sdk/v2026 v2026.10.6-1065407930 h1:RfSdSCgzIEyn4qSNAo5IPORCIKFdAXG8R/jH0T4PruY=
+github.com/urnetwork/sdk/v2026 v2026.10.6-1065407930/go.mod h1:K7aQSOdvE9Z70T4f3Bs0usoUuyg/nW2jtrPPNQN+dEA=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 go.uber.org/dig v1.19.0 h1:BACLhebsYdpQ7IROQ1AGPjrXcP5dF80U3gKoFzbaq/4=
@@ -243,7 +253,6 @@ golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated h1:1h2MnaIAIXISqTF
 golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated/go.mod h1:RVAQXBGNv1ib0J382/DPCRS/BPnsGebyM1Gj5VSDpG8=
 google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
 google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
