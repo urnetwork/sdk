@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // MASTER SECTION 8.4.5's message_id, THROUGH THE WHOLE STACK: THE SENDER'S, THE RECEIVER'S, AND

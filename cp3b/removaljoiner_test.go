@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // DIAGNOSTIC, written 2026-09-29 to reproduce liveprobe step 11's red on the deployed alpha:

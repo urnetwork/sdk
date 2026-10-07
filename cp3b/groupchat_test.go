@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/urnetwork/sdk"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE MILESTONE (ledger item 239, steps A4+A5): THREE REAL DEVICES, ONE ADDS A THIRD, ALL THREE

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urnetwork/connect/message"
-	"github.com/urnetwork/connect/messagegroup"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/connect/v2026/message"
+	"github.com/urnetwork/connect/v2026/messagegroup"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // THE TEXT CEILING, AND THE THING THAT MAKES IT WORTH A CASE: WHAT A REFUSED SEND COSTS.
