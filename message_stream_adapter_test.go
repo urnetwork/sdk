@@ -1220,6 +1220,7 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"mobileIdleMemoryTrimmerOnce":           streamAdapterPackageVarOf(&mobileIdleMemoryTrimmerOnce),
 	"mobileIdleMemoryTrimmerStarted":        streamAdapterPackageVarOf(&mobileIdleMemoryTrimmerStarted),
 	"mobileMemorySampleInterval":            streamAdapterPackageConstOf(mobileMemorySampleInterval),
+	"mobileMemoryTeardownLifetime":          streamAdapterPackageConstOf(mobileMemoryTeardownLifetime),
 	"mobilePhysicalFootprintCurrent":        streamAdapterPackageVarOf(&mobilePhysicalFootprintCurrent),
 	"mobilePhysicalFootprintPeak":           streamAdapterPackageVarOf(&mobilePhysicalFootprintPeak),
 	"mobilePhysicalPressureArmed":           streamAdapterPackageVarOf(&mobilePhysicalPressureArmed),
@@ -3122,4 +3123,40 @@ func TestAGroupSessionSealsADurableRecordOverTheProductionStore(t *testing.T) {
 	t.Logf("  2. THE TRANSPORT. There is no connect.Client binding in sdk at any section 10.1 code point, no request_id correlation and no section 4.6 fragmentation, so there is nothing to carry a request even once one exists")
 	t.Logf("  3. THE SERVER NONCE. write_auth is a mac over the submitting connection's nonce. This case supplies a constant because there is no connection; Hello is what supplies a real one, and GroupSession.RebindServerNonce -- which exists and has zero production call sites anywhere in these three trees -- is what installs it. A record sealed under a constant nonce is refused by check 7")
 	t.Log("  and none of the three is built here")
+}
+
+// The observer's imported duration type requires reflection, while its int
+// capacity is excluded by the existing derivation. Neither is mutable state.
+func TestStreamAdapterTeardownConstantsHaveCompleteCensus(t *testing.T) {
+	const lifetime = mobileMemoryTeardownLifetime
+	const capacity = mobileMemoryTeardownCapacity
+
+	named, _, _, excluded := streamAdapterPackageValuePositions(t)
+	if _, required := named["mobileMemoryTeardownLifetime"]; !required {
+		t.Fatal("imported teardown lifetime type escaped the required census")
+	}
+	if _, required := named["mobileMemoryTeardownCapacity"]; required {
+		t.Fatal("methodless teardown capacity was unnecessarily required in the census")
+	}
+	if _, provenMethodless := excluded["mobileMemoryTeardownCapacity"]; !provenMethodless {
+		t.Fatal("teardown capacity is neither censused nor in the methodless complement")
+	}
+
+	census := streamAdapterCensus()
+	entry, present := census["mobileMemoryTeardownLifetime"]
+	if !present {
+		t.Fatal("immutable teardown lifetime is missing from the value census")
+	}
+	if entry.declared != reflect.TypeOf(lifetime) || entry.declared.Implements(streamAdapterErrorType) ||
+		entry.value.CanAddr() || entry.value.CanSet() || entry.value.Interface() != lifetime {
+		t.Fatalf("teardown lifetime was not reflected as an immutable non-error duration: type=%v", entry.declared)
+	}
+	if _, redundant := census["mobileMemoryTeardownCapacity"]; redundant {
+		t.Fatal("methodless teardown capacity was added as a redundant census entry")
+	}
+	capacityEntry := streamAdapterPackageConstOf(capacity)
+	if capacityEntry.declared != reflect.TypeOf(int(0)) || capacityEntry.declared.Implements(streamAdapterErrorType) ||
+		capacityEntry.value.CanAddr() || capacityEntry.value.CanSet() {
+		t.Fatal("teardown capacity is not an immutable non-error int")
+	}
 }

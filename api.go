@@ -465,6 +465,17 @@ type AuthLoginResultNetwork struct {
 }
 
 func (self *Api) AuthLogin(authLogin *AuthLoginArgs, callback AuthLoginCallback) {
+	if authLogin != nil && authLogin.UserAuth != "" && callback != nil {
+		originalCallback := callback
+		callback = connect.NewApiCallback(func(result *AuthLoginResult, err error) {
+			// Diagnostics cannot replace the original callback or expose its payload.
+			func() {
+				defer func() { _ = recover() }()
+				self.logger().Infof("[auth-discovery]callback category=%s\n", authDiscoveryResultCategory(result, err))
+			}()
+			originalCallback.Result(result, err)
+		})
+	}
 	runAsyncApiRequest[*AuthLoginResult](callback, func(callback connect.ApiCallback[*AuthLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
