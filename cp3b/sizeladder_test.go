@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urnetwork/connect/message"
+	"github.com/urnetwork/connect/v2026/message"
 	"github.com/urnetwork/message-server/store"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // WHAT urmessage SEALS AT EVERY RECORD TYPE, AND WHICH RUNG EACH ONE LANDS ON, READ OFF THE
