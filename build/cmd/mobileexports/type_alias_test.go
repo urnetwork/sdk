@@ -54,7 +54,7 @@ func TestMobileApiAvoidsAliasesGobindMishandles(t *testing.T) {
 			),
 			BuildFlags: []string{"-tags=" + view.tags},
 		}
-		loadedPackages, err := packages.Load(config, "github.com/urnetwork/sdk")
+		loadedPackages, err := packages.Load(config, "github.com/urnetwork/sdk/v2026")
 		testingBuildNoError(t, err)
 		if len(loadedPackages) != 1 {
 			t.Fatalf("the %s %s view loaded %d packages, want the sdk", view.goos, view.tags, len(loadedPackages))

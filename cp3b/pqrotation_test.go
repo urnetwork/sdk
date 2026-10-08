@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/urnetwork/connect/message"
+	"github.com/urnetwork/connect/v2026/message"
 	"github.com/urnetwork/message-server/store"
 )
 

@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/urnetwork/connect/message"
-	"github.com/urnetwork/connect/protocol"
+	"github.com/urnetwork/connect/v2026/message"
+	"github.com/urnetwork/connect/v2026/protocol"
 	"github.com/urnetwork/message-server/api"
 	"github.com/urnetwork/message-server/peer"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 	"google.golang.org/protobuf/proto"
 )
 
