@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/urnetwork/connect/messagegroup"
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/connect/v2026/messagegroup"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // S2-26'S ACCEPTANCE PROPERTY: A DEVICE OPENS WHAT IS ADDRESSED TO THE LEAF IT PUBLISHES.

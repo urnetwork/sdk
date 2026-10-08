@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/urnetwork/sdk/urmessage"
+	"github.com/urnetwork/sdk/v2026/urmessage"
 )
 
 // The Windows app refuses an over-long text BEFORE it is sent, against its own copy of the two
