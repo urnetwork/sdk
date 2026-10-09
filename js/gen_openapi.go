@@ -698,6 +698,26 @@ func (g *generator) operations() ([]*operation, error) {
 
 var pathParamRe = regexp.MustCompile(`\{([^}]+)\}`)
 
+// parameterRef resolves a shared parameter, `#/components/parameters/<name>`.
+// That is the only $ref form a parameter may use, and its target must be a
+// parameter object, not another $ref.
+func (g *generator) parameterRef(ref string) (*yaml.Node, error) {
+	const prefix = "#/components/parameters/"
+	if !strings.HasPrefix(ref, prefix) {
+		return nil, fmt.Errorf("parameter $ref %q is not supported", ref)
+	}
+	// a JSON pointer token: ~1 is "/" and ~0 is "~", in that order
+	name := strings.ReplaceAll(strings.ReplaceAll(strings.TrimPrefix(ref, prefix), "~1", "/"), "~0", "~")
+	p := get(get(get(g.root, "components"), "parameters"), name)
+	if p == nil {
+		return nil, fmt.Errorf("parameter $ref %q does not resolve", ref)
+	}
+	if get(p, "$ref") != nil {
+		return nil, fmt.Errorf("parameter $ref %q resolves to another $ref", ref)
+	}
+	return p, nil
+}
+
 func (g *generator) operation(path string, m string, opNode *yaml.Node, pathParams []*yaml.Node) (*operation, error) {
 	op := &operation{
 		operationId: str(get(opNode, "operationId")),
@@ -730,7 +750,11 @@ func (g *generator) operation(path string, m string, opNode *yaml.Node, pathPara
 	for _, list := range [][]*yaml.Node{pathParams, items(get(opNode, "parameters"))} {
 		for _, p := range list {
 			if ref := get(p, "$ref"); ref != nil {
-				return nil, fmt.Errorf("parameter $ref %q is not supported", str(ref))
+				resolved, err := g.parameterRef(str(ref))
+				if err != nil {
+					return nil, err
+				}
+				p = resolved
 			}
 			key := str(get(p, "in")) + ":" + str(get(p, "name"))
 			if i, ok := index[key]; ok {
