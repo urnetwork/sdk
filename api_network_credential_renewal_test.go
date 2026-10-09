@@ -1087,3 +1087,35 @@ func TestNetworkRefreshRequestNeedsTheNetworkCredential(t *testing.T) {
 		}
 	}
 }
+
+// The Apple app's device is a DeviceRemote, whose requests go over device
+// rpc. It starts from the app's LocalState like a local device, so its API
+// renews the network token over the remote's transport, with the network
+// credential, and persists the renewal.
+func TestRemoteDeviceRenewsOverItsTransport(t *testing.T) {
+	r := newRenewalTestApi(t)
+	day := 24 * time.Hour
+	networkJwt := renewalTestNetworkJwt(t, renewalTestBaseTime.Add(-40*day), renewalTestBaseTime.Add(-10*day), "sign-in")
+	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "remote")
+	localState := newRenewalTestLocalState(t, t.TempDir(), networkJwt, clientJwt)
+	remote := &renewalTestTransport{requests: make(chan renewalTestRequest, 8)}
+	owner := newDeviceAuthPublicationGate()
+	prepared, err := r.api.prepareDeviceAuth(localState, clientJwt, localState.GetInstanceId(), time.Now(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.api.installDeviceRemote(prepared, owner, remote.post, remote.get, nil, connect.DefaultLogger()); err != nil {
+		t.Fatal(err)
+	}
+
+	request := remote.takeRenewal(t, networkJwt)
+	r.transport.requireNone(t)
+	renewedJwt := renewalTestRenewedJwt(t, r.clock.Now(), "renewed")
+	request.answer(renewalTestReplyJwt(renewedJwt))
+	r.requireRenewed(t)
+	r.clock.requireArmed(t, 15*day)
+	connect.AssertEqual(t, localState.GetByJwt(), renewedJwt)
+	connect.AssertEqual(t, localState.GetByClientJwt(), clientJwt)
+	connect.AssertEqual(t, r.api.networkCredential(), renewedJwt)
+	connect.AssertEqual(t, r.api.GetByJwt(), clientJwt)
+}
