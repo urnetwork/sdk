@@ -66,6 +66,7 @@ EXPORTS
 	urnet_api_get_provider_status
 	urnet_api_get_referral_network
 	urnet_api_get_transfer_stats
+	urnet_api_has_network_credential
 	urnet_api_list_api_keys
 	urnet_api_network_block_location
 	urnet_api_network_check
@@ -385,6 +386,7 @@ EXPORTS
 	urnet_device_local_add_receive_packet_batch
 	urnet_device_local_add_receive_packets
 	urnet_device_local_add_sn_wallet_change_listener
+	urnet_device_local_begin_memory_teardown_observation
 	urnet_device_local_clear_sn_wallet_cache
 	urnet_device_local_close_block_action_view_controller
 	urnet_device_local_close_connect_view_controller

@@ -245,6 +245,34 @@ func (self *LocalState) SetByJwt(byJwt string) error {
 	}, func() { self.deviceAuthOwner = nil })
 }
 
+// Replaces the stored admin/login credential with its renewal, the
+// compare-and-swap of a network token renewal (api_network_credential_renewal.go).
+// A renewal continues the same sign-in, so unlike SetByJwt it keeps the paired
+// client credential, the instance and the device owner. It applies only while
+// the store still holds previousByJwt: a sign-out, a new sign-in, or another
+// API's renewal of the same token wins, and storedByJwt reports what the store
+// holds instead.
+func (self *LocalState) replaceNetworkByJwt(previousByJwt string, byJwt string) (storedByJwt string, accepted bool, returnErr error) {
+	if previousByJwt == "" || byJwt == "" {
+		return "", false, nil
+	}
+	returnErr = self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
+		storedByJwt = state.ByJwt
+		if state.ByJwt == byJwt {
+			accepted = true
+			return false, nil
+		}
+		if state.ByJwt != previousByJwt {
+			return false, nil
+		}
+		state.ByJwt = byJwt
+		storedByJwt = byJwt
+		accepted = true
+		return true, nil
+	})
+	return
+}
+
 // Reads the derived provider client credential without falling back to admin.
 func (self *LocalState) GetByClientJwt() string {
 	state, err := self.loadAuthState()

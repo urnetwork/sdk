@@ -748,6 +748,7 @@ struct LocationGroupResult;
 struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
+struct MemoryTeardownObservation;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -2359,6 +2360,9 @@ struct MemoryStats {
 	int64_t GCCycleCount{};
 	int64_t ForcedGCCycleCount{};
 	int64_t GCPauseTotalNanoseconds{};
+};
+
+struct MemoryTeardownObservation {
 };
 
 struct NetExtender {
@@ -4066,6 +4070,8 @@ inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
 inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
+inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
+inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -10636,6 +10642,15 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	}
 	if (auto it = j.find("GCPauseTotalNanoseconds"); it != j.end() && !it->is_null()) {
 		it->get_to(v.GCPauseTotalNanoseconds);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v) {
+	j = nlohmann::json::object();
+}
+inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v) {
+	if (!j.is_object()) {
+		return;
 	}
 }
 
@@ -17497,6 +17512,7 @@ public:
 	void getProviderStatus(GetProviderStatusCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
+	bool hasNetworkCredential() const;
 	void listApiKeys(ListApiKeysCallback callback) const;
 	void networkBlockLocation(const std::optional<NetworkBlockLocationArgs>& args, NetworkBlockLocationCallback callback) const;
 	void networkCheck(const std::optional<NetworkCheckArgs>& network_check, NetworkCheckCallback callback) const;
@@ -17719,6 +17735,7 @@ public:
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
 	Sub addReceivePackets(ReceivePackets receive_packets) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
+	std::optional<MemoryTeardownObservation> beginMemoryTeardownObservation() const;
 	void clearSnWalletCache() const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
 	void closeConnectViewController(const ConnectViewController& vc) const;
@@ -25752,6 +25769,10 @@ inline void Api::getTransferStats(GetTransferStatsCallback callback) const {
 	auto* callback_fn = callback ? new GetTransferStatsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_transfer_stats(handle(), callback_fn ? &detail::oneshot_get_transfer_stats : nullptr, callback_fn);
 }
+inline bool Api::hasNetworkCredential() const {
+	bool r = urnet_api_has_network_credential(handle());
+	return r;
+}
 inline void Api::listApiKeys(ListApiKeysCallback callback) const {
 	auto* callback_fn = callback ? new ListApiKeysCallback(std::move(callback)) : nullptr;
 	urnet_api_list_api_keys(handle(), callback_fn ? &detail::oneshot_list_api_keys : nullptr, callback_fn);
@@ -26921,6 +26942,18 @@ inline Sub DeviceLocal::addSnWalletChangeListener(SnWalletChangeListener listene
 		r.retain(listener_fn);
 	}
 	return r;
+}
+inline std::optional<MemoryTeardownObservation> DeviceLocal::beginMemoryTeardownObservation() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_local_begin_memory_teardown_observation(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<MemoryTeardownObservation>(r_s->c_str());
 }
 inline void DeviceLocal::clearSnWalletCache() const {
 	urnet_device_local_clear_sn_wallet_cache(handle());

@@ -94,6 +94,7 @@ func TestNetworkClientRegistrationUnsupportedDoesNotAllocateLegacy(t *testing.T)
 			w.WriteHeader(http.StatusBadRequest)
 		}
 	}))
+	api.SetByJwt("synthetic-network-credential")
 	_, err := api.RegisterNetworkClientSyncWithContext(ctx, networkClientRegistrationTestArgs())
 	var unsupported *NetworkClientRegistrationUnsupportedError
 	if !errors.As(err, &unsupported) || unsupported.Status != http.StatusNotFound || legacy.Load() != 0 || versioned.Load() != 1 {
@@ -134,6 +135,7 @@ func TestNetworkClientRegistrationLostHttpReplyRetainsExactRequest(t *testing.T)
 		}
 		_, _ = w.Write(networkClientRegistrationTestResponse(t, body))
 	}))
+	api.SetByJwt("synthetic-network-credential")
 	args := networkClientRegistrationTestArgs()
 	if _, err := api.RegisterNetworkClientSyncWithContext(requestCtx, args); !errors.Is(err, context.Canceled) {
 		t.Fatalf("actual lost reply did not retain cancellation: %v", err)
@@ -159,6 +161,7 @@ func TestNetworkClientRegistrationLostHttpReplyRetainsExactRequest(t *testing.T)
 // bytes or changed request/identity claims stay explicit integrity failures.
 func TestNetworkClientRegistrationRejectsCompletedContradictions(t *testing.T) {
 	ctx, api := newTestApi(t, http.NotFoundHandler())
+	api.SetByJwt("synthetic-network-credential")
 	args := networkClientRegistrationTestArgs()
 	request, err := EncodeNetworkClientRegistration(args)
 	if err != nil {
