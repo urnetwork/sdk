@@ -913,6 +913,7 @@ struct UpgradeGuestResultVerification;
 struct UpgradeGuesteResultError;
 struct UpgradeGuestResult;
 struct UploadLogsError;
+struct UploadLogsFile;
 struct UploadLogsResult;
 struct ValidateReferralCodeArgs;
 struct ValidateReferralCodeResult;
@@ -995,6 +996,7 @@ using TransferBalanceList = std::vector<TransferBalance>;
 using TransportModePriorityList = std::vector<TransportModePriority>;
 using TransportPacketStatsList = std::vector<TransportPacketStats>;
 using TransportShareList = std::vector<TransportShare>;
+using UploadLogsFileList = std::vector<UploadLogsFile>;
 
 struct AccountEpoch {
 	int64_t epoch{};
@@ -3611,6 +3613,12 @@ struct UploadLogsError {
 	std::string message{};
 };
 
+struct UploadLogsFile {
+	std::string Source{};
+	std::string Name{};
+	int64_t FileDescriptor{};
+};
+
 struct UploadLogsResult {
 	std::optional<UploadLogsError> error;
 };
@@ -4400,6 +4408,8 @@ inline void to_json(nlohmann::json& j, const UpgradeGuestResult& v);
 inline void from_json(const nlohmann::json& j, UpgradeGuestResult& v);
 inline void to_json(nlohmann::json& j, const UploadLogsError& v);
 inline void from_json(const nlohmann::json& j, UploadLogsError& v);
+inline void to_json(nlohmann::json& j, const UploadLogsFile& v);
+inline void from_json(const nlohmann::json& j, UploadLogsFile& v);
 inline void to_json(nlohmann::json& j, const UploadLogsResult& v);
 inline void from_json(const nlohmann::json& j, UploadLogsResult& v);
 inline void to_json(nlohmann::json& j, const ValidateReferralCodeArgs& v);
@@ -16534,6 +16544,27 @@ inline void from_json(const nlohmann::json& j, UploadLogsError& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const UploadLogsFile& v) {
+	j = nlohmann::json::object();
+	j["Source"] = v.Source;
+	j["Name"] = v.Name;
+	j["FileDescriptor"] = v.FileDescriptor;
+}
+inline void from_json(const nlohmann::json& j, UploadLogsFile& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Source);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("FileDescriptor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FileDescriptor);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const UploadLogsResult& v) {
 	j = nlohmann::json::object();
 	if (v.error) {
@@ -17852,6 +17883,7 @@ public:
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
 	std::string tunnelLocalAddress() const;
 	std::string tunnelLocalAddressIpv6() const;
+	void uploadLogsWithFiles(const std::string& feedback_id, const std::optional<UploadLogsFileList>& upload_logs_files, UploadLogsCallback callback) const;
 	bool waitForClose(int64_t timeout_milliseconds) const;
 	void writeMemoryOwnerCensus(const std::string& path) const;
 	/* stable provider identity across process starts */
@@ -27607,6 +27639,23 @@ inline std::string DeviceLocal::tunnelLocalAddress() const {
 inline std::string DeviceLocal::tunnelLocalAddressIpv6() const {
 	char* r_c = urnet_device_local_tunnel_local_address_ipv6(handle());
 	return detail::takeString(r_c);
+}
+inline void DeviceLocal::uploadLogsWithFiles(const std::string& feedback_id, const std::optional<UploadLogsFileList>& upload_logs_files, UploadLogsCallback callback) const {
+	std::string upload_logs_files_json;
+	const char* upload_logs_files_c = nullptr;
+	if (upload_logs_files) {
+		upload_logs_files_json = nlohmann::json(*upload_logs_files).dump();
+		upload_logs_files_c = upload_logs_files_json.c_str();
+	}
+	auto* callback_fn = callback ? new UploadLogsCallback(std::move(callback)) : nullptr;
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_upload_logs_with_files(handle(), feedback_id.c_str(), upload_logs_files_c, callback_fn ? &detail::oneshot_upload_logs : nullptr, callback_fn, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_upload_logs_with_files failed");
+	}
 }
 inline bool DeviceLocal::waitForClose(int64_t timeout_milliseconds) const {
 	bool r = urnet_device_local_wait_for_close(handle(), timeout_milliseconds);

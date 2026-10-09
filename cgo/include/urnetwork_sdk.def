@@ -524,6 +524,7 @@ EXPORTS
 	urnet_device_local_tunnel_dns_setting
 	urnet_device_local_tunnel_local_address
 	urnet_device_local_tunnel_local_address_ipv6
+	urnet_device_local_upload_logs_with_files
 	urnet_device_local_wait_for_close
 	urnet_device_local_write_memory_owner_census
 	urnet_device_open_socket

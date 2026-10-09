@@ -7816,7 +7816,28 @@ func (self *DeviceLocal) UploadLogs(feedbackId string, callback UploadLogsCallba
 	if self.testingBeforeUploadLogs != nil {
 		self.testingBeforeUploadLogs()
 	}
-	return uploadLogs(self.GetApi(), self.log, feedbackId, callback)
+	return uploadLogs(self.GetApi(), self.log, feedbackId, nil, callback)
+}
+
+// UploadLogs, with the log files of another process (uploadLogsFiles) in the
+// same zip, each as <Source>/<Name>, within the same cap: the newest files of
+// every source that fit, oldest left out first.
+//
+// For a process that carries the upload for another one that logs in a
+// directory of its own: on windows the service carries the app's logs, on
+// linux urnetworkd the gui's. The files are borrowed (UploadLogsFile): they are
+// read through duplicates before this returns, and the caller closes its
+// descriptors once it has returned, whatever it returned. A file that is not a
+// regular file with a glog name is left out, and the rest still go.
+func (self *DeviceLocal) UploadLogsWithFiles(feedbackId string, uploadLogsFiles *UploadLogsFileList, callback UploadLogsCallback) error {
+	if self.testingBeforeUploadLogs != nil {
+		self.testingBeforeUploadLogs()
+	}
+	var uploadLogsFileValues []*UploadLogsFile
+	if uploadLogsFiles != nil {
+		uploadLogsFileValues = uploadLogsFiles.getAll()
+	}
+	return uploadLogs(self.GetApi(), self.log, feedbackId, uploadLogsFileValues, callback)
 }
 
 // DiagnosticManifestJson returns the device-side half of the exported bundle's

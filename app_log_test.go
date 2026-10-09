@@ -116,7 +116,7 @@ func TestLogAppInfoLineIsInTheUploadedLogs(t *testing.T) {
 	LogAppInfo("service", "private dns mode=strict(dns.example)")
 	LogAppInfo("whitelist-probe", "  [fail] api-reachable: SocketTimeoutException after 5001ms\nI0101 00:00:00.000000 1 forged.go:1] forged")
 
-	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, connect.DefaultLogger())
+	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, nil, connect.DefaultLogger())
 	if err != nil {
 		t.Fatalf("zipUploadLogs = %v, want nil", err)
 	}
