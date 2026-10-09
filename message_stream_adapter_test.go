@@ -1154,7 +1154,10 @@ var streamAdapterPackageValueCensus = map[string]streamAdapterPackageVar{
 	"BlockActionReasonSecuritySmtp":         streamAdapterPackageConstOf(BlockActionReasonSecuritySmtp),
 	"EmojiTagMaxCount":                      streamAdapterPackageConstOf(EmojiTagMaxCount),
 	"EmojiTagSuggestMaxCount":               streamAdapterPackageConstOf(EmojiTagSuggestMaxCount),
+	"ErrNetworkCredentialRequired":          streamAdapterPackageVarOf(&ErrNetworkCredentialRequired),
 	"ErrWalletCircleTransferRequestId":      streamAdapterPackageVarOf(&ErrWalletCircleTransferRequestId),
+	"apiAdminRouteAccess":                   streamAdapterPackageVarOf(&apiAdminRouteAccess),
+	"apiAdminRoutePatterns":                 streamAdapterPackageVarOf(&apiAdminRoutePatterns),
 	"ExtenderGossipStateConnected":          streamAdapterPackageConstOf(ExtenderGossipStateConnected),
 	"ExtenderGossipStateConnecting":         streamAdapterPackageConstOf(ExtenderGossipStateConnecting),
 	"ExtenderGossipStateDisconnected":       streamAdapterPackageConstOf(ExtenderGossipStateDisconnected),
@@ -1330,6 +1333,7 @@ var streamAdapterNonSentinelRulings = map[string]string{
 
 	// UPSTREAM sdk's, with the merge of urnetwork/sdk main (msgrepo ledger 277). Each is the refusal of
 	// a part of package sdk the stream store has no part in, and each is measured below like any other.
+	"ErrNetworkCredentialRequired":          "the API client's refusal to send a request that administers the network without the network credential",
 	"ErrWalletCircleTransferRequestId":      "the wallet API's refusal of a Circle transfer with no persisted request_id",
 	"errApiRequestFailed":                   "the API client's failure of one request",
 	"errApiRequestReturnedWithoutCallback":  "the API client's failure that a request returned without calling its callback",

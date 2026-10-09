@@ -20,6 +20,7 @@ import (
 // method. A complete refusal and an unknown reply keep separate ownership.
 func TestNetworkClientRegistrationPreservesMixedPhysicalCauses(t *testing.T) {
 	ctx, api := newTestApi(t, http.NotFoundHandler())
+	api.SetByJwt("synthetic-network-credential")
 	canary := errors.New("synthetic independent custody failure")
 	for _, status := range []int{http.StatusNotFound, http.StatusNotImplemented, http.StatusServiceUnavailable} {
 		for _, hard := range []error{canary, &ClientControlResponseError{detail: "synthetic complete contradiction"}, &os.PathError{Op: "read", Path: "synthetic-owned-file", Err: io.ErrUnexpectedEOF}} {

@@ -62,12 +62,14 @@ func (self *Api) deviceRejectedJwt(owner *deviceAuthPublicationGate) (string, bo
 
 // Installs a device credential without confusing it with an explicit admin
 // login through SetByJwt. Refresh preserves this owner; a new login revokes it.
+// The network credential stays beside it for the admin routes.
 func (self *Api) setDeviceByJwt(prepared *deviceAuthStartup, owner *deviceAuthPublicationGate, log connect.Logger) error {
 	byJwt := prepared.byJwt
 	changed := false
 	err := self.publishDeviceOwner(prepared, owner, func() {
 		changed = self.byJwt != byJwt
 		self.byJwt = byJwt
+		self.keepNetworkByJwtForDeviceWithLock(prepared, byJwt)
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.log = log
@@ -94,6 +96,7 @@ func (self *Api) installDeviceRemote(
 	err := self.publishDeviceOwner(prepared, owner, func() {
 		changed = self.byJwt != byJwt
 		self.byJwt = byJwt
+		self.keepNetworkByJwtForDeviceWithLock(prepared, byJwt)
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.log = log

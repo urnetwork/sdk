@@ -31,6 +31,7 @@ func TestWalletTransferRequestIdSurvivesRetriesAndSerialization(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"request_id":%q,"challenge_id":"synthetic-challenge","challenge_status":"PENDING"}`, args.RequestId.String())
 	}))
+	api.SetByJwt("synthetic-network-credential")
 	args := NewWalletCircleTransferOutArgs("synthetic-destination", 1_000_001_000, true)
 	stored, err := json.Marshal(args)
 	if err != nil {
@@ -56,6 +57,7 @@ func TestWalletTransferRequestIdSurvivesRetriesAndSerialization(t *testing.T) {
 func TestWalletTransferOldCallerRefusesBeforeHttp(t *testing.T) {
 	var calls atomic.Int64
 	_, api := newTestApi(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); fmt.Fprint(w, `{}`) }))
+	api.SetByJwt("synthetic-network-credential")
 	for _, args := range []*WalletCircleTransferOutArgs{nil, {ToAddress: "synthetic-destination", AmountUsdcNanoCents: 1000, Terms: true}} {
 		callback := &walletTransferTestCallback{done: make(chan error, 1)}
 		api.WalletCircleTransferOut(args, callback)

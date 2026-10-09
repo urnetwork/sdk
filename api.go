@@ -32,6 +32,9 @@ type Api struct {
 	rejectedByJwt        string
 	deviceAuthGeneration uint64
 	log                  connect.Logger
+	// the network credential kept for the routes that administer the network
+	// while a device's client token is byJwt (api_network_credential.go)
+	networkByJwt string
 
 	httpPostRaw            connect.HttpPostRawFunction
 	httpGetRaw             connect.HttpGetRawFunction
@@ -136,11 +139,12 @@ func (self *Api) newSession(ctx context.Context) *Api {
 
 // Hosted devices keep the immutable NetworkSpace metadata and API request
 // seams, but give each credential session its own control dial/DoH owner.
+// The session copies the transports, never this API's credential selection.
 func (self *Api) newSessionWithStrategy(ctx context.Context, strategy *connect.ClientStrategy) *Api {
 	session := newApi(ctx, strategy, self.apiUrl)
-	session.setHttpPostRaw(self.getHttpPostRaw())
-	session.setHttpGetRaw(self.getHttpGetRaw())
-	session.setHttpPostStreamRaw(self.getHttpPostStreamRaw())
+	session.setHttpPostRaw(self.transportHttpPostRaw())
+	session.setHttpGetRaw(self.transportHttpGetRaw())
+	session.setHttpPostStreamRaw(self.transportHttpPostStreamRaw())
 	return session
 }
 
@@ -154,13 +158,17 @@ func NewApi(ctx context.Context, clientStrategy *connect.ClientStrategy, apiUrl 
 	return newApi(ctx, clientStrategy, apiUrl)
 }
 
-// this gets attached to api calls that need it
+// this gets attached to api calls that need it. A network credential (the
+// network's sign-in token or an API key) is also the one the API keeps for the
+// calls that administer the network after a device installs its client token;
+// any other value clears that one.
 func (self *Api) SetByJwt(byJwt string) {
 	self.authMutationLock.Lock()
 	self.mutex.Lock()
 	self.deviceAuthGeneration += 1
 	changed := self.byJwt != byJwt
 	self.byJwt = byJwt
+	self.setLoginNetworkByJwtWithLock(byJwt)
 	self.deviceAuthOwner = nil
 	self.rejectedByJwt = ""
 	tokenManager := self.tokenManager
@@ -190,6 +198,8 @@ func (self *Api) clearByJwt(byJwt string) bool {
 	return true
 }
 
+// GetByJwt is the current credential: the device's client token once a device
+// starts. The network credential kept for admin calls is not returned.
 func (self *Api) GetByJwt() string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -241,6 +251,7 @@ func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string, expectedG
 
 // Clears only the request's current token/generation. Rejection listeners own
 // persistence/UI/process policy and run after every auth lock is released.
+// The rejected session signs out, so its network credential goes with it.
 func (self *Api) rejectByJwt(rejectedByJwt string, expectedGeneration ...uint64) bool {
 	self.authMutationLock.Lock()
 	self.mutex.Lock()
@@ -251,6 +262,7 @@ func (self *Api) rejectByJwt(rejectedByJwt string, expectedGeneration ...uint64)
 		return false
 	}
 	self.byJwt = ""
+	self.networkByJwt = ""
 	self.rejectedByJwt = rejectedByJwt
 	self.deviceAuthGeneration += 1
 	self.mutex.Unlock()
@@ -319,7 +331,9 @@ func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
 	self.httpPostRawOwner = nil
 }
 
-func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
+// transportHttpPostRaw is the installed POST transport, without the credential
+// selection of getHttpPostRaw.
+func (self *Api) transportHttpPostRaw() connect.HttpPostRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -340,7 +354,9 @@ func (self *Api) setHttpGetRaw(httpGetRaw connect.HttpGetRawFunction) {
 	self.httpGetRawOwner = nil
 }
 
-func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
+// transportHttpGetRaw is the installed GET transport, without the credential
+// selection of getHttpGetRaw.
+func (self *Api) transportHttpGetRaw() connect.HttpGetRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -353,7 +369,9 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 	}
 }
 
-func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
+// transportHttpPostStreamRaw is the installed streaming POST transport, without
+// the credential selection of getHttpPostStreamRaw.
+func (self *Api) transportHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.httpPostStreamRaw != nil {

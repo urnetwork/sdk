@@ -57,6 +57,8 @@ func newTestWalletViewController(
 ) *WalletViewController {
 	t.Helper()
 	ctx, api := newTestApi(t, http.NotFoundHandler())
+	// the wallet routes administer the account: they need the network credential
+	api.SetByJwt("test-network-jwt")
 	api.setHttpPostRaw(func(_ context.Context, requestUrl string, _ []byte, _ string) ([]byte, error) {
 		return post(requestUrl[strings.Index(requestUrl, "/account/"):])
 	})
