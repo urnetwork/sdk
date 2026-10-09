@@ -371,6 +371,8 @@ const generatedOperations: Array<{
     method: "GET", path: "/network/client-acl-group", query: [["client_id", "c1"]], bearer: true },
   { name: "setNetworkClientAclGroup", call: c => c.setNetworkClientAclGroup({ client_id: "c1", acl_group: "isolated" }),
     method: "POST", path: "/network/client-acl-group", bearer: true, body: { client_id: "c1", acl_group: "isolated" } },
+  { name: "getNetworkEmbed", call: c => c.getNetworkEmbed(),
+    method: "GET", path: "/network/embed", bearer: true },
   { name: "servicesContactSales",
     call: c => c.servicesContactSales({ name: "N", email: "n@example.com", company: "C", monthly_active_users: 5000, monthly_data_budget_byte_count: 10995116277760, message: "embed" }),
     method: "POST", path: "/services/contact-sales", bearer: false,
@@ -419,6 +421,24 @@ for (const op of generatedOperations) {
     }
   });
 }
+
+test("getNetworkEmbed parses the status, and returns a 200 refusal as data rather than throwing", async () => {
+  const { calls, fetchImpl } = recorder([
+    json(200, { enabled: true, client_limit: 5000, active_client_count: 12 }),
+    json(200, { error: { message: "Requires the network's root token or an API key." } }),
+  ]);
+  const client = createURNetworkApiClient({ token: "jwt-1", fetch: fetchImpl });
+  const status = await client.getNetworkEmbed();
+  assert.deepEqual(status, { enabled: true, client_limit: 5000, active_client_count: 12 });
+  const refused = await client.getNetworkEmbed();
+  assert.equal(refused.error?.message, "Requires the network's root token or an API key.");
+  assert.equal(refused.enabled, undefined);
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.equal(call.method, "GET");
+    assert.equal(call.body, undefined);
+  }
+});
 
 test("setNetworkClientDataCap sends merge semantics as written: omitted stays absent, null and 0 are sent", async () => {
   const { calls, fetchImpl } = recorder([json(200, {}), json(200, {}), json(200, {})]);
