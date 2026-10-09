@@ -4244,6 +4244,17 @@ func urnet_api_get_transfer_stats(self C.uint64_t, callback_result C.urnet_get_t
 	self_.GetTransferStats(callback_)
 }
 
+//export urnet_api_has_network_credential
+func urnet_api_has_network_credential(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_api_has_network_credential")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_has_network_credential")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.HasNetworkCredential()
+	return C.bool(r0)
+}
+
 //export urnet_api_list_api_keys
 func urnet_api_list_api_keys(self C.uint64_t, callback_result C.urnet_list_api_keys_cb, callback_user_data unsafe.Pointer) {
 	defer cgoGuard("urnet_api_list_api_keys")
@@ -8987,6 +8998,24 @@ func urnet_device_local_add_sn_wallet_change_listener(self C.uint64_t, listener_
 	}
 	r0 := self_.AddSnWalletChangeListener(listener_)
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_local_begin_memory_teardown_observation
+func urnet_device_local_begin_memory_teardown_observation(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_device_local_begin_memory_teardown_observation")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_begin_memory_teardown_observation")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.BeginMemoryTeardownObservation()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_device_local_begin_memory_teardown_observation")
 }
 
 //export urnet_device_local_clear_sn_wallet_cache

@@ -295,6 +295,7 @@ public interface Raw extends Library {
   void urnet_api_get_provider_status(long a0, urnet_get_provider_status_cb a1, Pointer a2);
   void urnet_api_get_referral_network(long a0, urnet_get_referral_network_cb a1, Pointer a2);
   void urnet_api_get_transfer_stats(long a0, urnet_get_transfer_stats_cb a1, Pointer a2);
+  byte urnet_api_has_network_credential(long a0);
   void urnet_api_list_api_keys(long a0, urnet_list_api_keys_cb a1, Pointer a2);
   void urnet_api_network_block_location(long a0, String a1, urnet_network_block_location_cb a2, Pointer a3);
   void urnet_api_network_check(long a0, String a1, urnet_network_check_cb a2, Pointer a3);
@@ -604,6 +605,7 @@ public interface Raw extends Library {
   long urnet_device_local_add_receive_packet_batch(long a0, urnet_receive_packet_batch_cb a1, Pointer a2);
   long urnet_device_local_add_receive_packets(long a0, urnet_receive_packets_cb a1, Pointer a2);
   long urnet_device_local_add_sn_wallet_change_listener(long a0, urnet_sn_wallet_change_cb a1, Pointer a2);
+  Pointer urnet_device_local_begin_memory_teardown_observation(long a0, PointerByReference a1);
   void urnet_device_local_clear_sn_wallet_cache(long a0);
   void urnet_device_local_close_block_action_view_controller(long a0, long a1);
   void urnet_device_local_close_connect_view_controller(long a0, long a1);

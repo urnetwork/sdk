@@ -390,6 +390,8 @@ def bind(lib):
     lib.urnet_api_get_referral_network.restype = None
     lib.urnet_api_get_transfer_stats.argtypes = [c_uint64, urnet_get_transfer_stats_cb, c_void_p]
     lib.urnet_api_get_transfer_stats.restype = None
+    lib.urnet_api_has_network_credential.argtypes = [c_uint64]
+    lib.urnet_api_has_network_credential.restype = c_bool
     lib.urnet_api_list_api_keys.argtypes = [c_uint64, urnet_list_api_keys_cb, c_void_p]
     lib.urnet_api_list_api_keys.restype = None
     lib.urnet_api_network_block_location.argtypes = [c_uint64, c_char_p, urnet_network_block_location_cb, c_void_p]
@@ -1008,6 +1010,8 @@ def bind(lib):
     lib.urnet_device_local_add_receive_packets.restype = c_uint64
     lib.urnet_device_local_add_sn_wallet_change_listener.argtypes = [c_uint64, urnet_sn_wallet_change_cb, c_void_p]
     lib.urnet_device_local_add_sn_wallet_change_listener.restype = c_uint64
+    lib.urnet_device_local_begin_memory_teardown_observation.argtypes = [c_uint64, POINTER(c_void_p)]
+    lib.urnet_device_local_begin_memory_teardown_observation.restype = c_void_p
     lib.urnet_device_local_clear_sn_wallet_cache.argtypes = [c_uint64]
     lib.urnet_device_local_clear_sn_wallet_cache.restype = None
     lib.urnet_device_local_close_block_action_view_controller.argtypes = [c_uint64, c_uint64]
