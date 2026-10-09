@@ -1244,6 +1244,8 @@ def bind(lib):
     lib.urnet_device_local_tunnel_local_address.restype = c_void_p
     lib.urnet_device_local_tunnel_local_address_ipv6.argtypes = [c_uint64]
     lib.urnet_device_local_tunnel_local_address_ipv6.restype = c_void_p
+    lib.urnet_device_local_upload_logs_with_files.argtypes = [c_uint64, c_char_p, c_char_p, urnet_upload_logs_cb, c_void_p, POINTER(c_void_p)]
+    lib.urnet_device_local_upload_logs_with_files.restype = c_bool
     lib.urnet_device_local_wait_for_close.argtypes = [c_uint64, c_int64]
     lib.urnet_device_local_wait_for_close.restype = c_bool
     lib.urnet_device_local_write_memory_owner_census.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]

@@ -722,6 +722,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_tunnel_dns_setting(long a0);
   Pointer urnet_device_local_tunnel_local_address(long a0);
   Pointer urnet_device_local_tunnel_local_address_ipv6(long a0);
+  byte urnet_device_local_upload_logs_with_files(long a0, String a1, String a2, urnet_upload_logs_cb a3, Pointer a4, PointerByReference a5);
   byte urnet_device_local_wait_for_close(long a0, long a1);
   byte urnet_device_local_write_memory_owner_census(long a0, String a1, PointerByReference a2);
   byte urnet_device_local_key_material_is_empty(long a0);

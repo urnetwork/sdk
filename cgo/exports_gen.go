@@ -10635,6 +10635,32 @@ func urnet_device_local_tunnel_local_address_ipv6(self C.uint64_t) *C.char {
 	return cString(string(r0))
 }
 
+//export urnet_device_local_upload_logs_with_files
+func urnet_device_local_upload_logs_with_files(self C.uint64_t, feedbackId *C.char, uploadLogsFiles *C.char, callback_result C.urnet_upload_logs_cb, callback_user_data unsafe.Pointer, outError **C.char) C.bool {
+	defer cgoGuard("urnet_device_local_upload_logs_with_files")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_upload_logs_with_files")
+	if !ok {
+		return C.bool(false)
+	}
+	var uploadLogsFiles_ *sdk.UploadLogsFileList
+	if uploadLogsFiles != nil {
+		uploadLogsFiles_ = &sdk.UploadLogsFileList{}
+		if !goJson(uploadLogsFiles, uploadLogsFiles_, "urnet_device_local_upload_logs_with_files") {
+			return C.bool(false)
+		}
+	}
+	var callback_ sdk.UploadLogsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterUploadLogsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	err := self_.UploadLogsWithFiles(goString(feedbackId), uploadLogsFiles_, callback_)
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 //export urnet_device_local_wait_for_close
 func urnet_device_local_wait_for_close(self C.uint64_t, timeoutMilliseconds C.int64_t) C.bool {
 	defer cgoGuard("urnet_device_local_wait_for_close")

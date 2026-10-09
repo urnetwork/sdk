@@ -721,6 +721,7 @@ module URnetwork
       attach_function :urnet_device_local_tunnel_dns_setting, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_local_address, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_local_tunnel_local_address_ipv6, [:uint64], :pointer, blocking: true
+      attach_function :urnet_device_local_upload_logs_with_files, [:uint64, :string, :string, :urnet_upload_logs_cb, :pointer, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_wait_for_close, [:uint64, :int64], :bool, blocking: true
       attach_function :urnet_device_local_write_memory_owner_census, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_device_local_key_material_is_empty, [:uint64], :bool, blocking: true

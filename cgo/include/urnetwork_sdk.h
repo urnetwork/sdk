@@ -1388,6 +1388,7 @@ char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
 char* urnet_device_local_tunnel_local_address(uint64_t self);
 char* urnet_device_local_tunnel_local_address_ipv6(uint64_t self);
+bool urnet_device_local_upload_logs_with_files(uint64_t self, const char* feedback_id, const char* upload_logs_files_json, urnet_upload_logs_cb callback_result, void* callback_user_data, char** out_error);
 bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_milliseconds);
 bool urnet_device_local_write_memory_owner_census(uint64_t self, const char* path, char** out_error);
 
@@ -4990,6 +4991,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* UploadLogsError (json):
  *   message: string
+ */
+
+/* UploadLogsFile (json):
+ *   Source: string
+ *   Name: string
+ *   FileDescriptor: number
+ */
+
+/* UploadLogsFileList (json):
+ *   = UploadLogsFile | null[]
  */
 
 /* UploadLogsResult (json):
