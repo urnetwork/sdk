@@ -89,6 +89,7 @@ type transferDiagMemory struct {
 	GoLiveByteCount                int64  `json:"go_live_bytes"`
 	GoGoalByteCount                int64  `json:"go_goal_bytes"`
 	GoLimitByteCount               int64  `json:"go_limit_bytes"`
+	GoMemoryProfileRateBytes       int64  `json:"memory_profile_rate_bytes"`
 	DeviceMemoryTargetByteCount    int64  `json:"device_memory_target_bytes"`
 	PhysicalByteCount              int64  `json:"physical_bytes"`
 	GoroutineCount                 int64  `json:"goroutines"`
@@ -421,6 +422,7 @@ func (self *DeviceLocal) collectTransferDiag(millis int64) []any {
 			GoLiveByteCount:                  runtimeSnapshot.liveByteCount,
 			GoGoalByteCount:                  runtimeSnapshot.goalByteCount,
 			GoLimitByteCount:                 runtimeSnapshot.limitByteCount,
+			GoMemoryProfileRateBytes:         runtimeSnapshot.memoryProfileRateByteCount,
 			DeviceMemoryTargetByteCount:      self.settings.MemoryTargetByteCount,
 			PhysicalByteCount:                runtimeSnapshot.physicalByteCount,
 			GoroutineCount:                   runtimeSnapshot.goroutineCount,

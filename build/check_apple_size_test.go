@@ -90,24 +90,24 @@ func runAppleSizeFixture(t *testing.T, fixture appleSizeFixture) (string, error)
 
 func TestAppleSizeExtensionDefaultCeiling(t *testing.T) {
 	t.Parallel()
-	const ceiling int64 = 48 << 20
+	const ceiling int64 = 50 << 20
 	for _, test := range []struct {
 		name   string
 		bytes  int64
 		bundle bool
 		fails  bool
 	}{
-		{name: "above_previous_ceiling", bytes: (39 << 20) + 1},
-		{name: "exactly_48_mib", bytes: ceiling},
-		{name: "exactly_48_mib_bundle", bytes: ceiling, bundle: true},
+		{name: "above_previous_ceiling", bytes: (48 << 20) + 1},
+		{name: "exactly_50_mib", bytes: ceiling},
+		{name: "exactly_50_mib_bundle", bytes: ceiling, bundle: true},
 		{name: "one_byte_over", bytes: ceiling + 1, bundle: true, fails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			output, err := runAppleSizeFixture(t, appleSizeFixture{
 				flag: "--extension", bytes: test.bytes, bundle: test.bundle, metadata: syntheticIOSBuildMetadata,
 			})
-			if !strings.Contains(output, "ceiling="+strconv.FormatInt(ceiling, 10)+" bytes (48.000 MiB)") {
-				t.Fatalf("extension ceiling is not 48 MiB:\n%s", output)
+			if !strings.Contains(output, "ceiling="+strconv.FormatInt(ceiling, 10)+" bytes (50.000 MiB)") {
+				t.Fatalf("extension ceiling is not 50 MiB:\n%s", output)
 			}
 			if test.fails {
 				var exitError *exec.ExitError
