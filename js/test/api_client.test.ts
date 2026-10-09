@@ -347,3 +347,88 @@ test("optional-auth operations work anonymously and send the token when there is
   await signedIn.statsPointsLeaderboard({ sort: "points" } as never);
   assert.equal(calls[1].headers["authorization"], "Bearer jwt-1");
 });
+
+// The operations the embed work added to the spec (data caps, ACL groups, the
+// Services inquiry) and the older routes it documented. A spec edit that
+// changes any of these wire shapes fails here.
+type Client = ReturnType<typeof createURNetworkApiClient>;
+const generatedOperations: Array<{
+  name: string;
+  call: (client: Client) => Promise<unknown>;
+  method: "GET" | "POST";
+  path: string;
+  query?: Array<[string, string]>;
+  bearer: boolean;
+  body?: unknown;
+}> = [
+  { name: "getNetworkClientDataCap", call: c => c.getNetworkClientDataCap({ client_id: "c 1" }),
+    method: "GET", path: "/network/client-data-cap", query: [["client_id", "c 1"]], bearer: true },
+  { name: "setNetworkClientDataCap", call: c => c.setNetworkClientDataCap({ client_id: "c1", monthly_byte_limit: 10000000000 }),
+    method: "POST", path: "/network/client-data-cap", bearer: true, body: { client_id: "c1", monthly_byte_limit: 10000000000 } },
+  { name: "listNetworkClientDataCaps", call: c => c.listNetworkClientDataCaps({ cursor: "next/1", limit: 50 }),
+    method: "GET", path: "/network/client-data-caps", query: [["cursor", "next/1"], ["limit", "50"]], bearer: true },
+  { name: "getNetworkClientAclGroup", call: c => c.getNetworkClientAclGroup({ client_id: "c1" }),
+    method: "GET", path: "/network/client-acl-group", query: [["client_id", "c1"]], bearer: true },
+  { name: "setNetworkClientAclGroup", call: c => c.setNetworkClientAclGroup({ client_id: "c1", acl_group: "isolated" }),
+    method: "POST", path: "/network/client-acl-group", bearer: true, body: { client_id: "c1", acl_group: "isolated" } },
+  { name: "servicesContactSales",
+    call: c => c.servicesContactSales({ name: "N", email: "n@example.com", company: "C", monthly_active_users: 5000, monthly_data_budget_byte_count: 10995116277760, message: "embed" }),
+    method: "POST", path: "/services/contact-sales", bearer: false,
+    body: { name: "N", email: "n@example.com", company: "C", monthly_active_users: 5000, monthly_data_budget_byte_count: 10995116277760, message: "embed" } },
+  { name: "getProviderWorkOwners", call: c => c.getProviderWorkOwners({ domain: "d", client: "c", key: "k", generation: 3 } as never),
+    method: "GET", path: "/provider-work/v1/owners", query: [["domain", "d"], ["client", "c"], ["key", "k"], ["generation", "3"]], bearer: false },
+  { name: "listProviderWorkRequests", call: c => c.listProviderWorkRequests({ domain: "d", client: "c", generation: 3, key: "k" } as never),
+    method: "GET", path: "/provider-work/v1/requests", query: [["domain", "d"], ["client", "c"], ["generation", "3"], ["key", "k"]], bearer: false },
+  { name: "getProviderWorkRequest", call: c => c.getProviderWorkRequest({ requestHash: "ab/cd" } as never),
+    method: "GET", path: "/provider-work/v1/requests/ab%2Fcd", bearer: false },
+  { name: "getProviderWorkCut", call: c => c.getProviderWorkCut({ cutHash: "ef" } as never),
+    method: "GET", path: "/provider-work/v1/cuts/ef", bearer: false },
+  { name: "getProviderWorkWindow", call: c => c.getProviderWorkWindow({ domain: "d", epoch: 7, artifact: "a", authority: "o" } as never),
+    method: "GET", path: "/provider-work/v1/windows", query: [["domain", "d"], ["epoch", "7"], ["artifact", "a"], ["authority", "o"]], bearer: false },
+  { name: "getVerifyOriginalRequest", call: c => c.getVerifyOriginalRequest({ request_id: "r" } as never),
+    method: "POST", path: "/verify/original", bearer: false, body: { request_id: "r" } },
+  { name: "registerNetworkClient", call: c => c.registerNetworkClient({ registration_id: "g" } as never),
+    method: "POST", path: "/network/register-client-v1", bearer: true, body: { registration_id: "g" } },
+  { name: "extenderRelease", call: c => c.extenderRelease({} as never),
+    method: "POST", path: "/network/extender-release", bearer: true, body: {} },
+  { name: "extenderBlockReport", call: c => c.extenderBlockReport({ extender_id: "x" } as never),
+    method: "POST", path: "/network/extender-block-report", bearer: true, body: { extender_id: "x" } },
+  { name: "testBalanceDrain", call: c => c.testBalanceDrain({ minutes: 5 } as never),
+    method: "POST", path: "/test/balance-drain", bearer: true, body: { minutes: 5 } },
+  { name: "testBalanceRestore", call: c => c.testBalanceRestore({} as never),
+    method: "POST", path: "/test/balance-restore", bearer: true, body: {} },
+];
+
+for (const op of generatedOperations) {
+  test(`generated ${op.name}: ${op.method} ${op.path}, ${op.bearer ? "bearer" : "no token"}`, async () => {
+    const { calls, fetchImpl } = recorder([json(200, {})]);
+    const client = createURNetworkApiClient({ baseURL: "https://api.example.test", token: "jwt-1", fetch: fetchImpl });
+    assert.equal(typeof (client as unknown as Record<string, unknown>)[op.name], "function");
+    await op.call(client);
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(calls[0].method, op.method);
+    assert.equal(url.origin + url.pathname, `https://api.example.test${op.path}`);
+    assert.deepEqual([...url.searchParams], op.query ?? []);
+    assert.equal(calls[0].headers["authorization"], op.bearer ? "Bearer jwt-1" : undefined);
+    if (op.body === undefined) {
+      assert.equal(calls[0].body, undefined);
+    } else {
+      assert.equal(calls[0].headers["content-type"], "application/json");
+      assert.equal(calls[0].body, JSON.stringify(op.body));
+    }
+  });
+}
+
+test("setNetworkClientDataCap sends merge semantics as written: omitted stays absent, null and 0 are sent", async () => {
+  const { calls, fetchImpl } = recorder([json(200, {}), json(200, {}), json(200, {})]);
+  const client = createURNetworkApiClient({ token: "jwt-1", fetch: fetchImpl });
+  await client.setNetworkClientDataCap({ client_id: "c1", monthly_byte_limit: 5000000000 });
+  await client.setNetworkClientDataCap({ client_id: "c1", total_byte_limit: null });
+  await client.setNetworkClientDataCap({ client_id: "c1", monthly_byte_limit: 0, reset_total: true });
+  const bodies = calls.map(call => JSON.parse(String(call.body)));
+  assert.deepEqual(bodies[0], { client_id: "c1", monthly_byte_limit: 5000000000 });
+  assert.equal("total_byte_limit" in bodies[0], false);
+  assert.deepEqual(bodies[1], { client_id: "c1", total_byte_limit: null });
+  assert.deepEqual(bodies[2], { client_id: "c1", monthly_byte_limit: 0, reset_total: true });
+});
