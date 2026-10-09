@@ -16,8 +16,12 @@ import (
 // the api is asychronous, which is the most natural for the target platforms
 
 type Api struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	credentialPersistenceError     error
+	networkSessionsListeners       *connect.CallbackList[NetworkSessionsChangeListener]
+	clientInfo                     connect.ClientInfo
+	accountSignInRequiredListeners *connect.CallbackList[AccountSignInRequiredListener]
+	ctx                            context.Context
+	cancel                         context.CancelFunc
 
 	clientStrategy *connect.ClientStrategy
 
@@ -139,6 +143,8 @@ func newApi(
 
 		jwtRefreshListeners:             connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:             connect.NewCallbackList[AuthLogoutListener](),
+		networkSessionsListeners:        connect.NewCallbackList[NetworkSessionsChangeListener](),
+		accountSignInRequiredListeners:  connect.NewCallbackList[AccountSignInRequiredListener](),
 		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
 	}
 	api.tokenManager = newApiTokenManager(cancelCtx, api)
@@ -157,6 +163,7 @@ func (self *Api) newSession(ctx context.Context) *Api {
 // The session copies the transports, never this API's credential selection.
 func (self *Api) newSessionWithStrategy(ctx context.Context, strategy *connect.ClientStrategy) *Api {
 	session := newApi(ctx, strategy, self.apiUrl)
+	session.SetClientInfo(self.GetClientInfo())
 	session.setHttpPostRaw(self.transportHttpPostRaw())
 	session.setHttpGetRaw(self.transportHttpGetRaw())
 	session.setHttpPostStreamRaw(self.transportHttpPostStreamRaw())
@@ -194,6 +201,7 @@ func (self *Api) SetByJwt(byJwt string) {
 		tokenManager.TokenChanged()
 	}
 	self.networkRenewer.credentialChanged()
+	self.networkSessionsChanged(&NetworkSessionsRevision{})
 }
 
 // clearByJwt clears the credential only when it is still the value owned by
@@ -2361,7 +2369,8 @@ func (self *Api) GetTransferStats(callback GetTransferStatsCallback) {
  */
 
 type AuthCodeLoginArgs struct {
-	AuthCode string `json:"auth_code"`
+	RequestId *Id    `json:"request_id,omitempty"`
+	AuthCode  string `json:"auth_code"`
 }
 
 type AuthCodeLoginResult struct {
@@ -2372,6 +2381,11 @@ type AuthCodeLoginResult struct {
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
 
 func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCallback) {
+	if args != nil && args.RequestId == nil {
+		copy := *args
+		copy.RequestId = newId(connect.NewId())
+		args = &copy
+	}
 	runAsyncApiRequest[*AuthCodeLoginResult](callback, func(callback connect.ApiCallback[*AuthCodeLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
@@ -2387,6 +2401,11 @@ func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCa
 
 //gomobile:noexport
 func (self *Api) AuthCodeLoginSyncWithContext(ctx context.Context, args *AuthCodeLoginArgs) (*AuthCodeLoginResult, error) {
+	if args != nil && args.RequestId == nil {
+		copy := *args
+		copy.RequestId = newId(connect.NewId())
+		args = &copy
+	}
 	return connect.HttpPostWithRawFunction(
 		ctx,
 		self.getHttpPostRaw(),

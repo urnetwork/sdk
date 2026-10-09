@@ -4836,6 +4836,7 @@ func (self *DeviceRemote) httpPostRaw(ctx context.Context, requestUrl string, re
 	if service != nil {
 		httpRequestId := connect.NewId()
 		httpRequest := &DeviceRemoteHttpRequest{
+			ClientInfo:       connect.ClientInfoFromContext(ctx),
 			RequestId:        httpRequestId,
 			RequestUrl:       requestUrl,
 			RequestBodyBytes: requestBodyBytes,
@@ -4940,6 +4941,7 @@ func (self *DeviceRemote) httpGetRaw(ctx context.Context, requestUrl string, byJ
 	if service != nil {
 		httpRequestId := connect.NewId()
 		httpRequest := &DeviceRemoteHttpRequest{
+			ClientInfo: connect.ClientInfoFromContext(ctx),
 			RequestId:  httpRequestId,
 			RequestUrl: requestUrl,
 			ByJwt:      byJwt,
@@ -9079,6 +9081,7 @@ func (self *DeviceRemoteUploadLogsResult) uploadLogsResult() (*UploadLogsResult,
 
 //gomobile:noexport
 type DeviceRemoteHttpRequest struct {
+	ClientInfo       connect.ClientInfo
 	RequestId        connect.Id
 	RequestUrl       string
 	RequestBodyBytes []byte
@@ -9273,8 +9276,9 @@ func (self *deviceLocalRpcManager) CloseAndWait(ctx context.Context) error {
 
 //gomobile:noexport
 type DeviceLocalRpc struct {
-	sockets      socketRpcRegistry
-	subprotocols subprotocolRpcRegistry
+	networkSessionsSub Sub
+	sockets            socketRpcRegistry
+	subprotocols       subprotocolRpcRegistry
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -9477,6 +9481,7 @@ func newDeviceLocalRpc(
 		providerIngressContractStatsChangeListenerIds:   map[connect.Id]bool{},
 		providerIngressContractDetailsChangeListenerIds: map[connect.Id]bool{},
 	}
+	deviceLocalRpc.networkSessionsSub = deviceLocal.GetApi().AddNetworkSessionsChangeListener(deviceLocalRpc)
 	deviceLocalRpc.httpSem = make(chan struct{}, settings.httpMaxConcurrent())
 	deviceLocalRpc.httpDeliverySem = make(chan struct{}, settings.httpMaxConcurrent())
 
@@ -13491,7 +13496,7 @@ func (self *DeviceLocalRpc) HttpPostRaw(httpRequest *DeviceRemoteHttpRequest, _ 
 		}()
 
 		bodyBytes, err := connect.HttpPostWithStrategyRaw(
-			self.ctx,
+			connect.WithClientInfo(self.ctx, httpRequest.ClientInfo),
 			self.deviceLocal.clientStrategy,
 			httpRequest.RequestUrl,
 			httpRequest.RequestBodyBytes,
@@ -13534,7 +13539,7 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 		}()
 
 		bodyBytes, err := connect.HttpGetWithStrategyRaw(
-			self.ctx,
+			connect.WithClientInfo(self.ctx, httpRequest.ClientInfo),
 			self.deviceLocal.clientStrategy,
 			httpRequest.RequestUrl,
 			httpRequest.ByJwt,
@@ -13559,6 +13564,9 @@ func (self *DeviceLocalRpc) HttpGetRaw(httpRequest *DeviceRemoteHttpRequest, _ R
 }
 
 func (self *DeviceLocalRpc) Close() {
+	if self.networkSessionsSub != nil {
+		self.networkSessionsSub.Close()
+	}
 	// self.stateLock.Lock()
 	// defer self.stateLock.Unlock()
 
@@ -14025,4 +14033,16 @@ func (self *DeviceRemoteRpc) CloseAndWait(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func (self *DeviceLocalRpc) NetworkSessionsChanged(revision *NetworkSessionsRevision) {
+	if revision == nil {
+		return
+	}
+	copy := *revision
+	self.reverseNotify("DeviceRemoteRpc.NetworkSessionsChanged", &copy)
+}
+func (self *DeviceRemoteRpc) NetworkSessionsChanged(revision *NetworkSessionsRevision, _ RpcVoid) error {
+	self.dispatch(func() { self.deviceRemote.GetApi().networkSessionsChanged(revision) })
+	return nil
 }

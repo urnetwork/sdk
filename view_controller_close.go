@@ -77,3 +77,9 @@ func (self *viewControllerManager) CloseProviderStatusViewController(vc *Provide
 		self.CloseViewController(vc)
 	}
 }
+
+func (self *viewControllerManager) CloseClientSessionViewController(vc *ClientSessionViewController) {
+	if vc != nil {
+		self.CloseViewController(vc)
+	}
+}

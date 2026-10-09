@@ -42,6 +42,18 @@ const sdkPath = "github.com/urnetwork/sdk"
 
 // behavioral types cross the abi as opaque handles
 var behavioralTypes = map[string]bool{
+	"SessionLastUsed":         true,
+	"NetworkSessionInfo":      true,
+	"NetworkSessionsRevision": true,
+	"NetworkSessionsResult":   true,
+	"SessionSignOutResult":    true,
+	"SessionOperationResult":  true,
+	"ClientSessionError":      true,
+	"ClientSessionAction":     true,
+	"ClientSessionSnapshot":   true,
+	"NetworkSessionInfoList":  true,
+	"ClientSessionActionList": true,
+
 	"Socket": true,
 	// These immutable observations expose private state through getters.
 	// JSON would erase both their values and their ownership identity.
@@ -86,6 +98,7 @@ var behavioralTypes = map[string]bool{
 	"ContractViewController":              true,
 	"SubscriptionBalanceViewController":   true,
 	"ContractDetailsViewController":       true,
+	"ClientSessionViewController":         true,
 	"DevicesViewController":               true,
 	"ExtenderViewController":              true,
 	"FeedbackViewController":              true,

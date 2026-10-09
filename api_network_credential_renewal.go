@@ -269,18 +269,7 @@ func (self *Api) commitNetworkRenewal(target networkRenewalTarget, renewedByJwt 
 // account screens. This API does not adopt the rejected token from
 // LocalState again.
 func (self *Api) rejectNetworkRenewalTarget(target networkRenewalTarget) bool {
-	self.authMutationLock.Lock()
-	defer self.authMutationLock.Unlock()
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	if !self.isNetworkRenewalTargetWithLock(target) {
-		return false
-	}
-	self.networkByJwt = ""
-	self.networkByJwtStore = nil
-	self.networkByJwtRejected = target.byJwt
-	self.networkCredentialChangedWithLock()
-	return true
+	return self.rejectNetworkCredential(target)
 }
 
 // haltNetworkRenewalTarget stops renewing the target while it is still the

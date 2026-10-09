@@ -718,8 +718,8 @@ func TestSignInAndSignOutDuringARenewalWin(t *testing.T) {
 
 // A 401 is the server rejecting the network token itself. It is dropped from
 // the API, so the admin calls fail locally and HasNetworkCredential is false,
-// but nothing else changes: the device keeps its client token, LocalState
-// keeps both tokens, and the app is not signed out. The API does not adopt
+// and from LocalState. An unrelated device keeps its client token and the app
+// is not signed out. The API does not adopt
 // the rejected token again; a new sign-in starts over.
 func TestRejectedNetworkCredentialIsDroppedOnly(t *testing.T) {
 	r := newRenewalTestApi(t)
@@ -735,7 +735,7 @@ func TestRejectedNetworkCredentialIsDroppedOnly(t *testing.T) {
 
 	connect.AssertEqual(t, r.api.HasNetworkCredential(), false)
 	connect.AssertEqual(t, r.api.GetByJwt(), clientJwt)
-	connect.AssertEqual(t, localState.GetByJwt(), networkJwt)
+	connect.AssertEqual(t, localState.GetByJwt(), "")
 	connect.AssertEqual(t, localState.GetByClientJwt(), clientJwt)
 	r.requireNoLogout(t)
 	r.clock.requireNotArmed(t)

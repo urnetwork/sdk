@@ -64,6 +64,19 @@ func generateTypes() ([]byte, error) {
 		 * Api types
 		 */
 		sdk.ApiError{},
+		sdk.SessionLastUsed{},
+		sdk.NetworkSessionInfo{},
+		sdk.NetworkSessionsRevision{},
+		sdk.NetworkSessionsResult{},
+		sdk.SessionOperationResult{},
+		sdk.SessionSignOutResult{},
+		sdk.ClientSessionError{},
+		sdk.ClientSessionAction{},
+		sdk.ClientSessionSnapshot{},
+		sdk.RevokeNetworkSessionArgs{},
+		sdk.RevokeOtherNetworkSessionsArgs{},
+		sdk.ClientInfo{},
+
 		sdk.GetPointsLeaderboardArgs{},
 		sdk.PointsLeaderboardRow{},
 		sdk.PointsLeaderboardResult{},
@@ -276,6 +289,10 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "string"
 		case "sdk.Id":
 			return "string" // UUID format
+		case "sdk.NetworkSessionInfoList":
+			return "NetworkSessionInfo[]"
+		case "sdk.ClientSessionActionList":
+			return "ClientSessionAction[]"
 		case "sdk.StringList":
 			return "string[]"
 		case "sdk.LocationResultList":

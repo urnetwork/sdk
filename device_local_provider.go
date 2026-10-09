@@ -68,6 +68,7 @@ type deviceLocalProvider struct {
 	// the space this provider belongs to, which the extender role takes its
 	// identity, directory, node and operator urls from (G2)
 	networkSpace *NetworkSpace
+	api          *Api
 	// the device's egress-aware dial, which is also the extender relay's
 	// forward dial so the relay never enters the device's own tunnel (G2)
 	dialContextSettings *connect.DialContextSettings
@@ -204,7 +205,13 @@ func newDeviceLocalProviderWithOverrides(
 	dialContextSettings *connect.DialContextSettings,
 	dnsPumpHost string,
 	transferMemory *deviceLocalTransferMemory,
+	sessionApis ...*Api,
 ) (*deviceLocalProvider, error) {
+	providerApi := networkSpace.GetApi()
+	if len(sessionApis) > 0 && sessionApis[0] != nil {
+		providerApi = sessionApis[0]
+	}
+	ctx = providerApi.clientInfoContext(ctx)
 	providerCtx, providerCancel := context.WithCancel(ctx)
 	apiUrl := networkSpace.apiUrl
 	clientStrategy := networkSpace.clientStrategy
@@ -276,6 +283,7 @@ func newDeviceLocalProviderWithOverrides(
 		ByJwt:      byJwt,
 		InstanceId: instanceId,
 		AppVersion: appVersion,
+		ClientInfo: networkSpace.GetApi().connectClientInfo(), StreamLeaseVersion: 1,
 	}
 	platformTransportSettings := newDeviceLocalPlatformTransportSettings(
 		deviceMemoryTargetByteCount,
@@ -284,6 +292,11 @@ func newDeviceLocalProviderWithOverrides(
 		networkSpace.GetAltUrl(),
 		dnsPumpHost,
 	)
+	platformTransportSettings.AuthorizationClosed = func(cause connect.AuthorizationCloseCause) {
+		if cause != connect.AuthorizationCloseUnavailable {
+			providerApi.RequestJwtRefresh()
+		}
+	}
 	platformTransportSettings.Log = clientSettings.Log
 	platformTransportSettings.ModePreferences = maps.Clone(modePreferences)
 	// The provider exists before outbound client windows. Its optional Auto-H3
@@ -307,6 +320,7 @@ func newDeviceLocalProviderWithOverrides(
 		instanceId: instanceId,
 
 		networkSpace:              networkSpace,
+		api:                       providerApi,
 		dialContextSettings:       dialContextSettings,
 		clientStrategy:            clientStrategy,
 		clientStrategySettings:    networkSpace.derivedClientStrategySettings(),
@@ -575,6 +589,14 @@ func (self *deviceLocalProvider) handleControlFrames(source connect.TransferPath
 		return
 	}
 	for _, frame := range frames {
+		if frame.MessageType == protocol.MessageType_TransferNetworkSessionsChanged {
+			if message, err := connect.FromFrame(frame); err == nil {
+				if hint, ok := message.(*protocol.NetworkSessionsChanged); ok {
+					self.api.networkSessionsChanged(&NetworkSessionsRevision{Generation: hint.Generation, EventId: int64(hint.EventId)})
+				}
+			}
+			continue
+		}
 		if frame.MessageType != protocol.MessageType_TransferResidentMigrate {
 			continue
 		}
@@ -830,10 +852,18 @@ func (self *deviceLocalProvider) SetByJwt(byJwt string) {
 	if self.closed {
 		return
 	}
+	info := connect.ClientInfoFromContext(self.ctx)
+	if self.auth != nil {
+		info = self.auth.ClientInfo
+	}
+	if self.api != nil {
+		info = self.api.connectClientInfo()
+	}
 	auth := &connect.ClientAuth{
 		ByJwt:      byJwt,
 		InstanceId: self.instanceId,
 		AppVersion: self.appVersion,
+		ClientInfo: info, StreamLeaseVersion: 1,
 		// the declaration follows the provide mode, never the token
 		ProvideIntent: provideModeIncludesPublic(self.provideMode),
 	}

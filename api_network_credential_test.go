@@ -377,6 +377,22 @@ func apiCredentialCases() []apiCredentialCase {
 		}},
 
 		// App admin routes: the apps sent these with the device's client token
+		{"GetNetworkSessions", "GET /network/sessions", "/network/sessions", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*NetworkSessionsResult]) { api.GetNetworkSessions(cb) })
+		}},
+		{"RevokeNetworkSession", "POST /network/revoke-session", "/network/revoke-session", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SessionOperationResult]) {
+				api.RevokeNetworkSession(&RevokeNetworkSessionArgs{SessionId: keyClientId, OperationId: keyClientId}, cb)
+			})
+		}},
+		{"RevokeOtherNetworkSessions", "POST /network/revoke-other-sessions", "/network/revoke-other-sessions", sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SessionOperationResult]) {
+				api.RevokeOtherNetworkSessions(&RevokeOtherNetworkSessionsArgs{OperationId: keyClientId}, cb)
+			})
+		}},
+		{"GetNetworkSessionOperation", "GET /network/session-operations/{operation_id}", "/network/session-operations/" + credentialTestKeyClientId, sendsNetwork, func(ctx context.Context, api *Api) error {
+			return awaitApiCall(func(cb connect.ApiCallback[*SessionOperationResult]) { api.GetNetworkSessionOperation(keyClientId, cb) })
+		}},
 		{"NetworkDelete", "POST /auth/network-delete", "/auth/network-delete", sendsNetwork, func(ctx context.Context, api *Api) error {
 			return awaitApiCall(func(cb connect.ApiCallback[*NetworkDeleteResult]) { api.NetworkDelete(cb) })
 		}},

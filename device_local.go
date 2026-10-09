@@ -1467,6 +1467,7 @@ func newDeviceLocalWithOverridesForPlatform(
 		}()
 	}
 
+	ctx = api.clientInfoContext(ctx)
 	preparedAuth, err := api.prepareDeviceAuth(authLocalState, byJwt, instanceId, time.Now(), authPublication)
 	if err != nil {
 		cancel()
@@ -1561,6 +1562,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			settings.ProviderDialContextSettings,
 			settings.DnsPumpHost,
 			transferMemory,
+			api,
 		)
 		if err != nil {
 			cancel()

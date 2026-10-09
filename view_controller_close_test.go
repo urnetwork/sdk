@@ -83,3 +83,9 @@ func TestCloseConcretePostQuantumIdentityViewControllerReleasesOwnership(t *test
 
 	requireNoOwnedViewControllers(t, device)
 }
+
+func TestCloseConcreteClientSessionViewControllerReleasesOwnership(t *testing.T) {
+	device := newViewControllerCloseTestDevice(t)
+	device.CloseClientSessionViewController(device.OpenClientSessionViewController())
+	requireNoOwnedViewControllers(t, device)
+}

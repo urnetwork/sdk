@@ -55,6 +55,10 @@ const (
 // takes any credential. TestApiAdminRoutesMatchTheServer compares the two
 // tables when the server checkout is beside the sdk.
 var apiAdminRouteAccess = map[string]apiRouteAccess{
+	"GET /network/sessions":                   apiRouteAccessNetwork,
+	"POST /network/revoke-session":            apiRouteAccessNetwork,
+	"POST /network/revoke-other-sessions":     apiRouteAccessNetwork,
+	"GET /network/session-operations/([^/]+)": apiRouteAccessNetwork,
 	"POST /auth/network-delete":               apiRouteAccessAppAdmin,
 	"POST /auth/code-create":                  apiRouteAccessAppAdmin,
 	"POST /auth/add-auth":                     apiRouteAccessAppAdmin,
@@ -341,7 +345,15 @@ func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
 		if err != nil {
 			return nil, err
 		}
-		return httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		target, tracked := self.networkRequestTarget(byJwt)
+		ctx = self.clientInfoContext(ctx)
+		result, requestErr := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
+		if tracked && ConfirmedClientRefreshRejection(requestErr) {
+			if self.rejectNetworkCredential(target) {
+				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
+			}
+		}
+		return result, requestErr
 	}
 }
 
@@ -352,7 +364,15 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 		if err != nil {
 			return nil, err
 		}
-		return httpGetRaw(ctx, requestUrl, byJwt)
+		target, tracked := self.networkRequestTarget(byJwt)
+		ctx = self.clientInfoContext(ctx)
+		result, requestErr := httpGetRaw(ctx, requestUrl, byJwt)
+		if tracked && ConfirmedClientRefreshRejection(requestErr) {
+			if self.rejectNetworkCredential(target) {
+				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
+			}
+		}
+		return result, requestErr
 	}
 }
 
@@ -363,6 +383,14 @@ func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 		if err != nil {
 			return nil, err
 		}
-		return httpPostStreamRaw(ctx, requestUrl, body, byJwt)
+		target, tracked := self.networkRequestTarget(byJwt)
+		ctx = self.clientInfoContext(ctx)
+		result, requestErr := httpPostStreamRaw(ctx, requestUrl, body, byJwt)
+		if tracked && ConfirmedClientRefreshRejection(requestErr) {
+			if self.rejectNetworkCredential(target) {
+				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
+			}
+		}
+		return result, requestErr
 	}
 }
