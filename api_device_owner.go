@@ -66,16 +66,20 @@ func (self *Api) deviceRejectedJwt(owner *deviceAuthPublicationGate) (string, bo
 func (self *Api) setDeviceByJwt(prepared *deviceAuthStartup, owner *deviceAuthPublicationGate, log connect.Logger) error {
 	byJwt := prepared.byJwt
 	changed := false
+	networkChanged := false
 	err := self.publishDeviceOwner(prepared, owner, func() {
 		changed = self.byJwt != byJwt
 		self.byJwt = byJwt
-		self.keepNetworkByJwtForDeviceWithLock(prepared, byJwt)
+		networkChanged = self.keepNetworkByJwtForDeviceWithLock(prepared, byJwt)
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.log = log
 	})
 	if err == nil && changed && self.tokenManager != nil {
 		self.tokenManager.TokenChanged()
+	}
+	if err == nil && networkChanged {
+		self.networkRenewer.credentialChanged()
 	}
 	return err
 }
@@ -93,10 +97,11 @@ func (self *Api) installDeviceRemote(
 ) error {
 	byJwt := prepared.byJwt
 	changed := false
+	networkChanged := false
 	err := self.publishDeviceOwner(prepared, owner, func() {
 		changed = self.byJwt != byJwt
 		self.byJwt = byJwt
-		self.keepNetworkByJwtForDeviceWithLock(prepared, byJwt)
+		networkChanged = self.keepNetworkByJwtForDeviceWithLock(prepared, byJwt)
 		self.deviceAuthOwner = owner
 		self.rejectedByJwt = ""
 		self.log = log
@@ -114,6 +119,9 @@ func (self *Api) installDeviceRemote(
 	})
 	if err == nil && changed && self.tokenManager != nil {
 		self.tokenManager.TokenChanged()
+	}
+	if err == nil && networkChanged {
+		self.networkRenewer.credentialChanged()
 	}
 	return err
 }

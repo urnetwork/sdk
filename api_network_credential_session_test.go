@@ -53,8 +53,9 @@ func requireClientCallSends(t *testing.T, api *Api, requests chan recordedApiReq
 
 // A client token refresh replaces only the client token. The refresh carries
 // the client token, never the network credential, and the network credential
-// stays beside the refreshed token. The network credential itself is never
-// refreshed: the server refreshes only a client token.
+// stays beside the refreshed token. /auth/refresh refreshes only a client
+// token; the network credential renews separately, and only when a LocalState
+// backs it (api_network_credential_renewal_test.go), which this API has none of.
 func TestClientRefreshKeepsTheNetworkCredential(t *testing.T) {
 	networkJwt := credentialTestNetworkJwt(t, credentialTestNetworkId)
 	clientJwt := credentialTestClientJwt(t, credentialTestNetworkId, "initial")
@@ -330,6 +331,8 @@ func TestApiRouteAccessMatchesTheServersRouting(t *testing.T) {
 		{"GET", "/auth/network-delete", apiRouteAccessClient},
 		{"POST", "/auth/network-delete/more", apiRouteAccessClient},
 		{"POST", "/network/client-data-cap", apiRouteAccessNetwork},
+		{"POST", "/auth/network-refresh", apiRouteAccessNetwork},
+		{"GET", "/auth/refresh", apiRouteAccessClient},
 		{"GET", "/network/client-data-cap", apiRouteAccessClient},
 		{"GET", "/device/share-code/code-1/qr.png", apiRouteAccessNetwork},
 		{"GET", "/device/share-code/a/b/qr.png", apiRouteAccessClient},

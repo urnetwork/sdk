@@ -83,6 +83,7 @@ var apiAdminRouteAccess = map[string]apiRouteAccess{
 	"POST /account/claim-name":                apiRouteAccessAppAdmin,
 	"GET /account/balance-codes":              apiRouteAccessAppAdmin,
 
+	"POST /auth/network-refresh":            apiRouteAccessNetwork,
 	"GET /stats/providers":                  apiRouteAccessNetwork,
 	"POST /stats/providers-last-n":          apiRouteAccessNetwork,
 	"POST /stats/provider-last-n":           apiRouteAccessNetwork,
@@ -222,22 +223,32 @@ func sameNetworkOrUnknown(a string, b string) bool {
 // An explicit login replaces the whole session, so it also replaces the
 // network credential: the login itself when it is one, else none. A client
 // token that a caller sets with SetByJwt never inherits an earlier login's.
-// Callers hold authMutationLock and mutex.
+// No LocalState backs the login until a device starts from one, so renewal
+// waits for that. Callers hold authMutationLock and mutex.
 func (self *Api) setLoginNetworkByJwtWithLock(byJwt string) {
 	if isNetworkCredential(byJwt) {
 		self.networkByJwt = byJwt
 	} else {
 		self.networkByJwt = ""
 	}
+	self.networkByJwtStore = nil
+	self.networkByJwtRejected = ""
+	self.networkCredentialChangedWithLock()
 }
 
 // Keeps the network credential beside the client token a device installs.
 // A device started after a relaunch adopts the sign-in token its LocalState
 // pairs with the client (the apps save both at sign-in), unless the API
 // already holds the login's. A network credential of another network than the
-// device's client is dropped rather than sent for it. Callers hold
-// authMutationLock, the LocalState auth lock and mutex.
-func (self *Api) keepNetworkByJwtForDeviceWithLock(prepared *deviceAuthStartup, deviceByJwt string) {
+// device's client is dropped rather than sent for it, and one the server
+// rejected is not adopted again. The LocalState backs the kept credential, and
+// renews it, when it stores exactly that token beside the device's client
+// token (api_network_credential_renewal.go). Reports whether the kept
+// credential or its LocalState changed. Callers hold authMutationLock, the
+// LocalState auth lock and mutex.
+func (self *Api) keepNetworkByJwtForDeviceWithLock(prepared *deviceAuthStartup, deviceByJwt string) bool {
+	networkByJwt := self.networkByJwt
+	networkByJwtStore := self.networkByJwtStore
 	if !sameNetworkOrUnknown(self.networkByJwt, deviceByJwt) {
 		self.networkByJwt = ""
 	}
@@ -245,10 +256,29 @@ func (self *Api) keepNetworkByJwtForDeviceWithLock(prepared *deviceAuthStartup, 
 		storedByJwt := prepared.state.ByJwt
 		// shipped Apple extensions stored their client token as by_jwt
 		// (selectStartupClientJwt); a client token is never adopted
-		if isNetworkCredential(storedByJwt) && sameNetworkOrUnknown(storedByJwt, deviceByJwt) {
+		if isNetworkCredential(storedByJwt) && sameNetworkOrUnknown(storedByJwt, deviceByJwt) &&
+			storedByJwt != self.networkByJwtRejected {
 			self.networkByJwt = storedByJwt
 		}
 	}
+	self.networkByJwtStore = nil
+	if prepared.localState != nil && self.networkByJwt != "" &&
+		prepared.state.ByJwt == self.networkByJwt && credentialNamesClient(deviceByJwt) {
+		self.networkByJwtStore = prepared.localState
+	}
+	if self.networkByJwt == networkByJwt && self.networkByJwtStore == networkByJwtStore {
+		return false
+	}
+	self.networkCredentialChangedWithLock()
+	return true
+}
+
+// networkCredentialChangedWithLock starts a new generation of the kept network
+// credential: a renewal that read the old one is discarded, and renewal of a
+// new credential starts over. Callers hold mutex.
+func (self *Api) networkCredentialChangedWithLock() {
+	self.networkByJwtGeneration += 1
+	self.networkRenewalHalted = false
 }
 
 // networkCredential is the API's current credential when that is a network
