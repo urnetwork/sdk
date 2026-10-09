@@ -1935,8 +1935,10 @@ func manualExports(sourceDirectory string) []string {
 // so before this an //export inside a build-tag-gated file reached include/urnetwork_sdk.def, and
 // an MSVC import library built from a .def naming a symbol the shipped dll does not contain is a
 // LINK ERROR at the consumer -- a break the generator would have caused and which nothing here
-// would have caught. The loopback fixture retains its urnet_message_loopback tag as well as
-// its testdata boundary; neither may let test exports enter a shipped library's definition.
+// would have caught. It was written for the messaging ABI's loopback harness, behind
+// `//go:build urnet_message_loopback`, which moved to github.com/urnetwork/message with that
+// ABI. No file in this package is gated that way today; manual_exports_test.go holds the rule
+// against a fixture directory.
 //
 // THE QUESTION IT ASKS IS "IS THIS FILE IN ANY SHIPPED BUILD", not "is it in this one". A custom
 // tag -- one no Makefile target passes -- is always false. A platform tag is evaluated BOTH ways

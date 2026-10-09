@@ -823,65 +823,6 @@ EXPORTS
 	urnet_login_view_controller_start
 	urnet_login_view_controller_stop
 	urnet_memory_classes_json_for_diag
-	urnet_message_client_close
-	urnet_message_client_id
-	urnet_message_client_new
-	urnet_message_client_platform_url
-	urnet_message_context_cancel
-	urnet_message_context_new
-	urnet_message_device_close
-	urnet_message_device_connect
-	urnet_message_device_create_group
-	urnet_message_device_forget_group
-	urnet_message_device_groups
-	urnet_message_device_join
-	urnet_message_device_key_package
-	urnet_message_device_new
-	urnet_message_device_restore
-	urnet_message_device_wait_push
-	urnet_message_durable_state_store_close
-	urnet_message_durable_state_store_open
-	urnet_message_group_add_member
-	urnet_message_group_add_member_and_publish
-	urnet_message_group_close
-	urnet_message_group_delete
-	urnet_message_group_ensure_subscribed
-	urnet_message_group_epoch
-	urnet_message_group_id
-	urnet_message_group_is_open
-	urnet_message_group_list_at
-	urnet_message_group_list_count
-	urnet_message_group_members
-	urnet_message_group_messages
-	urnet_message_group_my_role
-	urnet_message_group_open
-	urnet_message_group_react
-	urnet_message_group_receive
-	urnet_message_group_removal
-	urnet_message_group_remove_member
-	urnet_message_group_send
-	urnet_message_group_send_reply
-	urnet_message_group_set_role
-	urnet_message_group_stats
-	urnet_message_group_transfer_ownership
-	urnet_message_group_unreact
-	urnet_message_invite_encode
-	urnet_message_list_body
-	urnet_message_list_count
-	urnet_message_list_info
-	urnet_message_list_reaction_count
-	urnet_message_list_reaction_info
-	urnet_message_member_list_count
-	urnet_message_member_list_info
-	urnet_message_parse_invite
-	urnet_message_route_client_close
-	urnet_message_route_client_new
-	urnet_message_route_client_status
-	urnet_message_stream_index_reserver_new
-	urnet_message_stream_store_close
-	urnet_message_stream_store_open
-	urnet_message_transport_close
-	urnet_message_transport_new
 	urnet_monthly_equivalent_amount
 	urnet_nano_cents_to_usd
 	urnet_nano_points_to_points
@@ -978,7 +919,6 @@ EXPORTS
 	urnet_new_feedback_submitted_event
 	urnet_new_id
 	urnet_new_login_view_controller
-	urnet_new_message_transport
 	urnet_new_network_name_validation_view_controller
 	urnet_new_network_space_key
 	urnet_new_network_space_manager
@@ -1009,7 +949,6 @@ EXPORTS
 	urnet_normal_env_name
 	urnet_normal_extender_gossip_mode
 	urnet_normalize_bittensor_signature
-	urnet_open_stream_store
 	urnet_order_connected_provider_locations
 	urnet_packet_batch_get
 	urnet_packet_batch_ip_protocol
@@ -1020,7 +959,6 @@ EXPORTS
 	urnet_parse_checkout_redirect
 	urnet_parse_client_events_json
 	urnet_parse_id
-	urnet_parse_message_route_mode
 	urnet_parse_vless_link
 	urnet_peer_view_controller_add_peers_listener
 	urnet_peer_view_controller_close

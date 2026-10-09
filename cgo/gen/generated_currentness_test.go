@@ -128,7 +128,8 @@ func testingManualExportSymbols(t *testing.T, cgoDirectory string) []string {
 			t.Fatal(err)
 		}
 		// A file no shipped build compiles exports nothing the module definition owes.
-		// Match the generator's build-tag rule in addition to the testdata boundary.
+		// Match the generator's build-tag rule, which manual_exports_test.go holds against a
+		// fixture directory.
 		if !inAnyShippedBuild(string(source)) {
 			continue
 		}

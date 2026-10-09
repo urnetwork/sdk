@@ -388,9 +388,11 @@ func TestFixture(t *testing.T) {
 	}
 }
 
-// cp3b's server is a real sibling dependency. A checkout without it must not
+// A nested module's sibling dependency is real. A checkout without it must not
 // claim a passing SDK suite; an available checkout must actually be exercised.
-func TestSdkTestScriptMessageServerDependency(t *testing.T) {
+// The fixture keeps the shape of cp3b and its message-server sibling, which
+// moved to github.com/urnetwork/message with the rest of messaging.
+func TestSdkTestScriptNestedModuleSiblingDependency(t *testing.T) {
 	for _, available := range []bool{false, true} {
 		t.Run(fmt.Sprintf("available=%t", available), func(t *testing.T) {
 			fixture := newSdkTestScriptFixture(t)

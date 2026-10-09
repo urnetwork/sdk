@@ -335,8 +335,6 @@ inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
-inline constexpr int64_t MessageRouteDirect = 1;
-inline constexpr int64_t MessageRouteUrnetwork = 0;
 inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
 inline constexpr const char* OfferDeclineControlBack = "back";
 inline constexpr const char* OfferDeclineControlFreePlanLink = "free_plan_link";
@@ -751,8 +749,6 @@ struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
 struct MemoryTeardownObservation;
-struct MessageTransport;
-struct MessageTransportConfig;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -874,7 +870,6 @@ struct SolanaPaymentIntentArgs;
 struct SolanaPaymentIntentError;
 struct SolanaPaymentIntentResult;
 struct SolanaPaymentUrlArgs;
-struct StreamStore;
 struct StripeCreateCheckoutSessionArgs;
 struct StripeCreateCheckoutSessionError;
 struct StripeCreateCheckoutSessionResult;
@@ -2370,16 +2365,6 @@ struct MemoryStats {
 struct MemoryTeardownObservation {
 };
 
-struct MessageTransport {
-};
-
-struct MessageTransportConfig {
-	nlohmann::json Client{};
-	nlohmann::json Server{};
-	uint32_t ProtocolVersion{};
-	int64_t Timeout{};
-};
-
 struct NetExtender {
 	std::string ip{};
 	std::string secret{};
@@ -3338,9 +3323,6 @@ struct SolanaPaymentUrlArgs {
 	std::optional<std::string> message;
 };
 
-struct StreamStore {
-};
-
 struct StripeCreateCheckoutSessionArgs {
 	std::string item_id{};
 	std::optional<std::string> ui_mode;
@@ -4090,10 +4072,6 @@ inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
 inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
 inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
-inline void to_json(nlohmann::json& j, const MessageTransport& v);
-inline void from_json(const nlohmann::json& j, MessageTransport& v);
-inline void to_json(nlohmann::json& j, const MessageTransportConfig& v);
-inline void from_json(const nlohmann::json& j, MessageTransportConfig& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -4336,8 +4314,6 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const SolanaPaymentUrlArgs& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentUrlArgs& v);
-inline void to_json(nlohmann::json& j, const StreamStore& v);
-inline void from_json(const nlohmann::json& j, StreamStore& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionArgs& v);
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v);
@@ -10678,40 +10654,6 @@ inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v) {
 	}
 }
 
-inline void to_json(nlohmann::json& j, const MessageTransport& v) {
-	j = nlohmann::json::object();
-}
-inline void from_json(const nlohmann::json& j, MessageTransport& v) {
-	if (!j.is_object()) {
-		return;
-	}
-}
-
-inline void to_json(nlohmann::json& j, const MessageTransportConfig& v) {
-	j = nlohmann::json::object();
-	j["Client"] = v.Client;
-	j["Server"] = v.Server;
-	j["ProtocolVersion"] = v.ProtocolVersion;
-	j["Timeout"] = v.Timeout;
-}
-inline void from_json(const nlohmann::json& j, MessageTransportConfig& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("Client"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Client);
-	}
-	if (auto it = j.find("Server"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Server);
-	}
-	if (auto it = j.find("ProtocolVersion"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ProtocolVersion);
-	}
-	if (auto it = j.find("Timeout"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Timeout);
-	}
-}
-
 inline void to_json(nlohmann::json& j, const NetExtender& v) {
 	j = nlohmann::json::object();
 	j["ip"] = v.ip;
@@ -15258,15 +15200,6 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentUrlArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.message = std::move(tmp);
-	}
-}
-
-inline void to_json(nlohmann::json& j, const StreamStore& v) {
-	j = nlohmann::json::object();
-}
-inline void from_json(const nlohmann::json& j, StreamStore& v) {
-	if (!j.is_object()) {
-		return;
 	}
 }
 
@@ -31189,24 +31122,6 @@ inline LoginViewController newLoginViewController(const Api& api) {
 	LoginViewController r(urnet_new_login_view_controller(api.handle()));
 	return r;
 }
-inline std::optional<MessageTransport> newMessageTransport(const std::optional<MessageTransportConfig>& config) {
-	std::string config_json;
-	const char* config_c = nullptr;
-	if (config) {
-		config_json = nlohmann::json(*config).dump();
-		config_c = config_json.c_str();
-	}
-	char* err_c = nullptr;
-	char* r_c = urnet_new_message_transport(config_c, &err_c);
-	if (err_c) {
-		detail::throwError(err_c);
-	}
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<MessageTransport>(r_s->c_str());
-}
 inline NetworkNameValidationViewController newNetworkNameValidationViewController(const Api& api) {
 	NetworkNameValidationViewController r(urnet_new_network_name_validation_view_controller(api.handle()));
 	return r;
@@ -31416,18 +31331,6 @@ inline std::string normalizeBittensorSignature(const std::string& signature) {
 	char* r_c = urnet_normalize_bittensor_signature(signature.c_str());
 	return detail::takeString(r_c);
 }
-inline std::optional<StreamStore> openStreamStore(const std::string& dir) {
-	char* err_c = nullptr;
-	char* r_c = urnet_open_stream_store(dir.c_str(), &err_c);
-	if (err_c) {
-		detail::throwError(err_c);
-	}
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<StreamStore>(r_s->c_str());
-}
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
 	std::string locations_json;
 	const char* locations_c = nullptr;
@@ -31497,14 +31400,6 @@ inline std::string parseId(const std::string& src) {
 		detail::throwError(err_c);
 	}
 	return detail::takeString(r_c);
-}
-inline int64_t parseMessageRouteMode(const std::string& value) {
-	char* err_c = nullptr;
-	int64_t r = urnet_parse_message_route_mode(value.c_str(), &err_c);
-	if (err_c) {
-		detail::throwError(err_c);
-	}
-	return r;
 }
 inline std::optional<VlessLinkResult> parseVlessLink(const std::string& link) {
 	char* r_c = urnet_parse_vless_link(link.c_str());

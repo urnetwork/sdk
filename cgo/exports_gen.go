@@ -15598,27 +15598,6 @@ func urnet_new_login_view_controller(api C.uint64_t) C.uint64_t {
 	return C.uint64_t(newHandle(r0))
 }
 
-//export urnet_new_message_transport
-func urnet_new_message_transport(config *C.char, outError **C.char) *C.char {
-	defer cgoGuard("urnet_new_message_transport")
-	var config_ *sdk.MessageTransportConfig
-	if config != nil {
-		config_ = &sdk.MessageTransportConfig{}
-		if !goJson(config, config_, "urnet_new_message_transport") {
-			return nil
-		}
-	}
-	r0, err := sdk.NewMessageTransport(config_)
-	if err != nil {
-		setErrorOut(outError, err)
-		return nil
-	}
-	if r0 == nil {
-		return nil
-	}
-	return cJson(r0, "urnet_new_message_transport")
-}
-
 //export urnet_new_network_name_validation_view_controller
 func urnet_new_network_name_validation_view_controller(api C.uint64_t) C.uint64_t {
 	defer cgoGuard("urnet_new_network_name_validation_view_controller")
@@ -15946,20 +15925,6 @@ func urnet_normalize_bittensor_signature(signature *C.char) *C.char {
 	return cString(string(r0))
 }
 
-//export urnet_open_stream_store
-func urnet_open_stream_store(dir *C.char, outError **C.char) *C.char {
-	defer cgoGuard("urnet_open_stream_store")
-	r0, err := sdk.OpenStreamStore(goString(dir))
-	if err != nil {
-		setErrorOut(outError, err)
-		return nil
-	}
-	if r0 == nil {
-		return nil
-	}
-	return cJson(r0, "urnet_open_stream_store")
-}
-
 //export urnet_order_connected_provider_locations
 func urnet_order_connected_provider_locations(locations *C.char) *C.char {
 	defer cgoGuard("urnet_order_connected_provider_locations")
@@ -16075,17 +16040,6 @@ func urnet_parse_id(src *C.char, outError **C.char) *C.char {
 		return nil
 	}
 	return cId(r0)
-}
-
-//export urnet_parse_message_route_mode
-func urnet_parse_message_route_mode(value *C.char, outError **C.char) C.int64_t {
-	defer cgoGuard("urnet_parse_message_route_mode")
-	r0, err := sdk.ParseMessageRouteMode(goString(value))
-	if err != nil {
-		setErrorOut(outError, err)
-		return 0
-	}
-	return C.int64_t(r0)
 }
 
 //export urnet_parse_vless_link

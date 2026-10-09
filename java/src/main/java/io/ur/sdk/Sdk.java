@@ -26,7 +26,7 @@ public final class Sdk {
             throw new IllegalStateException("No URnetwork runtime for " + system + "-" + arch, e);
         }
         Raw result = Native.load(path, Raw.class, Map.of(Library.OPTION_STRING_ENCODING, "UTF-8"));
-        if (result.urnet_abi_version() != 1) throw new IllegalStateException("Incompatible URnetwork native ABI");
+        if (result.urnet_abi_version() != 2) throw new IllegalStateException("Incompatible URnetwork native ABI");
         return result;
     }
 

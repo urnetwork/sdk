@@ -73,7 +73,7 @@ func checkPackage(language, out string) {
 		command(temp, e, d.executable, "add", "package", "URnetwork.SDK", "--version", manifest.Version, "--source", filepath.Join(out, "artifacts"))
 		textFile(filepath.Join(temp, "Program.cs"), `using URnetwork.SDK;
 Console.WriteLine(Sdk.Version);
-if (Raw.urnet_abi_version() != 1) throw new Exception("ABI");
+if (Raw.urnet_abi_version() != 2) throw new Exception("ABI");
 var id = Sdk.TakeString(Raw.urnet_new_id());
 if (id?.Length != 36) throw new Exception("string");
 if (!Sdk.TakeString(Raw.urnet_new_network_space_key("héllo", "main"))!.Contains("héllo")) throw new Exception("UTF-8");
@@ -117,7 +117,7 @@ Raw.urnet_network_space_manager_close(handle.Value);
 		textFile(filepath.Join(consumer, "src/main.rs"), `fn main() -> std::io::Result<()> {
     println!("{}", urnetwork_sdk::version()?);
     let raw=urnetwork_sdk::native()?;
-    assert_eq!(unsafe{(raw.urnet_abi_version)()},1);
+    assert_eq!(unsafe{(raw.urnet_abi_version)()},2);
     let id=unsafe{urnetwork_sdk::take_string((raw.urnet_new_id)())}.unwrap();
     assert_eq!(id.len(),36);
     Ok(())

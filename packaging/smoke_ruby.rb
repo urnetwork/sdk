@@ -1,6 +1,6 @@
 gem "urnetwork-sdk", ENV.fetch("SDK_GEM_VERSION")
 require "urnetwork"
-raise "ABI" unless URnetwork::Raw.urnet_abi_version == 1
+raise "ABI" unless URnetwork::Raw.urnet_abi_version == 2
 raise "string" unless URnetwork.take_string(URnetwork::Raw.urnet_new_id).size == 36
 before = URnetwork::Raw.urnet_live_handle_count
 raise "UTF-8" unless URnetwork.take_string(URnetwork::Raw.urnet_new_network_space_key("héllo", "main")).include?("héllo")

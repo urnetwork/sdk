@@ -18,9 +18,11 @@ import (
 
 // urnet_abi_version changes only for an incompatible C ABI revision. Additive
 // exports do not require a bump; every language binding checks this on load.
+// 2: the three generated messaging exports left this library when messaging
+// moved to github.com/urnetwork/message.
 //
 //export urnet_abi_version
-func urnet_abi_version() C.int32_t { return 1 }
+func urnet_abi_version() C.int32_t { return 2 }
 
 //export urnet_version
 func urnet_version() *C.char {

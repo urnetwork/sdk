@@ -18,7 +18,7 @@ def _load():
     path = os.environ.get("URNETWORK_SDK_LIBRARY") or str(Path(__file__).parent / "native" / f"{system}-{arch}" / name)
     lib = C.CDLL(path)  # CDLL releases the GIL during blocking socket operations.
     bind(lib)
-    if lib.urnet_abi_version() != 1:
+    if lib.urnet_abi_version() != 2:
         raise ImportError("incompatible URnetwork native ABI")
     return lib
 
