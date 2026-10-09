@@ -1147,7 +1147,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1171) ==
+== skipped (1172) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1179,6 +1179,7 @@ Api.AuthWalletChallengeSyncWithContext: unmappable: param ctx: external type con
 Api.CloseAndWait: unmappable: param ctx: external type context.Context
 Api.FindProviders2SyncWithContext: unmappable: param ctx: external type context.Context
 Api.GetClientKeySyncWithContext: unmappable: param ctx: external type context.Context
+Api.NetworkRefreshSyncWithContextAndJwt: unmappable: param ctx: external type context.Context
 Api.RefreshJwtSyncWithContext: unmappable: param ctx: external type context.Context
 Api.RegisterNetworkClientSyncWithContext: unmappable: param ctx: external type context.Context
 Api.RemoveNetworkClientSyncWithContext: unmappable: param ctx: external type context.Context

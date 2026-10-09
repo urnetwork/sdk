@@ -522,8 +522,8 @@ func apiCredentialCases() []apiCredentialCase {
 			return err
 		}},
 		// the renewal of the network credential (api_network_credential_renewal.go)
-		{"networkRefreshSyncWithContextAndJwt", "POST /auth/network-refresh", "/auth/network-refresh", sendsNetwork, func(ctx context.Context, api *Api) error {
-			_, err := api.networkRefreshSyncWithContextAndJwt(ctx, api.networkCredential())
+		{"NetworkRefreshSyncWithContextAndJwt", "POST /auth/network-refresh", "/auth/network-refresh", sendsNetwork, func(ctx context.Context, api *Api) error {
+			_, err := api.NetworkRefreshSyncWithContextAndJwt(ctx, api.networkCredential())
 			return err
 		}},
 	}

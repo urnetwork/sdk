@@ -139,20 +139,20 @@ func storedRenewalOf(previousByJwt string, storedByJwt string) bool {
 	return jwtIssuedAt(previousByJwt).Before(jwtIssuedAt(storedByJwt))
 }
 
-type networkRefreshResultError struct {
-	Message string `json:"message"`
-}
-
-type networkRefreshResult struct {
-	ByJwt string                     `json:"by_jwt,omitempty"`
-	Error *networkRefreshResultError `json:"error,omitempty"`
-}
-
-// networkRefreshSyncWithContextAndJwt renews one network token: POST
-// /auth/network-refresh with that token. The route is Network only, so the
-// request seam sends a network credential there, never a client token, and
-// never to another url.
-func (self *Api) networkRefreshSyncWithContextAndJwt(ctx context.Context, byJwt string) (*networkRefreshResult, error) {
+// NetworkRefreshSyncWithContextAndJwt renews one network token: POST
+// /auth/network-refresh with that token. The answer has the shape of
+// /auth/refresh's: the renewed network token, or the server's refusal (an API
+// key, a client token). The route is Network only, so the request seam sends a
+// network credential there, never a client token, and never to another url.
+//
+// Go owners that keep a network token outside a LocalState renew it with this,
+// for example the subnet miner's token file. A confirmed rejection of the
+// token (401) satisfies ConfirmedClientRefreshRejection; a transient failure
+// is a ClientControlUnavailableError; a malformed answer is a
+// ClientControlResponseError.
+//
+//gomobile:noexport
+func (self *Api) NetworkRefreshSyncWithContextAndJwt(ctx context.Context, byJwt string) (*RefreshJwtResult, error) {
 	if ctx == nil {
 		return nil, &ClientControlResponseError{detail: "network refresh context is absent"}
 	}
@@ -166,7 +166,7 @@ func (self *Api) networkRefreshSyncWithContextAndJwt(ctx context.Context, byJwt 
 		}
 		return nil, err
 	}
-	var result *networkRefreshResult
+	var result *RefreshJwtResult
 	if err := decodeClientControlJson(raw, &result); err != nil {
 		return nil, err
 	}
@@ -501,7 +501,7 @@ func (self *apiNetworkCredentialRenewer) renew(target networkRenewalTarget) {
 	}
 	log := self.api.logger()
 	log.Infof("[api-network]renewing the network credential now")
-	result, err := self.api.networkRefreshSyncWithContextAndJwt(self.ctx, target.byJwt)
+	result, err := self.api.NetworkRefreshSyncWithContextAndJwt(self.ctx, target.byJwt)
 	if self.ctx.Err() != nil {
 		return
 	}

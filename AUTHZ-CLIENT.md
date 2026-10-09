@@ -88,6 +88,11 @@ still accept a client token from an ordinary network.
   - `Api.HasNetworkCredential() bool`, on gomobile and in the C ABI as
     `urnet_api_has_network_credential`.
   - The Go error `ErrNetworkCredentialRequired`.
+  - Go only: `Api.NetworkRefreshSyncWithContextAndJwt(ctx, byJwt)`, the
+    renewal request for a Go owner that keeps its network token outside a
+    LocalState (the subnet miner's token file). It answers a
+    `RefreshJwtResult`; a 401 satisfies `ConfirmedClientRefreshRejection`.
+    gobind and the C ABI skip it (it takes a `context.Context`).
 
   Nothing existing changed signature.
 

@@ -1054,7 +1054,7 @@ func TestNetworkRefreshRequestNeedsTheNetworkCredential(t *testing.T) {
 	connect.AssertEqual(t, apiRouteAccessFor(http.MethodPost, "/auth/network-refresh"), apiRouteAccessNetwork)
 
 	for _, byJwt := range []string{clientJwt, ""} {
-		_, err := r.api.networkRefreshSyncWithContextAndJwt(r.ctx, byJwt)
+		_, err := r.api.NetworkRefreshSyncWithContextAndJwt(r.ctx, byJwt)
 		if !errors.Is(err, ErrNetworkCredentialRequired) {
 			t.Fatalf("err = %v, want ErrNetworkCredentialRequired", err)
 		}
@@ -1077,7 +1077,7 @@ func TestNetworkRefreshRequestNeedsTheNetworkCredential(t *testing.T) {
 	} {
 		done := make(chan error, 1)
 		go func() {
-			_, err := r.api.networkRefreshSyncWithContextAndJwt(r.ctx, networkJwt)
+			_, err := r.api.NetworkRefreshSyncWithContextAndJwt(r.ctx, networkJwt)
 			done <- err
 		}()
 		r.transport.takeRenewal(t, networkJwt).answer(c.reply)
@@ -1118,4 +1118,66 @@ func TestRemoteDeviceRenewsOverItsTransport(t *testing.T) {
 	connect.AssertEqual(t, localState.GetByClientJwt(), clientJwt)
 	connect.AssertEqual(t, r.api.networkCredential(), renewedJwt)
 	connect.AssertEqual(t, r.api.GetByJwt(), clientJwt)
+}
+
+// The exported call is how a Go owner outside a LocalState renews its own
+// network token (the subnet miner's token file). It answers the renewal or the
+// refusal in /auth/refresh's shape, and its errors classify the way such an
+// owner schedules: a confirmed rejection (401), a transient failure, or another
+// status the owner treats as refused.
+func TestNetworkRefreshSyncWithContextAndJwtClassifiesItsAnswer(t *testing.T) {
+	r := newRenewalTestApi(t)
+	networkJwt := renewalTestNetworkJwt(t, renewalTestBaseTime, renewalTestBaseTime.Add(time.Hour), "sign-in")
+	exchange := func(t *testing.T, respond func(renewalTestRequest)) (*RefreshJwtResult, error) {
+		t.Helper()
+		type outcome struct {
+			result *RefreshJwtResult
+			err    error
+		}
+		done := make(chan outcome, 1)
+		go func() {
+			result, err := r.api.NetworkRefreshSyncWithContextAndJwt(r.ctx, networkJwt)
+			done <- outcome{result: result, err: err}
+		}()
+		respond(r.transport.takeRenewal(t, networkJwt))
+		got := <-done
+		return got.result, got.err
+	}
+
+	result, err := exchange(t, func(request renewalTestRequest) { request.answer(renewalTestReplyJwt("renewed")) })
+	if err != nil || result == nil || result.ByJwt != "renewed" || result.Error != nil {
+		t.Fatalf("renewal: result=%+v err=%v", result, err)
+	}
+	result, err = exchange(t, func(request renewalTestRequest) {
+		request.answer(`{"error":{"message":"An API key does not expire and is not refreshed."}}`)
+	})
+	if err != nil || result == nil || result.ByJwt != "" || result.Error == nil || result.Error.Message != "An API key does not expire and is not refreshed." {
+		t.Fatalf("refusal: result=%+v err=%v", result, err)
+	}
+
+	_, err = exchange(t, func(request renewalTestRequest) {
+		request.fail(&connect.HttpStatusError{StatusCode: http.StatusUnauthorized})
+	})
+	if !ConfirmedClientRefreshRejection(err) {
+		t.Fatalf("401 err = %v, want a confirmed rejection", err)
+	}
+	_, err = exchange(t, func(request renewalTestRequest) {
+		request.fail(&connect.HttpStatusError{StatusCode: http.StatusServiceUnavailable})
+	})
+	var unavailable *ClientControlUnavailableError
+	if !errors.As(err, &unavailable) || ConfirmedClientRefreshRejection(err) {
+		t.Fatalf("503 err = %v, want a transient ClientControlUnavailableError", err)
+	}
+	_, err = exchange(t, func(request renewalTestRequest) {
+		request.fail(&connect.HttpStatusError{StatusCode: http.StatusNotFound})
+	})
+	var status *connect.HttpStatusError
+	if !errors.As(err, &status) || status.StatusCode != http.StatusNotFound || errors.As(err, &unavailable) || ConfirmedClientRefreshRejection(err) {
+		t.Fatalf("404 err = %v, want a plain status a caller treats as refused", err)
+	}
+	_, err = exchange(t, func(request renewalTestRequest) { request.answer(`{}`) })
+	var malformed *ClientControlResponseError
+	if !errors.As(err, &malformed) {
+		t.Fatalf("empty answer err = %v, want a ClientControlResponseError", err)
+	}
 }
