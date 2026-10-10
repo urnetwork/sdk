@@ -254,8 +254,12 @@ type DeviceRemote struct {
 	lifecycleDone         chan struct{}
 	securityPolicyMonitor *securityPolicyMonitor
 
-	networkSpace     *NetworkSpace
-	byJwt            string
+	networkSpace *NetworkSpace
+	byJwt        string
+	// why the server ended this remote's sign-in, set before its AuthLogout
+	// listeners run (GetAuthLogoutCause). A rejection the device process
+	// answered over rpc carries its typed status (DeviceRemoteHttpResponseError).
+	authLogoutCause  string
 	apiJwtRefreshSub Sub
 	apiAuthLogoutSub Sub
 	authPublication  *deviceAuthPublicationGate
@@ -681,7 +685,7 @@ func newDeviceRemoteWithOverrides(
 				return
 			}
 			defer release()
-			rejectedJwt, current := api.deviceRejectedJwt(authPublication)
+			rejectedJwt, cause, current := api.deviceRejectedJwt(authPublication)
 			if !current {
 				return
 			}
@@ -695,7 +699,7 @@ func newDeviceRemoteWithOverrides(
 			if !accepted {
 				return
 			}
-			deviceRemote.handleApiAuthLogout()
+			deviceRemote.handleApiAuthLogout(cause)
 		}),
 	)
 	// Publish the credential and transport owner together before enabling
@@ -1178,9 +1182,11 @@ func (self *DeviceRemote) setByJwt(byJwt string) {
 	self.log.Infof("DeviceRemote onTokenRefreshSuccess complete, should have fired listeners")
 }
 
-func (self *DeviceRemote) handleApiAuthLogout() {
+// The cause is the rejection's, read with the rejected credential.
+func (self *DeviceRemote) handleApiAuthLogout(cause string) {
 	self.stateLock.Lock()
 	self.byJwt = ""
+	self.authLogoutCause = cause
 	self.stateLock.Unlock()
 	self.authLogout()
 }
@@ -2676,6 +2682,14 @@ func (self *DeviceRemote) AddAuthLogoutListener(listener AuthLogoutListener) Sub
 	return newSub(func() {
 		self.authLogoutListeners.Remove(callbackId)
 	})
+}
+
+// Why the server ended this remote's sign-in when its AuthLogout fired:
+// AuthLogoutCauseSessionRevoked or "" (Device.GetAuthLogoutCause).
+func (self *DeviceRemote) GetAuthLogoutCause() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.authLogoutCause
 }
 
 func (self *DeviceRemote) LoadProvideSecretKeys(provideSecretKeyList *ProvideSecretKeyList) {
@@ -5024,6 +5038,14 @@ func (self *DeviceRemote) removeHttpResponseChannel(
 }
 
 func (self *DeviceRemote) httpResponse(httpResponse *DeviceRemoteHttpResponse) {
+	if httpResponse.Error != nil && self.settings.httpMaxBodyBytes() < len(httpResponse.Error.Body) {
+		httpResponse = newDeviceRemoteHttpResponseWithLimit(
+			httpResponse.RequestId,
+			nil,
+			fmt.Errorf("device rpc http error response exceeds %d-byte limit", self.settings.httpMaxBodyBytes()),
+			self.settings.httpMaxBodyBytes(),
+		)
+	}
 	if self.settings.httpMaxBodyBytes() < len(httpResponse.BodyBytes) {
 		httpResponse = newDeviceRemoteHttpResponseWithLimit(
 			httpResponse.RequestId,
@@ -9122,12 +9144,30 @@ func newDeviceRemoteHttpResponseWithLimit(requestId connect.Id, bodyBytes []byte
 		httpResponse.Error = &DeviceRemoteHttpResponseError{
 			Error: fmt.Sprintf("%v", err),
 		}
+		// the server's answer itself, not a failure to get one
+		if status, ok := err.(*connect.HttpStatusError); ok && len(status.Body) <= maxBodyBytes {
+			httpResponse.Error.StatusCode = status.StatusCode
+			httpResponse.Error.Status = status.Status
+			httpResponse.Error.Body = status.Body
+		}
 	}
 	return httpResponse
 }
 
+// An answer the server gave is the same typed connect.HttpStatusError a direct
+// request returns, so the remote's API reads the same verdict: a 401 rejects
+// its credential with the structured code as the cause, a 202 carries its
+// body. Every other failure, and an answer from a device process that
+// predates the status fields, is the untyped message, as before.
 func (self *DeviceRemoteHttpResponse) toError() error {
 	if self.Error != nil {
+		if self.Error.StatusCode != 0 {
+			return &connect.HttpStatusError{
+				StatusCode: self.Error.StatusCode,
+				Status:     self.Error.Status,
+				Body:       self.Error.Body,
+			}
+		}
 		return fmt.Errorf("%s", self.Error.Error)
 	}
 	return nil
@@ -9136,6 +9176,12 @@ func (self *DeviceRemoteHttpResponse) toError() error {
 //gomobile:noexport
 type DeviceRemoteHttpResponseError struct {
 	Error string
+	// the status of the server's non-200 answer and its body, within the rpc
+	// body limit; 0 for a request that got no answer. Gob drops these fields
+	// for a peer that predates them.
+	StatusCode int
+	Status     string
+	Body       []byte
 }
 
 type deviceLocalRpcManager struct {

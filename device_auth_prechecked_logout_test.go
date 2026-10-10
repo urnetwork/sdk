@@ -35,7 +35,7 @@ func testingPrecheckedLogoutAfterConstructor(t *testing.T, remote bool) {
 	rejected := false
 	go func() {
 		defer close(done)
-		rejected = fixture.api.rejectByJwt(fixture.initialJwt)
+		rejected = fixture.api.rejectByJwt(fixture.initialJwt, "")
 	}()
 	testingAwaitAuthBoundary(t, entered)
 	replacement := &testingAuthClientShape{

@@ -263,13 +263,15 @@ func (self *Api) commitNetworkRenewal(target networkRenewalTarget, renewedByJwt 
 }
 
 // rejectNetworkRenewalTarget drops a network credential that the server
-// rejected (401) while it is still the kept one. The app is not signed out:
-// the device's client token and LocalState stay as they are, and
+// rejected (401) while it is still the kept one. Unless the device's client
+// token is of the same sign-in session, the app is not signed out: the
+// device's client token and LocalState stay as they are, and
 // HasNetworkCredential reports false so the app can ask for a sign-in on its
-// account screens. This API does not adopt the rejected token from
-// LocalState again.
-func (self *Api) rejectNetworkRenewalTarget(target networkRenewalTarget) bool {
-	return self.rejectNetworkCredential(target)
+// account screens (rejectNetworkCredential). This API does not adopt the
+// rejected token from LocalState again. The cause is the rejection's
+// (confirmedRejectionCause).
+func (self *Api) rejectNetworkRenewalTarget(target networkRenewalTarget, cause string) bool {
+	return self.rejectNetworkCredential(target, cause)
 }
 
 // haltNetworkRenewalTarget stops renewing the target while it is still the
@@ -499,8 +501,9 @@ func (self *apiNetworkCredentialRenewer) renew(target networkRenewalTarget) {
 		switch {
 		case ConfirmedClientRefreshRejection(err):
 			// the server rejected the token itself: rotated credentials, a
-			// removed account, or an expiration the server enforces
-			if self.api.rejectNetworkRenewalTarget(target) {
+			// removed account, an expiration the server enforces, or a revoked
+			// session. The request seam has normally rejected it already.
+			if self.api.rejectNetworkRenewalTarget(target, confirmedRejectionCause(err)) {
 				log.Errorf("[api-network]the network credential was rejected (%d); account administration needs a new sign-in", http.StatusUnauthorized)
 			}
 		case refusedNetworkRenewal(err):

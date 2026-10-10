@@ -150,6 +150,7 @@ protected:
 inline constexpr const char* ErrorIdInternal = URNET_ERROR_ID_INTERNAL;
 
 inline constexpr int64_t AsyncQueueSize = 32;
+inline constexpr const char* AuthLogoutCauseSessionRevoked = "session_revoked";
 inline constexpr const char* AuthVerifySendErrorCodeRateLimited = "verify_rate_limited";
 inline constexpr const char* AuthVerifySendErrorCodeSendFailed = "verify_send_failed";
 inline constexpr int64_t BalanceCodeLength = 26;
@@ -17492,6 +17493,7 @@ public:
 	void flushGlog() const;
 	bool getAllowForeground() const;
 	Api getApi() const;
+	std::string getAuthLogoutCause() const;
 	std::optional<BlockActionOverrideList> getBlockActionOverrides() const;
 	std::optional<BlockActionWindow> getBlockActions() const;
 	std::optional<BlockStats> getBlockStats() const;
@@ -17653,6 +17655,7 @@ public:
 	void getAccountPayments(GetAccountPaymentsCallback callback) const;
 	void getAccountPoints(GetAccountPointsCallback callback) const;
 	void getAccountWallets(GetAccountWalletsCallback callback) const;
+	std::string getAuthLogoutCause() const;
 	std::string getByJwt() const;
 	std::optional<ClientInfo> getClientInfo() const;
 	void getCredentialPersistenceError() const;
@@ -17854,6 +17857,7 @@ public:
 	explicit ClientSessionError(uint64_t h) : detail::Handle(h) {}
 	std::string getMessage() const;
 	bool getRetryable() const;
+	bool getSessionRevoked() const;
 	bool getSignInRequired() const;
 	bool getUnsupported() const;
 };
@@ -25210,6 +25214,10 @@ inline Api Device::getApi() const {
 	Api r(urnet_device_get_api(handle()));
 	return r;
 }
+inline std::string Device::getAuthLogoutCause() const {
+	char* r_c = urnet_device_get_auth_logout_cause(handle());
+	return detail::takeString(r_c);
+}
 inline std::optional<BlockActionOverrideList> Device::getBlockActionOverrides() const {
 	char* r_c = urnet_device_get_block_action_overrides(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -26194,6 +26202,10 @@ inline void Api::getAccountPoints(GetAccountPointsCallback callback) const {
 inline void Api::getAccountWallets(GetAccountWalletsCallback callback) const {
 	auto* callback_fn = callback ? new GetAccountWalletsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_account_wallets(handle(), callback_fn ? &detail::oneshot_get_account_wallets : nullptr, callback_fn);
+}
+inline std::string Api::getAuthLogoutCause() const {
+	char* r_c = urnet_api_get_auth_logout_cause(handle());
+	return detail::takeString(r_c);
 }
 inline std::string Api::getByJwt() const {
 	char* r_c = urnet_api_get_by_jwt(handle());
@@ -27242,6 +27254,10 @@ inline std::string ClientSessionError::getMessage() const {
 }
 inline bool ClientSessionError::getRetryable() const {
 	bool r = urnet_client_session_error_get_retryable(handle());
+	return r;
+}
+inline bool ClientSessionError::getSessionRevoked() const {
+	bool r = urnet_client_session_error_get_session_revoked(handle());
 	return r;
 }
 inline bool ClientSessionError::getSignInRequired() const {

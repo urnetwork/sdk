@@ -217,7 +217,7 @@ func TestApiRefreshAndLogoutSubscriptions(t *testing.T) {
 		}
 		logoutCount.Add(1)
 	}))
-	if !api.rejectByJwt("refreshed-again") {
+	if !api.rejectByJwt("refreshed-again", "") {
 		t.Fatal("current JWT rejection was treated as stale")
 	}
 	if got := logoutCount.Load(); got != 1 {
@@ -225,7 +225,7 @@ func TestApiRefreshAndLogoutSubscriptions(t *testing.T) {
 	}
 	logoutSub.Close()
 	api.SetByJwt("replacement")
-	if !api.rejectByJwt("replacement") {
+	if !api.rejectByJwt("replacement", "") {
 		t.Fatal("replacement JWT rejection was treated as stale")
 	}
 	if got := logoutCount.Load(); got != 1 {

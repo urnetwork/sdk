@@ -384,3 +384,20 @@ test("device configuration changed declaration matches the WASM runtime key", ()
   assert.match(runtime, /m\["addDeviceConfigurationChangedListener"\] = js.FuncOf\(/);
   assert.match(runtime, /device\.AddDeviceConfigurationChangedListener\(&jsDeviceConfigurationChangedListener\{cb: cb\}\)/);
 });
+
+// ur.io shows "This session was signed out from another device." only for the
+// trusted cause, which it reads from the account host or the device remote,
+// and the session controller's error carries the same fact as a flag.
+test("logout cause declarations match WASM runtime keys", () => {
+  const declarations = source("../src/types.ts");
+  const accountHost = declarations.match(/export interface AccountHost\b[\s\S]*?\n}/)?.[0] || "";
+  const deviceRemote = declarations.match(/export interface DeviceRemote extends[\s\S]*?\n}/)?.[0] || "";
+  for (const [name, body] of [["AccountHost", accountHost], ["DeviceRemote", deviceRemote]]) {
+    assert.match(body, /getAuthLogoutCause\(\): AuthLogoutCause;/, name);
+  }
+  assert.match(declarations, /export type AuthLogoutCause = "session_revoked" \| "";/);
+  assert.match(source("../account_host.go"), /m\["getAuthLogoutCause"\] = js\.FuncOf\([\s\S]*?api\.GetAuthLogoutCause\(\)/);
+  assert.match(source("../device_remote.go"), /m\["getAuthLogoutCause"\] = js\.FuncOf\([\s\S]*?device\.GetAuthLogoutCause\(\)/);
+  const sessionError = source("../src/generated/types.ts").match(/export interface ClientSessionError \{[\s\S]*?\n}/)?.[0] || "";
+  assert.match(sessionError, /\bsession_revoked: boolean;/);
+});

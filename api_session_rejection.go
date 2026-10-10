@@ -36,13 +36,18 @@ func (self *Api) networkRequestTarget(sent string) (networkRenewalTarget, bool) 
 	return networkRenewalTarget{byJwt: sent, generation: self.networkByJwtGeneration, store: self.networkByJwtStore}, true
 }
 
-func (self *LocalState) rejectNetworkCredential(expected string) error {
+// Removes the rejected network credential, and the client credential of the
+// same session when removeRelatedClient. A device that owns the API removes
+// its own client credential, with the rest of its sign-in, when its logout
+// listener runs (logoutRejectedClient checks that credential is still the
+// stored one), so its API leaves it here.
+func (self *LocalState) rejectNetworkCredential(expected string, removeRelatedClient bool) error {
 	return self.updateAuthState(func(state *persistedLocalAuthState) (bool, error) {
 		if state.ByJwt != expected {
 			return false, nil
 		}
 		state.ByJwt = ""
-		if sameTaggedSession(expected, state.ByClientJwt) {
+		if removeRelatedClient && sameTaggedSession(expected, state.ByClientJwt) {
 			state.ByClientJwt = ""
 			state.InstanceId = ""
 		}
@@ -70,7 +75,15 @@ func (self *Api) GetCredentialPersistenceError() error {
 	defer self.mutex.Unlock()
 	return self.credentialPersistenceError
 }
-func (self *Api) rejectNetworkCredential(target networkRenewalTarget) bool {
+
+// The cause (confirmedRejectionCause, or "" for a sign-out this API made) is
+// recorded only for the current target, before the listeners run.
+//
+// A logout keeps the device owner, as rejectByJwt does: the owning device's
+// logout listener reads the rejected credential through it and then removes
+// the device's sign-in, its client credential included, before it notifies
+// the app.
+func (self *Api) rejectNetworkCredential(target networkRenewalTarget, cause string) bool {
 	self.authMutationLock.Lock()
 	self.mutex.Lock()
 	current := self.networkByJwt == target.byJwt && self.networkByJwtGeneration == target.generation && self.networkByJwtStore == target.store
@@ -80,10 +93,11 @@ func (self *Api) rejectNetworkCredential(target networkRenewalTarget) bool {
 		return false
 	}
 	logout := self.byJwt == target.byJwt || self.byJwt == "" || sameTaggedSession(self.byJwt, target.byJwt)
+	deviceOwned := self.deviceAuthOwner != nil
 	self.mutex.Unlock()
 	var persistenceErr error
 	if target.store != nil {
-		persistenceErr = target.store.rejectNetworkCredential(target.byJwt)
+		persistenceErr = target.store.rejectNetworkCredential(target.byJwt, !deviceOwned)
 	}
 	self.mutex.Lock()
 	self.credentialPersistenceError = nil
@@ -94,11 +108,13 @@ func (self *Api) rejectNetworkCredential(target networkRenewalTarget) bool {
 	self.networkByJwtStore = nil
 	self.networkByJwtRejected = target.byJwt
 	self.networkCredentialChangedWithLock()
+	cause = self.trustedRejectionCauseWithLock(target.byJwt, cause)
+	self.noteSignInRejectionWithLock(cause)
 	if logout {
 		self.rejectedByJwt = self.byJwt
+		self.authLogoutCause = cause
 		self.byJwt = ""
 		self.deviceAuthGeneration++
-		self.deviceAuthOwner = nil
 	}
 	self.mutex.Unlock()
 	self.authMutationLock.Unlock()

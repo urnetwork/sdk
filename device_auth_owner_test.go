@@ -57,7 +57,7 @@ func testingAdmittedLogoutOwner(t *testing.T, remote bool, mutation string) {
 	accepted := false
 	go func() {
 		defer close(done)
-		accepted = fixture.api.rejectByJwt(fixture.initialJwt)
+		accepted = fixture.api.rejectByJwt(fixture.initialJwt, "")
 	}()
 	testingAwaitAuthBoundary(t, entered)
 	before, err := fixture.localState.loadAuthState()

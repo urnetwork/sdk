@@ -44,7 +44,8 @@ func (self *Api) signOutCaptured(ctx context.Context, target networkRenewalTarge
 		}
 	}
 	if current, ok := self.currentNetworkTarget(target); ok {
-		result.CredentialCleared = self.rejectNetworkCredential(current)
+		// the user signed this session out: no cause
+		result.CredentialCleared = self.rejectNetworkCredential(current, "")
 	}
 	if !result.CredentialCleared && target.byJwt != "" {
 		self.mutex.Lock()

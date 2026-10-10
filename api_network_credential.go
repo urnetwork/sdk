@@ -336,7 +336,9 @@ func (self *Api) requestByJwt(method string, requestUrl string, byJwt string) (s
 }
 
 // The request seams every API call goes through. Each sends the credential
-// requestByJwt selects for its route over the installed transport.
+// requestByJwt selects for its route over the installed transport. A confirmed
+// rejection of the network credential it sent rejects that credential, with
+// the response's cause (api_auth_logout_cause.go).
 
 func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
 	httpPostRaw := self.transportHttpPostRaw()
@@ -349,7 +351,7 @@ func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpPostRaw(ctx, requestUrl, requestBodyBytes, byJwt)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
-			if self.rejectNetworkCredential(target) {
+			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
 			}
 		}
@@ -368,7 +370,7 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpGetRaw(ctx, requestUrl, byJwt)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
-			if self.rejectNetworkCredential(target) {
+			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
 			}
 		}
@@ -387,7 +389,7 @@ func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 		ctx = self.clientInfoContext(ctx)
 		result, requestErr := httpPostStreamRaw(ctx, requestUrl, body, byJwt)
 		if tracked && ConfirmedClientRefreshRejection(requestErr) {
-			if self.rejectNetworkCredential(target) {
+			if self.rejectNetworkCredential(target, confirmedRejectionCause(requestErr)) {
 				requestErr = errors.Join(requestErr, self.GetCredentialPersistenceError())
 			}
 		}

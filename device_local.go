@@ -731,6 +731,9 @@ type DeviceLocal struct {
 	cancel context.CancelFunc
 
 	byJwt string
+	// why the server ended this device's sign-in, set before its AuthLogout
+	// listeners run (GetAuthLogoutCause)
+	authLogoutCause string
 	// The network of the client this device was built for, empty when its
 	// credential names none. Fixed at construction: the identity the device
 	// makes belongs to this network (DeviceLocalKeyMaterial).
@@ -1785,7 +1788,7 @@ func newDeviceLocalWithOverridesForPlatform(
 				return
 			}
 			defer release()
-			rejectedJwt, current := api.deviceRejectedJwt(authPublication)
+			rejectedJwt, cause, current := api.deviceRejectedJwt(authPublication)
 			if !current {
 				return
 			}
@@ -1799,7 +1802,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			if !accepted {
 				return
 			}
-			deviceLocal.handleApiAuthLogout()
+			deviceLocal.handleApiAuthLogout(cause)
 		}),
 	)
 	if err := api.setDeviceByJwt(preparedAuth, deviceLocal.authPublication, log); err != nil {
@@ -2786,12 +2789,14 @@ func (self *DeviceLocal) applyApiRefreshedByJwt(byJwt string) {
 	self.jwtRefreshed(byJwt)
 }
 
-func (self *DeviceLocal) handleApiAuthLogout() {
+// The cause is the rejection's, read with the rejected credential.
+func (self *DeviceLocal) handleApiAuthLogout(cause string) {
 	var provider *deviceLocalProvider
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.byJwt = ""
+		self.authLogoutCause = cause
 		provider = self.provider
 	}()
 	if provider != nil {
@@ -3473,6 +3478,14 @@ func (self *DeviceLocal) AddAuthLogoutListener(listener AuthLogoutListener) Sub 
 	return newSub(func() {
 		self.authLogoutListeners.Remove(callbackId)
 	})
+}
+
+// Why the server ended this device's sign-in when its AuthLogout fired:
+// AuthLogoutCauseSessionRevoked or "" (Device.GetAuthLogoutCause).
+func (self *DeviceLocal) GetAuthLogoutCause() string {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.authLogoutCause
 }
 
 func (self *DeviceLocal) authLogout() {

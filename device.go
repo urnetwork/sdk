@@ -169,7 +169,8 @@ type AuthLogoutListener interface {
 	// fired when the stored auth is no longer valid on the server (for
 	// example the jwt's client was removed) and the local auth state has
 	// been cleared. The app must treat this as a logout: drop the device
-	// and return to the login flow.
+	// and return to the login flow. The device's GetAuthLogoutCause, read
+	// here, says why.
 	AuthLogout()
 }
 
@@ -879,6 +880,12 @@ type Device interface {
 	AddJwtRefreshListener(listener JwtRefreshListener) Sub
 
 	AddAuthLogoutListener(listener AuthLogoutListener) Sub
+
+	// Why the server ended this device's sign-in when its AuthLogout fired:
+	// AuthLogoutCauseSessionRevoked when the server confirmed the session was
+	// revoked (signed out from another device), else "". It is set before the
+	// listeners run.
+	GetAuthLogoutCause() string
 
 	GetWindowStatus() *WindowStatus
 

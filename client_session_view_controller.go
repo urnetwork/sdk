@@ -17,7 +17,11 @@ type ClientSessionError struct {
 	Message        string `json:"message"`
 	Retryable      bool   `json:"retryable"`
 	SignInRequired bool   `json:"sign_in_required"`
-	Unsupported    bool   `json:"unsupported"`
+	// with SignInRequired: the server confirmed this sign-in session was
+	// revoked from another device (AuthLogoutCauseSessionRevoked). Never set
+	// for a generic rejection or a sign-out of this session made here.
+	SessionRevoked bool `json:"session_revoked"`
+	Unsupported    bool `json:"unsupported"`
 }
 type ClientSessionAction struct {
 	Status      string `json:"status"`
@@ -225,7 +229,12 @@ func (self *ClientSessionViewController) run() {
 		}
 	}
 }
-func clientSessionError(err error, listing bool) *ClientSessionError {
+
+// The error of a request that sent the credential sentByJwt. Once a confirmed
+// rejection has cleared the network credential, the controller's requests
+// fail before they are sent; they report that rejection as sign-in required,
+// with its trusted cause, until a new login.
+func (self *ClientSessionViewController) clientSessionError(err error, listing bool, sentByJwt string) *ClientSessionError {
 	if err == nil {
 		return nil
 	}
@@ -233,10 +242,19 @@ func clientSessionError(err error, listing bool) *ClientSessionError {
 	var status *connect.HttpStatusError
 	if errors.As(err, &status) {
 		result.SignInRequired = status.StatusCode == 401
+		result.SessionRevoked = result.SignInRequired && self.api.trustedRejectionCause(sentByJwt, err) == AuthLogoutCauseSessionRevoked
 		result.Unsupported = listing && status.StatusCode == 404
 		result.Retryable = status.StatusCode == 503 || status.StatusCode == 429 || status.StatusCode == 408 || status.StatusCode == 409
+	} else if errors.Is(err, ErrNetworkCredentialRequired) {
+		if rejected, cause := self.api.sessionSignInRejection(); rejected {
+			result.SignInRequired = true
+			result.SessionRevoked = cause == AuthLogoutCauseSessionRevoked
+			result.Retryable = false
+		}
 	}
-	if result.SignInRequired {
+	if result.SessionRevoked {
+		result.Message = "This session was signed out from another device."
+	} else if result.SignInRequired {
 		result.Message = "Sign-in required."
 	}
 	return result
@@ -261,6 +279,7 @@ func (self *ClientSessionViewController) refresh() {
 	self.stateLock.Unlock()
 	self.publish()
 	result, err := self.api.networkSessionsFor(self.ctx, target)
+	requestError := self.clientSessionError(err, true, target.byJwt)
 	current := self.api.sessionCredentialGeneration()
 	self.stateLock.Lock()
 	if self.closed || sequence != self.sequence || mutation != self.mutation || generation != current {
@@ -273,7 +292,7 @@ func (self *ClientSessionViewController) refresh() {
 	}
 	self.state.Loading = false
 	self.state.Refreshing = false
-	self.state.Error = clientSessionError(err, true)
+	self.state.Error = requestError
 	if err == nil {
 		self.state.Sessions = result.Sessions
 		self.state.CurrentSessionId = result.CurrentSessionId
@@ -349,6 +368,7 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 		} else {
 			result, err = self.api.sessionOperationFor(self.ctx, "/network/revoke-session", &RevokeNetworkSessionArgs{OperationId: operationId, SessionId: sessionId}, target)
 		}
+		requestError := self.clientSessionError(err, false, target.byJwt)
 		current := self.api.sessionCredentialGeneration()
 		self.stateLock.Lock()
 		if self.closed || generation != current {
@@ -356,7 +376,7 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 			return
 		}
 		action.Loading = false
-		action.Error = clientSessionError(err, false)
+		action.Error = requestError
 		self.mutation++
 		enforced := err == nil && (result.Status == "revoked" || result.Status == "already_revoked" || result.State == "enforced" || result.State == "complete")
 		terminalFailure := err == nil && (result.State == "cancelled" || result.State == "failed")
@@ -381,7 +401,8 @@ func (self *ClientSessionViewController) revoke(sessionId *Id, bulk bool) {
 		self.publish()
 		if enforced && !bulk && tracked && currentSession != nil && currentSession.Cmp(sessionId) == 0 {
 			if current, ok := self.api.currentNetworkTarget(target); ok {
-				self.api.rejectNetworkCredential(current)
+				// this session was signed out here: no cause
+				self.api.rejectNetworkCredential(current, "")
 			}
 			return
 		}
@@ -404,13 +425,14 @@ func (self *ClientSessionViewController) recoverPending() {
 			continue
 		}
 		result, err := self.api.sessionOperationFor(self.ctx, "/network/session-operations/"+action.OperationId.String(), nil, action.target)
+		requestError := self.clientSessionError(err, false, action.target.byJwt)
 		current := self.api.sessionCredentialGeneration()
 		self.stateLock.Lock()
 		if self.closed || generation != current {
 			self.stateLock.Unlock()
 			return
 		}
-		action.Error = clientSessionError(err, false)
+		action.Error = requestError
 		if result != nil {
 			action.Status = result.Status
 			action.State = result.State

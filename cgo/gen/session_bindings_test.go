@@ -27,6 +27,11 @@ func TestSessionBindingsExposeTypedSnapshotsAndApiOnlyController(t *testing.T) {
 	}
 	g.emitType(testingPreferenceType(t, g, "Api"))
 	_ = testingPreferenceExport(t, g, "Api", "OpenClientSessionViewController")
+	// the trusted logout cause, from the api and from either device
+	_ = testingPreferenceExport(t, g, "Api", "GetAuthLogoutCause")
+	_ = testingPreferenceExport(t, g, "ClientSessionError", "GetSessionRevoked")
+	g.emitType(testingPreferenceType(t, g, "Device"))
+	_ = testingPreferenceExport(t, g, "Device", "GetAuthLogoutCause")
 	for _, getter := range []string{"GetLoaded", "GetLoading", "GetRefreshing", "GetActions", "GetBulkAction", "GetCurrentSessionId", "GetLegacyCoverage", "GetSessions"} {
 		_ = testingPreferenceExport(t, g, "ClientSessionSnapshot", getter)
 	}
