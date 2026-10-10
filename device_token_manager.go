@@ -543,11 +543,12 @@ func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt 
 	result, err := self.api.refreshJwtSyncWithContextAndJwt(ctx, byJwt)
 	if err != nil {
 		// A 401 over the api connection is the auth layer rejecting the jwt
-		// itself (expired or unparseable): confirmed invalid
+		// itself (expired, unparseable or a revoked session): confirmed invalid.
+		// Its structured code is the logout's cause.
 		var statusErr *connect.HttpStatusError
 		if ConfirmedClientRefreshRejection(err) {
 			self.api.logger().Errorf("[api-token]jwt rejected by the api (%d): logging out", http.StatusUnauthorized)
-			if self.api.rejectByJwt(byJwt, authGeneration) {
+			if self.api.rejectByJwt(byJwt, confirmedRejectionCause(err), authGeneration) {
 				return apiTokenRefreshOutcome{loggedOut: true}
 			} else {
 				return apiTokenRefreshOutcome{stale: true}
@@ -570,9 +571,9 @@ func (self *apiTokenManager) refreshTokenWithContext(ctx context.Context, byJwt 
 
 	if result.Error != nil {
 		// not an api error, but a token refresh error -- for example, the client
-		// no longer exists
+		// no longer exists. A refusal in a result carries no cause.
 		self.api.logger().Errorf("[api-token]failed to refresh JWT: %v", result.Error.Message)
-		if self.api.rejectByJwt(byJwt, authGeneration) {
+		if self.api.rejectByJwt(byJwt, "", authGeneration) {
 			return apiTokenRefreshOutcome{loggedOut: true}
 		} else {
 			return apiTokenRefreshOutcome{stale: true}

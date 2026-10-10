@@ -11,6 +11,8 @@ func (self *ClientSessionError) GetRetryable() bool { return self.Retryable }
 
 func (self *ClientSessionError) GetSignInRequired() bool { return self.SignInRequired }
 
+func (self *ClientSessionError) GetSessionRevoked() bool { return self.SessionRevoked }
+
 func (self *ClientSessionError) GetUnsupported() bool { return self.Unsupported }
 
 func (self *ClientSessionAction) GetSessionId() *Id { return self.SessionId }

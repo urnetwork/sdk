@@ -48,6 +48,12 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 	m["getByJwt"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(api.GetByJwt())
 	})
+	// getAuthLogoutCause(): why the server ended the sign-in once a 401 clears
+	// it, "session_revoked" (signed out from another device) or ""; setByJwt
+	// of a new credential clears it
+	m["getAuthLogoutCause"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.ValueOf(api.GetAuthLogoutCause())
+	})
 	m["close"] = jsViewControllerClose(func() {
 		cancel()
 		networkSpace.Close()

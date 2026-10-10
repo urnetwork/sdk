@@ -161,6 +161,11 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 	m["getSyncError"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(device.GetSyncError())
 	})
+	// getAuthLogoutCause(): why the server ended the device's sign-in once its
+	// logout fired, "session_revoked" (signed out from another device) or ""
+	m["getAuthLogoutCause"] = js.FuncOf(func(js.Value, []js.Value) any {
+		return js.ValueOf(device.GetAuthLogoutCause())
+	})
 	m["getClientId"] = js.FuncOf(func(js.Value, []js.Value) any { return device.GetClientId().String() })
 	m["getLicenses"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return jsLicenses(device.GetLicenses(stringArg(args, 0)))

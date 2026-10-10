@@ -25,3 +25,13 @@ func TestSessionWasmSnapshotHasTypedListsAndMetadata(t *testing.T) {
 		t.Fatal("unknown use was fabricated")
 	}
 }
+
+func TestSessionWasmErrorCarriesTheRevokedSessionFlag(t *testing.T) {
+	for _, revoked := range []bool{true, false} {
+		snapshot := &sdk.ClientSessionSnapshot{Sessions: sdk.NewNetworkSessionInfoList(), Actions: sdk.NewClientSessionActionList(), Error: &sdk.ClientSessionError{SignInRequired: true, SessionRevoked: revoked}}
+		value := jsJson(snapshot).Get("error")
+		if !value.Get("sign_in_required").Bool() || value.Get("session_revoked").Type() != js.TypeBoolean || value.Get("session_revoked").Bool() != revoked || value.Get("SessionRevoked").Type() != js.TypeUndefined {
+			t.Fatal("the session error's revoked flag differs from the generated declaration")
+		}
+	}
+}

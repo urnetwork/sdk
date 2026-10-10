@@ -160,6 +160,7 @@ export interface ClientSessionError {
   message: string;
   retryable: boolean;
   sign_in_required: boolean;
+  session_revoked: boolean;
   unsupported: boolean;
 }
 

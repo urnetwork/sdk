@@ -159,6 +159,11 @@ func (self *Api) sessionOperationFor(ctx context.Context, path string, args any,
 		}
 		return nil, fmt.Errorf("%w: %s %s", ErrNetworkCredentialRequired, method, path)
 	}
+	// Revoking the session of the sent credential signs this API out: its
+	// later session_revoked answers are this sign-out, not another device's.
+	if revoke, ok := args.(*RevokeNetworkSessionArgs); ok && revoke != nil {
+		self.noteSelfRevocation(target.byJwt, revoke.SessionId)
+	}
 	var raw []byte
 	var err error
 	if args == nil {

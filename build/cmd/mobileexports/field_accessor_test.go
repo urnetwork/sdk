@@ -84,7 +84,7 @@ func TestMobileApiDeclaresNoAccessorGobindGenerates(t *testing.T) {
 // The session surface the apps read (the Android SessionsViewModel and the
 // Apple SessionsStore), each field through gobind's own accessors.
 var mobileSessionFieldNames = map[string][]string{
-	"ClientSessionError":      {"Message", "Retryable", "SignInRequired", "Unsupported"},
+	"ClientSessionError":      {"Message", "Retryable", "SignInRequired", "SessionRevoked", "Unsupported"},
 	"ClientSessionAction":     {"Status", "State", "SessionId", "OperationId", "Loading", "Pending", "Error"},
 	"ClientSessionSnapshot":   {"Sessions", "CurrentSessionId", "LegacyCoverage", "Generation", "EventId", "Loaded", "Loading", "Refreshing", "Supported", "BulkAction", "Actions", "Error"},
 	"SessionLastUsed":         {"UnixTime", "City", "Region", "Country", "CountryCode", "DeviceType", "AppVersion"},
@@ -204,10 +204,12 @@ func TestMobileSessionBindingsGenerateEachFieldAccessorOnce(t *testing.T) {
 		}
 	}
 
-	// apps open the controller from the api, or from a device
+	// apps open the controller from the api, or from a device, and read why
+	// a logout happened from the api or the device that reported it
 	javaTexts := map[string][]string{
 		"Api.java": {
 			"public native ClientSessionViewController openClientSessionViewController();",
+			"public native String getAuthLogoutCause();",
 		},
 		"ViewControllerManager.java": {
 			"public ClientSessionViewController openClientSessionViewController();",
@@ -215,6 +217,18 @@ func TestMobileSessionBindingsGenerateEachFieldAccessorOnce(t *testing.T) {
 		"ClientSessionViewController.java": {
 			"public native ClientSessionSnapshot getSnapshot();",
 			"public native Sub addClientSessionListener(ClientSessionListener listener);",
+		},
+		"Device.java": {
+			"public String getAuthLogoutCause();",
+		},
+		"DeviceLocal.java": {
+			"public native String getAuthLogoutCause();",
+		},
+		"DeviceRemote.java": {
+			"public native String getAuthLogoutCause();",
+		},
+		"Sdk.java": {
+			`public static final String AuthLogoutCauseSessionRevoked = "session_revoked";`,
 		},
 	}
 	for _, fileName := range slices.Sorted(maps.Keys(javaTexts)) {
@@ -225,13 +239,23 @@ func TestMobileSessionBindingsGenerateEachFieldAccessorOnce(t *testing.T) {
 			}
 		}
 	}
-	for className, text := range map[string]string{
-		"SdkApi":                         "- (SdkClientSessionViewController* _Nullable)openClientSessionViewController;",
-		"SdkClientSessionViewController": "- (SdkClientSessionSnapshot* _Nullable)getSnapshot;",
+	for className, texts := range map[string][]string{
+		"SdkApi": {
+			"- (SdkClientSessionViewController* _Nullable)openClientSessionViewController;",
+			"- (NSString* _Nonnull)getAuthLogoutCause;",
+		},
+		"SdkClientSessionViewController": {"- (SdkClientSessionSnapshot* _Nullable)getSnapshot;"},
+		"SdkDeviceLocal":                 {"- (NSString* _Nonnull)getAuthLogoutCause;"},
+		"SdkDeviceRemote":                {"- (NSString* _Nonnull)getAuthLogoutCause;"},
 	} {
-		if !strings.Contains(objcInterface(className), text) {
-			t.Errorf("%s does not bind %s", className, text)
+		for _, text := range texts {
+			if !strings.Contains(objcInterface(className), text) {
+				t.Errorf("%s does not bind %s", className, text)
+			}
 		}
+	}
+	if text := "FOUNDATION_EXPORT NSString* _Nonnull const SdkAuthLogoutCauseSessionRevoked;"; !strings.Contains(objcHeader, text) {
+		t.Errorf("Sdk.objc.h does not bind %s", text)
 	}
 }
 

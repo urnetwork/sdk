@@ -288,6 +288,7 @@ public interface Raw extends Library {
   void urnet_api_get_account_payments(long a0, urnet_get_account_payments_cb a1, Pointer a2);
   void urnet_api_get_account_points(long a0, urnet_get_account_points_cb a1, Pointer a2);
   void urnet_api_get_account_wallets(long a0, urnet_get_account_wallets_cb a1, Pointer a2);
+  Pointer urnet_api_get_auth_logout_cause(long a0);
   Pointer urnet_api_get_by_jwt(long a0);
   Pointer urnet_api_get_client_info(long a0);
   byte urnet_api_get_credential_persistence_error(long a0, PointerByReference a1);
@@ -441,6 +442,7 @@ public interface Raw extends Library {
   byte urnet_client_session_action_list_unmarshal_json(long a0, Pointer a1, int a2, PointerByReference a3);
   Pointer urnet_client_session_error_get_message(long a0);
   byte urnet_client_session_error_get_retryable(long a0);
+  byte urnet_client_session_error_get_session_revoked(long a0);
   byte urnet_client_session_error_get_sign_in_required(long a0);
   byte urnet_client_session_error_get_unsupported(long a0);
   long urnet_client_session_snapshot_get_actions(long a0);
@@ -564,6 +566,7 @@ public interface Raw extends Library {
   void urnet_device_flush_glog(long a0);
   byte urnet_device_get_allow_foreground(long a0);
   long urnet_device_get_api(long a0);
+  Pointer urnet_device_get_auth_logout_cause(long a0);
   Pointer urnet_device_get_block_action_overrides(long a0);
   Pointer urnet_device_get_block_actions(long a0);
   Pointer urnet_device_get_block_stats(long a0);

@@ -204,7 +204,7 @@ func TestTheNetworkCredentialEndsWithItsSession(t *testing.T) {
 		}},
 		{"client token rejected", func(t *testing.T, api *Api) {
 			byJwt, generation := api.authCredentialSnapshot()
-			if !api.rejectByJwt(byJwt, generation) {
+			if !api.rejectByJwt(byJwt, "", generation) {
 				t.Fatal("the rejection was not applied")
 			}
 		}},

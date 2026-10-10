@@ -4139,6 +4139,17 @@ func urnet_api_get_account_wallets(self C.uint64_t, callback_result C.urnet_get_
 	self_.GetAccountWallets(callback_)
 }
 
+//export urnet_api_get_auth_logout_cause
+func urnet_api_get_auth_logout_cause(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_api_get_auth_logout_cause")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_get_auth_logout_cause")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAuthLogoutCause()
+	return cString(string(r0))
+}
+
 //export urnet_api_get_by_jwt
 func urnet_api_get_by_jwt(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_api_get_by_jwt")
@@ -6635,6 +6646,17 @@ func urnet_client_session_error_get_retryable(self C.uint64_t) C.bool {
 	return C.bool(r0)
 }
 
+//export urnet_client_session_error_get_session_revoked
+func urnet_client_session_error_get_session_revoked(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_client_session_error_get_session_revoked")
+	self_, ok := resolveHandle[*sdk.ClientSessionError](uint64(self), "urnet_client_session_error_get_session_revoked")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetSessionRevoked()
+	return C.bool(r0)
+}
+
 //export urnet_client_session_error_get_sign_in_required
 func urnet_client_session_error_get_sign_in_required(self C.uint64_t) C.bool {
 	defer cgoGuard("urnet_client_session_error_get_sign_in_required")
@@ -8474,6 +8496,17 @@ func urnet_device_get_api(self C.uint64_t) C.uint64_t {
 		return 0
 	}
 	return C.uint64_t(newHandle(r0))
+}
+
+//export urnet_device_get_auth_logout_cause
+func urnet_device_get_auth_logout_cause(self C.uint64_t) *C.char {
+	defer cgoGuard("urnet_device_get_auth_logout_cause")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_auth_logout_cause")
+	if !ok {
+		return nil
+	}
+	r0 := self_.GetAuthLogoutCause()
+	return cString(string(r0))
 }
 
 //export urnet_device_get_block_action_overrides

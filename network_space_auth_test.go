@@ -383,7 +383,7 @@ func TestPairedResetRefusesInFlightApiRejection(t *testing.T) {
 		entered, resume := testingHoldAuthPublication(t, fixture.localDevice.authPublication)
 		done := make(chan struct{})
 		accepted := false
-		go func() { defer close(done); accepted = fixture.api.rejectByJwt(fixture.initialJwt) }()
+		go func() { defer close(done); accepted = fixture.api.rejectByJwt(fixture.initialJwt, "") }()
 		testingAwaitAuthBoundary(t, entered)
 		if !snapshotBefore {
 			snapshot = testingPairedAuthSnapshot(t, fixture)

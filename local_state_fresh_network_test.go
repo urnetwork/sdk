@@ -85,7 +85,7 @@ func TestRejectedClientLogoutLeavesTheExtenderState(t *testing.T) {
 	fixture.seedDistinctLogin(t)
 	fixture.startLocal(t)
 	seeded := testingSeedExtenderState(t, fixture.localState)
-	if !fixture.api.rejectByJwt(fixture.initialJwt) {
+	if !fixture.api.rejectByJwt(fixture.initialJwt, "") {
 		t.Fatal("the rejection did not reach the device's logout")
 	}
 	if after, err := fixture.localState.loadAuthState(); err != nil || after.ByClientJwt != "" {

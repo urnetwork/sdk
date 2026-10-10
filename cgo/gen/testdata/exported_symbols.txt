@@ -122,3 +122,10 @@ urnet_device_remote_close_client_session_view_controller
 urnet_session_sign_out_result_get_credential_cleared
 urnet_session_sign_out_result_get_operation_id
 urnet_session_sign_out_result_get_revocation_confirmed
+
+# The trusted logout cause: "session_revoked" when the server confirmed the
+# session was revoked from another device. urnet_device_* takes a DeviceLocal
+# or a DeviceRemote handle.
+urnet_api_get_auth_logout_cause
+urnet_client_session_error_get_session_revoked
+urnet_device_get_auth_logout_cause

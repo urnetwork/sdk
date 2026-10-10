@@ -124,7 +124,7 @@ func TestHostedDeviceClientAuthNeverMutatesSharedHostCredentials(t *testing.T) {
 	if afterRefresh != before {
 		t.Error("hosted construction or refresh changed shared host auth")
 	}
-	if !tenantApi.rejectByJwt(refreshedJwt) {
+	if !tenantApi.rejectByJwt(refreshedJwt, "") {
 		t.Fatal("hosted current client rejection was not accepted")
 	}
 	afterLogout, err := fixture.localState.loadAuthState()

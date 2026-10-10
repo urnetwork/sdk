@@ -54,7 +54,7 @@ func TestSessionRejectionPersistenceAndGeneration(t *testing.T) {
 			api.AddAuthLogoutListener(authLogoutListenerFunc(func() { logout.Add(1) }))
 			api.AddAccountSignInRequiredListener(accountSignInRequiredFunc(func() { account.Add(1) }))
 			target := api.captureNetworkTarget()
-			if !api.rejectNetworkCredential(target) || api.rejectNetworkCredential(target) {
+			if !api.rejectNetworkCredential(target, "") || api.rejectNetworkCredential(target, "") {
 				t.Fatal("rejection was not exactly once")
 			}
 			if store.GetByJwt() != "" || api.HasNetworkCredential() {
@@ -69,7 +69,7 @@ func TestSessionRejectionPersistenceAndGeneration(t *testing.T) {
 			}
 			newer := taggedSessionTestJwt(t, "new-login", "")
 			api.SetByJwt(newer)
-			if api.rejectNetworkCredential(target) || api.GetByJwt() != newer {
+			if api.rejectNetworkCredential(target, "") || api.GetByJwt() != newer {
 				t.Fatal("old response rejected new login")
 			}
 		})
@@ -100,7 +100,7 @@ func TestSessionRejectionStorageFailureReportedAndFenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := api.captureNetworkTarget()
-	if !api.rejectNetworkCredential(target) {
+	if !api.rejectNetworkCredential(target, "") {
 		t.Fatal("not rejected")
 	}
 	if !errors.Is(api.GetCredentialPersistenceError(), ErrCredentialPersistence) || api.HasNetworkCredential() {

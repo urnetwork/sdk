@@ -91,6 +91,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 /* ----- constants ----- */
 
 #define URNET_ASYNC_QUEUE_SIZE 32
+#define URNET_AUTH_LOGOUT_CAUSE_SESSION_REVOKED "session_revoked"
 #define URNET_AUTH_VERIFY_SEND_ERROR_CODE_RATE_LIMITED "verify_rate_limited"
 #define URNET_AUTH_VERIFY_SEND_ERROR_CODE_SEND_FAILED "verify_send_failed"
 #define URNET_BALANCE_CODE_LENGTH 26
@@ -925,6 +926,7 @@ void urnet_api_generate_seedphrase(uint64_t self, const char* args_json, urnet_g
 void urnet_api_get_account_payments(uint64_t self, urnet_get_account_payments_cb callback_result, void* callback_user_data);
 void urnet_api_get_account_points(uint64_t self, urnet_get_account_points_cb callback_result, void* callback_user_data);
 void urnet_api_get_account_wallets(uint64_t self, urnet_get_account_wallets_cb callback_result, void* callback_user_data);
+char* urnet_api_get_auth_logout_cause(uint64_t self);
 char* urnet_api_get_by_jwt(uint64_t self);
 char* urnet_api_get_client_info(uint64_t self);
 bool urnet_api_get_credential_persistence_error(uint64_t self, char** out_error);
@@ -1102,6 +1104,7 @@ bool urnet_client_session_action_list_unmarshal_json(uint64_t self, const uint8_
 
 char* urnet_client_session_error_get_message(uint64_t self);
 bool urnet_client_session_error_get_retryable(uint64_t self);
+bool urnet_client_session_error_get_session_revoked(uint64_t self);
 bool urnet_client_session_error_get_sign_in_required(uint64_t self);
 bool urnet_client_session_error_get_unsupported(uint64_t self);
 
@@ -1246,6 +1249,7 @@ char* urnet_device_diagnostic_manifest_json(uint64_t self);
 void urnet_device_flush_glog(uint64_t self);
 bool urnet_device_get_allow_foreground(uint64_t self);
 uint64_t urnet_device_get_api(uint64_t self);
+char* urnet_device_get_auth_logout_cause(uint64_t self);
 char* urnet_device_get_block_action_overrides(uint64_t self);
 char* urnet_device_get_block_actions(uint64_t self);
 char* urnet_device_get_block_stats(uint64_t self);

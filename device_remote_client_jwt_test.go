@@ -48,7 +48,7 @@ func TestRemoteClientJwtTracksPublishedRefreshAndLogout(t *testing.T) {
 	if fixture.remoteDevice.GetClientJwt() != nextJwt {
 		t.Error("remote getter missed its published refresh")
 	}
-	if !fixture.api.rejectByJwt(nextJwt) {
+	if !fixture.api.rejectByJwt(nextJwt, "") {
 		t.Fatal("actual rejection did not commit")
 	}
 	if fixture.remoteDevice.GetClientJwt() != "" {

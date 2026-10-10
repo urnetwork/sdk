@@ -287,6 +287,7 @@ module URnetwork
       attach_function :urnet_api_get_account_payments, [:uint64, :urnet_get_account_payments_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_account_points, [:uint64, :urnet_get_account_points_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_get_account_wallets, [:uint64, :urnet_get_account_wallets_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_get_auth_logout_cause, [:uint64], :pointer, blocking: true
       attach_function :urnet_api_get_by_jwt, [:uint64], :pointer, blocking: true
       attach_function :urnet_api_get_client_info, [:uint64], :pointer, blocking: true
       attach_function :urnet_api_get_credential_persistence_error, [:uint64, :pointer], :bool, blocking: true
@@ -440,6 +441,7 @@ module URnetwork
       attach_function :urnet_client_session_action_list_unmarshal_json, [:uint64, :pointer, :int32, :pointer], :bool, blocking: true
       attach_function :urnet_client_session_error_get_message, [:uint64], :pointer, blocking: true
       attach_function :urnet_client_session_error_get_retryable, [:uint64], :bool, blocking: true
+      attach_function :urnet_client_session_error_get_session_revoked, [:uint64], :bool, blocking: true
       attach_function :urnet_client_session_error_get_sign_in_required, [:uint64], :bool, blocking: true
       attach_function :urnet_client_session_error_get_unsupported, [:uint64], :bool, blocking: true
       attach_function :urnet_client_session_snapshot_get_actions, [:uint64], :uint64, blocking: true
@@ -563,6 +565,7 @@ module URnetwork
       attach_function :urnet_device_flush_glog, [:uint64], :void, blocking: true
       attach_function :urnet_device_get_allow_foreground, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_api, [:uint64], :uint64, blocking: true
+      attach_function :urnet_device_get_auth_logout_cause, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_block_action_overrides, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_block_actions, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_block_stats, [:uint64], :pointer, blocking: true

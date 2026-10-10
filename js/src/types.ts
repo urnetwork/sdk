@@ -269,6 +269,8 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   getLicenses(app: LicenseApp): LicenseInfo[];
   /** Last explicit RPC sync refusal; empty while pending or after success. */
   getSyncError(): string;
+  /** Why the server ended this device's sign-in once its logout fired: see AuthLogoutCause. */
+  getAuthLogoutCause(): AuthLogoutCause;
   /** A random tag of 1–3 distinct emoji to prefill the emoji-tag editor with; count 0 or omitted picks the length at random. */
   suggestEmojiTag(count?: number): string;
 
@@ -1235,6 +1237,8 @@ export interface AccountHostOptions {
 export interface AccountHost {
   setByJwt(byJwt: string): void;
   getByJwt(): string;
+  /** Why the server ended the sign-in once a confirmed 401 cleared it: see AuthLogoutCause. setByJwt of a new credential clears it. */
+  getAuthLogoutCause(): AuthLogoutCause;
   /** Bounded server revoke attempt, followed by local sign-out; offline is explicitly unconfirmed. */
   signOut(): Promise<SessionSignOutResult>;
   /** Releases ownership once; await to join teardown without blocking browser events. */
@@ -1326,6 +1330,13 @@ export interface ExtensionDeviceRemoteOptions {
   instanceId: string;
   transport: DeviceRpcTransport;
 }
+
+/**
+ * Why the server ended a sign-in: "session_revoked" only when it confirmed the
+ * session was revoked (show "This session was signed out from another
+ * device."), else "" (generic sign-in-required wording).
+ */
+export type AuthLogoutCause = "session_revoked" | "";
 
 /** Shared SDK session state; no app-owned revoke/retry or logout state machine. */
 export interface ClientSessionViewController {

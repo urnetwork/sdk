@@ -53,6 +53,7 @@ EXPORTS
 	urnet_api_get_account_payments
 	urnet_api_get_account_points
 	urnet_api_get_account_wallets
+	urnet_api_get_auth_logout_cause
 	urnet_api_get_by_jwt
 	urnet_api_get_client_info
 	urnet_api_get_credential_persistence_error
@@ -218,6 +219,7 @@ EXPORTS
 	urnet_client_session_action_list_unmarshal_json
 	urnet_client_session_error_get_message
 	urnet_client_session_error_get_retryable
+	urnet_client_session_error_get_session_revoked
 	urnet_client_session_error_get_sign_in_required
 	urnet_client_session_error_get_unsupported
 	urnet_client_session_snapshot_get_actions
@@ -371,6 +373,7 @@ EXPORTS
 	urnet_device_flush_glog
 	urnet_device_get_allow_foreground
 	urnet_device_get_api
+	urnet_device_get_auth_logout_cause
 	urnet_device_get_block_action_overrides
 	urnet_device_get_block_actions
 	urnet_device_get_block_stats

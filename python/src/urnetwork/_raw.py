@@ -370,6 +370,8 @@ def bind(lib):
     lib.urnet_api_get_account_points.restype = None
     lib.urnet_api_get_account_wallets.argtypes = [c_uint64, urnet_get_account_wallets_cb, c_void_p]
     lib.urnet_api_get_account_wallets.restype = None
+    lib.urnet_api_get_auth_logout_cause.argtypes = [c_uint64]
+    lib.urnet_api_get_auth_logout_cause.restype = c_void_p
     lib.urnet_api_get_by_jwt.argtypes = [c_uint64]
     lib.urnet_api_get_by_jwt.restype = c_void_p
     lib.urnet_api_get_client_info.argtypes = [c_uint64]
@@ -676,6 +678,8 @@ def bind(lib):
     lib.urnet_client_session_error_get_message.restype = c_void_p
     lib.urnet_client_session_error_get_retryable.argtypes = [c_uint64]
     lib.urnet_client_session_error_get_retryable.restype = c_bool
+    lib.urnet_client_session_error_get_session_revoked.argtypes = [c_uint64]
+    lib.urnet_client_session_error_get_session_revoked.restype = c_bool
     lib.urnet_client_session_error_get_sign_in_required.argtypes = [c_uint64]
     lib.urnet_client_session_error_get_sign_in_required.restype = c_bool
     lib.urnet_client_session_error_get_unsupported.argtypes = [c_uint64]
@@ -922,6 +926,8 @@ def bind(lib):
     lib.urnet_device_get_allow_foreground.restype = c_bool
     lib.urnet_device_get_api.argtypes = [c_uint64]
     lib.urnet_device_get_api.restype = c_uint64
+    lib.urnet_device_get_auth_logout_cause.argtypes = [c_uint64]
+    lib.urnet_device_get_auth_logout_cause.restype = c_void_p
     lib.urnet_device_get_block_action_overrides.argtypes = [c_uint64]
     lib.urnet_device_get_block_action_overrides.restype = c_void_p
     lib.urnet_device_get_block_actions.argtypes = [c_uint64]
