@@ -15,6 +15,21 @@ if ! "$network_test_gate" --verify-held run-all; then
     exit 70
 fi
 
+# Only the runner-owned test binary changes its Go temp directory. Go's driver
+# keeps the inherited compiler scratch/cache; native consumers inherit TMPDIR.
+sdk_test_runtime_args=()
+if [[ -n "${URNETWORK_SDK_TEST_RUNTIME_DIR:-}" ]]; then
+    sdk_test_runtime="$URNETWORK_SDK_TEST_RUNTIME_DIR"
+    if [[ "$sdk_test_runtime" != /* || ! -d "$sdk_test_runtime" ||
+          "$sdk_test_runtime" == *\'* || "$sdk_test_runtime" == *$'\n'* ||
+          "$sdk_test_runtime" == *$'\r'* ]]; then
+        echo "SDK test runtime must be an absolute existing launcher-safe directory" >&2
+        exit 64
+    fi
+    # Go splits -exec itself: quote each complete assignment, not just its value.
+    sdk_test_runtime_args=("-exec=/usr/bin/env 'GOTMPDIR=$sdk_test_runtime' 'TMPDIR=$sdk_test_runtime'")
+fi
+
 # Formatting gate, ahead of every test: each tracked Go file must be
 # gofmt-clean, checked with the gofmt of the toolchain the go commands below
 # use. A file whose header carries the generated-code line ("// Code generated
@@ -50,11 +65,11 @@ fi
 # reported before the longer race-enabled suite. The full command below runs it
 # again as part of the complete root-module test, including subpackages such
 # as sn/evm. Go's ./... stops at nested go.mod boundaries; those run below.
-go test -count=1 -timeout 30s -v -race -run '^TestSDKSmoke$'
+go test "${sdk_test_runtime_args[@]}" -count=1 -timeout 30s -v -race -run '^TestSDKSmoke$'
 if [[ $? != 0 ]]; then
     exit 1
 fi
-go test -timeout 0 -v -race "$@" ./...
+go test "${sdk_test_runtime_args[@]}" -timeout 0 -v -race "$@" ./...
 if [[ $? != 0 ]]; then
     exit 1
 fi
@@ -109,7 +124,7 @@ for mod in "$sdk_dir"/*(N/); do
             printf 'SDK Go module %s: no tests for the active Go target\n' "${mod:t}"
             exit 0
         fi
-        go test -timeout 0 -v -race "$@" ./...
+        go test "${sdk_test_runtime_args[@]}" -timeout 0 -v -race "$@" ./...
     ) || exit $?
 done
 
