@@ -106,6 +106,19 @@ entries:
       on Blockies (https://github.com/download13/blockies). Nanoidenticons is
       released under the WTFPL, version 2 (http://www.wtfpl.net/).
 
+  # The Account -> Sessions glyphs: the session face profile (head-outline) and
+  # the device logos (android, apple, console, help, linux, microsoft-windows,
+  # server, web), which the native apps and ur.io carry as vector path data.
+  # The icons are Apache-2.0; the text is the collection's own license file.
+  - name: Material Design Icons
+    version: 7.4.47
+    kind: software
+    origin: vendored
+    apps: [android, apple, windows, linux, web]
+    url: https://pictogrammers.com/library/mdi/
+    spdx: Apache-2.0
+    text_file: texts/Material-Design-Icons.txt
+
   # Windows: vendored and vcpkg C/C++ libraries (windows/app/THIRD-PARTY-NOTICES.txt)
   - name: Wintun
     version: 0.14.1
