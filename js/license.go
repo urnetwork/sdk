@@ -5,7 +5,7 @@ package main
 import (
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // jsLicenses projects sdk.LicenseInfoList as an array of plain objects

@@ -5,7 +5,7 @@ package main
 import (
 	"syscall/js"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // Bittensor wallet-connect protocol exports for the web app
