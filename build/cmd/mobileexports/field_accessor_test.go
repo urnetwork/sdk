@@ -111,7 +111,7 @@ func TestMobileSessionBindingsGenerateEachFieldAccessorOnce(t *testing.T) {
 		if language == "java" {
 			args = append(args, "-javapkg=com.bringyour")
 		}
-		args = append(args, "github.com/urnetwork/sdk")
+		args = append(args, "github.com/urnetwork/sdk/v2026")
 		command := exec.Command("go", args...)
 		command.Dir = "../.."
 		command.Env = append(
@@ -286,7 +286,7 @@ func testingLoadMobileView(t *testing.T, goos string, tags string) *packages.Pac
 		),
 		BuildFlags: []string{"-tags=" + tags},
 	}
-	loadedPackages, err := packages.Load(config, "github.com/urnetwork/sdk")
+	loadedPackages, err := packages.Load(config, "github.com/urnetwork/sdk/v2026")
 	testingBuildNoError(t, err)
 	if len(loadedPackages) != 1 {
 		t.Fatalf("the %s %s view loaded %d packages, want the sdk", goos, tags, len(loadedPackages))
