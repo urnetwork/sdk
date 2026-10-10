@@ -341,7 +341,7 @@ func decodeBoundedPeerPin(decoder *json.Decoder) (connect.ClientKeyPin, error) {
 		case "domain_digest":
 			bit, value = 1, (*boundedPinBytes)(&pin.DomainDigest)
 		case "signer":
-			bit, value = 2, &pin.Signer
+			bit = 2
 		case "generation":
 			bit, value = 4, (*boundedPinGeneration)(&pin.Generation)
 		case "public_key":
@@ -349,7 +349,21 @@ func decodeBoundedPeerPin(decoder *json.Decoder) (connect.ClientKeyPin, error) {
 		default:
 			return pin, errPeerPinStoreCorrupt
 		}
-		if seen&bit != 0 || decoder.Decode(value) != nil {
+		if seen&bit != 0 {
+			return pin, errPeerPinStoreCorrupt
+		}
+		if bit == 2 {
+			// Keep signer strings in the outer decoder instead of borrowing a
+			// nested scalar decoder and its per-decoder string cache.
+			token, err := decoder.Token()
+			signer, ok := token.(string)
+			if err != nil || !ok || len(signer) != 2+2*len(pin.Signer) || signer[0] != '0' || signer[1] != 'x' {
+				return pin, errPeerPinStoreCorrupt
+			}
+			if _, err := hex.Decode(pin.Signer[:], []byte(signer[2:])); err != nil {
+				return pin, errPeerPinStoreCorrupt
+			}
+		} else if decoder.Decode(value) != nil {
 			return pin, errPeerPinStoreCorrupt
 		}
 		seen |= bit

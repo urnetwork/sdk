@@ -179,7 +179,7 @@ func TestTokenManagerRunStopsOnCancel(t *testing.T) {
 
 	log := &countingLogger{}
 	attempts := &log.refreshes
-	_, api, closeFunc := testingNewTokenManager(ctx, server.URL, func(string) {}, func() error { return nil })
+	_, api, closeFunc := testingNewTokenManager(t, ctx, server.URL, func(string) {}, func() error { return nil })
 	defer closeFunc()
 	api.setLog(log)
 	// a real, current token: the schedule must not be what stops the loop
@@ -259,7 +259,7 @@ func TestTokenManagerClosedDeviceDoesNotRefresh(t *testing.T) {
 	defer cancel()
 
 	log := &countingLogger{}
-	_, api, closeFunc := testingNewTokenManager(ctx, server.URL, func(string) {}, func() error { return nil })
+	_, api, closeFunc := testingNewTokenManager(t, ctx, server.URL, func(string) {}, func() error { return nil })
 	defer closeFunc()
 	api.setLog(log)
 	api.SetByJwt(testingRefreshableScheduleJwt(time.Now(), 24*time.Hour))
@@ -308,7 +308,7 @@ func TestTokenManagerRunSchedulesAfterSuccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, api, closeFunc := testingNewTokenManager(ctx, server.URL, func(jwt string) {}, func() error { return nil })
+	_, api, closeFunc := testingNewTokenManager(t, ctx, server.URL, func(jwt string) {}, func() error { return nil })
 	defer closeFunc()
 	api.SetByJwt(testingRefreshableScheduleJwt(time.Now(), 24*time.Hour))
 

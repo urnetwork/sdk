@@ -22,24 +22,50 @@ import (
 // timeouts must retry without ever touching the auth state.
 
 func testingNewTokenManager(
+	t *testing.T,
 	ctx context.Context,
 	apiUrl string,
 	onTokenRefreshed func(string),
 	logout func() error,
 ) (*apiTokenManager, *Api, func()) {
+	t.Helper()
 	clientStrategy := newTestClientStrategy(ctx)
 	api := newApi(ctx, clientStrategy, apiUrl)
 	api.AddJwtRefreshListener(jwtRefreshListenerFunc(onTokenRefreshed))
 	api.AddAuthLogoutListener(authLogoutListenerFunc(func() {
 		_ = logout()
 	}))
-	api.SetByJwt("test-jwt")
+	api.SetByJwt(testingRefreshableJwt(t))
 	closeFunc := func() {
 		api.Close()
 		_ = api.CloseAndWait(context.Background())
 		clientStrategy.Close()
 	}
 	return api.tokenManager, api, closeFunc
+}
+
+// The refresh fixture must exercise client-token ownership, not the separate
+// network-credential rejection path, without starting background refreshes.
+func TestTokenManagerFixtureUsesRefreshableClientCredential(t *testing.T) {
+	manager, api, closeFunc := testingNewTokenManager(
+		t,
+		t.Context(),
+		"https://refresh.example",
+		func(string) {},
+		func() error { return nil },
+	)
+	t.Cleanup(closeFunc)
+
+	byJwt := api.GetByJwt()
+	refreshable := jwtCanRefresh(byJwt)
+	network := isNetworkCredential(byJwt)
+	_, tracked := api.networkRequestTarget(byJwt)
+	if !refreshable || network || tracked {
+		t.Fatalf("token manager fixture credential: refreshable=%t network=%t tracked=%t; want true, false, false", refreshable, network, tracked)
+	}
+	if manager.active.Load() {
+		t.Fatal("token manager fixture started background refreshes")
+	}
 }
 
 func testingRefreshableJwt(t *testing.T) string {
@@ -196,6 +222,7 @@ func TestApiRejectsRefreshThatChangesDeviceIdentity(t *testing.T) {
 func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	refreshedClientJwt := testingRefreshableJwtWithMarker(t, "semantics-refresh")
 
 	type serverCase struct {
 		name         string
@@ -211,9 +238,9 @@ func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 			name: "success",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"by_jwt":"refreshed-jwt"}`))
+				fmt.Fprintf(w, `{"by_jwt":%q}`, refreshedClientJwt)
 			},
-			expectJwt: "refreshed-jwt",
+			expectJwt: refreshedClientJwt,
 		},
 		{
 			// confirmed rejection in the result payload (e.g. the client was
@@ -280,6 +307,7 @@ func TestApiTokenManagerRefreshSemantics(t *testing.T) {
 			logoutCount := 0
 			refreshedJwt := ""
 			manager, api, closeFunc := testingNewTokenManager(
+				t,
 				ctx,
 				ts.URL,
 				func(jwt string) {
@@ -327,6 +355,7 @@ func TestApiTokenManagerRefreshOffline(t *testing.T) {
 
 	logoutCount := 0
 	manager, api, closeFunc := testingNewTokenManager(
+		t,
 		ctx,
 		deadUrl,
 		func(jwt string) {},
