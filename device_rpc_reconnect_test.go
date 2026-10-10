@@ -702,25 +702,50 @@ func (self *testingScriptedDeviceRpcListener) Close() error {
 func TestDeviceLocalRpcManagerLogsNewFailureAfterRecovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logger := &testingCountingDeviceRpcLogger{infoFormat: "[dlrcp]accept err = %s"}
+		// A successful accept constructs a real RPC session, including its API
+		// subscription. Error-only listener fixtures never reach that boundary.
+		api := newApi(t.Context(), nil, "https://rpc.example")
+		defer func() {
+			if err := api.CloseAndWait(context.Background()); err != nil {
+				t.Errorf("close fixture API: %v", err)
+			}
+		}()
 		listener := &testingScriptedDeviceRpcListener{
 			entered: make(chan struct{}),
 			results: make(chan testingDeviceRpcAcceptResult),
 		}
-		manager := newDeviceLocalRpcManager(t.Context(), &DeviceLocal{log: logger}, defaultDeviceRpcSettings(), listener)
+		manager := newDeviceLocalRpcManager(t.Context(), &DeviceLocal{log: logger, api: api}, defaultDeviceRpcSettings(), listener)
 		defer manager.CloseAndWait(context.Background())
-		<-listener.entered
+		waitForAccept := func() {
+			t.Helper()
+			select {
+			case <-listener.entered:
+			case <-manager.done:
+				t.Fatal("RPC manager exited before the next accept")
+			}
+		}
+		waitForAccept()
 		listener.results <- testingDeviceRpcAcceptResult{err: io.EOF}
-		<-listener.entered
+		waitForAccept()
 		forward, forwardPeer := net.Pipe()
 		reverse, reversePeer := net.Pipe()
 		defer forwardPeer.Close()
 		defer reversePeer.Close()
 		listener.results <- testingDeviceRpcAcceptResult{forward: forward, reverse: reverse}
-		<-listener.entered
+		waitForAccept()
 		listener.results <- testingDeviceRpcAcceptResult{err: io.EOF}
-		<-listener.entered
+		waitForAccept()
 		if count := logger.infoCount.Load(); count != 2 {
 			t.Fatalf("failures separated by recovery logged %d times, want two", count)
+		}
+		if err := manager.CloseAndWait(context.Background()); err != nil {
+			t.Fatalf("close recovered manager: %v", err)
+		}
+		for _, peer := range []net.Conn{forwardPeer, reversePeer} {
+			var packet [1]byte
+			if n, err := peer.Read(packet[:]); n != 0 || err != io.EOF {
+				t.Fatalf("accepted connection after manager join = %d, %v; want EOF", n, err)
+			}
 		}
 	})
 }

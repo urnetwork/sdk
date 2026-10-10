@@ -9592,6 +9592,9 @@ func (self *gobServerCodec) Close() error {
 func (self *DeviceLocalRpc) run() {
 	defer func() {
 		self.cancel()
+		if self.networkSessionsSub != nil {
+			self.networkSessionsSub.Close()
+		}
 		self.sockets.close()
 		self.subprotocols.close()
 		self.conn.Close()
