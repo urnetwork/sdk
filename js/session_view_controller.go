@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 	"syscall/js"
 )
 
