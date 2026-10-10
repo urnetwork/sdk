@@ -11,13 +11,10 @@ import (
 	"fmt"
 	"go/types"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/go/packages"
 )
 
 // gobind skips a const whose type is an alias, because its const generators
@@ -38,31 +35,7 @@ func TestMobileApiAvoidsAliasesGobindMishandles(t *testing.T) {
 	}
 	violationLines := map[string]bool{}
 	for _, view := range views {
-		config := &packages.Config{
-			Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
-			Dir:  "../..",
-			// the sdk package has no cgo, so its declarations do not depend on cgo
-			Env: append(
-				os.Environ(),
-				"GOOS="+view.goos,
-				"GOARCH=arm64",
-				"CGO_ENABLED=0",
-				"GOEXPERIMENT=greenteagc",
-				"GOPROXY=off",
-				"GOSUMDB=off",
-				"GOWORK=off",
-			),
-			BuildFlags: []string{"-tags=" + view.tags},
-		}
-		loadedPackages, err := packages.Load(config, "github.com/urnetwork/sdk")
-		testingBuildNoError(t, err)
-		if len(loadedPackages) != 1 {
-			t.Fatalf("the %s %s view loaded %d packages, want the sdk", view.goos, view.tags, len(loadedPackages))
-		}
-		sdkPackage := loadedPackages[0]
-		if 0 < len(sdkPackage.Errors) {
-			t.Fatalf("load the %s %s view: %v", view.goos, view.tags, sdkPackage.Errors)
-		}
+		sdkPackage := testingLoadMobileView(t, view.goos, view.tags)
 		report := func(object types.Object, format string, arguments ...any) {
 			position := sdkPackage.Fset.Position(object.Pos())
 			location := fmt.Sprintf("%s:%d: ", filepath.Base(position.Filename), position.Line)
