@@ -16,8 +16,12 @@ import (
 // the api is asychronous, which is the most natural for the target platforms
 
 type Api struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	credentialPersistenceError     error
+	networkSessionsListeners       *connect.CallbackList[NetworkSessionsChangeListener]
+	clientInfo                     connect.ClientInfo
+	accountSignInRequiredListeners *connect.CallbackList[AccountSignInRequiredListener]
+	ctx                            context.Context
+	cancel                         context.CancelFunc
 
 	clientStrategy *connect.ClientStrategy
 
@@ -32,6 +36,22 @@ type Api struct {
 	rejectedByJwt        string
 	deviceAuthGeneration uint64
 	log                  connect.Logger
+	// the network credential kept for the routes that administer the network
+	// while a device's client token is byJwt (api_network_credential.go)
+	networkByJwt string
+	// the LocalState that stores networkByJwt beside the device's client
+	// token, where its renewal persists it (api_network_credential_renewal.go);
+	// nil when no LocalState backs it, and then it is not renewed
+	networkByJwtStore *LocalState
+	// changes whenever networkByJwt or its LocalState changes other than by a
+	// renewal of it
+	networkByJwtGeneration uint64
+	// renewal of this generation stopped: the server refused it, or its
+	// LocalState no longer stores it
+	networkRenewalHalted bool
+	// the network credential the server rejected, which this API does not
+	// adopt from LocalState again
+	networkByJwtRejected string
 
 	httpPostRaw            connect.HttpPostRawFunction
 	httpGetRaw             connect.HttpGetRawFunction
@@ -45,6 +65,7 @@ type Api struct {
 	authLogoutListeners             *connect.CallbackList[AuthLogoutListener]
 	clientRefreshIntegrityListeners *connect.CallbackList[ClientRefreshIntegrityListener]
 	tokenManager                    *apiTokenManager
+	networkRenewer                  *apiNetworkCredentialRenewer
 }
 
 // Delivers at most one terminal result. Marking delivery before entering the
@@ -122,9 +143,12 @@ func newApi(
 
 		jwtRefreshListeners:             connect.NewCallbackList[JwtRefreshListener](),
 		authLogoutListeners:             connect.NewCallbackList[AuthLogoutListener](),
+		networkSessionsListeners:        connect.NewCallbackList[NetworkSessionsChangeListener](),
+		accountSignInRequiredListeners:  connect.NewCallbackList[AccountSignInRequiredListener](),
 		clientRefreshIntegrityListeners: connect.NewCallbackList[ClientRefreshIntegrityListener](),
 	}
 	api.tokenManager = newApiTokenManager(cancelCtx, api)
+	api.networkRenewer = newApiNetworkCredentialRenewer(cancelCtx, api)
 	return api
 }
 
@@ -136,11 +160,13 @@ func (self *Api) newSession(ctx context.Context) *Api {
 
 // Hosted devices keep the immutable NetworkSpace metadata and API request
 // seams, but give each credential session its own control dial/DoH owner.
+// The session copies the transports, never this API's credential selection.
 func (self *Api) newSessionWithStrategy(ctx context.Context, strategy *connect.ClientStrategy) *Api {
 	session := newApi(ctx, strategy, self.apiUrl)
-	session.setHttpPostRaw(self.getHttpPostRaw())
-	session.setHttpGetRaw(self.getHttpGetRaw())
-	session.setHttpPostStreamRaw(self.getHttpPostStreamRaw())
+	session.SetClientInfo(self.GetClientInfo())
+	session.setHttpPostRaw(self.transportHttpPostRaw())
+	session.setHttpGetRaw(self.transportHttpGetRaw())
+	session.setHttpPostStreamRaw(self.transportHttpPostStreamRaw())
 	return session
 }
 
@@ -154,13 +180,17 @@ func NewApi(ctx context.Context, clientStrategy *connect.ClientStrategy, apiUrl 
 	return newApi(ctx, clientStrategy, apiUrl)
 }
 
-// this gets attached to api calls that need it
+// this gets attached to api calls that need it. A network credential (the
+// network's sign-in token or an API key) is also the one the API keeps for the
+// calls that administer the network after a device installs its client token;
+// any other value clears that one.
 func (self *Api) SetByJwt(byJwt string) {
 	self.authMutationLock.Lock()
 	self.mutex.Lock()
 	self.deviceAuthGeneration += 1
 	changed := self.byJwt != byJwt
 	self.byJwt = byJwt
+	self.setLoginNetworkByJwtWithLock(byJwt)
 	self.deviceAuthOwner = nil
 	self.rejectedByJwt = ""
 	tokenManager := self.tokenManager
@@ -170,6 +200,8 @@ func (self *Api) SetByJwt(byJwt string) {
 	if changed && tokenManager != nil {
 		tokenManager.TokenChanged()
 	}
+	self.networkRenewer.credentialChanged()
+	self.networkSessionsChanged(&NetworkSessionsRevision{})
 }
 
 // clearByJwt clears the credential only when it is still the value owned by
@@ -190,6 +222,8 @@ func (self *Api) clearByJwt(byJwt string) bool {
 	return true
 }
 
+// GetByJwt is the current credential: the device's client token once a device
+// starts. The network credential kept for admin calls is not returned.
 func (self *Api) GetByJwt() string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -241,6 +275,7 @@ func (self *Api) setRefreshedByJwt(previousByJwt string, byJwt string, expectedG
 
 // Clears only the request's current token/generation. Rejection listeners own
 // persistence/UI/process policy and run after every auth lock is released.
+// The rejected session signs out, so its network credential goes with it.
 func (self *Api) rejectByJwt(rejectedByJwt string, expectedGeneration ...uint64) bool {
 	self.authMutationLock.Lock()
 	self.mutex.Lock()
@@ -251,10 +286,14 @@ func (self *Api) rejectByJwt(rejectedByJwt string, expectedGeneration ...uint64)
 		return false
 	}
 	self.byJwt = ""
+	self.networkByJwt = ""
+	self.networkByJwtStore = nil
+	self.networkCredentialChangedWithLock()
 	self.rejectedByJwt = rejectedByJwt
 	self.deviceAuthGeneration += 1
 	self.mutex.Unlock()
 	self.authMutationLock.Unlock()
+	self.networkRenewer.credentialChanged()
 
 	for _, listener := range self.authLogoutListeners.Get() {
 		listener := listener
@@ -309,6 +348,7 @@ func (self *Api) RequestJwtRefresh() {
 // service, never merely after configuring or dialing one.
 func (self *Api) remoteTransportAvailable() {
 	self.tokenManager.transportAvailable()
+	self.networkRenewer.transportAvailable()
 }
 
 func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
@@ -319,7 +359,9 @@ func (self *Api) setHttpPostRaw(httpPostRaw connect.HttpPostRawFunction) {
 	self.httpPostRawOwner = nil
 }
 
-func (self *Api) getHttpPostRaw() connect.HttpPostRawFunction {
+// transportHttpPostRaw is the installed POST transport, without the credential
+// selection of getHttpPostRaw.
+func (self *Api) transportHttpPostRaw() connect.HttpPostRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -340,7 +382,9 @@ func (self *Api) setHttpGetRaw(httpGetRaw connect.HttpGetRawFunction) {
 	self.httpGetRawOwner = nil
 }
 
-func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
+// transportHttpGetRaw is the installed GET transport, without the credential
+// selection of getHttpGetRaw.
+func (self *Api) transportHttpGetRaw() connect.HttpGetRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -353,7 +397,9 @@ func (self *Api) getHttpGetRaw() connect.HttpGetRawFunction {
 	}
 }
 
-func (self *Api) getHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
+// transportHttpPostStreamRaw is the installed streaming POST transport, without
+// the credential selection of getHttpPostStreamRaw.
+func (self *Api) transportHttpPostStreamRaw() connect.HttpPostStreamRawFunction {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.httpPostStreamRaw != nil {
@@ -378,28 +424,30 @@ func (self *Api) Close() {
 	self.cancel()
 }
 
-// Joins the API-owned refresh worker after cancellation. External owners use
-// this before releasing a shared strategy; callbacks must use Close instead.
+// Joins the API-owned refresh and renewal workers after cancellation.
+// External owners use this before releasing a shared strategy; callbacks must
+// use Close instead.
 //
 //gomobile:noexport
 func (self *Api) CloseAndWait(ctx context.Context) error {
 	self.Close()
-	select {
-	case <-self.tokenManager.done:
-		return nil
-	default:
-	}
-	select {
-	case <-self.tokenManager.done:
-		return nil
-	case <-ctx.Done():
+	for _, done := range []<-chan struct{}{self.tokenManager.done, self.networkRenewer.doneChannel()} {
 		select {
-		case <-self.tokenManager.done:
-			return nil
+		case <-done:
+			continue
 		default:
-			return ctx.Err()
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			select {
+			case <-done:
+			default:
+				return ctx.Err()
+			}
 		}
 	}
+	return nil
 }
 
 // ApiError represents a generic error response from the API
@@ -2321,7 +2369,8 @@ func (self *Api) GetTransferStats(callback GetTransferStatsCallback) {
  */
 
 type AuthCodeLoginArgs struct {
-	AuthCode string `json:"auth_code"`
+	RequestId *Id    `json:"request_id,omitempty"`
+	AuthCode  string `json:"auth_code"`
 }
 
 type AuthCodeLoginResult struct {
@@ -2332,6 +2381,11 @@ type AuthCodeLoginResult struct {
 type AuthCodeLoginCallback connect.ApiCallback[*AuthCodeLoginResult]
 
 func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCallback) {
+	if args != nil && args.RequestId == nil {
+		copy := *args
+		copy.RequestId = newId(connect.NewId())
+		args = &copy
+	}
 	runAsyncApiRequest[*AuthCodeLoginResult](callback, func(callback connect.ApiCallback[*AuthCodeLoginResult]) {
 		connect.HttpPostWithRawFunction(
 			self.ctx,
@@ -2347,6 +2401,11 @@ func (self *Api) AuthCodeLogin(args *AuthCodeLoginArgs, callback AuthCodeLoginCa
 
 //gomobile:noexport
 func (self *Api) AuthCodeLoginSyncWithContext(ctx context.Context, args *AuthCodeLoginArgs) (*AuthCodeLoginResult, error) {
+	if args != nil && args.RequestId == nil {
+		copy := *args
+		copy.RequestId = newId(connect.NewId())
+		args = &copy
+	}
 	return connect.HttpPostWithRawFunction(
 		ctx,
 		self.getHttpPostRaw(),

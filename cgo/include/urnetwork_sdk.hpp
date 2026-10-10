@@ -335,8 +335,6 @@ inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
-inline constexpr int64_t MessageRouteDirect = 1;
-inline constexpr int64_t MessageRouteUrnetwork = 0;
 inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
 inline constexpr const char* OfferDeclineControlBack = "back";
 inline constexpr const char* OfferDeclineControlFreePlanLink = "free_plan_link";
@@ -536,6 +534,11 @@ class BittensorWalletSession;
 class BlockActionViewController;
 class ClientEventQueue;
 class ClientRefreshIntegrityNotice;
+class ClientSessionAction;
+class ClientSessionActionList;
+class ClientSessionError;
+class ClientSessionSnapshot;
+class ClientSessionViewController;
 class ConnectGrid;
 class ConnectViewController;
 class ContractDetailsViewController;
@@ -558,6 +561,10 @@ class LocalStateResetResult;
 class LocationsViewController;
 class LoginViewController;
 class NetworkNameValidationViewController;
+class NetworkSessionInfo;
+class NetworkSessionInfoList;
+class NetworkSessionsResult;
+class NetworkSessionsRevision;
 class NetworkSpace;
 class NetworkSpaceManager;
 class NetworkUserViewController;
@@ -570,6 +577,9 @@ class ProviderLocationsViewController;
 class ProviderStatusViewController;
 class ProxyDevice;
 class ReferralCodeViewController;
+class SessionLastUsed;
+class SessionOperationResult;
+class SessionSignOutResult;
 class Socket;
 class SubscriptionBalanceViewController;
 class Tunnel;
@@ -662,6 +672,7 @@ struct ClientEvent;
 struct ClientEventRejection;
 struct ClientEventsSendArgs;
 struct ClientEventsSendResult;
+struct ClientInfo;
 struct ClientLimitStatus;
 struct ConnectedProviderLocation;
 struct ContractClientRow;
@@ -750,8 +761,7 @@ struct LocationGroupResult;
 struct LocationResult;
 struct LogFileInfo;
 struct MemoryStats;
-struct MessageTransport;
-struct MessageTransportConfig;
+struct MemoryTeardownObservation;
 struct NetExtender;
 struct NetworkBlockLocationArgs;
 struct NetworkBlockLocationError;
@@ -832,6 +842,8 @@ struct RemoveNetworkClientResult;
 struct RemoveWalletArgs;
 struct RemoveWalletError;
 struct RemoveWalletResult;
+struct RevokeNetworkSessionArgs;
+struct RevokeOtherNetworkSessionsArgs;
 struct SetEmojiTagArgs;
 struct SetEmojiTagError;
 struct SetEmojiTagResult;
@@ -873,7 +885,6 @@ struct SolanaPaymentIntentArgs;
 struct SolanaPaymentIntentError;
 struct SolanaPaymentIntentResult;
 struct SolanaPaymentUrlArgs;
-struct StreamStore;
 struct StripeCreateCheckoutSessionArgs;
 struct StripeCreateCheckoutSessionError;
 struct StripeCreateCheckoutSessionResult;
@@ -917,6 +928,7 @@ struct UpgradeGuestResultVerification;
 struct UpgradeGuesteResultError;
 struct UpgradeGuestResult;
 struct UploadLogsError;
+struct UploadLogsFile;
 struct UploadLogsResult;
 struct ValidateReferralCodeArgs;
 struct ValidateReferralCodeResult;
@@ -999,6 +1011,7 @@ using TransferBalanceList = std::vector<TransferBalance>;
 using TransportModePriorityList = std::vector<TransportModePriority>;
 using TransportPacketStatsList = std::vector<TransportPacketStats>;
 using TransportShareList = std::vector<TransportShare>;
+using UploadLogsFileList = std::vector<UploadLogsFile>;
 
 struct AccountEpoch {
 	int64_t epoch{};
@@ -1133,6 +1146,7 @@ struct AuthCodeCreateResult {
 };
 
 struct AuthCodeLoginArgs {
+	std::optional<std::string> request_id;
 	std::string auth_code{};
 };
 
@@ -1559,6 +1573,13 @@ struct ClientEventsSendArgs {
 struct ClientEventsSendResult {
 	int64_t accepted{};
 	std::optional<ClientEventRejectionList> rejected;
+};
+
+struct ClientInfo {
+	int64_t v{};
+	std::string device_type{};
+	std::string app_version{};
+	std::optional<std::string> sdk_version;
 };
 
 struct ClientLimitStatus {
@@ -2366,14 +2387,7 @@ struct MemoryStats {
 	int64_t GCPauseTotalNanoseconds{};
 };
 
-struct MessageTransport {
-};
-
-struct MessageTransportConfig {
-	nlohmann::json Client{};
-	nlohmann::json Server{};
-	uint32_t ProtocolVersion{};
-	int64_t Timeout{};
+struct MemoryTeardownObservation {
 };
 
 struct NetExtender {
@@ -3046,6 +3060,15 @@ struct RemoveWalletResult {
 	std::optional<RemoveWalletError> error;
 };
 
+struct RevokeNetworkSessionArgs {
+	std::optional<std::string> session_id;
+	std::optional<std::string> operation_id;
+};
+
+struct RevokeOtherNetworkSessionsArgs {
+	std::optional<std::string> operation_id;
+};
+
 struct SetEmojiTagArgs {
 	std::string emoji_tag{};
 };
@@ -3332,9 +3355,6 @@ struct SolanaPaymentUrlArgs {
 	std::string reference{};
 	std::optional<std::string> label;
 	std::optional<std::string> message;
-};
-
-struct StreamStore {
 };
 
 struct StripeCreateCheckoutSessionArgs {
@@ -3625,6 +3645,12 @@ struct UploadLogsError {
 	std::string message{};
 };
 
+struct UploadLogsFile {
+	std::string Source{};
+	std::string Name{};
+	int64_t FileDescriptor{};
+};
+
 struct UploadLogsResult {
 	std::optional<UploadLogsError> error;
 };
@@ -3908,6 +3934,8 @@ inline void to_json(nlohmann::json& j, const ClientEventsSendArgs& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendArgs& v);
 inline void to_json(nlohmann::json& j, const ClientEventsSendResult& v);
 inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v);
+inline void to_json(nlohmann::json& j, const ClientInfo& v);
+inline void from_json(const nlohmann::json& j, ClientInfo& v);
 inline void to_json(nlohmann::json& j, const ClientLimitStatus& v);
 inline void from_json(const nlohmann::json& j, ClientLimitStatus& v);
 inline void to_json(nlohmann::json& j, const ConnectedProviderLocation& v);
@@ -4084,10 +4112,8 @@ inline void to_json(nlohmann::json& j, const LogFileInfo& v);
 inline void from_json(const nlohmann::json& j, LogFileInfo& v);
 inline void to_json(nlohmann::json& j, const MemoryStats& v);
 inline void from_json(const nlohmann::json& j, MemoryStats& v);
-inline void to_json(nlohmann::json& j, const MessageTransport& v);
-inline void from_json(const nlohmann::json& j, MessageTransport& v);
-inline void to_json(nlohmann::json& j, const MessageTransportConfig& v);
-inline void from_json(const nlohmann::json& j, MessageTransportConfig& v);
+inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v);
+inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v);
 inline void to_json(nlohmann::json& j, const NetExtender& v);
 inline void from_json(const nlohmann::json& j, NetExtender& v);
 inline void to_json(nlohmann::json& j, const NetworkBlockLocationArgs& v);
@@ -4248,6 +4274,10 @@ inline void to_json(nlohmann::json& j, const RemoveWalletError& v);
 inline void from_json(const nlohmann::json& j, RemoveWalletError& v);
 inline void to_json(nlohmann::json& j, const RemoveWalletResult& v);
 inline void from_json(const nlohmann::json& j, RemoveWalletResult& v);
+inline void to_json(nlohmann::json& j, const RevokeNetworkSessionArgs& v);
+inline void from_json(const nlohmann::json& j, RevokeNetworkSessionArgs& v);
+inline void to_json(nlohmann::json& j, const RevokeOtherNetworkSessionsArgs& v);
+inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v);
 inline void from_json(const nlohmann::json& j, SetEmojiTagArgs& v);
 inline void to_json(nlohmann::json& j, const SetEmojiTagError& v);
@@ -4330,8 +4360,6 @@ inline void to_json(nlohmann::json& j, const SolanaPaymentIntentResult& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentIntentResult& v);
 inline void to_json(nlohmann::json& j, const SolanaPaymentUrlArgs& v);
 inline void from_json(const nlohmann::json& j, SolanaPaymentUrlArgs& v);
-inline void to_json(nlohmann::json& j, const StreamStore& v);
-inline void from_json(const nlohmann::json& j, StreamStore& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionArgs& v);
 inline void from_json(const nlohmann::json& j, StripeCreateCheckoutSessionArgs& v);
 inline void to_json(nlohmann::json& j, const StripeCreateCheckoutSessionError& v);
@@ -4418,6 +4446,8 @@ inline void to_json(nlohmann::json& j, const UpgradeGuestResult& v);
 inline void from_json(const nlohmann::json& j, UpgradeGuestResult& v);
 inline void to_json(nlohmann::json& j, const UploadLogsError& v);
 inline void from_json(const nlohmann::json& j, UploadLogsError& v);
+inline void to_json(nlohmann::json& j, const UploadLogsFile& v);
+inline void from_json(const nlohmann::json& j, UploadLogsFile& v);
 inline void to_json(nlohmann::json& j, const UploadLogsResult& v);
 inline void from_json(const nlohmann::json& j, UploadLogsResult& v);
 inline void to_json(nlohmann::json& j, const ValidateReferralCodeArgs& v);
@@ -5155,11 +5185,19 @@ inline void from_json(const nlohmann::json& j, AuthCodeCreateResult& v) {
 
 inline void to_json(nlohmann::json& j, const AuthCodeLoginArgs& v) {
 	j = nlohmann::json::object();
+	if (v.request_id) {
+		j["request_id"] = *v.request_id;
+	}
 	j["auth_code"] = v.auth_code;
 }
 inline void from_json(const nlohmann::json& j, AuthCodeLoginArgs& v) {
 	if (!j.is_object()) {
 		return;
+	}
+	if (auto it = j.find("request_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.request_id = std::move(tmp);
 	}
 	if (auto it = j.find("auth_code"); it != j.end() && !it->is_null()) {
 		it->get_to(v.auth_code);
@@ -7184,6 +7222,35 @@ inline void from_json(const nlohmann::json& j, ClientEventsSendResult& v) {
 		ClientEventRejectionList tmp{};
 		it->get_to(tmp);
 		v.rejected = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const ClientInfo& v) {
+	j = nlohmann::json::object();
+	j["v"] = v.v;
+	j["device_type"] = v.device_type;
+	j["app_version"] = v.app_version;
+	if (v.sdk_version) {
+		j["sdk_version"] = *v.sdk_version;
+	}
+}
+inline void from_json(const nlohmann::json& j, ClientInfo& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("v"); it != j.end() && !it->is_null()) {
+		it->get_to(v.v);
+	}
+	if (auto it = j.find("device_type"); it != j.end() && !it->is_null()) {
+		it->get_to(v.device_type);
+	}
+	if (auto it = j.find("app_version"); it != j.end() && !it->is_null()) {
+		it->get_to(v.app_version);
+	}
+	if (auto it = j.find("sdk_version"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.sdk_version = std::move(tmp);
 	}
 }
 
@@ -10663,37 +10730,12 @@ inline void from_json(const nlohmann::json& j, MemoryStats& v) {
 	}
 }
 
-inline void to_json(nlohmann::json& j, const MessageTransport& v) {
+inline void to_json(nlohmann::json& j, const MemoryTeardownObservation& v) {
 	j = nlohmann::json::object();
 }
-inline void from_json(const nlohmann::json& j, MessageTransport& v) {
+inline void from_json(const nlohmann::json& j, MemoryTeardownObservation& v) {
 	if (!j.is_object()) {
 		return;
-	}
-}
-
-inline void to_json(nlohmann::json& j, const MessageTransportConfig& v) {
-	j = nlohmann::json::object();
-	j["Client"] = v.Client;
-	j["Server"] = v.Server;
-	j["ProtocolVersion"] = v.ProtocolVersion;
-	j["Timeout"] = v.Timeout;
-}
-inline void from_json(const nlohmann::json& j, MessageTransportConfig& v) {
-	if (!j.is_object()) {
-		return;
-	}
-	if (auto it = j.find("Client"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Client);
-	}
-	if (auto it = j.find("Server"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Server);
-	}
-	if (auto it = j.find("ProtocolVersion"); it != j.end() && !it->is_null()) {
-		it->get_to(v.ProtocolVersion);
-	}
-	if (auto it = j.find("Timeout"); it != j.end() && !it->is_null()) {
-		it->get_to(v.Timeout);
 	}
 }
 
@@ -13933,6 +13975,48 @@ inline void from_json(const nlohmann::json& j, RemoveWalletResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const RevokeNetworkSessionArgs& v) {
+	j = nlohmann::json::object();
+	if (v.session_id) {
+		j["session_id"] = *v.session_id;
+	}
+	if (v.operation_id) {
+		j["operation_id"] = *v.operation_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, RevokeNetworkSessionArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("session_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.session_id = std::move(tmp);
+	}
+	if (auto it = j.find("operation_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.operation_id = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const RevokeOtherNetworkSessionsArgs& v) {
+	j = nlohmann::json::object();
+	if (v.operation_id) {
+		j["operation_id"] = *v.operation_id;
+	}
+}
+inline void from_json(const nlohmann::json& j, RevokeOtherNetworkSessionsArgs& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("operation_id"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.operation_id = std::move(tmp);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SetEmojiTagArgs& v) {
 	j = nlohmann::json::object();
 	j["emoji_tag"] = v.emoji_tag;
@@ -15243,15 +15327,6 @@ inline void from_json(const nlohmann::json& j, SolanaPaymentUrlArgs& v) {
 		std::string tmp{};
 		it->get_to(tmp);
 		v.message = std::move(tmp);
-	}
-}
-
-inline void to_json(nlohmann::json& j, const StreamStore& v) {
-	j = nlohmann::json::object();
-}
-inline void from_json(const nlohmann::json& j, StreamStore& v) {
-	if (!j.is_object()) {
-		return;
 	}
 }
 
@@ -16586,6 +16661,27 @@ inline void from_json(const nlohmann::json& j, UploadLogsError& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const UploadLogsFile& v) {
+	j = nlohmann::json::object();
+	j["Source"] = v.Source;
+	j["Name"] = v.Name;
+	j["FileDescriptor"] = v.FileDescriptor;
+}
+inline void from_json(const nlohmann::json& j, UploadLogsFile& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("Source"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Source);
+	}
+	if (auto it = j.find("Name"); it != j.end() && !it->is_null()) {
+		it->get_to(v.Name);
+	}
+	if (auto it = j.find("FileDescriptor"); it != j.end() && !it->is_null()) {
+		it->get_to(v.FileDescriptor);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const UploadLogsResult& v) {
 	j = nlohmann::json::object();
 	if (v.error) {
@@ -17109,6 +17205,7 @@ inline void from_json(const nlohmann::json& j, WindowStatus& v) {
 using AccountEpochsCallback = std::function<void(std::optional<AccountEpochsResult> result, std::optional<std::string> err_param)>;
 using AccountPreferencesGetCallback = std::function<void(std::optional<AccountPreferencesGetResult> result, std::optional<std::string> err_param)>;
 using AccountPreferencesSetCallback = std::function<void(std::optional<AccountPreferencesSetResult> result, std::optional<std::string> err_param)>;
+using AccountSignInRequiredListener = std::function<void()>;
 using AccountWalletsListener = std::function<void()>;
 using ActiveNetworkSpaceChangeListener = std::function<void(NetworkSpace network_space)>;
 using AddAuthCallback = std::function<void(std::optional<AddAuthResult> result, std::optional<std::string> err_param)>;
@@ -17139,6 +17236,7 @@ using ClaimNetworkNameCallback = std::function<void(std::optional<ClaimNetworkNa
 using ClientEventsSendCallback = std::function<void(std::optional<ClientEventsSendResult> result, std::optional<std::string> err_param)>;
 using ClientLimitStatusChangeListener = std::function<void(std::optional<ClientLimitStatus> status)>;
 using ClientRefreshIntegrityListener = std::function<void(ClientRefreshIntegrityNotice notice)>;
+using ClientSessionListener = std::function<void(ClientSessionSnapshot snapshot)>;
 using CommitCallback = std::function<void(bool success)>;
 using ConnectChangeListener = std::function<void(bool connect_enabled)>;
 using ConnectLocationChangeListener = std::function<void(std::optional<ConnectLocation> location)>;
@@ -17180,6 +17278,7 @@ using GetNetworkLeaderboardRankingCallback = std::function<void(std::optional<Ge
 using GetNetworkRedeemedBalanceCodesCallback = std::function<void(std::optional<GetNetworkRedeemedBalanceCodesResult> result, std::optional<std::string> err_param)>;
 using GetNetworkReferralCodeCallback = std::function<void(std::optional<GetNetworkReferralCodeResult> result, std::optional<std::string> err_param)>;
 using GetNetworkReliabilityCallback = std::function<void(std::optional<GetNetworkReliabilityResult> result, std::optional<std::string> err_param)>;
+using GetNetworkSessionsCallback = std::function<void(NetworkSessionsResult result, std::optional<std::string> err_param)>;
 using GetNetworkUserCallback = std::function<void(std::optional<GetNetworkUserResult> result, std::optional<std::string> err_param)>;
 using GetPayoutWalletCallback = std::function<void(std::optional<GetPayoutWalletIdResult> result, std::optional<std::string> err_param)>;
 using GetPointsLeaderboardCallback = std::function<void(std::optional<PointsLeaderboardResult> result, std::optional<std::string> err_param)>;
@@ -17202,6 +17301,7 @@ using NetworkClientsListener = std::function<void(std::optional<NetworkClientInf
 using NetworkCreateCallback = std::function<void(std::optional<NetworkCreateResult> result, std::optional<std::string> err_param)>;
 using NetworkDeleteCallback = std::function<void(std::optional<NetworkDeleteResult> result, std::optional<std::string> err_param)>;
 using NetworkPeersChangeListener = std::function<void(std::optional<NetworkPeers> network_peers)>;
+using NetworkSessionsChangeListener = std::function<void(NetworkSessionsRevision revision)>;
 using NetworkSpaceUpdate = std::function<void(std::optional<NetworkSpaceValues> values)>;
 using NetworkSpacesChangeListener = std::function<void()>;
 using NetworkUnblockLocationCallback = std::function<void(std::optional<NetworkUnblockLocationResult> result, std::optional<std::string> err_param)>;
@@ -17248,6 +17348,8 @@ using RouteLocalChangeListener = std::function<void(bool route_local)>;
 using SelectedLocationListener = std::function<void(std::optional<ConnectLocation> location)>;
 using SelectedProviderLocationChangeListener = std::function<void()>;
 using SendFeedbackCallback = std::function<void(std::optional<FeedbackSendResult> result, std::optional<std::string> err_param)>;
+using SessionOperationCallback = std::function<void(SessionOperationResult result, std::optional<std::string> err_param)>;
+using SessionSignOutCallback = std::function<void(SessionSignOutResult p0, std::optional<std::string> p1)>;
 using SetEmojiTagCallback = std::function<void(std::optional<SetEmojiTagResult> result, std::optional<std::string> err_param)>;
 using SetNetworkLeaderboardPublicCallback = std::function<void(std::optional<SetNetworkRankingPublicResult> result, std::optional<std::string> err_param)>;
 using SetNetworkReferralCallback = std::function<void(std::optional<SetNetworkReferralResult> result, std::optional<std::string> err_param)>;
@@ -17514,10 +17616,12 @@ public:
 	void accountEpochs(AccountEpochsCallback callback) const;
 	void accountPreferencesGet(AccountPreferencesGetCallback callback) const;
 	void accountPreferencesUpdate(const std::optional<AccountPreferencesSetArgs>& account_preferences, AccountPreferencesSetCallback callback) const;
+	Sub addAccountSignInRequiredListener(AccountSignInRequiredListener listener) const;
 	void addAuth(const std::optional<AddAuthArgs>& args, AddAuthCallback callback) const;
 	Sub addAuthLogoutListener(AuthLogoutListener listener) const;
 	Sub addClientRefreshIntegrityListener(ClientRefreshIntegrityListener listener) const;
 	Sub addJwtRefreshListener(JwtRefreshListener listener) const;
+	Sub addNetworkSessionsChangeListener(NetworkSessionsChangeListener listener) const;
 	void authCodeCreate(const std::optional<AuthCodeCreateArgs>& code_create_args, AuthCodeCreateCallback callback) const;
 	void authCodeLogin(const std::optional<AuthCodeLoginArgs>& args, AuthCodeLoginCallback callback) const;
 	void authLogin(const std::optional<AuthLoginArgs>& auth_login, AuthLoginCallback callback) const;
@@ -17550,6 +17654,8 @@ public:
 	void getAccountPoints(GetAccountPointsCallback callback) const;
 	void getAccountWallets(GetAccountWalletsCallback callback) const;
 	std::string getByJwt() const;
+	std::optional<ClientInfo> getClientInfo() const;
+	void getCredentialPersistenceError() const;
 	void getLeaderboard(const std::optional<GetLeaderboardArgs>& args, GetLeaderboardCallback callback) const;
 	void getNetworkBlockedLocations(GetNetworkBlockedLocationsCallback callback) const;
 	void getNetworkClients(GetNetworkClientsCallback callback) const;
@@ -17557,6 +17663,8 @@ public:
 	void getNetworkRedeemedBalanceCodes(GetNetworkRedeemedBalanceCodesCallback callback) const;
 	void getNetworkReferralCode(GetNetworkReferralCodeCallback callback) const;
 	void getNetworkReliability(GetNetworkReliabilityCallback callback) const;
+	void getNetworkSessionOperation(const std::string& operation_id, SessionOperationCallback callback) const;
+	void getNetworkSessions(GetNetworkSessionsCallback callback) const;
 	void getNetworkUser(GetNetworkUserCallback callback) const;
 	void getPayoutWallet(GetPayoutWalletCallback callback) const;
 	void getPointsLeaderboard(const std::optional<GetPointsLeaderboardArgs>& args, GetPointsLeaderboardCallback callback) const;
@@ -17564,6 +17672,7 @@ public:
 	void getProviderStatus(GetProviderStatusCallback callback) const;
 	void getReferralNetwork(GetReferralNetworkCallback callback) const;
 	void getTransferStats(GetTransferStatsCallback callback) const;
+	bool hasNetworkCredential() const;
 	void listApiKeys(ListApiKeysCallback callback) const;
 	void networkBlockLocation(const std::optional<NetworkBlockLocationArgs>& args, NetworkBlockLocationCallback callback) const;
 	void networkCheck(const std::optional<NetworkCheckArgs>& network_check, NetworkCheckCallback callback) const;
@@ -17575,6 +17684,7 @@ public:
 	void onboardingClick(const std::optional<OnboardingClickArgs>& args, OnboardingClickCallback callback) const;
 	void onboardingFeedbackToken(const std::string& token, int64_t rating, const std::string& reason, OnboardingFeedbackTokenCallback callback) const;
 	void onboardingOfferIssue(const std::optional<OnboardingOfferIssueArgs>& args, OnboardingOfferIssueCallback callback) const;
+	ClientSessionViewController openClientSessionViewController() const;
 	void redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const;
 	void refreshJwt(RefreshJwtCallback callback) const;
 	std::optional<RefreshJwtResult> refreshJwtSync() const;
@@ -17584,13 +17694,18 @@ public:
 	std::optional<RemoveNetworkClientResult> removeNetworkClientSync(const std::optional<RemoveNetworkClientArgs>& args) const;
 	void removeWallet(const std::optional<RemoveWalletArgs>& remove_wallet, RemoveWalletCallback callback) const;
 	void requestJwtRefresh() const;
+	void revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const;
+	void revokeOtherNetworkSessions(const std::optional<RevokeOtherNetworkSessionsArgs>& args, SessionOperationCallback callback) const;
 	void sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const;
 	void setByJwt(const std::string& by_jwt) const;
+	void setClientInfo(const std::optional<ClientInfo>& info) const;
 	void setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmojiTagCallback callback) const;
+	void setNetworkCredentialStore(const LocalState& store) const;
 	void setNetworkLeaderboardPublic(const std::optional<SetNetworkRankingPublicArgs>& args, SetNetworkLeaderboardPublicCallback callback) const;
 	void setNetworkReferral(const std::optional<SetNetworkReferralArgs>& args, SetNetworkReferralCallback callback) const;
 	void setPayoutWallet(const std::optional<SetPayoutWalletArgs>& payout_wallet, SetPayoutWalletCallback callback) const;
 	void setPointsLeaderboardPublic(const std::optional<SetPointsLeaderboardPublicArgs>& args, SetPointsLeaderboardPublicCallback callback) const;
+	void signOut(SessionSignOutCallback callback) const;
 	void snEpoch(SnEpochCallback callback) const;
 	std::optional<SnEpochResult> snEpochSync() const;
 	void snGetWallet(SnGetWalletCallback callback) const;
@@ -17709,6 +17824,75 @@ public:
 	bool closeApiIfCurrent() const;
 };
 
+class ClientSessionAction final : public detail::Handle {
+public:
+	ClientSessionAction() = default;
+	explicit ClientSessionAction(uint64_t h) : detail::Handle(h) {}
+	ClientSessionError getError() const;
+	bool getLoading() const;
+	std::string getOperationId() const;
+	bool getPending() const;
+	std::string getSessionId() const;
+	std::string getState() const;
+	std::string getStatus() const;
+};
+
+class ClientSessionActionList final : public detail::Handle {
+public:
+	ClientSessionActionList() = default;
+	explicit ClientSessionActionList(uint64_t h) : detail::Handle(h) {}
+	void add(const ClientSessionAction& value) const;
+	bool contains(const ClientSessionAction& v) const;
+	ClientSessionAction get(int64_t i) const;
+	int64_t len() const;
+	void unmarshalJSON(const uint8_t* b, int32_t b_len) const;
+};
+
+class ClientSessionError final : public detail::Handle {
+public:
+	ClientSessionError() = default;
+	explicit ClientSessionError(uint64_t h) : detail::Handle(h) {}
+	std::string getMessage() const;
+	bool getRetryable() const;
+	bool getSignInRequired() const;
+	bool getUnsupported() const;
+};
+
+class ClientSessionSnapshot final : public detail::Handle {
+public:
+	ClientSessionSnapshot() = default;
+	explicit ClientSessionSnapshot(uint64_t h) : detail::Handle(h) {}
+	ClientSessionActionList getActions() const;
+	ClientSessionAction getBulkAction() const;
+	std::string getCurrentSessionId() const;
+	ClientSessionError getError() const;
+	int64_t getEventId() const;
+	std::string getGeneration() const;
+	std::string getLegacyCoverage() const;
+	bool getLoaded() const;
+	bool getLoading() const;
+	bool getRefreshing() const;
+	NetworkSessionInfoList getSessions() const;
+	bool getSupported() const;
+};
+
+class ClientSessionViewController final : public detail::Handle {
+public:
+	ClientSessionViewController() = default;
+	explicit ClientSessionViewController(uint64_t h) : detail::Handle(h) {}
+	Sub addClientSessionListener(ClientSessionListener listener) const;
+	void close() const;
+	ClientSessionSnapshot getSnapshot() const;
+	void networkSessionsChanged(const NetworkSessionsRevision& revision) const;
+	void refresh() const;
+	void revokeOtherSessions() const;
+	void revokeSession(const std::string& session_id) const;
+	void setForeground(bool foreground) const;
+	void setVisible(bool visible) const;
+	void start() const;
+	void stop() const;
+};
+
 class ConnectGrid final : public detail::Handle {
 public:
 	ConnectGrid() = default;
@@ -17786,8 +17970,10 @@ public:
 	Sub addReceivePacketBatch(ReceivePacketBatch receive_packet_batch) const;
 	Sub addReceivePackets(ReceivePackets receive_packets) const;
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
+	std::optional<MemoryTeardownObservation> beginMemoryTeardownObservation() const;
 	void clearSnWalletCache() const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
+	void closeClientSessionViewController(const ClientSessionViewController& vc) const;
 	void closeConnectViewController(const ConnectViewController& vc) const;
 	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
 	void closeContractViewController(const ContractViewController& vc) const;
@@ -17835,6 +18021,7 @@ public:
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
 	ContractDetailsViewController openClientContractDetailsViewController() const;
+	ClientSessionViewController openClientSessionViewController() const;
 	ConnectViewController openConnectViewController() const;
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
@@ -17902,6 +18089,7 @@ public:
 	std::optional<TunnelDnsSetting> tunnelDnsSetting() const;
 	std::string tunnelLocalAddress() const;
 	std::string tunnelLocalAddressIpv6() const;
+	void uploadLogsWithFiles(const std::string& feedback_id, const std::optional<UploadLogsFileList>& upload_logs_files, UploadLogsCallback callback) const;
 	bool waitForClose(int64_t timeout_milliseconds) const;
 	void writeMemoryOwnerCensus(const std::string& path) const;
 	/* stable provider identity across process starts */
@@ -17958,6 +18146,7 @@ public:
 	Sub addSnWalletChangeListener(SnWalletChangeListener listener) const;
 	void clearSnWalletCache() const;
 	void closeBlockActionViewController(const BlockActionViewController& vc) const;
+	void closeClientSessionViewController(const ClientSessionViewController& vc) const;
 	void closeConnectViewController(const ConnectViewController& vc) const;
 	void closeContractDetailsViewController(const ContractDetailsViewController& vc) const;
 	void closeContractViewController(const ContractViewController& vc) const;
@@ -17990,6 +18179,7 @@ public:
 	AccountViewController openAccountViewController() const;
 	BlockActionViewController openBlockActionViewController() const;
 	ContractDetailsViewController openClientContractDetailsViewController() const;
+	ClientSessionViewController openClientSessionViewController() const;
 	ConnectViewController openConnectViewController() const;
 	ContractDetailsViewController openContractDetailsViewController() const;
 	ContractViewController openContractViewController() const;
@@ -18259,6 +18449,51 @@ public:
 	void stop() const;
 };
 
+class NetworkSessionInfo final : public detail::Handle {
+public:
+	NetworkSessionInfo() = default;
+	explicit NetworkSessionInfo(uint64_t h) : detail::Handle(h) {}
+	int64_t getAcceptUntil() const;
+	int64_t getCreateTime() const;
+	bool getCurrent() const;
+	std::string getKind() const;
+	int64_t getLastMintTime() const;
+	SessionLastUsed getLastUsed() const;
+	std::string getOriginSessionId() const;
+	std::string getSessionId() const;
+	int64_t getTokenExpireTime() const;
+};
+
+class NetworkSessionInfoList final : public detail::Handle {
+public:
+	NetworkSessionInfoList() = default;
+	explicit NetworkSessionInfoList(uint64_t h) : detail::Handle(h) {}
+	void add(const NetworkSessionInfo& value) const;
+	bool contains(const NetworkSessionInfo& v) const;
+	NetworkSessionInfo get(int64_t i) const;
+	int64_t len() const;
+	void unmarshalJSON(const uint8_t* b, int32_t b_len) const;
+};
+
+class NetworkSessionsResult final : public detail::Handle {
+public:
+	NetworkSessionsResult() = default;
+	explicit NetworkSessionsResult(uint64_t h) : detail::Handle(h) {}
+	std::string getCurrentSessionId() const;
+	int64_t getEventId() const;
+	std::string getGeneration() const;
+	std::string getLegacyCoverage() const;
+	NetworkSessionInfoList getSessions() const;
+};
+
+class NetworkSessionsRevision final : public detail::Handle {
+public:
+	NetworkSessionsRevision() = default;
+	explicit NetworkSessionsRevision(uint64_t h) : detail::Handle(h) {}
+	int64_t getEventId() const;
+	std::string getGeneration() const;
+};
+
 class NetworkSpace final : public detail::Handle {
 public:
 	NetworkSpace() = default;
@@ -18496,6 +18731,43 @@ public:
 	void stop() const;
 };
 
+class SessionLastUsed final : public detail::Handle {
+public:
+	SessionLastUsed() = default;
+	explicit SessionLastUsed(uint64_t h) : detail::Handle(h) {}
+	std::string getAppVersion() const;
+	std::string getCity() const;
+	std::string getCountry() const;
+	std::string getCountryCode() const;
+	std::string getDeviceType() const;
+	std::string getRegion() const;
+	int64_t getUnixTime() const;
+};
+
+class SessionOperationResult final : public detail::Handle {
+public:
+	SessionOperationResult() = default;
+	explicit SessionOperationResult(uint64_t h) : detail::Handle(h) {}
+	bool getCleanupPending() const;
+	int64_t getEventId() const;
+	std::string getGeneration() const;
+	std::string getKeptSessionId() const;
+	std::string getOperationId() const;
+	int64_t getRevokedCount() const;
+	std::string getSessionId() const;
+	std::string getState() const;
+	std::string getStatus() const;
+};
+
+class SessionSignOutResult final : public detail::Handle {
+public:
+	SessionSignOutResult() = default;
+	explicit SessionSignOutResult(uint64_t h) : detail::Handle(h) {}
+	bool getCredentialCleared() const;
+	std::string getOperationId() const;
+	bool getRevocationConfirmed() const;
+};
+
 class Socket final : public detail::Handle {
 public:
 	Socket() = default;
@@ -18708,6 +18980,26 @@ inline void oneshot_account_preferences_set(void* user_data, const char* result_
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_account_sign_in_required(void* user_data) {
+	auto* f = static_cast<AccountSignInRequiredListener*>(user_data);
+	try {
+		(*f)();
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_account_sign_in_required(void* user_data) {
+	auto* f = static_cast<AccountSignInRequiredListener*>(user_data);
+	try {
+		(*f)();
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -19568,6 +19860,28 @@ inline void oneshot_client_refresh_integrity(void* user_data, uint64_t notice) {
 	try {
 		ClientRefreshIntegrityNotice notice_v(notice);
 		(*f)(std::move(notice_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_client_session(void* user_data, uint64_t snapshot) {
+	auto* f = static_cast<ClientSessionListener*>(user_data);
+	try {
+		ClientSessionSnapshot snapshot_v(snapshot);
+		(*f)(std::move(snapshot_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_client_session(void* user_data, uint64_t snapshot) {
+	auto* f = static_cast<ClientSessionListener*>(user_data);
+	try {
+		ClientSessionSnapshot snapshot_v(snapshot);
+		(*f)(std::move(snapshot_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -20767,6 +21081,36 @@ inline void oneshot_get_network_reliability(void* user_data, const char* result_
 	delete f;
 }
 
+inline void retained_get_network_sessions(void* user_data, uint64_t result, const char* err_param) {
+	auto* f = static_cast<GetNetworkSessionsCallback*>(user_data);
+	try {
+		NetworkSessionsResult result_v(result);
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_get_network_sessions(void* user_data, uint64_t result, const char* err_param) {
+	auto* f = static_cast<GetNetworkSessionsCallback*>(user_data);
+	try {
+		NetworkSessionsResult result_v(result);
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_get_network_user(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<GetNetworkUserCallback*>(user_data);
 	try {
@@ -21416,6 +21760,28 @@ inline void oneshot_network_peers_change(void* user_data, const char* network_pe
 			network_peers_v = parseJson<NetworkPeers>(network_peers_json);
 		}
 		(*f)(std::move(network_peers_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_network_sessions_change(void* user_data, uint64_t revision) {
+	auto* f = static_cast<NetworkSessionsChangeListener*>(user_data);
+	try {
+		NetworkSessionsRevision revision_v(revision);
+		(*f)(std::move(revision_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_network_sessions_change(void* user_data, uint64_t revision) {
+	auto* f = static_cast<NetworkSessionsChangeListener*>(user_data);
+	try {
+		NetworkSessionsRevision revision_v(revision);
+		(*f)(std::move(revision_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -22602,6 +22968,66 @@ inline void oneshot_send_feedback(void* user_data, const char* result_json, cons
 			err_param_v = std::string(err_param);
 		}
 		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_session_operation(void* user_data, uint64_t result, const char* err_param) {
+	auto* f = static_cast<SessionOperationCallback*>(user_data);
+	try {
+		SessionOperationResult result_v(result);
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_session_operation(void* user_data, uint64_t result, const char* err_param) {
+	auto* f = static_cast<SessionOperationCallback*>(user_data);
+	try {
+		SessionOperationResult result_v(result);
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_session_sign_out(void* user_data, uint64_t p0, const char* p1) {
+	auto* f = static_cast<SessionSignOutCallback*>(user_data);
+	try {
+		SessionSignOutResult p0_v(p0);
+		std::optional<std::string> p1_v;
+		if (p1) {
+			p1_v = std::string(p1);
+		}
+		(*f)(std::move(p0_v), std::move(p1_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_session_sign_out(void* user_data, uint64_t p0, const char* p1) {
+	auto* f = static_cast<SessionSignOutCallback*>(user_data);
+	try {
+		SessionSignOutResult p0_v(p0);
+		std::optional<std::string> p1_v;
+		if (p1) {
+			p1_v = std::string(p1);
+		}
+		(*f)(std::move(p0_v), std::move(p1_v));
 	} catch (const std::exception& e) {
 		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
 	} catch (...) {
@@ -25403,6 +25829,17 @@ inline void Api::accountPreferencesUpdate(const std::optional<AccountPreferences
 	auto* callback_fn = callback ? new AccountPreferencesSetCallback(std::move(callback)) : nullptr;
 	urnet_api_account_preferences_update(handle(), account_preferences_c, callback_fn ? &detail::oneshot_account_preferences_set : nullptr, callback_fn);
 }
+inline Sub Api::addAccountSignInRequiredListener(AccountSignInRequiredListener listener) const {
+	std::shared_ptr<AccountSignInRequiredListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<AccountSignInRequiredListener>(std::move(listener));
+	}
+	Sub r(urnet_api_add_account_sign_in_required_listener(handle(), listener_fn ? &detail::retained_account_sign_in_required : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
 inline void Api::addAuth(const std::optional<AddAuthArgs>& args, AddAuthCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -25441,6 +25878,17 @@ inline Sub Api::addJwtRefreshListener(JwtRefreshListener listener) const {
 		listener_fn = std::make_shared<JwtRefreshListener>(std::move(listener));
 	}
 	Sub r(urnet_api_add_jwt_refresh_listener(handle(), listener_fn ? &detail::retained_jwt_refresh : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline Sub Api::addNetworkSessionsChangeListener(NetworkSessionsChangeListener listener) const {
+	std::shared_ptr<NetworkSessionsChangeListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<NetworkSessionsChangeListener>(std::move(listener));
+	}
+	Sub r(urnet_api_add_network_sessions_change_listener(handle(), listener_fn ? &detail::retained_network_sessions_change : nullptr, listener_fn.get()));
 	if (listener_fn) {
 		r.retain(listener_fn);
 	}
@@ -25751,6 +26199,24 @@ inline std::string Api::getByJwt() const {
 	char* r_c = urnet_api_get_by_jwt(handle());
 	return detail::takeString(r_c);
 }
+inline std::optional<ClientInfo> Api::getClientInfo() const {
+	char* r_c = urnet_api_get_client_info(handle());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientInfo>(r_s->c_str());
+}
+inline void Api::getCredentialPersistenceError() const {
+	char* err_c = nullptr;
+	bool ok = urnet_api_get_credential_persistence_error(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_api_get_credential_persistence_error failed");
+	}
+}
 inline void Api::getLeaderboard(const std::optional<GetLeaderboardArgs>& args, GetLeaderboardCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -25785,6 +26251,14 @@ inline void Api::getNetworkReliability(GetNetworkReliabilityCallback callback) c
 	auto* callback_fn = callback ? new GetNetworkReliabilityCallback(std::move(callback)) : nullptr;
 	urnet_api_get_network_reliability(handle(), callback_fn ? &detail::oneshot_get_network_reliability : nullptr, callback_fn);
 }
+inline void Api::getNetworkSessionOperation(const std::string& operation_id, SessionOperationCallback callback) const {
+	auto* callback_fn = callback ? new SessionOperationCallback(std::move(callback)) : nullptr;
+	urnet_api_get_network_session_operation(handle(), operation_id.c_str(), callback_fn ? &detail::oneshot_session_operation : nullptr, callback_fn);
+}
+inline void Api::getNetworkSessions(GetNetworkSessionsCallback callback) const {
+	auto* callback_fn = callback ? new GetNetworkSessionsCallback(std::move(callback)) : nullptr;
+	urnet_api_get_network_sessions(handle(), callback_fn ? &detail::oneshot_get_network_sessions : nullptr, callback_fn);
+}
 inline void Api::getNetworkUser(GetNetworkUserCallback callback) const {
 	auto* callback_fn = callback ? new GetNetworkUserCallback(std::move(callback)) : nullptr;
 	urnet_api_get_network_user(handle(), callback_fn ? &detail::oneshot_get_network_user : nullptr, callback_fn);
@@ -25818,6 +26292,10 @@ inline void Api::getReferralNetwork(GetReferralNetworkCallback callback) const {
 inline void Api::getTransferStats(GetTransferStatsCallback callback) const {
 	auto* callback_fn = callback ? new GetTransferStatsCallback(std::move(callback)) : nullptr;
 	urnet_api_get_transfer_stats(handle(), callback_fn ? &detail::oneshot_get_transfer_stats : nullptr, callback_fn);
+}
+inline bool Api::hasNetworkCredential() const {
+	bool r = urnet_api_has_network_credential(handle());
+	return r;
 }
 inline void Api::listApiKeys(ListApiKeysCallback callback) const {
 	auto* callback_fn = callback ? new ListApiKeysCallback(std::move(callback)) : nullptr;
@@ -25909,6 +26387,10 @@ inline void Api::onboardingOfferIssue(const std::optional<OnboardingOfferIssueAr
 	auto* callback_fn = callback ? new OnboardingOfferIssueCallback(std::move(callback)) : nullptr;
 	urnet_api_onboarding_offer_issue(handle(), args_c, callback_fn ? &detail::oneshot_onboarding_offer_issue : nullptr, callback_fn);
 }
+inline ClientSessionViewController Api::openClientSessionViewController() const {
+	ClientSessionViewController r(urnet_api_open_client_session_view_controller(handle()));
+	return r;
+}
 inline void Api::redeemBalanceCode(const std::optional<RedeemBalanceCodeArgs>& args, RedeemBalanceCodeCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -25996,6 +26478,26 @@ inline void Api::removeWallet(const std::optional<RemoveWalletArgs>& remove_wall
 inline void Api::requestJwtRefresh() const {
 	urnet_api_request_jwt_refresh(handle());
 }
+inline void Api::revokeNetworkSession(const std::optional<RevokeNetworkSessionArgs>& args, SessionOperationCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new SessionOperationCallback(std::move(callback)) : nullptr;
+	urnet_api_revoke_network_session(handle(), args_c, callback_fn ? &detail::oneshot_session_operation : nullptr, callback_fn);
+}
+inline void Api::revokeOtherNetworkSessions(const std::optional<RevokeOtherNetworkSessionsArgs>& args, SessionOperationCallback callback) const {
+	std::string args_json;
+	const char* args_c = nullptr;
+	if (args) {
+		args_json = nlohmann::json(*args).dump();
+		args_c = args_json.c_str();
+	}
+	auto* callback_fn = callback ? new SessionOperationCallback(std::move(callback)) : nullptr;
+	urnet_api_revoke_other_network_sessions(handle(), args_c, callback_fn ? &detail::oneshot_session_operation : nullptr, callback_fn);
+}
 inline void Api::sendFeedback(const std::optional<FeedbackSendArgs>& send_feedback, SendFeedbackCallback callback) const {
 	std::string send_feedback_json;
 	const char* send_feedback_c = nullptr;
@@ -26009,6 +26511,15 @@ inline void Api::sendFeedback(const std::optional<FeedbackSendArgs>& send_feedba
 inline void Api::setByJwt(const std::string& by_jwt) const {
 	urnet_api_set_by_jwt(handle(), by_jwt.c_str());
 }
+inline void Api::setClientInfo(const std::optional<ClientInfo>& info) const {
+	std::string info_json;
+	const char* info_c = nullptr;
+	if (info) {
+		info_json = nlohmann::json(*info).dump();
+		info_c = info_json.c_str();
+	}
+	urnet_api_set_client_info(handle(), info_c);
+}
 inline void Api::setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmojiTagCallback callback) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -26018,6 +26529,9 @@ inline void Api::setEmojiTag(const std::optional<SetEmojiTagArgs>& args, SetEmoj
 	}
 	auto* callback_fn = callback ? new SetEmojiTagCallback(std::move(callback)) : nullptr;
 	urnet_api_set_emoji_tag(handle(), args_c, callback_fn ? &detail::oneshot_set_emoji_tag : nullptr, callback_fn);
+}
+inline void Api::setNetworkCredentialStore(const LocalState& store) const {
+	urnet_api_set_network_credential_store(handle(), store.handle());
 }
 inline void Api::setNetworkLeaderboardPublic(const std::optional<SetNetworkRankingPublicArgs>& args, SetNetworkLeaderboardPublicCallback callback) const {
 	std::string args_json;
@@ -26058,6 +26572,10 @@ inline void Api::setPointsLeaderboardPublic(const std::optional<SetPointsLeaderb
 	}
 	auto* callback_fn = callback ? new SetPointsLeaderboardPublicCallback(std::move(callback)) : nullptr;
 	urnet_api_set_points_leaderboard_public(handle(), args_c, callback_fn ? &detail::oneshot_set_points_leaderboard_public : nullptr, callback_fn);
+}
+inline void Api::signOut(SessionSignOutCallback callback) const {
+	auto* callback_fn = callback ? new SessionSignOutCallback(std::move(callback)) : nullptr;
+	urnet_api_sign_out(handle(), callback_fn ? &detail::oneshot_session_sign_out : nullptr, callback_fn);
 }
 inline void Api::snEpoch(SnEpochCallback callback) const {
 	auto* callback_fn = callback ? new SnEpochCallback(std::move(callback)) : nullptr;
@@ -26665,6 +27183,165 @@ inline bool ClientRefreshIntegrityNotice::closeApiIfCurrent() const {
 	bool r = urnet_client_refresh_integrity_notice_close_api_if_current(handle());
 	return r;
 }
+inline ClientSessionError ClientSessionAction::getError() const {
+	ClientSessionError r(urnet_client_session_action_get_error(handle()));
+	return r;
+}
+inline bool ClientSessionAction::getLoading() const {
+	bool r = urnet_client_session_action_get_loading(handle());
+	return r;
+}
+inline std::string ClientSessionAction::getOperationId() const {
+	char* r_c = urnet_client_session_action_get_operation_id(handle());
+	return detail::takeString(r_c);
+}
+inline bool ClientSessionAction::getPending() const {
+	bool r = urnet_client_session_action_get_pending(handle());
+	return r;
+}
+inline std::string ClientSessionAction::getSessionId() const {
+	char* r_c = urnet_client_session_action_get_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ClientSessionAction::getState() const {
+	char* r_c = urnet_client_session_action_get_state(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ClientSessionAction::getStatus() const {
+	char* r_c = urnet_client_session_action_get_status(handle());
+	return detail::takeString(r_c);
+}
+inline void ClientSessionActionList::add(const ClientSessionAction& value) const {
+	urnet_client_session_action_list_add(handle(), value.handle());
+}
+inline bool ClientSessionActionList::contains(const ClientSessionAction& v) const {
+	bool r = urnet_client_session_action_list_contains(handle(), v.handle());
+	return r;
+}
+inline ClientSessionAction ClientSessionActionList::get(int64_t i) const {
+	ClientSessionAction r(urnet_client_session_action_list_get(handle(), i));
+	return r;
+}
+inline int64_t ClientSessionActionList::len() const {
+	int64_t r = urnet_client_session_action_list_len(handle());
+	return r;
+}
+inline void ClientSessionActionList::unmarshalJSON(const uint8_t* b, int32_t b_len) const {
+	char* err_c = nullptr;
+	bool ok = urnet_client_session_action_list_unmarshal_json(handle(), b, b_len, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_client_session_action_list_unmarshal_json failed");
+	}
+}
+inline std::string ClientSessionError::getMessage() const {
+	char* r_c = urnet_client_session_error_get_message(handle());
+	return detail::takeString(r_c);
+}
+inline bool ClientSessionError::getRetryable() const {
+	bool r = urnet_client_session_error_get_retryable(handle());
+	return r;
+}
+inline bool ClientSessionError::getSignInRequired() const {
+	bool r = urnet_client_session_error_get_sign_in_required(handle());
+	return r;
+}
+inline bool ClientSessionError::getUnsupported() const {
+	bool r = urnet_client_session_error_get_unsupported(handle());
+	return r;
+}
+inline ClientSessionActionList ClientSessionSnapshot::getActions() const {
+	ClientSessionActionList r(urnet_client_session_snapshot_get_actions(handle()));
+	return r;
+}
+inline ClientSessionAction ClientSessionSnapshot::getBulkAction() const {
+	ClientSessionAction r(urnet_client_session_snapshot_get_bulk_action(handle()));
+	return r;
+}
+inline std::string ClientSessionSnapshot::getCurrentSessionId() const {
+	char* r_c = urnet_client_session_snapshot_get_current_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline ClientSessionError ClientSessionSnapshot::getError() const {
+	ClientSessionError r(urnet_client_session_snapshot_get_error(handle()));
+	return r;
+}
+inline int64_t ClientSessionSnapshot::getEventId() const {
+	int64_t r = urnet_client_session_snapshot_get_event_id(handle());
+	return r;
+}
+inline std::string ClientSessionSnapshot::getGeneration() const {
+	char* r_c = urnet_client_session_snapshot_get_generation(handle());
+	return detail::takeString(r_c);
+}
+inline std::string ClientSessionSnapshot::getLegacyCoverage() const {
+	char* r_c = urnet_client_session_snapshot_get_legacy_coverage(handle());
+	return detail::takeString(r_c);
+}
+inline bool ClientSessionSnapshot::getLoaded() const {
+	bool r = urnet_client_session_snapshot_get_loaded(handle());
+	return r;
+}
+inline bool ClientSessionSnapshot::getLoading() const {
+	bool r = urnet_client_session_snapshot_get_loading(handle());
+	return r;
+}
+inline bool ClientSessionSnapshot::getRefreshing() const {
+	bool r = urnet_client_session_snapshot_get_refreshing(handle());
+	return r;
+}
+inline NetworkSessionInfoList ClientSessionSnapshot::getSessions() const {
+	NetworkSessionInfoList r(urnet_client_session_snapshot_get_sessions(handle()));
+	return r;
+}
+inline bool ClientSessionSnapshot::getSupported() const {
+	bool r = urnet_client_session_snapshot_get_supported(handle());
+	return r;
+}
+inline Sub ClientSessionViewController::addClientSessionListener(ClientSessionListener listener) const {
+	std::shared_ptr<ClientSessionListener> listener_fn;
+	if (listener) {
+		listener_fn = std::make_shared<ClientSessionListener>(std::move(listener));
+	}
+	Sub r(urnet_client_session_view_controller_add_client_session_listener(handle(), listener_fn ? &detail::retained_client_session : nullptr, listener_fn.get()));
+	if (listener_fn) {
+		r.retain(listener_fn);
+	}
+	return r;
+}
+inline void ClientSessionViewController::close() const {
+	urnet_client_session_view_controller_close(handle());
+}
+inline ClientSessionSnapshot ClientSessionViewController::getSnapshot() const {
+	ClientSessionSnapshot r(urnet_client_session_view_controller_get_snapshot(handle()));
+	return r;
+}
+inline void ClientSessionViewController::networkSessionsChanged(const NetworkSessionsRevision& revision) const {
+	urnet_client_session_view_controller_network_sessions_changed(handle(), revision.handle());
+}
+inline void ClientSessionViewController::refresh() const {
+	urnet_client_session_view_controller_refresh(handle());
+}
+inline void ClientSessionViewController::revokeOtherSessions() const {
+	urnet_client_session_view_controller_revoke_other_sessions(handle());
+}
+inline void ClientSessionViewController::revokeSession(const std::string& session_id) const {
+	urnet_client_session_view_controller_revoke_session(handle(), session_id.c_str());
+}
+inline void ClientSessionViewController::setForeground(bool foreground) const {
+	urnet_client_session_view_controller_set_foreground(handle(), foreground);
+}
+inline void ClientSessionViewController::setVisible(bool visible) const {
+	urnet_client_session_view_controller_set_visible(handle(), visible);
+}
+inline void ClientSessionViewController::start() const {
+	urnet_client_session_view_controller_start(handle());
+}
+inline void ClientSessionViewController::stop() const {
+	urnet_client_session_view_controller_stop(handle());
+}
 inline int64_t ConnectGrid::getHeight() const {
 	int64_t r = urnet_connect_grid_get_height(handle());
 	return r;
@@ -26989,11 +27666,26 @@ inline Sub DeviceLocal::addSnWalletChangeListener(SnWalletChangeListener listene
 	}
 	return r;
 }
+inline std::optional<MemoryTeardownObservation> DeviceLocal::beginMemoryTeardownObservation() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_local_begin_memory_teardown_observation(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<MemoryTeardownObservation>(r_s->c_str());
+}
 inline void DeviceLocal::clearSnWalletCache() const {
 	urnet_device_local_clear_sn_wallet_cache(handle());
 }
 inline void DeviceLocal::closeBlockActionViewController(const BlockActionViewController& vc) const {
 	urnet_device_local_close_block_action_view_controller(handle(), vc.handle());
+}
+inline void DeviceLocal::closeClientSessionViewController(const ClientSessionViewController& vc) const {
+	urnet_device_local_close_client_session_view_controller(handle(), vc.handle());
 }
 inline void DeviceLocal::closeConnectViewController(const ConnectViewController& vc) const {
 	urnet_device_local_close_connect_view_controller(handle(), vc.handle());
@@ -27240,6 +27932,10 @@ inline BlockActionViewController DeviceLocal::openBlockActionViewController() co
 }
 inline ContractDetailsViewController DeviceLocal::openClientContractDetailsViewController() const {
 	ContractDetailsViewController r(urnet_device_local_open_client_contract_details_view_controller(handle()));
+	return r;
+}
+inline ClientSessionViewController DeviceLocal::openClientSessionViewController() const {
+	ClientSessionViewController r(urnet_device_local_open_client_session_view_controller(handle()));
 	return r;
 }
 inline ConnectViewController DeviceLocal::openConnectViewController() const {
@@ -27642,6 +28338,23 @@ inline std::string DeviceLocal::tunnelLocalAddressIpv6() const {
 	char* r_c = urnet_device_local_tunnel_local_address_ipv6(handle());
 	return detail::takeString(r_c);
 }
+inline void DeviceLocal::uploadLogsWithFiles(const std::string& feedback_id, const std::optional<UploadLogsFileList>& upload_logs_files, UploadLogsCallback callback) const {
+	std::string upload_logs_files_json;
+	const char* upload_logs_files_c = nullptr;
+	if (upload_logs_files) {
+		upload_logs_files_json = nlohmann::json(*upload_logs_files).dump();
+		upload_logs_files_c = upload_logs_files_json.c_str();
+	}
+	auto* callback_fn = callback ? new UploadLogsCallback(std::move(callback)) : nullptr;
+	char* err_c = nullptr;
+	bool ok = urnet_device_local_upload_logs_with_files(handle(), feedback_id.c_str(), upload_logs_files_c, callback_fn ? &detail::oneshot_upload_logs : nullptr, callback_fn, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_device_local_upload_logs_with_files failed");
+	}
+}
 inline bool DeviceLocal::waitForClose(int64_t timeout_milliseconds) const {
 	bool r = urnet_device_local_wait_for_close(handle(), timeout_milliseconds);
 	return r;
@@ -27756,6 +28469,9 @@ inline void DeviceRemote::clearSnWalletCache() const {
 }
 inline void DeviceRemote::closeBlockActionViewController(const BlockActionViewController& vc) const {
 	urnet_device_remote_close_block_action_view_controller(handle(), vc.handle());
+}
+inline void DeviceRemote::closeClientSessionViewController(const ClientSessionViewController& vc) const {
+	urnet_device_remote_close_client_session_view_controller(handle(), vc.handle());
 }
 inline void DeviceRemote::closeConnectViewController(const ConnectViewController& vc) const {
 	urnet_device_remote_close_connect_view_controller(handle(), vc.handle());
@@ -27919,6 +28635,10 @@ inline BlockActionViewController DeviceRemote::openBlockActionViewController() c
 }
 inline ContractDetailsViewController DeviceRemote::openClientContractDetailsViewController() const {
 	ContractDetailsViewController r(urnet_device_remote_open_client_contract_details_view_controller(handle()));
+	return r;
+}
+inline ClientSessionViewController DeviceRemote::openClientSessionViewController() const {
+	ClientSessionViewController r(urnet_device_remote_open_client_session_view_controller(handle()));
 	return r;
 }
 inline ConnectViewController DeviceRemote::openConnectViewController() const {
@@ -29160,6 +29880,95 @@ inline void NetworkNameValidationViewController::start() const {
 inline void NetworkNameValidationViewController::stop() const {
 	urnet_network_name_validation_view_controller_stop(handle());
 }
+inline int64_t NetworkSessionInfo::getAcceptUntil() const {
+	int64_t r = urnet_network_session_info_get_accept_until(handle());
+	return r;
+}
+inline int64_t NetworkSessionInfo::getCreateTime() const {
+	int64_t r = urnet_network_session_info_get_create_time(handle());
+	return r;
+}
+inline bool NetworkSessionInfo::getCurrent() const {
+	bool r = urnet_network_session_info_get_current(handle());
+	return r;
+}
+inline std::string NetworkSessionInfo::getKind() const {
+	char* r_c = urnet_network_session_info_get_kind(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t NetworkSessionInfo::getLastMintTime() const {
+	int64_t r = urnet_network_session_info_get_last_mint_time(handle());
+	return r;
+}
+inline SessionLastUsed NetworkSessionInfo::getLastUsed() const {
+	SessionLastUsed r(urnet_network_session_info_get_last_used(handle()));
+	return r;
+}
+inline std::string NetworkSessionInfo::getOriginSessionId() const {
+	char* r_c = urnet_network_session_info_get_origin_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSessionInfo::getSessionId() const {
+	char* r_c = urnet_network_session_info_get_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t NetworkSessionInfo::getTokenExpireTime() const {
+	int64_t r = urnet_network_session_info_get_token_expire_time(handle());
+	return r;
+}
+inline void NetworkSessionInfoList::add(const NetworkSessionInfo& value) const {
+	urnet_network_session_info_list_add(handle(), value.handle());
+}
+inline bool NetworkSessionInfoList::contains(const NetworkSessionInfo& v) const {
+	bool r = urnet_network_session_info_list_contains(handle(), v.handle());
+	return r;
+}
+inline NetworkSessionInfo NetworkSessionInfoList::get(int64_t i) const {
+	NetworkSessionInfo r(urnet_network_session_info_list_get(handle(), i));
+	return r;
+}
+inline int64_t NetworkSessionInfoList::len() const {
+	int64_t r = urnet_network_session_info_list_len(handle());
+	return r;
+}
+inline void NetworkSessionInfoList::unmarshalJSON(const uint8_t* b, int32_t b_len) const {
+	char* err_c = nullptr;
+	bool ok = urnet_network_session_info_list_unmarshal_json(handle(), b, b_len, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_network_session_info_list_unmarshal_json failed");
+	}
+}
+inline std::string NetworkSessionsResult::getCurrentSessionId() const {
+	char* r_c = urnet_network_sessions_result_get_current_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t NetworkSessionsResult::getEventId() const {
+	int64_t r = urnet_network_sessions_result_get_event_id(handle());
+	return r;
+}
+inline std::string NetworkSessionsResult::getGeneration() const {
+	char* r_c = urnet_network_sessions_result_get_generation(handle());
+	return detail::takeString(r_c);
+}
+inline std::string NetworkSessionsResult::getLegacyCoverage() const {
+	char* r_c = urnet_network_sessions_result_get_legacy_coverage(handle());
+	return detail::takeString(r_c);
+}
+inline NetworkSessionInfoList NetworkSessionsResult::getSessions() const {
+	NetworkSessionInfoList r(urnet_network_sessions_result_get_sessions(handle()));
+	return r;
+}
+inline int64_t NetworkSessionsRevision::getEventId() const {
+	int64_t r = urnet_network_sessions_revision_get_event_id(handle());
+	return r;
+}
+inline std::string NetworkSessionsRevision::getGeneration() const {
+	char* r_c = urnet_network_sessions_revision_get_generation(handle());
+	return detail::takeString(r_c);
+}
 inline Sub NetworkSpace::addExtenderStatusChangeListener(ExtenderStatusChangeListener listener) const {
 	std::shared_ptr<ExtenderStatusChangeListener> listener_fn;
 	if (listener) {
@@ -30034,6 +30843,82 @@ inline void ReferralCodeViewController::start() const {
 }
 inline void ReferralCodeViewController::stop() const {
 	urnet_referral_code_view_controller_stop(handle());
+}
+inline std::string SessionLastUsed::getAppVersion() const {
+	char* r_c = urnet_session_last_used_get_app_version(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getCity() const {
+	char* r_c = urnet_session_last_used_get_city(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getCountry() const {
+	char* r_c = urnet_session_last_used_get_country(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getCountryCode() const {
+	char* r_c = urnet_session_last_used_get_country_code(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getDeviceType() const {
+	char* r_c = urnet_session_last_used_get_device_type(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionLastUsed::getRegion() const {
+	char* r_c = urnet_session_last_used_get_region(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t SessionLastUsed::getUnixTime() const {
+	int64_t r = urnet_session_last_used_get_unix_time(handle());
+	return r;
+}
+inline bool SessionOperationResult::getCleanupPending() const {
+	bool r = urnet_session_operation_result_get_cleanup_pending(handle());
+	return r;
+}
+inline int64_t SessionOperationResult::getEventId() const {
+	int64_t r = urnet_session_operation_result_get_event_id(handle());
+	return r;
+}
+inline std::string SessionOperationResult::getGeneration() const {
+	char* r_c = urnet_session_operation_result_get_generation(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionOperationResult::getKeptSessionId() const {
+	char* r_c = urnet_session_operation_result_get_kept_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionOperationResult::getOperationId() const {
+	char* r_c = urnet_session_operation_result_get_operation_id(handle());
+	return detail::takeString(r_c);
+}
+inline int64_t SessionOperationResult::getRevokedCount() const {
+	int64_t r = urnet_session_operation_result_get_revoked_count(handle());
+	return r;
+}
+inline std::string SessionOperationResult::getSessionId() const {
+	char* r_c = urnet_session_operation_result_get_session_id(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionOperationResult::getState() const {
+	char* r_c = urnet_session_operation_result_get_state(handle());
+	return detail::takeString(r_c);
+}
+inline std::string SessionOperationResult::getStatus() const {
+	char* r_c = urnet_session_operation_result_get_status(handle());
+	return detail::takeString(r_c);
+}
+inline bool SessionSignOutResult::getCredentialCleared() const {
+	bool r = urnet_session_sign_out_result_get_credential_cleared(handle());
+	return r;
+}
+inline std::string SessionSignOutResult::getOperationId() const {
+	char* r_c = urnet_session_sign_out_result_get_operation_id(handle());
+	return detail::takeString(r_c);
+}
+inline bool SessionSignOutResult::getRevocationConfirmed() const {
+	bool r = urnet_session_sign_out_result_get_revocation_confirmed(handle());
+	return r;
 }
 inline void Socket::close() const {
 	char* err_c = nullptr;
@@ -31053,6 +31938,14 @@ inline ClientEventQueue newClientEventQueue(const NetworkSpace& network_space, c
 	ClientEventQueue r(urnet_new_client_event_queue(network_space.handle(), platform.c_str(), app_version.c_str(), locale.c_str()));
 	return r;
 }
+inline std::optional<ClientInfo> newClientInfo(const std::string& device_type, const std::string& app_version) {
+	char* r_c = urnet_new_client_info(device_type.c_str(), app_version.c_str());
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<ClientInfo>(r_s->c_str());
+}
 inline std::optional<ClientEvent> newConnectFirstEvent() {
 	char* r_c = urnet_new_connect_first_event();
 	auto r_s = detail::takeStringOpt(r_c);
@@ -31155,24 +32048,6 @@ inline IoLoop newIoLoop(const DeviceLocal& device_local, int64_t fd, IoLoopDoneC
 inline LoginViewController newLoginViewController(const Api& api) {
 	LoginViewController r(urnet_new_login_view_controller(api.handle()));
 	return r;
-}
-inline std::optional<MessageTransport> newMessageTransport(const std::optional<MessageTransportConfig>& config) {
-	std::string config_json;
-	const char* config_c = nullptr;
-	if (config) {
-		config_json = nlohmann::json(*config).dump();
-		config_c = config_json.c_str();
-	}
-	char* err_c = nullptr;
-	char* r_c = urnet_new_message_transport(config_c, &err_c);
-	if (err_c) {
-		detail::throwError(err_c);
-	}
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<MessageTransport>(r_s->c_str());
 }
 inline NetworkNameValidationViewController newNetworkNameValidationViewController(const Api& api) {
 	NetworkNameValidationViewController r(urnet_new_network_name_validation_view_controller(api.handle()));
@@ -31383,18 +32258,6 @@ inline std::string normalizeBittensorSignature(const std::string& signature) {
 	char* r_c = urnet_normalize_bittensor_signature(signature.c_str());
 	return detail::takeString(r_c);
 }
-inline std::optional<StreamStore> openStreamStore(const std::string& dir) {
-	char* err_c = nullptr;
-	char* r_c = urnet_open_stream_store(dir.c_str(), &err_c);
-	if (err_c) {
-		detail::throwError(err_c);
-	}
-	auto r_s = detail::takeStringOpt(r_c);
-	if (!r_s) {
-		return std::nullopt;
-	}
-	return detail::parseJson<StreamStore>(r_s->c_str());
-}
 inline std::optional<ConnectedProviderLocationList> orderConnectedProviderLocations(const std::optional<ConnectedProviderLocationList>& locations) {
 	std::string locations_json;
 	const char* locations_c = nullptr;
@@ -31464,14 +32327,6 @@ inline std::string parseId(const std::string& src) {
 		detail::throwError(err_c);
 	}
 	return detail::takeString(r_c);
-}
-inline int64_t parseMessageRouteMode(const std::string& value) {
-	char* err_c = nullptr;
-	int64_t r = urnet_parse_message_route_mode(value.c_str(), &err_c);
-	if (err_c) {
-		detail::throwError(err_c);
-	}
-	return r;
 }
 inline std::optional<VlessLinkResult> parseVlessLink(const std::string& link) {
 	char* r_c = urnet_parse_vless_link(link.c_str());

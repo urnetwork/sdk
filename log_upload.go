@@ -12,6 +12,12 @@ package sdk
 // legacy single directory (SetLogDir) it holds that directory's files under
 // their bare names, as it always did.
 //
+// A process that logs outside the log root rides along as open files instead
+// (UploadLogsFile, DeviceLocal.UploadLogsWithFiles): on windows and linux the
+// app (gui) and the service (urnetworkd) are separate processes with separate
+// log directories, and the service, which carries the upload, adds the app's
+// files under the app's own folder of the one zip.
+//
 // The files are the newest that fit a cap below the server's, so the upload is
 // never one the server drops for its size. Only glog files are read, never the
 // symlinks glog keeps beside them or anything else in the directories.
@@ -24,6 +30,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/urnetwork/connect"
 )
@@ -48,26 +55,221 @@ const uploadLogsMaxByteCount = int64(96 * 1024 * 1024)
 // the number of files.
 const uploadLogsEntryByteCount = int64(1024)
 
+// Bounds the files of other processes one upload considers. A process's log
+// directory holds a handful of glog files (retention keeps 4 at a start, and a
+// long run adds one per 16 MiB), so this only stops a caller that hands over
+// far more descriptors than any log directory holds.
+const uploadLogsMaxOpenFileCount = 64
+
+// Bounds the length of a folder name (UploadLogsFile.Source).
+const uploadLogsMaxSourceLength = 32
+
+// A log file of another process that an upload from this process carries in
+// its zip as <Source>/<Name>, beside this process's own logs.
+//
+// On windows and linux the app (the gui) and the service (urnetworkd) are
+// separate processes, each with its own log directory, and the service carries
+// "send feedback with logs": it has a device when none is connected and a
+// network path under the kill switch. The server keeps one zip per feedback
+// and admits one upload per network per 5 minutes, so the app's logs can reach
+// support only inside the service's zip.
+//
+// The file is handed over open, never by path. The service runs as LocalSystem
+// or root and the app as the signed-in user, and the service answers any local
+// user, so a path from the app would let a user have the service read files the
+// user cannot. Instead the file is opened with the rights of the process that
+// wrote it (on linux the gui opens it and passes the descriptor over the
+// control socket, on windows the service opens it while impersonating the app's
+// pipe client), and the upload reads it only through that descriptor. It takes
+// only a regular file with a glog name, and never more than the planned size.
+//
+// The upload borrows the descriptor for the call (DeviceLocal.UploadLogsWithFiles):
+// it reads a duplicate that it closes itself before the call returns, and
+// FileDescriptor stays open and the caller's to close.
+type UploadLogsFile struct {
+	// the folder of the process that wrote the file, such as "app" or "gui":
+	// lowercase letters, digits and dashes, starting with a letter
+	Source string
+	// the file's glog name, its entry in the folder
+	Name string
+	// the open file: a file descriptor on unix, a handle on windows
+	FileDescriptor int64
+}
+
+type UploadLogsFileList struct {
+	exportedList[*UploadLogsFile]
+}
+
+func NewUploadLogsFileList() *UploadLogsFileList {
+	return &UploadLogsFileList{
+		exportedList: *newExportedList[*UploadLogsFile](),
+	}
+}
+
 // What one upload from this process sends.
 type uploadLogsPlan struct {
 	// the log files in the upload, newest first
 	logFileInfos []*LogFileInfo
-	// true when the files come from the per-process directories under a log
-	// root and are zipped as <source>/<name>. Under the legacy single directory
-	// they keep the bare names they were always zipped under.
+	// true when this process's files come from the per-process directories
+	// under a log root and are zipped as <source>/<name>. Under the legacy
+	// single directory they keep the bare names they were always zipped under.
 	perProcess bool
+	// the files of other processes in the plan (UploadLogsFile), each read
+	// through its own duplicate of the caller's descriptor and zipped as
+	// <source>/<name>, by the info that plans it. close closes them.
+	logFileInfoOpenFiles map[*LogFileInfo]*uploadLogsOpenFile
+}
+
+// A file of another process in a plan: the duplicate the upload reads, and
+// what it was when planned.
+type uploadLogsOpenFile struct {
+	file     *os.File
+	fileInfo os.FileInfo
 }
 
 // Picks the glog files an upload from this process sends: those of every
-// process under the log root, else those in this process's log directory.
-// Symlinks and files glog did not name are never in it (logInventory).
-func newUploadLogsPlan(maxByteCount int64) *uploadLogsPlan {
+// process under the log root, else those in this process's log directory,
+// with the open files of other processes (uploadLogsFiles). Symlinks and files
+// glog did not name are never in it (logInventory, openUploadLogsFiles). The
+// plan holds duplicates of the descriptors it took; close it when done.
+func newUploadLogsPlan(maxByteCount int64, uploadLogsFiles []*UploadLogsFile, log connect.Logger) *uploadLogsPlan {
 	perProcess := GetLogRoot() != ""
-	inventory, _, _ := logInventory()
-	return &uploadLogsPlan{
-		logFileInfos: selectUploadLogFiles(inventory.getAll(), maxByteCount, uploadLogsEntryByteCount),
-		perProcess:   perProcess,
+	inventory, _, sourceRoots := logInventory()
+
+	ownSources := map[string]bool{}
+	if perProcess {
+		for source := range sourceRoots {
+			ownSources[source] = true
+		}
 	}
+	openLogFileInfos, logFileInfoOpenFiles := openUploadLogsFiles(uploadLogsFiles, ownSources, log)
+
+	logFileInfos := append(inventory.getAll(), openLogFileInfos...)
+	selectedLogFileInfos := selectUploadLogFiles(logFileInfos, maxByteCount, uploadLogsEntryByteCount)
+
+	// the duplicates of files that did not fit are closed now
+	for logFileInfo, openFile := range logFileInfoOpenFiles {
+		if !slices.Contains(selectedLogFileInfos, logFileInfo) {
+			openFile.file.Close()
+			delete(logFileInfoOpenFiles, logFileInfo)
+		}
+	}
+
+	return &uploadLogsPlan{
+		logFileInfos:         selectedLogFileInfos,
+		perProcess:           perProcess,
+		logFileInfoOpenFiles: logFileInfoOpenFiles,
+	}
+}
+
+// Takes the files of other processes an upload may carry, in the given order,
+// and returns them planned (Path is empty: they are read only through their
+// duplicates) with the duplicate opened for each.
+//
+// A file is left out, with a line in this process's log, when its folder is not
+// a plain name or is the folder of a process under the log root (ownSources),
+// when its name is not one glog writes or repeats one already taken, when its
+// descriptor cannot be duplicated, or when it is not a regular file (a
+// directory, a pipe, a socket, a device). One bad file never fails the upload:
+// this process's own logs, which support reads first, still go.
+func openUploadLogsFiles(uploadLogsFiles []*UploadLogsFile, ownSources map[string]bool, log connect.Logger) ([]*LogFileInfo, map[*LogFileInfo]*uploadLogsOpenFile) {
+	logFileInfos := []*LogFileInfo{}
+	logFileInfoOpenFiles := map[*LogFileInfo]*uploadLogsOpenFile{}
+	zipNames := map[string]bool{}
+	for _, uploadLogsFile := range uploadLogsFiles {
+		if uploadLogsFile == nil {
+			continue
+		}
+		if uploadLogsMaxOpenFileCount <= len(logFileInfos) {
+			log.Infof("[log]upload leaves out the files of other processes past the first %d", uploadLogsMaxOpenFileCount)
+			break
+		}
+		if !isUploadLogsSource(uploadLogsFile.Source) {
+			log.Infof("[log]upload leaves out a file of folder %q: not a folder name", uploadLogsFile.Source)
+			continue
+		}
+		if ownSources[uploadLogsFile.Source] {
+			log.Infof("[log]upload leaves out a file of folder %q: the folder of a process under the log root", uploadLogsFile.Source)
+			continue
+		}
+		if !isUploadLogsFileName(uploadLogsFile.Name) {
+			log.Infof("[log]upload leaves out a file of folder %q: not a glog file name", uploadLogsFile.Source)
+			continue
+		}
+		zipName := uploadLogsFile.Source + "/" + uploadLogsFile.Name
+		if zipNames[zipName] {
+			log.Infof("[log]upload leaves out a second %q", zipName)
+			continue
+		}
+		file, err := openUploadLogsFileDuplicate(uploadLogsFile.FileDescriptor, zipName)
+		if err != nil {
+			log.Infof("[log]upload leaves out %q: %v", zipName, err)
+			continue
+		}
+		fileInfo, err := file.Stat()
+		if err != nil {
+			file.Close()
+			log.Infof("[log]upload leaves out %q: %v", zipName, err)
+			continue
+		}
+		if !fileInfo.Mode().IsRegular() {
+			file.Close()
+			log.Infof("[log]upload leaves out %q: not a regular file (%v)", zipName, fileInfo.Mode().Type())
+			continue
+		}
+		zipNames[zipName] = true
+		logFileInfo := &LogFileInfo{
+			Name:           uploadLogsFile.Name,
+			Source:         uploadLogsFile.Source,
+			Severity:       logSeverityOf(uploadLogsFile.Name),
+			ByteCount:      fileInfo.Size(),
+			ModifiedMillis: fileInfo.ModTime().UnixMilli(),
+		}
+		logFileInfos = append(logFileInfos, logFileInfo)
+		logFileInfoOpenFiles[logFileInfo] = &uploadLogsOpenFile{
+			file:     file,
+			fileInfo: fileInfo,
+		}
+	}
+	return logFileInfos, logFileInfoOpenFiles
+}
+
+// A folder name for the files of another process: a lowercase letter, then
+// lowercase letters, digits and dashes. It is one path segment of the zip, so
+// it can never climb out of the zip or into another process's folder by name.
+func isUploadLogsSource(source string) bool {
+	if source == "" || uploadLogsMaxSourceLength < len(source) {
+		return false
+	}
+	for i, c := range source {
+		switch {
+		case 'a' <= c && c <= 'z':
+		case 0 < i && '0' <= c && c <= '9':
+		case 0 < i && c == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// A name glog writes (<program>.<host>.<user>.log.<SEVERITY>.<time>.<pid>),
+// usable as one zip entry: valid utf-8 of at most 255 bytes, with no path
+// separator, no control character and no leading dot. The name comes from the
+// process that wrote the file, so it is checked before it names an entry.
+func isUploadLogsFileName(name string) bool {
+	if name == "" || 255 < len(name) || !utf8.ValidString(name) {
+		return false
+	}
+	if strings.HasPrefix(name, ".") || logSeverityOf(name) == "" {
+		return false
+	}
+	for _, c := range name {
+		if c < 0x20 || c == 0x7f || c == '/' || c == '\\' || c == ':' {
+			return false
+		}
+	}
+	return true
 }
 
 // Takes files newest first while their sizes, each plus entryByteCount, fit in
@@ -101,7 +303,7 @@ func selectUploadLogFiles(logFileInfos []*LogFileInfo, maxByteCount int64, entry
 
 // A file's entry in the zip.
 func (self *uploadLogsPlan) zipName(logFileInfo *LogFileInfo) string {
-	if self.perProcess {
+	if _, ok := self.logFileInfoOpenFiles[logFileInfo]; ok || self.perProcess {
 		return logFileInfo.Source + "/" + logFileInfo.Name
 	}
 	return logFileInfo.Name
@@ -112,11 +314,28 @@ func (self *uploadLogsPlan) zipName(logFileInfo *LogFileInfo) string {
 // Each file is copied only up to the size it was planned at: the live file of a
 // running process keeps growing while it is zipped, and the plan is what keeps
 // the upload under the cap. A file that is gone by now (a process pruned or
-// rotated it) is left out. Failing to write the zip is an error.
+// rotated it) is left out. A file of another process is read through its
+// duplicate, never opened by a path. Failing to write the zip is an error.
 func (self *uploadLogsPlan) writeZip(w io.Writer, log connect.Logger) (int, error) {
 	fileCount := 0
 	zipWriter := zip.NewWriter(w)
 	for _, logFileInfo := range self.logFileInfos {
+		if openFile, ok := self.logFileInfoOpenFiles[logFileInfo]; ok {
+			err := zipWriteEntry(
+				zipWriter,
+				self.zipName(logFileInfo),
+				io.NewSectionReader(openFile.file, 0, logFileInfo.ByteCount),
+				openFile.fileInfo,
+				nil,
+			)
+			if err != nil {
+				zipWriter.Close()
+				return fileCount, err
+			}
+			fileCount += 1
+			continue
+		}
+
 		logFile, err := os.Open(logFileInfo.Path)
 		if err != nil {
 			log.Infof("[log]upload leaves out %q: %v", self.zipName(logFileInfo), err)
@@ -148,6 +367,15 @@ func (self *uploadLogsPlan) writeZip(w io.Writer, log connect.Logger) (int, erro
 	return fileCount, nil
 }
 
+// Closes the duplicates of the other processes' files. The caller's descriptors
+// stay open.
+func (self *uploadLogsPlan) close() {
+	for logFileInfo, openFile := range self.logFileInfoOpenFiles {
+		openFile.file.Close()
+		delete(self.logFileInfoOpenFiles, logFileInfo)
+	}
+}
+
 // Lists the log files an upload from this process (Api.UploadLogs, or
 // Device.UploadLogs where the device runs in this process) would send now,
 // newest first: the glog files of every process under the log root, else those
@@ -155,19 +383,22 @@ func (self *uploadLogsPlan) writeZip(w io.Writer, log connect.Logger) (int, erro
 // cap.
 func UploadLogsInventory() *LogFileInfoList {
 	inventory := NewLogFileInfoList()
-	inventory.addAll(newUploadLogsPlan(uploadLogsMaxByteCount).logFileInfos...)
+	inventory.addAll(newUploadLogsPlan(uploadLogsMaxByteCount, nil, connect.DefaultLogger()).logFileInfos...)
 	return inventory
 }
 
-// Zips what an upload from this process sends into a new file in this
-// process's log directory, and returns its path.
+// Zips what an upload from this process sends, with the files of other
+// processes (uploadLogsFiles), into a new file in this process's log
+// directory, and returns its path. The other processes' files are read before
+// this returns, and their descriptors are left open.
 //
 // It flushes glog first: glog buffers its file writes and flushes them only
 // every 30 seconds, so the newest lines, such as an app line written with
 // LogAppInfo just before the user sent feedback, would otherwise be missing.
 // It flushes this process only. A process whose logs share the root flushes its
-// own before it asks this one to upload (DeviceRemote.UploadLogs).
-func zipUploadLogs(maxByteCount int64, log connect.Logger) (string, error) {
+// own before it asks this one to upload (DeviceRemote.UploadLogs), and a
+// process that hands over its files flushes before it opens them.
+func zipUploadLogs(maxByteCount int64, uploadLogsFiles []*UploadLogsFile, log connect.Logger) (string, error) {
 	FlushGlog()
 
 	logDir := GetLogDir()
@@ -175,7 +406,8 @@ func zipUploadLogs(maxByteCount int64, log connect.Logger) (string, error) {
 		return "", fmt.Errorf("no log directory")
 	}
 
-	plan := newUploadLogsPlan(maxByteCount)
+	plan := newUploadLogsPlan(maxByteCount, uploadLogsFiles, log)
+	defer plan.close()
 
 	// a unique name, so that two uploads never write one file
 	zipFile, err := os.CreateTemp(logDir, "logs-*.zip")
@@ -192,16 +424,18 @@ func zipUploadLogs(maxByteCount int64, log connect.Logger) (string, error) {
 		os.Remove(zipPath)
 		return "", err
 	}
-	log.Infof("[log]upload zipped %d of %d planned log files", fileCount, len(plan.logFileInfos))
+	log.Infof("[log]upload zipped %d of %d planned log files (%d of other processes)", fileCount, len(plan.logFileInfos), len(plan.logFileInfoOpenFiles))
 	return zipPath, nil
 }
 
-// Zips what an upload from this process sends and posts it through api to the
-// feedback with feedbackId. The zip is built before this returns. The post runs
-// in the background, callback (when not nil) gets its result, and the zip is
-// removed when the post is done.
-func uploadLogs(api *Api, log connect.Logger, feedbackId string, callback UploadLogsCallback) error {
-	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, log)
+// Zips what an upload from this process sends, with the files of other
+// processes (uploadLogsFiles), and posts it through api to the feedback with
+// feedbackId. The zip is built before this returns, so the other processes'
+// descriptors are no longer needed then. The post runs in the background,
+// callback (when not nil) gets its result, and the zip is removed when the post
+// is done.
+func uploadLogs(api *Api, log connect.Logger, feedbackId string, uploadLogsFiles []*UploadLogsFile, callback UploadLogsCallback) error {
+	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, uploadLogsFiles, log)
 	if err != nil {
 		log.Errorf("Failed to zip the log files: %v", err)
 		return err
@@ -250,5 +484,5 @@ func uploadLogs(api *Api, log connect.Logger, feedbackId string, callback Upload
 // call it off the ui thread. The post runs in the background, and callback,
 // when not nil, gets its result.
 func (self *Api) UploadLogs(feedbackId string, callback UploadLogsCallback) error {
-	return uploadLogs(self, self.logger(), feedbackId, callback)
+	return uploadLogs(self, self.logger(), feedbackId, nil, callback)
 }

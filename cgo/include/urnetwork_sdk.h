@@ -276,8 +276,6 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_VERBOSE 1
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
-#define URNET_MESSAGE_ROUTE_DIRECT 1
-#define URNET_MESSAGE_ROUTE_URNETWORK 0
 #define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
 #define URNET_OFFER_DECLINE_CONTROL_BACK "back"
 #define URNET_OFFER_DECLINE_CONTROL_FREE_PLAN_LINK "free_plan_link"
@@ -473,6 +471,8 @@ typedef void (*urnet_account_epochs_cb)(void* user_data, const char* result_json
 typedef void (*urnet_account_preferences_get_cb)(void* user_data, const char* result_json, const char* err_param);
 /* AccountPreferencesSetCallback */
 typedef void (*urnet_account_preferences_set_cb)(void* user_data, const char* result_json, const char* err_param);
+/* AccountSignInRequiredListener */
+typedef void (*urnet_account_sign_in_required_cb)(void* user_data);
 /* AccountWalletsListener */
 typedef void (*urnet_account_wallets_cb)(void* user_data);
 /* ActiveNetworkSpaceChangeListener */
@@ -533,6 +533,8 @@ typedef void (*urnet_client_events_send_cb)(void* user_data, const char* result_
 typedef void (*urnet_client_limit_status_change_cb)(void* user_data, const char* status_json);
 /* ClientRefreshIntegrityListener */
 typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t notice);
+/* ClientSessionListener */
+typedef void (*urnet_client_session_cb)(void* user_data, uint64_t snapshot);
 /* CommitCallback */
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 /* ConnectChangeListener */
@@ -615,6 +617,8 @@ typedef void (*urnet_get_network_redeemed_balance_codes_cb)(void* user_data, con
 typedef void (*urnet_get_network_referral_code_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetNetworkReliabilityCallback */
 typedef void (*urnet_get_network_reliability_cb)(void* user_data, const char* result_json, const char* err_param);
+/* GetNetworkSessionsCallback */
+typedef void (*urnet_get_network_sessions_cb)(void* user_data, uint64_t result, const char* err_param);
 /* GetNetworkUserCallback */
 typedef void (*urnet_get_network_user_cb)(void* user_data, const char* result_json, const char* err_param);
 /* GetPayoutWalletCallback */
@@ -659,6 +663,8 @@ typedef void (*urnet_network_create_cb)(void* user_data, const char* result_json
 typedef void (*urnet_network_delete_cb)(void* user_data, const char* result_json, const char* err_param);
 /* NetworkPeersChangeListener */
 typedef void (*urnet_network_peers_change_cb)(void* user_data, const char* network_peers_json);
+/* NetworkSessionsChangeListener */
+typedef void (*urnet_network_sessions_change_cb)(void* user_data, uint64_t revision);
 /* NetworkSpaceUpdate */
 typedef void (*urnet_network_space_update_cb)(void* user_data, const char* values_json);
 /* NetworkSpacesChangeListener */
@@ -751,6 +757,10 @@ typedef void (*urnet_selected_location_cb)(void* user_data, const char* location
 typedef void (*urnet_selected_provider_location_change_cb)(void* user_data);
 /* SendFeedbackCallback */
 typedef void (*urnet_send_feedback_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SessionOperationCallback */
+typedef void (*urnet_session_operation_cb)(void* user_data, uint64_t result, const char* err_param);
+/* SessionSignOutCallback */
+typedef void (*urnet_session_sign_out_cb)(void* user_data, uint64_t p0, const char* p1);
 /* SetEmojiTagCallback */
 typedef void (*urnet_set_emoji_tag_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SetNetworkLeaderboardPublicCallback */
@@ -878,10 +888,12 @@ void urnet_account_view_controller_wallet_validate_address(uint64_t self, const 
 void urnet_api_account_epochs(uint64_t self, urnet_account_epochs_cb callback_result, void* callback_user_data);
 void urnet_api_account_preferences_get(uint64_t self, urnet_account_preferences_get_cb callback_result, void* callback_user_data);
 void urnet_api_account_preferences_update(uint64_t self, const char* account_preferences_json, urnet_account_preferences_set_cb callback_result, void* callback_user_data);
+uint64_t urnet_api_add_account_sign_in_required_listener(uint64_t self, urnet_account_sign_in_required_cb listener_account_sign_in_required, void* listener_user_data);
 void urnet_api_add_auth(uint64_t self, const char* args_json, urnet_add_auth_cb callback_result, void* callback_user_data);
 uint64_t urnet_api_add_auth_logout_listener(uint64_t self, urnet_auth_logout_cb listener_auth_logout, void* listener_user_data);
 uint64_t urnet_api_add_client_refresh_integrity_listener(uint64_t self, urnet_client_refresh_integrity_cb listener_client_refresh_invalid, void* listener_user_data);
 uint64_t urnet_api_add_jwt_refresh_listener(uint64_t self, urnet_jwt_refresh_cb listener_jwt_refreshed, void* listener_user_data);
+uint64_t urnet_api_add_network_sessions_change_listener(uint64_t self, urnet_network_sessions_change_cb listener_network_sessions_changed, void* listener_user_data);
 void urnet_api_auth_code_create(uint64_t self, const char* code_create_args_json, urnet_auth_code_create_cb callback_result, void* callback_user_data);
 void urnet_api_auth_code_login(uint64_t self, const char* args_json, urnet_auth_code_login_cb callback_result, void* callback_user_data);
 void urnet_api_auth_login(uint64_t self, const char* auth_login_json, urnet_auth_login_cb callback_result, void* callback_user_data);
@@ -914,6 +926,8 @@ void urnet_api_get_account_payments(uint64_t self, urnet_get_account_payments_cb
 void urnet_api_get_account_points(uint64_t self, urnet_get_account_points_cb callback_result, void* callback_user_data);
 void urnet_api_get_account_wallets(uint64_t self, urnet_get_account_wallets_cb callback_result, void* callback_user_data);
 char* urnet_api_get_by_jwt(uint64_t self);
+char* urnet_api_get_client_info(uint64_t self);
+bool urnet_api_get_credential_persistence_error(uint64_t self, char** out_error);
 void urnet_api_get_leaderboard(uint64_t self, const char* args_json, urnet_get_leaderboard_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_blocked_locations(uint64_t self, urnet_get_network_blocked_locations_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_clients(uint64_t self, urnet_get_network_clients_cb callback_result, void* callback_user_data);
@@ -921,6 +935,8 @@ void urnet_api_get_network_leaderboard_ranking(uint64_t self, urnet_get_network_
 void urnet_api_get_network_redeemed_balance_codes(uint64_t self, urnet_get_network_redeemed_balance_codes_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_referral_code(uint64_t self, urnet_get_network_referral_code_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_reliability(uint64_t self, urnet_get_network_reliability_cb callback_result, void* callback_user_data);
+void urnet_api_get_network_session_operation(uint64_t self, const char* operation_id, urnet_session_operation_cb callback_result, void* callback_user_data);
+void urnet_api_get_network_sessions(uint64_t self, urnet_get_network_sessions_cb callback_result, void* callback_user_data);
 void urnet_api_get_network_user(uint64_t self, urnet_get_network_user_cb callback_result, void* callback_user_data);
 void urnet_api_get_payout_wallet(uint64_t self, urnet_get_payout_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_get_points_leaderboard(uint64_t self, const char* args_json, urnet_get_points_leaderboard_cb callback_result, void* callback_user_data);
@@ -928,6 +944,7 @@ void urnet_api_get_provider_locations(uint64_t self, urnet_find_locations_cb cal
 void urnet_api_get_provider_status(uint64_t self, urnet_get_provider_status_cb callback_result, void* callback_user_data);
 void urnet_api_get_referral_network(uint64_t self, urnet_get_referral_network_cb callback_result, void* callback_user_data);
 void urnet_api_get_transfer_stats(uint64_t self, urnet_get_transfer_stats_cb callback_result, void* callback_user_data);
+bool urnet_api_has_network_credential(uint64_t self);
 void urnet_api_list_api_keys(uint64_t self, urnet_list_api_keys_cb callback_result, void* callback_user_data);
 void urnet_api_network_block_location(uint64_t self, const char* args_json, urnet_network_block_location_cb callback_result, void* callback_user_data);
 void urnet_api_network_check(uint64_t self, const char* network_check_json, urnet_network_check_cb callback_result, void* callback_user_data);
@@ -939,6 +956,7 @@ void urnet_api_network_user_update(uint64_t self, const char* update_network_use
 void urnet_api_onboarding_click(uint64_t self, const char* args_json, urnet_onboarding_click_cb callback_result, void* callback_user_data);
 void urnet_api_onboarding_feedback_token(uint64_t self, const char* token, int64_t rating, const char* reason, urnet_onboarding_feedback_token_cb callback_result, void* callback_user_data);
 void urnet_api_onboarding_offer_issue(uint64_t self, const char* args_json, urnet_onboarding_offer_issue_cb callback_result, void* callback_user_data);
+uint64_t urnet_api_open_client_session_view_controller(uint64_t self);
 void urnet_api_redeem_balance_code(uint64_t self, const char* args_json, urnet_redeem_balance_code_cb callback_result, void* callback_user_data);
 void urnet_api_refresh_jwt(uint64_t self, urnet_refresh_jwt_cb callback_result, void* callback_user_data);
 char* urnet_api_refresh_jwt_sync(uint64_t self, char** out_error);
@@ -948,13 +966,18 @@ void urnet_api_remove_network_client(uint64_t self, const char* args_json, urnet
 char* urnet_api_remove_network_client_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_remove_wallet(uint64_t self, const char* remove_wallet_json, urnet_remove_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_request_jwt_refresh(uint64_t self);
+void urnet_api_revoke_network_session(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
+void urnet_api_revoke_other_network_sessions(uint64_t self, const char* args_json, urnet_session_operation_cb callback_result, void* callback_user_data);
 void urnet_api_send_feedback(uint64_t self, const char* send_feedback_json, urnet_send_feedback_cb callback_result, void* callback_user_data);
 void urnet_api_set_by_jwt(uint64_t self, const char* by_jwt);
+void urnet_api_set_client_info(uint64_t self, const char* info_json);
 void urnet_api_set_emoji_tag(uint64_t self, const char* args_json, urnet_set_emoji_tag_cb callback_result, void* callback_user_data);
+void urnet_api_set_network_credential_store(uint64_t self, uint64_t store);
 void urnet_api_set_network_leaderboard_public(uint64_t self, const char* args_json, urnet_set_network_leaderboard_public_cb callback_result, void* callback_user_data);
 void urnet_api_set_network_referral(uint64_t self, const char* args_json, urnet_set_network_referral_cb callback_result, void* callback_user_data);
 void urnet_api_set_payout_wallet(uint64_t self, const char* payout_wallet_json, urnet_set_payout_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_set_points_leaderboard_public(uint64_t self, const char* args_json, urnet_set_points_leaderboard_public_cb callback_result, void* callback_user_data);
+void urnet_api_sign_out(uint64_t self, urnet_session_sign_out_cb callback_result, void* callback_user_data);
 void urnet_api_sn_epoch(uint64_t self, urnet_sn_epoch_cb callback_result, void* callback_user_data);
 char* urnet_api_sn_epoch_sync(uint64_t self, char** out_error);
 void urnet_api_sn_get_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
@@ -1056,6 +1079,60 @@ void urnet_client_event_queue_set_locale(uint64_t self, const char* locale);
 /* ----- ClientRefreshIntegrityNotice ----- */
 
 bool urnet_client_refresh_integrity_notice_close_api_if_current(uint64_t self);
+
+/* ----- ClientSessionAction ----- */
+
+uint64_t urnet_client_session_action_get_error(uint64_t self);
+bool urnet_client_session_action_get_loading(uint64_t self);
+char* urnet_client_session_action_get_operation_id(uint64_t self);
+bool urnet_client_session_action_get_pending(uint64_t self);
+char* urnet_client_session_action_get_session_id(uint64_t self);
+char* urnet_client_session_action_get_state(uint64_t self);
+char* urnet_client_session_action_get_status(uint64_t self);
+
+/* ----- ClientSessionActionList ----- */
+
+void urnet_client_session_action_list_add(uint64_t self, uint64_t value);
+bool urnet_client_session_action_list_contains(uint64_t self, uint64_t v);
+uint64_t urnet_client_session_action_list_get(uint64_t self, int64_t i);
+int64_t urnet_client_session_action_list_len(uint64_t self);
+bool urnet_client_session_action_list_unmarshal_json(uint64_t self, const uint8_t* b, int32_t b_len, char** out_error);
+
+/* ----- ClientSessionError ----- */
+
+char* urnet_client_session_error_get_message(uint64_t self);
+bool urnet_client_session_error_get_retryable(uint64_t self);
+bool urnet_client_session_error_get_sign_in_required(uint64_t self);
+bool urnet_client_session_error_get_unsupported(uint64_t self);
+
+/* ----- ClientSessionSnapshot ----- */
+
+uint64_t urnet_client_session_snapshot_get_actions(uint64_t self);
+uint64_t urnet_client_session_snapshot_get_bulk_action(uint64_t self);
+char* urnet_client_session_snapshot_get_current_session_id(uint64_t self);
+uint64_t urnet_client_session_snapshot_get_error(uint64_t self);
+int64_t urnet_client_session_snapshot_get_event_id(uint64_t self);
+char* urnet_client_session_snapshot_get_generation(uint64_t self);
+char* urnet_client_session_snapshot_get_legacy_coverage(uint64_t self);
+bool urnet_client_session_snapshot_get_loaded(uint64_t self);
+bool urnet_client_session_snapshot_get_loading(uint64_t self);
+bool urnet_client_session_snapshot_get_refreshing(uint64_t self);
+uint64_t urnet_client_session_snapshot_get_sessions(uint64_t self);
+bool urnet_client_session_snapshot_get_supported(uint64_t self);
+
+/* ----- ClientSessionViewController ----- */
+
+uint64_t urnet_client_session_view_controller_add_client_session_listener(uint64_t self, urnet_client_session_cb listener_client_sessions_changed, void* listener_user_data);
+void urnet_client_session_view_controller_close(uint64_t self);
+uint64_t urnet_client_session_view_controller_get_snapshot(uint64_t self);
+void urnet_client_session_view_controller_network_sessions_changed(uint64_t self, uint64_t revision);
+void urnet_client_session_view_controller_refresh(uint64_t self);
+void urnet_client_session_view_controller_revoke_other_sessions(uint64_t self);
+void urnet_client_session_view_controller_revoke_session(uint64_t self, const char* session_id);
+void urnet_client_session_view_controller_set_foreground(uint64_t self, bool foreground);
+void urnet_client_session_view_controller_set_visible(uint64_t self, bool visible);
+void urnet_client_session_view_controller_start(uint64_t self);
+void urnet_client_session_view_controller_stop(uint64_t self);
 
 /* ----- ConnectGrid ----- */
 
@@ -1270,8 +1347,10 @@ uint64_t urnet_device_local_add_receive_packet(uint64_t self, urnet_receive_pack
 uint64_t urnet_device_local_add_receive_packet_batch(uint64_t self, urnet_receive_packet_batch_cb receive_packet_batch_receive_packet_batch, void* receive_packet_batch_user_data);
 uint64_t urnet_device_local_add_receive_packets(uint64_t self, urnet_receive_packets_cb receive_packets_receive_packets, void* receive_packets_user_data);
 uint64_t urnet_device_local_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);
+char* urnet_device_local_begin_memory_teardown_observation(uint64_t self, char** out_error);
 void urnet_device_local_clear_sn_wallet_cache(uint64_t self);
 void urnet_device_local_close_block_action_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_local_close_client_session_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_connect_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_contract_details_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_local_close_contract_view_controller(uint64_t self, uint64_t vc);
@@ -1319,6 +1398,7 @@ uint64_t urnet_device_local_open_account_preferences_view_controller(uint64_t se
 uint64_t urnet_device_local_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_block_action_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_client_contract_details_view_controller(uint64_t self);
+uint64_t urnet_device_local_open_client_session_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_local_open_contract_view_controller(uint64_t self);
@@ -1386,6 +1466,7 @@ char* urnet_device_local_tunnel_dns_addresses_ipv6(uint64_t self);
 char* urnet_device_local_tunnel_dns_setting(uint64_t self);
 char* urnet_device_local_tunnel_local_address(uint64_t self);
 char* urnet_device_local_tunnel_local_address_ipv6(uint64_t self);
+bool urnet_device_local_upload_logs_with_files(uint64_t self, const char* feedback_id, const char* upload_logs_files_json, urnet_upload_logs_cb callback_result, void* callback_user_data, char** out_error);
 bool urnet_device_local_wait_for_close(uint64_t self, int64_t timeout_milliseconds);
 bool urnet_device_local_write_memory_owner_census(uint64_t self, const char* path, char** out_error);
 
@@ -1419,6 +1500,7 @@ uint64_t urnet_device_remote_add_remote_change_listener(uint64_t self, urnet_rem
 uint64_t urnet_device_remote_add_sn_wallet_change_listener(uint64_t self, urnet_sn_wallet_change_cb listener_sn_wallet_changed, void* listener_user_data);
 void urnet_device_remote_clear_sn_wallet_cache(uint64_t self);
 void urnet_device_remote_close_block_action_view_controller(uint64_t self, uint64_t vc);
+void urnet_device_remote_close_client_session_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_connect_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_contract_details_view_controller(uint64_t self, uint64_t vc);
 void urnet_device_remote_close_contract_view_controller(uint64_t self, uint64_t vc);
@@ -1451,6 +1533,7 @@ uint64_t urnet_device_remote_open_account_preferences_view_controller(uint64_t s
 uint64_t urnet_device_remote_open_account_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_block_action_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_client_contract_details_view_controller(uint64_t self);
+uint64_t urnet_device_remote_open_client_session_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_connect_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_details_view_controller(uint64_t self);
 uint64_t urnet_device_remote_open_contract_view_controller(uint64_t self);
@@ -1669,6 +1752,39 @@ void urnet_network_name_validation_view_controller_network_check(uint64_t self, 
 void urnet_network_name_validation_view_controller_start(uint64_t self);
 void urnet_network_name_validation_view_controller_stop(uint64_t self);
 
+/* ----- NetworkSessionInfo ----- */
+
+int64_t urnet_network_session_info_get_accept_until(uint64_t self);
+int64_t urnet_network_session_info_get_create_time(uint64_t self);
+bool urnet_network_session_info_get_current(uint64_t self);
+char* urnet_network_session_info_get_kind(uint64_t self);
+int64_t urnet_network_session_info_get_last_mint_time(uint64_t self);
+uint64_t urnet_network_session_info_get_last_used(uint64_t self);
+char* urnet_network_session_info_get_origin_session_id(uint64_t self);
+char* urnet_network_session_info_get_session_id(uint64_t self);
+int64_t urnet_network_session_info_get_token_expire_time(uint64_t self);
+
+/* ----- NetworkSessionInfoList ----- */
+
+void urnet_network_session_info_list_add(uint64_t self, uint64_t value);
+bool urnet_network_session_info_list_contains(uint64_t self, uint64_t v);
+uint64_t urnet_network_session_info_list_get(uint64_t self, int64_t i);
+int64_t urnet_network_session_info_list_len(uint64_t self);
+bool urnet_network_session_info_list_unmarshal_json(uint64_t self, const uint8_t* b, int32_t b_len, char** out_error);
+
+/* ----- NetworkSessionsResult ----- */
+
+char* urnet_network_sessions_result_get_current_session_id(uint64_t self);
+int64_t urnet_network_sessions_result_get_event_id(uint64_t self);
+char* urnet_network_sessions_result_get_generation(uint64_t self);
+char* urnet_network_sessions_result_get_legacy_coverage(uint64_t self);
+uint64_t urnet_network_sessions_result_get_sessions(uint64_t self);
+
+/* ----- NetworkSessionsRevision ----- */
+
+int64_t urnet_network_sessions_revision_get_event_id(uint64_t self);
+char* urnet_network_sessions_revision_get_generation(uint64_t self);
+
 /* ----- NetworkSpace ----- */
 
 uint64_t urnet_network_space_add_extender_status_change_listener(uint64_t self, urnet_extender_status_change_cb listener_extender_status_changed, void* listener_user_data);
@@ -1868,6 +1984,34 @@ char* urnet_referral_code_view_controller_get_referral_code_result(uint64_t self
 void urnet_referral_code_view_controller_start(uint64_t self);
 void urnet_referral_code_view_controller_stop(uint64_t self);
 
+/* ----- SessionLastUsed ----- */
+
+char* urnet_session_last_used_get_app_version(uint64_t self);
+char* urnet_session_last_used_get_city(uint64_t self);
+char* urnet_session_last_used_get_country(uint64_t self);
+char* urnet_session_last_used_get_country_code(uint64_t self);
+char* urnet_session_last_used_get_device_type(uint64_t self);
+char* urnet_session_last_used_get_region(uint64_t self);
+int64_t urnet_session_last_used_get_unix_time(uint64_t self);
+
+/* ----- SessionOperationResult ----- */
+
+bool urnet_session_operation_result_get_cleanup_pending(uint64_t self);
+int64_t urnet_session_operation_result_get_event_id(uint64_t self);
+char* urnet_session_operation_result_get_generation(uint64_t self);
+char* urnet_session_operation_result_get_kept_session_id(uint64_t self);
+char* urnet_session_operation_result_get_operation_id(uint64_t self);
+int64_t urnet_session_operation_result_get_revoked_count(uint64_t self);
+char* urnet_session_operation_result_get_session_id(uint64_t self);
+char* urnet_session_operation_result_get_state(uint64_t self);
+char* urnet_session_operation_result_get_status(uint64_t self);
+
+/* ----- SessionSignOutResult ----- */
+
+bool urnet_session_sign_out_result_get_credential_cleared(uint64_t self);
+char* urnet_session_sign_out_result_get_operation_id(uint64_t self);
+bool urnet_session_sign_out_result_get_revocation_confirmed(uint64_t self);
+
 /* ----- Socket ----- */
 
 bool urnet_socket_close(uint64_t self, char** out_error);
@@ -2046,6 +2190,7 @@ double urnet_nano_points_to_points(int64_t nano_points);
 uint64_t urnet_new_async_local_state(const char* local_storage_home);
 uint64_t urnet_new_bittensor_wallet_session(const char* wallet_id, const char* platform, const char* purpose, const char* redirect_link, char** out_error);
 uint64_t urnet_new_client_event_queue(uint64_t network_space, const char* platform, const char* app_version, const char* locale);
+char* urnet_new_client_info(const char* device_type, const char* app_version);
 char* urnet_new_connect_first_event(void);
 uint64_t urnet_new_device_local(uint64_t network_space, const char* by_jwt, const char* device_description, const char* device_spec, const char* app_version, const char* instance_id, const char* settings_json, char** out_error);
 uint64_t urnet_new_device_local_key_material(const uint8_t* client_key_seed, int32_t client_key_seed_len, const uint8_t* provide_tls_certificate_pem, int32_t provide_tls_certificate_pem_len, const uint8_t* provide_tls_private_key_pem, int32_t provide_tls_private_key_pem_len);
@@ -2058,7 +2203,6 @@ char* urnet_new_export_options(void);
 char* urnet_new_feedback_submitted_event(int64_t rating, const char* reason, const char* text);
 char* urnet_new_id(void);
 uint64_t urnet_new_login_view_controller(uint64_t api);
-char* urnet_new_message_transport(const char* config_json, char** out_error);
 uint64_t urnet_new_network_name_validation_view_controller(uint64_t api);
 char* urnet_new_network_space_key(const char* host_name, const char* env_name);
 uint64_t urnet_new_network_space_manager(const char* storage_path);
@@ -2089,14 +2233,12 @@ char* urnet_new_widget_added_event(const char* kind);
 char* urnet_normal_env_name(const char* env_name);
 char* urnet_normal_extender_gossip_mode(const char* mode);
 char* urnet_normalize_bittensor_signature(const char* signature);
-char* urnet_open_stream_store(const char* dir, char** out_error);
 char* urnet_order_connected_provider_locations(const char* locations_json);
 char* urnet_parse_bittensor_challenge_message(const char* message, char** out_error);
 char* urnet_parse_bittensor_wallet_return(const char* uri, const char* redirect_link, char** out_error);
 char* urnet_parse_checkout_redirect(const char* uri, char** out_error);
 char* urnet_parse_client_events_json(const char* events_json, char** out_error);
 char* urnet_parse_id(const char* src, char** out_error);
-int64_t urnet_parse_message_route_mode(const char* value, char** out_error);
 char* urnet_parse_vless_link(const char* link);
 char* urnet_points_leaderboard_key_of(const char* row_json);
 char* urnet_points_leaderboard_scroll_label(int64_t rank, int64_t total);
@@ -2303,6 +2445,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  */
 
 /* AuthCodeLoginArgs (json):
+ *   request_id?: string (uuid) | null
  *   auth_code: string
  */
 
@@ -2646,6 +2789,13 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 /* ClientEventsSendResult (json):
  *   accepted: number
  *   rejected?: ClientEventRejectionList | null
+ */
+
+/* ClientInfo (json):
+ *   v: number
+ *   device_type: string
+ *   app_version: string
+ *   sdk_version?: string
  */
 
 /* ClientLimitStatus (json):
@@ -3510,14 +3660,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   GCPauseTotalNanoseconds: number
  */
 
-/* MessageTransport (json):
- */
-
-/* MessageTransportConfig (json):
- *   Client: any
- *   Server: any
- *   ProtocolVersion: number
- *   Timeout: number (ns)
+/* MemoryTeardownObservation (json):
  */
 
 /* MultiHopIdList (json):
@@ -4336,6 +4479,15 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   error?: RemoveWalletError | null
  */
 
+/* RevokeNetworkSessionArgs (json):
+ *   session_id: string (uuid) | null
+ *   operation_id: string (uuid) | null
+ */
+
+/* RevokeOtherNetworkSessionsArgs (json):
+ *   operation_id: string (uuid) | null
+ */
+
 /* RouteOverride (json):
  *   Local: boolean
  *   Pin: boolean
@@ -4656,9 +4808,6 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   reference: string
  *   label?: string
  *   message?: string
- */
-
-/* StreamStore (json):
  */
 
 /* StringList (json):
@@ -4985,6 +5134,16 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* UploadLogsError (json):
  *   message: string
+ */
+
+/* UploadLogsFile (json):
+ *   Source: string
+ *   Name: string
+ *   FileDescriptor: number
+ */
+
+/* UploadLogsFileList (json):
+ *   = UploadLogsFile | null[]
  */
 
 /* UploadLogsResult (json):

@@ -103,6 +103,107 @@ export interface ApiError {
   message: string;
 }
 
+export interface SessionLastUsed {
+  unix_time: number;
+  city: string;
+  region: string;
+  country: string;
+  country_code: string;
+  device_type: string;
+  app_version: string;
+}
+
+export interface NetworkSessionInfo {
+  session_id: string | null;
+  current: boolean;
+  kind: string;
+  create_time: string | null;
+  last_mint_time: string | null;
+  token_expire_time: string | null;
+  accept_until: string | null;
+  origin_session_id: string | null;
+  last_used: SessionLastUsed | null;
+}
+
+export interface NetworkSessionsRevision {
+  generation: string;
+  event_id: number;
+}
+
+export interface NetworkSessionsResult {
+  sessions: NetworkSessionInfo[] | null;
+  generation: string;
+  event_id: number;
+  current_session_id: string | null;
+  legacy_coverage: string;
+}
+
+export interface SessionOperationResult {
+  operation_id: string | null;
+  status: string;
+  state: string;
+  session_id: string | null;
+  kept_session_id: string | null;
+  revoked_count: number;
+  cleanup_pending: boolean;
+  generation: string;
+  event_id: number;
+}
+
+export interface SessionSignOutResult {
+  operation_id: string | null;
+  revocation_confirmed: boolean;
+  credential_cleared: boolean;
+}
+
+export interface ClientSessionError {
+  message: string;
+  retryable: boolean;
+  sign_in_required: boolean;
+  unsupported: boolean;
+}
+
+export interface ClientSessionAction {
+  status: string;
+  state: string;
+  session_id: string | null;
+  operation_id: string | null;
+  loading: boolean;
+  pending: boolean;
+  error: ClientSessionError | null;
+}
+
+export interface ClientSessionSnapshot {
+  sessions: NetworkSessionInfo[] | null;
+  current_session_id: string | null;
+  legacy_coverage: string;
+  generation: string;
+  event_id: number;
+  loaded: boolean;
+  loading: boolean;
+  refreshing: boolean;
+  supported: boolean;
+  bulk_action: ClientSessionAction | null;
+  actions: ClientSessionAction[] | null;
+  error: ClientSessionError | null;
+}
+
+export interface RevokeNetworkSessionArgs {
+  session_id: string | null;
+  operation_id: string | null;
+}
+
+export interface RevokeOtherNetworkSessionsArgs {
+  operation_id: string | null;
+}
+
+export interface ClientInfo {
+  v: number;
+  device_type: string;
+  app_version: string;
+  sdk_version?: string;
+}
+
 export interface GetPointsLeaderboardArgs {
   sort: string;
   cursor?: string;
@@ -462,6 +563,7 @@ export interface AuthVerifySendError {
 }
 
 export interface AuthCodeLoginArgs {
+  request_id?: string | null;
   auth_code: string;
 }
 

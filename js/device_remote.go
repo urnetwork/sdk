@@ -562,6 +562,14 @@ func jsDeviceRemote(device *sdk.DeviceRemote) js.Value {
 			device.CloseLocationsViewController(vc)
 		})
 	})
+	m["setClientInfo"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		device.GetApi().SetClientInfo(sdk.NewClientInfo(stringArg(args, 0), stringArg(args, 1)))
+		return js.Null()
+	})
+	m["openClientSessionViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc := device.OpenClientSessionViewController()
+		return jsClientSessionViewController(vc, func() { device.CloseClientSessionViewController(vc) })
+	})
 	m["openDevicesViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc := device.OpenDevicesViewController()
 		return jsDevicesViewController(vc, func() {

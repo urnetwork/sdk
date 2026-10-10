@@ -23,7 +23,7 @@ public static partial class Raw
             if (!File.Exists(path) && File.Exists(Path.Combine(baseDir, file))) path = Path.Combine(baseDir, file);
             return NativeLibrary.Load(path);
         });
-        if (urnet_abi_version() != 1) throw new TypeLoadException("Incompatible URnetwork native ABI");
+        if (urnet_abi_version() != 2) throw new TypeLoadException("Incompatible URnetwork native ABI");
     }
 }
 

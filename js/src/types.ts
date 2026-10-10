@@ -1,3 +1,5 @@
+import type { ClientSessionSnapshot, SessionSignOutResult } from "./generated/types";
+export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult } from "./generated/types";
 import type { SocketDevice } from "./socket";
 import type { SubprotocolDevice } from "./subprotocol";
 
@@ -407,6 +409,9 @@ export interface DeviceRemote extends SocketDevice, SubprotocolDevice {
   openBlockActionViewController(): BlockActionViewController;
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
+  openClientSessionViewController(): ClientSessionViewController;
+  /** Supply display metadata before connecting or making account requests. */
+  setClientInfo(deviceType: string, appVersion: string): void;
   openPointsLeaderboardViewController(): PointsLeaderboardViewController;
   openPeerViewController(): PeerViewController;
   openProviderLocationsViewController(): ProviderLocationsViewController;
@@ -1230,11 +1235,16 @@ export interface AccountHostOptions {
 export interface AccountHost {
   setByJwt(byJwt: string): void;
   getByJwt(): string;
+  /** Bounded server revoke attempt, followed by local sign-out; offline is explicitly unconfirmed. */
+  signOut(): Promise<SessionSignOutResult>;
   /** Releases ownership once; await to join teardown without blocking browser events. */
   close(): Promise<void>;
 
   openLocationsViewController(): LocationsViewController;
   openDevicesViewController(): DevicesViewController;
+  openClientSessionViewController(): ClientSessionViewController;
+  /** Supply display metadata before connecting or making account requests. */
+  setClientInfo(deviceType: string, appVersion: string): void;
   openAccountPreferencesViewController(): AccountPreferencesViewController;
   openNetworkUserViewController(): NetworkUserViewController;
   openFeedbackViewController(): FeedbackViewController;
@@ -1315,4 +1325,18 @@ export interface ExtensionDeviceRemoteOptions {
   byJwt: string;
   instanceId: string;
   transport: DeviceRpcTransport;
+}
+
+/** Shared SDK session state; no app-owned revoke/retry or logout state machine. */
+export interface ClientSessionViewController {
+ close(): Promise<void>;
+ start(): void;
+ stop(): void;
+ refresh(): void;
+ setVisible(visible: boolean): void;
+ setForeground(foreground: boolean): void;
+ getSnapshot(): ClientSessionSnapshot;
+ revokeSession(sessionId: string): void;
+ revokeOtherSessions(): void;
+ addClientSessionListener(callback: (snapshot: ClientSessionSnapshot) => void): Unsubscribe;
 }

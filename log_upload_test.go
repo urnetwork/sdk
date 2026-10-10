@@ -204,7 +204,7 @@ func TestUploadLogsHoldEveryProcessUnderTheLogRoot(t *testing.T) {
 		t.Fatalf("SetLogDirForProcess: %v", err)
 	}
 
-	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, connect.DefaultLogger())
+	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, nil, connect.DefaultLogger())
 	if err != nil {
 		t.Fatalf("zipUploadLogs = %v", err)
 	}
@@ -262,7 +262,7 @@ func TestUploadLogsUnderALegacyLogDirectoryKeepBareNames(t *testing.T) {
 		t.Fatalf("SetLogDir: %v", err)
 	}
 
-	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, connect.DefaultLogger())
+	zipPath, err := zipUploadLogs(uploadLogsMaxByteCount, nil, connect.DefaultLogger())
 	if err != nil {
 		t.Fatalf("zipUploadLogs = %v", err)
 	}

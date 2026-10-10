@@ -3,7 +3,9 @@
 package main
 
 import (
+	"reflect"
 	"testing"
+	"unsafe"
 
 	"github.com/urnetwork/sdk"
 )
@@ -26,6 +28,52 @@ func errorIdAnswer(t *testing.T, fn any, args ...any) string {
 	text := goStringAt(answer.UnsafePointer())
 	callExportNil(t, urnet_free_string, answer.UnsafePointer())
 	return text
+}
+
+// Calls an export through reflect, converting each argument to the parameter's
+// own type. A nil argument is that type's zero value, which is how a NULL
+// out_error or a NULL char* is passed from here, and an unsafe.Pointer argument
+// becomes a typed pointer at that address through reflect.NewAt, which is how a
+// char* an export handed back is passed to another export without naming
+// C.char. It and goStringAt were declared beside the messaging ABI's tests,
+// which moved to github.com/urnetwork/message.
+func callExportNil(t *testing.T, fn any, args ...any) []reflect.Value {
+	t.Helper()
+	value := reflect.ValueOf(fn)
+	shape := value.Type()
+	if shape.NumIn() != len(args) {
+		t.Fatalf("the export takes %d arguments and %d were passed", shape.NumIn(), len(args))
+	}
+	in := make([]reflect.Value, 0, len(args))
+	for at, arg := range args {
+		if arg == nil {
+			in = append(in, reflect.Zero(shape.In(at)))
+			continue
+		}
+		if p, isPointer := arg.(unsafe.Pointer); isPointer {
+			in = append(in, reflect.NewAt(shape.In(at).Elem(), p))
+			continue
+		}
+		in = append(in, reflect.ValueOf(arg).Convert(shape.In(at)))
+	}
+	return value.Call(in)
+}
+
+// Reads a NUL-terminated C string an export handed back, without naming a C
+// type.
+func goStringAt(p unsafe.Pointer) string {
+	if p == nil {
+		return ""
+	}
+	out := []byte{}
+	for at := uintptr(0); ; at += 1 {
+		c := *(*byte)(unsafe.Pointer(uintptr(p) + at))
+		if c == 0 {
+			break
+		}
+		out = append(out, c)
+	}
+	return string(out)
 }
 
 // The check of one url answers the sdk's own verdict: "" for a url the space

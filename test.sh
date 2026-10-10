@@ -49,7 +49,7 @@ fi
 # Run the public-surface smoke on its own so a load/constructor regression is
 # reported before the longer race-enabled suite. The full command below runs it
 # again as part of the complete root-module test, including subpackages such
-# as urmessage. Go's ./... stops at nested go.mod boundaries; those run below.
+# as sn/evm. Go's ./... stops at nested go.mod boundaries; those run below.
 go test -count=1 -timeout 30s -v -race -run '^TestSDKSmoke$'
 if [[ $? != 0 ]]; then
     exit 1
@@ -100,9 +100,9 @@ for mod in "$sdk_dir"/*(N/); do
     [[ -f "$mod/go.mod" ]] || continue
     (
         cd "$mod" || exit $?
-        # Missing sibling dependencies are failures, including cp3b's
-        # message-server checkout. Let Go resolve replacements and report the
-        # error; a printed skip cannot establish complete SDK coverage.
+        # Missing sibling dependencies are failures. Let Go resolve
+        # replacements and report the error; a printed skip cannot establish
+        # complete SDK coverage.
         host_tests=$(go list "${list_args[@]}" \
             -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...) || exit $?
         if [[ -z "$host_tests" ]]; then

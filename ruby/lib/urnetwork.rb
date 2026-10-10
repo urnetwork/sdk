@@ -19,7 +19,7 @@ module URnetwork
     file = {"darwin" => "libURnetworkSdk.dylib", "linux" => "libURnetworkSdk.so", "windows" => "URnetworkSdk.dll"}[system]
     ffi_lib ENV["URNETWORK_SDK_LIBRARY"] || File.join(__dir__, "urnetwork", "native", "#{system}-#{arch}", file)
     bind_functions
-    raise LoadError, "Incompatible URnetwork native ABI" unless urnet_abi_version == 1
+    raise LoadError, "Incompatible URnetwork native ABI" unless urnet_abi_version == 2
   end
 
   def self.take_string(pointer)

@@ -11,6 +11,8 @@ typedef void (*urnet_account_preferences_get_cb)(void* user_data, const char* re
 void urnet_invoke_account_preferences_get(urnet_account_preferences_get_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_account_preferences_set_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_account_preferences_set(urnet_account_preferences_set_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_account_sign_in_required_cb)(void* user_data);
+void urnet_invoke_account_sign_in_required(urnet_account_sign_in_required_cb cb, void* user_data);
 typedef void (*urnet_account_wallets_cb)(void* user_data);
 void urnet_invoke_account_wallets(urnet_account_wallets_cb cb, void* user_data);
 typedef void (*urnet_active_network_space_change_cb)(void* user_data, uint64_t network_space);
@@ -71,6 +73,8 @@ typedef void (*urnet_client_limit_status_change_cb)(void* user_data, const char*
 void urnet_invoke_client_limit_status_change(urnet_client_limit_status_change_cb cb, void* user_data, const char* status_json);
 typedef void (*urnet_client_refresh_integrity_cb)(void* user_data, uint64_t notice);
 void urnet_invoke_client_refresh_integrity(urnet_client_refresh_integrity_cb cb, void* user_data, uint64_t notice);
+typedef void (*urnet_client_session_cb)(void* user_data, uint64_t snapshot);
+void urnet_invoke_client_session(urnet_client_session_cb cb, void* user_data, uint64_t snapshot);
 typedef void (*urnet_commit_cb)(void* user_data, bool success);
 void urnet_invoke_commit(urnet_commit_cb cb, void* user_data, bool success);
 typedef void (*urnet_connect_change_cb)(void* user_data, bool connect_enabled);
@@ -153,6 +157,8 @@ typedef void (*urnet_get_network_referral_code_cb)(void* user_data, const char* 
 void urnet_invoke_get_network_referral_code(urnet_get_network_referral_code_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_network_reliability_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_get_network_reliability(urnet_get_network_reliability_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_get_network_sessions_cb)(void* user_data, uint64_t result, const char* err_param);
+void urnet_invoke_get_network_sessions(urnet_get_network_sessions_cb cb, void* user_data, uint64_t result, const char* err_param);
 typedef void (*urnet_get_network_user_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_get_network_user(urnet_get_network_user_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_get_payout_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
@@ -199,6 +205,8 @@ typedef void (*urnet_network_delete_cb)(void* user_data, const char* result_json
 void urnet_invoke_network_delete(urnet_network_delete_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_network_peers_change_cb)(void* user_data, const char* network_peers_json);
 void urnet_invoke_network_peers_change(urnet_network_peers_change_cb cb, void* user_data, const char* network_peers_json);
+typedef void (*urnet_network_sessions_change_cb)(void* user_data, uint64_t revision);
+void urnet_invoke_network_sessions_change(urnet_network_sessions_change_cb cb, void* user_data, uint64_t revision);
 typedef void (*urnet_network_space_update_cb)(void* user_data, const char* values_json);
 void urnet_invoke_network_space_update(urnet_network_space_update_cb cb, void* user_data, const char* values_json);
 typedef void (*urnet_network_spaces_change_cb)(void* user_data);
@@ -291,6 +299,10 @@ typedef void (*urnet_selected_provider_location_change_cb)(void* user_data);
 void urnet_invoke_selected_provider_location_change(urnet_selected_provider_location_change_cb cb, void* user_data);
 typedef void (*urnet_send_feedback_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_send_feedback(urnet_send_feedback_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_session_operation_cb)(void* user_data, uint64_t result, const char* err_param);
+void urnet_invoke_session_operation(urnet_session_operation_cb cb, void* user_data, uint64_t result, const char* err_param);
+typedef void (*urnet_session_sign_out_cb)(void* user_data, uint64_t p0, const char* p1);
+void urnet_invoke_session_sign_out(urnet_session_sign_out_cb cb, void* user_data, uint64_t p0, const char* p1);
 typedef void (*urnet_set_emoji_tag_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_set_emoji_tag(urnet_set_emoji_tag_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_set_network_leaderboard_public_cb)(void* user_data, const char* result_json, const char* err_param);

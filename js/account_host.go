@@ -42,6 +42,9 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 		api.SetByJwt(stringArg(args, 0))
 		return js.Null()
 	})
+	m["signOut"] = promiseMethod(func(args []js.Value) js.Value {
+		return apiPromise(func(cb connect.ApiCallback[*sdk.SessionSignOutResult]) { api.SignOut(sdk.SessionSignOutCallback(cb)) })
+	})
 	m["getByJwt"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		return js.ValueOf(api.GetByJwt())
 	})
@@ -54,6 +57,14 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 	m["openLocationsViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc := sdk.NewLocationsViewControllerWithApi(ctx, api)
 		return jsLocationsViewController(vc, vc.Close)
+	})
+	m["setClientInfo"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		api.SetClientInfo(sdk.NewClientInfo(stringArg(args, 0), stringArg(args, 1)))
+		return js.Null()
+	})
+	m["openClientSessionViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
+		vc := sdk.NewClientSessionViewControllerWithApi(ctx, api)
+		return jsClientSessionViewController(vc, vc.Close)
 	})
 	m["openDevicesViewController"] = js.FuncOf(func(this js.Value, args []js.Value) any {
 		vc := sdk.NewDevicesViewControllerWithApi(ctx, api)

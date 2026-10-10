@@ -32,7 +32,7 @@ pub fn native() -> io::Result<&'static raw::Raw> {
         // temporary directory per application process. Windows keeps it on disk.
         #[cfg(unix)]
         { directory.take(); }
-        if unsafe { (raw.urnet_abi_version)() } != 1 { return Err("Incompatible URnetwork native ABI".into()); }
+        if unsafe { (raw.urnet_abi_version)() } != 2 { return Err("Incompatible URnetwork native ABI".into()); }
         // Go owns background threads: this process-wide runtime is never dlclosed.
         Ok(Runtime { raw, _directory: directory })
     }) {

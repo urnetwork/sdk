@@ -5,7 +5,7 @@ import threading
 import urnetwork as ur
 from urnetwork._raw import urnet_get_by_jwt_cb
 
-assert ur.raw.urnet_abi_version() == 1
+assert ur.raw.urnet_abi_version() == 2
 assert len(ur._text(ur.raw.urnet_new_id())) == 36
 start = ur.raw.urnet_live_handle_count()
 assert "héllo" in ur._text(ur.raw.urnet_new_network_space_key("héllo".encode(), b"main"))

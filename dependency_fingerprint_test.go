@@ -9,7 +9,7 @@ import (
 )
 
 // Each consuming module owns its dependency records, including host generators
-// for browser artifacts and the C ABI's alternate loopback modfile. Keep the
+// for browser artifacts and the C ABI. Keep the
 // TLS and DTLS fingerprint dependencies pinned to connect with both checksums.
 func TestSdkModulesKeepConnectFingerprintDependencies(t *testing.T) {
 	readLines := func(path string) map[string]bool {
@@ -74,11 +74,7 @@ func TestSdkModulesKeepConnectFingerprintDependencies(t *testing.T) {
 		"go.mod",
 		"build/go.mod",
 		"cgo/go.mod",
-		"cgo/loopback.go.mod",
 		"js/go.mod",
-		"cp3b/go.mod",
-		"livepeer/go.mod",
-		"liveprobe/go.mod",
 	} {
 		requirements := readLines(modulePath)
 		sumPath := strings.TrimSuffix(modulePath, ".mod") + ".sum"

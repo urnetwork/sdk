@@ -26,6 +26,7 @@ type ViewControllerManager interface {
 	OpenProvideViewController() *ProvideViewController
 
 	OpenDevicesViewController() *DevicesViewController
+	OpenClientSessionViewController() *ClientSessionViewController
 
 	OpenPeerViewController() *PeerViewController
 
@@ -258,4 +259,10 @@ func (self *viewControllerManager) Close() {
 	for _, vc := range vcs {
 		vc.Close()
 	}
+}
+
+func (self *viewControllerManager) OpenClientSessionViewController() *ClientSessionViewController {
+	vc := newClientSessionViewController(self.ctx, self.device)
+	self.openViewController(vc)
+	return vc
 }

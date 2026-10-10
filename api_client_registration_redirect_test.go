@@ -74,6 +74,7 @@ func TestNetworkClientRegistrationRefusesRedirectedAllocations(t *testing.T) {
 // A mixed cause must retain its original hard leaf and never become a wait.
 func TestNetworkClientRegistrationRedirectPreservesJoinedHardCause(t *testing.T) {
 	ctx, api := newTestApi(t, http.NotFoundHandler())
+	api.SetByJwt("synthetic-network-credential")
 	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
 		hard := &os.PathError{Op: "read", Path: "synthetic-owned-operation", Err: errors.New("synthetic custody failure")}
 		cause := errors.Join(&connect.HttpStatusError{StatusCode: status}, hard)
@@ -100,6 +101,7 @@ func TestNetworkClientRegistrationBoundsEncodedRequestBeforeHttp(t *testing.T) {
 		requests.Add(1)
 		_, _ = w.Write(networkClientRegistrationTestResponse(t, raw))
 	}))
+	api.SetByJwt("synthetic-network-credential")
 	args := networkClientRegistrationTestArgs()
 	args.DeviceDescription, args.DeviceSpec = strings.Repeat("<", 1024), strings.Repeat("<", 4096)
 	if _, err := EncodeNetworkClientRegistration(args); err == nil {
