@@ -23,10 +23,15 @@ var mobileLifecycleJoinIds = map[string]bool{
 // Api-only controllers exist for signed-in hosts before their device plane
 // attaches. Native apps open the device-owned controllers instead, so these
 // context and Api parameters are deliberately outside the gomobile surface.
+// The session controller's constructors take a context as well; apps open it
+// with Api.OpenClientSessionViewController or a device's
+// OpenClientSessionViewController.
 // Keep both gobind records explicit: it emits one on the return type and one
 // on the package facade for each unsupported constructor.
 var mobileApiOnlyControllerIds = map[string]bool{
 	"AccountPreferencesViewController.NewAccountPreferencesViewControllerWithApi": true,
+	"ClientSessionViewController.NewClientSessionViewControllerWithApi":           true,
+	"ClientSessionViewController.NewClientSessionViewControllerWithDevice":        true,
 	"DevicesViewController.NewDevicesViewControllerWithApi":                       true,
 	"FeedbackViewController.NewFeedbackViewControllerWithApi":                     true,
 	"LocationsViewController.NewLocationsViewControllerWithApi":                   true,
@@ -34,6 +39,8 @@ var mobileApiOnlyControllerIds = map[string]bool{
 	"ReferralCodeViewController.NewReferralCodeViewControllerWithApi":             true,
 	"PointsLeaderboardViewController.NewPointsLeaderboardViewControllerWithApi":   true,
 	"NewAccountPreferencesViewControllerWithApi":                                  true,
+	"NewClientSessionViewControllerWithApi":                                       true,
+	"NewClientSessionViewControllerWithDevice":                                    true,
 	"NewDevicesViewControllerWithApi":                                             true,
 	"NewFeedbackViewControllerWithApi":                                            true,
 	"NewLocationsViewControllerWithApi":                                           true,

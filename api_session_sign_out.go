@@ -15,10 +15,6 @@ type SessionSignOutResult struct {
 	CredentialCleared   bool `json:"credential_cleared"`
 }
 
-func (self *SessionSignOutResult) GetOperationId() *Id          { return self.OperationId }
-func (self *SessionSignOutResult) GetRevocationConfirmed() bool { return self.RevocationConfirmed }
-func (self *SessionSignOutResult) GetCredentialCleared() bool   { return self.CredentialCleared }
-
 type SessionSignOutCallback interface {
 	Result(*SessionSignOutResult, error)
 }

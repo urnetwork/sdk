@@ -140,12 +140,16 @@ func TestMobileApiOnlyControllerOmissionsAreExplicit(t *testing.T) {
 	root := t.TempDir()
 	source := strings.Join([]string{
 		"// skipped constructor AccountPreferencesViewController.NewAccountPreferencesViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor ClientSessionViewController.NewClientSessionViewControllerWithApi with unsupported parameter or return types",
+		"// skipped constructor ClientSessionViewController.NewClientSessionViewControllerWithDevice with unsupported parameter or return types",
 		"// skipped constructor DevicesViewController.NewDevicesViewControllerWithApi with unsupported parameter or return types",
 		"// skipped constructor FeedbackViewController.NewFeedbackViewControllerWithApi with unsupported parameter or return types",
 		"// skipped constructor LocationsViewController.NewLocationsViewControllerWithApi with unsupported parameter or return types",
 		"// skipped constructor NetworkUserViewController.NewNetworkUserViewControllerWithApi with unsupported parameter or return types",
 		"// skipped constructor ReferralCodeViewController.NewReferralCodeViewControllerWithApi with unsupported parameter or return types",
 		"// skipped function NewAccountPreferencesViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewClientSessionViewControllerWithApi with unsupported parameter or return types",
+		"// skipped function NewClientSessionViewControllerWithDevice with unsupported parameter or return types",
 		"// skipped function NewDevicesViewControllerWithApi with unsupported parameter or return types",
 		"// skipped function NewFeedbackViewControllerWithApi with unsupported parameter or return types",
 		"// skipped function NewLocationsViewControllerWithApi with unsupported parameter or return types",
