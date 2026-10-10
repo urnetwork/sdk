@@ -619,7 +619,7 @@ func TestBittensorWalletConnectBridgeSession(t *testing.T) {
 		}
 		u, _ := url.Parse(bridgeUrl)
 		q := u.Query()
-		if u.Scheme+"://"+u.Host+u.Path != "https://ur.io/bittensor-connect" || q.Get("wallet") != "walletconnect" || q.Get("wc_project_id") != "app-project" ||
+		if u.Scheme+"://"+u.Host+u.Path != "https://ur.io/wallet-connect" || q.Get("provider") != "bittensor" || q.Get("wallet") != "walletconnect" || q.Get("wc_project_id") != "app-project" ||
 			q.Get("purpose") != "create" || q.Get("address") != bittensorTestAliceSs58 || q.Get("message") != bittensorTestMessage {
 			t.Fatalf("%s: bridge url %s", platform, bridgeUrl)
 		}

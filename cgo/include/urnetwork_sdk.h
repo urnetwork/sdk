@@ -108,7 +108,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET "wallet_error"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET_CONNECT_EXPIRED "walletconnect_expired"
 #define URNET_BITTENSOR_WALLET_BRIDGE_ERROR_WALLET_CONNECT_UNAVAILABLE "walletconnect_unavailable"
-#define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/bittensor-connect"
+#define URNET_BITTENSOR_WALLET_BRIDGE_URL "https://ur.io/wallet-connect"
 #define URNET_BITTENSOR_WALLET_CONNECT_CHAIN "polkadot:2f0555cc76fc2840a25a6ea3b9637146"
 #define URNET_BITTENSOR_WALLET_CONNECT_METHOD "polkadot_signMessage"
 #define URNET_BITTENSOR_WALLET_DAPP_NAME "URnetwork"
