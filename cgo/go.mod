@@ -75,7 +75,7 @@ require (
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
 	github.com/urnetwork/connect/v2026 v2026.10.10-1068748650
 	github.com/urnetwork/glog/v2026 v2026.10.10-1068748650
-	github.com/urnetwork/goidenticons/v2026 v2026.10.10-1068748650
+	github.com/urnetwork/goidenticons/v2026 v2026.10.10-1068748650 // indirect
 	github.com/urnetwork/sdk/v2026 v2026.10.10-1068748650
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
@@ -88,7 +88,6 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gvisor.dev/gvisor v0.0.0-20260909230408-9b1144b679cb // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	src.agwa.name/tlshacks v0.0.4 // indirect
