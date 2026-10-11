@@ -55,3 +55,47 @@ func TestSnClaimsResultWasmSchedule(t *testing.T) {
 		t.Fatalf("schedule without a policy: %v", none.Get("Schedule"))
 	}
 }
+
+// CL-2: the site sees each v2 account's states, and an unavailable ledger as
+// an error with no account.
+func TestSnLedgerAccountsResultWasm(t *testing.T) {
+	accounts := sdk.NewSnLedgerAccountList()
+	accounts.Add(&sdk.SnLedgerAccount{
+		Vault:        "0xabababababababababababababababababababab",
+		NoId:         1,
+		Index:        42,
+		FinalizedRao: 123_456_789,
+		ClaimableRao: 23_456_789,
+		PaidRao:      100_000_000,
+		Pending:      true,
+		PendingRao:   130_000_000,
+	})
+	result := jsSnLedgerAccountsResult(&sdk.SnLedgerAccountsResult{Accounts: accounts, ColdkeySs58: "5F"})
+	if result.Get("Accounts").Length() != 1 || result.Get("ColdkeySs58").String() != "5F" || !result.Get("Error").IsNull() {
+		t.Fatalf("result %v", result)
+	}
+	account := result.Get("Accounts").Index(0)
+	for name, want := range map[string]int64{
+		"NoId":         1,
+		"Index":        42,
+		"FinalizedRao": 123_456_789,
+		"ClaimableRao": 23_456_789,
+		"PaidRao":      100_000_000,
+		"PendingRao":   130_000_000,
+	} {
+		if got := int64(account.Get(name).Float()); got != want {
+			t.Fatalf("%s = %d, want %d", name, got, want)
+		}
+	}
+	if !account.Get("Pending").Bool() || account.Get("Vault").String() != "0xabababababababababababababababababababab" {
+		t.Fatalf("account %v", account)
+	}
+
+	unavailable := jsSnLedgerAccountsResult(&sdk.SnLedgerAccountsResult{
+		Accounts: sdk.NewSnLedgerAccountList(),
+		Error:    &sdk.SnError{Code: sdk.SnErrorCodeLedgerUnavailable, Message: "http 500 fetching the ledger account"},
+	})
+	if unavailable.Get("Accounts").Length() != 0 || unavailable.Get("Error").Get("Code").String() != sdk.SnErrorCodeLedgerUnavailable {
+		t.Fatalf("unavailable %v", unavailable)
+	}
+}
