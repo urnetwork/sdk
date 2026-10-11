@@ -178,17 +178,18 @@ func (self *snLedgerClaimEngine) plans(ctx context.Context, fail func(noId int64
 	plans := []*snLedgerClaimPlan{}
 	for i, entry := range finalized {
 		account := entry.account
-		root, rootErr := (*evm.LedgerRoot)(nil), errs[2*i]
+		rootErr, claimedErr := errs[2*i], errs[2*i+1]
+		var root *evm.LedgerRoot
 		if rootErr == nil {
 			root, rootErr = evm.DecodeLedgerRoot(rets[2*i])
 		}
-		claimed, claimedErr := (*big.Int)(nil), errs[2*i+1]
+		var claimed *big.Int
 		if claimedErr == nil {
 			claimed, claimedErr = evm.DecodeUint(rets[2*i+1])
 		}
 		var rpcErr *evm.RpcError
 		switch {
-		case errors.As(rootErr, &rpcErr) && 0 < len(rpcErr.RevertData()):
+		case errors.As(rootErr, &rpcErr) && len(rpcErr.RevertData()) > 0:
 			// roots(noId, rootIndex) reverts past the pool's last root
 			fail(account.NoId, account.Index, fmt.Sprintf("%s: vault2 has no root %d in pool %d", SnErrorCodeProofMismatch, entry.rootIndex, account.NoId))
 			continue
@@ -203,7 +204,7 @@ func (self *snLedgerClaimEngine) plans(ctx context.Context, fail func(noId int64
 			continue
 		}
 		if claimed.Cmp(cumulative) >= 0 {
-			if 0 < account.ClaimableRao {
+			if account.ClaimableRao > 0 {
 				fail(account.NoId, account.Index, SnErrorCodeAlreadyClaimed+": vault2 has paid this account its finalized cumulative")
 			}
 			continue
