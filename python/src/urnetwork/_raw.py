@@ -166,6 +166,7 @@ urnet_sn_epoch_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_gas_balance_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_get_wallet_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_head_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
+urnet_sn_ledger_accounts_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_set_wallet_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_validate_wallet_cb = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 urnet_sn_wallet_change_cb = CFUNCTYPE(None, c_void_p, c_char_p)
@@ -1330,6 +1331,8 @@ def bind(lib):
     lib.urnet_device_local_sn_claims.restype = None
     lib.urnet_device_local_sn_gas_balance.argtypes = [c_uint64, urnet_sn_gas_balance_cb, c_void_p]
     lib.urnet_device_local_sn_gas_balance.restype = None
+    lib.urnet_device_local_sn_ledger_accounts.argtypes = [c_uint64, urnet_sn_ledger_accounts_cb, c_void_p]
+    lib.urnet_device_local_sn_ledger_accounts.restype = None
     lib.urnet_device_local_stall_exit.argtypes = [c_uint64, c_char_p, c_bool]
     lib.urnet_device_local_stall_exit.restype = c_bool
     lib.urnet_device_local_start_probe_suite.argtypes = [c_uint64, c_char_p]
@@ -1538,6 +1541,8 @@ def bind(lib):
     lib.urnet_device_remote_sn_claims.restype = None
     lib.urnet_device_remote_sn_gas_balance.argtypes = [c_uint64, urnet_sn_gas_balance_cb, c_void_p]
     lib.urnet_device_remote_sn_gas_balance.restype = None
+    lib.urnet_device_remote_sn_ledger_accounts.argtypes = [c_uint64, urnet_sn_ledger_accounts_cb, c_void_p]
+    lib.urnet_device_remote_sn_ledger_accounts.restype = None
     lib.urnet_device_remote_stall_exit.argtypes = [c_uint64, c_char_p, c_bool]
     lib.urnet_device_remote_stall_exit.restype = c_bool
     lib.urnet_device_remote_start_probe_suite.argtypes = [c_uint64, c_char_p]
@@ -2706,6 +2711,8 @@ def bind(lib):
     lib.urnet_sn_fleet_binding_digest.restype = c_void_p
     lib.urnet_sn_gas_balance_for.argtypes = [c_char_p, c_char_p, urnet_sn_gas_balance_cb, c_void_p]
     lib.urnet_sn_gas_balance_for.restype = None
+    lib.urnet_sn_ledger_accounts_for.argtypes = [c_char_p, c_char_p, urnet_sn_ledger_accounts_cb, c_void_p]
+    lib.urnet_sn_ledger_accounts_for.restype = None
     lib.urnet_sn_payout_leaf_hex.argtypes = [c_char_p, c_int64]
     lib.urnet_sn_payout_leaf_hex.restype = c_void_p
     lib.urnet_sn_testnet_chain_settings.argtypes = []

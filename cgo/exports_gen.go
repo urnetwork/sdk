@@ -2596,6 +2596,27 @@ func (self *cAdapterSnHeadCallback) Result(result *sdk.SnHeadResult, errParam er
 	}
 }
 
+type cAdapterSnLedgerAccountsCallback struct {
+	cbResult C.urnet_sn_ledger_accounts_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnLedgerAccountsCallback) Result(result *sdk.SnLedgerAccountsResult, errParam error) {
+	defer cgoGuard("urnet_sn_ledger_accounts_cb")
+	result_ := cJson(result, "urnet_sn_ledger_accounts_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_ledger_accounts(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSnSetWalletCallback struct {
 	cbResult C.urnet_sn_set_wallet_cb
 	userData unsafe.Pointer
@@ -11246,6 +11267,20 @@ func urnet_device_local_sn_gas_balance(self C.uint64_t, callback_result C.urnet_
 	self_.SnGasBalance(callback_)
 }
 
+//export urnet_device_local_sn_ledger_accounts
+func urnet_device_local_sn_ledger_accounts(self C.uint64_t, callback_result C.urnet_sn_ledger_accounts_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_local_sn_ledger_accounts")
+	self_, ok := resolveHandle[*sdk.DeviceLocal](uint64(self), "urnet_device_local_sn_ledger_accounts")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnLedgerAccountsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnLedgerAccountsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnLedgerAccounts(callback_)
+}
+
 //export urnet_device_local_stall_exit
 func urnet_device_local_stall_exit(self C.uint64_t, clientId *C.char, stalled C.bool) C.bool {
 	defer cgoGuard("urnet_device_local_stall_exit")
@@ -12690,6 +12725,20 @@ func urnet_device_remote_sn_gas_balance(self C.uint64_t, callback_result C.urnet
 		callback_ = &cAdapterSnGasBalanceCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	self_.SnGasBalance(callback_)
+}
+
+//export urnet_device_remote_sn_ledger_accounts
+func urnet_device_remote_sn_ledger_accounts(self C.uint64_t, callback_result C.urnet_sn_ledger_accounts_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_device_remote_sn_ledger_accounts")
+	self_, ok := resolveHandle[*sdk.DeviceRemote](uint64(self), "urnet_device_remote_sn_ledger_accounts")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnLedgerAccountsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnLedgerAccountsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnLedgerAccounts(callback_)
 }
 
 //export urnet_device_remote_stall_exit
@@ -18658,6 +18707,23 @@ func urnet_sn_gas_balance_for(settings *C.char, address *C.char, callback_result
 		callback_ = &cAdapterSnGasBalanceCallback{cbResult: callback_result, userData: callback_user_data}
 	}
 	sdk.SnGasBalanceFor(settings_, goString(address), callback_)
+}
+
+//export urnet_sn_ledger_accounts_for
+func urnet_sn_ledger_accounts_for(settings *C.char, coldkeySs58 *C.char, callback_result C.urnet_sn_ledger_accounts_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_sn_ledger_accounts_for")
+	var settings_ *sdk.SnChainSettings
+	if settings != nil {
+		settings_ = &sdk.SnChainSettings{}
+		if !goJson(settings, settings_, "urnet_sn_ledger_accounts_for") {
+			return
+		}
+	}
+	var callback_ sdk.SnLedgerAccountsCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnLedgerAccountsCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	sdk.SnLedgerAccountsFor(settings_, goString(coldkeySs58), callback_)
 }
 
 //export urnet_sn_payout_leaf_hex

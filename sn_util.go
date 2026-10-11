@@ -46,6 +46,9 @@ const (
 	// verify for the address over the challenge: the wallet signed with
 	// another account (or other text). The server cannot name that account.
 	SnErrorCodeSignatureMismatch = "signature_mismatch"
+	// GET /sn/ledger/account could not be read or its answer was refused: the
+	// v2 balances are unavailable, which the apps show as such, never as zero
+	SnErrorCodeLedgerUnavailable = "ledger_unavailable"
 )
 
 // SnError is the error shape of every sn result in this package.

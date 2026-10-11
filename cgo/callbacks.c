@@ -661,6 +661,10 @@ void urnet_invoke_sn_head(urnet_sn_head_cb cb, void* user_data, const char* resu
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sn_ledger_accounts(urnet_sn_ledger_accounts_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

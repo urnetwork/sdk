@@ -229,6 +229,12 @@ func (self *snLocalArtifactStore) put(hashHex string, raw []byte) {
 }
 
 func snHttpFetch(ctx context.Context, url string) ([]byte, error) {
+	return snHttpGet(ctx, url, "the payout artifact")
+}
+
+// snHttpGet reads a public document with a plain http client; what names the
+// document in the error for a status other than 2xx.
+func snHttpGet(ctx context.Context, url string, what string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -241,7 +247,7 @@ func snHttpFetch(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("http %d fetching the payout artifact", res.StatusCode)
+		return nil, fmt.Errorf("http %d fetching %s", res.StatusCode, what)
 	}
 	return io.ReadAll(io.LimitReader(res.Body, snArtifactMaxBytes))
 }
@@ -1008,10 +1014,7 @@ func (self *snDevice) snClaimEngine() (*snClaimEngine, *SnError) {
 		return nil, newSnError(SnErrorCodeConnectWalletFirst, "connect a Bittensor wallet first")
 	}
 	settings := self.GetSnChainSettings()
-	artifactBaseUrl := settings.ArtifactBaseUrl
-	if artifactBaseUrl == "" && self.networkSpace != nil {
-		artifactBaseUrl = self.networkSpace.GetApiUrl()
-	}
+	artifactBaseUrl := self.snArtifactBaseUrl(settings)
 	localState := self.snLocalState()
 	var txHashes map[int64]string
 	if localState != nil {
@@ -1032,6 +1035,16 @@ func (self *snDevice) snClaimEngine() (*snClaimEngine, *SnError) {
 		}
 	}
 	return engine, nil
+}
+
+// snArtifactBaseUrl is where this device reads what the operator publishes:
+// the configured artifact host, else the network space api ("" for the
+// default host).
+func (self *snDevice) snArtifactBaseUrl(settings *SnChainSettings) string {
+	if settings.ArtifactBaseUrl == "" && self.networkSpace != nil {
+		return self.networkSpace.GetApiUrl()
+	}
+	return settings.ArtifactBaseUrl
 }
 
 func (self *snDevice) snWalletFromEpoch() int64 {
