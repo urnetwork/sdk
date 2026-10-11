@@ -33,7 +33,8 @@ var (
 	errorStringSelector     = selector("Error(string)")
 )
 
-// Custom errors raised by STSettlementVault.claim, decoded for the user.
+// Custom errors raised by STSettlementVault.claim and
+// STSettlementVault2.claim, decoded for the user.
 var vaultErrorNames = map[[4]byte]string{
 	selector("InvalidTransition()"):    "InvalidTransition",
 	selector("ClaimExpired()"):         "ClaimExpired",
@@ -44,6 +45,14 @@ var vaultErrorNames = map[[4]byte]string{
 	selector("NothingToWithdraw()"):    "NothingToWithdraw",
 	selector("InvalidEpoch()"):         "InvalidEpoch",
 	selector("InvalidPolicy()"):        "InvalidPolicy",
+	// STSettlementVault2.claim
+	selector("UnknownRoot()"):               "UnknownRoot",
+	selector("InvalidColdkey()"):            "InvalidColdkey",
+	selector("NothingToClaim()"):            "NothingToClaim",
+	selector("AmountTooLarge()"):            "AmountTooLarge",
+	selector("PoolCapExceeded()"):           "PoolCapExceeded",
+	selector("RuntimeAccountingMismatch()"): "RuntimeAccountingMismatch",
+	selector("Reentrancy()"):                "Reentrancy",
 }
 
 // Keccak256 hashes the concatenation of data.

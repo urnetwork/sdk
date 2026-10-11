@@ -565,6 +565,8 @@ EXPORTS
 	urnet_device_local_sn_claims
 	urnet_device_local_sn_gas_balance
 	urnet_device_local_sn_ledger_accounts
+	urnet_device_local_sn_ledger_claim
+	urnet_device_local_sn_ledger_claim_transactions
 	urnet_device_local_stall_exit
 	urnet_device_local_start_probe_suite
 	urnet_device_local_stop_probe_suite
@@ -660,6 +662,8 @@ EXPORTS
 	urnet_device_remote_sn_claims
 	urnet_device_remote_sn_gas_balance
 	urnet_device_remote_sn_ledger_accounts
+	urnet_device_remote_sn_ledger_claim
+	urnet_device_remote_sn_ledger_claim_transactions
 	urnet_device_remote_stall_exit
 	urnet_device_remote_start_probe_suite
 	urnet_device_remote_stop_probe_suite
@@ -1178,6 +1182,7 @@ EXPORTS
 	urnet_sn_fleet_binding_digest
 	urnet_sn_gas_balance_for
 	urnet_sn_ledger_accounts_for
+	urnet_sn_ledger_claim_transactions_for
 	urnet_sn_payout_leaf_hex
 	urnet_sn_testnet_chain_settings
 	urnet_socket_close

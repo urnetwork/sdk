@@ -7,21 +7,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/urnetwork/connect"
+	"github.com/urnetwork/sdk/sn/merkle"
 )
 
 // From its switch epoch an operator pool settles in STSettlementVault2
 // ("vault2"): each payout coldkey has one account per pool, a cumulative
 // balance committed in the pool's ledger roots that never expires. The
 // operator serves the account at GET /sn/ledger/account, on the artifact
-// host. This reads it for display only. The v1 entitlements are still read
-// from the v1 vault by SnClaims and shown separately; v2 claims are not sent
-// from here yet.
+// host. This reads it for display; the v1 entitlements are still read from
+// the v1 vault by SnClaims and shown separately. The v2 claim
+// (sn_ledger_claim.go) reads the same answer and trusts none of it.
 
 const snLedgerTimeout = 60 * time.Second
 
@@ -115,8 +117,18 @@ func snLedgerRao(s string) (int64, error) {
 	return v, nil
 }
 
-// account checks one entry and derives the states the apps show.
-func (self *snLedgerAccountJson) account() (*SnLedgerAccount, error) {
+// snLedgerEntry is one account of the answer: what the apps show, and the
+// finalized root's index and proof a claim needs.
+type snLedgerEntry struct {
+	account *SnLedgerAccount
+	// -1 when the account is only in the pending root
+	rootIndex int64
+	// bottom-up siblings; nil when the account is only in the pending root
+	proof []merkle.LedgerNode
+}
+
+// entry checks one account and derives the states the apps show.
+func (self *snLedgerAccountJson) entry() (*snLedgerEntry, error) {
 	if _, err := snLedgerHex(self.Vault, 20); err != nil {
 		return nil, fmt.Errorf("vault: %w", err)
 	}
@@ -131,13 +143,20 @@ func (self *snLedgerAccountJson) account() (*SnLedgerAccount, error) {
 	if err != nil {
 		return nil, fmt.Errorf("claimed: %w", err)
 	}
+	var proof []merkle.LedgerNode
+	if self.Proof != nil {
+		proof = make([]merkle.LedgerNode, len(self.Proof))
+	}
 	for i, node := range self.Proof {
-		if _, err := snLedgerHex(node.Hash, 32); err != nil {
+		hash, err := snLedgerHex(node.Hash, 32)
+		if err != nil {
 			return nil, fmt.Errorf("proof %d hash: %w", i, err)
 		}
-		if _, err := snLedgerRao(node.Sum); err != nil {
+		sum, err := snLedgerRao(node.Sum)
+		if err != nil {
 			return nil, fmt.Errorf("proof %d sum: %w", i, err)
 		}
+		proof[i] = merkle.LedgerNode{Hash: [32]byte(hash), Sum: big.NewInt(sum)}
 	}
 	switch {
 	case self.RootIndex == nil && (cumulative != 0 || self.Proof != nil || self.PendingCumulative == nil):
@@ -163,12 +182,16 @@ func (self *snLedgerAccountJson) account() (*SnLedgerAccount, error) {
 		account.Pending = true
 		account.PendingRao = pending
 	}
-	return account, nil
+	entry := &snLedgerEntry{account: account, rootIndex: -1, proof: proof}
+	if self.RootIndex != nil {
+		entry.rootIndex = *self.RootIndex
+	}
+	return entry, nil
 }
 
 // snParseLedgerAccounts refuses the whole answer when any part of it does
 // not parse exactly, so none of its balances is shown.
-func snParseLedgerAccounts(raw []byte, coldkey [32]byte) ([]*SnLedgerAccount, error) {
+func snParseLedgerAccounts(raw []byte, coldkey [32]byte) ([]*snLedgerEntry, error) {
 	var answer snLedgerAccountsJson
 	if err := json.Unmarshal(raw, &answer); err != nil {
 		return nil, err
@@ -183,41 +206,50 @@ func snParseLedgerAccounts(raw []byte, coldkey [32]byte) ([]*SnLedgerAccount, er
 	if answer.Accounts == nil {
 		return nil, errors.New("the answer has no accounts list")
 	}
-	accounts := make([]*SnLedgerAccount, 0, len(answer.Accounts))
+	entries := make([]*snLedgerEntry, 0, len(answer.Accounts))
 	for i := range answer.Accounts {
-		account, err := answer.Accounts[i].account()
+		entry, err := answer.Accounts[i].entry()
 		if err != nil {
 			return nil, fmt.Errorf("account %d: %w", i, err)
 		}
-		accounts = append(accounts, account)
+		entries = append(entries, entry)
 	}
-	return accounts, nil
+	return entries, nil
 }
 
-// snLedgerAccounts reads a coldkey's v2 accounts from the artifact host at
+// snReadLedger reads a coldkey's v2 accounts from the artifact host at
 // baseUrl ("" for the default host).
-func snLedgerAccounts(ctx context.Context, fetch snArtifactFetcher, baseUrl string, coldkeySs58 string) *SnLedgerAccountsResult {
-	coldkeySs58 = strings.TrimSpace(coldkeySs58)
-	result := &SnLedgerAccountsResult{Accounts: NewSnLedgerAccountList(), ColdkeySs58: coldkeySs58}
+func snReadLedger(ctx context.Context, fetch snArtifactFetcher, baseUrl string, coldkeySs58 string) ([]*snLedgerEntry, *SnError) {
 	coldkey, err := snColdkeyBytes(coldkeySs58)
 	if err != nil {
-		result.Error = newSnError(SnErrorCodeInvalidAddress, err.Error())
-		return result
+		return nil, newSnError(SnErrorCodeInvalidAddress, err.Error())
 	}
 	if baseUrl == "" {
 		baseUrl = snDefaultArtifactBaseUrl
 	}
 	raw, err := fetch(ctx, fmt.Sprintf("%s/sn/ledger/account?coldkey=%s", strings.TrimSuffix(baseUrl, "/"), url.QueryEscape(coldkeySs58)))
 	if err != nil {
-		result.Error = newSnError(SnErrorCodeLedgerUnavailable, err.Error())
-		return result
+		return nil, newSnError(SnErrorCodeLedgerUnavailable, err.Error())
 	}
-	accounts, err := snParseLedgerAccounts(raw, coldkey)
+	entries, err := snParseLedgerAccounts(raw, coldkey)
 	if err != nil {
-		result.Error = newSnError(SnErrorCodeLedgerUnavailable, "refused the ledger answer: "+err.Error())
+		return nil, newSnError(SnErrorCodeLedgerUnavailable, "refused the ledger answer: "+err.Error())
+	}
+	return entries, nil
+}
+
+// snLedgerAccounts reads a coldkey's v2 accounts for display.
+func snLedgerAccounts(ctx context.Context, fetch snArtifactFetcher, baseUrl string, coldkeySs58 string) *SnLedgerAccountsResult {
+	coldkeySs58 = strings.TrimSpace(coldkeySs58)
+	result := &SnLedgerAccountsResult{Accounts: NewSnLedgerAccountList(), ColdkeySs58: coldkeySs58}
+	entries, snErr := snReadLedger(ctx, fetch, baseUrl, coldkeySs58)
+	if snErr != nil {
+		result.Error = snErr
 		return result
 	}
-	result.Accounts.addAll(accounts...)
+	for _, entry := range entries {
+		result.Accounts.Add(entry.account)
+	}
 	return result
 }
 

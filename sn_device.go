@@ -88,6 +88,14 @@ func (self *DeviceLocal) SnLedgerAccounts(callback SnLedgerAccountsCallback) {
 	self.snDevice().SnLedgerAccounts(callback)
 }
 
+func (self *DeviceLocal) SnLedgerClaim(callback SnLedgerClaimCallback) {
+	self.snDevice().SnLedgerClaim(callback)
+}
+
+func (self *DeviceLocal) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, error) {
+	return self.snDevice().SnLedgerClaimTransactions()
+}
+
 // head spot
 
 func (self *DeviceLocal) GetSnClientKey() string {
@@ -166,6 +174,14 @@ func (self *DeviceRemote) SnClaimTransactions(epochs *Int64List) (*SnUnsignedTxL
 
 func (self *DeviceRemote) SnLedgerAccounts(callback SnLedgerAccountsCallback) {
 	self.snDevice().SnLedgerAccounts(callback)
+}
+
+func (self *DeviceRemote) SnLedgerClaim(callback SnLedgerClaimCallback) {
+	self.snDevice().SnLedgerClaim(callback)
+}
+
+func (self *DeviceRemote) SnLedgerClaimTransactions() (*SnLedgerUnsignedTxList, error) {
+	return self.snDevice().SnLedgerClaimTransactions()
 }
 
 // GetSnClientKey asks the DeviceLocal for the client public key; "" when

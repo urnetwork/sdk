@@ -337,6 +337,14 @@ typedef void (*urnet_sn_head_cb)(void* user_data, const char* result_json, const
 void urnet_invoke_sn_head(urnet_sn_head_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_ledger_accounts_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sn_ledger_accounts(urnet_sn_ledger_accounts_cb cb, void* user_data, const char* result_json, const char* err_param);
+typedef void (*urnet_sn_ledger_claim_confirmed_cb)(void* user_data, int64_t no_id, int64_t index, const char* tx_hash, int64_t amount_rao);
+void urnet_invoke_sn_ledger_claim_confirmed(urnet_sn_ledger_claim_confirmed_cb cb, void* user_data, int64_t no_id, int64_t index, const char* tx_hash, int64_t amount_rao);
+typedef void (*urnet_sn_ledger_claim_done_cb)(void* user_data);
+void urnet_invoke_sn_ledger_claim_done(urnet_sn_ledger_claim_done_cb cb, void* user_data);
+typedef void (*urnet_sn_ledger_claim_failed_cb)(void* user_data, int64_t no_id, int64_t index, const char* message);
+void urnet_invoke_sn_ledger_claim_failed(urnet_sn_ledger_claim_failed_cb cb, void* user_data, int64_t no_id, int64_t index, const char* message);
+typedef void (*urnet_sn_ledger_claim_sent_cb)(void* user_data, int64_t no_id, int64_t index, const char* tx_hash);
+void urnet_invoke_sn_ledger_claim_sent(urnet_sn_ledger_claim_sent_cb cb, void* user_data, int64_t no_id, int64_t index, const char* tx_hash);
 typedef void (*urnet_sn_set_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, const char* result_json, const char* err_param);
 typedef void (*urnet_sn_validate_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
