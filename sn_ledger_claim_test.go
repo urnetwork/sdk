@@ -28,6 +28,7 @@ import (
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk/sn/evm"
 	"github.com/urnetwork/sdk/sn/merkle"
+	"github.com/urnetwork/sdk/sn/ss58"
 )
 
 const testVault2 = "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
@@ -157,13 +158,16 @@ type fakeVault2Tx struct {
 // fakeVault2 answers the JSON-RPC calls of a v2 claim as STSettlementVault2
 // on a Subtensor node.
 type fakeVault2 struct {
-	t       *testing.T
-	mutex   sync.Mutex
-	vault2  [20]byte
-	escrow  [32]byte
-	chainId *big.Int
-	roots   map[int64][]fakeVault2Root
-	claimed map[[2]int64]*big.Int
+	t      *testing.T
+	mutex  sync.Mutex
+	vault2 [20]byte
+	escrow [32]byte
+	// vault2's own coldkey, the ss58 mirror of its address, which a claim
+	// may not pay
+	selfColdkey [32]byte
+	chainId     *big.Int
+	roots       map[int64][]fakeVault2Root
+	claimed     map[[2]int64]*big.Int
 	// a custom error vault2 refuses every claim with, or the runtime error the
 	// staking precompile refuses the transfer with, which reverts without data
 	vaultRefusal   string
@@ -183,28 +187,35 @@ type fakeVault2 struct {
 	failing map[string]*evm.RpcError
 	// eth_call and eth_estimateGas answers by selector, in place of vault2's
 	bySelector map[string]fakeVault2Answer
-	calls      []fakeVault2Call
-	sent       []*fakeVault2Tx
-	receipts   map[string]any
+	// a batch's answer leaves out the calls of this selector
+	omitFromBatch string
+	calls         []fakeVault2Call
+	sent          []*fakeVault2Tx
+	receipts      map[string]any
 }
 
 func newFakeVault2(t *testing.T) *fakeVault2 {
 	vault2, _ := evm.ParseAddress(testVault2)
+	selfColdkey, err := snColdkeyBytes(EvmMirrorSs58(testVault2))
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &fakeVault2{
-		t:          t,
-		vault2:     vault2,
-		escrow:     testColdkey(0x33),
-		chainId:    big.NewInt(SnChainIdTestnet),
-		roots:      map[int64][]fakeVault2Root{},
-		claimed:    map[[2]int64]*big.Int{},
-		estimate:   2_514_273,
-		gasPrice:   big.NewInt(10_000_000_000),
-		tip:        big.NewInt(2_000_000_000),
-		balance:    new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil),
-		nonce:      5,
-		failing:    map[string]*evm.RpcError{},
-		bySelector: map[string]fakeVault2Answer{},
-		receipts:   map[string]any{},
+		t:           t,
+		vault2:      vault2,
+		escrow:      testColdkey(0x33),
+		selfColdkey: selfColdkey,
+		chainId:     big.NewInt(SnChainIdTestnet),
+		roots:       map[int64][]fakeVault2Root{},
+		claimed:     map[[2]int64]*big.Int{},
+		estimate:    2_514_273,
+		gasPrice:    big.NewInt(10_000_000_000),
+		tip:         big.NewInt(2_000_000_000),
+		balance:     new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil),
+		nonce:       5,
+		failing:     map[string]*evm.RpcError{},
+		bySelector:  map[string]fakeVault2Answer{},
+		receipts:    map[string]any{},
 	}
 }
 
@@ -308,6 +319,9 @@ func (self *fakeVault2) runClaim(data []byte) (*testLedgerClaimArgs, *big.Int, [
 	if c.rootIndex >= int64(len(roots)) {
 		return nil, nil, testSelectorData("UnknownRoot()")
 	}
+	if c.coldkey == ([32]byte{}) || c.coldkey == self.selfColdkey {
+		return nil, nil, testSelectorData("InvalidColdkey()")
+	}
 	root := roots[c.rootIndex]
 	if !merkle.VerifyLedgerProof(root.root, root.total, root.leafCount, uint64(c.index), c.coldkey, c.cumulative, c.proof) {
 		return nil, nil, testSelectorData("InvalidProof()")
@@ -333,6 +347,18 @@ func testRevert(data []byte) *evm.RpcError {
 func testWordHex(v *big.Int) string {
 	w, _ := evm.UintWord(v)
 	return "0x" + hex.EncodeToString(w[:])
+}
+
+// testRootsHex is what roots() returns: the static Root tuple (root, total,
+// leafCount, epoch, ledgerHash).
+func testRootsHex(root [32]byte, total *big.Int, leafCount *big.Int, epoch *big.Int) string {
+	ret := append([]byte(nil), root[:]...)
+	for _, v := range []*big.Int{total, leafCount, epoch} {
+		w, _ := evm.UintWord(v)
+		ret = append(ret, w[:]...)
+	}
+	ret = append(ret, bytes.Repeat([]byte{0xee}, 32)...)
+	return "0x" + hex.EncodeToString(ret)
 }
 
 func (self *fakeVault2) handle(method string, params []json.RawMessage) (any, *evm.RpcError) {
@@ -413,13 +439,7 @@ func (self *fakeVault2) call(method string, call fakeVault2Call, data []byte) (a
 			return nil, testRevert(append(testSelectorData("Panic(uint256)"), make([]byte, 31)...))
 		}
 		root := roots[rootIndex]
-		ret := append([]byte(nil), root.root[:]...)
-		for _, v := range []*big.Int{root.total, new(big.Int).SetUint64(root.leafCount), big.NewInt(9)} {
-			w, _ := evm.UintWord(v)
-			ret = append(ret, w[:]...)
-		}
-		ret = append(ret, bytes.Repeat([]byte{0xee}, 32)...)
-		return "0x" + hex.EncodeToString(ret), nil
+		return testRootsHex(root.root, root.total, new(big.Int).SetUint64(root.leafCount), big.NewInt(9)), nil
 	case call.to == vault2 && call.selector == "a54ab457":
 		noId, index := new(big.Int).SetBytes(data[4:36]).Int64(), new(big.Int).SetBytes(data[36:68]).Int64()
 		return testWordHex(self.claimedOf(noId, index)), nil
@@ -512,7 +532,11 @@ func (self *fakeVault2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(body, &reqs)
 		out := []map[string]any{}
 		for _, req := range reqs {
-			out = append(out, respond(req))
+			res := respond(req)
+			if self.omitFromBatch != "" && self.calls[len(self.calls)-1].selector == self.omitFromBatch {
+				continue
+			}
+			out = append(out, res)
 		}
 		json.NewEncoder(w).Encode(out)
 		return
@@ -659,7 +683,17 @@ const (
 
 func newTestV2Claim(t *testing.T) *testV2Claim {
 	t.Helper()
-	alice, aliceSs58 := testAliceSs58(t)
+	alice, _ := testAliceSs58(t)
+	return newTestV2ClaimFor(t, alice)
+}
+
+// newTestV2ClaimFor is the fixture with the wallet coldkey alice.
+func newTestV2ClaimFor(t *testing.T, alice [32]byte) *testV2Claim {
+	t.Helper()
+	aliceSs58, err := ss58.Encode(alice, SnSs58Prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
 	others := []testLedgerLeaf{{testColdkey(0x40), 5_000}, {testColdkey(0x50), 900_000_000}, {testColdkey(0x60), 7}, {testColdkey(0x70), 1}}
 	oldRoot, oldTotal, oldProofs := buildTestLedgerTree([]testLedgerLeaf{others[0], others[1], {alice, testV2OldCumulative}})
 	root, total, proofs := buildTestLedgerTree([]testLedgerLeaf{others[0], others[1], {alice, testV2Cumulative}, others[2], others[3]})
@@ -945,6 +979,22 @@ func TestSnLedgerClaimRefusesAnotherVault(t *testing.T) {
 	}
 }
 
+// APPS-SPEC claim rules 1 and 2: Vault2Address pins the vault as an address,
+// not as a spelling. A checksummed one pins the same vault2 as the ledger's
+// lowercase vault, and the claim goes to its lowercase form.
+func TestSnLedgerClaimChecksummedVault2Address(t *testing.T) {
+	f := newTestV2Claim(t)
+	f.settings.Vault2Address = "0x" + strings.ToUpper(strings.TrimPrefix(testVault2, "0x"))
+	txs, err := SnLedgerClaimTransactionsFor(f.settings, f.aliceSs58)
+	if err != nil || txs.Len() != 1 || txs.Get(0).To != testVault2 {
+		t.Fatalf("transactions %+v, %v", txs, err)
+	}
+	events := f.claim(t)
+	if sent := f.chain.sentTxs(); len(events) != 2 || events[1].kind != "confirmed" || len(sent) != 1 || sent[0].to != f.chain.vault2 {
+		t.Fatalf("events %+v, sent %+v", events, sent)
+	}
+}
+
 // APPS-SPEC claim rule 1: nothing is claimable when vault2 has paid the
 // cumulative and the ledger says so, when the account is only in the pending
 // root, and when the coldkey has no account: one not_claimable, nothing sent.
@@ -973,6 +1023,30 @@ func TestSnLedgerClaimNothingClaimable(t *testing.T) {
 			}
 			if _, err := f.engine(t).unsignedTxs(context.Background()); err == nil || err.Error() != snLedgerNothingToClaim {
 				t.Fatalf("unsigned transactions: %v", err)
+			}
+		})
+	}
+}
+
+// APPS-SPEC claim rule 1: a claim pays the finalized cumulative less vault2's
+// claimed, read on chain; the ledger's claimed is only shown. A ledger that
+// understates it, overstates it, or says the account is paid in full changes
+// neither what is claimed nor its amount.
+func TestSnLedgerClaimAmountIsCumulativeLessVault2Claimed(t *testing.T) {
+	for name, ledgerClaimed := range map[string]int64{"understated": 0, "overstated": testV2Cumulative - 1, "paid in full": testV2Cumulative} {
+		t.Run(name, func(t *testing.T) {
+			f := newTestV2Claim(t)
+			f.answer(t, testLedgerClaimEntry(testVault2, 1, 2, 1, testV2Cumulative, f.proofs[2], ledgerClaimed))
+			txs, err := f.engine(t).unsignedTxs(context.Background())
+			if err != nil || txs.Len() != 1 || txs.Get(0).AmountRao != testV2Cumulative-testV2Paid {
+				t.Fatalf("transactions %+v, %v", txs, err)
+			}
+			events := f.claim(t)
+			if len(events) != 2 || events[0].kind != "sent" || events[1].kind != "confirmed" || events[1].amount != testV2Cumulative-testV2Paid {
+				t.Fatalf("events %+v", events)
+			}
+			if paid := f.chain.paid(1, 2); paid != testV2Cumulative {
+				t.Fatalf("vault2 paid %d", paid)
 			}
 		})
 	}
@@ -1104,6 +1178,36 @@ func TestSnLedgerClaimDecodesVaultRefusals(t *testing.T) {
 				t.Fatalf("message %q, want %q", events[0].message, want)
 			}
 			f.requireClaimable(t)
+		})
+	}
+}
+
+// APPS-SPEC claim rule 4: vault2 pays neither the zero coldkey nor its own
+// (InvalidColdkey), which it checks before the proof. The account of such a
+// wallet verifies here against vault2's root, and its preflight's refusal is
+// claim_failed with the decoded name: nothing is estimated or sent, and no
+// transaction is built for an external signer.
+func TestSnLedgerClaimInvalidColdkey(t *testing.T) {
+	self, err := snColdkeyBytes(EvmMirrorSs58(testVault2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := SnErrorCodeClaimFailed + ": InvalidColdkey"
+	for name, coldkey := range map[string][32]byte{"vault2's own coldkey": self, "the zero coldkey": {}} {
+		t.Run(name, func(t *testing.T) {
+			f := newTestV2ClaimFor(t, coldkey)
+			events := f.claim(t)
+			f.requireFailedOnly(t, events, 1, 2, want)
+			if events[0].message != want {
+				t.Fatalf("message %q, want %q", events[0].message, want)
+			}
+			if methods := f.chain.methods(); !reflect.DeepEqual(methods, []string{"eth_call", "eth_call", "eth_call"}) {
+				t.Fatalf("methods %q: the refused preflight went on", methods)
+			}
+			f.requireClaimable(t)
+			if _, err := f.engine(t).unsignedTxs(context.Background()); err == nil || err.Error() != want {
+				t.Fatalf("unsigned transactions: %v", err)
+			}
 		})
 	}
 }
@@ -1282,6 +1386,59 @@ func TestSnLedgerClaimReadFailures(t *testing.T) {
 	events = f.claim(t)
 	if len(events) != 2 || events[0].kind != "sent" || events[1].kind != "failed" || events[1].message != SnErrorCodeClaimFailed+": rpc error -32000: receipt unavailable" {
 		t.Fatalf("events %+v", events)
+	}
+}
+
+// APPS-SPEC claim rule 1: vault2's roots and claimed come from a JSON-RPC
+// endpoint the SDK does not trust either. An answer that is not the view's
+// return fails the account with chain_rpc_error, and a root that holds no
+// tree is proof_mismatch; nothing is preflighted or sent, and the account
+// stays claimable.
+func TestSnLedgerClaimRefusesMalformedVaultReads(t *testing.T) {
+	roots, claimed := "0fc3cec0", "a54ab457"
+	beyondUint64 := new(big.Int).Lsh(big.NewInt(1), 64)
+	for _, c := range []struct {
+		name  string
+		setup func(f *testV2Claim)
+		want  string
+	}{
+		{"a leaf count beyond uint64", func(f *testV2Claim) {
+			root := f.chain.roots[1][1]
+			f.chain.bySelector[roots] = fakeVault2Answer{result: testRootsHex(root.root, root.total, beyondUint64, big.NewInt(9))}
+		}, SnErrorCodeChainRpcError + ": root leaf count or epoch overflows uint64"},
+		{"an epoch beyond uint64", func(f *testV2Claim) {
+			root := f.chain.roots[1][1]
+			f.chain.bySelector[roots] = fakeVault2Answer{result: testRootsHex(root.root, root.total, big.NewInt(5), beyondUint64)}
+		}, SnErrorCodeChainRpcError + ": root leaf count or epoch overflows uint64"},
+		{"a roots answer that is not a string", func(f *testV2Claim) {
+			f.chain.bySelector[roots] = fakeVault2Answer{result: 7}
+		}, SnErrorCodeChainRpcError + ": data is not a string: 7"},
+		{"a claimed answer that is not hex", func(f *testV2Claim) {
+			f.chain.bySelector[claimed] = fakeVault2Answer{result: "0xzz"}
+		}, SnErrorCodeChainRpcError + ": encoding/hex: invalid byte: U+007A 'z'"},
+		{"a batch answer without the claimed", func(f *testV2Claim) {
+			f.chain.omitFromBatch = claimed
+		}, SnErrorCodeChainRpcError + ": missing batch response"},
+		{"a root of no tree", func(f *testV2Claim) {
+			f.chain.bySelector[roots] = fakeVault2Answer{result: "0x" + strings.Repeat("00", 5*32)}
+		}, SnErrorCodeProofMismatch + ": the ledger's proof does not verify against vault2's root"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newTestV2Claim(t)
+			c.setup(f)
+			events := f.claim(t)
+			f.requireFailedOnly(t, events, 1, 2, c.want)
+			if events[0].message != c.want {
+				t.Fatalf("message %q, want %q", events[0].message, c.want)
+			}
+			if calls := f.chain.claimCalls(); len(calls) != 0 {
+				t.Fatalf("an account read from a malformed answer was preflighted: %+v", calls)
+			}
+			f.requireClaimable(t)
+			if _, err := f.engine(t).unsignedTxs(context.Background()); err == nil || err.Error() != c.want {
+				t.Fatalf("unsigned transactions: %v", err)
+			}
+		})
 	}
 }
 
