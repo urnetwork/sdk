@@ -152,7 +152,7 @@ func TestLedgerHashVectors(t *testing.T) {
 
 // GT-2, X-1 (SDK port): every account of every vector tree verifies against its root
 // and total, and nowhere else: not at another index, not with another value
-// and not against another tree's root.
+// and not against a total one above or one below.
 func TestLedgerTreeProofVectors(t *testing.T) {
 	file := loadLedgerVectors(t)
 	if len(file.Trees) == 0 {
@@ -177,6 +177,9 @@ func TestLedgerTreeProofVectors(t *testing.T) {
 			}
 			if VerifyLedgerProof(root, new(big.Int).Add(total, big.NewInt(1)), tree.LeafCount, index, coldkey, value, proof) {
 				t.Fatalf("%s: account %d verifies against a higher total", tree.Name, i)
+			}
+			if VerifyLedgerProof(root, new(big.Int).Sub(total, big.NewInt(1)), tree.LeafCount, index, coldkey, value, proof) {
+				t.Fatalf("%s: account %d verifies against a lower total", tree.Name, i)
 			}
 		}
 	}

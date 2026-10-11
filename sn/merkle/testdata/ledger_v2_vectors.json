@@ -1924,7 +1924,7 @@
       },
       "error": "",
       "leafCount": 5,
-      "name": "n5_total",
+      "name": "n5_total_above",
       "proof": [
         {
           "hash": "0x573c19061653a840e92197a8f03f2a8c5b2adfc9b15304296bef52e384d3c48f",
@@ -1941,6 +1941,33 @@
       ],
       "root": "0xfb27a040b25a2a1f87c6d4a08062c20581afc3789ff0161dd41dcdacc8c23489",
       "total": "217709694063370611542745259",
+      "valid": false
+    },
+    {
+      "account": {
+        "coldkey": "0x52410afc7fd7020a795f27b04a844c37e59173bd13b8e1d6be514fdfad82cf3e",
+        "cumulative": "43557518367588939",
+        "index": "2"
+      },
+      "error": "",
+      "leafCount": 5,
+      "name": "n5_total_below",
+      "proof": [
+        {
+          "hash": "0x573c19061653a840e92197a8f03f2a8c5b2adfc9b15304296bef52e384d3c48f",
+          "sum": "4285903772197668038897"
+        },
+        {
+          "hash": "0xd58e6a659afc3c050f62241abc5838c67b2a104a6f74ce092866f5edd0e29eaf",
+          "sum": "217705408115955252974309405"
+        },
+        {
+          "hash": "0x83a606efed3ac9e462d7215a2eeab0fce3c41b5339647f07620bec74074242fe",
+          "sum": "85642532808017"
+        }
+      ],
+      "root": "0xfb27a040b25a2a1f87c6d4a08062c20581afc3789ff0161dd41dcdacc8c23489",
+      "total": "217709694063370611542745257",
       "valid": false
     },
     {
@@ -2253,10 +2280,24 @@
       },
       "error": "",
       "leafCount": 1,
-      "name": "n1_total",
+      "name": "n1_total_above",
       "proof": [],
       "root": "0x05f34c6095831ccabd4046d07578163e1ae33133c46c4093a66fda9506df756d",
       "total": "221297086425932692309089269564985997123",
+      "valid": false
+    },
+    {
+      "account": {
+        "coldkey": "0x76613cea94bd02d50f492f73ebd978d00feeeb492563f71e723049ce17f38b96",
+        "cumulative": "221297086425932692309089269564985997122",
+        "index": "0"
+      },
+      "error": "",
+      "leafCount": 1,
+      "name": "n1_total_below",
+      "proof": [],
+      "root": "0x05f34c6095831ccabd4046d07578163e1ae33133c46c4093a66fda9506df756d",
+      "total": "221297086425932692309089269564985997121",
       "valid": false
     },
     {
