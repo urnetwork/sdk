@@ -894,6 +894,23 @@ export interface SnClaimsResult {
   error?: SnError | null;
 }
 
+export interface SnLedgerAccount {
+  vault: string;
+  no_id: number;
+  index: number;
+  finalized_rao: number;
+  claimable_rao: number;
+  paid_rao: number;
+  pending: boolean;
+  pending_rao: number;
+}
+
+export interface SnLedgerAccountsResult {
+  accounts: SnLedgerAccount[] | null;
+  coldkey_ss58?: string;
+  error?: SnError | null;
+}
+
 export interface SnUnsignedTx {
   epoch: number;
   chain_id: number;

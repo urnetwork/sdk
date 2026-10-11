@@ -172,6 +172,8 @@ func generateTypes() ([]byte, error) {
 		sdk.SnEpochClaim{},
 		sdk.SnEpochSchedule{},
 		sdk.SnClaimsResult{},
+		sdk.SnLedgerAccount{},
+		sdk.SnLedgerAccountsResult{},
 		sdk.SnUnsignedTx{},
 		sdk.SnEpochResult{},
 		sdk.AccountEpoch{},
@@ -315,6 +317,8 @@ func goTypeToTypeScript(t reflect.Type) string {
 			return "SnWallet[]"
 		case "sdk.SnEpochClaimList":
 			return "SnEpochClaim[]"
+		case "sdk.SnLedgerAccountList":
+			return "SnLedgerAccount[]"
 		case "sdk.SnUnsignedTxList":
 			return "SnUnsignedTx[]"
 		case "sdk.AccountEpochList":

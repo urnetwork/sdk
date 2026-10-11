@@ -43,7 +43,8 @@ type SnChainSettings struct {
 	Netuid int64  `json:"netuid"`
 	// "https://…/tx/%s"
 	ExplorerTxUrl string `json:"explorer_tx_url"`
-	// where "/sn/artifact?hash=…" is served; "" = the network space api url
+	// where "/sn/artifact?hash=…" and the v2 "/sn/ledger/account" are
+	// served; "" = the network space api url
 	ArtifactBaseUrl string `json:"artifact_base_url"`
 	// SnTxTypeLegacy (default) or SnTxTypeEip1559
 	TxType string `json:"tx_type"`

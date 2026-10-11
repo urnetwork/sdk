@@ -167,6 +167,7 @@ public interface Raw extends Library {
   interface urnet_sn_gas_balance_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_get_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_head_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_ledger_accounts_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_set_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_validate_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_wallet_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -768,6 +769,7 @@ public interface Raw extends Library {
   Pointer urnet_device_local_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_local_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
   void urnet_device_local_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
+  void urnet_device_local_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   byte urnet_device_local_stall_exit(long a0, String a1, byte a2);
   byte urnet_device_local_start_probe_suite(long a0, String a1);
   void urnet_device_local_stop_probe_suite(long a0);
@@ -872,6 +874,7 @@ public interface Raw extends Library {
   Pointer urnet_device_remote_sn_claim_transactions(long a0, String a1, PointerByReference a2);
   void urnet_device_remote_sn_claims(long a0, urnet_sn_claims_cb a1, Pointer a2);
   void urnet_device_remote_sn_gas_balance(long a0, urnet_sn_gas_balance_cb a1, Pointer a2);
+  void urnet_device_remote_sn_ledger_accounts(long a0, urnet_sn_ledger_accounts_cb a1, Pointer a2);
   byte urnet_device_remote_stall_exit(long a0, String a1, byte a2);
   byte urnet_device_remote_start_probe_suite(long a0, String a1);
   void urnet_device_remote_stop_probe_suite(long a0);
@@ -1456,6 +1459,7 @@ public interface Raw extends Library {
   void urnet_sn_claims_for(String a0, String a1, long a2, urnet_sn_claims_cb a3, Pointer a4);
   Pointer urnet_sn_fleet_binding_digest(String a0, PointerByReference a1);
   void urnet_sn_gas_balance_for(String a0, String a1, urnet_sn_gas_balance_cb a2, Pointer a3);
+  void urnet_sn_ledger_accounts_for(String a0, String a1, urnet_sn_ledger_accounts_cb a2, Pointer a3);
   Pointer urnet_sn_payout_leaf_hex(String a0, long a1);
   Pointer urnet_sn_testnet_chain_settings();
   Pointer urnet_suggest_emoji_tag(long a0);
