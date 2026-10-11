@@ -3,8 +3,6 @@ module github.com/urnetwork/sdk/js
 go 1.26.5
 
 require (
-	github.com/urnetwork/connect v0.0.0
-	github.com/urnetwork/sdk v0.0.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260908180501-3f62bf119e84
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -78,8 +76,10 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/theodorsm/covert-dtls v1.5.1 // indirect
-	github.com/urnetwork/glog v0.0.0 // indirect
+	github.com/urnetwork/connect/v2026 v2026.10.10-1068958850
+	github.com/urnetwork/glog/v2026 v2026.10.10-1068958850
 	github.com/urnetwork/goidenticons v0.0.0 // indirect
+	github.com/urnetwork/sdk/v2026 v2026.10.10-1068958850
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
@@ -95,14 +95,8 @@ require (
 	src.agwa.name/tlshacks v0.0.4 // indirect
 )
 
-replace github.com/urnetwork/sdk => ..
-
-replace github.com/urnetwork/connect => ../../connect
-
 replace github.com/pion/sctp => ../../connect/sctp
-
-replace github.com/urnetwork/glog => ../../glog
 
 replace github.com/urnetwork/goidenticons => ../../goidenticons
 
-replace gvisor.dev/gvisor => ../../gvisor
+replace gvisor.dev/gvisor => github.com/urnetwork/gvisor v0.0.0-20261004152605-c0783dba2eef
