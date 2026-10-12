@@ -358,6 +358,22 @@ test("a download stream refused before the extender has the load is retried", { 
   });
 });
 
+test("an upload stream that never connects does not hold up the load", { timeout: 30_000 }, async () => {
+  await withMock({ holdUploadStream: 3, uploadBytesPerSecond: 16 << 20 }, async (mock) => {
+    const { session } = open(mock, "ticket-held");
+    await session.ready;
+    const started = performance.now();
+    const result = await session.startLoad();
+    // well inside the 10 s a stream gets to connect
+    assert.ok(performance.now() - started < 8000, `${performance.now() - started} ms`);
+    assert.equal(result.upload.streams, 3);
+    assert.equal(mock.sessions[0].uploadStreams, 3);
+    assert.equal(result.uploadVerified, true);
+    assert.equal(result.endReason, "complete");
+    session.close();
+  });
+});
+
 test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout: 30_000 }, async () => {
   await withMock({ uploadBytesPerSecond: 2 << 20 }, async (mock) => {
     let largest = 0;

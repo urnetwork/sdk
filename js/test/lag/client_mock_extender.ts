@@ -271,6 +271,8 @@ export interface MockExtenderOptions {
   uploadBytesPerSecond?: number;
   /** answer the first download request of each stream with this status, once */
   firstDownloadStatus?: number;
+  /** never answer the upgrade of this upload stream, as if its packets were lost */
+  holdUploadStream?: number;
 }
 
 export interface MockSessionRecord {
@@ -345,6 +347,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
   const byId = new Map<string, SessionState>();
   const usedTickets = new Set<string>();
   const firstDownloadAnswered = new Set<string>();
+  const held = new Set<Duplex>();
   let open = 0;
 
   const later = (state: SessionState, ms: number, action: () => void) => {
@@ -650,6 +653,11 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       refuseUpgrade(socket, 409);
       return;
     }
+    if (stream === options.holdUploadStream) {
+      socket.on("error", () => undefined);
+      held.add(socket);
+      return;
+    }
     const record = state.record;
     const ws = acceptWebSocket(req, socket, head);
     record.uploadStreams += 1;
@@ -730,6 +738,9 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     },
     openSessions: () => open,
     close: async () => {
+      for (const socket of held) {
+        socket.destroy();
+      }
       for (const state of byId.values()) {
         endSession(state, "extender", 1001);
         state.ws.terminate();

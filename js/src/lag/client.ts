@@ -279,6 +279,7 @@ const BUFFER_MIN_BYTES = 1 << 20;
 const BUFFER_MAX_BYTES = 8 << 20;
 const BUFFER_SECONDS = 0.5;
 const BUFFER_POLL_MS = 10;
+const WEBSOCKET_CONNECTING = 0;
 const WEBSOCKET_OPEN = 1;
 
 const monotonicNow = () => performance.now();
@@ -1071,6 +1072,12 @@ class LagLoadRun {
         this.uploadStartedAt = epochNow();
         this.timeout(this.hello.uploadMs, () => {
           this.uploadStopped = true;
+          // a stream still connecting has missed the window; don't wait on it
+          for (const pending of this.sockets) {
+            if (pending.readyState === WEBSOCKET_CONNECTING) {
+              pending.close(1000);
+            }
+          }
         });
         this.emitPhase("upload", this.uploadStartedAt);
       }
