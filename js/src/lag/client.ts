@@ -101,7 +101,7 @@ export interface LagDirectionResult {
   bytes: number;
   /** streams that carried data (download) or opened (upload) */
   streams: number;
-  /** when the browser saw the direction's first byte, epoch ms */
+  /** when the browser saw the direction's first byte, as Date.now() */
   startedAt?: number;
   /** from the first byte to the last, ms */
   durationMs: number;
@@ -123,7 +123,7 @@ export interface LagLoadResult {
 export interface LagOpenEvent {
   type: "open";
   hello: LagHello;
-  /** epoch ms, the browser's clock; the session's time origin for `rtt.at` */
+  /** Date.now() when the hello arrived: the session's time origin for `rtt.at` */
   at: number;
 }
 
@@ -135,7 +135,7 @@ export interface LagRttEvent {
   /** the round trip in ms, or null when the ping was lost (no pong within 5 s) */
   ms: number | null;
   lost: boolean;
-  /** the send time on the browser's clock, epoch ms (the open event's `at` plus `t`) */
+  /** the send time on the browser's clock, as Date.now() (the open event's `at` plus `t`) */
   at: number;
 }
 
@@ -149,7 +149,7 @@ export interface LagRttEvent {
 export interface LagLoadEvent {
   type: "load";
   phase: LagLoadDirection | "done";
-  /** epoch ms */
+  /** Date.now() */
   at: number;
 }
 
@@ -168,7 +168,7 @@ export interface LagProgressEvent {
   durationMs: number;
   /** bytes so far in this direction */
   bytes: number;
-  /** when the browser saw the direction's first byte, epoch ms */
+  /** when the browser saw the direction's first byte, as Date.now() */
   startedAt: number;
 }
 
@@ -197,7 +197,7 @@ export interface LagClosedEvent {
   byClient: boolean;
   /** why, when it was not close() */
   error?: LagSessionError;
-  /** epoch ms */
+  /** Date.now() */
   at: number;
 }
 
@@ -239,7 +239,7 @@ export interface LagSession {
   readonly state: LagSessionState;
   /** the extender's hello, once open */
   readonly hello: LagHello | null;
-  /** epoch ms when the session opened, the origin of the rtt events' `at` */
+  /** Date.now() when the session opened, the origin of the rtt events' `at` */
   readonly openedAt: number | null;
   /** the last minute of pings, by send time on the browser's clock (`at`) */
   readonly pings: LagPingWindow;
@@ -282,8 +282,10 @@ const BUFFER_POLL_MS = 10;
 const WEBSOCKET_CONNECTING = 0;
 const WEBSOCKET_OPEN = 1;
 
+// Durations come from the monotonic clock. Event times are Date.now(), the
+// clock a page keeps its own times in, so the two compare directly.
 const monotonicNow = () => performance.now();
-const epochNow = () => performance.timeOrigin + performance.now();
+const epochNow = () => Date.now();
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 interface Deferred<T> {
