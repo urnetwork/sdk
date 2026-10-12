@@ -4,6 +4,7 @@
 package main
 
 import (
+	"syscall/js"
 	"testing"
 
 	"github.com/urnetwork/sdk"
@@ -97,5 +98,49 @@ func TestSnLedgerAccountsResultWasm(t *testing.T) {
 	})
 	if unavailable.Get("Accounts").Length() != 0 || unavailable.Get("Error").Get("Code").String() != sdk.SnErrorCodeLedgerUnavailable {
 		t.Fatalf("unavailable %v", unavailable)
+	}
+}
+
+// APPS-SPEC "Vault2Address": the site's settings carry the pinned vault2 out
+// of the defaults and back in, under any key casing, so a page can configure
+// the v2 claim.
+func TestSnChainSettingsWasmVault2Address(t *testing.T) {
+	if got := jsSnChainSettings(sdk.DefaultSnChainSettings()).Get("Vault2Address").String(); got != "" {
+		t.Fatalf("default vault2 %q", got)
+	}
+	vault2 := "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
+	for _, key := range []string{"Vault2Address", "vault2Address", "vault2_address"} {
+		settings, err := parseSnChainSettings(js.ValueOf(map[string]any{key: vault2}))
+		if err != nil || settings.Vault2Address != vault2 {
+			t.Fatalf("%s: %+v, %v", key, settings, err)
+		}
+		if got := jsSnChainSettings(settings).Get("Vault2Address").String(); got != vault2 {
+			t.Fatalf("%s round trip %q", key, got)
+		}
+	}
+}
+
+// APPS-SPEC "SnLedgerClaimTransactionsFor": the site sees each v2 claim
+// transaction with the Go field names, ready for its wallet.
+func TestSnLedgerUnsignedTxsWasm(t *testing.T) {
+	txs := sdk.NewSnLedgerUnsignedTxList()
+	txs.Add(&sdk.SnLedgerUnsignedTx{NoId: 1, Index: 42, RootIndex: 3, ChainId: 964, To: "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", Data: "0xb7a6b907", Value: "0", AmountRao: 23_456_789})
+	out := jsSnLedgerUnsignedTxs(txs)
+	if out.Length() != 1 {
+		t.Fatalf("transactions %v", out)
+	}
+	tx := out.Index(0)
+	for name, want := range map[string]int64{"NoId": 1, "Index": 42, "RootIndex": 3, "ChainId": 964, "AmountRao": 23_456_789} {
+		if got := int64(tx.Get(name).Float()); got != want {
+			t.Fatalf("%s = %d, want %d", name, got, want)
+		}
+	}
+	for name, want := range map[string]string{"To": "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", "Data": "0xb7a6b907", "Value": "0"} {
+		if got := tx.Get(name).String(); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+	if empty := jsSnLedgerUnsignedTxs(sdk.NewSnLedgerUnsignedTxList()); empty.Length() != 0 {
+		t.Fatalf("empty %v", empty)
 	}
 }

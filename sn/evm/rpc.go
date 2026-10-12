@@ -382,6 +382,16 @@ func (c *Client) EthCall(ctx context.Context, to [20]byte, data []byte) ([]byte,
 	return parseBytesResult(raw)
 }
 
+// EthCallFrom executes a call from `from` at latest without a transaction,
+// as the preflight of a transaction from `from`.
+func (c *Client) EthCallFrom(ctx context.Context, from, to [20]byte, data []byte) ([]byte, error) {
+	raw, err := c.Call(ctx, "eth_call", callMsg{From: AddressHex(from), To: AddressHex(to), Data: "0x" + hex.EncodeToString(data)}, "latest")
+	if err != nil {
+		return nil, err
+	}
+	return parseBytesResult(raw)
+}
+
 // EthCallBatch runs several read-only calls in one round trip.
 func (c *Client) EthCallBatch(ctx context.Context, to [20]byte, datas [][]byte) ([][]byte, []error, error) {
 	calls := make([]BatchCall, len(datas))
@@ -443,6 +453,15 @@ type Receipt struct {
 	Status      bool
 	BlockNumber uint64
 	GasUsed     uint64
+	// the logs whose address, topics and data parse
+	Logs []*Log
+}
+
+// Log is one event log of a receipt.
+type Log struct {
+	Address [20]byte
+	Topics  [][32]byte
+	Data    []byte
 }
 
 // TransactionReceipt returns nil, nil while the transaction is pending.
@@ -459,11 +478,30 @@ func (c *Client) TransactionReceipt(ctx context.Context, txHash string) (*Receip
 		Status          string `json:"status"`
 		BlockNumber     string `json:"blockNumber"`
 		GasUsed         string `json:"gasUsed"`
+		Logs            []struct {
+			Address string   `json:"address"`
+			Topics  []string `json:"topics"`
+			Data    string   `json:"data"`
+		} `json:"logs"`
 	}
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, err
 	}
 	out := &Receipt{TxHash: strings.ToLower(r.TransactionHash)}
+	for _, l := range r.Logs {
+		log := &Log{}
+		address, err := ParseAddress(l.Address)
+		data, dataErr := ParseHexBytes(l.Data)
+		for _, topic := range l.Topics {
+			hash, topicErr := ParseHash32(topic)
+			err = errors.Join(err, topicErr)
+			log.Topics = append(log.Topics, hash)
+		}
+		if err == nil && dataErr == nil {
+			log.Address, log.Data = address, data
+			out.Logs = append(out.Logs, log)
+		}
+	}
 	if r.Status != "" {
 		status, err := ParseUint256(r.Status)
 		if err != nil {

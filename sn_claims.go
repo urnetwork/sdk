@@ -895,6 +895,50 @@ func snFormatTao(wei *big.Int) string {
 	return fmt.Sprintf("%.6f TAO", tao)
 }
 
+func snNeedsGasMessage(maxCost *big.Int, balance *big.Int, gasKey *SnGasKey) string {
+	return fmt.Sprintf("%s: this claim needs up to %s of gas, the gas key %s has %s; send TAO to %s", SnErrorCodeNeedsGas, snFormatTao(maxCost), gasKey.Address, snFormatTao(balance), gasKey.MirrorSs58)
+}
+
+// snSignClaim signs a claim of data to `to` with the gas limit gas, from the
+// gas key, at the chain's current price: EIP-1559 at twice the base fee plus
+// the tip when txType asks for it and the chain has a base fee, else legacy
+// at 1.1 × eth_gasPrice. It returns the raw transaction and the most it can
+// cost, the gas limit × the price.
+func snSignClaim(ctx context.Context, client *evm.Client, chainId *big.Int, txType string, key *secp.PrivateKey, to [20]byte, data []byte, gas uint64) ([]byte, *big.Int, error) {
+	var baseFee *big.Int
+	if txType == SnTxTypeEip1559 {
+		if fee, err := client.LatestBaseFee(ctx); err == nil && fee != nil && fee.Sign() > 0 {
+			baseFee = fee
+		}
+	}
+	nonce, err := client.Nonce(ctx, evm.AddressOf(key))
+	if err != nil {
+		return nil, nil, err
+	}
+	if baseFee != nil {
+		tip, err := client.MaxPriorityFeePerGas(ctx)
+		if err != nil || tip == nil {
+			tip = big.NewInt(1_000_000_000)
+		}
+		feeCap := new(big.Int).Mul(baseFee, big.NewInt(2))
+		feeCap.Add(feeCap, tip)
+		tx := &evm.DynamicFeeTx{Nonce: nonce, MaxPriorityFeePerGas: tip, MaxFeePerGas: feeCap, Gas: gas, To: to, Value: big.NewInt(0), Data: data}
+		raw, _, err := tx.Signed(chainId, key)
+		return raw, new(big.Int).Mul(feeCap, new(big.Int).SetUint64(gas)), err
+	}
+	gasPrice, err := client.GasPrice(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	gasPrice = new(big.Int).Div(new(big.Int).Mul(gasPrice, big.NewInt(11)), big.NewInt(10))
+	if gasPrice.Sign() == 0 {
+		gasPrice = big.NewInt(1)
+	}
+	tx := &evm.LegacyTx{Nonce: nonce, GasPrice: gasPrice, Gas: gas, To: to, Value: big.NewInt(0), Data: data}
+	raw, _, err := tx.Signed(chainId, key)
+	return raw, new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gas)), err
+}
+
 // send claims one epoch with the gas key and reports through the callback.
 func (self *snClaimEngine) send(ctx context.Context, key *secp.PrivateKey, epoch int64, callback SnClaimCallback) {
 	plan, reason, err := self.plan(ctx, epoch)
@@ -928,56 +972,13 @@ func (self *snClaimEngine) send(ctx context.Context, key *secp.PrivateKey, epoch
 		return
 	}
 	gas += gas / 4
-
-	var raw []byte
-	var maxCost *big.Int
-	useDynamic := false
-	var baseFee *big.Int
-	if self.settings.TxType == SnTxTypeEip1559 {
-		if fee, err := self.client.LatestBaseFee(ctx); err == nil && fee != nil && fee.Sign() > 0 {
-			baseFee = fee
-			useDynamic = true
-		}
-	}
-	nonce, err := self.client.Nonce(ctx, from)
+	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault, data, gas)
 	if err != nil {
 		callback.Failed(epoch, snFailMessage(err))
 		return
 	}
-	if useDynamic {
-		tip, err := self.client.MaxPriorityFeePerGas(ctx)
-		if err != nil || tip == nil {
-			tip = big.NewInt(1_000_000_000)
-		}
-		feeCap := new(big.Int).Mul(baseFee, big.NewInt(2))
-		feeCap.Add(feeCap, tip)
-		maxCost = new(big.Int).Mul(feeCap, new(big.Int).SetUint64(gas))
-		tx := &evm.DynamicFeeTx{Nonce: nonce, MaxPriorityFeePerGas: tip, MaxFeePerGas: feeCap, Gas: gas, To: self.vault, Value: big.NewInt(0), Data: data}
-		raw, _, err = tx.Signed(self.chainId, key)
-		if err != nil {
-			callback.Failed(epoch, SnErrorCodeClaimFailed+": "+err.Error())
-			return
-		}
-	} else {
-		gasPrice, err := self.client.GasPrice(ctx)
-		if err != nil {
-			callback.Failed(epoch, snFailMessage(err))
-			return
-		}
-		gasPrice = new(big.Int).Div(new(big.Int).Mul(gasPrice, big.NewInt(11)), big.NewInt(10))
-		if gasPrice.Sign() == 0 {
-			gasPrice = big.NewInt(1)
-		}
-		maxCost = new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gas))
-		tx := &evm.LegacyTx{Nonce: nonce, GasPrice: gasPrice, Gas: gas, To: self.vault, Value: big.NewInt(0), Data: data}
-		raw, _, err = tx.Signed(self.chainId, key)
-		if err != nil {
-			callback.Failed(epoch, SnErrorCodeClaimFailed+": "+err.Error())
-			return
-		}
-	}
 	if balance.Cmp(maxCost) < 0 {
-		callback.Failed(epoch, fmt.Sprintf("%s: this claim needs up to %s of gas, the gas key %s has %s; send TAO to %s", SnErrorCodeNeedsGas, snFormatTao(maxCost), gasKey.Address, snFormatTao(balance), gasKey.MirrorSs58))
+		callback.Failed(epoch, snNeedsGasMessage(maxCost, balance, gasKey))
 		return
 	}
 	txHash, err := self.client.SendRawTransaction(ctx, raw)
