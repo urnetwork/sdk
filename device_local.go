@@ -657,6 +657,13 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport Go-only network dial seam.
 	ProviderDialContextSettings *connect.DialContextSettings `json:"-"`
+	// LocalDialContextSettings, when set, is applied to the TCP and UDP sockets
+	// of the local route: what the device sends outside the tunnel, with route
+	// local on, to an un-blocked destination, or over SMTP. Tests keep that
+	// traffic in the process with it. Ordinary applications leave it nil.
+	//
+	//gomobile:noexport Go-only network dial seam.
+	LocalDialContextSettings *connect.DialContextSettings `json:"-"`
 	// DnsPumpHost overrides the public UDP/53 destination used by the DNS-pump
 	// carrier. Integration hosts with a private or loopback Connect endpoint
 	// must set this to their provisioned pump ingress; sending that endpoint's
@@ -1563,6 +1570,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			providerTransportMode,
 			providerModePreferences,
 			settings.ProviderDialContextSettings,
+			settings.LocalDialContextSettings,
 			settings.DnsPumpHost,
 			transferMemory,
 			api,
@@ -4810,6 +4818,7 @@ func (self *DeviceLocal) applyDestination(
 				self.settings.MemoryTargetByteCount,
 			)
 			settings.Log = self.log
+			settings.LocalDialContextSettings = self.settings.LocalDialContextSettings
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
 			// smart-routing tier (Phase 1): bake self.routingTier's knobs into
 			// the constructed baseline so a fresh window -- the very first one
