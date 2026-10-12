@@ -144,29 +144,36 @@ test("ring: a failed chunk fails the stream from there on", async () => {
   await assert.rejects(ring.next(64), /no crypto/);
 });
 
-// The S1 vectors from Go, once sdk-core's generator has written them.
+// The S1 vectors from Go (gen_lag.go): key, stream and offset give the
+// counter block and the keystream cipher.NewCTR produced.
 const vectorsPath = new URL("./vectors.json", import.meta.url);
 test("keystream matches the Go vectors", { skip: !existsSync(vectorsPath) && "test/lag/vectors.json not generated yet" }, async () => {
   const vectors = JSON.parse(readFileSync(vectorsPath, "utf8"));
-  const samples = vectors.keystream as Array<Record<string, unknown>>;
-  assert.ok(Array.isArray(samples) && samples.length > 0, "vectors.json has keystream samples");
-  const bytesOf = (value: unknown): Uint8Array => {
-    assert.equal(typeof value, "string");
-    const text = value as string;
-    return /^[0-9a-f]*$/i.test(text) && text.length % 2 === 0
-      ? new Uint8Array(Buffer.from(text, "hex"))
-      : new Uint8Array(Buffer.from(text, "base64url"));
-  };
+  const samples = vectors.keystream as Array<{
+    key: string;
+    uploadKey: string;
+    stream: number;
+    offset: number;
+    counter: string;
+    bytes: string;
+  }>;
+  assert.ok(Array.isArray(samples) && 0 < samples.length, "vectors.json has keystream samples");
   for (const sample of samples) {
-    const raw = bytesOf(sample.key);
-    const expected = bytesOf(sample.bytes ?? sample.keystream);
-    const stream = Number(sample.stream);
-    const offset = Number(sample.offset);
-    const key = await importLagUploadKey(raw);
-    assert.equal(
-      hex(await lagKeystream(key, stream, offset, expected.length)),
-      hex(expected),
-      `stream ${stream} offset ${offset}`,
-    );
+    const what = `stream ${sample.stream} offset ${sample.offset}`;
+    assert.equal(hex(lagCounterBlock(sample.stream, sample.offset)), sample.counter, what);
+    const raw = new Uint8Array(Buffer.from(sample.key, "hex"));
+    assert.equal(base64url(raw), sample.uploadKey, what);
+    const length = sample.bytes.length / 2;
+    for (const key of [await importLagUploadKey(raw), await importLagUploadKey(sample.uploadKey)]) {
+      assert.equal(hex(await lagKeystream(key, sample.stream, sample.offset, length)), sample.bytes, what);
+    }
+    // the ring reaches the same bytes reading from offset 0
+    if (sample.offset + length <= 1 << 21) {
+      const ring = new LagKeystream(await importLagUploadKey(raw), sample.stream, { chunkBytes: 4096 });
+      if (0 < sample.offset) {
+        await ring.next(sample.offset);
+      }
+      assert.equal(hex(await ring.next(length)), sample.bytes, `${what}, through the ring`);
+    }
   }
 });
