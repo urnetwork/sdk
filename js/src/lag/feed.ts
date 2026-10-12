@@ -584,9 +584,9 @@ export class ExtenderFeedClient {
       const onAbort = () => end(new ExtenderFeedError("aborted"), true);
       // a close or failure ends the stream after the frames already received
       // are applied, so a sample whose end arrived just before the close
-      // still resolves
-      const endAfterApplying = (error: Error) => {
-        void applying.then(() => end(sampled ? undefined : error));
+      // still resolves; `error` gives the error once that is known
+      const endAfterApplying = (error: () => Error | undefined) => {
+        void applying.then(() => end(error()));
       };
       const endOfSample = () => {
         if (ended) {
@@ -615,10 +615,17 @@ export class ExtenderFeedClient {
         }
       };
       socket.onerror = () => {
-        endAfterApplying(new ExtenderFeedError("the feed connection failed"));
+        endAfterApplying(() => new ExtenderFeedError("the feed connection failed"));
       };
       socket.onclose = (event) => {
-        endAfterApplying(new ExtenderFeedError(`the feed closed before the sample (${event.code})`));
+        // the server ends a feed with a normal close; after the sample that
+        // is an orderly end, and anything else is a failure
+        endAfterApplying(() => {
+          if (!sampled) {
+            return new ExtenderFeedError(`the feed closed before the sample (${event.code})`);
+          }
+          return event.code === 1000 ? undefined : new ExtenderFeedError(`the feed closed (${event.code})`);
+        });
       };
       socket.onmessage = (event) => {
         const data: unknown = event.data;

@@ -307,6 +307,33 @@ test("feed: a subscription applies what follows the sample until the server ends
   assert.deepEqual(events.map((event) => event.type), ["open", "record", "endOfSample", "revocation", "record", "closed"]);
 });
 
+test("feed: a subscription that fails is closed with the error, and the client's own close is not one", async () => {
+  const cases: Array<[string, (socket: FakeWebSocket, client: InstanceType<typeof ExtenderFeedClient>) => void, RegExp | null]> = [
+    ["an abnormal close", (socket) => socket.serverClose(1006), /the feed closed \(1006\)/],
+    ["a connection error", (socket) => { socket.onerror?.({}); socket.serverClose(1006); }, /connection failed/],
+    ["the client closing", (_socket, client) => client.close(), null],
+  ];
+  for (const [name, act, message] of cases) {
+    const { client, events } = feedClient();
+    const sampled = client.sample(8, { subscribe: true });
+    const socket = fake();
+    socket.open();
+    socket.frame(frames.record);
+    socket.frame(frames.endOfSample);
+    // the sample stands whatever ends the subscription
+    assert.equal((await sampled).length, 1, name);
+    act(socket, client);
+    await until(() => events.at(-1)?.type === "closed");
+    if (message === null) {
+      assert.equal(events.at(-1)?.error, undefined, name);
+    } else {
+      assert.match(String(events.at(-1)?.error), message, name);
+    }
+    assert.equal(client.open, false, name);
+    assert.equal(client.directory.entries().length, 1, name);
+  }
+});
+
 test("feed: refused records and frames are reported and the stream goes on", async () => {
   const { client, events } = feedClient({ networkHosts: ["ur.network"] });
   const sampled = client.sample(8);
