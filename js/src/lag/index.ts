@@ -19,8 +19,9 @@ export {
 export {
   DEFAULT_EXTENDER_MEASUREMENT_ZONE,
   canonicalIp,
+  extenderIdFromBytes,
   extenderMeasurementHost,
-  extenderMeasurementLabel,
+  isExtenderId,
   parseExtenderMeasurementHost,
 } from "./names";
 export {

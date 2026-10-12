@@ -41,14 +41,14 @@ function bodyJson(body: ReturnType<typeof decodeExtenderRecordBody>) {
     webRtcClientIdHex: hex(body.webRtcClientId),
     realityPublicKeyHex: hex(body.realityPublicKey),
     canaryChannel: body.canaryChannel,
-    measurementApi: body.measurementApi,
+    measurementIdHex: hex(body.measurementId),
   };
 }
 
 test("records and their bodies decode as Go decodes them", () => {
   assert.deepEqual(
     vectors.records.map((vector: { name: string }) => vector.name),
-    ["measurement", "canary", "unusual"],
+    ["measurement", "canary", "unusual", "zero id"],
   );
   for (const vector of vectors.records) {
     const record = decodeExtenderRecord(base64(vector.recordBase64));
@@ -59,10 +59,18 @@ test("records and their bodies decode as Go decodes them", () => {
   }
 });
 
-test("MeasurementApi, field 17, is read", () => {
+test("MeasurementId, field 17, is read as the extender's 16-byte id", () => {
   const [measurement, canary] = vectors.records;
-  assert.equal(decodeExtenderRecordBody(base64(measurement.bodyBase64)).measurementApi, true);
-  assert.equal(decodeExtenderRecordBody(base64(canary.bodyBase64)).measurementApi, false);
+  // the N1 example id, 0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f
+  assert.equal(hex(decodeExtenderRecordBody(base64(measurement.bodyBase64)).measurementId), "0192e4a17b3c7d2e9f105a6b7c8d9e0f");
+  assert.equal(measurement.measurementId, "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f");
+  // an extender that does not serve the measurement API carries none
+  assert.equal(decodeExtenderRecordBody(base64(canary.bodyBase64)).measurementId.length, 0);
+  assert.equal(canary.measurementId, null);
+  // 16 zero bytes are read as written; they are the zero id, which Go names nothing
+  const zeroId = vectors.records[3];
+  assert.equal(hex(decodeExtenderRecordBody(base64(zeroId.bodyBase64)).measurementId), "00".repeat(16));
+  assert.equal(zeroId.measurementId, null);
 });
 
 test("an unusual body: unknown fields skipped, ports packed and not, uint32 truncated, wrong wire types unknown", () => {
@@ -70,8 +78,11 @@ test("an unusual body: unknown fields skipped, ports packed and not, uint32 trun
   const body = decodeExtenderRecordBody(base64(unusual.bodyBase64));
   assert.deepEqual(body.dnsPorts, [53, 4053, 5353, 8053]);
   assert.equal(body.tcpPort, 8443);
-  assert.equal(body.measurementApi, true);
   assert.equal(body.countryCode, "");
+  // field 17 as the varint flag it once was is skipped, and the bytes after it
+  // are read as written though they are too short to be an id
+  assert.equal(hex(body.measurementId), "0192e4a17b3c7d2e");
+  assert.equal(unusual.measurementId, null);
 });
 
 test("the revocation decodes", () => {
@@ -181,7 +192,7 @@ test("unknown groups nested past 64 are refused, where Go allows 10000", () => {
 });
 
 test("values at the edges: a BOM is kept, uint64 is exact to 2^53, unknown groups nest", () => {
-  assert.equal(decodeExtenderRecordBody(Uint8Array.from([0x32, 0x03, 0xef, 0xbb, 0xbf])).dnsTld, "﻿");
+  assert.equal(decodeExtenderRecordBody(Uint8Array.from([0x32, 0x03, 0xef, 0xbb, 0xbf])).dnsTld, "\ufeff");
   // ExpireTimeMs (9) = 2^53 - 1, then IssueTimeMs (8) = 2^64 - 1
   const body = decodeExtenderRecordBody(
     Uint8Array.from([

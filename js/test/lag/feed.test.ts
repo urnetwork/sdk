@@ -21,7 +21,7 @@ const { decodeExtenderRecord, decodeExtenderRevocation, decodeLagTicket } = awai
 const { tweetnaclVerifyDetached } = await import("../../src/lag/tweetnacl_verify.ts");
 
 // lag.dev/PLAN.md S3, M9: the feed, verified as connect verifies it, into a
-// directory that exposes MeasurementApi
+// directory that exposes each record's MeasurementId and measurement host
 const vectors = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url), "utf8"));
 
 const base64 = (text: string) => new Uint8Array(Buffer.from(text, "base64"));
@@ -35,10 +35,11 @@ const concat = (a: Uint8Array, b: Uint8Array) => {
 
 const rootPublicKey = fromHex(vectors.rootPublicKeyHex);
 const otherPublicKey = fromHex(vectors.otherPublicKeyHex);
-const [measurementVector, canaryVector, unusualVector] = vectors.records;
+const [measurementVector, canaryVector, unusualVector, zeroIdVector] = vectors.records;
 const measurementRecord = decodeExtenderRecord(base64(measurementVector.recordBase64));
 const canaryRecord = decodeExtenderRecord(base64(canaryVector.recordBase64));
 const unusualRecord = decodeExtenderRecord(base64(unusualVector.recordBase64));
+const zeroIdRecord = decodeExtenderRecord(base64(zeroIdVector.recordBase64));
 const revocation = decodeExtenderRevocation(base64(vectors.revocation.revocationBase64));
 const extenderKey: string = measurementVector.body.publicKeyHex;
 
@@ -98,18 +99,18 @@ for (const fallback of [false, true]) {
     assert.equal(await verifyEd25519(rootPublicKey, signed, malleated, { fallback }), false);
   });
 
-  test(`directory with ${path}: a record is taken, with its MeasurementApi flag and hosts`, async () => {
+  test(`directory with ${path}: a record is taken, with its MeasurementId and measurement host`, async () => {
     const extenders = directory({ verifyFallback: fallback });
     const result = await extenders.applyRecord(measurementRecord);
     assert.equal(result.status, "applied");
     const [entry] = extenders.entries();
     assert.equal(entry.publicKey, extenderKey);
-    assert.equal(entry.measurementApi, true);
+    // as Go names the id the record carries
+    assert.equal(entry.measurementId, measurementVector.measurementId);
+    assert.equal(entry.measurementHost, measurementVector.measurementHost);
+    assert.equal(entry.measurementId, "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f");
+    assert.equal(entry.measurementHost, "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com");
     assert.deepEqual(entry.ips, ["203.0.113.7", "2001:db8::7"]);
-    assert.deepEqual(entry.measurementHosts, [
-      "203-0-113-7.extender.bringyour.com",
-      "2001-db8--7.extender.bringyour.com",
-    ]);
     assert.equal(entry.body.countryCode, "de");
     assert.equal(extenders.get(extenderKey.toUpperCase()), entry);
     assert.deepEqual(extenders.measurementEntries(), [entry]);
@@ -137,9 +138,34 @@ test("directory: network hosts are matched as connect matches them", async () =>
   assert.deepEqual(refused.status === "refused" && refused.reason, "networkHost");
   assert.equal((await urNetwork.applyRecord(canaryRecord)).status, "applied");
   assert.equal(urNetwork.entries()[0].body.canaryChannel, "canary-a");
-  assert.equal(urNetwork.entries()[0].measurementApi, false);
-  assert.deepEqual(urNetwork.entries()[0].measurementHosts, []);
+  // no MeasurementId, so no measurement host
+  assert.equal(urNetwork.entries()[0].measurementId, null);
+  assert.equal(urNetwork.entries()[0].measurementHost, null);
+  assert.deepEqual(urNetwork.measurementEntries(), []);
   assert.equal((await directory({ networkHosts: [] }).applyRecord(canaryRecord)).status, "refused");
+});
+
+test("directory: the measurement id and host of every record vector are what Go gives", async () => {
+  const records = { measurement: measurementRecord, canary: canaryRecord, unusual: unusualRecord, "zero id": zeroIdRecord };
+  for (const vector of vectors.records as Array<{ name: keyof typeof records; measurementId: string | null; measurementHost: string | null }>) {
+    const extenders = directory();
+    const result = await extenders.applyRecord(records[vector.name]);
+    assert.equal(result.status, "applied", vector.name);
+    const [entry] = extenders.entries();
+    assert.equal(entry.measurementId, vector.measurementId, vector.name);
+    assert.equal(entry.measurementHost, vector.measurementHost, vector.name);
+    assert.equal(extenders.measurementEntries().length, vector.measurementHost === null ? 0 : 1, vector.name);
+  }
+  // only the measurement record carries an extender's id: the canary has
+  // none, the unusual one 8 bytes, and the zero id is no extender's
+  assert.deepEqual(
+    vectors.records.map((vector: { measurementHost: string | null }) => vector.measurementHost),
+    ["0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com", null, null, null],
+  );
+  // the zone of the hosts is the directory's
+  const lab = directory({ measurementZone: "Lab.Example." });
+  await lab.applyRecord(measurementRecord);
+  assert.equal(lab.entries()[0].measurementHost, "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.lab.example");
 });
 
 test("directory: a record expires five minutes after its ExpireTimeMs", async () => {
@@ -157,9 +183,13 @@ test("directory: a record expires five minutes after its ExpireTimeMs", async ()
 test("directory: the newest record of a key wins", async () => {
   const extenders = directory();
   assert.equal((await extenders.applyRecord(measurementRecord)).status, "applied");
-  // the unusual record is the same extender, issued a millisecond later
+  assert.deepEqual(extenders.measurementEntries().length, 1);
+  // the unusual record is the same extender, issued a millisecond later, and
+  // its MeasurementId is 8 bytes, which is no id
   assert.equal((await extenders.applyRecord(unusualRecord)).status, "applied");
   assert.deepEqual(extenders.entries().map((entry) => entry.ips), [["198.51.100.20"]]);
+  assert.deepEqual(extenders.entries().map((entry) => [entry.measurementId, entry.measurementHost]), [[null, null]]);
+  assert.deepEqual(extenders.measurementEntries(), []);
   assert.equal((await extenders.applyRecord(measurementRecord)).status, "unchanged");
   assert.equal((await extenders.applyRecord(unusualRecord)).status, "unchanged");
   assert.deepEqual(extenders.entries().map((entry) => entry.ips), [["198.51.100.20"]]);
@@ -277,7 +307,10 @@ test("feed: a sample asks as connect asks, applies in order, and closes at its e
   // the server ends a sample without a subscription at once
   socket.serverClose();
   const entries = await sampled;
-  assert.deepEqual(entries.map((entry) => [entry.measurementApi, entry.body.countryCode]), [[true, "de"], [false, "jp"]]);
+  assert.deepEqual(
+    entries.map((entry) => [entry.measurementHost, entry.body.countryCode]),
+    [["0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com", "de"], [null, "jp"]],
+  );
   assert.equal(socket.closedWith, 1000);
   assert.equal(client.open, false);
   assert.deepEqual(events.map((event) => event.type), ["open", "record", "record", "endOfSample", "closed"]);

@@ -61,6 +61,8 @@ test("the lag entry exports S1-S3", async () => {
     "extenderHue",
     "extenderHueColorHex",
     "canonicalIp",
+    "isExtenderId",
+    "extenderIdFromBytes",
     "extenderMeasurementHost",
     "parseExtenderMeasurementHost",
     "decodeExtenderFeedFrame",
@@ -74,5 +76,8 @@ test("the lag entry exports S1-S3", async () => {
     assert.equal(typeof (lag as Record<string, unknown>)[name], "function", name);
   }
   assert.equal(Object.keys(lag.COUNTRY_COLOR_HEXES).length, 250);
-  assert.equal(lag.extenderMeasurementHost("203.0.113.7"), "203-0-113-7.extender.bringyour.com");
+  assert.equal(
+    lag.extenderMeasurementHost("0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"),
+    "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com",
+  );
 });

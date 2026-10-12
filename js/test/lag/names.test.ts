@@ -6,16 +6,21 @@ import { registerTsResolve } from "../ts-resolve.ts";
 registerTsResolve();
 const {
   canonicalIp,
+  extenderIdFromBytes,
   extenderMeasurementHost,
-  extenderMeasurementLabel,
+  isExtenderId,
   parseExtenderMeasurementHost,
   trimSpaceGo,
   DEFAULT_EXTENDER_MEASUREMENT_ZONE,
 } = await import("../../src/lag/names.ts");
 
-// lag.dev/PLAN.md S1, S2, N: the canonical address, names and their parse,
-// against what Go's netip and connect's lag_names.go give for the same input
+// lag.dev/PLAN.md S1, S2, N: the canonical address, and measurement names by
+// extender id and their parse, against what Go's netip and connect's
+// lag_names.go give for the same input
 const vectors = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url), "utf8"));
+
+const exampleId = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f";
+const exampleHost = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com";
 
 test("canonicalIp is netip.ParseAddr(...).Unmap().String() on every vector", () => {
   assert.ok(400 < vectors.canonicalIps.length);
@@ -38,70 +43,118 @@ test("canonicalIp: RFC 5952, v4-mapped unmapped, zones kept, netip's refusals", 
   }
 });
 
+test("isExtenderId takes only what connect.Id.String() writes, on every vector", () => {
+  const ids = vectors.extenderIds as Array<{ text: string; canonical: boolean }>;
+  assert.ok(30 <= ids.length);
+  assert.ok(ids.some((vector) => vector.canonical) && ids.some((vector) => !vector.canonical));
+  for (const { text, canonical } of ids) {
+    assert.equal(isExtenderId(text), canonical, JSON.stringify(text));
+    // an id that is not canonical names no host
+    assert.equal(extenderMeasurementHost(text), canonical ? `${text}.extender.bringyour.com` : "", JSON.stringify(text));
+  }
+});
+
 test("extenderMeasurementHost is connect.ExtenderMeasurementName on every vector", () => {
-  assert.ok(400 < vectors.measurementNames.length);
-  for (const { ip, zone, name } of vectors.measurementNames) {
-    assert.equal(extenderMeasurementHost(ip, zone), name, `${JSON.stringify(ip)} in ${JSON.stringify(zone)}`);
+  const names = vectors.measurementNames as Array<{ id: string; zone: string; name: string }>;
+  assert.ok(60 <= names.length);
+  for (const { id, zone, name } of names) {
+    assert.equal(extenderMeasurementHost(id, zone), name, `${id} in ${JSON.stringify(zone)}`);
   }
 });
 
-test("the N1 table", () => {
-  const table: Array<[string, string]> = [
-    ["203.0.113.7", "203-0-113-7.extender.bringyour.com"],
-    ["::ffff:203.0.113.7", "203-0-113-7.extender.bringyour.com"],
-    ["2001:db8::1", "2001-db8--1.extender.bringyour.com"],
-    ["2001:db8:0:1:1:1:1:1", "2001-db8-0-1-1-1-1-1.extender.bringyour.com"],
-    ["2001:db8::", "2001-db8--0.extender.bringyour.com"],
-    ["::1", "0--1.extender.bringyour.com"],
-  ];
-  for (const [ip, name] of table) {
-    assert.equal(extenderMeasurementHost(ip), name);
-    assert.equal(parseExtenderMeasurementHost(name), canonicalIp(ip));
-  }
+test("the N1 example", () => {
   assert.equal(DEFAULT_EXTENDER_MEASUREMENT_ZONE, "extender.bringyour.com");
+  assert.equal(extenderMeasurementHost(exampleId), exampleHost);
+  assert.equal(parseExtenderMeasurementHost(exampleHost), exampleId);
 });
 
-test("names: the zone is normalized, the scope dropped, and a non-address has none", () => {
-  assert.equal(extenderMeasurementHost("203.0.113.7", "Extender.BringYour.COM."), "203-0-113-7.extender.bringyour.com");
-  assert.equal(extenderMeasurementHost("203.0.113.7", " \t"), "203-0-113-7.extender.bringyour.com");
-  assert.equal(extenderMeasurementHost("203.0.113.7", "lab.example."), "203-0-113-7.lab.example");
-  assert.equal(extenderMeasurementHost("fe80::1%eth0"), "fe80--1.extender.bringyour.com");
-  assert.equal(extenderMeasurementLabel("::"), "0--0");
-  assert.equal(extenderMeasurementHost("not an address"), "");
-  assert.equal(extenderMeasurementHost(" 203.0.113.7"), "");
+test("names: the zone is normalized and a non-canonical id is refused", () => {
+  assert.equal(extenderMeasurementHost(exampleId, "Extender.BringYour.COM."), exampleHost);
+  assert.equal(extenderMeasurementHost(exampleId, " \t"), exampleHost);
+  assert.equal(extenderMeasurementHost(exampleId, ""), exampleHost);
+  assert.equal(extenderMeasurementHost(exampleId, "  Lab.Example. "), `${exampleId}.lab.example`);
+  for (const refused of [
+    exampleId.toUpperCase(),
+    exampleId.replace(/-/g, ""),
+    `{${exampleId}}`,
+    exampleId.slice(0, -1),
+    `${exampleId}0`,
+    exampleId.replace("0192", "g192"),
+    ` ${exampleId}`,
+    `${exampleId}\n`,
+    "",
+    "203.0.113.7",
+    "203-0-113-7",
+  ]) {
+    assert.equal(extenderMeasurementHost(refused), "", JSON.stringify(refused));
+  }
 });
 
 test("parseExtenderMeasurementHost is connect.ParseExtenderMeasurementName on every vector", () => {
-  const hosts = vectors.measurementHosts as Array<{ host: string; zone: string; ip: string | null }>;
-  assert.ok(400 < hosts.length);
+  const hosts = vectors.measurementHosts as Array<{ host: string; zone: string; id: string | null }>;
+  assert.ok(100 < hosts.length);
   // the vectors hold refusals as well as round trips
-  assert.ok(50 < hosts.filter((vector) => vector.ip === null).length);
-  for (const { host, zone, ip } of hosts) {
-    assert.equal(parseExtenderMeasurementHost(host, zone), ip, `${JSON.stringify(host)} in ${JSON.stringify(zone)}`);
+  assert.ok(40 < hosts.filter((vector) => vector.id === null).length);
+  assert.ok(60 <= hosts.filter((vector) => vector.id !== null).length);
+  for (const { host, zone, id } of hosts) {
+    assert.equal(parseExtenderMeasurementHost(host, zone), id, `${JSON.stringify(host)} in ${JSON.stringify(zone)}`);
   }
 });
 
 test("parseExtenderMeasurementHost refuses every spelling but the canonical one", () => {
   for (const refused of [
-    "2001-DB8--1.extender.bringyour.com",
-    "2001-db8-0-0-0-0-0-1.extender.bringyour.com",
-    "2001-0db8--1.extender.bringyour.com",
-    "--1.extender.bringyour.com",
-    "00--1.extender.bringyour.com",
-    "0--ffff-cb00-7107.extender.bringyour.com",
-    "203-0-113-7.extender.bringyour.com.",
-    "203-0-113-7.EXTENDER.BRINGYOUR.COM",
-    "x.203-0-113-7.extender.bringyour.com",
-    "203-0-113-7.example.com",
+    exampleHost.toUpperCase(),
+    `${exampleId.toUpperCase()}.extender.bringyour.com`,
+    `${exampleId.replace(/-/g, "")}.extender.bringyour.com`,
+    `${exampleId.replace(/-/g, "x")}.extender.bringyour.com`,
+    `${exampleId.slice(1)}.extender.bringyour.com`,
+    `${exampleId}0.extender.bringyour.com`,
+    `${exampleId.replace("0192", "g192")}.extender.bringyour.com`,
+    `${exampleId}.EXTENDER.BRINGYOUR.COM`,
+    `${exampleHost}.`,
+    `x.${exampleHost}`,
+    `${exampleId}.x.extender.bringyour.com`,
+    `${exampleId}.example.com`,
+    ` ${exampleHost}`,
+    exampleId,
+    ".extender.bringyour.com",
+    "203-0-113-7.extender.bringyour.com",
+    "",
   ]) {
-    assert.equal(parseExtenderMeasurementHost(refused), null, refused);
+    assert.equal(parseExtenderMeasurementHost(refused), null, JSON.stringify(refused));
   }
-  assert.equal(parseExtenderMeasurementHost("203-0-113-7.lab.example", "Lab.Example."), "203.0.113.7");
+  assert.equal(parseExtenderMeasurementHost(`${exampleId}.lab.example`, "Lab.Example."), exampleId);
+  assert.equal(parseExtenderMeasurementHost(exampleHost, "lab.example"), null);
+});
+
+test("extenderIdFromBytes writes 16 bytes as connect.Id.String() does", () => {
+  const bytes = Uint8Array.from(Buffer.from(exampleId.replace(/-/g, ""), "hex"));
+  assert.equal(extenderIdFromBytes(bytes), exampleId);
+  assert.equal(extenderIdFromBytes(new Uint8Array(16).fill(0xff)), "ffffffff-ffff-ffff-ffff-ffffffffffff");
+  for (const length of [0, 8, 15, 17, 32]) {
+    assert.equal(extenderIdFromBytes(new Uint8Array(length).fill(1)), null, `${length} bytes`);
+  }
+  // every id the vectors name round trips through its bytes; the zero id is
+  // no extender's, and Go names it nothing
+  for (const { id, name } of vectors.measurementNames as Array<{ id: string; name: string }>) {
+    const named = name !== "";
+    assert.equal(extenderIdFromBytes(Uint8Array.from(Buffer.from(id.replace(/-/g, ""), "hex"))), named ? id : null, id);
+    assert.equal(isExtenderId(id), named, id);
+  }
+});
+
+test("the zero id is no extender's: it has no host and does not parse", () => {
+  const zero = "00000000-0000-0000-0000-000000000000";
+  assert.equal(isExtenderId(zero), false);
+  assert.equal(extenderIdFromBytes(new Uint8Array(16)), null);
+  assert.equal(extenderMeasurementHost(zero), "");
+  assert.equal(parseExtenderMeasurementHost(`${zero}.extender.bringyour.com`), null);
+  assert.equal(isExtenderId("00000000-0000-0000-0000-000000000001"), true);
 });
 
 test("trimSpaceGo trims what Go's strings.TrimSpace trims", () => {
-  assert.equal(trimSpaceGo("\u0085 1.2.3.4　\n"), "1.2.3.4");
+  assert.equal(trimSpaceGo("\u0085 1.2.3.4\u3000\n"), "1.2.3.4");
   // U+FEFF is not space to Go, though String.prototype.trim removes it
-  assert.equal(trimSpaceGo("﻿1.2.3.4"), "﻿1.2.3.4");
+  assert.equal(trimSpaceGo("\ufeff1.2.3.4"), "\ufeff1.2.3.4");
   assert.equal(trimSpaceGo(" \t\v\f\r\n"), "");
 });

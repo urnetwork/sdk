@@ -1,12 +1,20 @@
 // The canonical text of an address and the measurement names of extenders
 // (lag.dev/PLAN.md N, S2).
 //
-// The canonical text is what Go's netip.Addr.Unmap().String() prints: lower
-// case, the shortest ipv6 form (RFC 5952: the leftmost longest run of two or
-// more zero groups compressed, never a single one), and a v4-mapped address as
-// plain ipv4. The parser accepts exactly what netip.ParseAddr accepts, so an
-// address the apps can read is read here the same way and nothing else is.
-// Both are pinned by vectors generated from Go (gen_lag.go, test/lag).
+// A measurement name is the extender's id, then '.', then the zone (N1). The
+// id is written as connect's Id.String() writes it, lower case hex grouped
+// 8-4-4-4-12, and no other spelling makes or parses a name. The zero id is no
+// extender's and has no name, as in connect (lag_names.go).
+//
+// The canonical text of an address is what Go's netip.Addr.Unmap().String()
+// prints: lower case, the shortest ipv6 form (RFC 5952: the leftmost longest
+// run of two or more zero groups compressed, never a single one), and a
+// v4-mapped address as plain ipv4. The parser accepts exactly what
+// netip.ParseAddr accepts, so an address the apps can read is read here the
+// same way and nothing else is. An extender's ring color hashes this text
+// (colors.ts).
+//
+// All of it is pinned by vectors generated from Go (gen_lag.go, test/lag).
 
 /** The zone measurement names are under unless configured otherwise (N1, C1). */
 export const DEFAULT_EXTENDER_MEASUREMENT_ZONE = "extender.bringyour.com";
@@ -286,76 +294,74 @@ function measurementZone(zone: string): string {
   return normalized === "" ? DEFAULT_EXTENDER_MEASUREMENT_ZONE : normalized;
 }
 
-// connect ExtenderMeasurementLabel of a parsed address
-function addrLabel(addr: Addr): string {
-  let label = formatAddr(unmap({ bytes: addr.bytes, zone: "" })).replace(/[.:]/g, "-");
-  if (label.startsWith("-")) {
-    label = `0${label}`;
-  }
-  if (label.endsWith("-")) {
-    label = `${label}0`;
-  }
-  return label;
+// an id as connect's Id.String() writes it, and the zero id, which is no
+// extender's
+const EXTENDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const ZERO_EXTENDER_ID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * Whether text is an extender's id in its canonical spelling, the one
+ * connect's `Id.String()` writes: 32 lower case hex digits grouped 8-4-4-4-12.
+ * Upper case, another grouping or length, anything that is not hex, and the
+ * zero id, which is no extender's, are not.
+ */
+export function isExtenderId(text: string): boolean {
+  return EXTENDER_ID.test(text) && text !== ZERO_EXTENDER_ID;
 }
 
 /**
- * The measurement label of an address (N1): its canonical text with '.' and
- * ':' replaced by '-', and a '0' where the label would start or end with '-'.
- * The ipv6 scope zone is dropped, as it is never part of a name. Text that is
- * not an address has no label, "".
+ * The canonical text of an extender's 16-byte id, as connect's `Id.String()`
+ * writes it, or null for bytes that are not one: another length, or all zero.
+ * A record carries its extender's id this way in `MeasurementId` (C10).
  *
  * @example
- * extenderMeasurementLabel("2001:db8::") // "2001-db8--0"
+ * extenderIdFromBytes(body.measurementId) // "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"
  */
-export function extenderMeasurementLabel(ip: string): string {
-  const addr = parseAddr(ip);
-  return addr === null ? "" : addrLabel(addr);
+export function extenderIdFromBytes(bytes: Uint8Array): string | null {
+  if (bytes.length !== 16) {
+    return null;
+  }
+  let hex = "";
+  for (let i = 0; i < 16; i += 1) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  const extenderId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  return extenderId === ZERO_EXTENDER_ID ? null : extenderId;
 }
 
 /**
- * The host an extender serves the measurement API (M) on for one of its
- * addresses (N1): the address's label, '.', and the zone. The zone is
- * normalized as connect normalizes it (no case, surrounding space or trailing
- * dot) and defaults to `extender.bringyour.com`. Text that is not an address
- * has no host, "", as the zero netip.Addr has no name in Go.
+ * The host an extender serves the measurement API (M) on (N1): its id, '.',
+ * and the zone. The id must be in its canonical spelling (`isExtenderId`);
+ * any other text, and the zero id, has no host, "", as the zero Id has no
+ * name in connect. The zone is normalized as connect normalizes it (no case,
+ * surrounding space or trailing dot) and defaults to
+ * `extender.bringyour.com`.
  *
  * @example
- * extenderMeasurementHost("203.0.113.7") // "203-0-113-7.extender.bringyour.com"
- * extenderMeasurementHost("::1")         // "0--1.extender.bringyour.com"
+ * extenderMeasurementHost("0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f")
+ * // "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com"
  */
-export function extenderMeasurementHost(ip: string, zone: string = DEFAULT_EXTENDER_MEASUREMENT_ZONE): string {
-  const label = extenderMeasurementLabel(ip);
-  return label === "" ? "" : `${label}.${measurementZone(zone)}`;
+export function extenderMeasurementHost(extenderId: string, zone: string = DEFAULT_EXTENDER_MEASUREMENT_ZONE): string {
+  return isExtenderId(extenderId) ? `${extenderId}.${measurementZone(zone)}` : "";
 }
 
 /**
- * The address a measurement host is for, as canonical text, or null: the
- * inverse of `extenderMeasurementHost`, as connect's
- * ParseExtenderMeasurementName (N2). Only the canonical spelling parses, the
- * one `extenderMeasurementHost` gives for the address it decodes to: upper
- * case, an uncompressed or otherwise compressed ipv6, leading zeros, a missing
- * or extra '0' pad, a v4-mapped or scoped spelling, a trailing dot, another
+ * The extender id a measurement host is for, or null: the inverse of
+ * `extenderMeasurementHost`, as connect's ParseExtenderMeasurementName (N2).
+ * Only the canonical spelling parses: an id in upper case, grouped another
+ * way, of another length or not hex, the zero id, a trailing dot, another
  * zone and an extra label are all refused. The zone is normalized as
  * `extenderMeasurementHost` normalizes it; the host is not.
  *
  * @example
- * parseExtenderMeasurementHost("2001-db8--1.extender.bringyour.com") // "2001:db8::1"
- * parseExtenderMeasurementHost("2001-db8-0-0-0-0-0-1.extender.bringyour.com") // null
+ * parseExtenderMeasurementHost("0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com")
+ * // "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"
  */
 export function parseExtenderMeasurementHost(host: string, zone: string = DEFAULT_EXTENDER_MEASUREMENT_ZONE): string | null {
   const suffix = `.${measurementZone(zone)}`;
   if (!host.endsWith(suffix)) {
     return null;
   }
-  const label = host.slice(0, host.length - suffix.length);
-  // the '0' pad needs no undoing, since "0::1" and "2001:db8::0" are valid
-  // ipv6 text; any spelling but the canonical one has another canonical label,
-  // or is no address at all, and the comparison refuses it
-  for (const text of [label.replace(/-/g, "."), label.replace(/-/g, ":")]) {
-    const addr = parseAddr(text);
-    if (addr !== null && addrLabel(addr) === label) {
-      return formatAddr(unmap(addr));
-    }
-  }
-  return null;
+  const extenderId = host.slice(0, host.length - suffix.length);
+  return isExtenderId(extenderId) ? extenderId : null;
 }

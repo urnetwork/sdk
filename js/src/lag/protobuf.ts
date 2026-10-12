@@ -2,7 +2,7 @@
 // (lag.dev/PLAN.md S3, M0, M9; connect protocol/extender.proto, lag.proto).
 //
 // It reads ExtenderFeedFrame, ExtenderRecord, ExtenderRecordBody (with
-// MeasurementApi, field 17), ExtenderRevocation and its body, and LagTicket
+// MeasurementId, field 17), ExtenderRevocation and its body, and LagTicket
 // and its body, and writes ExtenderFeedRequest. It reads what Go's
 // proto.Unmarshal reads the way it reads it:
 // - an unknown field, or a known one with an unexpected wire type, is skipped;
@@ -251,8 +251,11 @@ export interface ExtenderRecordBody {
   webRtcClientId: Uint8Array;
   realityPublicKey: Uint8Array;
   canaryChannel: string;
-  /** whether the extender serves the lag.dev measurement API on its measurement names (C10) */
-  measurementApi: boolean;
+  /**
+   * the extender's 16-byte id when it serves the lag.dev measurement API, which
+   * is then at the measurement name of that id; empty when it does not (C10)
+   */
+  measurementId: Uint8Array;
 }
 
 /** A signed record: the body as the exact bytes that were signed. */
@@ -335,7 +338,7 @@ export function decodeExtenderRecordBody(bytes: Uint8Array): ExtenderRecordBody 
     webRtcClientId: new Uint8Array(0),
     realityPublicKey: new Uint8Array(0),
     canaryChannel: "",
-    measurementApi: false,
+    measurementId: new Uint8Array(0),
   };
   readMessage(bytes, (reader, number, wireType) => {
     switch (number) {
@@ -406,8 +409,8 @@ export function decodeExtenderRecordBody(bytes: Uint8Array): ExtenderRecordBody 
         body.canaryChannel = reader.stringField();
         return true;
       case 17:
-        if (wireType !== VARINT) return false;
-        body.measurementApi = reader.bool();
+        if (wireType !== BYTES) return false;
+        body.measurementId = reader.bytesField();
         return true;
     }
     return false;

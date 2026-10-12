@@ -10,14 +10,21 @@
 // body names an allowed network host, and it carries a key. The newest record
 // of a key wins, a revocation at or after a record's issue time revokes it,
 // and a record is expired five minutes after its ExpireTimeMs. Each entry
-// exposes the record's MeasurementApi flag (C10) and its measurement hosts.
+// exposes the record's MeasurementId (C10), the extender's id when it serves
+// the measurement API, and the measurement host that id names (N1).
 //
 // Signatures are checked with WebCrypto Ed25519 where the runtime has it,
 // proven once against an RFC 8032 vector, and otherwise with the vendored
 // TweetNaCl (tweetnacl_verify.ts). Both refuse a non-canonical S, as Go's
 // crypto/ed25519 does.
 
-import { canonicalIp, DEFAULT_EXTENDER_MEASUREMENT_ZONE, extenderMeasurementHost, trimSpaceGo } from "./names";
+import {
+  canonicalIp,
+  DEFAULT_EXTENDER_MEASUREMENT_ZONE,
+  extenderIdFromBytes,
+  extenderMeasurementHost,
+  trimSpaceGo,
+} from "./names";
 import {
   decodeExtenderFeedFrame,
   decodeExtenderRecordBody,
@@ -214,10 +221,13 @@ export interface ExtenderDirectoryEntry {
   body: ExtenderRecordBody;
   /** each address's canonical text, in record order, once each */
   ips: string[];
-  /** whether the extender serves the lag.dev measurement API (C10) */
-  measurementApi: boolean;
-  /** the measurement host of each address when it serves the API, else none (N1) */
-  measurementHosts: string[];
+  /**
+   * the extender's id, from the record's MeasurementId, when it serves the
+   * lag.dev measurement API; null when it does not (C10)
+   */
+  measurementId: string | null;
+  /** the host it serves the measurement API on, the name of that id; null when it does not (N1) */
+  measurementHost: string | null;
 }
 
 export interface ExtenderDirectoryOptions {
@@ -316,16 +326,12 @@ export class ExtenderDirectory {
         ips.push(ip);
       }
     }
-    const measurementHosts: string[] = [];
-    if (body.measurementApi) {
-      for (const ip of ips) {
-        const host = extenderMeasurementHost(ip, this.measurementZone);
-        if (host !== "" && !measurementHosts.includes(host)) {
-          measurementHosts.push(host);
-        }
-      }
-    }
-    key.entry = { publicKey, record, body, ips, measurementApi: body.measurementApi, measurementHosts };
+    // an extender's id is 16 bytes that are not all zero; the field is empty
+    // for an extender that does not serve the measurement API, and anything
+    // else is no id and names no host
+    const measurementId = extenderIdFromBytes(body.measurementId);
+    const measurementHost = measurementId === null ? null : extenderMeasurementHost(measurementId, this.measurementZone);
+    key.entry = { publicKey, record, body, ips, measurementId, measurementHost };
   }
 
   /**
@@ -417,9 +423,9 @@ export class ExtenderDirectory {
     return entries;
   }
 
-  /** The active entries that serve the measurement API (C10). */
+  /** The active entries that serve the measurement API: those whose record carries a MeasurementId (C10). */
   measurementEntries(): ExtenderDirectoryEntry[] {
-    return this.entries().filter((entry) => entry.measurementApi);
+    return this.entries().filter((entry) => entry.measurementHost !== null);
   }
 }
 
@@ -467,12 +473,12 @@ export class ExtenderFeedError extends Error {
  *
  * @example
  * const feed = new ExtenderFeedClient({
- *   host: "203-0-113-7.extender.bringyour.com",
+ *   host: "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com",
  *   rootPublicKeys: hello.extender_root_public_keys,
  *   networkHosts: ["bringyour.com", "ur.network"],
  * });
- * const entries = await feed.sample(8);
- * const measurable = entries.filter((entry) => entry.measurementApi);
+ * await feed.sample(8);
+ * const hosts = feed.directory.measurementEntries().map((entry) => entry.measurementHost);
  */
 export class ExtenderFeedClient {
   readonly directory: ExtenderDirectory;

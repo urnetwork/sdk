@@ -165,6 +165,7 @@ func fixedBytes(label string, n int) []byte {
 type Vectors struct {
 	Comment           string                  `json:"comment"`
 	CanonicalIps      []CanonicalIpVector     `json:"canonicalIps"`
+	ExtenderIds       []ExtenderIdVector      `json:"extenderIds"`
 	MeasurementNames  []MeasurementNameVector `json:"measurementNames"`
 	MeasurementHosts  []MeasurementHostVector `json:"measurementHosts"`
 	ExtenderColors    []ExtenderColorVector   `json:"extenderColors"`
@@ -186,10 +187,19 @@ type CanonicalIpVector struct {
 	Canonical *string `json:"canonical"`
 }
 
+// text, and whether it is an extender's id as a measurement name spells one:
+// connect.ParseExtenderMeasurementName takes it as a name's label. That is an
+// id written as connect.Id.String() writes it, and not the zero id.
+type ExtenderIdVector struct {
+	Text      string `json:"text"`
+	Canonical bool   `json:"canonical"`
+}
+
 type MeasurementNameVector struct {
-	Ip   string `json:"ip"`
+	// connect.Id.String()
+	Id   string `json:"id"`
 	Zone string `json:"zone"`
-	// connect.ExtenderMeasurementName, "" when ip is not an address
+	// connect.ExtenderMeasurementName
 	Name string `json:"name"`
 }
 
@@ -197,8 +207,8 @@ type MeasurementNameVector struct {
 type MeasurementHostVector struct {
 	Host string `json:"host"`
 	Zone string `json:"zone"`
-	// the canonical address, or null when the host is refused
-	Ip *string `json:"ip"`
+	// the id as connect.Id.String() writes it, or null when the host is refused
+	Id *string `json:"id"`
 }
 
 type ExtenderColorVector struct {
@@ -244,7 +254,7 @@ type RecordBodyJson struct {
 	WebRtcClientIdHex   string        `json:"webRtcClientIdHex"`
 	RealityPublicKeyHex string        `json:"realityPublicKeyHex"`
 	CanaryChannel       string        `json:"canaryChannel"`
-	MeasurementApi      bool          `json:"measurementApi"`
+	MeasurementIdHex    string        `json:"measurementIdHex"`
 }
 
 type RecordVector struct {
@@ -255,6 +265,10 @@ type RecordVector struct {
 	RootSignatureHex string         `json:"rootSignatureHex"`
 	RootKeyIdHex     string         `json:"rootKeyIdHex"`
 	Body             RecordBodyJson `json:"body"`
+	// the extender's id and measurement name when the body's MeasurementId is
+	// an id (C10, N1), else null
+	MeasurementId   *string `json:"measurementId"`
+	MeasurementHost *string `json:"measurementHost"`
 }
 
 type RevocationVector struct {
@@ -325,7 +339,8 @@ func generateVectors() (*Vectors, error) {
 		vectors.CanonicalIps = append(vectors.CanonicalIps, vector)
 	}
 
-	names, err := measurementNameVectors(ipInputs)
+	vectors.ExtenderIds = extenderIdVectors()
+	names, err := measurementNameVectors(rng)
 	if err != nil {
 		return nil, err
 	}
@@ -351,11 +366,11 @@ func generateVectors() (*Vectors, error) {
 	return vectors, nil
 }
 
-// Address text: the N1 table, hand-picked edge cases of netip.ParseAddr, and
-// random addresses in several spellings each.
+// Address text: hand-picked edge cases of netip.ParseAddr, and random
+// addresses in several spellings each.
 func ipVectorInputs(rng *rand.Rand) []string {
 	inputs := []string{
-		// N1
+		// as the canonical text is usually met
 		"203.0.113.7",
 		"::ffff:203.0.113.7",
 		"2001:db8::1",
@@ -510,41 +525,115 @@ func ipVectorInputs(rng *rand.Rand) []string {
 	return inputs
 }
 
-func measurementNameVectors(ipInputs []string) ([]MeasurementNameVector, error) {
-	vectors := []MeasurementNameVector{}
-	add := func(ip string, zone string) {
-		var addr netip.Addr
-		if parsed, err := netip.ParseAddr(ip); err == nil {
-			addr = parsed
-		}
-		vectors = append(vectors, MeasurementNameVector{
-			Ip:   ip,
-			Zone: zone,
-			Name: connect.ExtenderMeasurementName(addr, zone),
-		})
+// The id of the N1 example, 0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.
+var exampleExtenderId = connect.Id{0x01, 0x92, 0xe4, 0xa1, 0x7b, 0x3c, 0x7d, 0x2e, 0x9f, 0x10, 0x5a, 0x6b, 0x7c, 0x8d, 0x9e, 0x0f}
+
+// Text that is or is not an extender's id in the one spelling a measurement
+// name takes. connect.ParseId is lenient -- any case, 32 digits or 36
+// characters with anything where the dashes go -- so parsing alone does not
+// decide it, and the zero id is no extender's.
+func extenderIdVectors() []ExtenderIdVector {
+	const id = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"
+	vectors := []ExtenderIdVector{}
+	for _, text := range []string{
+		id,
+		"ffffffff-ffff-ffff-ffff-ffffffffffff",
+		"01234567-89ab-cdef-0123-456789abcdef",
+		"00000000-0000-0000-0000-000000000001",
+		// the zero id, which is no extender's
+		"00000000-0000-0000-0000-000000000000",
+		// upper case, in whole or in part
+		"0192E4A1-7B3C-7D2E-9F10-5A6B7C8D9E0F",
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0F",
+		"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+		// another grouping
+		"0192e4a17b3c7d2e9f105a6b7c8d9e0f",
+		"0192e4a1-7b3c-7d2e-9f105a6b7c8d9e0f",
+		"0192e4a17-b3c-7d2e-9f10-5a6b7c8d9e0f",
+		"0192-e4a1-7b3c-7d2e-9f10-5a6b-7c8d-9e0f",
+		"0192e4a1x7b3cx7d2ex9f10x5a6b7c8d9e0f",
+		"0192e4a1.7b3c.7d2e.9f10.5a6b7c8d9e0f",
+		"0192e4a1_7b3c_7d2e_9f10_5a6b7c8d9e0f",
+		"0192e4a1 7b3c 7d2e 9f10 5a6b7c8d9e0f",
+		"0192e4a1-7b3c-7d2e-9f10--5a6b7c8d9e0",
+		"{0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f}",
+		"urn:uuid:0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f",
+		// another length
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0",
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f0",
+		"0192e4a1-7b3c-7d2e-9f10",
+		"0192e4a1",
+		"",
+		// not hex
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0g",
+		"g192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f",
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0\u00e9",
+		"\uff10192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f",
+		// space around it
+		" 0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f",
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f ",
+		"0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f\n",
+		// what a name was before amendment 2, an address
+		"203-0-113-7",
+		"203.0.113.7",
+		"2001-db8--1",
+	} {
+		_, canonical := connect.ParseExtenderMeasurementName(text+"."+connect.ExtenderMeasurementZone, "")
+		vectors = append(vectors, ExtenderIdVector{Text: text, Canonical: canonical})
 	}
-	for _, ip := range ipInputs {
-		add(ip, connect.ExtenderMeasurementZone)
+	return vectors
+}
+
+// Ids to names (N1): the plan's example, the ids at the edges, and random
+// ones, in the default zone and in zones written every way the zone is
+// normalized.
+func measurementNameVectors(rng *rand.Rand) ([]MeasurementNameVector, error) {
+	ids := []connect.Id{
+		exampleExtenderId,
+		{},
+		{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
+		// digits only, and letters only
+		{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+		{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0xaf, 0xbe, 0xcd, 0xda},
+	}
+	for i := 0; i < 26; i += 1 {
+		var id connect.Id
+		binary.BigEndian.PutUint64(id[0:8], rng.Uint64())
+		binary.BigEndian.PutUint64(id[8:16], rng.Uint64())
+		ids = append(ids, id)
 	}
 	// the zone is normalized, and "" means the default
-	for _, zone := range []string{"", "Extender.BringYour.COM.", "  lab.example  ", "lab.example.", " \t", "x"} {
-		for _, ip := range []string{"203.0.113.7", "2001:db8::", "::1", "fe80::1%eth0"} {
-			add(ip, zone)
+	zones := []string{
+		connect.ExtenderMeasurementZone,
+		"",
+		"Extender.BringYour.COM",
+		"extender.bringyour.com.",
+		"Extender.BringYour.COM.",
+		"  extender.bringyour.com\t",
+		" \t",
+		"lab.example",
+		"  Lab.Example.  ",
+		"lab.example..",
+		"x",
+	}
+	vectors := []MeasurementNameVector{}
+	for i, id := range ids {
+		for j, zone := range zones {
+			// every id in the default zone, and the first few in every zone
+			if j == 0 || i < 4 {
+				vectors = append(vectors, MeasurementNameVector{
+					Id:   id.String(),
+					Zone: zone,
+					Name: connect.ExtenderMeasurementName(id, zone),
+				})
+			}
 		}
 	}
-	// the N1 table as the plan prints it
-	n1 := map[string]string{
-		"203.0.113.7":          "203-0-113-7.extender.bringyour.com",
-		"::ffff:203.0.113.7":   "203-0-113-7.extender.bringyour.com",
-		"2001:db8::1":          "2001-db8--1.extender.bringyour.com",
-		"2001:db8:0:1:1:1:1:1": "2001-db8-0-1-1-1-1-1.extender.bringyour.com",
-		"2001:db8::":           "2001-db8--0.extender.bringyour.com",
-		"::1":                  "0--1.extender.bringyour.com",
-	}
-	for ip, name := range n1 {
-		if got := connect.ExtenderMeasurementName(netip.MustParseAddr(ip), ""); got != name {
-			return nil, fmt.Errorf("N1: %s is named %s, not %s", ip, got, name)
-		}
+	// the N1 example as the plan prints it
+	const example = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f.extender.bringyour.com"
+	if got := connect.ExtenderMeasurementName(exampleExtenderId, ""); got != example {
+		return nil, fmt.Errorf("N1: %s is named %s, not %s", exampleExtenderId, got, example)
 	}
 	return vectors, nil
 }
@@ -677,7 +766,7 @@ func recordBodyJson(body *protocol.ExtenderRecordBody) RecordBodyJson {
 		WebRtcClientIdHex:   hex.EncodeToString(body.WebRtcClientId),
 		RealityPublicKeyHex: hex.EncodeToString(body.RealityPublicKey),
 		CanaryChannel:       body.CanaryChannel,
-		MeasurementApi:      body.MeasurementApi,
+		MeasurementIdHex:    hex.EncodeToString(body.MeasurementId),
 	}
 }
 
@@ -725,7 +814,7 @@ func signedVectors(vectors *Vectors) error {
 		DirectoryTier:    connect.ExtenderDirectoryTierOpen,
 		WebRtcClientId:   fixedBytes("webrtc client id", 16),
 		RealityPublicKey: fixedBytes("reality key", 32),
-		MeasurementApi:   true,
+		MeasurementId:    exampleExtenderId.Bytes(),
 	}
 	canaryBody := &protocol.ExtenderRecordBody{
 		PublicKey:     canaryPublicKey,
@@ -768,12 +857,16 @@ func signedVectors(vectors *Vectors) error {
 	unusualBodyBytes = protowire.AppendVarint(unusualBodyBytes, 4053)
 	unusualBodyBytes = protowire.AppendTag(unusualBodyBytes, 11, protowire.BytesType)
 	unusualBodyBytes = protowire.AppendBytes(unusualBodyBytes, protowire.AppendVarint(protowire.AppendVarint(nil, 5353), 8053))
-	// a uint32 field written past 32 bits keeps its low 32, and a bool any
-	// non-zero varint
+	// a uint32 field written past 32 bits keeps its low 32
 	unusualBodyBytes = protowire.AppendTag(unusualBodyBytes, 3, protowire.VarintType)
 	unusualBodyBytes = protowire.AppendVarint(unusualBodyBytes, 1<<32+8443)
+	// field 17 written as the flag it was before it became MeasurementId has
+	// the wrong wire type and is skipped; then a MeasurementId that is not 16
+	// bytes, which is read as it is written and is no id
 	unusualBodyBytes = protowire.AppendTag(unusualBodyBytes, 17, protowire.VarintType)
-	unusualBodyBytes = protowire.AppendVarint(unusualBodyBytes, 2)
+	unusualBodyBytes = protowire.AppendVarint(unusualBodyBytes, 1)
+	unusualBodyBytes = protowire.AppendTag(unusualBodyBytes, 17, protowire.BytesType)
+	unusualBodyBytes = protowire.AppendBytes(unusualBodyBytes, exampleExtenderId[0:8])
 	// a known field with the wrong wire type is an unknown field
 	unusualBodyBytes = protowire.AppendTag(unusualBodyBytes, 7, protowire.VarintType)
 	unusualBodyBytes = protowire.AppendVarint(unusualBodyBytes, 1)
@@ -786,6 +879,20 @@ func signedVectors(vectors *Vectors) error {
 	if err != nil {
 		return err
 	}
+	// 16 zero bytes are the zero id, which is no extender's and names no host
+	zeroIdRecord, err := connect.SignExtenderRecord(rootPrivateKey, &protocol.ExtenderRecordBody{
+		PublicKey:     ed25519.NewKeyFromSeed(fixedBytes("zero id extender key", 32)).Public().(ed25519.PublicKey),
+		Addresses:     []*protocol.ExtenderAddress{{Ip: "192.0.2.44", IpVersion: 4, Carriers: []string{"tcp"}}},
+		TcpPort:       443,
+		CountryCode:   "ca",
+		IssueTimeMs:   issueTimeMs,
+		ExpireTimeMs:  expireTimeMs,
+		NetworkHost:   "bringyour.com",
+		MeasurementId: make([]byte, 16),
+	})
+	if err != nil {
+		return err
+	}
 	records := []struct {
 		name   string
 		record *protocol.ExtenderRecord
@@ -793,6 +900,7 @@ func signedVectors(vectors *Vectors) error {
 		{"measurement", measurementRecord},
 		{"canary", canaryRecord},
 		{"unusual", signRecordBody(unusualBodyBytes, rootPrivateKey)},
+		{"zero id", zeroIdRecord},
 	}
 	rootKeySet := connect.NewExtenderRootKeySet(rootPublicKey)
 	for _, entry := range records {
@@ -805,14 +913,23 @@ func signedVectors(vectors *Vectors) error {
 		if err != nil {
 			return err
 		}
-		vectors.Records = append(vectors.Records, RecordVector{
+		vector := RecordVector{
 			Name:             entry.name,
 			RecordBase64:     base64.StdEncoding.EncodeToString(recordBytes),
 			BodyBase64:       base64.StdEncoding.EncodeToString(entry.record.Body),
 			RootSignatureHex: hex.EncodeToString(entry.record.RootSignature),
 			RootKeyIdHex:     hex.EncodeToString(entry.record.RootKeyId),
 			Body:             recordBodyJson(body),
-		})
+		}
+		// bytes that are not an id, and the zero id, name no extender
+		if id, err := connect.IdFromBytes(body.MeasurementId); err == nil {
+			if host := connect.ExtenderMeasurementName(id, ""); host != "" {
+				text := id.String()
+				vector.MeasurementId = &text
+				vector.MeasurementHost = &host
+			}
+		}
+		vectors.Records = append(vectors.Records, vector)
 	}
 
 	revocation, err := connect.SignExtenderRevocation(rootPrivateKey, &protocol.ExtenderRevocationBody{
@@ -990,49 +1107,40 @@ func measurementHostVectors(names []MeasurementNameVector) []MeasurementHostVect
 	vectors := []MeasurementHostVector{}
 	add := func(host string, zone string) {
 		vector := MeasurementHostVector{Host: host, Zone: zone}
-		if addr, ok := connect.ParseExtenderMeasurementName(host, zone); ok {
-			text := addr.String()
-			vector.Ip = &text
+		if id, ok := connect.ParseExtenderMeasurementName(host, zone); ok {
+			text := id.String()
+			vector.Id = &text
 		}
 		vectors = append(vectors, vector)
 	}
 	for _, name := range names {
+		// the zero id has no name
 		if name.Name != "" {
 			add(name.Name, name.Zone)
 		}
 	}
 	const zone = connect.ExtenderMeasurementZone
-	for _, label := range []string{
-		// canonical, at the edges
-		"0--0", "0--1", "1--0", "0--1-0", "1-2-3-4-5-6-7-8", "0--ffff-203-0-113-7", "0-0-0-0",
-		// upper case
-		"2001-DB8--1", "FE80--1", "0--FFFF-CB00-7107",
-		// uncompressed, or compressed elsewhere
-		"2001-db8-0-0-0-0-0-1", "0-0-0-0-0-0-0-1", "0-0-0-0-0-0-0-0", "2001-db8-0--1",
-		"2001-db8-0-0-1--1", "2001--1-0-0-0-0-1",
-		// leading zeros
-		"2001-0db8--1", "203-000-113-7", "01-2-3-4", "203-0-113-07", "0203-0-113-7", "0001--1",
-		// a missing or extra pad
-		"--1", "2001-db8--", "--", "-", "00--1", "2001-db8--00", "0-0--1", "2001-db8--0-0", "0--1-",
-		// v4-mapped, v4-compatible and scoped spellings
-		"0--ffff-cb00-7107", "0--ffff-203-0-113-7-x", "0--cb00-7107", "fe80--1%eth0", "fe80--1%25eth0",
-		// not addresses
-		"", "256-0-0-1", "1-2-3", "1-2-3-4-5", "x", "203_0_113_7", "203.0.113.7", "2001:db8::1",
-		"1-2-3-4-5-6-7-8-9", "g--1",
-	} {
-		add(label+"."+zone, zone)
+	// every id spelling, canonical or not, as the label of a name
+	for _, id := range extenderIdVectors() {
+		add(id.Text+"."+zone, zone)
 	}
+	const id = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f"
 	for _, host := range []string{
 		// another zone, case or a trailing dot in the host, and extra labels
-		"203-0-113-7.EXTENDER.BRINGYOUR.COM",
-		"203-0-113-7.Extender.bringyour.com",
-		"203-0-113-7.extender.bringyour.com.",
-		"203-0-113-7.example.com",
-		"203-0-113-7.bringyour.com",
-		"x.203-0-113-7.extender.bringyour.com",
-		"203-0-113-7.x.extender.bringyour.com",
-		"203-0-113-7.extender.bringyour.com.extender.bringyour.com",
-		" 203-0-113-7.extender.bringyour.com",
+		id + ".EXTENDER.BRINGYOUR.COM",
+		id + ".Extender.bringyour.com",
+		id + ".extender.bringyour.com.",
+		id + ".example.com",
+		id + ".bringyour.com",
+		id + ".extender.bringyour.co",
+		id + "extender.bringyour.com",
+		id + "..extender.bringyour.com",
+		"x." + id + ".extender.bringyour.com",
+		id + ".x.extender.bringyour.com",
+		id + ".extender.bringyour.com.extender.bringyour.com",
+		" " + id + ".extender.bringyour.com",
+		id + ".extender.bringyour.com ",
+		id,
 		"extender.bringyour.com",
 		".extender.bringyour.com",
 		"",
@@ -1040,8 +1148,8 @@ func measurementHostVectors(names []MeasurementNameVector) []MeasurementHostVect
 		add(host, zone)
 	}
 	// the zone argument is normalized; the host is not
-	for _, zoneArgument := range []string{"", "Extender.BringYour.COM.", " extender.bringyour.com\t", "lab.example", "lab.example."} {
-		for _, host := range []string{"203-0-113-7.extender.bringyour.com", "2001-db8--1.lab.example", "2001-db8--1.lab.example."} {
+	for _, zoneArgument := range []string{"", "Extender.BringYour.COM.", " extender.bringyour.com\t", "lab.example", "Lab.Example."} {
+		for _, host := range []string{id + ".extender.bringyour.com", id + ".lab.example", id + ".lab.example.", id + ".Lab.Example"} {
 			add(host, zoneArgument)
 		}
 	}
