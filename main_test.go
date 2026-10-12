@@ -24,7 +24,7 @@ import (
 // their own space.
 func TestMain(m *testing.M) {
 	deviceRpcDefaultAddress = testing_freeHostPort()
-	extenderNetworkClientEnabled = false
+	SetExtenderNetworkClientEnabled(false)
 	extenderNodeEnabled = false
 	extenderProvideRoleEnabled = false
 	os.Exit(m.Run())
