@@ -1156,6 +1156,12 @@ func (self *LocalState) logoutWithLock() error {
 	return self.removeAccountStateWithLock()
 }
 
+// The lag.dev measurement key the provider extender role keeps beside the
+// extender identity (lag.dev/PLAN.md C4). The name is connect/extender's
+// ExtenderMeasurementKeyFileName, spelled out here because this file is in
+// every build and the mobile builds carry no connect/extender.
+const extenderMeasurementKeyFileName = "extender-measurement-key.pem"
+
 // What a sign-out keeps of a space's local state: all of the extender state
 // (owner, 2026-10-05: a sign-out leaves extender state alone, including what
 // was entered under the old account; local accounts on a device are trusted to
@@ -1163,13 +1169,20 @@ func (self *LocalState) logoutWithLock() error {
 // directory (.extenders: the operator's signed records and revocations, each
 // address's holds and failure history, imported share codes, the operator's
 // last country), the gossip role (.extender_gossip_mode), the extender
-// identity (.extender_key) and the provider extender setting
-// (.provide_extender), whose in-memory copy therefore stays true. Manual
-// extender hosts and the private extender live in the space's values, which a
-// sign-out never touches.
+// identity (.extender_key), the provider extender setting (.provide_extender),
+// whose in-memory copy therefore stays true, and the lag.dev measurement key
+// (extender-measurement-key.pem). The measurement certificate is named by the
+// extender's id, which the kept identity keeps, so a new key after a sign-out
+// would only have the operator issue the same name again. Manual extender
+// hosts and the private extender live in the space's values, which a sign-out
+// never touches.
 func keptAcrossSignOut(name string) bool {
 	switch name {
-	case extenderStoreFileName, extenderGossipModeFileName, extenderKeyFileName, provideExtenderFileName:
+	case extenderStoreFileName,
+		extenderGossipModeFileName,
+		extenderKeyFileName,
+		provideExtenderFileName,
+		extenderMeasurementKeyFileName:
 		return true
 	default:
 		return false
