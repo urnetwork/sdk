@@ -62,6 +62,30 @@ export default [
       }),
     ],
   },
+  // The lag.dev SDK (lag.dev/PLAN.md S): plain TypeScript that never loads
+  // the wasm, so a page that imports only it never downloads sdk.wasm
+  {
+    input: "src/lag/index.ts",
+    output: [
+      {
+        file: "dist/lag/index.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/lag/index.cjs",
+        format: "cjs",
+        sourcemap: true,
+      },
+    ],
+    plugins: [
+      resolve(),
+      typescript({
+        tsconfig: "./tsconfig.json",
+        declaration: false,
+      }),
+    ],
+  },
   // React entry point
   {
     input: "src/react/index.ts",
