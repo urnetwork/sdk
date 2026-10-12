@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,11 +52,31 @@ import (
 // §2.5), and the activation loop. The listener is stable for the life of the
 // role, so a changed set of activated addresses rebuilds only the node.
 //
+// The role also serves the lag.dev measurement API (lag.dev/PLAN.md C4, M10)
+// when its space keeps the identity in a file: it makes the measurement key
+// beside that file, hands the server the API's trust and hosts and the
+// lifecycle that keeps the certificate, and has the activation carry the
+// certificate request. Without a kept identity, or with measurement off, there
+// is no API at all.
+//
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
 
 // This build carries the role (G1).
 const extenderProvideSupported = true
+
+// Whether the role serves the lag.dev measurement API (lag.dev/PLAN.md C4,
+// M10): on, as the plan has it for an extender in the open tier with a public
+// inbound address, which is all the operator issues a certificate to.
+// Production never changes it: until a device setting carries a switch for
+// measurement alone, the owner's switch is the provider extender setting,
+// which turns the whole role off. Tests turn it off.
+var extenderMeasurementEnabled = true
+
+// When set, adjusts the measurement lifecycle's settings before each role's
+// server is built. Tests shorten the certificate poll through it; production
+// leaves it nil.
+var configureExtenderLagLifecycle func(settings *extender.ExtenderLagLifecycleSettings)
 
 // Budget of the wait for the carriers to bind before the role gives up on
 // activating. A bind that has not settled in this long is a bind that is not
@@ -94,6 +116,9 @@ type deviceLocalExtender struct {
 	// measurements are posted to the operator through (GEOMAP §2.1, §2.5)
 	pingReporter *connect.ExtenderPingReporter
 	peerPinger   *connect.ExtenderPeerPinger
+	// the lag.dev measurement key and certificate (lag.dev/PLAN.md C4), nil
+	// when the role serves no measurement API; built with the server
+	measurementCert *extender.ExtenderMeasurementCert
 
 	// the comparable half of the status; a consumer is woken only on an actual
 	// change, and the connection count is read live beside it
@@ -206,6 +231,10 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 	// must refuse the gossip service rather than queue it (A8)
 	nodeRuns := settings.NetworkSpace.setExtenderNodeRole(self.listener, nil) != nil
 	self.setNodeRuns(nodeRuns)
+
+	// the measurement certificate the server's lifecycle keeps and the
+	// activation asks for (lag.dev/PLAN.md C4)
+	self.measurementCert = self.newMeasurementCert()
 
 	self.heldTcpListener = &extenderHeldListener{listener: tcpListener}
 	server := extender.NewExtenderServer(
@@ -490,7 +519,73 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	settings.ListenErrorHandler = func(carrier string, err error) {
 		self.wakeMonitor.NotifyAll()
 	}
+	// the lag.dev measurement API and the lifecycle behind it, or no API at
+	// all (lag.dev/PLAN.md C4, M3, M10)
+	self.measurementSettings(settings)
 	return settings
+}
+
+// The measurement key and certificate (lag.dev/PLAN.md C4), or nil when the
+// role serves no measurement API: measurement is off, the role has no plain
+// api url, which the certificate and report routes are read from and posted
+// to, or the space keeps no local state. Then the identity is not kept in a
+// file: the operator names the certificate by the extender's id, one per
+// identity key, so an identity that is new at every start would ask for a new
+// certificate each time, and the measurement key is kept beside the identity's
+// file. A key that cannot be read leaves measurement off rather than the role
+// down.
+func (self *deviceLocalExtender) newMeasurementCert() *extender.ExtenderMeasurementCert {
+	if !extenderMeasurementEnabled {
+		return nil
+	}
+	if strings.TrimSpace(self.settings.ApiUrl) == "" {
+		self.log.Infof("[extender]provide measurement off: the role has no api url\n")
+		return nil
+	}
+	asyncLocalState := self.settings.NetworkSpace.asyncLocalState
+	if asyncLocalState == nil {
+		self.log.Infof("[extender]provide measurement off: the space keeps no extender key file\n")
+		return nil
+	}
+	keyFile := filepath.Join(asyncLocalState.GetLocalState().localStorageDir, extenderKeyFileName)
+	measurementCert, err := extender.NewExtenderMeasurementCert(extender.ExtenderMeasurementKeyPath(keyFile), "")
+	if err != nil {
+		self.log.Infof("[extender]provide measurement off: the measurement key is not usable = %s\n", err)
+		return nil
+	}
+	return measurementCert
+}
+
+// The measurement settings of the server (lag.dev/PLAN.md C4, M3, M10). With a
+// measurement certificate: the API's admission trusts the root keys the space's
+// directory trusts for records, read at each ticket so a rotation applies at
+// once, and the network hosts its records are for; and the lifecycle polls the
+// certificate and posts reports on the plain api url under the provider's
+// credential. Without one, no API at all, so a hello for a measurement name
+// takes the existing path.
+func (self *deviceLocalExtender) measurementSettings(settings *extender.ExtenderSettings) {
+	if self.measurementCert == nil {
+		settings.Measurement.Enabled = false
+		settings.LagLifecycle = nil
+		return
+	}
+	directory := self.directory()
+	settings.Measurement.RootPublicKeys = func() []ed25519.PublicKey {
+		return directory.RootKeys().PublicKeys()
+	}
+	networkSpace := self.settings.NetworkSpace
+	values := networkSpace.valuesCopy()
+	settings.Measurement.NetworkHosts = extenderNetworkHosts(&networkSpace.key, &values)
+
+	lagSettings := extender.DefaultExtenderLagLifecycleSettings()
+	lagSettings.Certificate = self.measurementCert
+	lagSettings.ApiUrl = self.settings.ApiUrl
+	lagSettings.ByJwt = self.settings.ByJwt
+	lagSettings.ClientStrategy = self.clientStrategy
+	if configureExtenderLagLifecycle != nil {
+		configureExtenderLagLifecycle(lagSettings)
+	}
+	settings.LagLifecycle = lagSettings
 }
 
 // The loop that activates and publishes the status. Everything it waits on is
@@ -575,6 +670,11 @@ func (self *deviceLocalExtender) startActivator() {
 	// them, so a privileged bind that failed is never advertised (L2)
 	settings.DnsPorts = self.server.DnsPorts
 	settings.Directory = self.directory()
+	if self.measurementCert != nil {
+		// the activation carries the measurement certificate request, named by
+		// the id its answers report (lag.dev/PLAN.md C4, N4)
+		settings.MeasurementCsr = self.measurementCert.ActivationCsr
+	}
 	// the mesh addresses follow the activated families, which the loop reads
 	// from the activator's own status; this only wakes it (D2, G2)
 	settings.OnActivated = func(ipVersion int, result *connect.ExtenderActivateResult) {
