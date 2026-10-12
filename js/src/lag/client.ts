@@ -212,8 +212,9 @@ export type LagSessionEvent =
 
 export interface LagSessionOptions {
   /**
-   * The extender's measurement name from the track's ticket (A6), e.g.
-   * 203-0-113-7.extender.bringyour.com, reached over https and wss. An
+   * What the track's ticket says to connect to (A6): the extender's
+   * measurement name, `<extender_id>.extender.bringyour.com` (N1), with the
+   * port a local test stack may add. It is reached over https and wss. An
    * origin such as http://127.0.0.1:8443 is used as given (tests, dev).
    */
   host: string;
@@ -306,15 +307,32 @@ const deferred = <T>(): Deferred<T> => {
   return { promise, resolve, reject };
 };
 
-// An extender's measurement name, reached over https and wss; or an http(s)
-// origin, used as given.
+// Where a session connects. A ticket's host goes into the urls as it is,
+// port and all (A4, A6), over https and wss; it must be a host with an
+// optional port and nothing else. An http(s) origin is used as given.
 const lagOrigins = (host: string): { http: string; ws: string } => {
   if (/^https?:\/\//i.test(host)) {
     const origin = new URL(host).origin;
     return { http: origin, ws: origin.replace(/^http/i, "ws") };
   }
-  if (!/^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/.test(host)) {
-    throw new TypeError(`not an extender host name: ${host}`);
+  let parsed: URL | undefined;
+  if (!/[\s/?#@\\]/.test(host)) {
+    try {
+      parsed = new URL(`https://${host}`);
+    } catch {
+      parsed = undefined;
+    }
+  }
+  if (
+    parsed === undefined ||
+    parsed.hostname === "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== "" ||
+    parsed.username !== "" ||
+    parsed.password !== ""
+  ) {
+    throw new TypeError(`not an extender host: ${host}`);
   }
   return { http: `https://${host}`, ws: `wss://${host}` };
 };

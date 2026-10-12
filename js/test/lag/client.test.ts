@@ -395,7 +395,10 @@ test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout
   });
 });
 
-test("a host is an extender name over https and wss, or an origin as given", () => {
+// an extender id and the measurement name it gives (N1)
+const EXTENDER_ID = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f";
+
+test("a host is an extender's name, with any port it carries, over https and wss", () => {
   const urls: string[] = [];
   class RecordingWebSocket {
     binaryType = "blob";
@@ -407,13 +410,29 @@ test("a host is an extender name over https and wss, or an origin as given", () 
     close() {}
   }
   const WebSocketImpl = RecordingWebSocket as unknown as typeof WebSocket;
-  openLagSession({ host: "203-0-113-7.extender.bringyour.com", ticket: "a b+c", WebSocket: WebSocketImpl }).close();
+  const hosts = [
+    `${EXTENDER_ID}.extender.bringyour.com`,
+    // a local test stack's host carries a port (A4, A6)
+    `${EXTENDER_ID}.extender.localhost:8443`,
+    "127.0.0.1:9443",
+    "[::1]:8443",
+  ];
+  for (const host of hosts) {
+    openLagSession({ host, ticket: "a b+c", WebSocket: WebSocketImpl }).close();
+  }
+  assert.deepEqual(
+    urls,
+    hosts.map((host) => `wss://${host}/lag/v1/session?ticket=a%20b%2Bc`),
+  );
+  // an origin is used as given, without its path
+  urls.length = 0;
   openLagSession({ host: "https://127.0.0.1:8443/ignored", ticket: "t", WebSocket: WebSocketImpl }).close();
+  openLagSession({ host: "http://127.0.0.1:8080", ticket: "t", WebSocket: WebSocketImpl }).close();
   assert.deepEqual(urls, [
-    "wss://203-0-113-7.extender.bringyour.com/lag/v1/session?ticket=a%20b%2Bc",
     "wss://127.0.0.1:8443/lag/v1/session?ticket=t",
+    "ws://127.0.0.1:8080/lag/v1/session?ticket=t",
   ]);
-  for (const host of ["evil.example/path", "a b", "x?y", ""]) {
+  for (const host of ["evil.example/path", "a b", "x?y", "h#f", "user@host", "host:99999", "::1", ""]) {
     assert.throws(() => openLagSession({ host, ticket: "t", WebSocket: WebSocketImpl }), TypeError, host);
   }
 });
