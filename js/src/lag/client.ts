@@ -280,6 +280,14 @@ const BUFFER_MIN_BYTES = 1 << 20;
 const BUFFER_MAX_BYTES = 8 << 20;
 const BUFFER_SECONDS = 0.5;
 const BUFFER_POLL_MS = 10;
+// A socket must count a message in bufferedAmount within the task that sent
+// it. Where one does not, bufferedAmount gives no backpressure, so the
+// streams are held by what the extender has verified: together they may run
+// this far ahead of it, plus a second of its verified rate.
+const UNCOUNTED_AHEAD_BYTES = 8 << 20;
+// A stream that sends this long without a pause yields to the event loop, so
+// timers and the page stay live whatever a socket's buffer reports.
+const SEND_SLICE_MS = 8;
 const WEBSOCKET_CONNECTING = 0;
 const WEBSOCKET_OPEN = 1;
 
@@ -710,6 +718,12 @@ class LagLoadRun {
   private uploadStartedAt?: number;
   private uploadStopped = false;
   private uploadStreams = 0;
+  // bytes handed to the upload sockets, across streams
+  private uploadSent = 0;
+  // the extender's latest verified rate, bytes per second
+  private uploadVerifiedRate = 0;
+  // false once a socket failed to count a message in bufferedAmount
+  private bufferedAmountCounts = true;
   private lastUploaded = { bytes: 0, ms: 0 };
   private readonly uploadWindowReported = deferred<void>();
 
@@ -775,6 +789,7 @@ class LagLoadRun {
     this.lastUploaded = { bytes: Math.max(previous.bytes, bytes), ms: Math.max(previous.ms, ms) };
     const elapsed = ms - previous.ms;
     const bytesPerSecond = 0 < elapsed ? (Math.max(0, bytes - previous.bytes) * 1000) / elapsed : 0;
+    this.uploadVerifiedRate = bytesPerSecond;
     this.session.emit({
       type: "progress",
       direction: "upload",
@@ -1066,10 +1081,17 @@ class LagLoadRun {
       rate: 0,
       cap: BUFFER_MIN_BYTES,
     };
+    let sliceStart = monotonicNow();
     while (!this.uploadStopped && socket.readyState === WEBSOCKET_OPEN) {
       this.adjustCap(socket, flow);
-      if (flow.cap < socket.bufferedAmount + LAG_UPLOAD_MESSAGE_BYTES) {
+      if (flow.cap < socket.bufferedAmount + LAG_UPLOAD_MESSAGE_BYTES || this.aheadOfVerified()) {
         await sleep(BUFFER_POLL_MS);
+        sliceStart = monotonicNow();
+        continue;
+      }
+      if (SEND_SLICE_MS < monotonicNow() - sliceStart) {
+        await sleep(0);
+        sliceStart = monotonicNow();
         continue;
       }
       let message: Uint8Array;
@@ -1087,6 +1109,10 @@ class LagLoadRun {
         return;
       }
       flow.sent += message.length;
+      this.uploadSent += message.length;
+      if (socket.bufferedAmount < message.length) {
+        this.bufferedAmountCounts = false;
+      }
       if (this.uploadFirst === undefined) {
         this.uploadFirst = monotonicNow();
         this.uploadStartedAt = epochNow();
@@ -1102,6 +1128,14 @@ class LagLoadRun {
         this.emitPhase("upload", this.uploadStartedAt);
       }
     }
+  }
+
+  // Backpressure where bufferedAmount gives none (UNCOUNTED_AHEAD_BYTES).
+  private aheadOfVerified(): boolean {
+    return (
+      !this.bufferedAmountCounts &&
+      UNCOUNTED_AHEAD_BYTES + this.uploadVerifiedRate < this.uploadSent - this.lastUploaded.bytes
+    );
   }
 
   // The cap follows about BUFFER_SECONDS of what the stream drains, within

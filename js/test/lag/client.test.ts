@@ -377,12 +377,20 @@ test("an upload stream that never connects does not hold up the load", { timeout
 test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout: 30_000 }, async () => {
   await withMock({ uploadBytesPerSecond: 2 << 20 }, async (mock) => {
     let largest = 0;
+    let uncounted = 0;
     class MeasuredWebSocket extends WebSocket {
       send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
-        if (typeof data !== "string") {
-          largest = Math.max(largest, this.bufferedAmount);
+        if (typeof data === "string") {
+          super.send(data);
+          return;
         }
+        largest = Math.max(largest, this.bufferedAmount);
         super.send(data);
+        // a socket counts a message as soon as it is sent, which is what
+        // lets the client trust bufferedAmount for backpressure
+        if (this.bufferedAmount < (data as ArrayBufferView).byteLength) {
+          uncounted += 1;
+        }
       }
     }
     const { session } = open(mock, "ticket-slow", { WebSocket: MeasuredWebSocket });
@@ -391,6 +399,7 @@ test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout
     assert.equal(result.uploadVerified, true);
     assert.ok(0 < largest, "the upload buffered");
     assert.ok(largest + 65536 <= 8 << 20, `bufferedAmount reached ${largest}`);
+    assert.equal(uncounted, 0);
     session.close();
   });
 });
@@ -435,4 +444,121 @@ test("a host is an extender's name, with any port it carries, over https and wss
   for (const host of ["evil.example/path", "a b", "x?y", "h#f", "user@host", "host:99999", "::1", ""]) {
     assert.throws(() => openLagSession({ host, ticket: "t", WebSocket: WebSocketImpl }), TypeError, host);
   }
+});
+
+test("a load's streams keep the host's port, and a bufferedAmount that never counts cannot run away", { timeout: 30_000 }, async () => {
+  const host = `${EXTENDER_ID}.extender.localhost:8443`;
+  const hello = {
+    type: "hello",
+    session: randomBytes(16).toString("base64url"),
+    uploadKey: randomBytes(16).toString("base64url"),
+    pingIntervalMs: 250,
+    intervalMs: 50,
+    downloadMs: 100,
+    uploadMs: 200,
+    maxStreams: 2,
+  };
+  const socketUrls: string[] = [];
+  const fetchUrls: string[] = [];
+  let uploadedBytes = 0;
+
+  // A WebSocket that goes nowhere: the control socket says hello and answers
+  // done with a loadResult; upload sockets swallow what they are sent, and
+  // bufferedAmount stays 0 whatever was sent, so it gives no backpressure.
+  type Listener = (event: Record<string, unknown>) => void;
+  class FakeWebSocket {
+    binaryType = "blob";
+    readyState = 0;
+    bufferedAmount = 0;
+    private readonly listeners = new Map<string, Set<Listener>>();
+    private readonly control: boolean;
+    constructor(url: string) {
+      socketUrls.push(url);
+      this.control = url.includes("/lag/v1/session?");
+      setTimeout(() => {
+        this.readyState = 1;
+        this.dispatch("open", {});
+        if (this.control) {
+          this.dispatch("message", { data: JSON.stringify(hello) });
+        }
+      }, 1);
+    }
+    addEventListener(type: string, listener: Listener) {
+      if (!this.listeners.has(type)) {
+        this.listeners.set(type, new Set());
+      }
+      this.listeners.get(type)!.add(listener);
+    }
+    removeEventListener(type: string, listener: Listener) {
+      this.listeners.get(type)?.delete(listener);
+    }
+    send(data: string | Uint8Array) {
+      if (typeof data !== "string") {
+        uploadedBytes += data.byteLength;
+        return;
+      }
+      const message = JSON.parse(data);
+      if (message.type === "load" && message.phase === "done") {
+        setTimeout(() => {
+          this.dispatch("message", {
+            data: JSON.stringify({ type: "loadResult", uploadVerified: true, endReason: "complete" }),
+          });
+        }, 1);
+      }
+    }
+    close(code = 1000) {
+      if (this.readyState === 3) {
+        return;
+      }
+      this.readyState = 3;
+      setTimeout(() => this.dispatch("close", { code, reason: "" }), 1);
+    }
+    private dispatch(type: string, event: Record<string, unknown>) {
+      for (const listener of [...(this.listeners.get(type) ?? [])]) {
+        listener(event);
+      }
+    }
+  }
+  // a download stream of a few chunks over about 100 ms
+  const fakeFetch = async (input: string | URL | Request) => {
+    fetchUrls.push(String(input));
+    let chunks = 0;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (chunks === 5) {
+          controller.close();
+          return;
+        }
+        chunks += 1;
+        await sleep(20);
+        controller.enqueue(new Uint8Array(1000));
+      },
+    });
+    return new Response(body, { status: 200 });
+  };
+
+  const session = openLagSession({
+    host,
+    ticket: "ticket-port",
+    WebSocket: FakeWebSocket as unknown as typeof WebSocket,
+    fetch: fakeFetch as typeof fetch,
+  });
+  await session.ready;
+  const started = performance.now();
+  const result = await session.startLoad();
+  session.close();
+
+  const query = (k: number) => `session=${hello.session}&stream=${k}`;
+  assert.deepEqual(fetchUrls.sort(), [0, 1].map((k) => `https://${host}/lag/v1/down?${query(k)}`));
+  assert.deepEqual(socketUrls.sort(), [
+    `wss://${host}/lag/v1/session?ticket=ticket-port`,
+    ...[0, 1].map((k) => `wss://${host}/lag/v1/up?${query(k)}`),
+  ]);
+  assert.equal(result.download.bytes, 2 * 5 * 1000);
+  assert.equal(result.endReason, "complete");
+  // the upload ended on its 200 ms window: its timer ran, though nothing
+  // ever held a stream back
+  assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
+  // and what it sent stayed bounded, with nothing verified to run ahead of
+  assert.ok(0 < uploadedBytes && uploadedBytes <= 16 << 20, `${uploadedBytes} bytes sent`);
 });
