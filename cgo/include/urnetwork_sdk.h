@@ -2259,6 +2259,7 @@ char* urnet_service_url(const char* key_json, const char* values_json, const cha
 void urnet_set_control_ip_family_policy(int64_t policy);
 void urnet_set_device_rpc_h1_plus_enabled(bool enabled);
 void urnet_set_egress_interface_index(int64_t index4, int64_t index6);
+bool urnet_set_extender_network_client_enabled(bool enabled);
 void urnet_set_extender_store_read_only(bool read_only);
 bool urnet_set_log_dir(const char* log_dir, char** out_error);
 bool urnet_set_log_dir_for_process(const char* root, const char* process_name, char** out_error);

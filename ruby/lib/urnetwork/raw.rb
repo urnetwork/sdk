@@ -1441,6 +1441,7 @@ module URnetwork
       attach_function :urnet_set_control_ip_family_policy, [:int64], :void, blocking: true
       attach_function :urnet_set_device_rpc_h1_plus_enabled, [:bool], :void, blocking: true
       attach_function :urnet_set_egress_interface_index, [:int64, :int64], :void, blocking: true
+      attach_function :urnet_set_extender_network_client_enabled, [:bool], :bool, blocking: true
       attach_function :urnet_set_extender_store_read_only, [:bool], :void, blocking: true
       attach_function :urnet_set_log_dir, [:string, :pointer], :bool, blocking: true
       attach_function :urnet_set_log_dir_for_process, [:string, :string, :pointer], :bool, blocking: true

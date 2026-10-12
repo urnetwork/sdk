@@ -1442,6 +1442,7 @@ public interface Raw extends Library {
   void urnet_set_control_ip_family_policy(long a0);
   void urnet_set_device_rpc_h1_plus_enabled(byte a0);
   void urnet_set_egress_interface_index(long a0, long a1);
+  byte urnet_set_extender_network_client_enabled(byte a0);
   void urnet_set_extender_store_read_only(byte a0);
   byte urnet_set_log_dir(String a0, PointerByReference a1);
   byte urnet_set_log_dir_for_process(String a0, String a1, PointerByReference a2);
