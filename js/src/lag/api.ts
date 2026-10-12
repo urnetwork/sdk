@@ -4,9 +4,6 @@
 // runtime, so auth, timeouts, GET retry and errors behave as the generated
 // methods do, until connect/api/bringyour.yml carries the lag routes and
 // gen_openapi.go generates them.
-//
-// lag.dev/PLAN.md S6 still names the ticket call lagTicket(), but amendment 1
-// made A6 one call per track, POST /lag/track; the wrapper is lagTrack().
 
 import {
   URNetworkApiClientBase,
@@ -38,7 +35,7 @@ export interface LagSessionResult {
   error?: LagApiRefusal;
 }
 
-/** A4: the extender's derived location, else GeoLite2-City for its address. */
+/** A4: the extender's derived location, else GeoLite2-City for its first address. */
 export interface LagExtenderLocation {
   city?: string;
   region?: string;
@@ -50,16 +47,21 @@ export interface LagExtenderLocation {
 }
 
 /**
- * A4: one address of an extender that serves the measurement api now. An
- * extender with both families appears once per address.
+ * A4: an extender that serves the measurement api now. There is one entry
+ * per extender: its one name serves both address families (N3).
  */
 export interface LagExtender {
   extender_id: string;
   /** the ed25519 identity key, hex */
   public_key: string;
-  ip: string;
-  /** the measurement name (N1), e.g. 203-0-113-7.extender.bringyour.com */
+  /**
+   * What the browser connects to: the measurement name (N1),
+   * `<extender_id>.extender.bringyour.com`. In a local test stack it may
+   * carry a port.
+   */
   host: string;
+  /** the extender's active addresses, IPv4 first */
+  ips: string[];
   location?: LagExtenderLocation;
 }
 
@@ -69,10 +71,9 @@ export interface LagExtendersResult {
   error?: LagApiRefusal;
 }
 
-/** One address in an A6 `POST /lag/track` request. */
+/** One extender in an A6 `POST /lag/track` request. */
 export interface LagTrackExtender {
   extender_id: string;
-  ip: string;
 }
 
 /** A6 `POST /lag/track` arguments: the 8 dots, then up to 4 spares. */
@@ -83,7 +84,7 @@ export interface LagTrackArgs {
 /** A6: one dot's ticket. */
 export interface LagTrackTicket {
   extender_id: string;
-  ip: string;
+  /** what the browser connects to, as in A4; it may carry a port */
   host: string;
   /** the request order: 0-7 for the dots, 8-11 for the spares */
   position: number;
@@ -162,14 +163,24 @@ export class LagApiClient extends URNetworkApiClientBase {
         options,
       ),
     );
-    return { ...result, extenders: Array.isArray(result.extenders) ? result.extenders : [] };
+    const extenders = Array.isArray(result.extenders) ? result.extenders : [];
+    return {
+      ...result,
+      // `ips` is always a list, even when the api sent none
+      extenders: extenders.map((extender) => (Array.isArray(extender.ips) ? extender : { ...extender, ips: [] })),
+    };
   }
 
-  /** A6: tickets for a track's dots and spares (client jwt). */
+  /** A6: tickets for a track's dots and spares, in request order (client jwt). */
   async lagTrack(args: LagTrackArgs, options?: RequestOptions): Promise<LagTrackResult> {
+    // an extender is named by its id alone: nothing else a caller holds
+    // about it, such as an address, goes into the request
+    const body: LagTrackArgs = {
+      extenders: args.extenders.map(({ extender_id }) => ({ extender_id })),
+    };
     const result = await refusalAsResult(
       this.request<Partial<LagTrackResult>>(
-        { method: "POST", path: "/lag/track", auth: "bearer", body: args },
+        { method: "POST", path: "/lag/track", auth: "bearer", body },
         options,
       ),
     );

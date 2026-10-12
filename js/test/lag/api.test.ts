@@ -40,6 +40,11 @@ function recorder(responses: Response[]) {
   return { calls, fetchImpl };
 }
 
+// extender ids, and the measurement names they give (N1)
+const ID_A = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e0f";
+const ID_B = "0192e4a1-7b3c-7d2e-9f10-5a6b7c8d9e10";
+const hostOf = (id: string) => `${id}.extender.bringyour.com`;
+
 const guest = {
   by_client_jwt: "jwt-1",
   network_id: "n-1",
@@ -67,46 +72,72 @@ test("a configured base url is used, without its trailing slash", async () => {
   assert.equal(calls[0].url, "http://127.0.0.1:8080/lag/extenders");
 });
 
-test("lagExtenders sends the guest jwt from a token function", async () => {
+test("lagExtenders sends the guest jwt and returns one entry per extender", async () => {
   const extender = {
-    extender_id: "e-1",
+    extender_id: ID_A,
     public_key: "ab".repeat(32),
-    ip: "203.0.113.7",
-    host: "203-0-113-7.extender.bringyour.com",
+    host: hostOf(ID_A),
+    ips: ["203.0.113.7", "2001:db8::1"],
     location: { city: "Frankfurt", country_code: "de", country_name: "Germany", latitude: 50.1, longitude: 8.7 },
   };
   const { calls, fetchImpl } = recorder([json(200, { extenders: [extender] }), json(200, {})]);
   const api = createLagApiClient({ fetch: fetchImpl, token: async () => "jwt-2" });
-  assert.deepEqual(await api.lagExtenders(), { extenders: [extender] });
+  const result = await api.lagExtenders();
+  assert.deepEqual(result, { extenders: [extender] });
+  // both families under the one name, IPv4 first, and no single `ip`
+  assert.deepEqual(result.extenders[0].ips, ["203.0.113.7", "2001:db8::1"]);
+  assert.equal("ip" in result.extenders[0], false);
   assert.equal(calls[0].method, "GET");
   assert.equal(calls[0].headers["authorization"], "Bearer jwt-2");
   // a body without the list still gives one
   assert.deepEqual(await api.lagExtenders(), { extenders: [] });
 });
 
-test("lagTrack posts the track's extenders and returns its tickets", async () => {
+test("lagExtenders gives every entry a list of ips, and keeps a host's port", async () => {
+  // a local test stack's host carries a port; an entry may come without ips
+  const local = { extender_id: ID_A, public_key: "cd".repeat(32), host: `${ID_A}.extender.localhost:8443`, ips: ["127.0.0.1"] };
+  const bare = { extender_id: ID_B, public_key: "ef".repeat(32), host: hostOf(ID_B) };
+  const noIps = { extender_id: ID_B, public_key: "ef".repeat(32), host: hostOf(ID_B), ips: null };
+  const { fetchImpl } = recorder([json(200, { extenders: [local, bare, noIps] })]);
+  const api = createLagApiClient({ fetch: fetchImpl, token: "t" });
+  const { extenders } = await api.lagExtenders();
+  assert.equal(extenders[0].host, `${ID_A}.extender.localhost:8443`);
+  assert.deepEqual(extenders.map((extender) => extender.ips), [["127.0.0.1"], [], []]);
+});
+
+test("lagTrack posts the track's extender ids and returns its tickets", async () => {
   const tickets = {
     track_id: "t-1",
     tickets: [
-      { extender_id: "e-1", ip: "203.0.113.7", host: "203-0-113-7.extender.bringyour.com", position: 0, ticket: "AAAA" },
+      { extender_id: ID_A, host: hostOf(ID_A), position: 0, ticket: "AAAA" },
+      { extender_id: ID_B, host: `${ID_B}.extender.localhost:8443`, position: 1, ticket: "BBBB" },
     ],
     expires_at: "2026-10-12T20:02:00Z",
   };
-  const { calls, fetchImpl } = recorder([json(200, tickets)]);
+  const { calls, fetchImpl } = recorder([json(200, tickets), json(200, tickets)]);
   const api = createLagApiClient({ fetch: fetchImpl, token: "jwt-3" });
-  const args = { extenders: [{ extender_id: "e-1", ip: "203.0.113.7" }, { extender_id: "e-2", ip: "2001:db8::1" }] };
-  assert.deepEqual(await api.lagTrack(args), tickets);
+  const args = { extenders: [{ extender_id: ID_A }, { extender_id: ID_B }] };
+  const result = await api.lagTrack(args);
+  assert.deepEqual(result, tickets);
+  assert.deepEqual(Object.keys(result.tickets[0]).sort(), ["extender_id", "host", "position", "ticket"]);
+  assert.equal(result.tickets[1].host, `${ID_B}.extender.localhost:8443`);
   assert.equal(calls[0].url, "https://api.bringyour.com/lag/track");
   assert.equal(calls[0].method, "POST");
   assert.deepEqual(calls[0].body, args);
   assert.equal(calls[0].headers["authorization"], "Bearer jwt-3");
+
+  // the request names each extender by its id alone, whatever else the
+  // caller's objects carry
+  const stale = { extenders: [{ extender_id: ID_A, ip: "203.0.113.7" }, { extender_id: ID_B, host: hostOf(ID_B) }] };
+  await api.lagTrack(stale);
+  assert.deepEqual(calls[1].body, args);
 });
 
 test("a refusal is a result whether the api answers it with 200 or an error status", async () => {
   const refusal = { error: { code: "limit", retry_after_ms: 60000 } };
   const { fetchImpl } = recorder([json(200, refusal), json(429, refusal), json(503, { error: { code: "unavailable" } })]);
   const api = createLagApiClient({ fetch: fetchImpl, token: "t", retry: false });
-  const args = { extenders: [{ extender_id: "e-1", ip: "203.0.113.7" }] };
+  const args = { extenders: [{ extender_id: ID_A }] };
   assert.deepEqual(await api.lagTrack(args), { ...refusal, tickets: [] });
   assert.deepEqual(await api.lagTrack(args), { ...refusal, tickets: [] });
   assert.deepEqual(await api.lagSession(), { error: { code: "unavailable" } });
