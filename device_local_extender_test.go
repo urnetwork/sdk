@@ -495,8 +495,11 @@ func (self *testProvideExtenderFixture) configureExtender(settings *deviceLocalE
 	settings.HelloUrl = self.operator.helloUrl
 	// one dialer, so one request reaches the operator per call: the resilient
 	// variants race the same request and would count a pass more than once
-	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.EnableResilient = false
+	// the operator and the carriers are on loopback; the peer records carry
+	// documentation addresses, which the pinger never sends to
+	strategySettings.ConnectSettings.DialContextSettings = testLoopbackDialContextSettings()
 	settings.ClientStrategySettings = strategySettings
 	// every stepped pass advances the clock by at least this, so the caller
 	// address check -- the pass barrier -- runs on every step
@@ -1414,11 +1417,15 @@ func TestDeviceLocalProviderExtenderReportsASpaceWithNoDirectory(t *testing.T) {
 	fixture := newTestProvideExtenderFixtureWithSpace(
 		t,
 		func(ctx context.Context) *NetworkSpace {
-			strategySettings := connect.DefaultClientStrategySettings()
+			strategySettings := testOfflineClientStrategySettings()
 			strategySettings.Log = connect.NewNoopLogger()
 			return NewNetworkSpaceWithUrls(ctx, "https://192.0.2.1", "wss://192.0.2.1", strategySettings)
 		},
-		nil,
+		func(settings *DeviceLocalSettings) {
+			// the provider's h3 carrier opens its udp socket through the
+			// provider seam, toward the documentation address of the urls
+			settings.ProviderDialContextSettings = testLoopbackDialContextSettings()
+		},
 		nil,
 	)
 	if fixture.networkSpace.extenderDirectory != nil {
@@ -1831,7 +1838,7 @@ func TestDeviceLocalProviderExtenderDisabledWhenHosted(t *testing.T) {
 // The url-only space of these tests: an api url and nothing else, which is
 // what a headless embedder builds (F1).
 func newTestProvideExtenderUrlSpace(ctx context.Context) *NetworkSpace {
-	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.Log = connect.NewNoopLogger()
 	return NewNetworkSpaceWithUrls(
 		ctx,

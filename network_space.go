@@ -554,13 +554,20 @@ func (self *NetworkSpace) logger() connect.Logger {
 	return connect.DefaultLogger()
 }
 
+// newNetworkSpaceConnectSettings answers the connect settings of a space built
+// from its key and values. Production takes the connect defaults. The sdk test
+// binary answers settings that resolve in the process (TestMain): its spaces
+// are keyed by test hosts, whose names must reach neither the system resolver
+// nor, through the strategy's protected-domain DoH, a public DoH server.
+var newNetworkSpaceConnectSettings = connect.DefaultConnectSettings
+
 func newNetworkSpace(
 	ctx context.Context,
 	key NetworkSpaceKey,
 	values NetworkSpaceValues,
 	storagePath string,
 ) *NetworkSpace {
-	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings(), false)
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, newNetworkSpaceConnectSettings(), false)
 }
 
 // Builds a space from its key and values. A hosted-incompatible space is the
