@@ -133,6 +133,73 @@ test("lagTrack posts the track's extender ids and returns its tickets", async ()
   assert.deepEqual(calls[1].body, args);
 });
 
+test("lagTrack without a trackId sends ids only, even when positions are given", async () => {
+  const { calls, fetchImpl } = recorder([json(200, { track_id: "t-1", tickets: [] })]);
+  const api = createLagApiClient({ fetch: fetchImpl, token: "jwt-3" });
+  await api.lagTrack({ extenders: [{ extender_id: ID_A, position: 5 }, { extender_id: ID_B }] });
+  assert.deepEqual(calls[0].body, { extenders: [{ extender_id: ID_A }, { extender_id: ID_B }] });
+  assert.equal("track_id" in (calls[0].body as object), false);
+});
+
+test("lagTrack with a trackId reissues tickets at their positions in that track", async () => {
+  const reissued = {
+    track_id: "t-1",
+    tickets: [
+      { extender_id: ID_B, host: hostOf(ID_B), position: 3, ticket: "CCCC" },
+      { extender_id: ID_A, host: hostOf(ID_A), position: 9, ticket: "DDDD" },
+    ],
+    expires_at: "2026-10-12T20:12:00Z",
+  };
+  const { calls, fetchImpl } = recorder([json(200, reissued)]);
+  const api = createLagApiClient({ fetch: fetchImpl, token: "jwt-4" });
+  const result = await api.lagTrack({
+    trackId: "t-1",
+    extenders: [
+      { extender_id: ID_B, position: 3 },
+      // what else a caller's object carries stays out of the request
+      { extender_id: ID_A, position: 9, ip: "203.0.113.7" } as { extender_id: string; position: number },
+    ],
+  });
+  // the response shape is unchanged
+  assert.deepEqual(result, reissued);
+  assert.equal(calls[0].url, "https://api.bringyour.com/lag/track");
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].headers["authorization"], "Bearer jwt-4");
+  assert.deepEqual(calls[0].body, {
+    track_id: "t-1",
+    extenders: [
+      { extender_id: ID_B, position: 3 },
+      { extender_id: ID_A, position: 9 },
+    ],
+  });
+  // on the wire: {"track_id":"…","extenders":[{"extender_id":"…","position":3}, …]}
+  assert.deepEqual(Object.keys(calls[0].body as object), ["track_id", "extenders"]);
+});
+
+test("a reissue without each extender's position is refused before any request", async () => {
+  const { calls, fetchImpl } = recorder([]);
+  const api = createLagApiClient({ fetch: fetchImpl, token: "t" });
+  for (const position of [undefined, -1, 1.5, NaN, "3" as unknown as number]) {
+    await assert.rejects(
+      api.lagTrack({ trackId: "t-1", extenders: [{ extender_id: ID_A, position: 0 }, { extender_id: ID_B, position }] }),
+      TypeError,
+      String(position),
+    );
+  }
+  await assert.rejects(api.lagTrack({ trackId: "", extenders: [{ extender_id: ID_A, position: 0 }] }), TypeError);
+  assert.equal(calls.length, 0);
+});
+
+test("a reissue's refusal is a result too", async () => {
+  const refusal = { error: { code: "limit", retry_after_ms: 0 } };
+  const { fetchImpl } = recorder([json(429, refusal)]);
+  const api = createLagApiClient({ fetch: fetchImpl, token: "t", retry: false });
+  assert.deepEqual(
+    await api.lagTrack({ trackId: "t-1", extenders: [{ extender_id: ID_A, position: 0 }] }),
+    { ...refusal, tickets: [] },
+  );
+});
+
 test("a refusal is a result whether the api answers it with 200 or an error status", async () => {
   const refusal = { error: { code: "limit", retry_after_ms: 60000 } };
   const { fetchImpl } = recorder([json(200, refusal), json(429, refusal), json(503, { error: { code: "unavailable" } })]);

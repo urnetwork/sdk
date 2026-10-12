@@ -74,11 +74,23 @@ export interface LagExtendersResult {
 /** One extender in an A6 `POST /lag/track` request. */
 export interface LagTrackExtender {
   extender_id: string;
+  /**
+   * For a reissue (`trackId` set): the dot's place in that track. Without
+   * `trackId` positions follow the request order and this is not sent.
+   */
+  position?: number;
 }
 
 /** A6 `POST /lag/track` arguments: the 8 dots, then up to 4 spares. */
 export interface LagTrackArgs {
   extenders: LagTrackExtender[];
+  /**
+   * Reissue (A6): fresh tickets in this track, one the caller was issued
+   * within the last hour, for dots it already holds, so a dropped session
+   * reconnects without leaving its track. Each extender then needs its
+   * `position`. Sent as `track_id`.
+   */
+  trackId?: string;
 }
 
 /** A6: one dot's ticket. */
@@ -171,13 +183,31 @@ export class LagApiClient extends URNetworkApiClientBase {
     };
   }
 
-  /** A6: tickets for a track's dots and spares, in request order (client jwt). */
+  /**
+   * A6: tickets for a track's dots and spares, in request order; or, with
+   * `trackId`, fresh tickets at the given positions in that track (client
+   * jwt).
+   */
   async lagTrack(args: LagTrackArgs, options?: RequestOptions): Promise<LagTrackResult> {
-    // an extender is named by its id alone: nothing else a caller holds
-    // about it, such as an address, goes into the request
-    const body: LagTrackArgs = {
-      extenders: args.extenders.map(({ extender_id }) => ({ extender_id })),
-    };
+    // an extender is named by its id, and in a reissue by its position too:
+    // nothing else a caller holds about it, such as an address, goes in
+    let body: object;
+    if (args.trackId === undefined) {
+      body = { extenders: args.extenders.map(({ extender_id }) => ({ extender_id })) };
+    } else {
+      if (typeof args.trackId !== "string" || args.trackId === "") {
+        throw new TypeError("lagTrack: a reissue's trackId must be a track id");
+      }
+      body = {
+        track_id: args.trackId,
+        extenders: args.extenders.map(({ extender_id, position }) => {
+          if (!(Number.isSafeInteger(position) && 0 <= position!)) {
+            throw new TypeError(`lagTrack: a reissue needs each extender's position (${extender_id})`);
+          }
+          return { extender_id, position };
+        }),
+      };
+    }
     const result = await refusalAsResult(
       this.request<Partial<LagTrackResult>>(
         { method: "POST", path: "/lag/track", auth: "bearer", body },
