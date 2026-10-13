@@ -120,6 +120,32 @@ func TestSnChainSettingsWasmVault2Address(t *testing.T) {
 	}
 }
 
+// VERSION2-LAUNCH.md §2.6, the sizing rule for v1 claims: the site sees each
+// v1 claim transaction with the Go field names, ready for its wallet, with
+// the gas limit to send it with.
+func TestSnUnsignedTxsWasm(t *testing.T) {
+	txs := sdk.NewSnUnsignedTxList()
+	txs.Add(&sdk.SnUnsignedTx{Epoch: 7, ChainId: 964, To: "0x2222222222222222222222222222222222222222", Data: "0xce479a1b", Value: "0", AmountRao: 123_400_000, Gas: 2_700_000})
+	out := jsSnUnsignedTxs(txs)
+	if out.Length() != 1 {
+		t.Fatalf("transactions %v", out)
+	}
+	tx := out.Index(0)
+	for name, want := range map[string]int64{"Epoch": 7, "ChainId": 964, "AmountRao": 123_400_000, "Gas": 2_700_000} {
+		if got := int64(tx.Get(name).Float()); got != want {
+			t.Fatalf("%s = %d, want %d", name, got, want)
+		}
+	}
+	for name, want := range map[string]string{"To": "0x2222222222222222222222222222222222222222", "Data": "0xce479a1b", "Value": "0"} {
+		if got := tx.Get(name).String(); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+	if empty := jsSnUnsignedTxs(sdk.NewSnUnsignedTxList()); empty.Length() != 0 {
+		t.Fatalf("empty %v", empty)
+	}
+}
+
 // CL-4, APPS-SPEC "SnLedgerClaimTransactionsFor": the site sees each v2 claim
 // transaction with the Go field names, ready for its wallet, with the gas
 // limit to send it with.

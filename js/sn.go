@@ -314,7 +314,11 @@ func SnLedgerAccountsFor(this js.Value, args []js.Value) any {
 	})
 }
 
-// URnetworkSnClaimTransactionsFor(settings, coldkeySs58, epochs) -> Promise<[{To, Data, Value, ChainId, Epoch, AmountRao}]>
+// URnetworkSnClaimTransactionsFor(settings, coldkeySs58, epochs) -> Promise<[{To, Data, Value, ChainId, Epoch, AmountRao, Gas}]>
+//
+// One v1 claim transaction per epoch the coldkey can claim, for the reader's
+// wallet to send with Gas as its gas limit: below it the vault defers the
+// payment, and a wallet's own estimate finds that.
 func SnClaimTransactionsFor(this js.Value, args []js.Value) any {
 	return jsPromise(func(resolve func(any), reject func(error)) {
 		if len(args) < 3 || args[1].Type() != js.TypeString {
@@ -331,20 +335,26 @@ func SnClaimTransactionsFor(this js.Value, args []js.Value) any {
 			reject(err)
 			return
 		}
-		out := []any{}
-		for i := 0; i < txs.Len(); i++ {
-			tx := txs.Get(i)
-			out = append(out, map[string]any{
-				"Epoch":     tx.Epoch,
-				"ChainId":   tx.ChainId,
-				"To":        tx.To,
-				"Data":      tx.Data,
-				"Value":     tx.Value,
-				"AmountRao": tx.AmountRao,
-			})
-		}
-		resolve(js.ValueOf(out))
+		resolve(jsSnUnsignedTxs(txs))
 	})
+}
+
+// The v1 claim transactions as a page reads them, with the Go field names.
+func jsSnUnsignedTxs(txs *sdk.SnUnsignedTxList) js.Value {
+	out := []any{}
+	for i := 0; i < txs.Len(); i++ {
+		tx := txs.Get(i)
+		out = append(out, map[string]any{
+			"Epoch":     tx.Epoch,
+			"ChainId":   tx.ChainId,
+			"To":        tx.To,
+			"Data":      tx.Data,
+			"Value":     tx.Value,
+			"AmountRao": tx.AmountRao,
+			"Gas":       tx.Gas,
+		})
+	}
+	return js.ValueOf(out)
 }
 
 // URnetworkSnLedgerClaimTransactionsFor(settings, coldkeySs58) -> Promise<[{NoId, Index, RootIndex, ChainId, To, Data, Value, AmountRao, Gas}]>
