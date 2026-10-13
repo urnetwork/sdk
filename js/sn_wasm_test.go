@@ -120,17 +120,18 @@ func TestSnChainSettingsWasmVault2Address(t *testing.T) {
 	}
 }
 
-// APPS-SPEC "SnLedgerClaimTransactionsFor": the site sees each v2 claim
-// transaction with the Go field names, ready for its wallet.
+// CL-4, APPS-SPEC "SnLedgerClaimTransactionsFor": the site sees each v2 claim
+// transaction with the Go field names, ready for its wallet, with the gas
+// limit to send it with.
 func TestSnLedgerUnsignedTxsWasm(t *testing.T) {
 	txs := sdk.NewSnLedgerUnsignedTxList()
-	txs.Add(&sdk.SnLedgerUnsignedTx{NoId: 1, Index: 42, RootIndex: 3, ChainId: 964, To: "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", Data: "0xb7a6b907", Value: "0", AmountRao: 23_456_789})
+	txs.Add(&sdk.SnLedgerUnsignedTx{NoId: 1, Index: 42, RootIndex: 3, ChainId: 964, To: "0x2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", Data: "0xb7a6b907", Value: "0", AmountRao: 23_456_789, Gas: 2_600_000})
 	out := jsSnLedgerUnsignedTxs(txs)
 	if out.Length() != 1 {
 		t.Fatalf("transactions %v", out)
 	}
 	tx := out.Index(0)
-	for name, want := range map[string]int64{"NoId": 1, "Index": 42, "RootIndex": 3, "ChainId": 964, "AmountRao": 23_456_789} {
+	for name, want := range map[string]int64{"NoId": 1, "Index": 42, "RootIndex": 3, "ChainId": 964, "AmountRao": 23_456_789, "Gas": 2_600_000} {
 		if got := int64(tx.Get(name).Float()); got != want {
 			t.Fatalf("%s = %d, want %d", name, got, want)
 		}

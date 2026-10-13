@@ -946,6 +946,7 @@ export interface SnLedgerUnsignedTx {
   data: string;
   value: string;
   amount_rao: number;
+  gas: number;
 }
 
 export interface SnEpochResult {

@@ -1584,10 +1584,13 @@ func (self *testV2Claim) addPool2(t *testing.T) map[string]any {
 	return testLedgerClaimEntry(testVault2, 2, 0, 0, 7_000_000_000, proofs[0], 0)
 }
 
-// APPS-SPEC claim rules 1 and 2: the claims for an external signer, one per
-// account with something to claim, in the ledger's order: to vault2, value
-// 0, the claim calldata, the chain id, the root index and the amount. Each is
-// preflighted without a sender, and one the vault refuses is left out.
+// CL-4, APPS-SPEC claim rules 1 and 2: the claims for an external signer, one
+// per account with something to claim, in the ledger's order: to vault2,
+// value 0, the claim calldata, the chain id, the root index, the amount and
+// the gas limit to sign with, snLedgerClaimGasFloor, 2,600,000: the signer
+// does not size the claim by an estimate, which follows vault2's
+// staking-hotkey list. Each is preflighted without a sender, and one the vault
+// refuses is left out.
 func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 	f := newTestV2Claim(t)
 	pool2 := f.addPool2(t)
@@ -1598,15 +1601,15 @@ func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 	}
 	pool2Data, _ := evm.PackLedgerClaim(2, 0, 0, f.alice, big.NewInt(7_000_000_000), []merkle.LedgerNode{})
 	want := []*SnLedgerUnsignedTx{
-		{NoId: 1, Index: 2, RootIndex: 1, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(f.calldata(t, 1, testV2Cumulative, f.proofs[2])), Value: "0", AmountRao: testV2Cumulative - testV2Paid},
-		{NoId: 2, Index: 0, RootIndex: 0, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(pool2Data), Value: "0", AmountRao: 7_000_000_000},
+		{NoId: 1, Index: 2, RootIndex: 1, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(f.calldata(t, 1, testV2Cumulative, f.proofs[2])), Value: "0", AmountRao: testV2Cumulative - testV2Paid, Gas: 2_600_000},
+		{NoId: 2, Index: 0, RootIndex: 0, ChainId: SnChainIdTestnet, To: testVault2, Data: "0x" + hex.EncodeToString(pool2Data), Value: "0", AmountRao: 7_000_000_000, Gas: 2_600_000},
 	}
 	if got := txs.getAll(); !reflect.DeepEqual(got, want) {
 		gotJson, _ := json.Marshal(got)
 		wantJson, _ := json.Marshal(want)
 		t.Fatalf("transactions\n%s\nwant\n%s", gotJson, wantJson)
 	}
-	if calls := f.chain.claimCalls(); len(calls) != 2 || calls[0].from != "" || calls[1].from != "" || calls[0].method != "eth_call" {
+	if calls := f.chain.claimCalls(); len(calls) != 2 || calls[0].from != "" || calls[1].from != "" || calls[0].method != "eth_call" || calls[1].method != "eth_call" {
 		t.Fatalf("preflights %+v", calls)
 	}
 	if requests := f.ledger.takeRequests(); len(requests) != 1 || requests[0] != "GET /sn/ledger/account?coldkey="+f.aliceSs58+" " {
@@ -1617,7 +1620,7 @@ func TestSnLedgerClaimTransactionsForExternalSigners(t *testing.T) {
 	}
 	// the json the apps read
 	raw, _ := json.Marshal(txs.Get(1))
-	if string(raw) != `{"no_id":2,"index":0,"root_index":0,"chain_id":945,"to":"`+testVault2+`","data":"0x`+hex.EncodeToString(pool2Data)+`","value":"0","amount_rao":7000000000}` {
+	if string(raw) != `{"no_id":2,"index":0,"root_index":0,"chain_id":945,"to":"`+testVault2+`","data":"0x`+hex.EncodeToString(pool2Data)+`","value":"0","amount_rao":7000000000,"gas":2600000}` {
 		t.Fatalf("json %s", raw)
 	}
 
@@ -1678,7 +1681,7 @@ func TestSnLedgerClaimOnDevices(t *testing.T) {
 
 	device.setSnWallet(&SnWallet{ColdkeySs58: f.aliceSs58})
 	txs, err := device.SnLedgerClaimTransactions()
-	if err != nil || txs.Len() != 1 || txs.Get(0).AmountRao != testV2Cumulative-testV2Paid {
+	if err != nil || txs.Len() != 1 || txs.Get(0).AmountRao != testV2Cumulative-testV2Paid || txs.Get(0).Gas != 2_600_000 {
 		t.Fatalf("transactions %+v, %v", txs, err)
 	}
 	callback = newRecordingLedgerClaimCallback()

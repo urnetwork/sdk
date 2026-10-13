@@ -3276,6 +3276,7 @@ struct SnLedgerUnsignedTx {
 	std::string data{};
 	std::string value{};
 	int64_t amount_rao{};
+	int64_t gas{};
 };
 
 struct SnNetworkConsentChallengeResult {
@@ -14925,6 +14926,7 @@ inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v) {
 	j["data"] = v.data;
 	j["value"] = v.value;
 	j["amount_rao"] = v.amount_rao;
+	j["gas"] = v.gas;
 }
 inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v) {
 	if (!j.is_object()) {
@@ -14953,6 +14955,9 @@ inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v) {
 	}
 	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
 		it->get_to(v.amount_rao);
+	}
+	if (auto it = j.find("gas"); it != j.end() && !it->is_null()) {
+		it->get_to(v.gas);
 	}
 }
 

@@ -53,6 +53,10 @@ type SnLedgerUnsignedTx struct {
 	Value string `json:"value"`
 	// what the claim pays now: the cumulative less vault2's claimed
 	AmountRao int64 `json:"amount_rao"`
+	// the gas limit to sign with, snLedgerClaimGasFloor (2,600,000): a
+	// signer's own estimate follows vault2's staking-hotkey list, which third
+	// parties can lengthen before the claim is included
+	Gas int64 `json:"gas"`
 }
 
 type SnLedgerUnsignedTxList struct {
@@ -384,8 +388,9 @@ func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey
 }
 
 // unsignedTxs builds a claim transaction for each account a claim pays now
-// whose preflight passes, for an external signer. With none the error is the
-// first account's refusal, else that there is nothing to claim.
+// whose preflight passes, for an external signer, each with
+// snLedgerClaimGasFloor as its gas limit. With none the error is the first
+// account's refusal, else that there is nothing to claim.
 func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsignedTxList, error) {
 	reason := ""
 	refuse := func(noId int64, index int64, message string) {
@@ -413,6 +418,7 @@ func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsi
 			Data:      "0x" + hex.EncodeToString(plan.data),
 			Value:     "0",
 			AmountRao: plan.amount,
+			Gas:       int64(snLedgerClaimGasFloor),
 		})
 	}
 	if list.Len() == 0 {
