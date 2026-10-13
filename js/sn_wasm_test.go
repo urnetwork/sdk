@@ -6,7 +6,7 @@ package main
 import (
 	"testing"
 
-	"github.com/urnetwork/sdk"
+	"github.com/urnetwork/sdk/v2026"
 )
 
 // The claims result carries the epoch schedule to the site, and null while
