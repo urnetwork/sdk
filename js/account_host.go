@@ -364,6 +364,35 @@ func NewAccountHost(this js.Value, args []js.Value) any {
 		})
 	})
 
+	// ----- network payout consent (CONSENT.md) -----
+
+	// snNetworkConsentChallenge(coldkeySs58): the challenge whose exact
+	// `message` the wallet signs. Rejects "network_owner_only: …" when the
+	// page's credential is not the network owner's.
+	m["snNetworkConsentChallenge"] = promiseMethod(func(args []js.Value) js.Value {
+		coldkeySs58 := stringArg(args, 0)
+		return apiPromise(func(cb connect.ApiCallback[*sdk.SnNetworkConsentChallengeResult]) {
+			api.SnNetworkConsentChallenge(coldkeySs58, sdk.SnNetworkConsentChallengeCallback(cb))
+		})
+	})
+	// snNetworkConsentSubmit(coldkeySs58, message, signatureHex): another
+	// account's signature resolves with error.code "signature_mismatch"; an
+	// expired message rejects "challenge_expired: …"
+	m["snNetworkConsentSubmit"] = promiseMethod(func(args []js.Value) js.Value {
+		coldkeySs58 := stringArg(args, 0)
+		message := stringArg(args, 1)
+		signatureHex := stringArg(args, 2)
+		return apiPromise(func(cb connect.ApiCallback[*sdk.SnSetWalletResult]) {
+			api.SnNetworkConsentSubmit(coldkeySs58, message, signatureHex, sdk.SnSetWalletCallback(cb))
+		})
+	})
+	// snNetworkConsentStatus(): the network's newest consent
+	m["snNetworkConsentStatus"] = promiseMethod(func(args []js.Value) js.Value {
+		return apiPromise(func(cb connect.ApiCallback[*sdk.SnNetworkConsentStatus]) {
+			api.SnNetworkConsentStatus(sdk.SnNetworkConsentStatusCallback(cb))
+		})
+	})
+
 	return js.ValueOf(m)
 }
 

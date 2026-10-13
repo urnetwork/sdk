@@ -257,6 +257,9 @@ test("account host and controller declarations match WASM runtime keys", () => {
     "checkBalanceCode",
     "subscriptionBalance",
     "getNetworkUser",
+    "snNetworkConsentChallenge",
+    "snNetworkConsentSubmit",
+    "snNetworkConsentStatus",
   ]) {
     assert.match(declarations, new RegExp(`\\b${method}\\s*\\(`));
     assert.match(hostRuntime, new RegExp(`m\\[\"${method}\"\\]`));

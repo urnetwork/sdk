@@ -825,6 +825,22 @@ export interface SnGetWalletResult {
   error?: SnError | null;
 }
 
+export interface SnNetworkConsentChallengeResult {
+  message: string;
+  coldkey_ss58: string;
+  from_epoch: number;
+  through_epoch: number;
+  expires_at: number;
+}
+
+export interface SnNetworkConsentStatus {
+  active: boolean;
+  coldkey_ss58: string;
+  from_epoch: number;
+  through_epoch: number;
+  generation: number;
+}
+
 export interface SnValidateWalletArgs {
   address: string;
 }
