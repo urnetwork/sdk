@@ -272,6 +272,15 @@ test("pings split into idle, loaded and own by the track's load windows", () => 
   assert.equal(stats.lost, 1);
   assert.equal(stats.loadIncreaseMs, 130);
   assert.equal(new LagLatencyStats().loadIncreaseMs, undefined);
+
+  // a ping the caller saw near a load is neither idle nor loaded; one in a
+  // window is classified as before
+  const settling = new LagLatencyStats();
+  assert.equal(settling.add({ t: 15_500, ms: 90 }, windows, 1, true), "settling");
+  assert.equal(settling.add({ t: 21_000, ms: 150 }, windows, 1, true), "own");
+  assert.equal(settling.add({ t: 31_000, ms: 22 }, windows, 1, false), "idle");
+  assert.deepEqual(settling.idle.percentiles(), { p50: 22, p95: 22 });
+  assert.equal(settling.loaded.count, 1);
 });
 
 test("interval series: exact arrivals per 250 ms interval from the first byte", () => {

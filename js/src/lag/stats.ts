@@ -581,12 +581,27 @@ export class LagLatencyStats {
     return own === undefined || idle === undefined ? undefined : own - idle;
   }
 
-  add(ping: LagPing, windows: readonly LagLoadWindow[], ownIndex?: number): LagPingKind | "lost" {
+  /**
+   * Add a ping. `settling` marks one the caller saw near a load without it
+   * being in the load's windows: in flight while the load set up, between its
+   * download and upload, or while what it queued drained. Such a ping counts
+   * as neither idle nor loaded, so a network still recovering from a load
+   * does not read as idle.
+   */
+  add(
+    ping: LagPing,
+    windows: readonly LagLoadWindow[],
+    ownIndex?: number,
+    settling = false,
+  ): LagPingKind | "settling" | "lost" {
     if (ping.ms === null) {
       this.lostCount += 1;
       return "lost";
     }
     const kind = classifyPing(ping.t, windows, ownIndex);
+    if (kind === "idle" && settling) {
+      return "settling";
+    }
     if (kind === "idle") {
       this.idle.add(ping.ms);
     } else {
