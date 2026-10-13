@@ -3,7 +3,7 @@
 // reaches the network beyond 127.0.0.1.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, createServer as createTcpServer, type AddressInfo, type Socket } from "node:net";
 import { startMockExtender, type MockExtender, type MockExtenderOptions } from "../../test/lag/client_mock_extender.ts";
 
 export interface Place {
@@ -41,6 +41,8 @@ export interface MockApiOptions {
   rejectJwt?: string | RegExp;
   /** a dead origin to give position 0's ticket, so its session can't open */
   deadFirstTicket?: boolean;
+  /** put a relay in front of each extender that reads what the client sends it */
+  relay?: boolean;
 }
 
 export interface MockApi {
@@ -48,10 +50,56 @@ export interface MockApi {
   extenders: Map<string, MockExtender>;
   sessionCreates: number;
   trackRequests: Array<{ extenders: Array<{ extender_id: string }> }>;
-  /** every request's Origin header, by path */
-  origins: Array<{ path: string; origin: string | undefined }>;
+  /** every request to the api, with its Origin and X-Lag-Client headers */
+  requests: Array<{ method: string; path: string; origin: string | undefined; client: string | undefined }>;
+  /** with `relay`: the requests the extenders were sent, and how many named an X-Lag-Client */
+  extenderTraffic: { requests: number; lagClient: number };
   close(): Promise<void>;
 }
+
+// A TCP relay to an extender that counts the request lines it is sent and
+// any X-Lag-Client header among them. Upload frames are masked random bytes,
+// so neither turns up in them by chance.
+const REQUEST_LINE = /(?:^|\r\n)(?:GET|POST) \/lag\//g;
+const LAG_CLIENT = /\r\nx-lag-client:/gi;
+const count = (text: string, pattern: RegExp) => (text.match(pattern) ?? []).length;
+
+const startRelay = async (target: string, traffic: MockApi["extenderTraffic"]) => {
+  const sockets = new Set<Socket>();
+  const relay = createTcpServer((client) => {
+    const upstream = connect(Number(new URL(target).port), "127.0.0.1");
+    for (const socket of [client, upstream]) {
+      sockets.add(socket);
+      socket.on("error", () => undefined);
+      socket.on("close", () => {
+        sockets.delete(socket);
+        client.destroy();
+        upstream.destroy();
+      });
+    }
+    let tail = "";
+    client.on("data", (chunk: Buffer) => {
+      // a match across two chunks counts once: those wholly in the tail
+      // were counted with the chunk before
+      const text = tail + chunk.toString("latin1");
+      traffic.requests += count(text, REQUEST_LINE) - count(tail, REQUEST_LINE);
+      traffic.lagClient += count(text, LAG_CLIENT) - count(tail, LAG_CLIENT);
+      tail = text.slice(-16);
+    });
+    client.pipe(upstream).pipe(client);
+  });
+  await new Promise<void>((resolve) => relay.listen(0, "127.0.0.1", resolve));
+  return {
+    origin: `http://127.0.0.1:${(relay.address() as AddressInfo).port}`,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const socket of sockets) {
+          socket.destroy();
+        }
+        relay.close(() => resolve());
+      }),
+  };
+};
 
 const readBody = (request: IncomingMessage): Promise<string> =>
   new Promise((resolve) => {
@@ -71,11 +119,19 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
   const places = options.places ?? ["houston", "dallas", "london"];
   const extenders = new Map<string, MockExtender>();
   const ids: Array<{ id: string; place: Place }> = [];
+  const extenderTraffic = { requests: 0, lagClient: 0 };
+  const relays = new Map<string, Awaited<ReturnType<typeof startRelay>>>();
   for (const [index, name] of places.entries()) {
     const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
-    extenders.set(id, await startMockExtender(options.extender));
+    const extender = await startMockExtender(options.extender);
+    extenders.set(id, extender);
+    if (options.relay) {
+      relays.set(id, await startRelay(extender.origin, extenderTraffic));
+    }
     ids.push({ id, place: PLACES[name] });
   }
+  // where the client reaches an extender: through its relay, if it has one
+  const hostOf = (id: string) => relays.get(id)?.origin ?? extenders.get(id)!.origin;
   let jwtCount = 0;
   let ticketCount = 0;
   const api: MockApi = {
@@ -83,10 +139,12 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
     extenders,
     sessionCreates: 0,
     trackRequests: [],
-    origins: [],
+    requests: [],
+    extenderTraffic,
     close: async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
+      await Promise.all([...relays.values()].map((relay) => relay.close()));
       await Promise.all([...extenders.values()].map((extender) => extender.close()));
     },
   };
@@ -96,7 +154,13 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
   };
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    api.origins.push({ path, origin: request.headers.origin });
+    const client = request.headers["x-lag-client"];
+    api.requests.push({
+      method: request.method ?? "",
+      path,
+      origin: request.headers.origin,
+      client: Array.isArray(client) ? client.join(", ") : client,
+    });
     if (request.method === "GET" && path === "/my-ip-info") {
       json(response, 200, {
         info: {
@@ -141,7 +205,7 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
         extenders: ids.map(({ id, place }) => ({
           extender_id: id,
           public_key: "00",
-          host: extenders.get(id)!.origin,
+          host: hostOf(id),
           ips: [],
           location: place,
         })),
@@ -159,7 +223,7 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
             ticketCount += 1;
             return {
               extender_id: extender.extender_id,
-              host: options.deadFirstTicket && position === 0 ? "http://127.0.0.1:1" : extenders.get(extender.extender_id)!.origin,
+              host: options.deadFirstTicket && position === 0 ? "http://127.0.0.1:1" : hostOf(extender.extender_id),
               position,
               ticket: `ticket-${ticketCount}`,
             };

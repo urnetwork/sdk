@@ -21,11 +21,21 @@ import { rpmFor, type Rpm } from "./rpm";
 import { selectServers, type Server, type Visitor } from "./select";
 import { VERSION } from "./version";
 
+/**
+ * The header that tells the api which tool ran a measurement, on its track
+ * request only, so the stats count the CLI's and the MCP server's runs apart
+ * from lag.dev's page (which sends none). It names the tool, nothing else.
+ */
+export const LAG_CLIENT_HEADER = "X-Lag-Client";
+
+/** The tool running a measurement: the command line or the MCP server. */
+export type LagClient = "cli" | "mcp";
+
 /** What a measurement needs from the outside, so tests can stand in for it. */
 export interface MeasureContext {
   api: {
     lagExtenders(): Promise<LagExtendersResult>;
-    lagTrack(args: LagTrackArgs): Promise<LagTrackResult>;
+    lagTrack(args: LagTrackArgs, options?: { headers?: Record<string, string> }): Promise<LagTrackResult>;
     myIpInfo(): Promise<LagMyIpInfoResult>;
   };
   /** the guest whose jwt the api client sends */
@@ -47,6 +57,8 @@ export interface LatencyOptions {
   durationMs?: number;
   /** servers to measure, 1 to 8 (default 8) */
   servers?: number;
+  /** the tool running it, sent as X-Lag-Client with the track request */
+  client?: LagClient;
   signal?: AbortSignal;
 }
 
@@ -61,6 +73,8 @@ export interface BufferbloatOptions {
   idleMs?: number;
   /** pause after each load before the next, ms (default 2 s) */
   settleMs?: number;
+  /** the tool running it, sent as X-Lag-Client with the track request */
+  client?: LagClient;
   signal?: AbortSignal;
 }
 
@@ -275,7 +289,12 @@ interface Prepared {
 
 // The guest, the sample, the track and an open session on each server, a
 // spare standing in for a server whose session won't open.
-async function prepare(context: MeasureContext, count: number, signal?: AbortSignal): Promise<Prepared> {
+async function prepare(
+  context: MeasureContext,
+  count: number,
+  client: LagClient | undefined,
+  signal?: AbortSignal,
+): Promise<Prepared> {
   const startedAt = Date.now();
   let visitor: Visitor = {};
   try {
@@ -293,7 +312,10 @@ async function prepare(context: MeasureContext, count: number, signal?: AbortSig
   }
   const ordered = [...selection.servers, ...selection.spares];
   const track = await withGuest(context, () =>
-    context.api.lagTrack({ extenders: ordered.map((server) => ({ extender_id: server.extenderId })) }),
+    context.api.lagTrack(
+      { extenders: ordered.map((server) => ({ extender_id: server.extenderId })) },
+      client === undefined ? undefined : { headers: { [LAG_CLIENT_HEADER]: client } },
+    ),
   );
   if (track.error) {
     throw refusalError("lag.dev couldn't start a measurement", track.error);
@@ -554,7 +576,7 @@ const COMMON_NOTES = [
 /** Ping up to 8 lag.dev servers for a while, with no load. */
 export async function measureLatency(context: MeasureContext, options: LatencyOptions = {}): Promise<Measurement> {
   const durationMs = Math.max(1000, options.durationMs ?? 15_000);
-  const prepared = await prepare(context, options.servers ?? 8, options.signal);
+  const prepared = await prepare(context, options.servers ?? 8, options.client, options.signal);
   const open = prepared.dots.filter((dot) => dot.session !== null).length;
   context.onProgress?.(`pinging ${open} servers for ${Math.round(durationMs / 1000)} s`);
   try {
@@ -586,7 +608,7 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
   const idleMs = options.idleMs ?? IDLE_MS;
   const settleMs = options.settleMs ?? SETTLE_MS;
   const signal = options.signal;
-  const prepared = await prepare(context, options.servers ?? 8, signal);
+  const prepared = await prepare(context, options.servers ?? 8, options.client, signal);
   const elapsed = () => Date.now() - prepared.startedAt;
   const spans: Span[] = [];
   let used = 0;

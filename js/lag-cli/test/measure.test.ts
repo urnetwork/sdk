@@ -50,7 +50,7 @@ test("latency: every server is pinged, with no load and nothing about the addres
       assert.deepEqual(result.visitor?.asn, { number: 64500, organization: "Example Networks" });
       assert.ok(!JSON.stringify(result).includes(VISITOR_IP), "the visitor's address is never in the result");
       // the api's requests carry no origin; the extenders' are lag.dev's (checked in net.test.ts)
-      assert.ok(api.origins.every((request) => request.origin === undefined));
+      assert.ok(api.requests.every((request) => request.origin === undefined));
     } finally {
       await local.close();
     }

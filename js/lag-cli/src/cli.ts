@@ -192,9 +192,9 @@ export async function main(argv: string[], io: Io): Promise<number> {
     }
     let result: Measurement;
     if (command === "bufferbloat") {
-      result = await measureBufferbloat(local.context, { maxBytes, maxMs, servers, signal: io.signal });
+      result = await measureBufferbloat(local.context, { maxBytes, maxMs, servers, client: "cli", signal: io.signal });
     } else {
-      result = await measureLatency(local.context, { durationMs, servers, signal: io.signal });
+      result = await measureLatency(local.context, { durationMs, servers, client: "cli", signal: io.signal });
     }
     io.stdout.write(values.json ? `${JSON.stringify(result, null, 2)}\n` : formatMeasurement(result));
     return 0;

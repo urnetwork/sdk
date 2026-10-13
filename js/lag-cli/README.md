@@ -143,6 +143,14 @@ Nothing about this machine's address is stored, the same as on lag.dev:
 - The measurements the servers keep have the city and network, not the
   address.
 
+lagdev identifies itself as the CLI or the MCP server, so the stats can count
+its runs separately from lag.dev's page:
+- The request that starts a measurement (`POST /lag/track`) carries
+  `X-Lag-Client: cli` from the command line, or `X-Lag-Client: mcp` from the
+  MCP server.
+- No other request carries the header, and nothing sent to the servers does.
+- It names the tool, not you or this machine.
+
 The guest session is kept between runs, so a run doesn't start a new one. (The
 api allows a network 10 new guests an hour.) It is a jwt, stored by api in
 `~/.config/lagdev/guest-<api>.json`. The directory is `$XDG_CONFIG_HOME/lagdev`
@@ -213,5 +221,7 @@ check:
 - guest reuse and replacement, and the api's refusals;
 - spares;
 - the Origin header;
+- the `X-Lag-Client` header, on the track request only (a relay reads what
+  reaches the extender);
 - the CLI's output and exit codes;
 - the MCP tools.

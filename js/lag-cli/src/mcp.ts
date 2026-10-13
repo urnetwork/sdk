@@ -68,7 +68,7 @@ export function createLagdevMcpServer(context: MeasureContext): McpServer {
     async ({ duration_seconds, servers }) => {
       try {
         const result: Measurement = await serially(() =>
-          measureLatency(context, { durationMs: (duration_seconds ?? 15) * 1000, servers }),
+          measureLatency(context, { durationMs: (duration_seconds ?? 15) * 1000, servers, client: "mcp" }),
         );
         return asText(result);
       } catch (error) {
@@ -97,7 +97,7 @@ export function createLagdevMcpServer(context: MeasureContext): McpServer {
     async ({ max_bytes, max_seconds, servers }) => {
       try {
         const result = await serially(() =>
-          measureBufferbloat(context, { maxBytes: max_bytes, maxMs: max_seconds * 1000, servers }),
+          measureBufferbloat(context, { maxBytes: max_bytes, maxMs: max_seconds * 1000, servers, client: "mcp" }),
         );
         return asText(result);
       } catch (error) {

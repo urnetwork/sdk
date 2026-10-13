@@ -10,6 +10,7 @@ const { createNet } = await import("../src/net.ts");
 const { createContext } = await import("../src/context.ts");
 const { createLagdevMcpServer } = await import("../src/mcp.ts");
 const { main } = await import("../src/cli.ts");
+const { measureBufferbloat } = await import("../src/measure.ts");
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
 
@@ -143,6 +144,48 @@ test("the mcp server offers both tools, and bufferbloat requires its caps", asyn
 
     const refused = await client.callTool({ name: "measure_bufferbloat", arguments: { max_seconds: 60 } });
     assert.equal(refused.isError, true);
+  } finally {
+    await client.close();
+    await server.close();
+    await local.close();
+    await api.close();
+  }
+});
+
+test("the track request names the tool that ran it, cli or mcp, and nothing else does", async () => {
+  const api = await startMockApi({ places: ["houston"], relay: true });
+  const local = createContext({ apiURL: api.url, save: false });
+  const server = createLagdevMcpServer(local.context);
+  const client = new Client({ name: "test", version: "0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  try {
+    const run = io();
+    const code = await main(["--json", "--api", api.url, "--duration", "1", "--servers", "1", "--no-save", "-q"], run.io);
+    assert.equal(code, 0, run.err.join(""));
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const call = await client.callTool({ name: "measure_latency", arguments: { duration_seconds: 3, servers: 1 } });
+    assert.notEqual(call.isError, true);
+    // a load too, so downloads and uploads go through the relay
+    const loaded = await measureBufferbloat(local.context, {
+      maxBytes: 20e9,
+      maxMs: 60_000,
+      servers: 1,
+      idleMs: 300,
+      settleMs: 100,
+      client: "cli",
+    });
+    assert.equal(loaded.servers[0].load?.status, "complete");
+
+    const named = api.requests.filter((request) => request.client !== undefined);
+    assert.deepEqual(
+      named.map((request) => `${request.method} ${request.path} ${request.client}`),
+      ["POST /lag/track cli", "POST /lag/track mcp", "POST /lag/track cli"],
+    );
+    assert.equal(api.requests.filter((request) => request.path === "/lag/track").length, 3);
+    // the guest, the sample and my-ip-info carry none; nor does anything sent
+    // to the extender: its sessions, downloads and uploads
+    assert.ok(api.extenderTraffic.requests >= 3 + 4 + 4, `${api.extenderTraffic.requests} requests reached the extender`);
+    assert.equal(api.extenderTraffic.lagClient, 0);
   } finally {
     await client.close();
     await server.close();
