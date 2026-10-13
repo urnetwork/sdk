@@ -135,6 +135,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_BITTENSOR_WALLET_PLATFORM_WINDOWS "windows"
 #define URNET_BITTENSOR_WALLET_PURPOSE_ADD "add"
 #define URNET_BITTENSOR_WALLET_PURPOSE_CONNECT "connect"
+#define URNET_BITTENSOR_WALLET_PURPOSE_CONSENT "consent"
 #define URNET_BITTENSOR_WALLET_PURPOSE_CREATE "create"
 #define URNET_BITTENSOR_WALLET_PURPOSE_LOGIN "login"
 #define URNET_BITTENSOR_WALLET_STATE_AWAITING_WALLET "awaiting_wallet"
@@ -386,6 +387,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_ERROR_CODE_CHAIN_NOT_CONFIGURED "chain_not_configured"
 #define URNET_SN_ERROR_CODE_CHAIN_RPC_ERROR "chain_rpc_error"
 #define URNET_SN_ERROR_CODE_CHAIN_RPC_UNREACHABLE "chain_rpc_unreachable"
+#define URNET_SN_ERROR_CODE_CHALLENGE_EXPIRED "challenge_expired"
 #define URNET_SN_ERROR_CODE_CLAIM_FAILED "claim_failed"
 #define URNET_SN_ERROR_CODE_CONNECT_WALLET_FIRST "connect_wallet_first"
 #define URNET_SN_ERROR_CODE_EXPIRED "claims_for_epoch_expired"
@@ -393,11 +395,13 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_SN_ERROR_CODE_LEDGER_UNAVAILABLE "ledger_unavailable"
 #define URNET_SN_ERROR_CODE_LOCAL_STATE "local_state_unavailable"
 #define URNET_SN_ERROR_CODE_NEEDS_GAS "needs_gas"
+#define URNET_SN_ERROR_CODE_NETWORK_OWNER_ONLY "network_owner_only"
 #define URNET_SN_ERROR_CODE_NOT_CLAIMABLE "not_claimable"
 #define URNET_SN_ERROR_CODE_PROOF_MISMATCH "proof_mismatch"
 #define URNET_SN_ERROR_CODE_SERVER "server_error"
 #define URNET_SN_ERROR_CODE_SIGNATURE_MISMATCH "signature_mismatch"
 #define URNET_SN_ERROR_CODE_WALLET_BLOCKED "wallet_blocked"
+#define URNET_SN_NETWORK_CONSENT_EPOCH_SPAN 65535
 #define URNET_SN_RAO_PER_ALPHA 1000000000
 #define URNET_SN_SS58_PREFIX 42
 #define URNET_SN_TX_TYPE_EIP1559 "eip1559"
@@ -799,6 +803,10 @@ typedef void (*urnet_sn_ledger_claim_confirmed_cb)(void* user_data, int64_t no_i
 typedef void (*urnet_sn_ledger_claim_done_cb)(void* user_data);
 typedef void (*urnet_sn_ledger_claim_failed_cb)(void* user_data, int64_t no_id, int64_t index, const char* message);
 typedef void (*urnet_sn_ledger_claim_sent_cb)(void* user_data, int64_t no_id, int64_t index, const char* tx_hash);
+/* SnNetworkConsentChallengeCallback */
+typedef void (*urnet_sn_network_consent_challenge_cb)(void* user_data, const char* result_json, const char* err_param);
+/* SnNetworkConsentStatusCallback */
+typedef void (*urnet_sn_network_consent_status_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnSetWalletCallback */
 typedef void (*urnet_sn_set_wallet_cb)(void* user_data, const char* result_json, const char* err_param);
 /* SnValidateWalletCallback */
@@ -992,6 +1000,12 @@ void urnet_api_sn_epoch(uint64_t self, urnet_sn_epoch_cb callback_result, void* 
 char* urnet_api_sn_epoch_sync(uint64_t self, char** out_error);
 void urnet_api_sn_get_wallet(uint64_t self, urnet_sn_get_wallet_cb callback_result, void* callback_user_data);
 void urnet_api_sn_head(uint64_t self, urnet_sn_head_cb callback_result, void* callback_user_data);
+void urnet_api_sn_network_consent_challenge(uint64_t self, const char* coldkey_ss58, urnet_sn_network_consent_challenge_cb callback_result, void* callback_user_data);
+char* urnet_api_sn_network_consent_challenge_sync(uint64_t self, const char* coldkey_ss58, char** out_error);
+void urnet_api_sn_network_consent_status(uint64_t self, urnet_sn_network_consent_status_cb callback_result, void* callback_user_data);
+char* urnet_api_sn_network_consent_status_sync(uint64_t self, char** out_error);
+void urnet_api_sn_network_consent_submit(uint64_t self, const char* coldkey_ss58, const char* message, const char* signature_hex, urnet_sn_set_wallet_cb callback_result, void* callback_user_data);
+char* urnet_api_sn_network_consent_submit_sync(uint64_t self, const char* coldkey_ss58, const char* message, const char* signature_hex, char** out_error);
 char* urnet_api_sn_network_wallet_mapping_challenge_sync(uint64_t self, const char* args_json, char** out_error);
 char* urnet_api_sn_pool_claim_sync(uint64_t self, const char* args_json, char** out_error);
 void urnet_api_sn_set_wallet(uint64_t self, const char* args_json, urnet_sn_set_wallet_cb callback_result, void* callback_user_data);
@@ -1048,6 +1062,7 @@ char* urnet_bittensor_wallet_session_platform(uint64_t self);
 char* urnet_bittensor_wallet_session_proof(uint64_t self);
 char* urnet_bittensor_wallet_session_purpose(uint64_t self);
 bool urnet_bittensor_wallet_session_set_challenge(uint64_t self, const char* result_json, int64_t now_millis, char** out_error);
+bool urnet_bittensor_wallet_session_set_network_consent_challenge(uint64_t self, const char* result_json, int64_t now_millis, char** out_error);
 void urnet_bittensor_wallet_session_set_wallet_connect_project_id(uint64_t self, const char* project_id);
 char* urnet_bittensor_wallet_session_sign_request(uint64_t self, char** out_error);
 char* urnet_bittensor_wallet_session_state(uint64_t self);
@@ -4722,6 +4737,22 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* SnLedgerUnsignedTxList (json):
  *   = SnLedgerUnsignedTx | null[]
+ */
+
+/* SnNetworkConsentChallengeResult (json):
+ *   message: string
+ *   coldkey_ss58: string
+ *   from_epoch: number
+ *   through_epoch: number
+ *   expires_at: number
+ */
+
+/* SnNetworkConsentStatus (json):
+ *   active: boolean
+ *   coldkey_ss58: string
+ *   from_epoch: number
+ *   through_epoch: number
+ *   generation: number
  */
 
 /* SnNetworkWalletMappingChallengeArgs (json):

@@ -172,6 +172,8 @@ public interface Raw extends Library {
   interface urnet_sn_ledger_claim_done_cb extends Callback { void invoke(Pointer a0); }
   interface urnet_sn_ledger_claim_failed_cb extends Callback { void invoke(Pointer a0, long a1, long a2, String a3); }
   interface urnet_sn_ledger_claim_sent_cb extends Callback { void invoke(Pointer a0, long a1, long a2, String a3); }
+  interface urnet_sn_network_consent_challenge_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
+  interface urnet_sn_network_consent_status_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_set_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_validate_wallet_cb extends Callback { void invoke(Pointer a0, String a1, String a2); }
   interface urnet_sn_wallet_change_cb extends Callback { void invoke(Pointer a0, String a1); }
@@ -351,6 +353,12 @@ public interface Raw extends Library {
   Pointer urnet_api_sn_epoch_sync(long a0, PointerByReference a1);
   void urnet_api_sn_get_wallet(long a0, urnet_sn_get_wallet_cb a1, Pointer a2);
   void urnet_api_sn_head(long a0, urnet_sn_head_cb a1, Pointer a2);
+  void urnet_api_sn_network_consent_challenge(long a0, String a1, urnet_sn_network_consent_challenge_cb a2, Pointer a3);
+  Pointer urnet_api_sn_network_consent_challenge_sync(long a0, String a1, PointerByReference a2);
+  void urnet_api_sn_network_consent_status(long a0, urnet_sn_network_consent_status_cb a1, Pointer a2);
+  Pointer urnet_api_sn_network_consent_status_sync(long a0, PointerByReference a1);
+  void urnet_api_sn_network_consent_submit(long a0, String a1, String a2, String a3, urnet_sn_set_wallet_cb a4, Pointer a5);
+  Pointer urnet_api_sn_network_consent_submit_sync(long a0, String a1, String a2, String a3, PointerByReference a4);
   Pointer urnet_api_sn_network_wallet_mapping_challenge_sync(long a0, String a1, PointerByReference a2);
   Pointer urnet_api_sn_pool_claim_sync(long a0, String a1, PointerByReference a2);
   void urnet_api_sn_set_wallet(long a0, String a1, urnet_sn_set_wallet_cb a2, Pointer a3);
@@ -401,6 +409,7 @@ public interface Raw extends Library {
   Pointer urnet_bittensor_wallet_session_proof(long a0);
   Pointer urnet_bittensor_wallet_session_purpose(long a0);
   byte urnet_bittensor_wallet_session_set_challenge(long a0, String a1, long a2, PointerByReference a3);
+  byte urnet_bittensor_wallet_session_set_network_consent_challenge(long a0, String a1, long a2, PointerByReference a3);
   void urnet_bittensor_wallet_session_set_wallet_connect_project_id(long a0, String a1);
   Pointer urnet_bittensor_wallet_session_sign_request(long a0, PointerByReference a1);
   Pointer urnet_bittensor_wallet_session_state(long a0);

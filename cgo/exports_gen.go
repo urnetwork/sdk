@@ -2651,6 +2651,48 @@ func (self *cAdapterSnLedgerClaimCallback) Sent(noId int64, index int64, txHash 
 	cStringFree(txHash_)
 }
 
+type cAdapterSnNetworkConsentChallengeCallback struct {
+	cbResult C.urnet_sn_network_consent_challenge_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnNetworkConsentChallengeCallback) Result(result *sdk.SnNetworkConsentChallengeResult, errParam error) {
+	defer cgoGuard("urnet_sn_network_consent_challenge_cb")
+	result_ := cJson(result, "urnet_sn_network_consent_challenge_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_network_consent_challenge(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
+type cAdapterSnNetworkConsentStatusCallback struct {
+	cbResult C.urnet_sn_network_consent_status_cb
+	userData unsafe.Pointer
+}
+
+func (self *cAdapterSnNetworkConsentStatusCallback) Result(result *sdk.SnNetworkConsentStatus, errParam error) {
+	defer cgoGuard("urnet_sn_network_consent_status_cb")
+	result_ := cJson(result, "urnet_sn_network_consent_status_cb")
+	var errParam_ *C.char
+	if errParam != nil {
+		errParam_ = cString(errParam.Error())
+	}
+	C.urnet_invoke_sn_network_consent_status(self.cbResult, self.userData, result_, errParam_)
+	if result_ != nil {
+		cStringFree(result_)
+	}
+	if errParam_ != nil {
+		cStringFree(errParam_)
+	}
+}
+
 type cAdapterSnSetWalletCallback struct {
 	cbResult C.urnet_sn_set_wallet_cb
 	userData unsafe.Pointer
@@ -5171,6 +5213,102 @@ func urnet_api_sn_head(self C.uint64_t, callback_result C.urnet_sn_head_cb, call
 	self_.SnHead(callback_)
 }
 
+//export urnet_api_sn_network_consent_challenge
+func urnet_api_sn_network_consent_challenge(self C.uint64_t, coldkeySs58 *C.char, callback_result C.urnet_sn_network_consent_challenge_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_network_consent_challenge")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_consent_challenge")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnNetworkConsentChallengeCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnNetworkConsentChallengeCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnNetworkConsentChallenge(goString(coldkeySs58), callback_)
+}
+
+//export urnet_api_sn_network_consent_challenge_sync
+func urnet_api_sn_network_consent_challenge_sync(self C.uint64_t, coldkeySs58 *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_network_consent_challenge_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_consent_challenge_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.SnNetworkConsentChallengeSync(goString(coldkeySs58))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_network_consent_challenge_sync")
+}
+
+//export urnet_api_sn_network_consent_status
+func urnet_api_sn_network_consent_status(self C.uint64_t, callback_result C.urnet_sn_network_consent_status_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_network_consent_status")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_consent_status")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnNetworkConsentStatusCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnNetworkConsentStatusCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnNetworkConsentStatus(callback_)
+}
+
+//export urnet_api_sn_network_consent_status_sync
+func urnet_api_sn_network_consent_status_sync(self C.uint64_t, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_network_consent_status_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_consent_status_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.SnNetworkConsentStatusSync()
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_network_consent_status_sync")
+}
+
+//export urnet_api_sn_network_consent_submit
+func urnet_api_sn_network_consent_submit(self C.uint64_t, coldkeySs58 *C.char, message *C.char, signatureHex *C.char, callback_result C.urnet_sn_set_wallet_cb, callback_user_data unsafe.Pointer) {
+	defer cgoGuard("urnet_api_sn_network_consent_submit")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_consent_submit")
+	if !ok {
+		return
+	}
+	var callback_ sdk.SnSetWalletCallback
+	if callback_result != nil {
+		callback_ = &cAdapterSnSetWalletCallback{cbResult: callback_result, userData: callback_user_data}
+	}
+	self_.SnNetworkConsentSubmit(goString(coldkeySs58), goString(message), goString(signatureHex), callback_)
+}
+
+//export urnet_api_sn_network_consent_submit_sync
+func urnet_api_sn_network_consent_submit_sync(self C.uint64_t, coldkeySs58 *C.char, message *C.char, signatureHex *C.char, outError **C.char) *C.char {
+	defer cgoGuard("urnet_api_sn_network_consent_submit_sync")
+	self_, ok := resolveHandle[*sdk.Api](uint64(self), "urnet_api_sn_network_consent_submit_sync")
+	if !ok {
+		return nil
+	}
+	r0, err := self_.SnNetworkConsentSubmitSync(goString(coldkeySs58), goString(message), goString(signatureHex))
+	if err != nil {
+		setErrorOut(outError, err)
+		return nil
+	}
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_api_sn_network_consent_submit_sync")
+}
+
 //export urnet_api_sn_network_wallet_mapping_challenge_sync
 func urnet_api_sn_network_wallet_mapping_challenge_sync(self C.uint64_t, args *C.char, outError **C.char) *C.char {
 	defer cgoGuard("urnet_api_sn_network_wallet_mapping_challenge_sync")
@@ -6033,6 +6171,28 @@ func urnet_bittensor_wallet_session_set_challenge(self C.uint64_t, result *C.cha
 		}
 	}
 	err := self_.SetChallenge(result_, int64(nowMillis))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_bittensor_wallet_session_set_network_consent_challenge
+func urnet_bittensor_wallet_session_set_network_consent_challenge(self C.uint64_t, result *C.char, nowMillis C.int64_t, outError **C.char) C.bool {
+	defer cgoGuard("urnet_bittensor_wallet_session_set_network_consent_challenge")
+	self_, ok := resolveHandle[*sdk.BittensorWalletSession](uint64(self), "urnet_bittensor_wallet_session_set_network_consent_challenge")
+	if !ok {
+		return C.bool(false)
+	}
+	var result_ *sdk.SnNetworkConsentChallengeResult
+	if result != nil {
+		result_ = &sdk.SnNetworkConsentChallengeResult{}
+		if !goJson(result, result_, "urnet_bittensor_wallet_session_set_network_consent_challenge") {
+			return C.bool(false)
+		}
+	}
+	err := self_.SetNetworkConsentChallenge(result_, int64(nowMillis))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)
