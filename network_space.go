@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/glog"
@@ -553,13 +554,20 @@ func (self *NetworkSpace) logger() connect.Logger {
 	return connect.DefaultLogger()
 }
 
+// newNetworkSpaceConnectSettings answers the connect settings of a space built
+// from its key and values. Production takes the connect defaults. The sdk test
+// binary answers settings that resolve in the process (TestMain): its spaces
+// are keyed by test hosts, whose names must reach neither the system resolver
+// nor, through the strategy's protected-domain DoH, a public DoH server.
+var newNetworkSpaceConnectSettings = connect.DefaultConnectSettings
+
 func newNetworkSpace(
 	ctx context.Context,
 	key NetworkSpaceKey,
 	values NetworkSpaceValues,
 	storagePath string,
 ) *NetworkSpace {
-	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, connect.DefaultConnectSettings(), false)
+	return newNetworkSpaceWithConnectSettings(ctx, key, values, storagePath, newNetworkSpaceConnectSettings(), false)
 }
 
 // Builds a space from its key and values. A hosted-incompatible space is the
@@ -736,12 +744,24 @@ func spaceExtenderRootKeySet(key *NetworkSpaceKey, values *NetworkSpaceValues) *
 	return rootKeySet
 }
 
-// extenderNetworkClientEnabled is a process-wide switch for the extender
-// network client. Production never changes it; the sdk test binary turns it
-// off in TestMain so a unit test that constructs a production-host space does
-// not resolve or dial anything, and the extender tests that need a client
-// build one explicitly.
-var extenderNetworkClientEnabled = true
+// extenderNetworkClientDisabled is the process-wide switch for the extender
+// network client, on (false) by default. Production never changes it; the sdk
+// test binary turns the client off in TestMain so a unit test that constructs
+// a production-host space does not resolve or dial anything, and the extender
+// tests that need a client turn it back on for their own space.
+var extenderNetworkClientDisabled atomic.Bool
+
+// SetExtenderNetworkClientEnabled turns the extender network client on or off
+// for every network space built after the call, process-wide, and returns the
+// previous setting. It is on by default, and ordinary applications never call
+// it. A test host turns it off before it builds a space: a space whose network
+// is keyed by a dotted host (or whose api url names one) otherwise starts the
+// client, which resolves the space's extender dns name over the public DoH
+// servers and the system resolver and reaches the operator's hello and hint.
+// Restore the previous value on teardown. Spaces already built are unaffected.
+func SetExtenderNetworkClientEnabled(enabled bool) bool {
+	return !extenderNetworkClientDisabled.Swap(!enabled)
+}
 
 // extenderNetworkClientConfigure, when set, adjusts a space's network client
 // settings before the client is built. Production never sets it; the extender
@@ -764,7 +784,7 @@ func newSpaceExtenderNetworkClient(
 	apiUrl string,
 	log connect.Logger,
 ) *connect.ExtenderNetworkClient {
-	if !extenderNetworkClientEnabled || !extenderNetworkClientRuns(key, values) {
+	if extenderNetworkClientDisabled.Load() || !extenderNetworkClientRuns(key, values) {
 		return nil
 	}
 	return connect.NewExtenderNetworkClient(

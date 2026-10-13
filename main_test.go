@@ -1,10 +1,16 @@
 package sdk
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/urnetwork/connect"
 )
 
 // TestMain points the default device rpc address at a per-process ephemeral
@@ -22,12 +28,105 @@ import (
 // libp2p host, and every test that turns providing on would bind the extender's
 // carrier ports. The extender tests that need any of them turn it back on for
 // their own space.
+// Every space built from a key resolves in the process (testOfflineConnectSettings).
 func TestMain(m *testing.M) {
 	deviceRpcDefaultAddress = testing_freeHostPort()
-	extenderNetworkClientEnabled = false
+	SetExtenderNetworkClientEnabled(false)
 	extenderNodeEnabled = false
 	extenderProvideRoleEnabled = false
+	newNetworkSpaceConnectSettings = testOfflineConnectSettings
 	os.Exit(m.Run())
+}
+
+// testOfflineResolver answers every name in the process, with nothing: the
+// hosts of the suite's spaces (`test`, `space.example`, `.test.invalid`) never
+// resolve, and no lookup may reach the system resolver, which forwards off the
+// machine. The hosts file still answers, so localhost resolves.
+var testOfflineResolver = &net.Resolver{
+	PreferGo: true,
+	Dial: func(ctx context.Context, network string, address string) (net.Conn, error) {
+		return nil, errors.New("the test resolves no name off the machine")
+	},
+}
+
+// testOfflineConnectSettings are the connect settings of the suite's spaces:
+// the defaults with the offline resolver, which also takes the place of the
+// strategy's protected-domain DoH, so no space queries a public DoH server,
+// and with dials and packet sockets toward loopback only, so no space, device
+// or node built on it reaches the documentation addresses its urls, records
+// and peers carry.
+func testOfflineConnectSettings() *connect.ConnectSettings {
+	connectSettings := connect.DefaultConnectSettings()
+	connectSettings.Resolver = testOfflineResolver
+	connectSettings.DialContextSettings = testLoopbackDialContextSettings()
+	return connectSettings
+}
+
+// testOfflineClientStrategySettings are client strategy settings with the
+// offline connect settings, for a test that builds a strategy for test hosts
+// itself.
+func testOfflineClientStrategySettings() *connect.ClientStrategySettings {
+	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings.ConnectSettings = *testOfflineConnectSettings()
+	return strategySettings
+}
+
+// testLoopbackDialContextSettings dial and send to loopback only. A test whose
+// in-process servers are all on loopback uses them where its records, peers or
+// spaces name documentation addresses. Nothing is sent to those: they answer
+// nothing in the process, as they do on a real network, so a tcp dial to one
+// waits out its deadline (at most testBlackholeDialTimeout) and a datagram
+// to one is dropped. A host name is refused, as the offline resolver refuses
+// it.
+func testLoopbackDialContextSettings() *connect.DialContextSettings {
+	return &connect.DialContextSettings{
+		DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			ip := net.ParseIP(host)
+			if host == "localhost" || (ip != nil && ip.IsLoopback()) {
+				return (&net.Dialer{}).DialContext(ctx, network, address)
+			}
+			if ip != nil && strings.HasPrefix(network, "tcp") {
+				timer := time.NewTimer(testBlackholeDialTimeout)
+				defer timer.Stop()
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-timer.C:
+					return nil, fmt.Errorf("the test dial of %s %s timed out", network, address)
+				}
+			}
+			return nil, fmt.Errorf("the test dials nothing off the machine, refused %s %s", network, address)
+		},
+		PacketConnFactory: func(ctx context.Context) (net.PacketConn, error) {
+			packetConn, err := net.ListenUDP("udp", nil)
+			if err != nil {
+				return nil, err
+			}
+			return &testLoopbackPacketConn{PacketConn: packetConn}, nil
+		},
+	}
+}
+
+// The longest a test tcp dial to a documentation address waits, the connect
+// default (ConnectSettings.ConnectTimeout).
+const testBlackholeDialTimeout = 15 * time.Second
+
+// Only the net.PacketConn methods, so quic-go writes through WriteTo rather
+// than the udp socket's own message writes.
+type testLoopbackPacketConn struct {
+	net.PacketConn
+}
+
+func (self *testLoopbackPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	if udpAddr, ok := addr.(*net.UDPAddr); !ok || !udpAddr.IP.IsLoopback() {
+		// dropped, as a documentation address drops it
+		return len(b), nil
+	}
+	return self.PacketConn.WriteTo(b, addr)
 }
 
 // testing_freeHostPort reserves a free loopback port from the kernel (bind

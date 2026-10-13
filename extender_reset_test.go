@@ -80,7 +80,7 @@ func testEnableExtenderResetNetwork(t *testing.T) *testExtenderResetNetwork {
 	network := &testExtenderResetNetwork{
 		helloCountMonitor: connect.NewMonitor(),
 	}
-	extenderNetworkClientEnabled = true
+	SetExtenderNetworkClientEnabled(true)
 	extenderNetworkClientConfigure = func(settings *connect.ExtenderNetworkClientSettings) {
 		testConfigureInProcessExtenderNetworkClient(settings)
 		network.recordClient(settings.ManualHosts)
@@ -90,7 +90,7 @@ func testEnableExtenderResetNetwork(t *testing.T) *testExtenderResetNetwork {
 		}
 	}
 	t.Cleanup(func() {
-		extenderNetworkClientEnabled = false
+		SetExtenderNetworkClientEnabled(false)
 		extenderNetworkClientConfigure = nil
 	})
 	return network

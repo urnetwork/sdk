@@ -32785,6 +32785,10 @@ inline void setDeviceRpcH1PlusEnabled(bool enabled) {
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);
 }
+inline bool setExtenderNetworkClientEnabled(bool enabled) {
+	bool r = urnet_set_extender_network_client_enabled(enabled);
+	return r;
+}
 inline void setExtenderStoreReadOnly(bool read_only) {
 	urnet_set_extender_store_read_only(read_only);
 }

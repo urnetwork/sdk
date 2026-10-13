@@ -796,7 +796,7 @@ func testProbeAttestorSpace(t *testing.T) (*NetworkSpace, ed25519.PrivateKey, *t
 	recorder := &testProbeAttestorRecorder{
 		probeMonitor: connect.NewMonitor(),
 	}
-	extenderNetworkClientEnabled = true
+	SetExtenderNetworkClientEnabled(true)
 	extenderNetworkClientConfigure = func(settings *connect.ExtenderNetworkClientSettings) {
 		testConfigureInProcessExtenderNetworkClient(settings)
 		settings.IpVersionSupported = func(ipVersion int) bool { return ipVersion == 4 }
@@ -814,7 +814,7 @@ func testProbeAttestorSpace(t *testing.T) (*NetworkSpace, ed25519.PrivateKey, *t
 		}
 	}
 	t.Cleanup(func() {
-		extenderNetworkClientEnabled = false
+		SetExtenderNetworkClientEnabled(false)
 		extenderNetworkClientConfigure = nil
 	})
 

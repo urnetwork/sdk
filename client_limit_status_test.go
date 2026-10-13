@@ -185,7 +185,8 @@ func newTestingClientLimitDevice(
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	strategySettings := connect.DefaultClientStrategySettings()
+	// the api and pump names resolve in the process; the platform is local
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.Log = connect.NewNoopLogger()
 	strategySettings.EnableNormal = true
 	strategySettings.EnableResilient = false
@@ -420,7 +421,8 @@ func TestDeviceRemoteClientLimitStatus(t *testing.T) {
 	platform := newTestingClientLimitPlatform(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	strategySettings := connect.DefaultClientStrategySettings()
+	// the api and pump names resolve in the process; the platform is local
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.Log = connect.NewNoopLogger()
 	strategySettings.EnableNormal = true
 	strategySettings.EnableResilient = false

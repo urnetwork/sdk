@@ -2703,6 +2703,8 @@ def bind(lib):
     lib.urnet_set_device_rpc_h1_plus_enabled.restype = None
     lib.urnet_set_egress_interface_index.argtypes = [c_int64, c_int64]
     lib.urnet_set_egress_interface_index.restype = None
+    lib.urnet_set_extender_network_client_enabled.argtypes = [c_bool]
+    lib.urnet_set_extender_network_client_enabled.restype = c_bool
     lib.urnet_set_extender_store_read_only.argtypes = [c_bool]
     lib.urnet_set_extender_store_read_only.restype = None
     lib.urnet_set_log_dir.argtypes = [c_char_p, POINTER(c_void_p)]

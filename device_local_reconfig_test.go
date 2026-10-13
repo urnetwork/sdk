@@ -68,6 +68,9 @@ func TestDeviceLocalReconfigurationChurn(t *testing.T) {
 	settings := DefaultDeviceLocalSettings()
 	settings.DisableLogging = true
 	settings.Verbose = false
+	// the probes go to a documentation address, which the local route dials in
+	// the process rather than sends to
+	settings.LocalDialContextSettings = testLoopbackDialContextSettings()
 	settings.GeneratorFunc = func(specs []*connect.ProviderSpec) connect.MultiClientGenerator {
 		generatorLock.Lock()
 		defer generatorLock.Unlock()
@@ -230,6 +233,9 @@ func TestDeviceLocalConcurrentLifecycleChaos(t *testing.T) {
 	settings := DefaultDeviceLocalSettings()
 	settings.DisableLogging = true
 	settings.Verbose = false
+	// the probes go to a documentation address, which the local route dials in
+	// the process rather than sends to
+	settings.LocalDialContextSettings = testLoopbackDialContextSettings()
 	settings.GeneratorFunc = func(specs []*connect.ProviderSpec) connect.MultiClientGenerator {
 		generatorLock.Lock()
 		defer generatorLock.Unlock()

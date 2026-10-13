@@ -8,11 +8,29 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"testing"
 
 	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk"
 )
+
+// The strategy of a space these tests build on a documentation address. The
+// devices on it start their platform transport, so every stream dial and
+// packet socket is refused in the process rather than sent to that address.
+func testingOfflineClientStrategySettings() *connect.ClientStrategySettings {
+	strategySettings := connect.DefaultClientStrategySettings()
+	strategySettings.Log = connect.NewNoopLogger()
+	strategySettings.ConnectSettings.DialContextSettings = &connect.DialContextSettings{
+		DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+			return nil, fmt.Errorf("the test dials nothing, refused %s %s", network, address)
+		},
+		PacketConnFactory: func(ctx context.Context) (net.PacketConn, error) {
+			return nil, fmt.Errorf("the test opens no packet socket")
+		},
+	}
+	return strategySettings
+}
 
 // A synthetic unsigned client credential naming one new client of one new
 // network. Construction reads only the client id from it.
@@ -32,8 +50,7 @@ func testingProvideExtenderClientJwt() string {
 func TestProvideExtenderDeviceControlsThroughTheAbi(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	strategySettings := connect.DefaultClientStrategySettings()
-	strategySettings.Log = connect.NewNoopLogger()
+	strategySettings := testingOfflineClientStrategySettings()
 	// an ip literal derives no extender network, so the space starts no
 	// extender client or node in this process
 	networkSpace := sdk.NewNetworkSpaceWithUrls(ctx, "https://192.0.2.1", "wss://192.0.2.1", strategySettings)

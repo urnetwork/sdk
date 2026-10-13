@@ -47,7 +47,7 @@ func newTestFamilyProvider(t *testing.T, platformUrlV4 string, platformUrlV6 str
 		ctx:                       client.Ctx(),
 		client:                    client,
 		clientStrategy:            strategy,
-		clientStrategySettings:    connect.DefaultClientStrategySettings(),
+		clientStrategySettings:    testOfflineClientStrategySettings(),
 		platformUrl:               "wss://127.0.0.1:1",
 		platformUrlV4:             platformUrlV4,
 		platformUrlV6:             platformUrlV6,
@@ -163,7 +163,9 @@ func TestDeviceLocalProviderTransportGroupWithoutFamilyUrls(t *testing.T) {
 // A nil settings source falls back to the connect defaults rather than
 // dereferencing nil when building the pinned strategies.
 func TestDeviceLocalProviderTransportGroupNilStrategySettings(t *testing.T) {
-	provider := newTestFamilyProvider(t, "wss://connect-v4.test.invalid", "wss://connect-v6.test.invalid")
+	// loopback literals: the defaults a nil source falls back to resolve a
+	// host name through the system resolver, which a test must never reach
+	provider := newTestFamilyProvider(t, "wss://127.0.0.1:1", "wss://[::1]:1")
 	provider.clientStrategySettings = nil
 	transport := provider.newProviderPlatformTransport(
 		provider.auth,
@@ -186,7 +188,7 @@ func TestCanMakeBeforeBreakAcrossTransportKinds(t *testing.T) {
 	newGroup := func() *connect.FamilyPlatformTransportGroup {
 		return connect.NewFamilyPlatformTransportGroup(
 			client.Ctx(),
-			connect.DefaultClientStrategySettings(),
+			testOfflineClientStrategySettings(),
 			strategy,
 			client.RouteManager(),
 			"wss://127.0.0.1:1",

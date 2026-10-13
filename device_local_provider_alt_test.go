@@ -76,8 +76,10 @@ func newTestAltProvider(
 	t.Helper()
 	client, _ := newTestProviderClient(t)
 
-	// one dialer, so a websocket dial is one observation rather than a race
-	strategySettings := connect.DefaultClientStrategySettings()
+	// one dialer, so a websocket dial is one observation rather than a race;
+	// the platform host resolves and dials in the process, and the alt
+	// listener is on loopback
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.EnableResilient = false
 	strategySettings.ConnectSettings.DialNetworkHook = dialNetworkHook
 	clientStrategy := connect.NewClientStrategy(client.Ctx(), strategySettings)

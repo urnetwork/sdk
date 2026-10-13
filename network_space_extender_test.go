@@ -2,6 +2,8 @@ package sdk
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/netip"
 	"slices"
 	"sync"
@@ -32,12 +34,101 @@ const (
 func testEnableUrlSpaceExtenderNetwork(t *testing.T) {
 	t.Helper()
 	testEnableExtenderNode(t)
-	extenderNetworkClientEnabled = true
+	SetExtenderNetworkClientEnabled(true)
 	extenderNetworkClientConfigure = testConfigureInProcessExtenderNetworkClient
 	t.Cleanup(func() {
-		extenderNetworkClientEnabled = false
+		SetExtenderNetworkClientEnabled(false)
 		extenderNetworkClientConfigure = nil
 	})
+}
+
+// The switch as the package initialized it, before TestMain turned the client
+// off for the suite.
+var testExtenderNetworkClientEnabledByDefault = !extenderNetworkClientDisabled.Load()
+
+// The extender network client is on unless a host turns it off, so an app
+// that never calls SetExtenderNetworkClientEnabled runs it.
+func TestExtenderNetworkClientIsOnByDefault(t *testing.T) {
+	if !testExtenderNetworkClientEnabledByDefault {
+		t.Fatal("the extender network client is off by default")
+	}
+}
+
+// SetExtenderNetworkClientEnabled decides whether a space built after it runs
+// the client. Every network boundary of the space's strategy is injected here
+// and records what reaches it: off, a space whose api url names a dotted host
+// builds no client and reaches no boundary; on, the same space builds the
+// client, whose first attempt reaches a boundary and goes no further.
+func TestSetExtenderNetworkClientEnabled(t *testing.T) {
+	previous := SetExtenderNetworkClientEnabled(false)
+	t.Cleanup(func() {
+		SetExtenderNetworkClientEnabled(previous)
+	})
+	newSpace := func(t *testing.T) (*NetworkSpace, <-chan string) {
+		t.Helper()
+		reached := make(chan string, 64)
+		refuse := func(operation string) error {
+			select {
+			case reached <- operation:
+			default:
+			}
+			return fmt.Errorf("the test refuses %s", operation)
+		}
+		strategySettings := connect.DefaultClientStrategySettings()
+		strategySettings.EnableResilient = false
+		// no DoH servers, so every resolution falls through to the resolver
+		strategySettings.DohSettings = nil
+		strategySettings.ConnectSettings.Resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network string, address string) (net.Conn, error) {
+				return nil, refuse("dns lookup")
+			},
+		}
+		strategySettings.ConnectSettings.DialContextSettings = &connect.DialContextSettings{
+			DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+				return nil, refuse("dial " + address)
+			},
+			PacketConnFactory: func(ctx context.Context) (net.PacketConn, error) {
+				return nil, refuse("packet socket")
+			},
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		networkSpace := NewNetworkSpaceWithUrls(ctx, testUrlSpaceApiUrl, testUrlSpacePlatformUrl, strategySettings)
+		t.Cleanup(func() {
+			networkSpace.close()
+			cancel()
+		})
+		return networkSpace, reached
+	}
+
+	// the setter answers the value it replaced
+	if SetExtenderNetworkClientEnabled(false) {
+		t.Fatal("the switch was on after it was turned off")
+	}
+	off, offReached := newSpace(t)
+	if off.extenderNetworkClient != nil {
+		t.Fatal("the switch is off and the space runs a network client")
+	}
+
+	if SetExtenderNetworkClientEnabled(true) {
+		t.Fatal("the switch was on after it was turned off")
+	}
+	on, onReached := newSpace(t)
+	if on.extenderNetworkClient == nil {
+		t.Fatal("the switch is on and the space runs no network client")
+	}
+	select {
+	case <-onReached:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the network client reached no boundary")
+	}
+
+	// the space without a client had longer than the one with it took
+	select {
+	case operation := <-offReached:
+		t.Fatalf("the switch is off and the space reached %s", operation)
+	case <-time.After(time.Second):
+	}
 }
 
 // A url-only space whose api url names a real host discovers like any other

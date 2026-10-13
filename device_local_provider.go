@@ -206,6 +206,7 @@ func newDeviceLocalProviderWithOverrides(
 	targetMode connect.TransportMode,
 	modePreferences map[connect.TransportMode]int,
 	dialContextSettings *connect.DialContextSettings,
+	localDialContextSettings *connect.DialContextSettings,
 	dnsPumpHost string,
 	transferMemory *deviceLocalTransferMemory,
 	sessionApis ...*Api,
@@ -258,9 +259,11 @@ func newDeviceLocalProviderWithOverrides(
 	// Admit the fallback NAT while the new device root is still empty, before
 	// starting the provider client. It is a lifetime owner even with providing
 	// disabled. Refusal is observable; never install a dead/nil NAT as a route.
+	// It carries the device's local route, so it dials through that seam.
 	localUserNatSettings := providerLocalUserNatSettings(
 		providerMemoryTargetByteCount,
 		clientSettings.Log,
+		localDialContextSettings,
 	)
 	if transferMemory != nil {
 		localUserNatSettings.MemoryBudget = transferMemory.nat

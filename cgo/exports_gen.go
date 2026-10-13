@@ -18704,6 +18704,13 @@ func urnet_set_egress_interface_index(index4 C.int64_t, index6 C.int64_t) {
 	sdk.SetEgressInterfaceIndex(int(int64(index4)), int(int64(index6)))
 }
 
+//export urnet_set_extender_network_client_enabled
+func urnet_set_extender_network_client_enabled(enabled C.bool) C.bool {
+	defer cgoGuard("urnet_set_extender_network_client_enabled")
+	r0 := sdk.SetExtenderNetworkClientEnabled(bool(enabled))
+	return C.bool(r0)
+}
+
 //export urnet_set_extender_store_read_only
 func urnet_set_extender_store_read_only(readOnly C.bool) {
 	defer cgoGuard("urnet_set_extender_store_read_only")

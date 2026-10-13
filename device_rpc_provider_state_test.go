@@ -68,7 +68,8 @@ func testingProviderStateNetworkSpace(t *testing.T) (*testingClientLimitPlatform
 	platform := newTestingClientLimitPlatform(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	strategySettings := connect.DefaultClientStrategySettings()
+	// the api and pump names resolve in the process; the platform is local
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.Log = connect.NewNoopLogger()
 	strategySettings.EnableNormal = true
 	strategySettings.EnableResilient = false
