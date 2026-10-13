@@ -250,16 +250,28 @@ func (self *Api) SnNetworkConsentStatusSyncWithContext(ctx context.Context) (*Sn
 	return status, nil
 }
 
+// The epoch of a GET /sn/epoch answer. An answer without it is not epoch 0.
+type snNetworkConsentEpoch struct {
+	Epoch *int64 `json:"epoch"`
+}
+
 // The current epoch and the network's newest accepted network consent (nil
 // when it has none), read with the api's current credential. The history
 // route needs an independently pinned head, which an app does not have, so the
 // consent is GET /sn/wallet's network entry (CONSENT.md §8).
 func (self *Api) snNetworkConsentState(ctx context.Context) (int64, *SnWallet, error) {
-	epoch, err := self.SnEpochSyncWithContext(ctx)
+	epoch, err := connect.HttpGetWithRawFunction(
+		ctx,
+		self.getHttpGetRaw(),
+		fmt.Sprintf("%s/sn/epoch", self.apiUrl),
+		self.GetByJwt(),
+		&snNetworkConsentEpoch{},
+		connect.NewNoopApiCallback[*snNetworkConsentEpoch](),
+	)
 	if err != nil {
 		return 0, nil, err
 	}
-	if epoch == nil || epoch.Epoch < 0 {
+	if epoch == nil || epoch.Epoch == nil || *epoch.Epoch < 0 {
 		return 0, nil, errors.New("GET /sn/epoch returned no current epoch")
 	}
 	wallets, err := self.SnGetWalletSyncWithContext(ctx)
@@ -270,7 +282,7 @@ func (self *Api) snNetworkConsentState(ctx context.Context) (int64, *SnWallet, e
 	if err != nil {
 		return 0, nil, err
 	}
-	return epoch.Epoch, latest, nil
+	return *epoch.Epoch, latest, nil
 }
 
 // The one network entry of a GET /sn/wallet answer, within the protocol's

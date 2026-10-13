@@ -1,11 +1,13 @@
 // The network payout consent's wallet session through the real c abi
-// (CONSENT.md §7, §9): a desktop app hands the challenge over as json with the
-// sdk's snake_case names, the session keeps the message byte for byte, and a
-// refusal reaches out_error in the sdk's "code: message" form.
+// (CONSENT.md §7, §9, §10): a desktop app hands the challenge over as json
+// with the sdk's snake_case names, the session keeps the message byte for
+// byte with its lifetime from receipt, and a refusal reaches out_error in the
+// sdk's "code: message" form.
 package main
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,18 +15,32 @@ import (
 )
 
 func TestNetworkConsentChallengeJsonThroughTheAbi(t *testing.T) {
-	const message = "Approve URnetwork network wallet mapping\n{\"synthetic\":\"statement\"}"
-	const expiresAt = int64(1791245100)
+	// the sn protocol's own challenge (sdk/sn/protocol/testdata)
+	raw, err := os.ReadFile("../sn/protocol/testdata/network-consent-challenge-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := struct {
+		ColdkeySs58  string `json:"coldkey_ss58"`
+		FromEpoch    int64  `json:"from_epoch"`
+		ThroughEpoch int64  `json:"through_epoch"`
+		ExpiresAt    int64  `json:"expires_at"`
+		Message      string `json:"message"`
+	}{}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
 	resultJson, err := json.Marshal(map[string]any{
-		"message":       message,
-		"coldkey_ss58":  "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-		"from_epoch":    43,
-		"through_epoch": 43 + sdk.SnNetworkConsentEpochSpan,
-		"expires_at":    expiresAt,
+		"message":       fixture.Message,
+		"coldkey_ss58":  fixture.ColdkeySs58,
+		"from_epoch":    fixture.FromEpoch,
+		"through_epoch": fixture.ThroughEpoch,
+		"expires_at":    fixture.ExpiresAt,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	const receivedMillis = int64(1_800_000_000_000)
 	newSession := func(purpose string) uint64 {
 		t.Helper()
 		walletId := cString(sdk.BittensorWalletTaoCom)
@@ -48,7 +64,7 @@ func TestNetworkConsentChallengeJsonThroughTheAbi(t *testing.T) {
 		resultC := cString(string(resultJson))
 		defer cStringFree(resultC)
 		outError := socketABIOut(urnet_bittensor_wallet_session_set_network_consent_challenge, 3)
-		ok := socketABICall(urnet_bittensor_wallet_session_set_network_consent_challenge, session, resultC, (expiresAt-300)*1000, outError)[0].Bool()
+		ok := socketABICall(urnet_bittensor_wallet_session_set_network_consent_challenge, session, resultC, receivedMillis, outError)[0].Bool()
 		return ok, socketABIError(outError)
 	}
 
@@ -59,11 +75,11 @@ func TestNetworkConsentChallengeJsonThroughTheAbi(t *testing.T) {
 	messagePointer := socketABICall(urnet_bittensor_wallet_session_message, consent)[0]
 	got := goStringAt(messagePointer.UnsafePointer())
 	socketABICall(urnet_free_string, messagePointer)
-	if got != message {
-		t.Fatalf("session message = %q, want the challenge's bytes %q", got, message)
+	if got != fixture.Message {
+		t.Fatalf("session message = %q, want the challenge's bytes %q", got, fixture.Message)
 	}
-	if millis := socketABICall(urnet_bittensor_wallet_session_expires_at_millis, consent)[0].Int(); millis != expiresAt*1000 {
-		t.Fatalf("session expiry = %d, want %d", millis, expiresAt*1000)
+	if millis := socketABICall(urnet_bittensor_wallet_session_expires_at_millis, consent)[0].Int(); millis != receivedMillis+300_000 {
+		t.Fatalf("session expiry = %d, want receipt + 300 s = %d", millis, receivedMillis+300_000)
 	}
 
 	login := newSession(sdk.BittensorWalletPurposeLogin)

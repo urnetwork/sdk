@@ -469,6 +469,19 @@ func TestSnNetworkConsentStatus(t *testing.T) {
 	}
 }
 
+// CONSENT §10: an epoch answer without its epoch ({}) is not epoch 0, so a
+// consent that ended long ago never shows as active.
+func TestSnNetworkConsentStatusRefusesAnEpochWithoutItsNumber(t *testing.T) {
+	server := newSnConsentServer(t)
+	server.epoch = answer(http.StatusOK, `{}`)
+	server.wallets = answer(http.StatusOK, snConsentWallets(snConsentNetworkEntry(bittensorTestAliceSs58, 1, 2)))
+	ctx, api, _ := newSnConsentOwnerApi(t, server)
+	status, err := api.SnNetworkConsentStatusSyncWithContext(ctx)
+	if err == nil || status != nil || !strings.Contains(err.Error(), "GET /sn/epoch returned no current epoch") {
+		t.Fatalf("status with an epoch answer without its epoch = %+v, %v", status, err)
+	}
+}
+
 // The status call without a callback still runs, and answers no one.
 func TestSnNetworkConsentStatusWithoutCallback(t *testing.T) {
 	server := newSnConsentServer(t)
@@ -654,6 +667,8 @@ func TestSnNetworkConsentRefusesMalformedAnswers(t *testing.T) {
 	}{
 		{name: "epoch null", epoch: ok("null"), requests: 1, failure: "GET /sn/epoch returned no current epoch"},
 		{name: "epoch before zero", epoch: ok(`{"epoch":-1}`), requests: 1, failure: "GET /sn/epoch returned no current epoch"},
+		{name: "epoch without its number", epoch: ok(`{}`), requests: 1, failure: "GET /sn/epoch returned no current epoch"},
+		{name: "epoch number null", epoch: ok(`{"epoch":null,"start_block":10}`), requests: 1, failure: "GET /sn/epoch returned no current epoch"},
 		{name: "epoch not json", epoch: ok(`{"epoch":`), requests: 1, failure: "unexpected end of JSON input"},
 		{name: "epoch beyond int64", epoch: ok(`{"epoch":9223372036854775808}`), requests: 1, failure: "cannot unmarshal number 9223372036854775808"},
 		{name: "wallets null", wallets: ok("null"), requests: 2, failure: "GET /sn/wallet returned no wallets"},
