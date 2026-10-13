@@ -279,6 +279,11 @@ export interface MockExtenderOptions {
   downloadOverrunMs?: number;
   /** never answer the upgrade of this upload stream, as if its packets were lost */
   holdUploadStream?: number;
+  /**
+   * Answer upload upgrades one at a time, this far apart, as a browser that
+   * opens one WebSocket handshake to a host at a time makes them complete.
+   */
+  uploadUpgradeSpacingMs?: number;
 }
 
 export interface MockSessionRecord {
@@ -305,6 +310,9 @@ export interface MockSessionRecord {
   /** sizes of upload messages that were not 65536 bytes, but the last of a stream */
   oddUploadMessages: number[];
   uploadVerifiedBytes: number;
+  /** per upload stream: when its socket opened, and when its first message came */
+  uploadOpenedAt: number[];
+  uploadFirstMessageAt: number[];
   uploadReports: Array<{ bytes: number; ms: number }>;
   mismatch: boolean;
   loadResult?: { uploadVerified: boolean; endReason: string };
@@ -356,6 +364,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
   const usedTickets = new Set<string>();
   const firstDownloadAnswered = new Set<string>();
   const held = new Set<Duplex>();
+  // when the last spaced upload upgrade was answered
+  let lastUpgradeAnswer = -Infinity;
   const closedByMock = new WeakSet<ServerResponse>();
   let open = 0;
 
@@ -533,6 +543,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploadMessages: 0,
       oddUploadMessages: [],
       uploadVerifiedBytes: 0,
+      uploadOpenedAt: [],
+      uploadFirstMessageAt: [],
       uploadReports: [],
       mismatch: false,
     };
@@ -681,8 +693,27 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       held.add(socket);
       return;
     }
+    const spacing = options.uploadUpgradeSpacingMs;
+    if (spacing !== undefined) {
+      socket.on("error", () => undefined);
+      const answerAt = Math.max(performance.now(), lastUpgradeAnswer + spacing);
+      lastUpgradeAnswer = answerAt;
+      setTimeout(() => {
+        if (!socket.destroyed && !state.closed && state.phase === "upload") {
+          acceptUpload(state, stream, req, socket, head);
+        } else {
+          socket.destroy();
+        }
+      }, answerAt - performance.now());
+      return;
+    }
+    acceptUpload(state, stream, req, socket, head);
+  };
+
+  const acceptUpload = (state: SessionState, stream: number, req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const record = state.record;
     const ws = acceptWebSocket(req, socket, head);
+    record.uploadOpenedAt[stream] = performance.now();
     record.uploadStreams += 1;
     state.uploads.add(ws);
     ws.onClose = () => state.uploads.delete(ws);
@@ -698,6 +729,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       }
       lastSize = data.length;
       const now = performance.now();
+      record.uploadFirstMessageAt[stream] ??= now;
       if (state.uploadFirst === undefined) {
         state.uploadFirst = now;
         state.uploadReporter = setInterval(() => {

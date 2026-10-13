@@ -463,12 +463,41 @@ test("an upload stream that never connects does not hold up the load", { timeout
     await session.ready;
     const started = performance.now();
     const result = await session.startLoad();
-    // well inside the 10 s a stream gets to connect
-    assert.ok(performance.now() - started < 8000, `${performance.now() - started} ms`);
+    // the streams that opened start once the 3 s the sockets get to open
+    // are over: about 1 s of download, 3 s, 1 s of upload and its result
+    assert.ok(performance.now() - started < 9000, `${performance.now() - started} ms`);
     assert.equal(result.upload.streams, 3);
     assert.equal(mock.sessions[0].uploadStreams, 3);
     assert.equal(result.uploadVerified, true);
     assert.equal(result.endReason, "complete");
+    session.close();
+  });
+});
+
+test("upload streams start together even when their sockets open one at a time", { timeout: 30_000 }, async () => {
+  // A browser makes WebSocket handshakes to one host one at a time; the mock
+  // answers the upgrades 300 ms apart, as that makes them complete.
+  await withMock({ uploadUpgradeSpacingMs: 300, uploadBytesPerSecond: 16 << 20 }, async (mock) => {
+    const { session, events } = open(mock, "ticket-serialized");
+    await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.upload.streams, 4);
+    assert.equal(result.uploadVerified, true);
+    const opens = record.uploadOpenedAt;
+    const firsts = record.uploadFirstMessageAt;
+    assert.equal(opens.filter((at) => at !== undefined).length, 4);
+    assert.equal(firsts.filter((at) => at !== undefined).length, 4);
+    const lastOpen = Math.max(...opens);
+    assert.ok(800 <= lastOpen - Math.min(...opens), `the sockets opened over ${lastOpen - Math.min(...opens)} ms`);
+    // no stream began before the last socket opened, and they began together
+    const spread = Math.max(...firsts) - Math.min(...firsts);
+    assert.ok(lastOpen <= Math.min(...firsts), "a stream began before every socket had opened");
+    assert.ok(spread <= 150, `the streams began over ${spread} ms`);
+    // the upload's window starts at that common start
+    const phases = ofType(events, "load");
+    assert.equal(phases[1].phase, "upload");
+    assert.equal(phases[1].at, result.upload.startedAt);
     session.close();
   });
 });

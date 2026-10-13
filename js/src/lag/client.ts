@@ -263,8 +263,11 @@ export function openLagSession(options: LagSessionOptions): LagSession {
   return new LagSessionClient(options);
 }
 
-// a load direction with no first byte by then has failed
+// a download with no first byte by then has failed
 const FIRST_BYTE_TIMEOUT_MS = 10_000;
+// how long the upload sockets get to open before the streams start without
+// the ones still connecting (the extender waits 10 s for them)
+const UPLOAD_OPEN_WAIT_MS = 3_000;
 // how long the upload waits for the extender's report that closes its window
 const UPLOAD_SETTLE_MS = 2_000;
 // how long the load waits for the extender's loadResult after done
@@ -725,6 +728,8 @@ class LagLoadRun {
   private uploadFirst?: number;
   private uploadStartedAt?: number;
   private uploadStopped = false;
+  // the streams have started together; a socket opening later is not used
+  private uploadStarted = false;
   private uploadStreams = 0;
   // bytes handed to the upload sockets, across streams
   private uploadSent = 0;
@@ -1090,10 +1095,13 @@ class LagLoadRun {
     }
   }
 
-  // M6: maxStreams WebSockets of keystream for uploadMs from the first
-  // message, with backpressure by bufferedAmount.
+  // M6: maxStreams WebSockets of keystream for uploadMs, with backpressure
+  // by bufferedAmount. A browser opens WebSockets to one host one at a time,
+  // so streams started as their sockets opened would join the window late:
+  // every socket is opened first, and the streams start together once each
+  // has opened or failed, waiting at most UPLOAD_OPEN_WAIT_MS (S5).
   private async runUpload(): Promise<void> {
-    const { maxStreams } = this.hello;
+    const { maxStreams, uploadMs } = this.hello;
     let key: CryptoKey;
     try {
       key = await this.uploadKey!;
@@ -1102,39 +1110,59 @@ class LagLoadRun {
       throw new LagSessionError("protocol", "the extender's upload key is not 16 bytes", { cause: error });
     }
     this.session.send({ type: "load", phase: "upload" });
-    const firstSendGuard = this.timeout(FIRST_BYTE_TIMEOUT_MS, () => {
-      if (this.uploadFirst === undefined) {
-        this.uploadStopped = true;
-        this.closeSockets();
-      }
-    });
-    const streams: Promise<void>[] = [];
+    // every stream's first chunks of keystream generate while the sockets open
+    const keystreams: LagKeystream[] = [];
+    const opened: Array<WebSocket | null> = [];
+    const opening: Promise<void>[] = [];
     for (let k = 0; k < maxStreams; k += 1) {
-      streams.push(this.uploadStream(k, key));
+      keystreams.push(new LagKeystream(key, k));
+      opened.push(null);
+      opening.push(
+        this.openUploadSocket(k).then((socket) => {
+          opened[k] = socket;
+        }),
+      );
     }
-    const outcome = await this.until(Promise.all(streams));
-    this.clearTimer(firstSendGuard);
+    const outcome = await this.until(Promise.race([Promise.all(opening), this.delay(UPLOAD_OPEN_WAIT_MS)]));
+    // the common start: a socket still connecting has missed it
+    this.uploadStarted = true;
+    for (const socket of this.sockets) {
+      if (socket.readyState === WEBSOCKET_CONNECTING) {
+        socket.close(1000);
+      }
+    }
     if (outcome === EARLY) {
       return;
     }
-    if (this.uploadFirst === undefined) {
+    const ready: Array<{ socket: WebSocket; keystream: LagKeystream }> = [];
+    opened.forEach((socket, k) => {
+      if (socket !== null && socket.readyState === WEBSOCKET_OPEN) {
+        ready.push({ socket, keystream: keystreams[k] });
+      }
+    });
+    if (ready.length === 0) {
       this.closeSockets();
       this.sendDone();
       throw new LagSessionError("upload", "no upload stream opened");
+    }
+    this.uploadStreams = ready.length;
+    this.uploadFirst = monotonicNow();
+    this.uploadStartedAt = epochNow();
+    this.timeout(uploadMs, () => {
+      this.uploadStopped = true;
+    });
+    this.emitPhase("upload", this.uploadStartedAt);
+    const pumped = await this.until(Promise.all(ready.map(({ socket, keystream }) => this.pumpUpload(socket, keystream))));
+    if (pumped === EARLY) {
+      return;
     }
     // the extender's window started when the first message arrived, a
     // little after it was sent: give its last report a moment
     await this.until(Promise.race([this.uploadWindowReported.promise, this.delay(UPLOAD_SETTLE_MS)]));
   }
 
-  private async uploadStream(k: number, key: CryptoKey): Promise<void> {
-    // the first chunks of keystream generate while the socket connects
-    const keystream = new LagKeystream(key, k);
-    const socket = await this.openUploadSocket(k);
-    if (socket === null) {
-      return;
-    }
-    this.uploadStreams += 1;
+  // One stream's messages, from the common start until uploadMs is over.
+  private async pumpUpload(socket: WebSocket, keystream: LagKeystream): Promise<void> {
     const flow: UploadFlow = {
       sent: 0,
       drained: 0,
@@ -1174,20 +1202,6 @@ class LagLoadRun {
       if (socket.bufferedAmount < message.length) {
         this.bufferedAmountCounts = false;
       }
-      if (this.uploadFirst === undefined) {
-        this.uploadFirst = monotonicNow();
-        this.uploadStartedAt = epochNow();
-        this.timeout(this.hello.uploadMs, () => {
-          this.uploadStopped = true;
-          // a stream still connecting has missed the window; don't wait on it
-          for (const pending of this.sockets) {
-            if (pending.readyState === WEBSOCKET_CONNECTING) {
-              pending.close(1000);
-            }
-          }
-        });
-        this.emitPhase("upload", this.uploadStartedAt);
-      }
     }
   }
 
@@ -1220,7 +1234,7 @@ class LagLoadRun {
       `${this.session.wsOrigin}/lag/v1/up` +
       `?session=${encodeURIComponent(this.hello.session)}&stream=${k}`;
     for (let attempt = 0; ; attempt += 1) {
-      if (this.uploadStopped) {
+      if (this.uploadStopped || this.uploadStarted) {
         return null;
       }
       const socket = await this.connect(url);
@@ -1228,7 +1242,7 @@ class LagLoadRun {
         return socket;
       }
       // the socket can arrive before the extender has the load message
-      if (this.uploadStopped || OPEN_RETRIES <= attempt) {
+      if (this.uploadStopped || this.uploadStarted || OPEN_RETRIES <= attempt) {
         return null;
       }
       await sleep(100 * 2 ** attempt);
@@ -1248,7 +1262,7 @@ class LagLoadRun {
       this.sockets.add(socket);
       const onOpen = () => {
         socket.removeEventListener("close", onClose);
-        if (this.uploadStopped) {
+        if (this.uploadStopped || this.uploadStarted) {
           socket.close(1000);
           resolve(null);
           return;
