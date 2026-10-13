@@ -596,6 +596,7 @@ public interface Raw extends Library {
   Pointer urnet_device_get_licenses(long a0, String a1);
   Pointer urnet_device_get_local_override_app_ids(long a0);
   long urnet_device_get_log_verbosity(long a0);
+  byte urnet_device_get_measurements_enabled(long a0);
   Pointer urnet_device_get_network_peers(long a0);
   long urnet_device_get_network_space(long a0);
   byte urnet_device_get_offline(long a0);
@@ -646,6 +647,7 @@ public interface Raw extends Library {
   void urnet_device_set_destination(long a0, String a1, String a2);
   void urnet_device_set_dns_resolver_settings(long a0, String a1);
   void urnet_device_set_log_verbosity(long a0, long a1);
+  void urnet_device_set_measurements_enabled(long a0, byte a1);
   void urnet_device_set_offline(long a0, byte a1);
   void urnet_device_set_performance_profile(long a0, String a1);
   void urnet_device_set_provide_control_mode(long a0, String a1);
@@ -945,6 +947,7 @@ public interface Raw extends Library {
   Pointer urnet_local_state_get_extender_gossip_mode(long a0);
   Pointer urnet_local_state_get_instance_id(long a0);
   long urnet_local_state_get_log_verbosity(long a0);
+  byte urnet_local_state_get_measurements_enabled(long a0);
   Pointer urnet_local_state_get_performance_profile(long a0);
   Pointer urnet_local_state_get_provide_control_mode(long a0);
   byte urnet_local_state_get_provide_extender(long a0);
@@ -986,6 +989,7 @@ public interface Raw extends Library {
   byte urnet_local_state_set_instance_id(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_intro_funnel_last_prompted(long a0, PointerByReference a1);
   byte urnet_local_state_set_log_verbosity(long a0, long a1, PointerByReference a2);
+  byte urnet_local_state_set_measurements_enabled(long a0, byte a1, PointerByReference a2);
   byte urnet_local_state_set_performance_profile(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_provide_control_mode(long a0, String a1, PointerByReference a2);
   byte urnet_local_state_set_provide_extender(long a0, byte a1, PointerByReference a2);

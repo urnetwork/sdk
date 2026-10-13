@@ -175,6 +175,69 @@ func (self *LocalState) SetProvideExtender(provideExtender bool) error {
 	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
 }
 
+// The lag.dev measurements setting (lag.dev/PLAN.md C4, decision 18): whether
+// the provider extender role serves the measurement API. A file that is not
+// there is an owner that never opted out, and measurement is on.
+const measurementsEnabledFileName = ".measurements_enabled"
+
+// The persisted measurements setting: on unless the owner opted out.
+func (self *LocalState) GetMeasurementsEnabled() bool {
+	if measurementsEnabled, stored := self.getStoredMeasurementsEnabled(); stored {
+		return measurementsEnabled
+	}
+	return true
+}
+
+// The stored measurements setting, and whether the space stores one at all.
+// Read from its file once and cached after, as the provider extender setting
+// is: every writer goes through SetMeasurementsEnabled.
+func (self *LocalState) getStoredMeasurementsEnabled() (measurementsEnabled bool, stored bool) {
+	self.measurementsEnabledLock.Lock()
+	defer self.measurementsEnabledLock.Unlock()
+	if !self.measurementsEnabledLoaded {
+		self.measurementsEnabled, self.measurementsEnabledStored = self.readMeasurementsEnabled()
+		self.measurementsEnabledLoaded = true
+	}
+	return self.measurementsEnabled, self.measurementsEnabledStored
+}
+
+// Only an explicit true or false is a stored value. A missing, unreadable or
+// corrupt file stores none, so measurement stays on rather than off by an
+// accident nobody chose.
+func (self *LocalState) readMeasurementsEnabled() (measurementsEnabled bool, stored bool) {
+	path := filepath.Join(self.localStorageDir, measurementsEnabledFileName)
+	stateBytes, err := os.ReadFile(path)
+	if err != nil {
+		return false, false
+	}
+	switch strings.TrimSpace(string(stateBytes)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// Persists the measurements setting. The cache takes the value whether or not
+// the write succeeds, so the setting applies for the session either way, and
+// the write error is returned for the caller to log.
+func (self *LocalState) SetMeasurementsEnabled(measurementsEnabled bool) error {
+	self.measurementsEnabledLock.Lock()
+	defer self.measurementsEnabledLock.Unlock()
+	self.measurementsEnabled = measurementsEnabled
+	self.measurementsEnabledStored = true
+	self.measurementsEnabledLoaded = true
+
+	path := filepath.Join(self.localStorageDir, measurementsEnabledFileName)
+	value := "false"
+	if measurementsEnabled {
+		value = "true"
+	}
+	return os.WriteFile(path, []byte(value), LocalStorageFilePermissions)
+}
+
 // NormalExtenderGossipMode maps any input to one of the three modes (D5).
 func NormalExtenderGossipMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {

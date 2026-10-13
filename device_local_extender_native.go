@@ -56,22 +56,15 @@ import (
 // when its space keeps the identity in a file: it makes the measurement key
 // beside that file, hands the server the API's trust and hosts and the
 // lifecycle that keeps the certificate, and has the activation carry the
-// certificate request. Without a kept identity, or with measurement off, there
-// is no API at all.
+// certificate request. The device's measurements setting turns the API off and
+// on while the role runs, and while it is off every activation tells the
+// operator so (decision 18). Without a kept identity there is no API at all.
 //
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
 
 // This build carries the role (G1).
 const extenderProvideSupported = true
-
-// Whether the role serves the lag.dev measurement API (lag.dev/PLAN.md C4,
-// M10): on, as the plan has it for an extender in the open tier with a public
-// inbound address, which is all the operator issues a certificate to.
-// Production never changes it: until a device setting carries a switch for
-// measurement alone, the owner's switch is the provider extender setting,
-// which turns the whole role off. Tests turn it off.
-var extenderMeasurementEnabled = true
 
 // When set, adjusts the measurement lifecycle's settings before each role's
 // server is built. Tests shorten the certificate poll through it; production
@@ -117,7 +110,8 @@ type deviceLocalExtender struct {
 	pingReporter *connect.ExtenderPingReporter
 	peerPinger   *connect.ExtenderPeerPinger
 	// the lag.dev measurement key and certificate (lag.dev/PLAN.md C4), nil
-	// when the role serves no measurement API; built with the server
+	// when the role can serve no measurement API; built with the server. Set
+	// under the state lock, for setMeasurementsEnabled (currentMeasurementCert)
 	measurementCert *extender.ExtenderMeasurementCert
 
 	// the comparable half of the status; a consumer is woken only on an actual
@@ -234,7 +228,12 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 
 	// the measurement certificate the server's lifecycle keeps and the
 	// activation asks for (lag.dev/PLAN.md C4)
-	self.measurementCert = self.newMeasurementCert()
+	measurementCert := self.newMeasurementCert()
+	func() {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		self.measurementCert = measurementCert
+	}()
 
 	self.heldTcpListener = &extenderHeldListener{listener: tcpListener}
 	server := extender.NewExtenderServer(
@@ -525,19 +524,16 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 	return settings
 }
 
-// The measurement key and certificate (lag.dev/PLAN.md C4), or nil when the
-// role serves no measurement API: measurement is off, the role has no plain
-// api url, which the certificate and report routes are read from and posted
-// to, or the space keeps no local state. Then the identity is not kept in a
-// file: the operator names the certificate by the extender's id, one per
-// identity key, so an identity that is new at every start would ask for a new
-// certificate each time, and the measurement key is kept beside the identity's
-// file. A key that cannot be read leaves measurement off rather than the role
-// down.
+// The measurement key and certificate (lag.dev/PLAN.md C4), on or off as the
+// device's measurements setting is, or nil when the role can serve no
+// measurement API: the role has no plain api url, which the certificate and
+// report routes are read from and posted to, or the space keeps no local
+// state. Then the identity is not kept in a file: the operator names the
+// certificate by the extender's id, one per identity key, so an identity that
+// is new at every start would ask for a new certificate each time, and the
+// measurement key is kept beside the identity's file. A key that cannot be
+// read leaves measurement off rather than the role down.
 func (self *deviceLocalExtender) newMeasurementCert() *extender.ExtenderMeasurementCert {
-	if !extenderMeasurementEnabled {
-		return nil
-	}
 	if strings.TrimSpace(self.settings.ApiUrl) == "" {
 		self.log.Infof("[extender]provide measurement off: the role has no api url\n")
 		return nil
@@ -553,7 +549,33 @@ func (self *deviceLocalExtender) newMeasurementCert() *extender.ExtenderMeasurem
 		self.log.Infof("[extender]provide measurement off: the measurement key is not usable = %s\n", err)
 		return nil
 	}
+	if self.settings.MeasurementsEnabled != nil && !self.settings.MeasurementsEnabled() {
+		measurementCert.SetEnabled(false)
+	}
 	return measurementCert
+}
+
+// The measurement certificate, nil when the role can serve no measurement API.
+func (self *deviceLocalExtender) currentMeasurementCert() *extender.ExtenderMeasurementCert {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.measurementCert
+}
+
+// Applies the device's measurements setting at once (lag.dev/PLAN.md C4): off
+// takes the certificate down, which closes the API's open sessions, and on
+// serves it again; either way an activation pass runs now, which tells the
+// operator of the opt-out, or asks for the certificate anew. A role that can
+// serve no measurement API has nothing to change.
+func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
+	measurementCert := self.currentMeasurementCert()
+	if measurementCert == nil || measurementCert.Enabled() == measurementsEnabled {
+		return
+	}
+	measurementCert.SetEnabled(measurementsEnabled)
+	if activator := self.currentActivator(); activator != nil {
+		activator.Reactivate()
+	}
 }
 
 // The measurement settings of the server (lag.dev/PLAN.md C4, M3, M10). With a
@@ -670,10 +692,14 @@ func (self *deviceLocalExtender) startActivator() {
 	// them, so a privileged bind that failed is never advertised (L2)
 	settings.DnsPorts = self.server.DnsPorts
 	settings.Directory = self.directory()
-	if self.measurementCert != nil {
+	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
 		// the activation carries the measurement certificate request, named by
-		// the id its answers report (lag.dev/PLAN.md C4, N4)
-		settings.MeasurementCsr = self.measurementCert.ActivationCsr
+		// the id its answers report, and says so while the owner has opted out
+		// (lag.dev/PLAN.md C4, N4)
+		settings.MeasurementCsr = measurementCert.ActivationCsr
+		settings.MeasurementDisabled = func() bool {
+			return !measurementCert.Enabled()
+		}
 	}
 	// the mesh addresses follow the activated families, which the loop reads
 	// from the activator's own status; this only wakes it (D2, G2)
@@ -704,6 +730,11 @@ func (self *deviceLocalExtender) startActivator() {
 	self.stateLock.Lock()
 	self.activator = activator
 	self.stateLock.Unlock()
+	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
+		// the operator holding another key's request or certificate asks for a
+		// pass at once, which carries this key's request (lag.dev/PLAN.md C4)
+		measurementCert.SetReactivate(activator.Reactivate)
+	}
 	self.wakeMonitor.NotifyAll()
 }
 

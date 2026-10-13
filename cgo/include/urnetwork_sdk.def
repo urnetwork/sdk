@@ -403,6 +403,7 @@ EXPORTS
 	urnet_device_get_licenses
 	urnet_device_get_local_override_app_ids
 	urnet_device_get_log_verbosity
+	urnet_device_get_measurements_enabled
 	urnet_device_get_network_peers
 	urnet_device_get_network_space
 	urnet_device_get_offline
@@ -685,6 +686,7 @@ EXPORTS
 	urnet_device_set_destination
 	urnet_device_set_dns_resolver_settings
 	urnet_device_set_log_verbosity
+	urnet_device_set_measurements_enabled
 	urnet_device_set_offline
 	urnet_device_set_performance_profile
 	urnet_device_set_provide_control_mode
@@ -810,6 +812,7 @@ EXPORTS
 	urnet_local_state_get_extender_gossip_mode
 	urnet_local_state_get_instance_id
 	urnet_local_state_get_log_verbosity
+	urnet_local_state_get_measurements_enabled
 	urnet_local_state_get_performance_profile
 	urnet_local_state_get_provide_control_mode
 	urnet_local_state_get_provide_extender
@@ -855,6 +858,7 @@ EXPORTS
 	urnet_local_state_set_instance_id
 	urnet_local_state_set_intro_funnel_last_prompted
 	urnet_local_state_set_log_verbosity
+	urnet_local_state_set_measurements_enabled
 	urnet_local_state_set_performance_profile
 	urnet_local_state_set_provide_control_mode
 	urnet_local_state_set_provide_extender

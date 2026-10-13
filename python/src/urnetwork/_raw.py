@@ -986,6 +986,8 @@ def bind(lib):
     lib.urnet_device_get_local_override_app_ids.restype = c_void_p
     lib.urnet_device_get_log_verbosity.argtypes = [c_uint64]
     lib.urnet_device_get_log_verbosity.restype = c_int64
+    lib.urnet_device_get_measurements_enabled.argtypes = [c_uint64]
+    lib.urnet_device_get_measurements_enabled.restype = c_bool
     lib.urnet_device_get_network_peers.argtypes = [c_uint64]
     lib.urnet_device_get_network_peers.restype = c_void_p
     lib.urnet_device_get_network_space.argtypes = [c_uint64]
@@ -1086,6 +1088,8 @@ def bind(lib):
     lib.urnet_device_set_dns_resolver_settings.restype = None
     lib.urnet_device_set_log_verbosity.argtypes = [c_uint64, c_int64]
     lib.urnet_device_set_log_verbosity.restype = None
+    lib.urnet_device_set_measurements_enabled.argtypes = [c_uint64, c_bool]
+    lib.urnet_device_set_measurements_enabled.restype = None
     lib.urnet_device_set_offline.argtypes = [c_uint64, c_bool]
     lib.urnet_device_set_offline.restype = None
     lib.urnet_device_set_performance_profile.argtypes = [c_uint64, c_char_p]
@@ -1684,6 +1688,8 @@ def bind(lib):
     lib.urnet_local_state_get_instance_id.restype = c_void_p
     lib.urnet_local_state_get_log_verbosity.argtypes = [c_uint64]
     lib.urnet_local_state_get_log_verbosity.restype = c_int64
+    lib.urnet_local_state_get_measurements_enabled.argtypes = [c_uint64]
+    lib.urnet_local_state_get_measurements_enabled.restype = c_bool
     lib.urnet_local_state_get_performance_profile.argtypes = [c_uint64]
     lib.urnet_local_state_get_performance_profile.restype = c_void_p
     lib.urnet_local_state_get_provide_control_mode.argtypes = [c_uint64]
@@ -1766,6 +1772,8 @@ def bind(lib):
     lib.urnet_local_state_set_intro_funnel_last_prompted.restype = c_bool
     lib.urnet_local_state_set_log_verbosity.argtypes = [c_uint64, c_int64, POINTER(c_void_p)]
     lib.urnet_local_state_set_log_verbosity.restype = c_bool
+    lib.urnet_local_state_set_measurements_enabled.argtypes = [c_uint64, c_bool, POINTER(c_void_p)]
+    lib.urnet_local_state_set_measurements_enabled.restype = c_bool
     lib.urnet_local_state_set_performance_profile.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]
     lib.urnet_local_state_set_performance_profile.restype = c_bool
     lib.urnet_local_state_set_provide_control_mode.argtypes = [c_uint64, c_char_p, POINTER(c_void_p)]

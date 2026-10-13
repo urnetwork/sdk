@@ -1508,6 +1508,65 @@ func (self *DeviceRemote) SetProvideExtender(provideExtender bool) {
 	}
 }
 
+// GetMeasurementsEnabled reads the setting through to the local device, which
+// owns the space it is stored in (lag.dev/PLAN.md C4). A device that cannot be
+// reached, or one too old to answer, reads the value queued for it, else the
+// last value read, else on -- exactly as the provider extender setting reads.
+func (self *DeviceRemote) GetMeasurementsEnabled() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service != nil {
+		measurementsEnabled, err := rpcCallNoArgAllowMissingMethod[bool](
+			self.service,
+			"DeviceLocalRpc.GetMeasurementsEnabled",
+			self.closeService,
+		)
+		if err == nil {
+			self.lastKnownState.MeasurementsEnabled.Set(measurementsEnabled)
+			return measurementsEnabled
+		}
+	}
+	return self.state.MeasurementsEnabled.Get(self.lastKnownState.MeasurementsEnabled.Get(true))
+}
+
+// SetMeasurementsEnabled writes the setting through to the local device, which
+// persists it and applies it at once (lag.dev/PLAN.md C4). While the device
+// process cannot be reached the value is queued and replayed at the next sync,
+// so the toggle does not snap back while a daemon restarts. A device process
+// too old to have the setter drops the write instead of queueing it: it has no
+// measurement API to turn off, and a queued value would replay on every
+// reconnect. A hosted device never runs the role (G1), so the setter is
+// guarded there as SetProvideExtender is.
+func (self *DeviceRemote) SetMeasurementsEnabled(measurementsEnabled bool) {
+	if self.hostedIncompatibleGuarded("SetMeasurementsEnabled") {
+		return
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+
+	if self.service == nil {
+		self.state.MeasurementsEnabled.Set(measurementsEnabled)
+		return
+	}
+	err := rpcCallVoidAllowMissingMethod(
+		self.service,
+		"DeviceLocalRpc.SetMeasurementsEnabled",
+		measurementsEnabled,
+		self.closeService,
+	)
+	switch {
+	case err == nil:
+		self.state.MeasurementsEnabled.Unset()
+		self.lastKnownState.MeasurementsEnabled.Set(measurementsEnabled)
+	case rpcMissingMethodError(err):
+		self.state.MeasurementsEnabled.Unset()
+		self.log.Infof("[dr]measurements enabled dropped: the device process has no setter")
+	default:
+		self.state.MeasurementsEnabled.Set(measurementsEnabled)
+	}
+}
+
 // ResetExtenders resets the extender state of this process's space and of the
 // space the device runs in (E7). This process mints the reset and applies it
 // to its own space, whose values it persists with the reset's id, then hands
@@ -7189,6 +7248,9 @@ type DeviceRemoteState struct {
 	// the provider extender setting, stored independently of the provide mode
 	// (N4) and queued while the device process cannot be reached (N2)
 	ProvideExtender deviceRemoteValue[bool]
+	// the lag.dev measurements setting (lag.dev/PLAN.md C4), stored beside the
+	// provider extender setting and queued as it is
+	MeasurementsEnabled deviceRemoteValue[bool]
 	// the id of a reset of the extender state (EXTENDER.md E7) queued for the
 	// device process, a one-shot command applied during sync; a newer reset
 	// replaces an older one, which it covers
@@ -7270,6 +7332,7 @@ func (self *DeviceRemoteState) Merge(update *DeviceRemoteState) {
 	self.ProvideMode.Merge(update.ProvideMode)
 	self.ProvideNetworkMode.Merge(update.ProvideNetworkMode)
 	self.ProvideExtender.Merge(update.ProvideExtender)
+	self.MeasurementsEnabled.Merge(update.MeasurementsEnabled)
 	self.ExtenderReset.Merge(update.ExtenderReset)
 	self.ProvidePaused.Merge(update.ProvidePaused)
 	self.Offline.Merge(update.Offline)
@@ -7318,6 +7381,7 @@ func (self *DeviceRemoteState) hasPendingSyncState() bool {
 		self.ProvideMode.IsSet ||
 		self.ProvideNetworkMode.IsSet ||
 		self.ProvideExtender.IsSet ||
+		self.MeasurementsEnabled.IsSet ||
 		self.ExtenderReset.IsSet ||
 		self.ProvidePaused.IsSet ||
 		self.Offline.IsSet ||
@@ -9986,6 +10050,7 @@ func (self *DeviceLocalRpc) state() DeviceRemoteState {
 	state.ProvideMode.Set(self.deviceLocal.GetProvideMode())
 	state.ProvideNetworkMode.Set(self.deviceLocal.GetProvideNetworkMode())
 	state.ProvideExtender.Set(self.deviceLocal.GetProvideExtender())
+	state.MeasurementsEnabled.Set(self.deviceLocal.GetMeasurementsEnabled())
 	state.ProvidePaused.Set(self.deviceLocal.GetProvidePaused())
 	state.Offline.Set(self.deviceLocal.GetOffline())
 	state.VpnInterfaceWhileOffline.Set(self.deviceLocal.GetVpnInterfaceWhileOffline())
@@ -10189,6 +10254,10 @@ func (self *DeviceLocalRpc) Sync(
 	// provide mode and of the control mode order above (N4)
 	if state.ProvideExtender.IsSet && !hostedIncompatible {
 		self.deviceLocal.SetProvideExtender(state.ProvideExtender.Value)
+	}
+	// the lag.dev measurements setting is its own file too (lag.dev/PLAN.md C4)
+	if state.MeasurementsEnabled.IsSet && !hostedIncompatible {
+		self.deviceLocal.SetMeasurementsEnabled(state.MeasurementsEnabled.Value)
 	}
 	// a reset the app made while this process could not be reached (E7)
 	if state.ExtenderReset.IsSet && !hostedIncompatible {
@@ -12457,6 +12526,19 @@ func (self *DeviceLocalRpc) SetProvideExtender(provideExtender bool, _ RpcVoid) 
 		return nil
 	}
 	self.deviceLocal.SetProvideExtender(provideExtender)
+	return nil
+}
+
+func (self *DeviceLocalRpc) GetMeasurementsEnabled(_ RpcNoArg, measurementsEnabled *bool) error {
+	*measurementsEnabled = self.deviceLocal.GetMeasurementsEnabled()
+	return nil
+}
+
+func (self *DeviceLocalRpc) SetMeasurementsEnabled(measurementsEnabled bool, _ RpcVoid) error {
+	if self.hostedIncompatibleRpcGuarded("SetMeasurementsEnabled") {
+		return nil
+	}
+	self.deviceLocal.SetMeasurementsEnabled(measurementsEnabled)
 	return nil
 }
 

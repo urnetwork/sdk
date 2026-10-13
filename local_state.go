@@ -75,6 +75,14 @@ type LocalState struct {
 	provideExtenderLoaded bool
 	provideExtenderStored bool
 	provideExtender       bool
+
+	// The lag.dev measurements setting, read from `.measurements_enabled` once
+	// and cached after (lag.dev/PLAN.md C4), and whether the space stores one
+	// at all. Guarded by measurementsEnabledLock as the setting above is.
+	measurementsEnabledLock   sync.Mutex
+	measurementsEnabledLoaded bool
+	measurementsEnabledStored bool
+	measurementsEnabled       bool
 }
 
 // One immutable read generation of the persisted
@@ -1170,7 +1178,8 @@ const extenderMeasurementKeyFileName = "extender-measurement-key.pem"
 // address's holds and failure history, imported share codes, the operator's
 // last country), the gossip role (.extender_gossip_mode), the extender
 // identity (.extender_key), the provider extender setting (.provide_extender),
-// whose in-memory copy therefore stays true, and the lag.dev measurement key
+// whose in-memory copy therefore stays true, the lag.dev measurements setting
+// (.measurements_enabled), likewise, and the lag.dev measurement key
 // (extender-measurement-key.pem). The measurement certificate is named by the
 // extender's id, which the kept identity keeps, so a new key after a sign-out
 // would only have the operator issue the same name again. Manual extender
@@ -1182,6 +1191,7 @@ func keptAcrossSignOut(name string) bool {
 		extenderGossipModeFileName,
 		extenderKeyFileName,
 		provideExtenderFileName,
+		measurementsEnabledFileName,
 		extenderMeasurementKeyFileName:
 		return true
 	default:

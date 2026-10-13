@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -236,16 +237,6 @@ func (self *testProvideMeasurementOperator) certPollCount() int {
 	return self.certPolls
 }
 
-// Sets the measurement switch for one test.
-func testSetExtenderMeasurement(t *testing.T, enabled bool) {
-	t.Helper()
-	previous := extenderMeasurementEnabled
-	extenderMeasurementEnabled = enabled
-	t.Cleanup(func() {
-		extenderMeasurementEnabled = previous
-	})
-}
-
 // A short certificate poll for one test: a read once the request has landed,
 // and soon after on a backoff.
 func testShortenExtenderLagLifecycle(t *testing.T) {
@@ -386,7 +377,6 @@ func testWaitProvideMeasurementCertificate(t *testing.T, measurementCert *extend
 // another key signed is refused as a ticket: the API trusts the space's root
 // keys.
 func TestDeviceLocalProviderExtenderMeasurementAdmitsATicket(t *testing.T) {
-	testSetExtenderMeasurement(t, true)
 	testShortenExtenderLagLifecycle(t)
 	fixture, measurement := newTestProvideMeasurementFixture(t, nil, nil)
 	role := fixture.extender()
@@ -431,28 +421,169 @@ func TestDeviceLocalProviderExtenderMeasurementAdmitsATicket(t *testing.T) {
 	}
 }
 
-// With measurement off the role keeps no measurement key, asks for no
-// certificate and never reads the certificate route.
-func TestDeviceLocalProviderExtenderMeasurementOff(t *testing.T) {
-	testSetExtenderMeasurement(t, false)
+// Reads one session's messages until it closes, and returns how it closed.
+func testProvideMeasurementSessionClose(t *testing.T, conn *websocket.Conn) *websocket.CloseError {
+	t.Helper()
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			closeErr := &websocket.CloseError{}
+			if !errors.As(err, &closeErr) {
+				t.Fatalf("the session ended without a close: %v", err)
+			}
+			return closeErr
+		}
+	}
+}
+
+// Opens a lag session that stays open, and returns its connection once the
+// extender has said hello.
+func testOpenProvideMeasurementSessionConn(
+	t *testing.T,
+	tcpPort int,
+	name string,
+	rootCas *x509.CertPool,
+	ticketText string,
+) (*websocket.Conn, error) {
+	t.Helper()
+	dialer := &websocket.Dialer{
+		NetDialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", tcpPort))
+		},
+		TLSClientConfig:  &tls.Config{RootCAs: rootCas},
+		HandshakeTimeout: 30 * time.Second,
+	}
+	header := http.Header{}
+	header.Set("Origin", testProvideMeasurementOrigin)
+	conn, _, err := dialer.Dial("wss://"+name+"/lag/v1/session?ticket="+url.QueryEscape(ticketText), header)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() {
+		conn.Close()
+	})
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	_, messageBytes, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := map[string]any{}
+	if err := json.Unmarshal(messageBytes, &message); err != nil {
+		t.Fatal(err)
+	}
+	if message["type"] != "hello" {
+		t.Fatalf("session answer = %v, expected hello", message)
+	}
+	return conn, nil
+}
+
+// The owner's measurements setting applies to a running role at once
+// (lag.dev/PLAN.md C4): off takes the certificate down, so a session open
+// under the measurement name is closed and a new one is refused, and the pass
+// it asks for at once tells the operator; on asks for the certificate anew in
+// the pass it asks for, and the role serves sessions again.
+func TestDeviceLocalProviderExtenderMeasurementsToggleAtRuntime(t *testing.T) {
 	testShortenExtenderLagLifecycle(t)
 	fixture, measurement := newTestProvideMeasurementFixture(t, nil, nil)
 	role := fixture.extender()
-	if role == nil || role.measurementCert != nil {
-		t.Fatal("a measurement certificate with measurement off")
+	if !fixture.device.GetMeasurementsEnabled() {
+		t.Fatal("measurements are off by default")
 	}
-	// both families post in one pass, and the second would carry a request
+	fixture.waitPost()
+	if post := fixture.waitPost(); post.args.MeasurementCsr == "" {
+		t.Fatal("the activation after the first carried no request")
+	}
+	name := connect.ExtenderMeasurementName(measurement.extenderId, "")
+	testWaitProvideMeasurementCertificate(t, role.measurementCert)
+	rootCas := x509.NewCertPool()
+	rootCas.AddCert(measurement.caCertificate)
+	conn, err := testOpenProvideMeasurementSessionConn(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.device.SetMeasurementsEnabled(false)
+	if fixture.device.GetMeasurementsEnabled() {
+		t.Fatal("the setting did not take")
+	}
+	if closeErr := testProvideMeasurementSessionClose(t, conn); closeErr.Code != websocket.CloseGoingAway {
+		t.Fatalf("the open session closed with %d %q, expected going away", closeErr.Code, closeErr.Text)
+	}
+	if _, err := testOpenProvideMeasurementSessionConn(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost)); err == nil {
+		t.Fatal("a session was admitted after opting out")
+	}
+	// the pass asked for at once says so on every post, and asks for nothing
 	for range 2 {
-		if post := fixture.waitPost(); post.args.MeasurementCsr != "" {
-			t.Fatal("an activation carried a request with measurement off")
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the opt-out alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
 		}
 	}
-	if count := measurement.certPollCount(); count != 0 {
-		t.Fatalf("the certificate route was read %d times", count)
+
+	version, _ := role.measurementCert.ChangeMonitor().Get()
+	fixture.device.SetMeasurementsEnabled(true)
+	if post := fixture.waitPost(); post.args.MeasurementDisabled || post.args.MeasurementCsr == "" {
+		t.Fatalf("post = disabled %t, request %q, expected the request again", post.args.MeasurementDisabled, post.args.MeasurementCsr)
 	}
-	keyFile := filepath.Join(fixture.networkSpace.asyncLocalState.GetLocalState().localStorageDir, extender.ExtenderMeasurementKeyFileName)
-	if _, err := os.Stat(keyFile); err == nil {
-		t.Fatal("a measurement key was kept with measurement off")
+	waitTestProvideMeasurementChange(t, role.measurementCert, version)
+	testWaitProvideMeasurementCertificate(t, role.measurementCert)
+	if _, err := testOpenProvideMeasurementSessionConn(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost)); err != nil {
+		t.Fatalf("no session after opting back in: %v", err)
+	}
+}
+
+// The role reads the setting as it starts: a role started with measurements
+// off keeps the measurement key, says measurement_disabled from its first post,
+// asks for no certificate and reads none.
+func TestDeviceLocalProviderExtenderMeasurementsOffAtStart(t *testing.T) {
+	testShortenExtenderLagLifecycle(t)
+	fixture, measurement := newTestProvideMeasurementFixture(t, nil, nil)
+	fixture.waitPost()
+	fixture.waitPost()
+
+	// off, then the role started again
+	fixture.device.SetMeasurementsEnabled(false)
+	fixture.waitPost()
+	fixture.waitPost()
+	fixture.device.SetProvideExtender(false)
+	if role := fixture.extender(); role != nil {
+		t.Fatal("the role still runs with the provider extender setting off")
+	}
+	polls := measurement.certPollCount()
+	fixture.device.SetProvideExtender(true)
+	fixture.waitPass()
+	role := fixture.extender()
+	if role == nil || role.measurementCert == nil || role.measurementCert.Enabled() {
+		t.Fatal("the restarted role did not start with measurements off")
+	}
+	for range 2 {
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the opt-out alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+	if names, certificate := role.measurementCert.Certificate(); names != nil || certificate != nil {
+		t.Fatal("a certificate was served with measurements off")
+	}
+	if count := measurement.certPollCount(); count != polls {
+		t.Fatalf("the certificate route was read %d times with measurements off", count-polls)
+	}
+}
+
+// Waits for the role's certificate to change after `version`.
+func waitTestProvideMeasurementChange(t *testing.T, measurementCert *extender.ExtenderMeasurementCert, version uint64) {
+	t.Helper()
+	for {
+		current, change := measurementCert.ChangeMonitor().Get()
+		if version < current {
+			return
+		}
+		select {
+		case <-change:
+		case <-time.After(60 * time.Second):
+			t.Fatal("the measurement certificate did not change")
+		}
 	}
 }
 
@@ -460,7 +591,6 @@ func TestDeviceLocalProviderExtenderMeasurementOff(t *testing.T) {
 // whatever the embedder supplied, or new at every start -- so the role serves
 // no measurement API and asks for no certificate.
 func TestDeviceLocalProviderExtenderMeasurementNeedsAKeptIdentity(t *testing.T) {
-	testSetExtenderMeasurement(t, true)
 	testShortenExtenderLagLifecycle(t)
 	fixture, measurement := newTestProvideMeasurementFixture(t, newTestProvideExtenderUrlSpace, nil)
 	if fixture.networkSpace.asyncLocalState != nil {
@@ -470,9 +600,11 @@ func TestDeviceLocalProviderExtenderMeasurementNeedsAKeptIdentity(t *testing.T) 
 	if role == nil || role.measurementCert != nil {
 		t.Fatal("a measurement certificate on a space with no identity file")
 	}
+	// and no opt-out either: with no identity file there is no name to
+	// withdraw
 	for range 2 {
-		if post := fixture.waitPost(); post.args.MeasurementCsr != "" {
-			t.Fatal("an activation carried a request with no identity file")
+		if post := fixture.waitPost(); post.args.MeasurementCsr != "" || post.args.MeasurementDisabled {
+			t.Fatal("an activation carried a request or an opt-out with no identity file")
 		}
 	}
 	if count := measurement.certPollCount(); count != 0 {
