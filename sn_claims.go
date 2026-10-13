@@ -899,6 +899,22 @@ func snNeedsGasMessage(maxCost *big.Int, balance *big.Int, gasKey *SnGasKey) str
 	return fmt.Sprintf("%s: this claim needs up to %s of gas, the gas key %s has %s; send TAO to %s", SnErrorCodeNeedsGas, snFormatTao(maxCost), gasKey.Address, snFormatTao(balance), gasKey.MirrorSs58)
 }
 
+// snClaimGasFloor is the least gas limit a v1 claim is signed with: the most
+// a claim needed before runtime 478 for its payment, with about 6% to spare
+// (VERSION2-LAUNCH.md §2.6). The vault pays a claim only if the runtime
+// admits its stake transfer, and below that it accepts the claim and defers
+// the payment (ClaimPaymentDeferred), so eth_estimateGas, which finds the
+// least gas that succeeds, sizes the deferral. Measured on nodes built from
+// runtimes 475 and 477 (sn scripts/runtime-rehearsal), with sn 9918b71c's
+// STSettlementVault and a depth-11 proof, beyond a v1 root's 2,000 accounts:
+// a claim was estimated at 515,668 to 563,837 gas and deferred at that plus a
+// quarter, and needed up to 2,512,208 gas to pay for a later claim of an
+// epoch, 2,529,254 for an epoch's first and 2,546,625 for the vault's first.
+// Runtime 478 admits the transfer against the vault's own StakingHotkeys list,
+// 8,750 gas an entry, which third parties can lengthen between an estimate
+// and the claim's inclusion.
+const snClaimGasFloor uint64 = 2_700_000
+
 // snSignClaim signs a claim of data to `to` with the gas limit gas, from the
 // gas key, at the chain's current price: EIP-1559 at twice the base fee plus
 // the tip when txType asks for it and the chain has a base fee, else legacy
@@ -971,7 +987,8 @@ func (self *snClaimEngine) send(ctx context.Context, key *secp.PrivateKey, epoch
 		callback.Failed(epoch, snFailMessage(err))
 		return
 	}
-	gas += gas / 4
+	// the estimate plus a quarter, and never less than a claim needs to pay
+	gas = max(gas+gas/4, snClaimGasFloor)
 	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault, data, gas)
 	if err != nil {
 		callback.Failed(epoch, snFailMessage(err))

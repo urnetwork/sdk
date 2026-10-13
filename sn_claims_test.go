@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/urnetwork/sdk/sn/evm"
 	"github.com/urnetwork/sdk/sn/merkle"
 	"github.com/urnetwork/sdk/sn/ss58"
@@ -168,6 +169,10 @@ type fakeChain struct {
 	policy     []uint64
 	// the head block's unix time
 	headTime uint64
+	// eth_estimateGas's answer, 100,000 when 0, and the gas key's balance, 1
+	// TAO when nil
+	estimate uint64
+	balance  *big.Int
 }
 
 func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *evm.RpcError) {
@@ -179,10 +184,16 @@ func (self *fakeChain) handle(method string, params []json.RawMessage) (any, *ev
 	case "eth_gasPrice":
 		return "0x3b9aca00", nil
 	case "eth_getBalance":
+		if self.balance != nil {
+			return evm.HexQuantity(self.balance), nil
+		}
 		return "0xde0b6b3a7640000", nil // 1 TAO
 	case "eth_getTransactionCount":
 		return "0x5", nil
 	case "eth_estimateGas":
+		if self.estimate != 0 {
+			return evm.HexQuantity(new(big.Int).SetUint64(self.estimate)), nil
+		}
 		return "0x186a0", nil
 	case "eth_getBlockByNumber":
 		return map[string]any{
@@ -478,6 +489,140 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 	engine.send(context.Background(), key, 5, cb)
 	if len(cb.failed) != 1 || !strings.HasPrefix(cb.failed[0].message, SnErrorCodeAlreadyClaimed) {
 		t.Fatalf("claimed epoch: %+v", cb.failed)
+	}
+}
+
+// testV1Claim is alice's claimable share of v1 epoch 7, 1,234 basis points of
+// 1 alpha, the fixture of TestClaimsEngineEndToEnd reduced to that epoch.
+type testV1Claim struct {
+	engine *snClaimEngine
+	chain  *fakeChain
+	key    *secp.PrivateKey
+}
+
+func newTestV1Claim(t *testing.T) *testV1Claim {
+	t.Helper()
+	alice, bob := testColdkey(1), testColdkey(0x40)
+	aliceSs58, err := ss58.Encode(alice, SnSs58Prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw7, hash7, root7 := buildTestArtifact(t, 7, 3, [][32]byte{alice, bob}, []uint64{1234, 8766})
+	artifactServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sn/artifact" || strings.TrimPrefix(r.URL.Query().Get("hash"), "sha256:") != hex.EncodeToString(hash7[:]) {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(raw7)
+	}))
+	t.Cleanup(artifactServer.Close)
+	vault, _ := evm.ParseAddress("0x2222222222222222222222222222222222222222")
+	coordinator, _ := evm.ParseAddress("0x1111111111111111111111111111111111111111")
+	chain := &fakeChain{
+		t: t, block: 1000, currentEpoch: 9, vault: vault, coordinator: coordinator,
+		entitlements: map[int64]*evm.Entitlement{
+			7: {PayoutRoot: root7, ArtifactHash: hash7, Funded: big.NewInt(1_000_000_000), Total: big.NewInt(1_000_000_000), Claimed: big.NewInt(0), ExpiryBlock: 5000, Status: evm.StatusFinalized},
+		},
+		claimed:  map[string]bool{},
+		receipts: map[string]bool{},
+	}
+	chainServer := httptest.NewServer(chain)
+	t.Cleanup(chainServer.Close)
+	settings := SnTestnetChainSettings()
+	settings.SetRpcUrls(nil)
+	settings.AddRpcUrl(chainServer.URL)
+	settings.VaultAddress = "0x2222222222222222222222222222222222222222"
+	settings.CoordinatorAddress = "0x1111111111111111111111111111111111111111"
+	settings.NoId = "3"
+	settings.ArtifactBaseUrl = artifactServer.URL
+	engine, snErr := newSnClaimEngine(settings, aliceSs58, "", nil, nil, nil)
+	if snErr != nil {
+		t.Fatal(snErr.Message)
+	}
+	key, err := evm.PrivateKeyFromHex("0x4646464646464646464646464646464646464646464646464646464646464646")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &testV1Claim{engine: engine, chain: chain, key: key}
+}
+
+// send claims epoch 7 with the gas key and returns the progress and the
+// transactions the chain received, decoded.
+func (self *testV1Claim) send(t *testing.T) (*recordingClaimCallback, []*fakeVault2Tx) {
+	t.Helper()
+	callback := &recordingClaimCallback{}
+	self.engine.send(context.Background(), self.key, 7, callback)
+	var sent []*fakeVault2Tx
+	for _, raw := range self.chain.sent {
+		tx, err := decodeTestTx(raw, big.NewInt(SnChainIdTestnet))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sent = append(sent, tx)
+	}
+	return callback, sent
+}
+
+// VERSION2-LAUNCH.md §2.6, the sizing rule on 478, for v1 claims: the gas
+// limit is eth_estimateGas's plus a quarter, and at least snClaimGasFloor,
+// 2,700,000, however low the estimate. Below the floor the vault accepts a
+// claim but defers its payment, and the estimate finds that.
+func TestSnClaimGasLimitFromTheEstimate(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		estimate uint64
+		want     uint64
+	}{
+		// runtime 477's estimate of a later claim of an epoch, which defers
+		{"a low estimate is signed at the floor", 515_668, 2_700_000},
+		{"a quarter one gas short of the floor", 2_159_999, 2_700_000},
+		{"a quarter that makes the floor", 2_160_000, 2_700_000},
+		{"a quarter one gas above the floor", 2_160_001, 2_700_001},
+		{"a high estimate is unchanged", 2_800_000, 3_500_000},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newTestV1Claim(t)
+			f.chain.estimate = c.estimate
+			callback, sent := f.send(t)
+			if len(callback.failed) != 0 || len(callback.confirmed) != 1 || len(sent) != 1 || sent[0].gas != c.want {
+				t.Fatalf("progress %+v, sent %+v, want a gas limit of %d", callback, sent, c.want)
+			}
+		})
+	}
+}
+
+// VERSION2-LAUNCH.md §2.6, for v1 claims: the gas key must hold the limit the
+// claim is signed with × the price, under a low estimate the floor's cost. A
+// gas key that covers the estimate with its quarter, or the floor less one
+// wei, is needs_gas with nothing sent; one that holds the floor × the price
+// sends the claim at the floor. At the fixture's 1 gwei gas price a legacy
+// claim is priced at 1.1 gwei, 0.00297 TAO at the floor.
+func TestSnClaimNeedsGasAtTheFloor(t *testing.T) {
+	price := big.NewInt(1_100_000_000)
+	floorCost := new(big.Int).Mul(big.NewInt(2_700_000), price)
+	estimateCost := new(big.Int).Mul(big.NewInt(515_668+128_917), price)
+	for _, balance := range []*big.Int{estimateCost, new(big.Int).Sub(floorCost, big.NewInt(1))} {
+		f := newTestV1Claim(t)
+		f.chain.estimate = 515_668
+		f.chain.balance = balance
+		callback, sent := f.send(t)
+		gasKey := snGasKeyInfo(f.key)
+		want := snNeedsGasMessage(floorCost, balance, gasKey)
+		if len(callback.failed) != 1 || callback.failed[0].epoch != 7 || callback.failed[0].message != want || len(callback.sent) != 0 || len(sent) != 0 {
+			t.Fatalf("with %s wei: progress %+v, %d sent, want %q", balance, callback, len(sent), want)
+		}
+		if !strings.HasPrefix(want, SnErrorCodeNeedsGas+": this claim needs up to 0.002970 TAO of gas, the gas key "+gasKey.Address) {
+			t.Fatalf("message %q", want)
+		}
+	}
+
+	f := newTestV1Claim(t)
+	f.chain.estimate = 515_668
+	f.chain.balance = floorCost
+	callback, sent := f.send(t)
+	if len(callback.failed) != 0 || len(callback.confirmed) != 1 || len(sent) != 1 || sent[0].gas != 2_700_000 || sent[0].dynamic || sent[0].gasPrice.Cmp(price) != 0 {
+		t.Fatalf("with exactly the floor × the price: progress %+v, sent %+v", callback, sent)
 	}
 }
 
