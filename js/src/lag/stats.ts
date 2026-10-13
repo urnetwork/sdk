@@ -668,6 +668,17 @@ export class LagIntervalSeries {
     return this.sums[index] ?? 0;
   }
 
+  /**
+   * Mark `ms` after the first byte as passed, with no more bytes: a window
+   * that closed then counts its last intervals even when they stayed empty.
+   */
+  extendTo(ms: number): void {
+    if (!Number.isFinite(ms)) {
+      throw new RangeError(`ms must be finite, got ${ms}`);
+    }
+    this.endMs = Math.max(this.endMs, ms);
+  }
+
   /** `bytes` that arrived `ms` after the first byte. */
   addAt(ms: number, bytes: number): void {
     if (!Number.isFinite(ms)) {

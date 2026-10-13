@@ -265,8 +265,6 @@ export function openLagSession(options: LagSessionOptions): LagSession {
 
 // a load direction with no first byte by then has failed
 const FIRST_BYTE_TIMEOUT_MS = 10_000;
-// download streams still open this long past downloadMs from the first byte are cut
-const DOWNLOAD_GRACE_MS = 2_000;
 // how long the upload waits for the extender's report that closes its window
 const UPLOAD_SETTLE_MS = 2_000;
 // how long the load waits for the extender's loadResult after done
@@ -705,7 +703,15 @@ class LagLoadRun {
   private doneEmitted = false;
   private result: { uploadVerified: boolean; endReason: string } | null = null;
   private readonly resultArrived = deferred<void>();
+  // imported while the download runs, so the upload need not wait for it
+  private uploadKey?: Promise<CryptoKey>;
   private readonly downloadAbort = new AbortController();
+  private readonly downloadReaders = new Set<ReadableStreamDefaultReader<Uint8Array>>();
+  // resolves downloadMs after the download's first byte, when its window ends
+  private readonly downloadWindow = deferred<void>();
+  private downloadWindowEnded = false;
+  // no byte counts once the download is over
+  private downloadClosed = false;
   private readonly sockets = new Set<WebSocket>();
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private downloadTick?: ReturnType<typeof setTimeout>;
@@ -741,6 +747,9 @@ class LagLoadRun {
       const intervals = (ms: number) => Math.max(1, Math.ceil(ms / hello.intervalMs));
       this.download = new LagIntervalSeries({ intervalMs: hello.intervalMs, maxIntervals: intervals(hello.downloadMs) });
       this.upload = new LagIntervalSeries({ intervalMs: hello.intervalMs, maxIntervals: intervals(hello.uploadMs) });
+      this.uploadKey = importLagUploadKey(hello.uploadKey);
+      // a bad key fails the upload when it starts, not before
+      this.uploadKey.catch(() => undefined);
       await this.runDownload();
       if (!this.ended) {
         await this.runUpload();
@@ -819,7 +828,7 @@ class LagLoadRun {
       // the extender ended the load first, e.g. on an upload mismatch
       this.ended = true;
       this.uploadStopped = true;
-      this.downloadAbort.abort();
+      this.closeDownload();
       this.closeSockets();
       this.emitDone();
       this.early.resolve(EARLY);
@@ -838,7 +847,7 @@ class LagLoadRun {
     }
     this.stopError = error;
     this.uploadStopped = true;
-    this.downloadAbort.abort();
+    this.closeDownload();
     this.closeSockets();
     // before the session's closed event, when that is what stopped it
     this.emitDone();
@@ -895,23 +904,26 @@ class LagLoadRun {
   }
 
   // M5: maxStreams fetches at once, chunks counted and dropped, `received`
-  // every interval from the first byte.
+  // every interval from the first byte. The download ends downloadMs after
+  // its first byte, or sooner when every stream has ended (a byte cap): the
+  // final `received` goes out, streams still delivering are cut, and the
+  // upload starts at once. Waiting for trailing bytes would push every
+  // later load in the track back (S5).
   private async runDownload(): Promise<void> {
     const { maxStreams } = this.hello;
     this.session.send({ type: "load", phase: "download" });
     const firstByteGuard = this.timeout(FIRST_BYTE_TIMEOUT_MS, () => {
       if (this.downloadFirst === undefined) {
-        this.downloadAbort.abort();
+        this.closeDownload();
       }
     });
     const streams: Promise<void>[] = [];
     for (let k = 0; k < maxStreams; k += 1) {
       streams.push(this.downloadStream(k));
     }
-    const outcome = await this.until(Promise.all(streams));
+    const outcome = await this.until(Promise.race([Promise.all(streams), this.downloadWindow.promise]));
     this.clearTimer(firstByteGuard);
-    this.downloadAbort.abort();
-    clearTimeout(this.downloadTick);
+    this.closeDownload();
     if (this.downloadFirst !== undefined) {
       const ms = monotonicNow() - this.downloadFirst;
       this.session.send({ type: "received", bytes: this.downloadBytes, ms: Math.round(ms) });
@@ -959,11 +971,16 @@ class LagLoadRun {
 
   private async readDownload(body: ReadableStream<Uint8Array>): Promise<void> {
     const reader = body.getReader();
+    if (this.downloadClosed) {
+      reader.cancel().catch(() => undefined);
+      return;
+    }
+    this.downloadReaders.add(reader);
     let counted = false;
     try {
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) {
+        if (done || this.downloadClosed) {
           return;
         }
         if (!counted) {
@@ -975,6 +992,7 @@ class LagLoadRun {
     } catch {
       // aborted, or the stream broke: what arrived counts
     } finally {
+      this.downloadReaders.delete(reader);
       try {
         reader.releaseLock();
       } catch {
@@ -984,11 +1002,17 @@ class LagLoadRun {
   }
 
   private onDownloadChunk(bytes: number): void {
+    if (this.downloadClosed) {
+      return;
+    }
     const now = monotonicNow();
     if (this.downloadFirst === undefined) {
       this.downloadFirst = now;
       this.downloadStartedAt = epochNow();
-      this.timeout(this.hello.downloadMs + DOWNLOAD_GRACE_MS, () => this.downloadAbort.abort());
+      this.timeout(this.hello.downloadMs, () => {
+        this.downloadWindowEnded = true;
+        this.downloadWindow.resolve();
+      });
       this.scheduleDownloadTick(1);
       this.emitPhase("download", this.downloadStartedAt);
     }
@@ -996,10 +1020,37 @@ class LagLoadRun {
     this.downloadBytes += bytes;
   }
 
-  // Ticks fall on whole intervals from the first byte, without drift.
+  // End the download: nothing more counts, every stream still delivering is
+  // cut (its reader cancelled, its fetch aborted), and a window that ran to
+  // its end keeps its last intervals even if they stayed empty.
+  private closeDownload(): void {
+    if (this.downloadClosed) {
+      return;
+    }
+    this.downloadClosed = true;
+    clearTimeout(this.downloadTick);
+    for (const reader of this.downloadReaders) {
+      reader.cancel().catch(() => undefined);
+    }
+    this.downloadReaders.clear();
+    this.downloadAbort.abort();
+    if (this.downloadWindowEnded && this.download !== undefined) {
+      this.download.extendTo(this.hello.downloadMs);
+    }
+  }
+
+  // Ticks fall on whole intervals from the first byte, without drift. A
+  // tick's own events can end the download (a handler may close the
+  // session), so a closed download schedules no more.
   private scheduleDownloadTick(k: number): void {
+    if (this.downloadClosed) {
+      return;
+    }
     const due = this.downloadFirst! + k * this.hello.intervalMs;
     this.downloadTick = setTimeout(() => {
+      if (this.downloadClosed) {
+        return;
+      }
       const ms = monotonicNow() - this.downloadFirst!;
       this.session.send({ type: "received", bytes: this.downloadBytes, ms: Math.round(ms) });
       this.reportDownload(ms, false);
@@ -1036,7 +1087,7 @@ class LagLoadRun {
     const { maxStreams } = this.hello;
     let key: CryptoKey;
     try {
-      key = await importLagUploadKey(this.hello.uploadKey);
+      key = await this.uploadKey!;
     } catch (error) {
       this.sendDone();
       throw new LagSessionError("protocol", "the extender's upload key is not 16 bytes", { cause: error });
@@ -1068,12 +1119,13 @@ class LagLoadRun {
   }
 
   private async uploadStream(k: number, key: CryptoKey): Promise<void> {
+    // the first chunks of keystream generate while the socket connects
+    const keystream = new LagKeystream(key, k);
     const socket = await this.openUploadSocket(k);
     if (socket === null) {
       return;
     }
     this.uploadStreams += 1;
-    const keystream = new LagKeystream(key, k);
     const flow: UploadFlow = {
       sent: 0,
       drained: 0,
@@ -1221,9 +1273,8 @@ class LagLoadRun {
       clearTimeout(timer);
     }
     this.timers.clear();
-    clearTimeout(this.downloadTick);
     this.uploadStopped = true;
-    this.downloadAbort.abort();
+    this.closeDownload();
     this.closeSockets();
   }
 

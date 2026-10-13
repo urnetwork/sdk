@@ -120,10 +120,11 @@ test("a load runs the download, then the upload, while the pings go on", { timeo
     assert.equal(result.endReason, "complete");
     assert.deepEqual(ofType(events, "loadResult")[0].result, result);
 
-    // download: four streams at once, every byte the extender wrote, per interval
+    // download: four streams at once, what arrived inside the window, per
+    // interval; the extender's last writes may land just past it
     assert.equal(record.maxConcurrentDownloads, 4);
     assert.equal(result.download.streams, 4);
-    assert.equal(result.download.bytes, record.downloadBytes);
+    assert.ok(0 < result.download.bytes && result.download.bytes <= record.downloadBytes);
     assert.equal(result.download.mbps.length, 4);
     assert.equal(result.download.intervalBytes.length, 4);
     const inIntervals = result.download.intervalBytes.reduce((a, b) => a + b, 0);
@@ -214,6 +215,72 @@ for (const code of ["busy", "budget"] as const) {
     });
   });
 }
+
+test("the download ends at its window: streams still delivering are cut and the upload starts at once", { timeout: 30_000 }, async () => {
+  // The extender keeps writing every stream 3 s past a 2 s window; a gentle
+  // pace keeps the mock, which shares this event loop, from delaying
+  // timers. A 500 ms interval leaves room for a busy machine's scheduling
+  // in a bound of one interval.
+  const options = {
+    hello: { intervalMs: 500, downloadMs: 2000 },
+    downloadOverrunMs: 3000,
+    downloadPauseMs: 20,
+    uploadBytesPerSecond: 4 << 20,
+  };
+  await withMock(options, async (mock) => {
+    // The window end as this process sees it: a timer due when the window
+    // closes, set as the download's first byte arrives. A busy machine fires
+    // it late exactly as it fires the client's own, so measuring from it
+    // leaves only the client's delay.
+    let observedEnd: number | undefined;
+    const { session, events } = open(mock, "ticket-overrun", {
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === "load" && event.phase === "download") {
+          const due = event.at + session.hello!.downloadMs;
+          setTimeout(() => {
+            observedEnd = Date.now();
+          }, due - Date.now());
+        }
+      },
+    });
+    const hello = await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    const phases = ofType(events, "load");
+    assert.deepEqual(phases.map((event) => event.phase), ["download", "upload", "done"]);
+    assert.equal(result.endReason, "complete");
+    assert.equal(result.uploadVerified, true);
+
+    // the upload's first message goes out within an interval of the
+    // download window's end, downloadMs from its first byte
+    const windowEnd = result.download.startedAt! + hello.downloadMs;
+    const gap = phases[1].at - windowEnd;
+    assert.ok(observedEnd !== undefined);
+    const reaction = phases[1].at - observedEnd;
+    assert.ok(reaction <= hello.intervalMs, `the upload began ${reaction} ms after the window was seen to end (${gap} ms by the clock)`);
+    // and nowhere near the 2 s a client that waited out trailing bytes would take
+    assert.ok(-2 <= gap && gap < 1500, `the upload began ${gap} ms after the download window`);
+    assert.equal(phases[1].at, result.upload.startedAt);
+
+    // every stream was still delivering, and the browser cut each one
+    assert.equal(record.downloadCutByBrowser, 4);
+    assert.ok(result.download.bytes < record.downloadBytes);
+    // the final report went out as the window ended, with all that was read
+    const last = record.received.at(-1)!;
+    assert.equal(last.bytes, result.download.bytes);
+    const seenEndMs = observedEnd - result.download.startedAt!;
+    assert.ok(
+      hello.downloadMs - 5 <= last.ms && last.ms <= seenEndMs + hello.intervalMs,
+      `final received at ${last.ms} ms, the window seen to end at ${seenEndMs} ms`,
+    );
+    // the series holds the window's intervals and nothing past it
+    assert.equal(result.download.mbps.length, hello.downloadMs / hello.intervalMs);
+    const inIntervals = result.download.intervalBytes.reduce((a, b) => a + b, 0);
+    assert.ok(0 < inIntervals && inIntervals <= result.download.bytes);
+    session.close();
+  });
+});
 
 test("an upload mismatch ends the load unverified, and the session goes on", { timeout: 30_000 }, async () => {
   await withMock({ verifyKey: randomBytes(16) }, async (mock) => {
@@ -519,19 +586,15 @@ test("a load's streams keep the host's port, and a bufferedAmount that never cou
       }
     }
   }
-  // a download stream of a few chunks over about 100 ms
+  // a download stream of five chunks, all at once, then its end
   const fakeFetch = async (input: string | URL | Request) => {
     fetchUrls.push(String(input));
-    let chunks = 0;
     const body = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        if (chunks === 5) {
-          controller.close();
-          return;
+      start(controller) {
+        for (let i = 0; i < 5; i += 1) {
+          controller.enqueue(new Uint8Array(1000));
         }
-        chunks += 1;
-        await sleep(20);
-        controller.enqueue(new Uint8Array(1000));
+        controller.close();
       },
     });
     return new Response(body, { status: 200 });

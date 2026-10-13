@@ -271,6 +271,12 @@ export interface MockExtenderOptions {
   uploadBytesPerSecond?: number;
   /** answer the first download request of each stream with this status, once */
   firstDownloadStatus?: number;
+  /**
+   * Keep writing each download stream this long past the window, whatever
+   * the browser's load phase, as an extender whose bytes are still in
+   * flight would deliver them.
+   */
+  downloadOverrunMs?: number;
   /** never answer the upgrade of this upload stream, as if its packets were lost */
   holdUploadStream?: number;
 }
@@ -290,6 +296,8 @@ export interface MockSessionRecord {
   downloadRequests: number;
   downloadRefused: number;
   downloadStreams: number;
+  /** download streams the browser closed while the extender was still writing */
+  downloadCutByBrowser: number;
   maxConcurrentDownloads: number;
   downloadBytes: number;
   uploadStreams: number;
@@ -348,6 +356,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
   const usedTickets = new Set<string>();
   const firstDownloadAnswered = new Set<string>();
   const held = new Set<Duplex>();
+  const closedByMock = new WeakSet<ServerResponse>();
   let open = 0;
 
   const later = (state: SessionState, ms: number, action: () => void) => {
@@ -371,6 +380,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     state.phase = "ended";
     clearInterval(state.uploadReporter);
     for (const response of state.downloads) {
+      closedByMock.add(response);
       response.destroy();
     }
     for (const upload of state.uploads) {
@@ -394,6 +404,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     }
     clearInterval(state.uploadReporter);
     for (const response of state.downloads) {
+      closedByMock.add(response);
       response.destroy();
     }
     for (const upload of state.uploads) {
@@ -514,6 +525,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       lost: 0,
       downloadRequests: 0,
       downloadRefused: 0,
+      downloadCutByBrowser: 0,
       downloadStreams: 0,
       maxConcurrentDownloads: 0,
       downloadBytes: 0,
@@ -603,30 +615,41 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     record.maxConcurrentDownloads = Math.max(record.maxConcurrentDownloads, state.downloads.size);
     res.writeHead(200, { "Content-Type": "application/octet-stream", "Cache-Control": "no-store" });
     const cipher: Cipher = createCipheriv("aes-128-ctr", randomBytes(16), Buffer.alloc(16));
+    const overrunMs = options.downloadOverrunMs;
     let done = false;
     const finish = () => {
       done = true;
       state.downloads.delete(res);
     };
-    res.on("close", finish);
+    const endHere = () => {
+      closedByMock.add(res);
+      res.end();
+      finish();
+    };
+    res.on("close", () => {
+      if (!done && !res.writableEnded && !closedByMock.has(res)) {
+        record.downloadCutByBrowser += 1;
+      }
+      finish();
+    });
     req.on("close", () => {
       if (!res.writableEnded) {
         finish();
       }
     });
     const write = () => {
-      if (done || state.phase !== "download") {
-        if (!done) {
-          res.end();
-          finish();
-        }
+      if (done) {
+        return;
+      }
+      const over = overrunMs === undefined ? state.phase !== "download" : state.phase === "ended" || state.closed;
+      if (over) {
+        endHere();
         return;
       }
       const now = performance.now();
       state.downloadFirst ??= now;
-      if (hello.downloadMs <= now - state.downloadFirst) {
-        res.end();
-        finish();
+      if (hello.downloadMs + (overrunMs ?? 0) <= now - state.downloadFirst) {
+        endHere();
         return;
       }
       record.downloadBytes += ZEROS.length;
