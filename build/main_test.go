@@ -638,6 +638,16 @@ func TestMobileBuildToolsRemainPinnedAndTidy(t *testing.T) {
 	}
 }
 
+// Native ABI tests and generators own their module graph independently of gomobile.
+func TestCgoBuildModuleRemainsTidy(t *testing.T) {
+	command := exec.CommandContext(t.Context(), "go", "mod", "tidy", "-diff")
+	command.Dir = "../cgo"
+	command.Env = append(os.Environ(), "GOWORK=off")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("cgo build module is not tidy: %v\n%s", err, output)
+	}
+}
+
 // testingBuildNoError fails the current build regression test on fixture errors.
 func testingBuildNoError(t *testing.T, err error) {
 	t.Helper()
