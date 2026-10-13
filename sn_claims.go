@@ -137,6 +137,10 @@ type SnUnsignedTx struct {
 	// decimal wei, always "0"
 	Value     string `json:"value"`
 	AmountRao int64  `json:"amount_rao"`
+	// the gas limit to sign with, snClaimGasFloor (2,700,000): below it the
+	// vault accepts the claim but defers its payment, and a signer's own
+	// estimate finds that
+	Gas int64 `json:"gas"`
 }
 
 type SnUnsignedTxList struct {
@@ -850,6 +854,7 @@ func (self *snClaimEngine) unsignedTxs(ctx context.Context, epochs []int64) (*Sn
 			To:      evm.AddressHex(self.vault),
 			Data:    "0x" + hex.EncodeToString(data),
 			Value:   "0",
+			Gas:     int64(snClaimGasFloor),
 		}
 		if plan.amount.IsInt64() {
 			tx.AmountRao = plan.amount.Int64()

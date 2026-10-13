@@ -447,7 +447,8 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 		t.Fatalf("schedule %+v, want %+v", result.Schedule, wantSchedule)
 	}
 
-	// unsigned transactions for an external signer
+	// unsigned transactions for an external signer, with the gas limit to
+	// sign with: snClaimGasFloor (VERSION2-LAUNCH.md §2.6)
 	epochs := NewInt64List()
 	epochs.Add(7)
 	epochs.Add(5)
@@ -455,8 +456,11 @@ func TestClaimsEngineEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if txs.Len() != 1 || txs.Get(0).Epoch != 7 || txs.Get(0).ChainId != 945 || !strings.EqualFold(txs.Get(0).To, settings.VaultAddress) {
+	if txs.Len() != 1 || txs.Get(0).Epoch != 7 || txs.Get(0).ChainId != 945 || !strings.EqualFold(txs.Get(0).To, settings.VaultAddress) || txs.Get(0).Gas != 2_700_000 {
 		t.Fatalf("txs %+v", txs.values)
+	}
+	if raw, _ := json.Marshal(txs.Get(0)); !strings.HasSuffix(string(raw), `"amount_rao":123400000,"gas":2700000}`) {
+		t.Fatalf("json %s", raw)
 	}
 	wantData, _ := evm.PackClaim(big.NewInt(7), big.NewInt(3), alice, big.NewInt(1234), byEpoch7Proof(t, raw7))
 	if txs.Get(0).Data != "0x"+hex.EncodeToString(wantData) {

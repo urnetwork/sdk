@@ -935,6 +935,7 @@ export interface SnUnsignedTx {
   data: string;
   value: string;
   amount_rao: number;
+  gas: number;
 }
 
 export interface SnLedgerUnsignedTx {
