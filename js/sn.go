@@ -15,8 +15,8 @@ import (
 // UR protocol (subnet 25) exports for the web app. The site has no
 // DeviceLocal: it reads a coldkey's entitlements straight from the chain
 // with explicit settings and signs claims with the reader's injected EVM
-// wallet, so only the settings, the claims scan, the unsigned transactions
-// and the local address check are exposed.
+// wallet, so only the settings, the claims scan, the v2 accounts, the v1 and
+// v2 unsigned transactions and the local address check are exposed.
 
 func jsPromise(run func(resolve func(any), reject func(error))) js.Value {
 	handler := js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -50,6 +50,7 @@ func jsSnChainSettings(settings *sdk.SnChainSettings) js.Value {
 		"RpcUrls":            urls,
 		"ChainId":            settings.ChainId,
 		"VaultAddress":       settings.VaultAddress,
+		"Vault2Address":      settings.Vault2Address,
 		"CoordinatorAddress": settings.CoordinatorAddress,
 		"NoId":               settings.NoId,
 		"Netuid":             settings.Netuid,
@@ -113,6 +114,7 @@ func parseSnChainSettings(v js.Value) (*sdk.SnChainSettings, error) {
 	}
 	overrides.ChainId = num("chainid")
 	overrides.VaultAddress = str("vaultaddress")
+	overrides.Vault2Address = str("vault2address")
 	overrides.CoordinatorAddress = str("coordinatoraddress")
 	overrides.NoId = str("noid")
 	overrides.Netuid = num("netuid")
@@ -198,6 +200,32 @@ func jsSnClaimsResult(result *sdk.SnClaimsResult) js.Value {
 	})
 }
 
+// The v2 accounts as a page reads them, with the Go field names. An Error
+// means the balances are unavailable, never zero.
+func jsSnLedgerAccountsResult(result *sdk.SnLedgerAccountsResult) js.Value {
+	accounts := []any{}
+	if result.Accounts != nil {
+		for i := 0; i < result.Accounts.Len(); i++ {
+			a := result.Accounts.Get(i)
+			accounts = append(accounts, map[string]any{
+				"Vault":        a.Vault,
+				"NoId":         a.NoId,
+				"Index":        a.Index,
+				"FinalizedRao": a.FinalizedRao,
+				"ClaimableRao": a.ClaimableRao,
+				"PaidRao":      a.PaidRao,
+				"Pending":      a.Pending,
+				"PendingRao":   a.PendingRao,
+			})
+		}
+	}
+	return js.ValueOf(map[string]any{
+		"Accounts":    accounts,
+		"ColdkeySs58": result.ColdkeySs58,
+		"Error":       jsSnError(result.Error),
+	})
+}
+
 func parseEpochs(v js.Value) *sdk.Int64List {
 	epochs := sdk.NewInt64List()
 	if v.IsNull() || v.IsUndefined() {
@@ -266,6 +294,26 @@ func SnClaimsFor(this js.Value, args []js.Value) any {
 	})
 }
 
+// URnetworkSnLedgerAccountsFor(settings, coldkeySs58) -> Promise<v2 accounts result>
+func SnLedgerAccountsFor(this js.Value, args []js.Value) any {
+	return jsPromise(func(resolve func(any), reject func(error)) {
+		if len(args) < 2 || args[1].Type() != js.TypeString {
+			reject(errors.New("settings and coldkey are required"))
+			return
+		}
+		settings, err := parseSnChainSettings(args[0])
+		if err != nil {
+			reject(err)
+			return
+		}
+		done := make(chan *sdk.SnLedgerAccountsResult, 1)
+		sdk.SnLedgerAccountsFor(settings, args[1].String(), connect.NewApiCallback[*sdk.SnLedgerAccountsResult](func(result *sdk.SnLedgerAccountsResult, err error) {
+			done <- result
+		}))
+		resolve(jsSnLedgerAccountsResult(<-done))
+	})
+}
+
 // URnetworkSnClaimTransactionsFor(settings, coldkeySs58, epochs) -> Promise<[{To, Data, Value, ChainId, Epoch, AmountRao}]>
 func SnClaimTransactionsFor(this js.Value, args []js.Value) any {
 	return jsPromise(func(resolve func(any), reject func(error)) {
@@ -297,6 +345,51 @@ func SnClaimTransactionsFor(this js.Value, args []js.Value) any {
 		}
 		resolve(js.ValueOf(out))
 	})
+}
+
+// URnetworkSnLedgerClaimTransactionsFor(settings, coldkeySs58) -> Promise<[{NoId, Index, RootIndex, ChainId, To, Data, Value, AmountRao}]>
+//
+// One v2 claim transaction per account with something to claim, to the
+// settings' Vault2Address, for the reader's wallet to send. It rejects with
+// "<code>: <detail>" when there is none: already_claimed, not_claimable,
+// proof_mismatch, chain_not_configured (no Vault2Address), ledger_unavailable.
+func SnLedgerClaimTransactionsFor(this js.Value, args []js.Value) any {
+	return jsPromise(func(resolve func(any), reject func(error)) {
+		if len(args) < 2 || args[1].Type() != js.TypeString {
+			reject(errors.New("settings and coldkey are required"))
+			return
+		}
+		settings, err := parseSnChainSettings(args[0])
+		if err != nil {
+			reject(err)
+			return
+		}
+		txs, err := sdk.SnLedgerClaimTransactionsFor(settings, args[1].String())
+		if err != nil {
+			reject(err)
+			return
+		}
+		resolve(jsSnLedgerUnsignedTxs(txs))
+	})
+}
+
+// The v2 claim transactions as a page reads them, with the Go field names.
+func jsSnLedgerUnsignedTxs(txs *sdk.SnLedgerUnsignedTxList) js.Value {
+	out := []any{}
+	for i := 0; i < txs.Len(); i++ {
+		tx := txs.Get(i)
+		out = append(out, map[string]any{
+			"NoId":      tx.NoId,
+			"Index":     tx.Index,
+			"RootIndex": tx.RootIndex,
+			"ChainId":   tx.ChainId,
+			"To":        tx.To,
+			"Data":      tx.Data,
+			"Value":     tx.Value,
+			"AmountRao": tx.AmountRao,
+		})
+	}
+	return js.ValueOf(out)
 }
 
 // URnetworkSnGasBalanceFor(settings, address) -> Promise<{Address, Wei, Tao, Error}>
@@ -348,7 +441,9 @@ func registerSnExports() {
 	js.Global().Set("URnetworkDefaultSnChainSettings", js.FuncOf(DefaultSnChainSettings))
 	js.Global().Set("URnetworkValidateSs58", js.FuncOf(ValidateSs58))
 	js.Global().Set("URnetworkSnClaimsFor", js.FuncOf(SnClaimsFor))
+	js.Global().Set("URnetworkSnLedgerAccountsFor", js.FuncOf(SnLedgerAccountsFor))
 	js.Global().Set("URnetworkSnClaimTransactionsFor", js.FuncOf(SnClaimTransactionsFor))
+	js.Global().Set("URnetworkSnLedgerClaimTransactionsFor", js.FuncOf(SnLedgerClaimTransactionsFor))
 	js.Global().Set("URnetworkSnGasBalanceFor", js.FuncOf(SnGasBalanceFor))
 	js.Global().Set("URnetworkFormatAlpha", js.FuncOf(FormatAlpha))
 }

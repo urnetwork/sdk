@@ -661,6 +661,26 @@ void urnet_invoke_sn_head(urnet_sn_head_cb cb, void* user_data, const char* resu
 	cb(user_data, result_json, err_param);
 }
 
+void urnet_invoke_sn_ledger_accounts(urnet_sn_ledger_accounts_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_ledger_claim_confirmed(urnet_sn_ledger_claim_confirmed_cb cb, void* user_data, int64_t no_id, int64_t index, const char* tx_hash, int64_t amount_rao) {
+	cb(user_data, no_id, index, tx_hash, amount_rao);
+}
+
+void urnet_invoke_sn_ledger_claim_done(urnet_sn_ledger_claim_done_cb cb, void* user_data) {
+	cb(user_data);
+}
+
+void urnet_invoke_sn_ledger_claim_failed(urnet_sn_ledger_claim_failed_cb cb, void* user_data, int64_t no_id, int64_t index, const char* message) {
+	cb(user_data, no_id, index, message);
+}
+
+void urnet_invoke_sn_ledger_claim_sent(urnet_sn_ledger_claim_sent_cb cb, void* user_data, int64_t no_id, int64_t index, const char* tx_hash) {
+	cb(user_data, no_id, index, tx_hash);
+}
+
 void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }
