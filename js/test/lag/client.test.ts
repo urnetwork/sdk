@@ -419,9 +419,13 @@ test("lost pings are reported, and 30 s without a pong ends the session", { time
     assert.ok(rtts.every((rtt) => rtt.lost && rtt.ms === null));
     assert.ok(2 <= session.pings.lost());
     assert.equal(session.pings.percentiles(), undefined);
+    // M4: the extender closes a session without pongs with 4408, which the
+    // browser counts as dropped
     assert.equal(closed.byClient, false);
-    assert.equal(closed.code, 1001);
+    assert.equal(closed.code, 4408);
     assert.equal(closed.error?.code, "dropped");
+    assert.equal(closed.error?.closeCode, 4408);
+    assert.equal(mock.sessions[0].closeCode, 4408);
     assert.equal(ofType(events, "error").at(-1)?.fatal, true);
     assert.equal(mock.sessions[0].closedBy, "extender");
     await assert.rejects(session.startLoad(), (error: unknown) => (error as InstanceType<typeof LagSessionError>).code === "closed");

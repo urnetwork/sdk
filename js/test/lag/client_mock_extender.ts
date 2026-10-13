@@ -255,7 +255,7 @@ export interface MockExtenderOptions {
   maxSessions?: number;
   /** a ping without a pong this long is lost (M4: 5 s) */
   lostAfterMs?: number;
-  /** a session without a pong this long ends (M4: 30 s) */
+  /** a session without a pong this long ends with 4408 (M4: 30 s) */
   noPongCloseMs?: number;
   /** pretend no pong arrives, as when the page is gone */
   ignorePongs?: boolean;
@@ -485,9 +485,10 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         return;
       }
       if (noPongCloseMs < performance.now() - lastPong) {
-        // M4: the page is gone
-        endSession(state, "extender", 1001);
-        state.ws.close(1001, "no pong");
+        // M4: the page is gone; 1001 is for shutting down and a withdrawn
+        // certificate
+        endSession(state, "extender", 4408);
+        state.ws.close(4408, "no pong");
         return;
       }
       later(state, Math.min(1000, noPongCloseMs / 4), watch);
