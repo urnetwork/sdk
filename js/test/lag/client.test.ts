@@ -49,6 +49,16 @@ const open = (mock: MockExtender, ticket: string, extra: Partial<Parameters<type
   return { session, events };
 };
 
+// what M4 says the browser reports for a download: one `received` per
+// completed interval i, at ms (i+1) x interval, with the bytes through i
+const expectedReceived = (intervalBytes: number[], intervalMs: number) => {
+  let total = 0;
+  return intervalBytes.map((bytes, i) => {
+    total += bytes;
+    return { bytes: total, ms: (i + 1) * intervalMs };
+  });
+};
+
 const ofType = <T extends LagSessionEvent["type"]>(events: LagSessionEvent[], type: T) =>
   events.filter((event): event is Extract<LagSessionEvent, { type: T }> => event.type === type);
 
@@ -135,15 +145,8 @@ test("a load runs the download, then the upload, while the pings go on", { timeo
     );
     const download = result.download.percentiles!;
     assert.ok(0 < download.p95 && download.p50 <= download.p95);
-    // the browser's reports: every interval from the first byte, cumulative,
-    // and a last one with the total
-    assert.ok(2 <= record.received.length, `${record.received.length} reports`);
-    for (let i = 1; i < record.received.length; i += 1) {
-      assert.ok(record.received[i - 1].ms <= record.received[i].ms);
-      assert.ok(record.received[i - 1].bytes <= record.received[i].bytes);
-    }
-    assert.equal(record.received.at(-1)!.bytes, result.download.bytes);
-    assert.ok(249 <= record.received[0].ms, `first report at ${record.received[0].ms}`);
+    // the browser's reports: one per interval of the window, from its series
+    assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, 250));
     const downloadProgress = ofType(events, "progress").filter((event) => event.direction === "download");
     assert.deepEqual(downloadProgress.map((event) => event.interval), [0, 1, 2, 3]);
     assert.ok(downloadProgress.every((event) => event.durationMs === 1000));
@@ -266,18 +269,47 @@ test("the download ends at its window: streams still delivering are cut and the 
     // every stream was still delivering, and the browser cut each one
     assert.equal(record.downloadCutByBrowser, 4);
     assert.ok(result.download.bytes < record.downloadBytes);
-    // the final report went out as the window ended, with all that was read
-    const last = record.received.at(-1)!;
-    assert.equal(last.bytes, result.download.bytes);
-    const seenEndMs = observedEnd - result.download.startedAt!;
-    assert.ok(
-      hello.downloadMs - 5 <= last.ms && last.ms <= seenEndMs + hello.intervalMs,
-      `final received at ${last.ms} ms, the window seen to end at ${seenEndMs} ms`,
-    );
-    // the series holds the window's intervals and nothing past it
+    // the series holds the window's intervals and nothing past it, and the
+    // reports end with the window's last interval
     assert.equal(result.download.mbps.length, hello.downloadMs / hello.intervalMs);
     const inIntervals = result.download.intervalBytes.reduce((a, b) => a + b, 0);
     assert.ok(0 < inIntervals && inIntervals <= result.download.bytes);
+    assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, hello.intervalMs));
+    assert.deepEqual(record.received.at(-1), { bytes: inIntervals, ms: hello.downloadMs });
+    session.close();
+  });
+});
+
+test("a page that stalls during the download still reports each interval once, at its own time", { timeout: 30_000 }, async () => {
+  await withMock({ uploadBytesPerSecond: 16 << 20 }, async (mock) => {
+    let stalled = false;
+    const { session, events } = open(mock, "ticket-stall", {
+      onEvent: (event) => {
+        events.push(event);
+        // a long task on the page, as the first interval completes
+        if (!stalled && event.type === "progress" && event.direction === "download") {
+          stalled = true;
+          const until = performance.now() + 450;
+          while (performance.now() < until) {
+            // busy
+          }
+        }
+      },
+    });
+    const hello = await session.ready;
+    const result = await session.startLoad();
+    assert.ok(stalled);
+    const record = mock.sessions[0];
+    // the ticks after the stall caught up: still one report per interval,
+    // at (i+1) x interval, with the bytes through it, and none past the window
+    assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, hello.intervalMs));
+    assert.equal(record.received.length, hello.downloadMs / hello.intervalMs);
+    const progress = ofType(events, "progress").filter((event) => event.direction === "download");
+    assert.deepEqual(progress.map((event) => event.interval), [0, 1, 2, 3]);
+    assert.deepEqual(
+      progress.map((event) => [event.ms, event.bytes]),
+      record.received.map((report) => [report.ms, report.bytes]),
+    );
     session.close();
   });
 });

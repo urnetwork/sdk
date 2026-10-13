@@ -719,7 +719,9 @@ class LagLoadRun {
   private downloadStartedAt?: number;
   private downloadBytes = 0;
   private downloadStreams = 0;
+  // the download intervals reported so far, and their bytes in total
   private downloadReported = 0;
+  private downloadReportedBytes = 0;
   private uploadFirst?: number;
   private uploadStartedAt?: number;
   private uploadStopped = false;
@@ -925,9 +927,9 @@ class LagLoadRun {
     this.clearTimer(firstByteGuard);
     this.closeDownload();
     if (this.downloadFirst !== undefined) {
-      const ms = monotonicNow() - this.downloadFirst;
-      this.session.send({ type: "received", bytes: this.downloadBytes, ms: Math.round(ms) });
-      this.reportDownload(ms, true);
+      // the final reports: through the window's last interval, or the last
+      // a download that ended early counts
+      this.reportDownload(this.download.count);
     }
     if (outcome === EARLY) {
       return;
@@ -1046,36 +1048,43 @@ class LagLoadRun {
     if (this.downloadClosed) {
       return;
     }
-    const due = this.downloadFirst! + k * this.hello.intervalMs;
+    const { intervalMs } = this.hello;
+    const due = this.downloadFirst! + k * intervalMs;
     this.downloadTick = setTimeout(() => {
       if (this.downloadClosed) {
         return;
       }
-      const ms = monotonicNow() - this.downloadFirst!;
-      this.session.send({ type: "received", bytes: this.downloadBytes, ms: Math.round(ms) });
-      this.reportDownload(ms, false);
-      this.scheduleDownloadTick(Math.floor(ms / this.hello.intervalMs) + 1);
+      const completed = Math.floor((monotonicNow() - this.downloadFirst!) / intervalMs);
+      this.reportDownload(completed);
+      this.scheduleDownloadTick(completed + 1);
     }, Math.max(0, due - monotonicNow()));
   }
 
-  private reportDownload(ms: number, final: boolean): void {
+  // One `received` report and one progress event per completed interval,
+  // up to `completed`, from the browser's own series (M4): interval i is
+  // reported at ms (i+1) x intervalMs with the bytes through it, so a late
+  // tick catches up interval by interval instead of reading a running
+  // total at the wrong time. Nothing past the window is reported.
+  private reportDownload(completed: number): void {
     const { intervalMs, downloadMs } = this.hello;
-    const upTo = final
-      ? this.download.count
-      : Math.min(this.download.maxIntervals, Math.floor(ms / intervalMs));
+    const upTo = Math.min(completed, this.download.maxIntervals);
     while (this.downloadReported < upTo) {
       const interval = this.downloadReported;
       this.downloadReported += 1;
-      const bytesPerSecond = (this.download.intervalBytes(interval) * 1000) / intervalMs;
+      const intervalBytes = this.download.intervalBytes(interval);
+      this.downloadReportedBytes += intervalBytes;
+      const ms = (interval + 1) * intervalMs;
+      this.session.send({ type: "received", bytes: this.downloadReportedBytes, ms });
+      const bytesPerSecond = (intervalBytes * 1000) / intervalMs;
       this.session.emit({
         type: "progress",
         direction: "download",
         interval,
         bytesPerSecond,
-        mbps: bytesToMbps(this.download.intervalBytes(interval), intervalMs),
-        ms: Math.round(ms),
+        mbps: bytesToMbps(intervalBytes, intervalMs),
+        ms,
         durationMs: downloadMs,
-        bytes: this.downloadBytes,
+        bytes: this.downloadReportedBytes,
         startedAt: this.downloadStartedAt!,
       });
     }
