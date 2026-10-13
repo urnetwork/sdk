@@ -9,6 +9,7 @@
 // fetches, then an upload over maxStreams WebSockets, each direction counted
 // from its first byte, while the pings go on and show what the load does.
 
+import { lagDownloadSources, type LagDownloadSource, type LagDownloadSourceFactory } from "./downloadSource";
 import { importLagUploadKey, LagKeystream, LAG_UPLOAD_MESSAGE_BYTES } from "./keystream";
 import { bytesToMbps, LagIntervalSeries, LagPingWindow, type LagPercentiles } from "./stats";
 
@@ -234,6 +235,15 @@ export interface LagSessionOptions {
   /** default globalThis.fetch */
   fetch?: typeof fetch;
   /**
+   * Where the download's streams are read (S5). By default a dedicated
+   * Worker reads them, so a chunk is timed when it arrives however busy the
+   * page is; the page reads them itself when there is no Worker, when it
+   * cannot start, or when `fetch` is given (it cannot cross into a Worker).
+   * false reads them on the page; a function supplies the Worker, for a
+   * bundler that builds it some other way.
+   */
+  downloadWorker?: false | (() => Worker);
+  /**
    * Close the session when nothing has come from the extender for this long
    * (default 15 s). Pings report at least every 5 s, lost or not.
    */
@@ -440,6 +450,7 @@ class LagSessionClient implements LagSession {
   readonly httpOrigin: string;
   readonly wsOrigin: string;
   readonly fetchImpl: typeof fetch;
+  readonly downloadSources: LagDownloadSourceFactory;
   readonly WebSocketImpl: typeof WebSocket;
   private stateValue: LagSessionState = "connecting";
   private helloValue: LagHello | null = null;
@@ -468,6 +479,7 @@ class LagSessionClient implements LagSession {
     this.wsOrigin = origins.ws;
     this.WebSocketImpl = WebSocketImpl;
     this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.downloadSources = lagDownloadSources({ fetch: options.fetch, worker: options.downloadWorker });
     this.onEvent = options.onEvent;
     this.silenceMs = options.silenceMs ?? 15_000;
     this.ready = this.readyDeferred.promise;
@@ -743,8 +755,13 @@ class LagLoadRun {
   private readonly resultArrived = deferred<void>();
   // imported while the download runs, so the upload need not wait for it
   private uploadKey?: Promise<CryptoKey>;
-  private readonly downloadAbort = new AbortController();
-  private readonly downloadReaders = new Set<ReadableStreamDefaultReader<Uint8Array>>();
+  private downloadSource: LagDownloadSource | null = null;
+  // every chunk timed up to then (monotonic) has been handed over: always on
+  // the page, a batch behind in the download's Worker (downloadSource.ts)
+  private downloadDelivered = Number.NEGATIVE_INFINITY;
+  private readonly downloadStreamsWithData = new Set<number>();
+  // resolves when every stream has ended, or the download is cut
+  private readonly downloadStreamsEnded = deferred<void>();
   // resolves downloadMs after the download's first byte, when its window ends
   private readonly downloadWindow = deferred<void>();
   private downloadWindowEnded = false;
@@ -959,7 +976,9 @@ class LagLoadRun {
   // its first byte, or sooner when every stream has ended (a byte cap): the
   // final `received` goes out, streams still delivering are cut, and the
   // upload starts at once. Waiting for trailing bytes would push every
-  // later load in the track back (S5).
+  // later load in the track back (S5). The streams are read in a Worker
+  // where one is available (downloadSource.ts), so a chunk's time is when it
+  // arrived, not when a busy page got to it.
   private async runDownload(): Promise<void> {
     const { maxStreams } = this.hello;
     this.session.send({ type: "load", phase: "download" });
@@ -968,12 +987,40 @@ class LagLoadRun {
         this.closeDownload();
       }
     });
-    const streams: Promise<void>[] = [];
-    for (let k = 0; k < maxStreams; k += 1) {
-      streams.push(this.downloadStream(k));
+    const ended = new Set<number>();
+    const source = this.session.downloadSources();
+    this.downloadSource = source;
+    source.start(
+      {
+        url: `${this.session.httpOrigin}/lag/v1/down?session=${encodeURIComponent(this.hello.session)}`,
+        streams: maxStreams,
+        downloadMs: this.hello.downloadMs,
+        openRetries: OPEN_RETRIES,
+      },
+      {
+        chunk: (stream, at, bytes) => this.onDownloadChunk(stream, at, bytes),
+        delivered: (through) => {
+          this.downloadDelivered = Math.max(this.downloadDelivered, through);
+          this.catchUpDownload();
+        },
+        ended: (stream) => {
+          ended.add(stream);
+          if (maxStreams <= ended.size) {
+            this.downloadStreamsEnded.resolve();
+          }
+        },
+      },
+    );
+    if (this.downloadClosed) {
+      // the load stopped before the streams began
+      source.close();
     }
-    const outcome = await this.until(Promise.race([Promise.all(streams), this.downloadWindow.promise]));
+    const outcome = await this.until(Promise.race([this.downloadStreamsEnded.promise, this.downloadWindow.promise]));
     this.clearTimer(firstByteGuard);
+    if (outcome !== EARLY) {
+      // what arrived before now, still on its way from the Worker
+      await this.until(source.flush());
+    }
     this.closeDownload();
     if (this.downloadFirst !== undefined) {
       // the final reports: through the window's last interval, or the last
@@ -989,86 +1036,33 @@ class LagLoadRun {
     }
   }
 
-  private async downloadStream(k: number): Promise<void> {
-    const url =
-      `${this.session.httpOrigin}/lag/v1/down` +
-      `?session=${encodeURIComponent(this.hello.session)}&stream=${k}`;
-    const signal = this.downloadAbort.signal;
-    for (let attempt = 0; ; attempt += 1) {
-      let response: Response | undefined;
-      try {
-        response = await this.session.fetchImpl(url, { signal, cache: "no-store", credentials: "omit" });
-      } catch {
-        response = undefined;
-      }
-      if (response?.ok && response.body) {
-        await this.readDownload(response.body);
-        return;
-      }
-      try {
-        await response?.body?.cancel();
-      } catch {
-        // nothing to release
-      }
-      // a stream can arrive before the extender has the load message: try
-      // again while the download can still use it
-      const late = this.downloadFirst !== undefined && this.hello.downloadMs <= monotonicNow() - this.downloadFirst;
-      if (signal.aborted || OPEN_RETRIES <= attempt || late) {
-        return;
-      }
-      await sleep(100 * 2 ** attempt);
-    }
-  }
-
-  private async readDownload(body: ReadableStream<Uint8Array>): Promise<void> {
-    const reader = body.getReader();
-    if (this.downloadClosed) {
-      reader.cancel().catch(() => undefined);
-      return;
-    }
-    this.downloadReaders.add(reader);
-    let counted = false;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done || this.downloadClosed) {
-          return;
-        }
-        if (!counted) {
-          counted = true;
-          this.downloadStreams += 1;
-        }
-        this.onDownloadChunk(value.byteLength);
-      }
-    } catch {
-      // aborted, or the stream broke: what arrived counts
-    } finally {
-      this.downloadReaders.delete(reader);
-      try {
-        reader.releaseLock();
-      } catch {
-        // a pending read on an aborted body
-      }
-    }
-  }
-
-  private onDownloadChunk(bytes: number): void {
+  // A chunk, timed `at` on the monotonic clock where it arrived.
+  private onDownloadChunk(stream: number, at: number, bytes: number): void {
     if (this.downloadClosed) {
       return;
     }
-    const now = monotonicNow();
     if (this.downloadFirst === undefined) {
-      this.downloadFirst = now;
-      this.downloadStartedAt = epochNow();
-      this.timeout(this.hello.downloadMs, () => {
+      this.downloadFirst = at;
+      this.downloadStartedAt = epochNow() - Math.max(0, monotonicNow() - at);
+      const sinceFirst = monotonicNow() - at;
+      this.timeout(Math.max(0, this.hello.downloadMs - sinceFirst), () => {
         this.downloadWindowEnded = true;
         this.downloadWindow.resolve();
       });
-      this.timeout(Math.max(0, this.hello.downloadMs - UPLOAD_EARLY_MS), () => this.prepareUpload());
+      this.timeout(Math.max(0, this.hello.downloadMs - UPLOAD_EARLY_MS - sinceFirst), () => this.prepareUpload());
       this.scheduleDownloadTick(1);
       this.emitPhase("download", this.downloadStartedAt);
+    } else if (this.downloadDelivered !== Number.POSITIVE_INFINITY && this.hello.downloadMs <= at - this.downloadFirst) {
+      // from the Worker, a chunk the page had not yet seen when the window
+      // closed: past the window, it does not count (on the page itself, the
+      // window's timer cuts the streams before such a chunk is read)
+      return;
     }
-    this.download.addAt(now - this.downloadFirst, bytes);
+    if (!this.downloadStreamsWithData.has(stream)) {
+      this.downloadStreamsWithData.add(stream);
+      this.downloadStreams += 1;
+    }
+    this.download.addAt(at - this.downloadFirst, bytes);
     this.downloadBytes += bytes;
   }
 
@@ -1081,11 +1075,9 @@ class LagLoadRun {
     }
     this.downloadClosed = true;
     clearTimeout(this.downloadTick);
-    for (const reader of this.downloadReaders) {
-      reader.cancel().catch(() => undefined);
-    }
-    this.downloadReaders.clear();
-    this.downloadAbort.abort();
+    this.downloadSource?.close();
+    // a cut stream may never say it ended (the Worker drops a closed download)
+    this.downloadStreamsEnded.resolve();
     if (this.downloadWindowEnded && this.download !== undefined) {
       this.download.extendTo(this.hello.downloadMs);
     }
@@ -1104,10 +1096,22 @@ class LagLoadRun {
       if (this.downloadClosed) {
         return;
       }
+      this.catchUpDownload();
       const completed = Math.floor((monotonicNow() - this.downloadFirst!) / intervalMs);
-      this.reportDownload(completed);
       this.scheduleDownloadTick(completed + 1);
     }, Math.max(0, due - monotonicNow()));
+  }
+
+  // Report each interval that has ended by the clock and whose chunks have
+  // all been handed over; one the Worker still owes a batch for waits for it.
+  private catchUpDownload(): void {
+    if (this.downloadClosed || this.downloadFirst === undefined) {
+      return;
+    }
+    const { intervalMs } = this.hello;
+    const byClock = Math.floor((monotonicNow() - this.downloadFirst) / intervalMs);
+    const byData = Math.floor((this.downloadDelivered - this.downloadFirst) / intervalMs);
+    this.reportDownload(Math.min(byClock, byData));
   }
 
   // One `received` report and one progress event per completed interval,
