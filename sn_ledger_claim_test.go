@@ -830,7 +830,8 @@ func (self *testV2Claim) requireClaimable(t *testing.T) {
 }
 
 // the maximum cost of the claim at the fixture's prices: the estimate plus a
-// quarter, at 1.1 × eth_gasPrice
+// quarter, which the fixture's estimate puts above snLedgerClaimGasFloor, at
+// 1.1 × eth_gasPrice
 func testV2MaxCost(chain *fakeVault2) *big.Int {
 	limit := chain.estimate + chain.estimate/4
 	price := new(big.Int).Div(new(big.Int).Mul(chain.gasPrice, big.NewInt(11)), big.NewInt(10))
@@ -1114,6 +1115,81 @@ func TestSnLedgerClaimNeedsGas(t *testing.T) {
 	}
 }
 
+// CL-4, APPS-SPEC claim rule 3: the gas key must hold the limit the claim is
+// signed with × the price. Under a low estimate that is the cost of
+// snLedgerClaimGasFloor: a gas key that covers the estimate with its quarter,
+// or the floor less one wei, is needs_gas with nothing sent. At the plan's
+// 5 gwei gas price a legacy claim, the default, then needs 0.0143 TAO, which
+// the 0.02 TAO the plan asks for on the gas key covers (VERSION2-FINAL.md
+// §11). An EIP-1559 claim is held to twice the base fee plus the tip, which
+// 0.02 TAO does not cover.
+func TestSnLedgerClaimNeedsGasAtTheFloor(t *testing.T) {
+	const gwei = 1_000_000_000
+	planGasKeyBalance := big.NewInt(20_000_000 * gwei)
+	for _, c := range []struct {
+		name   string
+		txType string
+		// the wei per gas the claim is signed at, and what needs_gas asks for
+		price int64
+		needs string
+		// whether the plan's 0.02 TAO on the gas key pays for the claim
+		planCovers bool
+	}{
+		{"legacy at 1.1 × the gas price", SnTxTypeLegacy, 5_500_000_000, "0.014300 TAO", true},
+		{"eip1559 at twice the base fee plus the tip", SnTxTypeEip1559, 12_000_000_000, "0.031200 TAO", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fixture := func(balance *big.Int) *testV2Claim {
+				f := newTestV2Claim(t)
+				f.settings.TxType = c.txType
+				// runtime 478's estimate of an account's first claim
+				f.chain.estimate = 206_967
+				f.chain.gasPrice = big.NewInt(5 * gwei)
+				if c.txType == SnTxTypeEip1559 {
+					f.chain.baseFee = big.NewInt(5 * gwei)
+				}
+				f.chain.balance = balance
+				return f
+			}
+			floorCost := new(big.Int).Mul(big.NewInt(2_600_000), big.NewInt(c.price))
+			// what the estimate with its quarter would cost
+			estimateCost := new(big.Int).Mul(big.NewInt(258_708), big.NewInt(c.price))
+			for _, balance := range []*big.Int{estimateCost, new(big.Int).Sub(floorCost, big.NewInt(1))} {
+				f := fixture(balance)
+				events := f.claim(t)
+				gasKey := snGasKeyInfo(f.key)
+				f.requireFailedOnly(t, events, 1, 2, SnErrorCodeNeedsGas+": this claim needs up to "+c.needs+" of gas, the gas key "+gasKey.Address)
+				if want := snNeedsGasMessage(floorCost, balance, gasKey); events[0].message != want {
+					t.Fatalf("with %s wei: message %q, want %q", balance, events[0].message, want)
+				}
+				f.requireClaimable(t)
+			}
+
+			f := fixture(floorCost)
+			events := f.claim(t)
+			sent := f.chain.sentTxs()
+			if len(events) != 2 || events[1].kind != "confirmed" || len(sent) != 1 {
+				t.Fatalf("with exactly the floor × the price: events %+v, %d sent", events, len(sent))
+			}
+			price := sent[0].gasPrice
+			if sent[0].dynamic {
+				price = sent[0].feeCap
+			}
+			if sent[0].gas != 2_600_000 || sent[0].dynamic != (c.txType == SnTxTypeEip1559) || price.Int64() != c.price {
+				t.Fatalf("signed %+v, want 2,600,000 gas at %d wei", sent[0], c.price)
+			}
+
+			f = fixture(planGasKeyBalance)
+			events = f.claim(t)
+			if !c.planCovers {
+				f.requireFailedOnly(t, events, 1, 2, SnErrorCodeNeedsGas+": this claim needs up to "+c.needs+" of gas, the gas key ")
+			} else if len(events) != 2 || events[1].kind != "confirmed" {
+				t.Fatalf("with the plan's 0.02 TAO: events %+v", events)
+			}
+		})
+	}
+}
+
 // APPS-SPEC claim rule 4: a transfer the staking precompile refuses reverts
 // vault2's claim without data; the runtime's reason is decoded by
 // simulating the transfer from vault2, and the account stays claimable.
@@ -1269,20 +1345,39 @@ func TestSnLedgerClaimRefusalsWithoutAReason(t *testing.T) {
 	f.requireClaimable(t)
 }
 
-// APPS-SPEC claim rule 3: the gas limit is eth_estimateGas's after a passing
-// eth_call, plus a quarter; an estimate the node refuses sends nothing, and a
+// CL-4, APPS-SPEC claim rule 3: the gas limit is eth_estimateGas's after a
+// passing eth_call, plus a quarter, and at least snLedgerClaimGasFloor,
+// 2,600,000: a claim is never signed below what it needed before runtime 478,
+// however low the estimate. An estimate the node refuses sends nothing, and a
 // refused preflight is never estimated.
 func TestSnLedgerClaimGasLimitFromTheEstimate(t *testing.T) {
-	f := newTestV2Claim(t)
-	f.chain.estimate = 236_000
-	events := f.claim(t)
-	if sent := f.chain.sentTxs(); len(events) != 2 || len(sent) != 1 || sent[0].gas != 236_000+59_000 {
-		t.Fatalf("events %+v, sent %+v", events, sent)
+	for _, c := range []struct {
+		name     string
+		estimate uint64
+		want     uint64
+	}{
+		// runtime 478's estimate of an account's first claim, 258,708 with
+		// its quarter, while vault2's staking-hotkey list is empty
+		{"a low estimate is signed at the floor", 206_967, 2_600_000},
+		{"a quarter one gas short of the floor", 2_079_999, 2_600_000},
+		{"a quarter that makes the floor", 2_080_000, 2_600_000},
+		{"a quarter one gas above the floor", 2_080_001, 2_600_001},
+		// the highest estimate of runtime 475 (R-7)
+		{"a high estimate is unchanged", 2_574_029, 3_217_536},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newTestV2Claim(t)
+			f.chain.estimate = c.estimate
+			events := f.claim(t)
+			if sent := f.chain.sentTxs(); len(events) != 2 || events[1].kind != "confirmed" || len(sent) != 1 || sent[0].gas != c.want {
+				t.Fatalf("events %+v, sent %+v, want a gas limit of %d", events, sent, c.want)
+			}
+		})
 	}
 
-	f = newTestV2Claim(t)
+	f := newTestV2Claim(t)
 	f.chain.failing["eth_estimateGas"] = &evm.RpcError{Code: -32000, Message: "gas required exceeds allowance (10000000)"}
-	events = f.claim(t)
+	events := f.claim(t)
 	f.requireFailedOnly(t, events, 1, 2, SnErrorCodeClaimFailed+": gas required exceeds allowance (10000000)")
 	if methods := f.chain.methods(); !reflect.DeepEqual(methods, []string{"eth_call", "eth_call", "eth_call", "eth_estimateGas"}) {
 		t.Fatalf("methods %q", methods)
