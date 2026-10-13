@@ -347,11 +347,13 @@ func SnClaimTransactionsFor(this js.Value, args []js.Value) any {
 	})
 }
 
-// URnetworkSnLedgerClaimTransactionsFor(settings, coldkeySs58) -> Promise<[{NoId, Index, RootIndex, ChainId, To, Data, Value, AmountRao}]>
+// URnetworkSnLedgerClaimTransactionsFor(settings, coldkeySs58) -> Promise<[{NoId, Index, RootIndex, ChainId, To, Data, Value, AmountRao, Gas}]>
 //
 // One v2 claim transaction per account with something to claim, to the
-// settings' Vault2Address, for the reader's wallet to send. It rejects with
-// "<code>: <detail>" when there is none: already_claimed, not_claimable,
+// settings' Vault2Address, for the reader's wallet to send with Gas as its
+// gas limit: a wallet's own estimate follows vault2's staking-hotkey list,
+// which third parties can lengthen before the claim is included. It rejects
+// with "<code>: <detail>" when there is none: already_claimed, not_claimable,
 // proof_mismatch, chain_not_configured (no Vault2Address), ledger_unavailable.
 func SnLedgerClaimTransactionsFor(this js.Value, args []js.Value) any {
 	return jsPromise(func(resolve func(any), reject func(error)) {
@@ -387,6 +389,7 @@ func jsSnLedgerUnsignedTxs(txs *sdk.SnLedgerUnsignedTxList) js.Value {
 			"Data":      tx.Data,
 			"Value":     tx.Value,
 			"AmountRao": tx.AmountRao,
+			"Gas":       tx.Gas,
 		})
 	}
 	return js.ValueOf(out)

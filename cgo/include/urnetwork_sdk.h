@@ -4738,6 +4738,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
  *   data: string
  *   value: string
  *   amount_rao: number
+ *   gas: number
  */
 
 /* SnLedgerUnsignedTxList (json):

@@ -21,10 +21,10 @@ import (
 // verifies here against vault2's roots(noId, rootIndex), and only for what
 // vault2's claimed(noId, index) leaves of its cumulative. Each claim passes an
 // eth_call preflight from the gas key, takes its gas limit from
-// eth_estimateGas, needs the gas key to hold the limit × the price, and is
-// signed with the gas key and sent to the chain endpoint. vault2 pays the
-// leaf's coldkey whoever sends the claim, and its Claimed event says how
-// much.
+// eth_estimateGas and at least snLedgerClaimGasFloor, needs the gas key to
+// hold the limit × the price, and is signed with the gas key and sent to the
+// chain endpoint. vault2 pays the leaf's coldkey whoever sends the claim, and
+// its Claimed event says how much.
 
 // SnLedgerClaimCallback receives the progress of SnLedgerClaim. Failed
 // messages start with an SnErrorCode* value followed by ": detail".
@@ -53,6 +53,10 @@ type SnLedgerUnsignedTx struct {
 	Value string `json:"value"`
 	// what the claim pays now: the cumulative less vault2's claimed
 	AmountRao int64 `json:"amount_rao"`
+	// the gas limit to sign with, snLedgerClaimGasFloor (2,600,000): a
+	// signer's own estimate follows vault2's staking-hotkey list, which third
+	// parties can lengthen before the claim is included
+	Gas int64 `json:"gas"`
 }
 
 type SnLedgerUnsignedTxList struct {
@@ -66,6 +70,22 @@ func NewSnLedgerUnsignedTxList() *SnLedgerUnsignedTxList {
 }
 
 const snLedgerNothingToClaim = SnErrorCodeNotClaimable + ": no settlement v2 account has anything to claim"
+
+// snLedgerClaimGasFloor is the least gas limit a v2 claim is signed with: the
+// plan's size for a claim (VERSION2-FINAL.md §10.2), which sn names
+// onchain.ClaimBatchGasPerClaim (sn miner/onchain/v2_batch.go). A claim uses
+// about 187,000 gas, but the runtime admits vault2's staking-precompile
+// transfer only if the gas forwarded covers the transfer's declared weight
+// (§7.3). Through runtime 477 that weight walked a full 256-entry
+// StakingHotkeys list: a claim needed a limit of up to 2,443,953, and
+// eth_estimateGas gave up to 2,574,029 (R-6, R-7). Runtime 478 walks only
+// vault2's own list, at 8,750 gas an entry: with an empty list a claim needs
+// 192,318 and is estimated at about 207,000, and with the 128 entries third
+// parties can add, one transfer each, about 1.31M. They can add them between
+// a claim's estimate and its inclusion, so a claim sized by its estimate
+// alone runs out of gas. Only the gas used is charged, but the gas key must
+// hold the limit × the price.
+const snLedgerClaimGasFloor uint64 = 2_600_000
 
 // The node's message for a refused precompile call:
 // evm error: Other("dispatch execution failed: <Error>").
@@ -300,7 +320,9 @@ func (self *snLedgerClaimEngine) send(ctx context.Context, key *secp.PrivateKey,
 		failed(self.refusal(ctx, plan, err))
 		return
 	}
-	gas += gas / 4
+	// the estimate plus a quarter, and never less than a claim needed before
+	// runtime 478
+	gas = max(gas+gas/4, snLedgerClaimGasFloor)
 	balance, err := self.client.Balance(ctx, from)
 	if err != nil {
 		failed(snFailMessage(err))
@@ -366,8 +388,9 @@ func (self *snLedgerClaimEngine) claim(ctx context.Context, key *secp.PrivateKey
 }
 
 // unsignedTxs builds a claim transaction for each account a claim pays now
-// whose preflight passes, for an external signer. With none the error is the
-// first account's refusal, else that there is nothing to claim.
+// whose preflight passes, for an external signer, each with
+// snLedgerClaimGasFloor as its gas limit. With none the error is the first
+// account's refusal, else that there is nothing to claim.
 func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsignedTxList, error) {
 	reason := ""
 	refuse := func(noId int64, index int64, message string) {
@@ -395,6 +418,7 @@ func (self *snLedgerClaimEngine) unsignedTxs(ctx context.Context) (*SnLedgerUnsi
 			Data:      "0x" + hex.EncodeToString(plan.data),
 			Value:     "0",
 			AmountRao: plan.amount,
+			Gas:       int64(snLedgerClaimGasFloor),
 		})
 	}
 	if list.Len() == 0 {
