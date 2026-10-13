@@ -2,7 +2,8 @@ package sdk
 
 // The Bittensor wallet-connect session helper: the protocol every app runs to
 // prove it holds a Bittensor (TAO) coldkey, for sign-in (POST /auth/login and
-// /auth/network-create) and for the subnet payout wallet (POST /sn/wallet).
+// /auth/network-create) and for the subnet payout wallet (POST /sn/wallet),
+// including the network payout consent (Api.SnNetworkConsentChallenge).
 // The apps own only the wallet transport (open a page, read an extension,
 // show a form); everything that decides what is signed and whether a result
 // is acceptable lives here.
@@ -94,7 +95,9 @@ const (
 // Purposes, echoed through the bridge so a return reaches the flow that
 // asked. "login" and "create" sign in (create = the second signature for a
 // new network); "connect" proves the subnet payout wallet; "add" adds the
-// wallet as a sign-in method to the signed-in network (POST /auth/add-auth).
+// wallet as a sign-in method to the signed-in network (POST /auth/add-auth);
+// "consent" signs the network payout consent (SetNetworkConsentChallenge),
+// and only a consent session takes one.
 // An "add" return must never reach a sign-in flow: a login or create session
 // refuses it with purpose_mismatch, so it cannot sign in as the added wallet.
 const (
@@ -102,6 +105,7 @@ const (
 	BittensorWalletPurposeCreate  = "create"
 	BittensorWalletPurposeConnect = "connect"
 	BittensorWalletPurposeAdd     = "add"
+	BittensorWalletPurposeConsent = "consent"
 )
 
 const (
@@ -462,7 +466,7 @@ func NewBittensorWalletSession(walletId string, platform string, purpose string,
 		return nil, fmt.Errorf("%s: %s", BittensorWalletErrorUnsupportedPlatform, platform)
 	}
 	switch purpose {
-	case BittensorWalletPurposeLogin, BittensorWalletPurposeCreate, BittensorWalletPurposeConnect, BittensorWalletPurposeAdd:
+	case BittensorWalletPurposeLogin, BittensorWalletPurposeCreate, BittensorWalletPurposeConnect, BittensorWalletPurposeAdd, BittensorWalletPurposeConsent:
 	default:
 		return nil, fmt.Errorf("unknown purpose: %s", purpose)
 	}
@@ -552,10 +556,15 @@ func (self *BittensorWalletSession) ChallengeArgs(expectedAddress string) *AuthW
 }
 
 // SetChallenge takes the /auth/wallet-challenge result. The message must be
-// a well-formed challenge; the expiry is nowMillis + expires_in.
+// a well-formed challenge; the expiry is nowMillis + expires_in. A consent
+// session refuses it: it signs only a network consent.
 func (self *BittensorWalletSession) SetChallenge(result *AuthWalletChallengeResult, nowMillis int64) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	if self.purpose == BittensorWalletPurposeConsent {
+		self.failWithLock(BittensorWalletErrorPurposeMismatch)
+		return fmt.Errorf("%s: a consent session signs only a network consent", BittensorWalletErrorPurposeMismatch)
+	}
 	if result == nil || result.Error != nil || result.MessageTemplate == "" {
 		self.failWithLock(BittensorWalletErrorNoChallenge)
 		return fmt.Errorf("%s: the server did not return a challenge", BittensorWalletErrorNoChallenge)
@@ -570,6 +579,40 @@ func (self *BittensorWalletSession) SetChallenge(result *AuthWalletChallengeResu
 	}
 	self.message = result.MessageTemplate
 	self.expiresAtMillis = nowMillis + expiresIn*1000
+	self.proof = nil
+	self.errorCode = ""
+	self.state = BittensorWalletStateChallenge
+	return nil
+}
+
+// SetNetworkConsentChallenge takes an Api.SnNetworkConsentChallenge result,
+// for a consent session only. The message is kept verbatim, the signing
+// account is bound to the result's coldkey, and the expiry is the server's
+// own (ExpiresAt).
+func (self *BittensorWalletSession) SetNetworkConsentChallenge(result *SnNetworkConsentChallengeResult, nowMillis int64) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.purpose != BittensorWalletPurposeConsent {
+		self.failWithLock(BittensorWalletErrorPurposeMismatch)
+		return fmt.Errorf("%s: a %s session signs no network consent", BittensorWalletErrorPurposeMismatch, self.purpose)
+	}
+	if result == nil || !strings.HasPrefix(result.Message, snNetworkConsentMessagePrefix) {
+		self.failWithLock(BittensorWalletErrorInvalidChallenge)
+		return fmt.Errorf("%s: not a network consent message", BittensorWalletErrorInvalidChallenge)
+	}
+	address := strings.TrimSpace(result.ColdkeySs58)
+	if !ValidateSs58(address) {
+		self.failWithLock(BittensorWalletErrorInvalidAddress)
+		return fmt.Errorf("%s: %s", BittensorWalletErrorInvalidAddress, address)
+	}
+	expiresAtMillis := result.ExpiresAt * 1000
+	if expiresAtMillis <= nowMillis {
+		self.failWithLock(BittensorWalletErrorExpired)
+		return fmt.Errorf("%s: the network consent challenge expired", BittensorWalletErrorExpired)
+	}
+	self.expectedAddress = address
+	self.message = result.Message
+	self.expiresAtMillis = expiresAtMillis
 	self.proof = nil
 	self.errorCode = ""
 	self.state = BittensorWalletStateChallenge
