@@ -171,6 +171,8 @@ module URnetwork
       callback :urnet_sn_ledger_claim_done_cb, [:pointer], :void
       callback :urnet_sn_ledger_claim_failed_cb, [:pointer, :int64, :int64, :string], :void
       callback :urnet_sn_ledger_claim_sent_cb, [:pointer, :int64, :int64, :string], :void
+      callback :urnet_sn_network_consent_challenge_cb, [:pointer, :string, :string], :void
+      callback :urnet_sn_network_consent_status_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_set_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_validate_wallet_cb, [:pointer, :string, :string], :void
       callback :urnet_sn_wallet_change_cb, [:pointer, :string], :void
@@ -350,6 +352,12 @@ module URnetwork
       attach_function :urnet_api_sn_epoch_sync, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_get_wallet, [:uint64, :urnet_sn_get_wallet_cb, :pointer], :void, blocking: true
       attach_function :urnet_api_sn_head, [:uint64, :urnet_sn_head_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_network_consent_challenge, [:uint64, :string, :urnet_sn_network_consent_challenge_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_network_consent_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_sn_network_consent_status, [:uint64, :urnet_sn_network_consent_status_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_network_consent_status_sync, [:uint64, :pointer], :pointer, blocking: true
+      attach_function :urnet_api_sn_network_consent_submit, [:uint64, :string, :string, :string, :urnet_sn_set_wallet_cb, :pointer], :void, blocking: true
+      attach_function :urnet_api_sn_network_consent_submit_sync, [:uint64, :string, :string, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_network_wallet_mapping_challenge_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_pool_claim_sync, [:uint64, :string, :pointer], :pointer, blocking: true
       attach_function :urnet_api_sn_set_wallet, [:uint64, :string, :urnet_sn_set_wallet_cb, :pointer], :void, blocking: true
@@ -400,6 +408,7 @@ module URnetwork
       attach_function :urnet_bittensor_wallet_session_proof, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_purpose, [:uint64], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_set_challenge, [:uint64, :string, :int64, :pointer], :bool, blocking: true
+      attach_function :urnet_bittensor_wallet_session_set_network_consent_challenge, [:uint64, :string, :int64, :pointer], :bool, blocking: true
       attach_function :urnet_bittensor_wallet_session_set_wallet_connect_project_id, [:uint64, :string], :void, blocking: true
       attach_function :urnet_bittensor_wallet_session_sign_request, [:uint64, :pointer], :pointer, blocking: true
       attach_function :urnet_bittensor_wallet_session_state, [:uint64], :pointer, blocking: true

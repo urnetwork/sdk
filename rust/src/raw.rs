@@ -170,6 +170,8 @@ pub type urnet_sn_ledger_claim_confirmed_cb = Option<unsafe extern "C" fn(*mut c
 pub type urnet_sn_ledger_claim_done_cb = Option<unsafe extern "C" fn(*mut c_void) -> ()>;
 pub type urnet_sn_ledger_claim_failed_cb = Option<unsafe extern "C" fn(*mut c_void, i64, i64, *const c_char) -> ()>;
 pub type urnet_sn_ledger_claim_sent_cb = Option<unsafe extern "C" fn(*mut c_void, i64, i64, *const c_char) -> ()>;
+pub type urnet_sn_network_consent_challenge_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
+pub type urnet_sn_network_consent_status_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_set_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_validate_wallet_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> ()>;
 pub type urnet_sn_wallet_change_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> ()>;
@@ -351,6 +353,12 @@ pub struct Raw {
     pub urnet_api_sn_epoch_sync: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_get_wallet: unsafe extern "C" fn(u64, urnet_sn_get_wallet_cb, *mut c_void) -> (),
     pub urnet_api_sn_head: unsafe extern "C" fn(u64, urnet_sn_head_cb, *mut c_void) -> (),
+    pub urnet_api_sn_network_consent_challenge: unsafe extern "C" fn(u64, *const c_char, urnet_sn_network_consent_challenge_cb, *mut c_void) -> (),
+    pub urnet_api_sn_network_consent_challenge_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
+    pub urnet_api_sn_network_consent_status: unsafe extern "C" fn(u64, urnet_sn_network_consent_status_cb, *mut c_void) -> (),
+    pub urnet_api_sn_network_consent_status_sync: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
+    pub urnet_api_sn_network_consent_submit: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, urnet_sn_set_wallet_cb, *mut c_void) -> (),
+    pub urnet_api_sn_network_consent_submit_sync: unsafe extern "C" fn(u64, *const c_char, *const c_char, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_network_wallet_mapping_challenge_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_pool_claim_sync: unsafe extern "C" fn(u64, *const c_char, *mut *mut c_char) -> *mut c_char,
     pub urnet_api_sn_set_wallet: unsafe extern "C" fn(u64, *const c_char, urnet_sn_set_wallet_cb, *mut c_void) -> (),
@@ -401,6 +409,7 @@ pub struct Raw {
     pub urnet_bittensor_wallet_session_proof: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_bittensor_wallet_session_purpose: unsafe extern "C" fn(u64) -> *mut c_char,
     pub urnet_bittensor_wallet_session_set_challenge: unsafe extern "C" fn(u64, *const c_char, i64, *mut *mut c_char) -> bool,
+    pub urnet_bittensor_wallet_session_set_network_consent_challenge: unsafe extern "C" fn(u64, *const c_char, i64, *mut *mut c_char) -> bool,
     pub urnet_bittensor_wallet_session_set_wallet_connect_project_id: unsafe extern "C" fn(u64, *const c_char) -> (),
     pub urnet_bittensor_wallet_session_sign_request: unsafe extern "C" fn(u64, *mut *mut c_char) -> *mut c_char,
     pub urnet_bittensor_wallet_session_state: unsafe extern "C" fn(u64) -> *mut c_char,
@@ -1647,6 +1656,12 @@ impl Raw {
             urnet_api_sn_epoch_sync: unsafe { *library.get(b"urnet_api_sn_epoch_sync\0")? },
             urnet_api_sn_get_wallet: unsafe { *library.get(b"urnet_api_sn_get_wallet\0")? },
             urnet_api_sn_head: unsafe { *library.get(b"urnet_api_sn_head\0")? },
+            urnet_api_sn_network_consent_challenge: unsafe { *library.get(b"urnet_api_sn_network_consent_challenge\0")? },
+            urnet_api_sn_network_consent_challenge_sync: unsafe { *library.get(b"urnet_api_sn_network_consent_challenge_sync\0")? },
+            urnet_api_sn_network_consent_status: unsafe { *library.get(b"urnet_api_sn_network_consent_status\0")? },
+            urnet_api_sn_network_consent_status_sync: unsafe { *library.get(b"urnet_api_sn_network_consent_status_sync\0")? },
+            urnet_api_sn_network_consent_submit: unsafe { *library.get(b"urnet_api_sn_network_consent_submit\0")? },
+            urnet_api_sn_network_consent_submit_sync: unsafe { *library.get(b"urnet_api_sn_network_consent_submit_sync\0")? },
             urnet_api_sn_network_wallet_mapping_challenge_sync: unsafe { *library.get(b"urnet_api_sn_network_wallet_mapping_challenge_sync\0")? },
             urnet_api_sn_pool_claim_sync: unsafe { *library.get(b"urnet_api_sn_pool_claim_sync\0")? },
             urnet_api_sn_set_wallet: unsafe { *library.get(b"urnet_api_sn_set_wallet\0")? },
@@ -1697,6 +1712,7 @@ impl Raw {
             urnet_bittensor_wallet_session_proof: unsafe { *library.get(b"urnet_bittensor_wallet_session_proof\0")? },
             urnet_bittensor_wallet_session_purpose: unsafe { *library.get(b"urnet_bittensor_wallet_session_purpose\0")? },
             urnet_bittensor_wallet_session_set_challenge: unsafe { *library.get(b"urnet_bittensor_wallet_session_set_challenge\0")? },
+            urnet_bittensor_wallet_session_set_network_consent_challenge: unsafe { *library.get(b"urnet_bittensor_wallet_session_set_network_consent_challenge\0")? },
             urnet_bittensor_wallet_session_set_wallet_connect_project_id: unsafe { *library.get(b"urnet_bittensor_wallet_session_set_wallet_connect_project_id\0")? },
             urnet_bittensor_wallet_session_sign_request: unsafe { *library.get(b"urnet_bittensor_wallet_session_sign_request\0")? },
             urnet_bittensor_wallet_session_state: unsafe { *library.get(b"urnet_bittensor_wallet_session_state\0")? },

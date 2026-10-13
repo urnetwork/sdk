@@ -164,6 +164,8 @@ func generateTypes() ([]byte, error) {
 		sdk.SnSetWalletResult{},
 		sdk.SnSetWalletError{},
 		sdk.SnGetWalletResult{},
+		sdk.SnNetworkConsentChallengeResult{},
+		sdk.SnNetworkConsentStatus{},
 		sdk.SnValidateWalletArgs{},
 		sdk.SnValidateWalletResult{},
 		sdk.SnConnectWalletResult{},

@@ -194,6 +194,7 @@ inline constexpr const char* BittensorWalletPlatformWeb = "web";
 inline constexpr const char* BittensorWalletPlatformWindows = "windows";
 inline constexpr const char* BittensorWalletPurposeAdd = "add";
 inline constexpr const char* BittensorWalletPurposeConnect = "connect";
+inline constexpr const char* BittensorWalletPurposeConsent = "consent";
 inline constexpr const char* BittensorWalletPurposeCreate = "create";
 inline constexpr const char* BittensorWalletPurposeLogin = "login";
 inline constexpr const char* BittensorWalletStateAwaitingWallet = "awaiting_wallet";
@@ -446,6 +447,7 @@ inline constexpr const char* SnErrorCodeArtifactUnavailable = "artifact_unavaila
 inline constexpr const char* SnErrorCodeChainNotConfigured = "chain_not_configured";
 inline constexpr const char* SnErrorCodeChainRpcError = "chain_rpc_error";
 inline constexpr const char* SnErrorCodeChainRpcUnreachable = "chain_rpc_unreachable";
+inline constexpr const char* SnErrorCodeChallengeExpired = "challenge_expired";
 inline constexpr const char* SnErrorCodeClaimFailed = "claim_failed";
 inline constexpr const char* SnErrorCodeConnectWalletFirst = "connect_wallet_first";
 inline constexpr const char* SnErrorCodeExpired = "claims_for_epoch_expired";
@@ -453,11 +455,13 @@ inline constexpr const char* SnErrorCodeInvalidAddress = "invalid_ss58_address";
 inline constexpr const char* SnErrorCodeLedgerUnavailable = "ledger_unavailable";
 inline constexpr const char* SnErrorCodeLocalState = "local_state_unavailable";
 inline constexpr const char* SnErrorCodeNeedsGas = "needs_gas";
+inline constexpr const char* SnErrorCodeNetworkOwnerOnly = "network_owner_only";
 inline constexpr const char* SnErrorCodeNotClaimable = "not_claimable";
 inline constexpr const char* SnErrorCodeProofMismatch = "proof_mismatch";
 inline constexpr const char* SnErrorCodeServer = "server_error";
 inline constexpr const char* SnErrorCodeSignatureMismatch = "signature_mismatch";
 inline constexpr const char* SnErrorCodeWalletBlocked = "wallet_blocked";
+inline constexpr int64_t SnNetworkConsentEpochSpan = 65535;
 inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
 inline constexpr const char* SnTxTypeEip1559 = "eip1559";
@@ -873,6 +877,8 @@ struct SnHeadResult;
 struct SnLedgerAccount;
 struct SnLedgerAccountsResult;
 struct SnLedgerUnsignedTx;
+struct SnNetworkConsentChallengeResult;
+struct SnNetworkConsentStatus;
 struct SnNetworkWalletMappingChallengeArgs;
 struct SnPoolClaimArgs;
 struct SnPoolClaimError;
@@ -3272,6 +3278,22 @@ struct SnLedgerUnsignedTx {
 	int64_t amount_rao{};
 };
 
+struct SnNetworkConsentChallengeResult {
+	std::string message{};
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
+	int64_t expires_at{};
+};
+
+struct SnNetworkConsentStatus {
+	bool active{};
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
+	int64_t generation{};
+};
+
 struct SnNetworkWalletMappingChallengeArgs {
 	std::string coldkey_ss58{};
 	int64_t from_epoch{};
@@ -4368,6 +4390,10 @@ inline void to_json(nlohmann::json& j, const SnLedgerAccountsResult& v);
 inline void from_json(const nlohmann::json& j, SnLedgerAccountsResult& v);
 inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v);
 inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v);
+inline void to_json(nlohmann::json& j, const SnNetworkConsentChallengeResult& v);
+inline void from_json(const nlohmann::json& j, SnNetworkConsentChallengeResult& v);
+inline void to_json(nlohmann::json& j, const SnNetworkConsentStatus& v);
+inline void from_json(const nlohmann::json& j, SnNetworkConsentStatus& v);
 inline void to_json(nlohmann::json& j, const SnNetworkWalletMappingChallengeArgs& v);
 inline void from_json(const nlohmann::json& j, SnNetworkWalletMappingChallengeArgs& v);
 inline void to_json(nlohmann::json& j, const SnPoolClaimArgs& v);
@@ -14930,6 +14956,64 @@ inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnNetworkConsentChallengeResult& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+	j["expires_at"] = v.expires_at;
+}
+inline void from_json(const nlohmann::json& j, SnNetworkConsentChallengeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expires_at);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnNetworkConsentStatus& v) {
+	j = nlohmann::json::object();
+	j["active"] = v.active;
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+	j["generation"] = v.generation;
+}
+inline void from_json(const nlohmann::json& j, SnNetworkConsentStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("active"); it != j.end() && !it->is_null()) {
+		it->get_to(v.active);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
+	}
+	if (auto it = j.find("generation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.generation);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnNetworkWalletMappingChallengeArgs& v) {
 	j = nlohmann::json::object();
 	j["coldkey_ss58"] = v.coldkey_ss58;
@@ -17536,6 +17620,8 @@ struct SnLedgerClaimCallback {
 	std::function<void(int64_t no_id, int64_t index, std::string message)> failed;
 	std::function<void(int64_t no_id, int64_t index, std::string tx_hash)> sent;
 };
+using SnNetworkConsentChallengeCallback = std::function<void(std::optional<SnNetworkConsentChallengeResult> result, std::optional<std::string> err_param)>;
+using SnNetworkConsentStatusCallback = std::function<void(std::optional<SnNetworkConsentStatus> result, std::optional<std::string> err_param)>;
 using SnSetWalletCallback = std::function<void(std::optional<SnSetWalletResult> result, std::optional<std::string> err_param)>;
 using SnValidateWalletCallback = std::function<void(std::optional<SnValidateWalletResult> result, std::optional<std::string> err_param)>;
 using SnWalletChangeListener = std::function<void(std::optional<SnWallet> wallet)>;
@@ -17882,6 +17968,12 @@ public:
 	std::optional<SnEpochResult> snEpochSync() const;
 	void snGetWallet(SnGetWalletCallback callback) const;
 	void snHead(SnHeadCallback callback) const;
+	void snNetworkConsentChallenge(const std::string& coldkey_ss58, SnNetworkConsentChallengeCallback callback) const;
+	std::optional<SnNetworkConsentChallengeResult> snNetworkConsentChallengeSync(const std::string& coldkey_ss58) const;
+	void snNetworkConsentStatus(SnNetworkConsentStatusCallback callback) const;
+	std::optional<SnNetworkConsentStatus> snNetworkConsentStatusSync() const;
+	void snNetworkConsentSubmit(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex, SnSetWalletCallback callback) const;
+	std::optional<SnSetWalletResult> snNetworkConsentSubmitSync(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex) const;
 	std::optional<SnWalletMappingChallengeResult> snNetworkWalletMappingChallengeSync(const std::optional<SnNetworkWalletMappingChallengeArgs>& args) const;
 	std::optional<SnPoolClaimResult> snPoolClaimSync(const std::optional<SnPoolClaimArgs>& args) const;
 	void snSetWallet(const std::optional<SnSetWalletArgs>& args, SnSetWalletCallback callback) const;
@@ -17944,6 +18036,7 @@ public:
 	std::optional<BittensorWalletProof> proof() const;
 	std::string purpose() const;
 	void setChallenge(const std::optional<AuthWalletChallengeResult>& result, int64_t now_millis) const;
+	void setNetworkConsentChallenge(const std::optional<SnNetworkConsentChallengeResult>& result, int64_t now_millis) const;
 	void setWalletConnectProjectId(const std::string& project_id) const;
 	std::optional<BittensorSignRequest> signRequest() const;
 	std::string state() const;
@@ -23772,6 +23865,78 @@ inline void retained_sn_ledger_claim_sent(void* user_data, int64_t no_id, int64_
 	}
 }
 
+inline void retained_sn_network_consent_challenge(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentChallengeCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentChallengeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_network_consent_challenge(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentChallengeCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentChallengeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_network_consent_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentStatusCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentStatus> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentStatus>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_network_consent_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentStatusCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentStatus> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentStatus>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sn_set_wallet(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SnSetWalletCallback*>(user_data);
 	try {
@@ -26878,6 +27043,54 @@ inline void Api::snHead(SnHeadCallback callback) const {
 	auto* callback_fn = callback ? new SnHeadCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_head(handle(), callback_fn ? &detail::oneshot_sn_head : nullptr, callback_fn);
 }
+inline void Api::snNetworkConsentChallenge(const std::string& coldkey_ss58, SnNetworkConsentChallengeCallback callback) const {
+	auto* callback_fn = callback ? new SnNetworkConsentChallengeCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_network_consent_challenge(handle(), coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_network_consent_challenge : nullptr, callback_fn);
+}
+inline std::optional<SnNetworkConsentChallengeResult> Api::snNetworkConsentChallengeSync(const std::string& coldkey_ss58) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_consent_challenge_sync(handle(), coldkey_ss58.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnNetworkConsentChallengeResult>(r_s->c_str());
+}
+inline void Api::snNetworkConsentStatus(SnNetworkConsentStatusCallback callback) const {
+	auto* callback_fn = callback ? new SnNetworkConsentStatusCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_network_consent_status(handle(), callback_fn ? &detail::oneshot_sn_network_consent_status : nullptr, callback_fn);
+}
+inline std::optional<SnNetworkConsentStatus> Api::snNetworkConsentStatusSync() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_consent_status_sync(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnNetworkConsentStatus>(r_s->c_str());
+}
+inline void Api::snNetworkConsentSubmit(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex, SnSetWalletCallback callback) const {
+	auto* callback_fn = callback ? new SnSetWalletCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_network_consent_submit(handle(), coldkey_ss58.c_str(), message.c_str(), signature_hex.c_str(), callback_fn ? &detail::oneshot_sn_set_wallet : nullptr, callback_fn);
+}
+inline std::optional<SnSetWalletResult> Api::snNetworkConsentSubmitSync(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_consent_submit_sync(handle(), coldkey_ss58.c_str(), message.c_str(), signature_hex.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnSetWalletResult>(r_s->c_str());
+}
 inline std::optional<SnWalletMappingChallengeResult> Api::snNetworkWalletMappingChallengeSync(const std::optional<SnNetworkWalletMappingChallengeArgs>& args) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -27276,6 +27489,22 @@ inline void BittensorWalletSession::setChallenge(const std::optional<AuthWalletC
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_bittensor_wallet_session_set_challenge failed");
+	}
+}
+inline void BittensorWalletSession::setNetworkConsentChallenge(const std::optional<SnNetworkConsentChallengeResult>& result, int64_t now_millis) const {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_bittensor_wallet_session_set_network_consent_challenge(handle(), result_c, now_millis, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_bittensor_wallet_session_set_network_consent_challenge failed");
 	}
 }
 inline void BittensorWalletSession::setWalletConnectProjectId(const std::string& project_id) const {

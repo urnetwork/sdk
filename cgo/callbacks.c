@@ -681,6 +681,14 @@ void urnet_invoke_sn_ledger_claim_sent(urnet_sn_ledger_claim_sent_cb cb, void* u
 	cb(user_data, no_id, index, tx_hash);
 }
 
+void urnet_invoke_sn_network_consent_challenge(urnet_sn_network_consent_challenge_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
+void urnet_invoke_sn_network_consent_status(urnet_sn_network_consent_status_cb cb, void* user_data, const char* result_json, const char* err_param) {
+	cb(user_data, result_json, err_param);
+}
+
 void urnet_invoke_sn_set_wallet(urnet_sn_set_wallet_cb cb, void* user_data, const char* result_json, const char* err_param) {
 	cb(user_data, result_json, err_param);
 }

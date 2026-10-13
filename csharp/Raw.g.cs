@@ -172,6 +172,8 @@ public static partial class Raw {
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_ledger_claim_done_cb(IntPtr a0);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_ledger_claim_failed_cb(IntPtr a0, long a1, long a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_ledger_claim_sent_cb(IntPtr a0, long a1, long a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_network_consent_challenge_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_network_consent_status_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_set_wallet_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_validate_wallet_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void urnet_sn_wallet_change_cb(IntPtr a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
@@ -351,6 +353,12 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_sn_epoch_sync(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_sn_get_wallet(ulong a0, urnet_sn_get_wallet_cb a1, IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_sn_head(ulong a0, urnet_sn_head_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_sn_network_consent_challenge(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_network_consent_challenge_cb a2, IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_sn_network_consent_challenge_sync(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_sn_network_consent_status(ulong a0, urnet_sn_network_consent_status_cb a1, IntPtr a2);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_sn_network_consent_status_sync(ulong a0, out IntPtr a1);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_sn_network_consent_submit(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3, urnet_sn_set_wallet_cb a4, IntPtr a5);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_sn_network_consent_submit_sync(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, [MarshalAs(UnmanagedType.LPUTF8Str)] string a2, [MarshalAs(UnmanagedType.LPUTF8Str)] string a3, out IntPtr a4);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_sn_network_wallet_mapping_challenge_sync(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_api_sn_pool_claim_sync(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, out IntPtr a2);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_api_sn_set_wallet(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, urnet_sn_set_wallet_cb a2, IntPtr a3);
@@ -401,6 +409,7 @@ public static partial class Raw {
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_proof(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_purpose(ulong a0);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_bittensor_wallet_session_set_challenge(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, out IntPtr a3);
+  [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern byte urnet_bittensor_wallet_session_set_network_consent_challenge(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1, long a2, out IntPtr a3);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern void urnet_bittensor_wallet_session_set_wallet_connect_project_id(ulong a0, [MarshalAs(UnmanagedType.LPUTF8Str)] string a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_sign_request(ulong a0, out IntPtr a1);
   [DllImport("URnetworkSdk", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr urnet_bittensor_wallet_session_state(ulong a0);

@@ -25,7 +25,8 @@ const SnRaoPerAlpha int64 = 1_000_000_000
 const SnAlphaSymbol = "SN25α"
 
 // Stable error codes carried in SnError.Code (and as the prefix of
-// SnClaimCallback.Failed messages) so the apps can localize them.
+// SnClaimCallback.Failed messages and of the network consent calls' errors,
+// "code: message") so the apps can localize them.
 const (
 	SnErrorCodeInvalidAddress      = "invalid_ss58_address"
 	SnErrorCodeWalletBlocked       = "wallet_blocked"
@@ -49,6 +50,13 @@ const (
 	// GET /sn/ledger/account could not be read or its answer was refused: the
 	// v2 balances are unavailable, which the apps show as such, never as zero
 	SnErrorCodeLedgerUnavailable = "ledger_unavailable"
+	// a network consent call's session is not the network owner's: the api
+	// holds no network credential, or the server refused the call with 403
+	SnErrorCodeNetworkOwnerOnly = "network_owner_only"
+	// a network consent challenge expired before it was accepted: the wallet
+	// session's own expiry, or the server's refusal of the expired message.
+	// The same value as BittensorWalletErrorExpired.
+	SnErrorCodeChallengeExpired = "challenge_expired"
 )
 
 // SnError is the error shape of every sn result in this package.
