@@ -156,7 +156,10 @@ test("a load runs the download, then the upload, while the pings go on", { timeo
     assert.deepEqual(downloadProgress.map((event) => event.interval), [0, 1, 2, 3]);
     assert.ok(downloadProgress.every((event) => event.durationMs === 1000));
 
-    // upload: four streams of whole 64 KiB messages, verified
+    // upload: four streams of whole 64 KiB messages, verified; its sockets
+    // began to open before the download's window ended, and waited at the
+    // extender for the upload message
+    assert.ok(0 < record.uploadEarly, "no upload socket came before the upload message");
     assert.equal(record.mismatch, false);
     assert.equal(record.uploadStreams, 4);
     assert.equal(result.upload.streams, 4);

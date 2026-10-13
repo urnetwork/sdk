@@ -121,8 +121,9 @@ export interface LagKeystreamOptions {
 /**
  * One upload stream's keystream, read sequentially from offset 0 and
  * generated ahead in a small ring: `depth` chunks of `chunkBytes` are in
- * hand or in flight, and a chunk is replaced as soon as it has been read, so
- * a sender rarely waits on WebCrypto and memory stays at depth x chunkBytes.
+ * hand or on their way, generated one at a time, and a chunk is replaced as
+ * soon as it has been read, so a sender rarely waits on WebCrypto, no task
+ * copies more than a chunk, and memory stays at depth x chunkBytes.
  *
  * The views next() returns are never written again, but the caller should
  * hand each one off (WebSocket.send copies it) rather than keep it.
@@ -134,6 +135,8 @@ export class LagKeystream {
   private readonly key: CryptoKey;
   private readonly subtle: SubtleCrypto;
   private readonly ahead: Promise<Uint8Array>[] = [];
+  // settles when the last chunk asked for is generated (generateAhead)
+  private generated: Promise<unknown> = Promise.resolve();
   private nextChunk = 0;
   private current: Uint8Array | null = null;
   private position = 0;
@@ -165,6 +168,22 @@ export class LagKeystream {
   /** Bytes handed out so far: the stream offset of the next byte. */
   get offset(): number {
     return this.handedOut;
+  }
+
+  /**
+   * Resolves once the next byte is generated, so next() would not wait on
+   * WebCrypto for it. A chunk that failed resolves it too; next() reports
+   * the failure.
+   */
+  primed(): Promise<void> {
+    const chunk = this.current === null && !this.failed ? this.ahead[0] : undefined;
+    if (chunk === undefined) {
+      return Promise.resolve();
+    }
+    return chunk.then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   /**
@@ -236,13 +255,18 @@ export class LagKeystream {
     }
   }
 
+  // Asks for the next chunk. Each starts once the one before it is generated,
+  // so a stream has one WebCrypto call in flight: filling the ring is a chunk
+  // per task rather than depth chunks' copying in one long task.
   private generateAhead(): void {
     const offset = this.nextChunk * this.chunkBytes;
     this.nextChunk += 1;
-    const chunk = lagKeystream(this.key, this.stream, offset, this.chunkBytes, this.subtle);
+    const generate = () => lagKeystream(this.key, this.stream, offset, this.chunkBytes, this.subtle);
+    const chunk = this.generated.then(generate, generate);
     // an abandoned stream must not leave an unhandled rejection behind; a
     // reader still sees the failure when it reaches this chunk
     chunk.catch(() => undefined);
+    this.generated = chunk;
     this.ahead.push(chunk);
   }
 }

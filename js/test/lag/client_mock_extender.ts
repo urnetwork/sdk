@@ -311,6 +311,8 @@ export interface MockSessionRecord {
   maxConcurrentDownloads: number;
   downloadBytes: number;
   uploadStreams: number;
+  /** upload streams that came while the download ran, and waited for their phase */
+  uploadEarly: number;
   uploadMessages: number;
   /** sizes of upload messages that were not 65536 bytes, but the last of a stream */
   oddUploadMessages: number[];
@@ -342,8 +344,14 @@ interface SessionState {
   uploads: Set<MockWebSocket>;
   uploadReporter?: ReturnType<typeof setInterval>;
   timers: Set<ReturnType<typeof setTimeout>>;
+  // upload streams that came before the upload message, waiting for it (M4)
+  phaseWaiters: Set<() => void>;
   closed: boolean;
 }
+
+// M4: a stream that comes before the control message of its phase waits
+// this long for it, as the extender's streamWait
+const STREAM_WAIT_MS = 2000;
 
 export interface MockExtender {
   /** e.g. http://127.0.0.1:12345, for openLagSession's host */
@@ -386,6 +394,12 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     state.timers.add(timer);
   };
 
+  const wakePhaseWaiters = (state: SessionState) => {
+    for (const wake of [...state.phaseWaiters]) {
+      wake();
+    }
+  };
+
   const sendJson = (state: SessionState, message: object) => {
     if (!state.closed) {
       state.ws.sendText(JSON.stringify(message));
@@ -397,6 +411,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       return;
     }
     state.phase = "ended";
+    wakePhaseWaiters(state);
     clearInterval(state.uploadReporter);
     for (const response of state.downloads) {
       closedByMock.add(response);
@@ -418,6 +433,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     open -= 1;
     state.record.closeCode = code;
     state.record.closedBy = closedBy;
+    wakePhaseWaiters(state);
     for (const timer of state.timers) {
       clearTimeout(timer);
     }
@@ -522,6 +538,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       case "upload":
         if (state.phase === "download") {
           state.phase = "upload";
+          wakePhaseWaiters(state);
         }
         return;
       case "done":
@@ -551,6 +568,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       maxConcurrentDownloads: 0,
       downloadBytes: 0,
       uploadStreams: 0,
+      uploadEarly: 0,
       uploadMessages: 0,
       oddUploadMessages: [],
       uploadVerifiedBytes: 0,
@@ -595,6 +613,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       downloads: new Set(),
       uploads: new Set(),
       timers: new Set(),
+      phaseWaiters: new Set(),
       closed: false,
     };
     byId.set(id, state);
@@ -698,6 +717,38 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
   const onUpload = (req: IncomingMessage, socket: Duplex, head: Buffer, url: URL) => {
     const state = byId.get(url.searchParams.get("session") ?? "");
     const stream = Number(url.searchParams.get("stream"));
+    // M4: a stream can overtake the upload message, so one that comes while
+    // the download runs waits for it, up to STREAM_WAIT_MS
+    if (state !== undefined && !state.closed && state.phase === "download") {
+      socket.on("error", () => undefined);
+      state.record.uploadEarly += 1;
+      let woken = false;
+      const wake = () => {
+        if (woken) {
+          return;
+        }
+        woken = true;
+        clearTimeout(timer);
+        state.phaseWaiters.delete(wake);
+        if (socket.destroyed) {
+          return;
+        }
+        onUploadInPhase(req, socket, head, state, stream);
+      };
+      const timer = setTimeout(wake, STREAM_WAIT_MS);
+      state.phaseWaiters.add(wake);
+      return;
+    }
+    onUploadInPhase(req, socket, head, state, stream);
+  };
+
+  const onUploadInPhase = (
+    req: IncomingMessage,
+    socket: Duplex,
+    head: Buffer,
+    state: SessionState | undefined,
+    stream: number,
+  ) => {
     if (
       state === undefined ||
       state.closed ||

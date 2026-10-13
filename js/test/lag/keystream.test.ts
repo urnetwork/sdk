@@ -144,6 +144,67 @@ test("ring: a failed chunk fails the stream from there on", async () => {
   await assert.rejects(ring.next(64), /no crypto/);
 });
 
+test("ring: one WebCrypto call in flight at a time, filling and refilling", async () => {
+  const raw = new Uint8Array(randomBytes(16));
+  const key = await importLagUploadKey(raw);
+  let inFlight = 0;
+  let most = 0;
+  let calls = 0;
+  const subtle = {
+    encrypt: async (...args: Parameters<SubtleCrypto["encrypt"]>) => {
+      calls += 1;
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        return await crypto.subtle.encrypt(...args);
+      } finally {
+        inFlight -= 1;
+      }
+    },
+  } as SubtleCrypto;
+  const ring = new LagKeystream(key, 5, { chunkBytes: 1024, depth: 4, subtle });
+  const reads = [];
+  for (let i = 0; i < 12; i += 1) {
+    reads.push(await ring.next(512));
+  }
+  // the ring filled, then refilled as chunks were read, one call at a time
+  assert.equal(most, 1);
+  assert.ok(6 <= calls);
+  assert.equal(hex(Buffer.concat(reads)), hex(reference(raw, 5, 0, 12 * 512)));
+});
+
+test("ring: primed waits for the next chunk without taking it", async () => {
+  const raw = new Uint8Array(randomBytes(16));
+  const key = await importLagUploadKey(raw);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const subtle = {
+    encrypt: async (...args: Parameters<SubtleCrypto["encrypt"]>) => {
+      await held;
+      return crypto.subtle.encrypt(...args);
+    },
+  } as SubtleCrypto;
+  const ring = new LagKeystream(key, 2, { chunkBytes: 1024, depth: 2, subtle });
+  let primed = false;
+  const priming = ring.primed().then(() => {
+    primed = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(primed, false, "primed before WebCrypto answered");
+  release();
+  await priming;
+  // the chunk is still the stream's first
+  assert.equal(ring.offset, 0);
+  assert.equal(hex(await ring.next(1024)), hex(reference(raw, 2, 0, 1024)));
+  // a stream part way through a chunk is primed already
+  await ring.next(10);
+  await ring.primed();
+  assert.equal(hex(await ring.next(10)), hex(reference(raw, 2, 0, 1044).subarray(1034)));
+});
+
 // The S1 vectors from Go (gen_lag.go): key, stream and offset give the
 // counter block and the keystream cipher.NewCTR produced.
 const vectorsPath = new URL("./vectors.json", import.meta.url);

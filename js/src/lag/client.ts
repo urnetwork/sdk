@@ -280,6 +280,13 @@ const FIRST_BYTE_TIMEOUT_MS = 10_000;
 // how long the upload sockets get to open before the streams start without
 // the ones still connecting (the extender waits 10 s for them)
 const UPLOAD_OPEN_WAIT_MS = 3_000;
+// The upload's sockets start to open this long before the download's window
+// ends. The extender holds a stream that comes before its phase for up to
+// 2 s (M4), so the first socket's handshake is done when the phase opens.
+// The rest still connect after it: a browser has one WebSocket handshake to
+// a host in progress at a time (RFC 6455 4.1), and the extender holds the
+// first until the phase opens.
+const UPLOAD_EARLY_MS = 1_000;
 // how long the upload waits for the extender's report that closes its window
 const UPLOAD_SETTLE_MS = 2_000;
 // how long the load waits for the extender's loadResult after done
@@ -750,6 +757,10 @@ class LagLoadRun {
   private downloadReportedBytes = 0;
   private uploadFirst?: number;
   private uploadStartedAt?: number;
+  // the upload's sockets, from when they began to open (openUploadSockets),
+  // and its streams' keystreams, from when they began to generate
+  private uploadSockets: { opened: Array<WebSocket | null>; opening: Promise<void>[] } | null = null;
+  private keystreams: LagKeystream[] | null = null;
   private uploadStopped = false;
   // the streams have started together; a socket opening later is not used
   private uploadStarted = false;
@@ -1043,6 +1054,7 @@ class LagLoadRun {
         this.downloadWindowEnded = true;
         this.downloadWindow.resolve();
       });
+      this.timeout(Math.max(0, this.hello.downloadMs - UPLOAD_EARLY_MS), () => this.prepareUpload());
       this.scheduleDownloadTick(1);
       this.emitPhase("download", this.downloadStartedAt);
     }
@@ -1121,10 +1133,14 @@ class LagLoadRun {
   // M6: maxStreams WebSockets of keystream for uploadMs, with backpressure
   // by bufferedAmount. A browser opens WebSockets to one host one at a time,
   // so streams started as their sockets opened would join the window late:
-  // every socket is opened first, and the streams start together once each
-  // has opened or failed, waiting at most UPLOAD_OPEN_WAIT_MS (S5).
+  // every socket is opened first, from UPLOAD_EARLY_MS before the download's
+  // window ends, and the streams start together once each has opened or
+  // failed and has its first keystream, waiting at most UPLOAD_OPEN_WAIT_MS
+  // after the phase (S5). A stream that started before its keystream was
+  // generated would leave the extender's window, which opens at the first
+  // message, running past the browser's.
   private async runUpload(): Promise<void> {
-    const { maxStreams, uploadMs } = this.hello;
+    const { uploadMs } = this.hello;
     let key: CryptoKey;
     try {
       key = await this.uploadKey!;
@@ -1133,20 +1149,15 @@ class LagLoadRun {
       throw new LagSessionError("protocol", "the extender's upload key is not 16 bytes", { cause: error });
     }
     this.session.send({ type: "load", phase: "upload" });
-    // every stream's first chunks of keystream generate while the sockets open
-    const keystreams: LagKeystream[] = [];
-    const opened: Array<WebSocket | null> = [];
-    const opening: Promise<void>[] = [];
-    for (let k = 0; k < maxStreams; k += 1) {
-      keystreams.push(new LagKeystream(key, k));
-      opened.push(null);
-      opening.push(
-        this.openUploadSocket(k).then((socket) => {
-          opened[k] = socket;
-        }),
-      );
-    }
-    const outcome = await this.until(Promise.race([Promise.all(opening), this.delay(UPLOAD_OPEN_WAIT_MS)]));
+    // a download that ended before its window did has not prepared them yet
+    const { opened, opening } = this.openUploadSockets();
+    const keystreams = this.keystreamsFor(key);
+    const outcome = await this.until(
+      Promise.race([
+        Promise.all([...opening, ...keystreams.map((keystream) => keystream.primed())]),
+        this.delay(UPLOAD_OPEN_WAIT_MS),
+      ]),
+    );
     // the common start: a socket still connecting has missed it
     this.uploadStarted = true;
     for (const socket of this.sockets) {
@@ -1250,6 +1261,55 @@ class LagLoadRun {
     flow.drained = drained;
     flow.measuredAt = now;
     flow.cap = Math.min(BUFFER_MAX_BYTES, Math.max(BUFFER_MIN_BYTES, flow.rate * BUFFER_SECONDS));
+  }
+
+  // UPLOAD_EARLY_MS before the download's window ends: the upload's sockets
+  // start to open, and its keystreams to generate once the key is in.
+  private prepareUpload(): void {
+    if (this.uploadStopped || this.ended) {
+      return;
+    }
+    this.openUploadSockets();
+    this.uploadKey!.then(
+      (key) => {
+        if (!this.uploadStopped && !this.ended) {
+          this.keystreamsFor(key);
+        }
+      },
+      // runUpload reports a bad key
+      () => undefined,
+    );
+  }
+
+  // The streams' keystreams, made once; each starts generating at once.
+  private keystreamsFor(key: CryptoKey): LagKeystream[] {
+    if (this.keystreams === null) {
+      this.keystreams = [];
+      for (let k = 0; k < this.hello.maxStreams; k += 1) {
+        this.keystreams.push(new LagKeystream(key, k));
+      }
+    }
+    return this.keystreams;
+  }
+
+  // Starts opening the upload's sockets, once: before the download's window
+  // ends, or when the upload starts if that is sooner. A socket that arrives
+  // before the upload message waits for it at the extender (M4).
+  private openUploadSockets(): { opened: Array<WebSocket | null>; opening: Promise<void>[] } {
+    if (this.uploadSockets === null) {
+      const opened: Array<WebSocket | null> = [];
+      const opening: Promise<void>[] = [];
+      for (let k = 0; k < this.hello.maxStreams; k += 1) {
+        opened.push(null);
+        opening.push(
+          this.openUploadSocket(k).then((socket) => {
+            opened[k] = socket;
+          }),
+        );
+      }
+      this.uploadSockets = { opened, opening };
+    }
+    return this.uploadSockets;
   }
 
   private async openUploadSocket(k: number): Promise<WebSocket | null> {
