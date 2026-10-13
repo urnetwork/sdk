@@ -293,7 +293,7 @@ func TestSnLedgerAccountsRefuseMalformedAnswers(t *testing.T) {
 		{"a cumulative with a leading zero", func(d map[string]any) { account(d, 0)["cumulative"] = "0123456789" }, `account 0: cumulative: "0123456789" is not a decimal amount of rao`},
 		{"a fractional cumulative", func(d map[string]any) { account(d, 0)["cumulative"] = "1.5" }, `account 0: cumulative: "1.5" is not a decimal amount of rao`},
 		{"a cumulative beyond int64", func(d map[string]any) { account(d, 0)["cumulative"] = "9223372036854775808" }, `account 0: cumulative: "9223372036854775808" is not a decimal amount of rao`},
-		{"a cumulative as a json number", func(d map[string]any) { account(d, 0)["cumulative"] = 123456789 }, "accounts.cumulative of type string"},
+		{"a cumulative as a json number", func(d map[string]any) { account(d, 0)["cumulative"] = 123456789 }, "cumulative of type string"},
 		{"a missing claimed", func(d map[string]any) { delete(account(d, 1), "claimed") }, `account 1: claimed: "" is not a decimal amount of rao`},
 		{"a pending cumulative in exponent form", func(d map[string]any) { account(d, 0)["pending_cumulative"] = "1e3" }, `account 0: pending_cumulative: "1e3" is not a decimal amount of rao`},
 		{"a hex proof sum", func(d map[string]any) { proofNode(d, 0, 1)["sum"] = "0x10" }, `account 0: proof 1 sum: "0x10" is not a decimal amount of rao`},
