@@ -293,18 +293,32 @@ const UPLOAD_SETTLE_MS = 2_000;
 const RESULT_TIMEOUT_MS = 5_000;
 // a stream that fails to open (it can race the load message) is retried
 const OPEN_RETRIES = 3;
-// S5: backpressure by bufferedAmount, at most 8 MiB per stream. Below that,
-// a stream buffers about half a second of what it drains, so a slow uplink
-// is not left with seconds of upload queued when the load ends.
-const BUFFER_MIN_BYTES = 1 << 20;
-const BUFFER_MAX_BYTES = 8 << 20;
-const BUFFER_SECONDS = 0.5;
+// S5: the upload's backlog. bufferedAmount counts only what the page has not
+// yet handed to the network stack. The kernel's send buffers hold far more
+// (and on the local stack, its front too), so a backlog that bufferedAmount
+// sized left tens of MB queued past the window. The streams are held instead,
+// together, by what the extender has verified. Bytes sent but not yet
+// verified may cover the path in flight (the base round trip at the verified
+// rate), what has arrived since the extender's last report, and a backlog of
+// UPLOAD_BACKLOG_MS at that rate, within its floor and ceiling, which keeps
+// the bottleneck busy. That rate is the higher of the extender's last two
+// reports, so a short dip does not starve the streams. They may also hold no
+// more than the extender can still count by the window's end, at its rate
+// over the last UPLOAD_STEADY_MS, so they stop queueing in time to drain by
+// then. Until its first report, the streams may send UPLOAD_START_BYTES.
+const UPLOAD_BACKLOG_MS = 250;
+const UPLOAD_BACKLOG_MIN_BYTES = 4 * LAG_UPLOAD_MESSAGE_BYTES;
+const UPLOAD_BACKLOG_MAX_BYTES = 16 << 20;
+const UPLOAD_STEADY_MS = 1000;
+// Enough for the first report's round trip on a path of a few tens of Mbps,
+// and to fill the window on one of 1.7 Mbps
+const UPLOAD_START_BYTES = 16 * LAG_UPLOAD_MESSAGE_BYTES;
+// what the streams may still hold when the extender's reports show no rate
+const UPLOAD_MIN_UNVERIFIED_BYTES = 2 * LAG_UPLOAD_MESSAGE_BYTES;
+const UPLOAD_MAX_UNVERIFIED_BYTES = 32 << 20;
+// the base round trip when the session has no ping yet
+const UPLOAD_DEFAULT_RTT_MS = 100;
 const BUFFER_POLL_MS = 10;
-// A socket must count a message in bufferedAmount within the task that sent
-// it. Where one does not, bufferedAmount gives no backpressure, so the
-// streams are held by what the extender has verified: together they may run
-// this far ahead of it, plus a second of its verified rate.
-const UNCOUNTED_AHEAD_BYTES = 8 << 20;
 // A stream that sends this long without a pause yields to the event loop, so
 // timers and the page stay live whatever a socket's buffer reports.
 const SEND_SLICE_MS = 8;
@@ -707,15 +721,6 @@ class LagSessionClient implements LagSession {
   }
 }
 
-// The flow of one upload stream: what it has sent, and its buffer cap.
-interface UploadFlow {
-  sent: number;
-  drained: number;
-  measuredAt: number;
-  rate: number;
-  cap: number;
-}
-
 const EARLY = Symbol("early");
 
 // One run of a session's load (M4-M6): the download, the upload, then the
@@ -767,10 +772,12 @@ class LagLoadRun {
   private uploadStreams = 0;
   // bytes handed to the upload sockets, across streams
   private uploadSent = 0;
-  // the extender's latest verified rate, bytes per second
-  private uploadVerifiedRate = 0;
-  // false once a socket failed to count a message in bufferedAmount
-  private bufferedAmountCounts = true;
+  // the extender's last reports in the window (ms since its first byte, and
+  // bytes verified), and when the last came (monotonic)
+  private reports: Array<{ ms: number; bytes: number }> = [];
+  private lastReportAt?: number;
+  // the session's lowest round trip when the upload started
+  private baseRttMs = UPLOAD_DEFAULT_RTT_MS;
   private lastUploaded = { bytes: 0, ms: 0 };
   private readonly uploadWindowReported = deferred<void>();
 
@@ -839,7 +846,10 @@ class LagLoadRun {
     this.lastUploaded = { bytes: Math.max(previous.bytes, bytes), ms: Math.max(previous.ms, ms) };
     const elapsed = ms - previous.ms;
     const bytesPerSecond = 0 < elapsed ? (Math.max(0, bytes - previous.bytes) * 1000) / elapsed : 0;
-    this.uploadVerifiedRate = bytesPerSecond;
+    if (0 < elapsed) {
+      this.reports = [...this.reports.slice(-7), { ms, bytes: Math.max(previous.bytes, bytes) }];
+      this.lastReportAt = monotonicNow();
+    }
     this.session.emit({
       type: "progress",
       direction: "upload",
@@ -1180,13 +1190,20 @@ class LagLoadRun {
       throw new LagSessionError("upload", "no upload stream opened");
     }
     this.uploadStreams = ready.length;
+    const roundTrips = this.session.pings.roundTrips();
+    if (0 < roundTrips.length) {
+      this.baseRttMs = Math.min(...roundTrips);
+    }
     this.uploadFirst = monotonicNow();
     this.uploadStartedAt = epochNow();
+    // at the window's end the streams close at once: what is left in their
+    // backlog is not the extender's to count
     this.timeout(uploadMs, () => {
       this.uploadStopped = true;
+      this.closeSockets();
     });
     this.emitPhase("upload", this.uploadStartedAt);
-    const pumped = await this.until(Promise.all(ready.map(({ socket, keystream }) => this.pumpUpload(socket, keystream))));
+    const pumped = await this.until(this.pumpUploads(ready));
     if (pumped === EARLY) {
       return;
     }
@@ -1195,19 +1212,34 @@ class LagLoadRun {
     await this.until(Promise.race([this.uploadWindowReported.promise, this.delay(UPLOAD_SETTLE_MS)]));
   }
 
-  // One stream's messages, from the common start until uploadMs is over.
-  private async pumpUpload(socket: WebSocket, keystream: LagKeystream): Promise<void> {
-    const flow: UploadFlow = {
-      sent: 0,
-      drained: 0,
-      measuredAt: monotonicNow(),
-      rate: 0,
-      cap: BUFFER_MIN_BYTES,
-    };
+  // The streams' messages, from the common start until uploadMs is over: a
+  // message whenever the streams' unverified bytes leave room for it, dealt
+  // to the streams in turn, so the backlog spreads across them rather than
+  // filling one stream's buffers while the others idle. A stream whose
+  // buffer in the page already holds its share of the room waits its next
+  // turn; one that closes or whose keystream fails drops out.
+  private async pumpUploads(streams: Array<{ socket: WebSocket; keystream: LagKeystream }>): Promise<void> {
+    let live = streams.slice();
+    let turn = 0;
     let sliceStart = monotonicNow();
-    while (!this.uploadStopped && socket.readyState === WEBSOCKET_OPEN) {
-      this.adjustCap(socket, flow);
-      if (flow.cap < socket.bufferedAmount + LAG_UPLOAD_MESSAGE_BYTES || this.aheadOfVerified()) {
+    while (!this.uploadStopped) {
+      live = live.filter(({ socket }) => socket.readyState === WEBSOCKET_OPEN);
+      if (live.length === 0) {
+        return;
+      }
+      const allowed = this.unverifiedAllowance(monotonicNow());
+      const share = Math.max(LAG_UPLOAD_MESSAGE_BYTES, allowed / live.length);
+      let next: { socket: WebSocket; keystream: LagKeystream } | undefined;
+      if (this.uploadSent - this.lastUploaded.bytes + LAG_UPLOAD_MESSAGE_BYTES <= allowed) {
+        for (let i = 0; i < live.length && next === undefined; i += 1) {
+          const stream = live[(turn + i) % live.length];
+          if (stream.socket.bufferedAmount + LAG_UPLOAD_MESSAGE_BYTES <= share) {
+            next = stream;
+            turn = (turn + i + 1) % live.length;
+          }
+        }
+      }
+      if (next === undefined) {
         await sleep(BUFFER_POLL_MS);
         sliceStart = monotonicNow();
         continue;
@@ -1219,48 +1251,68 @@ class LagLoadRun {
       }
       let message: Uint8Array;
       try {
-        message = await keystream.next(LAG_UPLOAD_MESSAGE_BYTES);
+        message = await next.keystream.next(LAG_UPLOAD_MESSAGE_BYTES);
       } catch {
-        return;
+        live = live.filter((stream) => stream !== next);
+        continue;
       }
-      if (this.uploadStopped || socket.readyState !== WEBSOCKET_OPEN) {
-        return;
+      if (this.uploadStopped || next.socket.readyState !== WEBSOCKET_OPEN) {
+        continue;
       }
       try {
-        socket.send(message);
+        next.socket.send(message);
       } catch {
-        return;
+        live = live.filter((stream) => stream !== next);
+        continue;
       }
-      flow.sent += message.length;
       this.uploadSent += message.length;
-      if (socket.bufferedAmount < message.length) {
-        this.bufferedAmountCounts = false;
+    }
+  }
+
+  // The bytes the streams may have sent that the extender has not verified
+  // yet (UPLOAD_BACKLOG_MS): enough to keep the bottleneck busy at its recent
+  // rate, and no more than it can still count by the window's end at its
+  // steady rate.
+  private unverifiedAllowance(now: number): number {
+    if (this.lastReportAt === undefined) {
+      return UPLOAD_START_BYTES;
+    }
+    const sinceReportMs = now - this.lastReportAt;
+    const timeLeftMs = Math.max(0, this.uploadFirst! + this.hello.uploadMs - now);
+    const recent = this.recentRate();
+    const steady = this.steadyRate();
+    const backlog = Math.min(UPLOAD_BACKLOG_MAX_BYTES, Math.max(UPLOAD_BACKLOG_MIN_BYTES, (recent * UPLOAD_BACKLOG_MS) / 1000));
+    const busy = (recent * (this.baseRttMs + sinceReportMs)) / 1000 + backlog;
+    const room = (steady * (this.baseRttMs + sinceReportMs + timeLeftMs)) / 1000;
+    const allowed = Math.min(UPLOAD_MAX_UNVERIFIED_BYTES, busy, room);
+    // reports that show no rate yet must not leave nothing in flight
+    return steady === 0 ? Math.max(UPLOAD_MIN_UNVERIFIED_BYTES, allowed) : allowed;
+  }
+
+  // The higher of the rates over the extender's last two report intervals,
+  // bytes per second.
+  private recentRate(): number {
+    let rate = 0;
+    for (let i = Math.max(0, this.reports.length - 2); i < this.reports.length; i += 1) {
+      const before = i === 0 ? { ms: 0, bytes: 0 } : this.reports[i - 1];
+      const report = this.reports[i];
+      rate = Math.max(rate, ((report.bytes - before.bytes) * 1000) / (report.ms - before.ms));
+    }
+    return rate;
+  }
+
+  // The extender's rate over its last UPLOAD_STEADY_MS of reports, or since
+  // the window began, bytes per second.
+  private steadyRate(): number {
+    const last = this.reports[this.reports.length - 1];
+    let since = { ms: 0, bytes: 0 };
+    for (const report of this.reports) {
+      if (last.ms - report.ms < UPLOAD_STEADY_MS) {
+        break;
       }
+      since = report;
     }
-  }
-
-  // Backpressure where bufferedAmount gives none (UNCOUNTED_AHEAD_BYTES).
-  private aheadOfVerified(): boolean {
-    return (
-      !this.bufferedAmountCounts &&
-      UNCOUNTED_AHEAD_BYTES + this.uploadVerifiedRate < this.uploadSent - this.lastUploaded.bytes
-    );
-  }
-
-  // The cap follows about BUFFER_SECONDS of what the stream drains, within
-  // [BUFFER_MIN_BYTES, BUFFER_MAX_BYTES].
-  private adjustCap(socket: WebSocket, flow: UploadFlow): void {
-    const now = monotonicNow();
-    const elapsed = now - flow.measuredAt;
-    if (elapsed < 100) {
-      return;
-    }
-    const drained = flow.sent - socket.bufferedAmount;
-    const rate = ((drained - flow.drained) * 1000) / elapsed;
-    flow.rate = flow.rate === 0 ? rate : (flow.rate + rate) / 2;
-    flow.drained = drained;
-    flow.measuredAt = now;
-    flow.cap = Math.min(BUFFER_MAX_BYTES, Math.max(BUFFER_MIN_BYTES, flow.rate * BUFFER_SECONDS));
+    return ((last.bytes - since.bytes) * 1000) / (last.ms - since.ms);
   }
 
   // UPLOAD_EARLY_MS before the download's window ends: the upload's sockets

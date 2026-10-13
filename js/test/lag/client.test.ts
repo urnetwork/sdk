@@ -542,6 +542,58 @@ test("upload streams start together even when their sockets open one at a time",
   });
 });
 
+// Windows of a few seconds, as the extender's are, so the first interval's
+// ramp and, at 128 KiB/s a stream (half a second a message), the message
+// each stream can still hold when the window ends stay a small part of it.
+for (const [perStream, uploadMs] of [
+  [1 << 20, 3000],
+  [1 << 17, 4000],
+]) {
+  test(`the upload sends little more than the extender verifies, at ${perStream / 1024} KiB/s a stream: its backlog follows the verified rate`, { timeout: 30_000 }, async () => {
+    // each of the four streams read only this fast, so the kernel's buffers
+    // between them could hold far more than the window takes
+    await withMock({ uploadBytesPerSecond: perStream, hello: { uploadMs } }, async (mock) => {
+      let sent = 0;
+      let sentAfter = 0;
+      let closedAt: number | undefined;
+      class CountingWebSocket extends WebSocket {
+        send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+          if (typeof data !== "string") {
+            sent += (data as ArrayBufferView).byteLength;
+            if (closedAt !== undefined) {
+              sentAfter += (data as ArrayBufferView).byteLength;
+            }
+          }
+          super.send(data);
+        }
+        close(code?: number, reason?: string) {
+          if (this.url.includes("/lag/v1/up")) {
+            closedAt ??= performance.now();
+          }
+          super.close(code, reason);
+        }
+      }
+      const { session, events } = open(mock, "ticket-backlog", { WebSocket: CountingWebSocket });
+      await session.ready;
+      await waitFor(() => ofType(events, "rtt").length >= 2, "pings before the load");
+      const result = await session.startLoad();
+      const record = mock.sessions[0];
+      assert.equal(result.uploadVerified, true);
+      const verified = record.uploadVerifiedBytes;
+      // the window was full: the four streams' rate for its length, give or
+      // take the first interval and a message a stream
+      const capacity = (4 * perStream * uploadMs) / 1000;
+      assert.ok(capacity * 0.8 <= verified, `${verified} bytes verified of the ${capacity} the window could take`);
+      const overshoot = (sent - verified) / verified;
+      assert.ok(overshoot < 0.2, `sent ${sent} bytes for ${verified} verified (${(overshoot * 100).toFixed(0)}% more)`);
+      // the streams closed at the window's end, and nothing went after
+      assert.ok(closedAt !== undefined, "the upload's sockets never closed");
+      assert.equal(sentAfter, 0);
+      session.close();
+    });
+  });
+}
+
 test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout: 30_000 }, async () => {
   await withMock({ uploadBytesPerSecond: 2 << 20 }, async (mock) => {
     let largest = 0;
@@ -554,8 +606,7 @@ test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout
         }
         largest = Math.max(largest, this.bufferedAmount);
         super.send(data);
-        // a socket counts a message as soon as it is sent, which is what
-        // lets the client trust bufferedAmount for backpressure
+        // a socket counts a message as soon as it is sent
         if (this.bufferedAmount < (data as ArrayBufferView).byteLength) {
           uncounted += 1;
         }
@@ -566,6 +617,7 @@ test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout
     const result = await session.startLoad();
     assert.equal(result.uploadVerified, true);
     assert.ok(0 < largest, "the upload buffered");
+    // a stream holds no more than its share of the backlog in the page
     assert.ok(largest + 65536 <= 8 << 20, `bufferedAmount reached ${largest}`);
     assert.equal(uncounted, 0);
     session.close();
@@ -723,6 +775,7 @@ test("a load's streams keep the host's port, and a bufferedAmount that never cou
   // the upload ended on its 200 ms window: its timer ran, though nothing
   // ever held a stream back
   assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
-  // and what it sent stayed bounded, with nothing verified to run ahead of
-  assert.ok(0 < uploadedBytes && uploadedBytes <= 16 << 20, `${uploadedBytes} bytes sent`);
+  // and with no report from the extender, the streams sent no more than
+  // they may before its first (sixteen messages)
+  assert.ok(0 < uploadedBytes && uploadedBytes <= 16 * 65536, `${uploadedBytes} bytes sent`);
 });
