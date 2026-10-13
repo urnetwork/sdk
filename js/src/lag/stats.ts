@@ -523,6 +523,19 @@ export class LagPingWindow {
     return lost;
   }
 
+  /**
+   * Move every kept ping by `deltaMs` on the time axis, e.g. when the
+   * session's time origin is found to be earlier than first thought.
+   */
+  shift(deltaMs: number): void {
+    if (!Number.isFinite(deltaMs)) {
+      throw new RangeError(`deltaMs must be finite, got ${deltaMs}`);
+    }
+    for (let i = this.first; i < this.times.length; i += 1) {
+      this.times[i] += deltaMs;
+    }
+  }
+
   clear(): void {
     this.times = [];
     this.rtts = [];

@@ -123,7 +123,10 @@ export interface LagLoadResult {
 export interface LagOpenEvent {
   type: "open";
   hello: LagHello;
-  /** Date.now() when the hello arrived: the session's time origin for `rtt.at` */
+  /**
+   * Date.now() when the hello was handled: the session's first estimate of
+   * its time origin. `LagSession.openedAt` holds the refined one.
+   */
   at: number;
 }
 
@@ -135,7 +138,12 @@ export interface LagRttEvent {
   /** the round trip in ms, or null when the ping was lost (no pong within 5 s) */
   ms: number | null;
   lost: boolean;
-  /** the send time on the browser's clock, as Date.now() (the open event's `at` plus `t`) */
+  /**
+   * The send time on the browser's clock, as Date.now(): the session's
+   * origin plus `t`, as the origin stood when the event fired. A later round
+   * trip can move the origin a little earlier; `LagSession.openedAt` and
+   * `LagSession.pings` follow it.
+   */
   at: number;
 }
 
@@ -240,7 +248,11 @@ export interface LagSession {
   readonly state: LagSessionState;
   /** the extender's hello, once open */
   readonly hello: LagHello | null;
-  /** Date.now() when the session opened, the origin of the rtt events' `at` */
+  /**
+   * When the session opened, as Date.now(): the origin of the rtt events'
+   * `at`. It starts as the hello's handling time and moves earlier when a
+   * round trip shows the session opened sooner (S5).
+   */
   readonly openedAt: number | null;
   /** the last minute of pings, by send time on the browser's clock (`at`) */
   readonly pings: LagPingWindow;
@@ -605,6 +617,17 @@ class LagSessionClient implements LagSession {
     const ms = lost ? null : finiteAtLeastZero(message.ms);
     if (ms === undefined) {
       return;
+    }
+    if (ms !== null) {
+      // The extender had this pong t + ms after the session opened and
+      // reported it at once, so the session opened no later than now less
+      // t + ms. The earliest such bound is the origin: a stall while the
+      // hello was handled made openedAt late, and would shift every ping.
+      const opened = epochNow() - (t + ms);
+      if (opened < this.openedAtValue) {
+        this.pings.shift(opened - this.openedAtValue);
+        this.openedAtValue = opened;
+      }
     }
     const at = this.openedAtValue + t;
     this.pings.add({ t: at, ms });

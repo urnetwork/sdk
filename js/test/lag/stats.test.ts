@@ -204,6 +204,24 @@ test("ping window: a late ping is placed by its time; a stale or invalid one is 
   assert.equal(window.newest, undefined);
 });
 
+test("ping window: shift moves every kept ping on the time axis", () => {
+  const window = new LagPingWindow({ windowMs: 1000 });
+  for (const t of [0, 250, 500, 750]) {
+    window.add({ t, ms: t / 10 });
+  }
+  window.shift(-400);
+  assert.deepEqual(
+    window.pings().map((ping) => [ping.t, ping.ms]),
+    [[-400, 0], [-150, 25], [100, 50], [350, 75]],
+  );
+  assert.equal(window.newest, 350);
+  assert.deepEqual(window.roundTrips(-200, 200), [25, 50]);
+  // later pings line up with the moved ones
+  window.add({ t: 600, ms: 1 });
+  assert.equal(window.oldest, -400);
+  assert.throws(() => window.shift(NaN), RangeError);
+});
+
 test("ping window: memory stays bounded over a long session", () => {
   const window = new LagPingWindow();
   for (let i = 0; i < 200_000; i += 1) {

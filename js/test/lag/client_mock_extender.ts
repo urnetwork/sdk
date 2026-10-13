@@ -261,6 +261,11 @@ export interface MockExtenderOptions {
   ignorePongs?: boolean;
   /** send no pings at all, so the session goes silent */
   silent?: boolean;
+  /**
+   * Block this process this long right after sending the hello, so the
+   * browser handles the hello late, as a page busy when it arrives would.
+   */
+  stallAfterHelloMs?: number;
   /** refusals for the next load requests, in order */
   refuseLoads?: Array<{ code: "busy" | "budget"; retryAfterMs: number }>;
   /** verify uploads under this key instead of the session's, to force a mismatch */
@@ -315,6 +320,10 @@ export interface MockSessionRecord {
   uploadFirstMessageAt: number[];
   uploadReports: Array<{ bytes: number; ms: number }>;
   mismatch: boolean;
+  /** Date.now() when the session opened and its hello went out */
+  openedEpoch?: number;
+  /** Date.now() at each ping's send */
+  pingSentEpoch: number[];
   loadResult?: { uploadVerified: boolean; endReason: string };
   closeCode?: number;
   closedBy?: "browser" | "extender";
@@ -445,6 +454,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       payload.writeUInt32BE(sequence);
       state.ws.ping(payload);
       state.record.pingsSent += 1;
+      state.record.pingSentEpoch.push(Date.now());
       later(state, lostAfterMs, () => {
         if (inFlight !== ping) {
           return;
@@ -547,6 +557,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploadFirstMessageAt: [],
       uploadReports: [],
       mismatch: false,
+      pingSentEpoch: [],
     };
     sessions.push(record);
     // M3: admission
@@ -588,9 +599,16 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     byId.set(id, state);
     ws.onText = (text) => onControlMessage(state, JSON.parse(text));
     ws.onClose = (code) => endSession(state, "browser", code);
+    record.openedEpoch = Date.now();
     ws.sendText(
       JSON.stringify({ type: "hello", session: id, uploadKey: uploadKey.toString("base64url"), ...hello }),
     );
+    if (options.stallAfterHelloMs !== undefined) {
+      const until = performance.now() + options.stallAfterHelloMs;
+      while (performance.now() < until) {
+        // busy, like a page in a long task
+      }
+    }
     if (!options.silent) {
       startPings(state);
     }

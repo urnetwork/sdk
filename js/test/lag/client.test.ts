@@ -75,11 +75,16 @@ test("a session pings from hello until close()", { timeout: 20_000 }, async () =
     assert.equal(ofType(events, "open")[0].hello, hello);
     await waitFor(() => ofType(events, "rtt").length >= 5, "five pings");
     const rtts = ofType(events, "rtt");
+    // each ping's time is the session's origin, as it stood then, plus t;
+    // the origin starts at the hello and only ever moves earlier
+    const origins = rtts.map((rtt) => rtt.at - rtt.t);
+    assert.ok(origins[0] <= ofType(events, "open")[0].at + 0.001);
+    assert.ok(Math.abs(origins.at(-1)! - session.openedAt!) < 0.001);
     for (const [i, rtt] of rtts.entries()) {
       assert.equal(rtt.lost, false);
       assert.ok(typeof rtt.ms === "number" && 0 <= rtt.ms, `${rtt.ms}`);
-      assert.equal(rtt.at, session.openedAt! + rtt.t);
       if (0 < i) {
+        assert.ok(origins[i] <= origins[i - 1] + 0.001, "the origin moved later");
         // one in flight, the next no sooner than 250 ms after the last send
         // (t is rounded to the millisecond, and a timer may fire 1 ms early)
         const gap = rtt.t - rtts[i - 1].t;
@@ -375,6 +380,34 @@ for (const direction of ["download", "upload"] as const) {
     });
   });
 }
+
+test("a stall while the hello is handled does not shift the session's pings", { timeout: 20_000 }, async () => {
+  // the hello waits 400 ms to be handled, as on a page busy when it arrives
+  await withMock({ stallAfterHelloMs: 400 }, async (mock) => {
+    const { session, events } = open(mock, "ticket-hello-stall");
+    await session.ready;
+    await waitFor(() => 4 <= ofType(events, "rtt").length, "four pings");
+    const record = mock.sessions[0];
+    const opened = record.openedEpoch!;
+    const late = ofType(events, "open")[0].at - opened;
+    assert.ok(300 <= late, `the hello was handled ${late} ms after the session opened`);
+    // the round trips put the origin back where the session opened...
+    const off = session.openedAt! - opened;
+    assert.ok(Math.abs(off) <= 50, `the origin is ${off} ms from the session's opening`);
+    // ...so every ping sits at its own send time
+    const rtts = ofType(events, "rtt");
+    rtts.forEach((rtt, i) => {
+      const drift = rtt.at - record.pingSentEpoch[i];
+      assert.ok(Math.abs(drift) <= 50, `ping ${i} is ${drift} ms from its send`);
+    });
+    // the window follows the origin as later round trips refine it
+    assert.deepEqual(
+      session.pings.pings().map((ping) => ping.t),
+      rtts.map((rtt) => session.openedAt! + rtt.t),
+    );
+    session.close();
+  });
+});
 
 test("lost pings are reported, and 30 s without a pong ends the session", { timeout: 20_000 }, async () => {
   await withMock({ ignorePongs: true, lostAfterMs: 150, noPongCloseMs: 1500 }, async (mock) => {
