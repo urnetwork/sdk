@@ -56,7 +56,7 @@ build_wasm:
 	export GOEXPERIMENT=greenteagc; \
 	mkdir -p wasm; \
 	rm -f wasm/sdk.wasm wasm/wasm_exec.js; \
-	GOOS=js GOARCH=wasm go build \
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm go build \
 		-ldflags "-X github.com/urnetwork/sdk.Version=$${WARP_VERSION}" \
 		-o wasm/sdk.wasm .; \
 	GOROOT="$$(go env GOROOT)"; \

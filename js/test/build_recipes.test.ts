@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 // The release uploads build/URnetworkSdkJs.zip and npm publishes wasm/, so a
 // build recipe that fails must stop there: nothing stale or partial may be left
 // standing as this build's output. These run the real Makefile on a private
-// copy, with a go that compiles nothing and a zip that only marks the archive.
+// copy, with a fake go/zip except for the explicit real-compiler regression below.
 const jsDir = fileURLToPath(new URL("..", import.meta.url));
 let root = "";
 
@@ -32,8 +32,8 @@ function fixture(compile: "fails" | "succeeds", files: Record<string, string>) {
   mkdirSync(join(dir, "bin"));
   writeFileSync(join(dir, "bin/go"), `#!/bin/sh
 case "$1" in
-  build) ${build} ;;
-  env) echo ${quote(join(dir, "goroot"))} ;;
+  build) printf '%s|%s|%s\\n' "$GOOS" "$GOARCH" "$CGO_ENABLED" > build.env; ${build} ;;
+  env) printf '%s\\n' "$CGO_ENABLED" > native.env; echo ${quote(join(dir, "goroot"))} ;;
   version) echo "go version go0.0-fixture js/wasm" ;;
   *) echo "unexpected-go $*" >&2; exit 91 ;;
 esac
@@ -43,9 +43,9 @@ esac
   return dir;
 }
 
-function make(dir: string, target: string) {
+function make(dir: string, target: string, extraEnv: Record<string, string> = {}) {
   return spawnSync("make", [target], {
-    cwd: dir, env: { ...process.env, PATH: join(dir, "bin") + ":" + process.env.PATH },
+    cwd: dir, env: { ...process.env, ...extraEnv, PATH: join(dir, "bin") + ":" + process.env.PATH },
     encoding: "utf8", timeout: 10000,
   });
 }
@@ -86,4 +86,38 @@ test("a successful build_bundle packages the freshly built wasm", () => {
   assert.match(result.stdout, /wasm_exec\.js paired with go0\.0-fixture/);
   assert.equal(readFileSync(join(dir, "build/URnetworkSdkJs/sdk.wasm"), "utf8"), "fresh wasm\n");
   assert.ok(existsSync(join(dir, "build/URnetworkSdkJs.zip")));
+});
+
+test("build_wasm owns cgo only for its wasm compile", () => {
+  for (const inherited of ["1", "0", ""]) {
+    const dir = fixture("succeeds", earlierBuild);
+    const result = make(dir, "build_wasm", { CGO_ENABLED: inherited });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(join(dir, "build.env"), "utf8"), "js|wasm|0\n");
+    assert.equal(readFileSync(join(dir, "native.env"), "utf8"), inherited + "\n",
+      "the wasm override changed the native toolchain query environment");
+  }
+});
+
+test("build_wasm compiles real os/user despite inherited native cgo", () => {
+  const dir = mkdtempSync(join(root, "real-wasm-"));
+  copyFileSync(join(jsDir, "Makefile"), join(dir, "Makefile"));
+  writeFileSync(join(dir, "go.mod"), "module fixture.example/wasm\n\ngo 1.26\n");
+  writeFileSync(join(dir, "main.go"),
+    'package main\n\nimport "os/user"\n\nfunc main() { _, _ = user.Current() }\n');
+  // Keep the native caller's cgo enabled. The actual recipe, not a mock go or
+  // an osusergo tag, must select the standard library's wasm implementation.
+  const result = spawnSync("make", ["build_wasm"], {
+    cwd: dir,
+    env: {
+      ...process.env, CGO_ENABLED: "1", GOFLAGS: "", GOENV: "off",
+      GOWORK: "off", GOTOOLCHAIN: "local", GOMAXPROCS: "2",
+      GOPROXY: "off", GOSUMDB: "off",
+    },
+    encoding: "utf8", timeout: 180000,
+  });
+  assert.equal(result.status, 0, `${result.error || ""}${result.stderr}`);
+  assert.deepEqual(readFileSync(join(dir, "wasm/sdk.wasm")).subarray(0, 8),
+    Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]), "the real compiler did not produce a wasm module");
+  assert.match(result.stdout, /wasm_exec\.js paired with go/);
 });

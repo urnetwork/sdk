@@ -81,7 +81,7 @@ var messagingBoundaryLegs = []messagingBoundaryLeg{
 	{name: "root linux/amd64", moduleDirectory: ".", environment: []string{"GOOS=linux", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "root windows/amd64", moduleDirectory: ".", environment: []string{"GOOS=windows", "GOARCH=amd64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "root darwin/arm64", moduleDirectory: ".", environment: []string{"GOOS=darwin", "GOARCH=arm64"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
-	{name: "js/wasm", moduleDirectory: "js", environment: []string{"GOOS=js", "GOARCH=wasm"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
+	{name: "js/wasm", moduleDirectory: "js", environment: []string{"GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "cgo linux/amd64", moduleDirectory: "cgo", environment: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "cgo windows/amd64", moduleDirectory: "cgo", environment: []string{"GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
 	{name: "cgo darwin/arm64", moduleDirectory: "cgo", environment: []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, test: true, patterns: []string{"./..."}, mustContain: "github.com/urnetwork/sdk"},
@@ -509,6 +509,14 @@ func TestNoShippedBuildLinksAMessagingPackage(t *testing.T) {
 // exactly its own. A runner that dropped a leg's environment, tags or -test would find the wrong
 // set here.
 func TestTheMessagingBoundaryLegsReadTheirOwnBuildConfiguration(t *testing.T) {
+	// A native caller must not add cgo-only dependencies to the shipped browser leg.
+	t.Setenv("CGO_ENABLED", "1")
+	browserIndex := slices.IndexFunc(messagingBoundaryLegs, func(leg messagingBoundaryLeg) bool {
+		return leg.name == "js/wasm"
+	})
+	if browserIndex < 0 {
+		t.Fatal("the shipped browser dependency leg is missing")
+	}
 	fixture := t.TempDir()
 	fixtureFiles := map[string]string{
 		"core/go.mod":           "module fixture.example/core\n\ngo 1.26\n\nrequire github.com/urnetwork/message v0.0.0\n\nreplace github.com/urnetwork/message => ../message\n",
@@ -543,6 +551,10 @@ func TestTheMessagingBoundaryLegsReadTheirOwnBuildConfiguration(t *testing.T) {
 		{
 			leg:  messagingBoundaryLeg{name: "browser", environment: []string{"GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0"}},
 			want: []string{"github.com/urnetwork/message/browser"},
+		},
+		{
+			leg:  messagingBoundaryLegs[browserIndex],
+			want: []string{"github.com/urnetwork/message/browser", "github.com/urnetwork/message/testonly"},
 		},
 		{
 			leg:  messagingBoundaryLeg{name: "mobile", environment: []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0"}, tags: "sdk_mobile_bind"},

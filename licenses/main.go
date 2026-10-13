@@ -357,7 +357,7 @@ var goTargets = []goTarget{
 	{".", []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=1"}, "sdk_mobile_bind", []string{".", "golang.org/x/mobile/bind/objc", "golang.org/x/mobile/bind/seq"}, []string{"apple"}},
 	{"cgo", []string{"GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1"}, "", []string{"."}, []string{"windows"}},
 	{"cgo", []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1"}, "", []string{"."}, []string{"linux"}},
-	{"js", []string{"GOOS=js", "GOARCH=wasm"}, "", []string{"."}, []string{"web", "extension"}},
+	{dir: "js", env: []string{"GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0"}, packages: []string{"."}, apps: []string{"web", "extension"}},
 }
 
 type goPackage struct {

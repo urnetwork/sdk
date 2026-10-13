@@ -188,3 +188,64 @@ func TestGoTargetsKeepBuildModulesAtCheckoutRoot(t *testing.T) {
 		}
 	}
 }
+
+// The actual browser target must exclude cgo-only modules even when its caller enables cgo.
+func TestBrowserLicenseTargetDoesNotInheritNativeCgo(t *testing.T) {
+	oldTargets, oldSdk, oldRepo := goTargets, sdkDir, sdkRepoDir
+	t.Cleanup(func() { goTargets, sdkDir, sdkRepoDir = oldTargets, oldSdk, oldRepo })
+	var browserTargets []goTarget
+	for _, target := range goTargets {
+		if target.dir == "js" {
+			browserTargets = append(browserTargets, target)
+		}
+	}
+	if len(browserTargets) != 1 {
+		t.Fatalf("browser license targets = %d, want 1", len(browserTargets))
+	}
+	goTargets = browserTargets
+	sdkRepoDir = t.TempDir()
+	sdkDir = sdkRepoDir
+	t.Setenv("CGO_ENABLED", "1")
+	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOSUMDB", "off")
+	fixtureFiles := map[string]string{
+		"js/go.mod":      "module github.com/urnetwork/sdk/js\n\ngo 1.26\n\nrequire (\nfixture.example/pure v0.0.0\nfixture.example/native v0.0.0\n)\n\nreplace fixture.example/pure => ../pure\nreplace fixture.example/native => ../native\n",
+		"js/main.go":     "package main\n\nimport _ \"fixture.example/pure\"\nfunc main() {}\n",
+		"js/main_cgo.go": "//go:build cgo\n\npackage main\n\nimport _ \"fixture.example/native\"\n",
+		"pure/go.mod":    "module fixture.example/pure\n\ngo 1.26\n",
+		"pure/pure.go":   "package pure\n",
+		"pure/LICENSE":   "MIT License\nPermission is hereby granted, free of charge.\n",
+		"native/go.mod":  "module fixture.example/native\n\ngo 1.26\n",
+		"native/cgo.go":  "package native\n",
+		"native/LICENSE": "MIT License\nPermission is hereby granted, free of charge.\n",
+	}
+	for name, contents := range fixtureFiles {
+		path := filepath.Join(sdkRepoDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := collectGo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		seen[entry.Name] = true
+		if entry.Name == "fixture.example/pure" && strings.Join(entry.Apps, ",") != "web,extension" {
+			t.Errorf("browser license apps = %v, want extension and web", entry.Apps)
+		}
+	}
+	if !seen["fixture.example/pure"] || !seen["Go standard library"] {
+		t.Fatalf("browser license positive controls missing: %v", seen)
+	}
+	if seen["fixture.example/native"] {
+		t.Fatal("browser license closure inherited the caller's cgo-only dependency")
+	}
+}
