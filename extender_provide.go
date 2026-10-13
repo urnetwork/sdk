@@ -453,6 +453,12 @@ type deviceLocalExtenderSettings struct {
 	// connect defaults.
 	ConfigurePeerPinger   func(settings *connect.ExtenderPeerPingerSettings)
 	ConfigurePingReporter func(settings *connect.ExtenderPingReporterSettings)
+
+	// Whether the role serves the lag.dev measurement API (lag.dev/PLAN.md
+	// C4): the device's measurements setting, read as the role starts; a
+	// change while it runs reaches it through setMeasurementsEnabled. Nil
+	// serves it.
+	MeasurementsEnabled func() bool
 }
 
 // The bound dns ports of one extender as one string (F3, L2), ascending.
@@ -533,6 +539,60 @@ func (self *DeviceLocal) SetProvideExtender(provideExtender bool) {
 	}
 	self.log.Infof("[device]provide extender = %t\n", provideExtender)
 	self.updateExtenderProvide()
+}
+
+// The lag.dev measurements setting of this device (lag.dev/PLAN.md C4,
+// decision 18): whether the provider extender role serves the measurement API,
+// on until the owner opts out. The value the space's local state stores; else,
+// on a space that keeps no local state, the value SetMeasurementsEnabled set
+// for the life of this device; else on.
+func (self *DeviceLocal) GetMeasurementsEnabled() bool {
+	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
+		return asyncLocalState.GetLocalState().GetMeasurementsEnabled()
+	}
+	measurementsEnabled, set := func() (bool, bool) {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.measurementsEnabled, self.measurementsEnabledSet
+	}()
+	if set {
+		return measurementsEnabled
+	}
+	return true
+}
+
+// Sets the measurements setting and applies it at once, without a restart
+// (lag.dev/PLAN.md C4): stored in the space's local state, which keeps it
+// across restarts and a sign-out, or held by this device for its life on a
+// space that keeps no local state. Off stops the measurement API and closes
+// its open sessions, and an activation asked for at once tells the operator,
+// which withdraws the measurement name (C9); on serves it again, asking for
+// its certificate anew. The extender role itself is the provider extender
+// setting's. A hosted device never runs the role (G1), so the setter is
+// guarded there as SetProvideExtender is.
+func (self *DeviceLocal) SetMeasurementsEnabled(measurementsEnabled bool) {
+	if self.hostedIncompatibleGuarded("SetMeasurementsEnabled") {
+		return
+	}
+	if asyncLocalState := self.networkSpaceAsyncLocalState(); asyncLocalState != nil {
+		if err := asyncLocalState.GetLocalState().SetMeasurementsEnabled(measurementsEnabled); err != nil {
+			self.log.Infof("[device]measurements enabled err = %s\n", err)
+		}
+	} else {
+		func() {
+			self.stateLock.Lock()
+			defer self.stateLock.Unlock()
+			self.measurementsEnabled = measurementsEnabled
+			self.measurementsEnabledSet = true
+		}()
+	}
+	self.log.Infof("[device]measurements enabled = %t\n", measurementsEnabled)
+	self.stateLock.Lock()
+	provider := self.provider
+	self.stateLock.Unlock()
+	if provider != nil {
+		provider.setExtenderMeasurementsEnabled(measurementsEnabled)
+	}
 }
 
 // The provider extender status (F3). A device that runs no role reports a

@@ -8882,6 +8882,17 @@ func urnet_device_get_log_verbosity(self C.uint64_t) C.int64_t {
 	return C.int64_t(r0)
 }
 
+//export urnet_device_get_measurements_enabled
+func urnet_device_get_measurements_enabled(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_device_get_measurements_enabled")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_get_measurements_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetMeasurementsEnabled()
+	return C.bool(r0)
+}
+
 //export urnet_device_get_network_peers
 func urnet_device_get_network_peers(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_device_get_network_peers")
@@ -9536,6 +9547,16 @@ func urnet_device_set_log_verbosity(self C.uint64_t, level C.int64_t) {
 		return
 	}
 	self_.SetLogVerbosity(int(int64(level)))
+}
+
+//export urnet_device_set_measurements_enabled
+func urnet_device_set_measurements_enabled(self C.uint64_t, measurementsEnabled C.bool) {
+	defer cgoGuard("urnet_device_set_measurements_enabled")
+	self_, ok := resolveHandle[sdk.Device](uint64(self), "urnet_device_set_measurements_enabled")
+	if !ok {
+		return
+	}
+	self_.SetMeasurementsEnabled(bool(measurementsEnabled))
 }
 
 //export urnet_device_set_offline
@@ -14058,6 +14079,17 @@ func urnet_local_state_get_log_verbosity(self C.uint64_t) C.int64_t {
 	return C.int64_t(r0)
 }
 
+//export urnet_local_state_get_measurements_enabled
+func urnet_local_state_get_measurements_enabled(self C.uint64_t) C.bool {
+	defer cgoGuard("urnet_local_state_get_measurements_enabled")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_get_measurements_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	r0 := self_.GetMeasurementsEnabled()
+	return C.bool(r0)
+}
+
 //export urnet_local_state_get_performance_profile
 func urnet_local_state_get_performance_profile(self C.uint64_t) *C.char {
 	defer cgoGuard("urnet_local_state_get_performance_profile")
@@ -14692,6 +14724,21 @@ func urnet_local_state_set_log_verbosity(self C.uint64_t, level C.int64_t, outEr
 		return C.bool(false)
 	}
 	err := self_.SetLogVerbosity(int(int64(level)))
+	if err != nil {
+		setErrorOut(outError, err)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+//export urnet_local_state_set_measurements_enabled
+func urnet_local_state_set_measurements_enabled(self C.uint64_t, measurementsEnabled C.bool, outError **C.char) C.bool {
+	defer cgoGuard("urnet_local_state_set_measurements_enabled")
+	self_, ok := resolveHandle[*sdk.LocalState](uint64(self), "urnet_local_state_set_measurements_enabled")
+	if !ok {
+		return C.bool(false)
+	}
+	err := self_.SetMeasurementsEnabled(bool(measurementsEnabled))
 	if err != nil {
 		setErrorOut(outError, err)
 		return C.bool(false)

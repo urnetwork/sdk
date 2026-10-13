@@ -983,6 +983,12 @@ type DeviceLocal struct {
 	// with local state stores the setting there instead.
 	provideExtenderSet bool
 	provideExtender    bool
+	// The lag.dev measurements setting on a space that keeps no local state
+	// (lag.dev/PLAN.md C4): set by SetMeasurementsEnabled and held for the
+	// life of the device, on until it is set. A space with local state stores
+	// the setting there instead.
+	measurementsEnabledSet bool
+	measurementsEnabled    bool
 
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
@@ -1825,6 +1831,10 @@ func newDeviceLocalWithOverridesForPlatform(
 		// are installed here (G2, L2)
 		provider.extenderDnsPrivilegedPort = settings.ProvideExtenderDnsPrivilegedPort
 		provider.extenderSettingsConfigure = settings.providerExtenderSettings
+		// the role reads the measurements setting as it starts, and a change
+		// reaches a running role through setExtenderMeasurementsEnabled
+		// (lag.dev/PLAN.md C4)
+		provider.extenderMeasurementsEnabled = deviceLocal.GetMeasurementsEnabled
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
 		// the provider client lives as long as the device, so its contract

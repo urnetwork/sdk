@@ -17523,6 +17523,7 @@ public:
 	std::optional<LicenseInfoList> getLicenses(const std::string& app) const;
 	std::optional<OverrideLocalAppIds> getLocalOverrideAppIds() const;
 	int64_t getLogVerbosity() const;
+	bool getMeasurementsEnabled() const;
 	std::optional<NetworkPeers> getNetworkPeers() const;
 	NetworkSpace getNetworkSpace() const;
 	bool getOffline() const;
@@ -17573,6 +17574,7 @@ public:
 	void setDestination(const std::optional<ConnectLocation>& location, const std::optional<ProviderSpecList>& specs) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
 	void setLogVerbosity(int64_t level) const;
+	void setMeasurementsEnabled(bool measurements_enabled) const;
 	void setOffline(bool offline) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& performance_profile) const;
 	void setProvideControlMode(const std::string& mode) const;
@@ -18342,6 +18344,7 @@ public:
 	std::string getExtenderGossipMode() const;
 	std::string getInstanceId() const;
 	int64_t getLogVerbosity() const;
+	bool getMeasurementsEnabled() const;
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
 	bool getProvideExtender() const;
@@ -18383,6 +18386,7 @@ public:
 	void setInstanceId(const std::string& instance_id) const;
 	void setIntroFunnelLastPrompted() const;
 	void setLogVerbosity(int64_t level) const;
+	void setMeasurementsEnabled(bool measurements_enabled) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const;
 	void setProvideControlMode(const std::string& mode) const;
 	void setProvideExtender(bool provide_extender) const;
@@ -25406,6 +25410,10 @@ inline int64_t Device::getLogVerbosity() const {
 	int64_t r = urnet_device_get_log_verbosity(handle());
 	return r;
 }
+inline bool Device::getMeasurementsEnabled() const {
+	bool r = urnet_device_get_measurements_enabled(handle());
+	return r;
+}
 inline std::optional<NetworkPeers> Device::getNetworkPeers() const {
 	char* r_c = urnet_device_get_network_peers(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -25710,6 +25718,9 @@ inline void Device::setDnsResolverSettings(const std::optional<DnsResolverSettin
 }
 inline void Device::setLogVerbosity(int64_t level) const {
 	urnet_device_set_log_verbosity(handle(), level);
+}
+inline void Device::setMeasurementsEnabled(bool measurements_enabled) const {
+	urnet_device_set_measurements_enabled(handle(), measurements_enabled);
 }
 inline void Device::setOffline(bool offline) const {
 	urnet_device_set_offline(handle(), offline);
@@ -29271,6 +29282,10 @@ inline int64_t LocalState::getLogVerbosity() const {
 	int64_t r = urnet_local_state_get_log_verbosity(handle());
 	return r;
 }
+inline bool LocalState::getMeasurementsEnabled() const {
+	bool r = urnet_local_state_get_measurements_enabled(handle());
+	return r;
+}
 inline std::optional<PerformanceProfile> LocalState::getPerformanceProfile() const {
 	char* r_c = urnet_local_state_get_performance_profile(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -29647,6 +29662,16 @@ inline void LocalState::setLogVerbosity(int64_t level) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_log_verbosity failed");
+	}
+}
+inline void LocalState::setMeasurementsEnabled(bool measurements_enabled) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_measurements_enabled(handle(), measurements_enabled, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_measurements_enabled failed");
 	}
 }
 inline void LocalState::setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const {

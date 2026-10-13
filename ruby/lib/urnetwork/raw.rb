@@ -595,6 +595,7 @@ module URnetwork
       attach_function :urnet_device_get_licenses, [:uint64, :string], :pointer, blocking: true
       attach_function :urnet_device_get_local_override_app_ids, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_log_verbosity, [:uint64], :int64, blocking: true
+      attach_function :urnet_device_get_measurements_enabled, [:uint64], :bool, blocking: true
       attach_function :urnet_device_get_network_peers, [:uint64], :pointer, blocking: true
       attach_function :urnet_device_get_network_space, [:uint64], :uint64, blocking: true
       attach_function :urnet_device_get_offline, [:uint64], :bool, blocking: true
@@ -645,6 +646,7 @@ module URnetwork
       attach_function :urnet_device_set_destination, [:uint64, :string, :string], :void, blocking: true
       attach_function :urnet_device_set_dns_resolver_settings, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_log_verbosity, [:uint64, :int64], :void, blocking: true
+      attach_function :urnet_device_set_measurements_enabled, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_offline, [:uint64, :bool], :void, blocking: true
       attach_function :urnet_device_set_performance_profile, [:uint64, :string], :void, blocking: true
       attach_function :urnet_device_set_provide_control_mode, [:uint64, :string], :void, blocking: true
@@ -944,6 +946,7 @@ module URnetwork
       attach_function :urnet_local_state_get_extender_gossip_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_instance_id, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_log_verbosity, [:uint64], :int64, blocking: true
+      attach_function :urnet_local_state_get_measurements_enabled, [:uint64], :bool, blocking: true
       attach_function :urnet_local_state_get_performance_profile, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_provide_control_mode, [:uint64], :pointer, blocking: true
       attach_function :urnet_local_state_get_provide_extender, [:uint64], :bool, blocking: true
@@ -985,6 +988,7 @@ module URnetwork
       attach_function :urnet_local_state_set_instance_id, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_intro_funnel_last_prompted, [:uint64, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_log_verbosity, [:uint64, :int64, :pointer], :bool, blocking: true
+      attach_function :urnet_local_state_set_measurements_enabled, [:uint64, :bool, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_performance_profile, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_control_mode, [:uint64, :string, :pointer], :bool, blocking: true
       attach_function :urnet_local_state_set_provide_extender, [:uint64, :bool, :pointer], :bool, blocking: true
