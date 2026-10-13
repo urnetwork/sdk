@@ -15,8 +15,15 @@
 //
 // Signatures are checked with WebCrypto Ed25519 where the runtime has it,
 // proven once against an RFC 8032 vector, and otherwise with the vendored
-// TweetNaCl (tweetnacl_verify.ts). Both refuse a non-canonical S, as Go's
+// TweetNaCl (tweetnacl_verify.ts), run a slice at a time so a check never
+// holds the event loop. Both refuse a non-canonical S, as Go's
 // crypto/ed25519 does.
+//
+// An extender is a volunteer's machine, so the feed client bounds what one
+// can make it hold (S3 Bounds): a sample may run at most a few frames past the
+// count it asked for before it ends, and no more than 64 frames wait to be
+// verified at once, the most the feed server lets a subscriber fall behind
+// (D4). Past either, the stream fails.
 
 import {
   canonicalIp,
@@ -36,7 +43,7 @@ import {
   type ExtenderRevocation,
   type ExtenderRevocationBody,
 } from "./protobuf";
-import { tweetnaclVerifyDetached } from "./tweetnacl_verify";
+import { tweetnaclPrimitives } from "./tweetnacl_verify";
 
 /** The signature domain of a record body (connect extender_record.go). */
 export const EXTENDER_RECORD_SIGNATURE_DOMAIN = "ur-extender-record-v1";
@@ -49,6 +56,17 @@ export const LAG_TICKET_SIGNATURE_DOMAIN = "ur-lag-ticket-v1";
 export const DEFAULT_EXTENDER_FEED_SAMPLE_COUNT = 8;
 /** The largest feed frame (D4). */
 export const EXTENDER_FEED_MAX_FRAME_BYTES = 64 * 1024;
+/**
+ * How many frames past the count it asked for a sample may carry before its
+ * end (S3 Bounds). The server sends at most the count, its own record among
+ * them, so the margin is only slack.
+ */
+export const EXTENDER_FEED_SAMPLE_MARGIN = 4;
+/**
+ * The most frames that may wait to be verified at once (S3 Bounds): as many as
+ * the feed server lets a subscriber fall behind before it drops it (D4).
+ */
+export const EXTENDER_FEED_MAX_PENDING_FRAMES = 64;
 /** How long past its ExpireTimeMs a record is still taken, for clock skew (connect RecordExpireSkew). */
 export const DEFAULT_EXTENDER_RECORD_EXPIRE_SKEW_MS = 5 * 60 * 1000;
 
@@ -124,7 +142,8 @@ function ed25519Subtle(): Promise<SubtleCrypto | null> {
 
 /**
  * Verifies an Ed25519 signature with WebCrypto where the runtime has Ed25519,
- * otherwise with the vendored TweetNaCl. A signature or key of the wrong
+ * otherwise with the vendored TweetNaCl, run in slices so a check never holds
+ * the event loop (`verifyEd25519Sliced`). A signature or key of the wrong
  * length, or a non-canonical S, does not verify. `fallback: true` skips
  * WebCrypto.
  */
@@ -147,7 +166,145 @@ export async function verifyEd25519(
       return false;
     }
   }
-  return tweetnaclVerifyDetached(message, signature, publicKey);
+  return verifyEd25519Sliced(publicKey, message, signature);
+}
+
+/** How long the fallback verification works before it gives the event loop a turn. */
+export const ED25519_SLICE_MS = 8;
+
+// lets the event loop run: other tasks, input and rendering in a page. A
+// MessageChannel turn is not clamped to 4 ms the way nested timers are.
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof MessageChannel === "function") {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        resolve();
+      };
+      channel.port2.postMessage(null);
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
+const clock = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+export interface Ed25519SliceOptions {
+  /** the work between turns of the event loop, ED25519_SLICE_MS by default; 0 yields at every step */
+  sliceMs?: number;
+  /** hash with the vendored SHA-512 even where WebCrypto's is available */
+  vendoredHash?: boolean;
+  /** how to give the event loop a turn */
+  yieldNow?: () => Promise<void>;
+}
+
+type TweetnaclPoint = [Float64Array, Float64Array, Float64Array, Float64Array];
+
+/**
+ * TweetNaCl's detached verification (crypto_sign_open) taken a slice at a
+ * time: the same primitives in the same order, with a turn of the event loop
+ * whenever a slice has run `sliceMs`. The SHA-512 of R || A || M is
+ * WebCrypto's where the runtime has it, and otherwise TweetNaCl's, a block
+ * range at a time. A 64 KiB record holds the event loop for a slice, not for
+ * the whole check. Like TweetNaCl it does not refuse a non-canonical S;
+ * `verifyEd25519` checks that first.
+ */
+export async function verifyEd25519Sliced(
+  publicKey: Uint8Array,
+  message: Uint8Array,
+  signature: Uint8Array,
+  options: Ed25519SliceOptions = {},
+): Promise<boolean> {
+  if (publicKey.length !== 32 || signature.length !== 64) {
+    return false;
+  }
+  const nacl = tweetnaclPrimitives();
+  const sliceMs = options.sliceMs ?? ED25519_SLICE_MS;
+  const yieldNow = options.yieldNow ?? yieldToEventLoop;
+  let sliceStart = clock();
+  const pace = async () => {
+    if (sliceMs <= clock() - sliceStart) {
+      await yieldNow();
+      sliceStart = clock();
+    }
+  };
+  const point = (): TweetnaclPoint => [nacl.gf(), nacl.gf(), nacl.gf(), nacl.gf()];
+  // TweetNaCl's scalarmult, pacing every 4 of its 256 steps
+  const scalarmult = async (p: TweetnaclPoint, q: TweetnaclPoint, s: Uint8Array) => {
+    nacl.set25519(p[0], nacl.gf0);
+    nacl.set25519(p[1], nacl.gf1);
+    nacl.set25519(p[2], nacl.gf1);
+    nacl.set25519(p[3], nacl.gf0);
+    for (let i = 255; 0 <= i; i -= 1) {
+      const b = (s[(i / 8) | 0] >> (i & 7)) & 1;
+      nacl.cswap(p, q, b);
+      nacl.add(q, p);
+      nacl.add(p, p);
+      nacl.cswap(p, q, b);
+      if (i % 4 === 0) {
+        await pace();
+      }
+    }
+  };
+
+  // as crypto_sign_open: -A from the key
+  const q = point();
+  if (nacl.unpackneg(q, publicKey)) {
+    return false;
+  }
+  await pace();
+  // h = SHA-512(R || A || M), reduced mod L
+  const hashed = new Uint8Array(64 + message.length);
+  hashed.set(signature.subarray(0, 32), 0);
+  hashed.set(publicKey, 32);
+  hashed.set(message, 64);
+  const subtle = options.vendoredHash ? undefined : globalThis.crypto?.subtle;
+  const h = new Uint8Array(64);
+  h.set(subtle ? new Uint8Array(await subtle.digest("SHA-512", hashed)) : await sha512Sliced(hashed, pace));
+  nacl.reduce(h);
+  // [h](-A) + [S]B, which is R when the signature is good (scalarbase is
+  // scalarmult from the base point)
+  const p = point();
+  await scalarmult(p, q, h);
+  const base = point();
+  nacl.set25519(base[0], nacl.X);
+  nacl.set25519(base[1], nacl.Y);
+  nacl.set25519(base[2], nacl.gf1);
+  nacl.M(base[3], nacl.X, nacl.Y);
+  await scalarmult(q, base, signature.subarray(32));
+  nacl.add(p, q);
+  const t = new Uint8Array(32);
+  nacl.pack(t, p);
+  return nacl.crypto_verify_32(signature, 0, t, 0) === 0;
+}
+
+// TweetNaCl's crypto_hash, pacing every 8 whole blocks
+async function sha512Sliced(m: Uint8Array, pace: () => Promise<void>): Promise<Uint8Array> {
+  const nacl = tweetnaclPrimitives();
+  const h = new Uint8Array(64);
+  h.set(nacl.iv);
+  const b = m.length;
+  const wholeBlocks = b - (b % 128);
+  for (let offset = 0; offset < wholeBlocks; ) {
+    const length = Math.min(128 * 8, wholeBlocks - offset);
+    nacl.crypto_hashblocks(h, m.subarray(offset, offset + length), length);
+    offset += length;
+    await pace();
+  }
+  // then the last partial block, padded, and the length, as crypto_hash ends
+  const x = new Uint8Array(256);
+  let n = b % 128;
+  for (let i = 0; i < n; i += 1) {
+    x[i] = m[b - n + i];
+  }
+  x[n] = 128;
+  n = 256 - 128 * (n < 112 ? 1 : 0);
+  x[n - 9] = 0;
+  nacl.ts64(x, n - 8, new nacl.u64((b / 0x20000000) | 0, b << 3));
+  nacl.crypto_hashblocks(h, x, n);
+  return h;
 }
 
 /** Why the directory did not take a record or revocation. */
@@ -551,6 +708,12 @@ export class ExtenderFeedClient {
       // frames are applied one at a time and in order, though verifying is async
       let applying: Promise<void> = Promise.resolve();
       let timer: ReturnType<typeof setTimeout> | undefined;
+      // what one extender can make the client hold (S3 Bounds): the frames a
+      // sample may carry before its end, and the frames waiting at once
+      const sampleAllowance = count + EXTENDER_FEED_SAMPLE_MARGIN;
+      let sampleFrames = 0;
+      let endReceived = false;
+      let pending = 0;
 
       // Ends the stream once. A sample still pending rejects with the error;
       // after the sample an error ends a subscription and is reported, and
@@ -593,6 +756,31 @@ export class ExtenderFeedClient {
       // still resolves; `error` gives the error once that is known
       const endAfterApplying = (error: () => Error | undefined) => {
         void applying.then(() => end(error()));
+      };
+      // queues a frame's work behind the frames before it; past the cap the
+      // stream fails rather than hold more. The end of the sample, which
+      // comes once and holds nothing, does not count.
+      const enqueue = (work: () => Promise<void> | void, frame = true) => {
+        if (frame && EXTENDER_FEED_MAX_PENDING_FRAMES <= pending) {
+          end(new ExtenderFeedError(`more than ${EXTENDER_FEED_MAX_PENDING_FRAMES} feed frames are waiting to be verified`));
+          return;
+        }
+        if (frame) {
+          pending += 1;
+        }
+        applying = applying.then(async () => {
+          try {
+            if (!ended) {
+              await work();
+            }
+          } catch (error) {
+            this.emit({ type: "refused", reason: "frame", message: String(error) });
+          } finally {
+            if (frame) {
+              pending -= 1;
+            }
+          }
+        });
       };
       const endOfSample = () => {
         if (ended) {
@@ -647,45 +835,67 @@ export class ExtenderFeedClient {
         if (sampled) {
           arm(idleTimeoutMs);
         }
-        const bytes = new Uint8Array(data);
-        applying = applying.then(() => (ended ? undefined : this.applyFrame(bytes, endOfSample)));
+        // decoding is cheap and synchronous; only verifying waits its turn
+        let frame: ExtenderFeedFrame | null = null;
+        let malformed = "";
+        try {
+          frame = decodeExtenderFeedFrame(new Uint8Array(data));
+        } catch (error) {
+          malformed = String(error);
+        }
+        // a sample carries at most what it asked for, and then its end;
+        // every other frame before the end counts, whatever it holds
+        if (!endReceived && frame?.kind !== "endOfSample") {
+          sampleFrames += 1;
+          if (sampleAllowance < sampleFrames) {
+            end(new ExtenderFeedError(`the sample sent more than ${sampleAllowance} frames for the ${count} records it asked for`));
+            return;
+          }
+        }
+        if (frame === null) {
+          enqueue(() => this.emit({ type: "refused", reason: "frame", message: malformed }));
+          return;
+        }
+        switch (frame.kind) {
+          case "record": {
+            const record = frame.record;
+            enqueue(() => this.applyRecord(record));
+            return;
+          }
+          case "revocation": {
+            const revocation = frame.revocation;
+            enqueue(() => this.applyRevocation(revocation));
+            return;
+          }
+          case "endOfSample":
+            if (!endReceived) {
+              endReceived = true;
+              enqueue(endOfSample, false);
+            }
+            return;
+          default:
+            // a keepalive, or nothing: it only shows the stream is alive
+            return;
+        }
       };
     });
   }
 
-  private async applyFrame(bytes: Uint8Array, endOfSample: () => void): Promise<void> {
-    let frame: ExtenderFeedFrame;
-    try {
-      frame = decodeExtenderFeedFrame(bytes);
-    } catch (error) {
-      this.emit({ type: "refused", reason: "frame", message: String(error) });
-      return;
+  private async applyRecord(record: ExtenderRecord): Promise<void> {
+    const result = await this.directory.applyRecord(record);
+    if (result.status === "applied") {
+      this.emit({ type: "record", publicKey: result.publicKey, entry: result.entry });
+    } else if (result.status === "refused") {
+      this.emit({ type: "refused", reason: result.reason, message: result.message });
     }
-    switch (frame.kind) {
-      case "record": {
-        const result = await this.directory.applyRecord(frame.record);
-        if (result.status === "applied") {
-          this.emit({ type: "record", publicKey: result.publicKey, entry: result.entry });
-        } else if (result.status === "refused") {
-          this.emit({ type: "refused", reason: result.reason, message: result.message });
-        }
-        return;
-      }
-      case "revocation": {
-        const result = await this.directory.applyRevocation(frame.revocation);
-        if (result.status === "applied") {
-          this.emit({ type: "revocation", publicKey: result.publicKey });
-        } else if (result.status === "refused") {
-          this.emit({ type: "refused", reason: result.reason, message: result.message });
-        }
-        return;
-      }
-      case "endOfSample":
-        endOfSample();
-        return;
-      default:
-        // a keepalive, or nothing
-        return;
+  }
+
+  private async applyRevocation(revocation: ExtenderRevocation): Promise<void> {
+    const result = await this.directory.applyRevocation(revocation);
+    if (result.status === "applied") {
+      this.emit({ type: "revocation", publicKey: result.publicKey });
+    } else if (result.status === "refused") {
+      this.emit({ type: "refused", reason: result.reason, message: result.message });
     }
   }
 

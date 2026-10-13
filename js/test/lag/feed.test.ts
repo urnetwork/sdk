@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
@@ -16,6 +16,9 @@ const {
   ExtenderFeedError,
   ExtenderRootKeys,
   verifyEd25519,
+  verifyEd25519Sliced,
+  EXTENDER_FEED_MAX_PENDING_FRAMES,
+  EXTENDER_FEED_SAMPLE_MARGIN,
 } = await import("../../src/lag/feed.ts");
 const { decodeExtenderRecord, decodeExtenderRevocation, decodeLagTicket } = await import("../../src/lag/protobuf.ts");
 const { tweetnaclVerifyDetached } = await import("../../src/lag/tweetnacl_verify.ts");
@@ -426,6 +429,141 @@ test("feed: the sample timeout, the idle timeout and an abort end the stream", a
   const abortedEarly = new AbortController();
   abortedEarly.abort();
   await assert.rejects(feedClient().client.sample(8, { signal: abortedEarly.signal }), /aborted/);
+});
+
+// S3 Bounds: what one hostile extender can make the client hold
+
+test("feed: a sample that carries more than it asked for fails at once", async () => {
+  assert.equal(EXTENDER_FEED_SAMPLE_MARGIN, 4);
+  for (const count of [8, 1, 0]) {
+    // up to the count and the margin, then the end, is a sample
+    const within = feedClient();
+    const sampled = within.client.sample(count);
+    const socket = fake();
+    socket.open();
+    for (let i = 0; i < count + EXTENDER_FEED_SAMPLE_MARGIN; i += 1) {
+      socket.frame(frames.keepalive);
+    }
+    socket.frame(frames.endOfSample);
+    assert.deepEqual(await sampled, [], `count ${count}`);
+
+    // one frame more fails before it is read, whatever it holds
+    const over = feedClient();
+    const flooded = over.client.sample(count);
+    const flood = fake();
+    flood.open();
+    for (let i = 0; i < count + EXTENDER_FEED_SAMPLE_MARGIN; i += 1) {
+      flood.frame(frames.record);
+    }
+    assert.equal(over.client.open, true, `count ${count}`);
+    flood.frame(frames.record);
+    assert.equal(over.client.open, false, `count ${count}`);
+    assert.equal(flood.closedWith, 1000);
+    await assert.rejects(flooded, new RegExp(`more than ${count + EXTENDER_FEED_SAMPLE_MARGIN} frames for the ${count} records`));
+    // what was queued before it is not applied after
+    await until(() => over.events.at(-1)?.type === "closed");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(over.client.directory.entries(), [], `count ${count}`);
+  }
+});
+
+test("feed: a subscription fails when more than 64 frames wait to be verified", async () => {
+  assert.equal(EXTENDER_FEED_MAX_PENDING_FRAMES, 64);
+  // 64 at once is a burst the server itself allows (D4), and is applied
+  const burst = feedClient();
+  const sampled = burst.client.sample(8, { subscribe: true });
+  const socket = fake();
+  socket.open();
+  socket.frame(frames.endOfSample);
+  await sampled;
+  // the measurement record, then the canary's again and again, the last of
+  // which shows the whole burst was verified when its event comes
+  socket.frame(frames.record);
+  for (let i = 1; i < EXTENDER_FEED_MAX_PENDING_FRAMES - 1; i += 1) {
+    socket.frame(frames["keepalive then record"]);
+  }
+  socket.frame(frames.revocation);
+  assert.equal(burst.client.open, true);
+  await until(() => burst.events.some((event) => event.type === "revocation"));
+  assert.deepEqual(burst.client.directory.entries().map((entry) => entry.body.countryCode), ["jp"]);
+  // and once it has been verified, another 64 may wait
+  for (let i = 0; i < EXTENDER_FEED_MAX_PENDING_FRAMES; i += 1) {
+    socket.frame(frames.revocation);
+  }
+  assert.equal(burst.client.open, true);
+  burst.client.close();
+
+  // one more fails the stream rather than hold it
+  const flood = feedClient();
+  const subscribed = flood.client.sample(8, { subscribe: true });
+  const flooding = fake();
+  flooding.open();
+  flooding.frame(frames.endOfSample);
+  await subscribed;
+  for (let i = 0; i <= EXTENDER_FEED_MAX_PENDING_FRAMES; i += 1) {
+    flooding.frame(frames.record);
+  }
+  assert.equal(flood.client.open, false);
+  await until(() => flood.events.at(-1)?.type === "closed");
+  assert.match(String(flood.events.at(-1)?.error), /more than 64 feed frames are waiting to be verified/);
+});
+
+// as Go signs: message, then key and signature, from Node's Ed25519
+function nodeSigned(length: number) {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const key = new Uint8Array(publicKey.export({ format: "der", type: "spki" }).subarray(12));
+  const message = new Uint8Array(length).map((_, i) => (i * 7 + length) & 0xff);
+  return { key, message, signature: new Uint8Array(sign(null, message, privateKey)) };
+}
+
+test("Ed25519 sliced: the same answers as TweetNaCl's one call, with either SHA-512", async () => {
+  // lengths around SHA-512's block and padding edges, once R || A is prefixed
+  const lengths = [0, 1, 47, 48, 63, 64, 111, 112, 127, 128, 175, 176, 1000, 64 * 1024];
+  for (const length of lengths) {
+    const { key, message, signature } = nodeSigned(length);
+    for (const vendoredHash of [false, true]) {
+      const options = { vendoredHash, sliceMs: 0 };
+      assert.equal(await verifyEd25519Sliced(key, message, signature, options), true, `${length} bytes, vendored ${vendoredHash}`);
+      const wrong = message.length === 0 ? Uint8Array.of(1) : tampered(message, message.length - 1);
+      assert.equal(await verifyEd25519Sliced(key, wrong, signature, options), false, `${length} bytes, vendored ${vendoredHash}`);
+      assert.equal(await verifyEd25519Sliced(key, message, tampered(signature, 40), options), false);
+      assert.equal(await verifyEd25519Sliced(otherPublicKey, message, signature, options), false);
+    }
+    assert.equal(tweetnaclVerifyDetached(message, signature, key), true);
+  }
+  for (const vector of vectors.records) {
+    const record = decodeExtenderRecord(base64(vector.recordBase64));
+    const signed = concat(new TextEncoder().encode(EXTENDER_RECORD_SIGNATURE_DOMAIN), record.body);
+    assert.equal(await verifyEd25519Sliced(rootPublicKey, signed, record.rootSignature, { vendoredHash: true }), true, vector.name);
+  }
+  // a key that is no point
+  const { message, signature } = nodeSigned(10);
+  const notAPoint = new Uint8Array(32).fill(0xff);
+  assert.equal(await verifyEd25519Sliced(notAPoint, message, signature), tweetnaclVerifyDetached(message, signature, notAPoint));
+});
+
+test("Ed25519 sliced: a 64 KiB check gives the event loop turns", async () => {
+  const { key, message, signature } = nodeSigned(64 * 1024);
+  for (const vendoredHash of [false, true]) {
+    let turns = 0;
+    const counted = await verifyEd25519Sliced(key, message, signature, {
+      vendoredHash,
+      sliceMs: 0,
+      yieldNow: async () => {
+        turns += 1;
+      },
+    });
+    assert.equal(counted, true);
+    // 128 in the two scalar multiplications, and 64 more for the vendored hash
+    assert.ok((vendoredHash ? 190 : 125) <= turns, `${turns} turns, vendored ${vendoredHash}`);
+  }
+  // and the turns are real: a timer set before the check runs before it ends
+  let fired = false;
+  setTimeout(() => {
+    fired = true;
+  }, 0);
+  assert.equal(await verifyEd25519Sliced(key, message, signature, { vendoredHash: true, sliceMs: 0 }), true);
+  assert.equal(fired, true);
 });
 
 test("feed: one stream at a time, and a bad count is refused", async () => {

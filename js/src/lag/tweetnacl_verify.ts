@@ -16,6 +16,9 @@
 // 73-75, 266-384, 469-636, 638-702, 722-754 and 792-858. The rest of this
 // file is the wrapper, and the wrapper alone was written here. The code is
 // enclosed in a function so that it costs nothing until a runtime needs it.
+// Besides TweetNaCl's own detached verification, the wrapper hands out the
+// primitives crypto_sign_open is built from, so that feed.ts can run the same
+// steps a slice at a time without holding the event loop.
 //
 // TweetNaCl.js is in the public domain:
 //
@@ -44,25 +47,59 @@
 //
 //   For more information, please refer to <http://unlicense.org>
 
-let verifyDetached: ((message: Uint8Array, signature: Uint8Array, publicKey: Uint8Array) => boolean) | undefined;
+// a field element (16 limbs), and a point in extended coordinates
+type Gf = Float64Array;
+type Point = [Gf, Gf, Gf, Gf];
+
+/** The TweetNaCl functions and constants crypto_sign_open is built from, as published. */
+export interface TweetnaclPrimitives {
+  /** nacl.sign.detached.verify, without its argument checks */
+  verifyDetached(message: Uint8Array, signature: Uint8Array, publicKey: Uint8Array): boolean;
+  gf(init?: ArrayLike<number>): Gf;
+  gf0: Gf;
+  gf1: Gf;
+  X: Gf;
+  Y: Gf;
+  /** SHA-512's initial state */
+  iv: Uint8Array;
+  u64: new (hi: number, lo: number) => unknown;
+  ts64(x: Uint8Array, i: number, u: unknown): void;
+  crypto_hashblocks(x: Uint8Array, m: Uint8Array, n: number): number;
+  crypto_verify_32(x: Uint8Array, xi: number, y: Uint8Array, yi: number): number;
+  set25519(r: Gf, a: Gf): void;
+  M(o: Gf, a: Gf, b: Gf): void;
+  add(p: Point, q: Point): void;
+  cswap(p: Point, q: Point, b: number): void;
+  pack(r: Uint8Array, p: Point): void;
+  reduce(r: Uint8Array): void;
+  unpackneg(r: Point, p: Uint8Array): number;
+}
+
+let primitives: TweetnaclPrimitives | undefined;
+
+/** The TweetNaCl primitives, made on first use. */
+export function tweetnaclPrimitives(): TweetnaclPrimitives {
+  if (primitives === undefined) {
+    primitives = createPrimitives();
+  }
+  return primitives;
+}
 
 /**
  * TweetNaCl's `nacl.sign.detached.verify`: whether `signature` is a valid
- * Ed25519 signature of `message` under `publicKey`. A signature that is not
- * 64 bytes or a key that is not 32 bytes is not valid. Like TweetNaCl, this
- * does not itself refuse a non-canonical S; the caller checks that.
+ * Ed25519 signature of `message` under `publicKey`, in one synchronous call.
+ * A signature that is not 64 bytes or a key that is not 32 bytes is not
+ * valid. Like TweetNaCl, this does not itself refuse a non-canonical S; the
+ * caller checks that.
  */
 export function tweetnaclVerifyDetached(message: Uint8Array, signature: Uint8Array, publicKey: Uint8Array): boolean {
   if (signature.length !== 64 || publicKey.length !== 32) {
     return false;
   }
-  if (verifyDetached === undefined) {
-    verifyDetached = createVerifyDetached();
-  }
-  return verifyDetached(message, signature, publicKey);
+  return tweetnaclPrimitives().verifyDetached(message, signature, publicKey);
 }
 
-function createVerifyDetached() {
+function createPrimitives() {
 // ---- begin verbatim tweetnacl 1.0.3 nacl.js ----
 var u64 = function(h, l) { this.hi = h|0 >>> 0; this.lo = l|0 >>> 0; };
 var gf = function(init) {
@@ -568,12 +605,20 @@ function crypto_sign_open(m, sm, n, pk) {
   // nacl.sign.detached.verify (nacl.js lines 1083-1095), with the argument
   // checks moved to tweetnaclVerifyDetached
   var crypto_sign_BYTES = 64;
-  return function(msg, sig, publicKey) {
+  var verifyDetached = function(msg, sig, publicKey) {
     var sm = new Uint8Array(crypto_sign_BYTES + msg.length);
     var m = new Uint8Array(crypto_sign_BYTES + msg.length);
     var i;
     for (i = 0; i < crypto_sign_BYTES; i++) sm[i] = sig[i];
     for (i = 0; i < msg.length; i++) sm[i+crypto_sign_BYTES] = msg[i];
     return (crypto_sign_open(m, sm, sm.length, publicKey) >= 0);
+  };
+
+  return {
+    verifyDetached: verifyDetached,
+    gf: gf, gf0: gf0, gf1: gf1, X: X, Y: Y, iv: iv, u64: u64, ts64: ts64,
+    crypto_hashblocks: crypto_hashblocks, crypto_verify_32: crypto_verify_32,
+    set25519: set25519, M: M, add: add, cswap: cswap, pack: pack,
+    reduce: reduce, unpackneg: unpackneg,
   };
 }
