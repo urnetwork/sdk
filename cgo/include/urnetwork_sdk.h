@@ -8,6 +8,9 @@
  *   call the object's close/stop function first where one exists.
  * - returned char* strings are owned by the caller: free with urnet_free_string.
  * - const char* parameters are borrowed; the sdk copies what it needs.
+ * - a callback that returns char* returns a string from urnet_copy_string; the
+ *   sdk frees it with urnet_free_string. never return the host's own malloc:
+ *   the host and this library may link different c runtimes and heaps.
  * - structured data crosses as utf-8 json (see the data type reference below).
  * - ids are uuid strings. times are unix epoch milliseconds, 0 = none.
  * - callbacks fire on arbitrary threads; marshal to your ui thread. strings and
@@ -37,6 +40,8 @@ char* urnet_version(void);
 /* incompatible C ABI revision; additive exports retain this value */
 int32_t urnet_abi_version(void);
 void urnet_free_string(char* s);
+/* a copy of s allocated by this library (NULL for NULL), for a callback's char* result */
+char* urnet_copy_string(const char* s);
 /* release a handle. returns false if the handle was unknown. */
 bool urnet_release(uint64_t handle);
 /* number of live handles, for leak checks */

@@ -221,6 +221,8 @@ def bind(lib):
     lib.urnet_abi_version.restype = c_int32
     lib.urnet_free_string.argtypes = [c_void_p]
     lib.urnet_free_string.restype = None
+    lib.urnet_copy_string.argtypes = [c_char_p]
+    lib.urnet_copy_string.restype = c_void_p
     lib.urnet_release.argtypes = [c_uint64]
     lib.urnet_release.restype = c_bool
     lib.urnet_live_handle_count.argtypes = []

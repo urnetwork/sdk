@@ -47,15 +47,12 @@ namespace detail {
 /* take ownership of a returned char*, freeing it */
 // dupCString copies a c++ string into a buffer GO takes ownership of. A
 // callback that returns a string hands the pointer across the c abi and go
-// frees it with urnet_free_string -> free(), so it must come from malloc and
-// not from new or std::string's allocator.
+// frees it with urnet_free_string, the library's own free(), so the library
+// must allocate it too (urnet_copy_string). std::malloc here is the host's
+// c runtime, which need not be the library's: freeing its block on the
+// library's heap corrupts both (windows/urnetwork#17).
 inline char* dupCString(const std::string& s) {
-	char* p = static_cast<char*>(std::malloc(s.size() + 1));
-	if (!p) {
-		return nullptr;
-	}
-	std::memcpy(p, s.c_str(), s.size() + 1);
-	return p;
+	return urnet_copy_string(s.c_str());
 }
 
 inline std::string takeString(char* s) {

@@ -138,3 +138,7 @@ urnet_api_sn_network_consent_submit_sync
 urnet_api_sn_network_consent_status
 urnet_api_sn_network_consent_status_sync
 urnet_bittensor_wallet_session_set_network_consent_challenge
+
+# callback string results: the generated wrapper allocates them through the library
+# (urnet_copy_string) so the library frees its own block (windows/urnetwork#17)
+urnet_copy_string

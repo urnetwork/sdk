@@ -313,6 +313,7 @@ EXPORTS
 	urnet_contract_view_controller_set_window_duration_seconds
 	urnet_contract_view_controller_start
 	urnet_contract_view_controller_stop
+	urnet_copy_string
 	urnet_create_payment_reference
 	urnet_decode_base58
 	urnet_decrypt_data

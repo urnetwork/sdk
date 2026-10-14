@@ -216,6 +216,7 @@ module URnetwork
       attach_function :urnet_version, [], :pointer, blocking: true
       attach_function :urnet_abi_version, [], :int32, blocking: true
       attach_function :urnet_free_string, [:pointer], :void, blocking: true
+      attach_function :urnet_copy_string, [:string], :pointer, blocking: true
       attach_function :urnet_release, [:uint64], :bool, blocking: true
       attach_function :urnet_live_handle_count, [], :int64, blocking: true
       attach_function :urnet_device_dial, [:uint64, :string, :string, :int64, :pointer], :uint64, blocking: true
