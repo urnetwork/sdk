@@ -166,6 +166,12 @@ func (self *reraceSdkGenerator) exitOf(clientId connect.Id) *reraceSdkExit {
 // races B. Without the signal reaching the client the flow would wait for the
 // 3s silence inference instead, so connecting before it is the proof.
 func TestDeviceLocalDialFailureReracesConnectToAnotherExit(t *testing.T) {
+	// Backend degradation is process-wide; earlier unable-to-connect tests must
+	// not decide whether this in-process two-provider fixture can form.
+	if runIsolatedLoadTest(t) {
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

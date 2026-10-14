@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -98,7 +99,9 @@ func newH1OwnerFixture(t *testing.T) *h1OwnerFixture {
 
 func newH1OwnerFixtureWithProviders(t *testing.T, providerCount int, timeout time.Duration) *h1OwnerFixture {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	// Retirement must use this owner after t.Context is canceled before cleanup.
+	// The unchanged watchdog and registered cleanup still bound its lifetime.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), timeout)
 	f := &h1OwnerFixture{t: t, ctx: ctx, conns: map[*websocket.Conn]bool{}, apiCalls: map[string]int{}}
 	for range providerCount {
 		provider, _ := startEchoProviderClient(t, ctx)
@@ -462,5 +465,97 @@ func TestDeviceLocalH1MigrationRetiresEveryCarrierGeneration(t *testing.T) {
 	}
 	if owners := device.memoryOwnerCensus(); owners.Client.Transfer.Clients != 0 {
 		t.Fatalf("closed DeviceLocal retained indexed window clients: %+v", owners.Client)
+	}
+}
+
+// Cleanup needs a live HTTP owner after testing cancels the test-body context.
+// Both unused identities and constructed clients retire through the real API;
+// the final callback also proves the fixture eventually cancels its own owner.
+func TestH1OwnerFixtureCleanupRetiresEveryIdentity(t *testing.T) {
+	for _, constructClient := range []bool{false, true} {
+		var fixture *h1OwnerFixture
+		t.Cleanup(func() {
+			if fixture != nil && !errors.Is(fixture.ctx.Err(), context.Canceled) {
+				t.Errorf("fixture owner was not canceled after joined cleanup: %v", fixture.ctx.Err())
+			}
+		})
+		fixture = newH1OwnerFixture(t)
+		strategySettings := connect.DefaultClientStrategySettings()
+		strategySettings.EnableResilient = false
+		strategySettings.ExtenderConfigs = nil
+		strategySettings.DnsTlds = nil
+		strategySettings.InternalDohDomains = nil
+		strategySettings.Log = connect.NewNoopLogger()
+		strategy := connect.NewClientStrategy(fixture.ctx, strategySettings)
+		t.Cleanup(strategy.Close)
+		endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/network/remove-client" && fixture.ctx.Err() != nil {
+				// Do not let a fast response outrun the real strategy-context
+				// bridge. The request, not this fixture, produces cancellation.
+				<-r.Context().Done()
+				return
+			}
+			fixture.server.Config.Handler.ServeHTTP(w, r)
+		}))
+		t.Cleanup(endpoint.Close)
+		settings := connect.DefaultApiMultiClientGeneratorSettings()
+		settings.PlatformTransportMode = connect.TransportModeH1
+		settings.PlatformTransportSettingsGenerator = func() *connect.PlatformTransportSettings {
+			transport := connect.DefaultPlatformTransportSettings()
+			transport.V2H1Auth = true
+			return transport
+		}
+		clientSettings := connect.DefaultClientSettings()
+		clientSettings.Log = connect.NewNoopLogger()
+		clientSettings.EncryptionSettings.Mode = connect.EncryptionModeOff
+		generator := &h1OwnerGenerator{providers: fixture.providers}
+		generator.ApiMultiClientGenerator = connect.NewApiMultiClientGenerator(fixture.ctx, nil,
+			strategy, nil, endpoint.URL, "synthetic-cleanup-owner", fixture.space.platformUrl,
+			"test", "test", "0", nil, func() *connect.ClientSettings { return clientSettings }, settings)
+		var args *connect.MultiClientGeneratorClientArgs
+		var client *connect.Client
+		constructionAttempted := false
+		t.Cleanup(func() {
+			testErr, ownerErr := t.Context().Err(), fixture.ctx.Err()
+			if client != nil {
+				generator.RemoveClientWithArgs(client, args)
+				client.Cancel()
+			} else if args != nil && !constructionAttempted {
+				generator.RemoveClientArgs(args)
+			}
+			join, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			retirementErr := generator.CloseAndWait(join)
+			fixture.mu.Lock()
+			removed := fixture.apiCalls["/network/remove-client"]
+			fixture.mu.Unlock()
+			if !errors.Is(testErr, context.Canceled) || ownerErr != nil || retirementErr != nil || removed != 1 {
+				t.Errorf("FIXTURE_RETIREMENT_OWNER constructed=%t test_canceled=%t owner_error=%v retirement_error=%v acknowledged_removals=%d",
+					constructClient, errors.Is(testErr, context.Canceled), ownerErr, retirementErr, removed)
+			}
+			if client != nil {
+				select {
+				case <-client.Done():
+				default:
+					t.Error("joined retirement retained the constructed client")
+				}
+				owners := client.MemoryOwnerCensus()
+				if owners.SendWorkers != 0 || owners.ReceiveWorkers != 0 || owners.PacingServices != 0 {
+					t.Errorf("joined retirement retained client workers: %+v", owners)
+				}
+			}
+		})
+		var err error
+		args, err = generator.NewClientArgs()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if constructClient {
+			constructionAttempted = true
+			client, err = generator.NewClientContext(fixture.ctx, fixture.ctx, args, clientSettings)
+			if err != nil || client == nil {
+				t.Fatalf("construct cleanup-owned client: present=%t err=%v", client != nil, err)
+			}
+		}
 	}
 }

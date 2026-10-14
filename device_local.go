@@ -791,6 +791,8 @@ type DeviceLocal struct {
 	localStateSaveListeners *connect.CallbackList[LocalStateSaveListener]
 	// Tests pause checked observations before the final owner admission.
 	testingBeforePreferenceApply func()
+	// Observes H3 composition outside stateLock; preference serialization remains held.
+	testingBeforeH3WindowComposition func()
 	// Holds only the shared scalar publication before its final owner check.
 	testingBeforeGlobalPreferenceApply func(string)
 	// Holds an upload before it zips the log files.
@@ -4594,6 +4596,10 @@ func (self *DeviceLocal) applyDestination(
 		}
 	}
 	specsFingerprint := providerSpecsFingerprint(connectSpecs)
+	windowSizeLimit := 0
+	if 0 < len(connectSpecs) {
+		windowSizeLimit = self.publicH3WindowSizeLimitWithLock()
+	}
 
 	provideChanged := false
 	sameTransport := false
@@ -4852,6 +4858,7 @@ func (self *DeviceLocal) applyDestination(
 				self.settings.MemoryTargetByteCount,
 				self.settings.LowMemoryProfile,
 			)
+			settings.WindowSizeLimit = windowSizeLimit
 			settings.Log = self.log
 			settings.LocalDialContextSettings = self.settings.LocalDialContextSettings
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
@@ -6213,17 +6220,23 @@ func (self *DeviceLocal) applyTransportSettingsWithLock(transportSettings *Trans
 	}
 	transportSettings = normalizeTransportSettings(transportSettings, false)
 	var apiGenerator *connect.ApiMultiClientGenerator
+	var multiClient *connect.RemoteUserNatMultiClient
 	changed := false
 	self.stateLock.Lock()
 	if !transportSettingsEqual(self.transportSettings, transportSettings, false) {
 		self.transportSettings = cloneTransportSettings(transportSettings)
 		self.updateMobilePacketPerformanceModeWithLock()
 		apiGenerator = self.apiMultiClientGenerator
+		multiClient, _ = self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient)
 		changed = true
 	}
 	self.stateLock.Unlock()
 	if !changed {
 		return nil, nil
+	}
+	windowSizeLimit := self.publicH3WindowSizeLimitWithLock()
+	if multiClient != nil {
+		multiClient.SetWindowSizeLimit(windowSizeLimit)
 	}
 	if apiGenerator != nil {
 		mode, preferences := toConnectTransportPolicy(transportSettings, false)
@@ -6303,16 +6316,22 @@ func (self *DeviceLocal) applyProviderTransportSettingsWithLock(transportSetting
 	}
 	transportSettings = normalizeTransportSettings(transportSettings, true)
 	var provider *deviceLocalProvider
+	var multiClient *connect.RemoteUserNatMultiClient
 	changed := false
 	self.stateLock.Lock()
 	if !transportSettingsEqual(self.providerTransportSettings, transportSettings, true) {
 		self.providerTransportSettings = cloneTransportSettings(transportSettings)
 		provider = self.provider
+		multiClient, _ = self.remoteUserNatClient.(*connect.RemoteUserNatMultiClient)
 		changed = true
 	}
 	self.stateLock.Unlock()
 	if !changed {
 		return nil, nil
+	}
+	windowSizeLimit := self.publicH3WindowSizeLimitWithLock()
+	if multiClient != nil {
+		multiClient.SetWindowSizeLimit(windowSizeLimit)
 	}
 	if provider != nil {
 		mode, preferences := toConnectTransportPolicy(transportSettings, true)

@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"syscall"
+	"time"
 
 	// "net"
 	"sync"
@@ -31,6 +32,7 @@ type IoLoop struct {
 	deviceLocal  *DeviceLocal
 	fd           int
 	doneCallback IoLoopDoneCallback
+	observation  *ioLoopObservation
 }
 
 func ioLoopCopyPacket(readBuffer []byte, byteCount int) []byte {
@@ -41,6 +43,11 @@ func ioLoopCopyPacket(readBuffer []byte, byteCount int) []byte {
 // - opened in non blocking mode
 // - detached so that it can be closed the the ioloop
 func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallback) *IoLoop {
+	return newIoLoopObserved(deviceLocal, fd, doneCallback, nil)
+}
+
+// Observation is instance-owned and optional; the public constructor stays off.
+func newIoLoopObserved(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallback, observation *ioLoopObservation) *IoLoop {
 	ctx, cancel := context.WithCancel(deviceLocal.Ctx())
 
 	ioLoop := &IoLoop{
@@ -49,12 +56,16 @@ func NewIoLoop(deviceLocal *DeviceLocal, fd int32, doneCallback IoLoopDoneCallba
 		deviceLocal:  deviceLocal,
 		fd:           int(fd),
 		doneCallback: doneCallback,
+		observation:  observation,
 	}
 	go connect.HandleError(ioLoop.run, cancel)
 	return ioLoop
 }
 
 func (self *IoLoop) run() {
+	if self.observation != nil {
+		defer close(self.observation.runDone)
+	}
 	defer self.cancel()
 
 	// set non-blocking BEFORE os.NewFile: os.NewFile only registers the fd with the
@@ -72,7 +83,13 @@ func (self *IoLoop) run() {
 	// to arrive, leaking the goroutine and holding the detached fd across every
 	// tunnel stop/start on an idle interface
 	go connect.HandleError(func() {
-		defer f.Close()
+		defer func() {
+			err := f.Close()
+			if self.observation != nil {
+				self.observation.fileCloseError = err != nil
+				close(self.observation.fileClosed)
+			}
+		}()
 		select {
 		case <-self.ctx.Done():
 		}
@@ -127,7 +144,14 @@ func (self *IoLoop) run() {
 		default:
 		}
 
+		var readStarted time.Time
+		if self.observation != nil {
+			readStarted = self.observation.now()
+		}
 		n, readErr := f.Read(readBuffer[:])
+		if self.observation != nil {
+			self.observation.recordRead(readStarted, n, readErr)
+		}
 		if n <= 0 {
 			if readErr != nil {
 				return
@@ -151,7 +175,15 @@ func (self *IoLoop) run() {
 			}
 			break
 		}
-		self.deviceLocal.sendPacketsNoCopy(packetStorage[:packetCount])
+		var sendStarted time.Time
+		if self.observation != nil {
+			sendStarted = self.observation.now()
+		}
+		acceptedPacketCount := self.deviceLocal.sendPacketsNoCopy(packetStorage[:packetCount])
+		if self.observation != nil {
+			// Only scalar counts survive transfer; packet roots belong to the route.
+			self.observation.recordSend(sendStarted, packetCount, acceptedPacketCount)
+		}
 		clear(packetStorage[:packetCount])
 		if readErr != nil {
 			return
