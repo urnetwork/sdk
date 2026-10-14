@@ -7858,6 +7858,16 @@ func urnet_default_device_local_settings() *C.char {
 	return cJson(r0, "urnet_default_device_local_settings")
 }
 
+//export urnet_default_low_memory_device_local_settings
+func urnet_default_low_memory_device_local_settings() *C.char {
+	defer cgoGuard("urnet_default_low_memory_device_local_settings")
+	r0 := sdk.DefaultLowMemoryDeviceLocalSettings()
+	if r0 == nil {
+		return nil
+	}
+	return cJson(r0, "urnet_default_low_memory_device_local_settings")
+}
+
 //export urnet_default_provider_transport_settings
 func urnet_default_provider_transport_settings() *C.char {
 	defer cgoGuard("urnet_default_provider_transport_settings")

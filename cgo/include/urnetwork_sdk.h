@@ -276,6 +276,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_DEFAULT 0
 #define URNET_LOG_VERBOSITY_TRACE 2
 #define URNET_LOG_VERBOSITY_VERBOSE 1
+#define URNET_LOW_MEMORY_DEVICE_TARGET_BYTE_COUNT 33554432
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
 #define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
@@ -2165,6 +2166,7 @@ char* urnet_compute_price_equivalent(double yearly_amount, double monthly_amount
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_create_payment_reference(void);
 char* urnet_default_device_local_settings(void);
+char* urnet_default_low_memory_device_local_settings(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
 char* urnet_default_proxy_device_settings(void);
@@ -3072,6 +3074,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* DeviceLocalSettings (json):
  *   MemoryTargetByteCount: number
+ *   LowMemoryProfile: boolean
  *   SendTimeout: number (ns)
  *   SequenceBufferSize: number
  *   NetContractStatusDuration: number (ns)

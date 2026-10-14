@@ -2465,6 +2465,8 @@ def bind(lib):
     lib.urnet_create_payment_reference.restype = c_void_p
     lib.urnet_default_device_local_settings.argtypes = []
     lib.urnet_default_device_local_settings.restype = c_void_p
+    lib.urnet_default_low_memory_device_local_settings.argtypes = []
+    lib.urnet_default_low_memory_device_local_settings.restype = c_void_p
     lib.urnet_default_provider_transport_settings.argtypes = []
     lib.urnet_default_provider_transport_settings.restype = c_void_p
     lib.urnet_default_proxy_config.argtypes = []

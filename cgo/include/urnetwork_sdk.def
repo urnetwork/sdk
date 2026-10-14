@@ -317,6 +317,7 @@ EXPORTS
 	urnet_decode_base58
 	urnet_decrypt_data
 	urnet_default_device_local_settings
+	urnet_default_low_memory_device_local_settings
 	urnet_default_provider_transport_settings
 	urnet_default_proxy_config
 	urnet_default_proxy_device_settings
