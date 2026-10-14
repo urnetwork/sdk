@@ -37,6 +37,21 @@ func urnet_free_string(p *C.char) {
 	}
 }
 
+// urnet_copy_string returns a copy of s allocated by this library, or NULL for
+// NULL. A callback that returns char* must return a string from here: the sdk
+// frees the result with urnet_free_string, which is this library's free, and a
+// buffer the host allocated itself would be freed on a heap that never
+// allocated it whenever the host links a different C runtime (windows/
+// urnetwork#17: a service crash in RtlFreeHeap).
+//
+//export urnet_copy_string
+func urnet_copy_string(s *C.char) *C.char {
+	if s == nil {
+		return nil
+	}
+	return cString(goString(s))
+}
+
 //export urnet_release
 func urnet_release(handle C.uint64_t) C.bool {
 	defer cgoGuard("urnet_release")

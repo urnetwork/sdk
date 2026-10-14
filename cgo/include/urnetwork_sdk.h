@@ -8,6 +8,9 @@
  *   call the object's close/stop function first where one exists.
  * - returned char* strings are owned by the caller: free with urnet_free_string.
  * - const char* parameters are borrowed; the sdk copies what it needs.
+ * - a callback that returns char* returns a string from urnet_copy_string; the
+ *   sdk frees it with urnet_free_string. never return the host's own malloc:
+ *   the host and this library may link different c runtimes and heaps.
  * - structured data crosses as utf-8 json (see the data type reference below).
  * - ids are uuid strings. times are unix epoch milliseconds, 0 = none.
  * - callbacks fire on arbitrary threads; marshal to your ui thread. strings and
@@ -37,6 +40,8 @@ char* urnet_version(void);
 /* incompatible C ABI revision; additive exports retain this value */
 int32_t urnet_abi_version(void);
 void urnet_free_string(char* s);
+/* a copy of s allocated by this library (NULL for NULL), for a callback's char* result */
+char* urnet_copy_string(const char* s);
 /* release a handle. returns false if the handle was unknown. */
 bool urnet_release(uint64_t handle);
 /* number of live handles, for leak checks */
@@ -276,6 +281,7 @@ bool urnet_packet_batch_get(uint64_t self, int64_t index, uint8_t* out, int32_t*
 #define URNET_LOG_VERBOSITY_DEFAULT 0
 #define URNET_LOG_VERBOSITY_TRACE 2
 #define URNET_LOG_VERBOSITY_VERBOSE 1
+#define URNET_LOW_MEMORY_DEVICE_TARGET_BYTE_COUNT 33554432
 #define URNET_MATIC "MATIC"
 #define URNET_MAX_CLIENT_EVENTS_PER_CALL 200
 #define URNET_NETWORK_CLIENT_REGISTRATION_SCHEMA "urnetwork-client-registration-v1"
@@ -2165,6 +2171,7 @@ char* urnet_compute_price_equivalent(double yearly_amount, double monthly_amount
 char* urnet_connect_link_url(const char* key_json, const char* values_json, const char* target);
 char* urnet_create_payment_reference(void);
 char* urnet_default_device_local_settings(void);
+char* urnet_default_low_memory_device_local_settings(void);
 char* urnet_default_provider_transport_settings(void);
 char* urnet_default_proxy_config(void);
 char* urnet_default_proxy_device_settings(void);
@@ -3072,6 +3079,7 @@ uint64_t urnet_new_io_loop(uint64_t device_local, int64_t fd, urnet_io_loop_done
 
 /* DeviceLocalSettings (json):
  *   MemoryTargetByteCount: number
+ *   LowMemoryProfile: boolean
  *   SendTimeout: number (ns)
  *   SequenceBufferSize: number
  *   NetContractStatusDuration: number (ns)

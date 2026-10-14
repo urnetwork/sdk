@@ -240,15 +240,12 @@ namespace detail {
 /* take ownership of a returned char*, freeing it */
 // dupCString copies a c++ string into a buffer GO takes ownership of. A
 // callback that returns a string hands the pointer across the c abi and go
-// frees it with urnet_free_string -> free(), so it must come from malloc and
-// not from new or std::string's allocator.
+// frees it with urnet_free_string, the library's own free(), so the library
+// must allocate it too (urnet_copy_string). std::malloc here is the host's
+// c runtime, which need not be the library's: freeing its block on the
+// library's heap corrupts both (windows/urnetwork#17).
 inline char* dupCString(const std::string& s) {
-	char* p = static_cast<char*>(std::malloc(s.size() + 1));
-	if (!p) {
-		return nullptr;
-	}
-	std::memcpy(p, s.c_str(), s.size() + 1);
-	return p;
+	return urnet_copy_string(s.c_str());
 }
 
 inline std::string takeString(char* s) {
@@ -1014,7 +1011,7 @@ func (g *gen) cppCallbackRet(cm *callbackMethod) string {
 
 // cCallbackRet is the TRAMPOLINE's return type, which is not always the c++
 // callback's: a std::function returning std::string crosses the c abi as a
-// malloc'd char* (see detail::dupCString). Emitting the c++ type for the
+// library-allocated char* (see detail::dupCString). Emitting the c++ type for the
 // trampoline produced a function that could not convert to its own typedef --
 // uncompilable, and invisible until a c++ consumer actually built the wrapper
 // for a string-returning callback (the windows client, on FlowOwnerLookup).
@@ -1125,8 +1122,9 @@ func (g *gen) hppTrampolines(b *strings.Builder, info *callbackInfo) {
 			}
 			if ret != "void" {
 				if cRet != ret {
-					// a string result crosses as a malloc'd copy that go
-					// takes ownership of and frees (urnet_free_string)
+					// a string result crosses as a library-allocated copy
+					// (urnet_copy_string) that go takes ownership of and
+					// frees (urnet_free_string)
 					b.WriteString("\treturn dupCString(r);\n")
 				} else {
 					b.WriteString("\treturn r;\n")

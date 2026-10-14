@@ -47,15 +47,12 @@ namespace detail {
 /* take ownership of a returned char*, freeing it */
 // dupCString copies a c++ string into a buffer GO takes ownership of. A
 // callback that returns a string hands the pointer across the c abi and go
-// frees it with urnet_free_string -> free(), so it must come from malloc and
-// not from new or std::string's allocator.
+// frees it with urnet_free_string, the library's own free(), so the library
+// must allocate it too (urnet_copy_string). std::malloc here is the host's
+// c runtime, which need not be the library's: freeing its block on the
+// library's heap corrupts both (windows/urnetwork#17).
 inline char* dupCString(const std::string& s) {
-	char* p = static_cast<char*>(std::malloc(s.size() + 1));
-	if (!p) {
-		return nullptr;
-	}
-	std::memcpy(p, s.c_str(), s.size() + 1);
-	return p;
+	return urnet_copy_string(s.c_str());
 }
 
 inline std::string takeString(char* s) {
@@ -335,6 +332,7 @@ inline constexpr const char* LocationsLoading = "LOCATIONS_LOADING";
 inline constexpr int64_t LogVerbosityDefault = 0;
 inline constexpr int64_t LogVerbosityTrace = 2;
 inline constexpr int64_t LogVerbosityVerbose = 1;
+inline constexpr int64_t LowMemoryDeviceTargetByteCount = 33554432;
 inline constexpr const char* MATIC = "MATIC";
 inline constexpr int64_t MaxClientEventsPerCall = 200;
 inline constexpr const char* NetworkClientRegistrationSchema = "urnetwork-client-registration-v1";
@@ -1777,6 +1775,7 @@ struct DeviceLocalMemoryUsage {
 
 struct DeviceLocalSettings {
 	int64_t MemoryTargetByteCount{};
+	bool LowMemoryProfile{};
 	int64_t SendTimeout{};
 	int64_t SequenceBufferSize{};
 	int64_t NetContractStatusDuration{};
@@ -8061,6 +8060,7 @@ inline void from_json(const nlohmann::json& j, DeviceLocalMemoryUsage& v) {
 inline void to_json(nlohmann::json& j, const DeviceLocalSettings& v) {
 	j = nlohmann::json::object();
 	j["MemoryTargetByteCount"] = v.MemoryTargetByteCount;
+	j["LowMemoryProfile"] = v.LowMemoryProfile;
 	j["SendTimeout"] = v.SendTimeout;
 	j["SequenceBufferSize"] = v.SequenceBufferSize;
 	j["NetContractStatusDuration"] = v.NetContractStatusDuration;
@@ -8097,6 +8097,9 @@ inline void from_json(const nlohmann::json& j, DeviceLocalSettings& v) {
 	}
 	if (auto it = j.find("MemoryTargetByteCount"); it != j.end() && !it->is_null()) {
 		it->get_to(v.MemoryTargetByteCount);
+	}
+	if (auto it = j.find("LowMemoryProfile"); it != j.end() && !it->is_null()) {
+		it->get_to(v.LowMemoryProfile);
 	}
 	if (auto it = j.find("SendTimeout"); it != j.end() && !it->is_null()) {
 		it->get_to(v.SendTimeout);
@@ -32123,6 +32126,14 @@ inline std::string createPaymentReference() {
 }
 inline std::optional<DeviceLocalSettings> defaultDeviceLocalSettings() {
 	char* r_c = urnet_default_device_local_settings();
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<DeviceLocalSettings>(r_s->c_str());
+}
+inline std::optional<DeviceLocalSettings> defaultLowMemoryDeviceLocalSettings() {
+	char* r_c = urnet_default_low_memory_device_local_settings();
 	auto r_s = detail::takeStringOpt(r_c);
 	if (!r_s) {
 		return std::nullopt;
