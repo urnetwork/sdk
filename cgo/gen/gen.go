@@ -219,6 +219,7 @@ var reservedCNames = map[string]bool{
 	"urnet_version":           true,
 	"urnet_abi_version":       true,
 	"urnet_free_string":       true,
+	"urnet_copy_string":       true,
 	"urnet_release":           true,
 	"urnet_live_handle_count": true,
 }
@@ -1648,6 +1649,9 @@ func (g *gen) write() error {
 		b.WriteString(" *   call the object's close/stop function first where one exists.\n")
 		b.WriteString(" * - returned char* strings are owned by the caller: free with urnet_free_string.\n")
 		b.WriteString(" * - const char* parameters are borrowed; the sdk copies what it needs.\n")
+		b.WriteString(" * - a callback that returns char* returns a string from urnet_copy_string; the\n")
+		b.WriteString(" *   sdk frees it with urnet_free_string. never return the host's own malloc:\n")
+		b.WriteString(" *   the host and this library may link different c runtimes and heaps.\n")
 		b.WriteString(" * - structured data crosses as utf-8 json (see the data type reference below).\n")
 		b.WriteString(" * - ids are uuid strings. times are unix epoch milliseconds, 0 = none.\n")
 		b.WriteString(" * - callbacks fire on arbitrary threads; marshal to your ui thread. strings and\n")
@@ -1669,6 +1673,8 @@ func (g *gen) write() error {
 		b.WriteString("char* urnet_version(void);\n")
 		b.WriteString("/* incompatible C ABI revision; additive exports retain this value */\nint32_t urnet_abi_version(void);\n")
 		b.WriteString("void urnet_free_string(char* s);\n")
+		b.WriteString("/* a copy of s allocated by this library (NULL for NULL), for a callback's char* result */\n")
+		b.WriteString("char* urnet_copy_string(const char* s);\n")
 		b.WriteString("/* release a handle. returns false if the handle was unknown. */\n")
 		b.WriteString("bool urnet_release(uint64_t handle);\n")
 		b.WriteString("/* number of live handles, for leak checks */\n")
@@ -1804,7 +1810,7 @@ func (g *gen) write() error {
 
 	// ----- include/urnetwork_sdk.def
 	{
-		names := []string{"urnet_version", "urnet_abi_version", "urnet_free_string", "urnet_release", "urnet_live_handle_count"}
+		names := []string{"urnet_version", "urnet_abi_version", "urnet_free_string", "urnet_copy_string", "urnet_release", "urnet_live_handle_count"}
 		for _, e := range g.exports {
 			if !e.unixOnly {
 				names = append(names, e.cName)

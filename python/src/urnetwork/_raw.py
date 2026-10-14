@@ -221,6 +221,8 @@ def bind(lib):
     lib.urnet_abi_version.restype = c_int32
     lib.urnet_free_string.argtypes = [c_void_p]
     lib.urnet_free_string.restype = None
+    lib.urnet_copy_string.argtypes = [c_char_p]
+    lib.urnet_copy_string.restype = c_void_p
     lib.urnet_release.argtypes = [c_uint64]
     lib.urnet_release.restype = c_bool
     lib.urnet_live_handle_count.argtypes = []
@@ -2465,6 +2467,8 @@ def bind(lib):
     lib.urnet_create_payment_reference.restype = c_void_p
     lib.urnet_default_device_local_settings.argtypes = []
     lib.urnet_default_device_local_settings.restype = c_void_p
+    lib.urnet_default_low_memory_device_local_settings.argtypes = []
+    lib.urnet_default_low_memory_device_local_settings.restype = c_void_p
     lib.urnet_default_provider_transport_settings.argtypes = []
     lib.urnet_default_provider_transport_settings.restype = c_void_p
     lib.urnet_default_proxy_config.argtypes = []

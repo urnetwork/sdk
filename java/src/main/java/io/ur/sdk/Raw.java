@@ -217,6 +217,7 @@ public interface Raw extends Library {
   Pointer urnet_version();
   int urnet_abi_version();
   void urnet_free_string(Pointer a0);
+  Pointer urnet_copy_string(String a0);
   byte urnet_release(long a0);
   long urnet_live_handle_count();
   long urnet_device_dial(long a0, String a1, String a2, long a3, PointerByReference a4);
@@ -1339,6 +1340,7 @@ public interface Raw extends Library {
   Pointer urnet_connect_link_url(String a0, String a1, String a2);
   Pointer urnet_create_payment_reference();
   Pointer urnet_default_device_local_settings();
+  Pointer urnet_default_low_memory_device_local_settings();
   Pointer urnet_default_provider_transport_settings();
   Pointer urnet_default_proxy_config();
   Pointer urnet_default_proxy_device_settings();

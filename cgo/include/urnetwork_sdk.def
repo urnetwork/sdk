@@ -313,10 +313,12 @@ EXPORTS
 	urnet_contract_view_controller_set_window_duration_seconds
 	urnet_contract_view_controller_start
 	urnet_contract_view_controller_stop
+	urnet_copy_string
 	urnet_create_payment_reference
 	urnet_decode_base58
 	urnet_decrypt_data
 	urnet_default_device_local_settings
+	urnet_default_low_memory_device_local_settings
 	urnet_default_provider_transport_settings
 	urnet_default_proxy_config
 	urnet_default_proxy_device_settings

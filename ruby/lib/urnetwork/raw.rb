@@ -216,6 +216,7 @@ module URnetwork
       attach_function :urnet_version, [], :pointer, blocking: true
       attach_function :urnet_abi_version, [], :int32, blocking: true
       attach_function :urnet_free_string, [:pointer], :void, blocking: true
+      attach_function :urnet_copy_string, [:string], :pointer, blocking: true
       attach_function :urnet_release, [:uint64], :bool, blocking: true
       attach_function :urnet_live_handle_count, [], :int64, blocking: true
       attach_function :urnet_device_dial, [:uint64, :string, :string, :int64, :pointer], :uint64, blocking: true
@@ -1338,6 +1339,7 @@ module URnetwork
       attach_function :urnet_connect_link_url, [:string, :string, :string], :pointer, blocking: true
       attach_function :urnet_create_payment_reference, [], :pointer, blocking: true
       attach_function :urnet_default_device_local_settings, [], :pointer, blocking: true
+      attach_function :urnet_default_low_memory_device_local_settings, [], :pointer, blocking: true
       attach_function :urnet_default_provider_transport_settings, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_config, [], :pointer, blocking: true
       attach_function :urnet_default_proxy_device_settings, [], :pointer, blocking: true

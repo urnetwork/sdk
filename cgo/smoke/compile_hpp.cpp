@@ -21,8 +21,8 @@
 
 namespace {
 
-// string-returning callback: the trampoline must hand back a malloc'd char*
-// that go frees with urnet_free_string
+// string-returning callback: the trampoline must hand back a char* from
+// urnet_copy_string that go frees with urnet_free_string
 urnet_flow_owner_lookup_cb retained_flow_owner = &urnet::detail::retained_flow_owner_lookup;
 urnet_flow_owner_lookup_cb oneshot_flow_owner = &urnet::detail::oneshot_flow_owner_lookup;
 

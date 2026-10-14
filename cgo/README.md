@@ -28,6 +28,9 @@ See the header comment in `include/urnetwork_sdk.h`. In short:
   `urnet_release`. Releasing does not close/stop the object — call the object's
   `*_close`/`*_stop` first where one exists.
 - returned `char*` are owned by the caller; free with `urnet_free_string`.
+- a callback that returns `char*` returns a copy made by `urnet_copy_string`,
+  which the sdk frees with `urnet_free_string`. Never return a buffer from the
+  host's own `malloc`: the host and the library may link different C runtimes.
 - a `char*` result the header marks "error id" is `""` on success, else the
   id of the refusal, and `URNET_ERROR_ID_INTERNAL` (never NULL, which the c++
   wrapper would read as `""`) when the call could not run. The sdk marks such
