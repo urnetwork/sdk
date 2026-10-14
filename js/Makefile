@@ -33,7 +33,17 @@ check_types:
 	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
 	go run gen_types.go -check;
 
-check_generated: check_openapi check_types
+# Generate the lag.dev SDK's country colors and test vectors from the Go sdk
+# and connect (lag.dev/PLAN.md S1)
+generate_lag:
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	go run gen_lag.go;
+
+check_lag:
+	export PATH="$$PATH:/usr/local/go/bin:$$HOME/go/bin"; \
+	go run gen_lag.go -check;
+
+check_generated: check_openapi check_types check_lag
 
 # Build the WASM binary and the Go JS runtime support file.
 #
@@ -106,7 +116,7 @@ build_checked: check_generated
 	npm ci && \
 	npm run build;
 
-.PHONY: package check-package smoke publish generate_types generate_openapi check_openapi check_types check_generated build_checked
+.PHONY: package check-package smoke publish generate_types generate_openapi check_openapi check_types generate_lag check_lag check_generated build_checked
 package: build
 	go -C ../packaging run . npm package
 check-package:

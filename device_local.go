@@ -679,6 +679,13 @@ type DeviceLocalSettings struct {
 	//
 	//gomobile:noexport Go-only network dial seam.
 	ProviderDialContextSettings *connect.DialContextSettings `json:"-"`
+	// LocalDialContextSettings, when set, is applied to the TCP and UDP sockets
+	// of the local route: what the device sends outside the tunnel, with route
+	// local on, to an un-blocked destination, or over SMTP. Tests keep that
+	// traffic in the process with it. Ordinary applications leave it nil.
+	//
+	//gomobile:noexport Go-only network dial seam.
+	LocalDialContextSettings *connect.DialContextSettings `json:"-"`
 	// DnsPumpHost overrides the public UDP/53 destination used by the DNS-pump
 	// carrier. Integration hosts with a private or loopback Connect endpoint
 	// must set this to their provisioned pump ingress; sending that endpoint's
@@ -1005,6 +1012,12 @@ type DeviceLocal struct {
 	// with local state stores the setting there instead.
 	provideExtenderSet bool
 	provideExtender    bool
+	// The lag.dev measurements setting on a space that keeps no local state
+	// (lag.dev/PLAN.md C4): set by SetMeasurementsEnabled and held for the
+	// life of the device, on until it is set. A space with local state stores
+	// the setting there instead.
+	measurementsEnabledSet bool
+	measurementsEnabled    bool
 
 	orderedContractStatusUpdates []*contractStatusUpdate
 	netContractStatus            *ContractStatus
@@ -1587,6 +1600,7 @@ func newDeviceLocalWithOverridesForPlatform(
 			providerTransportMode,
 			providerModePreferences,
 			settings.ProviderDialContextSettings,
+			settings.LocalDialContextSettings,
 			settings.DnsPumpHost,
 			transferMemory,
 			api,
@@ -1849,6 +1863,10 @@ func newDeviceLocalWithOverridesForPlatform(
 		// are installed here (G2, L2)
 		provider.extenderDnsPrivilegedPort = settings.ProvideExtenderDnsPrivilegedPort
 		provider.extenderSettingsConfigure = settings.providerExtenderSettings
+		// the role reads the measurements setting as it starts, and a change
+		// reaches a running role through setExtenderMeasurementsEnabled
+		// (lag.dev/PLAN.md C4)
+		provider.extenderMeasurementsEnabled = deviceLocal.GetMeasurementsEnabled
 		localUserNatSub := provider.LocalUserNat().AddReceivePacketCallback(deviceLocal.localFallbackReceive)
 		deviceLocal.localUserNatSub = localUserNatSub
 		// the provider client lives as long as the device, so its contract
@@ -4835,6 +4853,7 @@ func (self *DeviceLocal) applyDestination(
 				self.settings.LowMemoryProfile,
 			)
 			settings.Log = self.log
+			settings.LocalDialContextSettings = self.settings.LocalDialContextSettings
 			settings.DefaultPerformanceProfile = toConnectPerformanceProfile(self.performanceProfile)
 			// smart-routing tier (Phase 1): bake self.routingTier's knobs into
 			// the constructed baseline so a fresh window -- the very first one

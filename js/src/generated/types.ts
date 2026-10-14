@@ -770,6 +770,7 @@ export interface DeleteApiKeyResult {
 export interface SnChainSettings {
   chain_id: number;
   vault_address: string;
+  vault2_address: string;
   coordinator_address: string;
   no_id: string;
   netuid: number;
@@ -822,6 +823,22 @@ export interface SnGetWalletResult {
   wallet?: SnWallet | null;
   wallets?: SnWallet[] | null;
   error?: SnError | null;
+}
+
+export interface SnNetworkConsentChallengeResult {
+  message: string;
+  coldkey_ss58: string;
+  from_epoch: number;
+  through_epoch: number;
+  expires_at: number;
+}
+
+export interface SnNetworkConsentStatus {
+  active: boolean;
+  coldkey_ss58: string;
+  from_epoch: number;
+  through_epoch: number;
+  generation: number;
 }
 
 export interface SnValidateWalletArgs {
@@ -894,6 +911,23 @@ export interface SnClaimsResult {
   error?: SnError | null;
 }
 
+export interface SnLedgerAccount {
+  vault: string;
+  no_id: number;
+  index: number;
+  finalized_rao: number;
+  claimable_rao: number;
+  paid_rao: number;
+  pending: boolean;
+  pending_rao: number;
+}
+
+export interface SnLedgerAccountsResult {
+  accounts: SnLedgerAccount[] | null;
+  coldkey_ss58?: string;
+  error?: SnError | null;
+}
+
 export interface SnUnsignedTx {
   epoch: number;
   chain_id: number;
@@ -901,6 +935,19 @@ export interface SnUnsignedTx {
   data: string;
   value: string;
   amount_rao: number;
+  gas: number;
+}
+
+export interface SnLedgerUnsignedTx {
+  no_id: number;
+  index: number;
+  root_index: number;
+  chain_id: number;
+  to: string;
+  data: string;
+  value: string;
+  amount_rao: number;
+  gas: number;
 }
 
 export interface SnEpochResult {

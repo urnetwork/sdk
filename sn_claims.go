@@ -137,6 +137,10 @@ type SnUnsignedTx struct {
 	// decimal wei, always "0"
 	Value     string `json:"value"`
 	AmountRao int64  `json:"amount_rao"`
+	// the gas limit to sign with, snClaimGasFloor (2,700,000): below it the
+	// vault accepts the claim but defers its payment, and a signer's own
+	// estimate finds that
+	Gas int64 `json:"gas"`
 }
 
 type SnUnsignedTxList struct {
@@ -229,6 +233,12 @@ func (self *snLocalArtifactStore) put(hashHex string, raw []byte) {
 }
 
 func snHttpFetch(ctx context.Context, url string) ([]byte, error) {
+	return snHttpGet(ctx, url, "the payout artifact")
+}
+
+// snHttpGet reads a public document with a plain http client; what names the
+// document in the error for a status other than 2xx.
+func snHttpGet(ctx context.Context, url string, what string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -241,7 +251,7 @@ func snHttpFetch(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("http %d fetching the payout artifact", res.StatusCode)
+		return nil, fmt.Errorf("http %d fetching %s", res.StatusCode, what)
 	}
 	return io.ReadAll(io.LimitReader(res.Body, snArtifactMaxBytes))
 }
@@ -844,6 +854,7 @@ func (self *snClaimEngine) unsignedTxs(ctx context.Context, epochs []int64) (*Sn
 			To:      evm.AddressHex(self.vault),
 			Data:    "0x" + hex.EncodeToString(data),
 			Value:   "0",
+			Gas:     int64(snClaimGasFloor),
 		}
 		if plan.amount.IsInt64() {
 			tx.AmountRao = plan.amount.Int64()
@@ -889,6 +900,66 @@ func snFormatTao(wei *big.Int) string {
 	return fmt.Sprintf("%.6f TAO", tao)
 }
 
+func snNeedsGasMessage(maxCost *big.Int, balance *big.Int, gasKey *SnGasKey) string {
+	return fmt.Sprintf("%s: this claim needs up to %s of gas, the gas key %s has %s; send TAO to %s", SnErrorCodeNeedsGas, snFormatTao(maxCost), gasKey.Address, snFormatTao(balance), gasKey.MirrorSs58)
+}
+
+// snClaimGasFloor is the least gas limit a v1 claim is signed with: the most
+// a claim needed before runtime 478 for its payment, with about 6% to spare
+// (VERSION2-LAUNCH.md §2.6). The vault pays a claim only if the runtime
+// admits its stake transfer, and below that it accepts the claim and defers
+// the payment (ClaimPaymentDeferred), so eth_estimateGas, which finds the
+// least gas that succeeds, sizes the deferral. Measured on nodes built from
+// runtimes 475 and 477 (sn scripts/runtime-rehearsal), with sn 9918b71c's
+// STSettlementVault and a depth-11 proof, beyond a v1 root's 2,000 accounts:
+// a claim was estimated at 515,668 to 563,837 gas and deferred at that plus a
+// quarter, and needed up to 2,512,208 gas to pay for a later claim of an
+// epoch, 2,529,254 for an epoch's first and 2,546,625 for the vault's first.
+// Runtime 478 admits the transfer against the vault's own StakingHotkeys list,
+// 8,750 gas an entry, which third parties can lengthen between an estimate
+// and the claim's inclusion.
+const snClaimGasFloor uint64 = 2_700_000
+
+// snSignClaim signs a claim of data to `to` with the gas limit gas, from the
+// gas key, at the chain's current price: EIP-1559 at twice the base fee plus
+// the tip when txType asks for it and the chain has a base fee, else legacy
+// at 1.1 × eth_gasPrice. It returns the raw transaction and the most it can
+// cost, the gas limit × the price.
+func snSignClaim(ctx context.Context, client *evm.Client, chainId *big.Int, txType string, key *secp.PrivateKey, to [20]byte, data []byte, gas uint64) ([]byte, *big.Int, error) {
+	var baseFee *big.Int
+	if txType == SnTxTypeEip1559 {
+		if fee, err := client.LatestBaseFee(ctx); err == nil && fee != nil && fee.Sign() > 0 {
+			baseFee = fee
+		}
+	}
+	nonce, err := client.Nonce(ctx, evm.AddressOf(key))
+	if err != nil {
+		return nil, nil, err
+	}
+	if baseFee != nil {
+		tip, err := client.MaxPriorityFeePerGas(ctx)
+		if err != nil || tip == nil {
+			tip = big.NewInt(1_000_000_000)
+		}
+		feeCap := new(big.Int).Mul(baseFee, big.NewInt(2))
+		feeCap.Add(feeCap, tip)
+		tx := &evm.DynamicFeeTx{Nonce: nonce, MaxPriorityFeePerGas: tip, MaxFeePerGas: feeCap, Gas: gas, To: to, Value: big.NewInt(0), Data: data}
+		raw, _, err := tx.Signed(chainId, key)
+		return raw, new(big.Int).Mul(feeCap, new(big.Int).SetUint64(gas)), err
+	}
+	gasPrice, err := client.GasPrice(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	gasPrice = new(big.Int).Div(new(big.Int).Mul(gasPrice, big.NewInt(11)), big.NewInt(10))
+	if gasPrice.Sign() == 0 {
+		gasPrice = big.NewInt(1)
+	}
+	tx := &evm.LegacyTx{Nonce: nonce, GasPrice: gasPrice, Gas: gas, To: to, Value: big.NewInt(0), Data: data}
+	raw, _, err := tx.Signed(chainId, key)
+	return raw, new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gas)), err
+}
+
 // send claims one epoch with the gas key and reports through the callback.
 func (self *snClaimEngine) send(ctx context.Context, key *secp.PrivateKey, epoch int64, callback SnClaimCallback) {
 	plan, reason, err := self.plan(ctx, epoch)
@@ -921,57 +992,15 @@ func (self *snClaimEngine) send(ctx context.Context, key *secp.PrivateKey, epoch
 		callback.Failed(epoch, snFailMessage(err))
 		return
 	}
-	gas += gas / 4
-
-	var raw []byte
-	var maxCost *big.Int
-	useDynamic := false
-	var baseFee *big.Int
-	if self.settings.TxType == SnTxTypeEip1559 {
-		if fee, err := self.client.LatestBaseFee(ctx); err == nil && fee != nil && fee.Sign() > 0 {
-			baseFee = fee
-			useDynamic = true
-		}
-	}
-	nonce, err := self.client.Nonce(ctx, from)
+	// the estimate plus a quarter, and never less than a claim needs to pay
+	gas = max(gas+gas/4, snClaimGasFloor)
+	raw, maxCost, err := snSignClaim(ctx, self.client, self.chainId, self.settings.TxType, key, self.vault, data, gas)
 	if err != nil {
 		callback.Failed(epoch, snFailMessage(err))
 		return
 	}
-	if useDynamic {
-		tip, err := self.client.MaxPriorityFeePerGas(ctx)
-		if err != nil || tip == nil {
-			tip = big.NewInt(1_000_000_000)
-		}
-		feeCap := new(big.Int).Mul(baseFee, big.NewInt(2))
-		feeCap.Add(feeCap, tip)
-		maxCost = new(big.Int).Mul(feeCap, new(big.Int).SetUint64(gas))
-		tx := &evm.DynamicFeeTx{Nonce: nonce, MaxPriorityFeePerGas: tip, MaxFeePerGas: feeCap, Gas: gas, To: self.vault, Value: big.NewInt(0), Data: data}
-		raw, _, err = tx.Signed(self.chainId, key)
-		if err != nil {
-			callback.Failed(epoch, SnErrorCodeClaimFailed+": "+err.Error())
-			return
-		}
-	} else {
-		gasPrice, err := self.client.GasPrice(ctx)
-		if err != nil {
-			callback.Failed(epoch, snFailMessage(err))
-			return
-		}
-		gasPrice = new(big.Int).Div(new(big.Int).Mul(gasPrice, big.NewInt(11)), big.NewInt(10))
-		if gasPrice.Sign() == 0 {
-			gasPrice = big.NewInt(1)
-		}
-		maxCost = new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gas))
-		tx := &evm.LegacyTx{Nonce: nonce, GasPrice: gasPrice, Gas: gas, To: self.vault, Value: big.NewInt(0), Data: data}
-		raw, _, err = tx.Signed(self.chainId, key)
-		if err != nil {
-			callback.Failed(epoch, SnErrorCodeClaimFailed+": "+err.Error())
-			return
-		}
-	}
 	if balance.Cmp(maxCost) < 0 {
-		callback.Failed(epoch, fmt.Sprintf("%s: this claim needs up to %s of gas, the gas key %s has %s; send TAO to %s", SnErrorCodeNeedsGas, snFormatTao(maxCost), gasKey.Address, snFormatTao(balance), gasKey.MirrorSs58))
+		callback.Failed(epoch, snNeedsGasMessage(maxCost, balance, gasKey))
 		return
 	}
 	txHash, err := self.client.SendRawTransaction(ctx, raw)
@@ -1008,10 +1037,7 @@ func (self *snDevice) snClaimEngine() (*snClaimEngine, *SnError) {
 		return nil, newSnError(SnErrorCodeConnectWalletFirst, "connect a Bittensor wallet first")
 	}
 	settings := self.GetSnChainSettings()
-	artifactBaseUrl := settings.ArtifactBaseUrl
-	if artifactBaseUrl == "" && self.networkSpace != nil {
-		artifactBaseUrl = self.networkSpace.GetApiUrl()
-	}
+	artifactBaseUrl := self.snArtifactBaseUrl(settings)
 	localState := self.snLocalState()
 	var txHashes map[int64]string
 	if localState != nil {
@@ -1032,6 +1058,16 @@ func (self *snDevice) snClaimEngine() (*snClaimEngine, *SnError) {
 		}
 	}
 	return engine, nil
+}
+
+// snArtifactBaseUrl is where this device reads what the operator publishes:
+// the configured artifact host, else the network space api ("" for the
+// default host).
+func (self *snDevice) snArtifactBaseUrl(settings *SnChainSettings) string {
+	if settings.ArtifactBaseUrl == "" && self.networkSpace != nil {
+		return self.networkSpace.GetApiUrl()
+	}
+	return settings.ArtifactBaseUrl
 }
 
 func (self *snDevice) snWalletFromEpoch() int64 {

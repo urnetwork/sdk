@@ -45,3 +45,7 @@ func (self *deviceLocalExtender) statusUpdate() chan struct{} {
 
 func (self *deviceLocalExtender) Close() {
 }
+
+// No role, so no measurement API to turn off or on (lag.dev/PLAN.md C4).
+func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
+}

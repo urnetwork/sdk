@@ -795,10 +795,12 @@ type ReliabilityMetrics struct {
 	// RecoveryPending is how many destinations are still dark right now.
 	RecoveryPending int32
 
-	// DialFailuresIntercepted counts provider could-not-connect signals seen;
-	// FlowsReraced counts how many of those flows were quietly moved to another
-	// exit instead of being left to hang. The gap between them is the failures
-	// that were already established or otherwise not eligible to move.
+	// DialFailuresIntercepted counts provider could-not-connect signals seen.
+	// FlowsReraced counts flows quietly moved to another exit instead of being
+	// left to hang, after a signal or after the silence of an exit that sends
+	// none, once per flow and exit that failed it. Signals that move nothing
+	// were for flows already established or otherwise not eligible to move,
+	// or repeat an exit's failure of a flow.
 	DialFailuresIntercepted int64
 	FlowsReraced            int64
 

@@ -35,15 +35,19 @@ const (
 // are compiled in; the network space values and the device's local
 // settings override them (see DeviceLocal.GetSnChainSettings).
 type SnChainSettings struct {
-	ChainId            int64  `json:"chain_id"`
-	VaultAddress       string `json:"vault_address"`
+	ChainId      int64  `json:"chain_id"`
+	VaultAddress string `json:"vault_address"`
+	// the settlement v2 vault (STSettlementVault2), lowercase 0x; v2 claims
+	// go only to this address. "" = v2 claims are not configured
+	Vault2Address      string `json:"vault2_address"`
 	CoordinatorAddress string `json:"coordinator_address"`
 	// URnetwork's network-operator id in the coordinator (decimal or 0x hex)
 	NoId   string `json:"no_id"`
 	Netuid int64  `json:"netuid"`
 	// "https://…/tx/%s"
 	ExplorerTxUrl string `json:"explorer_tx_url"`
-	// where "/sn/artifact?hash=…" is served; "" = the network space api url
+	// where "/sn/artifact?hash=…" and the v2 "/sn/ledger/account" are
+	// served; "" = the network space api url
 	ArtifactBaseUrl string `json:"artifact_base_url"`
 	// SnTxTypeLegacy (default) or SnTxTypeEip1559
 	TxType string `json:"tx_type"`
@@ -56,6 +60,7 @@ type SnChainSettings struct {
 type snChainSettingsJson struct {
 	ChainId            int64    `json:"chain_id"`
 	VaultAddress       string   `json:"vault_address"`
+	Vault2Address      string   `json:"vault2_address"`
 	CoordinatorAddress string   `json:"coordinator_address"`
 	NoId               string   `json:"no_id"`
 	Netuid             int64    `json:"netuid"`
@@ -74,6 +79,13 @@ func NewSnChainSettings() *SnChainSettings {
 // addresses and operator id are filled by the network space values, the
 // server's /sn/epoch (DeviceLocal.SyncSnChainSettings) or the device
 // settings; the chain, rpc and explorer are compiled in.
+//
+// Vault2Address stays empty on mainnet until settlement v2 activates
+// (VERSION2-FINAL.md §14): the v2 claim is then not configured, and the apps
+// hide it while still showing v2 balances. At activation the deployed
+// STSettlementVault2 is pinned here, or in the network space's sn_chain
+// values. /sn/epoch never sets it: the vault a claim is sent to is pinned by
+// the release, not taken from a server.
 func DefaultSnChainSettings() *SnChainSettings {
 	return &SnChainSettings{
 		ChainId:        SnChainIdMainnet,
@@ -145,6 +157,9 @@ func (self *SnChainSettings) Merge(overrides *SnChainSettings) *SnChainSettings 
 	if overrides.VaultAddress != "" {
 		merged.VaultAddress = overrides.VaultAddress
 	}
+	if overrides.Vault2Address != "" {
+		merged.Vault2Address = overrides.Vault2Address
+	}
 	if overrides.CoordinatorAddress != "" {
 		merged.CoordinatorAddress = overrides.CoordinatorAddress
 	}
@@ -215,6 +230,7 @@ func (self *SnChainSettings) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&snChainSettingsJson{
 		ChainId:            self.ChainId,
 		VaultAddress:       self.VaultAddress,
+		Vault2Address:      self.Vault2Address,
 		CoordinatorAddress: self.CoordinatorAddress,
 		NoId:               self.NoId,
 		Netuid:             self.Netuid,
@@ -234,6 +250,7 @@ func (self *SnChainSettings) UnmarshalJSON(b []byte) error {
 	*self = SnChainSettings{
 		ChainId:            j.ChainId,
 		VaultAddress:       j.VaultAddress,
+		Vault2Address:      j.Vault2Address,
 		CoordinatorAddress: j.CoordinatorAddress,
 		NoId:               j.NoId,
 		Netuid:             j.Netuid,
@@ -248,6 +265,18 @@ func (self *SnChainSettings) UnmarshalJSON(b []byte) error {
 
 func (self *SnChainSettings) vault() ([20]byte, error) {
 	return evm.ParseAddress(self.VaultAddress)
+}
+
+// vault2 parses Vault2Address, which must be set and nonzero.
+func (self *SnChainSettings) vault2() ([20]byte, error) {
+	if self.Vault2Address == "" {
+		return [20]byte{}, errors.New("not set")
+	}
+	address, err := evm.ParseAddress(self.Vault2Address)
+	if err == nil && address == ([20]byte{}) {
+		err = errors.New("the zero address")
+	}
+	return address, err
 }
 
 func (self *SnChainSettings) coordinator() ([20]byte, error) {

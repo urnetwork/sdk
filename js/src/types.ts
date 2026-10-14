@@ -1,5 +1,5 @@
-import type { ClientSessionSnapshot, SessionSignOutResult } from "./generated/types";
-export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult } from "./generated/types";
+import type { ClientSessionSnapshot, SessionSignOutResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
+export type { ClientInfo, ClientSessionSnapshot, ClientSessionAction, ClientSessionError, SessionLastUsed, NetworkSessionInfo, NetworkSessionsResult, SessionOperationResult, SnNetworkConsentChallengeResult, SnNetworkConsentStatus, SnSetWalletResult } from "./generated/types";
 import type { SocketDevice } from "./socket";
 import type { SubprotocolDevice } from "./subprotocol";
 
@@ -1312,6 +1312,14 @@ export interface AccountHost {
   onboardingFeedbackToken(token: string, rating?: number, reason?: string): Promise<any>;
   /** The per-month sub-line math: yearly / 12 rounded up to the minor unit, saving rounded down, suppressed under one major unit. */
   computePriceEquivalent(yearly: number, monthly: number, minorUnitDigits: number): PriceEquivalent;
+
+  // ----- network payout consent (CONSENT.md) -----
+  /** The challenge whose exact `message` the wallet signs. Rejects with an Error whose message starts "network_owner_only: " when this credential is not the network owner's. */
+  snNetworkConsentChallenge(coldkeySs58: string): Promise<SnNetworkConsentChallengeResult>;
+  /** Submit the signed consent. Another account's signature resolves with error.code "signature_mismatch"; an expired message rejects "challenge_expired: …". */
+  snNetworkConsentSubmit(coldkeySs58: string, message: string, signatureHex: string): Promise<SnSetWalletResult>;
+  /** The network's newest consent; active is false when none is in force or starts next epoch. */
+  snNetworkConsentStatus(): Promise<SnNetworkConsentStatus>;
 }
 
 export interface PriceEquivalent {

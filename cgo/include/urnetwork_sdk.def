@@ -111,6 +111,12 @@ EXPORTS
 	urnet_api_sn_epoch_sync
 	urnet_api_sn_get_wallet
 	urnet_api_sn_head
+	urnet_api_sn_network_consent_challenge
+	urnet_api_sn_network_consent_challenge_sync
+	urnet_api_sn_network_consent_status
+	urnet_api_sn_network_consent_status_sync
+	urnet_api_sn_network_consent_submit
+	urnet_api_sn_network_consent_submit_sync
 	urnet_api_sn_network_wallet_mapping_challenge_sync
 	urnet_api_sn_pool_claim_sync
 	urnet_api_sn_set_wallet
@@ -165,6 +171,7 @@ EXPORTS
 	urnet_bittensor_wallet_session_proof
 	urnet_bittensor_wallet_session_purpose
 	urnet_bittensor_wallet_session_set_challenge
+	urnet_bittensor_wallet_session_set_network_consent_challenge
 	urnet_bittensor_wallet_session_set_wallet_connect_project_id
 	urnet_bittensor_wallet_session_sign_request
 	urnet_bittensor_wallet_session_state
@@ -403,6 +410,7 @@ EXPORTS
 	urnet_device_get_licenses
 	urnet_device_get_local_override_app_ids
 	urnet_device_get_log_verbosity
+	urnet_device_get_measurements_enabled
 	urnet_device_get_network_peers
 	urnet_device_get_network_space
 	urnet_device_get_offline
@@ -564,6 +572,9 @@ EXPORTS
 	urnet_device_local_sn_claim_transactions
 	urnet_device_local_sn_claims
 	urnet_device_local_sn_gas_balance
+	urnet_device_local_sn_ledger_accounts
+	urnet_device_local_sn_ledger_claim
+	urnet_device_local_sn_ledger_claim_transactions
 	urnet_device_local_stall_exit
 	urnet_device_local_start_probe_suite
 	urnet_device_local_stop_probe_suite
@@ -658,6 +669,9 @@ EXPORTS
 	urnet_device_remote_sn_claim_transactions
 	urnet_device_remote_sn_claims
 	urnet_device_remote_sn_gas_balance
+	urnet_device_remote_sn_ledger_accounts
+	urnet_device_remote_sn_ledger_claim
+	urnet_device_remote_sn_ledger_claim_transactions
 	urnet_device_remote_stall_exit
 	urnet_device_remote_start_probe_suite
 	urnet_device_remote_stop_probe_suite
@@ -685,6 +699,7 @@ EXPORTS
 	urnet_device_set_destination
 	urnet_device_set_dns_resolver_settings
 	urnet_device_set_log_verbosity
+	urnet_device_set_measurements_enabled
 	urnet_device_set_offline
 	urnet_device_set_performance_profile
 	urnet_device_set_provide_control_mode
@@ -810,6 +825,7 @@ EXPORTS
 	urnet_local_state_get_extender_gossip_mode
 	urnet_local_state_get_instance_id
 	urnet_local_state_get_log_verbosity
+	urnet_local_state_get_measurements_enabled
 	urnet_local_state_get_performance_profile
 	urnet_local_state_get_provide_control_mode
 	urnet_local_state_get_provide_extender
@@ -855,6 +871,7 @@ EXPORTS
 	urnet_local_state_set_instance_id
 	urnet_local_state_set_intro_funnel_last_prompted
 	urnet_local_state_set_log_verbosity
+	urnet_local_state_set_measurements_enabled
 	urnet_local_state_set_performance_profile
 	urnet_local_state_set_provide_control_mode
 	urnet_local_state_set_provide_extender
@@ -1161,6 +1178,7 @@ EXPORTS
 	urnet_set_control_ip_family_policy
 	urnet_set_device_rpc_h1_plus_enabled
 	urnet_set_egress_interface_index
+	urnet_set_extender_network_client_enabled
 	urnet_set_extender_store_read_only
 	urnet_set_log_dir
 	urnet_set_log_dir_for_process
@@ -1175,6 +1193,8 @@ EXPORTS
 	urnet_sn_claims_for
 	urnet_sn_fleet_binding_digest
 	urnet_sn_gas_balance_for
+	urnet_sn_ledger_accounts_for
+	urnet_sn_ledger_claim_transactions_for
 	urnet_sn_payout_leaf_hex
 	urnet_sn_testnet_chain_settings
 	urnet_socket_close

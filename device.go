@@ -796,6 +796,20 @@ type Device interface {
 	// as the provide mode is
 	SetProvideExtender(provideExtender bool)
 
+	// GetMeasurementsEnabled is the owner's lag.dev measurements setting
+	// (lag.dev/PLAN.md C4, decision 18): whether the provider extender role
+	// serves the measurement API, stored per network space, or held by the
+	// device for its life on a space that keeps no local state. On until the
+	// owner opts out; a device that cannot be reached reads the value queued
+	// for it, else the last value read, else on.
+	GetMeasurementsEnabled() bool
+
+	// applied at once, without a restart: off stops the measurement API and
+	// has the operator withdraw the extender's measurement name, on serves it
+	// again. Queued while the device cannot be reached and replayed at the
+	// next sync, as the provider extender setting is
+	SetMeasurementsEnabled(measurementsEnabled bool)
+
 	// ResetExtenders returns the extender state of the device's network space
 	// to a fresh install's (EXTENDER.md E7): everything learned about extenders
 	// is cleared and every extender a user added is removed, then the

@@ -67,13 +67,13 @@ func (self *testExtenderNetworkClientSettingsRecorder) count() int {
 func testEnableExtenderManualHostsNetwork(t *testing.T) *testExtenderNetworkClientSettingsRecorder {
 	t.Helper()
 	recorder := &testExtenderNetworkClientSettingsRecorder{}
-	extenderNetworkClientEnabled = true
+	SetExtenderNetworkClientEnabled(true)
 	extenderNetworkClientConfigure = func(settings *connect.ExtenderNetworkClientSettings) {
 		recorder.record(settings.ManualHosts)
 		testConfigureInProcessExtenderNetworkClient(settings)
 	}
 	t.Cleanup(func() {
-		extenderNetworkClientEnabled = false
+		SetExtenderNetworkClientEnabled(false)
 		extenderNetworkClientConfigure = nil
 	})
 	return recorder

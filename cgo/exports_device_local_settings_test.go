@@ -10,15 +10,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/urnetwork/connect"
 	"github.com/urnetwork/sdk"
 )
 
 func TestDeviceLocalSettingsJsonThroughTheAbi(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	strategySettings := connect.DefaultClientStrategySettings()
-	strategySettings.Log = connect.NewNoopLogger()
+	strategySettings := testingOfflineClientStrategySettings()
 	// an ip literal derives no extender network, so the space starts no
 	// extender client or node, and a role asked to run there fails to start
 	// before it binds anything

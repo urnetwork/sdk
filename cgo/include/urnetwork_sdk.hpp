@@ -194,6 +194,7 @@ inline constexpr const char* BittensorWalletPlatformWeb = "web";
 inline constexpr const char* BittensorWalletPlatformWindows = "windows";
 inline constexpr const char* BittensorWalletPurposeAdd = "add";
 inline constexpr const char* BittensorWalletPurposeConnect = "connect";
+inline constexpr const char* BittensorWalletPurposeConsent = "consent";
 inline constexpr const char* BittensorWalletPurposeCreate = "create";
 inline constexpr const char* BittensorWalletPurposeLogin = "login";
 inline constexpr const char* BittensorWalletStateAwaitingWallet = "awaiting_wallet";
@@ -446,17 +447,21 @@ inline constexpr const char* SnErrorCodeArtifactUnavailable = "artifact_unavaila
 inline constexpr const char* SnErrorCodeChainNotConfigured = "chain_not_configured";
 inline constexpr const char* SnErrorCodeChainRpcError = "chain_rpc_error";
 inline constexpr const char* SnErrorCodeChainRpcUnreachable = "chain_rpc_unreachable";
+inline constexpr const char* SnErrorCodeChallengeExpired = "challenge_expired";
 inline constexpr const char* SnErrorCodeClaimFailed = "claim_failed";
 inline constexpr const char* SnErrorCodeConnectWalletFirst = "connect_wallet_first";
 inline constexpr const char* SnErrorCodeExpired = "claims_for_epoch_expired";
 inline constexpr const char* SnErrorCodeInvalidAddress = "invalid_ss58_address";
+inline constexpr const char* SnErrorCodeLedgerUnavailable = "ledger_unavailable";
 inline constexpr const char* SnErrorCodeLocalState = "local_state_unavailable";
 inline constexpr const char* SnErrorCodeNeedsGas = "needs_gas";
+inline constexpr const char* SnErrorCodeNetworkOwnerOnly = "network_owner_only";
 inline constexpr const char* SnErrorCodeNotClaimable = "not_claimable";
 inline constexpr const char* SnErrorCodeProofMismatch = "proof_mismatch";
 inline constexpr const char* SnErrorCodeServer = "server_error";
 inline constexpr const char* SnErrorCodeSignatureMismatch = "signature_mismatch";
 inline constexpr const char* SnErrorCodeWalletBlocked = "wallet_blocked";
+inline constexpr int64_t SnNetworkConsentEpochSpan = 65535;
 inline constexpr int64_t SnRaoPerAlpha = 1000000000;
 inline constexpr int64_t SnSs58Prefix = 42;
 inline constexpr const char* SnTxTypeEip1559 = "eip1559";
@@ -869,6 +874,11 @@ struct SnGasBalanceResult;
 struct SnGasKey;
 struct SnGetWalletResult;
 struct SnHeadResult;
+struct SnLedgerAccount;
+struct SnLedgerAccountsResult;
+struct SnLedgerUnsignedTx;
+struct SnNetworkConsentChallengeResult;
+struct SnNetworkConsentStatus;
 struct SnNetworkWalletMappingChallengeArgs;
 struct SnPoolClaimArgs;
 struct SnPoolClaimError;
@@ -1002,6 +1012,8 @@ using RedeemedBalanceCodeList = std::vector<RedeemedBalanceCode>;
 using RegionGroupList = std::vector<RegionGroup>;
 using RegionalDnsServerList = std::vector<RegionalDnsServer>;
 using SnEpochClaimList = std::vector<SnEpochClaim>;
+using SnLedgerAccountList = std::vector<SnLedgerAccount>;
+using SnLedgerUnsignedTxList = std::vector<SnLedgerUnsignedTx>;
 using SnUnsignedTxList = std::vector<SnUnsignedTx>;
 using SnWalletList = std::vector<SnWallet>;
 using StringList = std::vector<std::string>;
@@ -2536,6 +2548,7 @@ struct NetworkSpaceKey {
 struct SnChainSettings {
 	int64_t chain_id{};
 	std::string vault_address{};
+	std::string vault2_address{};
 	std::string coordinator_address{};
 	std::string no_id{};
 	int64_t netuid{};
@@ -3237,6 +3250,51 @@ struct SnHeadResult {
 	std::optional<SnError> error;
 };
 
+struct SnLedgerAccount {
+	std::string vault{};
+	int64_t no_id{};
+	int64_t index{};
+	int64_t finalized_rao{};
+	int64_t claimable_rao{};
+	int64_t paid_rao{};
+	bool pending{};
+	int64_t pending_rao{};
+};
+
+struct SnLedgerAccountsResult {
+	std::optional<SnLedgerAccountList> accounts;
+	std::optional<std::string> coldkey_ss58;
+	std::optional<SnError> error;
+};
+
+struct SnLedgerUnsignedTx {
+	int64_t no_id{};
+	int64_t index{};
+	int64_t root_index{};
+	int64_t chain_id{};
+	std::string to{};
+	std::string data{};
+	std::string value{};
+	int64_t amount_rao{};
+	int64_t gas{};
+};
+
+struct SnNetworkConsentChallengeResult {
+	std::string message{};
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
+	int64_t expires_at{};
+};
+
+struct SnNetworkConsentStatus {
+	bool active{};
+	std::string coldkey_ss58{};
+	int64_t from_epoch{};
+	int64_t through_epoch{};
+	int64_t generation{};
+};
+
 struct SnNetworkWalletMappingChallengeArgs {
 	std::string coldkey_ss58{};
 	int64_t from_epoch{};
@@ -3294,6 +3352,7 @@ struct SnUnsignedTx {
 	std::string data{};
 	std::string value{};
 	int64_t amount_rao{};
+	int64_t gas{};
 };
 
 struct SnValidateWalletResult {
@@ -4327,6 +4386,16 @@ inline void to_json(nlohmann::json& j, const SnGetWalletResult& v);
 inline void from_json(const nlohmann::json& j, SnGetWalletResult& v);
 inline void to_json(nlohmann::json& j, const SnHeadResult& v);
 inline void from_json(const nlohmann::json& j, SnHeadResult& v);
+inline void to_json(nlohmann::json& j, const SnLedgerAccount& v);
+inline void from_json(const nlohmann::json& j, SnLedgerAccount& v);
+inline void to_json(nlohmann::json& j, const SnLedgerAccountsResult& v);
+inline void from_json(const nlohmann::json& j, SnLedgerAccountsResult& v);
+inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v);
+inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v);
+inline void to_json(nlohmann::json& j, const SnNetworkConsentChallengeResult& v);
+inline void from_json(const nlohmann::json& j, SnNetworkConsentChallengeResult& v);
+inline void to_json(nlohmann::json& j, const SnNetworkConsentStatus& v);
+inline void from_json(const nlohmann::json& j, SnNetworkConsentStatus& v);
 inline void to_json(nlohmann::json& j, const SnNetworkWalletMappingChallengeArgs& v);
 inline void from_json(const nlohmann::json& j, SnNetworkWalletMappingChallengeArgs& v);
 inline void to_json(nlohmann::json& j, const SnPoolClaimArgs& v);
@@ -11467,6 +11536,7 @@ inline void to_json(nlohmann::json& j, const SnChainSettings& v) {
 	j = nlohmann::json::object();
 	j["chain_id"] = v.chain_id;
 	j["vault_address"] = v.vault_address;
+	j["vault2_address"] = v.vault2_address;
 	j["coordinator_address"] = v.coordinator_address;
 	j["no_id"] = v.no_id;
 	j["netuid"] = v.netuid;
@@ -11484,6 +11554,9 @@ inline void from_json(const nlohmann::json& j, SnChainSettings& v) {
 	}
 	if (auto it = j.find("vault_address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.vault_address);
+	}
+	if (auto it = j.find("vault2_address"); it != j.end() && !it->is_null()) {
+		it->get_to(v.vault2_address);
 	}
 	if (auto it = j.find("coordinator_address"); it != j.end() && !it->is_null()) {
 		it->get_to(v.coordinator_address);
@@ -14770,6 +14843,183 @@ inline void from_json(const nlohmann::json& j, SnHeadResult& v) {
 	}
 }
 
+inline void to_json(nlohmann::json& j, const SnLedgerAccount& v) {
+	j = nlohmann::json::object();
+	j["vault"] = v.vault;
+	j["no_id"] = v.no_id;
+	j["index"] = v.index;
+	j["finalized_rao"] = v.finalized_rao;
+	j["claimable_rao"] = v.claimable_rao;
+	j["paid_rao"] = v.paid_rao;
+	j["pending"] = v.pending;
+	j["pending_rao"] = v.pending_rao;
+}
+inline void from_json(const nlohmann::json& j, SnLedgerAccount& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("vault"); it != j.end() && !it->is_null()) {
+		it->get_to(v.vault);
+	}
+	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index);
+	}
+	if (auto it = j.find("finalized_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.finalized_rao);
+	}
+	if (auto it = j.find("claimable_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.claimable_rao);
+	}
+	if (auto it = j.find("paid_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.paid_rao);
+	}
+	if (auto it = j.find("pending"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending);
+	}
+	if (auto it = j.find("pending_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.pending_rao);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnLedgerAccountsResult& v) {
+	j = nlohmann::json::object();
+	if (v.accounts) {
+		j["accounts"] = *v.accounts;
+	}
+	if (v.coldkey_ss58) {
+		j["coldkey_ss58"] = *v.coldkey_ss58;
+	}
+	if (v.error) {
+		j["error"] = *v.error;
+	}
+}
+inline void from_json(const nlohmann::json& j, SnLedgerAccountsResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("accounts"); it != j.end() && !it->is_null()) {
+		SnLedgerAccountList tmp{};
+		it->get_to(tmp);
+		v.accounts = std::move(tmp);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		std::string tmp{};
+		it->get_to(tmp);
+		v.coldkey_ss58 = std::move(tmp);
+	}
+	if (auto it = j.find("error"); it != j.end() && !it->is_null()) {
+		SnError tmp{};
+		it->get_to(tmp);
+		v.error = std::move(tmp);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnLedgerUnsignedTx& v) {
+	j = nlohmann::json::object();
+	j["no_id"] = v.no_id;
+	j["index"] = v.index;
+	j["root_index"] = v.root_index;
+	j["chain_id"] = v.chain_id;
+	j["to"] = v.to;
+	j["data"] = v.data;
+	j["value"] = v.value;
+	j["amount_rao"] = v.amount_rao;
+	j["gas"] = v.gas;
+}
+inline void from_json(const nlohmann::json& j, SnLedgerUnsignedTx& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("no_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.no_id);
+	}
+	if (auto it = j.find("index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.index);
+	}
+	if (auto it = j.find("root_index"); it != j.end() && !it->is_null()) {
+		it->get_to(v.root_index);
+	}
+	if (auto it = j.find("chain_id"); it != j.end() && !it->is_null()) {
+		it->get_to(v.chain_id);
+	}
+	if (auto it = j.find("to"); it != j.end() && !it->is_null()) {
+		it->get_to(v.to);
+	}
+	if (auto it = j.find("data"); it != j.end() && !it->is_null()) {
+		it->get_to(v.data);
+	}
+	if (auto it = j.find("value"); it != j.end() && !it->is_null()) {
+		it->get_to(v.value);
+	}
+	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
+		it->get_to(v.amount_rao);
+	}
+	if (auto it = j.find("gas"); it != j.end() && !it->is_null()) {
+		it->get_to(v.gas);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnNetworkConsentChallengeResult& v) {
+	j = nlohmann::json::object();
+	j["message"] = v.message;
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+	j["expires_at"] = v.expires_at;
+}
+inline void from_json(const nlohmann::json& j, SnNetworkConsentChallengeResult& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("message"); it != j.end() && !it->is_null()) {
+		it->get_to(v.message);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
+	}
+	if (auto it = j.find("expires_at"); it != j.end() && !it->is_null()) {
+		it->get_to(v.expires_at);
+	}
+}
+
+inline void to_json(nlohmann::json& j, const SnNetworkConsentStatus& v) {
+	j = nlohmann::json::object();
+	j["active"] = v.active;
+	j["coldkey_ss58"] = v.coldkey_ss58;
+	j["from_epoch"] = v.from_epoch;
+	j["through_epoch"] = v.through_epoch;
+	j["generation"] = v.generation;
+}
+inline void from_json(const nlohmann::json& j, SnNetworkConsentStatus& v) {
+	if (!j.is_object()) {
+		return;
+	}
+	if (auto it = j.find("active"); it != j.end() && !it->is_null()) {
+		it->get_to(v.active);
+	}
+	if (auto it = j.find("coldkey_ss58"); it != j.end() && !it->is_null()) {
+		it->get_to(v.coldkey_ss58);
+	}
+	if (auto it = j.find("from_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.from_epoch);
+	}
+	if (auto it = j.find("through_epoch"); it != j.end() && !it->is_null()) {
+		it->get_to(v.through_epoch);
+	}
+	if (auto it = j.find("generation"); it != j.end() && !it->is_null()) {
+		it->get_to(v.generation);
+	}
+}
+
 inline void to_json(nlohmann::json& j, const SnNetworkWalletMappingChallengeArgs& v) {
 	j = nlohmann::json::object();
 	j["coldkey_ss58"] = v.coldkey_ss58;
@@ -15009,6 +15259,7 @@ inline void to_json(nlohmann::json& j, const SnUnsignedTx& v) {
 	j["data"] = v.data;
 	j["value"] = v.value;
 	j["amount_rao"] = v.amount_rao;
+	j["gas"] = v.gas;
 }
 inline void from_json(const nlohmann::json& j, SnUnsignedTx& v) {
 	if (!j.is_object()) {
@@ -15031,6 +15282,9 @@ inline void from_json(const nlohmann::json& j, SnUnsignedTx& v) {
 	}
 	if (auto it = j.find("amount_rao"); it != j.end() && !it->is_null()) {
 		it->get_to(v.amount_rao);
+	}
+	if (auto it = j.find("gas"); it != j.end() && !it->is_null()) {
+		it->get_to(v.gas);
 	}
 }
 
@@ -17369,6 +17623,15 @@ using SnEpochCallback = std::function<void(std::optional<SnEpochResult> result, 
 using SnGasBalanceCallback = std::function<void(std::optional<SnGasBalanceResult> result, std::optional<std::string> err_param)>;
 using SnGetWalletCallback = std::function<void(std::optional<SnGetWalletResult> result, std::optional<std::string> err_param)>;
 using SnHeadCallback = std::function<void(std::optional<SnHeadResult> result, std::optional<std::string> err_param)>;
+using SnLedgerAccountsCallback = std::function<void(std::optional<SnLedgerAccountsResult> result, std::optional<std::string> err_param)>;
+struct SnLedgerClaimCallback {
+	std::function<void(int64_t no_id, int64_t index, std::string tx_hash, int64_t amount_rao)> confirmed;
+	std::function<void()> done;
+	std::function<void(int64_t no_id, int64_t index, std::string message)> failed;
+	std::function<void(int64_t no_id, int64_t index, std::string tx_hash)> sent;
+};
+using SnNetworkConsentChallengeCallback = std::function<void(std::optional<SnNetworkConsentChallengeResult> result, std::optional<std::string> err_param)>;
+using SnNetworkConsentStatusCallback = std::function<void(std::optional<SnNetworkConsentStatus> result, std::optional<std::string> err_param)>;
 using SnSetWalletCallback = std::function<void(std::optional<SnSetWalletResult> result, std::optional<std::string> err_param)>;
 using SnValidateWalletCallback = std::function<void(std::optional<SnValidateWalletResult> result, std::optional<std::string> err_param)>;
 using SnWalletChangeListener = std::function<void(std::optional<SnWallet> wallet)>;
@@ -17523,6 +17786,7 @@ public:
 	std::optional<LicenseInfoList> getLicenses(const std::string& app) const;
 	std::optional<OverrideLocalAppIds> getLocalOverrideAppIds() const;
 	int64_t getLogVerbosity() const;
+	bool getMeasurementsEnabled() const;
 	std::optional<NetworkPeers> getNetworkPeers() const;
 	NetworkSpace getNetworkSpace() const;
 	bool getOffline() const;
@@ -17573,6 +17837,7 @@ public:
 	void setDestination(const std::optional<ConnectLocation>& location, const std::optional<ProviderSpecList>& specs) const;
 	void setDnsResolverSettings(const std::optional<DnsResolverSettings>& dns_resolver_settings) const;
 	void setLogVerbosity(int64_t level) const;
+	void setMeasurementsEnabled(bool measurements_enabled) const;
 	void setOffline(bool offline) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& performance_profile) const;
 	void setProvideControlMode(const std::string& mode) const;
@@ -17713,6 +17978,12 @@ public:
 	std::optional<SnEpochResult> snEpochSync() const;
 	void snGetWallet(SnGetWalletCallback callback) const;
 	void snHead(SnHeadCallback callback) const;
+	void snNetworkConsentChallenge(const std::string& coldkey_ss58, SnNetworkConsentChallengeCallback callback) const;
+	std::optional<SnNetworkConsentChallengeResult> snNetworkConsentChallengeSync(const std::string& coldkey_ss58) const;
+	void snNetworkConsentStatus(SnNetworkConsentStatusCallback callback) const;
+	std::optional<SnNetworkConsentStatus> snNetworkConsentStatusSync() const;
+	void snNetworkConsentSubmit(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex, SnSetWalletCallback callback) const;
+	std::optional<SnSetWalletResult> snNetworkConsentSubmitSync(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex) const;
 	std::optional<SnWalletMappingChallengeResult> snNetworkWalletMappingChallengeSync(const std::optional<SnNetworkWalletMappingChallengeArgs>& args) const;
 	std::optional<SnPoolClaimResult> snPoolClaimSync(const std::optional<SnPoolClaimArgs>& args) const;
 	void snSetWallet(const std::optional<SnSetWalletArgs>& args, SnSetWalletCallback callback) const;
@@ -17775,6 +18046,7 @@ public:
 	std::optional<BittensorWalletProof> proof() const;
 	std::string purpose() const;
 	void setChallenge(const std::optional<AuthWalletChallengeResult>& result, int64_t now_millis) const;
+	void setNetworkConsentChallenge(const std::optional<SnNetworkConsentChallengeResult>& result, int64_t now_millis) const;
 	void setWalletConnectProjectId(const std::string& project_id) const;
 	std::optional<BittensorSignRequest> signRequest() const;
 	std::string state() const;
@@ -18077,6 +18349,9 @@ public:
 	std::optional<SnUnsignedTxList> snClaimTransactions(const std::optional<Int64List>& epochs) const;
 	void snClaims(SnClaimsCallback callback) const;
 	void snGasBalance(SnGasBalanceCallback callback) const;
+	void snLedgerAccounts(SnLedgerAccountsCallback callback) const;
+	void snLedgerClaim(SnLedgerClaimCallback callback) const;
+	std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactions() const;
 	bool stallExit(const std::string& client_id, bool stalled) const;
 	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
 	void stopProbeSuite() const;
@@ -18216,6 +18491,9 @@ public:
 	std::optional<SnUnsignedTxList> snClaimTransactions(const std::optional<Int64List>& epochs) const;
 	void snClaims(SnClaimsCallback callback) const;
 	void snGasBalance(SnGasBalanceCallback callback) const;
+	void snLedgerAccounts(SnLedgerAccountsCallback callback) const;
+	void snLedgerClaim(SnLedgerClaimCallback callback) const;
+	std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactions() const;
 	bool stallExit(const std::string& exit_client_id, bool stalled) const;
 	bool startProbeSuite(const std::optional<ProbeSuiteConfig>& config) const;
 	void stopProbeSuite() const;
@@ -18342,6 +18620,7 @@ public:
 	std::string getExtenderGossipMode() const;
 	std::string getInstanceId() const;
 	int64_t getLogVerbosity() const;
+	bool getMeasurementsEnabled() const;
 	std::optional<PerformanceProfile> getPerformanceProfile() const;
 	std::string getProvideControlMode() const;
 	bool getProvideExtender() const;
@@ -18383,6 +18662,7 @@ public:
 	void setInstanceId(const std::string& instance_id) const;
 	void setIntroFunnelLastPrompted() const;
 	void setLogVerbosity(int64_t level) const;
+	void setMeasurementsEnabled(bool measurements_enabled) const;
 	void setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const;
 	void setProvideControlMode(const std::string& mode) const;
 	void setProvideExtender(bool provide_extender) const;
@@ -23514,6 +23794,159 @@ inline void oneshot_sn_head(void* user_data, const char* result_json, const char
 	delete f;
 }
 
+inline void retained_sn_ledger_accounts(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnLedgerAccountsCallback*>(user_data);
+	try {
+		std::optional<SnLedgerAccountsResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnLedgerAccountsResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_ledger_accounts(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnLedgerAccountsCallback*>(user_data);
+	try {
+		std::optional<SnLedgerAccountsResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnLedgerAccountsResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_ledger_claim_confirmed(void* user_data, int64_t no_id, int64_t index, const char* tx_hash, int64_t amount_rao) {
+	auto* f = static_cast<SnLedgerClaimCallback*>(user_data);
+	try {
+		if (f->confirmed) {
+			f->confirmed(no_id, index, std::string(tx_hash ? tx_hash : ""), amount_rao);
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void retained_sn_ledger_claim_done(void* user_data) {
+	auto* f = static_cast<SnLedgerClaimCallback*>(user_data);
+	try {
+		if (f->done) {
+			f->done();
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void retained_sn_ledger_claim_failed(void* user_data, int64_t no_id, int64_t index, const char* message) {
+	auto* f = static_cast<SnLedgerClaimCallback*>(user_data);
+	try {
+		if (f->failed) {
+			f->failed(no_id, index, std::string(message ? message : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void retained_sn_ledger_claim_sent(void* user_data, int64_t no_id, int64_t index, const char* tx_hash) {
+	auto* f = static_cast<SnLedgerClaimCallback*>(user_data);
+	try {
+		if (f->sent) {
+			f->sent(no_id, index, std::string(tx_hash ? tx_hash : ""));
+		}
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+
+inline void retained_sn_network_consent_challenge(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentChallengeCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentChallengeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_network_consent_challenge(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentChallengeCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentChallengeResult> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentChallengeResult>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
+inline void retained_sn_network_consent_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentStatusCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentStatus> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentStatus>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+}
+inline void oneshot_sn_network_consent_status(void* user_data, const char* result_json, const char* err_param) {
+	auto* f = static_cast<SnNetworkConsentStatusCallback*>(user_data);
+	try {
+		std::optional<SnNetworkConsentStatus> result_v;
+		if (result_json) {
+			result_v = parseJson<SnNetworkConsentStatus>(result_json);
+		}
+		std::optional<std::string> err_param_v;
+		if (err_param) {
+			err_param_v = std::string(err_param);
+		}
+		(*f)(std::move(result_v), std::move(err_param_v));
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "urnet callback error: %s\n", e.what());
+	} catch (...) {
+	}
+	delete f;
+}
+
 inline void retained_sn_set_wallet(void* user_data, const char* result_json, const char* err_param) {
 	auto* f = static_cast<SnSetWalletCallback*>(user_data);
 	try {
@@ -25406,6 +25839,10 @@ inline int64_t Device::getLogVerbosity() const {
 	int64_t r = urnet_device_get_log_verbosity(handle());
 	return r;
 }
+inline bool Device::getMeasurementsEnabled() const {
+	bool r = urnet_device_get_measurements_enabled(handle());
+	return r;
+}
 inline std::optional<NetworkPeers> Device::getNetworkPeers() const {
 	char* r_c = urnet_device_get_network_peers(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -25710,6 +26147,9 @@ inline void Device::setDnsResolverSettings(const std::optional<DnsResolverSettin
 }
 inline void Device::setLogVerbosity(int64_t level) const {
 	urnet_device_set_log_verbosity(handle(), level);
+}
+inline void Device::setMeasurementsEnabled(bool measurements_enabled) const {
+	urnet_device_set_measurements_enabled(handle(), measurements_enabled);
 }
 inline void Device::setOffline(bool offline) const {
 	urnet_device_set_offline(handle(), offline);
@@ -26613,6 +27053,54 @@ inline void Api::snHead(SnHeadCallback callback) const {
 	auto* callback_fn = callback ? new SnHeadCallback(std::move(callback)) : nullptr;
 	urnet_api_sn_head(handle(), callback_fn ? &detail::oneshot_sn_head : nullptr, callback_fn);
 }
+inline void Api::snNetworkConsentChallenge(const std::string& coldkey_ss58, SnNetworkConsentChallengeCallback callback) const {
+	auto* callback_fn = callback ? new SnNetworkConsentChallengeCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_network_consent_challenge(handle(), coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_network_consent_challenge : nullptr, callback_fn);
+}
+inline std::optional<SnNetworkConsentChallengeResult> Api::snNetworkConsentChallengeSync(const std::string& coldkey_ss58) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_consent_challenge_sync(handle(), coldkey_ss58.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnNetworkConsentChallengeResult>(r_s->c_str());
+}
+inline void Api::snNetworkConsentStatus(SnNetworkConsentStatusCallback callback) const {
+	auto* callback_fn = callback ? new SnNetworkConsentStatusCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_network_consent_status(handle(), callback_fn ? &detail::oneshot_sn_network_consent_status : nullptr, callback_fn);
+}
+inline std::optional<SnNetworkConsentStatus> Api::snNetworkConsentStatusSync() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_consent_status_sync(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnNetworkConsentStatus>(r_s->c_str());
+}
+inline void Api::snNetworkConsentSubmit(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex, SnSetWalletCallback callback) const {
+	auto* callback_fn = callback ? new SnSetWalletCallback(std::move(callback)) : nullptr;
+	urnet_api_sn_network_consent_submit(handle(), coldkey_ss58.c_str(), message.c_str(), signature_hex.c_str(), callback_fn ? &detail::oneshot_sn_set_wallet : nullptr, callback_fn);
+}
+inline std::optional<SnSetWalletResult> Api::snNetworkConsentSubmitSync(const std::string& coldkey_ss58, const std::string& message, const std::string& signature_hex) const {
+	char* err_c = nullptr;
+	char* r_c = urnet_api_sn_network_consent_submit_sync(handle(), coldkey_ss58.c_str(), message.c_str(), signature_hex.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnSetWalletResult>(r_s->c_str());
+}
 inline std::optional<SnWalletMappingChallengeResult> Api::snNetworkWalletMappingChallengeSync(const std::optional<SnNetworkWalletMappingChallengeArgs>& args) const {
 	std::string args_json;
 	const char* args_c = nullptr;
@@ -27011,6 +27499,22 @@ inline void BittensorWalletSession::setChallenge(const std::optional<AuthWalletC
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_bittensor_wallet_session_set_challenge failed");
+	}
+}
+inline void BittensorWalletSession::setNetworkConsentChallenge(const std::optional<SnNetworkConsentChallengeResult>& result, int64_t now_millis) const {
+	std::string result_json;
+	const char* result_c = nullptr;
+	if (result) {
+		result_json = nlohmann::json(*result).dump();
+		result_c = result_json.c_str();
+	}
+	char* err_c = nullptr;
+	bool ok = urnet_bittensor_wallet_session_set_network_consent_challenge(handle(), result_c, now_millis, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_bittensor_wallet_session_set_network_consent_challenge failed");
 	}
 }
 inline void BittensorWalletSession::setWalletConnectProjectId(const std::string& project_id) const {
@@ -28265,6 +28769,32 @@ inline void DeviceLocal::snGasBalance(SnGasBalanceCallback callback) const {
 	auto* callback_fn = callback ? new SnGasBalanceCallback(std::move(callback)) : nullptr;
 	urnet_device_local_sn_gas_balance(handle(), callback_fn ? &detail::oneshot_sn_gas_balance : nullptr, callback_fn);
 }
+inline void DeviceLocal::snLedgerAccounts(SnLedgerAccountsCallback callback) const {
+	auto* callback_fn = callback ? new SnLedgerAccountsCallback(std::move(callback)) : nullptr;
+	urnet_device_local_sn_ledger_accounts(handle(), callback_fn ? &detail::oneshot_sn_ledger_accounts : nullptr, callback_fn);
+}
+inline void DeviceLocal::snLedgerClaim(SnLedgerClaimCallback callback) const {
+	std::shared_ptr<SnLedgerClaimCallback> callback_fn;
+	if ((static_cast<bool>(callback.confirmed) || static_cast<bool>(callback.done) || static_cast<bool>(callback.failed) || static_cast<bool>(callback.sent))) {
+		callback_fn = std::make_shared<SnLedgerClaimCallback>(std::move(callback));
+	}
+	if (callback_fn) {
+		retain(callback_fn);
+	}
+	urnet_device_local_sn_ledger_claim(handle(), callback_fn ? &detail::retained_sn_ledger_claim_confirmed : nullptr, callback_fn ? &detail::retained_sn_ledger_claim_done : nullptr, callback_fn ? &detail::retained_sn_ledger_claim_failed : nullptr, callback_fn ? &detail::retained_sn_ledger_claim_sent : nullptr, callback_fn.get());
+}
+inline std::optional<SnLedgerUnsignedTxList> DeviceLocal::snLedgerClaimTransactions() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_local_sn_ledger_claim_transactions(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerUnsignedTxList>(r_s->c_str());
+}
 inline bool DeviceLocal::stallExit(const std::string& client_id, bool stalled) const {
 	bool r = urnet_device_local_stall_exit(handle(), client_id.c_str(), stalled);
 	return r;
@@ -28834,6 +29364,32 @@ inline void DeviceRemote::snGasBalance(SnGasBalanceCallback callback) const {
 	auto* callback_fn = callback ? new SnGasBalanceCallback(std::move(callback)) : nullptr;
 	urnet_device_remote_sn_gas_balance(handle(), callback_fn ? &detail::oneshot_sn_gas_balance : nullptr, callback_fn);
 }
+inline void DeviceRemote::snLedgerAccounts(SnLedgerAccountsCallback callback) const {
+	auto* callback_fn = callback ? new SnLedgerAccountsCallback(std::move(callback)) : nullptr;
+	urnet_device_remote_sn_ledger_accounts(handle(), callback_fn ? &detail::oneshot_sn_ledger_accounts : nullptr, callback_fn);
+}
+inline void DeviceRemote::snLedgerClaim(SnLedgerClaimCallback callback) const {
+	std::shared_ptr<SnLedgerClaimCallback> callback_fn;
+	if ((static_cast<bool>(callback.confirmed) || static_cast<bool>(callback.done) || static_cast<bool>(callback.failed) || static_cast<bool>(callback.sent))) {
+		callback_fn = std::make_shared<SnLedgerClaimCallback>(std::move(callback));
+	}
+	if (callback_fn) {
+		retain(callback_fn);
+	}
+	urnet_device_remote_sn_ledger_claim(handle(), callback_fn ? &detail::retained_sn_ledger_claim_confirmed : nullptr, callback_fn ? &detail::retained_sn_ledger_claim_done : nullptr, callback_fn ? &detail::retained_sn_ledger_claim_failed : nullptr, callback_fn ? &detail::retained_sn_ledger_claim_sent : nullptr, callback_fn.get());
+}
+inline std::optional<SnLedgerUnsignedTxList> DeviceRemote::snLedgerClaimTransactions() const {
+	char* err_c = nullptr;
+	char* r_c = urnet_device_remote_sn_ledger_claim_transactions(handle(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerUnsignedTxList>(r_s->c_str());
+}
 inline bool DeviceRemote::stallExit(const std::string& exit_client_id, bool stalled) const {
 	bool r = urnet_device_remote_stall_exit(handle(), exit_client_id.c_str(), stalled);
 	return r;
@@ -29271,6 +29827,10 @@ inline int64_t LocalState::getLogVerbosity() const {
 	int64_t r = urnet_local_state_get_log_verbosity(handle());
 	return r;
 }
+inline bool LocalState::getMeasurementsEnabled() const {
+	bool r = urnet_local_state_get_measurements_enabled(handle());
+	return r;
+}
 inline std::optional<PerformanceProfile> LocalState::getPerformanceProfile() const {
 	char* r_c = urnet_local_state_get_performance_profile(handle());
 	auto r_s = detail::takeStringOpt(r_c);
@@ -29647,6 +30207,16 @@ inline void LocalState::setLogVerbosity(int64_t level) const {
 	}
 	if (!ok) {
 		throw Error("urnet: urnet_local_state_set_log_verbosity failed");
+	}
+}
+inline void LocalState::setMeasurementsEnabled(bool measurements_enabled) const {
+	char* err_c = nullptr;
+	bool ok = urnet_local_state_set_measurements_enabled(handle(), measurements_enabled, &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	if (!ok) {
+		throw Error("urnet: urnet_local_state_set_measurements_enabled failed");
 	}
 }
 inline void LocalState::setPerformanceProfile(const std::optional<PerformanceProfile>& profile) const {
@@ -32454,6 +33024,10 @@ inline void setDeviceRpcH1PlusEnabled(bool enabled) {
 inline void setEgressInterfaceIndex(int64_t index4, int64_t index6) {
 	urnet_set_egress_interface_index(index4, index6);
 }
+inline bool setExtenderNetworkClientEnabled(bool enabled) {
+	bool r = urnet_set_extender_network_client_enabled(enabled);
+	return r;
+}
 inline void setExtenderStoreReadOnly(bool read_only) {
 	urnet_set_extender_store_read_only(read_only);
 }
@@ -32558,6 +33132,34 @@ inline void snGasBalanceFor(const std::optional<SnChainSettings>& settings, cons
 	}
 	auto* callback_fn = callback ? new SnGasBalanceCallback(std::move(callback)) : nullptr;
 	urnet_sn_gas_balance_for(settings_c, address.c_str(), callback_fn ? &detail::oneshot_sn_gas_balance : nullptr, callback_fn);
+}
+inline void snLedgerAccountsFor(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58, SnLedgerAccountsCallback callback) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	auto* callback_fn = callback ? new SnLedgerAccountsCallback(std::move(callback)) : nullptr;
+	urnet_sn_ledger_accounts_for(settings_c, coldkey_ss58.c_str(), callback_fn ? &detail::oneshot_sn_ledger_accounts : nullptr, callback_fn);
+}
+inline std::optional<SnLedgerUnsignedTxList> snLedgerClaimTransactionsFor(const std::optional<SnChainSettings>& settings, const std::string& coldkey_ss58) {
+	std::string settings_json;
+	const char* settings_c = nullptr;
+	if (settings) {
+		settings_json = nlohmann::json(*settings).dump();
+		settings_c = settings_json.c_str();
+	}
+	char* err_c = nullptr;
+	char* r_c = urnet_sn_ledger_claim_transactions_for(settings_c, coldkey_ss58.c_str(), &err_c);
+	if (err_c) {
+		detail::throwError(err_c);
+	}
+	auto r_s = detail::takeStringOpt(r_c);
+	if (!r_s) {
+		return std::nullopt;
+	}
+	return detail::parseJson<SnLedgerUnsignedTxList>(r_s->c_str());
 }
 inline std::string snPayoutLeafHex(const std::string& coldkey_ss58, int64_t share_bps) {
 	char* r_c = urnet_sn_payout_leaf_hex(coldkey_ss58.c_str(), share_bps);

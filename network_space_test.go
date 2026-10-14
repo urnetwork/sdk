@@ -105,6 +105,31 @@ func TestNetworkSpaceManager(t *testing.T) {
 	networkSpaceManager3.Close()
 }
 
+// The connect settings factory as the package initialized it, before TestMain
+// installed the suite's offline settings.
+var testNewNetworkSpaceConnectSettingsAtInit = newNetworkSpaceConnectSettings
+
+// A space built from its key takes newNetworkSpaceConnectSettings: in
+// production the connect defaults, which resolve through the system and the
+// protected-domain DoH, and in this suite the offline resolver.
+func TestNetworkSpaceFromKeyTakesTheConnectSettingsFactory(t *testing.T) {
+	production := testNewNetworkSpaceConnectSettingsAtInit()
+	defaults := connect.DefaultConnectSettings()
+	if production.Resolver != nil || production.DialContextSettings != nil ||
+		production.RequestTimeout != defaults.RequestTimeout ||
+		production.TlsClientHelloFingerprint != defaults.TlsClientHelloFingerprint {
+		t.Fatal("a production space does not take the connect defaults")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	networkSpace := newNetworkSpace(ctx, *NewNetworkSpaceKey("space.example", "main"), NetworkSpaceValues{}, "")
+	defer networkSpace.close()
+	if networkSpace.clientStrategySettings.ConnectSettings.Resolver != testOfflineResolver {
+		t.Fatal("a space built from its key did not take the factory's settings")
+	}
+}
+
 func TestNetworkSpaceUrlResolution(t *testing.T) {
 	ctx := context.Background()
 

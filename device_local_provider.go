@@ -79,6 +79,9 @@ type deviceLocalProvider struct {
 	// settings before it is built. Tests bind ephemeral carrier ports and
 	// point the activation at an in-process operator through it.
 	extenderSettingsConfigure func(settings *deviceLocalExtenderSettings)
+	// the device's lag.dev measurements setting, which the role reads as it
+	// starts (lag.dev/PLAN.md C4)
+	extenderMeasurementsEnabled func() bool
 
 	clientStrategy *connect.ClientStrategy
 	// clientStrategySettings seeds the direct-only strategies of the
@@ -203,6 +206,7 @@ func newDeviceLocalProviderWithOverrides(
 	targetMode connect.TransportMode,
 	modePreferences map[connect.TransportMode]int,
 	dialContextSettings *connect.DialContextSettings,
+	localDialContextSettings *connect.DialContextSettings,
 	dnsPumpHost string,
 	transferMemory *deviceLocalTransferMemory,
 	sessionApis ...*Api,
@@ -256,9 +260,11 @@ func newDeviceLocalProviderWithOverrides(
 	// Admit the fallback NAT while the new device root is still empty, before
 	// starting the provider client. It is a lifetime owner even with providing
 	// disabled. Refusal is observable; never install a dead/nil NAT as a route.
+	// It carries the device's local route, so it dials through that seam.
 	localUserNatSettings := providerLocalUserNatSettings(
 		providerMemoryTargetByteCount,
 		clientSettings.Log,
+		localDialContextSettings,
 	)
 	if transferMemory != nil {
 		localUserNatSettings.MemoryBudget = transferMemory.nat
@@ -1235,10 +1241,28 @@ func (self *deviceLocalProvider) extenderSettings() (*deviceLocalExtenderSetting
 		ClientStrategySettings: self.clientStrategySettings,
 		DialContext:            connectSettings.DialContext,
 	}
+	settings.MeasurementsEnabled = self.extenderMeasurementsEnabled
 	if self.extenderSettingsConfigure != nil {
 		self.extenderSettingsConfigure(settings)
 	}
 	return settings, nil
+}
+
+// Applies the measurements setting to the running role at once
+// (lag.dev/PLAN.md C4). Taken with the role's start and stop, so a role being
+// built is given the change once it stands; a role built later reads the
+// setting as it starts.
+func (self *deviceLocalProvider) setExtenderMeasurementsEnabled(measurementsEnabled bool) {
+	self.extenderLock.Lock()
+	defer self.extenderLock.Unlock()
+	extender := func() *deviceLocalExtender {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		return self.extender
+	}()
+	if extender != nil {
+		extender.setMeasurementsEnabled(measurementsEnabled)
+	}
 }
 
 // The client jwt of this provider, read at each activation and at each ping

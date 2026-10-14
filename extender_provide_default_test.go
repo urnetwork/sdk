@@ -21,7 +21,8 @@ func testingProvideExtenderUrlSpace(t *testing.T) *NetworkSpace {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	strategySettings := connect.DefaultClientStrategySettings()
+	// the space's names resolve in the process
+	strategySettings := testOfflineClientStrategySettings()
 	strategySettings.Log = connect.NewNoopLogger()
 	networkSpace := NewNetworkSpaceWithUrls(
 		ctx,

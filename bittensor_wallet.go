@@ -2,7 +2,8 @@ package sdk
 
 // The Bittensor wallet-connect session helper: the protocol every app runs to
 // prove it holds a Bittensor (TAO) coldkey, for sign-in (POST /auth/login and
-// /auth/network-create) and for the subnet payout wallet (POST /sn/wallet).
+// /auth/network-create) and for the subnet payout wallet (POST /sn/wallet),
+// including the network payout consent (Api.SnNetworkConsentChallenge).
 // The apps own only the wallet transport (open a page, read an extension,
 // show a form); everything that decides what is signed and whether a result
 // is acceptable lives here.
@@ -55,6 +56,9 @@ package sdk
 // BittensorWalletSession is safe for concurrent use.
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/url"
@@ -94,7 +98,9 @@ const (
 // Purposes, echoed through the bridge so a return reaches the flow that
 // asked. "login" and "create" sign in (create = the second signature for a
 // new network); "connect" proves the subnet payout wallet; "add" adds the
-// wallet as a sign-in method to the signed-in network (POST /auth/add-auth).
+// wallet as a sign-in method to the signed-in network (POST /auth/add-auth);
+// "consent" signs the network payout consent (SetNetworkConsentChallenge),
+// and only a consent session takes one.
 // An "add" return must never reach a sign-in flow: a login or create session
 // refuses it with purpose_mismatch, so it cannot sign in as the added wallet.
 const (
@@ -102,6 +108,7 @@ const (
 	BittensorWalletPurposeCreate  = "create"
 	BittensorWalletPurposeConnect = "connect"
 	BittensorWalletPurposeAdd     = "add"
+	BittensorWalletPurposeConsent = "consent"
 )
 
 const (
@@ -176,6 +183,9 @@ const (
 	bittensorChallengeDefaultExpiresInSeconds = 300
 	// sr25519 signatures are 64 bytes
 	bittensorSignatureByteCount = 64
+	// a consent hand-back's bound: Chromium drops an external-protocol url
+	// longer than 2,048 characters
+	bittensorConsentReturnMaxLength = 1500
 )
 
 const (
@@ -388,6 +398,23 @@ type BittensorWalletReturn struct {
 // scheme and host). The page builds the query with URLSearchParams, so "+"
 // is a space.
 func ParseBittensorWalletReturn(uri string, redirectLink string) (*BittensorWalletReturn, error) {
+	values, err := parseBittensorWalletReturnValues(uri, redirectLink)
+	if err != nil {
+		return nil, err
+	}
+	return &BittensorWalletReturn{
+		Address:      values.Get("address"),
+		Signature:    values.Get("signature"),
+		Message:      values.Get("message"),
+		Purpose:      values.Get("purpose"),
+		WalletId:     values.Get("wallet"),
+		ErrorCode:    values.Get("errorCode"),
+		ErrorMessage: values.Get("errorMessage"),
+	}, nil
+}
+
+// The query of a hand-back on redirectLink.
+func parseBittensorWalletReturnValues(uri string, redirectLink string) (url.Values, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %s", BittensorWalletErrorNotReturn, err)
@@ -405,15 +432,7 @@ func ParseBittensorWalletReturn(uri string, redirectLink string) (*BittensorWall
 	if err != nil {
 		return nil, fmt.Errorf("%s: %s", BittensorWalletErrorNotReturn, err)
 	}
-	return &BittensorWalletReturn{
-		Address:      values.Get("address"),
-		Signature:    values.Get("signature"),
-		Message:      values.Get("message"),
-		Purpose:      values.Get("purpose"),
-		WalletId:     values.Get("wallet"),
-		ErrorCode:    values.Get("errorCode"),
-		ErrorMessage: values.Get("errorMessage"),
-	}, nil
+	return values, nil
 }
 
 // BittensorWalletSession runs one proof: pick a wallet, take a challenge,
@@ -445,8 +464,10 @@ type BittensorWalletSession struct {
 	expectedAddress        string
 	message                string
 	expiresAtMillis        int64
-	proof                  *BittensorWalletProof
-	errorCode              string
+	// a consent session's hand-back token, fresh for each challenge
+	bridgeState string
+	proof       *BittensorWalletProof
+	errorCode   string
 }
 
 // NewBittensorWalletSession checks the wallet, platform and purpose.
@@ -462,7 +483,7 @@ func NewBittensorWalletSession(walletId string, platform string, purpose string,
 		return nil, fmt.Errorf("%s: %s", BittensorWalletErrorUnsupportedPlatform, platform)
 	}
 	switch purpose {
-	case BittensorWalletPurposeLogin, BittensorWalletPurposeCreate, BittensorWalletPurposeConnect, BittensorWalletPurposeAdd:
+	case BittensorWalletPurposeLogin, BittensorWalletPurposeCreate, BittensorWalletPurposeConnect, BittensorWalletPurposeAdd, BittensorWalletPurposeConsent:
 	default:
 		return nil, fmt.Errorf("unknown purpose: %s", purpose)
 	}
@@ -552,10 +573,19 @@ func (self *BittensorWalletSession) ChallengeArgs(expectedAddress string) *AuthW
 }
 
 // SetChallenge takes the /auth/wallet-challenge result. The message must be
-// a well-formed challenge; the expiry is nowMillis + expires_in.
+// a well-formed challenge; the expiry is nowMillis + expires_in. A consent
+// session refuses it: it signs only a network consent. A cancelled session
+// takes no late challenge.
 func (self *BittensorWalletSession) SetChallenge(result *AuthWalletChallengeResult, nowMillis int64) error {
 	self.stateLock.Lock()
 	defer self.stateLock.Unlock()
+	if self.state == BittensorWalletStateCancelled {
+		return fmt.Errorf("%s: the session was cancelled", BittensorWalletErrorNotAwaiting)
+	}
+	if self.purpose == BittensorWalletPurposeConsent {
+		self.failWithLock(BittensorWalletErrorPurposeMismatch)
+		return fmt.Errorf("%s: a consent session signs only a network consent", BittensorWalletErrorPurposeMismatch)
+	}
 	if result == nil || result.Error != nil || result.MessageTemplate == "" {
 		self.failWithLock(BittensorWalletErrorNoChallenge)
 		return fmt.Errorf("%s: the server did not return a challenge", BittensorWalletErrorNoChallenge)
@@ -570,6 +600,53 @@ func (self *BittensorWalletSession) SetChallenge(result *AuthWalletChallengeResu
 	}
 	self.message = result.MessageTemplate
 	self.expiresAtMillis = nowMillis + expiresIn*1000
+	self.proof = nil
+	self.errorCode = ""
+	self.state = BittensorWalletStateChallenge
+	return nil
+}
+
+// SetNetworkConsentChallenge takes an Api.SnNetworkConsentChallenge result,
+// for a consent session only. The message must be a network consent statement
+// that names the result's coldkey: it is kept verbatim and the signing
+// account is bound to the statement's coldkey. The expiry counts from receipt,
+// for the statement's own lifetime (expires_at - issued_at), as a login's
+// does, so the device clock does not matter. A cancelled session takes no late
+// challenge.
+func (self *BittensorWalletSession) SetNetworkConsentChallenge(result *SnNetworkConsentChallengeResult, nowMillis int64) error {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.state == BittensorWalletStateCancelled {
+		return fmt.Errorf("%s: the session was cancelled", BittensorWalletErrorNotAwaiting)
+	}
+	if self.purpose != BittensorWalletPurposeConsent {
+		self.failWithLock(BittensorWalletErrorPurposeMismatch)
+		return fmt.Errorf("%s: a %s session signs no network consent", BittensorWalletErrorPurposeMismatch, self.purpose)
+	}
+	if result == nil {
+		self.failWithLock(BittensorWalletErrorInvalidChallenge)
+		return fmt.Errorf("%s: no network consent challenge", BittensorWalletErrorInvalidChallenge)
+	}
+	statement, err := decodeSnNetworkConsentStatement(result.Message)
+	if err != nil {
+		self.failWithLock(BittensorWalletErrorInvalidChallenge)
+		return fmt.Errorf("%s: %w", BittensorWalletErrorInvalidChallenge, err)
+	}
+	address := strings.TrimSpace(result.ColdkeySs58)
+	coldkey, err := snColdkeyBytes(address)
+	if err != nil {
+		self.failWithLock(BittensorWalletErrorInvalidAddress)
+		return fmt.Errorf("%s: %s", BittensorWalletErrorInvalidAddress, address)
+	}
+	if coldkey != statement.Coldkey {
+		self.failWithLock(BittensorWalletErrorInvalidChallenge)
+		return fmt.Errorf("%s: the network consent names another coldkey than %s", BittensorWalletErrorInvalidChallenge, address)
+	}
+	// the address is the statement's coldkey: one key has one prefix-42 form
+	self.expectedAddress = address
+	self.message = result.Message
+	self.expiresAtMillis = nowMillis + (statement.ExpiresAt-statement.IssuedAt)*1000
+	self.bridgeState = rand.Text()
 	self.proof = nil
 	self.errorCode = ""
 	self.state = BittensorWalletStateChallenge
@@ -619,8 +696,16 @@ func (self *BittensorWalletSession) SignRequest() (*BittensorSignRequest, error)
 //	  &wallet=<id>&message=<text>&purpose=<purpose>&redirect_link=<link>
 //	  [&address=<expected ss58>] [&wc_project_id=<id>, walletconnect only]
 //
-// `wallet` makes the page use only that wallet's extension. It moves the
-// session to awaiting_wallet.
+// `wallet` makes the page use only that wallet's extension. A consent
+// session's message goes in the fragment, which never reaches a server, as
+// the unpadded base64url (RFC 4648 §5) of its exact bytes, with the session's
+// hand-back token in the query:
+//
+//	https://ur.io/wallet-connect?provider=bittensor&method=signMessage
+//	  &wallet=<id>&purpose=consent&redirect_link=<link>&address=<coldkey>
+//	  &state=<token> [&wc_project_id=<id>]#message=<base64url>
+//
+// It moves the session to awaiting_wallet.
 func (self *BittensorWalletSession) BridgeUrl() (string, error) {
 	if self.transport != BittensorWalletTransportBrowserBridge {
 		return "", fmt.Errorf("%s: %s", BittensorWalletErrorWrongTransport, self.transport)
@@ -634,7 +719,6 @@ func (self *BittensorWalletSession) BridgeUrl() (string, error) {
 	values.Set("provider", "bittensor")
 	values.Set("method", "signMessage")
 	values.Set("wallet", self.walletId)
-	values.Set("message", self.message)
 	values.Set("purpose", self.purpose)
 	values.Set("redirect_link", self.redirectLink)
 	if self.expectedAddress != "" {
@@ -644,6 +728,11 @@ func (self *BittensorWalletSession) BridgeUrl() (string, error) {
 		values.Set("wc_project_id", self.walletConnectProjectId)
 	}
 	self.state = BittensorWalletStateAwaitingWallet
+	if self.purpose == BittensorWalletPurposeConsent {
+		values.Set("state", self.bridgeState)
+		return BittensorWalletBridgeUrl + "?" + values.Encode() + "#message=" + base64.RawURLEncoding.EncodeToString([]byte(self.message)), nil
+	}
+	values.Set("message", self.message)
 	return BittensorWalletBridgeUrl + "?" + values.Encode(), nil
 }
 
@@ -657,11 +746,19 @@ func (self *BittensorWalletSession) IsReturn(uri string) bool {
 	return err == nil
 }
 
-// HandleBridgeReturn checks a browser_bridge hand-back. A return for
-// another purpose is refused without changing the session (it belongs to
+// HandleBridgeReturn checks a browser_bridge hand-back; a session of another
+// transport refuses it, as HandleSignature refuses a bridge session. A return
+// for another purpose is refused without changing the session (it belongs to
 // another flow). A failure the page hands back is wallet_error, with the
-// page's text and its BittensorWalletBridgeError* code.
+// page's text and its BittensorWalletBridgeError* code. A consent session
+// takes only its own hand-back (handleNetworkConsentReturn).
 func (self *BittensorWalletSession) HandleBridgeReturn(uri string, nowMillis int64) *BittensorWalletResult {
+	if self.transport != BittensorWalletTransportBrowserBridge {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorWrongTransport, ErrorMessage: self.transport}
+	}
+	if self.purpose == BittensorWalletPurposeConsent {
+		return self.handleNetworkConsentReturn(uri, nowMillis)
+	}
 	r, err := ParseBittensorWalletReturn(uri, self.redirectLink)
 	if err != nil {
 		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorNotReturn, ErrorMessage: err.Error()}
@@ -693,6 +790,86 @@ func (self *BittensorWalletSession) HandleBridgeReturn(uri string, nowMillis int
 		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorUnsupportedWallet, ErrorMessage: r.WalletId}
 	}
 	return self.accept(r.Address, r.Signature, r.Message, true, nowMillis)
+}
+
+// A consent hand-back names the session's token (state) and the SHA-256 of the
+// message, never the message, in at most bittensorConsentReturnMaxLength
+// characters:
+//
+//	<redirect_link>?address=<coldkey>&signature=<hex>&purpose=consent
+//	  &state=<token>&message_sha256=<64 lowercase hex> [&wallet=<id>]
+//	<redirect_link>?errorCode=<code>&purpose=consent&state=<token>
+//
+// Only a return of this attempt, with its token, ends the waiting session: any
+// other is refused and the session keeps waiting, so an opener of the app's
+// link cannot end it. No text from a return is passed on, and only a known
+// BittensorWalletBridgeError* code. The proof's message is the session's own.
+func (self *BittensorWalletSession) handleNetworkConsentReturn(uri string, nowMillis int64) *BittensorWalletResult {
+	values, err := parseBittensorWalletReturnValues(uri, self.redirectLink)
+	if err != nil || bittensorConsentReturnMaxLength < len(uri) {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorNotReturn}
+	}
+	if values.Get("purpose") != BittensorWalletPurposeConsent {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorPurposeMismatch}
+	}
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.state != BittensorWalletStateAwaitingWallet {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorNotAwaiting}
+	}
+	if values.Get("state") != self.bridgeState || values.Has("message") {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorNotReturn}
+	}
+	if values.Has("errorCode") || values.Has("errorMessage") {
+		self.failWithLock(BittensorWalletErrorWallet)
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorWallet, BridgeErrorCode: bittensorWalletKnownBridgeError(values.Get("errorCode"))}
+	}
+	if self.expiresAtMillis <= nowMillis {
+		self.failWithLock(BittensorWalletErrorExpired)
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorExpired}
+	}
+	messageSha256 := sha256.Sum256([]byte(self.message))
+	if values.Get("message_sha256") != hex.EncodeToString(messageSha256[:]) {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorMessageMismatch}
+	}
+	if values.Get("address") != self.expectedAddress {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorAddressMismatch}
+	}
+	if walletId := values.Get("wallet"); walletId != "" && walletId != self.walletId {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorUnsupportedWallet}
+	}
+	signature := NormalizeBittensorSignature(values.Get("signature"))
+	if signature == "" {
+		return &BittensorWalletResult{ErrorCode: BittensorWalletErrorInvalidSignature}
+	}
+	self.proof = &BittensorWalletProof{
+		WalletId:  self.walletId,
+		Purpose:   self.purpose,
+		Address:   self.expectedAddress,
+		Message:   self.message,
+		Signature: signature,
+	}
+	self.errorCode = ""
+	self.state = BittensorWalletStateSigned
+	return &BittensorWalletResult{Proof: self.proof}
+}
+
+// The bridge page's code when it is one of BittensorWalletBridgeError*, else "".
+func bittensorWalletKnownBridgeError(code string) string {
+	switch code {
+	case BittensorWalletBridgeErrorAddressNotInWallet,
+		BittensorWalletBridgeErrorAddressMismatch,
+		BittensorWalletBridgeErrorExtensionNotFound,
+		BittensorWalletBridgeErrorNoAccount,
+		BittensorWalletBridgeErrorUserRejected,
+		BittensorWalletBridgeErrorWalletConnectExpired,
+		BittensorWalletBridgeErrorWalletConnectUnavailable,
+		BittensorWalletBridgeErrorInvalidRequest,
+		BittensorWalletBridgeErrorWallet:
+		return code
+	default:
+		return ""
+	}
 }
 
 // HandleSignature checks an extension signRaw result or a manual entry
