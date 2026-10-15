@@ -248,3 +248,52 @@ test("bufferbloat skips a server whose load won't fit in the time left, and stil
     },
   );
 });
+
+test("a run in which no server opened is unavailable, and closes at once", async () => {
+  await withApi({ places: ["houston"], deadFirstTicket: true }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const started = performance.now();
+      for (const run of [
+        () => measureLatency(local.context, { durationMs: 30_000, servers: 1 }),
+        () => measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 60_000, servers: 1, idleMs: 30_000 }),
+      ]) {
+        await assert.rejects(run(), (error: unknown) => {
+          assert.ok(error instanceof MeasureError);
+          assert.equal(error.code, "unavailable");
+          assert.match(error.message, /^none of the 1 lag\.dev servers chosen could be reached: /);
+          return true;
+        });
+      }
+      assert.ok(performance.now() - started < 20_000, "neither waited out its pings");
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("an extender whose hello asks for more than its ticket is never loaded", { timeout: 60_000 }, async () => {
+  // the reviewer's hostile hello: 120 s each way on 16 streams, where the
+  // ticket allows 8 s and 4 at most
+  const hostile = { hello: { downloadMs: 120_000, uploadMs: 120_000, maxStreams: 16 } };
+  await withApi({ places: ["houston", "london"], extender: hostile }, async (api) => {
+    const local = contextFor(api);
+    try {
+      await assert.rejects(
+        measureBufferbloat(local.context, { maxBytes: 50e6, maxMs: 600_000, servers: 2, idleMs: 300, settleMs: 100 }),
+        (error: unknown) => {
+          assert.ok(error instanceof MeasureError);
+          assert.equal(error.code, "unavailable");
+          assert.match(error.message, /the extender's hello asks for more than its ticket allows: downloadMs 120000, the ticket allows 8000/);
+          return true;
+        },
+      );
+      const sessions = [...api.extenders.values()].flatMap((extender) => extender.sessions);
+      assert.ok(sessions.length >= 2);
+      assert.ok(sessions.every((session) => session.loadRequests === 0 && session.downloadRequests === 0));
+      assert.equal(local.context.meter!.bytes(), 0);
+    } finally {
+      await local.close();
+    }
+  });
+});

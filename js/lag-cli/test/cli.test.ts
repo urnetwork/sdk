@@ -6,8 +6,25 @@ import { registerTsResolve } from "../../test/ts-resolve.ts";
 import { startMockApi, type MockApi, type MockApiOptions } from "./mock_api.ts";
 
 registerTsResolve();
+const { main } = await import("../src/cli.ts");
 
-// The command line as a program: it exits as soon as it has printed.
+// The command line's exit codes and output: a run in which no server opened
+// is 1, and the process exits as soon as it has printed.
+
+const io = (signal?: AbortSignal) => {
+  const out: string[] = [];
+  const err: string[] = [];
+  return {
+    out,
+    err,
+    io: {
+      stdout: { write: (text: string) => out.push(text) },
+      stderr: { write: (text: string) => err.push(text) },
+      env: {},
+      signal,
+    },
+  };
+};
 
 const withApi = async (options: MockApiOptions, body: (api: MockApi) => Promise<void>) => {
   const api = await startMockApi(options);

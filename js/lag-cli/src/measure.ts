@@ -339,7 +339,8 @@ interface Prepared {
 }
 
 // The guest, the sample, the track and an open session on each server, a
-// spare standing in for a server whose session won't open.
+// spare standing in for a server whose session won't open. With no session
+// open on any server it rejects as unavailable: there is nothing to measure.
 async function prepare(
   context: MeasureContext,
   count: number,
@@ -409,6 +410,13 @@ async function prepare(
       return dot;
     }),
   );
+  if (dots.every((dot) => dot.session === null)) {
+    const reasons = [...new Set(dots.map((dot) => dot.error ?? "no session"))];
+    throw new MeasureError(
+      "unavailable",
+      `none of the ${dots.length} lag.dev servers chosen could be reached: ${reasons.join("; ")}`,
+    );
+  }
   return { startedAt, visitor, dots };
 }
 

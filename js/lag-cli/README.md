@@ -46,10 +46,11 @@ The result goes to stdout and progress to stderr. Ctrl-C stops a run and
 closes its sessions; a second Ctrl-C exits at once.
 
 The exit code is 0 for a result, 2 for bad arguments, and 1 when the
-measurement couldn't run. With `--json`, a failure prints
-`{"error", "message", "retryAfterMs"?}` to stdout. The api refuses a new guest
-or a track for a while when a network asks for too many, and `retryAfterMs`
-says how long to wait.
+measurement couldn't run: the api refused it, or no server it chose could be
+reached. With `--json`, a failure prints `{"error", "message", "retryAfterMs"?}`
+to stdout. `error` is `unavailable` when no server could be reached, or the
+api's refusal code. The api refuses a new guest or a track for a while when a
+network asks for too many, and `retryAfterMs` says how long to wait.
 
 ```
 $ lagdev
@@ -247,5 +248,6 @@ check:
   reaches the extender);
 - the CLI's output and exit codes, and that it exits as soon as it has
   printed;
+- a run in which no server opened;
 - the MCP tools: their annotations, cancellation, a client closing stdin, and
   progress.

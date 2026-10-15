@@ -140,6 +140,16 @@ test("a call that asks for progress hears of each step: connecting, the idle sta
   });
 });
 
+test("a run in which no server opened is an error result", async () => {
+  await withServer({ places: ["houston"], deadFirstTicket: true }, async (client) => {
+    const result = await client.callTool({ name: "measure_latency", arguments: { duration_seconds: 30, servers: 1 } });
+    assert.equal(result.isError, true);
+    const failure = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    assert.equal(failure.error, "unavailable");
+    assert.match(failure.message, /^none of the 1 lag\.dev servers chosen could be reached: /);
+  });
+});
+
 test("a client that closes stdin stops the measurement, and the server returns", { timeout: 120_000 }, async () => {
   const api = await startMockApi({ places: ["houston", "london"] });
   const local = createContext({ apiURL: api.url, save: false });
