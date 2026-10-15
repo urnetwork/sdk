@@ -37,12 +37,19 @@ export interface MockApiOptions {
   extender?: MockExtenderOptions;
   /** for the extender in a place, these over `extender` */
   extenderByPlace?: Record<string, MockExtenderOptions>;
+  /** answer /my-ip-info this long after it is asked */
+  myIpInfoDelayMs?: number;
   /** refuse guest creation with this */
   refuseSession?: { code: string; message: string; retry_after_ms?: number };
   /** answer this jwt (or every one matching) with 401 on the lag routes */
   rejectJwt?: string | RegExp;
   /** a dead origin to give position 0's ticket, so its session can't open */
   deadFirstTicket?: boolean;
+  /**
+   * An origin that takes position 0's connection and never answers it, so
+   * its session waits to open until the client gives up
+   */
+  holdFirstTicket?: boolean;
   /** put a relay in front of each extender that reads what the client sends it */
   relay?: boolean;
 }
@@ -134,6 +141,15 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
   }
   // where the client reaches an extender: through its relay, if it has one
   const hostOf = (id: string) => relays.get(id)?.origin ?? extenders.get(id)!.origin;
+  // a server that takes connections and never says a word
+  const held = new Set<Socket>();
+  const holder = createTcpServer((socket) => {
+    held.add(socket);
+    socket.on("error", () => undefined);
+    socket.on("close", () => held.delete(socket));
+  });
+  await new Promise<void>((resolve) => holder.listen(0, "127.0.0.1", resolve));
+  const holdOrigin = `http://127.0.0.1:${(holder.address() as AddressInfo).port}`;
   let jwtCount = 0;
   let ticketCount = 0;
   const api: MockApi = {
@@ -144,6 +160,10 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
     requests: [],
     extenderTraffic,
     close: async () => {
+      for (const socket of held) {
+        socket.destroy();
+      }
+      await new Promise<void>((resolve) => holder.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
       await Promise.all([...relays.values()].map((relay) => relay.close()));
@@ -164,6 +184,19 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
       client: Array.isArray(client) ? client.join(", ") : client,
     });
     if (request.method === "GET" && path === "/my-ip-info") {
+      if (options.myIpInfoDelayMs) {
+        // a client that gives up first gets no answer
+        const asked = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(true), options.myIpInfoDelayMs);
+          response.on("close", () => {
+            clearTimeout(timer);
+            resolve(false);
+          });
+        });
+        if (!asked) {
+          return;
+        }
+      }
       json(response, 200, {
         info: {
           ip: VISITOR_IP,
@@ -225,7 +258,12 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
             ticketCount += 1;
             return {
               extender_id: extender.extender_id,
-              host: options.deadFirstTicket && position === 0 ? "http://127.0.0.1:1" : hostOf(extender.extender_id),
+              host:
+                position === 0 && options.deadFirstTicket
+                  ? "http://127.0.0.1:1"
+                  : position === 0 && options.holdFirstTicket
+                    ? holdOrigin
+                    : hostOf(extender.extender_id),
               position,
               ticket: `ticket-${ticketCount}`,
             };

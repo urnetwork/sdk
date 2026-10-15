@@ -38,12 +38,12 @@ export type LagClient = "cli" | "mcp";
 /** What a measurement needs from the outside, so tests can stand in for it. */
 export interface MeasureContext {
   api: {
-    lagExtenders(): Promise<LagExtendersResult>;
-    lagTrack(args: LagTrackArgs, options?: { headers?: Record<string, string> }): Promise<LagTrackResult>;
-    myIpInfo(): Promise<LagMyIpInfoResult>;
+    lagExtenders(options?: { signal?: AbortSignal }): Promise<LagExtendersResult>;
+    lagTrack(args: LagTrackArgs, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<LagTrackResult>;
+    myIpInfo(options?: { signal?: AbortSignal }): Promise<LagMyIpInfoResult>;
   };
   /** the guest whose jwt the api client sends */
-  guest: { token(): Promise<string>; invalidate(jwt?: string): Promise<void> };
+  guest: { token(options?: { signal?: AbortSignal }): Promise<string>; invalidate(jwt?: string): Promise<void> };
   openSession(options: { host: string; ticket: string; onEvent(event: LagSessionEvent): void }): LagSession;
   /** the api's origin, for the result */
   apiOrigin: string;
@@ -75,6 +75,10 @@ export interface LatencyOptions {
   servers?: number;
   /** the tool running it, sent as X-Lag-Client with the track request */
   client?: LagClient;
+  /**
+   * Stops the run. Before any server is measured, it rejects with a
+   * MeasureError "interrupted"; after, the result says it was interrupted.
+   */
   signal?: AbortSignal;
   /** each step of the run: connecting, then every 5 s of pinging */
   onProgress?: (progress: MeasureProgress) => void;
@@ -93,6 +97,7 @@ export interface BufferbloatOptions {
   settleMs?: number;
   /** the tool running it, sent as X-Lag-Client with the track request */
   client?: LagClient;
+  /** as LatencyOptions' */
   signal?: AbortSignal;
   /** each step of the run: connecting, the idle start, then each load */
   onProgress?: (progress: MeasureProgress) => void;
@@ -178,7 +183,11 @@ export interface Measurement {
   notes: string[];
 }
 
-/** Why a measurement couldn't run: the api's refusal, or no server. */
+/**
+ * Why a measurement couldn't run: the api's refusal (its code), no server to
+ * measure ("unavailable"), or a stop before any server was measured
+ * ("interrupted").
+ */
 export class MeasureError extends Error {
   readonly code: string;
   readonly retryAfterMs?: number;
@@ -247,6 +256,33 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener("abort", done, { once: true });
   });
 
+// `promise`, or a rejection as soon as `signal` aborts
+const unlessAborted = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (signal === undefined) {
+    return promise;
+  }
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+};
+
+const interrupted = () => new MeasureError("interrupted", "interrupted before any server was measured");
+
 // The run's progress: a line for a person watching (the context's), and a
 // numbered step for a client that shows how far the run is (the options').
 // A tick goes to the client alone, so the person's lines stay few.
@@ -307,10 +343,15 @@ const refusalError = (what: string, refusal: { code?: string; message?: string; 
   );
 
 /** Run an api call with the guest's jwt; a refused jwt makes a new guest, once. */
-async function withGuest<T>(context: MeasureContext, call: () => Promise<T>, retried = false): Promise<T> {
+async function withGuest<T>(
+  context: MeasureContext,
+  call: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  retried = false,
+): Promise<T> {
   let jwt: string;
   try {
-    jwt = await context.guest.token();
+    jwt = await context.guest.token({ signal });
   } catch (error) {
     if (error instanceof LagGuestSessionError) {
       throw refusalError("lag.dev couldn't start a guest session", {
@@ -326,7 +367,7 @@ async function withGuest<T>(context: MeasureContext, call: () => Promise<T>, ret
   } catch (error) {
     if (!retried && isURNetworkApiError(error) && error.kind === "http" && (error.status === 401 || error.status === 403)) {
       await context.guest.invalidate(jwt);
-      return await withGuest(context, call, true);
+      return await withGuest(context, call, signal, true);
     }
     throw error;
   }
@@ -341,6 +382,9 @@ interface Prepared {
 // The guest, the sample, the track and an open session on each server, a
 // spare standing in for a server whose session won't open. With no session
 // open on any server it rejects as unavailable: there is nothing to measure.
+// A stop on `signal` cuts every call short, asks for no track once it has
+// come (a track counts against the client's 12 an hour, A6), closes what
+// opened, and rejects as interrupted.
 async function prepare(
   context: MeasureContext,
   count: number,
@@ -349,13 +393,28 @@ async function prepare(
   signal?: AbortSignal,
 ): Promise<Prepared> {
   const startedAt = Date.now();
+  const stopIfInterrupted = () => {
+    if (signal?.aborted) {
+      throw interrupted();
+    }
+  };
+  // a call the stop cut short is the stop, whatever it threw
+  const interruptible = async <T>(call: () => Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      stopIfInterrupted();
+      throw error;
+    }
+  };
   let visitor: Visitor = {};
   try {
-    visitor = visitorOf(await context.api.myIpInfo());
+    visitor = visitorOf(await context.api.myIpInfo({ signal }));
   } catch {
     // without a place every server is chosen by spread alone
   }
-  const sample = await withGuest(context, () => context.api.lagExtenders());
+  stopIfInterrupted();
+  const sample = await interruptible(() => withGuest(context, () => context.api.lagExtenders({ signal }), signal));
   if (sample.error) {
     throw refusalError("lag.dev couldn't list its servers", sample.error);
   }
@@ -364,10 +423,16 @@ async function prepare(
     throw new MeasureError("unavailable", "no lag.dev server can be measured right now");
   }
   const ordered = [...selection.servers, ...selection.spares];
-  const track = await withGuest(context, () =>
-    context.api.lagTrack(
-      { extenders: ordered.map((server) => ({ extender_id: server.extenderId })) },
-      client === undefined ? undefined : { headers: { [LAG_CLIENT_HEADER]: client } },
+  stopIfInterrupted();
+  const track = await interruptible(() =>
+    withGuest(
+      context,
+      () =>
+        context.api.lagTrack(
+          { extenders: ordered.map((server) => ({ extender_id: server.extenderId })) },
+          { ...(client === undefined ? {} : { headers: { [LAG_CLIENT_HEADER]: client } }), signal },
+        ),
+      signal,
     ),
   );
   if (track.error) {
@@ -396,7 +461,7 @@ async function prepare(
         dot.server = candidate.server;
         const session = openDot(context, dot, candidate.ticket);
         try {
-          await session.ready;
+          await unlessAborted(session.ready, signal);
           dot.session = session;
           return dot;
         } catch (error) {
@@ -410,6 +475,10 @@ async function prepare(
       return dot;
     }),
   );
+  if (signal?.aborted) {
+    await closeAll(dots);
+    throw interrupted();
+  }
   if (dots.every((dot) => dot.session === null)) {
     const reasons = [...new Set(dots.map((dot) => dot.error ?? "no session"))];
     throw new MeasureError(

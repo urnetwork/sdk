@@ -297,3 +297,54 @@ test("an extender whose hello asks for more than its ticket is never loaded", { 
     }
   });
 });
+
+test("a stop while the run is set up cuts the call short, asks for no track, and rejects as interrupted", async () => {
+  await withApi({ places: ["houston"], myIpInfoDelayMs: 60_000 }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const controller = new AbortController();
+      const run = measureLatency(local.context, { durationMs: 1000, servers: 1, signal: controller.signal });
+      while (!api.requests.some((request) => request.path === "/my-ip-info")) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const stoppedAt = performance.now();
+      controller.abort();
+      await assert.rejects(run, (error: unknown) => {
+        assert.ok(error instanceof MeasureError);
+        assert.equal(error.code, "interrupted");
+        return true;
+      });
+      assert.ok(performance.now() - stoppedAt < 10_000);
+      assert.deepEqual(api.requests.map((request) => request.path), ["/my-ip-info"]);
+      assert.equal(api.trackRequests.length, 0);
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("a stop while sessions open closes the ones that opened and rejects as interrupted", { timeout: 60_000 }, async () => {
+  // Houston's ticket points at a host that never answers, so its session
+  // waits up to 10 s to open; London's opens at once
+  await withApi({ places: ["houston", "london"], holdFirstTicket: true }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const controller = new AbortController();
+      const run = measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 60_000, servers: 2, idleMs: 300, signal: controller.signal });
+      const london = [...api.extenders.values()][1];
+      while (london.openSessions() === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const stoppedAt = performance.now();
+      controller.abort();
+      await assert.rejects(run, (error: unknown) => error instanceof MeasureError && error.code === "interrupted");
+      assert.ok(performance.now() - stoppedAt < 5000, "it waited for the session that never opens");
+      while (london.openSessions() !== 0) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(london.sessions.filter((session) => session.loadRequests > 0).length, 0);
+    } finally {
+      await local.close();
+    }
+  });
+});

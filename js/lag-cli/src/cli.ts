@@ -209,7 +209,8 @@ export async function main(argv: string[], io: Io): Promise<number> {
       io.stdout.write(`${JSON.stringify(failure, null, 2)}\n`);
     }
     io.stderr.write(`lagdev: ${message}\n`);
-    return 1;
+    // Ctrl-C before any server was measured
+    return error instanceof MeasureError && error.code === "interrupted" ? 130 : 1;
   } finally {
     await local.close();
   }
