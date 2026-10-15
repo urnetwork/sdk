@@ -686,6 +686,8 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
   let used = 0;
   let largest = 0;
   let stoppedEarly: Measurement["stoppedEarly"] = null;
+  // a server whose load didn't fit in the time left
+  let skippedForTime = false;
   // connecting, the idle start, and a load per server
   const total = 2 + prepared.dots.length;
 
@@ -704,8 +706,11 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
       }
       const loadMs = session.hello.downloadMs + session.hello.uploadMs + LOAD_SETUP_MS;
       if (options.maxMs < elapsed() + loadMs + settleMs) {
-        stoppedEarly = "max_seconds";
-        break;
+        // This server's load doesn't fit in the time left, but a later
+        // server's shorter one may: its hello sets its own windows.
+        dot.load = { status: "skipped", reason: "max_seconds", download: null, upload: null, rpm: null };
+        skippedForTime = true;
+        continue;
       }
       if (0 < largest && options.maxBytes < used + largest) {
         stoppedEarly = "max_bytes";
@@ -772,6 +777,9 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
     }
   } finally {
     await closeAll(prepared.dots);
+  }
+  if (stoppedEarly === null && skippedForTime) {
+    stoppedEarly = "max_seconds";
   }
   for (const dot of prepared.dots) {
     if (dot.load && dot.load.status !== "skipped") {

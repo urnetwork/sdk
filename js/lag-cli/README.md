@@ -118,6 +118,10 @@ For each server, it reports:
 Overall, it reports the medians of the increases and of loaded RPM over the
 servers, plus the best and median speeds.
 
+A server's hello sets its load's windows, within what its ticket allows. A
+load that won't fit in the time `--max-seconds` leaves is skipped, and the run
+goes on to the next server, whose load may be shorter.
+
 ## Data cost
 
 - **Latency** uses well under 1 MB.

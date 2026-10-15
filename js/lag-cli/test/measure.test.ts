@@ -224,3 +224,27 @@ test("a server whose session won't open is replaced by a spare", async () => {
     }
   });
 });
+
+test("bufferbloat skips a server whose load won't fit in the time left, and still loads the next", { timeout: 60_000 }, async () => {
+  // Houston's hello asks for 8 s each way, within what its ticket allows;
+  // London's for the mock's 1 s. 12 s fits London's load and not Houston's.
+  await withApi(
+    { places: ["houston", "london"], extenderByPlace: { houston: { hello: { downloadMs: 8000, uploadMs: 8000 } } } },
+    async (api) => {
+      const local = contextFor(api);
+      try {
+        const result = await measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 12_000, servers: 2, idleMs: 300, settleMs: 100 });
+        const [houston, london] = result.servers;
+        assert.equal(houston.city, "Houston");
+        assert.deepEqual([houston.load?.status, houston.load?.reason], ["skipped", "max_seconds"]);
+        assert.equal(london.load?.status, "complete", `${london.load?.status} ${london.load?.reason}`);
+        assert.equal(result.stoppedEarly, "max_seconds");
+        const [houstonExtender, londonExtender] = [...api.extenders.values()];
+        assert.equal(houstonExtender.sessions.filter((session) => session.loadRequests > 0).length, 0);
+        assert.equal(londonExtender.sessions.filter((session) => session.loadRequests > 0).length, 1);
+      } finally {
+        await local.close();
+      }
+    },
+  );
+});

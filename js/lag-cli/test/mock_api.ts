@@ -35,6 +35,8 @@ export interface MockApiOptions {
   /** the places to run extenders in (default houston, dallas, london) */
   places?: string[];
   extender?: MockExtenderOptions;
+  /** for the extender in a place, these over `extender` */
+  extenderByPlace?: Record<string, MockExtenderOptions>;
   /** refuse guest creation with this */
   refuseSession?: { code: string; message: string; retry_after_ms?: number };
   /** answer this jwt (or every one matching) with 401 on the lag routes */
@@ -123,7 +125,7 @@ export async function startMockApi(options: MockApiOptions = {}): Promise<MockAp
   const relays = new Map<string, Awaited<ReturnType<typeof startRelay>>>();
   for (const [index, name] of places.entries()) {
     const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
-    const extender = await startMockExtender(options.extender);
+    const extender = await startMockExtender({ ...options.extender, ...options.extenderByPlace?.[name] });
     extenders.set(id, extender);
     if (options.relay) {
       relays.set(id, await startRelay(extender.origin, extenderTraffic));
