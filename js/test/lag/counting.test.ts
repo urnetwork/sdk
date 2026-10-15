@@ -1220,6 +1220,10 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
     windowOverAt: undefined as number | undefined,
     closedAt: undefined as number | undefined,
     doneAt: undefined as number | undefined,
+    // the short messages, as they went (performance.now()), and any message
+    // a stream sent after its short one
+    shorts: [] as Array<{ at: number; stream: number; bytes: number }>,
+    afterShort: 0,
   };
   let lastCounted = 0;
 
@@ -1271,6 +1275,12 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
 
     send(data: string | Uint8Array): void {
       if (typeof data !== "string") {
+        if (stats.shorts.some((short) => short.stream === this.stream)) {
+          stats.afterShort += 1;
+        }
+        if (data.byteLength < 65536) {
+          stats.shorts.push({ at: performance.now(), stream: this.stream, bytes: data.byteLength });
+        }
         this.queued += data.byteLength;
         stats.sent += data.byteLength;
         return;
@@ -1394,21 +1404,22 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
   return { WebSocket: LinkedSocket as unknown as typeof WebSocket, stats, stop };
 };
 
-for (const mbps of [20, 4]) {
-  test(`over a ${mbps} Mbps link, the upload fills the extender's window to its end, and sends past it only until the window is final`, { timeout: 60_000 }, async (t) => {
+for (const mbps of [20, 4, 2]) {
+  test(`over a ${mbps} Mbps link, the upload fills the extender's window to its end, ends its streams on short messages, and sends past it only until the window is final`, { timeout: 60_000 }, async (t) => {
     // A 5 s window over a path of 50 ms. The streams send on past the
     // window's end until the extender's report says it is over, so that each
-    // stream has a record that straddles the end and fills it: by this
-    // model, amendment 14's client, which stopped at its own uploadMs, left
-    // the last interval at 86% of the link at 20 Mbps and 65-73% at
-    // 4 Mbps, and sent no more than was counted. What goes after the end
-    // and is not counted is the price: the time until every stream is done,
-    // and a round trip, at the link's rate. That is 2-4% at 20 Mbps, and
-    // 9-12% at 4 Mbps, where a stream waits for its turn of the 64 KiB
-    // messages, dealt in turn, for its first record past the end: some
-    // 0.5 s for the last of the four.
+    // stream has a record that straddles the end and fills it. Near the end
+    // the room for a whole message runs out, and what is left goes as a
+    // stream's short, last message (M6, S5). By this model, amendment 14's
+    // client, which stopped at its own uploadMs, left the last interval at
+    // 86%, 65-73% and 41% of the link at 20, 4 and 2 Mbps. Sending whole
+    // messages until the window was over, without short ones, filled it to
+    // 98%, 79-87% and 58%, and sent 2-4%, 9-12% and 19% more than was
+    // counted; with them, 4 and 2 Mbps fill it to about 95-110% and 85-100%,
+    // and send 1-2% and 2-3% more.
     const uploadMs = 5000;
-    const link = linkedExtender({ mbps, oneWayMs: 25, uploadMs });
+    const oneWayMs = 25;
+    const link = linkedExtender({ mbps, oneWayMs, uploadMs });
     const worker = new ScheduleWorker(briefDownload());
     const session = openLagSession({ host: "extender.test", ticket: "ticket", WebSocket: link.WebSocket, downloadWorker: () => worker as unknown as Worker });
     let result: LagLoadResult;
@@ -1428,19 +1439,34 @@ for (const mbps of [20, 4]) {
     const end = stats.first! + uploadMs;
     t.diagnostic(
       `counted ${(stats.counted / capacity * 100).toFixed(1)}% of the link; p50 ${result.upload.percentiles!.p50.toFixed(3)} Mbps; last interval ${(last * 100).toFixed(0)}%; ` +
-        `sent ${(overshoot * 100).toFixed(1)}% more than counted; window over ${Math.round(stats.windowOverAt! - end)} ms after its end`,
+        `sent ${(overshoot * 100).toFixed(1)}% more than counted; window over ${Math.round(stats.windowOverAt! - end)} ms after its end; ` +
+        `short messages ${JSON.stringify(stats.shorts.map((short) => [Math.round(short.at - end), short.stream, short.bytes]))}`,
     );
     // the link was full through the window, and its last interval too: the
     // p50 says so however busy the machine is, the bytes counted unless the
     // machine starved the streams for a while
     assert.ok(Math.abs(result.upload.percentiles!.p50 - mbps) <= mbps * 0.03, `p50 ${result.upload.percentiles!.p50}`);
     assert.ok(0.9 <= stats.counted / capacity, `counted ${stats.counted} of ${capacity}`);
-    assert.ok((mbps < 10 ? 0.7 : 0.85) <= last, `the last interval holds ${(last * 100).toFixed(0)}% of the link`);
+    assert.ok(0.8 <= last, `the last interval holds ${(last * 100).toFixed(0)}% of the link`);
+    // each short message was a stream's last, of one record to just under a
+    // whole message, and none went before the end phase: before the window's
+    // estimated end less a whole message's time and the round trip
+    assert.equal(stats.afterShort, 0, "a stream sent a message after its short one");
+    const endPhaseMs = (65536 * 1000) / ((mbps * 1e6) / 8) + 2 * oneWayMs;
+    stats.shorts.forEach((short) => {
+      assert.ok(16 * 1024 <= short.bytes && short.bytes < 65536, `a short message of ${short.bytes} bytes`);
+      assert.ok(end - short.at < endPhaseMs + 100, `a short message went ${end - short.at} ms before the end`);
+    });
+    if (mbps < 10) {
+      assert.ok(0 < stats.shorts.length, "no stream ended on a short message");
+    }
     // the streams closed on the report that the window was over, within 1 s
-    // of its end, and done followed
-    assert.ok(stats.windowOverAt! - end <= SPREAD_MAX_MS + 100, `the window was over ${stats.windowOverAt! - end} ms after its end`);
+    // of its end (a stream whose short message all came before the end has
+    // no record past it, so it holds the window that long), and done
+    // followed
+    assert.ok(stats.windowOverAt! - end <= SPREAD_MAX_MS + 300, `the window was over ${stats.windowOverAt! - end} ms after its end`);
     assert.ok(stats.windowOverAt! - 5 <= stats.closedAt! && stats.closedAt! - stats.windowOverAt! < 100, `the streams closed ${stats.closedAt! - stats.windowOverAt!} ms after the report`);
     assert.ok(stats.closedAt! <= stats.doneAt!);
-    assert.ok(overshoot <= (mbps < 10 ? 0.15 : 0.08), `sent ${(overshoot * 100).toFixed(1)}% more than was counted`);
+    assert.ok(overshoot <= 0.08, `sent ${(overshoot * 100).toFixed(1)}% more than was counted`);
   });
 }

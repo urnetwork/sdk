@@ -395,6 +395,8 @@ export interface MockSessionRecord {
   uploadMessages: number;
   /** sizes of upload messages that were not 65536 bytes, but the last of a stream */
   oddUploadMessages: number[];
+  /** upload messages shorter than 65536 bytes, as they came, each verified like the rest */
+  uploadShortMessages: Array<{ stream: number; bytes: number }>;
   /** the upload bytes counted in the window, all verified */
   uploadVerifiedBytes: number;
   /** the upload's series as the report would sign it, whatever the loadResult sent */
@@ -717,6 +719,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploadRequestedAt: [],
       uploadMessages: 0,
       oddUploadMessages: [],
+      uploadShortMessages: [],
       uploadVerifiedBytes: 0,
       uploadBytes: [],
       uploadOpenedAt: [],
@@ -973,6 +976,9 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         record.oddUploadMessages.push(lastSize);
       }
       lastSize = data.length;
+      if (data.length < 65536) {
+        record.uploadShortMessages.push({ stream, bytes: data.length });
+      }
       const now = performance.now();
       record.uploadFirstMessageAt[stream] ??= now;
       if (state.uploadFirst === undefined) {

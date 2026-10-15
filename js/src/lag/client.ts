@@ -12,6 +12,7 @@
 import { lagDownloadSources, type LagDownloadSource, type LagDownloadSourceFactory } from "./downloadSource";
 import { importLagUploadKey, LagKeystream, LAG_UPLOAD_MESSAGE_BYTES } from "./keystream";
 import { decodeLagTicket, decodeLagTicketBody } from "./protobuf";
+import { lagUploadShortMessage } from "./uploadEnd";
 import {
   bytesToMbps,
   LAG_SPREAD_MAX_MS,
@@ -1535,26 +1536,46 @@ class LagLoadRun {
   // to the streams in turn, so the backlog spreads across them rather than
   // filling one stream's buffers while the others idle. A stream whose
   // buffer in the page already holds its share of the room waits its next
-  // turn; one that closes or whose keystream fails drops out.
+  // turn; one that closes or whose keystream fails drops out. In the
+  // window's end phase, room that no longer fits a whole message goes as a
+  // stream's short, last message (lagUploadShortMessage, M6), and that stream
+  // sends nothing more.
   private async pumpUploads(streams: Array<{ socket: WebSocket; keystream: LagKeystream }>): Promise<void> {
     let live = streams.slice();
+    // the streams that have sent their last, short message
+    const finished = new Set<WebSocket>();
     let turn = 0;
     let sliceStart = monotonicNow();
     while (!this.uploadStopped) {
       live = live.filter(({ socket }) => socket.readyState === WEBSOCKET_OPEN);
-      if (live.length === 0) {
+      if (live.every(({ socket }) => finished.has(socket))) {
         return;
       }
-      const allowed = this.unverifiedAllowance(monotonicNow());
+      const now = monotonicNow();
+      const allowed = this.unverifiedAllowance(now);
+      const unverified = this.uploadSent - this.lastUploaded.bytes;
       const share = Math.max(LAG_UPLOAD_MESSAGE_BYTES, allowed / live.length);
       let next: { socket: WebSocket; keystream: LagKeystream } | undefined;
-      if (this.uploadSent - this.lastUploaded.bytes + LAG_UPLOAD_MESSAGE_BYTES <= allowed) {
+      let length = LAG_UPLOAD_MESSAGE_BYTES;
+      if (unverified + LAG_UPLOAD_MESSAGE_BYTES <= allowed) {
         for (let i = 0; i < live.length && next === undefined; i += 1) {
           const stream = live[(turn + i) % live.length];
-          if (stream.socket.bufferedAmount + LAG_UPLOAD_MESSAGE_BYTES <= share) {
+          if (!finished.has(stream.socket) && stream.socket.bufferedAmount + LAG_UPLOAD_MESSAGE_BYTES <= share) {
             next = stream;
             turn = (turn + i + 1) % live.length;
           }
+        }
+      } else if (this.lastReportAt !== undefined) {
+        const short = lagUploadShortMessage({
+          roomLeft: allowed - unverified,
+          timeLeftMs: Math.max(0, this.uploadWindowEnd() - now),
+          steadyBytesPerSecond: this.steadyRate(),
+          baseRttMs: this.baseRttMs,
+          streams: live.map(({ socket }) => ({ bufferedAmount: socket.bufferedAmount, finished: finished.has(socket) })),
+        });
+        if (short !== undefined) {
+          next = live[short.stream];
+          length = short.bytes;
         }
       }
       if (next === undefined) {
@@ -1569,13 +1590,17 @@ class LagLoadRun {
       }
       let message: Uint8Array;
       try {
-        message = await next.keystream.next(LAG_UPLOAD_MESSAGE_BYTES);
+        message = await next.keystream.next(length);
       } catch {
         live = live.filter((stream) => stream !== next);
         continue;
       }
       if (this.uploadStopped || next.socket.readyState !== WEBSOCKET_OPEN) {
         continue;
+      }
+      if (length < LAG_UPLOAD_MESSAGE_BYTES) {
+        // its last message: the extender takes none after a short one (M6)
+        finished.add(next.socket);
       }
       try {
         next.socket.send(message);
