@@ -1572,10 +1572,10 @@ class LagLoadRun {
   // The upload as the extender's report signs it (M4 `loadResult`
   // `uploadBytes`), cut as the API cuts it (A5): to at most its first
   // ceil(window / intervalMs) intervals, the window being the last
-  // `uploaded` report's ms. The extender leaves out trailing empty
-  // intervals, and the API counts only the ones it sent, so a shorter
-  // series is never padded. Its p50 and p95 are then the ones the API
-  // stores. Undefined when the extender sent none, or sent anything but a
+  // `uploaded` report's ms. The extender sends every interval from the
+  // upload's first byte through its end, quiet ones as zeros (M8); the API
+  // counts only the ones it sent, so a shorter series is never padded. Its
+  // p50 and p95 are then the ones the API stores. Undefined when the extender sent none, or sent anything but a
   // series of finite counts at least 0 that the window's intervals hold,
   // and the browser's own series stands.
   private extenderUpload(): LagDirectionResult | undefined {
