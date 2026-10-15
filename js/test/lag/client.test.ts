@@ -742,6 +742,32 @@ test("the upload's streams stay open past the window's end until the extender sa
   });
 });
 
+test("on a slow uplink, streams end on a short message of the room left, which the extender verifies, and send nothing after it", { timeout: 30_000 }, async () => {
+  // 128 KiB/s a stream, about 4 Mbps in all, so the 1 MiB the streams may
+  // send before the first report takes 2 s of the 3 s window, and an
+  // extender of amendment 15 that says its window is over 600 ms after its
+  // end: near the end, room for a whole message runs out, and what is left
+  // goes as short, last messages (M6, S5)
+  await withMock({ uploadBytesPerSecond: 128 << 10, hello: { uploadMs: 3000 }, uploadFinal: true, uploadWindowOverDelayMs: 600 }, async (mock) => {
+    const { session } = open(mock, "ticket-short");
+    await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.uploadVerified, true);
+    assert.equal(result.endReason, "complete");
+    assert.equal(record.mismatch, false);
+    // at least one stream ended on a short message, each at most once, and
+    // the extender checked it against the keystream like any other
+    assert.ok(0 < record.uploadShortMessages.length, "no stream sent a short message");
+    const streams = record.uploadShortMessages.map((message) => message.stream);
+    assert.equal(new Set(streams).size, streams.length, `a stream sent two short messages: ${JSON.stringify(record.uploadShortMessages)}`);
+    assert.ok(record.uploadShortMessages.every((message) => 16 * 1024 <= message.bytes && message.bytes < 65536));
+    // and no stream sent a message after its short one
+    assert.deepEqual(record.oddUploadMessages, []);
+    session.close();
+  });
+});
+
 test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout: 30_000 }, async () => {
   await withMock({ uploadBytesPerSecond: 2 << 20 }, async (mock) => {
     let largest = 0;
