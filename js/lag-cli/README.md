@@ -51,14 +51,16 @@ The exit code is:
 - 0 for a result;
 - 1 when the measurement couldn't run: the api refused it, or no server it
   chose could be reached;
-- 2 for bad arguments;
+- 2 for bad arguments, among them a `--ca` or `--stack` file that can't be
+  read, an `--api` or `--origin` that isn't an http or https url, and a
+  `--connect-to` that isn't `host:port`;
 - 130 when Ctrl-C stopped the run before any server was measured.
 
-With `--json`, a failure prints `{"error", "message", "retryAfterMs"?}` to
-stdout. `error` is `unavailable` when no server could be reached,
-`interrupted`, or the api's refusal code. The api refuses a new guest or a
-track for a while when a network asks for too many, and `retryAfterMs` says
-how long to wait.
+With `--json`, every failure prints `{"error", "message", "retryAfterMs"?}` to
+stdout, bad arguments included. `error` is `usage` for bad arguments,
+`unavailable` when no server could be reached, `interrupted`, or the api's
+refusal code. The api refuses a new guest or a track for a while when a
+network asks for too many, and `retryAfterMs` says how long to wait.
 
 ```
 $ lagdev
@@ -254,8 +256,8 @@ check:
 - the Origin header;
 - the `X-Lag-Client` header, on the track request only (a relay reads what
   reaches the extender);
-- the CLI's output and exit codes, and that it exits as soon as it has
-  printed;
+- the CLI's output, exit codes and `--json` failures, and that it exits as
+  soon as it has printed;
 - Ctrl-C during setup, and a run in which no server opened;
 - the MCP tools: their annotations, cancellation, a client closing stdin, and
   progress.

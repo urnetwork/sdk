@@ -8,9 +8,10 @@ import { startMockApi, type MockApi, type MockApiOptions } from "./mock_api.ts";
 registerTsResolve();
 const { main } = await import("../src/cli.ts");
 
-// The command line's exit codes and output: a run in which no server opened
-// is 1; Ctrl-C before any server was measured is 130; and the process exits
-// as soon as it has printed.
+// The command line's exit codes and output: bad arguments are 2, and under
+// --json every failure is a JSON object on stdout; a run in which no server
+// opened is 1; Ctrl-C before any server was measured is 130; and the process
+// exits as soon as it has printed.
 
 const io = (signal?: AbortSignal) => {
   const out: string[] = [];
@@ -47,6 +48,48 @@ const waitFor = async (predicate: () => boolean, what: string, timeoutMs = 30_00
     await sleep(20);
   }
 };
+
+test("bad arguments exit 2, and under --json print what was wrong as JSON", async () => {
+  for (const args of [
+    ["--ca", "/nonexistent/roots.pem"],
+    ["--api", "notaurl"],
+    ["--api", "ftp://api.example"],
+    ["--connect-to", "127.0.0.1"],
+    ["--origin", "lag.dev"],
+    ["--stack", "/nonexistent/stack.json"],
+    ["--servers", "9"],
+    ["bufferbloat", "--max-bytes", "lots"],
+    ["frobnicate"],
+    ["--frobnicate"],
+  ]) {
+    const plain = io();
+    assert.equal(await main(args, plain.io), 2, args.join(" "));
+    assert.deepEqual(plain.out, [], `${args.join(" ")}: nothing on stdout without --json`);
+    assert.match(plain.err.join(""), /^lagdev: /, args.join(" "));
+
+    const json = io();
+    assert.equal(await main([...args, "--json"], json.io), 2, args.join(" "));
+    const failure = JSON.parse(json.out.join(""));
+    assert.equal(failure.error, "usage", args.join(" "));
+    assert.equal(json.err.join("").split("\n")[0], `lagdev: ${failure.message}`, args.join(" "));
+  }
+  // what each said
+  const said = async (args: string[]) => JSON.parse((await (async () => {
+    const run = io();
+    await main([...args, "--json"], run.io);
+    return run.out.join("");
+  })())).message as string;
+  assert.match(await said(["--ca", "/nonexistent/roots.pem"]), /^--ca: can't read "\/nonexistent\/roots\.pem": ENOENT/);
+  assert.equal(await said(["--api", "notaurl"]), '--api must be an http or https url, got "notaurl"');
+  assert.equal(await said(["--connect-to", "127.0.0.1"]), '--connect-to: expected host:port, got "127.0.0.1"');
+  assert.match(await said(["--stack", "/nonexistent/stack.json"]), /^--stack: can't read/);
+
+  // mcp's stdout is the protocol's: no JSON goes there, whatever was asked
+  const mcp = io();
+  assert.equal(await main(["mcp", "--json", "--api", "notaurl"], mcp.io), 2);
+  assert.deepEqual(mcp.out, []);
+  assert.match(mcp.err.join(""), /--api must be an http or https url/);
+});
 
 test("a run in which no server opened exits 1, with the reason as JSON, and doesn't wait out its duration", async () => {
   // the one server's ticket points at a dead port, and there is no spare
