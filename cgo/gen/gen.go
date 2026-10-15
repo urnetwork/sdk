@@ -119,6 +119,7 @@ var behavioralTypes = map[string]bool{
 // skipped types are not exported. mirror the gomobile validate exclusions
 // (see build/Makefile): rpc gob internals, testing and platform constructors.
 var skipTypes = map[string]string{
+	"IoLoopDiagnosticSession":   "private acceptance diagnostic (native mobile only)",
 	"Dialer":                    "native Go socket interface; manual C socket exports",
 	"TLSDialer":                 "native Go TLS interface; manual C socket exports",
 	"Conn":                      "net.Conn alias; manual C socket exports",
@@ -150,16 +151,17 @@ var jsonParamDefaults = map[string]string{
 }
 
 var skipFuncs = map[string]string{
-	"NewPlatformNetworkSpace": "platform constructor (macOS parity: ignored)",
-	"NewPlatformDeviceLocal":  "platform constructor (macOS parity: ignored)",
-	"RequireIdFromBytes":      "panics on bad input; use urnet_parse_id",
-	"MessagePoolGet":          "pool buffers must not cross the abi; use urnet_device_local_send_packet",
-	"MessagePoolGetRaw":       "pool buffers must not cross the abi",
-	"MessagePoolReturn":       "pool buffers must not cross the abi",
-	"MessagePoolCheck":        "pool internal",
-	"DecodeBase58":            "byte buffer result; manual export in exports_manual.go",
-	"DecryptData":             "byte buffer result; manual export in exports_manual.go",
-	"GenerateSharedSecret":    "byte buffer result; manual export in exports_manual.go",
+	"NewIoLoopDiagnosticSession": "private acceptance diagnostic (native mobile only)",
+	"NewPlatformNetworkSpace":    "platform constructor (macOS parity: ignored)",
+	"NewPlatformDeviceLocal":     "platform constructor (macOS parity: ignored)",
+	"RequireIdFromBytes":         "panics on bad input; use urnet_parse_id",
+	"MessagePoolGet":             "pool buffers must not cross the abi; use urnet_device_local_send_packet",
+	"MessagePoolGetRaw":          "pool buffers must not cross the abi",
+	"MessagePoolReturn":          "pool buffers must not cross the abi",
+	"MessagePoolCheck":           "pool internal",
+	"DecodeBase58":               "byte buffer result; manual export in exports_manual.go",
+	"DecryptData":                "byte buffer result; manual export in exports_manual.go",
+	"GenerateSharedSecret":       "byte buffer result; manual export in exports_manual.go",
 }
 
 var skipFuncPatterns = []*regexp.Regexp{
