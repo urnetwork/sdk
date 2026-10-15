@@ -13,6 +13,9 @@
 // on its stream, a read here being a whole message, since that is how this
 // server receives them. Its reports carry `at` and its loadResult the series
 // (`uploadBytes`), unless the mock answers as an extender from before them.
+// Asked to (`uploadFinal`), it also counts a message that straddles the
+// window's end and sends its window-over report late, once the window is
+// final, as an extender of amendment 15 does.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createCipheriv, createHash, randomBytes, type Cipher } from "node:crypto";
@@ -321,6 +324,19 @@ export interface MockExtenderOptions {
   /** upload read rate per stream, bytes per second (default unlimited) */
   uploadBytesPerSecond?: number;
   /**
+   * Count and report the upload as an extender of amendment 15 does (M4,
+   * M6): a message that arrives after the window's end counts the part of
+   * its span before the end, no progress goes out in the window's last half
+   * interval, and the report that says the window is over goes out only once
+   * the window is final: once every upload stream still open has had a
+   * message whose span starts at or after the end, or 1 s after the end.
+   * Without it, that report goes out at the end, and nothing after the end
+   * counts, as before.
+   */
+  uploadFinal?: boolean;
+  /** with uploadFinal, the window-over report goes out this long after the end instead, whatever the streams do */
+  uploadWindowOverDelayMs?: number;
+  /**
    * Answer as an extender from before amendment 14: `uploaded` reports
    * without `at`, and a loadResult without `uploadBytes`.
    */
@@ -366,6 +382,10 @@ export interface MockSessionRecord {
   uploadStreams: number;
   /** upload streams that came while the download ran, and waited for their phase */
   uploadEarly: number;
+  /** upload upgrades refused (409), as one that waited 2 s for its phase is */
+  uploadRefused: number;
+  /** per upload stream, performance.now() when its first upgrade request came */
+  uploadRequestedAt: number[];
   uploadMessages: number;
   /** sizes of upload messages that were not 65536 bytes, but the last of a stream */
   oddUploadMessages: number[];
@@ -377,6 +397,11 @@ export interface MockSessionRecord {
   uploadOpenedAt: number[];
   uploadFirstMessageAt: number[];
   uploadReports: Array<{ bytes: number; ms: number; at?: number }>;
+  /** performance.now() when the upload's window opened (its first message), and when the window-over report went out */
+  uploadFirstAt?: number;
+  uploadWindowOverAt?: number;
+  /** upload bytes that arrived, counted or not */
+  uploadArrivedBytes: number;
   mismatch: boolean;
   /** Date.now() when the session opened and its hello went out */
   openedEpoch?: number;
@@ -403,6 +428,10 @@ interface SessionState {
   uploadSeries: number[];
   uploadAt: number;
   uploadReporter?: ReturnType<typeof setInterval>;
+  // uploadFinal: the upload streams that are done, and whether the
+  // window-over report has gone out
+  uploadDone: Set<MockWebSocket>;
+  uploadOver: boolean;
   timers: Set<ReturnType<typeof setTimeout>>;
   // upload streams that came before the upload message, waiting for it (M4)
   phaseWaiters: Set<() => void>;
@@ -475,6 +504,28 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     }
     state.record.uploadReports.push(report);
     sendJson(state, { type: "uploaded", ...report });
+  };
+
+  // uploadFinal: the window is final, so the report that says it is over
+  // goes out, once
+  const sendUploadWindowOver = (state: SessionState) => {
+    if (state.uploadOver || state.phase !== "upload") {
+      return;
+    }
+    state.uploadOver = true;
+    state.record.uploadWindowOverAt = performance.now();
+    sendUploaded(state, hello.uploadMs);
+  };
+
+  // uploadFinal: once every upload stream still open is done, nothing more
+  // can count, so the window is final
+  const checkUploadFinal = (state: SessionState) => {
+    if (options.uploadWindowOverDelayMs !== undefined || state.uploadFirst === undefined) {
+      return;
+    }
+    if (hello.uploadMs <= performance.now() - state.uploadFirst && [...state.uploads].every((ws) => state.uploadDone.has(ws))) {
+      sendUploadWindowOver(state);
+    }
   };
 
   const endLoad = (state: SessionState, endReason: string) => {
@@ -648,6 +699,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       downloadBytes: 0,
       uploadStreams: 0,
       uploadEarly: 0,
+      uploadRefused: 0,
+      uploadRequestedAt: [],
       uploadMessages: 0,
       oddUploadMessages: [],
       uploadVerifiedBytes: 0,
@@ -655,6 +708,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploadOpenedAt: [],
       uploadFirstMessageAt: [],
       uploadReports: [],
+      uploadArrivedBytes: 0,
       mismatch: false,
       pingSentEpoch: [],
     };
@@ -694,6 +748,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploads: new Set(),
       uploadSeries: [],
       uploadAt: 0,
+      uploadDone: new Set(),
+      uploadOver: false,
       timers: new Set(),
       phaseWaiters: new Set(),
       closed: false,
@@ -786,9 +842,11 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         return;
       }
       record.downloadBytes += ZEROS.length;
-      const slow = options.slowDownloadStream;
-      const pauseMs = slow !== undefined && slow.stream === stream ? slow.pauseMs : (options.downloadPauseMs ?? 5);
-      if (res.write(cipher.update(ZEROS))) {
+      const slow = options.slowDownloadStream !== undefined && options.slowDownloadStream.stream === stream;
+      const pauseMs = slow ? options.slowDownloadStream!.pauseMs : (options.downloadPauseMs ?? 5);
+      // the slow stream keeps its pace however fast the browser reads; the
+      // others write as soon as the browser has taken the last
+      if (res.write(cipher.update(ZEROS)) || slow) {
         setTimeout(write, pauseMs);
       } else {
         res.once("drain", write);
@@ -802,6 +860,9 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
   const onUpload = (req: IncomingMessage, socket: Duplex, head: Buffer, url: URL) => {
     const state = byId.get(url.searchParams.get("session") ?? "");
     const stream = Number(url.searchParams.get("stream"));
+    if (state !== undefined && Number.isInteger(stream) && 0 <= stream && stream < hello.maxStreams) {
+      state.record.uploadRequestedAt[stream] ??= performance.now();
+    }
     // M4: a stream can overtake the upload message, so one that comes while
     // the download runs waits for it, up to STREAM_WAIT_MS
     if (state !== undefined && !state.closed && state.phase === "download") {
@@ -840,6 +901,9 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       state.phase !== "upload" ||
       !(Number.isInteger(stream) && 0 <= stream && stream < hello.maxStreams)
     ) {
+      if (state !== undefined) {
+        state.record.uploadRefused += 1;
+      }
       refuseUpgrade(socket, 409);
       return;
     }
@@ -871,7 +935,13 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     record.uploadOpenedAt[stream] = performance.now();
     record.uploadStreams += 1;
     state.uploads.add(ws);
-    ws.onClose = () => state.uploads.delete(ws);
+    ws.onClose = () => {
+      state.uploads.delete(ws);
+      // a stream that closes holds the window open no longer
+      if (options.uploadFinal) {
+        checkUploadFinal(state);
+      }
+    };
     const verifier = createCipheriv("aes-128-ctr", options.verifyKey ?? state.uploadKey, counterBlock(stream, 0));
     let lastSize = 65536;
     // when this stream's previous message arrived, ms after the first byte
@@ -881,6 +951,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         return;
       }
       record.uploadMessages += 1;
+      record.uploadArrivedBytes += data.length;
       if (lastSize !== 65536) {
         record.oddUploadMessages.push(lastSize);
       }
@@ -889,11 +960,28 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       record.uploadFirstMessageAt[stream] ??= now;
       if (state.uploadFirst === undefined) {
         state.uploadFirst = now;
+        record.uploadFirstAt = now;
         state.uploadReporter = setInterval(() => {
           const ms = Math.round(performance.now() - state.uploadFirst!);
-          sendUploaded(state, Math.min(ms, hello.uploadMs));
+          if (!options.uploadFinal) {
+            sendUploaded(state, Math.min(ms, hello.uploadMs));
+            if (hello.uploadMs <= ms) {
+              clearInterval(state.uploadReporter);
+            }
+            return;
+          }
+          // M4: none in the window's last half interval; the window-over
+          // report waits for the window to be final, or its delay
+          if (ms < hello.uploadMs - hello.intervalMs / 2) {
+            sendUploaded(state, ms);
+            return;
+          }
           if (hello.uploadMs <= ms) {
             clearInterval(state.uploadReporter);
+            const delayMs = options.uploadWindowOverDelayMs;
+            const late = ms - hello.uploadMs;
+            later(state, Math.max(0, (delayMs ?? SPREAD_MAX_MS) - late), () => sendUploadWindowOver(state));
+            checkUploadFinal(state);
           }
         }, hello.intervalMs);
       }
@@ -904,13 +992,27 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         return;
       }
       // M6: verified, the message counts at once by rule S; at or after the
-      // window's end it counts nothing
+      // window's end it counts nothing, or with uploadFinal, only the part
+      // of its span before the end, and the stream is done once a message's
+      // span starts at or after it
       const t = now - state.uploadFirst;
+      const from = Math.max(previous, t - SPREAD_MAX_MS);
       if (t < hello.uploadMs) {
-        addSpread(state.uploadSeries, hello.intervalMs, Math.max(previous, t - SPREAD_MAX_MS), t, data.length);
+        addSpread(state.uploadSeries, hello.intervalMs, from, t, data.length);
         previous = t;
         state.uploadAt = Math.max(state.uploadAt, t);
         record.uploadVerifiedBytes += data.length;
+      } else if (options.uploadFinal && !state.uploadOver && !state.uploadDone.has(ws)) {
+        if (from < hello.uploadMs) {
+          const counted = Math.round((data.length * (hello.uploadMs - from)) / (t - from));
+          addSpread(state.uploadSeries, hello.intervalMs, from, hello.uploadMs, counted);
+          previous = t;
+          state.uploadAt = hello.uploadMs;
+          record.uploadVerifiedBytes += counted;
+        } else {
+          state.uploadDone.add(ws);
+          checkUploadFinal(state);
+        }
       }
       const rate = options.uploadBytesPerSecond;
       if (rate !== undefined && !ws.paused) {

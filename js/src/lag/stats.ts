@@ -622,15 +622,52 @@ export interface LagIntervalSeriesOptions {
    * past them count toward the total only.
    */
   maxIntervals?: number;
+  /**
+   * The window's length from its first byte, ms (default maxIntervals x
+   * intervalMs). A read (addRead) counts only the part of its span inside
+   * the window, and the window is final once no read can still reach back
+   * before its end (lag.dev/PLAN.md M6, amendment 15).
+   */
+  windowMs?: number;
 }
 
 /**
  * Rule S's cap (lag.dev/PLAN.md M6): a read counts as having arrived evenly
  * since its stream's previous read, but over no more than this, so the bytes
- * after a genuine stall are not smeared far back into it. The extender's
+ * after a genuine stall are not smeared far back into it. A stream's first
+ * group reaches back no further either, and so no read that arrives more
+ * than this after the window's end can count (amendment 15). The extender's
  * `lagSpreadMax`.
  */
 export const LAG_SPREAD_MAX_MS = 1000;
+
+/**
+ * Reads that arrive back to back form one group (lag.dev/PLAN.md M6,
+ * amendment 15): a read that arrives within this of the first read of its
+ * stream's group joins the group, and its span starts where the group's
+ * does. A burst released after a stall then spreads, all of it, over the
+ * stall. It is measured from the group's first read, so a steady fast stream
+ * is cut into groups this long and never smeared over a long span. The
+ * extender's `lagSpreadJoin`.
+ */
+export const LAG_SPREAD_JOIN_MS = 2;
+
+// One stream's reads, as addRead counts them (lag.dev/PLAN.md M6, amendment
+// 15). Times are ms after the window's first byte.
+interface LagStreamReads {
+  // when its latest read arrived
+  last: number;
+  // its group: when the group's first read arrived, and where the group's
+  // span starts
+  groupFirst: number;
+  groupFrom: number;
+  // its first group, held uncounted until its second begins: its bytes, and
+  // when its last read arrived; null once it has counted
+  held: { bytes: number; last: number } | null;
+  // it has had a read whose span starts at or after the window's end, or it
+  // ended: nothing it reads later counts
+  done: boolean;
+}
 
 // A span's pieces are cut by cumulative rounding to 1/SPREAD_GRAIN byte, as
 // the extender cuts whole bytes (M6), so they add up to exactly the span's
@@ -642,11 +679,12 @@ const SPREAD_GRAIN = 1024;
 /**
  * One direction of a load, as bytes per interval from the direction's first
  * byte (lag.dev/PLAN.md M4, M8). Feed it reads on their streams (addRead,
- * e.g. each download chunk, counted by rule S, M6), bytes with the span they
- * arrived over (addSpread), exact arrivals (addAt) or cumulative counts
- * (addCumulative, e.g. the extender's `uploaded` reports), whose bytes
- * spread evenly over the time since the previous count. A span splits
- * across the intervals it covers in proportion to time.
+ * e.g. each download chunk, counted by rule S as amendment 15 extends it,
+ * M6), bytes with the span they arrived over (addSpread), exact arrivals
+ * (addAt) or cumulative counts (addCumulative, e.g. the extender's
+ * `uploaded` reports), whose bytes spread evenly over the time since the
+ * previous count. A span splits across the intervals it covers in
+ * proportion to time.
  *
  * The series holds fractions, but reads out whole bytes: an interval's bytes
  * are the floor of the running sum through it less the floor through the one
@@ -658,13 +696,15 @@ const SPREAD_GRAIN = 1024;
 export class LagIntervalSeries {
   readonly intervalMs: number;
   readonly maxIntervals: number;
+  readonly windowMs: number;
   private readonly sums: number[] = [];
   private total = 0;
   private endMs = 0;
   private cumulative = 0;
   private cumulativeMs = 0;
-  // per stream, when its last read came (addRead)
-  private readonly lastReads: number[] = [];
+  // per stream, its reads so far (addRead)
+  private readonly streams: Array<LagStreamReads | undefined> = [];
+  private finishedValue = false;
 
   constructor(options: LagIntervalSeriesOptions = {}) {
     const intervalMs = options.intervalMs ?? 250;
@@ -675,11 +715,19 @@ export class LagIntervalSeries {
     if (!(Number.isInteger(maxIntervals) && 0 <= maxIntervals)) {
       throw new RangeError(`maxIntervals must be a non-negative integer, got ${maxIntervals}`);
     }
+    const windowMs = options.windowMs ?? maxIntervals * intervalMs;
+    if (!(Number.isFinite(windowMs) && 0 <= windowMs)) {
+      throw new RangeError(`windowMs must be a finite number at least 0, got ${windowMs}`);
+    }
     this.intervalMs = intervalMs;
     this.maxIntervals = maxIntervals;
+    this.windowMs = windowMs;
   }
 
-  /** Every byte added, including any past the kept intervals. */
+  /**
+   * Every byte added, including any past the kept intervals, and a read's
+   * bytes that fell outside the window.
+   */
   get totalBytes(): number {
     return this.total;
   }
@@ -754,23 +802,228 @@ export class LagIntervalSeries {
   }
 
   /**
-   * A read of `bytes` on stream `stream` that arrived `ms` after the first
-   * byte, counted by rule S (lag.dev/PLAN.md M6): as having arrived evenly
-   * since the stream's previous read, or since the first byte for its first,
-   * but over at most LAG_SPREAD_MAX_MS.
+   * A read of `bytes` on stream `stream` that arrived `ms` after the window's
+   * first byte, counted by rule S as amendment 15 extends it
+   * (lag.dev/PLAN.md M6). Each stream's reads are counted on their own:
+   * - A read counts as having arrived evenly over a span that ends when it
+   *   arrived. A read that arrives within LAG_SPREAD_JOIN_MS of the first
+   *   read of its stream's group joins the group, and its span starts where
+   *   the group's does. Any other read starts a new group, whose span starts
+   *   at the stream's previous read, at most LAG_SPREAD_MAX_MS back and
+   *   never before the window's first byte.
+   * - A stream's first group is held, uncounted, until its second begins.
+   *   It then counts as having arrived at the rate of the second group's
+   *   first read, n bytes at t2: its B bytes, the last of them at t1, over
+   *   [max(t1 - B (t2 - t1) / n, t1 - LAG_SPREAD_MAX_MS), t1]. Only the part
+   *   from the window's first byte on counts; the rest arrived before the
+   *   window opened. A first group with no second counts by rule S (finish,
+   *   endStream).
+   * - Only the part of a span before the window's end counts, so a read
+   *   that arrives after the end still counts what it carried before it. A
+   *   stream is done once it has a read whose span starts at or after the
+   *   end: its spans are contiguous, so nothing it reads later can count.
+   *   A read that arrives more than LAG_SPREAD_MAX_MS after the end could
+   *   not reach back before it, so it makes the window final (finish).
+   * A read of no bytes changes nothing.
    */
   addRead(stream: number, ms: number, bytes: number): void {
     if (!(Number.isInteger(stream) && 0 <= stream)) {
       throw new RangeError(`stream must be an integer at least 0, got ${stream}`);
     }
-    const previous = this.lastReads[stream] ?? 0;
-    this.addSpread(Math.max(previous, ms - LAG_SPREAD_MAX_MS), ms, bytes);
-    this.lastReads[stream] = Math.max(previous, ms);
+    if (!Number.isFinite(ms)) {
+      throw new RangeError(`ms must be finite, got ${ms}`);
+    }
+    if (!(Number.isFinite(bytes) && 0 <= bytes)) {
+      throw new RangeError(`bytes must be a finite number at least 0, got ${bytes}`);
+    }
+    if (this.finishedValue) {
+      return;
+    }
+    this.total += bytes;
+    if (bytes === 0) {
+      return;
+    }
+    const end = this.windowMs;
+    if (end + LAG_SPREAD_MAX_MS < ms) {
+      this.finish();
+      return;
+    }
+    const reads = this.streams[stream];
+    // a stream's reads arrive in order
+    const t = Math.max(0, ms, reads?.last ?? 0);
+    this.endMs = Math.max(this.endMs, Math.min(t, end));
+    if (reads === undefined) {
+      this.streams[stream] = { last: t, groupFirst: t, groupFrom: t, held: { bytes, last: t }, done: false };
+      return;
+    }
+    if (reads.done) {
+      return;
+    }
+    let from: number;
+    if (t - reads.groupFirst <= LAG_SPREAD_JOIN_MS) {
+      if (reads.held !== null) {
+        reads.held.bytes += bytes;
+        reads.held.last = t;
+        reads.last = t;
+        return;
+      }
+      from = reads.groupFrom;
+    } else {
+      if (reads.held !== null) {
+        this.countFirstGroup(reads, t, bytes);
+      }
+      from = Math.max(reads.last, t - LAG_SPREAD_MAX_MS, 0);
+      reads.groupFirst = t;
+      reads.groupFrom = from;
+    }
+    reads.last = t;
+    if (end <= from) {
+      reads.done = true;
+      return;
+    }
+    this.countSpan(from, t, bytes);
   }
 
-  /** When stream `stream`'s last read came (addRead), in ms after the first byte; undefined before its first. */
+  /** When stream `stream`'s latest read arrived (addRead), in ms after the first byte; undefined before its first. */
   lastRead(stream: number): number | undefined {
-    return this.lastReads[stream];
+    return this.streams[stream]?.last;
+  }
+
+  /**
+   * Stream `stream` has ended (lag.dev/PLAN.md M6, amendment 15): a first
+   * group it still holds counts by rule S, its span starting at the later of
+   * the window's first byte and LAG_SPREAD_MAX_MS before its last read, and
+   * nothing it reads after counts.
+   */
+  endStream(stream: number): void {
+    if (!(Number.isInteger(stream) && 0 <= stream)) {
+      throw new RangeError(`stream must be an integer at least 0, got ${stream}`);
+    }
+    if (this.finishedValue) {
+      return;
+    }
+    const reads = this.streams[stream];
+    if (reads === undefined) {
+      this.streams[stream] = { last: 0, groupFirst: Number.NEGATIVE_INFINITY, groupFrom: 0, held: null, done: true };
+      return;
+    }
+    if (reads.held !== null) {
+      this.countFirstGroup(reads);
+    }
+    reads.done = true;
+  }
+
+  /** The window is final: nothing more counts (finish). */
+  get finished(): boolean {
+    return this.finishedValue;
+  }
+
+  /**
+   * The window is final (lag.dev/PLAN.md M6, amendment 15): every stream is
+   * done, or no read can reach back before the end any more, or the
+   * direction is over. A first group still held counts by rule S, as when
+   * its stream ends (endStream), and no read counts after this.
+   */
+  finish(): void {
+    if (this.finishedValue) {
+      return;
+    }
+    for (const reads of this.streams) {
+      if (reads !== undefined && reads.held !== null) {
+        this.countFirstGroup(reads);
+      }
+    }
+    this.finishedValue = true;
+  }
+
+  /**
+   * Whether stream `stream` is done (lag.dev/PLAN.md M6, amendment 15): it
+   * has had a read whose span starts at or after the window's end, or it
+   * ended, so nothing it reads later counts.
+   */
+  streamDone(stream: number): boolean {
+    return this.streams[stream]?.done ?? false;
+  }
+
+  /**
+   * How far back stream `stream`'s later reads can still count, in ms after
+   * the first byte, when every read of it that arrived by `seenMs` has been
+   * added: an interval that ends at or before this is final as far as the
+   * stream goes (M4's settled reports). Infinity when nothing it reads later
+   * can count: it is done, its reach is past the window's end, or the window
+   * is final.
+   */
+  reach(stream: number, seenMs: number): number {
+    if (this.finishedValue) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const reads = this.streams[stream];
+    let reach: number;
+    if (reads === undefined) {
+      // its first group, still to come, reaches back at most
+      // LAG_SPREAD_MAX_MS from its last read
+      reach = seenMs - LAG_SPREAD_MAX_MS;
+    } else if (reads.done) {
+      return Number.POSITIVE_INFINITY;
+    } else if (reads.held !== null) {
+      // and so does the first group it holds
+      reach = reads.held.last - LAG_SPREAD_MAX_MS;
+    } else if (seenMs <= reads.groupFirst + LAG_SPREAD_JOIN_MS) {
+      // a read may still join its group, whose span starts where the
+      // group's does
+      reach = reads.groupFrom;
+    } else {
+      // a new group's span starts no earlier than its previous read, nor
+      // more than LAG_SPREAD_MAX_MS before it arrives
+      reach = Math.max(reads.last, seenMs - LAG_SPREAD_MAX_MS);
+    }
+    return this.windowMs <= reach ? Number.POSITIVE_INFINITY : reach;
+  }
+
+  // A stream's first group counts (addRead): at the rate of its second
+  // group's first read, `bytes` at `t2`, or by rule S when there is none or
+  // no time passed between them.
+  private countFirstGroup(reads: LagStreamReads, t2?: number, bytes?: number): void {
+    const held = reads.held!;
+    reads.held = null;
+    const t1 = held.last;
+    const from =
+      t2 !== undefined && bytes !== undefined && t1 < t2
+        ? Math.max(t1 - (held.bytes * (t2 - t1)) / bytes, t1 - LAG_SPREAD_MAX_MS)
+        : Math.max(0, t1 - LAG_SPREAD_MAX_MS);
+    this.countSpan(from, t1, held.bytes);
+  }
+
+  // `bytes` that arrived evenly over [from, to] (addRead), of which only the
+  // part inside the window counts: from its first byte to its end. A span of
+  // no time counts its bytes at `to`, when that is inside the window. The
+  // pieces are cut by cumulative rounding, as addSpread cuts them, so they
+  // add up to exactly what the span counts.
+  private countSpan(from: number, to: number, bytes: number): void {
+    const interval = this.intervalMs;
+    if (to <= from) {
+      if (0 <= to && to < this.windowMs) {
+        this.addToInterval(Math.floor(to / interval), bytes);
+      }
+      return;
+    }
+    const lo = Math.max(0, from);
+    const hi = Math.min(to, this.windowMs);
+    if (hi <= lo) {
+      return;
+    }
+    const through = (cut: number) =>
+      cut <= from
+        ? 0
+        : to <= cut
+          ? bytes
+          : Math.min(bytes, Math.round(((bytes * (cut - from)) / (to - from)) * SPREAD_GRAIN) / SPREAD_GRAIN);
+    let placed = through(lo);
+    for (let i = Math.floor(lo / interval); i * interval < hi && i < this.maxIntervals; i += 1) {
+      const counted = through(Math.min(hi, (i + 1) * interval));
+      this.addToInterval(i, counted - placed);
+      placed = counted;
+    }
   }
 
   /**

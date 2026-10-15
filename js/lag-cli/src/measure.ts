@@ -16,7 +16,7 @@ import { isURNetworkApiError } from "../../src/api_client";
 import type { LagExtendersResult, LagMyIpInfoResult, LagTrackArgs, LagTrackResult, LagTrackTicket } from "../../src/lag/api";
 import { LagSessionError, type LagLoadResult, type LagSession, type LagSessionEvent } from "../../src/lag/client";
 import { LagGuestSessionError } from "../../src/lag/session";
-import { percentiles } from "../../src/lag/stats";
+import { LAG_SPREAD_MAX_MS, percentiles } from "../../src/lag/stats";
 import { rpmFor, type Rpm } from "./rpm";
 import { selectServers, type Server, type Visitor } from "./select";
 import { VERSION } from "./version";
@@ -192,6 +192,11 @@ interface Dot {
 const SETTLE_MS = 2000;
 const IDLE_MS = 5000;
 const LOAD_SETUP_MS = 2000;
+// Each direction's window can run on until it is final, at most
+// LAG_SPREAD_MAX_MS past its end: the download is read on, and the upload
+// waits for the server's report that its window is over (lag.dev/PLAN.md
+// M4, M6, amendment 15).
+const LOAD_FINAL_MS = 2 * LAG_SPREAD_MAX_MS;
 
 const round = (value: number, digits: number): number => {
   const scale = 10 ** digits;
@@ -628,7 +633,7 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
         dot.load = { status: "skipped", reason: dot.error ?? "no session", download: null, upload: null, rpm: null };
         continue;
       }
-      const loadMs = session.hello.downloadMs + session.hello.uploadMs + LOAD_SETUP_MS;
+      const loadMs = session.hello.downloadMs + session.hello.uploadMs + LOAD_FINAL_MS + LOAD_SETUP_MS;
       if (options.maxMs < elapsed() + loadMs + settleMs) {
         stoppedEarly = "max_seconds";
         break;

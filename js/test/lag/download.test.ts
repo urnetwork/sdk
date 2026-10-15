@@ -8,6 +8,7 @@ import type { LagDownloadToPage, LagDownloadToWorker } from "../../src/lag/downl
 registerTsResolve();
 const { openLagSession } = await import("../../src/lag/client.ts");
 const { LagDownloadWorkerHost, LAG_DOWNLOAD_BATCH_MS } = await import("../../src/lag/download.ts");
+const { LAG_SPREAD_MAX_MS: SPREAD_MAX_MS } = await import("../../src/lag/stats.ts");
 
 // The download read in a Worker (lag.dev/PLAN.md S5): a load whose streams
 // are read in the download Worker reports exactly what one read on the page
@@ -224,7 +225,7 @@ for (const deliveryDelayMs of [120, 400]) {
   });
 }
 
-test("chunks the Worker times past the window do not count, and the streams are cut at it", { timeout: 30_000 }, async () => {
+test("chunks the Worker times past the window count only what they carried before its end, and the streams are cut once it is final", { timeout: 30_000 }, async () => {
   const options = {
     hello: { intervalMs: 500, downloadMs: 2000 },
     downloadOverrunMs: 3000,
@@ -240,12 +241,61 @@ test("chunks the Worker times past the window do not count, and the streams are 
     assert.equal(record.downloadCutByBrowser, 4);
     assert.ok(result.download.bytes < record.downloadBytes);
     assert.equal(result.download.mbps.length, hello.downloadMs / hello.intervalMs);
-    // nothing past the window: every byte counted is in the window's intervals
+    // nothing past the window: every byte counted is in the window's
+    // intervals, and the bytes read include what fell outside it, before
+    // its first byte (M6, amendment 15) or after its end
     const inIntervals = result.download.intervalBytes.reduce((a, b) => a + b, 0);
-    assert.equal(inIntervals, result.download.bytes);
+    assert.ok(0 < inIntervals && inIntervals < result.download.bytes);
     assert.equal(result.download.durationMs, hello.downloadMs);
     assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, hello.intervalMs));
     assert.deepEqual(record.received.at(-1), { bytes: inIntervals, ms: hello.downloadMs });
+    // the chunks that straddled the end filled the last interval
+    const median = [...result.download.intervalBytes].sort((a, b) => a - b)[1];
+    assert.ok(0.8 * median <= result.download.intervalBytes.at(-1)!, `the last interval holds ${result.download.intervalBytes.at(-1)} bytes, the median ${median}`);
+    session.close();
+  });
+});
+
+test("a download that takes its whole extra second to be final still has its upload's sockets accepted, none held into a refusal", { timeout: 30_000 }, async () => {
+  // Stream 2 writes 64 KiB and then nothing for 5 s, so it is never done:
+  // the window is final 1 s after its 2 s end, and the upload's phase opens
+  // only then (M6, amendment 15). The extender holds an upload
+  // socket that comes before its phase for 2 s and then refuses it (M4),
+  // and the Worker hands chunks over 100 ms late, as to a busy page. Opened
+  // 1 s before the window's end, the first socket would wait over 2 s and be
+  // refused; it reaches the extender about 250 ms before the end instead.
+  const options = {
+    hello: { downloadMs: 2000 },
+    downloadPauseMs: 20,
+    slowDownloadStream: { stream: 2, pauseMs: 5000 },
+    downloadOverrunMs: 2000,
+    uploadBytesPerSecond: 4 << 20,
+  };
+  await withMock(options, async (mock) => {
+    const { session, events } = openWithWorker(mock, "ticket-worker-slow-final", { deliveryDelayMs: 100 });
+    const hello = await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.endReason, "complete");
+    assert.equal(record.uploadRefused, 0, "an upload socket was refused");
+    assert.equal(record.uploadStreams, 4);
+    assert.equal(result.upload.streams, 4);
+    // the window was final 1 s after its end, when the upload began
+    const windowEnd = result.download.startedAt! + hello.downloadMs;
+    const upload = ofType(events, "load").find((event) => event.phase === "upload")!;
+    assert.ok(SPREAD_MAX_MS - 50 <= upload.at - windowEnd, `the upload began ${upload.at - windowEnd} ms after the download's window ended`);
+    // the first socket came about 250 ms before the window ended, the
+    // sockets having started two of the session's round trips sooner, not
+    // 1 s before it
+    const rttMs = Math.min(...session.pings.roundTrips());
+    const requested = record.uploadRequestedAt.filter((at) => at !== undefined).map((at) => performance.timeOrigin + at);
+    assert.equal(requested.length, 4);
+    const before = windowEnd - Math.min(...requested);
+    assert.ok(before <= 250 + 2 * rttMs + 100, `the first upload socket came ${before} ms before the window's end, the round trip ${rttMs} ms`);
+    // and none was held as long as the 2 s the extender allows
+    record.uploadOpenedAt.forEach((openedAt, k) => {
+      assert.ok(openedAt - record.uploadRequestedAt[k] < 2000, `upload stream ${k} waited ${openedAt - record.uploadRequestedAt[k]} ms`);
+    });
     session.close();
   });
 });

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   bytesToMbps,
   classifyPing,
+  LAG_SPREAD_JOIN_MS,
+  LAG_SPREAD_MAX_MS,
   LagHistogram,
   LagIntervalSeries,
   LagLatencyStats,
@@ -397,5 +399,213 @@ test("interval series: whole bytes are the floors of the running sum, and spans 
       assert.equal(series.wholeBytesThrough(i), through);
     });
     assert.equal(through, total, `seed ${seed}`);
+  }
+});
+
+// The share of `bytes`, spread evenly over [from, to], that falls in [lo, hi)
+const share = (from: number, to: number, bytes: number, lo: number, hi: number) =>
+  (bytes * Math.max(0, Math.min(to, hi) - Math.max(from, lo))) / (to - from);
+
+const intervals = (series: LagIntervalSeries, count: number) => Array.from({ length: count }, (_, i) => series.intervalBytes(i));
+
+// within the 1/1024 byte the pieces are cut to
+const assertBytes = (actual: number[], expected: number[], what: string) => {
+  assert.equal(actual.length, expected.length);
+  actual.forEach((bytes, i) => assert.ok(Math.abs(bytes - expected[i]) < 0.01, `${what}, interval ${i}: ${bytes}, expected ${expected[i]}`));
+};
+
+test("interval series: reads that arrive back to back join their group and share its span, so a burst after a stall spreads over it", () => {
+  assert.equal(LAG_SPREAD_JOIN_MS, 2);
+  const series = new LagIntervalSeries({ maxIntervals: 4, windowMs: 1000 });
+  // the stream's first group, at the rate of its second: [-100, 0], before
+  // the window, so it counts nothing; the second spans [0, 100]
+  series.addRead(0, 0, 1000);
+  series.addRead(0, 100, 1000);
+  // a stall to 600 ms, then four reads, the last 2 ms after the first: one
+  // group, each read spread from the stream's read before the stall
+  for (const t of [600, 600.5, 601, 602]) {
+    series.addRead(0, t, 1000);
+  }
+  // 2.5 ms after the group's first read, a new group, from the read before
+  series.addRead(0, 602.5, 1000);
+  const expected = [0, 1, 2, 3].map((i) => {
+    const [lo, hi] = [i * 250, (i + 1) * 250];
+    return (
+      share(0, 100, 1000, lo, hi) +
+      [600, 600.5, 601, 602].reduce((sum, t) => sum + share(100, t, 1000, lo, hi), 0) +
+      share(602, 602.5, 1000, lo, hi)
+    );
+  });
+  assertBytes(intervals(series, 4), expected, "burst");
+  // by rule S alone, the stall's middle interval would hold only the first
+  // read's share, 500 bytes
+  assert.ok(1990 < series.intervalBytes(1), `${series.intervalBytes(1)}`);
+});
+
+test("interval series: a steady fast stream is cut into groups of 2 ms, so no read spreads far", () => {
+  // A read at 0 and one at 500 ms, then from 1000 ms a steady run of 500
+  // bytes every 0.4 ms, 1250 bytes a ms. Groups are 2 ms from their first
+  // read, not from the read before, so only the run's first group, six
+  // reads, spreads back over the gap since 500 ms, and every later read
+  // over at most 2.4 ms: each interval of the run holds its 312,500 bytes to
+  // within a group's 3000. Joined read to read, the run would be one group,
+  // every read spread back to 500 ms: some 340 kB in [750, 1000) alone.
+  const series = new LagIntervalSeries({ maxIntervals: 8, windowMs: 2000 });
+  series.addRead(0, 0, 500);
+  series.addRead(0, 500, 500);
+  for (let k = 0; 1000 + k * 0.4 < 2005; k += 1) {
+    series.addRead(0, 1000 + k * 0.4, 500);
+  }
+  series.finish();
+  assert.ok(series.intervalBytes(3) < 3000, `${series.intervalBytes(3)} bytes in [750, 1000)`);
+  [4, 5, 6, 7].forEach((i) => {
+    assert.ok(Math.abs(series.intervalBytes(i) - 312_500) <= 3000, `interval ${i}: ${series.intervalBytes(i)}`);
+  });
+});
+
+test("interval series: a stream's first group waits for its second, counts at its rate, and only from the window's first byte", () => {
+  const series = new LagIntervalSeries({ maxIntervals: 4, windowMs: 1000 });
+  series.addRead(0, 0, 16384);
+  series.addRead(1, 100, 16384);
+  // both first groups are held, uncounted
+  assert.deepEqual(intervals(series, 4), [0, 0, 0, 0]);
+  assert.equal(series.totalBytes, 2 * 16384);
+  // stream 0's second: its first arrived over [-200, 0], before the window
+  series.addRead(0, 200, 16384);
+  // stream 1's second, 8192 bytes in 200 ms: its first, twice that, over
+  // [-300, 100], a quarter of it from the first byte on
+  series.addRead(1, 300, 8192);
+  assertBytes(intervals(series, 4), [16384 + 4096 + 6144, 2048, 0, 0], "first groups");
+
+  // at most LAG_SPREAD_MAX_MS back: 64 KiB then 1 KiB 100 ms later would
+  // put the first 6.4 s back
+  const capped = new LagIntervalSeries({ maxIntervals: 8, windowMs: 2000 });
+  capped.addRead(0, 0, 100);
+  capped.addRead(0, 50, 100);
+  capped.addRead(1, 1500, 65536);
+  capped.addRead(1, 1600, 1024);
+  assert.equal(LAG_SPREAD_MAX_MS, 1000);
+  assertBytes(intervals(capped, 8), [100, 0, 16384, 16384, 16384, 16384, 1024, 0], "capped");
+});
+
+test("interval series: a first group with no second counts by rule S when its stream ends or the window is final", () => {
+  const series = new LagIntervalSeries({ maxIntervals: 8, windowMs: 2000 });
+  series.addRead(0, 0, 1000);
+  series.addRead(0, 100, 1000);
+  // a stream that ends after one read: from 1 s before it, but not before
+  // the window's first byte
+  series.addRead(1, 400, 2000);
+  series.endStream(1);
+  assert.equal(series.streamDone(1), true);
+  // nothing it reads after its end counts
+  series.addRead(1, 450, 2000);
+  // a stream still holding its first group when the window is final
+  series.addRead(2, 1700, 3000);
+  assert.equal(series.finished, false);
+  series.finish();
+  assert.equal(series.finished, true);
+  // and nothing counts after that
+  series.addRead(0, 800, 5000);
+  const expected = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+    const [lo, hi] = [i * 250, (i + 1) * 250];
+    return share(0, 100, 1000, lo, hi) + share(0, 400, 2000, lo, hi) + share(700, 1700, 3000, lo, hi);
+  });
+  assertBytes(intervals(series, 8), expected, "fallbacks");
+  assert.equal(series.totalBytes, 1000 + 1000 + 2000 + 2000 + 3000);
+
+  // the window's only read, at its first byte, counts there whole
+  const single = new LagIntervalSeries({ maxIntervals: 4, windowMs: 1000 });
+  single.addRead(0, 0, 777);
+  single.endStream(0);
+  assert.deepEqual(intervals(single, 4), [777, 0, 0, 0]);
+});
+
+test("interval series: past the window's end, a read counts its part before it, a stream whose span starts after it is done, and a read 1 s past it makes the window final", () => {
+  const series = new LagIntervalSeries({ maxIntervals: 4, windowMs: 1000 });
+  series.addRead(0, 0, 100);
+  series.addRead(0, 900, 900);
+  // straddling the end: half of [900, 1100] is before it
+  series.addRead(0, 1100, 2000);
+  assert.equal(series.streamDone(0), false);
+  // joining that group, from 900: 100 of its 201 ms are before the end
+  series.addRead(0, 1101, 500);
+  // a new group from 1101: after the end, so the stream is done
+  series.addRead(0, 1200, 700);
+  assert.equal(series.streamDone(0), true);
+  series.addRead(0, 1300, 700);
+  // a first group held after the end, which may still reach back before it
+  series.addRead(1, 1500, 4000);
+  assert.equal(series.finished, false);
+  // a read more than 1 s past the end could not: the window is final, and
+  // the held group counts by rule S, over [500, 1500]
+  series.addRead(2, 2000.5, 100);
+  assert.equal(series.finished, true);
+  const expected = [0, 1, 2, 3].map((i) => {
+    const [lo, hi] = [i * 250, (i + 1) * 250];
+    return (
+      share(0, 900, 900, lo, hi) +
+      share(900, 1100, 2000, lo, Math.min(hi, 1000)) +
+      share(900, 1101, 500, lo, Math.min(hi, 1000)) +
+      share(500, 1500, 4000, lo, Math.min(hi, 1000))
+    );
+  });
+  assertBytes(intervals(series, 4), expected, "end");
+  assert.equal(series.durationMs, 1000);
+  assert.equal(series.count, 4);
+});
+
+test("interval series: reach says how far back a stream's later reads can still count", () => {
+  const series = new LagIntervalSeries({ maxIntervals: 20, windowMs: 5000 });
+  // no read yet: its first group can reach 1 s before whatever comes
+  assert.equal(series.reach(0, 300), -700);
+  // a held first group reaches 1 s before its last read
+  series.addRead(0, 0, 100);
+  assert.equal(series.reach(0, 10), -1000);
+  series.addRead(0, 1.5, 100);
+  assert.equal(series.reach(0, 10), -998.5);
+  // the second group spans from the first's last read: while a read may
+  // still join it (within 2 ms of its first), the reach is there; then the
+  // last read, or 1 s back, whichever is later
+  series.addRead(0, 400, 100);
+  assert.equal(series.reach(0, 401), 1.5);
+  assert.equal(series.reach(0, 403), 400);
+  assert.equal(series.reach(0, 2000), 1000);
+  // a read that straddles the end still reaches back before it, until its
+  // group closes; the next span starts after it, so nothing more can count
+  series.addRead(0, 5100, 100);
+  assert.equal(series.reach(0, 5101), 4100);
+  assert.equal(series.reach(0, 5103), Number.POSITIVE_INFINITY);
+  series.addRead(0, 5200, 100);
+  assert.equal(series.streamDone(0), true);
+  assert.equal(series.reach(0, 5300), Number.POSITIVE_INFINITY);
+  // an ended stream, and every stream of a final window, reach nothing
+  series.endStream(1);
+  assert.equal(series.reach(1, 0), Number.POSITIVE_INFINITY);
+  series.finish();
+  assert.equal(series.reach(2, 0), Number.POSITIVE_INFINITY);
+});
+
+test("interval series: counted by the rules, whole bytes are still the floors of the running sum and add up exactly", () => {
+  // Four streams of reads with stalls, bursts, first groups before the
+  // window and reads past its end: the whole bytes through each interval
+  // never decrease and add up interval by interval, whatever was cut away.
+  for (let seed = 1; seed <= 40; seed += 1) {
+    const next = random(seed);
+    const series = new LagIntervalSeries({ maxIntervals: 20, windowMs: 5000 });
+    const at = [0, 0, 0, 0].map(() => next() * 50);
+    for (let n = 0; n < 2000; n += 1) {
+      const stream = Math.floor(next() * 4);
+      at[stream] += next() < 0.1 ? next() * 2 : next() * 40;
+      series.addRead(stream, at[stream], 1 + Math.floor(next() * 65536));
+    }
+    series.finish();
+    series.extendTo(5000);
+    let through = 0;
+    series.bytes.forEach((bytes, i) => {
+      assert.ok(Number.isInteger(bytes) && 0 <= bytes, `seed ${seed}, interval ${i}: ${bytes}`);
+      through += bytes;
+      assert.equal(series.wholeBytesThrough(i), through);
+    });
+    assert.ok(through <= series.totalBytes);
   }
 });
