@@ -196,6 +196,8 @@ interface Dot {
 const SETTLE_MS = 2000;
 const IDLE_MS = 5000;
 const LOAD_SETUP_MS = 2000;
+// how long closing waits for the sessions to say they have closed
+const CLOSE_WAIT_MS = 3000;
 
 const round = (value: number, digits: number): number => {
   const scale = 10 ** digits;
@@ -395,7 +397,14 @@ async function closeAll(dots: Dot[]): Promise<void> {
       closing.push(dot.session.closed);
     }
   }
-  await Promise.race([Promise.allSettled(closing), sleep(3000)]);
+  // The wait's timer goes as soon as the sessions have closed. Left to run,
+  // it held the process open for 3 s after the result was printed.
+  const closed = new AbortController();
+  try {
+    await Promise.race([Promise.allSettled(closing), sleep(CLOSE_WAIT_MS, closed.signal)]);
+  } finally {
+    closed.abort();
+  }
 }
 
 interface Span {

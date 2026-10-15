@@ -228,5 +228,6 @@ check:
 - the Origin header;
 - the `X-Lag-Client` header, on the track request only (a relay reads what
   reaches the extender);
-- the CLI's output and exit codes;
+- the CLI's output and exit codes, and that it exits as soon as it has
+  printed;
 - the MCP tools.
