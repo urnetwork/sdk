@@ -348,3 +348,31 @@ test("a stop while sessions open closes the ones that opened and rejects as inte
     }
   });
 });
+
+test("bufferbloat keeps the results of a server whose session is reclaimed after its load", { timeout: 60_000 }, async () => {
+  // each extender closes a session with 4410 200 ms after its load ends, as a
+  // full one does to admit another: Houston's goes while London still loads
+  await withApi({ places: ["houston", "london"], extender: { reclaimAfterLoadMs: 200 } }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const result = await measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 60_000, servers: 2, idleMs: 600, settleMs: 400 });
+      assert.equal(result.stoppedEarly, null);
+      for (const server of result.servers) {
+        assert.equal(server.error, undefined, server.city);
+        const load = server.load!;
+        assert.equal(load.status, "complete", `${server.city}: ${load.status} ${load.reason}`);
+        assert.ok(load.download && load.download.p50Mbps! > 0 && load.download.bytes > 0, server.city);
+        assert.ok(load.upload && load.upload.p50Mbps! > 0 && load.upload.bytes > 0, server.city);
+        assert.equal(load.upload.verified, true, server.city);
+        assert.ok(server.pings > 0 && server.idle !== null, server.city);
+      }
+      assert.ok(result.overall.downloadMbps?.median && result.overall.uploadMbps?.median);
+      // Houston's session was reclaimed, and nothing opened another
+      const [houston, london] = [...api.extenders.values()];
+      assert.deepEqual(houston.sessions.map((session) => session.closeCode), [4410]);
+      assert.equal(london.sessions.length, 1);
+    } finally {
+      await local.close();
+    }
+  });
+});

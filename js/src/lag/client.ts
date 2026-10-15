@@ -48,6 +48,13 @@ export type LagSessionErrorCode =
   | "sessions"
   | "origin"
   | "internal"
+  /**
+   * The extender closed the session to admit another (close code 4410), as
+   * a full extender closes its oldest session whose load has ended and whose
+   * report has gone out. The session is done, not failed: its results are
+   * complete, no load was running, and nothing should reconnect it.
+   */
+  | "reclaimed"
   // from the extender, refusing a load; the session goes on pinging (M4)
   | "busy"
   | "budget"
@@ -227,7 +234,11 @@ export interface LagClosedEvent {
   reason: string;
   /** close() ended it */
   byClient: boolean;
-  /** why, when it was not close() */
+  /**
+   * Why, when it was not close(). Code `reclaimed` (closeCode 4410) is a
+   * session that finished rather than failed, and no error event comes
+   * before it.
+   */
   error?: LagSessionError;
   /** Date.now() */
   at: number;
@@ -421,6 +432,8 @@ const closeCodeError = (code: number): LagSessionErrorCode | undefined => {
   switch (code) {
     case 4403:
       return "ticket";
+    case 4410:
+      return "reclaimed";
     case 4429:
       return "sessions";
     case 4500:
@@ -806,7 +819,8 @@ class LagSessionClient implements LagSession {
     clearTimeout(this.connectTimer);
     clearInterval(this.silenceTimer);
     clearTimeout(this.fatalTimer);
-    if (error !== undefined && error !== this.fatal) {
+    // a reclaimed session finished: the closed event says why, and no error
+    if (error !== undefined && error !== this.fatal && error.code !== "reclaimed") {
       this.emit({ type: "error", error, fatal: true });
     }
     this.load?.onSessionClosed(error);

@@ -299,6 +299,12 @@ export interface MockExtenderOptions {
   lostAfterMs?: number;
   /** a session without a pong this long ends with 4408 (M4: 30 s) */
   noPongCloseMs?: number;
+  /**
+   * Close each session this long after its load's loadResult with 4410
+   * "reclaimed", as a full extender closes its oldest finished session to
+   * admit another (M3)
+   */
+  reclaimAfterLoadMs?: number;
   /** pretend no pong arrives, as when the page is gone */
   ignorePongs?: boolean;
   /** send no pings at all, so the session goes silent */
@@ -502,6 +508,14 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     }
     state.record.loadResult = result;
     sendJson(state, { type: "loadResult", ...result });
+    if (options.reclaimAfterLoadMs !== undefined) {
+      later(state, options.reclaimAfterLoadMs, () => {
+        if (!state.closed) {
+          endSession(state, "extender", 4410);
+          state.ws.close(4410, "reclaimed");
+        }
+      });
+    }
   };
 
   const endSession = (state: SessionState, closedBy: "browser" | "extender", code: number) => {
