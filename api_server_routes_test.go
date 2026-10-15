@@ -84,11 +84,12 @@ func sdkApiUrls(t *testing.T, sdkDir string) []*sdkApiUrl {
 	return urls
 }
 
-// serverRoutePatterns parses the server's api.go route table. Routes are
+// serverRoutePatterns parses the server's api.go route table, the
+// router.NewRoute and router.NewStreamingRoute registrations alike. Routes are
 // regular expressions over the path, e.g. "/key/([^/]+)/history".
 func serverRoutePatterns(t *testing.T, routesSource string) map[string]*regexp.Regexp {
 	t.Helper()
-	routeRe := regexp.MustCompile(`NewRoute\("(?:GET|POST|PUT|DELETE)",\s*"([^"]+)"`)
+	routeRe := regexp.MustCompile(`New(?:Streaming)?Route\("(?:GET|POST|PUT|DELETE)",\s*"([^"]+)"`)
 	routes := map[string]*regexp.Regexp{}
 	for _, m := range routeRe.FindAllStringSubmatch(routesSource, -1) {
 		pattern, err := regexp.Compile("^" + m[1] + "$")
@@ -170,6 +171,20 @@ func TestSdkApiUrlMissingFromServerRoutesIsReported(t *testing.T) {
 			reported = append(reported, url.path)
 		}
 		t.Fatalf("unrouted = %v, want exactly [/solana/payment-intent]", reported)
+	}
+}
+
+// A route registered with router.NewStreamingRoute, whose body the server
+// reads at the client's pace, serves its url like any other route. Runs on a
+// synthetic route table, so it needs no server checkout.
+func TestSdkApiUrlServedByStreamingRouteIsRouted(t *testing.T) {
+	routes := serverRoutePatterns(t, `router.NewStreamingRoute("POST", "/provider-work/v1/cuts", providerWork.ServeHTTP, providerWorkBody),`)
+	if _, ok := routes["/provider-work/v1/cuts"]; !ok || len(routes) != 1 {
+		t.Fatalf("parsed routes %v, want exactly the streaming route /provider-work/v1/cuts", routes)
+	}
+	urls := []*sdkApiUrl{{path: "/provider-work/v1/cuts", position: "synthetic"}}
+	if unrouted := unroutedSdkApiUrls(urls, routes); len(unrouted) != 0 {
+		t.Fatalf("the streaming route does not serve %s", unrouted[0].path)
 	}
 }
 
