@@ -8,6 +8,11 @@
 // noPongCloseMs without any pong ends the session. A session runs at most
 // one load, and a load can be refused as busy or budget while the session
 // goes on pinging.
+//
+// The upload is counted as the extender counts it (M6): each read by rule S
+// on its stream, a read here being a whole message, since that is how this
+// server receives them. Its reports carry `at` and its loadResult the series
+// (`uploadBytes`), unless the mock answers as an extender from before them.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createCipheriv, createHash, randomBytes, type Cipher } from "node:crypto";
@@ -241,6 +246,43 @@ const counterBlock = (stream: number, offset: number): Buffer => {
 
 const ZEROS = Buffer.alloc(65536);
 
+// Rule S's cap (M6), the extender's lagSpreadMax
+const SPREAD_MAX_MS = 1000;
+
+// Rule S (M6) as the extender counts a read: `n` bytes that arrived evenly
+// over [from, to] ms after the first byte, cut at the interval boundaries by
+// cumulative rounding into whole pieces that add up to exactly n; a span of
+// no time counts at `to`.
+const addSpread = (series: number[], intervalMs: number, from: number, to: number, n: number): void => {
+  const add = (index: number, bytes: number) => {
+    while (series.length <= index) {
+      series.push(0);
+    }
+    series[index] += bytes;
+  };
+  if (to <= from) {
+    add(Math.floor(to / intervalMs), n);
+    return;
+  }
+  let placed = 0;
+  for (let i = Math.floor(from / intervalMs); i * intervalMs < to; i += 1) {
+    const cut = Math.min(to, (i + 1) * intervalMs);
+    const through = cut === to ? n : Math.round((n * (cut - from)) / (to - from));
+    add(i, through - placed);
+    placed = through;
+  }
+};
+
+// A series through its last interval that counted anything, as the
+// extender's report holds it
+const seriesValues = (series: number[]): number[] => {
+  let end = series.length;
+  while (0 < end && series[end - 1] === 0) {
+    end -= 1;
+  }
+  return series.slice(0, end);
+};
+
 export interface MockHello {
   pingIntervalMs: number;
   intervalMs: number;
@@ -272,8 +314,19 @@ export interface MockExtenderOptions {
   verifyKey?: Buffer;
   /** pause between 64 KiB download writes, per stream (default 5 ms) */
   downloadPauseMs?: number;
+  /** a download stream that writes at its own pace: this pause between its writes */
+  slowDownloadStream?: { stream: number; pauseMs: number };
+  /** refuse every download request of this stream, so it never opens */
+  refuseDownloadStream?: number;
   /** upload read rate per stream, bytes per second (default unlimited) */
   uploadBytesPerSecond?: number;
+  /**
+   * Answer as an extender from before amendment 14: `uploaded` reports
+   * without `at`, and a loadResult without `uploadBytes`.
+   */
+  legacyUpload?: boolean;
+  /** what the loadResult sends as `uploadBytes`, from the series it would send */
+  mangleUploadBytes?: (values: number[]) => unknown;
   /** answer the first download request of each stream with this status, once */
   firstDownloadStatus?: number;
   /**
@@ -316,17 +369,20 @@ export interface MockSessionRecord {
   uploadMessages: number;
   /** sizes of upload messages that were not 65536 bytes, but the last of a stream */
   oddUploadMessages: number[];
+  /** the upload bytes counted in the window, all verified */
   uploadVerifiedBytes: number;
+  /** the upload's series as the report would sign it, whatever the loadResult sent */
+  uploadBytes: number[];
   /** per upload stream: when its socket opened, and when its first message came */
   uploadOpenedAt: number[];
   uploadFirstMessageAt: number[];
-  uploadReports: Array<{ bytes: number; ms: number }>;
+  uploadReports: Array<{ bytes: number; ms: number; at?: number }>;
   mismatch: boolean;
   /** Date.now() when the session opened and its hello went out */
   openedEpoch?: number;
   /** Date.now() at each ping's send */
   pingSentEpoch: number[];
-  loadResult?: { uploadVerified: boolean; endReason: string };
+  loadResult?: { uploadVerified: boolean; endReason: string; uploadBytes?: unknown };
   closeCode?: number;
   closedBy?: "browser" | "extender";
 }
@@ -342,6 +398,10 @@ interface SessionState {
   downloads: Set<ServerResponse>;
   uploadFirst?: number;
   uploads: Set<MockWebSocket>;
+  // the upload's series (whole bytes per interval) and when its last
+  // counted read arrived, ms after the first byte
+  uploadSeries: number[];
+  uploadAt: number;
   uploadReporter?: ReturnType<typeof setInterval>;
   timers: Set<ReturnType<typeof setTimeout>>;
   // upload streams that came before the upload message, waiting for it (M4)
@@ -406,6 +466,17 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     }
   };
 
+  // M4 `uploaded`: what was counted so far, at `ms` into the window, with
+  // when the last counted read arrived
+  const sendUploaded = (state: SessionState, ms: number) => {
+    const report: { bytes: number; ms: number; at?: number } = { bytes: state.record.uploadVerifiedBytes, ms };
+    if (!options.legacyUpload) {
+      report.at = Math.min(ms, Math.round(state.uploadAt * 1000) / 1000);
+    }
+    state.record.uploadReports.push(report);
+    sendJson(state, { type: "uploaded", ...report });
+  };
+
   const endLoad = (state: SessionState, endReason: string) => {
     if (state.phase === "ended") {
       return;
@@ -420,7 +491,15 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     for (const upload of state.uploads) {
       upload.close(1000);
     }
-    const result = { uploadVerified: !state.record.mismatch, endReason };
+    const result: { uploadVerified: boolean; endReason: string; uploadBytes?: unknown } = {
+      uploadVerified: !state.record.mismatch,
+      endReason,
+    };
+    const values = seriesValues(state.uploadSeries);
+    state.record.uploadBytes = values;
+    if (state.uploadFirst !== undefined && !options.legacyUpload) {
+      result.uploadBytes = options.mangleUploadBytes ? options.mangleUploadBytes(values) : values;
+    }
     state.record.loadResult = result;
     sendJson(state, { type: "loadResult", ...result });
   };
@@ -572,6 +651,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       uploadMessages: 0,
       oddUploadMessages: [],
       uploadVerifiedBytes: 0,
+      uploadBytes: [],
       uploadOpenedAt: [],
       uploadFirstMessageAt: [],
       uploadReports: [],
@@ -612,6 +692,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       loadUsed: false,
       downloads: new Set(),
       uploads: new Set(),
+      uploadSeries: [],
+      uploadAt: 0,
       timers: new Set(),
       phaseWaiters: new Set(),
       closed: false,
@@ -649,6 +731,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       state.closed ||
       state.phase !== "download" ||
       !(Number.isInteger(stream) && 0 <= stream && stream < hello.maxStreams) ||
+      stream === options.refuseDownloadStream ||
       forced
     ) {
       firstDownloadAnswered.add(key);
@@ -703,8 +786,10 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         return;
       }
       record.downloadBytes += ZEROS.length;
+      const slow = options.slowDownloadStream;
+      const pauseMs = slow !== undefined && slow.stream === stream ? slow.pauseMs : (options.downloadPauseMs ?? 5);
       if (res.write(cipher.update(ZEROS))) {
-        setTimeout(write, options.downloadPauseMs ?? 5);
+        setTimeout(write, pauseMs);
       } else {
         res.once("drain", write);
       }
@@ -789,6 +874,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     ws.onClose = () => state.uploads.delete(ws);
     const verifier = createCipheriv("aes-128-ctr", options.verifyKey ?? state.uploadKey, counterBlock(stream, 0));
     let lastSize = 65536;
+    // when this stream's previous message arrived, ms after the first byte
+    let previous = 0;
     ws.onBinary = (data) => {
       if (state.phase !== "upload") {
         return;
@@ -804,9 +891,7 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         state.uploadFirst = now;
         state.uploadReporter = setInterval(() => {
           const ms = Math.round(performance.now() - state.uploadFirst!);
-          const report = { bytes: record.uploadVerifiedBytes, ms: Math.min(ms, hello.uploadMs) };
-          record.uploadReports.push(report);
-          sendJson(state, { type: "uploaded", ...report });
+          sendUploaded(state, Math.min(ms, hello.uploadMs));
           if (hello.uploadMs <= ms) {
             clearInterval(state.uploadReporter);
           }
@@ -818,7 +903,13 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         endLoad(state, "upload_mismatch");
         return;
       }
-      if (now - state.uploadFirst <= hello.uploadMs) {
+      // M6: verified, the message counts at once by rule S; at or after the
+      // window's end it counts nothing
+      const t = now - state.uploadFirst;
+      if (t < hello.uploadMs) {
+        addSpread(state.uploadSeries, hello.intervalMs, Math.max(previous, t - SPREAD_MAX_MS), t, data.length);
+        previous = t;
+        state.uploadAt = Math.max(state.uploadAt, t);
         record.uploadVerifiedBytes += data.length;
       }
       const rate = options.uploadBytesPerSecond;

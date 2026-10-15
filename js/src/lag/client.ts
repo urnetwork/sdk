@@ -11,7 +11,14 @@
 
 import { lagDownloadSources, type LagDownloadSource, type LagDownloadSourceFactory } from "./downloadSource";
 import { importLagUploadKey, LagKeystream, LAG_UPLOAD_MESSAGE_BYTES } from "./keystream";
-import { bytesToMbps, LagIntervalSeries, LagPingWindow, type LagPercentiles } from "./stats";
+import {
+  bytesToMbps,
+  LAG_SPREAD_MAX_MS,
+  LagIntervalSeries,
+  LagPingWindow,
+  percentiles,
+  type LagPercentiles,
+} from "./stats";
 
 /** The session's parameters, from the extender's hello (M4). */
 export interface LagHello {
@@ -92,13 +99,13 @@ export class LagSessionError extends Error {
 
 /** One direction of a load (S5). */
 export interface LagDirectionResult {
-  /** bytes per interval from the direction's first byte, as M8 aligns them */
+  /** whole bytes per interval from the direction's first byte, as M8 aligns them */
   intervalBytes: number[];
   /** Mbps per interval */
   mbps: number[];
   /** p50 and p95 of `mbps` by nearest rank; undefined without an interval */
   percentiles?: LagPercentiles;
-  /** bytes moved: read by the browser, or verified by the extender for the upload */
+  /** bytes moved: read by the browser, or counted by the extender for the upload */
   bytes: number;
   /** streams that carried data (download) or opened (upload) */
   streams: number;
@@ -111,8 +118,13 @@ export interface LagDirectionResult {
 /** What the session's load measured (S5). */
 export interface LagLoadResult {
   intervalMs: number;
+  /** what the browser read, its series as its `received` reports gave it to the extender (M4) */
   download: LagDirectionResult;
-  /** the extender's verified counts (M4 `uploaded`) */
+  /**
+   * The extender's counts: its own series, as its report signs it and the
+   * API stores it (M4 `loadResult` `uploadBytes`), or from an extender that
+   * sends none, the series of its `uploaded` reports
+   */
   upload: LagDirectionResult;
   /** the extender found every upload message it checked to be the expected keystream */
   uploadVerified: boolean;
@@ -162,20 +174,30 @@ export interface LagLoadEvent {
   at: number;
 }
 
-/** A load interval completed in one direction. */
+/**
+ * A load interval in one direction, once its value is final (S5): a
+ * download interval when it settles and its `received` report goes out
+ * (M4), an upload interval when the live series' latest point is at or past
+ * its end, or the window is over. One per interval, in order.
+ */
 export interface LagProgressEvent {
   type: "progress";
   direction: LagLoadDirection;
-  /** the interval that completed, counted from the direction's first byte */
+  /** the interval, counted from the direction's first byte */
   interval: number;
   /** its rate */
   bytesPerSecond: number;
   mbps: number;
-  /** ms since the direction's first byte */
+  /**
+   * How far into the direction the load is as the event goes out, in ms
+   * since its first byte: for the download, the page's clock, up to
+   * downloadMs, which it is once the window has closed; for the upload, the
+   * extender's latest `uploaded` ms. It never decreases.
+   */
   ms: number;
   /** the direction's length (hello's downloadMs or uploadMs) */
   durationMs: number;
-  /** bytes so far in this direction */
+  /** whole bytes in this direction through the interval; it never decreases */
   bytes: number;
   /** when the browser saw the direction's first byte, as Date.now() */
   startedAt: number;
@@ -307,8 +329,8 @@ const OPEN_RETRIES = 3;
 // yet handed to the network stack. The kernel's send buffers hold far more
 // (and on the local stack, its front too), so a backlog that bufferedAmount
 // sized left tens of MB queued past the window. The streams are held instead,
-// together, by what the extender has verified. Bytes sent but not yet
-// verified may cover the path in flight (the base round trip at the verified
+// together, by what the extender has counted. Bytes sent but not yet
+// counted may cover the path in flight (the base round trip at the counted
 // rate), what has arrived since the extender's last report, and a backlog of
 // UPLOAD_BACKLOG_MS at that rate, within its floor and ceiling, which keeps
 // the bottleneck busy. That rate is the higher of the extender's last two
@@ -751,7 +773,8 @@ class LagLoadRun {
   private doneSent = false;
   private started = false;
   private doneEmitted = false;
-  private result: { uploadVerified: boolean; endReason: string } | null = null;
+  // the extender's loadResult; uploadBytes as it came, checked when used
+  private result: { uploadVerified: boolean; endReason: string; uploadBytes: unknown } | null = null;
   private readonly resultArrived = deferred<void>();
   // imported while the download runs, so the upload need not wait for it
   private uploadKey?: Promise<CryptoKey>;
@@ -760,6 +783,8 @@ class LagLoadRun {
   // the page, a batch behind in the download's Worker (downloadSource.ts)
   private downloadDelivered = Number.NEGATIVE_INFINITY;
   private readonly downloadStreamsWithData = new Set<number>();
+  // the streams that have ended
+  private readonly downloadEnded = new Set<number>();
   // resolves when every stream has ended, or the download is cut
   private readonly downloadStreamsEnded = deferred<void>();
   // resolves downloadMs after the download's first byte, when its window ends
@@ -774,7 +799,7 @@ class LagLoadRun {
   private downloadStartedAt?: number;
   private downloadBytes = 0;
   private downloadStreams = 0;
-  // the download intervals reported so far, and their bytes in total
+  // the download intervals reported so far, and the whole bytes through them
   private downloadReported = 0;
   private downloadReportedBytes = 0;
   private uploadFirst?: number;
@@ -790,13 +815,17 @@ class LagLoadRun {
   // bytes handed to the upload sockets, across streams
   private uploadSent = 0;
   // the extender's last reports in the window (ms since its first byte, and
-  // bytes verified), and when the last came (monotonic)
+  // bytes counted), and when the last came (monotonic)
   private reports: Array<{ ms: number; bytes: number }> = [];
   private lastReportAt?: number;
   // the session's lowest round trip when the upload started
   private baseRttMs = UPLOAD_DEFAULT_RTT_MS;
   private lastUploaded = { bytes: 0, ms: 0 };
   private readonly uploadWindowReported = deferred<void>();
+  // the upload intervals that have had their progress event, and the whole
+  // bytes through them
+  private uploadReported = 0;
+  private uploadReportedBytes = 0;
 
   constructor(session: LagSessionClient) {
     this.session = session;
@@ -851,6 +880,8 @@ class LagLoadRun {
     );
   }
 
+  // M4 `uploaded`: the extender's count so far (`bytes`), at the report's
+  // time (`ms`), with when the last counted byte arrived (`at`).
   onUploaded(message: Record<string, unknown>): void {
     const bytes = finiteAtLeastZero(message.bytes);
     const ms = finiteAtLeastZero(message.ms);
@@ -858,27 +889,26 @@ class LagLoadRun {
       return;
     }
     const { intervalMs, uploadMs } = this.hello;
+    // The live series (S5): the bytes a report adds arrived since the point
+    // before, so they spread evenly back to it, from `at`; from `ms` where
+    // an older extender sends no `at`, though the report's time can be well
+    // after the bytes came.
+    const at = finiteAtLeastZero(message.at);
+    this.upload.addCumulative(at === undefined ? ms : Math.min(at, ms), bytes);
+    // flow control and the window's end go by `ms` and `bytes` alone
     const previous = this.lastUploaded;
-    this.upload.addCumulative(ms, bytes);
     this.lastUploaded = { bytes: Math.max(previous.bytes, bytes), ms: Math.max(previous.ms, ms) };
-    const elapsed = ms - previous.ms;
-    const bytesPerSecond = 0 < elapsed ? (Math.max(0, bytes - previous.bytes) * 1000) / elapsed : 0;
-    if (0 < elapsed) {
+    if (0 < ms - previous.ms) {
       this.reports = [...this.reports.slice(-7), { ms, bytes: Math.max(previous.bytes, bytes) }];
       this.lastReportAt = monotonicNow();
     }
-    this.session.emit({
-      type: "progress",
-      direction: "upload",
-      interval: Math.max(0, Math.round(ms / intervalMs) - 1),
-      bytesPerSecond,
-      mbps: (bytesPerSecond * 8) / 1e6,
-      ms,
-      durationMs: uploadMs,
-      bytes: this.lastUploaded.bytes,
-      startedAt: this.uploadStartedAt ?? epochNow() - ms,
-    });
-    if (uploadMs - intervalMs / 2 <= ms) {
+    const over = uploadMs - intervalMs / 2 <= ms;
+    if (over) {
+      // the window's last intervals count, even where no byte came
+      this.upload.extendTo(uploadMs);
+    }
+    this.reportUpload(over);
+    if (over) {
       this.uploadWindowReported.resolve();
     }
   }
@@ -890,6 +920,7 @@ class LagLoadRun {
     this.result = {
       uploadVerified: message.uploadVerified === true,
       endReason: typeof message.endReason === "string" ? message.endReason : "unknown",
+      uploadBytes: message.uploadBytes,
     };
     this.resultArrived.resolve();
     if (!this.doneSent) {
@@ -971,29 +1002,28 @@ class LagLoadRun {
     }
   }
 
-  // M5: maxStreams fetches at once, chunks counted and dropped, `received`
-  // every interval from the first byte. The download ends downloadMs after
-  // its first byte, or sooner when every stream has ended (a byte cap): the
-  // final `received` goes out, streams still delivering are cut, and the
-  // upload starts at once. Waiting for trailing bytes would push every
-  // later load in the track back (S5). The streams are read in a Worker
-  // where one is available (downloadSource.ts), so a chunk's time is when it
-  // arrived, not when a busy page got to it.
+  // M5: maxStreams fetches at once, chunks counted by rule S and dropped,
+  // `received` for each interval from the first byte once it has settled
+  // (M4). The download ends downloadMs after its first byte, or sooner when
+  // every stream has ended (a byte cap): the final `received` reports go
+  // out, streams still delivering are cut, and the upload starts at once.
+  // Waiting for trailing bytes would push every later load in the track
+  // back (S5). The streams are read in a Worker where one is available
+  // (downloadSource.ts), so a chunk's time is when it arrived, not when a
+  // busy page got to it.
   private async runDownload(): Promise<void> {
-    const { maxStreams } = this.hello;
     this.session.send({ type: "load", phase: "download" });
     const firstByteGuard = this.timeout(FIRST_BYTE_TIMEOUT_MS, () => {
       if (this.downloadFirst === undefined) {
         this.closeDownload();
       }
     });
-    const ended = new Set<number>();
     const source = this.session.downloadSources();
     this.downloadSource = source;
     source.start(
       {
         url: `${this.session.httpOrigin}/lag/v1/down?session=${encodeURIComponent(this.hello.session)}`,
-        streams: maxStreams,
+        streams: this.hello.maxStreams,
         downloadMs: this.hello.downloadMs,
         openRetries: OPEN_RETRIES,
       },
@@ -1004,10 +1034,12 @@ class LagLoadRun {
           this.catchUpDownload();
         },
         ended: (stream) => {
-          ended.add(stream);
-          if (maxStreams <= ended.size) {
+          // an ended stream holds no interval back
+          this.downloadEnded.add(stream);
+          if (this.hello.maxStreams <= this.downloadEnded.size) {
             this.downloadStreamsEnded.resolve();
           }
+          this.catchUpDownload();
         },
       },
     );
@@ -1023,8 +1055,9 @@ class LagLoadRun {
     }
     this.closeDownload();
     if (this.downloadFirst !== undefined) {
-      // the final reports: through the window's last interval, or the last
-      // a download that ended early counts
+      // the final reports: once the download is closed, every interval has
+      // settled, through the window's last, or through the last that a
+      // download that ended early counts
       this.reportDownload(this.download.count);
     }
     if (outcome === EARLY) {
@@ -1036,7 +1069,10 @@ class LagLoadRun {
     }
   }
 
-  // A chunk, timed `at` on the monotonic clock where it arrived.
+  // A chunk of stream `stream`, timed `at` on the monotonic clock where it
+  // arrived. It counts by rule S (M6): as having arrived evenly since the
+  // stream's previous chunk, from no more than LAG_SPREAD_MAX_MS before it
+  // and never before the window's first byte.
   private onDownloadChunk(stream: number, at: number, bytes: number): void {
     if (this.downloadClosed) {
       return;
@@ -1052,18 +1088,24 @@ class LagLoadRun {
       this.timeout(Math.max(0, this.hello.downloadMs - UPLOAD_EARLY_MS - sinceFirst), () => this.prepareUpload());
       this.scheduleDownloadTick(1);
       this.emitPhase("download", this.downloadStartedAt);
-    } else if (this.downloadDelivered !== Number.POSITIVE_INFINITY && this.hello.downloadMs <= at - this.downloadFirst) {
-      // from the Worker, a chunk the page had not yet seen when the window
-      // closed: past the window, it does not count (on the page itself, the
-      // window's timer cuts the streams before such a chunk is read)
+    }
+    const t = Math.max(0, at - this.downloadFirst);
+    if (this.hello.downloadMs <= t) {
+      // past the window, it counts nothing: on the page the window's timer
+      // cuts the streams before such a chunk is read, but the Worker can
+      // hand over one the page had not yet seen when the window closed
       return;
     }
     if (!this.downloadStreamsWithData.has(stream)) {
       this.downloadStreamsWithData.add(stream);
       this.downloadStreams += 1;
     }
-    this.download.addAt(at - this.downloadFirst, bytes);
+    this.download.addRead(stream, t, bytes);
     this.downloadBytes += bytes;
+    // a chunk past the next interval's end can settle it before the next tick
+    if ((this.downloadReported + 1) * this.hello.intervalMs <= t) {
+      this.catchUpDownload();
+    }
   }
 
   // End the download: nothing more counts, every stream still delivering is
@@ -1102,45 +1144,108 @@ class LagLoadRun {
     }, Math.max(0, due - monotonicNow()));
   }
 
-  // Report each interval that has ended by the clock and whose chunks have
-  // all been handed over; one the Worker still owes a batch for waits for it.
+  // Report each interval that has settled (M4).
   private catchUpDownload(): void {
     if (this.downloadClosed || this.downloadFirst === undefined) {
       return;
     }
-    const { intervalMs } = this.hello;
-    const byClock = Math.floor((monotonicNow() - this.downloadFirst) / intervalMs);
-    const byData = Math.floor((this.downloadDelivered - this.downloadFirst) / intervalMs);
-    this.reportDownload(Math.min(byClock, byData));
+    this.reportDownload(this.settledDownload());
   }
 
-  // One `received` report and one progress event per completed interval,
-  // up to `completed`, from the browser's own series (M4): interval i is
-  // reported at ms (i+1) x intervalMs with the bytes through it, so a late
-  // tick catches up interval by interval instead of reading a running
-  // total at the wrong time. Nothing past the window is reported.
+  // How many intervals have settled, so that no more bytes can reach them
+  // (M4): each has ended by the clock, every chunk timed before now has
+  // been handed over (the Worker hands them over a batch behind), and no
+  // stream can still spread into it by rule S (M6). A stream has stopped
+  // spreading into an interval once it has had a chunk at or after its end,
+  // or once LAG_SPREAD_MAX_MS has passed since that end. One that has not
+  // opened yet holds intervals back like any other, since its first chunk
+  // spreads back too; one that has ended holds nothing back.
+  private settledDownload(): number {
+    const { intervalMs, maxStreams } = this.hello;
+    const seen = Math.min(monotonicNow(), this.downloadDelivered) - this.downloadFirst!;
+    let settled = Math.floor(seen / intervalMs);
+    for (let k = 0; k < maxStreams; k += 1) {
+      if (!this.downloadEnded.has(k)) {
+        const past = Math.max(this.download.lastRead(k) ?? Number.NEGATIVE_INFINITY, seen - LAG_SPREAD_MAX_MS);
+        settled = Math.min(settled, Math.floor(past / intervalMs));
+      }
+    }
+    if (maxStreams <= this.downloadEnded.size) {
+      // every stream has ended, so the series is whole: an interval it does
+      // not count is not reported, though the clock passes it
+      settled = Math.min(settled, this.download.count);
+    }
+    return Math.max(0, settled);
+  }
+
+  // One `received` report and one progress event per settled interval, up
+  // to `completed`, from the browser's own series (M4): interval i is
+  // reported at ms (i+1) x intervalMs with the whole bytes through it, the
+  // floor of the series' running sum, so a late tick catches up interval by
+  // interval instead of reading a running total at the wrong time, and what
+  // the extender signs is what the browser shows. Nothing past the window
+  // is reported.
   private reportDownload(completed: number): void {
     const { intervalMs, downloadMs } = this.hello;
+    // the progress events' time: the clock since the first byte, which an
+    // interval waiting to settle does not hold back, and once the window
+    // has closed, its whole length
+    const ms = this.downloadWindowEnded
+      ? downloadMs
+      : Math.min(downloadMs, monotonicNow() - this.downloadFirst!);
     const upTo = Math.min(completed, this.download.maxIntervals);
     while (this.downloadReported < upTo) {
       const interval = this.downloadReported;
       this.downloadReported += 1;
-      const intervalBytes = this.download.intervalBytes(interval);
-      this.downloadReportedBytes += intervalBytes;
-      const ms = (interval + 1) * intervalMs;
-      this.session.send({ type: "received", bytes: this.downloadReportedBytes, ms });
-      const bytesPerSecond = (intervalBytes * 1000) / intervalMs;
-      this.session.emit({
-        type: "progress",
-        direction: "download",
-        interval,
-        bytesPerSecond,
-        mbps: bytesToMbps(intervalBytes, intervalMs),
-        ms,
-        durationMs: downloadMs,
-        bytes: this.downloadReportedBytes,
-        startedAt: this.downloadStartedAt!,
-      });
+      const through = this.download.wholeBytesThrough(interval);
+      const intervalBytes = through - this.downloadReportedBytes;
+      this.downloadReportedBytes = through;
+      this.session.send({ type: "received", bytes: through, ms: (interval + 1) * intervalMs });
+      this.emitProgress("download", interval, intervalBytes, through, ms, this.downloadStartedAt!);
+    }
+  }
+
+  // An interval's progress event, once its value is final (S5), at `ms`
+  // into the direction.
+  private emitProgress(
+    direction: LagLoadDirection,
+    interval: number,
+    intervalBytes: number,
+    through: number,
+    ms: number,
+    startedAt: number,
+  ): void {
+    const { intervalMs, downloadMs, uploadMs } = this.hello;
+    this.session.emit({
+      type: "progress",
+      direction,
+      interval,
+      bytesPerSecond: (intervalBytes * 1000) / intervalMs,
+      mbps: bytesToMbps(intervalBytes, intervalMs),
+      ms,
+      durationMs: direction === "download" ? downloadMs : uploadMs,
+      bytes: through,
+      startedAt,
+    });
+  }
+
+  // One progress event per completed interval of the live upload series
+  // (S5): interval i is complete once the series' latest point is at or
+  // past its end, or the window is over, and nothing reaches it after. A
+  // report that adds nothing completes none. The events' time is the
+  // extender's, its latest report's ms.
+  private reportUpload(over: boolean): void {
+    const { intervalMs } = this.hello;
+    const series = this.upload;
+    const { ms } = this.lastUploaded;
+    const completed = over ? series.count : Math.min(series.maxIntervals, Math.floor(series.durationMs / intervalMs));
+    while (this.uploadReported < completed) {
+      const interval = this.uploadReported;
+      this.uploadReported += 1;
+      const through = series.wholeBytesThrough(interval);
+      const intervalBytes = through - this.uploadReportedBytes;
+      this.uploadReportedBytes = through;
+      this.emitProgress("upload", interval, intervalBytes, through, ms, this.uploadStartedAt ?? epochNow() - ms);
     }
   }
 
@@ -1458,9 +1563,43 @@ class LagLoadRun {
     return {
       intervalMs,
       download: direction(this.download, this.downloadStreams, this.downloadStartedAt),
-      upload: direction(this.upload, this.uploadStreams, this.uploadStartedAt),
+      upload: this.extenderUpload() ?? direction(this.upload, this.uploadStreams, this.uploadStartedAt),
       uploadVerified: this.result?.uploadVerified ?? false,
       endReason: this.result?.endReason ?? null,
+    };
+  }
+
+  // The upload as the extender's report signs it (M4 `loadResult`
+  // `uploadBytes`), cut as the API cuts it (A5): to at most its first
+  // ceil(window / intervalMs) intervals, the window being the last
+  // `uploaded` report's ms. The extender sends every interval from the
+  // upload's first byte through its end, quiet ones as zeros (M8); the API
+  // counts only the ones it sent, so a shorter series is never padded. Its
+  // p50 and p95 are then the ones the API stores. Undefined when the extender sent none, or sent anything but a
+  // series of finite counts at least 0 that the window's intervals hold,
+  // and the browser's own series stands.
+  private extenderUpload(): LagDirectionResult | undefined {
+    const values = this.result?.uploadBytes;
+    if (
+      this.upload === undefined ||
+      !Array.isArray(values) ||
+      this.upload.maxIntervals < values.length ||
+      !values.every((value) => finiteAtLeastZero(value) !== undefined)
+    ) {
+      return undefined;
+    }
+    const { intervalMs } = this.hello;
+    const windowMs = this.lastUploaded.ms;
+    const intervalBytes = (values as number[]).slice(0, Math.ceil(windowMs / intervalMs));
+    const mbps = intervalBytes.map((bytes) => bytesToMbps(bytes, intervalMs));
+    return {
+      intervalBytes,
+      mbps,
+      percentiles: percentiles(mbps),
+      bytes: this.upload.totalBytes,
+      streams: this.uploadStreams,
+      startedAt: this.uploadStartedAt,
+      durationMs: windowMs,
     };
   }
 }

@@ -327,14 +327,75 @@ test("interval series: cumulative reports spread over the time since the last", 
   assert.deepEqual(series.bytes, [1000, 2000, 2500, 100]);
   assert.equal(series.totalBytes, 5600);
   assert.equal(series.durationMs, 1000);
-  // bytes reported with no time passing close the interval ending there
+  // bytes reported with no time passing count at that time, in the interval
+  // that holds it
   const same = new LagIntervalSeries();
   same.addCumulative(0, 10);
   same.addCumulative(250, 10);
   assert.deepEqual(same.bytes, [10]);
+  same.addCumulative(250, 30);
+  same.addCumulative(500, 30);
+  assert.deepEqual(same.bytes, [10, 20]);
   // a report far past maxIntervals stays bounded
   const far = new LagIntervalSeries({ maxIntervals: 2 });
   far.addCumulative(1e12, 1e6);
   assert.equal(far.count, 2);
   assert.equal(far.totalBytes, 1e6);
+});
+
+test("interval series: a span's bytes split across the intervals it covers, in proportion to time (rule S)", () => {
+  const series = new LagIntervalSeries({ maxIntervals: 4 });
+  // 1000 bytes over [100, 600): 150 ms, 250 ms and 100 ms of it
+  series.addSpread(100, 600, 1000);
+  assert.deepEqual([0, 1, 2].map((i) => series.intervalBytes(i)), [300, 500, 200]);
+  // a span of no time counts at its time, in the interval that holds it,
+  // and a span from before the first byte starts at it
+  series.addSpread(750, 750, 10);
+  series.addSpread(-500, 0, 7);
+  assert.equal(series.intervalBytes(3), 10);
+  assert.equal(series.intervalBytes(0), 307);
+  assert.equal(series.count, 3);
+  assert.equal(series.durationMs, 750);
+  // a span past the kept intervals counts toward the total only
+  series.addSpread(900, 1100, 400);
+  assert.equal(series.intervalBytes(3), 10 + 200);
+  assert.equal(series.totalBytes, 1000 + 10 + 7 + 400);
+  assert.equal(series.count, 4);
+  assert.throws(() => series.addSpread(0, Number.NaN, 1), RangeError);
+  assert.throws(() => series.addSpread(0, 1, -1), RangeError);
+});
+
+test("interval series: whole bytes are the floors of the running sum, and spans add up exactly", () => {
+  // a third of 1000 bytes in each interval
+  const thirds = new LagIntervalSeries({ maxIntervals: 3 });
+  thirds.addSpread(0, 750, 1000);
+  assert.deepEqual(thirds.bytes, [333, 333, 334]);
+  assert.deepEqual([0, 1, 2].map((i) => thirds.wholeBytesThrough(i)), [333, 666, 1000]);
+
+  // Thousands of chunks on four streams, spread over spans that split them
+  // unevenly: the whole bytes through each interval never decrease, add up
+  // interval by interval, and end at exactly the bytes that came. Pieces
+  // in plain floating point lose a byte to rounding on most of these.
+  for (let seed = 1; seed <= 40; seed += 1) {
+    const next = random(seed);
+    const series = new LagIntervalSeries({ maxIntervals: 20 });
+    const last = [0, 0, 0, 0];
+    let total = 0;
+    for (let n = 0; n < 2000; n += 1) {
+      const stream = Math.floor(next() * 4);
+      const t = Math.min(4999.999, last[stream] + next() * 40 + 0.001);
+      const bytes = 1 + Math.floor(next() * 65536);
+      series.addSpread(Math.max(last[stream], t - 1000), t, bytes);
+      last[stream] = t;
+      total += bytes;
+    }
+    series.extendTo(5000);
+    let through = 0;
+    series.bytes.forEach((bytes, i) => {
+      assert.ok(Number.isInteger(bytes) && 0 <= bytes, `seed ${seed}, interval ${i}: ${bytes}`);
+      through += bytes;
+      assert.equal(series.wholeBytesThrough(i), through);
+    });
+    assert.equal(through, total, `seed ${seed}`);
+  }
 });

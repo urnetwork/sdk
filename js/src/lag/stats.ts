@@ -625,12 +625,32 @@ export interface LagIntervalSeriesOptions {
 }
 
 /**
+ * Rule S's cap (lag.dev/PLAN.md M6): a read counts as having arrived evenly
+ * since its stream's previous read, but over no more than this, so the bytes
+ * after a genuine stall are not smeared far back into it. The extender's
+ * `lagSpreadMax`.
+ */
+export const LAG_SPREAD_MAX_MS = 1000;
+
+// A span's pieces are cut by cumulative rounding to 1/SPREAD_GRAIN byte, as
+// the extender cuts whole bytes (M6), so they add up to exactly the span's
+// bytes. Every sum of whole bytes and such pieces is then exact (below
+// 2^53 / SPREAD_GRAIN, some 8.8 TB), and a running sum's floor never falls a
+// byte short from rounding.
+const SPREAD_GRAIN = 1024;
+
+/**
  * One direction of a load, as bytes per interval from the direction's first
- * byte (lag.dev/PLAN.md M4, M8). Feed it exact arrivals (addAt, e.g. each
- * download chunk as it is read) or cumulative counts (addCumulative, e.g. the
- * extender's `uploaded` reports), whose bytes spread evenly over the time
- * since the previous count, so a late report splits across intervals in
- * proportion to time.
+ * byte (lag.dev/PLAN.md M4, M8). Feed it reads on their streams (addRead,
+ * e.g. each download chunk, counted by rule S, M6), bytes with the span they
+ * arrived over (addSpread), exact arrivals (addAt) or cumulative counts
+ * (addCumulative, e.g. the extender's `uploaded` reports), whose bytes
+ * spread evenly over the time since the previous count. A span splits
+ * across the intervals it covers in proportion to time.
+ *
+ * The series holds fractions, but reads out whole bytes: an interval's bytes
+ * are the floor of the running sum through it less the floor through the one
+ * before, which is what a `received` report sends (M4).
  *
  * An interval counts once at least half of it has passed by the last byte,
  * so a load cut short by a cap does not end on a part-empty interval.
@@ -643,6 +663,8 @@ export class LagIntervalSeries {
   private endMs = 0;
   private cumulative = 0;
   private cumulativeMs = 0;
+  // per stream, when its last read came (addRead)
+  private readonly lastReads: number[] = [];
 
   constructor(options: LagIntervalSeriesOptions = {}) {
     const intervalMs = options.intervalMs ?? 250;
@@ -672,11 +694,16 @@ export class LagIntervalSeries {
     return Math.min(this.maxIntervals, Math.round(this.endMs / this.intervalMs));
   }
 
-  /** Bytes per counted interval. */
+  /** Whole bytes per counted interval: through each, they add up to wholeBytesThrough. */
   get bytes(): number[] {
     const out: number[] = [];
+    let sum = 0;
+    let before = 0;
     for (let i = 0; i < this.count; i += 1) {
-      out.push(this.sums[i] ?? 0);
+      sum += this.sums[i] ?? 0;
+      const through = Math.floor(sum);
+      out.push(through - before);
+      before = through;
     }
     return out;
   }
@@ -691,9 +718,23 @@ export class LagIntervalSeries {
     return percentiles(this.mbps);
   }
 
-  /** Bytes in interval `index`, counted or not yet. */
+  /** Bytes in interval `index`, counted or not yet, as held: a fraction where a span split. */
   intervalBytes(index: number): number {
     return this.sums[index] ?? 0;
+  }
+
+  /**
+   * The bytes through interval `index`, counted or not yet, as a whole
+   * number: the floor of the running sum. It never decreases from one
+   * interval to the next, and once no more bytes can reach the intervals
+   * through `index`, it is final.
+   */
+  wholeBytesThrough(index: number): number {
+    let sum = 0;
+    for (let i = 0; i <= index && i < this.sums.length; i += 1) {
+      sum += this.sums[i];
+    }
+    return Math.floor(sum);
   }
 
   /**
@@ -709,21 +750,71 @@ export class LagIntervalSeries {
 
   /** `bytes` that arrived `ms` after the first byte. */
   addAt(ms: number, bytes: number): void {
-    if (!Number.isFinite(ms)) {
-      throw new RangeError(`ms must be finite, got ${ms}`);
+    this.addSpread(ms, ms, bytes);
+  }
+
+  /**
+   * A read of `bytes` on stream `stream` that arrived `ms` after the first
+   * byte, counted by rule S (lag.dev/PLAN.md M6): as having arrived evenly
+   * since the stream's previous read, or since the first byte for its first,
+   * but over at most LAG_SPREAD_MAX_MS.
+   */
+  addRead(stream: number, ms: number, bytes: number): void {
+    if (!(Number.isInteger(stream) && 0 <= stream)) {
+      throw new RangeError(`stream must be an integer at least 0, got ${stream}`);
+    }
+    const previous = this.lastReads[stream] ?? 0;
+    this.addSpread(Math.max(previous, ms - LAG_SPREAD_MAX_MS), ms, bytes);
+    this.lastReads[stream] = Math.max(previous, ms);
+  }
+
+  /** When stream `stream`'s last read came (addRead), in ms after the first byte; undefined before its first. */
+  lastRead(stream: number): number | undefined {
+    return this.lastReads[stream];
+  }
+
+  /**
+   * `bytes` that arrived evenly over [fromMs, toMs] after the first byte
+   * (rule S, lag.dev/PLAN.md M6): each interval the span covers gets its
+   * share by time. A span of no time counts its bytes at toMs, in the
+   * interval that holds it. Nothing counts before the first byte.
+   */
+  addSpread(fromMs: number, toMs: number, bytes: number): void {
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+      throw new RangeError(`fromMs and toMs must be finite, got ${fromMs} and ${toMs}`);
     }
     if (!(Number.isFinite(bytes) && 0 <= bytes)) {
       throw new RangeError(`bytes must be a finite number at least 0, got ${bytes}`);
     }
-    const at = Math.max(0, ms);
+    const to = Math.max(0, toMs);
+    const from = Math.min(to, Math.max(0, fromMs));
     this.total += bytes;
-    this.endMs = Math.max(this.endMs, at);
-    this.addToInterval(Math.floor(at / this.intervalMs), bytes);
+    this.endMs = Math.max(this.endMs, to);
+    if (bytes === 0) {
+      return;
+    }
+    const interval = this.intervalMs;
+    if (from === to) {
+      this.addToInterval(Math.floor(to / interval), bytes);
+      return;
+    }
+    // the bytes through each cut, so the pieces add up to exactly `bytes`
+    let placed = 0;
+    for (let i = Math.floor(from / interval); i * interval < to && i < this.maxIntervals; i += 1) {
+      const cut = Math.min(to, (i + 1) * interval);
+      const through =
+        cut === to
+          ? bytes
+          : Math.min(bytes, Math.round(((bytes * (cut - from)) / (to - from)) * SPREAD_GRAIN) / SPREAD_GRAIN);
+      this.addToInterval(i, through - placed);
+      placed = through;
+    }
   }
 
   /**
    * A cumulative byte count `ms` after the first byte; the count is 0 at
-   * ms 0, and a count lower than an earlier one adds nothing.
+   * ms 0, and a count lower than an earlier one adds nothing. What it adds
+   * spreads over the time since the previous count (addSpread).
    */
   addCumulative(ms: number, totalBytes: number): void {
     if (!Number.isFinite(ms) || !Number.isFinite(totalBytes)) {
@@ -734,23 +825,7 @@ export class LagIntervalSeries {
     const from = this.cumulativeMs;
     const to = Math.max(from, ms);
     this.cumulativeMs = to;
-    this.total += bytes;
-    this.endMs = Math.max(this.endMs, to);
-    if (bytes === 0) {
-      return;
-    }
-    const interval = this.intervalMs;
-    if (to === from) {
-      // no time passed: the bytes close the interval that ends at `to`
-      this.addToInterval(Math.max(0, Math.ceil(to / interval) - 1), bytes);
-      return;
-    }
-    for (let i = Math.floor(from / interval); i * interval < to && i < this.maxIntervals; i += 1) {
-      const overlap = Math.min(to, (i + 1) * interval) - Math.max(from, i * interval);
-      if (0 < overlap) {
-        this.addToInterval(i, (bytes * overlap) / (to - from));
-      }
-    }
+    this.addSpread(from, to, bytes);
   }
 
   private addToInterval(index: number, bytes: number): void {

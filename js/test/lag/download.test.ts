@@ -166,8 +166,39 @@ test("a load's download is read in the Worker, and reports what one read on the 
     const progress = ofType(events, "progress").filter((event) => event.direction === "download");
     assert.deepEqual(progress.map((event) => event.interval), [0, 1, 2, 3]);
     assert.deepEqual(
-      progress.map((event) => [event.ms, event.bytes]),
-      record.received.map((report) => [report.ms, report.bytes]),
+      progress.map((event) => event.bytes),
+      record.received.map((report) => report.bytes),
+    );
+    // at the page's time since the first byte, which never goes back
+    progress.forEach((event, i) => {
+      assert.ok(0 <= event.ms && event.ms <= 1000 && (i === 0 || progress[i - 1].ms <= event.ms), `progress at ${event.ms} ms`);
+    });
+    session.close();
+  });
+});
+
+test("through the Worker, each `received` report carries its interval's final value: with a slow stream, a stream that never opens, and past the window", { timeout: 30_000 }, async () => {
+  const options = {
+    hello: { downloadMs: 2000 },
+    downloadPauseMs: 20,
+    slowDownloadStream: { stream: 2, pauseMs: 400 },
+    refuseDownloadStream: 3,
+    downloadOverrunMs: 1000,
+    uploadBytesPerSecond: 4 << 20,
+  };
+  await withMock(options, async (mock) => {
+    const { session, events } = openWithWorker(mock, "ticket-worker-settled", { deliveryDelayMs: 30 });
+    const hello = await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.download.streams, 3);
+    assert.equal(record.downloadRefused, 4);
+    assert.equal(result.download.intervalBytes.length, hello.downloadMs / hello.intervalMs);
+    assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, hello.intervalMs));
+    const progress = ofType(events, "progress").filter((event) => event.direction === "download");
+    assert.deepEqual(
+      progress.map((event) => event.bytes),
+      record.received.map((report) => report.bytes),
     );
     session.close();
   });
