@@ -57,8 +57,13 @@ import (
 // beside that file, hands the server the API's trust and hosts and the
 // lifecycle that keeps the certificate, and has the activation carry the
 // certificate request. The device's measurements setting turns the API off and
-// on while the role runs, and while it is off every activation tells the
-// operator so (decision 18). Without a kept identity there is no API at all.
+// on while the role runs (decision 18). Off stops the API at once, but the
+// activations tell the operator only once the setting has stayed off for
+// extenderMeasurementOptOutHold, and from then on while it stays off: each
+// opt-out the operator hears of revokes the name's certificate and each opt-in
+// after it orders a new one, so a switch toggled a few times would otherwise
+// spend Let's Encrypt's weekly limit for the name. Without a kept identity
+// there is no API at all.
 //
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
@@ -81,6 +86,14 @@ const extenderProvideListenTimeout = 60 * time.Second
 // per-operator children; the role moves to another of them within this of
 // the holder exiting.
 const extenderProvideTcpRetryTimeout = 3 * time.Minute
+
+// How long the measurements setting must stay off before the activation tells
+// the operator of the opt-out (lag.dev/PLAN.md C4, C9). The operator revokes
+// the measurement name's certificate when told, and orders a new one once the
+// setting is back on. Let's Encrypt issues at most five certificates a week
+// for one exact set of names, so a switch turned off and on a few times must
+// not spend them.
+const extenderMeasurementOptOutHold = 5 * time.Minute
 
 type deviceLocalExtender struct {
 	ctx       context.Context
@@ -131,6 +144,13 @@ type deviceLocalExtender struct {
 	nodeListenAddrs []string
 	// when this extender's key was first seen revoked in the directory (G3)
 	revokedTime time.Time
+	// The owner's opt-out of measurement as the operator hears of it
+	// (lag.dev/PLAN.md C4): told once the setting has stayed off for the hold,
+	// which the timer waits out, and no longer once it is back on. Each wait
+	// has its serial, so a wait cancelled as its timer fires tells nothing.
+	measurementOptOutTold   bool
+	measurementOptOutTimer  *time.Timer
+	measurementOptOutSerial uint64
 
 	// the space directory's cap on active records before this role replaced
 	// it, restored when the role closes, and whether it was replaced (D26)
@@ -234,6 +254,11 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 		defer self.stateLock.Unlock()
 		self.measurementCert = measurementCert
 	}()
+	if measurementCert != nil && !measurementCert.Enabled() {
+		// off as the role starts: told once it has held off since it was set,
+		// which a setting that has long been off has
+		self.holdMeasurementOptOut(self.measurementsOffSince())
+	}
 
 	self.heldTcpListener = &extenderHeldListener{listener: tcpListener}
 	server := extender.NewExtenderServer(
@@ -562,20 +587,123 @@ func (self *deviceLocalExtender) currentMeasurementCert() *extender.ExtenderMeas
 	return self.measurementCert
 }
 
-// Applies the device's measurements setting at once (lag.dev/PLAN.md C4): off
-// takes the certificate down, which closes the API's open sessions, and on
-// serves it again; either way an activation pass runs now, which tells the
-// operator of the opt-out, or asks for the certificate anew. A role that can
-// serve no measurement API has nothing to change.
+// Applies the device's measurements setting (lag.dev/PLAN.md C4). Off takes
+// the certificate down at once, which closes the API's open sessions, and the
+// operator is told once the setting has stayed off for the hold. On serves the
+// certificate again. If the operator was told, it has withdrawn the name, so
+// an activation pass runs now and asks for the certificate anew; if it wasn't,
+// the telling is called off, the operator still holds the certificate, and the
+// lifecycle installs it again. A role that can serve no measurement API has
+// nothing to change.
 func (self *deviceLocalExtender) setMeasurementsEnabled(measurementsEnabled bool) {
 	measurementCert := self.currentMeasurementCert()
 	if measurementCert == nil || measurementCert.Enabled() == measurementsEnabled {
 		return
 	}
-	measurementCert.SetEnabled(measurementsEnabled)
-	if activator := self.currentActivator(); activator != nil {
-		activator.Reactivate()
+	if !measurementsEnabled {
+		measurementCert.SetEnabled(false)
+		self.holdMeasurementOptOut(time.Now())
+		return
 	}
+	// called off before the certificate is asked for, so no pass says both
+	told := self.cancelMeasurementOptOut()
+	measurementCert.SetEnabled(true)
+	if told {
+		if activator := self.currentActivator(); activator != nil {
+			activator.Reactivate()
+		}
+	}
+}
+
+// The opt-out hold of this role.
+func (self *deviceLocalExtender) measurementOptOutHold() time.Duration {
+	if 0 < self.settings.MeasurementOptOutHold {
+		return self.settings.MeasurementOptOutHold
+	}
+	return extenderMeasurementOptOutHold
+}
+
+// When the owner opted out, as near as this device can tell: when the
+// measurements setting was last set. The zero time when it can't tell, which
+// counts as an opt-out that has held.
+func (self *deviceLocalExtender) measurementsOffSince() time.Time {
+	asyncLocalState := self.settings.NetworkSpace.asyncLocalState
+	if asyncLocalState == nil {
+		return time.Time{}
+	}
+	changeTime, ok := asyncLocalState.GetLocalState().measurementsEnabledChangeTime()
+	if !ok {
+		return time.Time{}
+	}
+	return changeTime
+}
+
+// Tells the operator of the opt-out once the setting has stayed off for the
+// hold since `since` (lag.dev/PLAN.md C4): at once when it has already, else
+// with a pass when the hold is up. A `since` ahead of now is a clock that
+// moved, and waits the whole hold.
+func (self *deviceLocalExtender) holdMeasurementOptOut(since time.Time) {
+	hold := self.measurementOptOutHold()
+	wait := min(hold, time.Until(since.Add(hold)))
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.measurementOptOutTold || self.measurementOptOutTimer != nil {
+		return
+	}
+	if wait <= 0 {
+		// the passes from now on say so
+		self.measurementOptOutTold = true
+		return
+	}
+	self.measurementOptOutSerial += 1
+	serial := self.measurementOptOutSerial
+	self.measurementOptOutTimer = time.AfterFunc(wait, func() {
+		self.tellMeasurementOptOut(serial)
+	})
+}
+
+// The hold of wait `serial` is up: the passes from now on tell the operator,
+// and one runs now rather than at the next tick.
+func (self *deviceLocalExtender) tellMeasurementOptOut(serial uint64) {
+	told := func() bool {
+		self.stateLock.Lock()
+		defer self.stateLock.Unlock()
+		if self.measurementOptOutSerial != serial || self.measurementOptOutTimer == nil {
+			// called off, or the role closed, as the timer fired
+			return false
+		}
+		self.measurementOptOutTimer = nil
+		self.measurementOptOutTold = true
+		return true
+	}()
+	if told && self.ctx.Err() == nil {
+		if activator := self.currentActivator(); activator != nil {
+			activator.Reactivate()
+		}
+	}
+}
+
+// Calls off the opt-out: the wait for the hold, or the telling, and returns
+// whether the operator had been told.
+func (self *deviceLocalExtender) cancelMeasurementOptOut() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	if self.measurementOptOutTimer != nil {
+		self.measurementOptOutTimer.Stop()
+		self.measurementOptOutTimer = nil
+	}
+	self.measurementOptOutSerial += 1
+	told := self.measurementOptOutTold
+	self.measurementOptOutTold = false
+	return told
+}
+
+// Whether the activations tell the operator of the opt-out (C4): once the
+// setting has stayed off for the hold, until it is back on.
+func (self *deviceLocalExtender) measurementOptOutIsTold() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.measurementOptOutTold
 }
 
 // The measurement settings of the server (lag.dev/PLAN.md C4, M3, M10). With a
@@ -694,12 +822,10 @@ func (self *deviceLocalExtender) startActivator() {
 	settings.Directory = self.directory()
 	if measurementCert := self.currentMeasurementCert(); measurementCert != nil {
 		// the activation carries the measurement certificate request, named by
-		// the id its answers report, and says so while the owner has opted out
-		// (lag.dev/PLAN.md C4, N4)
+		// the id its answers report, and says the owner has opted out once the
+		// opt-out has held (lag.dev/PLAN.md C4, N4)
 		settings.MeasurementCsr = measurementCert.ActivationCsr
-		settings.MeasurementDisabled = func() bool {
-			return !measurementCert.Enabled()
-		}
+		settings.MeasurementDisabled = self.measurementOptOutIsTold
 	}
 	// the mesh addresses follow the activated families, which the loop reads
 	// from the activator's own status; this only wakes it (D2, G2)
@@ -964,6 +1090,8 @@ func (self *deviceLocalExtender) Close() {
 	self.closeOnce.Do(func() {
 		self.cancel()
 		<-self.done
+		// a wait for the opt-out's hold ends with the role
+		self.cancelMeasurementOptOut()
 		if activator := self.currentActivator(); activator != nil {
 			activator.Close()
 		}
