@@ -1267,7 +1267,7 @@ urnet_websocket_device_rpc_listener_close <- WebsocketDeviceRpcListener.Close
 urnet_write_heap_profile <- WriteHeapProfile
 urnet_write_heap_profile_for_diag <- WriteHeapProfileForDiag
 
-== skipped (1209) ==
+== skipped (1211) ==
 AccountEpoch: data: crosses as json
 AccountEpochList: data: crosses as json
 AccountEpochsCallback: callback interface: crosses as c function pointer
@@ -1960,6 +1960,7 @@ Id: crosses as uuid string
 IdList: data: crosses as json
 Int64List: data: crosses as json
 IntList: data: crosses as json
+IoLoopDiagnosticSession: skipped: private acceptance diagnostic (native mobile only)
 IoLoopDoneCallback: callback interface: crosses as c function pointer
 IpProtocol: alias: crosses as its underlying c type
 IsCreatingExternalWalletListener: callback interface: crosses as c function pointer
@@ -2082,6 +2083,7 @@ NewHostedDeviceRpcListener: unmappable: param ctx: external type context.Context
 NewIdList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewInt64List: skipped: pattern ^New[A-Za-z0-9]*List$
 NewIntList: skipped: pattern ^New[A-Za-z0-9]*List$
+NewIoLoopDiagnosticSession: skipped: private acceptance diagnostic (native mobile only)
 NewLicenseInfoList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewLocationDeviceResultList: skipped: pattern ^New[A-Za-z0-9]*List$
 NewLocationGroupResultList: skipped: pattern ^New[A-Za-z0-9]*List$
