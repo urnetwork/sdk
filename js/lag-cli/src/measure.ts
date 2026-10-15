@@ -4,8 +4,12 @@
 // machine running it is on.
 //
 // - latency: every server is pinged for a while, with no load. Each server
-//   times its own pings and this machine's network stack answers them, so
-//   a busy machine doesn't enter the round trips.
+//   times its own pings. In a browser the network stack answers them, but
+//   in Node undici answers each ping from its JavaScript frame parser on the
+//   main thread, which also reads the downloads here. So whatever delays this
+//   process's event loop delays the pongs and enters the round trips: little
+//   when idle, but at multi-gigabit load rates enough to add to the loaded
+//   increase.
 // - bufferbloat: the same pings, and after an idle start each server in
 //   turn runs one load: a download, then an upload, over four streams each.
 //   How much the round trip to the loading server grows in each direction is
@@ -567,7 +571,7 @@ function measurement(
 }
 
 const COMMON_NOTES = [
-  "Each server times its own pings, about four a second, and this machine's network stack answers them.",
+  "Each server times its own pings, about four a second. This process answers them on its main thread, which also reads the downloads, so its own delays add to a round trip: little when idle, but at multi-gigabit load rates enough to add to the loaded increase. A browser's network stack answers them instead.",
   "A ping is lost when no answer comes within 5 s. That is not a packet-loss measurement.",
   "RPM is 60,000 divided by the round trip in ms, banded as in draft-ietf-ippm-responsiveness-09: poor below 300, fair to 1,000, good to 6,000, excellent above.",
   "Nothing about this machine's address is stored: the guest session and its results keep only the network (ASN) and city.",

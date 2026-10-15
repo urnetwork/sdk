@@ -46,6 +46,9 @@ test("latency: every server is pinged, with no load and nothing about the addres
       assert.ok(result.overall.best && result.overall.rpm);
       assert.equal(result.bytes.total, 0);
       assert.equal(result.stoppedEarly, null);
+      // in Node this process answers the pings, not the network stack
+      assert.match(result.notes[0], /This process answers them on its main thread, which also reads the downloads/);
+      assert.ok(!result.notes.some((note) => /network stack answers them\./.test(note)));
       assert.equal(result.visitor?.city, "Austin");
       assert.deepEqual(result.visitor?.asn, { number: 64500, organization: "Example Networks" });
       assert.ok(!JSON.stringify(result).includes(VISITOR_IP), "the visitor's address is never in the result");

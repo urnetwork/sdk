@@ -81,7 +81,12 @@ comes from the api's `my-ip-info`, as a city and a network (ASN).
 
 **Latency** (`lagdev`, `measure_latency`). Each server sends this machine a
 WebSocket ping about 4 times a second and times the pong itself. Nothing loads
-the line. For each server and overall, it reports:
+the line. In a browser the network stack answers the pings, but Node's
+WebSocket client (undici) answers each one from JavaScript on the process's
+main thread, which also reads the downloads. So this process's own delays
+enter the round trips. They are small when it's idle, but at multi-gigabit
+load rates they can add to the loaded increase. For each server and overall,
+it reports:
 - the idle round trip, p50 and p95 in ms (nearest-rank percentiles, as on
   lag.dev);
 - lost pings, those with no pong within 5 s. The pings ride TCP, so a dropped
