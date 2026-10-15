@@ -124,7 +124,8 @@ test("bufferbloat stops before a load the time cap can't fit", async () => {
   await withApi({ places: ["houston", "london"] }, async (api) => {
     const local = contextFor(api);
     try {
-      // a load is 1 s each way plus 2 s of setup; 2.5 s leaves no room for one
+      // a load is 1 s each way, up to 1 s more each way for its window to be
+      // final, and 2 s of setup; 2.5 s leaves no room for one
       const result = await measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 2500, servers: 2, idleMs: 100 });
       assert.equal(result.stoppedEarly, "max_seconds");
       assert.ok(result.servers.every((server) => server.load?.status === "skipped"));

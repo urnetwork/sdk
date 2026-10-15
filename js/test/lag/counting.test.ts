@@ -5,15 +5,21 @@ import type { LagLoadResult, LagSessionEvent } from "../../src/lag/client.ts";
 import type { LagDownloadToPage, LagDownloadToWorker } from "../../src/lag/download.ts";
 
 registerTsResolve();
-const { openLagSession } = await import("../../src/lag/client.ts");
+const { openLagSession, LagSessionError } = await import("../../src/lag/client.ts");
 const { LAG_DOWNLOAD_BATCH_MS } = await import("../../src/lag/download.ts");
-const { LAG_SPREAD_MAX_MS, LagIntervalSeries, nearestRank } = await import("../../src/lag/stats.ts");
+const stats = await import("../../src/lag/stats.ts");
+const { LagIntervalSeries, nearestRank } = stats;
 
 // How a load's bytes are counted and reported (lag.dev/PLAN.md M4, M6, S5,
-// amendment 14), on the session client's own code, with no network and no
-// timing of its own: a stand-in for the download's Worker hands the client
-// chunks at exact, synthetic arrival times, through the same messages the
-// real Worker sends, and a scripted extender answers the control socket.
+// amendments 14 and 15), on the session client's own code, with no network
+// and no timing of its own: a stand-in for the download's Worker hands the
+// client chunks at exact, synthetic arrival times, through the same messages
+// the real Worker sends, and a scripted extender answers the control socket.
+
+// the rules' constants, as the spec gives them (lag.dev/PLAN.md M6,
+// amendment 15), for the rules written out on their own below
+const SPREAD_MAX_MS = 1000;
+const SPREAD_JOIN_MS = 2;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,8 +55,9 @@ interface Schedule {
  * handed over whole in the first batch.
  */
 class ScheduleWorker {
-  /** the chunks handed over before the download was closed */
+  /** the chunks handed over before the download was closed, and when (performance.now()) */
   readonly delivered: Chunk[] = [];
+  readonly deliveredAt: number[] = [];
   /** performance.now() when the page closed the download */
   closedAt?: number;
   private readonly schedule: Schedule;
@@ -114,6 +121,7 @@ class ScheduleWorker {
         items.push(chunk.stream, performance.timeOrigin + chunk.at, chunk.bytes);
         if (this.closedAt === undefined) {
           this.delivered.push(chunk);
+          this.deliveredAt.push(now);
         }
       }
       for (const end of ends) {
@@ -147,12 +155,26 @@ interface ScriptedHello {
 
 interface Script {
   hello: ScriptedHello;
-  /** `uploaded` reports, sent once the upload's first message arrives, `gapMs` apart */
-  uploaded: Array<Record<string, unknown>>;
+  /**
+   * `uploaded` reports, sent once the upload's first message arrives: each
+   * `afterMs` after that message, or else `gapMs` after the one before
+   */
+  uploaded: Array<Record<string, unknown> & { afterMs?: number }>;
   gapMs?: number;
+  /** a report without `bytes` carries every upload byte the extender has been sent */
+  countBytes?: boolean;
+  /** round trips the extender reports right after its hello */
+  rtts?: number[];
   /** the loadResult: after done, or after the last report when `early` */
   loadResult: Record<string, unknown>;
   early?: boolean;
+  /**
+   * The load ends after its download: the hello's upload key is not 16
+   * bytes, so the upload fails at once and the load's error carries what the
+   * download measured. No upload keystream is generated, which lets a test
+   * run hundreds of downloads.
+   */
+  downloadOnly?: boolean;
 }
 
 type Listener = (event: Record<string, unknown>) => void;
@@ -161,25 +183,31 @@ type Listener = (event: Record<string, unknown>) => void;
  * An extender as a WebSocket class: the control socket says hello, takes
  * the browser's messages, sends the script's `uploaded` reports once the
  * upload has begun and answers done with its loadResult; an upload socket
- * swallows what it is sent.
+ * swallows what it is sent, and the extender notes when.
  */
 const scriptedExtender = (script: Script) => {
   const sent: Array<Record<string, unknown>> = [];
   const received: Array<{ bytes: number; ms: number; when: number }> = [];
+  // the upload's messages, the reports sent, all at performance.now()
+  const uploadSends: Array<{ at: number; bytes: number }> = [];
+  const reports: Array<{ at: number; ms: number; bytes: number }> = [];
+  const times: { uploadFirst?: number; uploadClosed?: number; done?: number } = {};
+  let uploadBytes = 0;
   let reportsSent = 0;
   let control: FakeSocket | undefined;
-  let uploading = false;
 
   class FakeSocket {
     binaryType = "blob";
     readyState = 0;
     bufferedAmount = 0;
     readonly url: string;
+    private readonly upload: boolean;
     private readonly listeners = new Map<string, Set<Listener>>();
 
     constructor(url: string) {
       this.url = url;
       const isControl = url.includes("/lag/v1/session?");
+      this.upload = url.includes("/lag/v1/up?");
       if (isControl) {
         control = this;
       }
@@ -190,7 +218,11 @@ const scriptedExtender = (script: Script) => {
         this.readyState = 1;
         this.dispatch("open", {});
         if (isControl) {
-          this.message({ type: "hello", session: "c2Vzc2lvbg", uploadKey: "AAAAAAAAAAAAAAAAAAAAAA", pingIntervalMs: 250, ...script.hello });
+          const uploadKey = script.downloadOnly ? "AAAA" : "AAAAAAAAAAAAAAAAAAAAAA";
+          this.message({ type: "hello", session: "c2Vzc2lvbg", uploadKey, pingIntervalMs: 250, ...script.hello });
+          for (const ms of script.rtts ?? []) {
+            this.message({ type: "rtt", t: 0, ms });
+          }
         }
       }, 1);
     }
@@ -208,8 +240,11 @@ const scriptedExtender = (script: Script) => {
 
     send(data: string | Uint8Array): void {
       if (typeof data !== "string") {
-        if (!uploading) {
-          uploading = true;
+        const now = performance.now();
+        uploadSends.push({ at: now, bytes: data.byteLength });
+        uploadBytes += data.byteLength;
+        if (times.uploadFirst === undefined) {
+          times.uploadFirst = now;
           void reportUpload();
         }
         return;
@@ -219,14 +254,20 @@ const scriptedExtender = (script: Script) => {
       if (message.type === "received") {
         received.push({ bytes: message.bytes as number, ms: message.ms as number, when: performance.now() });
       }
-      if (message.type === "load" && message.phase === "done" && !script.early) {
-        setTimeout(() => this.message({ type: "loadResult", ...script.loadResult }), 1);
+      if (message.type === "load" && message.phase === "done") {
+        times.done ??= performance.now();
+        if (!script.early) {
+          setTimeout(() => this.message({ type: "loadResult", ...script.loadResult }), 1);
+        }
       }
     }
 
     close(code = 1000): void {
       if (this.readyState === 3) {
         return;
+      }
+      if (this.upload) {
+        times.uploadClosed ??= performance.now();
       }
       this.readyState = 3;
       setTimeout(() => this.dispatch("close", { code, reason: "" }), 1);
@@ -246,9 +287,11 @@ const scriptedExtender = (script: Script) => {
   }
 
   const reportUpload = async () => {
-    for (const report of script.uploaded) {
-      await sleep(script.gapMs ?? 1);
+    for (const { afterMs, ...scripted } of script.uploaded) {
+      await sleep(afterMs === undefined ? (script.gapMs ?? 1) : Math.max(0, times.uploadFirst! + afterMs - performance.now()));
+      const report = script.countBytes && scripted.bytes === undefined ? { ...scripted, bytes: uploadBytes } : scripted;
       reportsSent += 1;
+      reports.push({ at: performance.now(), ms: report.ms as number, bytes: report.bytes as number });
       control?.message({ type: "uploaded", ...report });
     }
     if (script.early) {
@@ -263,12 +306,18 @@ const scriptedExtender = (script: Script) => {
     sent,
     /** its `received` reports, with performance.now() when each was sent */
     received,
+    /** the upload's messages as they were sent, and the reports the extender sent */
+    uploadSends,
+    reports,
+    /** when the first upload message came, an upload socket was first closed, and done came */
+    times,
     /** the `uploaded` reports sent so far */
     reportsSent: () => reportsSent,
   };
 };
 
-// One load against a scripted extender, its download from a schedule.
+// One load against a scripted extender, its download from a schedule. A
+// download-only load's result is what its error says the download measured.
 const runLoad = async (
   script: Script,
   schedule: Schedule,
@@ -291,6 +340,12 @@ const runLoad = async (
   let result: LagLoadResult;
   try {
     result = await session.startLoad();
+    assert.ok(!script.downloadOnly, "a download-only load ran its upload");
+  } catch (error) {
+    if (!(script.downloadOnly && error instanceof LagSessionError && error.code === "protocol" && error.partial !== undefined)) {
+      throw error;
+    }
+    result = error.partial;
   } finally {
     session.close();
     worker.terminate();
@@ -303,11 +358,11 @@ const reportedIntervals = (received: Array<{ bytes: number }>) =>
   received.map((report, i) => report.bytes - (i === 0 ? 0 : received[i - 1].bytes));
 
 /**
- * A download as four streams deliver it, the spread spec's model: stream k
- * carries a share w_k / Σw of the rate, each w_k 1 ± 30%, in 16 KiB records.
- * Its first record completes at a random point in its first gap and the
- * rest a gap apart, each up to `jitterMs` late. Times are ms from `start`,
- * up to `untilMs`.
+ * A download as four streams deliver it, the spread spec's model (amendment
+ * 14): stream k carries a share w_k / Σw of the rate, each w_k 1 ± 30%, in
+ * 16 KiB records. Its first record completes at a random point in its first
+ * gap and the rest a gap apart, each up to `jitterMs` late. Times are ms
+ * from `start`, up to `untilMs`.
  */
 const streamSchedule = (
   mbps: number,
@@ -332,64 +387,208 @@ const streamSchedule = (
   return { chunks, ends: [] };
 };
 
-// Rule S over a schedule's chunks (lag.dev/PLAN.md M6), written out on its
-// own: per stream, each chunk spread evenly since the stream's previous one,
-// at most LAG_SPREAD_MAX_MS back and never before the window's first byte;
-// nothing at or after the window's end.
-const ruleS = (chunks: Chunk[], windowMs: number, intervalMs: number): number[] => {
-  const sums: number[] = Array(Math.ceil(windowMs / intervalMs)).fill(0);
+/**
+ * A download at the window's edges, as amendment 15's simulation models it: four
+ * streams start sending together, stream k at a share w_k / Σw of the rate
+ * with each w_k 1 ± 30%, in 16 KiB records, and keep sending well past the
+ * window's end. A stream's first record completes one record's time after
+ * the start, and each record comes up to 3 ms late. With `stallChance`,
+ * each record may begin a stall of 0.2 to 0.6 s, as TCP recovering a lost
+ * packet holds back what came after it, and the records it held come back
+ * to back once it ends, 10 µs apart. Times are ms from `start`, which is the
+ * window's first byte: the first record to arrive on any stream.
+ */
+const edgesSchedule = (mbps: number, seed: number, stallChance: number, start: number): Schedule => {
+  const next = random(seed);
+  const bytesPerMs = (mbps * 1e6) / 8 / 1000;
+  const weights = [0, 1, 2, 3].map(() => 1 + (next() * 2 - 1) * 0.3);
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const chunks: Chunk[] = [];
+  weights.forEach((weight, stream) => {
+    const gap = 16384 / ((bytesPerMs * weight) / total);
+    let held = 0;
+    let stalledUntil = Number.NEGATIVE_INFINITY;
+    for (let t = gap; t < 9500; t += gap) {
+      if (0 < stallChance && stalledUntil < t && next() < stallChance) {
+        stalledUntil = t + 200 + next() * 400;
+      }
+      if (t < stalledUntil) {
+        held += 1;
+        continue;
+      }
+      for (let k = 0; k < held; k += 1) {
+        chunks.push({ stream, at: t + k * 0.01, bytes: 16384 });
+      }
+      held = 0;
+      chunks.push({ stream, at: t + next() * 3, bytes: 16384 });
+    }
+  });
+  chunks.sort((a, b) => a.at - b.at);
   const first = chunks[0].at;
-  const last = new Map<number, number>();
-  for (const chunk of chunks) {
-    const t = chunk.at - first;
-    if (windowMs <= t) {
+  return { chunks: chunks.map((chunk) => ({ ...chunk, at: start + chunk.at - first })), ends: [] };
+};
+
+/**
+ * The counting rules written out on their own, as amendment 15's simulation
+ * writes them (lag.dev/PLAN.md M6, amendments 14 and 15), to hold the client
+ * to. Per
+ * stream, from the window's first byte, the first chunk at time 0:
+ * - a chunk that comes within SPREAD_JOIN_MS of its group's first chunk
+ *   shares the group's span; any other starts a group, whose span starts at
+ *   the stream's previous chunk, at most SPREAD_MAX_MS back;
+ * - a stream's first group waits for its second, then counts at the rate of
+ *   the second's first chunk, at most SPREAD_MAX_MS back, and only from the
+ *   window's first byte on; with no second, by rule S, when its stream ends
+ *   or the window is final;
+ * - only the part of a span before the window's end counts; a stream is
+ *   done SPREAD_JOIN_MS after the first chunk of its first group to begin at
+ *   or after the end, and nothing it reads after counts or places a first
+ *   group it still holds; and nothing that arrives more than SPREAD_MAX_MS
+ *   after the end counts.
+ * Bytes per interval, as fractions.
+ */
+const edgeRules = (schedule: Schedule, windowMs: number, intervalMs: number): number[] => {
+  const sums: number[] = Array(Math.ceil(windowMs / intervalMs)).fill(0);
+  const add = (from: number, to: number, bytes: number) => {
+    if (to <= from) {
+      if (0 <= to && to < windowMs) {
+        sums[Math.floor(to / intervalMs)] += bytes;
+      }
+      return;
+    }
+    for (let i = 0; i < sums.length; i += 1) {
+      const overlap = Math.min(to, windowMs, (i + 1) * intervalMs) - Math.max(from, 0, i * intervalMs);
+      if (0 < overlap) {
+        sums[i] += (bytes * overlap) / (to - from);
+      }
+    }
+  };
+  interface Stream {
+    last: number;
+    groupFirst: number;
+    groupFrom: number;
+    held: { bytes: number; last: number } | null;
+    ended: boolean;
+    doneAt: number;
+  }
+  const streams = new Map<number, Stream>();
+  const placeHeld = (stream: Stream, t2?: number, bytes?: number) => {
+    const { bytes: held, last: t1 } = stream.held!;
+    stream.held = null;
+    if (t2 !== undefined && bytes !== undefined) {
+      add(Math.max(t1 - (held * (t2 - t1)) / bytes, t1 - SPREAD_MAX_MS), t1, held);
+    } else {
+      add(Math.max(0, t1 - SPREAD_MAX_MS), t1, held);
+    }
+  };
+  const first = schedule.chunks[0].at;
+  const events = [
+    ...schedule.chunks.map((chunk) => ({ ...chunk, end: false })),
+    ...schedule.ends.map((end) => ({ ...end, bytes: 0, end: true })),
+  ].sort((a, b) => a.at - b.at || Number(a.end) - Number(b.end));
+  for (const event of events) {
+    const t = event.at - first;
+    if (windowMs + SPREAD_MAX_MS < t) {
+      break;
+    }
+    const stream = streams.get(event.stream);
+    if (event.end) {
+      if (stream?.held) {
+        placeHeld(stream);
+      }
+      streams.set(event.stream, { ...(stream ?? { last: 0, groupFirst: 0, groupFrom: 0, held: null, doneAt: Infinity }), ended: true });
       continue;
     }
-    const from = Math.max(last.get(chunk.stream) ?? 0, t - LAG_SPREAD_MAX_MS);
-    last.set(chunk.stream, t);
-    if (from === t) {
-      sums[Math.floor(t / intervalMs)] += chunk.bytes;
+    if (stream === undefined) {
+      const doneAt = windowMs <= t ? t + SPREAD_JOIN_MS : Infinity;
+      streams.set(event.stream, { last: t, groupFirst: t, groupFrom: t, held: { bytes: event.bytes, last: t }, ended: false, doneAt });
       continue;
     }
-    for (let i = Math.floor(from / intervalMs); i * intervalMs < t; i += 1) {
-      sums[i] += (chunk.bytes * (Math.min(t, (i + 1) * intervalMs) - Math.max(from, i * intervalMs))) / (t - from);
+    if (stream.ended || stream.doneAt < t) {
+      continue;
+    }
+    let from: number;
+    if (t - stream.groupFirst <= SPREAD_JOIN_MS) {
+      if (stream.held) {
+        stream.held.bytes += event.bytes;
+        stream.held.last = t;
+        stream.last = t;
+        continue;
+      }
+      from = stream.groupFrom;
+    } else {
+      if (stream.held) {
+        placeHeld(stream, t, event.bytes);
+      }
+      from = Math.max(stream.last, t - SPREAD_MAX_MS, 0);
+      stream.groupFirst = t;
+      stream.groupFrom = from;
+      if (windowMs <= t && stream.doneAt === Infinity) {
+        stream.doneAt = t + SPREAD_JOIN_MS;
+      }
+    }
+    stream.last = t;
+    add(from, t, event.bytes);
+  }
+  for (const stream of streams.values()) {
+    if (stream.held) {
+      placeHeld(stream);
     }
   }
   return sums;
 };
 
-const ACCURACY_RATES = [0.5, 1, 2, 3, 4, 5, 10, 20, 50];
-const ACCURACY_WINDOW_MS = 5000;
-
-// A 5 s download of a schedule's chunks counted by rule S, as the client
-// counts them (LagIntervalSeries.addRead): from the window's first byte, and
-// nothing at or after its end. Its series in whole bytes.
-const ruleSSeries = (chunks: Chunk[]) => {
-  const series = new LagIntervalSeries({ intervalMs: 250, maxIntervals: ACCURACY_WINDOW_MS / 250 });
+// A schedule's chunks counted by the series as the client counts them
+// (LagIntervalSeries.addRead): from the window's first byte, each read
+// past the end counting what it carried before it, until the window is
+// final. Its series in whole bytes.
+const seriesOf = (chunks: Chunk[], windowMs = 5000, intervalMs = 250) => {
+  const series = new LagIntervalSeries({ intervalMs, maxIntervals: Math.ceil(windowMs / intervalMs), windowMs });
   const first = chunks[0].at;
   for (const chunk of chunks) {
-    const t = chunk.at - first;
-    if (t < ACCURACY_WINDOW_MS) {
-      series.addRead(chunk.stream, t, chunk.bytes);
-    }
+    series.addRead(chunk.stream, chunk.at - first, chunk.bytes);
   }
-  series.extendTo(ACCURACY_WINDOW_MS);
+  series.finish();
+  series.extendTo(windowMs);
   return series;
 };
 
-test("rule S: over 200 downloads at each rate, every p50 is within 2% of the true rate from 1 to 50 Mbps, and their median within 5% at 0.5", (t) => {
+// whole bytes per interval, the floors of the running sum, from fractions
+const wholeBytes = (sums: number[]) => {
+  let total = 0;
+  let before = 0;
+  return sums.map((bytes) => {
+    total += bytes;
+    const through = Math.floor(total + 1e-6);
+    const out = through - before;
+    before = through;
+    return out;
+  });
+};
+
+test("the rules' constants are the spec's", () => {
+  assert.equal(stats.LAG_SPREAD_MAX_MS, SPREAD_MAX_MS);
+  assert.equal(stats.LAG_SPREAD_JOIN_MS, SPREAD_JOIN_MS);
+});
+
+const ACCURACY_RATES = [0.5, 1, 2, 3, 4, 5, 10, 20, 50];
+const ACCURACY_WINDOW_MS = 5000;
+
+test("the counting: over 200 downloads at each rate, every p50 is within 2% of the true rate from 1 to 50 Mbps, and their median within 5% at 0.5", (t) => {
   // Four streams at rates up to 30% apart, with up to 5 ms of jitter, in
-  // 16 KiB records, over a 5 s window of 250 ms intervals: the extender's
-  // own test of rule S reads these too (connect, amendment 14). At 0.5 Mbps
-  // a stream's records come about LAG_SPREAD_MAX_MS apart or more, so one
-  // download's p50 can be several percent off; the median of the 200 is
-  // within 5%. Credited whole to the interval each arrived in, as before,
-  // the same records put the median 4.9% high from 0.5 to 5 Mbps, and single
-  // downloads as much as 48% low at 1 Mbps: steps of one record an interval.
+  // 16 KiB records, over a 5 s window of 250 ms intervals (amendment 14's
+  // model: each stream's first record completes at a random point in its
+  // first gap): the extender's own test of the counting reads these too. At
+  // 0.5 Mbps a stream's records come about LAG_SPREAD_MAX_MS apart or more,
+  // so one download's p50 can be several percent off; the median of the 200
+  // is within 5%. Credited whole to the interval each arrived in, as before
+  // amendment 14, the same records put the median 4.9% high from 0.5 to
+  // 5 Mbps, and single downloads as much as 48% low at 1 Mbps: steps of one
+  // record an interval.
   const rows = ACCURACY_RATES.map((mbps) => {
     const errors: number[] = [];
     for (let seed = 0; seed < 200; seed += 1) {
-      const p50 = ruleSSeries(streamSchedule(mbps, seed, { start: 0, untilMs: 8000 }).chunks).percentiles()!.p50;
+      const p50 = seriesOf(streamSchedule(mbps, seed, { start: 0, untilMs: 8000 }).chunks).percentiles()!.p50;
       errors.push((100 * (p50 - mbps)) / mbps);
     }
     const rank = (p: number) => nearestRank(errors, p)!;
@@ -410,11 +609,11 @@ test("rule S: over 200 downloads at each rate, every p50 is within 2% of the tru
   }
 });
 
-test("the client counts each download chunk by rule S, reports that series, and reads within 2% of the true rate from 1 to 50 Mbps", { timeout: 60_000 }, async (t) => {
+test("the client counts each download chunk by the rules, reports that series, and reads within 2% of the true rate from 1 to 50 Mbps", { timeout: 60_000 }, async (t) => {
   // One download a rate, through the client: each schedule is set in the
-  // past, so the Worker hands it over in one batch and the window closes at
-  // once, and every interval is counted from the same chunks however busy
-  // the machine is.
+  // past, so the Worker hands it over in one batch and the window is final
+  // at once, and every interval is counted from the same chunks however
+  // busy the machine is.
   const hello = { intervalMs: 250, downloadMs: ACCURACY_WINDOW_MS, uploadMs: 250, maxStreams: 4 };
   const rows = await Promise.all(
     ACCURACY_RATES.map(async (mbps, index) => {
@@ -424,12 +623,15 @@ test("the client counts each download chunk by rule S, reports that series, and 
         schedule,
       );
       const download = result.download;
-      // its series is rule S's, give or take a byte for the chunks' times
+      // its series is the rules', as the series counts them and as they are
+      // written out on their own, give or take a byte for the chunks' times
       // on the page's clock
-      const expected = ruleSSeries(schedule.chunks).bytes;
+      const expected = seriesOf(schedule.chunks).bytes;
+      const written = wholeBytes(edgeRules(schedule, ACCURACY_WINDOW_MS, 250));
       assert.equal(download.intervalBytes.length, expected.length);
       download.intervalBytes.forEach((bytes, i) => {
-        assert.ok(Math.abs(bytes - expected[i]) <= 1, `${mbps} Mbps, interval ${i}: ${bytes} bytes, rule S gives ${expected[i]}`);
+        assert.ok(Math.abs(bytes - expected[i]) <= 1, `${mbps} Mbps, interval ${i}: ${bytes} bytes, the series gives ${expected[i]}`);
+        assert.ok(Math.abs(bytes - written[i]) <= 1, `${mbps} Mbps, interval ${i}: ${bytes} bytes, the rules give ${written[i]}`);
       });
       // and what the extender signs is what the browser shows
       assert.deepEqual(reportedIntervals(extender.received), download.intervalBytes, `${mbps} Mbps`);
@@ -447,7 +649,63 @@ test("the client counts each download chunk by rule S, reports that series, and 
   }
 });
 
-test("a download interval is reported once it has settled: with a slow stream, a stream that never opens, and through the window's end", { timeout: 30_000 }, async () => {
+// Amendment 15's acceptance (lag.dev/PLAN.md M6): over 100 downloads a rate,
+// the medians of the p50, the p95 and the first and last intervals, as a
+// share of the true rate, within these. 0.5 Mbps has wider marks: a
+// stream's records come a second or more apart there.
+const EDGES_RATES = [0.5, 1, 2, 3, 5, 10, 20];
+const EDGES_MARKS = { p50: [5, 2], p95: [12, 6], first: [15, 10], last: [15, 10] } as const;
+
+for (const stallChance of [0, 0.03]) {
+  test(`at the window's edges and in bursts, ${stallChance === 0 ? "without stalls" : "with stalls released back to back"}: over 100 downloads at each rate, the median p50, p95 and first and last intervals are the true rate's`, { timeout: 600_000 }, async (t) => {
+    // that simulation's downloads through the client (amendment 15): four streams
+    // start together, so most of the record that opens the window, and of
+    // the first records the others have on their way, arrived before it;
+    // they send on past the window's end, so a record straddles it; and
+    // with stalls, a stream holds its records back for 0.2 to 0.6 s and
+    // releases them back to back. Each load ends after its download, so a
+    // hundred of them run at once.
+    const hello = { intervalMs: 250, downloadMs: 5000, uploadMs: 250, maxStreams: 4 };
+    const rows: Array<{ mbps: number; p50: number; p95: number; first: number; last: number }> = [];
+    for (const mbps of EDGES_RATES) {
+      const runs = await Promise.all(
+        Array.from({ length: 100 }, async (_, seed) => {
+          const schedule = edgesSchedule(mbps, 7919 * seed + Math.round(mbps * 1000) + (stallChance === 0 ? 0 : 1), stallChance, performance.now() - 12_000);
+          const { result, extender } = await runLoad(
+            { hello, uploaded: [], loadResult: {}, downloadOnly: true },
+            schedule,
+          );
+          const { mbps: series, intervalBytes } = result.download;
+          assert.equal(series.length, 20);
+          // what the extender signs is what the browser shows
+          assert.deepEqual(reportedIntervals(extender.received), intervalBytes);
+          const share = (value: number) => (100 * value) / mbps;
+          return {
+            p50: share(nearestRank(series, 50)!),
+            p95: share(nearestRank(series, 95)!),
+            first: share(series[0]),
+            last: share(series[series.length - 1]),
+          };
+        }),
+      );
+      const median = (key: "p50" | "p95" | "first" | "last") => nearestRank(runs.map((run) => run[key]), 50)!;
+      rows.push({ mbps, p50: median("p50"), p95: median("p95"), first: median("first"), last: median("last") });
+    }
+    t.diagnostic(
+      `median over 100 downloads, % of the true rate (p50 p95 first last): ${rows
+        .map((row) => `${row.mbps} Mbps ${[row.p50, row.p95, row.first, row.last].map((value) => value.toFixed(1)).join(" ")}`)
+        .join("; ")}`,
+    );
+    for (const row of rows) {
+      for (const key of ["p50", "p95", "first", "last"] as const) {
+        const mark = EDGES_MARKS[key][row.mbps < 1 ? 0 : 1];
+        assert.ok(Math.abs(row[key] - 100) <= mark, `${row.mbps} Mbps: the median ${key} is ${row[key].toFixed(1)}% of the rate, outside ±${mark}%`);
+      }
+    }
+  });
+}
+
+test("a download interval is reported once it has settled: with a slow stream, a stream that never opens, held first groups, and past the window's end until it is final", { timeout: 30_000 }, async () => {
   // Streams 0 and 1 deliver a 16 KiB record about every 20 ms, stream 2 one
   // every 600 ms, and stream 3 never opens: it ends 300 ms in with nothing.
   // Each stream delivers past the 2 s window, live, from 100 ms after the
@@ -474,18 +732,26 @@ test("a download interval is reported once it has settled: with a slow stream, a
   // one report per interval, each with the interval's final value
   assert.deepEqual(extender.received.map((report) => report.ms), [250, 500, 750, 1000, 1250, 1500, 1750, 2000]);
   assert.deepEqual(reportedIntervals(extender.received), download.intervalBytes);
-  // and that value is rule S's over what the Worker handed over
-  const expected = ruleS(worker.delivered, hello.downloadMs, hello.intervalMs);
+  // and that value is the rules' over what the Worker handed over
+  const expected = edgeRules({ chunks: worker.delivered, ends: schedule.ends }, hello.downloadMs, hello.intervalMs);
   download.intervalBytes.forEach((bytes, i) => {
-    assert.ok(Math.abs(bytes - expected[i]) <= 1, `interval ${i}: ${bytes} bytes, rule S gives ${expected[i]}`);
+    assert.ok(Math.abs(bytes - expected[i]) <= 1, `interval ${i}: ${bytes} bytes, the rules give ${expected[i]}`);
   });
+  // The window was final once streams 0, 1 and 2 were each done, 2 ms after
+  // the first record of their first group to begin after the end: stream
+  // 2's at 2250.7 ms, which straddles the end and counted the part of its
+  // span before it. Done only on a record whose span starts after the end,
+  // it would have waited for the next, at 2850.7.
+  const first = worker.delivered[0].at;
+  assert.equal(first, start);
+  assert.ok(start + 2250.7 + SPREAD_JOIN_MS < worker.closedAt!, `the download closed ${worker.closedAt! - first} ms in, before its window was final`);
+  assert.ok(worker.closedAt! < first + 2850, `the download closed ${worker.closedAt! - first} ms in`);
 
   // Each interval's progress event goes out with its report, carrying its
   // value, at the page's time since the first byte, which an interval
   // waiting to settle does not hold back (the slow stream holds some for
   // hundreds of ms): never ahead of the clock or past the window, never
   // going back, and the window's length once it has closed.
-  const first = worker.delivered[0].at;
   const progress = ofType(events, "progress").filter((event) => event.direction === "download");
   assert.deepEqual(progress.map((event) => event.interval), [0, 1, 2, 3, 4, 5, 6, 7]);
   assert.deepEqual(progress.map((event) => event.bytes), extender.received.map((report) => report.bytes));
@@ -498,7 +764,9 @@ test("a download interval is reported once it has settled: with a slow stream, a
 
   // No interval went out before it settled: by then the clock had passed
   // its end, and each open stream had had a chunk at or after its end, or
-  // 1 s had passed since. Only the reports at the window's close, once the
+  // 1 s had passed since; and a stream whose first group was still held,
+  // waiting for its second, reached no further back than 1 s before the
+  // group's last chunk. Only the reports at the window's close, once the
   // download had settled everything, may come sooner.
   const closedAt = worker.closedAt!;
   let early = 0;
@@ -511,14 +779,104 @@ test("a download interval is reported once it has settled: with a slow stream, a
     assert.ok(end <= report.when, `interval ${i} was reported before its end`);
     for (let stream = 0; stream < 4; stream += 1) {
       const ended = schedule.ends.some((e) => e.stream === stream && e.at <= report.when);
-      const chunkPast = worker.delivered.some((c) => c.stream === stream && end <= c.at && c.at <= report.when);
-      const spreadOver = end + LAG_SPREAD_MAX_MS <= report.when;
+      const seen = worker.delivered.filter((c, k) => c.stream === stream && worker.deliveredAt[k] <= report.when);
+      const chunkPast = seen.some((c) => end <= c.at);
+      const spreadOver = end + SPREAD_MAX_MS <= report.when;
       assert.ok(ended || chunkPast || spreadOver, `interval ${i} was reported while stream ${stream} could still spread into it`);
+      const held = 0 < seen.length && seen.every((c) => c.at - seen[0].at <= SPREAD_JOIN_MS);
+      if (held && !ended) {
+        assert.ok(end <= seen.at(-1)!.at - SPREAD_MAX_MS, `interval ${i} was reported while stream ${stream}'s first group could reach it`);
+      }
     }
   });
   // the slow stream held intervals back, but they settled during the window
   assert.ok(2 <= early, `${early} intervals reported before the window closed`);
 });
+
+test("a stream's first group waits for its second and counts at its rate, and the intervals it can reach wait with it", { timeout: 30_000 }, async () => {
+  // Streams 0 and 1 deliver a 16 KiB record every 25 ms from the first
+  // byte. Stream 2's first record comes 900 ms in and its second 1700 ms
+  // in, so its first counts as having arrived at the second's rate, over
+  // the 800 ms before it: [100, 900]. Until the second comes, that record
+  // could reach back to 1 s before it, past the window's first byte, so no
+  // interval settles. Stream 3 ends at once. The schedule runs live.
+  const hello = { intervalMs: 250, downloadMs: 2000, uploadMs: 250, maxStreams: 4 };
+  const start = performance.now() + 100;
+  const chunks: Chunk[] = [];
+  for (let t = 0; t < 3100; t += 25) {
+    chunks.push({ stream: 0, at: start + t, bytes: 16384 }, { stream: 1, at: start + t + 12.5, bytes: 16384 });
+  }
+  for (const t of [900, 1700, 2500, 3300]) {
+    chunks.push({ stream: 2, at: start + t, bytes: 16384 });
+  }
+  chunks.sort((a, b) => a.at - b.at);
+  const schedule: Schedule = { chunks, ends: [{ stream: 3, at: start + 50 }] };
+  const { result, extender, worker } = await runLoad(
+    { hello, uploaded: [{ bytes: 0, ms: 250, at: 0 }], loadResult: { uploadVerified: true, endReason: "complete" } },
+    schedule,
+  );
+  const secondAt = worker.deliveredAt[worker.delivered.findIndex((c) => c.stream === 2 && c.at === start + 1700)];
+  assert.ok(extender.received[0].when >= secondAt, `interval 0 went out ${secondAt - extender.received[0].when} ms before stream 2's second record came`);
+  // the series is the rules': stream 2's first record over [100, 900]
+  const expected = edgeRules({ chunks: worker.delivered, ends: schedule.ends }, hello.downloadMs, hello.intervalMs);
+  result.download.intervalBytes.forEach((bytes, i) => {
+    assert.ok(Math.abs(bytes - expected[i]) <= 1, `interval ${i}: ${bytes} bytes, the rules give ${expected[i]}`);
+  });
+  // Each stream's first record arrived before the window opened, at the
+  // rate of its second, and counts only from the first byte: none of
+  // stream 0's, which opened the window, and half of stream 1's (12.5 of its
+  // 25 ms). So streams 0 and 1 each count their true rate from the first
+  // interval on, 250 ms of a record per 25 ms, and stream 2 its first
+  // record's share of each interval in [100, 900].
+  const steady = (16384 * 250) / 25;
+  assert.ok(Math.abs(expected[0] - (2 * steady + (16384 * 150) / 800)) < 1e-6, `interval 0: ${expected[0]}`);
+  assert.ok(Math.abs(expected[1] - (2 * steady + (16384 * 250) / 800)) < 1e-6, `interval 1: ${expected[1]}`);
+  assert.deepEqual(reportedIntervals(extender.received), result.download.intervalBytes);
+});
+
+test("the download's window is final once every open stream is done, 2 ms after its first group past the end, or 1 s after the end", { timeout: 30_000 }, async () => {
+  // Stream k delivers a record every 200 ms from 25 + 50k ms, so each has
+  // one record that straddles the 1 s window's end, at 1025 + 50k ms, and is
+  // done 2 ms after it: the window is final at 1177 ms. Done only on a
+  // record whose span starts after the end, each would wait for its next,
+  // until 1375 ms. Then, the same but with stream 1 stalled from 800 to
+  // 2600 ms: it has no record past the end that could be its last, so it
+  // holds the window until 1 s past the end.
+  const hello = { intervalMs: 250, downloadMs: 1000, uploadMs: 250, maxStreams: 4 };
+  const run = async (stall: boolean) => {
+    const start = performance.now() + 100;
+    const chunks: Chunk[] = [];
+    for (let stream = 0; stream < 4; stream += 1) {
+      for (let t = 25 + 50 * stream; t < 3000; t += 200) {
+        if (!(stall && stream === 1 && 800 < t && t < 2600)) {
+          chunks.push({ stream, at: start + t, bytes: 16384 });
+        }
+      }
+    }
+    chunks.sort((a, b) => a.at - b.at);
+    const schedule: Schedule = { chunks, ends: [] };
+    const { result, extender, worker } = await runLoad(
+      { hello, uploaded: [{ bytes: 0, ms: 250, at: 0 }], loadResult: { uploadVerified: true, endReason: "complete" } },
+      schedule,
+    );
+    const expected = edgeRules({ chunks: worker.delivered, ends: [] }, hello.downloadMs, hello.intervalMs);
+    result.download.intervalBytes.forEach((bytes, i) => {
+      assert.ok(Math.abs(bytes - expected[i]) <= 1, `interval ${i}: ${bytes} bytes, the rules give ${expected[i]}`);
+    });
+    assert.deepEqual(reportedIntervals(extender.received), result.download.intervalBytes);
+    return { result, closed: worker.closedAt! - start };
+  };
+  const steady = await run(false);
+  // the close follows the last stream's done time, a Worker batch or so on
+  assert.ok(1177 < steady.closed && steady.closed < 1360, `the download closed ${steady.closed} ms in`);
+  // the records that straddle the end counted their parts before it, so the
+  // last interval is whole: 250 ms at 4 x 16 KiB per 200 ms
+  const full = (4 * 16384 * 250) / 200;
+  assert.ok(Math.abs(steady.result.download.intervalBytes[3] - full) < 2, `the last interval holds ${steady.result.download.intervalBytes[3]} of ${full}`);
+  const stalled = await run(true);
+  assert.ok(1000 + SPREAD_MAX_MS <= stalled.closed && stalled.closed < 1000 + SPREAD_MAX_MS + 500, `the download closed ${stalled.closed} ms in`);
+});
+
 
 const uploadHello = { intervalMs: 250, downloadMs: 250, uploadMs: 1000, maxStreams: 2 };
 
@@ -736,3 +1094,353 @@ test("an upload series the extender sends malformed is set aside for the browser
     assert.deepEqual({ ...result.upload, startedAt: undefined }, { ...own, startedAt: undefined }, `uploadBytes ${JSON.stringify(malformed[i])}`);
   });
 });
+
+// The upload's window end on the page's clock as the extender's reports
+// place it (lag.dev/PLAN.md M4, S5, amendment 15): the least, over the
+// reports, of when one arrived less its ms, less half the session's lowest
+// round trip, plus uploadMs. The scripted extender's reports reach the page
+// as they are sent.
+const estimatedEnd = (reports: Array<{ at: number; ms: number }>, rttMs: number, uploadMs: number) =>
+  Math.min(...reports.map((report) => report.at - report.ms)) - rttMs / 2 + uploadMs;
+
+test("the upload sends past its own uploadMs until the extender's report says the window is over, and closes on that report", { timeout: 30_000 }, async () => {
+  // The extender's window opens 320 ms after the first message goes, as
+  // far as its reports show, and is final 400 ms after its end: its
+  // reports come 320 ms after their ms, and the one that says the window
+  // is over 1720 ms after the first message. Each report counts every byte
+  // sent, so flow control never holds the streams back for long.
+  const { result, extender } = await runLoad(
+    {
+      hello: uploadHello,
+      rtts: [40],
+      countBytes: true,
+      uploaded: [
+        { ms: 250, at: 245, afterMs: 570 },
+        { ms: 500, at: 495, afterMs: 820 },
+        { ms: 750, at: 745, afterMs: 1070 },
+        { ms: 1000, at: 1000, afterMs: 1720 },
+      ],
+      loadResult: { uploadVerified: true, endReason: "complete" },
+    },
+    briefDownload(),
+  );
+  const { times, uploadSends, reports } = extender;
+  const first = times.uploadFirst!;
+  const over = reports.at(-1)!.at;
+  // the streams sent on past uploadMs by their own clock, up to the report
+  const late = uploadSends.filter((send) => first + uploadHello.uploadMs + 50 < send.at).reduce((sum, send) => sum + send.bytes, 0);
+  assert.ok(0 < late, "nothing was sent after uploadMs by the page's clock");
+  // they closed on the report, and nothing went after
+  assert.ok(times.uploadClosed !== undefined && over <= times.uploadClosed, `the streams closed ${over - times.uploadClosed!} ms before the report`);
+  assert.ok(times.uploadClosed - over < 100, `the streams closed ${times.uploadClosed - over} ms after the report`);
+  assert.ok(uploadSends.every((send) => send.at <= times.uploadClosed!));
+  // done follows, and the load is whole
+  assert.ok(times.done !== undefined && over <= times.done);
+  assert.equal(result.endReason, "complete");
+  assert.equal(result.upload.durationMs, 1000);
+});
+
+test("with no report that the window is over, the upload closes 2 s after its end as the reports place it: the earliest arrival less ms, less half the lowest round trip, plus uploadMs", { timeout: 30_000 }, async () => {
+  // Reports at ms 250, 500 and 750, the first 600 ms after its time, the
+  // others 1400 and 1200 ms after theirs, and the session's lowest round
+  // trip 100 ms: the end is placed by the first, 600 - 50 + 1000 ms after
+  // the first message, and the streams close 2 s after that. Placed by the
+  // latest report, they would close 600 ms later; by the page's own start,
+  // 550 ms sooner.
+  const { result, extender } = await runLoad(
+    {
+      hello: uploadHello,
+      rtts: [180, 100, 140],
+      uploaded: [
+        { bytes: 100_000, ms: 250, at: 250, afterMs: 850 },
+        { bytes: 200_000, ms: 500, at: 500, afterMs: 1900 },
+        { bytes: 300_000, ms: 750, at: 750, afterMs: 1950 },
+      ],
+      loadResult: { uploadVerified: true, endReason: "complete" },
+    },
+    briefDownload(),
+  );
+  const { times, reports, uploadSends } = extender;
+  const close = estimatedEnd(reports, 100, 1000) + 2000;
+  assert.ok(close - 2 <= times.uploadClosed!, `the streams closed ${close - times.uploadClosed!} ms before the end's estimate allowed`);
+  assert.ok(times.uploadClosed! < close + 550, `the streams closed ${times.uploadClosed! - close} ms after the end's estimate allowed`);
+  assert.ok(times.done !== undefined && close - 2 <= times.done);
+  assert.ok(uploadSends.every((send) => send.at <= times.uploadClosed!));
+  assert.equal(result.endReason, "complete");
+});
+
+test("with no report at all, the upload closes 2 s after its own start plus uploadMs, having sent what it may before the first", { timeout: 30_000 }, async () => {
+  const { result, extender } = await runLoad(
+    { hello: uploadHello, uploaded: [], loadResult: { uploadVerified: true, endReason: "complete" } },
+    briefDownload(),
+  );
+  const { times, uploadSends } = extender;
+  const first = times.uploadFirst!;
+  // the page's start is a little before its first message went
+  assert.ok(first + 1000 + 2000 - 100 <= times.uploadClosed!, `the streams closed ${times.uploadClosed! - first} ms after the first message`);
+  assert.ok(times.uploadClosed! < first + 1000 + 2000 + 550, `the streams closed ${times.uploadClosed! - first} ms after the first message`);
+  // sixteen messages before the first report (S5)
+  assert.ok(uploadSends.reduce((sum, send) => sum + send.bytes, 0) <= 16 * 65536);
+  assert.equal(result.endReason, "complete");
+});
+
+/**
+ * A link and an extender of amendment 15, for the upload (lag.dev/PLAN.md
+ * M4, M6): the page's upload sockets queue what they are sent; a bottleneck
+ * of `mbps` drains them in 16 KiB records, one from each stream with bytes
+ * queued in turn; each record reaches the extender `oneWayMs` later, as its
+ * messages reach the page. The extender counts each record by rule S on its
+ * stream, one within 2 ms of its group's first sharing the group's span,
+ * and past the window's end only the part before it. It reports every
+ * interval of its window but the last half one, and says the window is over
+ * once every stream is done, 2 ms after the first record of its first group
+ * to begin at or after the end, or 1 s after the end. It does not hold a
+ * stream's first group, which shapes only the first interval. A socket's
+ * bufferedAmount is what it has queued past a 128 KiB send buffer.
+ */
+const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: number; uploadMs: number }) => {
+  const intervalMs = 250;
+  const rate = (mbps * 1e6) / 8 / 1000;
+  const timers: Array<ReturnType<typeof setTimeout>> = [];
+  const later = (ms: number, action: () => void) => {
+    timers.push(setTimeout(action, Math.max(0, ms)));
+  };
+  let control: LinkedSocket | undefined;
+  const uploads: LinkedSocket[] = [];
+  const arrivals: Array<{ at: number; stream: number; bytes: number }> = [];
+  let linkFree = 0;
+  let turn = 0;
+  const series: number[] = Array(Math.ceil(uploadMs / intervalMs)).fill(0);
+  const streams = new Map<number, { last: number; groupFirst: number; groupFrom: number; doneAt: number }>();
+  const stats = {
+    sent: 0,
+    counted: 0,
+    series,
+    first: undefined as number | undefined,
+    windowOverAt: undefined as number | undefined,
+    closedAt: undefined as number | undefined,
+    doneAt: undefined as number | undefined,
+  };
+  let lastCounted = 0;
+
+  type Listener = (event: Record<string, unknown>) => void;
+  class LinkedSocket {
+    binaryType = "blob";
+    readyState = 0;
+    queued = 0;
+    readonly url: string;
+    readonly stream: number;
+    private readonly listeners = new Map<string, Set<Listener>>();
+
+    constructor(url: string) {
+      this.url = url;
+      const isControl = url.includes("/lag/v1/session?");
+      this.stream = url.includes("/lag/v1/up?") ? Number(/stream=(\d+)/.exec(url)![1]) : -1;
+      if (isControl) {
+        control = this;
+      } else if (0 <= this.stream) {
+        uploads.push(this);
+      }
+      setTimeout(() => {
+        if (this.readyState !== 0) {
+          return;
+        }
+        this.readyState = 1;
+        this.dispatch("open", {});
+        if (isControl) {
+          this.message({ type: "hello", session: "c2Vzc2lvbg", uploadKey: "AAAAAAAAAAAAAAAAAAAAAA", pingIntervalMs: 250, intervalMs, downloadMs: 250, uploadMs, maxStreams: 4 });
+          this.message({ type: "rtt", t: 0, ms: 2 * oneWayMs });
+        }
+      }, 1);
+    }
+
+    get bufferedAmount(): number {
+      return Math.max(0, this.queued - 131_072);
+    }
+
+    addEventListener(type: string, listener: Listener): void {
+      if (!this.listeners.has(type)) {
+        this.listeners.set(type, new Set());
+      }
+      this.listeners.get(type)!.add(listener);
+    }
+
+    removeEventListener(type: string, listener: Listener): void {
+      this.listeners.get(type)?.delete(listener);
+    }
+
+    send(data: string | Uint8Array): void {
+      if (typeof data !== "string") {
+        this.queued += data.byteLength;
+        stats.sent += data.byteLength;
+        return;
+      }
+      const message = JSON.parse(data) as Record<string, unknown>;
+      if (message.type === "load" && message.phase === "done") {
+        stats.doneAt ??= performance.now();
+        const uploadBytes = series.map((bytes) => Math.round(bytes));
+        later(oneWayMs, () => control?.message({ type: "loadResult", uploadVerified: true, endReason: "complete", uploadBytes }));
+      }
+    }
+
+    close(): void {
+      if (this.readyState === 3) {
+        return;
+      }
+      if (0 <= this.stream) {
+        stats.closedAt ??= performance.now();
+      }
+      this.readyState = 3;
+      setTimeout(() => this.dispatch("close", { code: 1000, reason: "" }), 1);
+    }
+
+    message(value: Record<string, unknown>): void {
+      if (this.readyState === 1) {
+        this.dispatch("message", { data: JSON.stringify(value) });
+      }
+    }
+
+    private dispatch(type: string, event: Record<string, unknown>): void {
+      for (const listener of [...(this.listeners.get(type) ?? [])]) {
+        listener(event);
+      }
+    }
+  }
+
+  const report = (ms: number) => {
+    const message = { type: "uploaded", bytes: Math.floor(stats.counted), ms, at: Math.min(ms, lastCounted) };
+    later(oneWayMs, () => control?.message(message));
+  };
+  const windowOver = () => {
+    if (stats.windowOverAt === undefined) {
+      stats.windowOverAt = performance.now() + oneWayMs;
+      report(uploadMs);
+    }
+  };
+  const count = (from: number, to: number, bytes: number) => {
+    series.forEach((_, i) => {
+      const overlap = Math.min(to, uploadMs, (i + 1) * intervalMs) - Math.max(from, i * intervalMs);
+      if (0 < overlap) {
+        series[i] += (bytes * overlap) / (to - from);
+        stats.counted += (bytes * overlap) / (to - from);
+      }
+    });
+  };
+  const receive = (arrival: number, k: number, bytes: number) => {
+    if (stats.first === undefined) {
+      stats.first = arrival;
+      for (let ms = intervalMs; ms < uploadMs - intervalMs / 2; ms += intervalMs) {
+        later(arrival + ms - performance.now(), () => report(ms));
+      }
+      later(arrival + uploadMs + SPREAD_MAX_MS - performance.now(), windowOver);
+    }
+    const t = arrival - stats.first;
+    let stream = streams.get(k);
+    if (stats.windowOverAt !== undefined || (stream !== undefined && stream.doneAt < t)) {
+      return;
+    }
+    let from: number;
+    if (stream !== undefined && t - stream.groupFirst <= SPREAD_JOIN_MS) {
+      from = stream.groupFrom;
+    } else {
+      from = Math.max(stream?.last ?? 0, t - SPREAD_MAX_MS, 0);
+      const doneAt = stream?.doneAt ?? Infinity;
+      stream = { last: t, groupFirst: t, groupFrom: from, doneAt: doneAt === Infinity && uploadMs <= t ? t + SPREAD_JOIN_MS : doneAt };
+      streams.set(k, stream);
+    }
+    stream.last = t;
+    if (from < t) {
+      count(from, t, bytes);
+    } else if (t < uploadMs) {
+      series[Math.floor(t / intervalMs)] += bytes;
+      stats.counted += bytes;
+    }
+    lastCounted = Math.min(t, uploadMs);
+  };
+  // every 2 ms the link drains what it could have since the last time, and
+  // the records due by now arrive; while it has nothing queued it idles
+  const ticker = setInterval(() => {
+    const now = performance.now();
+    while (linkFree <= now) {
+      const queued = uploads.filter((upload) => 0 < upload.queued);
+      if (queued.length === 0) {
+        linkFree = now;
+        break;
+      }
+      const upload = queued[turn % queued.length];
+      turn += 1;
+      const bytes = Math.min(16384, upload.queued);
+      upload.queued -= bytes;
+      linkFree += bytes / rate;
+      arrivals.push({ at: linkFree + oneWayMs, stream: upload.stream, bytes });
+    }
+    arrivals.sort((a, b) => a.at - b.at);
+    while (0 < arrivals.length && arrivals[0].at <= now) {
+      const arrival = arrivals.shift()!;
+      receive(arrival.at, arrival.stream, arrival.bytes);
+    }
+    // the window is final once every stream is done
+    const elapsed = stats.first === undefined ? 0 : now - stats.first;
+    if (uploadMs <= elapsed && uploads.every((upload) => (streams.get(upload.stream)?.doneAt ?? Infinity) < elapsed)) {
+      windowOver();
+    }
+  }, 2);
+  const stop = () => {
+    clearInterval(ticker);
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+  };
+  return { WebSocket: LinkedSocket as unknown as typeof WebSocket, stats, stop };
+};
+
+for (const mbps of [20, 4]) {
+  test(`over a ${mbps} Mbps link, the upload fills the extender's window to its end, and sends past it only until the window is final`, { timeout: 60_000 }, async (t) => {
+    // A 5 s window over a path of 50 ms. The streams send on past the
+    // window's end until the extender's report says it is over, so that each
+    // stream has a record that straddles the end and fills it: by this
+    // model, amendment 14's client, which stopped at its own uploadMs, left
+    // the last interval at 86% of the link at 20 Mbps and 65-73% at
+    // 4 Mbps, and sent no more than was counted. What goes after the end
+    // and is not counted is the price: the time until every stream is done,
+    // and a round trip, at the link's rate. That is 2-4% at 20 Mbps, and
+    // 9-12% at 4 Mbps, where a stream waits for its turn of the 64 KiB
+    // messages, dealt in turn, for its first record past the end: some
+    // 0.5 s for the last of the four.
+    const uploadMs = 5000;
+    const link = linkedExtender({ mbps, oneWayMs: 25, uploadMs });
+    const worker = new ScheduleWorker(briefDownload());
+    const session = openLagSession({ host: "extender.test", ticket: "ticket", WebSocket: link.WebSocket, downloadWorker: () => worker as unknown as Worker });
+    let result: LagLoadResult;
+    try {
+      await session.ready;
+      result = await session.startLoad();
+    } finally {
+      session.close();
+      worker.terminate();
+      link.stop();
+    }
+    const { stats } = link;
+    const capacity = (mbps * 1e6 * uploadMs) / 8 / 1000;
+    const perInterval = capacity / (uploadMs / 250);
+    const overshoot = (stats.sent - stats.counted) / stats.counted;
+    const last = stats.series.at(-1)! / perInterval;
+    const end = stats.first! + uploadMs;
+    t.diagnostic(
+      `counted ${(stats.counted / capacity * 100).toFixed(1)}% of the link; p50 ${result.upload.percentiles!.p50.toFixed(3)} Mbps; last interval ${(last * 100).toFixed(0)}%; ` +
+        `sent ${(overshoot * 100).toFixed(1)}% more than counted; window over ${Math.round(stats.windowOverAt! - end)} ms after its end`,
+    );
+    // the link was full through the window, and its last interval too: the
+    // p50 says so however busy the machine is, the bytes counted unless the
+    // machine starved the streams for a while
+    assert.ok(Math.abs(result.upload.percentiles!.p50 - mbps) <= mbps * 0.03, `p50 ${result.upload.percentiles!.p50}`);
+    assert.ok(0.9 <= stats.counted / capacity, `counted ${stats.counted} of ${capacity}`);
+    assert.ok((mbps < 10 ? 0.7 : 0.85) <= last, `the last interval holds ${(last * 100).toFixed(0)}% of the link`);
+    // the streams closed on the report that the window was over, within 1 s
+    // of its end, and done followed
+    assert.ok(stats.windowOverAt! - end <= SPREAD_MAX_MS + 100, `the window was over ${stats.windowOverAt! - end} ms after its end`);
+    assert.ok(stats.windowOverAt! - 5 <= stats.closedAt! && stats.closedAt! - stats.windowOverAt! < 100, `the streams closed ${stats.closedAt! - stats.windowOverAt!} ms after the report`);
+    assert.ok(stats.closedAt! <= stats.doneAt!);
+    assert.ok(overshoot <= (mbps < 10 ? 0.15 : 0.08), `sent ${(overshoot * 100).toFixed(1)}% more than was counted`);
+  });
+}

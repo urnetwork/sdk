@@ -126,7 +126,24 @@ test("a session pings from hello until close()", { timeout: 20_000 }, async () =
 
 test("a load runs the download, then the upload, while the pings go on", { timeout: 30_000 }, async () => {
   await withMock({ uploadBytesPerSecond: 16 << 20 }, async (mock) => {
-    const { session, events } = open(mock, "ticket-load");
+    // when the page made its first upload socket, and sent the upload message
+    let firstUploadSocketAt: number | undefined;
+    let uploadMessageAt: number | undefined;
+    class TimedWebSocket extends WebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (String(url).includes("/lag/v1/up")) {
+          firstUploadSocketAt ??= performance.now();
+        }
+      }
+      send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+        if (typeof data === "string" && data.includes('"phase":"upload"')) {
+          uploadMessageAt ??= performance.now();
+        }
+        super.send(data);
+      }
+    }
+    const { session, events } = open(mock, "ticket-load", { WebSocket: TimedWebSocket });
     await session.ready;
     await waitFor(() => ofType(events, "rtt").length >= 2, "pings before the load");
     const result = await session.startLoad();
@@ -170,9 +187,10 @@ test("a load runs the download, then the upload, while the pings go on", { timeo
     assertProgressTime(downloadProgress, 1000);
 
     // upload: four streams of whole 64 KiB messages, verified; its sockets
-    // began to open before the download's window ended, and waited at the
-    // extender for the upload message
-    assert.ok(0 < record.uploadEarly, "no upload socket came before the upload message");
+    // began to open shortly before the download's window ended, so before
+    // the upload message, to wait for it at the extender (how punctually,
+    // and how soon one gets there, is up to this machine)
+    assert.ok(firstUploadSocketAt !== undefined && uploadMessageAt !== undefined && firstUploadSocketAt < uploadMessageAt, "no upload socket was opened before the upload message");
     assert.equal(record.mismatch, false);
     assert.equal(record.uploadStreams, 4);
     assert.equal(result.upload.streams, 4);
@@ -245,11 +263,14 @@ for (const code of ["busy", "budget"] as const) {
   });
 }
 
-test("the download ends at its window: streams still delivering are cut and the upload starts at once", { timeout: 30_000 }, async () => {
+test("the download ends once its window is final: streams still delivering are cut and the upload starts at once", { timeout: 30_000 }, async () => {
   // The extender keeps writing every stream 3 s past a 2 s window; a gentle
   // pace keeps the mock, which shares this event loop, from delaying
-  // timers. A 500 ms interval leaves room for a busy machine's scheduling
-  // in a bound of one interval.
+  // timers. Each stream writes every 20 ms, so each is done, 2 ms after its
+  // first write past the window's end, within some 25 ms of it, and the
+  // window is final then (M6, amendment 15), far sooner than the 1 s a
+  // stream that stopped could hold it. A 500 ms interval leaves room for a
+  // busy machine's scheduling in a bound of two intervals.
   const options = {
     hello: { intervalMs: 500, downloadMs: 2000 },
     downloadOverrunMs: 3000,
@@ -281,13 +302,15 @@ test("the download ends at its window: streams still delivering are cut and the 
     assert.equal(result.endReason, "complete");
     assert.equal(result.uploadVerified, true);
 
-    // the upload's first message goes out within an interval of the
-    // download window's end, downloadMs from its first byte
+    // the upload's first message goes out within two intervals of the
+    // download window's end, downloadMs from its first byte: the window is
+    // final tens of ms after it, and the upload's sockets have had 250 ms
+    // before it to open
     const windowEnd = result.download.startedAt! + hello.downloadMs;
     const gap = phases[1].at - windowEnd;
     assert.ok(observedEnd !== undefined);
     const reaction = phases[1].at - observedEnd;
-    assert.ok(reaction <= hello.intervalMs, `the upload began ${reaction} ms after the window was seen to end (${gap} ms by the clock)`);
+    assert.ok(reaction <= 2 * hello.intervalMs, `the upload began ${reaction} ms after the window was seen to end (${gap} ms by the clock)`);
     // and nowhere near the 2 s a client that waited out trailing bytes would take
     assert.ok(-2 <= gap && gap < 1500, `the upload began ${gap} ms after the download window`);
     assert.equal(phases[1].at, result.upload.startedAt);
@@ -295,7 +318,8 @@ test("the download ends at its window: streams still delivering are cut and the 
     // every stream was still delivering, and the browser cut each one
     assert.equal(record.downloadCutByBrowser, 4);
     assert.ok(result.download.bytes < record.downloadBytes);
-    // the series holds the window's intervals and nothing past it, and the
+    // the series holds the window's intervals and nothing past it, though
+    // chunks past the end counted what they carried before it, and the
     // reports end with the window's last interval
     assert.equal(result.download.mbps.length, hello.downloadMs / hello.intervalMs);
     const inIntervals = result.download.intervalBytes.reduce((a, b) => a + b, 0);
@@ -672,6 +696,51 @@ for (const [perStream, uploadMs] of [
     });
   });
 }
+
+test("the upload's streams stay open past the window's end until the extender says it is over, then close on it", { timeout: 30_000 }, async () => {
+  // An extender of amendment 15 says its upload window is over only once
+  // the window is final, which can be 1 s after its end (M4, M6); here it
+  // waits 700 ms. The browser's streams send until that report, rather than
+  // for uploadMs by its own clock, then close at once, and done follows.
+  await withMock({ uploadBytesPerSecond: 1 << 20, uploadFinal: true, uploadWindowOverDelayMs: 700 }, async (mock) => {
+    let sentPastEnd = 0;
+    let closedAt: number | undefined;
+    class CountingWebSocket extends WebSocket {
+      send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+        const first = mock.sessions[0]?.uploadFirstAt;
+        if (typeof data !== "string" && first !== undefined && first + 1000 < performance.now()) {
+          sentPastEnd += (data as ArrayBufferView).byteLength;
+        }
+        super.send(data);
+      }
+      close(code?: number, reason?: string) {
+        if (this.url.includes("/lag/v1/up")) {
+          closedAt ??= performance.now();
+        }
+        super.close(code, reason);
+      }
+    }
+    const { session } = open(mock, "ticket-late-over", { WebSocket: CountingWebSocket });
+    await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.uploadVerified, true);
+    assert.equal(result.endReason, "complete");
+    const end = record.uploadFirstAt! + 1000;
+    const over = record.uploadWindowOverAt!;
+    assert.ok(700 <= over - end, `the window-over report went ${over - end} ms after the end`);
+    // the streams sent on past the window's end, and closed on the report
+    assert.ok(0 < sentPastEnd, "nothing was sent past the window's end");
+    assert.ok(closedAt !== undefined && over <= closedAt, `the streams closed ${over - closedAt!} ms before the report`);
+    assert.ok(closedAt! - over < 300, `the streams closed ${closedAt! - over} ms after the report`);
+    // the report's bytes are the window's, and the result's series is the
+    // extender's
+    assert.equal(record.uploadReports.at(-1)!.ms, 1000);
+    assert.equal(result.upload.bytes, record.uploadReports.at(-1)!.bytes);
+    assert.deepEqual(result.upload.intervalBytes, record.uploadBytes.slice(0, 4));
+    session.close();
+  });
+});
 
 test("the upload keeps bufferedAmount under its cap on a slow uplink", { timeout: 30_000 }, async () => {
   await withMock({ uploadBytesPerSecond: 2 << 20 }, async (mock) => {
