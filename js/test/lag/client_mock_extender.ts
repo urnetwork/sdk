@@ -328,8 +328,8 @@ export interface MockExtenderOptions {
    * M6): a message that arrives after the window's end counts the part of
    * its span before the end, no progress goes out in the window's last half
    * interval, and the report that says the window is over goes out only once
-   * the window is final: once every upload stream still open has had a
-   * message whose span starts at or after the end, or 1 s after the end.
+   * the window is final: once every upload stream still open is done, 2 ms
+   * after its first message at or after the end, or 1 s after the end.
    * Without it, that report goes out at the end, and nothing after the end
    * counts, as before.
    */
@@ -946,6 +946,9 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
     let lastSize = 65536;
     // when this stream's previous message arrived, ms after the first byte
     let previous = 0;
+    // uploadFinal: its first message at or after the window's end has come,
+    // and the stream is done 2 ms on
+    let pastEnd = false;
     ws.onBinary = (data) => {
       if (state.phase !== "upload") {
         return;
@@ -993,8 +996,8 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
       }
       // M6: verified, the message counts at once by rule S; at or after the
       // window's end it counts nothing, or with uploadFinal, only the part
-      // of its span before the end, and the stream is done once a message's
-      // span starts at or after it
+      // of its span before the end, and the stream is done 2 ms after its
+      // first message there (amendment 15)
       const t = now - state.uploadFirst;
       const from = Math.max(previous, t - SPREAD_MAX_MS);
       if (t < hello.uploadMs) {
@@ -1006,12 +1009,16 @@ export async function startMockExtender(options: MockExtenderOptions = {}): Prom
         if (from < hello.uploadMs) {
           const counted = Math.round((data.length * (hello.uploadMs - from)) / (t - from));
           addSpread(state.uploadSeries, hello.intervalMs, from, hello.uploadMs, counted);
-          previous = t;
           state.uploadAt = hello.uploadMs;
           record.uploadVerifiedBytes += counted;
-        } else {
-          state.uploadDone.add(ws);
-          checkUploadFinal(state);
+        }
+        previous = t;
+        if (!pastEnd) {
+          pastEnd = true;
+          later(state, 2, () => {
+            state.uploadDone.add(ws);
+            checkUploadFinal(state);
+          });
         }
       }
       const rate = options.uploadBytesPerSecond;

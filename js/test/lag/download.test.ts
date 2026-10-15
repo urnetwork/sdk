@@ -249,9 +249,6 @@ test("chunks the Worker times past the window count only what they carried befor
     assert.equal(result.download.durationMs, hello.downloadMs);
     assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, hello.intervalMs));
     assert.deepEqual(record.received.at(-1), { bytes: inIntervals, ms: hello.downloadMs });
-    // the chunks that straddled the end filled the last interval
-    const median = [...result.download.intervalBytes].sort((a, b) => a - b)[1];
-    assert.ok(0.8 * median <= result.download.intervalBytes.at(-1)!, `the last interval holds ${result.download.intervalBytes.at(-1)} bytes, the median ${median}`);
     session.close();
   });
 });

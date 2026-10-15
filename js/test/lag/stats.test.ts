@@ -496,7 +496,7 @@ test("interval series: a first group with no second counts by rule S when its st
   // the window's first byte
   series.addRead(1, 400, 2000);
   series.endStream(1);
-  assert.equal(series.streamDone(1), true);
+  assert.equal(series.streamDone(1, 0), true);
   // nothing it reads after its end counts
   series.addRead(1, 450, 2000);
   // a stream still holding its first group when the window is final
@@ -520,32 +520,44 @@ test("interval series: a first group with no second counts by rule S when its st
   assert.deepEqual(intervals(single, 4), [777, 0, 0, 0]);
 });
 
-test("interval series: past the window's end, a read counts its part before it, a stream whose span starts after it is done, and a read 1 s past it makes the window final", () => {
+test("interval series: past the window's end, a read counts its part before it, a stream is done 2 ms after its first group to begin after the end, and a read 1 s past it makes the window final", () => {
   const series = new LagIntervalSeries({ maxIntervals: 4, windowMs: 1000 });
   series.addRead(0, 0, 100);
   series.addRead(0, 900, 900);
-  // straddling the end: half of [900, 1100] is before it
+  // straddling the end, the first group to begin after it: half of
+  // [900, 1100] is before the end, and the stream is done 2 ms after 1100
   series.addRead(0, 1100, 2000);
-  assert.equal(series.streamDone(0), false);
+  assert.equal(series.streamDoneAt(0), 1100 + LAG_SPREAD_JOIN_MS);
+  assert.equal(series.streamDone(0, 1101), false);
   // joining that group, from 900: 100 of its 201 ms are before the end
   series.addRead(0, 1101, 500);
-  // a new group from 1101: after the end, so the stream is done
+  assert.equal(series.streamDone(0, 1102), false);
+  // done once those 2 ms are over, with no read needed to show it; a read
+  // after counts nothing
+  assert.equal(series.streamDone(0, 1102.5), true);
   series.addRead(0, 1200, 700);
-  assert.equal(series.streamDone(0), true);
-  series.addRead(0, 1300, 700);
+  // a stream whose first group begins after the end is done 2 ms after it
+  // too, and its next group, after that, cannot place the first: it counts
+  // by rule S when the window is final, over [300, 1300]
+  series.addRead(3, 1300, 3000);
+  series.addRead(3, 1400, 100);
+  assert.equal(series.streamDone(3, 1400), true);
   // a first group held after the end, which may still reach back before it
   series.addRead(1, 1500, 4000);
+  assert.equal(series.streamDone(1, 1501), false);
   assert.equal(series.finished, false);
   // a read more than 1 s past the end could not: the window is final, and
-  // the held group counts by rule S, over [500, 1500]
+  // the held groups count by rule S, stream 1's over [500, 1500]
   series.addRead(2, 2000.5, 100);
   assert.equal(series.finished, true);
+  assert.equal(series.streamDone(1, 1501), true);
   const expected = [0, 1, 2, 3].map((i) => {
     const [lo, hi] = [i * 250, (i + 1) * 250];
     return (
       share(0, 900, 900, lo, hi) +
       share(900, 1100, 2000, lo, Math.min(hi, 1000)) +
       share(900, 1101, 500, lo, Math.min(hi, 1000)) +
+      share(300, 1300, 3000, lo, Math.min(hi, 1000)) +
       share(500, 1500, 4000, lo, Math.min(hi, 1000))
     );
   });
@@ -553,6 +565,7 @@ test("interval series: past the window's end, a read counts its part before it, 
   assert.equal(series.durationMs, 1000);
   assert.equal(series.count, 4);
 });
+
 
 test("interval series: reach says how far back a stream's later reads can still count", () => {
   const series = new LagIntervalSeries({ maxIntervals: 20, windowMs: 5000 });
@@ -570,13 +583,16 @@ test("interval series: reach says how far back a stream's later reads can still 
   assert.equal(series.reach(0, 401), 1.5);
   assert.equal(series.reach(0, 403), 400);
   assert.equal(series.reach(0, 2000), 1000);
-  // a read that straddles the end still reaches back before it, until its
-  // group closes; the next span starts after it, so nothing more can count
+  // a read that straddles the end still reaches back before it until its
+  // group closes, 2 ms on, when the stream is done: the next span starts
+  // after the end, so nothing more can count
   series.addRead(0, 5100, 100);
   assert.equal(series.reach(0, 5101), 4100);
-  assert.equal(series.reach(0, 5103), Number.POSITIVE_INFINITY);
+  assert.equal(series.reach(0, 5102), 4100);
+  assert.equal(series.streamDone(0, 5102), false);
+  assert.equal(series.reach(0, 5102.5), Number.POSITIVE_INFINITY);
+  assert.equal(series.streamDone(0, 5102.5), true);
   series.addRead(0, 5200, 100);
-  assert.equal(series.streamDone(0), true);
   assert.equal(series.reach(0, 5300), Number.POSITIVE_INFINITY);
   // an ended stream, and every stream of a final window, reach nothing
   series.endStream(1);

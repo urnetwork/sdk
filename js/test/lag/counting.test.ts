@@ -440,9 +440,11 @@ const edgesSchedule = (mbps: number, seed: number, stallChance: number, start: n
  *   the second's first chunk, at most SPREAD_MAX_MS back, and only from the
  *   window's first byte on; with no second, by rule S, when its stream ends
  *   or the window is final;
- * - only the part of a span before the window's end counts, a stream whose
- *   span starts at or after it is done, and nothing that arrives more than
- *   SPREAD_MAX_MS after the end counts.
+ * - only the part of a span before the window's end counts; a stream is
+ *   done SPREAD_JOIN_MS after the first chunk of its first group to begin at
+ *   or after the end, and nothing it reads after counts or places a first
+ *   group it still holds; and nothing that arrives more than SPREAD_MAX_MS
+ *   after the end counts.
  * Bytes per interval, as fractions.
  */
 const edgeRules = (schedule: Schedule, windowMs: number, intervalMs: number): number[] => {
@@ -466,7 +468,8 @@ const edgeRules = (schedule: Schedule, windowMs: number, intervalMs: number): nu
     groupFirst: number;
     groupFrom: number;
     held: { bytes: number; last: number } | null;
-    done: boolean;
+    ended: boolean;
+    doneAt: number;
   }
   const streams = new Map<number, Stream>();
   const placeHeld = (stream: Stream, t2?: number, bytes?: number) => {
@@ -493,14 +496,15 @@ const edgeRules = (schedule: Schedule, windowMs: number, intervalMs: number): nu
       if (stream?.held) {
         placeHeld(stream);
       }
-      streams.set(event.stream, { ...(stream ?? { last: 0, groupFirst: 0, groupFrom: 0, held: null }), done: true });
+      streams.set(event.stream, { ...(stream ?? { last: 0, groupFirst: 0, groupFrom: 0, held: null, doneAt: Infinity }), ended: true });
       continue;
     }
     if (stream === undefined) {
-      streams.set(event.stream, { last: t, groupFirst: t, groupFrom: t, held: { bytes: event.bytes, last: t }, done: false });
+      const doneAt = windowMs <= t ? t + SPREAD_JOIN_MS : Infinity;
+      streams.set(event.stream, { last: t, groupFirst: t, groupFrom: t, held: { bytes: event.bytes, last: t }, ended: false, doneAt });
       continue;
     }
-    if (stream.done) {
+    if (stream.ended || stream.doneAt < t) {
       continue;
     }
     let from: number;
@@ -519,12 +523,11 @@ const edgeRules = (schedule: Schedule, windowMs: number, intervalMs: number): nu
       from = Math.max(stream.last, t - SPREAD_MAX_MS, 0);
       stream.groupFirst = t;
       stream.groupFrom = from;
+      if (windowMs <= t && stream.doneAt === Infinity) {
+        stream.doneAt = t + SPREAD_JOIN_MS;
+      }
     }
     stream.last = t;
-    if (windowMs <= from) {
-      stream.done = true;
-      continue;
-    }
     add(from, t, event.bytes);
   }
   for (const stream of streams.values()) {
@@ -734,14 +737,15 @@ test("a download interval is reported once it has settled: with a slow stream, a
   download.intervalBytes.forEach((bytes, i) => {
     assert.ok(Math.abs(bytes - expected[i]) <= 1, `interval ${i}: ${bytes} bytes, the rules give ${expected[i]}`);
   });
-  // The window was final once streams 0, 1 and 2 had each had a record
-  // whose span starts at or after its end: stream 2's record at 2850.7 ms,
-  // whose span starts at its previous one, at 2250.7. That one, which
-  // straddles the end, counted the part of its span before it.
+  // The window was final once streams 0, 1 and 2 were each done, 2 ms after
+  // the first record of their first group to begin after the end: stream
+  // 2's at 2250.7 ms, which straddles the end and counted the part of its
+  // span before it. Done only on a record whose span starts after the end,
+  // it would have waited for the next, at 2850.7.
   const first = worker.delivered[0].at;
   assert.equal(first, start);
-  assert.ok(start + 2850.7 <= worker.closedAt!, `the download closed ${worker.closedAt! - first} ms in, before its window was final`);
-  assert.ok(worker.closedAt! < first + hello.downloadMs + SPREAD_MAX_MS + 500, `the download closed ${worker.closedAt! - first} ms in`);
+  assert.ok(start + 2250.7 + SPREAD_JOIN_MS < worker.closedAt!, `the download closed ${worker.closedAt! - first} ms in, before its window was final`);
+  assert.ok(worker.closedAt! < first + 2850, `the download closed ${worker.closedAt! - first} ms in`);
 
   // Each interval's progress event goes out with its report, carrying its
   // value, at the page's time since the first byte, which an interval
@@ -830,18 +834,20 @@ test("a stream's first group waits for its second and counts at its rate, and th
   assert.deepEqual(reportedIntervals(extender.received), result.download.intervalBytes);
 });
 
-test("the download's window is final once every open stream is done, or 1 s after its end", { timeout: 30_000 }, async () => {
-  // Every stream delivers a record every 30 ms: a stream is done at its
-  // second record after the 1 s window's end, so the download closes well
-  // before 1 s past it. Then, the same but with stream 1 stalled from 800
-  // to 2600 ms: it is not done, and could still reach back before the end,
-  // until 1 s past it.
+test("the download's window is final once every open stream is done, 2 ms after its first group past the end, or 1 s after the end", { timeout: 30_000 }, async () => {
+  // Stream k delivers a record every 200 ms from 25 + 50k ms, so each has
+  // one record that straddles the 1 s window's end, at 1025 + 50k ms, and is
+  // done 2 ms after it: the window is final at 1177 ms. Done only on a
+  // record whose span starts after the end, each would wait for its next,
+  // until 1375 ms. Then, the same but with stream 1 stalled from 800 to
+  // 2600 ms: it has no record past the end that could be its last, so it
+  // holds the window until 1 s past the end.
   const hello = { intervalMs: 250, downloadMs: 1000, uploadMs: 250, maxStreams: 4 };
   const run = async (stall: boolean) => {
     const start = performance.now() + 100;
     const chunks: Chunk[] = [];
     for (let stream = 0; stream < 4; stream += 1) {
-      for (let t = stream * 7.3; t < 3000; t += 30) {
+      for (let t = 25 + 50 * stream; t < 3000; t += 200) {
         if (!(stall && stream === 1 && 800 < t && t < 2600)) {
           chunks.push({ stream, at: start + t, bytes: 16384 });
         }
@@ -861,16 +867,16 @@ test("the download's window is final once every open stream is done, or 1 s afte
     return { result, closed: worker.closedAt! - start };
   };
   const steady = await run(false);
-  // done at its second record past the end, at most 60 ms after it: the
-  // close follows, a Worker batch or two later
-  assert.ok(1000 + 30 < steady.closed && steady.closed < 1000 + 500, `the download closed ${steady.closed} ms in`);
-  // the record that straddles the end counted its part before it, so the
-  // last interval is whole: 250 ms at 4 x 16 KiB per 30 ms
-  const full = (4 * 16384 * 250) / 30;
+  // the close follows the last stream's done time, a Worker batch or so on
+  assert.ok(1177 < steady.closed && steady.closed < 1360, `the download closed ${steady.closed} ms in`);
+  // the records that straddle the end counted their parts before it, so the
+  // last interval is whole: 250 ms at 4 x 16 KiB per 200 ms
+  const full = (4 * 16384 * 250) / 200;
   assert.ok(Math.abs(steady.result.download.intervalBytes[3] - full) < 2, `the last interval holds ${steady.result.download.intervalBytes[3]} of ${full}`);
   const stalled = await run(true);
   assert.ok(1000 + SPREAD_MAX_MS <= stalled.closed && stalled.closed < 1000 + SPREAD_MAX_MS + 500, `the download closed ${stalled.closed} ms in`);
 });
+
 
 const uploadHello = { intervalMs: 250, downloadMs: 250, uploadMs: 1000, maxStreams: 2 };
 
@@ -1187,10 +1193,10 @@ test("with no report at all, the upload closes 2 s after its own start plus uplo
  * stream, one within 2 ms of its group's first sharing the group's span,
  * and past the window's end only the part before it. It reports every
  * interval of its window but the last half one, and says the window is over
- * once every stream has had a record whose span starts at or after the end,
- * or 1 s after the end. It does not hold a stream's first group, which
- * shapes only the first interval. A socket's bufferedAmount is what it has
- * queued past a 128 KiB send buffer.
+ * once every stream is done, 2 ms after the first record of its first group
+ * to begin at or after the end, or 1 s after the end. It does not hold a
+ * stream's first group, which shapes only the first interval. A socket's
+ * bufferedAmount is what it has queued past a 128 KiB send buffer.
  */
 const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: number; uploadMs: number }) => {
   const intervalMs = 250;
@@ -1205,7 +1211,7 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
   let linkFree = 0;
   let turn = 0;
   const series: number[] = Array(Math.ceil(uploadMs / intervalMs)).fill(0);
-  const streams = new Map<number, { last: number; groupFirst: number; groupFrom: number; done: boolean }>();
+  const streams = new Map<number, { last: number; groupFirst: number; groupFrom: number; doneAt: number }>();
   const stats = {
     sent: 0,
     counted: 0,
@@ -1330,7 +1336,7 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
     }
     const t = arrival - stats.first;
     let stream = streams.get(k);
-    if (stats.windowOverAt !== undefined || stream?.done) {
+    if (stats.windowOverAt !== undefined || (stream !== undefined && stream.doneAt < t)) {
       return;
     }
     let from: number;
@@ -1338,20 +1344,14 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
       from = stream.groupFrom;
     } else {
       from = Math.max(stream?.last ?? 0, t - SPREAD_MAX_MS, 0);
-      stream = { last: t, groupFirst: t, groupFrom: from, done: false };
+      const doneAt = stream?.doneAt ?? Infinity;
+      stream = { last: t, groupFirst: t, groupFrom: from, doneAt: doneAt === Infinity && uploadMs <= t ? t + SPREAD_JOIN_MS : doneAt };
       streams.set(k, stream);
     }
     stream.last = t;
-    if (uploadMs <= from) {
-      stream.done = true;
-      if (uploads.every((upload) => streams.get(upload.stream)?.done)) {
-        windowOver();
-      }
-      return;
-    }
     if (from < t) {
       count(from, t, bytes);
-    } else {
+    } else if (t < uploadMs) {
       series[Math.floor(t / intervalMs)] += bytes;
       stats.counted += bytes;
     }
@@ -1379,6 +1379,11 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
       const arrival = arrivals.shift()!;
       receive(arrival.at, arrival.stream, arrival.bytes);
     }
+    // the window is final once every stream is done
+    const elapsed = stats.first === undefined ? 0 : now - stats.first;
+    if (uploadMs <= elapsed && uploads.every((upload) => (streams.get(upload.stream)?.doneAt ?? Infinity) < elapsed)) {
+      windowOver();
+    }
   }, 2);
   const stop = () => {
     clearInterval(ticker);
@@ -1398,8 +1403,10 @@ for (const mbps of [20, 4]) {
     // the last interval at 86% of the link at 20 Mbps and 65-73% at
     // 4 Mbps, and sent no more than was counted. What goes after the end
     // and is not counted is the price: the time until every stream is done,
-    // and a round trip, at the link's rate. That is 3-6% at 20 Mbps, and
-    // 9-12% at 4 Mbps, where each stream's records come 130 ms apart.
+    // and a round trip, at the link's rate. That is 2-4% at 20 Mbps, and
+    // 9-12% at 4 Mbps, where a stream waits for its turn of the 64 KiB
+    // messages, dealt in turn, for its first record past the end: some
+    // 0.5 s for the last of the four.
     const uploadMs = 5000;
     const link = linkedExtender({ mbps, oneWayMs: 25, uploadMs });
     const worker = new ScheduleWorker(briefDownload());

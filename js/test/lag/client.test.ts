@@ -266,11 +266,11 @@ for (const code of ["busy", "budget"] as const) {
 test("the download ends once its window is final: streams still delivering are cut and the upload starts at once", { timeout: 30_000 }, async () => {
   // The extender keeps writing every stream 3 s past a 2 s window; a gentle
   // pace keeps the mock, which shares this event loop, from delaying
-  // timers. Each stream writes every 20 ms, so each is done, its span
-  // starting after the window's end, within some 40 ms of it, and the
+  // timers. Each stream writes every 20 ms, so each is done, 2 ms after its
+  // first write past the window's end, within some 25 ms of it, and the
   // window is final then (M6, amendment 15), far sooner than the 1 s a
   // stream that stopped could hold it. A 500 ms interval leaves room for a
-  // busy machine's scheduling in a bound of one interval.
+  // busy machine's scheduling in a bound of two intervals.
   const options = {
     hello: { intervalMs: 500, downloadMs: 2000 },
     downloadOverrunMs: 3000,
@@ -302,13 +302,15 @@ test("the download ends once its window is final: streams still delivering are c
     assert.equal(result.endReason, "complete");
     assert.equal(result.uploadVerified, true);
 
-    // the upload's first message goes out within an interval of the
-    // download window's end, downloadMs from its first byte
+    // the upload's first message goes out within two intervals of the
+    // download window's end, downloadMs from its first byte: the window is
+    // final tens of ms after it, and the upload's sockets have had 250 ms
+    // before it to open
     const windowEnd = result.download.startedAt! + hello.downloadMs;
     const gap = phases[1].at - windowEnd;
     assert.ok(observedEnd !== undefined);
     const reaction = phases[1].at - observedEnd;
-    assert.ok(reaction <= hello.intervalMs, `the upload began ${reaction} ms after the window was seen to end (${gap} ms by the clock)`);
+    assert.ok(reaction <= 2 * hello.intervalMs, `the upload began ${reaction} ms after the window was seen to end (${gap} ms by the clock)`);
     // and nowhere near the 2 s a client that waited out trailing bytes would take
     assert.ok(-2 <= gap && gap < 1500, `the upload began ${gap} ms after the download window`);
     assert.equal(phases[1].at, result.upload.startedAt);

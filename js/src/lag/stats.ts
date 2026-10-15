@@ -664,9 +664,11 @@ interface LagStreamReads {
   // its first group, held uncounted until its second begins: its bytes, and
   // when its last read arrived; null once it has counted
   held: { bytes: number; last: number } | null;
-  // it has had a read whose span starts at or after the window's end, or it
-  // ended: nothing it reads later counts
-  done: boolean;
+  // it ended: nothing it reads after counts
+  ended: boolean;
+  // when it is done: LAG_SPREAD_JOIN_MS after the first read of its first
+  // group to begin at or after the window's end; Infinity before that group
+  doneAt: number;
 }
 
 // A span's pieces are cut by cumulative rounding to 1/SPREAD_GRAIN byte, as
@@ -820,10 +822,13 @@ export class LagIntervalSeries {
    *   endStream).
    * - Only the part of a span before the window's end counts, so a read
    *   that arrives after the end still counts what it carried before it. A
-   *   stream is done once it has a read whose span starts at or after the
-   *   end: its spans are contiguous, so nothing it reads later can count.
-   *   A read that arrives more than LAG_SPREAD_MAX_MS after the end could
-   *   not reach back before it, so it makes the window final (finish).
+   *   stream is done LAG_SPREAD_JOIN_MS after the first read of its first
+   *   group to begin at or after the end (streamDone): only a read within
+   *   that time can join the group, and any later group's span starts at
+   *   its previous read, at or after the end. So nothing it reads after
+   *   then counts, nor places a first group it still holds. A read that
+   *   arrives more than LAG_SPREAD_MAX_MS after the end could not reach
+   *   back before it, so it makes the window final (finish).
    * A read of no bytes changes nothing.
    */
   addRead(stream: number, ms: number, bytes: number): void {
@@ -853,10 +858,11 @@ export class LagIntervalSeries {
     const t = Math.max(0, ms, reads?.last ?? 0);
     this.endMs = Math.max(this.endMs, Math.min(t, end));
     if (reads === undefined) {
-      this.streams[stream] = { last: t, groupFirst: t, groupFrom: t, held: { bytes, last: t }, done: false };
+      const doneAt = end <= t ? t + LAG_SPREAD_JOIN_MS : Number.POSITIVE_INFINITY;
+      this.streams[stream] = { last: t, groupFirst: t, groupFrom: t, held: { bytes, last: t }, ended: false, doneAt };
       return;
     }
-    if (reads.done) {
+    if (reads.ended || reads.doneAt < t) {
       return;
     }
     let from: number;
@@ -875,12 +881,11 @@ export class LagIntervalSeries {
       from = Math.max(reads.last, t - LAG_SPREAD_MAX_MS, 0);
       reads.groupFirst = t;
       reads.groupFrom = from;
+      if (end <= t && reads.doneAt === Number.POSITIVE_INFINITY) {
+        reads.doneAt = t + LAG_SPREAD_JOIN_MS;
+      }
     }
     reads.last = t;
-    if (end <= from) {
-      reads.done = true;
-      return;
-    }
     this.countSpan(from, t, bytes);
   }
 
@@ -904,13 +909,14 @@ export class LagIntervalSeries {
     }
     const reads = this.streams[stream];
     if (reads === undefined) {
-      this.streams[stream] = { last: 0, groupFirst: Number.NEGATIVE_INFINITY, groupFrom: 0, held: null, done: true };
+      const ended = { last: 0, groupFirst: Number.NEGATIVE_INFINITY, groupFrom: 0, held: null, ended: true, doneAt: Number.POSITIVE_INFINITY };
+      this.streams[stream] = ended;
       return;
     }
     if (reads.held !== null) {
       this.countFirstGroup(reads);
     }
-    reads.done = true;
+    reads.ended = true;
   }
 
   /** The window is final: nothing more counts (finish). */
@@ -937,12 +943,24 @@ export class LagIntervalSeries {
   }
 
   /**
-   * Whether stream `stream` is done (lag.dev/PLAN.md M6, amendment 15): it
-   * has had a read whose span starts at or after the window's end, or it
-   * ended, so nothing it reads later counts.
+   * Whether stream `stream` is done (lag.dev/PLAN.md M6, amendment 15) by
+   * `seenMs`, when every read of it that arrived by then has been added:
+   * LAG_SPREAD_JOIN_MS has passed since the first read of its first group to
+   * begin at or after the window's end, or it ended, or the window is final.
+   * Nothing it reads after counts.
    */
-  streamDone(stream: number): boolean {
-    return this.streams[stream]?.done ?? false;
+  streamDone(stream: number, seenMs: number): boolean {
+    const reads = this.streams[stream];
+    return this.finishedValue || (reads !== undefined && (reads.ended || reads.doneAt < seenMs));
+  }
+
+  /**
+   * When stream `stream` is done, in ms after the first byte, unless it ends
+   * first (streamDone): LAG_SPREAD_JOIN_MS after the first read of its first
+   * group to begin at or after the window's end. Infinity before that read.
+   */
+  streamDoneAt(stream: number): number {
+    return this.streams[stream]?.doneAt ?? Number.POSITIVE_INFINITY;
   }
 
   /**
@@ -950,8 +968,8 @@ export class LagIntervalSeries {
    * the first byte, when every read of it that arrived by `seenMs` has been
    * added: an interval that ends at or before this is final as far as the
    * stream goes (M4's settled reports). Infinity when nothing it reads later
-   * can count: it is done, its reach is past the window's end, or the window
-   * is final.
+   * can count: it is done (streamDone), its reach is past the window's end,
+   * or the window is final.
    */
   reach(stream: number, seenMs: number): number {
     if (this.finishedValue) {
@@ -963,7 +981,7 @@ export class LagIntervalSeries {
       // its first group, still to come, reaches back at most
       // LAG_SPREAD_MAX_MS from its last read
       reach = seenMs - LAG_SPREAD_MAX_MS;
-    } else if (reads.done) {
+    } else if (this.streamDone(stream, seenMs)) {
       return Number.POSITIVE_INFINITY;
     } else if (reads.held !== null) {
       // and so does the first group it holds

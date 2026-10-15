@@ -797,6 +797,8 @@ class LagLoadRun {
   private readonly downloadStreamsWithData = new Set<number>();
   // the streams that have ended
   private readonly downloadEnded = new Set<number>();
+  // the streams with a check of the window's finality due when they are done
+  private readonly downloadDoneChecks = new Set<number>();
   // resolves when every stream has ended, or the download is cut
   private readonly downloadStreamsEnded = deferred<void>();
   // resolves when the download's window is final (M6, amendment 15): every
@@ -1072,6 +1074,7 @@ class LagLoadRun {
         chunk: (stream, at, bytes) => this.onDownloadChunk(stream, at, bytes),
         delivered: (through) => {
           this.downloadDelivered = Math.max(this.downloadDelivered, through);
+          this.checkDownloadFinal();
           this.catchUpDownload();
         },
         ended: (stream) => {
@@ -1148,6 +1151,16 @@ class LagLoadRun {
     }
     this.download.addRead(stream, t, bytes);
     this.downloadBytes += bytes;
+    // the stream is done LAG_SPREAD_JOIN_MS after the first chunk of its
+    // first group to begin at or after the window's end, chunk or no chunk
+    const doneAt = this.download.streamDoneAt(stream);
+    if (Number.isFinite(doneAt) && !this.downloadDoneChecks.has(stream)) {
+      this.downloadDoneChecks.add(stream);
+      this.timeout(Math.max(0, this.downloadFirst + doneAt - monotonicNow()) + 1, () => {
+        this.checkDownloadFinal();
+        this.catchUpDownload();
+      });
+    }
     this.checkDownloadFinal();
     // a chunk past the next interval's end can settle it before the next tick
     if ((this.downloadReported + 1) * this.hello.intervalMs <= t) {
@@ -1156,12 +1169,19 @@ class LagLoadRun {
   }
 
   // The download's window is final (M6, amendment 15) once every stream that
-  // has not ended is done, so nothing it reads later can count, or once a
-  // chunk came too late to count: more than LAG_SPREAD_MAX_MS after the end.
+  // has not ended is done, so nothing it reads later can count: each is done
+  // LAG_SPREAD_JOIN_MS after the first chunk of its first group to begin at
+  // or after the window's end, judged by the chunks handed over by now. Or
+  // once a chunk came too late to count, more than LAG_SPREAD_MAX_MS after
+  // the end.
   private checkDownloadFinal(): void {
+    if (this.downloadClosed || this.downloadFirst === undefined) {
+      return;
+    }
     if (!this.download.finished) {
+      const seen = Math.min(monotonicNow(), this.downloadDelivered) - this.downloadFirst;
       for (let k = 0; k < this.hello.maxStreams; k += 1) {
-        if (!this.downloadEnded.has(k) && !this.download.streamDone(k)) {
+        if (!this.downloadEnded.has(k) && !this.download.streamDone(k, seen)) {
           return;
         }
       }
