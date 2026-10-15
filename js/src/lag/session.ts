@@ -4,8 +4,16 @@
 // expires_at. Creation is rate-limited per /24 (/48), so concurrent callers
 // share one creation, and a guest that is due for renewal but not yet expired
 // keeps working while renewal fails.
+//
+// expires_at is on the api's clock, and a device's clock can be hours off.
+// Judged by the device's clock, a guest on a device a day ahead would be due
+// the moment it arrived, and every call would make another, spending A1's
+// limit for everyone on that /24. So a guest's lifetime is read on the api's
+// clock, from its jwt's `iat` to expires_at, and counted on the device's
+// clock from when the guest arrived.
 
 import type { RequestOptions } from "../api_client";
+import { parseJWTClaims } from "../utils/jwt";
 import { createLagApiClient, type LagApiRefusal, type LagSessionResult } from "./api";
 
 /** Where the guest is kept between page loads; any method may be async. */
@@ -21,6 +29,10 @@ export const LAG_GUEST_STORAGE_KEY = "lagdev.guest";
 export const LAG_GUEST_RENEW_WITHIN_MS = 10 * 60 * 1000;
 // how long a failed renewal waits before the next, at least
 const LAG_GUEST_RENEW_RETRY_MS = 60 * 1000;
+// A1: the api keeps a guest 24 h. A guest whose jwt says nothing of when it
+// was made is taken to live that long when the device's clock can't be
+// believed.
+const LAG_GUEST_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** A usable guest: the A1 result with every field present. */
 export interface LagGuest {
@@ -62,6 +74,25 @@ export interface LagGuestSessionOptions {
 
 const expiryOf = (guest: LagGuest): number => Date.parse(guest.expires_at);
 
+// A guest as this device keeps it: the A1 result, and on this device's clock
+// (epoch ms) when it is due for renewal and when it expires. They are stored
+// beside A1's fields, so every tab of the browser reads the same times.
+interface KeptGuest {
+  guest: LagGuest;
+  renewAtMs: number;
+  expiresAtMs: number;
+}
+
+// When the api signed a jwt, by its clock: its `iat`, in seconds
+const issuedAtOf = (jwt: string): number | undefined => {
+  try {
+    const issuedAt = parseJWTClaims(jwt).iat;
+    return typeof issuedAt === "number" && Number.isFinite(issuedAt) && 0 < issuedAt ? issuedAt * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const asGuest = (value: unknown): LagGuest | null => {
   if (typeof value !== "object" || value === null) {
     return null;
@@ -80,16 +111,33 @@ const asGuest = (value: unknown): LagGuest | null => {
   return { by_client_jwt, network_id, client_id, expires_at };
 };
 
-const parseStored = (text: string | null | undefined): LagGuest | null => {
+const finiteNumber = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+// A kept guest from storage. One kept before its device times were (or by
+// another writer) has none, and is judged by expires_at on this device's
+// clock, as before.
+const parseStored = (text: string | null | undefined, renewWithinMs: number): KeptGuest | null => {
   if (!text) {
     return null;
   }
   try {
-    return asGuest(JSON.parse(text));
+    const value: unknown = JSON.parse(text);
+    const guest = asGuest(value);
+    if (guest === null) {
+      return null;
+    }
+    const { local_renew_ms, local_expires_ms } = value as Record<string, unknown>;
+    const expiresAtMs = finiteNumber(local_expires_ms) ?? expiryOf(guest);
+    const renewAtMs = finiteNumber(local_renew_ms) ?? expiresAtMs - renewWithinMs;
+    return { guest, renewAtMs: Math.min(renewAtMs, expiresAtMs), expiresAtMs };
   } catch {
     return null;
   }
 };
+
+const storedText = (kept: KeptGuest): string =>
+  JSON.stringify({ ...kept.guest, local_renew_ms: kept.renewAtMs, local_expires_ms: kept.expiresAtMs });
 
 const raceAbort = <T>(promise: Promise<T>, signal: AbortSignal): Promise<T> =>
   new Promise<T>((resolve, reject) => {
@@ -123,7 +171,7 @@ export class LagGuestSession {
   private readonly key: string;
   private readonly renewWithinMs: number;
   private readonly now: () => number;
-  private current: LagGuest | null = null;
+  private current: KeptGuest | null = null;
   private loading: Promise<LagGuest> | null = null;
   // after a failed renewal, the still-valid guest is used without asking
   // the api again until then
@@ -147,7 +195,7 @@ export class LagGuestSession {
       return Promise.reject(signal.reason);
     }
     if (this.current !== null && this.isFresh(this.current)) {
-      return Promise.resolve(this.current);
+      return Promise.resolve(this.current.guest);
     }
     if (this.loading === null) {
       this.loading = this.load().finally(() => {
@@ -168,32 +216,33 @@ export class LagGuestSession {
    * guest another caller has already replaced it with stays.
    */
   async invalidate(jwt?: string): Promise<void> {
-    if (jwt === undefined || this.current?.by_client_jwt === jwt) {
+    if (jwt === undefined || this.current?.guest.by_client_jwt === jwt) {
       this.current = null;
     }
-    const stored = parseStored(await this.read());
-    if (stored !== null && jwt !== undefined && stored.by_client_jwt !== jwt) {
+    const stored = parseStored(await this.read(), this.renewWithinMs);
+    if (stored !== null && jwt !== undefined && stored.guest.by_client_jwt !== jwt) {
       return;
     }
     await this.attempt(() => this.storage.remove(this.key));
   }
 
-  private isFresh(guest: LagGuest): boolean {
-    return this.now() < expiryOf(guest) - this.renewWithinMs;
+  private isFresh(kept: KeptGuest): boolean {
+    return this.now() < kept.renewAtMs;
   }
 
   private async load(): Promise<LagGuest> {
-    const stored = parseStored(await this.read());
+    const stored = parseStored(await this.read(), this.renewWithinMs);
     let best = this.current;
-    if (stored !== null && (best === null || expiryOf(best) < expiryOf(stored))) {
+    // the guest the api made last is the one that lives longest
+    if (stored !== null && (best === null || expiryOf(best.guest) < expiryOf(stored.guest))) {
       best = stored;
     }
-    const usable = best !== null && this.now() < expiryOf(best);
+    const usable = best !== null && this.now() < best.expiresAtMs;
     if (best !== null && (this.isFresh(best) || (usable && this.now() < this.renewAfter))) {
       this.current = best;
-      return best;
+      return best.guest;
     }
-    let created: LagGuest;
+    let created: KeptGuest;
     try {
       created = await this.create();
     } catch (error) {
@@ -202,17 +251,18 @@ export class LagGuestSession {
         const retryAfterMs = error instanceof LagGuestSessionError ? (error.retryAfterMs ?? 0) : 0;
         this.renewAfter = this.now() + Math.max(LAG_GUEST_RENEW_RETRY_MS, retryAfterMs);
         this.current = best;
-        return best;
+        return best.guest;
       }
       throw error;
     }
     this.current = created;
-    await this.attempt(() => this.storage.set(this.key, JSON.stringify(created)));
-    return created;
+    await this.attempt(() => this.storage.set(this.key, storedText(created)));
+    return created.guest;
   }
 
-  private async create(): Promise<LagGuest> {
+  private async create(): Promise<KeptGuest> {
     const result = await this.api.lagSession();
+    const arrivedAt = this.now();
     if (result.error) {
       throw new LagGuestSessionError(
         result.error.message ?? `the api refused a guest session (${result.error.code ?? "unknown"})`,
@@ -223,7 +273,29 @@ export class LagGuestSession {
     if (guest === null) {
       throw new LagGuestSessionError("the api answered /lag/session without a usable guest");
     }
-    return guest;
+    const lifetimeMs = this.lifetimeOf(guest, arrivedAt);
+    return {
+      guest,
+      // never due as it arrives: a lifetime shorter than twice the renewal
+      // window is renewed halfway through
+      renewAtMs: arrivedAt + Math.max(lifetimeMs - this.renewWithinMs, lifetimeMs / 2),
+      expiresAtMs: arrivedAt + lifetimeMs,
+    };
+  }
+
+  // How long a guest that has just arrived has to live: on the api's clock,
+  // from when the api signed its jwt (`iat`) to expires_at. A jwt that says
+  // nothing of it leaves the device's clock to decide, unless that clock says
+  // a guest made a moment ago is already due, or will live longer than A1's
+  // 24 h: then it is off, and the guest has A1's 24 h.
+  private lifetimeOf(guest: LagGuest, arrivedAt: number): number {
+    const expiresAt = expiryOf(guest);
+    const issuedAt = issuedAtOf(guest.by_client_jwt);
+    if (issuedAt !== undefined && issuedAt < expiresAt) {
+      return expiresAt - issuedAt;
+    }
+    const leftMs = expiresAt - arrivedAt;
+    return this.renewWithinMs < leftMs && leftMs <= LAG_GUEST_TTL_MS ? leftMs : LAG_GUEST_TTL_MS;
   }
 
   private async read(): Promise<string | null | undefined> {
