@@ -195,6 +195,19 @@ a time: two at once would load the same line and spoil each other, so a second
 call waits for the first. `lagdev mcp` takes the CLI's connection options, so
 `lagdev mcp --stack …` serves measurements of a test stack.
 
+- **Cancelling:** a cancelled call stops its measurement and closes its
+  sessions, which is also what happens when a client gives up at its request
+  timeout. A call cancelled while it waits never runs. When the client closes
+  stdin, the server stops whatever is running and exits.
+- **Progress:** a call whose request carries a `progressToken` gets
+  `notifications/progress` as it goes: when it connects, then every 5 s of a
+  latency run, or at the idle start and at each load of a bufferbloat run. A
+  client that resets its timeout on progress can wait out a full bufferbloat
+  run of about 100 s.
+- **Annotations:** neither tool is read-only, since both create a guest and a
+  track and the servers keep what they measured, and `measure_bufferbloat`
+  moves real data. Neither is destructive.
+
 ## A test stack
 
 lag.dev's e2e stack (`mmm/lag.dev/e2e/stack`) serves the production names
@@ -230,4 +243,5 @@ check:
   reaches the extender);
 - the CLI's output and exit codes, and that it exits as soon as it has
   printed;
-- the MCP tools.
+- the MCP tools: their annotations, cancellation, a client closing stdin, and
+  progress.

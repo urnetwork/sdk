@@ -56,6 +56,18 @@ export interface MeasureContext {
   onProgress?: (line: string) => void;
 }
 
+/**
+ * How far a run has got, for a client that shows it, such as an MCP client
+ * (notifications/progress): numbered steps, each with what the run is doing.
+ */
+export interface MeasureProgress {
+  /** steps taken so far; it grows by one with each */
+  progress: number;
+  /** the steps of the whole run, once known; a run that stops early takes fewer */
+  total?: number;
+  message: string;
+}
+
 export interface LatencyOptions {
   /** how long to ping, ms (default 15 s) */
   durationMs?: number;
@@ -64,6 +76,8 @@ export interface LatencyOptions {
   /** the tool running it, sent as X-Lag-Client with the track request */
   client?: LagClient;
   signal?: AbortSignal;
+  /** each step of the run: connecting, then every 5 s of pinging */
+  onProgress?: (progress: MeasureProgress) => void;
 }
 
 export interface BufferbloatOptions {
@@ -80,6 +94,8 @@ export interface BufferbloatOptions {
   /** the tool running it, sent as X-Lag-Client with the track request */
   client?: LagClient;
   signal?: AbortSignal;
+  /** each step of the run: connecting, the idle start, then each load */
+  onProgress?: (progress: MeasureProgress) => void;
 }
 
 export interface Percentiles {
@@ -198,6 +214,8 @@ const IDLE_MS = 5000;
 const LOAD_SETUP_MS = 2000;
 // how long closing waits for the sessions to say they have closed
 const CLOSE_WAIT_MS = 3000;
+// a latency run reports its progress this often while it pings
+const LATENCY_PROGRESS_MS = 5000;
 
 const round = (value: number, digits: number): number => {
   const scale = 10 ** digits;
@@ -228,6 +246,33 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     const timer = setTimeout(done, ms);
     signal?.addEventListener("abort", done, { once: true });
   });
+
+// The run's progress: a line for a person watching (the context's), and a
+// numbered step for a client that shows how far the run is (the options').
+// A tick goes to the client alone, so the person's lines stay few.
+interface Progress {
+  step(message: string, total?: number): void;
+  tick(message: string, total?: number): void;
+}
+
+const progressOf = (context: MeasureContext, onProgress?: (progress: MeasureProgress) => void): Progress => {
+  let steps = 0;
+  const notify = (message: string, total?: number) => {
+    steps += 1;
+    try {
+      onProgress?.({ progress: steps, ...(total === undefined ? {} : { total }), message });
+    } catch {
+      // a client that can't be told is no reason to stop
+    }
+  };
+  return {
+    step: (message, total) => {
+      context.onProgress?.(message);
+      notify(message, total);
+    },
+    tick: notify,
+  };
+};
 
 const placeOf = (server: Server): string =>
   [server.city, server.countryCode.toUpperCase()].filter((part) => part !== "").join(", ") || server.extenderId;
@@ -299,6 +344,7 @@ async function prepare(
   context: MeasureContext,
   count: number,
   client: LagClient | undefined,
+  progress: Progress,
   signal?: AbortSignal,
 ): Promise<Prepared> {
   const startedAt = Date.now();
@@ -338,7 +384,7 @@ async function prepare(
     }
   }
 
-  context.onProgress?.(`connecting to ${selection.servers.length} servers`);
+  progress.step(`connecting to ${selection.servers.length} servers`);
   const dots = await Promise.all(
     selection.servers.map(async (server, position) => {
       const dot: Dot = { server, session: null, pings: [], phases: {}, progress: { download: 0, upload: 0 } };
@@ -589,11 +635,23 @@ const COMMON_NOTES = [
 /** Ping up to 8 lag.dev servers for a while, with no load. */
 export async function measureLatency(context: MeasureContext, options: LatencyOptions = {}): Promise<Measurement> {
   const durationMs = Math.max(1000, options.durationMs ?? 15_000);
-  const prepared = await prepare(context, options.servers ?? 8, options.client, options.signal);
+  const signal = options.signal;
+  const progress = progressOf(context, options.onProgress);
+  const prepared = await prepare(context, options.servers ?? 8, options.client, progress, signal);
   const open = prepared.dots.filter((dot) => dot.session !== null).length;
-  context.onProgress?.(`pinging ${open} servers for ${Math.round(durationMs / 1000)} s`);
+  // connecting, the start of the pings, and a tick every LATENCY_PROGRESS_MS
+  const ticks = Math.ceil(durationMs / LATENCY_PROGRESS_MS);
+  const total = 1 + ticks;
+  progress.step(`pinging ${open} servers for ${Math.round(durationMs / 1000)} s`, total);
+  const pingsStart = Date.now();
   try {
-    await sleep(durationMs, options.signal);
+    for (let tick = 1; tick < ticks && !signal?.aborted; tick += 1) {
+      await sleep(pingsStart + tick * LATENCY_PROGRESS_MS - Date.now(), signal);
+      if (!signal?.aborted) {
+        progress.tick(`pinged ${open} servers for ${(tick * LATENCY_PROGRESS_MS) / 1000} of ${Math.round(durationMs / 1000)} s`, total);
+      }
+    }
+    await sleep(pingsStart + durationMs - Date.now(), signal);
   } finally {
     await closeAll(prepared.dots);
   }
@@ -621,15 +679,18 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
   const idleMs = options.idleMs ?? IDLE_MS;
   const settleMs = options.settleMs ?? SETTLE_MS;
   const signal = options.signal;
-  const prepared = await prepare(context, options.servers ?? 8, options.client, signal);
+  const progress = progressOf(context, options.onProgress);
+  const prepared = await prepare(context, options.servers ?? 8, options.client, progress, signal);
   const elapsed = () => Date.now() - prepared.startedAt;
   const spans: Span[] = [];
   let used = 0;
   let largest = 0;
   let stoppedEarly: Measurement["stoppedEarly"] = null;
+  // connecting, the idle start, and a load per server
+  const total = 2 + prepared.dots.length;
 
   try {
-    context.onProgress?.(`pinging for ${Math.round(idleMs / 1000)} s before the loads`);
+    progress.step(`pinging for ${Math.round(idleMs / 1000)} s before the loads`, total);
     await sleep(idleMs, signal);
     for (const [index, dot] of prepared.dots.entries()) {
       if (signal?.aborted) {
@@ -650,7 +711,7 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
         stoppedEarly = "max_bytes";
         break;
       }
-      context.onProgress?.(`loading ${placeOf(dot.server)} (${index + 1} of ${prepared.dots.length})`);
+      progress.step(`loading ${placeOf(dot.server)} (${index + 1} of ${prepared.dots.length})`, total);
       const requested = Date.now();
       const meter = context.meter;
       const meterStart = meter?.bytes() ?? 0;
