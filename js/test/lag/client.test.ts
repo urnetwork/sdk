@@ -62,6 +62,18 @@ const expectedReceived = (intervalBytes: number[], intervalMs: number) => {
 const ofType = <T extends LagSessionEvent["type"]>(events: LagSessionEvent[], type: T) =>
   events.filter((event): event is Extract<LagSessionEvent, { type: T }> => event.type === type);
 
+// A direction's progress events go out at the load's own time, within its
+// window, and neither that time nor their bytes ever go back (S5)
+const assertProgressTime = (progress: Array<{ ms: number; bytes: number }>, windowMs: number) => {
+  progress.forEach((event, i) => {
+    assert.ok(0 <= event.ms && event.ms <= windowMs, `progress at ${event.ms} ms`);
+    if (0 < i) {
+      assert.ok(progress[i - 1].ms <= event.ms, "the progress went back");
+      assert.ok(progress[i - 1].bytes <= event.bytes, "the bytes went back");
+    }
+  });
+};
+
 test("a session pings from hello until close()", { timeout: 20_000 }, async () => {
   await withMock({}, async (mock) => {
     const { session, events } = open(mock, "ticket-ping");
@@ -155,6 +167,7 @@ test("a load runs the download, then the upload, while the pings go on", { timeo
     const downloadProgress = ofType(events, "progress").filter((event) => event.direction === "download");
     assert.deepEqual(downloadProgress.map((event) => event.interval), [0, 1, 2, 3]);
     assert.ok(downloadProgress.every((event) => event.durationMs === 1000));
+    assertProgressTime(downloadProgress, 1000);
 
     // upload: four streams of whole 64 KiB messages, verified; its sockets
     // began to open before the download's window ended, and waited at the
@@ -166,14 +179,19 @@ test("a load runs the download, then the upload, while the pings go on", { timeo
     assert.deepEqual(record.oddUploadMessages, []);
     assert.ok(0 < record.uploadVerifiedBytes);
     assert.equal(result.upload.bytes, record.uploadReports.at(-1)!.bytes);
+    assert.ok(record.uploadReports.every((report) => report.at !== undefined && report.at <= report.ms));
+    // its result is the extender's own series (M4 loadResult uploadBytes),
+    // within the window its last report gives
+    assert.deepEqual(record.loadResult?.uploadBytes, record.uploadBytes);
+    assert.deepEqual(result.upload.intervalBytes, record.uploadBytes.slice(0, Math.ceil(record.uploadReports.at(-1)!.ms / 250)));
     assert.ok(1 <= result.upload.mbps.length && result.upload.mbps.length <= 4);
     assert.ok(0 < result.upload.percentiles!.p95);
+    // while the live progress came once per interval of the series the
+    // extender's reports built, at its time
     const uploadProgress = ofType(events, "progress").filter((event) => event.direction === "upload");
-    assert.equal(uploadProgress.length, record.uploadReports.length);
-    assert.deepEqual(
-      uploadProgress.map((event) => event.bytes),
-      record.uploadReports.map((report) => report.bytes),
-    );
+    assert.deepEqual(uploadProgress.map((event) => event.interval), [0, 1, 2, 3]);
+    assertProgressTime(uploadProgress, 1000);
+    assert.ok(uploadProgress.at(-1)!.bytes <= record.uploadVerifiedBytes);
 
     // the pings went on through the load, and go on after it
     const loads = ofType(events, "load");
@@ -315,9 +333,70 @@ test("a page that stalls during the download still reports each interval once, a
     const progress = ofType(events, "progress").filter((event) => event.direction === "download");
     assert.deepEqual(progress.map((event) => event.interval), [0, 1, 2, 3]);
     assert.deepEqual(
-      progress.map((event) => [event.ms, event.bytes]),
-      record.received.map((report) => [report.ms, report.bytes]),
+      progress.map((event) => event.bytes),
+      record.received.map((report) => report.bytes),
     );
+    assertProgressTime(progress, hello.downloadMs);
+    session.close();
+  });
+});
+
+test("each `received` report carries its interval's final value: with a slow stream, a stream that never opens, and past the window", { timeout: 30_000 }, async () => {
+  // Stream 2 writes 64 KiB every 400 ms where the others write every 20 ms,
+  // so by rule S its bytes spread back over intervals the others have long
+  // passed; stream 3 is refused every time it asks, so it never opens; and
+  // every stream keeps writing 1 s past a 2 s window.
+  const options = {
+    hello: { downloadMs: 2000 },
+    downloadPauseMs: 20,
+    slowDownloadStream: { stream: 2, pauseMs: 400 },
+    refuseDownloadStream: 3,
+    downloadOverrunMs: 1000,
+    uploadBytesPerSecond: 4 << 20,
+  };
+  await withMock(options, async (mock) => {
+    const { session, events } = open(mock, "ticket-settled");
+    const hello = await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.endReason, "complete");
+    assert.equal(result.download.streams, 3);
+    // the first try and three retries, all refused
+    assert.equal(record.downloadRefused, 4);
+    assert.equal(result.download.intervalBytes.length, hello.downloadMs / hello.intervalMs);
+    // what the extender signs is what the browser shows, interval by interval
+    assert.deepEqual(record.received, expectedReceived(result.download.intervalBytes, hello.intervalMs));
+    const progress = ofType(events, "progress").filter((event) => event.direction === "download");
+    assert.deepEqual(progress.map((event) => event.interval), [0, 1, 2, 3, 4, 5, 6, 7]);
+    assert.deepEqual(
+      progress.map((event) => event.bytes),
+      record.received.map((report) => report.bytes),
+    );
+    assertProgressTime(progress, hello.downloadMs);
+    session.close();
+  });
+});
+
+test("from an extender without `at` and `uploadBytes`, the upload's result is the series its reports build", { timeout: 30_000 }, async () => {
+  await withMock({ legacyUpload: true, uploadBytesPerSecond: 16 << 20 }, async (mock) => {
+    const { session, events } = open(mock, "ticket-legacy");
+    await session.ready;
+    const result = await session.startLoad();
+    const record = mock.sessions[0];
+    assert.equal(result.uploadVerified, true);
+    assert.ok(record.uploadReports.every((report) => report.at === undefined));
+    assert.equal(record.loadResult && "uploadBytes" in record.loadResult, false);
+    // the live series, from each report's (ms, bytes), one progress event
+    // per interval, stands as the result
+    const progress = ofType(events, "progress").filter((event) => event.direction === "upload");
+    assert.deepEqual(progress.map((event) => event.interval), [0, 1, 2, 3]);
+    assertProgressTime(progress, 1000);
+    assert.deepEqual(
+      result.upload.intervalBytes,
+      progress.map((event, i) => event.bytes - (i === 0 ? 0 : progress[i - 1].bytes)),
+    );
+    assert.equal(result.upload.bytes, record.uploadReports.at(-1)!.bytes);
+    assert.ok(0 < result.upload.percentiles!.p50);
     session.close();
   });
 });
