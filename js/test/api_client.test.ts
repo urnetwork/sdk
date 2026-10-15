@@ -349,8 +349,9 @@ test("optional-auth operations work anonymously and send the token when there is
 });
 
 // The operations the embed work added to the spec (data caps, ACL groups, the
-// Services inquiry) and the older routes it documented. A spec edit that
-// changes any of these wire shapes fails here.
+// Services inquiry), the older routes it documented and the streaming posts
+// documented after them. A spec edit that changes any of these wire shapes
+// fails here.
 type Client = ReturnType<typeof createURNetworkApiClient>;
 const generatedOperations: Array<{
   name: string;
@@ -389,6 +390,17 @@ const generatedOperations: Array<{
     method: "GET", path: "/provider-work/v1/windows", query: [["domain", "d"], ["epoch", "7"], ["artifact", "a"], ["authority", "o"]], bearer: false },
   { name: "getVerifyOriginalRequest", call: c => c.getVerifyOriginalRequest({ request_id: "r" } as never),
     method: "POST", path: "/verify/original", bearer: false, body: { request_id: "r" } },
+  // the streaming posts: the provider work intake and the request closure
+  { name: "submitProviderWorkOwner", call: c => c.submitProviderWorkOwner({ schema: "urnetwork-sdk-whole-work-owner-v1" } as never),
+    method: "POST", path: "/provider-work/v1/owners", bearer: false, body: { schema: "urnetwork-sdk-whole-work-owner-v1" } },
+  { name: "submitProviderWorkRequest", call: c => c.submitProviderWorkRequest({ schema: "urnetwork-sdk-whole-work-request-v1" } as never),
+    method: "POST", path: "/provider-work/v1/requests", bearer: false, body: { schema: "urnetwork-sdk-whole-work-request-v1" } },
+  { name: "submitProviderWorkCut", call: c => c.submitProviderWorkCut({ request: "cmVx", cut: "Y3V0" }),
+    method: "POST", path: "/provider-work/v1/cuts", bearer: false, body: { request: "cmVx", cut: "Y3V0" } },
+  { name: "submitProviderWorkAuthority", call: c => c.submitProviderWorkAuthority({ schema: "urnetwork-whole-work-authority-v1" } as never),
+    method: "POST", path: "/provider-work/v1/authorities", bearer: false, body: { schema: "urnetwork-whole-work-authority-v1" } },
+  { name: "closeVerifyOriginalRequest", call: c => c.closeVerifyOriginalRequest({ epoch: 7 } as never),
+    method: "POST", path: "/verify/original/close", bearer: false, body: { epoch: 7 } },
   { name: "registerNetworkClient", call: c => c.registerNetworkClient({ registration_id: "g" } as never),
     method: "POST", path: "/network/register-client-v1", bearer: true, body: { registration_id: "g" } },
   { name: "extenderRelease", call: c => c.extenderRelease({} as never),
