@@ -1,11 +1,14 @@
 package sdk
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -248,7 +251,80 @@ type snFleetBindingJson struct {
 	CommitmentHash snFlexBytes `json:"commitment_hash"`
 }
 
+// the binding's json keys (WHITEPAPER §11.4), matching snFleetBindingJson
+var snFleetBindingKeys = []string{
+	"chain_id",
+	"netuid",
+	"coordinator",
+	"fleet_id",
+	"hotkey",
+	"client_id",
+	"client_key",
+	"generation",
+	"valid_from_epoch",
+	"valid_to_epoch",
+	"commitment_hash",
+}
+
+// snCheckFleetBindingKeys requires one json object with exactly the binding
+// keys, each once and spelled exactly. encoding/json alone would take the last
+// of duplicate keys, match keys case-insensitively and ignore unknown keys, so
+// a pasted binding could carry e.g. both "hotkey" and "Hotkey": an app showing
+// its own parse for review would show one hotkey while the device signs the
+// other. Refusing those leaves one reading for every parser.
+func snCheckFleetBindingKeys(bindingJson string) error {
+	decoder := json.NewDecoder(strings.NewReader(bindingJson))
+	token, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("binding json: %w", err)
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '{' {
+		return errors.New("binding must be a json object")
+	}
+	seenKeys := map[string]bool{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("binding json: %w", err)
+		}
+		key, ok := token.(string)
+		if !ok {
+			return errors.New("binding json: expected a key")
+		}
+		if !slices.Contains(snFleetBindingKeys, key) {
+			return fmt.Errorf("binding has unknown field %q", key)
+		}
+		if seenKeys[key] {
+			return fmt.Errorf("binding has duplicate field %q", key)
+		}
+		seenKeys[key] = true
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return fmt.Errorf("binding json: %w", err)
+		}
+	}
+	// the closing brace, then nothing but whitespace
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("binding json: %w", err)
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return errors.New("binding json has trailing data")
+	}
+	for _, key := range snFleetBindingKeys {
+		if !seenKeys[key] {
+			return fmt.Errorf("binding is missing field %q", key)
+		}
+	}
+	return nil
+}
+
+// snParseFleetBinding parses and validates a binding. Values may use the flex
+// forms (hex, uuid or byte-array bytes; decimal or string numbers), which all
+// map to one canonical binding; keys must be exact (snCheckFleetBindingKeys).
 func snParseFleetBinding(bindingJson string) (*protocol.FleetBinding, error) {
+	if err := snCheckFleetBindingKeys(bindingJson); err != nil {
+		return nil, err
+	}
 	var j snFleetBindingJson
 	if err := json.Unmarshal([]byte(bindingJson), &j); err != nil {
 		return nil, fmt.Errorf("binding json: %w", err)
@@ -333,7 +409,11 @@ func (self *snDevice) GetSnClientKey() string {
 // §11.4: chain_id, netuid, coordinator, fleet_id, hotkey, client_id,
 // client_key, generation, valid_from_epoch, valid_to_epoch,
 // commitment_hash) with this device's client key. The binding must name
-// this client and its key. Returns the 64-byte signature as 0x hex.
+// this client and its key: apps sign a pasted binding, and a binding for
+// another key must never get this device's signature. Only the canonical
+// binding digest is signed, never the given bytes. This runs in the process
+// that holds the key (DeviceLocal; DeviceRemote forwards the json over rpc).
+// Returns the 64-byte signature as 0x hex.
 func (self *snDevice) SignSnFleetBinding(bindingJson string) (string, error) {
 	b, err := snParseFleetBinding(bindingJson)
 	if err != nil {
@@ -345,6 +425,11 @@ func (self *snDevice) SignSnFleetBinding(bindingJson string) (string, error) {
 	key, err := self.snClientPrivateKey()
 	if err != nil {
 		return "", err
+	}
+	// protocol SignClient checks this too; refuse here first so the check
+	// does not depend on that layer
+	if !bytes.Equal(b.ClientKey[:], key.Public().(ed25519.PublicKey)) {
+		return "", errors.New("binding client_key is not this device's client key")
 	}
 	signature, err := b.SignClient(key)
 	if err != nil {
