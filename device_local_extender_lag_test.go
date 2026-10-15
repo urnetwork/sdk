@@ -251,6 +251,10 @@ func testShortenExtenderLagLifecycle(t *testing.T) {
 	})
 }
 
+// The opt-out hold of the tests that aren't about it: short, so an opt-out is
+// told within a moment.
+const testProvideMeasurementOptOutHold = 200 * time.Millisecond
+
 // The role's fixture with the measurement side of the operator in front of
 // it. `newSpace` is the fixture's (nil for the manager-backed space, which
 // keeps local state). The role's first pass has started when this returns.
@@ -258,6 +262,18 @@ func newTestProvideMeasurementFixture(
 	t *testing.T,
 	newSpace func(ctx context.Context) *NetworkSpace,
 	configureDevice func(settings *DeviceLocalSettings),
+) (*testProvideExtenderFixture, *testProvideMeasurementOperator) {
+	t.Helper()
+	return newTestProvideMeasurementFixtureWithHold(t, newSpace, configureDevice, testProvideMeasurementOptOutHold)
+}
+
+// The fixture, with roles that tell the operator of an opt-out once it has
+// held `optOutHold`.
+func newTestProvideMeasurementFixtureWithHold(
+	t *testing.T,
+	newSpace func(ctx context.Context) *NetworkSpace,
+	configureDevice func(settings *DeviceLocalSettings),
+	optOutHold time.Duration,
 ) (*testProvideExtenderFixture, *testProvideMeasurementOperator) {
 	t.Helper()
 	measurement := newTestProvideMeasurementOperator(t)
@@ -268,6 +284,7 @@ func newTestProvideMeasurementFixture(
 		// the measurement routes are on the plain api url; the activation
 		// keeps to the family urls, which are set
 		settings.ApiUrl = measurement.apiUrl
+		settings.MeasurementOptOutHold = optOutHold
 	})
 	fixture.waitPass()
 	return fixture, measurement
@@ -477,14 +494,16 @@ func testOpenProvideMeasurementSessionConn(
 	return conn, nil
 }
 
-// The owner's measurements setting applies to a running role at once
-// (lag.dev/PLAN.md C4): off takes the certificate down, so a session open
-// under the measurement name is closed and a new one is refused, and the pass
-// it asks for at once tells the operator; on asks for the certificate anew in
-// the pass it asks for, and the role serves sessions again.
+// The owner's measurements setting applies to a running role (lag.dev/PLAN.md
+// C4): off takes the certificate down at once, so a session open under the
+// measurement name is closed and a new one is refused, and once the setting
+// has stayed off for the hold, the pass the role asks for then tells the
+// operator; on asks for the certificate anew in the pass it asks for, and the
+// role serves sessions again.
 func TestDeviceLocalProviderExtenderMeasurementsToggleAtRuntime(t *testing.T) {
 	testShortenExtenderLagLifecycle(t)
-	fixture, measurement := newTestProvideMeasurementFixture(t, nil, nil)
+	optOutHold := 3 * time.Second
+	fixture, measurement := newTestProvideMeasurementFixtureWithHold(t, nil, nil, optOutHold)
 	role := fixture.extender()
 	if !fixture.device.GetMeasurementsEnabled() {
 		t.Fatal("measurements are off by default")
@@ -503,9 +522,14 @@ func TestDeviceLocalProviderExtenderMeasurementsToggleAtRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	offTime := time.Now()
 	fixture.device.SetMeasurementsEnabled(false)
 	if fixture.device.GetMeasurementsEnabled() {
 		t.Fatal("the setting did not take")
+	}
+	// the operator isn't told yet; the role waits out the hold
+	if role.measurementOptOutIsTold() {
+		t.Fatal("the opt-out was told before the hold was up")
 	}
 	if closeErr := testProvideMeasurementSessionClose(t, conn); closeErr.Code != websocket.CloseGoingAway {
 		t.Fatalf("the open session closed with %d %q, expected going away", closeErr.Code, closeErr.Text)
@@ -514,11 +538,15 @@ func TestDeviceLocalProviderExtenderMeasurementsToggleAtRuntime(t *testing.T) {
 		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost)); err == nil {
 		t.Fatal("a session was admitted after opting out")
 	}
-	// the pass asked for at once says so on every post, and asks for nothing
+	// the pass asked for once the hold is up says so on every post, and asks
+	// for nothing
 	for range 2 {
 		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
 			t.Fatalf("post = disabled %t, request %q, expected the opt-out alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
 		}
+	}
+	if held := time.Since(offTime); held < optOutHold {
+		t.Fatalf("the opt-out was told %s after the setting went off, before the %s hold", held, optOutHold)
 	}
 
 	version, _ := role.measurementCert.ChangeMonitor().Get()
@@ -535,8 +563,9 @@ func TestDeviceLocalProviderExtenderMeasurementsToggleAtRuntime(t *testing.T) {
 }
 
 // The role reads the setting as it starts: a role started with measurements
-// off keeps the measurement key, says measurement_disabled from its first post,
-// asks for no certificate and reads none.
+// off, since longer than the hold, keeps the measurement key, says
+// measurement_disabled from its first post, asks for no certificate and reads
+// none.
 func TestDeviceLocalProviderExtenderMeasurementsOffAtStart(t *testing.T) {
 	testShortenExtenderLagLifecycle(t)
 	fixture, measurement := newTestProvideMeasurementFixture(t, nil, nil)
@@ -568,6 +597,172 @@ func TestDeviceLocalProviderExtenderMeasurementsOffAtStart(t *testing.T) {
 	}
 	if count := measurement.certPollCount(); count != polls {
 		t.Fatalf("the certificate route was read %d times with measurements off", count-polls)
+	}
+}
+
+// Turned off and on again within the hold, the switch costs the operator
+// nothing (lag.dev/PLAN.md C4): the API stops at once, no activation says
+// measurement_disabled, before or after, and on again the role installs the
+// certificate the operator still holds and serves sessions with it.
+func TestDeviceLocalProviderExtenderMeasurementsToggleWithinTheHold(t *testing.T) {
+	testShortenExtenderLagLifecycle(t)
+	fixture, measurement := newTestProvideMeasurementFixtureWithHold(t, nil, nil, time.Hour)
+	role := fixture.extender()
+	fixture.waitPost()
+	if post := fixture.waitPost(); post.args.MeasurementCsr == "" {
+		t.Fatal("the activation after the first carried no request")
+	}
+	name := connect.ExtenderMeasurementName(measurement.extenderId, "")
+	testWaitProvideMeasurementCertificate(t, role.measurementCert)
+	rootCas := x509.NewCertPool()
+	rootCas.AddCert(measurement.caCertificate)
+	conn, err := testOpenProvideMeasurementSessionConn(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// off: the API stops at once, and the operator isn't told
+	fixture.device.SetMeasurementsEnabled(false)
+	if closeErr := testProvideMeasurementSessionClose(t, conn); closeErr.Code != websocket.CloseGoingAway {
+		t.Fatalf("the open session closed with %d %q, expected going away", closeErr.Code, closeErr.Text)
+	}
+	if _, err := testOpenProvideMeasurementSessionConn(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost)); err == nil {
+		t.Fatal("a session was admitted after opting out")
+	}
+	// a pass while the setting is off says nothing of it, and asks for nothing
+	role.currentActivator().Reactivate()
+	for range 2 {
+		if post := fixture.waitPost(); post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected neither within the hold", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+
+	// on again within the hold: the wait for it is called off
+	version, _ := role.measurementCert.ChangeMonitor().Get()
+	fixture.device.SetMeasurementsEnabled(true)
+	func() {
+		role.stateLock.Lock()
+		defer role.stateLock.Unlock()
+		if role.measurementOptOutTold || role.measurementOptOutTimer != nil {
+			t.Fatalf("opt-out told %t, waiting %t, expected neither once on again", role.measurementOptOutTold, role.measurementOptOutTimer != nil)
+		}
+	}()
+	// the operator still holds the certificate, which the role installs again
+	waitTestProvideMeasurementChange(t, role.measurementCert, version)
+	testWaitProvideMeasurementCertificate(t, role.measurementCert)
+	if _, err := testOpenProvideMeasurementSessionConn(t, fixture.tcpPort, name, rootCas, testProvideMeasurementTicket(
+		t, fixture.rootPrivateKey, role.publicKey, testProvideExtenderHost)); err != nil {
+		t.Fatalf("no session after opting back in: %v", err)
+	}
+	role.currentActivator().Reactivate()
+	for range 2 {
+		if post := fixture.waitPost(); post.args.MeasurementDisabled {
+			t.Fatal("a post said measurement_disabled after the setting came back on within the hold")
+		}
+	}
+}
+
+// A role that starts with the setting off tells the operator once the setting
+// has stayed off for the hold since it was set, so restarting the role can't
+// cut the hold short (lag.dev/PLAN.md C4): one set a moment ago isn't told at
+// the start, and one set long ago is, from the first post.
+func TestDeviceLocalProviderExtenderMeasurementsOffAtStartHoldsFromTheSetting(t *testing.T) {
+	testShortenExtenderLagLifecycle(t)
+	fixture, _ := newTestProvideMeasurementFixtureWithHold(t, nil, nil, time.Hour)
+	fixture.waitPost()
+	fixture.waitPost()
+
+	// off while the role is down, then the role started again
+	fixture.device.SetProvideExtender(false)
+	if role := fixture.extender(); role != nil {
+		t.Fatal("the role still runs with the provider extender setting off")
+	}
+	fixture.device.SetMeasurementsEnabled(false)
+	fixture.device.SetProvideExtender(true)
+	fixture.waitPass()
+	role := fixture.extender()
+	if role == nil || role.measurementCert == nil || role.measurementCert.Enabled() {
+		t.Fatal("the restarted role did not start with measurements off")
+	}
+	for range 2 {
+		if post := fixture.waitPost(); post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected neither within the hold", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+	func() {
+		role.stateLock.Lock()
+		defer role.stateLock.Unlock()
+		if role.measurementOptOutTimer == nil {
+			t.Fatal("the role does not wait out the hold of a setting just set")
+		}
+	}()
+
+	// the same setting, set two hours ago
+	settingFile := filepath.Join(fixture.networkSpace.asyncLocalState.GetLocalState().localStorageDir, measurementsEnabledFileName)
+	setTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(settingFile, setTime, setTime); err != nil {
+		t.Fatal(err)
+	}
+	fixture.device.SetProvideExtender(false)
+	fixture.device.SetProvideExtender(true)
+	fixture.waitPass()
+	for range 2 {
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the opt-out alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+}
+
+// A kept identity whose measurement key can't be used serves no measurement
+// name, so every activation asks the operator to withdraw it, from the first
+// post and without the opt-out's hold, which is for the owner's switch
+// (lag.dev/PLAN.md C4, C9). The certificate route is never read, the key file
+// is left as it is, and the owner's switch changes nothing.
+func TestDeviceLocalProviderExtenderMeasurementKeyNotUsable(t *testing.T) {
+	testShortenExtenderLagLifecycle(t)
+	fixture, measurement := newTestProvideMeasurementFixtureWithHold(t, nil, nil, time.Hour)
+	fixture.waitPost()
+	fixture.waitPost()
+
+	// a measurement key that does not parse, then the role started again
+	fixture.device.SetProvideExtender(false)
+	if role := fixture.extender(); role != nil {
+		t.Fatal("the role still runs with the provider extender setting off")
+	}
+	keyFile := filepath.Join(fixture.networkSpace.asyncLocalState.GetLocalState().localStorageDir, extender.ExtenderMeasurementKeyFileName)
+	unusable := []byte("not a measurement key\n")
+	if err := os.WriteFile(keyFile, unusable, 0600); err != nil {
+		t.Fatal(err)
+	}
+	polls := measurement.certPollCount()
+	fixture.device.SetProvideExtender(true)
+	fixture.waitPass()
+	role := fixture.extender()
+	if role == nil || role.measurementCert != nil || !role.currentMeasurementKeyUnusable() {
+		t.Fatal("the role did not start without a certificate for its unusable key")
+	}
+	for range 2 {
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the withdrawal alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+
+	// the owner's switch has no certificate to change
+	fixture.device.SetMeasurementsEnabled(false)
+	fixture.device.SetMeasurementsEnabled(true)
+	role.currentActivator().Reactivate()
+	for range 2 {
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the withdrawal alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+	if count := measurement.certPollCount(); count != polls {
+		t.Fatalf("the certificate route was read %d times with an unusable key", count-polls)
+	}
+	if keyBytes, err := os.ReadFile(keyFile); err != nil || !bytes.Equal(keyBytes, unusable) {
+		t.Fatalf("the unusable key file was changed: %q %v", keyBytes, err)
 	}
 }
 

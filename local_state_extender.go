@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/urnetwork/connect"
 )
@@ -218,6 +219,17 @@ func (self *LocalState) readMeasurementsEnabled() (measurementsEnabled bool, sto
 	default:
 		return false, false
 	}
+}
+
+// When the measurements setting was last set, by its file's modification
+// time: SetMeasurementsEnabled is the file's only writer. False when there is
+// no file to tell by.
+func (self *LocalState) measurementsEnabledChangeTime() (time.Time, bool) {
+	info, err := os.Stat(filepath.Join(self.localStorageDir, measurementsEnabledFileName))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return info.ModTime(), true
 }
 
 // Persists the measurements setting. The cache takes the value whether or not

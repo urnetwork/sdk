@@ -46,6 +46,9 @@ test("latency: every server is pinged, with no load and nothing about the addres
       assert.ok(result.overall.best && result.overall.rpm);
       assert.equal(result.bytes.total, 0);
       assert.equal(result.stoppedEarly, null);
+      // in Node this process answers the pings, not the network stack
+      assert.match(result.notes[0], /This process answers them on its main thread, which also reads the downloads/);
+      assert.ok(!result.notes.some((note) => /network stack answers them\./.test(note)));
       assert.equal(result.visitor?.city, "Austin");
       assert.deepEqual(result.visitor?.asn, { number: 64500, organization: "Example Networks" });
       assert.ok(!JSON.stringify(result).includes(VISITOR_IP), "the visitor's address is never in the result");
@@ -217,6 +220,158 @@ test("a server whose session won't open is replaced by a spare", async () => {
       // the track asked for the server and its spares in one call
       assert.equal(api.trackRequests.length, 1);
       assert.equal(api.trackRequests[0].extenders.length, 3);
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("bufferbloat skips a server whose load won't fit in the time left, and still loads the next", { timeout: 60_000 }, async () => {
+  // Houston's hello asks for 8 s each way, within what its ticket allows;
+  // London's for the mock's 1 s. 12 s fits London's load and not Houston's.
+  await withApi(
+    { places: ["houston", "london"], extenderByPlace: { houston: { hello: { downloadMs: 8000, uploadMs: 8000 } } } },
+    async (api) => {
+      const local = contextFor(api);
+      try {
+        const result = await measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 12_000, servers: 2, idleMs: 300, settleMs: 100 });
+        const [houston, london] = result.servers;
+        assert.equal(houston.city, "Houston");
+        assert.deepEqual([houston.load?.status, houston.load?.reason], ["skipped", "max_seconds"]);
+        assert.equal(london.load?.status, "complete", `${london.load?.status} ${london.load?.reason}`);
+        assert.equal(result.stoppedEarly, "max_seconds");
+        const [houstonExtender, londonExtender] = [...api.extenders.values()];
+        assert.equal(houstonExtender.sessions.filter((session) => session.loadRequests > 0).length, 0);
+        assert.equal(londonExtender.sessions.filter((session) => session.loadRequests > 0).length, 1);
+      } finally {
+        await local.close();
+      }
+    },
+  );
+});
+
+test("a run in which no server opened is unavailable, and closes at once", async () => {
+  await withApi({ places: ["houston"], deadFirstTicket: true }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const started = performance.now();
+      for (const run of [
+        () => measureLatency(local.context, { durationMs: 30_000, servers: 1 }),
+        () => measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 60_000, servers: 1, idleMs: 30_000 }),
+      ]) {
+        await assert.rejects(run(), (error: unknown) => {
+          assert.ok(error instanceof MeasureError);
+          assert.equal(error.code, "unavailable");
+          assert.match(error.message, /^none of the 1 lag\.dev servers chosen could be reached: /);
+          return true;
+        });
+      }
+      assert.ok(performance.now() - started < 20_000, "neither waited out its pings");
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("an extender whose hello asks for more than its ticket is never loaded", { timeout: 60_000 }, async () => {
+  // the reviewer's hostile hello: 120 s each way on 16 streams, where the
+  // ticket allows 8 s and 4 at most
+  const hostile = { hello: { downloadMs: 120_000, uploadMs: 120_000, maxStreams: 16 } };
+  await withApi({ places: ["houston", "london"], extender: hostile }, async (api) => {
+    const local = contextFor(api);
+    try {
+      await assert.rejects(
+        measureBufferbloat(local.context, { maxBytes: 50e6, maxMs: 600_000, servers: 2, idleMs: 300, settleMs: 100 }),
+        (error: unknown) => {
+          assert.ok(error instanceof MeasureError);
+          assert.equal(error.code, "unavailable");
+          assert.match(error.message, /the extender's hello asks for more than its ticket allows: downloadMs 120000, the ticket allows 8000/);
+          return true;
+        },
+      );
+      const sessions = [...api.extenders.values()].flatMap((extender) => extender.sessions);
+      assert.ok(sessions.length >= 2);
+      assert.ok(sessions.every((session) => session.loadRequests === 0 && session.downloadRequests === 0));
+      assert.equal(local.context.meter!.bytes(), 0);
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("a stop while the run is set up cuts the call short, asks for no track, and rejects as interrupted", async () => {
+  await withApi({ places: ["houston"], myIpInfoDelayMs: 60_000 }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const controller = new AbortController();
+      const run = measureLatency(local.context, { durationMs: 1000, servers: 1, signal: controller.signal });
+      while (!api.requests.some((request) => request.path === "/my-ip-info")) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const stoppedAt = performance.now();
+      controller.abort();
+      await assert.rejects(run, (error: unknown) => {
+        assert.ok(error instanceof MeasureError);
+        assert.equal(error.code, "interrupted");
+        return true;
+      });
+      assert.ok(performance.now() - stoppedAt < 10_000);
+      assert.deepEqual(api.requests.map((request) => request.path), ["/my-ip-info"]);
+      assert.equal(api.trackRequests.length, 0);
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("a stop while sessions open closes the ones that opened and rejects as interrupted", { timeout: 60_000 }, async () => {
+  // Houston's ticket points at a host that never answers, so its session
+  // waits up to 10 s to open; London's opens at once
+  await withApi({ places: ["houston", "london"], holdFirstTicket: true }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const controller = new AbortController();
+      const run = measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 60_000, servers: 2, idleMs: 300, signal: controller.signal });
+      const london = [...api.extenders.values()][1];
+      while (london.openSessions() === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const stoppedAt = performance.now();
+      controller.abort();
+      await assert.rejects(run, (error: unknown) => error instanceof MeasureError && error.code === "interrupted");
+      assert.ok(performance.now() - stoppedAt < 5000, "it waited for the session that never opens");
+      while (london.openSessions() !== 0) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(london.sessions.filter((session) => session.loadRequests > 0).length, 0);
+    } finally {
+      await local.close();
+    }
+  });
+});
+
+test("bufferbloat keeps the results of a server whose session is reclaimed after its load", { timeout: 60_000 }, async () => {
+  // each extender closes a session with 4410 200 ms after its load ends, as a
+  // full one does to admit another: Houston's goes while London still loads
+  await withApi({ places: ["houston", "london"], extender: { reclaimAfterLoadMs: 200 } }, async (api) => {
+    const local = contextFor(api);
+    try {
+      const result = await measureBufferbloat(local.context, { maxBytes: 20e9, maxMs: 60_000, servers: 2, idleMs: 600, settleMs: 400 });
+      assert.equal(result.stoppedEarly, null);
+      for (const server of result.servers) {
+        assert.equal(server.error, undefined, server.city);
+        const load = server.load!;
+        assert.equal(load.status, "complete", `${server.city}: ${load.status} ${load.reason}`);
+        assert.ok(load.download && load.download.p50Mbps! > 0 && load.download.bytes > 0, server.city);
+        assert.ok(load.upload && load.upload.p50Mbps! > 0 && load.upload.bytes > 0, server.city);
+        assert.equal(load.upload.verified, true, server.city);
+        assert.ok(server.pings > 0 && server.idle !== null, server.city);
+      }
+      assert.ok(result.overall.downloadMbps?.median && result.overall.uploadMbps?.median);
+      // Houston's session was reclaimed, and nothing opened another
+      const [houston, london] = [...api.extenders.values()];
+      assert.deepEqual(houston.sessions.map((session) => session.closeCode), [4410]);
+      assert.equal(london.sessions.length, 1);
     } finally {
       await local.close();
     }

@@ -459,6 +459,10 @@ type deviceLocalExtenderSettings struct {
 	// change while it runs reaches it through setMeasurementsEnabled. Nil
 	// serves it.
 	MeasurementsEnabled func() bool
+	// How long the measurements setting must stay off before the activation
+	// tells the operator, which withdraws the measurement name (C4, C9). Zero
+	// takes extenderMeasurementOptOutHold. Tests shorten it.
+	MeasurementOptOutHold time.Duration
 }
 
 // The bound dns ports of one extender as one string (F3, L2), ascending.

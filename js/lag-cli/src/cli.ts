@@ -99,8 +99,60 @@ interface StackFile {
   ca_file?: string;
 }
 
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+// A file an option names; one that can't be read is a bad argument.
+const readOptionFile = (option: string, path: string): string => {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    throw new UsageError(`${option}: can't read ${JSON.stringify(path)}: ${messageOf(error)}`);
+  }
+};
+
+const parseOptionHostPort = (option: string, text: string): { host: string; port: number } => {
+  try {
+    return parseHostPort(text);
+  } catch (error) {
+    throw new UsageError(`${option}: ${messageOf(error)}`);
+  }
+};
+
+// An http or https url, as an option gives it.
+const parseOptionUrl = (option: string, text: string): URL => {
+  let url: URL | undefined;
+  try {
+    url = new URL(text);
+  } catch {
+    url = undefined;
+  }
+  if (url === undefined || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    throw new UsageError(`${option} must be an http or https url, got ${JSON.stringify(text)}`);
+  }
+  return url;
+};
+
+/** The exit codes: a result, a measurement that couldn't run, bad arguments, and Ctrl-C before any server was measured. */
+export const EXIT_RESULT = 0;
+export const EXIT_FAILED = 1;
+export const EXIT_USAGE = 2;
+export const EXIT_INTERRUPTED = 130;
+
 /** Run the CLI with `argv` (without node and the script); the exit code. */
 export async function main(argv: string[], io: Io): Promise<number> {
+  // Under --json every failure is also a JSON object on stdout, bad arguments
+  // included, but not under mcp, whose stdout is the protocol's. Until the
+  // arguments parse, the words before any "--" say whether they ask for it.
+  const options = argv.includes("--") ? argv.slice(0, argv.indexOf("--")) : argv;
+  let json = options.includes("--json") && !options.includes("mcp");
+  const fail = (exitCode: number, failure: { error: string; message: string; retryAfterMs?: number }, usage = false): number => {
+    if (json) {
+      io.stdout.write(`${JSON.stringify(failure, null, 2)}\n`);
+    }
+    io.stderr.write(`lagdev: ${failure.message}\n${usage ? `\n${USAGE}` : ""}`);
+    return exitCode;
+  };
+
   let parsed;
   try {
     parsed = parseArgs({
@@ -125,26 +177,25 @@ export async function main(argv: string[], io: Io): Promise<number> {
       },
     });
   } catch (error) {
-    io.stderr.write(`lagdev: ${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`);
-    return 2;
+    return fail(EXIT_USAGE, { error: "usage", message: messageOf(error) }, true);
   }
   const { values, positionals } = parsed;
+  const command = positionals[0] ?? "latency";
+  json = values.json === true && command !== "mcp";
   if (values.help) {
     io.stdout.write(USAGE);
-    return 0;
+    return EXIT_RESULT;
   }
   if (values.version) {
     io.stdout.write(`${VERSION}\n`);
-    return 0;
+    return EXIT_RESULT;
   }
-  const command = positionals[0] ?? "latency";
   if (positionals.length > 1 || !["latency", "bufferbloat", "mcp", "help"].includes(command)) {
-    io.stderr.write(`lagdev: unknown command ${JSON.stringify(positionals.join(" "))}\n\n${USAGE}`);
-    return 2;
+    return fail(EXIT_USAGE, { error: "usage", message: `unknown command ${JSON.stringify(positionals.join(" "))}` }, true);
   }
   if (command === "help") {
     io.stdout.write(USAGE);
-    return 0;
+    return EXIT_RESULT;
   }
 
   let local;
@@ -159,36 +210,49 @@ export async function main(argv: string[], io: Io): Promise<number> {
     maxMs = parsePositive("max-seconds", values["max-seconds"], 180, 3600) * 1000;
 
     let apiURL = values.api;
-    let caPem = values.ca === undefined ? undefined : readFileSync(values.ca, "utf8");
-    let connectTo = values["connect-to"] === undefined ? undefined : parseHostPort(values["connect-to"]);
+    if (apiURL !== undefined) {
+      parseOptionUrl("--api", apiURL);
+    }
+    let caPem = values.ca === undefined ? undefined : readOptionFile("--ca", values.ca);
+    let connectTo = values["connect-to"] === undefined ? undefined : parseOptionHostPort("--connect-to", values["connect-to"]);
+    const origin = values.origin === undefined ? undefined : parseOptionUrl("--origin", values.origin).origin;
     if (values.stack !== undefined) {
-      const stack = JSON.parse(readFileSync(values.stack, "utf8")) as StackFile;
-      if (!stack.api?.url || !stack.front || !stack.ca_file) {
+      let stack: StackFile;
+      try {
+        stack = JSON.parse(readOptionFile("--stack", values.stack)) as StackFile;
+      } catch (error) {
+        throw error instanceof UsageError ? error : new UsageError(`--stack: ${values.stack} is not JSON: ${messageOf(error)}`);
+      }
+      if (!stack?.api?.url || !stack.front || !stack.ca_file) {
         throw new UsageError(`${values.stack} has no api.url, front or ca_file: is it a lag.dev stack.json?`);
       }
-      apiURL ??= stack.api.url;
-      caPem ??= readFileSync(stack.ca_file, "utf8");
-      connectTo ??= parseHostPort(stack.front);
+      if (apiURL === undefined) {
+        parseOptionUrl(`--stack's api.url`, stack.api.url);
+        apiURL = stack.api.url;
+      }
+      caPem ??= readOptionFile(`--stack's ca_file`, stack.ca_file);
+      connectTo ??= parseOptionHostPort(`--stack's front`, stack.front);
     }
     const progress = values.quiet || command === "mcp" ? undefined : (line: string) => io.stderr.write(`lagdev: ${line}\n`);
     local = createContext({
       apiURL,
       caPem,
       connectTo,
-      origin: values.origin,
+      origin,
       save: !values["no-save"],
       configDir: values["config-dir"],
       onProgress: progress,
     });
   } catch (error) {
-    io.stderr.write(`lagdev: ${error instanceof Error ? error.message : String(error)}\n`);
-    return error instanceof UsageError ? 2 : 1;
+    return error instanceof UsageError
+      ? fail(EXIT_USAGE, { error: "usage", message: messageOf(error) })
+      : fail(EXIT_FAILED, { error: "failed", message: messageOf(error) });
   }
 
   try {
     if (command === "mcp") {
       await serveMcp(local.context);
-      return 0;
+      return EXIT_RESULT;
     }
     let result: Measurement;
     if (command === "bufferbloat") {
@@ -197,19 +261,14 @@ export async function main(argv: string[], io: Io): Promise<number> {
       result = await measureLatency(local.context, { durationMs, servers, client: "cli", signal: io.signal });
     }
     io.stdout.write(values.json ? `${JSON.stringify(result, null, 2)}\n` : formatMeasurement(result));
-    return 0;
+    return EXIT_RESULT;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (values.json) {
-      const failure = {
-        error: error instanceof MeasureError ? error.code : "failed",
-        message,
-        ...(error instanceof MeasureError && error.retryAfterMs ? { retryAfterMs: error.retryAfterMs } : {}),
-      };
-      io.stdout.write(`${JSON.stringify(failure, null, 2)}\n`);
-    }
-    io.stderr.write(`lagdev: ${message}\n`);
-    return 1;
+    const failure = {
+      error: error instanceof MeasureError ? error.code : "failed",
+      message: messageOf(error),
+      ...(error instanceof MeasureError && error.retryAfterMs ? { retryAfterMs: error.retryAfterMs } : {}),
+    };
+    return fail(error instanceof MeasureError && error.code === "interrupted" ? EXIT_INTERRUPTED : EXIT_FAILED, failure);
   } finally {
     await local.close();
   }
@@ -230,7 +289,7 @@ if (isProgram()) {
   process.on("SIGINT", () => {
     interrupts += 1;
     if (interrupts > 1) {
-      process.exit(130);
+      process.exit(EXIT_INTERRUPTED);
     }
     controller.abort();
   });

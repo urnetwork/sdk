@@ -4,8 +4,12 @@
 // machine running it is on.
 //
 // - latency: every server is pinged for a while, with no load. Each server
-//   times its own pings and this machine's network stack answers them, so
-//   a busy machine doesn't enter the round trips.
+//   times its own pings. In a browser the network stack answers them, but
+//   in Node undici answers each ping from its JavaScript frame parser on the
+//   main thread, which also reads the downloads here. So whatever delays this
+//   process's event loop delays the pongs and enters the round trips: little
+//   when idle, but at multi-gigabit load rates enough to add to the loaded
+//   increase.
 // - bufferbloat: the same pings, and after an idle start each server in
 //   turn runs one load: a download, then an upload, over four streams each.
 //   How much the round trip to the loading server grows in each direction is
@@ -34,12 +38,12 @@ export type LagClient = "cli" | "mcp";
 /** What a measurement needs from the outside, so tests can stand in for it. */
 export interface MeasureContext {
   api: {
-    lagExtenders(): Promise<LagExtendersResult>;
-    lagTrack(args: LagTrackArgs, options?: { headers?: Record<string, string> }): Promise<LagTrackResult>;
-    myIpInfo(): Promise<LagMyIpInfoResult>;
+    lagExtenders(options?: { signal?: AbortSignal }): Promise<LagExtendersResult>;
+    lagTrack(args: LagTrackArgs, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<LagTrackResult>;
+    myIpInfo(options?: { signal?: AbortSignal }): Promise<LagMyIpInfoResult>;
   };
   /** the guest whose jwt the api client sends */
-  guest: { token(): Promise<string>; invalidate(jwt?: string): Promise<void> };
+  guest: { token(options?: { signal?: AbortSignal }): Promise<string>; invalidate(jwt?: string): Promise<void> };
   openSession(options: { host: string; ticket: string; onEvent(event: LagSessionEvent): void }): LagSession;
   /** the api's origin, for the result */
   apiOrigin: string;
@@ -52,6 +56,18 @@ export interface MeasureContext {
   onProgress?: (line: string) => void;
 }
 
+/**
+ * How far a run has got, for a client that shows it, such as an MCP client
+ * (notifications/progress): numbered steps, each with what the run is doing.
+ */
+export interface MeasureProgress {
+  /** steps taken so far; it grows by one with each */
+  progress: number;
+  /** the steps of the whole run, once known; a run that stops early takes fewer */
+  total?: number;
+  message: string;
+}
+
 export interface LatencyOptions {
   /** how long to ping, ms (default 15 s) */
   durationMs?: number;
@@ -59,7 +75,13 @@ export interface LatencyOptions {
   servers?: number;
   /** the tool running it, sent as X-Lag-Client with the track request */
   client?: LagClient;
+  /**
+   * Stops the run. Before any server is measured, it rejects with a
+   * MeasureError "interrupted"; after, the result says it was interrupted.
+   */
   signal?: AbortSignal;
+  /** each step of the run: connecting, then every 5 s of pinging */
+  onProgress?: (progress: MeasureProgress) => void;
 }
 
 export interface BufferbloatOptions {
@@ -75,7 +97,10 @@ export interface BufferbloatOptions {
   settleMs?: number;
   /** the tool running it, sent as X-Lag-Client with the track request */
   client?: LagClient;
+  /** as LatencyOptions' */
   signal?: AbortSignal;
+  /** each step of the run: connecting, the idle start, then each load */
+  onProgress?: (progress: MeasureProgress) => void;
 }
 
 export interface Percentiles {
@@ -158,7 +183,11 @@ export interface Measurement {
   notes: string[];
 }
 
-/** Why a measurement couldn't run: the api's refusal, or no server. */
+/**
+ * Why a measurement couldn't run: the api's refusal (its code), no server to
+ * measure ("unavailable"), or a stop before any server was measured
+ * ("interrupted").
+ */
 export class MeasureError extends Error {
   readonly code: string;
   readonly retryAfterMs?: number;
@@ -198,6 +227,11 @@ const LOAD_SETUP_MS = 2000;
 // M4, M6, amendment 15).
 const LOAD_FINAL_MS = 2 * LAG_SPREAD_MAX_MS;
 
+// how long closing waits for the sessions to say they have closed
+const CLOSE_WAIT_MS = 3000;
+// a latency run reports its progress this often while it pings
+const LATENCY_PROGRESS_MS = 5000;
+
 const round = (value: number, digits: number): number => {
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
@@ -227,6 +261,60 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     const timer = setTimeout(done, ms);
     signal?.addEventListener("abort", done, { once: true });
   });
+
+// `promise`, or a rejection as soon as `signal` aborts
+const unlessAborted = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (signal === undefined) {
+    return promise;
+  }
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+};
+
+const interrupted = () => new MeasureError("interrupted", "interrupted before any server was measured");
+
+// The run's progress: a line for a person watching (the context's), and a
+// numbered step for a client that shows how far the run is (the options').
+// A tick goes to the client alone, so the person's lines stay few.
+interface Progress {
+  step(message: string, total?: number): void;
+  tick(message: string, total?: number): void;
+}
+
+const progressOf = (context: MeasureContext, onProgress?: (progress: MeasureProgress) => void): Progress => {
+  let steps = 0;
+  const notify = (message: string, total?: number) => {
+    steps += 1;
+    try {
+      onProgress?.({ progress: steps, ...(total === undefined ? {} : { total }), message });
+    } catch {
+      // a client that can't be told is no reason to stop
+    }
+  };
+  return {
+    step: (message, total) => {
+      context.onProgress?.(message);
+      notify(message, total);
+    },
+    tick: notify,
+  };
+};
 
 const placeOf = (server: Server): string =>
   [server.city, server.countryCode.toUpperCase()].filter((part) => part !== "").join(", ") || server.extenderId;
@@ -261,10 +349,15 @@ const refusalError = (what: string, refusal: { code?: string; message?: string; 
   );
 
 /** Run an api call with the guest's jwt; a refused jwt makes a new guest, once. */
-async function withGuest<T>(context: MeasureContext, call: () => Promise<T>, retried = false): Promise<T> {
+async function withGuest<T>(
+  context: MeasureContext,
+  call: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  retried = false,
+): Promise<T> {
   let jwt: string;
   try {
-    jwt = await context.guest.token();
+    jwt = await context.guest.token({ signal });
   } catch (error) {
     if (error instanceof LagGuestSessionError) {
       throw refusalError("lag.dev couldn't start a guest session", {
@@ -280,7 +373,7 @@ async function withGuest<T>(context: MeasureContext, call: () => Promise<T>, ret
   } catch (error) {
     if (!retried && isURNetworkApiError(error) && error.kind === "http" && (error.status === 401 || error.status === 403)) {
       await context.guest.invalidate(jwt);
-      return await withGuest(context, call, true);
+      return await withGuest(context, call, signal, true);
     }
     throw error;
   }
@@ -293,21 +386,41 @@ interface Prepared {
 }
 
 // The guest, the sample, the track and an open session on each server, a
-// spare standing in for a server whose session won't open.
+// spare standing in for a server whose session won't open. With no session
+// open on any server it rejects as unavailable: there is nothing to measure.
+// A stop on `signal` cuts every call short, asks for no track once it has
+// come (a track counts against the client's 12 an hour, A6), closes what
+// opened, and rejects as interrupted.
 async function prepare(
   context: MeasureContext,
   count: number,
   client: LagClient | undefined,
+  progress: Progress,
   signal?: AbortSignal,
 ): Promise<Prepared> {
   const startedAt = Date.now();
+  const stopIfInterrupted = () => {
+    if (signal?.aborted) {
+      throw interrupted();
+    }
+  };
+  // a call the stop cut short is the stop, whatever it threw
+  const interruptible = async <T>(call: () => Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      stopIfInterrupted();
+      throw error;
+    }
+  };
   let visitor: Visitor = {};
   try {
-    visitor = visitorOf(await context.api.myIpInfo());
+    visitor = visitorOf(await context.api.myIpInfo({ signal }));
   } catch {
     // without a place every server is chosen by spread alone
   }
-  const sample = await withGuest(context, () => context.api.lagExtenders());
+  stopIfInterrupted();
+  const sample = await interruptible(() => withGuest(context, () => context.api.lagExtenders({ signal }), signal));
   if (sample.error) {
     throw refusalError("lag.dev couldn't list its servers", sample.error);
   }
@@ -316,10 +429,16 @@ async function prepare(
     throw new MeasureError("unavailable", "no lag.dev server can be measured right now");
   }
   const ordered = [...selection.servers, ...selection.spares];
-  const track = await withGuest(context, () =>
-    context.api.lagTrack(
-      { extenders: ordered.map((server) => ({ extender_id: server.extenderId })) },
-      client === undefined ? undefined : { headers: { [LAG_CLIENT_HEADER]: client } },
+  stopIfInterrupted();
+  const track = await interruptible(() =>
+    withGuest(
+      context,
+      () =>
+        context.api.lagTrack(
+          { extenders: ordered.map((server) => ({ extender_id: server.extenderId })) },
+          { ...(client === undefined ? {} : { headers: { [LAG_CLIENT_HEADER]: client } }), signal },
+        ),
+      signal,
     ),
   );
   if (track.error) {
@@ -337,7 +456,7 @@ async function prepare(
     }
   }
 
-  context.onProgress?.(`connecting to ${selection.servers.length} servers`);
+  progress.step(`connecting to ${selection.servers.length} servers`);
   const dots = await Promise.all(
     selection.servers.map(async (server, position) => {
       const dot: Dot = { server, session: null, pings: [], phases: {}, progress: { download: 0, upload: 0 } };
@@ -348,7 +467,7 @@ async function prepare(
         dot.server = candidate.server;
         const session = openDot(context, dot, candidate.ticket);
         try {
-          await session.ready;
+          await unlessAborted(session.ready, signal);
           dot.session = session;
           return dot;
         } catch (error) {
@@ -362,6 +481,17 @@ async function prepare(
       return dot;
     }),
   );
+  if (signal?.aborted) {
+    await closeAll(dots);
+    throw interrupted();
+  }
+  if (dots.every((dot) => dot.session === null)) {
+    const reasons = [...new Set(dots.map((dot) => dot.error ?? "no session"))];
+    throw new MeasureError(
+      "unavailable",
+      `none of the ${dots.length} lag.dev servers chosen could be reached: ${reasons.join("; ")}`,
+    );
+  }
   return { startedAt, visitor, dots };
 }
 
@@ -396,7 +526,14 @@ async function closeAll(dots: Dot[]): Promise<void> {
       closing.push(dot.session.closed);
     }
   }
-  await Promise.race([Promise.allSettled(closing), sleep(3000)]);
+  // The wait's timer goes as soon as the sessions have closed. Left to run,
+  // it held the process open for 3 s after the result was printed.
+  const closed = new AbortController();
+  try {
+    await Promise.race([Promise.allSettled(closing), sleep(CLOSE_WAIT_MS, closed.signal)]);
+  } finally {
+    closed.abort();
+  }
 }
 
 interface Span {
@@ -572,7 +709,7 @@ function measurement(
 }
 
 const COMMON_NOTES = [
-  "Each server times its own pings, about four a second, and this machine's network stack answers them.",
+  "Each server times its own pings, about four a second. This process answers them on its main thread, which also reads the downloads, so its own delays add to a round trip: little when idle, but at multi-gigabit load rates enough to add to the loaded increase. A browser's network stack answers them instead.",
   "A ping is lost when no answer comes within 5 s. That is not a packet-loss measurement.",
   "RPM is 60,000 divided by the round trip in ms, banded as in draft-ietf-ippm-responsiveness-09: poor below 300, fair to 1,000, good to 6,000, excellent above.",
   "Nothing about this machine's address is stored: the guest session and its results keep only the network (ASN) and city.",
@@ -581,11 +718,23 @@ const COMMON_NOTES = [
 /** Ping up to 8 lag.dev servers for a while, with no load. */
 export async function measureLatency(context: MeasureContext, options: LatencyOptions = {}): Promise<Measurement> {
   const durationMs = Math.max(1000, options.durationMs ?? 15_000);
-  const prepared = await prepare(context, options.servers ?? 8, options.client, options.signal);
+  const signal = options.signal;
+  const progress = progressOf(context, options.onProgress);
+  const prepared = await prepare(context, options.servers ?? 8, options.client, progress, signal);
   const open = prepared.dots.filter((dot) => dot.session !== null).length;
-  context.onProgress?.(`pinging ${open} servers for ${Math.round(durationMs / 1000)} s`);
+  // connecting, the start of the pings, and a tick every LATENCY_PROGRESS_MS
+  const ticks = Math.ceil(durationMs / LATENCY_PROGRESS_MS);
+  const total = 1 + ticks;
+  progress.step(`pinging ${open} servers for ${Math.round(durationMs / 1000)} s`, total);
+  const pingsStart = Date.now();
   try {
-    await sleep(durationMs, options.signal);
+    for (let tick = 1; tick < ticks && !signal?.aborted; tick += 1) {
+      await sleep(pingsStart + tick * LATENCY_PROGRESS_MS - Date.now(), signal);
+      if (!signal?.aborted) {
+        progress.tick(`pinged ${open} servers for ${(tick * LATENCY_PROGRESS_MS) / 1000} of ${Math.round(durationMs / 1000)} s`, total);
+      }
+    }
+    await sleep(pingsStart + durationMs - Date.now(), signal);
   } finally {
     await closeAll(prepared.dots);
   }
@@ -613,15 +762,20 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
   const idleMs = options.idleMs ?? IDLE_MS;
   const settleMs = options.settleMs ?? SETTLE_MS;
   const signal = options.signal;
-  const prepared = await prepare(context, options.servers ?? 8, options.client, signal);
+  const progress = progressOf(context, options.onProgress);
+  const prepared = await prepare(context, options.servers ?? 8, options.client, progress, signal);
   const elapsed = () => Date.now() - prepared.startedAt;
   const spans: Span[] = [];
   let used = 0;
   let largest = 0;
   let stoppedEarly: Measurement["stoppedEarly"] = null;
+  // a server whose load didn't fit in the time left
+  let skippedForTime = false;
+  // connecting, the idle start, and a load per server
+  const total = 2 + prepared.dots.length;
 
   try {
-    context.onProgress?.(`pinging for ${Math.round(idleMs / 1000)} s before the loads`);
+    progress.step(`pinging for ${Math.round(idleMs / 1000)} s before the loads`, total);
     await sleep(idleMs, signal);
     for (const [index, dot] of prepared.dots.entries()) {
       if (signal?.aborted) {
@@ -635,14 +789,17 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
       }
       const loadMs = session.hello.downloadMs + session.hello.uploadMs + LOAD_FINAL_MS + LOAD_SETUP_MS;
       if (options.maxMs < elapsed() + loadMs + settleMs) {
-        stoppedEarly = "max_seconds";
-        break;
+        // This server's load doesn't fit in the time left, but a later
+        // server's shorter one may: its hello sets its own windows.
+        dot.load = { status: "skipped", reason: "max_seconds", download: null, upload: null, rpm: null };
+        skippedForTime = true;
+        continue;
       }
       if (0 < largest && options.maxBytes < used + largest) {
         stoppedEarly = "max_bytes";
         break;
       }
-      context.onProgress?.(`loading ${placeOf(dot.server)} (${index + 1} of ${prepared.dots.length})`);
+      progress.step(`loading ${placeOf(dot.server)} (${index + 1} of ${prepared.dots.length})`, total);
       const requested = Date.now();
       const meter = context.meter;
       const meterStart = meter?.bytes() ?? 0;
@@ -703,6 +860,9 @@ export async function measureBufferbloat(context: MeasureContext, options: Buffe
     }
   } finally {
     await closeAll(prepared.dots);
+  }
+  if (stoppedEarly === null && skippedForTime) {
+    stoppedEarly = "max_seconds";
   }
   for (const dot of prepared.dots) {
     if (dot.load && dot.load.status !== "skipped") {

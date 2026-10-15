@@ -43,13 +43,24 @@ lagdev mcp [options]            serve measure_latency and measure_bufferbloat ov
 ```
 
 The result goes to stdout and progress to stderr. Ctrl-C stops a run and
-closes its sessions; a second Ctrl-C exits at once.
+closes its sessions; a second Ctrl-C exits at once. A run stopped once a
+server is being measured prints what it measured, with `stoppedEarly`
+`"interrupted"`. One stopped before that asks the api for nothing more.
 
-The exit code is 0 for a result, 2 for bad arguments, and 1 when the
-measurement couldn't run. With `--json`, a failure prints
-`{"error", "message", "retryAfterMs"?}` to stdout. The api refuses a new guest
-or a track for a while when a network asks for too many, and `retryAfterMs`
-says how long to wait.
+The exit code is:
+- 0 for a result;
+- 1 when the measurement couldn't run: the api refused it, or no server it
+  chose could be reached;
+- 2 for bad arguments, among them a `--ca` or `--stack` file that can't be
+  read, an `--api` or `--origin` that isn't an http or https url, and a
+  `--connect-to` that isn't `host:port`;
+- 130 when Ctrl-C stopped the run before any server was measured.
+
+With `--json`, every failure prints `{"error", "message", "retryAfterMs"?}` to
+stdout, bad arguments included. `error` is `usage` for bad arguments,
+`unavailable` when no server could be reached, `interrupted`, or the api's
+refusal code. The api refuses a new guest or a track for a while when a
+network asks for too many, and `retryAfterMs` says how long to wait.
 
 ```
 $ lagdev
@@ -81,7 +92,12 @@ comes from the api's `my-ip-info`, as a city and a network (ASN).
 
 **Latency** (`lagdev`, `measure_latency`). Each server sends this machine a
 WebSocket ping about 4 times a second and times the pong itself. Nothing loads
-the line. For each server and overall, it reports:
+the line. In a browser the network stack answers the pings, but Node's
+WebSocket client (undici) answers each one from JavaScript on the process's
+main thread, which also reads the downloads. So this process's own delays
+enter the round trips. They are small when it's idle, but at multi-gigabit
+load rates they can add to the loaded increase. For each server and overall,
+it reports:
 - the idle round trip, p50 and p95 in ms (nearest-rank percentiles, as on
   lag.dev);
 - lost pings, those with no pong within 5 s. The pings ride TCP, so a dropped
@@ -112,6 +128,10 @@ For each server, it reports:
 
 Overall, it reports the medians of the increases and of loaded RPM over the
 servers, plus the best and median speeds.
+
+A server's hello sets its load's windows, within what its ticket allows. A
+load that won't fit in the time `--max-seconds` leaves is skipped, and the run
+goes on to the next server, whose load may be shorter.
 
 ## Data cost
 
@@ -190,6 +210,19 @@ a time: two at once would load the same line and spoil each other, so a second
 call waits for the first. `lagdev mcp` takes the CLI's connection options, so
 `lagdev mcp --stack …` serves measurements of a test stack.
 
+- **Cancelling:** a cancelled call stops its measurement and closes its
+  sessions, which is also what happens when a client gives up at its request
+  timeout. A call cancelled while it waits never runs. When the client closes
+  stdin, the server stops whatever is running and exits.
+- **Progress:** a call whose request carries a `progressToken` gets
+  `notifications/progress` as it goes: when it connects, then every 5 s of a
+  latency run, or at the idle start and at each load of a bufferbloat run. A
+  client that resets its timeout on progress can wait out a full bufferbloat
+  run of about 100 s.
+- **Annotations:** neither tool is read-only, since both create a guest and a
+  track and the servers keep what they measured, and `measure_bufferbloat`
+  moves real data. Neither is destructive.
+
 ## A test stack
 
 lag.dev's e2e stack (`mmm/lag.dev/e2e/stack`) serves the production names
@@ -223,5 +256,8 @@ check:
 - the Origin header;
 - the `X-Lag-Client` header, on the track request only (a relay reads what
   reaches the extender);
-- the CLI's output and exit codes;
-- the MCP tools.
+- the CLI's output, exit codes and `--json` failures, and that it exits as
+  soon as it has printed;
+- Ctrl-C during setup, and a run in which no server opened;
+- the MCP tools: their annotations, cancellation, a client closing stdin, and
+  progress.

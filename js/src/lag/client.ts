@@ -11,6 +11,7 @@
 
 import { lagDownloadSources, type LagDownloadSource, type LagDownloadSourceFactory } from "./downloadSource";
 import { importLagUploadKey, LagKeystream, LAG_UPLOAD_MESSAGE_BYTES } from "./keystream";
+import { decodeLagTicket, decodeLagTicketBody } from "./protobuf";
 import {
   bytesToMbps,
   LAG_SPREAD_MAX_MS,
@@ -47,6 +48,13 @@ export type LagSessionErrorCode =
   | "sessions"
   | "origin"
   | "internal"
+  /**
+   * The extender closed the session to admit another (close code 4410), as
+   * a full extender closes its oldest session whose load has ended and whose
+   * report has gone out. The session is done, not failed: its results are
+   * complete, no load was running, and nothing should reconnect it.
+   */
+  | "reclaimed"
   // from the extender, refusing a load; the session goes on pinging (M4)
   | "busy"
   | "budget"
@@ -57,7 +65,7 @@ export type LagSessionErrorCode =
   | "dropped"
   /** nothing came from the extender for `silenceMs`, so the session was closed */
   | "silent"
-  /** the extender sent what M4 does not allow */
+  /** the extender sent what M4 does not allow, or a hello beyond its ticket */
   | "protocol"
   /** the session closed, or was closed, while the load ran */
   | "closed"
@@ -226,7 +234,11 @@ export interface LagClosedEvent {
   reason: string;
   /** close() ended it */
   byClient: boolean;
-  /** why, when it was not close() */
+  /**
+   * Why, when it was not close(). Code `reclaimed` (closeCode 4410) is a
+   * session that finished rather than failed, and no error event comes
+   * before it.
+   */
   error?: LagSessionError;
   /** Date.now() */
   at: number;
@@ -249,7 +261,12 @@ export interface LagSessionOptions {
    * origin such as http://127.0.0.1:8443 is used as given (tests, dev).
    */
   host: string;
-  /** the ticket text (A6) */
+  /**
+   * The ticket text (A6). The extender's hello may ask for no longer a
+   * window each way, and no more streams, than the ticket allows; a hello
+   * that asks for more fails the session as `protocol`. A ticket that can't
+   * be read allows 8 s windows and 4 streams.
+   */
   ticket: string;
   onEvent?: (event: LagSessionEvent) => void;
   /** default globalThis.WebSocket */
@@ -427,6 +444,8 @@ const closeCodeError = (code: number): LagSessionErrorCode | undefined => {
   switch (code) {
     case 4403:
       return "ticket";
+    case 4410:
+      return "reclaimed";
     case 4429:
       return "sessions";
     case 4500:
@@ -464,6 +483,56 @@ const parseHello = (message: Record<string, unknown>): LagHello | null => {
   return numbers.every((n) => !Number.isNaN(n)) ? hello : null;
 };
 
+// What a session's ticket lets its load take (A6): the hello may ask for no
+// longer a window each way, and no more streams, than these. Anyone can run
+// an extender, and the load's size comes from its hello, so an extender whose
+// hello asked for more would load every visitor for longer, and over more
+// streams, than the page says. An honest one never asks for more: it holds
+// the ticket to the same bounds (M3, M7).
+interface LagTicketLimits {
+  downloadMs: number;
+  uploadMs: number;
+  maxStreams: number;
+}
+
+// The extender's bounds on a ticket (connect extender_lag_api_session.go): a
+// phase of 250 ms to 8 s, 5 s when the ticket leaves it unset, and at most
+// 16 streams, 4 when unset. A ticket this can't read is held to 8 s, the
+// longest phase any extender runs (M7), and to the 4 streams A6 issues.
+const LAG_PHASE_MIN_MS = 250;
+const LAG_PHASE_MAX_MS = 8000;
+const LAG_PHASE_DEFAULT_MS = 5000;
+const LAG_STREAMS_MAX = 16;
+const LAG_STREAMS_DEFAULT = 4;
+
+const lagTicketLimits = (ticket: string): LagTicketLimits => {
+  try {
+    const body = decodeLagTicketBody(decodeLagTicket(ticket).body);
+    // M0: a ticket names itself with 16 bytes; text that happens to parse
+    // as protobuf without being a ticket names nothing
+    if (body.ticketId.length === 16) {
+      const phaseMs = (ms: number) =>
+        ms === 0 ? LAG_PHASE_DEFAULT_MS : Math.max(LAG_PHASE_MIN_MS, Math.min(LAG_PHASE_MAX_MS, ms));
+      return {
+        downloadMs: phaseMs(body.downloadMs),
+        uploadMs: phaseMs(body.uploadMs),
+        maxStreams: body.maxStreams === 0 ? LAG_STREAMS_DEFAULT : Math.min(LAG_STREAMS_MAX, body.maxStreams),
+      };
+    }
+  } catch {
+    // not a ticket this can read
+  }
+  return { downloadMs: LAG_PHASE_MAX_MS, uploadMs: LAG_PHASE_MAX_MS, maxStreams: LAG_STREAMS_DEFAULT };
+};
+
+// What a hello asks for beyond its ticket, or null when it asks for nothing more.
+const helloBeyondTicket = (hello: LagHello, limits: LagTicketLimits): string | null => {
+  const beyond = (["downloadMs", "uploadMs", "maxStreams"] as const)
+    .filter((name) => limits[name] < hello[name])
+    .map((name) => `${name} ${hello[name]}, the ticket allows ${limits[name]}`);
+  return beyond.length === 0 ? null : beyond.join("; ");
+};
+
 const finiteAtLeastZero = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && 0 <= value ? value : undefined;
 
@@ -494,6 +563,8 @@ class LagSessionClient implements LagSession {
   private readonly onEvent?: (event: LagSessionEvent) => void;
   private readonly socket: WebSocket;
   private readonly silenceMs: number;
+  // what the ticket lets the hello ask for
+  private readonly ticketLimits: LagTicketLimits;
   private lastMessageAt = monotonicNow();
   private connectTimer?: ReturnType<typeof setTimeout>;
   private silenceTimer?: ReturnType<typeof setInterval>;
@@ -516,6 +587,7 @@ class LagSessionClient implements LagSession {
     this.downloadSources = lagDownloadSources({ fetch: options.fetch, worker: options.downloadWorker });
     this.onEvent = options.onEvent;
     this.silenceMs = options.silenceMs ?? 15_000;
+    this.ticketLimits = lagTicketLimits(options.ticket);
     this.ready = this.readyDeferred.promise;
     this.closed = this.closedDeferred.promise;
 
@@ -656,6 +728,11 @@ class LagSessionClient implements LagSession {
       this.fail(new LagSessionError("protocol", "the extender's hello is malformed"));
       return;
     }
+    const beyond = helloBeyondTicket(hello, this.ticketLimits);
+    if (beyond !== null) {
+      this.fail(new LagSessionError("protocol", `the extender's hello asks for more than its ticket allows: ${beyond}`));
+      return;
+    }
     clearTimeout(this.connectTimer);
     this.helloValue = hello;
     this.openedAtValue = epochNow();
@@ -754,7 +831,8 @@ class LagSessionClient implements LagSession {
     clearTimeout(this.connectTimer);
     clearInterval(this.silenceTimer);
     clearTimeout(this.fatalTimer);
-    if (error !== undefined && error !== this.fatal) {
+    // a reclaimed session finished: the closed event says why, and no error
+    if (error !== undefined && error !== this.fatal && error.code !== "reclaimed") {
       this.emit({ type: "error", error, fatal: true });
     }
     this.load?.onSessionClosed(error);

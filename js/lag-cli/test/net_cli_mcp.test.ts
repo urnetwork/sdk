@@ -115,7 +115,7 @@ test("the cli prints a latency run as JSON and refuses bad arguments", async () 
   for (const args of [["--servers", "9"], ["bufferbloat", "--max-bytes", "lots"], ["frobnicate"], ["--duration", "-1"], ["--stack", "/nonexistent.json"]]) {
     const run = io();
     const code = await main(args, run.io);
-    assert.ok(code === 2 || (args[0] === "--stack" && code === 1), `${args.join(" ")}: ${code}`);
+    assert.equal(code, 2, args.join(" "));
     assert.ok(run.err.join("").startsWith("lagdev: "));
   }
 });
