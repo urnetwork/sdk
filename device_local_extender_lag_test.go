@@ -715,6 +715,57 @@ func TestDeviceLocalProviderExtenderMeasurementsOffAtStartHoldsFromTheSetting(t 
 	}
 }
 
+// A kept identity whose measurement key can't be used serves no measurement
+// name, so every activation asks the operator to withdraw it, from the first
+// post and without the opt-out's hold, which is for the owner's switch
+// (lag.dev/PLAN.md C4, C9). The certificate route is never read, the key file
+// is left as it is, and the owner's switch changes nothing.
+func TestDeviceLocalProviderExtenderMeasurementKeyNotUsable(t *testing.T) {
+	testShortenExtenderLagLifecycle(t)
+	fixture, measurement := newTestProvideMeasurementFixtureWithHold(t, nil, nil, time.Hour)
+	fixture.waitPost()
+	fixture.waitPost()
+
+	// a measurement key that does not parse, then the role started again
+	fixture.device.SetProvideExtender(false)
+	if role := fixture.extender(); role != nil {
+		t.Fatal("the role still runs with the provider extender setting off")
+	}
+	keyFile := filepath.Join(fixture.networkSpace.asyncLocalState.GetLocalState().localStorageDir, extender.ExtenderMeasurementKeyFileName)
+	unusable := []byte("not a measurement key\n")
+	if err := os.WriteFile(keyFile, unusable, 0600); err != nil {
+		t.Fatal(err)
+	}
+	polls := measurement.certPollCount()
+	fixture.device.SetProvideExtender(true)
+	fixture.waitPass()
+	role := fixture.extender()
+	if role == nil || role.measurementCert != nil || !role.currentMeasurementKeyUnusable() {
+		t.Fatal("the role did not start without a certificate for its unusable key")
+	}
+	for range 2 {
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the withdrawal alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+
+	// the owner's switch has no certificate to change
+	fixture.device.SetMeasurementsEnabled(false)
+	fixture.device.SetMeasurementsEnabled(true)
+	role.currentActivator().Reactivate()
+	for range 2 {
+		if post := fixture.waitPost(); !post.args.MeasurementDisabled || post.args.MeasurementCsr != "" {
+			t.Fatalf("post = disabled %t, request %q, expected the withdrawal alone", post.args.MeasurementDisabled, post.args.MeasurementCsr)
+		}
+	}
+	if count := measurement.certPollCount(); count != polls {
+		t.Fatalf("the certificate route was read %d times with an unusable key", count-polls)
+	}
+	if keyBytes, err := os.ReadFile(keyFile); err != nil || !bytes.Equal(keyBytes, unusable) {
+		t.Fatalf("the unusable key file was changed: %q %v", keyBytes, err)
+	}
+}
+
 // Waits for the role's certificate to change after `version`.
 func waitTestProvideMeasurementChange(t *testing.T, measurementCert *extender.ExtenderMeasurementCert, version uint64) {
 	t.Helper()

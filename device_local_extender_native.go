@@ -63,7 +63,9 @@ import (
 // opt-out the operator hears of revokes the name's certificate and each opt-in
 // after it orders a new one, so a switch toggled a few times would otherwise
 // spend Let's Encrypt's weekly limit for the name. Without a kept identity
-// there is no API at all.
+// there is no API at all. A kept identity whose measurement key can't be used
+// has none either, and its activations ask the operator to withdraw the name
+// at once.
 //
 // The role is safe for concurrent use. Close joins its loop and releases every
 // part in the reverse order it was built.
@@ -126,6 +128,10 @@ type deviceLocalExtender struct {
 	// when the role can serve no measurement API; built with the server. Set
 	// under the state lock, for setMeasurementsEnabled (currentMeasurementCert)
 	measurementCert *extender.ExtenderMeasurementCert
+	// the measurement key beside the kept identity could not be used, so there
+	// is no certificate and every activation asks the operator to withdraw
+	// the name (C4, C9). Set with measurementCert.
+	measurementKeyUnusable bool
 
 	// the comparable half of the status; a consumer is woken only on an actual
 	// change, and the connection count is read live beside it
@@ -248,11 +254,12 @@ func (self *deviceLocalExtender) startServing(tcpListener net.Listener) {
 
 	// the measurement certificate the server's lifecycle keeps and the
 	// activation asks for (lag.dev/PLAN.md C4)
-	measurementCert := self.newMeasurementCert()
+	measurementCert, measurementKeyUnusable := self.newMeasurementCert()
 	func() {
 		self.stateLock.Lock()
 		defer self.stateLock.Unlock()
 		self.measurementCert = measurementCert
+		self.measurementKeyUnusable = measurementKeyUnusable
 	}()
 	if measurementCert != nil && !measurementCert.Enabled() {
 		// off as the role starts: told once it has held off since it was set,
@@ -557,27 +564,42 @@ func (self *deviceLocalExtender) serverSettings(nodeRuns bool) *extender.Extende
 // certificate by the extender's id, one per identity key, so an identity that
 // is new at every start would ask for a new certificate each time, and the
 // measurement key is kept beside the identity's file. A key that cannot be
-// read leaves measurement off rather than the role down.
-func (self *deviceLocalExtender) newMeasurementCert() *extender.ExtenderMeasurementCert {
+// read leaves measurement off rather than the role down, and `keyUnusable`
+// says so: the activation then asks the operator to withdraw the name, as for
+// an opt-out (C9).
+func (self *deviceLocalExtender) newMeasurementCert() (measurementCert *extender.ExtenderMeasurementCert, keyUnusable bool) {
 	if strings.TrimSpace(self.settings.ApiUrl) == "" {
 		self.log.Infof("[extender]provide measurement off: the role has no api url\n")
-		return nil
+		return nil, false
 	}
 	asyncLocalState := self.settings.NetworkSpace.asyncLocalState
 	if asyncLocalState == nil {
 		self.log.Infof("[extender]provide measurement off: the space keeps no extender key file\n")
-		return nil
+		return nil, false
 	}
 	keyFile := filepath.Join(asyncLocalState.GetLocalState().localStorageDir, extenderKeyFileName)
-	measurementCert, err := extender.NewExtenderMeasurementCert(extender.ExtenderMeasurementKeyPath(keyFile), "")
+	measurementKeyFile := extender.ExtenderMeasurementKeyPath(keyFile)
+	measurementCert, err := extender.NewExtenderMeasurementCert(measurementKeyFile, "")
 	if err != nil {
-		self.log.Infof("[extender]provide measurement off: the measurement key is not usable = %s\n", err)
-		return nil
+		self.log.Infof(
+			"[extender]provide measurement off: the measurement key %s is not usable, so every activation asks the operator to withdraw this extender's measurement name = %s\n",
+			measurementKeyFile,
+			err,
+		)
+		return nil, true
 	}
 	if self.settings.MeasurementsEnabled != nil && !self.settings.MeasurementsEnabled() {
 		measurementCert.SetEnabled(false)
 	}
-	return measurementCert
+	return measurementCert, false
+}
+
+// Whether the measurement key beside the kept identity could not be used, so
+// the role serves no measurement name and asks for it to be withdrawn.
+func (self *deviceLocalExtender) currentMeasurementKeyUnusable() bool {
+	self.stateLock.Lock()
+	defer self.stateLock.Unlock()
+	return self.measurementKeyUnusable
 }
 
 // The measurement certificate, nil when the role can serve no measurement API.
@@ -826,6 +848,15 @@ func (self *deviceLocalExtender) startActivator() {
 		// opt-out has held (lag.dev/PLAN.md C4, N4)
 		settings.MeasurementCsr = measurementCert.ActivationCsr
 		settings.MeasurementDisabled = self.measurementOptOutIsTold
+	} else if self.currentMeasurementKeyUnusable() {
+		// a kept identity whose measurement key can't be used answers no
+		// measurement name, so every activation says so and a name it had is
+		// withdrawn (C4, C9) rather than renewed and offered to lag.dev with
+		// nothing answering it. At once: this is no switch of the owner's,
+		// whose opt-out waits out the hold.
+		settings.MeasurementDisabled = func() bool {
+			return true
+		}
 	}
 	// the mesh addresses follow the activated families, which the loop reads
 	// from the activator's own status; this only wakes it (D2, G2)
