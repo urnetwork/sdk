@@ -13,6 +13,7 @@ import { lagDownloadSources, type LagDownloadSource, type LagDownloadSourceFacto
 import { importLagUploadKey, LagKeystream, LAG_UPLOAD_MESSAGE_BYTES } from "./keystream";
 import { decodeLagTicket, decodeLagTicketBody } from "./protobuf";
 import { lagUploadShortMessage } from "./uploadEnd";
+import { lagUploadFirstRate, lagUploadStartBytes } from "./uploadStart";
 import {
   bytesToMbps,
   LAG_SPREAD_MAX_MS,
@@ -367,14 +368,13 @@ const OPEN_RETRIES = 3;
 // more than the extender can still count by its window's end, as its reports
 // place that on this page's clock (amendment 15), at its rate over the last
 // UPLOAD_STEADY_MS, so they stop queueing in time to drain by then. Until its
-// first report, the streams may send UPLOAD_START_BYTES.
+// first report, the streams may send the start: the first report's round
+// trip and an interval more at the rate the download ran, at least a message
+// a stream and at most 1 MiB (uploadStart.ts).
 const UPLOAD_BACKLOG_MS = 250;
 const UPLOAD_BACKLOG_MIN_BYTES = 4 * LAG_UPLOAD_MESSAGE_BYTES;
 const UPLOAD_BACKLOG_MAX_BYTES = 16 << 20;
 const UPLOAD_STEADY_MS = 1000;
-// Enough for the first report's round trip on a path of a few tens of Mbps,
-// and to fill the window on one of 1.7 Mbps
-const UPLOAD_START_BYTES = 16 * LAG_UPLOAD_MESSAGE_BYTES;
 // what the streams may still hold when the extender's reports show no rate
 const UPLOAD_MIN_UNVERIFIED_BYTES = 2 * LAG_UPLOAD_MESSAGE_BYTES;
 const UPLOAD_MAX_UNVERIFIED_BYTES = 32 << 20;
@@ -913,6 +913,10 @@ class LagLoadRun {
   // the extender's last reports in the window (ms since its first byte, and
   // bytes counted), and when the last came (monotonic)
   private reports: Array<{ ms: number; bytes: number }> = [];
+  // what the streams may send before the first report, and the first
+  // report's rate (uploadStart.ts)
+  private startBytes = 0;
+  private firstReportRate = 0;
   private lastReportAt?: number;
   // the earliest any report's ms could have been the extender's time as it
   // arrived (monotonic): the least, over the reports, of when each arrived
@@ -1009,7 +1013,15 @@ class LagLoadRun {
     const previous = this.lastUploaded;
     this.lastUploaded = { bytes: Math.max(previous.bytes, bytes), ms: Math.max(previous.ms, ms) };
     if (0 < ms - previous.ms) {
-      this.reports = [...this.reports.slice(-7), { ms, bytes: Math.max(previous.bytes, bytes) }];
+      const point = { ms, bytes: Math.max(previous.bytes, bytes) };
+      if (this.reports.length === 0) {
+        // what the streams have sent by now is the start, or part of it
+        this.firstReportRate = lagUploadFirstRate(
+          { ...point, at: Math.min(ms, at ?? ms) },
+          { bytes: this.uploadSent, streams: this.uploadStreams },
+        );
+      }
+      this.reports = [...this.reports.slice(-7), point];
       this.lastReportAt = now;
     }
     // the report that came soonest after its time places the extender's
@@ -1473,6 +1485,12 @@ class LagLoadRun {
     if (0 < roundTrips.length) {
       this.baseRttMs = Math.min(...roundTrips);
     }
+    this.startBytes = lagUploadStartBytes({
+      downloadBytesPerSecond: ((this.download.percentiles()?.p50 ?? 0) * 1e6) / 8,
+      baseRttMs: this.baseRttMs,
+      intervalMs: this.hello.intervalMs,
+      streams: ready.length,
+    });
     this.uploadFirst = monotonicNow();
     this.uploadStartedAt = epochNow();
     // The extender's window opens when the first message arrives, a little
@@ -1616,10 +1634,11 @@ class LagLoadRun {
   // yet (UPLOAD_BACKLOG_MS): enough to keep the bottleneck busy at its recent
   // rate, and no more than it can still count by the window's end at its
   // steady rate. The end is the extender's, as this page's clock places it
-  // (uploadWindowEnd, amendment 15).
+  // (uploadWindowEnd, amendment 15). Before the first report, the start
+  // (uploadStart.ts).
   private unverifiedAllowance(now: number): number {
     if (this.lastReportAt === undefined) {
-      return UPLOAD_START_BYTES;
+      return this.startBytes;
     }
     const sinceReportMs = now - this.lastReportAt;
     const timeLeftMs = Math.max(0, this.uploadWindowEnd() - now);
@@ -1634,11 +1653,17 @@ class LagLoadRun {
   }
 
   // The higher of the rates over the extender's last two report intervals,
-  // bytes per second.
+  // bytes per second. The first report's is taken over the time its bytes
+  // took to arrive when the start had drained by then (lagUploadFirstRate),
+  // so a start that drained before it doesn't read as a slow link.
   private recentRate(): number {
     let rate = 0;
     for (let i = Math.max(0, this.reports.length - 2); i < this.reports.length; i += 1) {
-      const before = i === 0 ? { ms: 0, bytes: 0 } : this.reports[i - 1];
+      if (i === 0) {
+        rate = Math.max(rate, this.firstReportRate);
+        continue;
+      }
+      const before = this.reports[i - 1];
       const report = this.reports[i];
       rate = Math.max(rate, ((report.bytes - before.bytes) * 1000) / (report.ms - before.ms));
     }

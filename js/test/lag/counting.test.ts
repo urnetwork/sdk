@@ -1179,10 +1179,16 @@ test("with no report at all, the upload closes 2 s after its own start plus uplo
   // the page's start is a little before its first message went
   assert.ok(first + 1000 + 2000 - 100 <= times.uploadClosed!, `the streams closed ${times.uploadClosed! - first} ms after the first message`);
   assert.ok(times.uploadClosed! < first + 1000 + 2000 + 550, `the streams closed ${times.uploadClosed! - first} ms after the first message`);
-  // sixteen messages before the first report (S5)
-  assert.ok(uploadSends.reduce((sum, send) => sum + send.bytes, 0) <= 16 * 65536);
+  // before the first report, the start: a message a stream, since the
+  // download ran at about 1 Mbps (S5, uploadStart.ts)
+  assert.equal(uploadSends.reduce((sum, send) => sum + send.bytes, 0), 2 * 65536);
   assert.equal(result.endReason, "complete");
 });
+
+// How long the extender waits for the browser's own close after it closes
+// an upload stream at its window's end, before it closes the connection
+// (connect's lagApiCloseWait, RFC 6455 7.1.1)
+const CLOSE_WAIT_MS = 2000;
 
 /**
  * A link and an extender of amendment 15, for the upload (lag.dev/PLAN.md
@@ -1191,14 +1197,31 @@ test("with no report at all, the upload closes 2 s after its own start plus uplo
  * queued in turn; each record reaches the extender `oneWayMs` later, as its
  * messages reach the page. The extender counts each record by rule S on its
  * stream, one within 2 ms of its group's first sharing the group's span,
- * and past the window's end only the part before it. It reports every
+ * and past the window's end only the part before it. A stream's first
+ * group waits for its second and counts at its rate, from the window's
+ * first byte on (R2), so the bytes counted, and the reports' `bytes` and
+ * `at`, leave out what arrived before the window opened: about 2.5 records
+ * a load, which flow control sees as in flight for the rest of the window.
+ * With `holdFirst` false, as the model was before the start was measured, a
+ * stream's first record counts at once, spread back to the window's first
+ * byte, and the first interval reads high on slow links. It reports every
  * interval of its window but the last half one, and says the window is over
  * once every stream is done, 2 ms after the first record of its first group
- * to begin at or after the end, or 1 s after the end. It does not hold a
- * stream's first group, which shapes only the first interval. A socket's
+ * to begin at or after the end, or 1 s after the end. A socket's
  * bufferedAmount is what it has queued past a 128 KiB send buffer.
+ *
+ * What leaves the browser (`wire`) is what the bottleneck drains. A socket
+ * the page closes still drains what it had queued, its close frame behind
+ * it, and is then over; the extender gives up waiting for that close
+ * CLOSE_WAIT_MS after its window's end and closes the connection, and once
+ * that reaches the browser, a one-way delay later, nothing more of it leaves.
+ * The extender's own close of each stream at its window's end isn't
+ * modelled: the page sends on until the report that the window is over.
+ *
+ * The hello's downloadMs is `downloadMs`, 250 by default: the window of the
+ * download the load runs first.
  */
-const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: number; uploadMs: number }) => {
+const linkedExtender = ({ mbps, oneWayMs, uploadMs, downloadMs = 250, holdFirst = true }: { mbps: number; oneWayMs: number; uploadMs: number; downloadMs?: number; holdFirst?: boolean }) => {
   const intervalMs = 250;
   const rate = (mbps * 1e6) / 8 / 1000;
   const timers: Array<ReturnType<typeof setTimeout>> = [];
@@ -1211,10 +1234,14 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
   let linkFree = 0;
   let turn = 0;
   const series: number[] = Array(Math.ceil(uploadMs / intervalMs)).fill(0);
-  const streams = new Map<number, { last: number; groupFirst: number; groupFrom: number; doneAt: number }>();
+  const streams = new Map<number, { last: number; groupFirst: number; groupFrom: number; doneAt: number; held: { bytes: number; last: number } | null }>();
   const stats = {
     sent: 0,
     counted: 0,
+    // what left the browser: the bytes the bottleneck drained, and when the
+    // last of them did (performance.now())
+    wire: 0,
+    lastDrain: undefined as number | undefined,
     series,
     first: undefined as number | undefined,
     windowOverAt: undefined as number | undefined,
@@ -1224,6 +1251,10 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
     // a stream sent after its short one
     shorts: [] as Array<{ at: number; stream: number; bytes: number }>,
     afterShort: 0,
+    // the upload's messages as they went (performance.now()), and the
+    // reports as they reached the page
+    sends: [] as Array<{ at: number; bytes: number }>,
+    reports: [] as Array<{ at: number; ms: number; bytes: number }>,
   };
   let lastCounted = 0;
 
@@ -1232,6 +1263,10 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
     binaryType = "blob";
     readyState = 0;
     queued = 0;
+    // once the page has closed it: what it still drains before its close
+    // frame; and whether the connection is over, so nothing more leaves
+    closing?: number;
+    over = false;
     readonly url: string;
     readonly stream: number;
     private readonly listeners = new Map<string, Set<Listener>>();
@@ -1252,7 +1287,7 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
         this.readyState = 1;
         this.dispatch("open", {});
         if (isControl) {
-          this.message({ type: "hello", session: "c2Vzc2lvbg", uploadKey: "AAAAAAAAAAAAAAAAAAAAAA", pingIntervalMs: 250, intervalMs, downloadMs: 250, uploadMs, maxStreams: 4 });
+          this.message({ type: "hello", session: "c2Vzc2lvbg", uploadKey: "AAAAAAAAAAAAAAAAAAAAAA", pingIntervalMs: 250, intervalMs, downloadMs, uploadMs, maxStreams: 4 });
           this.message({ type: "rtt", t: 0, ms: 2 * oneWayMs });
         }
       }, 1);
@@ -1283,6 +1318,7 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
         }
         this.queued += data.byteLength;
         stats.sent += data.byteLength;
+        stats.sends.push({ at: performance.now(), bytes: data.byteLength });
         return;
       }
       const message = JSON.parse(data) as Record<string, unknown>;
@@ -1299,6 +1335,9 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
       }
       if (0 <= this.stream) {
         stats.closedAt ??= performance.now();
+        // what it has queued still goes, then its close frame
+        this.closing = this.queued;
+        this.over ||= this.queued === 0;
       }
       this.readyState = 3;
       setTimeout(() => this.dispatch("close", { code: 1000, reason: "" }), 1);
@@ -1319,15 +1358,32 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
 
   const report = (ms: number) => {
     const message = { type: "uploaded", bytes: Math.floor(stats.counted), ms, at: Math.min(ms, lastCounted) };
-    later(oneWayMs, () => control?.message(message));
+    later(oneWayMs, () => {
+      stats.reports.push({ at: performance.now(), ms, bytes: message.bytes });
+      control?.message(message);
+    });
   };
   const windowOver = () => {
     if (stats.windowOverAt === undefined) {
+      // the window is final: a first group still held counts by rule S
+      for (const stream of streams.values()) {
+        if (stream.held !== null) {
+          lastCounted = Math.max(lastCounted, Math.min(stream.held.last, uploadMs));
+          placeHeld(stream);
+        }
+      }
       stats.windowOverAt = performance.now() + oneWayMs;
       report(uploadMs);
     }
   };
   const count = (from: number, to: number, bytes: number) => {
+    if (to <= from) {
+      if (0 <= to && to < uploadMs) {
+        series[Math.floor(to / intervalMs)] += bytes;
+        stats.counted += bytes;
+      }
+      return;
+    }
     series.forEach((_, i) => {
       const overlap = Math.min(to, uploadMs, (i + 1) * intervalMs) - Math.max(from, i * intervalMs);
       if (0 < overlap) {
@@ -1336,6 +1392,18 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
       }
     });
   };
+  // R2: a stream's first group counts once its second begins, at the rate
+  // of that group's first record, and only from the window's first byte on;
+  // without a second, by rule S
+  const placeHeld = (stream: { held: { bytes: number; last: number } | null }, t2?: number, bytes?: number) => {
+    const { bytes: held, last: t1 } = stream.held!;
+    stream.held = null;
+    if (t2 !== undefined && bytes !== undefined && t1 < t2) {
+      count(Math.max(t1 - (held * (t2 - t1)) / bytes, t1 - SPREAD_MAX_MS), t1, held);
+    } else {
+      count(Math.max(0, t1 - SPREAD_MAX_MS), t1, held);
+    }
+  };
   const receive = (arrival: number, k: number, bytes: number) => {
     if (stats.first === undefined) {
       stats.first = arrival;
@@ -1343,28 +1411,53 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
         later(arrival + ms - performance.now(), () => report(ms));
       }
       later(arrival + uploadMs + SPREAD_MAX_MS - performance.now(), windowOver);
+      // the extender gives up on the browser's close and closes the
+      // connections; once that reaches the browser, nothing more leaves
+      later(arrival + uploadMs + CLOSE_WAIT_MS + oneWayMs - performance.now(), () => {
+        for (const upload of uploads) {
+          upload.over = true;
+        }
+      });
     }
     const t = arrival - stats.first;
-    let stream = streams.get(k);
+    const stream = streams.get(k);
     if (stats.windowOverAt !== undefined || (stream !== undefined && stream.doneAt < t)) {
       return;
     }
+    if (stream === undefined && holdFirst) {
+      // its first group, held (R2)
+      streams.set(k, { last: t, groupFirst: t, groupFrom: t, doneAt: uploadMs <= t ? t + SPREAD_JOIN_MS : Infinity, held: { bytes, last: t } });
+      return;
+    }
+    if (stream === undefined) {
+      const from = Math.max(0, t - SPREAD_MAX_MS);
+      streams.set(k, { last: t, groupFirst: t, groupFrom: from, doneAt: uploadMs <= t ? t + SPREAD_JOIN_MS : Infinity, held: null });
+      count(from, t, bytes);
+      lastCounted = Math.min(t, uploadMs);
+      return;
+    }
     let from: number;
-    if (stream !== undefined && t - stream.groupFirst <= SPREAD_JOIN_MS) {
+    if (t - stream.groupFirst <= SPREAD_JOIN_MS) {
+      if (stream.held !== null) {
+        stream.held.bytes += bytes;
+        stream.held.last = t;
+        stream.last = t;
+        return;
+      }
       from = stream.groupFrom;
     } else {
-      from = Math.max(stream?.last ?? 0, t - SPREAD_MAX_MS, 0);
-      const doneAt = stream?.doneAt ?? Infinity;
-      stream = { last: t, groupFirst: t, groupFrom: from, doneAt: doneAt === Infinity && uploadMs <= t ? t + SPREAD_JOIN_MS : doneAt };
-      streams.set(k, stream);
+      if (stream.held !== null) {
+        placeHeld(stream, t, bytes);
+      }
+      from = Math.max(stream.last, t - SPREAD_MAX_MS, 0);
+      stream.groupFirst = t;
+      stream.groupFrom = from;
+      if (uploadMs <= t && stream.doneAt === Infinity) {
+        stream.doneAt = t + SPREAD_JOIN_MS;
+      }
     }
     stream.last = t;
-    if (from < t) {
-      count(from, t, bytes);
-    } else if (t < uploadMs) {
-      series[Math.floor(t / intervalMs)] += bytes;
-      stats.counted += bytes;
-    }
+    count(from, t, bytes);
     lastCounted = Math.min(t, uploadMs);
   };
   // every 2 ms the link drains what it could have since the last time, and
@@ -1372,7 +1465,7 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
   const ticker = setInterval(() => {
     const now = performance.now();
     while (linkFree <= now) {
-      const queued = uploads.filter((upload) => 0 < upload.queued);
+      const queued = uploads.filter((upload) => 0 < upload.queued && !upload.over);
       if (queued.length === 0) {
         linkFree = now;
         break;
@@ -1382,7 +1475,13 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
       const bytes = Math.min(16384, upload.queued);
       upload.queued -= bytes;
       linkFree += bytes / rate;
+      stats.wire += bytes;
+      stats.lastDrain = linkFree;
       arrivals.push({ at: linkFree + oneWayMs, stream: upload.stream, bytes });
+      if (upload.closing !== undefined) {
+        upload.closing -= bytes;
+        upload.over ||= upload.closing <= 0;
+      }
     }
     arrivals.sort((a, b) => a.at - b.at);
     while (0 < arrivals.length && arrivals[0].at <= now) {
@@ -1401,52 +1500,124 @@ const linkedExtender = ({ mbps, oneWayMs, uploadMs }: { mbps: number; oneWayMs: 
       clearTimeout(timer);
     }
   };
-  return { WebSocket: LinkedSocket as unknown as typeof WebSocket, stats, stop };
+  // resolves once nothing more can leave the browser: every upload socket's
+  // connection is over
+  const settled = async () => {
+    while (!(0 < uploads.length && uploads.every((upload) => upload.over))) {
+      await sleep(10);
+    }
+  };
+  return { WebSocket: LinkedSocket as unknown as typeof WebSocket, stats, stop, settled };
+};
+
+/**
+ * One load over a linked extender (above): a download first, then the
+ * upload over `mbps` with a round trip of 2 x `oneWayMs`. The download is
+ * briefDownload's unless `downloadMbps` is given: then a 5 s download at
+ * that rate, set in the past so that it is over at once, as a link whose
+ * download runs at that rate would leave the session. What the run
+ * measured, as shares of the link: the bytes counted, the p50, the first,
+ * second and last intervals, and the overshoot, as bytes handed to the
+ * sockets (`sent`) and leaving the browser (`wire`) over those counted; and
+ * when the link was full (`fullMs`): the start of the first interval from
+ * which every one but the window's last holds at least 90% of the link.
+ * Also the bytes handed to the sockets before the first report reached the
+ * page (`start`), those sent and not counted (`wasted`), and how long the
+ * link went on carrying the upload after the page's own window, uploadMs
+ * from its first message (`tailMs`): what the site's idle span after an
+ * upload has to cover (L4).
+ */
+const linkedLoad = async ({
+  mbps,
+  oneWayMs,
+  uploadMs = 5000,
+  downloadMbps,
+  holdFirst = true,
+}: {
+  mbps: number;
+  oneWayMs: number;
+  uploadMs?: number;
+  downloadMbps?: number;
+  holdFirst?: boolean;
+}) => {
+  const downloadMs = downloadMbps === undefined ? 250 : 5000;
+  const link = linkedExtender({ mbps, oneWayMs, uploadMs, downloadMs, holdFirst });
+  const download =
+    downloadMbps === undefined
+      ? briefDownload()
+      : streamSchedule(downloadMbps, Math.round(downloadMbps * 1000) + oneWayMs, { start: performance.now() - 20_000, untilMs: downloadMs + 1500 });
+  const worker = new ScheduleWorker(download);
+  const session = openLagSession({ host: "extender.test", ticket: "ticket", WebSocket: link.WebSocket, downloadWorker: () => worker as unknown as Worker });
+  let result: LagLoadResult;
+  try {
+    await session.ready;
+    result = await session.startLoad();
+    await link.settled();
+  } finally {
+    session.close();
+    worker.terminate();
+    link.stop();
+  }
+  const { stats } = link;
+  const capacity = (mbps * 1e6 * uploadMs) / 8 / 1000;
+  const perInterval = capacity / (uploadMs / 250);
+  const share = (bytes: number) => bytes / perInterval;
+  const { series } = stats;
+  let full = series.length - 1;
+  while (0 < full && 0.9 <= share(series[full - 1])) {
+    full -= 1;
+  }
+  const firstReport = stats.reports[0]?.at ?? Infinity;
+  return {
+    result,
+    stats,
+    end: stats.first! + uploadMs,
+    start: stats.sends.filter((send) => send.at < firstReport).reduce((sum, send) => sum + send.bytes, 0),
+    wasted: stats.sent - stats.counted,
+    tailMs: stats.lastDrain! - (stats.sends[0].at + uploadMs),
+    counted: stats.counted / capacity,
+    p50: result.upload.percentiles!.p50 / mbps,
+    p95: result.upload.percentiles!.p95 / mbps,
+    first: share(series[0]),
+    second: share(series[1]),
+    last: share(series.at(-1)!),
+    fullMs: full * 250,
+    sent: stats.sent / stats.counted - 1,
+    wire: stats.wire / stats.counted - 1,
+    download: result.download.percentiles?.p50,
+  };
 };
 
 for (const mbps of [20, 4, 2]) {
   test(`over a ${mbps} Mbps link, the upload fills the extender's window to its end, ends its streams on short messages, and sends past it only until the window is final`, { timeout: 60_000 }, async (t) => {
-    // A 5 s window over a path of 50 ms. The streams send on past the
-    // window's end until the extender's report says it is over, so that each
-    // stream has a record that straddles the end and fills it. Near the end
-    // the room for a whole message runs out, and what is left goes as a
-    // stream's short, last message (M6, S5). By this model, amendment 14's
-    // client, which stopped at its own uploadMs, left the last interval at
-    // 86%, 65-73% and 41% of the link at 20, 4 and 2 Mbps. Sending whole
-    // messages until the window was over, without short ones, filled it to
-    // 98%, 79-87% and 58%, and sent 2-4%, 9-12% and 19% more than was
-    // counted; with them, 4 and 2 Mbps fill it to about 95-110% and 85-100%,
-    // and send 1-2% and 2-3% more.
-    const uploadMs = 5000;
+    // A 5 s window over a path of 50 ms, the download at the link's rate.
+    // The streams send on past the window's end until the extender's report
+    // says it is over, so that each stream has a record that straddles the
+    // end and fills it. Near the end the room for a whole message runs out,
+    // and what is left goes as a stream's short, last message (M6, S5). By
+    // this model, amendment 14's client, which stopped at its own uploadMs,
+    // left the last interval at 86%, 65-73% and 41% of the link at 20, 4 and
+    // 2 Mbps. Sending whole messages until the window was over, without
+    // short ones, filled it to 98%, 79-87% and 58%, and sent 2-4%, 9-12% and
+    // 19% more than was counted; with them, 4 and 2 Mbps fill it to about
+    // 95-110% and 85-100%. Each stream's first record counts at once here
+    // (holdFirst false): held as R2 holds it, the 2.5 records or so that R2
+    // never counts stay in flight for flow control to the end, and the last
+    // interval on these slow paths ends short of room, as on the stack (Q8),
+    // which is not what this tests.
     const oneWayMs = 25;
-    const link = linkedExtender({ mbps, oneWayMs, uploadMs });
-    const worker = new ScheduleWorker(briefDownload());
-    const session = openLagSession({ host: "extender.test", ticket: "ticket", WebSocket: link.WebSocket, downloadWorker: () => worker as unknown as Worker });
-    let result: LagLoadResult;
-    try {
-      await session.ready;
-      result = await session.startLoad();
-    } finally {
-      session.close();
-      worker.terminate();
-      link.stop();
-    }
-    const { stats } = link;
-    const capacity = (mbps * 1e6 * uploadMs) / 8 / 1000;
-    const perInterval = capacity / (uploadMs / 250);
-    const overshoot = (stats.sent - stats.counted) / stats.counted;
-    const last = stats.series.at(-1)! / perInterval;
-    const end = stats.first! + uploadMs;
+    const run = await linkedLoad({ mbps, oneWayMs, downloadMbps: mbps, holdFirst: false });
+    const { result, stats, end, last } = run;
     t.diagnostic(
-      `counted ${(stats.counted / capacity * 100).toFixed(1)}% of the link; p50 ${result.upload.percentiles!.p50.toFixed(3)} Mbps; last interval ${(last * 100).toFixed(0)}%; ` +
-        `sent ${(overshoot * 100).toFixed(1)}% more than counted; window over ${Math.round(stats.windowOverAt! - end)} ms after its end; ` +
+      `counted ${(run.counted * 100).toFixed(1)}% of the link; p50 ${result.upload.percentiles!.p50.toFixed(3)} Mbps; last interval ${(last * 100).toFixed(0)}%; ` +
+        `sent ${(run.sent * 100).toFixed(1)}% more than counted; window over ${Math.round(stats.windowOverAt! - end)} ms after its end; ` +
         `short messages ${JSON.stringify(stats.shorts.map((short) => [Math.round(short.at - end), short.stream, short.bytes]))}`,
     );
     // the link was full through the window, and its last interval too: the
     // p50 says so however busy the machine is, the bytes counted unless the
     // machine starved the streams for a while
     assert.ok(Math.abs(result.upload.percentiles!.p50 - mbps) <= mbps * 0.03, `p50 ${result.upload.percentiles!.p50}`);
-    assert.ok(0.9 <= stats.counted / capacity, `counted ${stats.counted} of ${capacity}`);
+    assert.ok(0.9 <= run.counted, `counted ${(run.counted * 100).toFixed(1)}% of the link`);
     assert.ok(0.8 <= last, `the last interval holds ${(last * 100).toFixed(0)}% of the link`);
     // each short message was a stream's last, of one record to just under a
     // whole message, and none went before the end phase: before the window's
@@ -1467,6 +1638,100 @@ for (const mbps of [20, 4, 2]) {
     assert.ok(stats.windowOverAt! - end <= SPREAD_MAX_MS + 300, `the window was over ${stats.windowOverAt! - end} ms after its end`);
     assert.ok(stats.windowOverAt! - 5 <= stats.closedAt! && stats.closedAt! - stats.windowOverAt! < 100, `the streams closed ${stats.closedAt! - stats.windowOverAt!} ms after the report`);
     assert.ok(stats.closedAt! <= stats.doneAt!);
-    assert.ok(overshoot <= 0.08, `sent ${(overshoot * 100).toFixed(1)}% more than was counted`);
+    assert.ok(run.sent <= 0.08, `sent ${(run.sent * 100).toFixed(1)}% more than was counted`);
   });
 }
+
+// The link model's table (lag.dev/PLAN.md S5): over each link, by rate and
+// round trip, one load, the download at the upload's rate; and links whose
+// upload is far slower or far faster than their download, at 50 and 250 ms.
+const LINK_RATES = [0.5, 1, 1.5, 2, 4, 20, 50];
+const LINK_RTTS = [20, 50, 100, 250];
+const LINK_ASYMMETRIC: Array<{ mbps: number; downloadMbps: number }> = [
+  { mbps: 0.5, downloadMbps: 20 },
+  { mbps: 1, downloadMbps: 20 },
+  { mbps: 1.5, downloadMbps: 20 },
+  { mbps: 20, downloadMbps: 2 },
+  { mbps: 50, downloadMbps: 2 },
+];
+
+// runs `jobs` with at most `width` at once, in order
+const pooled = async <T,>(jobs: Array<() => Promise<T>>, width: number): Promise<T[]> => {
+  const out: T[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(width, jobs.length) }, async () => {
+      while (next < jobs.length) {
+        const i = next;
+        next += 1;
+        out[i] = await jobs[i]();
+      }
+    }),
+  );
+  return out;
+};
+
+test("the link model's table: from 0.5 to 50 Mbps and 20 to 250 ms, the upload's start fits the window, it sends little past what is counted, and it fills the link as before", { timeout: 900_000 }, async (t) => {
+  // The start is what the streams may send before the extender's first
+  // report: the download's rate for the lowest round trip and two
+  // intervals, a message a stream at least and 1 MiB at most (S5,
+  // uploadStart.ts). With the 1 MiB start of before, a 0.5 Mbps link handed
+  // its sockets 3.4 times what its window counted, and 1.5 times at 1 Mbps,
+  // and what its window could not count drained after it, until the
+  // extender closed the connections 2 s after its end. Four loads at a time
+  // (LAG_LINK_WIDTH).
+  const { lagUploadStartBytes, LAG_UPLOAD_START_MAX_BYTES } = await import("../../src/lag/uploadStart.ts");
+  const width = Number(process.env.LAG_LINK_WIDTH ?? 4);
+  const cases = [
+    ...LINK_RATES.flatMap((mbps) => LINK_RTTS.map((rttMs) => ({ mbps, downloadMbps: mbps, rttMs }))),
+    ...LINK_ASYMMETRIC.flatMap((link) => [50, 250].map((rttMs) => ({ ...link, rttMs }))),
+  ];
+  const rows = await pooled(
+    cases.map((link) => async () => ({ ...link, ...(await linkedLoad({ mbps: link.mbps, oneWayMs: link.rttMs / 2, downloadMbps: link.downloadMbps })) })),
+    width,
+  );
+  const percent = (value: number) => `${(100 * value).toFixed(0)}%`;
+  t.diagnostic(
+    "up/down Mbps, rtt ms: start KiB | sent% wire% over counted, KB not counted | p50 p95 | counted | first second last interval | full from ms | tail ms\n" +
+      rows
+        .map(
+          (row) =>
+            `${row.mbps}/${row.downloadMbps}, ${row.rttMs}: ${Math.round(row.start / 1024)} | ${(100 * row.sent).toFixed(1)} ${(100 * row.wire).toFixed(1)}, ${Math.round(row.wasted / 1000)} | ` +
+            `${percent(row.p50)} ${percent(row.p95)} | ${percent(row.counted)} | ${percent(row.first)} ${percent(row.second)} ${percent(row.last)} | ${row.fullMs} | ${Math.round(row.tailMs)}`,
+        )
+        .join("\n"),
+  );
+  for (const row of rows) {
+    const name = `${row.mbps} Mbps up, ${row.downloadMbps} down, ${row.rttMs} ms`;
+    // The p50 is the link's, and the link was full through the window but
+    // for its ramp, however fast the upload is next to the download. At
+    // 2 Mbps and below a start that fits the window leaves the four streams
+    // about a message each in flight after it (the backlog's 256 KiB), so a
+    // stream can run dry between messages and the extender's count of it,
+    // stream by stream (rule S), reads a few percent off: 96-100% at 1 to
+    // 2 Mbps, where the 1 MiB start kept every stream busy to the end and
+    // read 100%.
+    const p50Mark = row.mbps <= 2 ? 0.05 : 0.03;
+    assert.ok(Math.abs(row.p50 - 1) <= p50Mark, `${name}: p50 ${percent(row.p50)} of the link`);
+    assert.ok(0.85 <= row.counted, `${name}: counted ${percent(row.counted)} of the link`);
+    // before the first report the streams sent no more than the start
+    const start = lagUploadStartBytes({
+      downloadBytesPerSecond: ((row.download ?? 0) * 1e6) / 8,
+      baseRttMs: row.rttMs,
+      intervalMs: 250,
+      streams: 4,
+    });
+    assert.ok(row.start <= start, `${name}: ${row.start} bytes before the first report, the start is ${start}`);
+    assert.ok(row.wire <= row.sent + 1e-9, `${name}: more left the browser than it sent`);
+    if (row.mbps === row.downloadMbps && 20 <= row.mbps) {
+      // a fast link's start is the 1 MiB it was, so it fills as quickly
+      assert.equal(start, LAG_UPLOAD_START_MAX_BYTES, `${name}: the start`);
+    }
+    if (row.mbps === row.downloadMbps && row.mbps < 2) {
+      // a slow link leaves uncounted about what a faster one does, 60 to
+      // 90 KB: the records R2 never counts, and the end's (M6). The 1 MiB
+      // start left 736 KB at 0.5 Mbps, 424 KB at 1 and 111 KB at 1.5.
+      assert.ok(row.wasted <= 160_000, `${name}: ${Math.round(row.wasted)} bytes sent and not counted`);
+    }
+  }
+});
