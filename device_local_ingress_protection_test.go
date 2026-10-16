@@ -92,3 +92,86 @@ func TestDeviceLocalIngressProtectionActualFactory(t *testing.T) {
 		}
 	}
 }
+
+// A real pin owner and ordinary SCTP claims can survive the provider-on role
+// switch. Its incoming ACK must fit before any old resend ownership can drain.
+func TestDeviceLocalIngressProtectionRoleShrinkProgress(t *testing.T) {
+	for _, target := range []ByteCount{32 * 1024 * 1024, 64 * 1024 * 1024} {
+		device, _ := transferMemoryTestDevice(t, target)
+		memory := device.transferMemory
+		pack := device.settings.ReceiveBufferSettings.PackQueueBudget
+		reorder := device.settings.ReceiveBufferSettings.ReceiveQueueBudget
+		resend := device.settings.SendBufferSettings.ResendQueueBudget
+		p2p := device.settings.WebRtcSettings.MemoryBudget
+		store, err := newBoundedPeerClientKeyPinStore(&LocalState{localStorageDir: t.TempDir()}, nil, memory.peerKeyPins)
+		if err != nil {
+			t.Fatal(err)
+		}
+		owned := map[*connect.TransferMemoryBudget]ByteCount{}
+		reserve := func(budget *connect.TransferMemoryBudget, bytes ByteCount) bool {
+			if !budget.TryReserve(bytes) {
+				return false
+			}
+			owned[budget] += bytes
+			return true
+		}
+		release := func(budget *connect.TransferMemoryBudget, bytes ByteCount) {
+			if bytes < 0 || owned[budget] < bytes {
+				t.Fatal("fixture released ownership it did not admit")
+			}
+			owned[budget] -= bytes
+			budget.Release(bytes)
+		}
+		t.Cleanup(func() {
+			for budget, bytes := range owned {
+				if bytes > 0 {
+					budget.Release(bytes)
+				}
+			}
+			store.Close()
+			stats := memory.root.Stats()
+			if stats.UsedByteCount != 0 || stats.ReservedByteCount != stats.ReleasedByteCount {
+				t.Error("role-shrink fixture cleanup did not reconcile actual owners")
+			}
+		})
+		resendBytes := resend.TotalByteCount()
+		_, clientShare, _, _ := deviceMemoryShares(device.settings)
+		onProtected := mobilePackQueueBudgetByteCountForTarget(clientShare, target) + mobileReceiveQueueBudgetForPlatform(target, clientShare, true)
+		onOrdinary := clientShare - onProtected
+		p2pBytes := ((onOrdinary-resendBytes-peerPinStoreMemoryByteCount)/deviceLocalP2pReceiveBufferByteCount + 1) * deviceLocalP2pReceiveBufferByteCount
+		if p2pBytes <= 0 || !reserve(resend, resendBytes) || !reserve(p2p, p2pBytes) {
+			t.Fatalf("target=%d: ordinary pre-switch owners did not fit", target)
+		}
+		oldOrdinary := memory.client.UsedByteCount()
+		rootTotal := memory.root.TotalByteCount()
+		device.applyProvideMemorySharesWithLock(true)
+		if oldOrdinary <= onOrdinary || memory.client.UsedByteCount() != oldOrdinary || memory.root.TotalByteCount() != rootTotal || reserve(resend, 1) {
+			t.Fatalf("target=%d: fixture missed retained ordinary overhang or changed the root", target)
+		}
+		// Fill every ordinary byte at the shared root; ingress cannot rely on
+		// accidental spare provider/NAT capacity or on retiring a healthy peer.
+		sibling := connect.NewTransferMemoryBudgetWithParent(rootTotal, memory.root)
+		siblingBytes := rootTotal - oldOrdinary - onProtected
+		if !reserve(sibling, siblingBytes) || reserve(sibling, 1) {
+			t.Fatalf("target=%d: root sibling stole the promised ingress window", target)
+		}
+		packBytes, reorderBytes := pack.TotalByteCount(), reorder.TotalByteCount()
+		if pack.Available() != packBytes || reorder.Available() != reorderBytes || !reserve(pack, packBytes) || !reserve(reorder, reorderBytes) {
+			t.Fatalf("target=%d: role shrink blocked ACK admission behind its own retained sender", target)
+		}
+		if memory.root.UsedByteCount() != rootTotal || memory.client.UsedByteCount() != oldOrdinary+onProtected {
+			t.Fatal("draining role duplicated or lost ancestor ownership")
+		}
+		// Only after ingress succeeds may the acknowledged send owner retire.
+		release(resend, resendBytes)
+		release(pack, packBytes)
+		release(reorder, reorderBytes)
+		release(p2p, p2pBytes)
+		release(sibling, siblingBytes)
+		store.Close()
+		stats := memory.root.Stats()
+		if stats.UsedByteCount != 0 || stats.ReservedByteCount != stats.ReleasedByteCount {
+			t.Fatal("role-shrink owner release did not reconcile")
+		}
+	}
+}
