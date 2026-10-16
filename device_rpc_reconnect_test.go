@@ -849,7 +849,9 @@ func TestDeviceRemoteEquivalentConnectLocationIsNoOp(t *testing.T) {
 }
 
 func TestDeviceRemoteConnectLocationDoesNotSuppressCustomDestinationChange(t *testing.T) {
-	device := &DeviceRemote{}
+	// the queued command also tells the provide mode the remote derives from
+	// it, which reads the remote's settings
+	device := &DeviceRemote{settings: defaultDeviceRpcSettings()}
 	location := &ConnectLocation{
 		ConnectLocationId: &ConnectLocationId{BestAvailable: true},
 	}

@@ -237,8 +237,10 @@ func TestDeviceRemoteSimple(t *testing.T) {
 	listener := &testing_offlineChangeListener{}
 	sub := deviceRemote.AddOfflineChangeListener(listener)
 	deviceRemote.SetOffline(false)
+	// the write tells the listener itself once the device applied it, before
+	// the device's report (device_remote_setting_state.go)
 	listener.with(func() {
-		connect.AssertEqual(t, false, listener.event)
+		connect.AssertEqual(t, true, listener.event)
 		connect.AssertEqual(t, false, listener.eventOffline)
 	})
 	sub.Close()
